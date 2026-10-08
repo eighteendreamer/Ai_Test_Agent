@@ -1,0 +1,48 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_actual_production_lifespan_docx_parse_survives_api_restart_and_terminal_replay _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1145/test_actual_production_lifespa0')
+
+    async def test_actual_production_lifespan_docx_parse_survives_api_restart_and_terminal_replay(tmp_path):
+        evidence = Path(os.getenv("QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR", str(tmp_path)))
+        evidence.mkdir(parents=True, exist_ok=True)
+        try:
+            async with controlled_http(tmp_path) as (business, calls, _, _, _, errors):
+                async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
+                    settings.orchestration.redis_task_outbox_streams = DOCUMENT_PARSE_STREAM
+                    models = MySQLModelConfigStore(settings)
+                    models.initialize()
+                    models.upsert(ModelConfigUpdateRequest(model_name="controlled-parse-lifespan", provider="openai",
+                        transport="openai_chat_completions", base_url=business + "/v1", api_key=uuid4().hex, is_active=True,
+                        use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False)))
+                    processes.env = child_environment(settings)
+                    port = free_port()
+                    args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                    api = processes.start("document-api-first", *args)
+                    queue = RedisTaskQueue(settings.database.redis_url, stream=DOCUMENT_PARSE_STREAM,
+                        group=settings.orchestration.redis_task_consumer_group + ":document_parsing")
+                    await queue.connect()
+                    try:
+                        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=50) as client:
+>                           await wait_api(client, api)
+
+tests\test_document_parse_production.py:48: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+client = <httpx.AsyncClient object at 0x000001A59404F7D0>
+process = <Popen: returncode: 3 args: ['G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_...>
+
+    async def wait_api(client, process):
+        deadline = monotonic() + 50
+        while monotonic() < deadline:
+>           assert process.poll() is None, "production API exited; see preserved stderr"
+E           AssertionError: production API exited; see preserved stderr
+E           assert 3 is None
+E            +  where 3 = poll()
+E            +    where poll = <Popen: returncode: 3 args: ['G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_...>.poll
+
+tests\test_execution_worker_cli.py:334: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_document_parse_production.py::test_actual_production_lifespan_docx_parse_survives_api_restart_and_terminal_replay
+1 failed in 22.79s

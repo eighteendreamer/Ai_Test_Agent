@@ -1,0 +1,7 @@
+<!doctype html><meta charset="utf-8"><script>window.__testLifecycle=[];
+            for(const type of ['pageshow','pagehide','beforeunload'])addEventListener(type,event=>{
+              const row={type,persisted:event.persisted??null,url:location.href,time:performance.now()};
+              window.__testLifecycle.push(row);navigator.sendBeacon('/lifecycle',JSON.stringify(row));
+            });</script><button id="inner-target">嵌套操作</button><input id="inner-tail"><script>document.querySelector('#inner-target').onclick=()=>{
+              const response=document.createElement('p');response.id='inner-response';response.textContent='嵌套操作后响应';document.body.append(response);
+            };</script>

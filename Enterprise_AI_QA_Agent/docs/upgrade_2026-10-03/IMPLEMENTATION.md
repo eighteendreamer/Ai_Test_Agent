@@ -4348,3 +4348,52 @@ $env:RECORDING_FINISH_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-knowledge-f
 5源文件hash保存p0-recording-knowledge-source-sha.json；三份原计划同步至4.1.5/6.77，审计脚本核对5893旧原件HEAD/当前字节、新完整载荷/HTTP/PG/截图/XML、保护.gitignore及无关工件，结果p0-recording-knowledge-validation.json。无新配置键/表/依赖/迁移；py_compile通过仅附加，前端JS/build本轮未重跑。
 
 默认AI引用知识并进行真实操作/断言、动作后DOM响应时序与关联、清洗、人工DeepSeek、完整App/场景报告、Electron实际缓存恢复/并行attach及更多故障、Docker与其他P0—P5、生产历史迁移和旧两Worker汇总原字节恢复仍未完成。完整升级目标保持，不缩成知识查询专项。
+
+
+## 有限DOM响应与采集策略〔2026-10-08，基线091e4200〕
+
+详见PLAN.md 4.1.6/6.78及P0_RECORDING_RESPONSE_DESIGN.md。先保留原CDP/管理浏览器2失败、输入响应1失败、敏感子节点1失败和Electron连接1失败。初次节点误选未运行功能；MySQL策略冻结/PG读回和脚本隔离56通过，实际输入/截止等8通过。
+
+最终实际命令，工作目录Agent_Server：
+
+```powershell
+$env:PYTHONIOENCODING='utf-8'
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RUN_LIVE_RECORDING_SCOPE_STORAGE='1'
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RUN_LIVE_RECORDING_BFCACHE='1'
+$env:RUN_LIVE_CASE_PLANNING_TESTS='1'
+$evidenceRoot='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03'
+$env:RECORDING_PRODUCT_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-response-verified-electron'
+$env:RECORDING_SCOPE_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-response-verified-python'
+$env:RECORDING_BOUNDARY_PG_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-response-verified-boundary-pg'
+$env:RECORDING_BOUNDARY_CDP_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-response-verified-boundary-cdp'
+$env:RECORDING_FINISH_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-response-verified-finish'
+$env:RECORDING_CAPTURE_EVIDENCE=Join-Path $evidenceRoot 'p0-recording-response-verified-policy'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py tests/test_recording_scope_product.py tests/test_recording_finish_protocol.py tests/test_recording_boundary_protocol.py tests/test_recording_document_scopes.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py tests/test_case_planning.py tests/test_recording_knowledge_payloads.py tests/test_recording_capture_policy.py tests/test_assertion_suggester.py tests/test_replay_executor.py -q --junitxml=../docs/upgrade_2026-10-03/p0-recording-response-verified.xml
+```
+
+stdout/stderr保存p0-recording-response-verified.log，最终285通过、1默认模型专项跳过、262.22秒。首轮285通过274.89秒的原件仍保留，随后修正响应frame定位标记并按新冻结源码完整重跑。46真实场景/44完成项PG、API、规划知识全字段相等，另2预期失败；46截图对象读回，15源/测试文件hash核对。
+
+工作目录agent_web实际执行：
+
+```powershell
+npm.cmd test -- tests/recorder/recorder.test.mjs tests/recorder/native-scopes.test.mjs --reporter=default --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p0-recording-response-js-verified.xml
+npm.cmd run build
+```
+
+JS46通过；vue-tsc与Vite构建通过，日志p0-recording-response-js-verified.log/p0-recording-response-build.log。
+
+独立生产启动实际命令，工作目录Agent_Server：
+
+```powershell
+$env:RUN_LIVE_DOCUMENT_PARSE_PRODUCTION='1'
+$env:QA_DOCUMENT_PARSE_PRODUCTION_EVIDENCE_DIR=Join-Path $evidenceRoot 'p0-recording-response-production'
+..\.venv\Scripts\python.exe -m pytest tests/test_document_parse_production.py -q --junitxml=../docs/upgrade_2026-10-03/p0-recording-response-production.xml
+```
+
+该项1失败22.79秒：API冷启动消费表FK先引用不存在的agent_test_run_items，发生在录制初始化之前。需要单独修复依赖初始化顺序，保留原stderr；未将此项计作生产通过。首次Electron连接ReadError也尚未定位，重测与扩大回归通过不能证明其根因已修复。
+
+MySQL新增recording.capture_settings默认键；项目策略及修订冻结于PG会话，无新PG表/依赖/历史改写，前端仍读原泛型JSON契约。有限DOM响应只作同文档时间关联，明确截断/无变化/不可用；旧计数不再导出响应断言，新响应低置信度建议需评审且不回放。默认AI、完整清洗/人工DeepSeek/App/报告、网络/跨文档/Shadow DOM、Docker及其余P0—P5和生产迁移继续未完成。

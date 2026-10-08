@@ -18,12 +18,13 @@ from playwright.async_api import async_playwright
 
 from src.application.recorder.drivers.base import CaptureCheckpoint
 from src.application.recorder.drivers.cdp_attach import CdpAttachDriver
-from src.schemas.recording import RecorderEvent, RecordingDriverConfig
+from src.schemas.recording import RecorderEvent, RecordingDriverConfig, RecordingCaptureSettings
 from test_case_planning import environment
 from src.api.routes.recordings import router
 from src.application.exploration.recording_graph_store import RecordingGraphStore
 from src.application.recorder.drivers import EmbeddedBridge
 from src.application.recorder.finish_config_service import RecordingFinishConfigService
+from src.application.recorder.capture_config_service import RecordingCaptureConfigService, CONFIG_KEY as CAPTURE_KEY
 from src.application.recorder.recorder_session_service import RecorderSessionService
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.recording_store import PostgresRecordingStore
@@ -34,7 +35,7 @@ pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_CDP_RECORDING") != "1", reas
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["navigation", "cross-origin", "nested-frame", "popup", "popup-close", "frame-remove", "history-back"])
+@pytest.mark.parametrize("scenario", ["navigation", "cross-origin", "nested-frame", "popup", "popup-close", "frame-remove", "history-back", "response-dom"])
 async def test_actual_browser_retains_operations_across_document_scopes(tmp_path, scenario):
     await _scope_scenario(tmp_path, scenario)
 
@@ -68,6 +69,30 @@ async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp
     }
     if scenario not in ("nested-frame", "frame-remove"):
         files["root"] = files["root"].split('<iframe')[0]
+    if scenario in ("nested-frame", "frame-remove"):
+        files["inner"] += """<script>document.querySelector('#inner-target').onclick=()=>{
+          const response=document.createElement('p');response.id='inner-response';response.textContent='嵌套操作后响应';document.body.append(response);
+        };</script>"""
+    if scenario == "response-dom":
+        files["root"] = '''<!doctype html><meta charset="utf-8"><button id="root">触发动态响应</button>
+        <script>
+        window.__fixtureMutations=0;
+        new MutationObserver(records=>window.__fixtureMutations+=records.length).observe(document,{childList:true,subtree:true});
+        document.querySelector('#root').onclick=()=>setTimeout(()=>{
+          const response=document.createElement('section');response.id='response-ready';
+          response.innerHTML='<button id="response-action">操作后新增按钮</button><p>本次页面已更新</p>';
+          document.body.append(response);
+        },50);
+        </script>'''
+    if scenario in ("response-input", "response-none", "response-stop", "response-limit"):
+        if scenario in ("response-stop", "response-limit"):
+            files["root"] = '''<!doctype html><meta charset="utf-8"><button id="root">触发响应</button><section id="response-ready"></section>
+            <script>document.querySelector('#root').onclick=()=>{
+              document.querySelector('#response-ready').innerHTML='<button id="response-action">操作后新增按钮</button><p>本次页面已更新</p>';
+            };</script>'''
+        else:
+            files["root"] = '''<!doctype html><meta charset="utf-8"><button id="root">独立操作</button><input id="search"><section id="response-ready"></section>
+            <script>document.querySelector('#search').oninput=()=>{document.querySelector('#response-ready').textContent='输入后立即出现的结果';};</script>'''
     if scenario in ("popup-close", "frame-remove", "history-back") or cache_return:
         diagnostic = """<script>
         window.__testLifecycle=[];
@@ -168,6 +193,7 @@ async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp
                     response.raise_for_status()
             else:
                 driver = CdpAttachDriver(config=RecordingDriverConfig(kind="cdp-attach", endpoint=f"http://127.0.0.1:{port}"), recording_id="scope-" + scenario)
+                driver.configure_capture(RecordingCaptureSettings().model_dump(mode="json"))
                 await driver.open(origin + "/root", viewport=(1440, 960))
                 await driver.inject_recorder()
 
@@ -195,9 +221,33 @@ async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp
                 cache_diagnostics = await driver._context.new_cdp_session(page)
                 cache_diagnostics.on("Page.backForwardCacheNotUsed", lambda details: save("cache-not-used.json", details))
                 await cache_diagnostics.send("Page.enable")
+            if scenario.startswith("response-"):
+                async with asyncio.timeout(4):
+                    while not any(event["type"] == "page_scan" for event in events):
+                        await asyncio.sleep(.02)
             await page.click("#root")
             expected, expected_values = ["root"], []
-            if scenario in ("navigation", "cross-origin", "history-back") or cache_return:
+            if scenario == "response-dom":
+                await page.locator("#response-action").wait_for(state="visible")
+                await asyncio.sleep(.7)
+                save("response-dom.json", {"actual_response": await page.locator("#response-ready").inner_text(),
+                    "actual_dom_mutations": await page.evaluate("window.__fixtureMutations")})
+            elif scenario in ("response-input", "response-none", "response-stop", "response-limit"):
+                if scenario == "response-input":
+                    # Finish the unrelated click's observation first: this
+                    # response must come from input acceptance before fill.
+                    await asyncio.sleep(1.7)
+                    await page.locator("#search").fill("实际查询")
+                    expected_values.append("实际查询")
+                    await page.wait_for_function("document.querySelector('#response-ready').textContent === '输入后立即出现的结果'")
+                    await asyncio.sleep(.8)
+                elif scenario == "response-none":
+                    await asyncio.sleep(1.7)
+                else:
+                    await page.locator("#response-action").wait_for(state="visible")
+                save("response-dom.json", {"actual_response": await page.locator("#response-ready").inner_text(),
+                    "recorder_state": await page.evaluate("window.__qaRecorderGetState()")})
+            elif scenario in ("navigation", "cross-origin", "history-back") or cache_return:
                 await page.click("#next")
                 await page.wait_for_url("**/next")
                 states.append({"url": page.url, "state": await page.evaluate("window.__qaRecorderGetState()")})
@@ -338,6 +388,34 @@ async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp
             assert all(actual.count(target) >= expected.count(target) for target in expected), "real browser operations were lost across scopes"
             assert all(value in [event.get("value") for event in events if event["type"] == "fill"] for value in expected_values), "last accepted input was lost on document departure"
             assert receipt is not None and not receipt["frames_unconfirmed"], "capture completion did not confirm every scope"
+            if scenario == "response-dom":
+                assert any("操作后新增按钮" in json.dumps(event.get("page_effect"), ensure_ascii=False)
+                    for event in events), "actual post-action DOM response was not recorded"
+            if scenario in ("nested-frame", "frame-remove"):
+                assert any(event["type"] == "page_response" and "嵌套操作后响应" in json.dumps(event["page_effect"], ensure_ascii=False)
+                    and len(event["page"]["recording_scope"]["frame_path"]) == 2 for event in events)
+                for event in events:
+                    if event["type"] == "page_response" and len(event["page"]["recording_scope"]["frame_path"]):
+                        assert all(element["target"]["in_iframe"] is True for element in event["page_effect"]["response"]["elements"] if "target" in element)
+            if scenario in ("response-input", "response-none", "response-stop", "response-limit"):
+                responses = [event for event in events if event["type"] == "page_response"]
+                assert responses
+                last = responses[-1]
+                observed = last["page_effect"]["response"]
+                related = [event for event in events if event["page"]["recording_scope"]["document_id"] == last["page"]["recording_scope"]["document_id"]
+                    and event["page"]["recording_scope"]["local_seq"] in observed["action_local_seqs"]]
+                assert related and all(event["seq"] < last["seq"] for event in related)
+                if scenario == "response-input":
+                    assert len(related) == 1 and related[0]["type"] == "fill"
+                    assert "输入后立即出现的结果" in json.dumps(observed, ensure_ascii=False)
+                elif scenario == "response-none":
+                    assert observed["observation_status"] == "no_changes_observed" and observed["mutation_count"] == 0
+                elif scenario == "response-stop":
+                    assert observed["reason"] == "stop" and "操作后新增按钮" in json.dumps(observed, ensure_ascii=False)
+                else:
+                    assert observed["truncated"] and len(observed["elements"]) <= 2
+                    assert "node_limit" in observed["truncation_reasons"]
+                    assert all(len(element.get("text", "")) <= 5 for element in observed["elements"])
             if cache_return:
                 assert any(row["type"] == "pageshow" and row["persisted"] is True for row in states[-1]["lifecycle"]), "real BFCache restoration was not exercised"
                 root_documents = {event["page"]["recording_scope"]["document_id"] for event in events if (event.get("target") or {}).get("locators", {}).get("id") == "root"}
@@ -361,7 +439,7 @@ async def _scope_scenario(tmp_path, scenario, *, services=None, driver_kind="cdp
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_SCOPE_STORAGE") != "1", reason="actual MySQL/PG/RustFS/Memgraph required")
 @pytest.mark.parametrize("driver_kind", ["cdp-attach", "playwright-managed"])
-@pytest.mark.parametrize("scenario", ["navigation", "cross-origin", "nested-frame", "popup", "pause-new-frame", "popup-close", "frame-remove", "history-back", "ready-start-gap"])
+@pytest.mark.parametrize("scenario", ["navigation", "cross-origin", "nested-frame", "popup", "pause-new-frame", "popup-close", "frame-remove", "history-back", "ready-start-gap", "response-dom", "response-input", "response-none", "response-stop", "response-limit"])
 async def test_actual_scopes_through_api_and_pg(tmp_path, scenario, driver_kind):
     await _live_scope_scenario(tmp_path, scenario, driver_kind)
 
@@ -387,7 +465,13 @@ async def _live_scope_scenario(tmp_path, scenario, driver_kind):
         await store.initialize()
         config = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
         await config.initialize()
-        service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=config)
+        capture = RecordingCaptureConfigService(config_store=env.configs, project_service=env.projects)
+        await capture.initialize()
+        if scenario in ("response-stop", "response-limit"):
+            policy = RecordingCaptureSettings(settle_ms=10000, max_wait_ms=10000).model_dump(mode="json")
+            if scenario == "response-limit": policy.update(max_nodes=2, max_text_chars=5)
+            await asyncio.to_thread(env.configs.save, CAPTURE_KEY, policy, scope_key=project.id)
+        service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=config, capture_config_service=capture)
         env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
         try:
             await _scope_scenario(tmp_path, scenario, services=(env, store, graph, bridge, service, project), driver_kind=driver_kind)

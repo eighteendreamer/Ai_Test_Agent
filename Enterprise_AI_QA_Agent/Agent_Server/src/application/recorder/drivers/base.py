@@ -29,6 +29,10 @@ class BrowserDriver(ABC):
 
     kind: str  # "embedded" | "cdp-attach" | "playwright-managed"
 
+    def configure_capture(self, settings: dict[str, Any] | None) -> None:
+        """Use the server-frozen policy before opening/injecting the browser."""
+        self._capture_settings = settings
+
     def launch_metadata(self) -> dict[str, str]:
         """Trusted server ownership persisted before starting an owned driver."""
         return {}

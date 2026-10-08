@@ -1,0 +1,74 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run tests/recorder/recorder.test.mjs -t 敏感容器内子元素 --reporter=default --reporter=junit --outputFile=../docs/upgrade_2026-10-03/p0-recording-response-sensitive-reproduction.xml
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ tests/recorder/recorder.test.mjs (40 tests | 1 failed | 39 skipped) 54ms
+     ↓ 保留实际反例中的延迟新增按钮并关联本地操作身份
+     ↓ stop前冲刷尚未回调的删除节点和局部水位
+     ↓ pause前冲刷尚未回调的删除节点和局部水位
+     ↓ document_leave前冲刷尚未回调的删除节点和局部水位
+     ↓ 多个重叠操作保留候选集合，无变化明确结束观察
+     ↓ 输入在fill防抖前产生的响应仍关联最终值，change后不重复fill
+     ↓ 达到动作上限先发前窗，不倒置局部事件顺序
+     ↓ 节点和文本范围受限并报告原因，父文本不会带入敏感子节点
+     ↓ 开窗前排除旧变更，关闭策略保留旧行为
+     × 敏感容器内子元素以及刚移出的子元素只保留脱敏标记 52ms
+     ↓ 缓存恢复按当前宿主开关true重投原身份，旧确认晚到不再入队
+     ↓ 缓存恢复按当前宿主开关false重投原身份，旧确认晚到不再入队
+     ↓ 宿主文档身份模式不用旧来源seq，结束水位对应完整局部事件
+     ↓ 宿主未授予文档归属时保持关闭，不采集同context无关页
+     ↓ 幂等守卫：同窗口重复注入不重复初始化
+     ↓ 采集开关：关闭期间不采集，重新开启恢复
+     ↓ 事件缓冲：binding 缺失时入队，binding 就绪后 flush 补投
+     ↓ locator 链完整（id/testid/role+name/css/xpath/text）与像素三件套
+     ↓ 无 id 元素生成 nth-of-type css 与带序号 xpath
+     ↓ dblclick 与 submit 全量采集
+     ↓ input 500ms debounce 合并为一次 fill，保留最终值
+     ↓ 密码字段只记长度不记明文（安全红线）
+     ↓ 命名暗示敏感的普通字段同样脱敏
+     ↓ change 事件立即结算最终值（不等待 debounce）
+     ↓ 普通字符键不采集，功能键与组合键采集
+     ↓ 300ms 节流：窗口期内的滚动合并，跨窗口记录最新位置
+     ↓ history.pushState 产生 navigate 事件（from/to）并触发 page_scan
+     ↓ popstate 产生 navigate 事件
+     ↓ seq 从 0 单调递增，挂起的 page_scan 按发出顺序续号
+     ↓ 整页导航重注入后从 sessionStorage 续号
+     ↓ 跨域子 frame 事件经桥送达 top：targetOrigin='*'（修复前传自身 origin 会被静默丢弃）
+     ↓ 子 frame 与 top 自身事件由 top 统一分配连续 seq
+     ↓ 非协议消息（无 __qaRecorderBridge 标记）被 top 忽略
+     ↓ sha1 实现与 Node crypto 一致（含中文/emoji UTF-8）
+     ↓ 同 DOM 两次扫描 dom_hash 相同；DOM 变化 hash 变化
+     ↓ page_scan 事件携带 dom_hash 与可交互元素清单
+     ↓ 事件携带自上一事件以来的 DOM 变更计数，且发出后重置
+     ↓ 立即结束冲刷多个输入的最终值并保留密码脱敏，不重复定时发送
+     ↓ 等待异步binding完成，拒绝后保持未确认内容
+     ↓ 未确认iframe范围显式保留，不声称top回执证明子frame完成
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/recorder/recorder.test.mjs > 操作后的有限DOM观察 > 敏感容器内子元素以及刚移出的子元素只保留脱敏标记
+AssertionError: expected '[{"type":"page_response","page":{"url…' not to contain 'fixture-private-'
+
+Expected: "fixture-private-"
+Received: "[{"type":"page_response","page":{"url":"http://localhost/","title":"测试页","viewport":{"w":1024,"h":768},"dpr":1},"target":null,"pixel":null,"value":null,"page_effect":{"response":{"protocol":"recording-dom-response-v1","association":"temporal_after_actions","action_local_seqs":[1],"reason":"pause","mutation_count":2,"elements":[{"tag":"SECTION","sensitive":true},{"target":{"locators":{"id":"private-child","testid":null,"role_name":{"role":null,"name":"fixture-private-value"},"css":"#private-child","xpath":"/html/span[1]","text":"fixture-private-value"},"tag":"SPAN","role":null,"attributes":{"id":"private-child"},"in_iframe":false,"shadow_path":null},"connected":false,"text":"fixture-private-value"},{"target":{"locators":{"id":null,"testid":null,"role_name":{"role":null,"name":"fixture-private-added"},"css":"#password > span","xpath":"/html/body[1]/section[1]/section[1]/span[1]","text":"fixture-private-added"},"tag":"SPAN","role":null,"attributes":{},"in_iframe":false,"shadow_path":null},"connected":true,"text":"fixture-private-added"}],"observation_status":"observed_changes","scope":"document_light_dom","snapshot_at":"observation_end","truncated":false,"truncation_reasons":[],"max_nodes":100,"max_text_chars":200,"max_actions":100},"dom_mutation_count":0},"seq":2,"recording_document_id":"response-document","timestamp":"2026-10-08T08:27:24.697Z"}]"
+
+ ❯ tests/recorder/recorder.test.mjs:198:45
+    196|     doc.querySelector('#password').innerHTML = '<span>fixture-private-…
+    197|     win.__qaRecorderSetEnabled(false);
+    198|     expect(JSON.stringify(responses())).not.toContain('fixture-private…
+       |                                             ^
+    199|     expect(responses()[0].page_effect.response.elements.some(el => el.…
+    200|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 39 skipped (40)
+   Start at  16:27:22
+   Duration  1.51s (transform 54ms, setup 0ms, import 106ms, tests 54ms, environment 1.18s)
+
+JUNIT report written to G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-sensitive-reproduction.xml

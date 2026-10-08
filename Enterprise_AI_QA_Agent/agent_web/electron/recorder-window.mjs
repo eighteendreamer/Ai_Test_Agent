@@ -87,21 +87,16 @@ async function backendFetch(path, init = {}) {
   }
 }
 
-let recorderScriptCache = null;
-
-async function fetchRecorderScript() {
-  if (recorderScriptCache) {
-    return recorderScriptCache;
-  }
-  const response = await backendFetch("/api/v1/recordings/recorder.js");
+async function fetchRecorderScript(recordingId) {
+  const response = await backendFetch(`/api/v1/recordings/recorder.js?recording_id=${encodeURIComponent(recordingId)}`);
   if (!response.ok) {
     throw new Error(`fetch recorder.js failed: ${response.status}`);
   }
-  recorderScriptCache = await response.text();
-  if (!recorderScriptCache.includes("__qaRecorderInstalled")) {
+  const script = await response.text();
+  if (!script.includes("__qaRecorderInstalled")) {
     throw new Error("recorder.js payload looks invalid");
   }
-  return recorderScriptCache;
+  return script;
 }
 
 async function postAttachRegistry(state) {
@@ -437,7 +432,7 @@ export async function createRecorderWindow(payload = {}) {
   });
 
   try {
-    const script = await fetchRecorderScript();
+    const script = await fetchRecorderScript(state.recordingId);
     // A new WebContentsView has no initialized renderer yet. Page.enable can
     // wait for that renderer, so navigate a blank page before awaiting CDP.
     // Install the binding/script before the first target navigation as before.

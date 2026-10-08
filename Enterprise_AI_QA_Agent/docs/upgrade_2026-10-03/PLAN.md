@@ -1,12 +1,12 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次方案核对基线 `0d046514`。本次更新上传变更的可行性结论与独立验证范围；完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留。
+修订日期：2026-10-08；本次录制响应实施基线 `091e4200`。上传变更的独立保存约定保持；完整 P0—P5 工程范围、历史实施记录与未完成验收仍保留。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
 **本次查证结果：上传变更可以沿现有实现完成，无需 Git 缓存。** 已重新核对上传路由、原件/版本保存、固定快照比较和独立 Git 导入的调用方向，并实际运行两项上传回归：2通过、0失败、0跳过。验证使用真实临时文件、应用路由和本地测试存储；生产存储、完整页面及 AI 影响判断未在本次重跑。依据和结果见3.1.1。
 
-上传及Git边界继续按3.1/3.2执行。生命周期修复见4.1.4/6.76；本次扩展原录制知识查询，返回每步完整脱敏事件和缺失诊断，33个已完成实际场景对公开API/规划知识/PG原件全字段核对，244项通过、1项默认模型专项跳过，见4.1.5/6.77。完整知识进入受控规划请求已验；默认AI实际引用并操作、动作后响应关联、正式App与人工DeepSeek仍待验收。
+上传及Git边界继续按3.1/3.2执行。生命周期修复见4.1.4/6.76；此前完整录制知识出口见4.1.5/6.77。本次在原采集链中增加有限DOM响应：记录同文档局部操作身份、观察截止、变化元素和截断原因，覆盖输入防抖前响应。MySQL配置在PG会话冻结，Python/Electron使用该快照。285项通过、1项默认模型专项跳过，46项JS通过；46个真实场景中的44个完成项核对公开API/规划知识/PG原件，见4.1.6/6.78。时间关联不证明业务因果；默认AI实际使用、完整清洗、正式App与人工DeepSeek继续待验收。
 
 本方案按用户纠正后的流程执行：
 
@@ -1096,6 +1096,18 @@ MySQL仍保存既有冻结策略，PG保存原会话/事件/水位，RustFS保�
 
 默认规划Prompt更新为`case-planning-v5`，说明如何读取完整事件、缺失与响应边界；旧任务继续原固定Prompt。受控模型原件回归证明事件实际进入第二轮请求，图发生变化后原计划GET仍返回原冻结证据。这不证明默认AI已经正确操作。真实20个Python场景及13个已完成Electron场景均核对公开API和规划知识返回原步骤，另2个预期失败保留，详见6.77及[P0_RECORDING_KNOWLEDGE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_KNOWLEDGE_DESIGN.md)。现有mutation_count在动作emit时读取，完整page_effect不是动作后DOM响应已经关联；此项、清洗、人工DeepSeek、AI实际使用与完整App继续实施。
 
+### 4.1.6 操作后的有限DOM响应〔三驱动与真实存储已验，完整闭环继续〕
+
+真实反例先等待初始扫描，再点击并在50ms后新增按钮/文字；原CDP和管理浏览器均未记录响应，2失败。沿原MutationObserver、事件传输和PG/图出口修复，增加辅助事件`page_response`。响应保存`recording-dom-response-v1`、`association=temporal_after_actions`、`action_local_seqs`、实际变更数、有限元素及定位链、截止原因、观察状态和截断原因。关联需同时匹配`page.recording_scope.document_id`和局部序号，不能直接当作会话全局seq。多个重叠操作保留候选集合，不强行认定最后一步产生结果。
+
+MySQL新增`recording.capture_settings`：是否观察响应、settle/max_wait、节点/文本/动作范围上限。创建会话冻结实际scope/revision/payload到PG metadata；用户输入不能覆盖该快照。Python驱动在注入前设置，Electron通过`recorder.js?recording_id=...`取得该会话脚本，移除全局配置脚本缓存。配置变化只影响新会话；无固定策略的旧会话继续原采集行为。原PG事件、历史计划与旧固化依据不重写，无新增PG表或依赖。
+
+观察普通DOM的新增、移除、属性/文本变化；窗口结束时保存节点状态，删除节点标记`connected=false`。输入从接受时开始观察，关联防抖后最终fill；稳定窗口等待尚未结算的输入，最长窗口或控制边界排空已接受输入。change已结算的输入不再在结束时重复发送。暂停/停止/文档离开读取待回调变更，再关闭采集和提交原局部水位。历史dom_mutation_count是此前累积量，不再推导当前操作响应断言；新响应只形成同文档关联的低置信度评审建议，不证明业务通过，辅助事件不回放。
+
+敏感节点、敏感容器的子节点及从其移除的节点只保留脱敏标记；父文本跳过敏感和script/style子树。节点、文本和定位文本有明确截断原因。`scope=document_light_dom`、`snapshot_at=observation_end`说明观察范围；无变化记录no_changes_observed，观察器不可用标明unavailable。此实现不代表完整DOM、网络响应、跨文档因果或Shadow DOM已经采集，也不代替遗漏检查和清洗。
+
+实际扩大回归285通过、1默认模型专项跳过；46项JS通过，前端typecheck/build通过。46个真实场景含16个原Electron与30个Python API/存储场景，44完成项逐字段核对公开API、规划知识和PG原件，2个预期失败状态保持。独立MySQL/PG配置专项核对旧会话、新会话、另一项目和脚本交替读取；动态响应还覆盖真实跨来源嵌套frame、输入立即响应、无变化、停止截止和截断。首次Electron连接失败未稳定复现，原失败保留，不能宣称已定位根因。研究和实际结果见[P0_RECORDING_RESPONSE_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_RESPONSE_DESIGN.md)、6.78和原验证记录。
+
 ### 4.2 Agent API测试
 
 保持Agent操作方式和现有API工具。已有依赖身份/参数来源修正，继续实际验证响应提取、JSON路径/空值、依赖传值、鉴权/续期、超时/异常、幂等和结果展示。变量按项目/运行隔离，保存来源身份和实际输出，不能用计划示例值填充。
@@ -1134,7 +1146,7 @@ API、DTO、数据库、前端类型/API/页面、任务投影/恢复和测试�
 
 | 阶段 | 完整交付 | 仍需推进 |
 |---|---|---|
-| P0 | 重复请求根因与API身份修正，实测录制/Docker | 完整HTTP阶段追踪、人工录制闭环、Docker真实证据 |
+| P0 | 重复请求根因与API身份修正，实测录制/Docker；有限DOM/输入响应和冻结采集配置已验，见4.1.6/6.78 | 完整HTTP阶段追踪、人工录制/清洗/AI使用闭环、Docker真实证据 |
 | P1 | 默认/项目模板、完整JSON、Excel/JSON导入、模块化生成 | 完整项目页/生产导入与模板流程；普通文档全量生成的模块进度与独立恢复仍待验，P4确认需求增量模块及重试的已验能力见3.6.5—3.6.8 |
 | P2 | 项目选取→初排→补全→冻结→现有Agent执行/恢复/新回归；固定范围、对象证据、清理覆盖及两阶段规划专项已验，见6.45—6.57 | 正式项清理及项内多效果v2专项已验，见2.3.2/6.59；默认新任务完成逻辑、证据阶段超时，固定文档预期已接入并专项验证，见2.3.3/6.60；明确操作读取及三轮真实业务专项已验，见2.3.4/6.61；来源身份一致及三格式/真实恢复专项已验，见2.3.5/6.62；正式/准备项操作选择、固定hash和去重读取已验，见2.3.6/6.63；首轮固定文档读取已接入并实测，见2.3.7/6.64；短引用职责已接入并实测，见2.3.8/6.65；运行输入路径丢失已复现并修复，见2.3.9/6.66；新默认仍在证据阶段超时，继续核对真实契约再推进自主执行；内部消费关闭及原事务见2.3.12/6.69，实际返回与两消费者共享清理/自动等待修复见2.3.13/6.70；完整准备状态、未知只读查证、计划修订、其他模式及完整产品流程继续 |
 | P3 | 上传版本/原件/解析/差异/可选Git | 生产历史迁移、其他格式完整产品流程和更多故障组合；首期不部署Docling |
@@ -2581,3 +2593,20 @@ JS首轮32通过2.07秒，补原消息晚到/暂停及native来源约束后最�
 本批仅Python读取/默认Prompt/测试变化，未重跑前端build或JS；6.76的36项JS/build仍为历史结果。py_compile附加通过。三份方案同步，5个源文件SHA、5893个既有原件当前/HEAD字节、所有新输入/错误/XML/HTTP/查询/截图核对见[p0-recording-knowledge-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-knowledge-validation.json)，实际命令见IMPLEMENTATION.md。用户.gitignore/无关Worker与环境工件保持；两份旧Worker汇总原字节未恢复限制保留。
 
 完整升级继续进行：默认AI实际引用知识与页面操作/断言；动作后响应关联、清洗/完整性和人工DeepSeek/完整App/场景报告；Electron实际缓存恢复、并行attach/更多网络进程故障；Docker真实性能/安全、P0全阶段HTTP、P1正式生成/导入产品、P2默认自主/准备生命周期/未知副作用/其他模式、需求业务评审/环境适用及生产历史迁移尚未完成。本批不把完整读取等同整个人工录制闭环。
+
+
+### 6.78 有限DOM响应、输入及固定策略〔基线091e4200〕
+
+完整P0—P5目标保持。研究P0_RECORDING_RESPONSE_DESIGN.md，原CDP/管理浏览器实际反例2失败15.67秒：页面已新增按钮/文字，原知识无响应。初次命令误选节点，31项全排除、退出码5，不算功能验证；正确选择后2通过17.32秒。输入防抖前响应另有JS实际失败1项，敏感父容器的新增/删除子节点另失败1项；均保留原输出后修复。
+
+采集复用原事件链；MySQL recording.capture_settings在PG会话冻结，Python注入和Electron按recording_id下发使用原快照。page_response记录同文档局部候选操作、截止状态和有限增删/文本元素；敏感上下文继承脱敏，截断明确。旧dom_mutation_count不再证明当前操作响应；新低置信度建议需要真实响应及同文档操作匹配。辅助事件保持知识用途、不回放。输入接收即观察，最终fill才绑定身份，change结算不重复；停止前读取待回调变化。无新表/依赖/迁移，旧记录与策略保持。
+
+真实输入/无变化/停止/截断8通过39.73秒；配置冻结/MySQL/PG/脚本隔离及原API/Schema/断言56通过5.52秒。首次Electron在pause请求发生ReadError，之后收尾超时，1失败44.89秒；追加服务端HTTP轨迹重测1通过17.74秒，根因未建立，不能声称连接错误已经修复。
+
+扩大回归首轮285通过、1默认模型专项跳过、274.89秒。审计发现嵌套响应target.in_iframe默认值不准确，保留当时recorder.js原字节和初始源码hash后修正；最终按新冻结源码重跑23模块，285通过、0失败、1跳过、262.22秒，既有Starlette弃用警告一条。最终JS46通过，typecheck/build通过。46场景含16原Electron和30Python API/存储场景；44完成项公开API/规划知识逐字段等于PG流水，2预期失败保持；跨来源嵌套响应按原文档/局部seq关联，frame定位标记已核对。44份截图RustFS之外，失败场景的截图也保存并核对。
+
+本次生产API/独立解析Worker专项未通过：冷启动在录制初始化之前退出，消费表FK先引用尚未创建的agent_test_run_items，原stderr和1失败22.79秒保存p0-recording-response-production。需要沿真实依赖修复初始化顺序，不能以受控录制服务通过代替生产启动通过。
+
+实际命令见[IMPLEMENTATION.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/IMPLEMENTATION.md)；[最终XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-verified.xml)、[最终日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-verified.log)、[审计记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-response-validation.json)包含实际项目、PG原事件/知识/API、截图、策略隔离和原件hash。15源/测试文件hash覆盖最终运行，三份计划字节一致，既有原证据与无关工作区文件保持。
+
+该观察仅限document_light_dom及窗口结束状态；时间关联不是业务因果或完整响应。默认AI实际引用并操作、网络/跨文档/Shadow DOM、清洗/遗漏检查、人工DeepSeek、完整App/场景/别名/报告、Electron实际缓存与更多故障、Docker、其余P0—P5、生产历史迁移和两份旧Worker汇总原字节恢复继续未完成。

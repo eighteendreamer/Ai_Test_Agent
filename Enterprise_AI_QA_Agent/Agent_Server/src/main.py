@@ -887,12 +887,17 @@ async def _initialize_lifespan_resources(
     recording_finish_configs = RecordingFinishConfigService(
         config_store=container.application_config_store(), project_service=project_service)
     await recording_finish_configs.initialize()
+    from src.application.recorder.capture_config_service import RecordingCaptureConfigService
+    recording_capture_configs = RecordingCaptureConfigService(
+        config_store=container.application_config_store(), project_service=project_service)
+    await recording_capture_configs.initialize()
     recorder_service = RecorderSessionService(
         settings=settings,
         store=recording_store,
         graph_store=recording_graph_store,
         bridge=embedded_bridge,
         finish_config_service=recording_finish_configs,
+        capture_config_service=recording_capture_configs,
         registry=build_default_registry(embedded_bridge, settings=settings,
             resource_manager=mcp_runtime_service.browser_resources),
     )

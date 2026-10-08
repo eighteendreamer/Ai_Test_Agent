@@ -29,6 +29,8 @@
 
   var EMIT_BINDING = '__qaRecordEmit';
   var scopedHost = window.__qaRecorderScopedHost === true;
+  var captureSettings = window.__qaRecorderCaptureSettings;
+  var responseEnabled = scopedHost && captureSettings && captureSettings.response_enabled === true;
   var SEQ_KEY = '__qaRecorderSeq';
   var LAST_URL_KEY = '__qaRecorderLastUrl';
   var INPUT_DEBOUNCE_MS = 500;
@@ -39,6 +41,8 @@
   var MAX_ATTR_LEN = 200;
   var MAX_SCAN_ELEMENTS = 200;
   var SENSITIVE_NAME_RE = /pass(word)?|pwd|secret|token|credential|otp|verif(?:y|ication)[-_]?code/i;
+  var responseWindow = null;
+  var responseActionTypes = { click: 1, dblclick: 1, fill: 1, key: 1, submit: 1, scroll: 1, navigate: 1, file_change: 1 };
   var FUNCTION_KEYS = {
     Enter: 1, Tab: 1, Escape: 1, ArrowUp: 1, ArrowDown: 1, ArrowLeft: 1, ArrowRight: 1,
     Home: 1, End: 1, PageUp: 1, PageDown: 1, Backspace: 1, Delete: 1, Insert: 1,
@@ -113,7 +117,10 @@
       bridgeToTop(rawEvent); // 子 frame 不分配 seq，交由 top 统一编排
       return;
     }
+    var observesResponse = responseEnabled && responseActionTypes[rawEvent.type];
+    if (observesResponse) beginResponse();
     rawEvent.seq = nextSeq();
+    if (observesResponse) responseWindow.actions.push(rawEvent.seq);
     if (scopedHost) rawEvent.recording_document_id = state.documentId;
     state.emittedCount += 1;
     rawEvent.timestamp = new Date().toISOString();
@@ -451,6 +458,9 @@
       emitFill(el); // 勾选类无最终值语义，立即出
       return;
     }
+    // Observe accepted input immediately; the final fill identity arrives after
+    // debounce. Otherwise synchronous search/validation responses are lost.
+    if (responseEnabled) beginResponse();
     var record = state.fillTimers.get(el);
     if (record && record.timer) {
       clearTimeout(record.timer);
@@ -506,6 +516,7 @@
       record.timer = null;
     }
     if (el.nodeName === 'SELECT' || el.nodeName === 'TEXTAREA' || el.nodeName === 'INPUT') {
+      state.fillTimers.delete(el);
       emitFill(el);
     }
   }
@@ -704,11 +715,129 @@
     }, SCAN_SETTLE_MS);
   }
 
+  // ---------------------------------------------------- 操作后的有限 DOM 观察
+
+  function beginResponse() {
+    // Drain changes detected before this action before adding its identity.
+    if (observer) collectResponse(observer.takeRecords());
+    if (responseWindow && responseWindow.actions.length >= captureSettings.max_actions) flushResponse('action_limit');
+    if (!responseWindow) {
+      responseWindow = { actions: [], nodes: new Set(), redacted: new Set(), mutations: 0, reasons: new Set(), settle: null, deadline: null };
+      responseWindow.deadline = setTimeout(function () { flushResponse('max_wait'); }, captureSettings.max_wait_ms);
+    }
+  }
+
+  function sensitiveResponseNode(node) {
+    var el = node && (node.nodeType === 1 ? node : node.parentElement);
+    while (el) {
+      if (isSensitiveField(el)) return true;
+      el = el.parentElement;
+    }
+    return false;
+  }
+
+  function collectResponse(records) {
+    if (!responseEnabled || !state.enabled || !responseWindow || !records.length) return;
+    var windowState = responseWindow;
+    windowState.mutations += records.length;
+    var inspected = 0;
+    function keep(node, sensitiveContext) {
+      var el = node && (node.nodeType === 1 ? node : node.parentElement);
+      if (!el || /^(HTML|BODY|SCRIPT|STYLE)$/.test(el.nodeName)) return;
+      if (sensitiveContext || sensitiveResponseNode(el)) windowState.redacted.add(el);
+      if (windowState.nodes.has(el)) return;
+      if (windowState.nodes.size >= captureSettings.max_nodes) { windowState.reasons.add('node_limit'); return; }
+      windowState.nodes.add(el);
+    }
+    for (var i = 0; i < records.length; i++) {
+      if (inspected++ >= captureSettings.max_nodes) { windowState.reasons.add('record_limit'); break; }
+      var sensitiveContext = sensitiveResponseNode(records[i].target);
+      keep(records[i].target, sensitiveContext);
+      var changed = Array.from(records[i].addedNodes || []).concat(Array.from(records[i].removedNodes || []));
+      for (var j = 0; j < changed.length; j++) {
+        if (windowState.nodes.size >= captureSettings.max_nodes) { windowState.reasons.add('node_limit'); break; }
+        var stack = [changed[j]];
+        while (stack.length) {
+          var node = stack.pop(); keep(node, sensitiveContext);
+          if (windowState.nodes.size >= captureSettings.max_nodes) { windowState.reasons.add('node_limit'); break; }
+          var children = node.children || [];
+          for (var k = children.length - 1; k >= 0; k--) {
+            if (stack.length >= captureSettings.max_nodes) { windowState.reasons.add('node_limit'); break; }
+            stack.push(children[k]);
+          }
+        }
+      }
+    }
+    clearTimeout(windowState.settle);
+    windowState.settle = setTimeout(function () { flushResponse('settled'); }, captureSettings.settle_ms);
+  }
+
+  function responseText(el, windowState) {
+    var text = '', visited = 0, stack = [el];
+    while (stack.length) {
+      if (visited++ >= captureSettings.max_nodes) { windowState.reasons.add('text_node_limit'); break; }
+      var node = stack.pop();
+      if (node.nodeType === 1 && (/^(SCRIPT|STYLE)$/.test(node.nodeName) || isSensitiveField(node))) continue;
+      if (node.nodeType === 3) {
+        var part = String(node.textContent || '');
+        var remaining = captureSettings.max_text_chars - text.length;
+        text += part.slice(0, remaining);
+        if (part.length > remaining || (text.length >= captureSettings.max_text_chars && stack.length)) {
+          windowState.reasons.add('text_limit'); break;
+        }
+      } else {
+        var children = node.childNodes || [];
+        for (var i = children.length - 1; i >= 0; i--) {
+          if (stack.length >= captureSettings.max_nodes) { windowState.reasons.add('text_node_limit'); break; }
+          stack.push(children[i]);
+        }
+      }
+    }
+    return text;
+  }
+
+  function flushResponse(reason) {
+    if (!responseWindow) return;
+    if (reason === 'settled' && state.fillTimers.size) {
+      responseWindow.settle = setTimeout(function () { flushResponse('settled'); }, INPUT_DEBOUNCE_MS);
+      return;
+    }
+    // The fixed maximum window also bounds pending inputs. Action-limit flushes
+    // must not recursively flush other inputs into the same exhausted window.
+    if (reason === 'max_wait') flushAcceptedInputs();
+    if (observer) collectResponse(observer.takeRecords());
+    var windowState = responseWindow;
+    responseWindow = null;
+    clearTimeout(windowState.settle); clearTimeout(windowState.deadline);
+    var elements = [];
+    windowState.nodes.forEach(function (el) {
+      if (windowState.redacted.has(el) || sensitiveResponseNode(el)) { elements.push({ tag: el.nodeName, sensitive: true }); return; }
+      var text = responseText(el, windowState);
+      var target = buildTarget(el);
+      target.in_iframe = !isTop;
+      // Parent text/name must not reintroduce sensitive descendant contents.
+      target.locators.text = truncate(text, MAX_TEXT_LEN) || null;
+      if (target.locators.role_name) target.locators.role_name.name = truncate(text, MAX_TEXT_LEN) || null;
+      if (text.length > MAX_TEXT_LEN) windowState.reasons.add('locator_text_limit');
+      elements.push({ target: target, connected: el.isConnected, text: text });
+    });
+    emit({ type: 'page_response', page: pageInfo(), target: null, pixel: null, value: null,
+      page_effect: { response: { protocol: captureSettings.protocol,
+        association: 'temporal_after_actions', action_local_seqs: windowState.actions,
+        reason: reason, mutation_count: windowState.mutations, elements: elements,
+        observation_status: observer ? (windowState.mutations ? 'observed_changes' : 'no_changes_observed') : 'unavailable',
+        scope: 'document_light_dom', snapshot_at: 'observation_end',
+        truncated: windowState.reasons.size > 0, truncation_reasons: Array.from(windowState.reasons),
+        max_nodes: captureSettings.max_nodes, max_text_chars: captureSettings.max_text_chars,
+        max_actions: captureSettings.max_actions } } });
+  }
+
   // ---------------------------------------------------- MutationObserver 计数
 
   try {
     var observer = new MutationObserver(function (records) {
       state.mutationCount += records.length;
+      collectResponse(records);
     });
     var startObserve = function () {
       try {
@@ -804,16 +933,18 @@
   // ------------------------------------------------------------ 控制协议
 
   function flushAcceptedInputs() {
-    state.fillTimers.forEach(function (record, el) {
+    var accepted = Array.from(state.fillTimers.entries());
+    state.fillTimers.clear();
+    accepted.forEach(function (entry) {
+      var el = entry[0], record = entry[1];
       clearTimeout(record.timer);
       emitFill(el, record.snapshot, record.value);
     });
-    state.fillTimers.clear();
   }
 
   window.__qaRecorderSetEnabled = function (enabled) {
     var prev = state.enabled;
-    if (prev && !enabled) flushAcceptedInputs();
+    if (prev && !enabled) { flushAcceptedInputs(); flushResponse('pause'); }
     state.enabled = !!enabled;
     if (state.enabled && !prev) {
       flushPending();
@@ -844,6 +975,7 @@
   window.__qaRecorderFinish = async function () {
     if (scopedHost) await window.__qaRecorderReady;
     flushAcceptedInputs();
+    flushResponse('stop');
     state.enabled = false;
     if (state.scanTimer) {
       clearTimeout(state.scanTimer);
@@ -873,6 +1005,7 @@
     function reportDocumentBoundary() {
       if (!state.documentId) return;
       flushAcceptedInputs();
+      flushResponse('document_leave');
       // Native host checks every local seq, including async calls still in flight.
       window[EMIT_BINDING](JSON.stringify({ __qaRecorderScope: 'close',
         document_id: state.documentId, next_seq: state.seq,

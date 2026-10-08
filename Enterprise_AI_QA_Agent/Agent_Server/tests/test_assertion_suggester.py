@@ -1,7 +1,7 @@
 """断言建议生成器测试（P2-3 纯函数）。
 
-覆盖：navigated_to equals（high）、dom_mutation_count 达阈值建议 DOM 响应
-（medium）、低于阈值不建议、末页 title contains（medium）、page_scan
+覆盖：navigated_to equals（high）、旧dom_mutation_count不推导操作响应、
+实际page_response及同文档关联提示（low）、末页 title contains（medium）、page_scan
 interactive_count（low）、confidence 排序与截断、空事件流空建议，
 以及 P2-2 集成（草稿断言 = 基线 + 建议）。
 """
@@ -50,15 +50,14 @@ def test_navigated_to_yields_high_confidence_url_assertion() -> None:
     assert "登 录" in first.description
 
 
-def test_dom_mutation_above_threshold_suggests_response_assertion() -> None:
+def test_legacy_pre_action_mutation_count_does_not_prove_response() -> None:
     events = [
         _event(0, "click", target=_click_target(),
                page_effect={"dom_mutation_count": 12})
     ]
     suggestions = suggest_assertions(events)
     dom = [s for s in suggestions if s.kind == "ui_dom_changed"]
-    assert dom and dom[0].description.startswith("[medium]")
-    assert "12" in dom[0].description
+    assert not dom
 
 
 def test_dom_mutation_below_threshold_not_suggested() -> None:
@@ -93,7 +92,7 @@ def test_interactive_count_suggested_as_low() -> None:
 
 
 def test_suggestions_sorted_by_confidence_and_capped() -> None:
-    # 小场景：url(high) → dom(medium) → title(medium) → element_count(low) 全保留
+    # Historical pre-action counters cannot establish an operation's response.
     events = [
         _event(0, "click", target=_click_target(),
                page_effect={"navigated_to": "https://x/a", "dom_mutation_count": 5}),
@@ -101,20 +100,20 @@ def test_suggestions_sorted_by_confidence_and_capped() -> None:
                page_effect={"interactive_count": 9}),
     ]
     suggestions = suggest_assertions(events)
-    assert [s.kind for s in suggestions] == ["ui_url", "ui_dom_changed", "ui_title", "ui_element_count"]
+    assert [s.kind for s in suggestions] == ["ui_url", "ui_title", "ui_element_count"]
     assert [s.description.split("]")[0] + "]" for s in suggestions] == [
-        "[high]", "[medium]", "[medium]", "[low]",
+        "[high]", "[medium]", "[low]",
     ]
 
-    # 长场景：4 条 url + 4 条 dom 超出截断上限 5，low 被裁
+    # Six URL observations exceed the existing five-suggestion limit.
     long_events = [
         _event(i, "click", target=_click_target(),
                page_effect={"navigated_to": f"https://x/{c}", "dom_mutation_count": 5})
-        for i, c in enumerate("abcd")
+        for i, c in enumerate("abcdef")
     ]
     capped = suggest_assertions(long_events)
     assert len(capped) == 5
-    assert capped[0].kind == "ui_url" and capped[-1].kind == "ui_dom_changed"
+    assert all(item.kind == "ui_url" for item in capped)
 
 
 def test_empty_events_yield_no_suggestions() -> None:
@@ -137,4 +136,17 @@ def test_draft_payload_merges_baseline_and_suggestions() -> None:
     payload = build_recording_draft_payload(session, events)
     kinds = [a.kind for a in payload.assertions]
     assert kinds[0] == "ui_url"  # 基线（必选）
-    assert "ui_url" in kinds[1:] and "ui_dom_changed" in kinds[1:]  # 建议追加其后
+    assert "ui_url" in kinds[1:] and "ui_dom_changed" not in kinds[1:]
+
+
+def test_actual_recorded_response_yields_review_hint_with_same_document_actions():
+    import json
+    from pathlib import Path
+    path = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p0-recording-response-python-fixed/cdp-attach/response-dom/pg-events.json"
+    events = [RecorderEvent.model_validate(item) for item in json.loads(path.read_text(encoding="utf-8"))]
+    hints = [item for item in suggest_assertions(events) if item.kind == "ui_dom_changed"]
+    assert len(hints) == 1 and hints[0].description.startswith("[low]")
+    assert "仅为时间关联" in hints[0].description
+    response = next(item for item in events if item.type == "page_response")
+    response.page["recording_scope"]["document_id"] = "another-document"
+    assert not any(item.kind == "ui_dom_changed" for item in suggest_assertions(events))

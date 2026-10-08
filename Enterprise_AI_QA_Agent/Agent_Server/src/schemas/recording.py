@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any, Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class RecordingStatus(str, Enum):
@@ -61,6 +61,23 @@ RECORDING_KNOWN_EVENT_TYPES: frozenset[str] = frozenset(
 RecordingEventIdentity = tuple[str, int]
 
 
+class RecordingCaptureSettings(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    protocol: Literal["recording-dom-response-v1"] = "recording-dom-response-v1"
+    response_enabled: bool = True
+    settle_ms: int = Field(default=250, ge=1, le=10000)
+    max_wait_ms: int = Field(default=1500, ge=1, le=60000)
+    max_nodes: int = Field(default=100, ge=1, le=1000)
+    max_text_chars: int = Field(default=200, ge=1, le=10000)
+    max_actions: int = Field(default=100, ge=1, le=1000)
+
+    @model_validator(mode="after")
+    def validate_observation_window(self):
+        if self.settle_ms > self.max_wait_ms:
+            raise ValueError("Recording response settle_ms exceeds max_wait_ms")
+        return self
+
+
 def event_identity(recording_id: str, seq: int) -> RecordingEventIdentity:
     """事件的幂等标识：网络重试、重复批次按此键去重（方案 7.2 关口②）。"""
     return (recording_id, seq)
@@ -85,7 +102,7 @@ class RecorderEvent(BaseModel):
     target: dict[str, Any] | None = Field(default=None, description="DOM 定位链 locators/tag/role/attributes")
     pixel: dict[str, Any] | None = Field(default=None, description="viewport_point/bbox/rel_offset 像素三件套")
     value: Any = Field(default=None, description="输入值（敏感字段采集端已脱敏为 {length:n}）")
-    page_effect: dict[str, Any] = Field(default_factory=dict, description="navigated_to/dom_mutation_count")
+    page_effect: dict[str, Any] = Field(default_factory=dict, description="navigated_to/legacy dom_mutation_count/page_response.response")
     screenshot_ref: str | None = Field(default=None, description="截图产物引用（RustFS/本地产物目录）")
 
     @field_validator("type")

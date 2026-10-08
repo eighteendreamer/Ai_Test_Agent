@@ -7,6 +7,7 @@ import json
 import os
 import socket
 import subprocess
+import time
 from pathlib import Path
 from uuid import uuid4
 
@@ -23,6 +24,7 @@ from src.application.exploration.recording_graph_store import RecordingGraphStor
 from src.application.recorder.drivers import EmbeddedBridge
 from src.application.recorder.recorder_session_service import RecorderSessionService
 from src.application.recorder.finish_config_service import RecordingFinishConfigService, CONFIG_KEY
+from src.application.recorder.capture_config_service import RecordingCaptureConfigService, CONFIG_KEY as CAPTURE_KEY
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.recording_store import PostgresRecordingStore
 from src.schemas.case_planning import PlanningQuery
@@ -33,7 +35,7 @@ pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_PRODUCT") != "1", 
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup", "pause-frame", "same-url-navigation", "identity-conflict", "popup-close", "frame-remove", "history-back"])
+@pytest.mark.parametrize("scenario", ["settled", "tail-input", "finish-timeout", "pause-input", "bridge-loss", "navigation", "cross-origin", "nested-frame", "popup", "pause-frame", "same-url-navigation", "identity-conflict", "popup-close", "frame-remove", "history-back", "response-dom"])
 async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path, scenario):
     root = Path(__file__).resolve().parents[2]
     evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve() / scenario
@@ -48,6 +50,11 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
 <p>此页面只用于本次系统录制验收。</p></body></html>""", encoding="utf-8")
     if scenario in ("tail-input", "pause-input"):
         fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", "<input id='tail' placeholder='最后一步内容'></body>"), encoding="utf-8")
+    if scenario == "response-dom":
+        fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", """<section id='response-ready'></section><script>
+        document.querySelector('#target').addEventListener('click',()=>setTimeout(()=>{
+          document.querySelector('#response-ready').innerHTML='<button id="response-action">操作后新增按钮</button><p>本次页面已更新</p>';
+        },50));</script></body>"""), encoding="utf-8")
     async with environment(tmp_path, live=True) as env:
         project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="原窗口录制验收"))
         suffix = uuid4().hex[:12]
@@ -66,7 +73,9 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
         await finish_configs.initialize()
         if scenario == "finish-timeout":
             await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
-        service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs)
+        capture_configs = RecordingCaptureConfigService(config_store=env.configs, project_service=env.projects)
+        await capture_configs.initialize()
+        service = RecorderSessionService(env.settings, store, graph, bridge=bridge, finish_config_service=finish_configs, capture_config_service=capture_configs)
         env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
         app = FastAPI()
         app.state.recorder_service, app.state.recording_store = service, store
@@ -76,11 +85,25 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
 
         @app.middleware("http")
         async def actual_receipt_outage(request, call_next):
-            if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
-                body = await request.json()
-                if body.get("operation", "stop") == "stop":
-                    return JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
-            return await call_next(request)
+            trace = {"method": request.method, "path": request.url.path, "started": time.monotonic()}
+            try:
+                if scenario == "finish-timeout" and request.url.path.endswith("/capture-finished"):
+                    body = await request.json()
+                    if body.get("operation", "stop") == "stop":
+                        response = JSONResponse({"error": "controlled actual HTTP finish outage"}, status_code=503)
+                    else:
+                        response = await call_next(request)
+                else:
+                    response = await call_next(request)
+                trace["status"] = response.status_code
+                return response
+            except BaseException as exc:
+                trace["error_type"] = type(exc).__name__
+                raise
+            finally:
+                trace["finished"] = time.monotonic()
+                with (evidence / "server-http.jsonl").open("a", encoding="utf-8") as handle:
+                    handle.write(json.dumps(trace) + "\n")
 
         @app.get("/fixture")
         async def actual_fixture():
@@ -103,6 +126,10 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
             "inner": '<button id="inner-target">嵌套操作</button><input id="inner-tail">',
             "popup": '<button id="popup-target">弹窗操作</button><input id="popup-tail">',
         }
+        if scenario in ("nested-frame", "pause-frame", "frame-remove"):
+            scope_files["inner"] += """<script>document.querySelector('#inner-target').onclick=()=>{
+              const response=document.createElement('p');response.id='inner-response';response.textContent='嵌套操作后响应';document.body.append(response);
+            };</script>"""
         if scenario in ("navigation", "cross-origin", "history-back"):
             destination = other if scenario == "cross-origin" else origin
             fixture.write_text(fixture.read_text(encoding="utf-8").replace("</body>", f'<a id="scope-next" href="{destination}/scope/next">下一页</a></body>'), encoding="utf-8")
@@ -177,6 +204,13 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                 save("created.json", created.json())
                 frozen_finish_settings = created.json()["metadata"]["finish_settings"]
                 assert created.json()["metadata"]["finish_settings"]["revision"] >= 1
+                frozen_capture_settings = created.json()["metadata"]["capture_settings"]
+                if scenario == "response-dom":
+                    await asyncio.to_thread(env.configs.save, CAPTURE_KEY,
+                        {**frozen_capture_settings["payload"], "response_enabled": False}, scope_key=project.id)
+                    current_capture = await capture_configs.capture(project.id)
+                    save("capture-settings-current.json", current_capture)
+                    assert current_capture["payload"]["response_enabled"] is False
                 # Actual MySQL change after creation must not change this session's policy.
                 await asyncio.to_thread(env.configs.save, CONFIG_KEY, {"timeout_seconds": 1.0}, scope_key=project.id)
                 current_finish_settings = await finish_configs.capture(project.id)
@@ -199,6 +233,7 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     playwright = await async_playwright().start()
                     attached = await playwright.chromium.connect_over_cdp(f"http://127.0.0.1:{cdp_port}")
                     page = next(page for context in attached.contexts for page in context.pages if page.url == origin + "/fixture")
+                    assert await page.evaluate("window.__qaRecorderCaptureSettings") == frozen_capture_settings["payload"]
 
                     async def clicks(count):
                         initial = await page.evaluate("window.fixtureClicks || 0")
@@ -218,7 +253,14 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
 
                     await control("start")
                     await enabled(True)
+                    if scenario == "response-dom":
+                        async with asyncio.timeout(5):
+                            while not any(item.type == "page_scan" for item in await store.get_events(session_id)):
+                                await asyncio.sleep(.05)
                     await clicks(2)
+                    if scenario == "response-dom":
+                        await page.locator("#response-action").wait_for(state="visible")
+                        save("response-dom.json", {"actual_response": await page.locator("#response-ready").inner_text()})
                     await command("unrelated")
                     unrelated = next(p for c in attached.contexts for p in c.pages if p.url == origin + "/scope/unrelated")
                     await unrelated.locator("#unrelated-target").click()
@@ -336,6 +378,7 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     save("scope-targets.json", {"expected": expected_scope_targets, "pages": [p.url for c in attached.contexts for p in c.pages]})
                     final = await control("stop")
                     assert final["metadata"]["finish_settings"] == frozen_finish_settings
+                    assert final["metadata"]["capture_settings"] == frozen_capture_settings
                     if scenario == "finish-timeout":
                         assert final["status"] == "failed"
                         assert final["finalize_metrics"]["failure_reason"] == "finish_timeout"
@@ -352,6 +395,8 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     assert final["status"] == "completed"
                     assert final["finalize_metrics"]["finish_receipt"]["pg_verified"]
                     saved = await store.get_events(session_id)
+                    if scenario == "response-dom":
+                        assert any("操作后新增按钮" in json.dumps(item.page_effect, ensure_ascii=False) for item in saved)
                     bindings = [json.loads(line) for line in (evidence / "binding.jsonl").read_text(encoding="utf-8").splitlines()]
                     assert not any((item.target or {}).get("locators", {}).get("id") == "unrelated-target" for item in saved)
                     for target in expected_scope_targets:
@@ -381,6 +426,11 @@ async def test_original_electron_controls_and_small_batches_reach_project_knowle
                     if scenario in ("nested-frame", "pause-frame", "frame-remove"):
                         assert {len(scope["frame_path"]) for scope in scopes} >= {0, 1, 2}
                         assert any(item.type == "fill" and item.value == "跨来源嵌套最后输入" for item in saved)
+                        assert any(item.type == "page_response" and "嵌套操作后响应" in json.dumps(item.page_effect, ensure_ascii=False)
+                            and len(item.page["recording_scope"]["frame_path"]) == 2 for item in saved)
+                        for item in saved:
+                            if item.type == "page_response" and len(item.page["recording_scope"]["frame_path"]):
+                                assert all(element["target"]["in_iframe"] is True for element in item.page_effect["response"]["elements"] if "target" in element)
                     if scenario in ("popup", "popup-close"):
                         assert len({scope["page_id"] for scope in scopes}) == 2
                         assert any(item.type == "fill" and item.value == "弹窗最后输入" for item in saved)

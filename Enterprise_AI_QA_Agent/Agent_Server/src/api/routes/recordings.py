@@ -14,11 +14,13 @@
 from __future__ import annotations
 
 import logging
+import json
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
 
 from fastapi import APIRouter, File, HTTPException, Query, Request, Response, UploadFile
+from pydantic import ValidationError
 from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.infrastructure.recording_store import RecordingEventWriteRejected
 
@@ -30,6 +32,7 @@ from src.schemas.recording import (
     RecordingEventBatchRequest,
     RecordingFinishReceipt,
     RecordingPublic,
+    RecordingCaptureSettings,
 )
 
 logger = logging.getLogger(__name__)
@@ -65,14 +68,28 @@ def _bridge(request: Request) -> Any:
 
 
 @router.get("/recorder.js")
-def get_recorder_script() -> Response:
+async def get_recorder_script(request: Request, recording_id: str | None = Query(default=None, min_length=1)) -> Response:
     """三端共用的 recorder.js（Electron attach-debugger 时拉取注入）。"""
     global _recorder_js_cache
     if _recorder_js_cache is None:
         if not _RECORDER_JS_PATH.is_file():
             raise HTTPException(status_code=404, detail="recorder.js asset missing")
         _recorder_js_cache = _RECORDER_JS_PATH.read_text(encoding="utf-8")
-    return Response(_recorder_js_cache, media_type="text/javascript; charset=utf-8")
+    prefix = ""
+    if recording_id is not None:
+        session = await _recorder_service(request).get_session(recording_id)
+        if session is None:
+            raise HTTPException(status_code=404, detail="recording not found")
+        fixed = session.metadata.get("capture_settings")
+        if fixed is not None:
+            try:
+                payload = RecordingCaptureSettings.model_validate(fixed["payload"]).model_dump(mode="json")
+            except (KeyError, TypeError, ValidationError) as exc:
+                logger.error("recording_capture_settings_invalid", extra={"recording_id": recording_id,
+                    "error_type": type(exc).__name__})
+                raise HTTPException(status_code=500, detail="recording capture settings are invalid") from exc
+            prefix = "window.__qaRecorderCaptureSettings = " + json.dumps(payload) + ";\n"
+    return Response(prefix + _recorder_js_cache, media_type="text/javascript; charset=utf-8")
 
 
 # ------------------------------------------------------------ 会话管理

@@ -1,0 +1,10 @@
+<!doctype html><meta charset="utf-8"><button id="root">触发动态响应</button>
+        <script>
+        window.__fixtureMutations=0;
+        new MutationObserver(records=>window.__fixtureMutations+=records.length).observe(document,{childList:true,subtree:true});
+        document.querySelector('#root').onclick=()=>setTimeout(()=>{
+          const response=document.createElement('section');response.id='response-ready';
+          response.innerHTML='<button id="response-action">操作后新增按钮</button><p>本次页面已更新</p>';
+          document.body.append(response);
+        },50);
+        </script>

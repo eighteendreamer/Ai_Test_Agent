@@ -26,7 +26,7 @@ const realSetTimeout = globalThis.setTimeout;
 /** @type {Array<any>} */
 const events = [];
 
-function createWindow({ storage = {}, scopeRegistration = null } = {}) {
+function createWindow({ storage = {}, scopeRegistration = null, captureSettings = null } = {}) {
   const dom = new JSDOM(
     `<!doctype html><html><head><title>测试页</title></head><body></body></html>`,
     // runScripts: "outside-only" —— 允许 window.eval 执行注入脚本（默认关闭时
@@ -43,6 +43,7 @@ function createWindow({ storage = {}, scopeRegistration = null } = {}) {
     win.sessionStorage.setItem(key, value);
   }
   win.__qaRecorderScopedHost = scopeRegistration !== null;
+  if (captureSettings) win.__qaRecorderCaptureSettings = captureSettings;
   win.__qaRecordEmit = (s) => {
     const payload = JSON.parse(s);
     if (payload.__qaRecorderScope === 'register') return Promise.resolve(scopeRegistration);
@@ -73,6 +74,131 @@ function input(win, el, value) {
   el.value = value;
   el.dispatchEvent(new win.Event("input", { bubbles: true, composed: true }));
 }
+
+describe("操作后的有限DOM观察", () => {
+  const policy = {protocol: 'recording-dom-response-v1', response_enabled: true,
+    settle_ms: 250, max_wait_ms: 1500, max_nodes: 100, max_text_chars: 200, max_actions: 100};
+  async function setup(overrides = {}) {
+    const ctx = createWindow({scopeRegistration: {document_id: 'response-document', enabled: true},
+      captureSettings: {...policy, ...overrides}});
+    await ctx.win.__qaRecorderReady;
+    ctx.doc.body.innerHTML = '<button id="action">操作</button><section id="result"></section>';
+    await Promise.resolve();
+    vi.advanceTimersByTime(600);
+    events.length = 0;
+    return ctx;
+  }
+  const responses = () => events.filter(event => event.type === 'page_response');
+
+  it("保留实际反例中的延迟新增按钮并关联本地操作身份", async () => {
+    const {win, doc} = await setup();
+    const original = readFileSync(resolve(process.cwd(), '../docs/upgrade_2026-10-03/p0-recording-response-reproduction/cdp-attach/response-dom/root.html'), 'utf8');
+    expect(original).toContain('操作后新增按钮');
+    click(win, doc.querySelector('#action'));
+    const action = events.at(-1);
+    win.setTimeout(() => {doc.querySelector('#result').innerHTML = '<button id="response-action">操作后新增按钮</button><p>本次页面已更新</p>';}, 50);
+    vi.advanceTimersByTime(50); await Promise.resolve(); vi.advanceTimersByTime(250);
+    const result = responses()[0];
+    expect(result.recording_document_id).toBe(action.recording_document_id);
+    expect(result.page_effect.response.action_local_seqs).toEqual([action.seq]);
+    expect(result.page_effect.response.association).toBe('temporal_after_actions');
+    expect(result.page_effect.response.observation_status).toBe('observed_changes');
+    expect(JSON.stringify(result)).toContain('操作后新增按钮');
+    expect(result.page_effect.response.reason).toBe('settled');
+  });
+
+  it.each(['stop', 'pause', 'document_leave'])("%s前冲刷尚未回调的删除节点和局部水位", async reason => {
+    const {win, doc} = await setup();
+    doc.querySelector('#result').innerHTML = '<button id="removed">将被移除</button>';
+    await Promise.resolve();
+    click(win, doc.querySelector('#action'));
+    doc.querySelector('#removed').remove();
+    if (reason === 'pause') win.__qaRecorderSetEnabled(false);
+    else if (reason === 'document_leave') win.dispatchEvent(new win.PageTransitionEvent('pagehide', {persisted: false}));
+    else await win.__qaRecorderFinish();
+    expect(responses()).toHaveLength(1);
+    const observed = responses()[0].page_effect.response;
+    expect(observed.reason).toBe(reason);
+    expect(observed.elements.some(el => el.target?.locators.id === 'removed' && el.connected === false)).toBe(true);
+    expect(events.map(e => e.seq)).toEqual(events.map((_e, i) => i + events[0].seq));
+  });
+
+  it("多个重叠操作保留候选集合，无变化明确结束观察", async () => {
+    const {win, doc} = await setup();
+    click(win, doc.querySelector('#action')); click(win, doc.querySelector('#action'));
+    const actions = events.filter(e => e.type === 'click');
+    vi.advanceTimersByTime(1500);
+    expect(responses()[0].page_effect.response.action_local_seqs).toEqual(actions.map(e => e.seq));
+    expect(responses()[0].page_effect.response.observation_status).toBe('no_changes_observed');
+    expect(responses()[0].page_effect.response.reason).toBe('max_wait');
+  });
+
+  it("输入在fill防抖前产生的响应仍关联最终值，change后不重复fill", async () => {
+    const {win, doc} = await setup();
+    const field = doc.createElement('input'); field.id = 'search'; doc.body.append(field);
+    await Promise.resolve();
+    input(win, field, '实际查询');
+    doc.querySelector('#result').textContent = '输入后立即出现的结果';
+    await Promise.resolve();
+    vi.advanceTimersByTime(500); await Promise.resolve(); vi.advanceTimersByTime(500);
+    expect(JSON.stringify(responses())).toContain('输入后立即出现的结果');
+    expect(events.filter(e => e.type === 'fill')).toHaveLength(1);
+    input(win, field, '第二次查询');
+    field.dispatchEvent(new win.Event('change', {bubbles: true}));
+    await win.__qaRecorderFinish();
+    expect(events.filter(e => e.type === 'fill').map(e => e.value)).toEqual(['实际查询', '第二次查询']);
+  });
+
+  it("达到动作上限先发前窗，不倒置局部事件顺序", async () => {
+    const {win, doc} = await setup({max_actions: 1});
+    click(win, doc.querySelector('#action')); click(win, doc.querySelector('#action'));
+    await win.__qaRecorderFinish();
+    expect(events.map(e => e.type)).toEqual(['click', 'page_response', 'click', 'page_response']);
+    expect(responses().map(e => e.page_effect.response.action_local_seqs)).toEqual([[events[0].seq], [events[2].seq]]);
+    expect(events.map(e => e.seq)).toEqual(events.map((_e, i) => i + events[0].seq));
+  });
+
+  it("节点和文本范围受限并报告原因，父文本不会带入敏感子节点", async () => {
+    const {win, doc} = await setup({max_nodes: 8, max_text_chars: 5});
+    click(win, doc.querySelector('#action'));
+    const result = doc.querySelector('#result');
+    result.innerHTML = '<textarea name="password">fixture-private-sample</textarea><p>公开响应内容很长</p><script>fixture-script-sample</script>' + '<button>更多</button>'.repeat(20);
+    win.__qaRecorderSetEnabled(false);
+    const event = responses()[0], observed = event.page_effect.response;
+    expect(observed.truncated).toBe(true);
+    expect(observed.truncation_reasons).toContain('node_limit');
+    expect(observed.elements.length).toBeLessThanOrEqual(8);
+    expect(observed.elements.every(el => (el.text?.length || 0) <= 5)).toBe(true);
+    expect(JSON.stringify(event)).not.toContain('fixture-private-sample');
+    expect(JSON.stringify(event)).not.toContain('fixture-script-sample');
+  });
+
+  it("开窗前排除旧变更，关闭策略保留旧行为", async () => {
+    const {win, doc} = await setup();
+    doc.querySelector('#result').textContent = '发生在点击之前';
+    click(win, doc.querySelector('#action'));
+    await win.__qaRecorderFinish();
+    expect(responses()[0].page_effect.response.mutation_count).toBe(0);
+    expect(responses()[0].page_effect.response.elements).toEqual([]);
+    const legacy = await setup({response_enabled: false});
+    click(legacy.win, legacy.doc.querySelector('#action'));
+    legacy.doc.querySelector('#result').textContent = '关闭响应策略';
+    await legacy.win.__qaRecorderFinish();
+    expect(responses()).toEqual([]);
+  });
+
+  it("敏感容器内子元素以及刚移出的子元素只保留脱敏标记", async () => {
+    const {win, doc} = await setup();
+    doc.querySelector('#result').innerHTML = '<section id="password"><span id="private-child">fixture-private-value</span></section>';
+    await Promise.resolve();
+    click(win, doc.querySelector('#action'));
+    doc.querySelector('#private-child').remove();
+    doc.querySelector('#password').innerHTML = '<span>fixture-private-added</span>';
+    win.__qaRecorderSetEnabled(false);
+    expect(JSON.stringify(responses())).not.toContain('fixture-private-');
+    expect(responses()[0].page_effect.response.elements.some(el => el.sensitive)).toBe(true);
+  });
+});
 
 beforeEach(() => {
   events.length = 0;

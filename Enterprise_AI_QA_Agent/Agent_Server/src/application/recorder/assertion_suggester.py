@@ -2,7 +2,7 @@
 
 建议规则（confidence 递减，评审按需采纳）：
 - navigated_to equals（high）：动作触发页面跳转——最强可验证效果；
-- 操作后 DOM 变更（medium）：page_effect.dom_mutation_count > 0，页面有响应；
+- DOM 观察（low）：固定响应协议记录了操作之后的变化，仅供评审；
 - 末页 title contains（medium）：弱于 URL 但稳定性好；
 - page_scan interactive_count（low）：页面应保持 N 个可交互元素（易脆，仅参考）。
 
@@ -19,10 +19,6 @@ from src.schemas.recording import RecorderEvent
 
 # 单次录制最多采纳的建议数（防长录制断言爆炸，评审负担可控）
 _MAX_SUGGESTIONS = 5
-
-# dom_mutation_count 达到该值才建议 DOM 响应断言（微小变更可能是轮询噪声）
-_DOM_MUTATION_THRESHOLD = 3
-
 
 def _action_label(event: RecorderEvent) -> str:
     target = event.target if isinstance(event.target, dict) else {}
@@ -57,20 +53,39 @@ def suggest_assertions(events: list[RecorderEvent]) -> list[TestCaseAssertion]:
                 )
             )
 
-        mutation = int(effect.get("dom_mutation_count") or 0)
-        if mutation >= _DOM_MUTATION_THRESHOLD and event.target is not None:
-            label = _action_label(event)
+        # The historical counter contains changes before this event. It cannot
+        # establish a response to this operation. Never rewrite old drafts.
+        response = effect.get("response")
+        if (event.type == "page_response" and isinstance(response, dict)
+                and response.get("protocol") == "recording-dom-response-v1"
+                and response.get("association") == "temporal_after_actions"
+                and response.get("observation_status") == "observed_changes"
+                and type(response.get("mutation_count")) is int and response["mutation_count"] > 0
+                and isinstance(response.get("elements"), list) and response["elements"]):
+            scope = event.page.get("recording_scope", {})
+            document_id = scope.get("document_id") if isinstance(scope, dict) else None
+            local_seqs = response.get("action_local_seqs")
+            if (not document_id or not isinstance(local_seqs, list) or not local_seqs
+                    or any(type(seq) is not int or seq < 0 for seq in local_seqs)):
+                continue
+            actions = [item for item in events if item.type in {"click", "dblclick", "fill", "key", "submit", "scroll", "navigate", "file_change"}
+                and isinstance(item.page.get("recording_scope"), dict)
+                and item.page["recording_scope"].get("document_id") == document_id
+                and item.page["recording_scope"].get("local_seq") in local_seqs and item.seq < event.seq]
+            if len(actions) != len(set(local_seqs)):
+                continue
             suggestions.append(
                 (
-                    1,
+                    3,
                     TestCaseAssertion(
                         kind="ui_dom_changed",
                         target="page.dom",
                         operator="changed",
                         expected=True,
                         description=(
-                            f"[medium] {event.type}「{label}」后页面 DOM 发生 {mutation} 处变更"
-                            "（操作产生了可见响应）"
+                            f"[low] 录制条目{[item.seq for item in actions]}之后的观察窗口记录"
+                            f"{response['mutation_count']}条DOM变更；仅为时间关联，需评审业务含义"
+                            + ("，采集范围存在截断" if response.get("truncated") else "")
                         ),
                     ),
                 )

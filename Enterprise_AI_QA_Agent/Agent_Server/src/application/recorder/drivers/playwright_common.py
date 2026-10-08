@@ -149,6 +149,8 @@ class PlaywrightBindingDriverBase(BrowserDriver):
             )
         self._binding_name = binding_name
         script = "window.__qaRecorderScopedHost = true;\n" + _load_recorder_script()
+        if getattr(self, "_capture_settings", None) is not None:
+            script = "window.__qaRecorderCaptureSettings = " + json.dumps(self._capture_settings) + ";\n" + script
         self._owned_pages.add(self._page)
         # 先注册 binding（recorder.js emit 时 binding 已就绪；其内部另有 2s 缓冲兜底）
         await self._context.expose_binding(binding_name, self._binding_handler)

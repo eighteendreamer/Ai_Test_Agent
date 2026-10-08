@@ -102,6 +102,7 @@ class RecorderSessionService:
         registry: DriverRegistry | None = None,
         bridge: EmbeddedBridge | None = None,
         finish_config_service=None,
+        capture_config_service=None,
     ) -> None:
         self._settings = settings
         self._store = store
@@ -113,6 +114,7 @@ class RecorderSessionService:
         self._closed = False
         self._shutdown_task: asyncio.Task | None = None
         self._finish_configs = finish_config_service
+        self._capture_configs = capture_config_service
 
     # ------------------------------------------------------------ 查询
 
@@ -188,8 +190,14 @@ class RecorderSessionService:
                 "browser_allocation_id", "browser_lease_namespace", "browser_host_id")},
         )
         session.metadata["finish_settings"] = finish_settings
+        # No policy on a historical/internal session means the legacy recorder.
+        session.metadata.pop("capture_settings", None)
+        if self._capture_configs is not None:
+            session.metadata["capture_settings"] = await self._capture_configs.capture(request.project_id)
         driver = self._registry.create(request.driver, recording_id=session.id)
         try:
+            if "capture_settings" in session.metadata:
+                driver.configure_capture(session.metadata["capture_settings"]["payload"])
             session.metadata.update(driver.launch_metadata())
             created = await self._store.create_session(session)
         except BaseException:
