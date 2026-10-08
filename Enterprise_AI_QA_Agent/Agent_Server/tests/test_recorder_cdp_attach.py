@@ -35,6 +35,10 @@ class FakePage:
         self.goto_calls: list[str] = []
         self.evaluate_calls: list[tuple[Any, ...]] = []
         self.screenshot_bytes = b"png-bytes"
+        self.frames = [self]
+
+    def is_closed(self):
+        return False
 
     async def goto(self, url: str, wait_until: str | None = None) -> None:
         self.url = url
@@ -164,11 +168,11 @@ def test_inject_registers_context_level_binding_and_init_script() -> None:
 
         await driver.inject_recorder()
 
-        script = _load_recorder_script()
+        script = "window.__qaRecorderScopedHost = true;\n" + _load_recorder_script()
         assert context.bindings["__qaRecordEmit"] is not None
         assert context.init_scripts == [script]
         # 已打开的 page 立即注入（init_script 只对新文档生效）
-        assert page.evaluate_calls == [(script, None)]
+        assert page.evaluate_calls == [(script, None), ("() => window.__qaRecorderReady", None)]
 
     asyncio.run(scenario())
 

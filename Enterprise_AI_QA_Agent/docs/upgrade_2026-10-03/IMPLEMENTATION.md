@@ -4228,3 +4228,30 @@ $env:RECORDING_PRODUCT_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 原结果5通过0跳过38.36秒：正常、最后输入stop、实际HTTP503 failed、最后输入pause、移除bridge重投409。实际MySQL/PG/RustFS/Memgraph及原HTTP/binding/历史快照保存，控制条静态夹具不是完整App。仅清理测试UUID自有资源；不改历史结果。没有新配置/表/依赖，原MySQL策略创建时冻结，PG原metadata/finalize_metrics追加回执。
 
 附加源码编译与Electron node --check，退出0；无Vue契约修改，未重跑Vue完整构建。recorder.js未改，26项JS仍为上一批历史结果。三份PLAN逐字节同步、原工件审计见p0-recording-boundary-validation.json。iframe/多窗口、更多断网/恢复、managed真实结束、完整App/人工DeepSeek、响应/清洗/完整知识/AI、Docker和其他P0—P5及生产迁移仍未完成；没有重跑同配置默认自主Agent超时。
+
+## 2026-10-08 文档/frame/弹窗身份〔基线d03ab1e5〕
+
+原四实际driver反例4失败6.88秒；首轮修复2通过2失败5.21秒（pagehide未送达）；第二轮32通过2失败5.61秒（inject前toggle归属缺失），失败保留并按根因修复。旧模块161通过21.05秒；真实两驱动API存储12通过27.39秒，补截图RustFS12通过31.45秒；六项原输入身份派生0.50秒；暂停新frame两项10.65秒通过。详见设计/PLAN 6.74。
+
+第一次十八模块XML186通过0跳过78.66秒，但十个存储知识查询的TypeError被测试保存后未抛，绿色结果不证明知识或后续字段验证；原件审计发现并保留。修正既有query签名(kind=recording、limit=1)及所有结束异常必抛后，完整重跑186通过0跳过86.92秒，十个新知识工件及完整字段验证通过，一条既有Starlette弃用警告。工作目录Agent_Server，核验后的实际命令如下：
+
+```powershell
+$env:RUN_LIVE_RECORDING_PRODUCT='1'
+$env:RUN_LIVE_RECORDING_SCOPE_STORAGE='1'
+$env:RUN_LIVE_CDP_RECORDING='1'
+$env:RUN_LIVE_RECORDING_PG='1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH='1'
+$env:RECORDING_SCOPE_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-scopes-verified'
+$env:RECORDING_PRODUCT_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-scopes-electron-verified'
+$env:RECORDING_BOUNDARY_PG_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-scopes-boundary-pg-verified'
+$env:RECORDING_BOUNDARY_CDP_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-scopes-boundary-cdp-verified'
+$env:RECORDING_FINISH_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-scopes-finish-cdp-verified'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_scope_product.py tests/test_recording_document_scopes.py tests/test_recording_embedded_product.py tests/test_recording_boundary_protocol.py tests/test_recording_finish_protocol.py tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-scopes-verified.xml' --tb=short
+```
+
+agent_web实际：`npm.cmd run test -- tests/recorder/recorder.test.mjs --reporter=default --reporter=junit --outputFile.junit=../docs/upgrade_2026-10-03/p0-recording-scopes-web-final.xml`，28通过1.60秒（先前26项3.63秒单独保留）。py_compile三Python源文件、node --check recorder.js均退出0。无公共DTO/路由/表/依赖变更，没有重跑Vue完整构建。
+
+scope生产使用原CDP/managed驱动和原API/消费/PG/图：每驱动五场景及无关标签隔离，managed实际headless=False；完整通道字段/PG、MySQL冻结策略和RustFS截图字节保存。测试只清理UUID自有表/图/截图；原输入/失败XML/log不重写。原Electron五场景载入新JS的v1兼容模式，不能当Electron多范围通过。三份计划同步/原件SHA见p0-recording-scopes-validation.json。
+
+当前录制知识查询的图摘要/回执不证明完整原文或模型实际引用；未调用模型，未人工DeepSeek。Electron v2、关闭/移除/回返/BFCache/重复attach与更多网络恢复、完整App/响应/清洗/AI、Docker和其余P0—P5/生产迁移未完成。目标继续保持完整，没有缩成Python范围专项。

@@ -2,10 +2,11 @@
  * recorder.js — UI 操作录制注入脚本（方案 6.1–6.4，三端共用，单文件无依赖）
  *
  * 注入时机：文档创建前（CDP Page.addScriptToEvaluateOnNewDocument / Playwright
- * add_init_script），SPA 路由切换后仍存活；整页导航后脚本重注入，seq 与 lastUrl
- * 通过 sessionStorage 保持连续。
+ * add_init_script），SPA 路由切换后仍存活。v1用sessionStorage续号；
+ * v2由宿主登记每个document并映射局部seq为会话seq，不依赖来源存储。
  *
- * 事件回传：top frame 统一分配 seq 后调用 window.__qaRecordEmit(jsonString)
+ * 事件回传：v1由top统一seq；v2每个frame直接调用原生binding并保留文档身份。
+ * 调用 window.__qaRecordEmit(jsonString)
  * （embedded: CDP Runtime.addBinding；playwright: exposeBinding；宿主侧缓冲
  * 批量 POST /api/v1/recordings/{id}/events:batch）。
  *
@@ -15,7 +16,8 @@
  *   window.__qaRecorderScan()            立即触发一次页面轻量扫描（dom_hash）
  *   window.__qaRecorderFlush()           立即冲刷本地缓冲（调试用）
  *
- * P0 边界（方案 6.1 / 11）：跨域 iframe 不采集；Canvas 由像素三件套兜底。
+ * Python驱动显式启用v2；Electron仍用v1且未确认frame不能完成。
+ * Canvas仍由像素三件套兜底。
  */
 (function () {
   'use strict';
@@ -26,6 +28,7 @@
   window.__qaRecorderInstalled = true;
 
   var EMIT_BINDING = '__qaRecordEmit';
+  var scopedHost = window.__qaRecorderScopedHost === true;
   var SEQ_KEY = '__qaRecorderSeq';
   var LAST_URL_KEY = '__qaRecorderLastUrl';
   var INPUT_DEBOUNCE_MS = 500;
@@ -68,7 +71,7 @@
 
   var state = {
     enabled: false,
-    seq: readNumber(SEQ_KEY, 0),
+    seq: scopedHost ? 0 : readNumber(SEQ_KEY, 0),
     lastUrl: safeStorage('get', LAST_URL_KEY) || null,
     mutationCount: 0,
     pending: [],
@@ -77,6 +80,7 @@
     emittedCount: 0,
     scrollLastAt: new WeakMap(), // element → lastEmitTs
     scanTimer: null,
+    documentId: null,
   };
 
   // ------------------------------------------------------------ seq / emit
@@ -100,16 +104,17 @@
   function nextSeq() {
     var n = state.seq;
     state.seq = n + 1;
-    safeStorage('set', SEQ_KEY, String(state.seq));
+    if (!scopedHost) safeStorage('set', SEQ_KEY, String(state.seq));
     return n;
   }
 
   function emit(rawEvent) {
-    if (!isTop) {
+    if (!isTop && !scopedHost) {
       bridgeToTop(rawEvent); // 子 frame 不分配 seq，交由 top 统一编排
       return;
     }
     rawEvent.seq = nextSeq();
+    if (scopedHost) rawEvent.recording_document_id = state.documentId;
     state.emittedCount += 1;
     rawEvent.timestamp = new Date().toISOString();
     rawEvent.page_effect = rawEvent.page_effect || {};
@@ -165,7 +170,7 @@
     }
   }
 
-  if (isTop) {
+  if (isTop && !scopedHost) {
     window.addEventListener('message', function (e) {
       // 跨域 iframe 是合法来源（同源/跨域统一经 __qaRecorderBridge 协议标记），
       // seq 由 top 统一分配，多 frame 汇聚不冲突。
@@ -808,6 +813,7 @@
       lastUrl: state.lastUrl,
       pending: state.pending.length,
       top: isTop,
+      document_id: state.documentId,
     };
   };
 
@@ -818,6 +824,7 @@
   window.__qaRecorderFlush = flushPending;
 
   window.__qaRecorderFinish = async function () {
+    if (scopedHost) await window.__qaRecorderReady;
     flushAcceptedInputs();
     state.enabled = false;
     if (state.scanTimer) {
@@ -828,12 +835,38 @@
     flushPending();
     await Promise.all(Array.from(state.inFlight));
     return {
-      protocol: 'recording-finish-v1', next_seq: state.seq,
+      protocol: scopedHost ? 'recording-scopes-v2' : 'recording-finish-v1', next_seq: state.seq,
       emitted_count: state.emittedCount, pending: state.pending.length,
       // Frame delivery needs its own barrier; never claim top watermarks prove it.
-      frames_unconfirmed: document.querySelectorAll('iframe, frame').length,
+      frames_unconfirmed: scopedHost ? 0 : document.querySelectorAll('iframe, frame').length,
+      document_id: state.documentId,
     };
   };
 
   window.__qaRecorderSha1 = sha1hex; // 测试/诊断用（与宿主对账 dom_hash）
+  if (scopedHost) {
+    window.__qaRecorderReady = Promise.resolve(window[EMIT_BINDING](JSON.stringify({
+      __qaRecorderScope: 'register',
+    }))).then(function (registration) {
+      state.documentId = registration.document_id;
+      window.__qaRecorderSetEnabled(registration.enabled === true);
+      return registration;
+    });
+    function reportDocumentBoundary() {
+      if (!state.documentId) return;
+      flushAcceptedInputs();
+      // Native host checks every local seq, including async calls still in flight.
+      window[EMIT_BINDING](JSON.stringify({ __qaRecorderScope: 'close',
+        document_id: state.documentId, next_seq: state.seq,
+        emitted_count: state.emittedCount, pending: state.pending.length,
+      })).catch(function () { /* Native host retains an unconfirmed document. */ });
+    }
+    // pagehide can occur after CDP loses the old execution context. The earlier
+    // boundary is usable only when the host received its entire local range.
+    window.addEventListener('beforeunload', reportDocumentBoundary, true);
+    window.addEventListener('pagehide', function () {
+      reportDocumentBoundary();
+      state.enabled = false;
+    }, true);
+  }
 })();

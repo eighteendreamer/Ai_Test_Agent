@@ -26,7 +26,7 @@ const realSetTimeout = globalThis.setTimeout;
 /** @type {Array<any>} */
 const events = [];
 
-function createWindow({ storage = {} } = {}) {
+function createWindow({ storage = {}, scopeRegistration = null } = {}) {
   const dom = new JSDOM(
     `<!doctype html><html><head><title>测试页</title></head><body></body></html>`,
     // runScripts: "outside-only" —— 允许 window.eval 执行注入脚本（默认关闭时
@@ -42,7 +42,14 @@ function createWindow({ storage = {} } = {}) {
   for (const [key, value] of Object.entries(storage)) {
     win.sessionStorage.setItem(key, value);
   }
-  win.__qaRecordEmit = (s) => events.push(JSON.parse(s));
+  win.__qaRecorderScopedHost = scopeRegistration !== null;
+  win.__qaRecordEmit = (s) => {
+    const payload = JSON.parse(s);
+    if (payload.__qaRecorderScope === 'register') return Promise.resolve(scopeRegistration);
+    if (payload.__qaRecorderScope === 'close') return Promise.resolve();
+    events.push(payload);
+    return scopeRegistration === null ? undefined : Promise.resolve();
+  };
   win.eval(RECORDER_CODE);
   return { dom, win, doc: win.document };
 }
@@ -77,6 +84,34 @@ afterEach(() => {
 });
 
 describe("recorder.js 安装与控制", () => {
+  it("宿主文档身份模式不用旧来源seq，结束水位对应完整局部事件", async () => {
+    const { win, doc } = createWindow({storage: {__qaRecorderSeq: '900'},
+      scopeRegistration: {document_id: 'native-document', enabled: true}});
+    await win.__qaRecorderReady;
+    const field = doc.createElement('input');
+    field.id = 'scope-input';
+    doc.body.appendChild(field);
+    input(win, field, '最后一项');
+    const receipt = await win.__qaRecorderFinish();
+    expect(events).toHaveLength(1);
+    expect(events[0].seq).toBe(0);
+    expect(events[0].recording_document_id).toBe('native-document');
+    expect(events[0].value).toBe('最后一项');
+    expect(receipt.protocol).toBe('recording-scopes-v2');
+    expect(receipt.document_id).toBe('native-document');
+    expect(receipt.next_seq).toBe(1);
+    expect(receipt.pending).toBe(0);
+    expect(win.sessionStorage.getItem('__qaRecorderSeq')).toBe('900');
+  });
+
+  it("宿主未授予文档归属时保持关闭，不采集同context无关页", async () => {
+    const { win, doc } = createWindow({scopeRegistration: {document_id: null, enabled: false}});
+    await win.__qaRecorderReady;
+    click(win, doc.body);
+    expect(win.__qaRecorderGetState().enabled).toBe(false);
+    expect(events).toHaveLength(0);
+  });
+
   it("幂等守卫：同窗口重复注入不重复初始化", () => {
     const { win, doc } = enabledWindow();
     click(win, doc.body);

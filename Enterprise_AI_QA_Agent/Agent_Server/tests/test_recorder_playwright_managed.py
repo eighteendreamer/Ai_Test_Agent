@@ -31,6 +31,10 @@ class FakeManagedPage:
         self.url = "about:blank"
         self.goto_calls: list[str] = []
         self.evaluate_calls: list[tuple[Any, ...]] = []
+        self.frames = [self]
+
+    def is_closed(self):
+        return False
 
     def on(self, event, handler):
         pass
@@ -162,10 +166,10 @@ def test_inject_registers_binding_and_init_script_and_evaluates_open_pages(tmp_p
 
         await driver.inject_recorder()
 
-        script = _load_recorder_script()
+        script = "window.__qaRecorderScopedHost = true;\n" + _load_recorder_script()
         assert context.bindings["__qaRecordEmit"] is not None
         assert context.init_scripts == [script]
-        assert context.pages[0].evaluate_calls == [(script, None)]
+        assert context.pages[0].evaluate_calls == [(script, None), ("() => window.__qaRecorderReady", None)]
 
     asyncio.run(scenario())
 

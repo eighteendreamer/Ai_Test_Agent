@@ -1,8 +1,8 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本批实施研究基线 `bd972911`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
+修订日期：2026-10-08；本批实施研究基线 `d03ab1e5`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
 
-**本批补齐暂停前最后输入与终态迟到写入。** 暂停先确认浏览器和批次交付，原消费循环冲刷PG后才返回paused，继续录制复用原队列；事件追加事务锁定会话行，bridge丢失后的终态重投返回409且历史不变。最终161项后端及五个真实Electron场景分别通过，见4.1.1/6.73。iframe、多窗口、更多网络故障和完整录制/AI验收仍未完成，历史失败保留。
+**本批接入Python两驱动的文档/frame/弹窗身份。** 导航及跨来源不再依赖sessionStorage续号；原生binding登记文档、继承采集状态，宿主映射局部序号为原PG会话序号，逐文档核验结束水位。CDP/受管浏览器各五个正式API/真实存储场景、Electron旧五场景及原模块最终186项通过，JS28项通过，见4.1.2/6.74。Electron多范围接入、更多生命周期与完整录制/AI验收仍未完成，历史失败保留。
 
 执行流程继续采用“理解用户需求 → 当前项目选取完整用例 → 初排 → AI判断步骤所需条件是否有来源 → 按项目依据补全 → 最终排序与冻结 → 现有Agent执行”。模板只参与生成；缺口检测不增加注册、登录等固定清单，具体检测方式见2.3。上传独立保存原件/版本并比较指定快照，Git仍为可选来源，见3.1。各模块未完成的产品验收按第六节保留。
 
@@ -1075,6 +1075,16 @@ API、Schema、前端DTO/客户端和旧矩阵消费者已同步。真实MD/DOCX
 
 iframe/多top仍缺分范围确认，当前明确失败；更多延迟/断网/进程恢复组合仍待验，不能把top回执当作全录制完成。动态响应、完整知识、AI实际使用、完整App和人工DeepSeek仍未完成。
 
+### 4.1.2 文档、frame与弹窗身份〔Python原两驱动已实测〕
+
+真实CDP四失败证明：整页导航后新脚本enabled=false，已有iframe没有注入，弹窗初始化关闭。JS模拟测试手动开启子frame，不能证明生产控制可用。原v1通过来源sessionStorage/top汇聚seq，不能保证跨来源/多窗口身份。
+
+Python两驱动使用recording-scopes-v2：原生binding提供page/frame，宿主登记文档及父frame路径；每文档局部seq与宿主分配的会话seq分别保存，重投不重新分配。当前root全部frame立即注入，之后的document通过init_script登记并取得当前采集状态。原生opener链只纳入所选root的弹窗，不采集同context无关标签。暂停新frame保持关闭，resume再开启。
+
+暂停/结束核对每个当前frame及已离开document。实际pagehide丢失离开消息已复现，加入更早beforeunload水位；只有该文档完整局部范围已收齐时才确认。最终PG同时核对全局seq、文档局部seq及原生page/frame/父路径，遗漏/重复文档和身份篡改拒绝。没有新增表、依赖或可编辑策略；超时仍由MySQL冻结，PG既有page/finalize_metrics保存身份与回执，RustFS原截图。
+
+实际CDP和真实headed managed各五场景经原API/PG/图投影/项目知识读取通过，包括嵌套frame最后输入、跨来源、弹窗、暂停后新frame及无关标签隔离。完整事件对原通道、截图对RustFS字节已验；不是AI实际使用、完整Vue App或人工DeepSeek。Electron仍使用v1，旧五场景回归通过但多范围能力未接。关闭/移除frame、回返/BFCache、同context重复/并行attach、更多断网/恢复尚需实测和必要修复。设计和证据见6.74。
+
 ### 4.2 Agent API测试
 
 保持Agent操作方式和现有API工具。已有依赖身份/参数来源修正，继续实际验证响应提取、JSON路径/空值、依赖传值、鉴权/续期、超时/异常、幂等和结果展示。变量按项目/运行隔离，保存来源身份和实际输出，不能用计划示例值填充。
@@ -1250,7 +1260,7 @@ C2c3依据[真实状态研究](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_
 | P4覆盖确认 | `b908fe29` API/三格式生产进程见3.6.9/6.24；本阶段正式页面、完整JSON/固定版本评审、原请求恢复、历史/撤销/冲突及归档读取已验，84项组件和真实DOCX完整App见3.6.10/6.26 | 正文关联正式App已验；环境适用、更广业务及生产迁移 |
 | P4正文执行关联 | 固定核验/PG追加历史/候选恢复API和矩阵见6.30；正式编辑、原请求恢复、历史/撤销/409/归档完整读取已验；120项组件、真实DOCX完整App与独立进程见3.6.13/6.31 | 默认Agent自主执行、点级完整性及环境适用/生产历史迁移 |
 | P4环境/来源 | A登记/MySQL配置/PG捕获见6.33；B真实来源/确认见6.34—6.35；C1规划/Agent固定依据见6.36；C2a精确失效的创建/领取/开始限制、依赖/独立项、锁竞争和检查点恢复见6.37；C2b首次开始回执/原Agent恢复/真实生产执行见6.38；C2c1归属及C2c2未领取动作限制/原响应恢复见6.40—6.41 | 运行中动作修订、换目标回归、正式环境页面、AI候选及默认Agent；来源匹配不自动生成部署确认，未选择点不推断 |
-| P0/P5录制与Docker/报告 | 停止回执/PG水位见6.72；暂停检查点/尾输入、bridge丢失后终态保护及实际PG行锁见6.73，161后端和五个真实Electron场景分别通过 | iframe/多窗口、更多网络/进程恢复边界、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
+| P0/P5录制与Docker/报告 | 停止/暂停/终态保护见6.72—6.73；Python两驱动原生文档/frame/弹窗与逐文档PG核验见6.74，最终186后端/28JS通过 | Electron多范围、关闭/回返/重复attach及更多网络恢复、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
 
 此前内部输入专项：新增输入任务/来源、既有解析任务/比较任务和差异共 **62通过、0跳过（78.97秒）**；随后增加固定版本筛选/分页查询并复验新任务 **7通过、0跳过（17.22秒）**。实际MD/DOCX/PDF、MySQL/PG/RustFS、解析CLI与Redis比较Worker均运行；影响模型调用0。输入准备后的“重启”专项是新Store/Service读取同一真实数据库，尚未独立影响Worker进程验收。证据为 `p4-fixed-input-regression-final.xml`、`p4-fixed-input-query-final.xml` 和对应实际原件/输入目录。
 
@@ -2496,3 +2506,19 @@ PostgresRecordingStore.append_events在同一事务FOR UPDATE锁定会话行，�
 本批未改recorder.js，26项JS是6.72历史结果；当前Electron实际载入修改后的operation协议，node --check附加验证。没有Vue契约变更，未重跑Vue完整构建。三份方案全文同步和本批/此前原件SHA核对见[p0-recording-boundary-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-boundary-validation.json)，命令见IMPLEMENTATION.md。用户.gitignore及无关Worker/环境工件保持；历史两份Worker汇总原字节未恢复限制不变。
 
 暂停尾输入和终态写入专项通过，不代表断网/更多恢复、iframe/多窗口、真实managed结束、完整App/人工DeepSeek、响应关联、清洗/完整知识/AI已经验收。下一步继续分范围身份和响应/知识链路；P0全阶段HTTP、P1正式模板/Excel产品、P2默认自主Agent/生命周期/其他模式、需求业务评审/环境适用、Docker真实结果及报告、生产迁移与其余P0—P5仍未完成。没有重复未改变的默认自主Agent超时。
+
+### 6.74 Python两驱动的文档/frame/弹窗范围〔基线d03ab1e5〕
+
+先查原JS、注入/控制、官方及本机binding/Frame接口与本地Agent协议课程，见[P0_RECORDING_SCOPES_DESIGN.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_SCOPES_DESIGN.md)。原真实Chromium及保存HTML四场景 **4失败、6.88秒**：导航后新doc关闭、既有子frame未注入、弹窗关闭；不是JS realm模拟，见[原XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-scopes-reproduction.xml)。原生产跨范围采集缺身份/水位，不能以逐页sleep或单独开启子frame作为修复。
+
+采用recording-scopes-v2，Python宿主通过原生page/frame登记每次文档，局部seq映射为现有PG会话seq；保存原生frame_path及local_seq到原page JSON。原binding处理重投/内容变更/来源身份，当前frame逐一注入，init_script中新doc登记继承采集状态；原生opener链只纳入root弹窗。暂停/结束逐frame确认，保留已离开doc水位，PG验证全局范围、局部范围和原生身份；遗漏/重复doc及来源错配拒绝，不改旧PG事件/唯一键或原v1历史。没有新表、依赖或可编辑参数，超时沿用MySQL冻结策略。内部版本化回执在原泛型finalize_metrics中保存；Electron公共回执协议未改。
+
+首次修复 **2通过、2失败、5.21秒**：frame/popup采齐，旧doc pagehide水位未送达，导航明确未确认；改为更早beforeunload边界并继续要求全范围收齐。第二轮四真实场景及驱动合同 **32通过、2失败、5.61秒**：open后/inject前toggle遗漏root owned登记，保留原断言并补正归属。旧十五模块 **161通过、0跳过、21.05秒**。API/实际存储初轮 **12通过、27.39秒**；补RustFS截图实际上传/读回后 **12通过、31.45秒**。身份/PG错配六项用真实保存事件派生，**6通过、0.50秒**；暂停后新frame的CDP/managed两项 **2通过、10.65秒**。以上原件及失败保留，不重复累计节点。
+
+第一次十八模块合跑XML **186通过、0跳过、78.66秒**，但原件审计发现十个存储场景记录了TypeError：知识查询漏传limit且使用复数目录kind，测试在赋值receipt后保存异常而未抛出。因此这一绿色XML不能证明知识读取或异常后未执行的完整字段断言成功；此前12项/暂停两项轮次也受此限制。原finish-error.json和所有XML/log保留，不改为新的成功证据。
+
+已按现有query签名改为明确kind=recording/source_id/limit=1，并让所有结束验证异常保存后重新抛出。完整十八模块重跑 **186通过、0跳过、86.92秒**，含两驱动各五个API/实际MySQL、PG、RustFS、Memgraph/项目知识场景、四个原driver反例、身份专项及原Electron五场景，见[核验后XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-scopes-verified.xml)及[日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-scopes-verified.log)。十个新知识工件存在且没有finish-error。五场景为同源导航、跨来源导航、跨来源嵌套frame最后输入、root弹窗、暂停新frame后继续；十场景都另开同context无关标签并实际点击，确认关闭且未纳入。managed实际使用原运行时headed窗口；原API停止completed及逐doc PG确认、完整通道字段/入库顺序和十份RustFS截图读回一致，模型调用0。
+
+JS旧26项先 **26通过、3.63秒**，新增v2来源seq隔离及无归属页面后 **28通过、1.60秒**，见[JS XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-scopes-web-final.xml)。源码编译/node检查仅附加；未改Vue DTO，未重跑Vue完整构建。三份方案和本批/此前原件SHA核对见[p0-recording-scopes-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-scopes-validation.json)，实际命令见IMPLEMENTATION.md；用户.gitignore/无关Worker工件及历史失败保持，旧两份Worker汇总原字节未恢复限制保留。
+
+Electron仍v1，五场景回归不等于它已支持frame/多窗口；下一步接native execution context/popup。关闭/移除frame、回返/BFCache、同context重复/并行attach、更多断网/进程恢复还需实测及必要修复。知识读取返回的原图摘要/回执不是完整步骤原文已供AI执行。完整Vue App、人工DeepSeek、响应关联、清洗/完整知识/AI、场景/报告、Docker、P0全阶段HTTP、P1正式模板/Excel产品、P2默认自主/生命周期/其他模式、需求业务评审/环境適用与生产迁移及其余P0—P5仍未完成；没有重跑同配置默认自主Agent超时。

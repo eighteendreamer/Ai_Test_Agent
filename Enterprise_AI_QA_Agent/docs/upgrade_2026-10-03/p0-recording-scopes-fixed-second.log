@@ -1,0 +1,42 @@
+.............F.............F......                                       [100%]
+================================== FAILURES ===================================
+_____________ test_set_capture_enabled_evaluates_recorder_toggle ______________
+tests\test_recorder_cdp_attach.py:267: in test_set_capture_enabled_evaluates_recorder_toggle
+    asyncio.run(scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_recorder_cdp_attach.py:262: in scenario
+    assert toggles == [
+E   AssertionError: assert [] == [('enabled =>...bled)', True)]
+E     
+E     Right contains 2 more items, first extra item: ('enabled => window.__qaRecorderSetEnabled(!!enabled)', False)
+E     Use -v to get more diff
+________________ test_set_capture_enabled_uses_recorder_toggle ________________
+tests\test_recorder_playwright_managed.py:213: in test_set_capture_enabled_uses_recorder_toggle
+    asyncio.run(scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_recorder_playwright_managed.py:211: in scenario
+    assert toggles == [("enabled => window.__qaRecorderSetEnabled(!!enabled)", True)]
+E   AssertionError: assert [] == [('enabled =>...bled)', True)]
+E     
+E     Right contains one more item: ('enabled => window.__qaRecorderSetEnabled(!!enabled)', True)
+E     Use -v to get more diff
+=========================== short test summary info ===========================
+FAILED tests/test_recorder_cdp_attach.py::test_set_capture_enabled_evaluates_recorder_toggle
+FAILED tests/test_recorder_playwright_managed.py::test_set_capture_enabled_uses_recorder_toggle
+2 failed, 32 passed in 5.61s

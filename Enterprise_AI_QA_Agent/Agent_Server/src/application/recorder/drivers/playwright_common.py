@@ -16,6 +16,7 @@ from typing import Any, AsyncIterator
 from uuid import uuid4
 
 from .base import BrowserDriver, CaptureCheckpoint, EventChannel
+from .document_scopes import RecordingDocumentScopes
 
 logger = logging.getLogger(__name__)
 
@@ -49,10 +50,13 @@ class PlaywrightBindingDriverBase(BrowserDriver):
         self._page: Any | None = None
         self._binding_name = DEFAULT_BINDING_NAME
         self._closed = False
+        self._capture_enabled = False
+        self._owned_pages: set[Any] = set()
+        self._scopes = RecordingDocumentScopes()
 
     # ------------------------------------------------------------ 内部
 
-    async def _binding_handler(self, source: dict[str, Any], payload: Any) -> None:
+    async def _binding_handler(self, source: dict[str, Any], payload: Any) -> Any:
         """expose_binding 回调（context 级，所有 frame 的事件汇入同一通道）。
 
         recorder.js 按协议传 JSON 字符串（Electron CDP addBinding 链路同款，
@@ -71,7 +75,38 @@ class PlaywrightBindingDriverBase(BrowserDriver):
                 )
                 return
         if isinstance(payload, dict):
-            self._channel.publish(payload)
+            operation = payload.get("__qaRecorderScope")
+            try:
+                if operation == "register":
+                    page, frame = source["page"], source["frame"]
+                    if page not in self._owned_pages:
+                        if await page.opener() not in self._owned_pages:
+                            return {"document_id": None, "enabled": False}
+                        self._owned_pages.add(page)
+                    path, native = [], frame
+                    while native.parent_frame is not None:
+                        element = await native.frame_element()
+                        path.insert(0, await element.evaluate("el => ({id: el.id, name: el.getAttribute('name'), src: el.getAttribute('src'), index: Array.from(el.ownerDocument.querySelectorAll('iframe,frame')).indexOf(el)})"))
+                        native = native.parent_frame
+                    document_id = self._scopes.register(page, frame, path)
+                    logger.info("recording_document_registered", extra={
+                        "recording_id": self._recording_id, "document_id": document_id,
+                        "frame_depth": len(path)})
+                    return {"document_id": document_id, "enabled": self._capture_enabled}
+                if operation == "close":
+                    self._scopes.confirm(payload, page=source["page"], frame=source["frame"], closed=True)
+                    return None
+                if payload.get("recording_document_id"):
+                    event = self._scopes.event(payload, page=source["page"], frame=source["frame"])
+                    if event is not None:
+                        if not self._channel.publish(event):
+                            raise RuntimeError("Recording scoped event channel rejected delivery")
+                else:
+                    self._channel.publish(payload)
+            except Exception:
+                logger.exception("recording_document_delivery_rejected", extra={"recording_id": self._recording_id,
+                    "operation": operation or "event"})
+                raise
         else:
             logger.warning(
                 "playwright binding payload is not an object, dropped: recording_id=%s",
@@ -79,13 +114,13 @@ class PlaywrightBindingDriverBase(BrowserDriver):
             )
 
     async def _inject_into_current_pages(self, script: str) -> None:
-        """对 context 下已打开 page 立即注入（init_script 只对新文档生效）。"""
-        pages = list(getattr(self._context, "pages", None) or [])
-        for page in pages:
+        """Inject all current root frames; future documents register via init_script."""
+        for frame in self._page.frames:
             last_error: Exception | None = None
             for delay in (0.0, *_INJECT_RETRY_DELAYS):
                 try:
-                    await page.evaluate(script)
+                    await frame.evaluate(script)
+                    await frame.evaluate("() => window.__qaRecorderReady")
                     last_error = None
                     break
                 except Exception as exc:  # noqa: BLE001 页面瞬态不可用：重试
@@ -95,20 +130,21 @@ class PlaywrightBindingDriverBase(BrowserDriver):
                 logger.warning(
                     "inject skipped on one page: recording_id=%s url=%s error=%s",
                     self._recording_id,
-                    getattr(page, "url", "?"),
+                    getattr(frame, "url", "?"),
                     last_error,
                 )
 
     # ------------------------------------------------------------ BrowserDriver 契约（通用部分）
 
     async def inject_recorder(self, binding_name: str = DEFAULT_BINDING_NAME) -> None:
-        """context 级 binding + init_script；对已开 page 立即 evaluate。"""
+        """Native scoped binding + init_script; inject already loaded root frames."""
         if self._closed or self._context is None:
             raise RuntimeError(
                 f"{self.kind} inject before open: recording_id={self._recording_id}"
             )
         self._binding_name = binding_name
-        script = _load_recorder_script()
+        script = "window.__qaRecorderScopedHost = true;\n" + _load_recorder_script()
+        self._owned_pages.add(self._page)
         # 先注册 binding（recorder.js emit 时 binding 已就绪；其内部另有 2s 缓冲兜底）
         await self._context.expose_binding(binding_name, self._binding_handler)
         await self._context.add_init_script(script)
@@ -133,12 +169,16 @@ class PlaywrightBindingDriverBase(BrowserDriver):
     async def _capture_checkpoint(self, operation: str) -> dict[str, Any]:
         if self._page is None or self._closed:
             raise RuntimeError("Recording browser unavailable during finish")
-        pages = list(self._context.pages)
-        if len(pages) != 1:
-            raise RuntimeError("Recording multi-page finish requires per-page identities")
-        receipt = await self._page.evaluate("() => window.__qaRecorderFinish()")
-        if not isinstance(receipt, dict) or receipt.get("protocol") != "recording-finish-v1":
-            raise RuntimeError("Recording browser finish protocol unavailable")
+        self._capture_enabled = False
+        for page in list(self._owned_pages):
+            if page.is_closed():
+                continue
+            for frame in list(page.frames):
+                receipt = await frame.evaluate("() => window.__qaRecorderFinish()")
+                if not isinstance(receipt, dict) or receipt.get("protocol") != "recording-scopes-v2":
+                    raise RuntimeError("Recording browser scoped finish protocol unavailable")
+                self._scopes.confirm(receipt, page=page, frame=frame)
+        receipt = self._scopes.result()
         if operation == "stop":
             await self._channel.finish()
         else:
@@ -171,9 +211,14 @@ class PlaywrightBindingDriverBase(BrowserDriver):
     async def set_capture_enabled(self, enabled: bool) -> None:
         if self._page is None:
             raise RuntimeError(f"{self.kind} toggle before open: recording_id={self._recording_id}")
-        await self._page.evaluate(
-            "enabled => window.__qaRecorderSetEnabled(!!enabled)", bool(enabled)
-        )
+        self._owned_pages.add(self._page)
+        self._capture_enabled = bool(enabled)
+        for page in list(self._owned_pages):
+            if page.is_closed():
+                continue
+            for frame in list(page.frames):
+                await frame.evaluate("() => window.__qaRecorderReady")
+                await frame.evaluate("enabled => window.__qaRecorderSetEnabled(!!enabled)", bool(enabled))
         logger.info(
             "%s capture toggle: recording_id=%s enabled=%s",
             self.kind,

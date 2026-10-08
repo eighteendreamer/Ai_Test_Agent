@@ -1,0 +1,32 @@
+FFFF                                                                     [100%]
+================================== FAILURES ===================================
+__ test_actual_browser_retains_operations_across_document_scopes[navigation] __
+tests\test_recording_scope_product.py:117: in test_actual_browser_retains_operations_across_document_scopes
+    assert all(target in actual for target in expected), "real browser operations were lost across scopes"
+E   AssertionError: real browser operations were lost across scopes
+E   assert False
+E    +  where False = all(<generator object test_actual_browser_retains_operations_across_document_scopes.<locals>.<genexpr> at 0x0000023258C7E260>)
+_ test_actual_browser_retains_operations_across_document_scopes[cross-origin] _
+tests\test_recording_scope_product.py:117: in test_actual_browser_retains_operations_across_document_scopes
+    assert all(target in actual for target in expected), "real browser operations were lost across scopes"
+E   AssertionError: real browser operations were lost across scopes
+E   assert False
+E    +  where False = all(<generator object test_actual_browser_retains_operations_across_document_scopes.<locals>.<genexpr> at 0x0000023258EA9000>)
+_ test_actual_browser_retains_operations_across_document_scopes[nested-frame] _
+tests\test_recording_scope_product.py:117: in test_actual_browser_retains_operations_across_document_scopes
+    assert all(target in actual for target in expected), "real browser operations were lost across scopes"
+E   AssertionError: real browser operations were lost across scopes
+E   assert False
+E    +  where False = all(<generator object test_actual_browser_retains_operations_across_document_scopes.<locals>.<genexpr> at 0x000002325A0498C0>)
+____ test_actual_browser_retains_operations_across_document_scopes[popup] _____
+tests\test_recording_scope_product.py:117: in test_actual_browser_retains_operations_across_document_scopes
+    assert all(target in actual for target in expected), "real browser operations were lost across scopes"
+E   AssertionError: real browser operations were lost across scopes
+E   assert False
+E    +  where False = all(<generator object test_actual_browser_retains_operations_across_document_scopes.<locals>.<genexpr> at 0x000002325A049380>)
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scope_product.py::test_actual_browser_retains_operations_across_document_scopes[navigation]
+FAILED tests/test_recording_scope_product.py::test_actual_browser_retains_operations_across_document_scopes[cross-origin]
+FAILED tests/test_recording_scope_product.py::test_actual_browser_retains_operations_across_document_scopes[nested-frame]
+FAILED tests/test_recording_scope_product.py::test_actual_browser_retains_operations_across_document_scopes[popup]
+4 failed in 6.88s

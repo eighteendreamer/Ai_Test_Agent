@@ -429,7 +429,22 @@ class RecorderSessionService:
         receipt["browser_saved_count"] = browser_saved_count
         watermark_missing = browser_start < 0 or browser_saved_count != receipt["emitted_count"]
         receipt["pg_verified"] = not missing and not watermark_missing
-        if (receipt["protocol"] != "recording-finish-v1" or receipt.get("operation", "stop") != operation or
+        if receipt["protocol"] == "recording-scopes-v2":
+            documents = [scope["document_id"] for scope in receipt["scopes"]]
+            if not documents or len(documents) != len(set(documents)) or any(
+                event.page.get("recording_scope", {}).get("document_id") not in documents for event in events):
+                raise RuntimeError("Recording document scope coverage could not be confirmed")
+            for scope in receipt["scopes"]:
+                actual = [event.page.get("recording_scope", {}) for event in events
+                    if event.page.get("recording_scope", {}).get("document_id") == scope["document_id"]]
+                expected_local = set(range(scope["next_seq"])) if isinstance(scope["next_seq"], int) else None
+                scope["pg_verified"] = bool(scope["confirmed"] and expected_local is not None
+                    and {row.get("local_seq") for row in actual} == expected_local and len(actual) == len(expected_local)
+                    and all(all(row.get(key) == scope.get(key) for key in (
+                        "page_id", "frame_id", "parent_frame_id", "frame_path", "document_url")) for row in actual))
+                if not scope["pg_verified"]:
+                    raise RuntimeError("Recording document local delivery could not be confirmed")
+        if (receipt["protocol"] not in ("recording-finish-v1", "recording-scopes-v2") or receipt.get("operation", "stop") != operation or
             receipt["pending"] or receipt["frames_unconfirmed"] or receipt["transport_dropped"] or
             receipt["channel_dropped"] or missing or watermark_missing or runtime.parse_failures or
             runtime.dropped_on_db_error):
