@@ -1,10 +1,10 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-08；本次方案核对基线 `4ed1507f`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
+修订日期：2026-10-08；本批实施研究基线 `05f7403d`。完整 P0—P5 工程范围继续保留，专项验证结果与未完成范围分别记录。
 
-**本次直接更新本方案及用户附件。** 上传变更采用系统自己的文档版本记录：先上传并保存原件，更新时在指定文档下上传新版本，再选择双方解析快照比较。Git只保留独立可选入口；上传不创建仓库、不写Git缓存。可行性依据和本次验证见3.1.1，具体操作契约见3.1.4。
+**本批实施原Electron录制入口核验。** 已实际复现并修复指令字段错位和不足二十条的事件不按时发送；原窗口/HTTP/真实存储正常场景通过。但“输入后立即停止”实际漏录并仍显示completed，结束排空协议尚未实现，见4.1.1/6.71。研究和失败工件保留，不把入口通过当作人工录制或AI使用已验收。
 
-执行流程继续采用“理解用户需求 → 当前项目选取完整用例 → 初排 → AI判断步骤所需条件是否有来源 → 按项目依据补全 → 最终排序与冻结 → 现有Agent执行”。模板只参与生成；缺口检测不增加注册、登录等固定清单，具体检测方式见2.3。本次只修改方案和同步副本；各模块未完成的产品验收仍按第六节保留。
+执行流程继续采用“理解用户需求 → 当前项目选取完整用例 → 初排 → AI判断步骤所需条件是否有来源 → 按项目依据补全 → 最终排序与冻结 → 现有Agent执行”。模板只参与生成；缺口检测不增加注册、登录等固定清单，具体检测方式见2.3。上传独立保存原件/版本并比较指定快照，Git仍为可选来源，见3.1。各模块未完成的产品验收按第六节保留。
 
 本方案按用户纠正后的流程执行：
 
@@ -1057,11 +1057,19 @@ API、Schema、前端DTO/客户端和旧矩阵消费者已同步。真实MD/DOCX
 
 ### 4.1 人工 UI 录制和知识
 
-先验收现有“人为浏览器操作 → 捕获操作及响应元素/DOM等 → 清洗 → 检查遗漏 → 入库 → AI查询/使用”。用户指定的 [DeepSeek 官网](https://www.deepseek.com/) 作为简单人工录制页面；只做低频UI操作。当前方案修订没有访问该网站，也没有将自动化点击当作人工录制验收。
+先验收现有“人为浏览器操作 → 捕获操作及响应元素/DOM等 → 清洗 → 检查遗漏 → 入库 → AI查询/使用”。用户指定的 [DeepSeek 官网](https://www.deepseek.com/) 作为简单人工录制页面；只做低频UI操作。人工DeepSeek验收尚未完成；本批自动化受控HTML验证不替代人工操作。
 
 核对客户端事件、服务端接收、数据库与固化结果，包含动作ID/顺序、动作前后响应关联、DOM稳定等待、结束排空、最后一步、截断和遗漏警告。去掉重复投递和干扰，不误删真实重复操作；保留脱敏流水、清洗版本与原因。动态DOM/iframe/连续点击等用受控页面补验。
 
 链路可用后补场景管理、步骤编辑、元素别名、知识版本查询与失败定位。编辑产生新版本；选择器修复不能抹去原失败。验收必须有AI实际引用录制知识以及操作/断言证据。
+
+### 4.1.1 原Electron入口实测与结束协议缺口
+
+原后端指令使用`action`，Electron却读取`kind/command`，原HTTP状态active与页面enabled=false已实际复现；原消费处现已对齐。二秒定时器也被二十条门槛挡住，实际两个click/一个page_scan六秒未入库，现已修正原定时flush。正常窗口/API/PG/知识投影、暂停/继续、重复投递与真实重复操作、关闭及RustFS截图读回通过。
+
+随后实际输入后立即stop：页面输入存在、停止前seq=6，PG只有5条且没有对应fill，却显示completed和正常对账。**录制整条链路尚不可判为已完成验收。** 下一步先研究并实现三驱动一致的结束确认，覆盖debounce、binding、客户端批次、后端队列及PG提交水位；失败/未知/丢弃可见后才固化。不能只延时等待或把已有行数一致当作完整采集。
+
+研究、真实失败和范围见[P0_RECORDING_EMBEDDED_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_EMBEDDED_RESEARCH.md)及6.71。本批没有接入新结束协议、动态响应关联或完整知识正文，没有模型使用和人工DeepSeek验收。配置、权限、既有模式和历史不改。
 
 ### 4.2 Agent API测试
 
@@ -1238,7 +1246,7 @@ C2c3依据[真实状态研究](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_
 | P4覆盖确认 | `b908fe29` API/三格式生产进程见3.6.9/6.24；本阶段正式页面、完整JSON/固定版本评审、原请求恢复、历史/撤销/冲突及归档读取已验，84项组件和真实DOCX完整App见3.6.10/6.26 | 正文关联正式App已验；环境适用、更广业务及生产迁移 |
 | P4正文执行关联 | 固定核验/PG追加历史/候选恢复API和矩阵见6.30；正式编辑、原请求恢复、历史/撤销/409/归档完整读取已验；120项组件、真实DOCX完整App与独立进程见3.6.13/6.31 | 默认Agent自主执行、点级完整性及环境适用/生产历史迁移 |
 | P4环境/来源 | A登记/MySQL配置/PG捕获见6.33；B真实来源/确认见6.34—6.35；C1规划/Agent固定依据见6.36；C2a精确失效的创建/领取/开始限制、依赖/独立项、锁竞争和检查点恢复见6.37；C2b首次开始回执/原Agent恢复/真实生产执行见6.38；C2c1归属及C2c2未领取动作限制/原响应恢复见6.40—6.41 | 运行中动作修订、换目标回归、正式环境页面、AI候选及默认Agent；来源匹配不自动生成部署确认，未选择点不推断 |
-| P0/P5录制与Docker/报告 | 现有实现可以作为实测入口 | 人工录制→清洗→数据库→AI、Docker真实工具结果及场景/报告尚未闭环验收 |
+| P0/P5录制与Docker/报告 | 原Electron控制及少量批次实测修复；正常原窗口/API/存储/项目知识读取通过，143后端及23脚本回归通过，见6.71 | 立即stop实际漏最后输入且仍显示完成；结束确认、响应关联/完整知识、人工DeepSeek与AI使用、Docker真实结果及场景/报告尚未闭环 |
 
 此前内部输入专项：新增输入任务/来源、既有解析任务/比较任务和差异共 **62通过、0跳过（78.97秒）**；随后增加固定版本筛选/分页查询并复验新任务 **7通过、0跳过（17.22秒）**。实际MD/DOCX/PDF、MySQL/PG/RustFS、解析CLI与Redis比较Worker均运行；影响模型调用0。输入准备后的“重启”专项是新Store/Service读取同一真实数据库，尚未独立影响Worker进程验收。证据为 `p4-fixed-input-regression-final.xml`、`p4-fixed-input-query-final.xml` 和对应实际原件/输入目录。
 
@@ -2440,3 +2448,17 @@ sources预读不耗模型回合；ID-only来源在capture前V2发生时读V2且�
 前端仅增加可选快照DTO，实际`npm.cmd run typecheck`退出0。受影响十五模块/节点回归**197通过、4跳过（286.59秒）**；两个外部模型、独立Redis Worker及真实路径绑定模型开关未启用，精确节点保留在XML。最终命令与结果在IMPLEMENTATION.md及[p2-consumption-return-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p2-consumption-return-validation.json)记录；源码编译是附加检查，不能替代上述功能测试。三个方案全文同步，上一批227份原证据/HEAD及用户.gitignore/无关当前文件按SHA检查，历史两份Worker汇总原字节未恢复限制保留。
 
 这批验证的是工具可靠返回与原清理准入，不证明所有远端副作用已结束或全部业务通过。更多消费者/来源组合、跨租约/多Worker、独立消费报告、完整准备生命周期、unknown只读查证、计划修订/其他模式、完整App和默认自主Agent继续待验。未重复同配置默认超时、未进行生产历史迁移；P1模板/Excel正式产品、DeepSeek人工录制、Docker真实性能/安全、P0产品链路及其余P0—P5保持未完成。
+
+### 6.71 原Electron录制实测、入口修复及停止漏录〔基线05f7403d〕
+
+本批先核对原JS、三驱动、bridge/API、客户端、PG事件、清洗投影与规划知识读取，再启动隔离正式项目、实际MySQL/PG/RustFS/Memgraph、原Electron录制模块和真实HTTP。受控HTML原件实际保存，原Playwright CDP点击产生真实浏览器事件；不手造RecorderEvent，不替换原传输/固化模块。
+
+实际原指令使用action，而Electron只读取kind/command：HTTP返回active、页面enabled=false，原日志记录unknown command。已在原消费处对齐action并兼容旧别名。修正后实际两次点击、原binding两click及page_scan，六秒仍未入库，证明原定时flush也要求满二十条；改为二秒提交部分批次。没有新增配置、表结构、依赖、测试模式或执行器。
+
+独立正常场景**1通过11.08秒**；按原API开始、暂停、继续、停止，四次有效操作保存，暂停两次操作不录入，同seq重复投递去重，重复真实操作保留；原关闭命令生效。实际PG/图投影和项目只读知识来源读取、跨项目拒绝、RustFS原截图读回与SHA已核对。控制条采用静态夹具，不能当作完整Vue App或人工录制验收；没有模型调用。
+
+新增立即停止场景：页面实际输入“最后一步实际输入”，停止前enabled=true/seq=6；PG仅5条、对应fill为零，返回completed且reconciled=true/degraded=false。**本批最终两场景为1通过、1失败18.65秒**，见[原XML](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-embedded-scenarios.xml)、[原日志](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-embedded-scenarios.log)和[停止结果](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-embedded-scenarios/tail-input/tail-input-result.json)。失败没有标为通过、xfail或重置运行；测试自有数据库对象按明确归属清理，原状态/输入/HTTP/binding/事件字节保留为工件。
+
+受影响十三模块回归**143通过、0跳过13.32秒**，包括真实Chromium CDP、PG和Memgraph开关；既有Starlette弃用警告1条。原脚本**23通过1.74秒**。探针自身的启动时序、argv、未生效输入、隐藏view和清理glob失败均保存并逐一纠正，详见[P0_RECORDING_EMBEDDED_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_RECORDING_EMBEDDED_RESEARCH.md)。这些失败不能当作更多生产缺陷或虚增通过数。
+
+下一步先实现有实际确认的跨端停止/排空契约，再补动作响应信息、清洗/遗漏与完整知识原文、人工DeepSeek及AI实际使用。单纯sleep、统计已有行数或把指令入队当执行完成都不满足本次反例。旧completed/failed/unknown历史保留，不原地重写。场景管理/编辑/别名/查询/失败定位、Docker性能安全及报告、P1正式模板/Excel、P2完整自主/生命周期和其他模式/App、需求业务评审/环境适用、P0完整发送与产品及生产历史迁移继续，完整P0—P5目标保持未完成。方案与用户附件/选中PLAN同步和原字节审计见[p0-recording-embedded-validation.json](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-embedded-validation.json)。

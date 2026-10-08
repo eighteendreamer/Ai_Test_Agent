@@ -157,7 +157,8 @@ async function flushEventBuffer(state, { force = false } = {}) {
 
 function startEventFlushTimer(state) {
   state.flushTimer = setInterval(() => {
-    void flushEventBuffer(state);
+    // The interval is the latency bound for a partial batch, not another size gate.
+    void flushEventBuffer(state, { force: true });
   }, EVENT_FLUSH_INTERVAL_MS);
 }
 
@@ -229,7 +230,8 @@ async function captureScreenshotToBackend(state) {
 }
 
 async function applyCommand(state, command) {
-  const kind = command?.kind || command?.command;
+  // EmbeddedDriver and /recordings/{id}/commands use action; retain old aliases.
+  const kind = command?.action || command?.kind || command?.command;
   const payload = command?.payload || {};
   if (kind === "navigate") {
     log(state, "navigate ->", payload.url);

@@ -1,0 +1,175 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__ test_original_electron_controls_and_small_batches_reach_project_knowledge __
+
+path = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p0-recording-embedded-first/harness-ready.json')
+timeout = 30
+
+    async def wait_json(path, timeout=15):
+        async with asyncio.timeout(timeout):
+            while not path.exists():
+                if process and process.poll() is not None:
+                    raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+>               await asyncio.sleep(.05)
+
+tests\test_recording_embedded_product.py:88: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+delay = 0.05, result = None
+
+    async def sleep(delay, result=None):
+        """Coroutine that completes after a given time (in seconds)."""
+        if delay <= 0:
+            await __sleep0()
+            return result
+    
+        loop = events.get_running_loop()
+        future = loop.create_future()
+        h = loop.call_later(delay,
+                            futures._set_result_unless_cancelled,
+                            future, result)
+        try:
+>           return await future
+                   ^^^^^^^^^^^^
+E           asyncio.exceptions.CancelledError
+
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\tasks.py:649: CancelledError
+
+The above exception was the direct cause of the following exception:
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1071/test_original_electron_control0')
+
+    @pytest.mark.asyncio
+    async def test_original_electron_controls_and_small_batches_reach_project_knowledge(tmp_path):
+        root = Path(__file__).resolve().parents[2]
+        evidence = Path(os.getenv("RECORDING_PRODUCT_EVIDENCE", str(tmp_path / "evidence"))).resolve()
+        evidence.mkdir(parents=True, exist_ok=False)
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        fixture = evidence / "fixture.html"
+        fixture.write_text("""<!doctype html><html><head><meta charset='utf-8'><title>ʵ��¼�Ƽо�</title></head>
+    <body><button id='target' onclick='window.fixtureClicks=(window.fixtureClicks||0)+1'>��������</button>
+    <p>��ҳ��ֻ���ڱ���ϵͳ¼�����ա�</p></body></html>""", encoding="utf-8")
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recording-" + uuid4().hex[:12], name="ԭ����¼������"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_re_" + suffix, "up_rs_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                for table in tables:
+                    cursor.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cursor.fetchone()["existing"] is None
+            store = PostgresRecordingStore(env.settings)
+            await store.initialize()
+            graph = RecordingGraphStore(env.settings)
+            bridge = EmbeddedBridge()
+            service = RecorderSessionService(env.settings, store, graph, bridge=bridge)
+            env.sources.set_recording_sources(recording_store=store, recording_graph_store=graph)
+            app = FastAPI()
+            app.state.recorder_service, app.state.recording_store = service, store
+            app.state.recording_graph_store, app.state.embedded_bridge = graph, bridge
+            app.state.settings, app.state.artifact_storage_service = env.settings, env.objects
+            app.include_router(router, prefix="/api/v1")
+    
+            @app.get("/fixture")
+            async def actual_fixture():
+                return HTMLResponse(fixture.read_bytes())
+    
+            @app.get("/recorder-window")
+            async def minimal_control_bar():
+                return HTMLResponse("������ԭHTTP�ӿڲ��Կ��ƣ��˾�̬�о߲�����Vueҳ�����ա�")
+    
+            listener = socket.socket()
+            listener.bind(("127.0.0.1", 0))
+            server = uvicorn.Server(uvicorn.Config(app, log_level="warning"))
+            serving = asyncio.create_task(server.serve(sockets=[listener]))
+            origin = f"http://127.0.0.1:{listener.getsockname()[1]}"
+            process = None
+            session_id = None
+            commands = tmp_path / "commands.json"
+            command_id = 0
+    
+            async def wait_json(path, timeout=15):
+                async with asyncio.timeout(timeout):
+                    while not path.exists():
+                        if process and process.poll() is not None:
+                            raise AssertionError("original Electron exited; see saved stdout/stderr/error")
+                        await asyncio.sleep(.05)
+                return json.loads(path.read_text(encoding="utf-8"))
+    
+            async def command(action="state", **kwargs):
+                nonlocal command_id
+                command_id += 1
+                staged = commands.with_suffix(".tmp")
+                staged.write_text(json.dumps({"id": command_id, "action": action, **kwargs}), encoding="utf-8")
+                staged.replace(commands)
+                return await wait_json(evidence / f"reply-{command_id}.json")
+    
+            async def enabled(expected):
+                result = None
+                for _ in range(30):
+                    result = await command()
+                    if result.get("recorder", {}).get("enabled") is expected:
+                        return result
+                    await asyncio.sleep(.1)
+                save("control-mismatch.json", {"expected_enabled": expected, "actual": result})
+                raise AssertionError(f"original command did not set capture={expected}; actual={result}")
+    
+            try:
+                async with httpx.AsyncClient(base_url=origin) as client:
+                    while not server.started:
+                        assert not serving.done()
+                        await asyncio.sleep(.05)
+                    created = await client.post("/api/v1/recordings", json={"project_id": project.id, "entry_url": origin + "/fixture", "driver": {"kind": "embedded"}})
+                    created.raise_for_status()
+                    session_id = created.json()["id"]
+                    save("created.json", created.json())
+                    config = tmp_path / "electron.json"
+                    config.write_text(json.dumps({"origin": origin, "entryUrl": origin + "/fixture", "recordingId": session_id,
+                        "module": str(root / "agent_web/electron/recorder-window.mjs"), "userData": str(tmp_path / "electron-user-data"),
+                        "evidence": str(evidence), "commands": str(commands)}), encoding="utf-8")
+                    electron = root / "agent_web/node_modules/electron/dist/electron.exe"
+                    assert electron.is_file()
+                    with (evidence / "electron.stdout").open("wb") as out, (evidence / "electron.stderr").open("wb") as err:
+                        process = subprocess.Popen([str(electron), str(root / "agent_web/tests/fixtures/recorder-live.mjs"), str(config)],
+                            stdout=out, stderr=err, stdin=subprocess.DEVNULL, env={key: value for key, value in os.environ.items() if key != "ELECTRON_RUN_AS_NODE"},
+                            creationflags=subprocess.CREATE_NO_WINDOW if os.name == "nt" else 0)
+>                       await wait_json(evidence / "harness-ready.json", timeout=30)
+
+tests\test_recording_embedded_product.py:128: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_embedded_product.py:84: in wait_json
+    async with asyncio.timeout(timeout):
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <Timeout [expired]>
+exc_type = <class 'asyncio.exceptions.CancelledError'>
+exc_val = CancelledError(), exc_tb = <traceback object at 0x000001CCAF5AD240>
+
+    async def __aexit__(
+        self,
+        exc_type: Optional[Type[BaseException]],
+        exc_val: Optional[BaseException],
+        exc_tb: Optional[TracebackType],
+    ) -> Optional[bool]:
+        assert self._state in (_State.ENTERED, _State.EXPIRING)
+    
+        if self._timeout_handler is not None:
+            self._timeout_handler.cancel()
+            self._timeout_handler = None
+    
+        if self._state is _State.EXPIRING:
+            self._state = _State.EXPIRED
+    
+            if self._task.uncancel() <= self._cancelling and exc_type is exceptions.CancelledError:
+                # Since there are no new cancel requests, we're
+                # handling this.
+>               raise TimeoutError from exc_val
+E               TimeoutError
+
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\timeouts.py:115: TimeoutError
+=========================== short test summary info ===========================
+FAILED tests/test_recording_embedded_product.py::test_original_electron_controls_and_small_batches_reach_project_knowledge
+1 failed in 49.37s

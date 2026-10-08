@@ -4143,3 +4143,34 @@ fixed2通过9.89秒，final新15项通过14.50秒；两份原件真实RustFS读�
 - tests.test_agent_case_context::test_actual_model_reads_complete_frozen_case_without_authoring_template：requires current configured actual model and real isolated storage
 - tests.test_plan_binding_paths::test_actual_model_uses_literal_path_from_full_case：requires current actual model and real storage
 编译和历史/原件审计另保存validation.json，不能把未启用外部模型或独立Worker计算为功能通过。
+
+## 2026-10-08 原Electron录制控制与部分批次〔基线05f7403d〕
+
+研究依据、所有原失败、实际功能边界及后续结束协议见 `P0_RECORDING_EMBEDDED_RESEARCH.md` 和PLAN 4.1.1/6.71。生产改动只在原Electron模块：按action消费后端命令，原二秒定时器提交部分批次。无新配置、表、依赖或模式。
+
+正常原窗口/真实HTTP/MySQL/PG/RustFS/图投影/项目只读知识入口1通过11.08秒。测试控制条是静态夹具，点击由原Playwright CDP产生，不能当人工DeepSeek或完整Vue App。实际重复操作与重复投递分开验证，原RustFS截图下载及SHA保存。无真实模型调用。
+
+最终测试加入立即stop：1通过、1失败18.65秒。原页面的最后输入没有对应PG fill，状态仍completed，原完整性指标正常；该回归未标xfail且继续失败，不能报告录制闭环完成。原工件 `p0-recording-embedded-scenarios/settled` 和 `tail-input` 分别保存。
+
+实际执行命令（backend工作目录Agent_Server，frontend工作目录agent_web）：
+
+```powershell
+$env:RUN_LIVE_RECORDING_PRODUCT = '1'
+$env:RECORDING_PRODUCT_EVIDENCE = 'G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-recording-embedded-scenarios'
+$env:PYTHONIOENCODING = 'utf-8'
+..\.venv\Scripts\python.exe -m pytest tests/test_recording_embedded_product.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-embedded-scenarios.xml' --tb=short
+# 原结果：1 passed, 1 failed（实际停止漏最后输入）。原日志同时保存。
+
+$env:RUN_LIVE_CDP_RECORDING = '1'
+$env:RUN_LIVE_RECORDING_PG = '1'
+$env:RUN_LIVE_RECORDING_MEMGRAPH = '1'
+..\.venv\Scripts\python.exe -m pytest tests/test_recorder_drivers.py tests/test_recorder_cdp_attach.py tests/test_recorder_playwright_managed.py tests/test_recorder_live_cdp.py tests/test_recorder_session_service.py tests/test_recording_store.py tests/test_recording_graph_store.py tests/test_recording_routes.py tests/test_recording_schema.py tests/test_recording_e2e_p0.py tests/test_recording_case_draft.py tests/test_recording_approval_service.py tests/test_ui_automation_recording_orchestration.py -q --junitxml='../docs/upgrade_2026-10-03/p0-recording-embedded-regression.xml' --tb=short
+# 原结果：143 passed，13.32秒，0跳过，既有Starlette弃用警告1条。
+
+npm.cmd run test -- tests/recorder/recorder.test.mjs --reporter=default --reporter=junit --outputFile.junit=../docs/upgrade_2026-10-03/p0-recording-embedded-web.xml
+# 原结果：23 passed，1.74秒。
+```
+
+专用真实测试开关默认关闭；需要完整基础设施和已安装Electron。测试创建UUID隔离表、正式项目和实际HTML文件，实际网络及存储读回。原结束状态/事件均保存后仅清理测试拥有的表/对象/图；清理glob失败造成的一组自有表/图和截图已按原录制ID/项目ID、唯一归属回查并清理，见 `p0-recording-embedded-cleanup.json`。清理查询最初LIKE未参数化，既有适配器拒绝；纠正后实际命令通过，不能把清理工具当生产迁移。
+
+本批不重复旧默认模型超时，不宣称停止排空、动作响应关联、完整知识原文、人工DeepSeek、模型使用、场景管理、Docker/报告或整个P0—P5完成。下一步有真实漏录反例支撑结束契约设计；历史失败和无关工作区保持。
