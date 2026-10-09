@@ -142,6 +142,15 @@ class PerformanceTestingModeRuntime:
         bundle = getattr(context, "context_bundle", {}) or {}
 
         try:
+            project_id = bundle.get("project_id") or None
+            if state.project_id and state.project_id != project_id:
+                logger.warning("performance_state_project_mismatch", extra={
+                    "session_id": state.session_id, "phase": state.phase,
+                })
+                return {"status": "denied", "ok": False, "phase": state.phase,
+                        "summary": "性能运行所属项目与当前会话不一致",
+                        "performance_testing_state": state.model_dump()}
+            state.project_id = project_id
             with bind_request_context(
                 trace_id=getattr(context, "trace_id", None),
                 project_id=bundle.get("project_id"), session_id=getattr(context, "session_id", None),
@@ -589,9 +598,12 @@ class PerformanceTestingModeRuntime:
 
         if self._metrics_store and target_url:
             try:
-                baseline = await self._metrics_store.get_baseline(target_url)
-            except Exception:
-                logger.debug("Baseline lookup failed, proceeding without baseline")
+                baseline = await self._metrics_store.get_baseline(target_url, project_id=state.project_id)
+            except Exception as exc:
+                logger.warning("performance_baseline_unavailable", extra={
+                    "run_id": state.run.run_id, "project_id": state.project_id,
+                    "error_type": type(exc).__name__,
+                })
 
         report = self._report_builder.build(parsed, state.plan, state.run, baseline)
         state.report = report
@@ -618,6 +630,7 @@ class PerformanceTestingModeRuntime:
                     verdict=state.report.verdict,
                     target_url=target_url,
                     run_intent=state.report.run_intent,
+                    project_id=state.project_id,
                 )
             except Exception as exc:
                 logger.warning("performance_metrics_persistence_exception", extra={
@@ -642,6 +655,7 @@ class PerformanceTestingModeRuntime:
         report = state.report
         metrics_payload = {
             "run_id": report.run_id,
+            "project_id": state.project_id,
             "run_intent": report.run_intent,
             "verdict": report.verdict,
             "metrics": report.metrics.model_dump(),
@@ -667,6 +681,7 @@ class PerformanceTestingModeRuntime:
                         if pending else f"性能测试完成，verdict={state.report.verdict}"),
             "metrics_persistence": persistence,
             "verdict": state.report.verdict,
+            "project_id": state.project_id,
             "run_id": state.run.run_id if state.run else "",
             "run_intent": state.report.run_intent,
             "metrics": state.report.metrics.model_dump(),

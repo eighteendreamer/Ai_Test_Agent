@@ -107,7 +107,7 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
                             write_json(evidence / (variant + "-report.json"), report.model_dump(mode="json"))
                             (evidence / (variant + "-report.md")).write_text(report.report_markdown, encoding="utf-8")
                             (evidence / (variant + "-report.html")).write_text(report.report_html, encoding="utf-8")
-                            output = await runtime._handle_report(PerformanceTestingState(plan=variant_plan, run=run, report=report))
+                            output = await runtime._handle_report(PerformanceTestingState(project_id=project["id"], plan=variant_plan, run=run, report=report))
                             write_json(evidence / (variant + "-mode-output.json"), output)
                             assert parsed.metrics.samples > 0 and report.verdict == expected, report.report_markdown
                             assert run.status == ("failed" if variant == "violating" else "completed"), run
@@ -133,7 +133,7 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
                         for name, run, parsed, report in results:
                             row = next(row for row in rows if row["run_id"] == run.run_id)
                             assert row["metrics_json"]["p99_ms"] == parsed.metrics.p99_ms and row["verdict"] == report.verdict
-                        baseline = await runtime._metrics_store.get_baseline(plan.targets[0].url)
+                        baseline = await runtime._metrics_store.get_baseline(plan.targets[0].url, project_id=project["id"])
                         assert baseline is not None and baseline.p99_ms == results[1][2].metrics.p99_ms
                         write_json(evidence / "facts.json", {"project_id": project["id"], "session_id": session["id"],
                             "scope": "production runner/parser/report with managed actual Docker; no Agent/model invocation",

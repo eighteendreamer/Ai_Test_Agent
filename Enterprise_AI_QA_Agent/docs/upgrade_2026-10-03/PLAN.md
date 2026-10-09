@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-09；本次核对基线 `79c72775`。跨审批累计预算及多审批恢复已提交；一次只读回执纠正和可选冻结传输设置已完成受控验证，见6.86。真实Step纠正请求记录到一次HTTP403，要求实名认证；用户决定先继续其他模块，账号处理后再验收。模板及Excel/JSON完整产品验收通过，见6.87；Docker性能采集及缺失指标判定见6.88，性能原件持久化、冒烟错误和异常退出判定见6.89。k6响应提取、预期状态和依赖header传值见6.90；JMeter实际响应与短时旅程补强见6.91。本轮正式JMeter工具/PG报告/重启下载已验，并修复入库失败误报完成，支持只保存报告恢复，见6.92。完整P0—P5和默认模型可信UI仍未完成。历史章节中的“本批”仅指当时批次。
+修订日期：2026-10-09；本次核对基线 `1ae7af26`。跨审批累计预算及多审批恢复已提交；一次只读回执纠正和可选冻结传输设置已完成受控验证，见6.86。真实Step纠正请求记录到一次HTTP403，要求实名认证；用户决定先继续其他模块，账号处理后再验收。模板及Excel/JSON完整产品验收通过，见6.87；Docker性能采集及缺失指标判定见6.88，性能原件持久化、冒烟错误和异常退出判定见6.89。k6响应提取、预期状态和依赖header传值见6.90；JMeter实际响应与短时旅程补强见6.91。正式JMeter工具/PG报告/重启下载及入库失败只保存恢复见6.92。本轮修复性能基线与运行记录跨项目读取/覆盖，实际存储、并发、旧表升级和k6工具流程见6.93。完整P0—P5和默认模型可信UI仍未完成。历史章节中的“本批”仅指当时批次。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
@@ -1172,7 +1172,7 @@ MySQL新增`recording.capture_settings`：是否观察响应、settle/max_wait�
 
 沿用现有Docker工具及权限。受控目标逐级压测，核对Agent实际调用参数、容器身份、退出码、stdout/stderr、原始工件、解析和报告。记录吞吐、错误率、P50/P95/P99；AI流式目标另采TTFT、Token吞吐和阶段耗时。未采指标显示缺失，不能以工具启动代替性能结论。
 
-采集/解析专项已用现有生产runner、真实缓存k6和受管HTTP目标验证，见6.88。生成脚本load/smoke均采P99；两引擎缺失测量为null，SLA缺口保存missing_metrics及passed=null，报告inconclusive；实测0仍为0。k6旧/新嵌套阈值按实际格式转为{ok}；数值阈值保留小数。原件生产持久化、烟测缺件/损坏/非零退出、失败样本不误报pass和生产API重启下载已实测，见6.89。k6响应提取、预期状态及明确来源/消费方的header传值已经用实际HTTP、原checks、报告和PG验证，见6.90；不再以stdout变量名判断提取成功。JMeter真实断言/有序关联见6.91，正式短时load、生产ToolJob/PG报告/独立API重启下载及入库失败只保存恢复见6.92。入库失败保留analyzed检查点、工具partial；不重复压测或修改原SLA结论。此专项不等于Agent完整调用、性能容量基线、安全扫描或正式App报告验收；项目基线隔离、阶段指标、更多JMeter业务组合及历史迁移继续待验。
+采集/解析专项已用现有生产runner、真实缓存k6和受管HTTP目标验证，见6.88。生成脚本load/smoke均采P99；两引擎缺失测量为null，SLA缺口保存missing_metrics及passed=null，报告inconclusive；实测0仍为0。k6旧/新嵌套阈值按实际格式转为{ok}；数值阈值保留小数。原件生产持久化、烟测缺件/损坏/非零退出、失败样本不误报pass和生产API重启下载已实测，见6.89。k6响应提取、预期状态及明确来源/消费方的header传值已经用实际HTTP、原checks、报告和PG验证，见6.90；不再以stdout变量名判断提取成功。JMeter真实断言/有序关联见6.91，正式短时load、生产ToolJob/PG报告/独立API重启下载及入库失败只保存恢复见6.92。入库失败保留analyzed检查点、工具partial；不重复压测或修改原SLA结论。性能指标按正式project_id隔离读取，冲突写入不能覆盖其他项目或收领未知归属历史，实际旧表升级/并发/重启和k6模式流程见6.93。此专项不等于Agent完整调用、性能容量基线、安全扫描或正式App报告验收；负载/环境/多目标/版本可比性、阶段指标、更多JMeter业务组合及生产历史迁移继续待验。
 
 安全测试同样用受控目标核验真实发现及原证据，不把空结果当安全、报错当无漏洞。DeepSeek不用于压测或安全扫描。
 
@@ -2883,3 +2883,24 @@ sample_variables只能保存qa_extract_N/qa_dependency_N布尔事实，线程Tok
 相关contract-fixed 26通过10.82秒；扩大21模块 **149通过30.80秒、0跳过**，既有Starlette/AnyIO弃用警告1条。修改后的真实k6测量回归1通过44.27秒，四报告仍pass/pass/inconclusive/fail；原件/ToolRuntime/PG/API重启回归1通过66.16秒，24份原件下载、跨项目404、篡改409/恢复200及终态零新增执行保持。compileall退出0仅作附加检查。审计p5-jmeter-report-validation.json核对旧1420份工件未改、受保护文件与三份方案，实际命令见IMPLEMENTATION.md；不累计重叠测试为总覆盖。
 
 仍需做：性能基线按URL检索的项目隔离专项（源码无project_id，尚未实际复现/修复）；完整Agent性能模式/App、逐级容量与AI流式指标；JMeter复杂JSON/数组/body/跨迭代变化、缺依赖跳过和独立目标；安全工具真实发现/证据；人工DeepSeek录制、清洗/遗漏、场景/步骤/别名/失败定位及AI使用；全阶段物理HTTP；P2准备/未知副作用/计划修订/其他模式；普通文档模块生成、更多业务评审/格式和生产历史迁移。此次工具验证直接提供固定计划、只注入缓存镜像选择，不证明Agent自主计划、默认5.6.3镜像配置或完整App。完整P0—P5保持未完成。
+
+### 6.93 性能基线、运行记录项目隔离与旧表升级〔基线1ae7af26〕
+
+按用户决定继续不依赖Step账号的模块。依据[P5_PERFORMANCE_PROJECT_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P5_PERFORMANCE_PROJECT_RESEARCH.md)，实际原store无project_id：基线只按URL读取、列表无项目条件、相同run_id可以改写其他项目记录。真实API建立两个正式项目、隔离PG并使用前批实测JMeter指标复现1失败28.10秒：B读到A指标/列表，并将A判定从pass改为fail。原事实、日志/XML及修复前测试源码保存；该复现没有新压测或模型调用。
+
+采用现有session store的nullable UUID外键和ADD COLUMN IF NOT EXISTS升级方式。指标表增加正式project_id及项目/URL/时间索引；未知历史保持NULL，不猜归属。get_baseline/list_runs显式传项目，缺项目返回无基线/空列表，无全局回退。save_run使用实际行数和条件upsert，在项目、计划、引擎、backend、意图及目标身份一致时才接受冲突更新；跨项目、NULL历史改绑和不存在正式项目不能保存。两项实际并发跨项目同run_id写入仅一项接受，不采用先查后写。没有改变已有同项目更新语义，不能称全部终态不可改写已经验证。
+
+PerformanceTestingState保存正式会话项目；恢复项目不一致时拒绝并保留原检查点。分析/保存显式传该身份，顶层结果、metrics JSON和Prompt同步；不借父层日志上下文归属。旧状态未设置时省略新None字段，原序列化保持。独立analyst的显式baseline_metrics输入不查询该表；实际搜索未发现性能列表API消费方。
+
+| 实际批次 | 结果与范围 |
+| --- | --- |
+| store-verified | 2通过65.77秒。两个正式项目同URL，基线/列表、跨项目/计划冲突、正式UUID外键及独立API重启验证；仓储资格专为归属测试设置，不重新评价前批SLA |
+| store-delivery | 最终2通过51.92秒。增加实际并发两方写入，仅一方成功；旧表升级第二节点重新通过 |
+| migration | 原表含false/0/null旧JSON，两次initialize后旧整行不变，仅新增NULL项目列；旧行不能自动领入新项目，fresh表另已验证 |
+| mode-verified | 1通过91.52秒。真实受管HTTP目标/缓存k6/原guard/smoke/load/report/ToolRuntime/PG/RustFS/独立API重启；同URL A probe→B regression→A regression共6次引擎，B无跨项目比较、A比较自身实测P95；终态重放0新增引擎，39下载字节/哈希校验、7完整容器不存在及7completed清理回执 |
+| contract-first / expanded | 先45通过11.22秒，最终22模块154通过27.30秒、0跳过；既有Starlette/AnyIO警告1条。新增5项契约源自真实失败和报告上下文 |
+| measurement-regression | 实际k6四场景1通过53.77秒，pass/pass/inconclusive/fail保持，PG四行均为正式项目归属；compileall退出0仅为附加检查 |
+
+此批固定计划直接进入plan_resolved，只注入缓存镜像选择，没有调用Agent/真实模型或完整App，也未重新执行真实JMeter load。业务归属PG、编辑配置MySQL、原件RustFS边界保持；没有新依赖或前端改动。生产数据库未迁移；部署需正式项目表和ALTER/CREATE INDEX权限。未知NULL历史仍留存但不作为任何项目基线；旧NULL指标ID与新项目保存冲突时沿原partial/analyzed恢复，需明确历史归属治理，不能自动改绑。
+
+完整P0—P5继续未完成：性能负载/环境/多目标/版本基线可比性、完整Agent/App、容量/AI流式阶段指标；JMeter复杂JSON/body/跨迭代与缺依赖跳过/独立目标；安全工具真实发现与证据；人工DeepSeek录制、清洗/遗漏、场景/步骤/别名/失败定位及AI使用；全阶段物理HTTP；准备/未知副作用/计划修订/其他模式；普通文档生成与恢复、更多业务评审和生产历史迁移。Step默认模型按用户决定待账号处理后验收。旧6.92待办是当时状态，项目隔离最新结果以本节为准。

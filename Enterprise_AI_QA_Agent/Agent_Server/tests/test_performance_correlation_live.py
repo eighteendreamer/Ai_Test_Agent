@@ -232,7 +232,7 @@ async def test_actual_response_extraction_and_dependency_header(tmp_path):
                         run = await runner.execute(load_plan, script, RunOptions(timeout_seconds=30), adapter)
                         owned_objects.extend(a["path"] for a in run.evidence.get("artifacts", []))
                         report = PerfReportBuilder().build(PerfResultParser().parse(adapter.parse_results(runner.last.summary_json)), load_plan, run)
-                        output = await runtime._handle_report(PerformanceTestingState(plan=load_plan, run=run, report=report))
+                        output = await runtime._handle_report(PerformanceTestingState(project_id=project["id"], plan=load_plan, run=run, report=report))
                         write_json(evidence / (variant + "-run.json"), run.model_dump(mode="json"))
                         write_json(evidence / (variant + "-report.json"), report.model_dump(mode="json"))
                         write_json(evidence / (variant + "-mode-output.json"), output)

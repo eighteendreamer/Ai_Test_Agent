@@ -57,6 +57,9 @@ PERFORMANCE_TESTING_SYSTEM_CONTRACT = """\
 5. metrics_persistence.status=failed means the report exists but metrics were not saved.
    Preserve status=partial and phase=analyzed; retry the existing report save only.
    Do not launch another load test, reset the previous ToolJob, or reinterpret storage failure as SLA failure.
+6. Stored baselines/history belong to the formal session project. The same target URL
+   does not authorize using another project's metrics. Missing project identity or
+   unknown legacy ownership means no automatic baseline, not a zero-valued baseline.
 
 ## 镜像能力使用规则
 

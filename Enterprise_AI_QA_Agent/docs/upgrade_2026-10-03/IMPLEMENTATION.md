@@ -4793,3 +4793,17 @@ Agent_Server中实际命令均使用`..\.venv\Scripts\python.exe -X utf8 -m pyte
 - `-m compileall -q`对三项生产文件、三项测试和新审计运行，退出0，双流`p5-jmeter-report-compile.log`。仅为附加检查。
 
 项目根`.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-jmeter-report-audit.py --sync`核对外部方案仍为HEAD后同步，再不带--sync复核。旧1420份工件及用户无关文件保持；新增1084下载校验、76关键原件、6个完整容器不存在与6个completed清理回执。业务PG、编辑配置MySQL、原件RustFS职责保持。仅提交本批文件，不推送/建PR；未执行生产迁移或前端构建，未改前端。完整P0—P5及下一步基线项目隔离和其他待办见PLAN6.92。
+
+## 2026-10-09 性能基线与运行记录项目隔离〔1ae7af26〕
+
+依据P5_PERFORMANCE_PROJECT_RESEARCH.md/PLAN6.93，修改PerfMetricsStore、PerformanceTestingState、runtime和Prompt，并同步两个直接调用的实际测试；追加两个专项测试。PG表增加nullable正式project_id外键和索引，沿现有session store增量初始化；旧行保留NULL，不重写历史指标。无新依赖/配置/前端改动，不调用Step。部署需正式项目表、ALTER/CREATE INDEX权限；生产历史没有执行迁移，NULL历史归属须明确治理，不能自动改绑。
+
+Agent_Server中均使用`..\.venv\Scripts\python.exe -X utf8 -m pytest`：
+
+- `RUN_LIVE_PERF_PROJECT_BASELINE=1`，`QA_PERF_PROJECT_BASELINE_DIR`分别指向本项目`docs/upgrade_2026-10-03/p5-perf-project-before`、`p5-perf-project-store-verified`、`p5-perf-project-store-delivery`绝对路径；`tests/test_performance_project_baseline_live.py::test_project_baseline_and_run_owner_isolation`使用独立隔离MySQL/PG/RustFS/Redis/API。before节点1失败28.10秒；store-verified和store-delivery同时执行`::test_existing_perf_table_additive_project_migration`，分别2通过65.77秒、2通过51.92秒；最终增加实际并发跨项目同run_id只接受一方。before测试源码及旧事实保留。
+- 同一开关，目录`p5-perf-project-mode-verified`，节点`tests/test_performance_project_baseline_live.py::test_actual_k6_project_mode_baselines_and_restart`：1通过91.52秒。受管真实HTTP/k6及原生产工具/guard/报告/PG/API重启，A/B同URL隔离比较，6次引擎、终态0新增引擎、39下载、7容器不存在和清理回执。固定计划/缓存镜像选择注入，不证明自主Agent、默认镜像或完整App。上述节点均带`-q --tb=short --junitxml=../docs/upgrade_2026-10-03/<同批次>.xml`，双流写同批.log。
+- 新`test_performance_project_scope.py`与相关合同first 45通过11.22秒；最终22模块expanded 154通过27.30秒、0跳过。既有Starlette/AnyIO警告1条；精确模块及执行结果见同批.log/XML。
+- `RUN_LIVE_DOCKER_PERF_MEASUREMENT=1`、`QA_DOCKER_PERF_MEASUREMENT_DIR=.../p5-perf-project-measurement-regression`，`tests/test_performance_docker_measurement.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-project-measurement-regression.xml`，1通过53.77秒；四种既有报告判定不变，PG归属已实际核对。
+- compileall生产性能文件、四测试及审计退出0，双流p5-perf-project-compile.log，仅作附加检查。
+
+日志和XML使用对应p5-perf-project-*批次名；所有测试进程已退出。项目根`.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-project-audit.py --sync`在核对外部副本仍为原HEAD后同步三份方案，再不带--sync审计。保护前批274份工件及用户无关文件；只提交本轮确切文件，不推送/建PR。基线可比性、完整Agent/App及其余P0—P5仍未完成，真实Step待账号处理后验收。

@@ -318,6 +318,7 @@ class PerformanceTestingState(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     session_id: str = ""
+    project_id: str | None = None
     phase: PerformanceTestingPhase = PHASE_INTAKE
     request: PerfTestingRequestState = Field(default_factory=PerfTestingRequestState)
     workload_model: WorkloadModel | None = None
@@ -334,6 +335,13 @@ class PerformanceTestingState(BaseModel):
     phase_history: list[dict[str, Any]] = Field(default_factory=list)
     created_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
     updated_at: str = Field(default_factory=lambda: datetime.utcnow().isoformat())
+
+    @model_serializer(mode="wrap")
+    def serialize_state(self, handler):
+        data = handler(self)
+        if self.project_id is None:
+            data.pop("project_id", None)
+        return data
 
     def record_phase_transition(self, new_phase: PerformanceTestingPhase) -> None:
         self.phase_history.append({

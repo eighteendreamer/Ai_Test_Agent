@@ -1,0 +1,61 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: /work/script.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 32s max duration (incl. graceful stop):
+              * default: 1 looping VUs for 2s (gracefulStop: 30s)
+
+
+running (01.0s), 1/1 VUs, 19 complete and 0 interrupted iterations
+default   [  50% ] 1 VUs  1.0s/2s
+
+running (02.0s), 1/1 VUs, 38 complete and 0 interrupted iterations
+default   [ 100% ] 1 VUs  2.0s/2s
+
+
+  █ THRESHOLDS 
+
+    http_req_duration
+    ✓ 'p(99)<1000' p(99)=680.19µs
+
+    http_req_failed
+    ✓ 'rate<0.01' rate=0.00%
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 39      19.496809/s
+    checks_succeeded...: 100.00% 39 out of 39
+    checks_failed......: 0.00%   0 out of 39
+
+    ✓ qa_status_0_200
+
+    HTTP
+    http_req_duration..............: avg=456µs   min=315.28µs med=425.64µs max=707.81µs p(90)=609.44µs p(95)=631.69µs p(99)=680.19µs
+      { expected_response:true }...: avg=456µs   min=315.28µs med=425.64µs max=707.81µs p(90)=609.44µs p(95)=631.69µs p(99)=680.19µs
+    http_req_failed................: 0.00%  0 out of 39
+    http_reqs......................: 39     19.496809/s
+
+    EXECUTION
+    iteration_duration.............: avg=51.25ms min=50.79ms  med=51.19ms  max=51.92ms  p(90)=51.61ms  p(95)=51.75ms  p(99)=51.88ms 
+    iterations.....................: 39     19.496809/s
+    vus............................: 1      min=1       max=1
+    vus_max........................: 1      min=1       max=1
+
+    NETWORK
+    data_received..................: 7.2 kB 3.6 kB/s
+    data_sent......................: 2.8 kB 1.4 kB/s
+
+
+
+
+running (02.0s), 0/1 VUs, 39 complete and 0 interrupted iterations
+default ✓ [ 100% ] 1 VUs  2s
