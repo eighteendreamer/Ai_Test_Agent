@@ -4896,3 +4896,13 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 - 未新增依赖、配置、表/迁移或前端契约；Step 默认模型没有调用。
 
 本批只完成写入未知结果的重复发送防护和结构化可见性，未完成通用业务只读查证契约、默认 Agent 自主选择、完整 App、运行中计划修订、其他模式、人工录制/知识闭环、性能容量/安全及完整 P0—P5。
+
+### 7.00 UI录制真实浏览器与DeepSeek物理探针〔2026-10-10〕
+
+依据 [P0_DEEPSEEK_RECORDING_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_DEEPSEEK_RECORDING_RESEARCH.md)，先读取现有 CdpAttachDriver、PlaywrightBindingDriverBase、RecorderEvent、RecorderSessionService 及真实录制产品测试，再执行真实浏览器；没有把模拟事件或默认 Step 模型当作证据。
+
+新增门控测试 `Agent_Server/tests/test_recorder_deepseek_live.py`。它使用生产 CDP 驱动访问公开 DeepSeek 首页，点击“和 DeepSeek 对话”并输入非敏感“录制探针”，不登录、不提交消息；原始事件、结束回执和截图保存到 `p0-deepseek-recording-verified`。实际 `1 passed in 4.26s`，采到 click/page_scan/navigate/fill，`recording-scopes-v2` 回执 pending、frames_unconfirmed、transport_dropped、channel_dropped 均为 0。既有 `test_recorder_live_cdp.py` 真实本地 Chromium 探针 `1 passed`。
+
+另外复跑 `test_recording_embedded_product.py` 的 `settled`、`response-dom` 两个场景，真实 Electron + PostgreSQL/RustFS/图谱固化 `2 passed, 14 deselected in 23.97s`。因此现有录制驱动和真实产品存储各有直接证据，但本轮没有把外部 DeepSeek 事件写入正式业务库。
+
+仍未完成：人工登录态与真实业务步骤、完整清洗去重/干扰和遗漏检查、跨页面/跨域/Shadow DOM 关联、场景与步骤整理、元素别名、失败定位、默认 AI 使用及正式评审。默认 Step 模型仍因实名认证返回 403，按用户决定暂缓；完整 P0—P5 目标保持 active。
