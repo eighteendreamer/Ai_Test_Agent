@@ -7,6 +7,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
+
 
 class RecordingStatus(str, Enum):
     """录制会话权威状态机（方案 4.1 / 4.2）。
@@ -271,6 +273,19 @@ class RecordingDetail(RecordingPublic):
     """详情：会话 + 事件流 + 固化指标。"""
 
     events: list[RecorderEvent] = Field(default_factory=list)
+
+
+class RecordingCaseDraftResponse(BaseModel):
+    """录制转换为用例草稿的响应。
+
+    草稿仍由既有 TestCaseService 写入 PostgreSQL；该响应只增加录制来源
+    与步骤计数，避免为录制另建一套用例存储或状态机。
+    """
+
+    recording_id: str
+    step_count: int = Field(ge=1)
+    case: TestCaseRecord
+    version: TestCaseVersionRecord
 
 
 class RecordingEventAck(BaseModel):

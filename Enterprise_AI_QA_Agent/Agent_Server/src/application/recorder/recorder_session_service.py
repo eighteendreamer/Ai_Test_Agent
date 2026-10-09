@@ -137,11 +137,15 @@ class RecorderSessionService:
         return await self._store.get_session(recording_id)
 
     async def list_sessions(
-        self, project_id: str | None = None, limit: int = 50, offset: int = 0
+        self, project_id: str | None = None, limit: int = 50, offset: int = 0, *, session_id: str | None = None
     ) -> list[RecordingSession]:
+        if session_id is not None:
+            return await self._store.list_sessions(project_id, limit, offset, session_id=session_id)
         return await self._store.list_sessions(project_id, limit, offset)
 
-    async def count_sessions(self, project_id: str | None = None) -> int:
+    async def count_sessions(self, project_id: str | None = None, *, session_id: str | None = None) -> int:
+        if session_id is not None:
+            return await self._store.count_sessions(project_id, session_id=session_id)
         return await self._store.count_sessions(project_id)
 
     async def get_events(self, recording_id: str) -> list[RecorderEvent]:

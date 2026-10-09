@@ -6,16 +6,20 @@
  * 拉详情渲染步骤流（动作类型 + 元素语义名 + 截图引用）。
  * 录制结束后展示固化指标与图谱入口。
  */
-import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 
 import {
+  createRecordingCaseDraft,
+  getRecordingCaseDraft,
   getRecordingDetail,
   isUserActionEvent,
   listRecordings,
   recorderEventLabel,
   type RecordingDetail,
+  type RecordingCaseDraftResponse,
 } from "../../features/recorder/recordingApi";
+import TestCaseContentDialog from "../../features/projects/TestCaseContentDialog.vue";
 import { t } from "../../services/i18n";
 import { useSessionStore } from "../../stores/session";
 
@@ -24,7 +28,19 @@ const router = useRouter();
 
 const recording = ref<RecordingDetail | null>(null);
 const loading = ref(false);
+type DraftState = { pending: boolean; loaded: boolean; result: RecordingCaseDraftResponse | null; error: string };
+const draftStates = ref<Record<string, DraftState>>({});
+const draftDialogOpen = ref(false);
+const draft = computed(() => recording.value ? draftStates.value[recording.value.id] : undefined);
+const draftLoading = computed(() => draft.value?.pending ?? false);
+const draftCaseId = computed(() => draft.value?.result?.case.id ?? null);
+const draftError = computed(() => draft.value?.error ?? "");
 let pollTimer: number | null = null;
+let refreshRevision = 0;
+
+function draftState(id: string): DraftState {
+  return draftStates.value[id] ??= { pending: false, loaded: false, result: null, error: "" };
+}
 
 const ACTIVE_STATUSES = new Set(["launching", "ready", "active", "paused", "finalizing"]);
 const TERMINAL_STATUSES = new Set(["completed", "failed", "discarded"]);
@@ -86,16 +102,18 @@ function eventIcon(type: string): string {
 
 async function refresh() {
   const sessionId = sessionStore.session?.id;
+  const revision = ++refreshRevision;
   if (!sessionId) {
     return;
   }
   loading.value = true;
   try {
-    const items = await listRecordings(20);
+    const items = await listRecordings(20, {sessionId, projectId: sessionStore.session?.project_id ?? undefined});
+    if (revision !== refreshRevision || sessionId !== sessionStore.session?.id) return;
     const matched = items.find((item) => item.session_id === sessionId) ?? null;
     if (!matched) {
       // 会话关闭后保留已取到的终态录制；无任何匹配则隐藏面板
-      if (!recording.value || !TERMINAL_STATUSES.has(recording.value.status)) {
+      if (!recording.value || recording.value.session_id !== sessionId || !TERMINAL_STATUSES.has(recording.value.status)) {
         recording.value = null;
       }
       return;
@@ -105,11 +123,15 @@ async function refresh() {
       recording.value = { ...recording.value, ...matched, events: recording.value.events };
       return;
     }
-    recording.value = await getRecordingDetail(matched.id);
-  } catch {
+    const detail = await getRecordingDetail(matched.id);
+    if (revision !== refreshRevision || sessionId !== sessionStore.session?.id) return;
+    recording.value = detail;
+    if (detail.status === "completed" && !draftState(detail.id).loaded) await resolveDraft(detail, false);
+  } catch (error) {
     // 后端不可达：保留已有内容，下轮重试
+    console.warn("recording_timeline_refresh_failed", { sessionId, errorType: error instanceof Error ? error.name : "unknown" });
   } finally {
-    loading.value = false;
+    if (revision === refreshRevision) loading.value = false;
   }
 }
 
@@ -117,14 +139,46 @@ function openKnowledgeGraph() {
   void router.push("/knowledge");
 }
 
-onMounted(() => {
+async function resolveDraft(current: RecordingDetail, create: boolean) {
+  const state = draftState(current.id);
+  if (state.pending || state.result) return;
+  state.pending = true;
+  state.error = "";
+  try {
+    state.result = await getRecordingCaseDraft(current.id, current.project_id);
+    if (!state.result && create && recording.value?.id === current.id && sessionStore.session?.id === current.session_id) {
+      state.result = await createRecordingCaseDraft(current.id, current.project_id);
+    }
+    state.loaded = true;
+  } catch (error) {
+    state.error = error instanceof Error ? error.message : t("recordingPanel.case_draft_failed");
+  } finally {
+    state.pending = false;
+  }
+}
+
+async function createCaseDraft() {
+  const current = recording.value;
+  if (current?.status === "completed") await resolveDraft(current, true);
+}
+
+watch(() => sessionStore.session?.id, () => {
+  ++refreshRevision;
+  recording.value = null;
+  draftDialogOpen.value = false;
   void refresh();
+}, { immediate: true });
+
+watch(() => recording.value?.id, () => { draftDialogOpen.value = false; });
+
+onMounted(() => {
   pollTimer = window.setInterval(() => {
     void refresh();
   }, 3000);
 });
 
 onBeforeUnmount(() => {
+  ++refreshRevision;
   if (pollTimer !== null) {
     window.clearInterval(pollTimer);
     pollTimer = null;
@@ -178,9 +232,26 @@ onBeforeUnmount(() => {
         >
           {{ t("recordingPanel.open_graph") }}
         </button>
+        <button
+          v-if="status === 'completed'"
+          data-testid="recording-create-case-draft"
+          type="button"
+          class="secondary-btn recording-panel-link"
+          :disabled="draftLoading || Boolean(draftCaseId)"
+          @click="createCaseDraft"
+        >
+          {{ draftLoading ? t("recordingPanel.case_draft_creating") : draftCaseId ? t("recordingPanel.case_draft_created") : t("recordingPanel.create_case_draft") }}
+        </button>
+        <button v-if="draftCaseId" data-testid="recording-case-draft-id" type="button" class="secondary-btn"
+          @click="draftDialogOpen = true">{{ t("recordingPanel.case_draft_id", { id: draftCaseId }) }}</button>
+        <small v-if="draftError" data-testid="recording-case-draft-error" class="recording-panel-error">
+          {{ draftError }}
+        </small>
       </footer>
     </section>
   </Transition>
+  <TestCaseContentDialog v-if="draftDialogOpen && draft?.result" :key="draft.result.case.id"
+    :test-case="draft.result.case" :initial-version-id="draft.result.version.id" @close="draftDialogOpen = false" />
 </template>
 
 <style scoped>

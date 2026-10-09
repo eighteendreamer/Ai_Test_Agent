@@ -3068,3 +3068,13 @@ JMeter沿原生HTTPArgument/postBodyRaw/UTF-8发送正文，已有JSR223PreProce
 同时修复停止固化的快照根因：PG 事件 flush 后重新读取权威 `RecordingSession`，再做图谱完整性校验和 completed 更新，避免使用旧内存 `step_count` 把完整事件误报为 degraded；会话消失则失败。没有新增表、配置、依赖或前端契约，MySQL/PG/RustFS/Memgraph 职责保持。
 
 修复前真实原件转换 3 项失败，证据见 `p0-recording-draft-before`；修复后真实 Chromium + 隔离 MySQL/PG/RustFS/Memgraph 的长输入、密码脱敏、两次真实点击、观察保留、项目隔离和重启读回 **61 通过、6 跳过**，最终 `step_count=8`、PG 事件数 8、`integrity.degraded=false`。录制相关扩大回归 **203 通过、69 跳过**，有 1 条既有 Starlette/AnyIO 弃用警告。详细依据、范围和限制见 `P0_RECORDING_DRAFT_RESEARCH.md`。人工 DeepSeek 业务流程、完整跨页面/跨域/Shadow DOM 清洗、场景/别名/失败定位、默认 AI 使用和其余 P0—P5 仍未完成。
+
+### 7.03 录制草稿入口、只读恢复与会话过滤〔2026-10-10〕
+
+依据 `P0_RECORDING_CASE_DRAFT_ROUTE_RESEARCH.md`，原内部转换服务已有，但缺 API/前端入口。新增 POST/GET `/recordings/{recording_id}/case-draft`，结果进入现有用例草稿、评审和启用链路；不读取生成模板。项目只来自原录制，查询参数只核对归属。
+
+真实再次提交复现 409 后，沿现有项目/编号唯一约束补原转换读取。读取原 V1 并核验完整录制身份、来源和内容哈希；并发只恢复确认的赢家，不重生成、不换编号、不重写旧版本。前端先 GET 再决定是否 POST，GET 错误不写入，保存状态按录制隔离，切换会话不显示旧请求迟到结果；复用既有用例对话框显示原版本。另用 25 条其他会话 PG 记录复现全局 top20 漏录制，将 project_id/session_id 过滤移到数据库分页前。
+
+最终真实 Chromium + 隔离 MySQL/PG/RustFS/Memgraph + Uvicorn TCP HTTP **1 passed in 6.41s**：3 并发请求中故意丢弃一个已提交响应，GET 找回同一结果，PG 仅 1 case/1 version；重放、重建服务、归档读原 V1、长输入/脱敏/重复点击、评审启用/完整规划证据及项目隔离通过。最终录制等回归 **221 passed、72 skipped**（门控外部场景）、前端 **18 passed**，vue-tsc/Vite build 和 compileall 退出 0。保留真实缺恢复的 409，以及测试夹具下标/middleware 生命周期失败证据；详情与工件见 `p0-recording-case-draft-validation.json`。
+
+本批已实现入口/原件恢复/会话过滤；物理 HTTP 是生产服务与测试专属 FastAPI 装配，不是完整 Vue App 或独立 main 进程验收。完整 App、人工 DeepSeek 业务、默认 AI 知识使用尚待验收；回放报告持久化、场景/步骤/别名、清洗遗漏和失败定位仍需推进。无新增表、迁移、配置或依赖。默认 Step 按用户决定待账号处理；完整 P0—P5 保持未完成。

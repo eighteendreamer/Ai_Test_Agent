@@ -1,0 +1,94 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="10.196" timestamp="2026-10-10T05:53:36.298248+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_draft_evidence" name="test_actual_browser_draft_persistence_and_project_read" time="9.618"><failure message="AssertionError: {&quot;detail&quot;:&quot;case_key already exists in project: ui_rec_d9e51677_c2a&quot;}&#10;assert 409 == 201&#10; +  where 409 = &lt;Response [409 Conflict]&gt;.status_code">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1321/test_actual_browser_draft_pers0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_DRAFT") != "1", reason="requires real Chromium, MySQL/PG/RustFS/Memgraph")
+    async def test_actual_browser_draft_persistence_and_project_read(tmp_path):
+        from playwright.async_api import async_playwright
+        from fastapi import FastAPI
+        from httpx import ASGITransport, AsyncClient
+        from test_case_planning import environment
+        from src.api.routes.recordings import router as recordings_router
+        from src.application.exploration.recording_graph_store import RecordingGraphStore
+        from src.application.recorder.drivers import EmbeddedBridge
+        from src.application.recorder.recorder_session_service import RecorderSessionService
+        from src.application.recorder.finish_config_service import RecordingFinishConfigService
+        from src.application.recorder.capture_config_service import RecordingCaptureConfigService
+        from src.application.test_cases.case_store import PostgresTestCaseStore
+        from src.application.test_cases.case_service import TestCaseService
+        from src.infrastructure.postgres_runtime import postgres_connect
+        from src.infrastructure.recording_store import PostgresRecordingStore
+        from src.schemas.project import ProjectCreateRequest
+        from src.schemas.recording import RecordingCreateRequest, RecordingControlAction, RecordingStatus
+    
+        evidence = Path(os.environ["RECORDING_DRAFT_EVIDENCE"])
+        evidence.mkdir(parents=True, exist_ok=False)
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        # Original local page: two real clicks must remain two distinct actions.
+        fixture = tmp_path / "recorded-form.html"
+        html = '&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;&lt;title&gt;录制转草稿&lt;/title&gt;&lt;input id="long"&gt;&lt;input id="password" type="password"&gt;&lt;button id="repeat"&gt;增加&lt;/button&gt;&lt;p id="count"&gt;0&lt;/p&gt;&lt;script&gt;document.querySelector("#repeat").onclick=()=&gt;{document.querySelector("#count").textContent=String(Number(document.querySelector("#count").textContent)+1)};&lt;/script&gt;'
+        fixture.write_text(html, encoding="utf-8")
+        (evidence / "fixture.html").write_text(html, encoding="utf-8")
+        long_value = "完整输入😀" * 80
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0)); port = reserved.getsockname()[1]
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recorded-" + uuid4().hex[:12], name="真实录制草稿"))
+            other = await env.projects.create(ProjectCreateRequest(project_key="other-" + uuid4().hex[:12], name="另一项目"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_de_" + suffix, "up_ds_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                for table in tables:
+                    cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cur.fetchone()["existing"] is None
+            store, graph = PostgresRecordingStore(env.settings), RecordingGraphStore(env.settings)
+            await store.initialize()
+            finish = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            capture = RecordingCaptureConfigService(config_store=env.configs, project_service=env.projects)
+            await finish.initialize(); await capture.initialize()
+            service = RecorderSessionService(env.settings, store, graph, bridge=EmbeddedBridge(), finish_config_service=finish, capture_config_service=capture)
+            try:
+                async with async_playwright() as playwright:
+                    browser = await playwright.chromium.launch(headless=True, args=[f"--remote-debugging-port={port}"])
+                    try:
+                        session = await service.launch(RecordingCreateRequest(project_id=project.id, entry_url=fixture.resolve().as_uri(), driver={"kind":"cdp-attach", "endpoint":f"http://127.0.0.1:{port}"}))
+                        async with asyncio.timeout(10):
+                            while (await store.get_session(session.id)).status != RecordingStatus.ready: await asyncio.sleep(.05)
+                        await service.control(session.id, RecordingControlAction.start)
+                        page = service._runtimes[session.id].driver._page
+                        await page.locator("#long").fill(long_value)
+                        await page.locator("#password").fill("synthetic-redaction-sentinel")
+                        await page.wait_for_timeout(600)
+                        await page.locator("#repeat").click(); await page.locator("#repeat").click()
+                        assert await page.locator("#count").inner_text() == "2"
+                        final = await service.control(session.id, RecordingControlAction.stop)
+                        assert final.status == RecordingStatus.completed
+                        assert final.step_count == 8
+                        assert final.finalize_metrics["integrity"]["pg_step_count"] == 8
+                        assert final.finalize_metrics["integrity"]["pg_event_count"] == 8
+                        assert final.finalize_metrics["integrity"]["degraded"] is False
+                        events = await store.get_events(session.id)
+                        save("pg-events.json", [event.model_dump(mode="json") for event in events])
+                        save("pg-session.json", final.model_dump(mode="json"))
+                        draft_service = RecordingCaseDraftService(recorder_service=service, test_case_service=env.cases)
+                        app = FastAPI()
+                        app.include_router(recordings_router, prefix="/api/v1")
+                        app.state.recording_case_draft_service = draft_service
+                        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://recording.test") as client:
+                            response = await client.post(
+                                f"/api/v1/recordings/{session.id}/case-draft",
+                                params={"project_id": project.id},
+                            )
+                        assert response.status_code == 201, response.text
+                        save("route-response.json", response.json())
+                        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://recording.test") as client:
+                            replay = await client.post(f"/api/v1/recordings/{session.id}/case-draft", params={"project_id": project.id})
+                            save("route-replay.json", {"status_code": replay.status_code, "body": replay.json()})
+&gt;                       assert replay.status_code == 201, replay.text
+E                       AssertionError: {"detail":"case_key already exists in project: ui_rec_d9e51677_c2a"}
+E                       assert 409 == 201
+E                        +  where 409 = &lt;Response [409 Conflict]&gt;.status_code
+
+tests\test_recording_draft_evidence.py:133: AssertionError</failure></testcase></testsuite></testsuites>

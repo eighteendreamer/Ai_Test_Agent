@@ -1670,4 +1670,9 @@ export default {
   "recordingPanel.elements_written": "{count} 个元素",
   "recordingPanel.reconciled": "事件对账一致",
   "recordingPanel.open_graph": "查看图谱",
+  "recordingPanel.create_case_draft": "生成用例草稿",
+  "recordingPanel.case_draft_creating": "正在生成用例草稿…",
+  "recordingPanel.case_draft_created": "用例草稿已生成",
+  "recordingPanel.case_draft_id": "用例：{id}",
+  "recordingPanel.case_draft_failed": "生成用例草稿失败",
 } as Record<string, string>;

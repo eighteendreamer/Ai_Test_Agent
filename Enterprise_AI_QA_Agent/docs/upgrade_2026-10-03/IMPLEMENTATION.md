@@ -4897,6 +4897,21 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 
 本批只完成写入未知结果的重复发送防护和结构化可见性，未完成通用业务只读查证契约、默认 Agent 自主选择、完整 App、运行中计划修订、其他模式、人工录制/知识闭环、性能容量/安全及完整 P0—P5。
 
+## 2026-10-10 录制草稿入口、恢复与精确会话过滤
+
+依据 `P0_RECORDING_CASE_DRAFT_ROUTE_RESEARCH.md`：新增 GET/POST case-draft，返回正式 case 与原 V1；沿已有项目/编号唯一约束保存一次。读取核验完整 recording_id、项目、来源和内容哈希，碰撞/损坏拒绝；重试和并发恢复原件，不调用模型或模板。前端终态时间线生成、先 GET 恢复、对话框查看、会话切换隔离；后台录制列表先 session/project 过滤再分页。
+
+实际最终命令和结果：
+
+- Agent_Server 内：`$files = Get-ChildItem tests -File | Where-Object { $_.Name -like 'test_recording*.py' -or $_.Name -like 'test_recorder*.py' } | ForEach-Object { $_.FullName }`，`..\.venv\Scripts\python.exe -m pytest @files tests/test_replay_executor.py tests/test_assertion_suggester.py tests/test_ui_automation_recording_orchestration.py tests/test_test_case_lifecycle.py tests/test_case_json_templates.py -q --junitxml=../docs/upgrade_2026-10-03/p0-recording-case-draft-recovery-expanded.xml`：221 passed、72 skipped、1 既有弃用警告，17.10s。外部环境门控跳过不算通过。
+- Agent_Server 内：设置 `RUN_LIVE_RECORDING_DRAFT=1`、`RECORDING_DRAFT_EVIDENCE=../docs/upgrade_2026-10-03/p0-recording-draft-route-http-verified`，`..\.venv\Scripts\python.exe -m pytest tests/test_recording_draft_evidence.py -k actual_browser -q --junitxml=../docs/upgrade_2026-10-03/p0-recording-draft-route-http-verified.xml`：1 passed、2 deselected，6.41s。真实 Chromium、隔离存储与同进程 Uvicorn TCP HTTP：三并发/丢回包后只读恢复、PG 一条用例/一版本、重建服务和归档读取、25 条其他会话后的分页过滤、评审/启用/完整事件规划及跨项目拒绝通过。`server-http.jsonl` 保存实际 11 请求及状态，无输入值。
+- agent_web 内：`npm run test -- --run src/components/chat/RecordingTimelinePanel.test.ts src/features/recorder/recordingApi.test.ts src/features/projects/TestCaseAuthoring.test.ts`：18 passed、3 文件，1.98s；`npm run build`：vue-tsc/Vite 退出0，3288 modules、7.86s。
+- Agent_Server 内：`..\.venv\Scripts\python.exe -m compileall -q src/api/routes/recordings.py src/application/recorder/recorder_session_service.py src/application/recorder/recording_case_draft_service.py src/application/test_cases/case_service.py src/application/test_cases/case_store.py src/infrastructure/recording_store.py src/schemas/recording.py tests/test_recording_case_draft.py tests/test_recording_case_draft_route.py tests/test_recording_draft_evidence.py tests/test_recording_routes.py`：退出0，仅附加检查。
+
+旧 ASGI 失败/通过、真实409及middleware夹具错误原证据保留；早期误放在 Agent_Server/docs 的五个 XML 原字节复制到项目 docs，原路径保留。新审计记录本批文件与物理 HTTP 事实，核对旧七份录制证据及三份方案一致，不覆盖旧审计。
+
+无新增表/迁移、配置或依赖，MySQL/PG/RustFS 边界保持。未验证完整 Vue App、独立 main 进程故障恢复或默认 AI；回放报告、场景/别名/清洗遗漏/失败定位、人工 DeepSeek 业务和其他 P0—P5 仍未完成，Step 账号处理后验收。
+
 ### 7.00 UI录制真实浏览器与DeepSeek物理探针〔2026-10-10〕
 
 依据 [P0_DEEPSEEK_RECORDING_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_DEEPSEEK_RECORDING_RESEARCH.md)，先读取现有 CdpAttachDriver、PlaywrightBindingDriverBase、RecorderEvent、RecorderSessionService 及真实录制产品测试，再执行真实浏览器；没有把模拟事件或默认 Step 模型当作证据。

@@ -60,16 +60,19 @@ class FakeRecorderService:
         project_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        *, session_id: str | None = None,
     ) -> list[RecordingSession]:
         items = list(self.sessions.values())
         if project_id:
             items = [s for s in items if s.project_id == project_id]
+        if session_id is not None:
+            items = [s for s in items if s.session_id == session_id]
         return items[offset : offset + limit]
 
-    async def count_sessions(self, project_id: str | None = None) -> int:
+    async def count_sessions(self, project_id: str | None = None, *, session_id: str | None = None) -> int:
         return sum(
             1 for session in self.sessions.values()
-            if project_id is None or session.project_id == project_id
+            if (project_id is None or session.project_id == project_id) and (session_id is None or session.session_id == session_id)
         )
 
     async def get_session(self, recording_id: str) -> RecordingSession | None:
@@ -246,6 +249,18 @@ def test_list_recordings_count_is_total_for_project_across_pages():
     assert response.status_code == 200
     assert len(response.json()["items"]) == 1
     assert response.json()["count"] == 2
+
+
+def test_list_recordings_applies_session_filter_before_pagination():
+    service = FakeRecorderService()
+    target = _make_session(service, project_id="proj-1", session_id="current")
+    for _ in range(25):
+        _make_session(service, project_id="proj-1", session_id="unrelated")
+    response = TestClient(_make_app(service=service)).get("/api/v1/recordings", params={
+        "session_id": "current", "project_id": "proj-1", "limit": 1})
+    assert response.status_code == 200
+    assert response.json()["count"] == 1
+    assert response.json()["items"][0]["id"] == target.id
 
 
 def test_get_recording_detail_includes_events():

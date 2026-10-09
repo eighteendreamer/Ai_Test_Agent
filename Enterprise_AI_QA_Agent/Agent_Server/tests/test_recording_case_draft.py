@@ -135,6 +135,9 @@ class _FakeTestCaseService:
     def __init__(self) -> None:
         self.calls: list[dict[str, Any]] = []
 
+    async def get_case_by_key(self, project_id, case_key):
+        return None
+
     async def create_draft(self, *, project_id: str, payload, created_by=None) -> _Bundle:
         self.calls.append({"project_id": project_id, "payload": payload, "created_by": created_by})
         case = type("Case", (), {"id": "case-1"})()
@@ -212,3 +215,35 @@ def test_recording_without_replayable_actions_rejected() -> None:
             await service.create_draft_from_recording(session.id)
 
     asyncio.run(scenario())
+
+
+@pytest.mark.asyncio
+async def test_recovery_verifies_original_source_even_when_keys_collide(tmp_path):
+    from test_case_planning import environment
+    from src.schemas.project import ProjectCreateRequest
+    async with environment(tmp_path) as env:
+        project = await env.projects.create(ProjectCreateRequest(project_key="recovery", name="恢复"))
+        session = _session(id="01234567-abc-one", project_id=project.id)
+        recorder = _FakeRecorderService(session, _login_events())
+        service = RecordingCaseDraftService(recorder_service=recorder, test_case_service=env.cases)
+        first = await service.create_draft_from_recording(session.id)
+        same = await service.get_created_draft(session.id)
+        assert same["version"] == first["version"]
+        session.id = "01234567-abc-two"
+        with pytest.raises(ValueError, match="original recording conversion"):
+            await service.create_draft_from_recording(session.id)
+        assert (await env.cases.list_versions(first["case"].id)) == [first["version"]]
+
+
+@pytest.mark.asyncio
+async def test_recovery_rejects_changed_original_hash(tmp_path):
+    from test_case_planning import environment
+    from src.schemas.project import ProjectCreateRequest
+    async with environment(tmp_path) as env:
+        project = await env.projects.create(ProjectCreateRequest(project_key="changed", name="完整性"))
+        session = _session(project_id=project.id)
+        service = RecordingCaseDraftService(recorder_service=_FakeRecorderService(session, _login_events()), test_case_service=env.cases)
+        first = await service.create_draft_from_recording(session.id)
+        env.cases._store._versions[first["version"].id].steps[0].action = "changed original"
+        with pytest.raises(ValueError, match="original recording conversion"):
+            await service.get_created_draft(session.id)

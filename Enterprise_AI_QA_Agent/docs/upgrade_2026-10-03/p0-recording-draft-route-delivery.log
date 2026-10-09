@@ -1,0 +1,120 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___________ test_actual_browser_draft_persistence_and_project_read ____________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1323/test_actual_browser_draft_pers0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_DRAFT") != "1", reason="requires real Chromium, MySQL/PG/RustFS/Memgraph")
+    async def test_actual_browser_draft_persistence_and_project_read(tmp_path):
+        from playwright.async_api import async_playwright
+        from fastapi import FastAPI
+        from fastapi.responses import JSONResponse
+        from httpx import ASGITransport, AsyncClient
+        from test_case_planning import environment
+        from src.api.routes.recordings import router as recordings_router
+        from src.application.exploration.recording_graph_store import RecordingGraphStore
+        from src.application.recorder.drivers import EmbeddedBridge
+        from src.application.recorder.recorder_session_service import RecorderSessionService
+        from src.application.recorder.finish_config_service import RecordingFinishConfigService
+        from src.application.recorder.capture_config_service import RecordingCaptureConfigService
+        from src.application.test_cases.case_store import PostgresTestCaseStore
+        from src.application.test_cases.case_service import TestCaseService
+        from src.infrastructure.postgres_runtime import postgres_connect
+        from src.infrastructure.recording_store import PostgresRecordingStore
+        from src.schemas.project import ProjectCreateRequest
+        from src.schemas.recording import RecordingCreateRequest, RecordingControlAction, RecordingStatus
+    
+        evidence = Path(os.environ["RECORDING_DRAFT_EVIDENCE"])
+        evidence.mkdir(parents=True, exist_ok=False)
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+        # Original local page: two real clicks must remain two distinct actions.
+        fixture = tmp_path / "recorded-form.html"
+        html = '<!doctype html><meta charset="utf-8"><title>录制转草稿</title><input id="long"><input id="password" type="password"><button id="repeat">增加</button><p id="count">0</p><script>document.querySelector("#repeat").onclick=()=>{document.querySelector("#count").textContent=String(Number(document.querySelector("#count").textContent)+1)};</script>'
+        fixture.write_text(html, encoding="utf-8")
+        (evidence / "fixture.html").write_text(html, encoding="utf-8")
+        long_value = "完整输入😀" * 80
+        with socket.socket() as reserved:
+            reserved.bind(("127.0.0.1", 0)); port = reserved.getsockname()[1]
+        async with environment(tmp_path, live=True) as env:
+            project = await env.projects.create(ProjectCreateRequest(project_key="recorded-" + uuid4().hex[:12], name="真实录制草稿"))
+            other = await env.projects.create(ProjectCreateRequest(project_key="other-" + uuid4().hex[:12], name="另一项目"))
+            suffix = uuid4().hex[:12]
+            tables = ["up_de_" + suffix, "up_ds_" + suffix]
+            env.settings.database.postgres_recording_event_table, env.settings.database.postgres_recording_table = tables
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                for table in tables:
+                    cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    assert cur.fetchone()["existing"] is None
+            store, graph = PostgresRecordingStore(env.settings), RecordingGraphStore(env.settings)
+            await store.initialize()
+            finish = RecordingFinishConfigService(config_store=env.configs, project_service=env.projects)
+            capture = RecordingCaptureConfigService(config_store=env.configs, project_service=env.projects)
+            await finish.initialize(); await capture.initialize()
+            service = RecorderSessionService(env.settings, store, graph, bridge=EmbeddedBridge(), finish_config_service=finish, capture_config_service=capture)
+            try:
+                async with async_playwright() as playwright:
+                    browser = await playwright.chromium.launch(headless=True, args=[f"--remote-debugging-port={port}"])
+                    try:
+                        session = await service.launch(RecordingCreateRequest(project_id=project.id, session_id=str(uuid4()), entry_url=fixture.resolve().as_uri(), driver={"kind":"cdp-attach", "endpoint":f"http://127.0.0.1:{port}"}))
+                        async with asyncio.timeout(10):
+                            while (await store.get_session(session.id)).status != RecordingStatus.ready: await asyncio.sleep(.05)
+                        await service.control(session.id, RecordingControlAction.start)
+                        page = service._runtimes[session.id].driver._page
+                        await page.locator("#long").fill(long_value)
+                        await page.locator("#password").fill("synthetic-redaction-sentinel")
+                        await page.wait_for_timeout(600)
+                        await page.locator("#repeat").click(); await page.locator("#repeat").click()
+                        assert await page.locator("#count").inner_text() == "2"
+                        final = await service.control(session.id, RecordingControlAction.stop)
+                        assert final.status == RecordingStatus.completed
+                        assert final.step_count == 8
+                        assert final.finalize_metrics["integrity"]["pg_step_count"] == 8
+                        assert final.finalize_metrics["integrity"]["pg_event_count"] == 8
+                        assert final.finalize_metrics["integrity"]["degraded"] is False
+                        events = await store.get_events(session.id)
+                        save("pg-events.json", [event.model_dump(mode="json") for event in events])
+                        save("pg-session.json", final.model_dump(mode="json"))
+                        draft_service = RecordingCaseDraftService(recorder_service=service, test_case_service=env.cases)
+                        app = FastAPI()
+                        app.include_router(recordings_router, prefix="/api/v1")
+                        app.state.recording_case_draft_service = draft_service
+                        app.state.recorder_service = service
+                        # Later unrelated recordings used to hide this recording from the global top 20.
+                        for index in range(25):
+                            await store.create_session(RecordingSession(project_id=other.id, session_id="unrelated-session",
+                                entry_url=fixture.resolve().as_uri(), name=f"unrelated-{index}"))
+                        assert session.id not in [value.id for value in await store.list_sessions(limit=20)]
+                        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://recording.test") as client:
+                            own = await client.get("/api/v1/recordings", params={"session_id": session.session_id, "project_id": project.id})
+                            assert own.status_code == 200 and own.json()["count"] == 1
+                            assert [value["id"] for value in own.json()["items"]] == [session.id]
+                            wrong_project = await client.get("/api/v1/recordings", params={"session_id": session.session_id, "project_id": other.id})
+                            assert wrong_project.json() == {"items": [], "count": 0}
+                            save("route-session-filter.json", {"global_top20_missing": True, "own": own.json(), "foreign": wrong_project.json()})
+                        app.state.lose_reply = True
+>                       @app.middleware("http")
+                         ^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_recording_draft_evidence.py:138: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\.venv\Lib\site-packages\fastapi\applications.py:4724: in decorator
+    self.add_middleware(BaseHTTPMiddleware, dispatch=func)
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <fastapi.applications.FastAPI object at 0x000001E1BD42B650>
+middleware_class = <class 'starlette.middleware.base.BaseHTTPMiddleware'>
+args = ()
+kwargs = {'dispatch': <function test_actual_browser_draft_persistence_and_project_read.<locals>.lose_one_committed_reply at 0x000001E1BF7C3740>}
+
+    def add_middleware(self, middleware_class: _MiddlewareFactory[P], *args: P.args, **kwargs: P.kwargs) -> None:
+        if self.middleware_stack is not None:  # pragma: no cover
+>           raise RuntimeError("Cannot add middleware after an application has started")
+E           RuntimeError: Cannot add middleware after an application has started
+
+..\.venv\Lib\site-packages\starlette\applications.py:106: RuntimeError
+=========================== short test summary info ===========================
+FAILED tests/test_recording_draft_evidence.py::test_actual_browser_draft_persistence_and_project_read
+1 failed in 6.28s

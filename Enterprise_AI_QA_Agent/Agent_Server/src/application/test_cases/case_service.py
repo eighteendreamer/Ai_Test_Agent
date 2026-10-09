@@ -202,6 +202,10 @@ class TestCaseService:
             raise KeyError(f"Test case not found: {case_id}")
         return case
 
+    async def get_case_by_key(self, project_id: str, case_key: str) -> TestCaseRecord | None:
+        await self._project_service.get(project_id)
+        return await self._store.get_case_by_key(project_id, case_key)
+
     async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]:
         cases = await self._store.get_cases(case_ids)
         missing = [case_id for case_id in dict.fromkeys(case_ids) if case_id not in cases]

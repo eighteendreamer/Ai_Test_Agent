@@ -83,13 +83,14 @@ class PostgresRecordingStore:
         project_id: str | None = None,
         limit: int = 50,
         offset: int = 0,
+        *, session_id: str | None = None,
     ) -> list[RecordingSession]:
         return await asyncio.to_thread(
-            self._list_sessions_sync, project_id, limit, offset
+            self._list_sessions_sync, project_id, limit, offset, session_id
         )
 
-    async def count_sessions(self, project_id: str | None = None) -> int:
-        return await asyncio.to_thread(self._count_sessions_sync, project_id)
+    async def count_sessions(self, project_id: str | None = None, *, session_id: str | None = None) -> int:
+        return await asyncio.to_thread(self._count_sessions_sync, project_id, session_id)
 
     async def get_events(self, recording_id: str) -> list[RecorderEvent]:
         return await asyncio.to_thread(self._get_events_sync, recording_id)
@@ -378,11 +379,16 @@ class PostgresRecordingStore:
                 return self._row_to_session(row)
 
     def _list_sessions_sync(
-        self, project_id: str | None, limit: int, offset: int
+        self, project_id: str | None, limit: int, offset: int, session_id: str | None = None
     ) -> list[RecordingSession]:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                if project_id:
+                if session_id is not None:
+                    condition = "session_id = %s" + (" AND project_id = %s" if project_id else "")
+                    params = (session_id, project_id) if project_id else (session_id,)
+                    cur.execute(f"SELECT * FROM {self._session_table} WHERE {condition} "
+                        "ORDER BY updated_at DESC, id DESC LIMIT %s OFFSET %s", (*params, int(limit), int(offset)))
+                elif project_id:
                     cur.execute(
                         f"SELECT * FROM {self._session_table} "
                         f"WHERE project_id = %s ORDER BY updated_at DESC LIMIT %s OFFSET %s",
@@ -396,10 +402,14 @@ class PostgresRecordingStore:
                     )
                 return [self._row_to_session(row) for row in cur.fetchall()]
 
-    def _count_sessions_sync(self, project_id: str | None = None) -> int:
+    def _count_sessions_sync(self, project_id: str | None = None, session_id: str | None = None) -> int:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                if project_id:
+                if session_id is not None:
+                    condition = "session_id = %s" + (" AND project_id = %s" if project_id else "")
+                    params = (session_id, project_id) if project_id else (session_id,)
+                    cur.execute(f"SELECT COUNT(*) AS cnt FROM {self._session_table} WHERE {condition}", params)
+                elif project_id:
                     cur.execute(
                         f"SELECT COUNT(*) AS cnt FROM {self._session_table} WHERE project_id = %s",
                         (project_id,),

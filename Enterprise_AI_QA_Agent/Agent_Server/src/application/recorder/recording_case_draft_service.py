@@ -21,6 +21,8 @@ from typing import Any
 
 from src.application.recorder.assertion_suggester import suggest_assertions
 from src.application.recorder.replay_executor import _is_masked_value
+from src.application.test_cases.case_store import DuplicateCaseKeyError
+from src.application.test_cases.version_content import version_content_hash
 from src.schemas.case_management import (
     TestCaseAssertion,
     TestCaseDraftCreateRequest,
@@ -193,6 +195,31 @@ class RecordingCaseDraftService:
         self._recorder_service = recorder_service
         self._test_case_service = test_case_service
 
+    async def get_created_draft(self, recording_id: str, *, project_id: str | None = None) -> dict[str, Any] | None:
+        """只读恢复原始转换版本；不读取当前模板或重建已保存内容。"""
+        session = await self._recorder_service.get_session(recording_id)
+        if session is None:
+            raise ValueError(f"recording not found: {recording_id}")
+        if project_id is not None and session.project_id != project_id:
+            raise ValueError("recording does not belong to the given project")
+        case_key = f"ui_rec_{session.id[:12].replace('-', '_')}"
+        case = await self._test_case_service.get_case_by_key(session.project_id, case_key)
+        if case is None:
+            return None
+        versions = await self._test_case_service.list_versions(case.id)
+        original = next((version for version in versions if version.version == 1), None)
+        if (original is None or case.project_id != session.project_id
+            or original.case_id != case.id or original.test_data.get("recording_id") != recording_id
+            or original.model_key != CONVERSION_RULE_KEY
+            or not any(ref.source_type == "ui_recording" and ref.source_id == recording_id for ref in original.source_refs)
+            or original.content_hash != version_content_hash(original)):
+            logger.warning("recording_case_draft_recovery_rejected", extra={"recording_id": recording_id,
+                "project_id": session.project_id, "case_id": case.id})
+            raise ValueError("existing case key does not identify the original recording conversion")
+        logger.info("recording_case_draft_recovered", extra={"recording_id": recording_id,
+            "project_id": session.project_id, "case_id": case.id, "version_id": original.id})
+        return {"case": case, "version": original, "recording_id": recording_id, "step_count": len(original.steps)}
+
     async def create_draft_from_recording(
         self,
         recording_id: str,
@@ -201,6 +228,9 @@ class RecordingCaseDraftService:
         created_by: str | None = None,
     ) -> dict[str, Any]:
         """按 recording_id 生成草稿；会话须为 completed（固化完成才有完整事件流）。"""
+        existing = await self.get_created_draft(recording_id, project_id=project_id)
+        if existing is not None:
+            return existing
         session = await self._recorder_service.get_session(recording_id)
         if session is None:
             raise ValueError(f"recording not found: {recording_id}")
@@ -218,11 +248,16 @@ class RecordingCaseDraftService:
             raise ValueError("recording has no replayable actions to convert")
 
         payload = build_recording_draft_payload(session, events)
-        bundle = await self._test_case_service.create_draft(
-            project_id=session.project_id,
-            payload=payload,
-            created_by=created_by,
-        )
+        try:
+            bundle = await self._test_case_service.create_draft(
+                project_id=session.project_id, payload=payload, created_by=created_by,
+            )
+        except DuplicateCaseKeyError:
+            # The existing project/key unique constraint elects the concurrent winner.
+            existing = await self.get_created_draft(recording_id, project_id=project_id)
+            if existing is None:
+                raise
+            return existing
         logger.info("recording_case_draft_created", extra={"recording_id": recording_id,
             "project_id": session.project_id, "case_id": bundle.case.id, "step_count": len(payload.steps),
             "observation_count": len(payload.test_data["recording_observations"]),

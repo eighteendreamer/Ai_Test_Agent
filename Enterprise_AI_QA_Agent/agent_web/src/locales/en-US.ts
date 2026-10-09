@@ -1670,4 +1670,9 @@ export default {
   "recordingPanel.elements_written": "{count} elements",
   "recordingPanel.reconciled": "Events reconciled",
   "recordingPanel.open_graph": "View graph",
+  "recordingPanel.create_case_draft": "Create case draft",
+  "recordingPanel.case_draft_creating": "Creating case draft…",
+  "recordingPanel.case_draft_created": "Case draft created",
+  "recordingPanel.case_draft_id": "Case: {id}",
+  "recordingPanel.case_draft_failed": "Failed to create case draft",
 } as Record<string, string>;

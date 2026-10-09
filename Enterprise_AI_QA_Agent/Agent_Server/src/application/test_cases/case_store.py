@@ -31,6 +31,7 @@ class TestCaseStore(Protocol):
         entries: list[tuple[TestCaseRecord, TestCaseVersionRecord]],
     ) -> list[tuple[TestCaseRecord, TestCaseVersionRecord]]: ...
     async def get_case(self, case_id: str) -> TestCaseRecord | None: ...
+    async def get_case_by_key(self, project_id: str, case_key: str) -> TestCaseRecord | None: ...
     async def find_case_keys(self, project_id: str, case_keys: list[str]) -> set[str]: ...
     async def get_cases(self, case_ids: list[str]) -> dict[str, TestCaseRecord]: ...
     async def list_cases(
@@ -122,6 +123,11 @@ class InMemoryTestCaseStore:
 
     async def get_case(self, case_id: str) -> TestCaseRecord | None:
         case = self._cases.get(case_id)
+        return case.model_copy(deep=True) if case else None
+
+    async def get_case_by_key(self, project_id: str, case_key: str) -> TestCaseRecord | None:
+        case = next((value for value in self._cases.values()
+                     if value.project_id == project_id and value.case_key == case_key), None)
         return case.model_copy(deep=True) if case else None
 
     async def find_case_keys(self, project_id: str, case_keys: list[str]) -> set[str]:
@@ -320,6 +326,15 @@ class PostgresTestCaseStore:
 
     async def get_case(self, case_id: str) -> TestCaseRecord | None:
         return await asyncio.to_thread(self._get_case_sync, case_id)
+
+    async def get_case_by_key(self, project_id: str, case_key: str) -> TestCaseRecord | None:
+        def query():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT record FROM {self._case_table} WHERE project_id = %s AND case_key = %s",
+                            (project_id, case_key))
+                row = cur.fetchone()
+            return self._case_from_value(row["record"]) if row else None
+        return await asyncio.to_thread(query)
 
     async def find_case_keys(self, project_id: str, case_keys: list[str]) -> set[str]:
         def query():

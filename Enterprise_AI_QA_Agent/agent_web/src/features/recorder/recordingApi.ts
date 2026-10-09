@@ -7,6 +7,9 @@
  *   POST /api/v1/recordings/{id}/control                 → 控制条指令
  */
 
+import type { TestCaseRecord, TestCaseVersionRecord } from "../../types";
+import { request } from "../../services/http";
+
 export interface RecordingPublic {
   id: string;
   project_id: string;
@@ -49,8 +52,18 @@ export interface RecordingDetail extends RecordingPublic {
   events: RecorderEvent[];
 }
 
-export async function listRecordings(limit = 20): Promise<RecordingPublic[]> {
-  const response = await fetch(`/api/v1/recordings?limit=${limit}`);
+export interface RecordingCaseDraftResponse {
+  recording_id: string;
+  step_count: number;
+  case: TestCaseRecord;
+  version: TestCaseVersionRecord;
+}
+
+export async function listRecordings(limit = 20, scope: {sessionId?: string; projectId?: string} = {}): Promise<RecordingPublic[]> {
+  const query = new URLSearchParams({limit: String(limit)});
+  if (scope.sessionId) query.set("session_id", scope.sessionId);
+  if (scope.projectId) query.set("project_id", scope.projectId);
+  const response = await fetch(`/api/v1/recordings?${query.toString()}`);
   if (!response.ok) {
     throw new Error(`list recordings failed: HTTP ${response.status}`);
   }
@@ -64,6 +77,22 @@ export async function getRecordingDetail(recordingId: string): Promise<Recording
     throw new Error(`get recording failed: HTTP ${response.status}`);
   }
   return (await response.json()) as RecordingDetail;
+}
+
+export async function createRecordingCaseDraft(
+  recordingId: string,
+  projectId?: string,
+): Promise<RecordingCaseDraftResponse> {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  return request<RecordingCaseDraftResponse>(
+    `/api/v1/recordings/${encodeURIComponent(recordingId)}/case-draft${query}`,
+    { method: "POST" },
+  );
+}
+
+export function getRecordingCaseDraft(recordingId: string, projectId?: string): Promise<RecordingCaseDraftResponse | null> {
+  const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
+  return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/case-draft${query}`);
 }
 
 /** 事件条目主标签：优先语义名（text/role name），退化到 css/id。 */

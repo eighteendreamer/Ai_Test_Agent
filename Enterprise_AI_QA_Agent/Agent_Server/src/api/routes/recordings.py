@@ -33,6 +33,7 @@ from src.schemas.recording import (
     RecordingFinishReceipt,
     RecordingPublic,
     RecordingCaptureSettings,
+    RecordingCaseDraftResponse,
 )
 
 logger = logging.getLogger(__name__)
@@ -112,12 +113,14 @@ async def create_recording(payload: RecordingCreateRequest, request: Request) ->
 async def list_recordings(
     request: Request,
     project_id: str | None = Query(default=None),
+    session_id: str | None = Query(default=None, min_length=1),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> dict[str, Any]:
     service = _recorder_service(request)
-    sessions = await service.list_sessions(project_id=project_id, limit=limit, offset=offset)
-    total = await service.count_sessions(project_id=project_id)
+    scope = {"session_id": session_id} if session_id is not None else {}
+    sessions = await service.list_sessions(project_id=project_id, limit=limit, offset=offset, **scope)
+    total = await service.count_sessions(project_id=project_id, **scope)
     return {
         "items": [RecordingPublic.from_session(s).model_dump(mode="json") for s in sessions],
         "count": total,
@@ -321,3 +324,51 @@ async def get_recording_graph(recording_id: str, request: Request) -> dict[str, 
     return await graph_store.get_recording_subgraph(
         recording_id, project_id=session.project_id
     )
+
+
+@router.post(
+    "/{recording_id}/case-draft",
+    response_model=RecordingCaseDraftResponse,
+    status_code=201,
+)
+async def create_case_draft_from_recording(
+    recording_id: str,
+    request: Request,
+    project_id: str | None = Query(default=None, min_length=1),
+) -> RecordingCaseDraftResponse:
+    """把已固化录制送入既有用例草稿链路。
+
+    `project_id` 只用于调用方的项目范围核对；实际项目身份始终来自录制
+    会话，避免通过请求参数把草稿写入另一个项目。模板不会参与转换。
+    """
+    service = getattr(request.app.state, "recording_case_draft_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="recording case draft service not initialized")
+    try:
+        result = await service.create_draft_from_recording(
+            recording_id,
+            project_id=project_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        message = str(exc)
+        status_code = 404 if message.startswith("recording not found:") else 409
+        raise HTTPException(status_code=status_code, detail=message) from exc
+    return RecordingCaseDraftResponse.model_validate(result)
+
+
+@router.get("/{recording_id}/case-draft", response_model=RecordingCaseDraftResponse | None)
+async def get_case_draft_from_recording(recording_id: str, request: Request,
+                                      project_id: str | None = Query(default=None, min_length=1)):
+    """恢复已保存转换结果；200 null 表示尚无草稿，不做写入。"""
+    service = getattr(request.app.state, "recording_case_draft_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="recording case draft service not initialized")
+    try:
+        return await service.get_created_draft(recording_id, project_id=project_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404 if str(exc).startswith("recording not found:") else 409,
+                            detail=str(exc)) from exc
