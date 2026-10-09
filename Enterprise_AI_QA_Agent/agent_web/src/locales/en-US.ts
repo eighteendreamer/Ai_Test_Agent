@@ -368,6 +368,8 @@ export default {
   "knowledge.pages": "Pages",
   "knowledge.elements": "Elements",
   "knowledge.entities": "Entities",
+  "knowledge.recordings": "Recordings",
+  "knowledge.actions": "Actions and observations",
   "knowledge.relations": "Relations",
   "knowledge.node_filter": "Node Filter",
   "knowledge.nodes_count_unit": "Node(s)",

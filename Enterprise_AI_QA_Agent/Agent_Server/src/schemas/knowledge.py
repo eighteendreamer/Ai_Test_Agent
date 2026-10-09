@@ -8,20 +8,26 @@ from pydantic import BaseModel, Field
 
 class KnowledgeProjectSummary(BaseModel):
     project_id: str | None = None
+    project_name: str | None = None
     project_scope: str
     page_count: int = 0
     element_count: int = 0
     entity_count: int = 0
+    recording_count: int = 0
+    action_count: int = 0
     edge_count: int = 0
     latest_updated_at: datetime | None = None
 
 
 class KnowledgeGraphSummary(BaseModel):
     project_id: str | None = None
+    project_name: str | None = None
     project_scope: str
     page_count: int = 0
     element_count: int = 0
     entity_count: int = 0
+    recording_count: int = 0
+    action_count: int = 0
     edge_count: int = 0
     relation_counts: dict[str, int] = Field(default_factory=dict)
     latest_updated_at: datetime | None = None

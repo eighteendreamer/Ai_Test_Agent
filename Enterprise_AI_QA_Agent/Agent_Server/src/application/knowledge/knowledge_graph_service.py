@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import time
 from datetime import datetime
 from typing import Any
@@ -17,6 +18,9 @@ from src.schemas.knowledge import (
     KnowledgeProjectDeleteResponse,
     KnowledgeProjectSummary,
 )
+from src.schemas.recording import RecorderEvent, masked_recording_event_payload
+
+logger = logging.getLogger(__name__)
 
 
 class KnowledgeGraphService:
@@ -51,10 +55,8 @@ class KnowledgeGraphService:
                 page = await self._projects.list(status="active", query=None, limit=200, offset=0)
                 summaries: list[KnowledgeProjectSummary] = []
                 for project in page.items:
-                    if not project.graph_scope_key:
-                        continue
                     summary = await self.get_project_summary(project.id)
-                    if summary.page_count + summary.element_count + summary.entity_count + summary.edge_count:
+                    if summary.page_count + summary.element_count + summary.entity_count + summary.recording_count + summary.action_count + summary.edge_count:
                         summaries.append(summary)
                 projects = summaries
             else:
@@ -111,13 +113,13 @@ class KnowledgeGraphService:
             else await self._projects.get(value)
         )
         scope = str(project.graph_scope_key or "").strip()
-        if not scope:
-            raise ValueError(f"Project has no graph_scope_key: {value}")
-        return {"project_id": str(project.id), "project_scope": scope}
+        return {"project_id": str(project.id), "project_scope": scope, "project_name": getattr(project, "name", None)}
 
     @staticmethod
     def _project_filter(alias: str, identity: dict[str, str | None]) -> str:
         if identity.get("project_id"):
+            if not identity.get("project_scope"):
+                return f"{alias}.project_id = $project_id"
             return (
                 f"({alias}.project_id = $project_id OR "
                 f"({alias}.project_id IS NULL AND {alias}.project_scope = $project_scope))"
@@ -144,13 +146,21 @@ class KnowledgeGraphService:
             WHERE {node_filter}
             RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'entity_count' AS count_field
             UNION ALL
+            MATCH (n:Recording)
+            WHERE {node_filter}
+            RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'recording_count' AS count_field
+            UNION ALL
+            MATCH (n:Action)
+            WHERE {node_filter}
+            RETURN count(n) AS total, max(n.updated_at) AS latest_updated_at, 'action_count' AS count_field
+            UNION ALL
             MATCH ()-[r]->()
             WHERE {relation_filter}
             RETURN count(r) AS total, max(r.updated_at) AS latest_updated_at, 'edge_count' AS count_field
             """,
             parameters,
         )
-        counts = {"page_count": 0, "element_count": 0, "entity_count": 0, "edge_count": 0}
+        counts = {"page_count": 0, "element_count": 0, "entity_count": 0, "recording_count": 0, "action_count": 0, "edge_count": 0}
         latest = None
         for row in rows:
             field = str(row.get("count_field") or "")
@@ -161,6 +171,7 @@ class KnowledgeGraphService:
                 latest = value
         return KnowledgeProjectSummary(
             project_id=project_id,
+            project_name=identity.get("project_name"),
             project_scope=project_scope,
             latest_updated_at=latest,
             **counts,
@@ -272,6 +283,20 @@ class KnowledgeGraphService:
                    max(n.updated_at) AS latest_updated_at,
                    'entity_count' AS count_field
             UNION ALL
+            MATCH (n:Recording)
+            WHERE n.project_scope IS NOT NULL AND n.project_scope <> ""
+            RETURN n.project_scope AS project_scope,
+                   count(n) AS total,
+                   max(n.updated_at) AS latest_updated_at,
+                   'recording_count' AS count_field
+            UNION ALL
+            MATCH (n:Action)
+            WHERE n.project_scope IS NOT NULL AND n.project_scope <> ""
+            RETURN n.project_scope AS project_scope,
+                   count(n) AS total,
+                   max(n.updated_at) AS latest_updated_at,
+                   'action_count' AS count_field
+            UNION ALL
             MATCH ()-[r]->()
             WHERE r.project_scope IS NOT NULL AND r.project_scope <> ""
             RETURN r.project_scope AS project_scope,
@@ -288,6 +313,8 @@ class KnowledgeGraphService:
                 page_count=int(data.get("page_count") or 0),
                 element_count=int(data.get("element_count") or 0),
                 entity_count=int(data.get("entity_count") or 0),
+                recording_count=int(data.get("recording_count") or 0),
+                action_count=int(data.get("action_count") or 0),
                 edge_count=int(data.get("edge_count") or 0),
                 latest_updated_at=self._parse_datetime(data.get("latest_updated_at")),
             )
@@ -297,7 +324,7 @@ class KnowledgeGraphService:
         items.sort(
             key=lambda item: (
                 item.latest_updated_at or datetime.min,
-                item.page_count + item.element_count + item.entity_count + item.edge_count,
+                item.page_count + item.element_count + item.entity_count + item.recording_count + item.action_count + item.edge_count,
                 item.project_scope,
             ),
             reverse=True,
@@ -321,7 +348,11 @@ class KnowledgeGraphService:
             f"MATCH (n:Entity) WHERE {node_filter} RETURN n ORDER BY n.updated_at DESC",
             identity,
         )
-        if not pages and not elements and not entities:
+        recordings = self._provider.execute(
+            f"MATCH (n:Recording) WHERE {node_filter} RETURN n ORDER BY n.updated_at DESC", identity)
+        actions = self._provider.execute(
+            f"MATCH (n:Action) WHERE {node_filter} RETURN n ORDER BY n.updated_at DESC", identity)
+        if not pages and not elements and not entities and not recordings and not actions:
             raise KeyError(scope)
         edge_rows = self._provider.execute(
             f"""
@@ -336,6 +367,8 @@ class KnowledgeGraphService:
             *[self._node_from_record(item["n"], "page") for item in pages],
             *[self._node_from_record(item["n"], "element") for item in elements],
             *[self._node_from_record(item["n"], "entity") for item in entities],
+            *[self._node_from_record(item["n"], "recording") for item in recordings],
+            *[self._node_from_record(item["n"], "action") for item in actions],
         ]
         edges: list[KnowledgeGraphEdge] = []
         relation_counts: dict[str, int] = {}
@@ -347,18 +380,23 @@ class KnowledgeGraphService:
             parsed
             for parsed in (
                 self._parse_datetime(self._record_value(item["n"], "updated_at"))
-                for item in [*pages, *elements, *entities]
+                for item in [*pages, *elements, *entities, *recordings, *actions]
             )
             if parsed is not None
         ]
         latest_updated_at = max(latest_values, default=None)
+        logger.info("knowledge_graph_read", extra={"project_id": project_id,
+            "recording_count": len(recordings), "action_count": len(actions), "node_count": len(nodes), "edge_count": len(edges)})
         return KnowledgeGraphResponse(
             summary=KnowledgeGraphSummary(
                 project_id=project_id,
+                project_name=identity.get("project_name"),
                 project_scope=scope,
                 page_count=len(pages),
                 element_count=len(elements),
                 entity_count=len(entities),
+                recording_count=len(recordings),
+                action_count=len(actions),
                 edge_count=len(edges),
                 relation_counts=dict(sorted(relation_counts.items())),
                 latest_updated_at=latest_updated_at,
@@ -374,6 +412,8 @@ class KnowledgeGraphService:
             "pages": graph.summary.page_count,
             "elements": graph.summary.element_count,
             "entities": graph.summary.entity_count,
+            "recordings": graph.summary.recording_count,
+            "actions": graph.summary.action_count,
             "edges": graph.summary.edge_count,
         }
         node_filter = self._project_filter("n", identity)
@@ -420,6 +460,8 @@ class KnowledgeGraphService:
                     "page_count": 0,
                     "element_count": 0,
                     "entity_count": 0,
+                    "recording_count": 0,
+                    "action_count": 0,
                     "edge_count": 0,
                     "latest_updated_at": None,
                 },
@@ -431,11 +473,18 @@ class KnowledgeGraphService:
 
     def _node_from_record(self, record: Any, kind: str) -> KnowledgeGraphNode:
         metadata = self._metadata_from_payload(self._record_value(record, "payload_json"))
-        label = str(self._record_value(record, "label") or self._record_value(record, "id") or kind.title()).strip()
+        if kind == "action":
+            try:
+                metadata = masked_recording_event_payload(RecorderEvent.model_validate(metadata))
+            except ValueError:
+                logger.warning("knowledge_recording_event_unavailable", extra={"node_id": self._record_value(record, "id")})
+                metadata = {}
+        label = str(self._record_value(record, "label") or self._record_value(record, "name") or self._record_value(record, "id") or kind.title()).strip()
         summary = str(
             self._record_value(record, "url")
             or self._record_value(record, "role")
             or self._record_value(record, "type")
+            or self._record_value(record, "action_type")
             or ""
         ).strip()
         return KnowledgeGraphNode(

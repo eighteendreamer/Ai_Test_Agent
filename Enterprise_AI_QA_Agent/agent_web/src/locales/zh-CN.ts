@@ -367,6 +367,8 @@ export default {
   "knowledge.pages": "页面",
   "knowledge.elements": "元素",
   "knowledge.entities": "实体",
+  "knowledge.recordings": "录制",
+  "knowledge.actions": "动作与观察",
   "knowledge.relations": "关系",
   "knowledge.node_filter": "节点过滤",
   "knowledge.nodes_count_unit": "个节点",

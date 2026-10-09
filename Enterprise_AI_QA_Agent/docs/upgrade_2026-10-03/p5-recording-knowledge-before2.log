@@ -1,0 +1,18 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+________ test_new_recording_steps_visible_in_project_knowledge[False] _________
+tests\test_recording_knowledge_product.py:96: in test_new_recording_steps_visible_in_project_knowledge
+    response.raise_for_status()
+..\.venv\Lib\site-packages\httpx\_models.py:829: in raise_for_status
+    raise HTTPStatusError(message, request=request, response=self)
+E   httpx.HTTPStatusError: Client error '409 Conflict' for url 'http://127.0.0.1:58074/api/v1/knowledge/graph?project_id=52549d67-afb9-4f6c-bcab-88e4373ef8f3'
+E   For more information check: https://developer.mozilla.org/en-US/docs/Web/HTTP/Status/409
+_________ test_new_recording_steps_visible_in_project_knowledge[True] _________
+tests\test_recording_knowledge_product.py:107: in test_new_recording_steps_visible_in_project_knowledge
+    assert not missing and not dangling, "project knowledge omits recorded nodes but returns their relations"
+E   AssertionError: project knowledge omits recorded nodes but returns their relations
+E   assert (not [{'id': '4a8c9f67-f871-4aac-a050-8323aafb662c', 'kind': 'recording'}, {'id': '4a8c9f67-f871-4aac-a050-8323aafb662c:0',...-4aac-a050-8323aafb662c:3', 'kind': 'action'}, {'id': '4a8c9f67-f871-4aac-a050-8323aafb662c:4', 'kind': 'action'}, ...])
+=========================== short test summary info ===========================
+FAILED tests/test_recording_knowledge_product.py::test_new_recording_steps_visible_in_project_knowledge[False]
+FAILED tests/test_recording_knowledge_product.py::test_new_recording_steps_visible_in_project_knowledge[True]
+2 failed in 28.25s

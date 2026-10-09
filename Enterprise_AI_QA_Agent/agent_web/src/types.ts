@@ -1105,20 +1105,26 @@ export interface SessionVerificationResponse {
 
 export interface KnowledgeProjectSummary {
   project_id?: string | null;
+  project_name?: string | null;
   project_scope: string;
   page_count: number;
   element_count: number;
   entity_count: number;
+  recording_count?: number;
+  action_count?: number;
   edge_count: number;
   latest_updated_at?: string | null;
 }
 
 export interface KnowledgeGraphSummary {
   project_id?: string | null;
+  project_name?: string | null;
   project_scope: string;
   page_count: number;
   element_count: number;
   entity_count: number;
+  recording_count?: number;
+  action_count?: number;
   edge_count: number;
   relation_counts: Record<string, number>;
   latest_updated_at?: string | null;

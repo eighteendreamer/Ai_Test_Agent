@@ -12,7 +12,7 @@ import type {
   KnowledgeProjectSummary,
 } from "../types";
 
-type NodeKindFilter = "all" | "page" | "entity" | "element";
+type NodeKindFilter = "all" | "page" | "entity" | "element" | "recording" | "action";
 
 const CANVAS_WIDTH = 840;
 const CANVAS_HEIGHT = 500;
@@ -125,7 +125,7 @@ const canvasNodes = computed(() => {
     const items = [
       {
         id: '__GLOBAL_PAGES__',
-        label: selectedProject.value?.project_scope || t('knowledge.project_global'),
+        label: selectedProject.value?.project_name || selectedProject.value?.project_scope || t('knowledge.project_global'),
         kind: 'project',
         x: 420,
         y: 250,
@@ -434,6 +434,8 @@ function kindLabel(kind: string) {
   if (kind === "page") return "Page";
   if (kind === "entity") return "Entity";
   if (kind === "element") return "Element";
+  if (kind === "recording") return t("knowledge.recordings");
+  if (kind === "action") return t("knowledge.actions");
   return kind;
 }
 
@@ -561,7 +563,7 @@ function syncFullscreenState() {
           <select v-model="selectedProjectId" class="knowledge-select" :disabled="loadingProjects || !projects.length">
             <option value="" disabled>{{ t("knowledge.select_project") }}</option>
             <option v-for="project in projects" :key="project.project_id || project.project_scope" :value="project.project_id || ''">
-              {{ project.project_scope }}
+              {{ project.project_name || project.project_scope || project.project_id }}
             </option>
           </select>
             <button
@@ -578,6 +580,8 @@ function syncFullscreenState() {
             <div><span>{{ t("knowledge.pages") }}</span><strong>{{ selectedProject.page_count }}</strong></div>
             <div><span>{{ t("knowledge.elements") }}</span><strong>{{ selectedProject.element_count }}</strong></div>
             <div><span>{{ t("knowledge.entities") }}</span><strong>{{ selectedProject.entity_count }}</strong></div>
+            <div><span>{{ t("knowledge.recordings") }}</span><strong>{{ selectedProject.recording_count ?? 0 }}</strong></div>
+            <div><span>{{ t("knowledge.actions") }}</span><strong>{{ selectedProject.action_count ?? 0 }}</strong></div>
             <div><span>{{ t("knowledge.relations") }}</span><strong>{{ selectedProject.edge_count }}</strong></div>
           </div>
         </div>
@@ -589,7 +593,7 @@ function syncFullscreenState() {
           </div>
           <div class="knowledge-kind-tabs">
             <button
-              v-for="kind in ['all', 'page', 'entity', 'element']"
+              v-for="kind in ['all', 'page', 'entity', 'element', 'recording', 'action']"
               :key="kind"
               class="kind-tab"
               :class="{ active: activeKind === kind }"

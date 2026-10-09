@@ -360,6 +360,8 @@ export default {
   "knowledge.pages": "頁面",
   "knowledge.elements": "元素",
   "knowledge.entities": "實體",
+  "knowledge.recordings": "錄製",
+  "knowledge.actions": "動作與觀察",
   "knowledge.relations": "關係",
   "knowledge.node_filter": "節點過濾",
   "knowledge.nodes_count_unit": "個節點",

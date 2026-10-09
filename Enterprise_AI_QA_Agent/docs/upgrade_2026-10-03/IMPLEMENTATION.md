@@ -4994,3 +4994,16 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 十模块回归 **84 passed、6 skipped in 39.90s**，报告投影7通过，前端报告两文件11通过，实际安全报告产品回归1通过56.48秒；最终build/vue-tsc与compileall退出0。最初扩大到迁移模块因当前虚拟环境缺alembic.config而收集失败，保留原日志，不报迁移通过；本轮没有DDL/配置/依赖变更。70.98/70.04秒中间产品批次均保留，最终标签及滚动复位后截图见 `p5-perf-report-final2`。详情见 `P5_PERFORMANCE_REPORT_PRODUCT_RESEARCH.md`、`p5-perf-report-validation.json`。
 
 此批已有实现且已验的是性能工具结果/报告中心产品链路，从既有guard和analyzed检查点开始；完整默认Agent/规划、容量租约复用及AI流式仍待验。安全其他工具/故障、录制知识/场景/清洗遗漏/业务人工录制、API续期、需求业务质量及生产历史迁移等仍需继续。Step按用户决定等待账号处理；完整P0—P5不标完成。旧章节按当时范围解读，7.07的“绑定最新报告”现已进一步纠正为最新执行任务。
+
+
+## 2026-10-10 正式项目知识读取完整录制节点
+
+本轮基线 `adf51172`。先读原录制固化/子图、知识身份/查询、项目概览、前端和参考报告5.3，发现正式录制写project_id而知识读取要求旧graph_scope_key；知识只读Page/Element/Entity却返回全部关系。实际新Chromium/CDP/生产API录制长Unicode输入和两次点击，PG落8条事件：第一次1失败17.28秒；有/无旧scope两项目复现2失败28.25秒，分别409和缺1Recording/8Action导致悬空关系。全部旧失败原件保留。
+
+身份按正式ID读取；无旧映射不回退默认scope或项目名，明确登记旧映射的历史兼容保留。项目列表/摘要/全图增加Recording、Action与项目名称，前后端Schema/DTO、筛选/详情及三语言同步。事件元数据沿原完整协议和密码脱敏；损坏载荷记录节点身份warning且不可用，不改写历史。计数“动作与观察”含技术观察，不等于业务步骤数。配置仍MySQL，业务录制/事件PG，现有Memgraph仅投影；无新增表、依赖、模式或直接回放入口。
+
+最终 `restored` **2 passed in 85.99s，0 skipped**：实际生产独立main/隔离MySQL/PG/Redis、现有Memgraph、真实受控HTML/CDP和本轮构建完整Vue App。两项目各8事件、1Page/2Element/1Recording/8Action/24关系；遗漏及悬空均0，详情长值完整且所属录制可查，空另一项目404。API重启知识JSON一致，页面重载再查同录制，PG原事件逐行不变；pageerror和非预期API错误均0。主动停API的轮询500单列保留；仅清理新项目图节点，两批12/0→0/0。
+
+九模块回归55通过2门控跳过4.16秒，新增五个由真实样本派生的身份/完整事件/历史密码/损坏载荷合同；三个知识消费者模块9通过7.28秒。前端既有项目切换4通过；最终两次实际build含vue-tsc退出0，compileall退出0仅附加检查。中间verified 2通过86.42秒、final 2通过81.30秒保留，最终补强网络窗口、App重载、PG不变和按所有权清理。详情、实际命令和原件见 `P5_RECORDING_KNOWLEDGE_PRODUCT_RESEARCH.md`、`p5-recording-knowledge-validation.json`。
+
+分类：知识查询/筛选/详情已有实现且本轮已验；默认AI业务知识使用、人工DeepSeek、复杂关联及清洗遗漏仍待验。业务场景管理/步骤整理/业务元素别名/失败定位报告仍需补齐，内部alias不是可编辑业务别名。无旧scope的项目概览仍可能显示零，项目列表前200项/逐项目查询未容量验收，通用生成摘要未读取完整录制事件。这些独立缺口保持未完成。API续期、性能容量/AI流式、安全其他工具故障、需求业务质量/生产历史迁移及默认Agent仍需继续；Step按用户决定待账号处理，完整P0—P5不标完成。
