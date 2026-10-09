@@ -25,6 +25,7 @@ from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfRun, Smo
 from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact
 from .engine_adapter import metric_number
 from .evidence import store_execution_evidence
+from .request_validation import request_validation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -171,6 +172,9 @@ class PerfRunnerService:
         try:
             data = json.loads(result.summary_json)
             count, failed_rate = self._extract_smoke_counts(data)
+            validation = request_validation(data, plan)
+            checked_status = validation["checked_status"]
+            extracted = validation["extracted"]
 
             if count is None or count <= 0:
                 diagnostics = self._format_execution_diagnostics(result)
@@ -185,6 +189,7 @@ class PerfRunnerService:
                 raise ValueError("汇总中的请求数或失败率非法")
             if failed_rate > 0.5:
                 return SmokeResult(passed=False, checked_status=checked_status,
+                    extracted=extracted, request_validation=validation,
                     detail=f"冒烟验证失败率过高: {failed_rate*100:.0f}%（预期状态码可能不匹配）")
         except (ValueError, TypeError, KeyError) as exc:
             LOGGER.warning("performance_smoke_summary_invalid", extra={"engine": plan.engine, "error": str(exc)})
@@ -193,17 +198,16 @@ class PerfRunnerService:
         if result.evidence and result.evidence.get("status") != "saved":
             return SmokeResult(passed=False, detail="冒烟原件未完整保存: " + str(result.evidence.get("error") or result.evidence.get("missing_artifacts")))
 
-        for var in plan.smoke.expect_extract:
-            found = var.lower() in result.stdout.lower()
-            extracted[var] = found
-            if not found:
-                return SmokeResult(
-                    passed=False,
-                    extracted=extracted,
-                    detail=f"关联变量 '{var}' 未在响应中提取成功",
-                )
+        if validation["status"] in {"failed", "missing"} or not all(extracted.values()):
+            LOGGER.warning("performance_smoke_request_invalid", extra={"engine": plan.engine,
+                "validation_status": validation["status"], "missing_checks": validation["missing_checks"],
+                "failed_checks": validation["failed_checks"]})
+            return SmokeResult(passed=False, checked_status=checked_status, extracted=extracted,
+                request_validation=validation, detail="冒烟响应核验未通过: " + str(
+                    validation["failed_checks"] or validation["missing_checks"] or list(extracted)))
 
-        return SmokeResult(passed=True, checked_status=checked_status, extracted=extracted, detail="冒烟验证通过")
+        return SmokeResult(passed=True, checked_status=checked_status, extracted=extracted,
+            request_validation=validation, detail="冒烟验证通过")
 
     def _format_execution_diagnostics(self, result: ExecutionResult) -> str:
         parts: list[str] = []

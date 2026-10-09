@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-09；本次核对基线 `cf703e05`。跨审批累计预算及多审批恢复已提交；一次只读回执纠正和可选冻结传输设置已完成受控验证，见6.86。真实Step纠正请求记录到一次HTTP403，要求实名认证；用户决定先继续其他模块，账号处理后再验收。模板及Excel/JSON完整产品验收通过，见6.87；Docker性能采集及缺失指标判定见6.88，本轮补性能原件持久化、冒烟错误和异常退出判定，已实际验证PG/RustFS/API重启与下载，见6.89。完整P0—P5和默认模型可信UI仍未完成。历史章节中的“本批”仅指当时批次。
+修订日期：2026-10-09；本次核对基线 `d3e36b09`。跨审批累计预算及多审批恢复已提交；一次只读回执纠正和可选冻结传输设置已完成受控验证，见6.86。真实Step纠正请求记录到一次HTTP403，要求实名认证；用户决定先继续其他模块，账号处理后再验收。模板及Excel/JSON完整产品验收通过，见6.87；Docker性能采集及缺失指标判定见6.88，性能原件持久化、冒烟错误和异常退出判定见6.89。本轮实际修复并验证k6响应提取、预期状态和依赖header传值，见6.90。完整P0—P5和默认模型可信UI仍未完成。历史章节中的“本批”仅指当时批次。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
@@ -1172,7 +1172,7 @@ MySQL新增`recording.capture_settings`：是否观察响应、settle/max_wait�
 
 沿用现有Docker工具及权限。受控目标逐级压测，核对Agent实际调用参数、容器身份、退出码、stdout/stderr、原始工件、解析和报告。记录吞吐、错误率、P50/P95/P99；AI流式目标另采TTFT、Token吞吐和阶段耗时。未采指标显示缺失，不能以工具启动代替性能结论。
 
-采集/解析专项已用现有生产runner、真实缓存k6和受管HTTP目标验证，见6.88。生成脚本load/smoke均采P99；两引擎缺失测量为null，SLA缺口保存missing_metrics及passed=null，报告inconclusive；实测0仍为0。k6旧/新嵌套阈值按实际格式转为{ok}；数值阈值保留小数。原件生产持久化、烟测缺件/损坏/非零退出、失败样本不误报pass和生产API重启下载已实测，见6.89。此专项不等于Agent完整调用、性能容量基线、安全扫描或正式App报告验收；响应提取仍须核验实际产物，阶段指标、真实JMeter及历史迁移继续待验。
+采集/解析专项已用现有生产runner、真实缓存k6和受管HTTP目标验证，见6.88。生成脚本load/smoke均采P99；两引擎缺失测量为null，SLA缺口保存missing_metrics及passed=null，报告inconclusive；实测0仍为0。k6旧/新嵌套阈值按实际格式转为{ok}；数值阈值保留小数。原件生产持久化、烟测缺件/损坏/非零退出、失败样本不误报pass和生产API重启下载已实测，见6.89。k6响应提取、预期状态及明确来源/消费方的header传值已经用实际HTTP、原checks、报告和PG验证，见6.90；不再以stdout变量名判断提取成功。此专项不等于Agent完整调用、性能容量基线、安全扫描或正式App报告验收；阶段指标、真实JMeter及历史迁移继续待验。
 
 安全测试同样用受控目标核验真实发现及原证据，不把空结果当安全、报错当无漏洞。DeepSeek不用于压测或安全扫描。
 
@@ -2831,3 +2831,24 @@ JSON树/原文页使用完整业务JSON，自定义嵌套、false/0/null保持�
 扩大19模块 **123通过21.42秒**；实际四场景测量回归 **1通过35.91秒**，pass/pass/inconclusive/fail及原PG指标保持。compileall退出0仅附加检查。前序contract-first77通过12.78秒；verified1失败51.43秒为测试错误比较派生下载展示字段，verified-final1失败52.11秒为测试使用不存在/download路由，修正为实际/content；download-verified1通过55.24秒。最终delivery额外保留24份实际下载字节，未覆盖前序输出。全部失败、脚本、summary、执行结果、PG、API日志及清理证据保留。
 
 本批未改前端，未重复前端构建/完整App；未验证真实JMeter、完整Agent性能模式、容量逐级加压、AI流式指标、安全引擎。expect_extract仍使用stdout搜索，不能当作真实响应变量提取已验。下一步继续这些实际缺口和完整UI录制/清洗/遗漏/DeepSeek/App/场景别名、物理HTTP全阶段、准备/未知效果/修订/其他模式、业务评审及生产迁移。真实Step按用户决定等待账号处理；完整P0—P5仍未完成。三份方案同步与前序155/153/413/200/408/151原工件未改校验见p5-perf-evidence-validation.json；实际命令见IMPLEMENTATION.md。
+
+### 6.90 k6响应、预期状态与依赖header〔基线d3e36b09〕
+
+沿现有adapter/runner/模式/报告、API依赖身份及本地接口/性能课程查证；官方k6标准checks、Response.json、Params及expectedStatuses提供依据。缓存镜像实际v2.2.0，不升级镜像。原四场景反例1失败39.32秒：有效响应不打印变量名却失败、缺字段但stdout打印同名文字却通过、实际200不符合预期201却通过、两目标生成重复const导致引擎107且零HTTP。旧原件保留在p5-perf-correlation-before。
+
+使用标准summary.root_group.checks的passes/fails投影request_validation；状态、提取与header准备分别保存，不新增私有stdout协议。Correlation沿原三字段增加可选from_target/into_target/header_prefix；未设置新增字段时序列化仍保持原三字段。默认首目标来源、紧邻下一目标消费；显式名称须唯一存在且消费在后，不向无关目标广播凭据。变量仅在当前iteration内；0/false有效，null/undefined/空字符串或坏JSON不能提供必要header。缺依赖跳过该消费目标，后续独立目标继续，不能将“header已准备”当作任意业务断言全部通过。
+
+smoke和load/report读取同一事实，负向401配合responseCallback计量；check失败为fail，必需check缺失为inconclusive。进程、原件和SLA既有规则保留。模式输出/JSON工件、独立工具analyst工件及提示同步，报告新增结构化判定日志。编辑配置MySQL、业务结果PG、原件RustFS边界不变；无新表/迁移/依赖/前端修改。JMeter目前明确not_observed，尚未证明其提取、断言和业务相关性，不能称两引擎均验收。
+
+| 本轮验证 | 实际结果和边界 |
+|---|---|
+| 初次修复四场景 verified | 1通过38.73秒；随后增加独立目标、负向和边界场景，未覆盖后续修订 |
+| 扩展full-verified | 1失败102.39秒；前10场景结果正确，第11次resource_pending_reap。容器已删除，隔离测试只有API、缺独立清理Worker，配额待持久回执；保留失败，不扩大名额/手工释放租约 |
+| 接现有清理CLI worker-verified | **1通过155.86秒，0跳过**；12种smoke和2种短时load全部实际运行。提取后受保护接口200并核对凭据hash；缺依赖不请求受保护接口、独立/plain仍运行；显式来源及Bearer前缀、0/false/null/空串/坏JSON/负向401均有服务端事实。两load退出0、SLA通过，报告分别pass/fail，现有PG保存两条对应结果；14份分配、14份completed清理回执、14次Redis配额归零和全部完整容器ID不存在已核对 |
+| 扩大20模块 expanded / delivery-contract | 前序140通过44.36秒；加入判定日志后最终**140通过38.25秒**，0跳过，既有Starlette/AnyIO弃用警告1条 |
+| 测量measurement-regression | **1通过65.82秒**，0跳过；真实四场景pass/pass/inconclusive/fail，PG指标及缺P99/违反阈值保持 |
+| 原件evidence-regression | **1通过89.65秒**，0跳过；生产ToolRuntime从已验guard开始，PG/API重启保存响应投影，24份原件下载hash/大小相同，跨项目404、篡改409/恢复200、终态重投零新引擎、8个受管容器已删。未调用Agent/模型 |
+
+compileall实际退出0。失败日志、实际脚本/summary/执行、HTTP事实/报告/PG/清理/原件保留，审计p5-perf-correlation-validation.json核对本批和旧253/155/153/413/200/408/151工件、受保护文件及三份方案；实际命令见IMPLEMENTATION.md。不把重叠回归次数累加为总覆盖。
+
+继续待做：JMeter真实提取/断言及JTL报告；完整Agent性能模式/正式App、逐级容量和AI流式阶段；安全工具真实发现与证据；人工DeepSeek录制、完整清洗/遗漏/场景别名及AI知识使用；全阶段物理HTTP、准备/未知副作用/修订/其他模式、业务评审及生产迁移。真实Step按用户决定等账号处理。此批只完成有实际证据的性能专项，完整P0—P5仍未完成。

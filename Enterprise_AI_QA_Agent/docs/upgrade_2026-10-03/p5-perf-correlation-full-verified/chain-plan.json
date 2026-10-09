@@ -1,0 +1,66 @@
+{
+  "plan_id": "",
+  "title": "",
+  "engine": "k6",
+  "run_intent": "probe",
+  "targets": [
+    {
+      "name": "login",
+      "method": "GET",
+      "url": "http://127.0.0.1:62791/login",
+      "headers": {},
+      "body_template": null
+    },
+    {
+      "name": "profile",
+      "method": "GET",
+      "url": "http://127.0.0.1:62791/profile",
+      "headers": {},
+      "body_template": null
+    }
+  ],
+  "workload": {
+    "model": "closed",
+    "mode": "ramping_arrival_rate",
+    "target_rate_rps": null,
+    "ramp_stages": [],
+    "virtual_users": 1,
+    "hold_seconds": 1,
+    "think_time_ms": 0
+  },
+  "smoke": {
+    "vus": 1,
+    "iterations": 3,
+    "expect_status": [
+      200
+    ],
+    "expect_extract": [
+      "ticket"
+    ]
+  },
+  "data_params": [],
+  "correlations": [
+    {
+      "extract": "ticket",
+      "from_path": "session.credential",
+      "into_header": "Authorization"
+    }
+  ],
+  "assertions": [],
+  "sla": {
+    "p95_ms": null,
+    "p99_ms": null,
+    "error_rate": null,
+    "min_tps": null
+  },
+  "baseline_ref": null,
+  "topology": {
+    "backend": "auto",
+    "injector_count": 0
+  },
+  "limits": {
+    "max_vus": 2000,
+    "max_rate_rps": 1000,
+    "max_duration_seconds": 1800
+  }
+}

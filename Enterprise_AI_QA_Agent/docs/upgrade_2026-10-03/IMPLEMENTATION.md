@@ -4722,3 +4722,42 @@ $env:QA_DOCKER_PERF_MEASUREMENT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_
 ```
 
 compileall退出0，空输出保存p5-perf-evidence-compile.log。不将其代替实际测试。原件按既有.gitattributes限定本批字节保留，用户.gitignore及其他无关文件不提交。项目根 `.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-evidence-audit.py --sync` 核对外部方案仍为旧HEAD再同步三份；随后不带--sync只读复核。首轮审计错误假设所有环境变量名为空，实际adapter冒烟设置已有3个QA_PERF_SMOKE变量名；按实际源码和原清单修正断言，原审计失败日志保留，生产代码未因此修改。最终审计退出0，253份本批工件/24份下载字节/4条PG结果/8个完整容器ID，以及前序155/153/413/200/408/151份原件未改校验通过，不改写旧审计。完整Agent/App/JMeter/容量/安全及全部P0—P5仍未完成。
+
+## 2026-10-09 k6响应、预期状态与依赖header〔d3e36b09〕
+
+修改k6生成/runner/schema/模式/报告/独立analyst投影和提示，新增request_validation标准checks读取器、真实HTTP/k6/清理CLI测试及17项反例回归。依据P5_PERFORMANCE_CORRELATION_RESEARCH.md及PLAN6.90；无新表/迁移/依赖/前端或真实模型调用。
+
+pytest均在Agent_Server运行，用`..\.venv\Scripts\python.exe -X utf8 -m pytest`，参数`-q --tb=short --junitxml=../docs/upgrade_2026-10-03/<前缀>.xml`，双流保存同前缀.log：
+
+| 前缀p5-perf-correlation- | 命令范围与结果 |
+|---|---|
+| before | test_performance_correlation_live.py原四场景；1失败39.32秒，四种真实误判/生成错误 |
+| verified | 修复四场景；1通过38.73秒，未覆盖后续独立目标修订 |
+| expanded | 原件专项原19模块加correlation_contract；140通过44.36秒 |
+| full-verified | live扩展12smoke+2load；1失败102.39秒，缺独立清理Worker，前10正确后第11无法领配额；失败保留 |
+| worker-verified | 接生产清理CLI的live；1通过155.86秒，14份完成回执与配额归零 |
+| delivery-contract | 同20模块，判定日志后；140通过38.25秒、0跳过，既有弃用警告1条 |
+| measurement-regression | test_performance_docker_measurement.py；1通过65.82秒，四种报告与PG结果保持 |
+| evidence-regression | test_performance_evidence_live.py；1通过89.65秒，原件/响应投影/重启/下载/隔离/篡改/终态重放 |
+
+最终真实命令：
+
+```powershell
+$env:RUN_LIVE_PERF_CORRELATION='1'
+$env:QA_PERF_CORRELATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-perf-correlation-worker-verified'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_correlation_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-correlation-worker-verified.xml *> ../docs/upgrade_2026-10-03/p5-perf-correlation-worker-verified.log
+
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_correlation_contract.py tests/test_performance_evidence_contract.py tests/test_performance_measurement_contract.py tests/test_performance_k6_adapter.py tests/test_performance_jmeter_adapter.py tests/test_performance_report_builder.py tests/test_performance_result_parser.py tests/test_performance_runner.py tests/test_performance_runtime_artifacts.py tests/test_case_execution_verification.py tests/test_performance_coordinator.py tests/test_performance_task_pool.py tests/test_performance_guard.py tests/test_performance_failure_analyzer.py tests/test_performance_mode_skills.py tests/test_performance_case_execution_system.py tests/test_perf_high_level_runners.py tests/test_artifact_storage_service.py tests/test_xlsx_artifact_download.py tests/test_tool_runtime_heartbeat.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-correlation-delivery-contract.xml *> ../docs/upgrade_2026-10-03/p5-perf-correlation-delivery-contract.log
+
+$env:RUN_LIVE_DOCKER_PERF_MEASUREMENT='1'
+$env:QA_DOCKER_PERF_MEASUREMENT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-perf-correlation-measurement-regression'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_docker_measurement.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-correlation-measurement-regression.xml *> ../docs/upgrade_2026-10-03/p5-perf-correlation-measurement-regression.log
+
+$env:RUN_LIVE_PERF_EVIDENCE='1'
+$env:QA_PERF_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-perf-correlation-evidence-regression'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_evidence_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-correlation-evidence-regression.xml *> ../docs/upgrade_2026-10-03/p5-perf-correlation-evidence-regression.log
+
+..\.venv\Scripts\python.exe -X utf8 -m compileall -q src/application/performance src/application/runtime/tool_runtime_service.py src/modes/performance_testing_mode tests/test_performance_correlation_live.py tests/test_performance_correlation_contract.py *> ../docs/upgrade_2026-10-03/p5-perf-correlation-compile.log
+```
+
+compileall退出0。新审计`p5-perf-correlation-audit.py --sync`先核对外部方案仍为原HEAD再同步，随后不带--sync复核；不重跑会覆盖旧验证JSON的历史审计。`.gitattributes`只扩展本批原件规则，测试按既有忽略规则force-add确切文件，不修改用户.gitignore；完成后仅提交本批文件。完整P0—P5保持未完成，JMeter/Agent/App/容量/AI流式/安全与其余待办继续。

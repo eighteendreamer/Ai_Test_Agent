@@ -13,6 +13,7 @@ from urllib.parse import urlparse, urlunparse
 
 from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfTarget, RampStage
 from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact, metric_number
+from .request_validation import correlation_bindings
 
 
 class K6EngineAdapter:
@@ -34,6 +35,8 @@ class K6EngineAdapter:
         self._local_host_ips = local_host_ips if local_host_ips is not None else self._detect_local_host_ips()
 
     def build_script(self, plan: PerfPlan) -> ScriptArtifact:
+        if not plan.smoke.expect_status or any(isinstance(s, bool) or not 100 <= s <= 599 for s in plan.smoke.expect_status):
+            raise ValueError("性能预期状态必须包含明确的HTTP状态码")
         lines: list[str] = []
         lines.append('import http from "k6/http";')
         lines.append('import { check, sleep } from "k6";')
@@ -43,6 +46,8 @@ class K6EngineAdapter:
             lines.append('import papaparse from "https://jslib.k6.io/papaparse/5.1.1/index.js";')
 
         lines.append("")
+        lines.append(f"const __expectedStatus = {json.dumps(plan.smoke.expect_status)};")
+        lines.append("const __responseCallback = http.expectedStatuses(...__expectedStatus);")
 
         # Data CSV loading
         for dp in plan.data_params:
@@ -252,6 +257,9 @@ class K6EngineAdapter:
     def _build_default_function(self, plan: PerfPlan) -> list[str]:
         lines: list[str] = []
         indent = "  "
+        bindings = correlation_bindings(plan)
+        if bindings:
+            lines.append(f"{indent}const __correlations = Object.create(null);")
 
         # Data variable selection
         for dp in plan.data_params:
@@ -265,29 +273,57 @@ class K6EngineAdapter:
         for i, target in enumerate(plan.targets):
             url = self.rewrite_target_url(target.url)
             var_name = f"res{i}" if len(plan.targets) > 1 else "res"
+            lines.append(f"{indent}const __headers{i} = {json.dumps(target.headers)};")
+            required = []
+            for binding in bindings:
+                if binding["destination"] != i:
+                    continue
+                number, correlation = binding["index"], binding["correlation"]
+                lines.append(f"{indent}const __bound{number} = __correlations[{number}];")
+                lines.append(f'{indent}const __canBind{number} = ["string", "number", "boolean"].includes(typeof __bound{number}) && __bound{number} !== "";')
+                lines.append(f'{indent}check(__canBind{number}, {{ "qa_dependency_{number}": (v) => v === true }});')
+                lines.append(f"{indent}if (__canBind{number}) __headers{i}[{json.dumps(correlation.into_header)}] = {json.dumps(correlation.header_prefix or '')} + String(__bound{number});")
+                required.append(f"__canBind{number}")
+            target_indent = indent
+            lines.append(f"{indent}if ({' && '.join(required) or 'true'}) {{")
+            indent += "  "
 
             if target.method.upper() == "GET":
-                lines.append(f'{indent}const {var_name} = http.get("{url}", {{')
+                lines.append(f'{indent}const {var_name} = http.get({json.dumps(url)}, {{')
             else:
                 body = self._build_body_expr(target, plan)
-                lines.append(f'{indent}const {var_name} = http.{target.method.lower()}("{url}", {body}, {{')
+                lines.append(f'{indent}const {var_name} = http.{target.method.lower()}({json.dumps(url)}, {body}, {{')
 
             # Headers
-            if target.headers:
-                lines.append(f"{indent}  headers: {json.dumps(target.headers)},")
+            lines.append(f"{indent}  headers: __headers{i},")
+            lines.append(f"{indent}  responseCallback: __responseCallback,")
             lines.append(f"{indent}}});")
             lines.append("")
 
             # Checks
             lines.append(f'{indent}check({var_name}, {{')
-            lines.append(f'{indent}  "status is expected": (r) => r.status >= 200 && r.status < 400,')
+            lines.append(f'{indent}  ["qa_status_{i}_" + {var_name}.status]: (r) => __expectedStatus.includes(r.status),')
             lines.append(f"{indent}}});")
 
             # Correlations (extract from response)
-            for corr in plan.correlations:
-                if corr.from_path:
-                    lines.append(f'{indent}const {corr.extract} = {var_name}.json("{corr.from_path}");')
+            for binding in bindings:
+                if binding["source"] != i:
+                    continue
+                number, correlation = binding["index"], binding["correlation"]
+                lines.append(f"{indent}let __value{number};")
+                lines.append(f"{indent}let __parsed{number} = false;")
+                lines.append(f"{indent}try {{")
+                lines.append(f"{indent}  __value{number} = {var_name}.json({json.dumps(correlation.from_path)});")
+                lines.append(f"{indent}  __parsed{number} = true;")
+                lines.append(f"{indent}}} catch (_) {{")
+                lines.append(f'{indent}  check(false, {{ "qa_json_parse_{number}": (v) => v === true }});')
+                lines.append(f"{indent}}}")
+                lines.append(f'{indent}const __extracted{number} = __parsed{number} && __expectedStatus.includes({var_name}.status) && __value{number} !== undefined && __value{number} !== null && __value{number} !== "";')
+                lines.append(f'{indent}check(__extracted{number}, {{ "qa_extract_{number}": (v) => v === true }});')
+                lines.append(f"{indent}if (__extracted{number}) __correlations[{number}] = __value{number};")
 
+            indent = target_indent
+            lines.append(f"{indent}}}")
             lines.append("")
 
         # Think time

@@ -1,0 +1,599 @@
+{
+  "scope": "actual k6 response/header and independent report with owned HTTP; no Agent/model invocation",
+  "project_id": "e00694b0-10ce-4059-87b2-c30c91299bda",
+  "session_id": "ba8e994f-38db-43a5-9ed4-5257d42da5ce",
+  "observations": [
+    {
+      "variant": "single",
+      "passed": true,
+      "expected": true,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "2ca33aa07f885b566f2268239ca6ece2b1415e7af19a397c9e51f1c273dc778f"
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "7cbb19ea8ab1d04631e3f8bdb9a3613cef9453d37c78e1b1aca76b8af9a361fa"
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "1f2a0bd2977a97da8b3bbae3a427cd8a617f477055e3d5c6e5e4924baf515ec2"
+        }
+      ]
+    },
+    {
+      "variant": "missing-noise",
+      "passed": false,
+      "expected": false,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/missing",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/missing",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/missing",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "wrong-status",
+      "passed": false,
+      "expected": false,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "chain",
+      "passed": true,
+      "expected": true,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "6a58d18abfd90df98cd6cf4c29f66f1367ce777367302390c65011076a88e1f4"
+        },
+        {
+          "path": "/profile",
+          "status": 200,
+          "authorization_present": true,
+          "authorization_accepted": true,
+          "authorization_sha256": "6a58d18abfd90df98cd6cf4c29f66f1367ce777367302390c65011076a88e1f4",
+          "credential_sha256": "6a58d18abfd90df98cd6cf4c29f66f1367ce777367302390c65011076a88e1f4",
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "8f1358cec4bd679cce0d46c8106bfd4f4a92159e022866c49bb45aaab1e3c319"
+        },
+        {
+          "path": "/profile",
+          "status": 200,
+          "authorization_present": true,
+          "authorization_accepted": true,
+          "authorization_sha256": "8f1358cec4bd679cce0d46c8106bfd4f4a92159e022866c49bb45aaab1e3c319",
+          "credential_sha256": "8f1358cec4bd679cce0d46c8106bfd4f4a92159e022866c49bb45aaab1e3c319",
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "5fb1f5462efb421cdb6f1d0fd26cf1903e6e91fcb28a5c93cfa80bb8b970adf7"
+        },
+        {
+          "path": "/profile",
+          "status": 200,
+          "authorization_present": true,
+          "authorization_accepted": true,
+          "authorization_sha256": "5fb1f5462efb421cdb6f1d0fd26cf1903e6e91fcb28a5c93cfa80bb8b970adf7",
+          "credential_sha256": "5fb1f5462efb421cdb6f1d0fd26cf1903e6e91fcb28a5c93cfa80bb8b970adf7",
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "zero",
+      "passed": true,
+      "expected": true,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/zero",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/zero",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/zero",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "false",
+      "passed": true,
+      "expected": true,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/false",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/false",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/false",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "null",
+      "passed": false,
+      "expected": false,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/null",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/null",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/null",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "empty",
+      "passed": false,
+      "expected": false,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/empty",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/empty",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/empty",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "malformed",
+      "passed": false,
+      "expected": false,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/malformed",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/malformed",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/malformed",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "missing-chain",
+      "passed": false,
+      "expected": false,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/missing",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/missing",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/missing",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "explicit-source",
+      "passed": true,
+      "expected": true,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "5a96f69b8b32f6b770a0070200b292498a19dbbfb4ed3e695eecf026bfa2ac22"
+        },
+        {
+          "path": "/profile",
+          "status": 200,
+          "authorization_present": true,
+          "authorization_accepted": true,
+          "authorization_sha256": "4ff57f44a977ebbf29028015773eb35433e7e502da7a8a19830dad2123a83858",
+          "credential_sha256": "5a96f69b8b32f6b770a0070200b292498a19dbbfb4ed3e695eecf026bfa2ac22",
+          "bearer_prefix": true,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "5e943602ab99da0e4ee8424830a01383aa74fdffa588cbab1b111341f11fe44b"
+        },
+        {
+          "path": "/profile",
+          "status": 200,
+          "authorization_present": true,
+          "authorization_accepted": true,
+          "authorization_sha256": "86489458706981e733e9b620a28fbefb6f3d2a60b9cbcad114090420b8f75946",
+          "credential_sha256": "5e943602ab99da0e4ee8424830a01383aa74fdffa588cbab1b111341f11fe44b",
+          "bearer_prefix": true,
+          "issued_sha256": null
+        },
+        {
+          "path": "/plain",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/login",
+          "status": 200,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": "c59402547c402a2ce0c0e3372cc34d9f73f5c1b0874901bcbe5734ec7429f641"
+        },
+        {
+          "path": "/profile",
+          "status": 200,
+          "authorization_present": true,
+          "authorization_accepted": true,
+          "authorization_sha256": "c0fae07cde9167cd94ca4168e9be1db7938808179dd9f9093c29d23bfa56c4a4",
+          "credential_sha256": "c59402547c402a2ce0c0e3372cc34d9f73f5c1b0874901bcbe5734ec7429f641",
+          "bearer_prefix": true,
+          "issued_sha256": null
+        }
+      ]
+    },
+    {
+      "variant": "negative-status",
+      "passed": true,
+      "expected": true,
+      "exit_code": 0,
+      "events": [
+        {
+          "path": "/profile",
+          "status": 401,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/profile",
+          "status": 401,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        },
+        {
+          "path": "/profile",
+          "status": 401,
+          "authorization_present": false,
+          "authorization_accepted": false,
+          "authorization_sha256": null,
+          "credential_sha256": null,
+          "bearer_prefix": false,
+          "issued_sha256": null
+        }
+      ]
+    }
+  ],
+  "loads": [
+    {
+      "variant": "load-chain",
+      "exit_code": 0,
+      "sla_passed": true,
+      "verdict": "pass",
+      "request_validation": "passed"
+    },
+    {
+      "variant": "load-missing",
+      "exit_code": 0,
+      "sla_passed": true,
+      "verdict": "fail",
+      "request_validation": "failed"
+    }
+  ]
+}

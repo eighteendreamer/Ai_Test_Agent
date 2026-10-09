@@ -4168,6 +4168,7 @@ class ToolRuntimeService:
             "metrics": report.metrics.model_dump(),
             "sla_result": report.sla_result.model_dump(),
             "error_breakdown": report.error_breakdown.model_dump(),
+            "request_validation": report.request_validation,
             "engine_threshold_crosscheck": report.engine_threshold_crosscheck.model_dump(),
             "baseline_comparison": report.baseline_comparison.model_dump() if report.baseline_comparison else None,
             "load_side_observations": report.load_side_observations,

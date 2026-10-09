@@ -631,6 +631,7 @@ class PerformanceTestingModeRuntime:
             "execution_status": report.execution_status,
             "engine_exit_code": report.engine_exit_code,
             "evidence_status": report.evidence_status,
+            "request_validation": report.request_validation,
             "engine_threshold_crosscheck": report.engine_threshold_crosscheck.model_dump(),
             "baseline_comparison": (
                 report.baseline_comparison.model_dump()
@@ -661,6 +662,7 @@ class PerformanceTestingModeRuntime:
             "engine_exit_code": report.engine_exit_code,
             "evidence_status": report.evidence_status,
             "evidence_warning": report.evidence_warning,
+            "request_validation": report.request_validation,
             "run": state.run.model_dump() if state.run else None,
             "smoke_result": state.smoke_result.model_dump() if state.smoke_result else None,
             "report_markdown": state.report.report_markdown,

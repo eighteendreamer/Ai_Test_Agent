@@ -6,8 +6,10 @@ engine threshold crosscheck, load-side observations, and markdown/HTML output.
 from __future__ import annotations
 
 import uuid
+import logging
 from html import escape
 from typing import Any
+from src.application.performance.request_validation import request_validation
 
 from src.modes.performance_testing_mode.contracts import (
     RUN_INTENT_PROBE,
@@ -32,6 +34,7 @@ from src.modes.performance_testing_mode.plan_state import (
 )
 from src.modes.performance_testing_mode.result_parser import ParsedMetrics
 
+logger = logging.getLogger(__name__)
 
 class PerfReportBuilder:
     """Builds a complete PerfReport from parsed metrics and plan context."""
@@ -52,6 +55,7 @@ class PerfReportBuilder:
             engine_exit_code=run.exit_code,
             evidence_status=run.evidence.get("status"),
             evidence_warning=str(run.evidence.get("error") or ", ".join(run.evidence.get("missing_artifacts", []))),
+            request_validation=request_validation(parsed.raw, plan),
         )
 
         report.error_breakdown = self._classify_errors(parsed, run)
@@ -67,6 +71,11 @@ class PerfReportBuilder:
 
         report.load_side_observations = self._observe(parsed, plan)
         report.verdict = self._decide_verdict(report)
+        logger.info("performance_report_judged", extra={"run_id": run.run_id,
+            "verdict": report.verdict, "request_validation_status": report.request_validation.get("status"),
+            "failed_checks": report.request_validation.get("failed_checks", []),
+            "missing_checks": report.request_validation.get("missing_checks", []),
+            "engine_exit_code": run.exit_code, "evidence_status": report.evidence_status})
         report.report_markdown = self._render_markdown(report)
         report.report_html = self._render_html(report)
 
@@ -195,11 +204,15 @@ class PerfReportBuilder:
         return observations
 
     def _decide_verdict(self, report: PerfReport) -> Verdict:
+        if report.request_validation.get("status") == "failed":
+            return VERDICT_FAIL
         if report.sla_result.passed is False:
             return VERDICT_FAIL
         if report.baseline_comparison and report.baseline_comparison.regressed:
             return VERDICT_FAIL
         if report.sla_result.passed is None:
+            return VERDICT_INCONCLUSIVE
+        if report.request_validation.get("status") == "missing":
             return VERDICT_INCONCLUSIVE
         if (report.execution_status != "completed" or report.engine_exit_code not in {0, None}
                 or report.evidence_status not in {None, "saved"}):
@@ -232,6 +245,11 @@ class PerfReportBuilder:
             lines.append(f"**原件状态**: {report.evidence_status}")
         if report.evidence_warning:
             lines.append(f"**证据缺口**: {report.evidence_warning}")
+        if report.request_validation.get("status") not in {None, "not_requested"}:
+            lines.append(f"**响应核验**: {report.request_validation['status']}")
+            for key in ("failed_checks", "missing_checks"):
+                if report.request_validation.get(key):
+                    lines.append(f"- {key}: " + ", ".join(report.request_validation[key]))
         lines.append("")
 
         lines.append("## 核心指标")
@@ -324,6 +342,11 @@ class PerfReportBuilder:
             lines.append(f"<p>原件状态: {escape(report.evidence_status)}</p>")
         if report.evidence_warning:
             lines.append(f"<p>证据缺口: {escape(report.evidence_warning)}</p>")
+        if report.request_validation.get("status") not in {None, "not_requested"}:
+            lines.append(f"<p>响应核验: {escape(report.request_validation['status'])}</p>")
+            for key in ("failed_checks", "missing_checks"):
+                if report.request_validation.get(key):
+                    lines.append(f"<p>{key}: {escape(', '.join(report.request_validation[key]))}</p>")
 
         m = report.metrics
         lines.append("<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>")

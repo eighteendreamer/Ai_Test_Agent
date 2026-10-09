@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="102.227" timestamp="2026-10-09T11:07:45.722945+08:00" hostname="EIghteen"><testcase classname="tests.test_performance_correlation_live" name="test_actual_response_extraction_and_dependency_header" time="80.765"><failure message="src.runtime.resource_lease_manager.ResourceUnavailable: resource_pending_reap">tests\test_performance_correlation_live.py:166: in test_actual_response_extraction_and_dependency_header
+    smoke = await runner.run_smoke(plan, script, adapter)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\performance\perf_runner_service.py:145: in run_smoke
+    result = await self._run_in_docker(cmd, script, container_name, smoke_opts.timeout_seconds)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_performance_correlation_live.py:110: in _run_in_docker
+    result = await super()._run_in_docker(cmd, script, name, timeout)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\performance\perf_runner_service.py:283: in _run_in_docker
+    result = await self._docker_resources.execute(
+src\runtime\docker_resource_manager.py:92: in execute
+    return await self.run(create_args, name_prefix=name_prefix, operation=attached)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\docker_resource_manager.py:124: in run
+    lease = await manager.acquire_first_available(
+src\runtime\resource_lease_manager.py:241: in acquire_first_available
+    raise ResourceUnavailable(last_reason or f"{resource_type}_capacity")
+E   src.runtime.resource_lease_manager.ResourceUnavailable: resource_pending_reap</failure></testcase></testsuite></testsuites>

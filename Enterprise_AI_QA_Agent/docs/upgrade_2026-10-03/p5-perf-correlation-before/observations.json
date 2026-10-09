@@ -1,0 +1,96 @@
+[
+  {
+    "variant": "single",
+    "passed": false,
+    "expected": true,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      }
+    ]
+  },
+  {
+    "variant": "missing-noise",
+    "passed": true,
+    "expected": false,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/missing",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/missing",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/missing",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      }
+    ]
+  },
+  {
+    "variant": "wrong-status",
+    "passed": true,
+    "expected": false,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/plain",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/plain",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/plain",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      }
+    ]
+  },
+  {
+    "variant": "chain",
+    "passed": false,
+    "expected": true,
+    "exit_code": 107,
+    "events": []
+  }
+]

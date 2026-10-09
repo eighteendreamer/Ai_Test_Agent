@@ -1,0 +1,254 @@
+[
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-0ec139-ad834b145508",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=ad834b1455084e6186bdee27b543789c",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=1",
+      "--label",
+      "qa.project_id=4ea62f73-c75f-4a07-ba75-237b99289c63",
+      "--label",
+      "qa.session_id=be030e1e-af71-4208-868a-4631bbeeea5a",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-pb5c5hi0:/work",
+      "-e",
+      "QA_PERF_SMOKE=true",
+      "-e",
+      "QA_PERF_SMOKE_VUS=1",
+      "-e",
+      "QA_PERF_SMOKE_ITERATIONS=3",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/single.js"
+    ],
+    "exit_code": 0,
+    "stdout": "779f43f6e5209185cd2e6be671886da3ff5900dbc3c88c5df454af10d5ef952e\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "779f43f6e5209185cd2e6be671886da3ff5900dbc3c88c5df454af10d5ef952e"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/single.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 3       127.767911/s\n    checks_succeeded...: 100.00% 3 out of 3\n    checks_failed......: 0.00%   0 out of 3\n\n    ✓ status is expected\n\n    HTTP\n    http_req_duration..............: avg=1.32ms min=1ms    med=1.25ms max=1.7ms   p(90)=1.61ms p(95)=1.65ms  p(99)=1.69ms\n      { expected_response:true }...: avg=1.32ms min=1ms    med=1.25ms max=1.7ms   p(90)=1.61ms p(95)=1.65ms  p(99)=1.69ms\n    http_req_failed................: 0.00% 0 out of 3\n    http_reqs......................: 3     127.767911/s\n\n    EXECUTION\n    iteration_duration.............: avg=7.66ms min=2.71ms med=3.18ms max=17.08ms p(90)=14.3ms p(95)=15.69ms p(99)=16.8ms\n    iterations.....................: 3     127.767911/s\n\n    NETWORK\n    data_received..................: 624 B 27 kB/s\n    data_sent......................: 261 B 11 kB/s\n\n\n\n\nrunning (00m00.0s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.0s/10m0s  3/3 shared iters\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "779f43f6e5209185cd2e6be671886da3ff5900dbc3c88c5df454af10d5ef952e"
+    ],
+    "exit_code": 0,
+    "stdout": "779f43f6e5209185cd2e6be671886da3ff5900dbc3c88c5df454af10d5ef952e\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-b163f1-92d539e81823",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=92d539e818234071a41636432a8ee782",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-1",
+      "--label",
+      "qa.fencing_token=2",
+      "--label",
+      "qa.project_id=4ea62f73-c75f-4a07-ba75-237b99289c63",
+      "--label",
+      "qa.session_id=be030e1e-af71-4208-868a-4631bbeeea5a",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-wswp2wd6:/work",
+      "-e",
+      "QA_PERF_SMOKE=true",
+      "-e",
+      "QA_PERF_SMOKE_VUS=1",
+      "-e",
+      "QA_PERF_SMOKE_ITERATIONS=3",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/missing-noise.js"
+    ],
+    "exit_code": 0,
+    "stdout": "6fcb05788db4703622a1e670dac581f34cb519c665ab7833a6c5dd36f3a99389\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "6fcb05788db4703622a1e670dac581f34cb519c665ab7833a6c5dd36f3a99389"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/missing-noise.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\nticket\n\nrunning (00m00.0s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.0s/10m0s  3/3 shared iters\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "6fcb05788db4703622a1e670dac581f34cb519c665ab7833a6c5dd36f3a99389"
+    ],
+    "exit_code": 0,
+    "stdout": "6fcb05788db4703622a1e670dac581f34cb519c665ab7833a6c5dd36f3a99389\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-905937-835593b952d0",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=835593b952d04618a567852eab0ed591",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-2",
+      "--label",
+      "qa.fencing_token=3",
+      "--label",
+      "qa.project_id=4ea62f73-c75f-4a07-ba75-237b99289c63",
+      "--label",
+      "qa.session_id=be030e1e-af71-4208-868a-4631bbeeea5a",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-5xrneslr:/work",
+      "-e",
+      "QA_PERF_SMOKE=true",
+      "-e",
+      "QA_PERF_SMOKE_VUS=1",
+      "-e",
+      "QA_PERF_SMOKE_ITERATIONS=3",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/wrong-status.js"
+    ],
+    "exit_code": 0,
+    "stdout": "7a73d5cfededb68a0584aaa22771ff855f2233a5a507845bcac3f70e84fc72b9\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "7a73d5cfededb68a0584aaa22771ff855f2233a5a507845bcac3f70e84fc72b9"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/wrong-status.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 3       205.770956/s\n    checks_succeeded...: 100.00% 3 out of 3\n    checks_failed......: 0.00%   0 out of 3\n\n    ✓ status is expected\n\n    HTTP\n    http_req_duration..............: avg=1.77ms min=1.58ms med=1.63ms max=2.11ms p(90)=2.01ms p(95)=2.06ms p(99)=2.1ms \n      { expected_response:true }...: avg=1.77ms min=1.58ms med=1.63ms max=2.11ms p(90)=2.01ms p(95)=2.06ms p(99)=2.1ms \n    http_req_failed................: 0.00% 0 out of 3\n    http_reqs......................: 3     205.770956/s\n\n    EXECUTION\n    iteration_duration.............: avg=4.77ms min=3.68ms med=4.88ms max=5.74ms p(90)=5.57ms p(95)=5.66ms p(99)=5.72ms\n    iterations.....................: 3     205.770956/s\n\n    NETWORK\n    data_received..................: 471 B 32 kB/s\n    data_sent......................: 261 B 18 kB/s\n\n\n\n\nrunning (00m00.0s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.0s/10m0s  3/3 shared iters\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "7a73d5cfededb68a0584aaa22771ff855f2233a5a507845bcac3f70e84fc72b9"
+    ],
+    "exit_code": 0,
+    "stdout": "7a73d5cfededb68a0584aaa22771ff855f2233a5a507845bcac3f70e84fc72b9\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-8a61bc-e59a8a870ac0",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=e59a8a870ac04b5c85804ba210090953",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-3",
+      "--label",
+      "qa.fencing_token=4",
+      "--label",
+      "qa.project_id=4ea62f73-c75f-4a07-ba75-237b99289c63",
+      "--label",
+      "qa.session_id=be030e1e-af71-4208-868a-4631bbeeea5a",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-53beiy9i:/work",
+      "-e",
+      "QA_PERF_SMOKE=true",
+      "-e",
+      "QA_PERF_SMOKE_VUS=1",
+      "-e",
+      "QA_PERF_SMOKE_ITERATIONS=3",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/chain.js"
+    ],
+    "exit_code": 0,
+    "stdout": "8631e3b9621b56036f82eee7855acdee22b7353b7f1045db6fea1ae29f9abf42\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "8631e3b9621b56036f82eee7855acdee22b7353b7f1045db6fea1ae29f9abf42"
+    ],
+    "exit_code": 107,
+    "stdout": "",
+    "stderr": "time=\"2026-10-09T03:00:32Z\" level=error msg=\"could not initialize '/work/chain.js': could not load JS test 'file:///work/chain.js': SyntaxError: Identifier 'ticket' has already been declared at file:///work/chain.js:33:9\"\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "8631e3b9621b56036f82eee7855acdee22b7353b7f1045db6fea1ae29f9abf42"
+    ],
+    "exit_code": 0,
+    "stdout": "8631e3b9621b56036f82eee7855acdee22b7353b7f1045db6fea1ae29f9abf42\n",
+    "stderr": ""
+  }
+]

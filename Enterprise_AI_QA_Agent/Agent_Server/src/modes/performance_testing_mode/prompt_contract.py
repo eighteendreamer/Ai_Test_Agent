@@ -93,6 +93,8 @@ PERF_PLANNER_CONTRACT = """\
 - closed 模型默认使用 ramping-vus
 - 必须包含 smoke config（冒烟验证参数）
 - 必须包含 sla config（即使 probe 模式也需要记录 baseline 参考）
+- correlations读取明确JSON路径；from_target是来源目标名，into_target是后续消费目标名，into_header是header名，header_prefix仅按项目鉴权文档提供。不设置新字段时来源为首目标、消费为紧邻下一目标；不向全部目标广播凭据。
+- smoke.expect_status提供明确预期状态，expect_extract必须对应实际correlations。变量保留在当前iteration内，禁止打印凭据来证明提取成功。
 - limits 必须在系统硬上限范围内
 """
 
@@ -106,6 +108,7 @@ PERF_ANALYST_CONTRACT = """\
 4. P99/P95 长尾比率异常检测
 5. 引擎 thresholds 与 SLA 判定交叉验证
 6. 负载侧观测 + "需结合服务端监控"标注
+7. request_validation独立于SLA：实际check失败为fail，必需check缺失为inconclusive；stdout文字、exit0及SLA通过不能代替响应、关联与header准备成功。not_observed表示引擎业务核验未采，不能称它已验收。
 
 你不做执行，不调用 runner 工具。你的输入是 RawMetrics，输出是 PerfReport。
 """

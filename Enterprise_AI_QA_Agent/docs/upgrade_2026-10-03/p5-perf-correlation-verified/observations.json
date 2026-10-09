@@ -1,0 +1,139 @@
+[
+  {
+    "variant": "single",
+    "passed": true,
+    "expected": true,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      }
+    ]
+  },
+  {
+    "variant": "missing-noise",
+    "passed": false,
+    "expected": false,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/missing",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/missing",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/missing",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      }
+    ]
+  },
+  {
+    "variant": "wrong-status",
+    "passed": false,
+    "expected": false,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/plain",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/plain",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/plain",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      }
+    ]
+  },
+  {
+    "variant": "chain",
+    "passed": true,
+    "expected": true,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/profile",
+        "status": 200,
+        "authorization_present": true,
+        "authorization_accepted": true,
+        "authorization_sha256": "22cb6b3c74c048f63c0d02c735764893130caed4655680f42837f037af421ae7"
+      },
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/profile",
+        "status": 200,
+        "authorization_present": true,
+        "authorization_accepted": true,
+        "authorization_sha256": "8eb2e3d70a1e50f2f76af24d184fb700fece50fef8b17541c2321cc5f09f4cd1"
+      },
+      {
+        "path": "/login",
+        "status": 200,
+        "authorization_present": false,
+        "authorization_accepted": false,
+        "authorization_sha256": null
+      },
+      {
+        "path": "/profile",
+        "status": 200,
+        "authorization_present": true,
+        "authorization_accepted": true,
+        "authorization_sha256": "daff3948685f9801a28cf03811afcba4734e78e729d3a7b1555504c6f489ddbe"
+      }
+    ]
+  }
+]

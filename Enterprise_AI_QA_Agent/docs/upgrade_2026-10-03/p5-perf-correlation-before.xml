@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="39.306" timestamp="2026-10-09T10:59:57.167030+08:00" hostname="EIghteen"><testcase classname="tests.test_performance_correlation_live" name="test_actual_response_extraction_and_dependency_header" time="29.731"><failure message="AssertionError: [{'variant': 'single', 'passed': False, 'expected': True, 'exit_code': 0, ...}, {'variant': 'missing-noise', 'passed':...expected': False, 'exit_code': 0, ...}, {'variant': 'chain', 'passed': False, 'expected': True, 'exit_code': 107, ...}]&#10;assert [False, True, True, False] == [True, False, False, True]&#10;  &#10;  At index 0 diff: False != True&#10;  Use -v to get more diff">tests\test_performance_correlation_live.py:147: in test_actual_response_extraction_and_dependency_header
+    assert [item["passed"] for item in observations] == [item["expected"] for item in observations], observations
+E   AssertionError: [{'variant': 'single', 'passed': False, 'expected': True, 'exit_code': 0, ...}, {'variant': 'missing-noise', 'passed':...expected': False, 'exit_code': 0, ...}, {'variant': 'chain', 'passed': False, 'expected': True, 'exit_code': 107, ...}]
+E   assert [False, True, True, False] == [True, False, False, True]
+E     
+E     At index 0 diff: False != True
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 from .contracts import (
     DriverConfidence,
@@ -137,6 +137,17 @@ class Correlation(BaseModel):
     extract: str
     from_path: str = ""
     into_header: str = ""
+    from_target: str | None = None
+    into_target: str | None = None
+    header_prefix: str | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_fields(self, handler):
+        data = handler(self)
+        for name in ("from_target", "into_target", "header_prefix"):
+            if getattr(self, name) is None:
+                data.pop(name, None)
+        return data
 
 
 class Assertion(BaseModel):
@@ -197,6 +208,7 @@ class SmokeResult(BaseModel):
     extracted: dict[str, bool] = Field(default_factory=dict)
     detail: str = ""
     evidence: dict[str, Any] = Field(default_factory=dict)
+    request_validation: dict[str, Any] = Field(default_factory=dict)
 
 
 class PerfRun(BaseModel):
@@ -294,6 +306,7 @@ class PerfReport(BaseModel):
     engine_exit_code: int | None = None
     evidence_status: str | None = None
     evidence_warning: str = ""
+    request_validation: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
