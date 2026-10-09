@@ -33,7 +33,7 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_PERF_C
 
 
 class Target:
-    def __init__(self):
+    def __init__(self, *, server_factory=ThreadingHTTPServer):
         self.events, self.credentials, self.lock = [], set(), Lock()
         owner = self
 
@@ -75,7 +75,7 @@ class Target:
                 self.end_headers()
                 self.wfile.write(encoded)
 
-        self.server = ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+        self.server = server_factory(("0.0.0.0", 0), Handler)
         self.thread = Thread(target=self.server.serve_forever, daemon=True)
 
     def start(self):

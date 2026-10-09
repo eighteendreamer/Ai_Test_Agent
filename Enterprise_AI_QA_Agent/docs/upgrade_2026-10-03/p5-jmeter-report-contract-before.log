@@ -1,0 +1,34 @@
+FFFF                                                                     [100%]
+================================== FAILURES ===================================
+__ test_rejected_report_keeps_measurement_and_resumes_without_engine[False] ___
+tests\test_performance_report_persistence.py:41: in test_rejected_report_keeps_measurement_and_resumes_without_engine
+    assert result["status"] == "partial" and result["ok"] is False
+E   AssertionError: assert ('completed' == 'partial'
+E     
+E     - partial
+E     + completed)
+___ test_rejected_report_keeps_measurement_and_resumes_without_engine[None] ___
+tests\test_performance_report_persistence.py:41: in test_rejected_report_keeps_measurement_and_resumes_without_engine
+    assert result["status"] == "partial" and result["ok"] is False
+E   AssertionError: assert ('completed' == 'partial'
+E     
+E     - partial
+E     + completed)
+_ test_rejected_report_keeps_measurement_and_resumes_without_engine[outcome2] _
+tests\test_performance_report_persistence.py:41: in test_rejected_report_keeps_measurement_and_resumes_without_engine
+    assert result["status"] == "partial" and result["ok"] is False
+E   AssertionError: assert ('completed' == 'partial'
+E     
+E     - partial
+E     + completed)
+__________ test_report_without_configured_store_does_not_claim_saved __________
+tests\test_performance_report_persistence.py:67: in test_report_without_configured_store_does_not_claim_saved
+    assert result["metrics_persistence"] == {"status": "not_configured", "retryable": False}
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'metrics_persistence'
+=========================== short test summary info ===========================
+FAILED tests/test_performance_report_persistence.py::test_rejected_report_keeps_measurement_and_resumes_without_engine[False]
+FAILED tests/test_performance_report_persistence.py::test_rejected_report_keeps_measurement_and_resumes_without_engine[None]
+FAILED tests/test_performance_report_persistence.py::test_rejected_report_keeps_measurement_and_resumes_without_engine[outcome2]
+FAILED tests/test_performance_report_persistence.py::test_report_without_configured_store_does_not_claim_saved
+4 failed in 1.10s

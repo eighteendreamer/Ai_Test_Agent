@@ -1,0 +1,108 @@
+{
+  "run_id": "perf-run-b1bef4cf",
+  "run_intent": "regression",
+  "verdict": "pass",
+  "metrics": {
+    "samples": 92,
+    "throughput_tps": 24.05857740585774,
+    "avg_ms": 4.380434782608695,
+    "min_ms": 3.0,
+    "max_ms": 34.0,
+    "p50_ms": 4.0,
+    "p90_ms": 5.0,
+    "p95_ms": 5.349999999999994,
+    "p99_ms": 34.0,
+    "error_rate": 0.0
+  },
+  "sla_result": {
+    "passed": true,
+    "violations": [],
+    "missing_metrics": []
+  },
+  "execution_status": "completed",
+  "engine_exit_code": 0,
+  "evidence_status": "saved",
+  "request_validation": {
+    "status": "passed",
+    "targets": [
+      {
+        "index": 0,
+        "name": "login",
+        "expected_status": [
+          200,
+          201
+        ],
+        "observed_status": [
+          200
+        ],
+        "checks": [
+          {
+            "name": "qa_status_0",
+            "passes": 47,
+            "fails": 0,
+            "passed": true
+          }
+        ]
+      },
+      {
+        "index": 1,
+        "name": "profile",
+        "expected_status": [
+          200,
+          201
+        ],
+        "observed_status": [
+          200
+        ],
+        "checks": [
+          {
+            "name": "qa_status_1",
+            "passes": 45,
+            "fails": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "correlations": [
+      {
+        "index": 0,
+        "name": "ticket",
+        "from_target": "login",
+        "from_path": "session.credential",
+        "extraction": {
+          "name": "qa_extract_0",
+          "passes": 47,
+          "fails": 0,
+          "passed": true
+        },
+        "into_target": "profile",
+        "into_header": "Authorization",
+        "binding": {
+          "name": "qa_dependency_0",
+          "passes": 45,
+          "fails": 0,
+          "passed": true
+        }
+      }
+    ],
+    "checked_status": [
+      200
+    ],
+    "extracted": {},
+    "missing_checks": [],
+    "failed_checks": []
+  },
+  "metrics_persistence": {
+    "status": "saved",
+    "retryable": false
+  },
+  "engine_threshold_crosscheck": {
+    "agree": true,
+    "detail": "引擎未输出 thresholds"
+  },
+  "baseline_comparison": {
+    "p95_delta_pct": -10.83,
+    "regressed": false
+  }
+}

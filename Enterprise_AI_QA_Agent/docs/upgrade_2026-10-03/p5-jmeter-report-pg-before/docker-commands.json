@@ -1,0 +1,482 @@
+[
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-270c93-ca9ead74bb50",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=ca9ead74bb504d298fbd4dce4622038b",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=1",
+      "--label",
+      "qa.project_id=1dfa7b0f-d6a9-4ed4-8383-6f0800138732",
+      "--label",
+      "qa.session_id=36968ca2-c51b-4a4b-b557-f706fa279994",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-2zqsidcc:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jqa_perf.smoke=true",
+      "-Jqa_perf.smoke_iterations=3",
+      "-Jqa_perf.smoke_vus=1",
+      "-Jqa_perf.scheduler=false",
+      "-Jsample_variables=qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "7224aed49f8d1031b15440b4cbd17fc43f2d9aba19d507138ef4c7a5cab512b5\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "7224aed49f8d1031b15440b4cbd17fc43f2d9aba19d507138ef4c7a5cab512b5"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 8:59:49 AM CEST (1791529189353)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =      6 in 00:00:02 =    3.4/s Avg:    14 Min:     5 Max:    56 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 8:59:51 AM CEST (1791529191770)\n... end of run\n",
+    "stderr": "Oct 09, 2026 8:59:48 AM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "7224aed49f8d1031b15440b4cbd17fc43f2d9aba19d507138ef4c7a5cab512b5"
+    ],
+    "exit_code": 0,
+    "stdout": "7224aed49f8d1031b15440b4cbd17fc43f2d9aba19d507138ef4c7a5cab512b5\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-1b52b53-1b85a9a9557f",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=1b85a9a9557f4393b76272642d57789f",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-1",
+      "--label",
+      "qa.fencing_token=2",
+      "--label",
+      "qa.project_id=1dfa7b0f-d6a9-4ed4-8383-6f0800138732",
+      "--label",
+      "qa.session_id=36968ca2-c51b-4a4b-b557-f706fa279994",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-m4uiaj_e:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jsample_variables=qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "52f900e652e2d5b25e32acfa86559f92be58885587dd64060d3526bb6236f00b\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "52f900e652e2d5b25e32acfa86559f92be58885587dd64060d3526bb6236f00b"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 9:00:01 AM CEST (1791529201192)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary +      1 in 00:00:01 =    0.9/s Avg:     7 Min:     7 Max:     7 Err:     0 (0.00%) Active: 3 Started: 3 Finished: 0\nsummary +     83 in 00:00:03 =   28.4/s Avg:     5 Min:     3 Max:    47 Err:     0 (0.00%) Active: 0 Started: 3 Finished: 3\nsummary =     84 in 00:00:04 =   20.7/s Avg:     5 Min:     3 Max:    47 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 9:00:05 AM CEST (1791529205853)\n... end of run\n",
+    "stderr": "Oct 09, 2026 9:00:00 AM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "52f900e652e2d5b25e32acfa86559f92be58885587dd64060d3526bb6236f00b"
+    ],
+    "exit_code": 0,
+    "stdout": "52f900e652e2d5b25e32acfa86559f92be58885587dd64060d3526bb6236f00b\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-b92588-072482e3a092",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=072482e3a0924e0b9d7ce66730d90025",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=3",
+      "--label",
+      "qa.project_id=1dfa7b0f-d6a9-4ed4-8383-6f0800138732",
+      "--label",
+      "qa.session_id=36968ca2-c51b-4a4b-b557-f706fa279994",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-ntr2ma98:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jqa_perf.smoke=true",
+      "-Jqa_perf.smoke_iterations=3",
+      "-Jqa_perf.smoke_vus=1",
+      "-Jqa_perf.scheduler=false",
+      "-Jsample_variables=qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "ea3c01c10dcc83064df9357c05e9e908ebd125ad8fa1f58f13255e5cb0980b60\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "ea3c01c10dcc83064df9357c05e9e908ebd125ad8fa1f58f13255e5cb0980b60"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 9:00:26 AM CEST (1791529226270)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =      6 in 00:00:01 =    4.1/s Avg:     9 Min:     4 Max:    34 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 9:00:28 AM CEST (1791529228229)\n... end of run\n",
+    "stderr": "Oct 09, 2026 9:00:25 AM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "ea3c01c10dcc83064df9357c05e9e908ebd125ad8fa1f58f13255e5cb0980b60"
+    ],
+    "exit_code": 0,
+    "stdout": "ea3c01c10dcc83064df9357c05e9e908ebd125ad8fa1f58f13255e5cb0980b60\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-200e6ac-488b20e134aa",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=488b20e134aa48f99b071d39b4700400",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-1",
+      "--label",
+      "qa.fencing_token=4",
+      "--label",
+      "qa.project_id=1dfa7b0f-d6a9-4ed4-8383-6f0800138732",
+      "--label",
+      "qa.session_id=36968ca2-c51b-4a4b-b557-f706fa279994",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-er7ywua4:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jsample_variables=qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "2f6a9efc7067e94137548ba333bb77d00461126391c5de9dfefeab4fcaf7d1c9\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "2f6a9efc7067e94137548ba333bb77d00461126391c5de9dfefeab4fcaf7d1c9"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 9:00:37 AM CEST (1791529237005)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =     84 in 00:00:04 =   20.8/s Avg:     4 Min:     3 Max:    46 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 9:00:41 AM CEST (1791529241531)\n... end of run\n",
+    "stderr": "Oct 09, 2026 9:00:36 AM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "2f6a9efc7067e94137548ba333bb77d00461126391c5de9dfefeab4fcaf7d1c9"
+    ],
+    "exit_code": 0,
+    "stdout": "2f6a9efc7067e94137548ba333bb77d00461126391c5de9dfefeab4fcaf7d1c9\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-dc4c73-0e00f79d6154",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=0e00f79d615445a4b6cca48f0c8763ce",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=5",
+      "--label",
+      "qa.project_id=1dfa7b0f-d6a9-4ed4-8383-6f0800138732",
+      "--label",
+      "qa.session_id=36968ca2-c51b-4a4b-b557-f706fa279994",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-aq97ic_x:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jqa_perf.smoke=true",
+      "-Jqa_perf.smoke_iterations=3",
+      "-Jqa_perf.smoke_vus=1",
+      "-Jqa_perf.scheduler=false",
+      "-Jsample_variables=qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "4fc5ff7ee293e2209acc0ccb645cd075cb6f3631fc735ebfcc0d05899ba46966\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "4fc5ff7ee293e2209acc0ccb645cd075cb6f3631fc735ebfcc0d05899ba46966"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 9:00:57 AM CEST (1791529257223)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =      6 in 00:00:02 =    3.9/s Avg:    10 Min:     4 Max:    41 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 9:00:59 AM CEST (1791529259160)\n... end of run\n",
+    "stderr": "Oct 09, 2026 9:00:56 AM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "4fc5ff7ee293e2209acc0ccb645cd075cb6f3631fc735ebfcc0d05899ba46966"
+    ],
+    "exit_code": 0,
+    "stdout": "4fc5ff7ee293e2209acc0ccb645cd075cb6f3631fc735ebfcc0d05899ba46966\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-03c7778-6021d687c742",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=6021d687c74247908fa44af46e75d8d3",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-1",
+      "--label",
+      "qa.fencing_token=6",
+      "--label",
+      "qa.project_id=1dfa7b0f-d6a9-4ed4-8383-6f0800138732",
+      "--label",
+      "qa.session_id=36968ca2-c51b-4a4b-b557-f706fa279994",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-ewieeam9:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jsample_variables=qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "0d4aa6ae83118e334d5daadab0601a211072772eb695ca9960848be788989a38\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "0d4aa6ae83118e334d5daadab0601a211072772eb695ca9960848be788989a38"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 9:01:06 AM CEST (1791529266631)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =     84 in 00:00:04 =   21.0/s Avg:     4 Min:     3 Max:    40 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 9:01:11 AM CEST (1791529271165)\n... end of run\n",
+    "stderr": "Oct 09, 2026 9:01:05 AM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "0d4aa6ae83118e334d5daadab0601a211072772eb695ca9960848be788989a38"
+    ],
+    "exit_code": 0,
+    "stdout": "0d4aa6ae83118e334d5daadab0601a211072772eb695ca9960848be788989a38\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=7224aed49f8d1031b15440b4cbd17fc43f2d9aba19d507138ef4c7a5cab512b5",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=52f900e652e2d5b25e32acfa86559f92be58885587dd64060d3526bb6236f00b",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=ea3c01c10dcc83064df9357c05e9e908ebd125ad8fa1f58f13255e5cb0980b60",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=2f6a9efc7067e94137548ba333bb77d00461126391c5de9dfefeab4fcaf7d1c9",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=4fc5ff7ee293e2209acc0ccb645cd075cb6f3631fc735ebfcc0d05899ba46966",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=0d4aa6ae83118e334d5daadab0601a211072772eb695ca9960848be788989a38",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

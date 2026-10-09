@@ -54,6 +54,9 @@ PERFORMANCE_TESTING_SYSTEM_CONTRACT = """\
    - never claim SLA passed when tool output says fail;
    - if `baseline_comparison.regressed=true`, you must surface the regression clearly.
 4. When reporting final results, prefer exact fields from tool output over free-form reinterpretation.
+5. metrics_persistence.status=failed means the report exists but metrics were not saved.
+   Preserve status=partial and phase=analyzed; retry the existing report save only.
+   Do not launch another load test, reset the previous ToolJob, or reinterpret storage failure as SLA failure.
 
 ## 镜像能力使用规则
 

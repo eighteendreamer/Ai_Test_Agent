@@ -93,7 +93,12 @@ class PerfMetricsStore:
             )
             return True
         except Exception as e:
-            logger.warning(f"Failed to save perf run: {e}")
+            # SQL exception strings can contain the full bound metrics/URL.
+            logger.warning("performance_metrics_save_failed", extra={
+                "run_id": run.run_id, "plan_id": run.plan_id,
+                "engine": run.engine, "table": self._table,
+                "error_type": type(e).__name__,
+            })
             return False
 
     def _save_run_sync(

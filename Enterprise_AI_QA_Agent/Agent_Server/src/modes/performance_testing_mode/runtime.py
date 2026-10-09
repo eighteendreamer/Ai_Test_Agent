@@ -603,23 +603,41 @@ class PerformanceTestingModeRuntime:
         if not state.report:
             return self._error("缺少分析报告", state)
 
-        await self._emit_progress(state, PHASE_REPORT_READY, "正在生成性能测试报告")
+        await self._emit_progress(state, PHASE_ANALYZED, "正在保存性能测试报告")
 
-        # Persist run metrics for future baseline lookups
+        persistence = {"status": "not_configured", "retryable": False}
+        # Keep the analyzed checkpoint on failed writes. A new tool call can
+        # save this report without running smoke/load again.
         if self._metrics_store and state.run and state.plan:
             target_url = state.plan.targets[0].url if state.plan.targets else ""
+            saved = False
             try:
-                await self._metrics_store.save_run(
+                saved = await self._metrics_store.save_run(
                     run=state.run,
                     metrics=state.report.metrics,
                     verdict=state.report.verdict,
                     target_url=target_url,
                     run_intent=state.report.run_intent,
                 )
-            except Exception:
-                logger.debug("Failed to persist perf run metrics, non-blocking")
+            except Exception as exc:
+                logger.warning("performance_metrics_persistence_exception", extra={
+                    "run_id": state.run.run_id, "session_id": state.session_id,
+                    "error_type": type(exc).__name__,
+                })
+            persistence = {"status": "saved" if saved is True else "failed", "retryable": saved is not True}
 
-        state.record_phase_transition(PHASE_REPORT_READY)
+        pending = persistence["retryable"]
+        phase = PHASE_ANALYZED if pending else PHASE_REPORT_READY
+        if state.phase != phase:
+            state.record_phase_transition(phase)
+        log = logger.warning if pending else logger.info
+        log("performance_report_pending_persistence" if pending else "performance_report_ready", extra={
+            "run_id": state.report.run_id, "session_id": state.session_id,
+            "metrics_persistence": persistence["status"], "phase": phase,
+        })
+        await self._emit_progress(state, phase,
+            "性能报告已生成，指标入库失败；可重试保存，无需再次压测" if pending else "性能测试报告已完成",
+            {"metrics_persistence": persistence})
 
         report = state.report
         metrics_payload = {
@@ -632,6 +650,7 @@ class PerformanceTestingModeRuntime:
             "engine_exit_code": report.engine_exit_code,
             "evidence_status": report.evidence_status,
             "request_validation": report.request_validation,
+            "metrics_persistence": persistence,
             "engine_threshold_crosscheck": report.engine_threshold_crosscheck.model_dump(),
             "baseline_comparison": (
                 report.baseline_comparison.model_dump()
@@ -641,10 +660,12 @@ class PerformanceTestingModeRuntime:
         }
 
         return {
-            "status": "completed",
-            "ok": True,
-            "phase": PHASE_REPORT_READY,
-            "summary": f"性能测试完成，verdict={state.report.verdict}",
+            "status": "partial" if pending else "completed",
+            "ok": not pending,
+            "phase": phase,
+            "summary": (f"性能报告已生成，verdict={state.report.verdict}；指标入库失败，可重试保存"
+                        if pending else f"性能测试完成，verdict={state.report.verdict}"),
+            "metrics_persistence": persistence,
             "verdict": state.report.verdict,
             "run_id": state.run.run_id if state.run else "",
             "run_intent": state.report.run_intent,

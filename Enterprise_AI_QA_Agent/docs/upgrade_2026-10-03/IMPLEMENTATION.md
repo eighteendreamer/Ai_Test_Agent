@@ -4778,3 +4778,18 @@ Agent_Server内实际命令（真实批次目录QA_JMETER_RESPONSE_DIR分别为r
 项目根运行.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-jmeter-audit.py --sync，再不带--sync复核；只提交本批确切文件。完整P0—P5及剩余边界见PLAN6.91。
 
 补充结构化JMeter判定日志后9模块contract-logged：81通过20.41秒；最终compileall退出0。审计核对670份最终实际原件下载、345份旧工件，含临时凭据的早期原件没有入暂存区。
+
+## 2026-10-09 JMeter正式报告、真实PG拒写与恢复〔79c72775〕
+
+依据P5_JMETER_REPORT_RESEARCH.md/PLAN6.92，修改runtime报告阶段、metrics store日志、Prompt；复用已有analyzed恢复和ToolJob partial，不增加依赖、配置、表或前端改动。测试使用实际缓存JMeter5.5与隔离存储，固定计划直接进入生产plan_resolved；不调用Step、Agent或完整App，不声称默认5.6.3配置已验。
+
+Agent_Server中实际命令均使用`..\.venv\Scripts\python.exe -X utf8 -m pytest`（首轮before未加-X utf8）：
+
+- `RUN_LIVE_JMETER_REPORT=1`，`QA_JMETER_REPORT_DIR`分别为本项目绝对路径下`docs/upgrade_2026-10-03/p5-jmeter-report-before`、`p5-jmeter-report-pg-before`、`p5-jmeter-report-verified`，执行`tests/test_performance_jmeter_report_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/<同批次>.xml`，双流写同名.log。依次1失败129.93秒（Connect长尾）、1失败141.90秒（真实PG拒写误报完成）、最终1通过199.85秒。
+- `tests/test_performance_report_persistence.py`：contract-before 4失败1.10秒，基于实际PG失败上下文。加入runtime_artifacts、measurement_contract、report_builder后contract-fixed 26通过10.82秒。
+- expanded：report_persistence、correlation_contract、evidence_contract、measurement_contract、k6_adapter、jmeter_adapter、report_builder、result_parser、runner、runtime_artifacts、case_execution_verification、coordinator、task_pool、guard、failure_analyzer、mode_skills、performance_case_execution_system、perf_high_level_runners、artifact_storage_service、xlsx_artifact_download、tool_runtime_heartbeat共21模块，149通过30.80秒；各文件使用现有`tests/test_*.py`全名，同一pytest调用并写`p5-jmeter-report-expanded.log/xml`。0跳过，既有Starlette/AnyIO警告1条。
+- `RUN_LIVE_DOCKER_PERF_MEASUREMENT=1` / `QA_DOCKER_PERF_MEASUREMENT_DIR=.../p5-jmeter-report-measurement-regression`，`tests/test_performance_docker_measurement.py`：1通过44.27秒。
+- `RUN_LIVE_PERF_EVIDENCE=1` / `QA_PERF_EVIDENCE_DIR=.../p5-jmeter-report-evidence-regression`，`tests/test_performance_evidence_live.py`：1通过66.16秒。两批独立隔离环境并行，不覆盖历史工件。
+- `-m compileall -q`对三项生产文件、三项测试和新审计运行，退出0，双流`p5-jmeter-report-compile.log`。仅为附加检查。
+
+项目根`.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-jmeter-report-audit.py --sync`核对外部方案仍为HEAD后同步，再不带--sync复核。旧1420份工件及用户无关文件保持；新增1084下载校验、76关键原件、6个完整容器不存在与6个completed清理回执。业务PG、编辑配置MySQL、原件RustFS职责保持。仅提交本批文件，不推送/建PR；未执行生产迁移或前端构建，未改前端。完整P0—P5及下一步基线项目隔离和其他待办见PLAN6.92。

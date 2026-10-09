@@ -1,0 +1,530 @@
+{
+  "status": "completed",
+  "ok": true,
+  "phase": "report_ready",
+  "summary": "性能测试完成，verdict=pass",
+  "metrics_persistence": {
+    "status": "saved",
+    "retryable": false
+  },
+  "verdict": "pass",
+  "run_id": "perf-run-fa813bf5",
+  "run_intent": "regression",
+  "metrics": {
+    "samples": 3,
+    "throughput_tps": 19.01770136580884,
+    "avg_ms": 0.7194433333333334,
+    "min_ms": 0.442286,
+    "max_ms": 0.93482,
+    "p50_ms": 0.781224,
+    "p90_ms": 0.9041008,
+    "p95_ms": 0.9194604,
+    "p99_ms": 0.93174808,
+    "error_rate": 0.0
+  },
+  "sla_result": {
+    "passed": true,
+    "violations": [],
+    "missing_metrics": []
+  },
+  "error_breakdown": {
+    "protocol_errors": 0,
+    "application_errors": 0,
+    "expected_throttle": 0
+  },
+  "engine_threshold_crosscheck": {
+    "agree": true,
+    "detail": "引擎未输出 thresholds"
+  },
+  "baseline_comparison": null,
+  "load_side_observations": [],
+  "execution_status": "completed",
+  "engine_exit_code": 0,
+  "evidence_status": "saved",
+  "evidence_warning": "",
+  "request_validation": {
+    "status": "passed",
+    "targets": [
+      {
+        "index": 0,
+        "name": "owned-target",
+        "expected_status": [
+          200,
+          201
+        ],
+        "observed_status": [
+          200
+        ],
+        "checks": [
+          {
+            "name": "qa_status_0_200",
+            "passes": 3,
+            "fails": 0,
+            "passed": true
+          }
+        ]
+      }
+    ],
+    "correlations": [],
+    "checked_status": [
+      200
+    ],
+    "extracted": {},
+    "missing_checks": [],
+    "failed_checks": []
+  },
+  "run": {
+    "run_id": "perf-run-fa813bf5",
+    "plan_id": "actual-perf-e1d64dd97d67",
+    "engine": "k6",
+    "backend": "docker",
+    "container_or_cluster": "1a5ccbcf9685ab85aba9a2474c114fe5308dd35899f56cfa2ff22bef678bf58b",
+    "status": "completed",
+    "smoke_result": null,
+    "started_at": "2026-10-09T07:07:52.217617",
+    "completed_at": "2026-10-09T07:07:54.217673",
+    "result_artifact": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+    "raw_metrics": {
+      "samples": 3,
+      "throughput_tps": 19.01770136580884,
+      "avg_ms": 0.7194433333333334,
+      "min_ms": 0.442286,
+      "max_ms": 0.93482,
+      "p50_ms": 0.781224,
+      "p90_ms": 0.9041008,
+      "p95_ms": 0.9194604,
+      "p99_ms": 0.93174808,
+      "error_rate": 0.0,
+      "error_count": 0,
+      "status_codes": {},
+      "thresholds": {},
+      "raw_data": {
+        "root_group": {
+          "groups": {},
+          "checks": {
+            "qa_status_0_200": {
+              "id": "97d45ecbd97c7bffbb65f3df0385d661",
+              "passes": 3,
+              "fails": 0,
+              "name": "qa_status_0_200",
+              "path": "::qa_status_0_200"
+            }
+          },
+          "name": "",
+          "path": "",
+          "id": "d41d8cd98f00b204e9800998ecf8427e"
+        },
+        "metrics": {
+          "iteration_duration": {
+            "avg": 52.305459000000006,
+            "min": 51.143932,
+            "med": 51.670128,
+            "max": 54.102317,
+            "p(90)": 53.6158792,
+            "p(95)": 53.8590981,
+            "p(99)": 54.05367322
+          },
+          "http_req_failed": {
+            "fails": 3,
+            "passes": 0,
+            "value": 0
+          },
+          "http_req_duration{expected_response:true}": {
+            "min": 0.442286,
+            "med": 0.781224,
+            "max": 0.93482,
+            "p(90)": 0.9041008,
+            "p(95)": 0.9194604,
+            "p(99)": 0.93174808,
+            "avg": 0.7194433333333334
+          },
+          "data_sent": {
+            "rate": 1350.2567969724275,
+            "count": 213
+          },
+          "http_req_connecting": {
+            "p(95)": 2.0409344999999997,
+            "p(99)": 2.2223509,
+            "avg": 0.7559016666666666,
+            "min": 0,
+            "med": 0,
+            "max": 2.267705,
+            "p(90)": 1.8141639999999999
+          },
+          "iterations": {
+            "rate": 19.01770136580884,
+            "count": 3
+          },
+          "http_req_sending": {
+            "min": 0.012887,
+            "med": 0.024602,
+            "max": 0.259511,
+            "p(90)": 0.21252919999999997,
+            "p(95)": 0.23602009999999995,
+            "p(99)": 0.25481282,
+            "avg": 0.09899999999999999
+          },
+          "http_reqs": {
+            "count": 3,
+            "rate": 19.01770136580884
+          },
+          "http_req_receiving": {
+            "med": 0.133987,
+            "max": 0.158508,
+            "p(90)": 0.1536038,
+            "p(95)": 0.1560559,
+            "p(99)": 0.15801758000000002,
+            "avg": 0.11783600000000001,
+            "min": 0.061013
+          },
+          "checks": {
+            "passes": 3,
+            "fails": 0,
+            "value": 1
+          },
+          "http_req_waiting": {
+            "min": 0.295412,
+            "med": 0.363205,
+            "max": 0.849205,
+            "p(90)": 0.752005,
+            "p(95)": 0.800605,
+            "p(99)": 0.839485,
+            "avg": 0.5026073333333333
+          },
+          "data_received": {
+            "rate": 4126.841196380517,
+            "count": 651
+          },
+          "http_req_blocked": {
+            "avg": 0.8200226666666667,
+            "min": 0.004832,
+            "med": 0.006507,
+            "max": 2.448729,
+            "p(90)": 1.9602846000000003,
+            "p(95)": 2.2045068,
+            "p(99)": 2.3998845600000003
+          },
+          "http_req_tls_handshaking": {
+            "avg": 0,
+            "min": 0,
+            "med": 0,
+            "max": 0,
+            "p(90)": 0,
+            "p(95)": 0,
+            "p(99)": 0
+          },
+          "http_req_duration": {
+            "p(99)": 0.93174808,
+            "avg": 0.7194433333333334,
+            "min": 0.442286,
+            "med": 0.781224,
+            "max": 0.93482,
+            "p(90)": 0.9041008,
+            "p(95)": 0.9194604
+          }
+        }
+      }
+    },
+    "engine_thresholds": {},
+    "html_report_artifact": "",
+    "stdout_tail": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/smoke.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 3       19.017701/s\n    checks_succeeded...: 100.00% 3 out of 3\n    checks_failed......: 0.00%   0 out of 3\n\n    ✓ qa_status_0_200\n\n    HTTP\n    http_req_duration..............: avg=719.44µs min=442.28µs med=781.22µs max=934.82µs p(90)=904.1µs p(95)=919.46µs p(99)=931.74µs\n      { expected_response:true }...: avg=719.44µs min=442.28µs med=781.22µs max=934.82µs p(90)=904.1µs p(95)=919.46µs p(99)=931.74µs\n    http_req_failed................: 0.00% 0 out of 3\n    http_reqs......................: 3     19.017701/s\n\n    EXECUTION\n    iteration_duration.............: avg=52.3ms   min=51.14ms  med=51.67ms  max=54.1ms   p(90)=53.61ms p(95)=53.85ms  p(99)=54.05ms \n    iterations.....................: 3     19.017701/s\n\n    NETWORK\n    data_received..................: 651 B 4.1 kB/s\n    data_sent......................: 213 B 1.4 kB/s\n\n\n\n\nrunning (00m00.2s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.2s/10m0s  3/3 shared iters\n",
+    "exit_code": 0,
+    "evidence": {
+      "status": "saved",
+      "artifacts": [
+        {
+          "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9/smoke.js",
+          "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9/smoke.js",
+          "storage_backend": "rustfs",
+          "bucket": "qa-agent",
+          "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9/smoke.js",
+          "content_type": "application/javascript",
+          "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\smoke.js",
+          "original_filename": "smoke.js",
+          "size_bytes": 1167,
+          "type": "performance_engine_file",
+          "label": "smoke.js",
+          "filename": "smoke.js",
+          "sha256": "e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9",
+          "evidence_schema": "performance-execution-v1",
+          "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+          "relative_path": "smoke.js",
+          "owner": {
+            "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+            "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+            "turn_id": null,
+            "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+            "run_id": null,
+            "run_item_id": null,
+            "attempt_id": null
+          }
+        },
+        {
+          "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/stderr.log",
+          "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/stderr.log",
+          "storage_backend": "rustfs",
+          "bucket": "qa-agent",
+          "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/stderr.log",
+          "content_type": "application/octet-stream",
+          "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\stderr.log",
+          "original_filename": "stderr.log",
+          "size_bytes": 0,
+          "type": "performance_engine_file",
+          "label": "stderr.log",
+          "filename": "stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "evidence_schema": "performance-execution-v1",
+          "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+          "relative_path": "stderr.log",
+          "owner": {
+            "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+            "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+            "turn_id": null,
+            "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+            "run_id": null,
+            "run_item_id": null,
+            "attempt_id": null
+          }
+        },
+        {
+          "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5/stdout.log",
+          "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5/stdout.log",
+          "storage_backend": "rustfs",
+          "bucket": "qa-agent",
+          "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5/stdout.log",
+          "content_type": "application/octet-stream",
+          "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\stdout.log",
+          "original_filename": "stdout.log",
+          "size_bytes": 1480,
+          "type": "performance_engine_file",
+          "label": "stdout.log",
+          "filename": "stdout.log",
+          "sha256": "7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5",
+          "evidence_schema": "performance-execution-v1",
+          "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+          "relative_path": "stdout.log",
+          "owner": {
+            "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+            "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+            "turn_id": null,
+            "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+            "run_id": null,
+            "run_item_id": null,
+            "attempt_id": null
+          }
+        },
+        {
+          "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+          "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+          "storage_backend": "rustfs",
+          "bucket": "qa-agent",
+          "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+          "content_type": "application/json",
+          "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\summary.json",
+          "original_filename": "summary.json",
+          "size_bytes": 3480,
+          "type": "performance_engine_file",
+          "label": "summary.json",
+          "filename": "summary.json",
+          "sha256": "3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955",
+          "evidence_schema": "performance-execution-v1",
+          "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+          "relative_path": "summary.json",
+          "owner": {
+            "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+            "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+            "turn_id": null,
+            "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+            "run_id": null,
+            "run_item_id": null,
+            "attempt_id": null
+          }
+        },
+        {
+          "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557/execution-manifest.json",
+          "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557/execution-manifest.json",
+          "storage_backend": "rustfs",
+          "bucket": "qa-agent",
+          "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557/execution-manifest.json",
+          "content_type": "application/json",
+          "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\execution-manifest.json",
+          "original_filename": "execution-manifest.json",
+          "size_bytes": 6639,
+          "type": "performance_engine_file",
+          "label": "execution-manifest.json",
+          "filename": "execution-manifest.json",
+          "sha256": "17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557",
+          "evidence_schema": "performance-execution-v1",
+          "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+          "relative_path": "execution-manifest.json",
+          "owner": {
+            "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+            "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+            "turn_id": null,
+            "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+            "run_id": null,
+            "run_item_id": null,
+            "attempt_id": null
+          }
+        }
+      ],
+      "missing_artifacts": [],
+      "error": ""
+    }
+  },
+  "smoke_result": null,
+  "report_markdown": "# 性能测试报告 (rpt-f4bfb788)\n\n**运行 ID**: perf-run-fa813bf5\n**意图**: regression\n**结论**: pass\n**引擎状态**: completed；退出码: 0\n**原件状态**: saved\n**响应核验**: passed\n\n## 核心指标\n\n| 指标 | 值 |\n|------|-----|\n| 样本数 | 3 |\n| 吞吐量 | 19.0 tps |\n| 平均延迟 | 0.7 ms |\n| P50 | 0.8 ms |\n| P90 | 0.9 ms |\n| P95 | 0.9 ms |\n| P99 | 0.9 ms |\n| 错误率 | 0.00% |\n",
+  "report_html": "<!DOCTYPE html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">\n<title>性能报告 rpt-f4bfb788</title>\n<style>\nbody{font-family:system-ui;max-width:800px;margin:2rem auto;padding:0 1rem}\ntable{border-collapse:collapse;width:100%}\nth,td{border:1px solid #ddd;padding:8px;text-align:left}\nth{background:#f5f5f5}\n.pass{color:#16a34a}.fail{color:#dc2626}.baseline{color:#2563eb}.inconclusive{color:#b45309}\n</style></head><body>\n<h1>性能测试报告 <span class=\"pass\">[PASS]</span></h1>\n<p>运行 ID: perf-run-fa813bf5 | 意图: regression</p>\n<p>引擎状态: completed | 退出码: 0</p>\n<p>原件状态: saved</p>\n<p>响应核验: passed</p>\n<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>\n<tr><td>样本数</td><td>3</td></tr>\n<tr><td>吞吐量</td><td>19.0 tps</td></tr>\n<tr><td>P95</td><td>0.9 ms</td></tr>\n<tr><td>P99</td><td>0.9 ms</td></tr>\n<tr><td>错误率</td><td>0.00%</td></tr>\n</table>\n</body></html>",
+  "artifacts": [
+    {
+      "type": "performance_report_markdown",
+      "label": "Performance report (Markdown)",
+      "content": "# 性能测试报告 (rpt-f4bfb788)\n\n**运行 ID**: perf-run-fa813bf5\n**意图**: regression\n**结论**: pass\n**引擎状态**: completed；退出码: 0\n**原件状态**: saved\n**响应核验**: passed\n\n## 核心指标\n\n| 指标 | 值 |\n|------|-----|\n| 样本数 | 3 |\n| 吞吐量 | 19.0 tps |\n| 平均延迟 | 0.7 ms |\n| P50 | 0.8 ms |\n| P90 | 0.9 ms |\n| P95 | 0.9 ms |\n| P99 | 0.9 ms |\n| 错误率 | 0.00% |\n"
+    },
+    {
+      "type": "performance_report_html",
+      "label": "Performance report (HTML)",
+      "content": "<!DOCTYPE html>\n<html lang=\"zh-CN\"><head><meta charset=\"utf-8\">\n<title>性能报告 rpt-f4bfb788</title>\n<style>\nbody{font-family:system-ui;max-width:800px;margin:2rem auto;padding:0 1rem}\ntable{border-collapse:collapse;width:100%}\nth,td{border:1px solid #ddd;padding:8px;text-align:left}\nth{background:#f5f5f5}\n.pass{color:#16a34a}.fail{color:#dc2626}.baseline{color:#2563eb}.inconclusive{color:#b45309}\n</style></head><body>\n<h1>性能测试报告 <span class=\"pass\">[PASS]</span></h1>\n<p>运行 ID: perf-run-fa813bf5 | 意图: regression</p>\n<p>引擎状态: completed | 退出码: 0</p>\n<p>原件状态: saved</p>\n<p>响应核验: passed</p>\n<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>\n<tr><td>样本数</td><td>3</td></tr>\n<tr><td>吞吐量</td><td>19.0 tps</td></tr>\n<tr><td>P95</td><td>0.9 ms</td></tr>\n<tr><td>P99</td><td>0.9 ms</td></tr>\n<tr><td>错误率</td><td>0.00%</td></tr>\n</table>\n</body></html>"
+    },
+    {
+      "type": "performance_metrics_json",
+      "label": "Performance metrics and SLA (JSON)",
+      "content": "{\n  \"run_id\": \"perf-run-fa813bf5\",\n  \"run_intent\": \"regression\",\n  \"verdict\": \"pass\",\n  \"metrics\": {\n    \"samples\": 3,\n    \"throughput_tps\": 19.01770136580884,\n    \"avg_ms\": 0.7194433333333334,\n    \"min_ms\": 0.442286,\n    \"max_ms\": 0.93482,\n    \"p50_ms\": 0.781224,\n    \"p90_ms\": 0.9041008,\n    \"p95_ms\": 0.9194604,\n    \"p99_ms\": 0.93174808,\n    \"error_rate\": 0.0\n  },\n  \"sla_result\": {\n    \"passed\": true,\n    \"violations\": [],\n    \"missing_metrics\": []\n  },\n  \"execution_status\": \"completed\",\n  \"engine_exit_code\": 0,\n  \"evidence_status\": \"saved\",\n  \"request_validation\": {\n    \"status\": \"passed\",\n    \"targets\": [\n      {\n        \"index\": 0,\n        \"name\": \"owned-target\",\n        \"expected_status\": [\n          200,\n          201\n        ],\n        \"observed_status\": [\n          200\n        ],\n        \"checks\": [\n          {\n            \"name\": \"qa_status_0_200\",\n            \"passes\": 3,\n            \"fails\": 0,\n            \"passed\": true\n          }\n        ]\n      }\n    ],\n    \"correlations\": [],\n    \"checked_status\": [\n      200\n    ],\n    \"extracted\": {},\n    \"missing_checks\": [],\n    \"failed_checks\": []\n  },\n  \"metrics_persistence\": {\n    \"status\": \"saved\",\n    \"retryable\": false\n  },\n  \"engine_threshold_crosscheck\": {\n    \"agree\": true,\n    \"detail\": \"引擎未输出 thresholds\"\n  },\n  \"baseline_comparison\": null\n}"
+    },
+    {
+      "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9/smoke.js",
+      "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9/smoke.js",
+      "storage_backend": "rustfs",
+      "bucket": "qa-agent",
+      "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9/smoke.js",
+      "content_type": "application/javascript",
+      "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\smoke.js",
+      "original_filename": "smoke.js",
+      "size_bytes": 1167,
+      "type": "performance_engine_file",
+      "label": "smoke.js",
+      "filename": "smoke.js",
+      "sha256": "e9b156f6bd86ba680daf5d3d7bf0d6e47ee36a7fb2511c5adb7850f6ba6835e9",
+      "evidence_schema": "performance-execution-v1",
+      "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+      "relative_path": "smoke.js",
+      "owner": {
+        "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+        "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+        "turn_id": null,
+        "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+        "run_id": null,
+        "run_item_id": null,
+        "attempt_id": null
+      }
+    },
+    {
+      "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/stderr.log",
+      "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/stderr.log",
+      "storage_backend": "rustfs",
+      "bucket": "qa-agent",
+      "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855/stderr.log",
+      "content_type": "application/octet-stream",
+      "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\stderr.log",
+      "original_filename": "stderr.log",
+      "size_bytes": 0,
+      "type": "performance_engine_file",
+      "label": "stderr.log",
+      "filename": "stderr.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "evidence_schema": "performance-execution-v1",
+      "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+      "relative_path": "stderr.log",
+      "owner": {
+        "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+        "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+        "turn_id": null,
+        "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+        "run_id": null,
+        "run_item_id": null,
+        "attempt_id": null
+      }
+    },
+    {
+      "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5/stdout.log",
+      "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5/stdout.log",
+      "storage_backend": "rustfs",
+      "bucket": "qa-agent",
+      "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5/stdout.log",
+      "content_type": "application/octet-stream",
+      "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\stdout.log",
+      "original_filename": "stdout.log",
+      "size_bytes": 1480,
+      "type": "performance_engine_file",
+      "label": "stdout.log",
+      "filename": "stdout.log",
+      "sha256": "7ed2055d26319cdf50e5d744a57e18c937dc839931908dc9686ebea0f677f8e5",
+      "evidence_schema": "performance-execution-v1",
+      "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+      "relative_path": "stdout.log",
+      "owner": {
+        "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+        "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+        "turn_id": null,
+        "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+        "run_id": null,
+        "run_item_id": null,
+        "attempt_id": null
+      }
+    },
+    {
+      "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+      "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+      "storage_backend": "rustfs",
+      "bucket": "qa-agent",
+      "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955/summary.json",
+      "content_type": "application/json",
+      "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\summary.json",
+      "original_filename": "summary.json",
+      "size_bytes": 3480,
+      "type": "performance_engine_file",
+      "label": "summary.json",
+      "filename": "summary.json",
+      "sha256": "3f06c946bdefa1244d06d08fb1b893bf43fedc90fe76e88759ff4827fe2e4955",
+      "evidence_schema": "performance-execution-v1",
+      "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+      "relative_path": "summary.json",
+      "owner": {
+        "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+        "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+        "turn_id": null,
+        "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+        "run_id": null,
+        "run_item_id": null,
+        "attempt_id": null
+      }
+    },
+    {
+      "path": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557/execution-manifest.json",
+      "uri": "rustfs://qa-agent/performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557/execution-manifest.json",
+      "storage_backend": "rustfs",
+      "bucket": "qa-agent",
+      "object_name": "performance-evidence/d259093a-17eb-4add-8a88-e3186cb641ea/3eb19c7d-9650-4703-b2e6-18d72486aa5b/5cd2bd03bb44458b8d75a01555e7b69a/17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557/execution-manifest.json",
+      "content_type": "application/json",
+      "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-y14vrln0\\execution-manifest.json",
+      "original_filename": "execution-manifest.json",
+      "size_bytes": 6639,
+      "type": "performance_engine_file",
+      "label": "execution-manifest.json",
+      "filename": "execution-manifest.json",
+      "sha256": "17d62a8756b917d1eb8aa316d39b1069546c3789dc35b938b3cf523b12bf0557",
+      "evidence_schema": "performance-execution-v1",
+      "execution_id": "5cd2bd03bb44458b8d75a01555e7b69a",
+      "relative_path": "execution-manifest.json",
+      "owner": {
+        "project_id": "d259093a-17eb-4add-8a88-e3186cb641ea",
+        "session_id": "3eb19c7d-9650-4703-b2e6-18d72486aa5b",
+        "turn_id": null,
+        "trace_id": "trace_fb6f8a8475764fea974c0cec2b5febd0",
+        "run_id": null,
+        "run_item_id": null,
+        "attempt_id": null
+      }
+    }
+  ]
+}

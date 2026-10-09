@@ -1,0 +1,29 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________ test_jmeter_tool_reports_restore_and_rejected_metrics_write _________
+tests\test_performance_jmeter_report_live.py:135: in test_jmeter_tool_reports_restore_and_rejected_metrics_write
+    assert record.status == "partial" and record.output["phase"] == "analyzed", observations[-1]
+E   AssertionError: {'variant': 'pg-rejected', 'tool_status': 'completed', 'verdict': 'pass', 'phase': 'report_ready', ...}
+E   assert ('completed' == 'partial'
+E     
+E     - partial
+E     + completed)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.perf_metrics_store:perf_metrics_store.py:96 Failed to save perf run: (psycopg.errors.CheckViolation) new row for relation "agent_perf_runs" violates check constraint "owned_reject_perf_write"
+DETAIL:  Failing row contains (perf-run-03c77784, jmeter-plan-88ae43ad, jmeter, docker, completed, regression, http://127.0.0.1:52426/login, {"avg_ms": 4.80952380952381, "max_ms": 40.0, "min_ms": 3.0, "p50..., pass, 2026-10-09 07:01:04.413525+00, 2026-10-09 07:01:16.856122+00, 2026-10-09 07:01:16.864788+00).
+[SQL: 
+                    INSERT INTO agent_perf_runs
+                        (run_id, plan_id, engine, backend, status, run_intent, target_url,
+                         metrics_json, verdict, started_at, completed_at)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s, %s, %s)
+                    ON CONFLICT (run_id) DO UPDATE SET
+                        status = EXCLUDED.status,
+                        metrics_json = EXCLUDED.metrics_json,
+                        verdict = EXCLUDED.verdict,
+                        completed_at = EXCLUDED.completed_at
+                    ]
+[parameters: ('perf-run-03c77784', 'jmeter-plan-88ae43ad', 'jmeter', 'docker', 'completed', 'regression', 'http://127.0.0.1:52426/login', '{"samples": 84, "throughput_tps": 22.75189599133261, "avg_ms": 4.80952380952381, "min_ms": 3.0, "max_ms": 40.0, "p50_ms": 4.0, "p90_ms": 5.0, "p95_ms": 5.75, "p99_ms": 40.0, "error_rate": 0.0}', 'pass', datetime.datetime(2026, 10, 9, 7, 1, 4, 413525), datetime.datetime(2026, 10, 9, 7, 1, 16, 856122))]
+(Background on this error at: https://sqlalche.me/e/20/gkpj)
+=========================== short test summary info ===========================
+FAILED tests/test_performance_jmeter_report_live.py::test_jmeter_tool_reports_restore_and_rejected_metrics_write
+1 failed in 141.90s (0:02:21)
