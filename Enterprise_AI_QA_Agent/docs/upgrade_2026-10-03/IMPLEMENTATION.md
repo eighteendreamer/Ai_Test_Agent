@@ -4637,3 +4637,22 @@ $env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
 保存最初错误开关3跳过、首次1失败31通过1跳过、扩大5失败87通过3跳过及单模块1失败2通过。新审计核对原200/408/151工件、三份计划同步、受保护文件、新源码与原证据哈希；不重跑旧审计覆写历史。纠正故障恢复仍为提交后BaseException模拟，不声称真实进程故障或默认可信UI通过；完整P0—P5继续。
 
 本轮首次暂存遇到零字节index.lock（2026-10-09 09:15:56）。两次检查均无Git进程，将锁在原.git内改名为唯一stale-receipt备份后分批暂存；未删除索引/修改配置。413原工件已核对索引字节一致，diff --cached --check通过。
+
+
+## 2026-10-09 完整模板与Excel/JSON产品验收〔97ac33b6〕
+
+新增Agent_Server/tests/test_case_import_full_product.py，实际构建App/Chromium/独立API重启及隔离MySQL/PG/RustFS/Redis，未修改生产功能。研究见P1_IMPORT_FULL_PRODUCT_RESEARCH.md，范围及未完成项见PLAN6.87。最后实际命令（Agent_Server目录）：
+
+```powershell
+$env:RUN_LIVE_CASE_IMPORT_FULL_PRODUCT='1'
+$env:QA_CASE_IMPORT_FULL_PRODUCT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p1-import-full-product-delivery'
+..\.venv\Scripts\python.exe -m pytest tests/test_case_import_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p1-import-full-product-delivery.xml *> ../docs/upgrade_2026-10-03/p1-import-full-product-delivery.log
+```
+
+exit0，1通过54.82秒，0跳过。真实xlsx行/分表/JSON和混合有效/错误行，默认/项目模板、预览报告/原件下载、MySQL映射、PG提交重放/评审/启用/V2草稿、项目隔离、重启原数据读回；PG3用例4版本。原件哈希、HTTP状态/页面ARIA/截图及进程stdout/stderr和数据库保存到delivery目录。主动停API窗口的代理500单列保存，实际stderr证实连接拒绝，恢复后未计划API错误0、pageerror0；未调用AI生成或真实Step，不称文档生成或P0—P5完成。
+
+此前同一模块first75.74秒、second50.63秒、third48.94秒、verified78.38秒、final90.09秒、complete58.80秒各1失败；原因与修订见研究文件，原工件不改写。构建均通过；测试错误不掩盖为生产修复。三份方案已同步，项目目录运行 `.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/p1-import-full-product-audit.py` 核对历史/源码/原件/最终PG及范围。
+
+方案同步最初额外产生CRCRLF，提交前已按原CRLF修正三份文件并重跑审计，未改正文含义。再次遇到09:28:59创建的零字节index.lock，两次无Git进程确认后在原.git保存唯一stale-import备份，未删除索引。
+
+首次diff --check报告浏览器inner_text原件的Tab尾空白；沿既有原工件策略为本批.txt指定保留原空白，不改原件，不放宽代码检查。153原工件索引逐字节核对通过。

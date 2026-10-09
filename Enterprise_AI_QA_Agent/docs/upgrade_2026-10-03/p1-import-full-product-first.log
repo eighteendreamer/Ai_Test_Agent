@@ -1,0 +1,25 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_______ test_product_templates_excel_json_review_restart_and_isolation ________
+tests\test_case_import_full_product.py:154: in test_product_templates_excel_json_review_restart_and_isolation
+    rows = await upload_preview("rows.xlsx", "rows", commit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_import_full_product.py:119: in upload_preview
+    await dialog.get_by_label("���벼��", exact=True).select_option(layout)
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:20051: in select_option
+    await self._impl_obj.select_option(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:633: in select_option
+    return await self._frame.select_option(
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:814: in select_option
+    return await self._channel.send("selectOption", self._timeout, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.select_option: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_role("dialog", name="�����������", exact=True).get_by_label("���벼��", exact=True)
+=========================== short test summary info ===========================
+FAILED tests/test_case_import_full_product.py::test_product_templates_excel_json_review_restart_and_isolation
+1 failed in 75.74s (0:01:15)

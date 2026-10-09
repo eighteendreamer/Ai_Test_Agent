@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="75.720" timestamp="2026-10-09T09:21:59.639586+08:00" hostname="EIghteen"><testcase classname="tests.test_case_import_full_product" name="test_product_templates_excel_json_review_restart_and_isolation" time="68.298"><failure message="playwright._impl._errors.TimeoutError: Locator.select_option: Timeout 30000ms exceeded.&#10;Call log:&#10;  - waiting for get_by_role(&quot;dialog&quot;, name=&quot;导入测试用例&quot;, exact=True).get_by_label(&quot;导入布局&quot;, exact=True)">tests\test_case_import_full_product.py:154: in test_product_templates_excel_json_review_restart_and_isolation
+    rows = await upload_preview("rows.xlsx", "rows", commit=True)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_case_import_full_product.py:119: in upload_preview
+    await dialog.get_by_label("导入布局", exact=True).select_option(layout)
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:20051: in select_option
+    await self._impl_obj.select_option(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:633: in select_option
+    return await self._frame.select_option(
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:814: in select_option
+    return await self._channel.send("selectOption", self._timeout, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Locator.select_option: Timeout 30000ms exceeded.
+E   Call log:
+E     - waiting for get_by_role("dialog", name="导入测试用例", exact=True).get_by_label("导入布局", exact=True)</failure></testcase></testsuite></testsuites>
