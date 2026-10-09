@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="157.110" timestamp="2026-10-09T12:30:39.079271+08:00" hostname="EIghteen"><testcase classname="tests.test_performance_jmeter_live" name="test_actual_jmeter_smoke_status_and_response_chain" time="143.315"><failure message="AssertionError: [{'variant': 'normal', 'passed': True, 'expected': True, 'exit_code': 0, ...}, {'variant': 'wrong-status', 'passed': F...e, 'expected': True, 'exit_code': 0, ...}, {'variant': 'chain', 'passed': True, 'expected': True, 'exit_code': 0, ...}]&#10;assert [True, False, False, True] == [True, False, True, True]&#10;  &#10;  At index 2 diff: False != True&#10;  Use -v to get more diff">tests\test_performance_jmeter_live.py:107: in test_actual_jmeter_smoke_status_and_response_chain
+    assert [o["passed"] for o in observations] == [o["expected"] for o in observations], observations
+E   AssertionError: [{'variant': 'normal', 'passed': True, 'expected': True, 'exit_code': 0, ...}, {'variant': 'wrong-status', 'passed': F...e, 'expected': True, 'exit_code': 0, ...}, {'variant': 'chain', 'passed': True, 'expected': True, 'exit_code': 0, ...}]
+E   assert [True, False, False, True] == [True, False, True, True]
+E     
+E     At index 2 diff: False != True
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

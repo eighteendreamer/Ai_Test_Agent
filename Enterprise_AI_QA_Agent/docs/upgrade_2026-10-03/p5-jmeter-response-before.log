@@ -1,0 +1,15 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____________ test_actual_jmeter_smoke_status_and_response_chain ______________
+tests\test_performance_jmeter_live.py:107: in test_actual_jmeter_smoke_status_and_response_chain
+    assert [o["passed"] for o in observations] == [o["expected"] for o in observations], observations
+E   AssertionError: [{'variant': 'normal', 'passed': True, 'expected': True, 'exit_code': 0, ...}, {'variant': 'wrong-status', 'passed': T..., 'expected': True, 'exit_code': 0, ...}, {'variant': 'chain', 'passed': False, 'expected': True, 'exit_code': 0, ...}]
+E   assert [True, True, False, False] == [True, False, True, True]
+E     
+E     At index 1 diff: True != False
+E     Use -v to get more diff
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+=========================== short test summary info ===========================
+FAILED tests/test_performance_jmeter_live.py::test_actual_jmeter_smoke_status_and_response_chain
+1 failed in 108.48s (0:01:48)

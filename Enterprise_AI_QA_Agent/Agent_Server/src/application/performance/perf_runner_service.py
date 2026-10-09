@@ -348,7 +348,13 @@ class PerfRunnerService:
 
         jmeter_stats = tmpdir / "report" / "statistics.json"
         if jmeter_stats.exists():
-            return jmeter_stats.read_text(encoding="utf-8")
+            # Keep the dashboard metrics and the raw JTL together so the
+            # shared request validator can inspect actual status/variables.
+            data = json.loads(jmeter_stats.read_text(encoding="utf-8"))
+            jtl = tmpdir / "result.jtl"
+            if jtl.exists():
+                data["__jtl"] = jtl.read_text(encoding="utf-8")
+            return json.dumps(data, ensure_ascii=False)
 
         return ""
 

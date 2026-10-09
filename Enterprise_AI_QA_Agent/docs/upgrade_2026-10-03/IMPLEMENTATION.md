@@ -4761,3 +4761,20 @@ $env:QA_PERF_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agen
 ```
 
 compileall退出0。新审计`p5-perf-correlation-audit.py --sync`先核对外部方案仍为原HEAD再同步，随后不带--sync复核；不重跑会覆盖旧验证JSON的历史审计。`.gitattributes`只扩展本批原件规则，测试按既有忽略规则force-add确切文件，不修改用户.gitignore；完成后仅提交本批文件。完整P0—P5保持未完成，JMeter/Agent/App/容量/AI流式/安全与其余待办继续。
+
+
+## 2026-10-09 JMeter响应、旅程与布尔证据〔8a2b63f3〕
+
+四个性能源文件及两项测试变更，依据P5_JMETER_RESPONSE_RESEARCH.md/PLAN6.91。原件保存实际Docker/HTTP/runner/对象及清理日志，不调用Agent或真实模型；无新数据库/依赖/配置。旧临时凭据原件保留本地、不提交。
+
+Agent_Server内实际命令（真实批次目录QA_JMETER_RESPONSE_DIR分别为response-final/response-delivery，RUN_LIVE_JMETER_RESPONSE=1）：
+
+- test_performance_jmeter_live.py -q --tb=short：response-final 1通过74.67秒；最终delivery加--junitxml=../docs/upgrade_2026-10-03/p5-jmeter-response-delivery.xml，双流写同名.log，1通过101.61秒。
+- test_performance_jmeter_adapter.py、runner、correlation_contract、evidence_contract、measurement_contract、k6_adapter、report_builder、result_parser、runtime_artifacts：同一pytest命令9模块，contract-final 78通过/3失败，contract-delivery 81通过20.39秒；原失败日志XML保留。
+- RUN_LIVE_DOCKER_PERF_MEASUREMENT=1/QA_DOCKER_PERF_MEASUREMENT_DIR=p5-jmeter-measurement-regression，test_performance_docker_measurement.py：1通过40.65秒。
+- RUN_LIVE_PERF_EVIDENCE=1/QA_PERF_EVIDENCE_DIR=p5-jmeter-evidence-regression，test_performance_evidence_live.py：1通过58.50秒。
+- 解释器均为..\.venv\Scripts\python.exe -X utf8 -m pytest；附加compileall性能目录及两JMeter测试退出0，仅为附加检查。
+
+项目根运行.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-jmeter-audit.py --sync，再不带--sync复核；只提交本批确切文件。完整P0—P5及剩余边界见PLAN6.91。
+
+补充结构化JMeter判定日志后9模块contract-logged：81通过20.41秒；最终compileall退出0。审计核对670份最终实际原件下载、345份旧工件，含临时凭据的早期原件没有入暂存区。

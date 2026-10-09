@@ -1,0 +1,10 @@
+F...................................                                     [100%]
+================================== FAILURES ===================================
+_____________ test_jmeter_build_script_contains_core_jmx_elements _____________
+tests\test_performance_jmeter_adapter.py:48: in test_jmeter_build_script_contains_core_jmx_elements
+    assert "CSVDataSet" in artifact.script_content
+E   assert 'CSVDataSet' in '<?xml version="1.0" encoding="UTF-8"?>\n<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">\n  <hashTree>\...tics.json</stringProp>\n      </ResultCollector>\n      <hashTree/>\n    </hashTree>\n  </hashTree>\n</jmeterTestPlan>'
+E    +  where '<?xml version="1.0" encoding="UTF-8"?>\n<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">\n  <hashTree>\...tics.json</stringProp>\n      </ResultCollector>\n      <hashTree/>\n    </hashTree>\n  </hashTree>\n</jmeterTestPlan>' = ScriptArtifact(engine='jmeter', script_content='<?xml version="1.0" encoding="UTF-8"?>\n<jmeterTestPlan version="1.2" ...>\n  </hashTree>\n</jmeterTestPlan>', filename='test.jmx', data_files={'data/users.csv': 'users.csv'}, correlations=[]).script_content
+=========================== short test summary info ===========================
+FAILED tests/test_performance_jmeter_adapter.py::test_jmeter_build_script_contains_core_jmx_elements
+1 failed, 35 passed in 7.32s

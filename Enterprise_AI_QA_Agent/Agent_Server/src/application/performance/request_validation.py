@@ -1,8 +1,10 @@
-"""Read k6's standard check counters, rather than treating console text as proof."""
+"""Read engine request facts, rather than treating console text as proof."""
 from __future__ import annotations
 
 import logging
 import re
+import csv
+import io
 
 from .engine_adapter import metric_number
 
@@ -39,12 +41,85 @@ def correlation_bindings(plan):
 def request_validation(data, plan):
     result = {"status": "not_requested", "targets": [], "correlations": [],
         "checked_status": [], "extracted": {}, "missing_checks": [], "failed_checks": []}
-    if plan.engine != "k6":
+    if plan.engine not in {"k6", "jmeter"}:
         result["status"] = "not_observed"
         result["extracted"] = {name: False for name in plan.smoke.expect_extract}
         return result
     if not plan.targets and not plan.correlations and not plan.smoke.expect_extract:
         return result
+    if plan.engine == "jmeter":
+        jtl = data.get("__jtl") if isinstance(data, dict) else None
+        if not isinstance(jtl, str) or not jtl.strip():
+            result["status"] = "not_observed"
+            result["extracted"] = {name: False for name in plan.smoke.expect_extract}
+            result["missing_checks"].append("jmeter_jtl")
+            logger.warning("performance_jmeter_observation_unavailable", extra={"reason": "missing_jtl"})
+            return result
+        rows = list(csv.DictReader(io.StringIO(jtl)))
+        bindings = correlation_bindings(plan)
+        by_index = {i: [] for i in range(len(plan.targets))}
+        for row in rows:
+            label = str(row.get("label") or "")
+            for i, target in enumerate(plan.targets):
+                if label == target.name:
+                    by_index[i].append(row)
+        expected = set(str(status) for status in plan.smoke.expect_status)
+        for i, target in enumerate(plan.targets):
+            target_rows = by_index[i]
+            statuses = sorted({int(row["responseCode"]) for row in target_rows if str(row.get("responseCode", "")).isdigit()})
+            passes = sum(1 for row in target_rows if str(row.get("responseCode")) in expected)
+            fails = len(target_rows) - passes
+            if not target_rows:
+                result["missing_checks"].append(f"status:{target.name}")
+            elif fails:
+                result["failed_checks"].append(f"qa_status_{i}")
+            result["checked_status"].extend(statuses)
+            result["targets"].append({"index": i, "name": target.name,
+                "expected_status": plan.smoke.expect_status, "observed_status": statuses,
+                "checks": [{"name": f"qa_status_{i}", "passes": passes, "fails": fails,
+                    "passed": not fails}]})
+        by_name = {}
+
+        def jtl_check(name, target_rows):
+            values = [row.get(name) for row in target_rows]
+            passes = sum(value == "true" for value in values)
+            fails = sum(value == "false" for value in values)
+            if not values or passes + fails != len(values):
+                result["missing_checks"].append(name)
+            if fails:
+                result["failed_checks"].append(name)
+            return {"name": name, "passes": passes, "fails": fails,
+                "passed": bool(values) and passes == len(values)}
+
+        for binding in bindings:
+            i = binding["index"]
+            source_rows = by_index[binding["source"]]
+            destination_rows = by_index[binding["destination"]] if binding["destination"] is not None else []
+            extraction = jtl_check(f"qa_extract_{i}", source_rows)
+            extract_passed = extraction["passed"]
+            binding_passed = True
+            detail = {"index": i, "name": binding["correlation"].extract,
+                "from_target": plan.targets[binding["source"]].name, "from_path": binding["correlation"].from_path,
+                "extraction": extraction}
+            if binding["destination"] is not None:
+                dependency = jtl_check(f"qa_dependency_{i}", destination_rows)
+                binding_passed = dependency["passed"]
+                detail.update({"into_target": plan.targets[binding["destination"]].name,
+                    "into_header": binding["correlation"].into_header,
+                    "binding": dependency})
+            result["correlations"].append(detail)
+            by_name.setdefault(binding["correlation"].extract, []).append(extract_passed and binding_passed)
+        for name in plan.smoke.expect_extract:
+            result["extracted"][name] = bool(by_name.get(name)) and all(by_name[name])
+            if name not in by_name:
+                result["missing_checks"].append(f"extract:{name}")
+        result["checked_status"] = sorted(set(result["checked_status"]))
+        result["status"] = "failed" if result["failed_checks"] else "missing" if result["missing_checks"] else "passed"
+        logger.info("performance_jmeter_requests_validated", extra={"validation_status": result["status"],
+            "target_count": len(result["targets"]), "correlation_count": len(bindings),
+            "missing_checks": result["missing_checks"], "failed_checks": result["failed_checks"]})
+        return result
+
     checks = {}
 
     def collect(group):

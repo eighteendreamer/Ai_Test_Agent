@@ -1,0 +1,44 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: /work/teardown.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):
+              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)
+
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 3       19.443787/s
+    checks_succeeded...: 100.00% 3 out of 3
+    checks_failed......: 0.00%   0 out of 3
+
+    ✓ qa_status_0_200
+
+    HTTP
+    http_req_duration..............: avg=459.77µs min=407.97µs med=485.6µs max=485.75µs p(90)=485.72µs p(95)=485.73µs p(99)=485.75µs
+      { expected_response:true }...: avg=459.77µs min=407.97µs med=485.6µs max=485.75µs p(90)=485.72µs p(95)=485.73µs p(99)=485.75µs
+    http_req_failed................: 0.00% 0 out of 3
+    http_reqs......................: 3     19.443787/s
+
+    EXECUTION
+    iteration_duration.............: avg=51.16ms  min=50.87ms  med=50.93ms max=51.69ms  p(90)=51.54ms  p(95)=51.62ms  p(99)=51.68ms 
+    iterations.....................: 3     19.443787/s
+
+    NETWORK
+    data_received..................: 552 B 3.6 kB/s
+    data_sent......................: 213 B 1.4 kB/s
+
+
+
+
+running (00m00.2s), 0/1 VUs, 3 complete and 0 interrupted iterations
+default ✓ [ 100% ] 1 VUs  00m00.2s/10m0s  3/3 shared iters

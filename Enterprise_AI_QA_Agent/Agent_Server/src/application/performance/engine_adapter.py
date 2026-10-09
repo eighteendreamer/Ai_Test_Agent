@@ -18,6 +18,7 @@ class ScriptArtifact:
     script_content: str
     filename: str
     data_files: dict[str, str] = field(default_factory=dict)
+    correlations: list[Any] = field(default_factory=list)
 
 
 @dataclass

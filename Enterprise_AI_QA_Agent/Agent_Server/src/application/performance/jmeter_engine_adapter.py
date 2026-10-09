@@ -11,6 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.modes.performance_testing_mode.plan_state import PerfPlan
+from .request_validation import correlation_bindings
 from .engine_adapter import EngineCommand, RawMetrics, RunOptions, ScriptArtifact, metric_number
 
 
@@ -54,9 +55,9 @@ class JMeterEngineAdapter:
         lines.append("    </TestPlan>")
         lines.append("    <hashTree>")
 
-        # ThreadGroup per target (or single group with all targets)
-        for i, target in enumerate(targets):
-            self._append_thread_group(lines, plan, target, i)
+        # One ordered ThreadGroup preserves response correlations between targets.
+        if targets:
+            self._append_thread_group(lines, plan, targets)
 
         # ResultCollector for summary export
         lines.append('      <ResultCollector guiclass="SummaryCollector" testclass="ResultCollector" testname="Summary Report" enabled="true">')
@@ -87,6 +88,7 @@ class JMeterEngineAdapter:
             script_content=script_content,
             filename="test.jmx",
             data_files=data_files,
+            correlations=list(plan.correlations),
         )
 
     def run_command(self, script: ScriptArtifact, run_opts: RunOptions) -> EngineCommand:
@@ -99,6 +101,15 @@ class JMeterEngineAdapter:
 
         if run_opts.is_smoke:
             cmd.extend(["-Jqa_perf.smoke=true"])
+            cmd.extend([f"-Jqa_perf.smoke_iterations={run_opts.smoke_iterations}",
+                        f"-Jqa_perf.smoke_vus={run_opts.smoke_vus}",
+                        "-Jqa_perf.scheduler=false"])
+
+        if getattr(script, "correlations", None):
+            cmd.extend(["-Jsample_variables=" + ",".join(
+                name for i, _ in enumerate(script.correlations)
+                for name in (f"qa_extract_{i}", f"qa_dependency_{i}")
+            )])
 
         env = dict(run_opts.environment)
         for k, v in run_opts.environment.items():
@@ -161,8 +172,40 @@ class JMeterEngineAdapter:
     # Private helpers
     # -----------------------------------------------------------------------
 
-    def _append_thread_group(self, lines: list[str], plan: PerfPlan, target: Any, index: int) -> None:
+    def _append_thread_group(self, lines: list[str], plan: PerfPlan, targets: list[Any]) -> None:
         wl = plan.workload
+        vus = wl.virtual_users or 50
+        ramp = max(1, wl.hold_seconds // 6) if wl.hold_seconds else 10
+        duration = wl.hold_seconds or 60
+        lines.append(f'      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Performance-journey" enabled="true">')
+        lines.append('        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>')
+        lines.append('        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">')
+        lines.append('          <boolProp name="LoopController.continue_forever">false</boolProp>')
+        lines.append('          <stringProp name="LoopController.loops">${__P(qa_perf.smoke_iterations,-1)}</stringProp>')
+        lines.append('        </elementProp>')
+        lines.append(f'        <stringProp name="ThreadGroup.num_threads">${{__P(qa_perf.smoke_vus,{vus})}}</stringProp>')
+        lines.append(f'        <stringProp name="ThreadGroup.ramp_time">{ramp}</stringProp>')
+        lines.append('        <stringProp name="ThreadGroup.scheduler">${__P(qa_perf.scheduler,true)}</stringProp>')
+        lines.append(f'        <stringProp name="ThreadGroup.duration">${{__P(qa_perf.duration,{duration})}}</stringProp>')
+        lines.append('        <stringProp name="ThreadGroup.delay"></stringProp>')
+        lines.append('        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>')
+        lines.append('      </ThreadGroup>')
+        lines.append('      <hashTree>')
+        for dp in plan.data_params:
+            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", dp.name)
+            lines.append(f'        <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data - {safe_name}" enabled="true">')
+            lines.append(f'          <stringProp name="filename">/work/data/{_esc_xml(dp.name)}.csv</stringProp><stringProp name="variableNames">{safe_name}</stringProp><boolProp name="ignoreFirstLine">true</boolProp><stringProp name="delimiter">,</stringProp><boolProp name="recycle">true</boolProp><boolProp name="stopThread">false</boolProp>')
+            lines.append('        </CSVDataSet><hashTree/>')
+        if wl.model == "open" and wl.target_rate_rps:
+            target_cph = wl.target_rate_rps * 3600
+            lines.append('        <ConstantThroughputTimer guiclass="TestBeanGUI" testclass="ConstantThroughputTimer" testname="Throughput Timer" enabled="true">')
+            lines.append(f'          <stringProp name="throughput">{target_cph}</stringProp><stringProp name="calcMode">1</stringProp>')
+            lines.append('        </ConstantThroughputTimer><hashTree/>')
+        for i, target in enumerate(targets):
+            self._append_sampler(lines, plan, target, i, indent="        ")
+        lines.append('      </hashTree>')
+
+    def _append_sampler(self, lines: list[str], plan: PerfPlan, target: Any, index: int, *, indent: str) -> None:
         url = self.rewrite_target_url(target.url)
         parsed_url = urlparse(url)
         host = parsed_url.hostname or "localhost"
@@ -171,119 +214,63 @@ class JMeterEngineAdapter:
         path = parsed_url.path or "/"
         if parsed_url.query:
             path = f"{path}?{parsed_url.query}"
-
-        tg_name = f"ThreadGroup-{target.name}-{index}" if target.name else f"ThreadGroup-{index}"
+        bindings = correlation_bindings(plan)
+        destination_bindings = [b for b in bindings if b["destination"] == index]
+        source_bindings = [b for b in bindings if b["source"] == index]
         sampler_name = _esc_xml(target.name or f"Sampler-{index}")
+        lines.append(f'{indent}<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="{sampler_name}" enabled="true">')
+        lines.append(f'{indent}  <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.domain">{_esc_xml(host)}</stringProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.port">{port}</stringProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.protocol">{_esc_xml(protocol)}</stringProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.contentEncoding"></stringProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.path">{_esc_xml(path)}</stringProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.method">{_esc_xml(target.method.upper())}</stringProp>')
+        lines.append(f'{indent}  <boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>')
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>')
+        lines.append(f'{indent}</HTTPSamplerProxy>')
+        lines.append(f'{indent}<hashTree>')
+        if plan.workload.think_time_ms > 0:
+            lines.append(f'{indent}  <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">{plan.workload.think_time_ms}</stringProp></ConstantTimer><hashTree/>')
+        vus = plan.workload.virtual_users or 50
+        if plan.workload.mode == "spike" or vus > 100:
+            lines.append(f'{indent}  <SyncTimer guiclass="TestBeanGUI" testclass="SyncTimer" testname="Sync Timer" enabled="true"><intProp name="groupSize">{min(vus, 500)}</intProp><longProp name="timeoutInMs">10000</longProp></SyncTimer><hashTree/>')
+        headers = dict(target.headers)
+        for binding in destination_bindings:
+            corr = binding["correlation"]
+            headers[corr.into_header] = (corr.header_prefix or "") + '${qa_corr_' + str(binding["index"]) + '}'
+        if headers:
+            lines.append(f'{indent}  <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true"><collectionProp name="HeaderManager.headers">')
+            for hk, hv in headers.items():
+                lines.append(f'{indent}    <elementProp name="{_esc_xml(hk)}" elementType="Header"><stringProp name="Header.name">{_esc_xml(hk)}</stringProp><stringProp name="Header.value">{_esc_xml(hv)}</stringProp></elementProp>')
+            lines.append(f'{indent}  </collectionProp></HeaderManager><hashTree/>')
+        expected = plan.smoke.expect_status or []
+        if expected:
+            lines.append(f'{indent}  <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Expected status" enabled="true">')
+            lines.append(f'{indent}    <collectionProp name="Asserion.test_strings">')
+            for n, status in enumerate(expected):
+                lines.append(f'{indent}      <stringProp name="status{index}_{n}">{status}</stringProp>')
+            test_type = 8 | (32 if len(expected) > 1 else 0)
+            lines.append(f'{indent}    </collectionProp><stringProp name="Assertion.custom_message">Unexpected HTTP status</stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">{test_type}</intProp>')
+            lines.append(f'{indent}  </ResponseAssertion><hashTree/>')
+        for binding in source_bindings:
+            corr = binding["correlation"]
+            ref = f'qa_corr_{binding["index"]}'
+            lines.append(f'{indent}  <JMESPathExtractor guiclass="JMESPathExtractorGui" testclass="JMESPathExtractor" testname="Extract {ref}" enabled="true"><stringProp name="JMESExtractor.referenceName">{ref}</stringProp><stringProp name="JMESExtractor.jmesPathExpr">{_esc_xml(corr.from_path)}</stringProp><stringProp name="JMESExtractor.defaultValue"></stringProp><stringProp name="JMESExtractor.matchNumber">1</stringProp></JMESPathExtractor><hashTree/>')
+            self._append_script_element(lines, indent, "JSR223PostProcessor", f"Observe extraction {binding['index']}",
+                f"def value = vars.get('{ref}'); vars.put('qa_extract_{binding['index']}', "
+                "String.valueOf(value != null && !value.isEmpty() && value != 'null'))")
+        for binding in destination_bindings:
+            self._append_script_element(lines, indent, "JSR223PreProcessor", f"Observe header binding {binding['index']}",
+                f"vars.put('qa_dependency_{binding['index']}', "
+                f"String.valueOf(vars.get('qa_extract_{binding['index']}') == 'true'))")
+        lines.append(f'{indent}</hashTree>')
 
-        # Closed model: use ThreadGroup.num_threads
-        # Open model: use ConstantThroughputTimer
-        vus = wl.virtual_users or 50
-        ramp = max(1, wl.hold_seconds // 6) if wl.hold_seconds else 10
-        duration = wl.hold_seconds or 60
-
-        lines.append(f'      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="{tg_name}" enabled="true">')
-        lines.append('        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>')
-        lines.append('        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">')
-        lines.append('          <boolProp name="LoopController.continue_forever">false</boolProp>')
-        lines.append('          <intProp name="LoopController.loops">-1</intProp>')
-        lines.append("        </elementProp>")
-        lines.append(f'        <stringProp name="ThreadGroup.num_threads">{vus}</stringProp>')
-        lines.append(f'        <stringProp name="ThreadGroup.ramp_time">{ramp}</stringProp>')
-        lines.append('        <boolProp name="ThreadGroup.scheduler">true</boolProp>')
-        lines.append(f'        <stringProp name="ThreadGroup.duration">{duration}</stringProp>')
-        lines.append('        <stringProp name="ThreadGroup.delay"></stringProp>')
-        lines.append('        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>')
-        lines.append("      </ThreadGroup>")
-        lines.append("      <hashTree>")
-
-        # HTTPSampler
-        lines.append(f'        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="{sampler_name}" enabled="true">')
-        lines.append('          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">')
-        lines.append('            <collectionProp name="Arguments.arguments"/>')
-        lines.append("          </elementProp>")
-        lines.append(f'          <stringProp name="HTTPSampler.domain">{host}</stringProp>')
-        lines.append(f'          <stringProp name="HTTPSampler.port">{port}</stringProp>')
-        lines.append(f'          <stringProp name="HTTPSampler.protocol">{protocol}</stringProp>')
-        lines.append('          <stringProp name="HTTPSampler.contentEncoding"></stringProp>')
-        lines.append(f'          <stringProp name="HTTPSampler.path">{_esc_xml(path)}</stringProp>')
-        lines.append(f'          <stringProp name="HTTPSampler.method">{target.method.upper()}</stringProp>')
-        lines.append('          <boolProp name="HTTPSampler.follow_redirects">true</boolProp>')
-        lines.append('          <boolProp name="HTTPSampler.auto_redirects">false</boolProp>')
-        lines.append('          <boolProp name="HTTPSampler.use_keepalive">true</boolProp>')
-        lines.append('          <boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>')
-        lines.append('          <stringProp name="HTTPSampler.embedded_url_re"></stringProp>')
-        lines.append('          <stringProp name="HTTPSampler.connect_timeout"></stringProp>')
-        lines.append('          <stringProp name="HTTPSampler.response_timeout"></stringProp>')
-        lines.append("        </HTTPSamplerProxy>")
-        lines.append("        <hashTree>")
-
-        # Header Manager
-        if target.headers:
-            lines.append('          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true">')
-            lines.append('            <collectionProp name="HeaderManager.headers">')
-            for hk, hv in target.headers.items():
-                lines.append(f'              <elementProp name="{_esc_xml(hk)}" elementType="Header">')
-                lines.append(f'                <stringProp name="Header.name">{_esc_xml(hk)}</stringProp>')
-                lines.append(f'                <stringProp name="Header.value">{_esc_xml(hv)}</stringProp>')
-                lines.append("              </elementProp>")
-            lines.append("            </collectionProp>")
-            lines.append("          </HeaderManager>")
-            lines.append("          <hashTree/>")
-
-        # CSV DataSet Config
-        for dp in plan.data_params:
-            safe_name = re.sub(r"[^a-zA-Z0-9_]", "_", dp.name)
-            lines.append(f'          <CSVDataSet guiclass="TestBeanGUI" testclass="CSVDataSet" testname="CSV Data - {safe_name}" enabled="true">')
-            lines.append(f'            <stringProp name="filename">/work/data/{dp.name}.csv</stringProp>')
-            lines.append(f'            <stringProp name="variableNames">{safe_name}</stringProp>')
-            lines.append('            <boolProp name="ignoreFirstLine">true</boolProp>')
-            lines.append('            <stringProp name="delimiter">,</stringProp>')
-            lines.append('            <boolProp name="quotedData">false</boolProp>')
-            lines.append('            <boolProp name="recycle">true</boolProp>')
-            lines.append('            <boolProp name="stopThread">false</boolProp>')
-            lines.append("          </CSVDataSet>")
-            lines.append("          <hashTree/>")
-
-        # SyncTimer (collection point) - add if spike or high concurrency
-        if wl.mode == "spike" or vus > 100:
-            group_size = min(vus, 500)
-            lines.append(f'          <SyncTimer guiclass="TestBeanGUI" testclass="SyncTimer" testname="Sync Timer" enabled="true">')
-            lines.append(f'            <intProp name="groupSize">{group_size}</intProp>')
-            lines.append('            <longProp name="timeoutInMs">10000</longProp>')
-            lines.append("          </SyncTimer>")
-            lines.append("          <hashTree/>")
-
-        # ConstantThroughputTimer for open model
-        if wl.model == "open" and wl.target_rate_rps:
-            target_cph = wl.target_rate_rps * 3600
-            lines.append(f'          <ConstantThroughputTimer guiclass="TestBeanGUI" testclass="ConstantThroughputTimer" testname="Throughput Timer" enabled="true">')
-            lines.append(f'            <stringProp name="throughput">{target_cph}</stringProp>')
-            lines.append('            <stringProp name="calcMode">1</stringProp>')
-            lines.append("          </ConstantThroughputTimer>")
-            lines.append("          <hashTree/>")
-
-        # Response Assertion from SLA
-        if plan.sla.p95_ms or plan.sla.error_rate is not None:
-            lines.append('          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Response Assertion" enabled="true">')
-            lines.append('            <collectionProp name="Asserion.test_strings"/>')
-            lines.append('            <stringProp name="Assertion.test_field">Assertion.response_code</stringProp>')
-            lines.append('            <boolProp name="Assertion.assume_success">false</boolProp>')
-            lines.append('            <intProp name="Assertion.test_type">2</intProp>')
-            lines.append("          </ResponseAssertion>")
-            lines.append("          <hashTree/>")
-
-        # Think time
-        if wl.think_time_ms > 0:
-            tt_seconds = wl.think_time_ms / 1000.0
-            lines.append(f'          <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true">')
-            lines.append(f'            <stringProp name="ConstantTimer.delay">{tt_seconds * 1000:.0f}</stringProp>')
-            lines.append('            <stringProp name="ConstantTimer.random">0</stringProp>')
-            lines.append("          </ConstantTimer>")
-            lines.append("          <hashTree/>")
-
-        lines.append("        </hashTree>")
-        lines.append("      </hashTree>")
-
+    @staticmethod
+    def _append_script_element(lines, indent, kind, name, script):
+        # JMeter's standard sample_variables stores boolean facts only. Values
+        # used for request headers remain in the thread-local variable store.
+        lines.append(f'{indent}  <{kind} guiclass="TestBeanGUI" testclass="{kind}" testname="{name}" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">{_esc_xml(script)}</stringProp><stringProp name="scriptLanguage">groovy</stringProp></{kind}><hashTree/>')
 
 def _esc_xml(text: str) -> str:
     """Escape a string for safe inclusion in XML attribute/text."""

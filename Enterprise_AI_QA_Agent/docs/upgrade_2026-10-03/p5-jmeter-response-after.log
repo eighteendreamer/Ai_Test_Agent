@@ -1,0 +1,15 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____________ test_actual_jmeter_smoke_status_and_response_chain ______________
+tests\test_performance_jmeter_live.py:107: in test_actual_jmeter_smoke_status_and_response_chain
+    assert [o["passed"] for o in observations] == [o["expected"] for o in observations], observations
+E   AssertionError: [{'variant': 'normal', 'passed': True, 'expected': True, 'exit_code': 0, ...}, {'variant': 'wrong-status', 'passed': F...e, 'expected': True, 'exit_code': 0, ...}, {'variant': 'chain', 'passed': True, 'expected': True, 'exit_code': 0, ...}]
+E   assert [True, False, False, True] == [True, False, True, True]
+E     
+E     At index 2 diff: False != True
+E     Use -v to get more diff
+------------------------------ Captured log call ------------------------------
+WARNING  src.runtime.docker_resource_manager:docker_resource_manager.py:88 docker_resource_execution_timeout
+=========================== short test summary info ===========================
+FAILED tests/test_performance_jmeter_live.py::test_actual_jmeter_smoke_status_and_response_chain
+1 failed in 157.14s (0:02:37)
