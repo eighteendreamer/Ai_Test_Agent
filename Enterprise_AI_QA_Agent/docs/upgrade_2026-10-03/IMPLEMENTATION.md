@@ -4944,3 +4944,16 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 同时修复停止固化的快照根因：PG 事件 flush 后重新读取权威 `RecordingSession`，再做图谱完整性校验和 completed 更新，避免使用旧内存 `step_count` 把完整事件误报为 degraded；会话消失则失败。没有新增表、配置、依赖或前端契约，MySQL/PG/RustFS/Memgraph 职责保持。
 
 修复前真实原件转换 3 项失败，证据见 `p0-recording-draft-before`；修复后真实 Chromium + 隔离 MySQL/PG/RustFS/Memgraph 的长输入、密码脱敏、两次真实点击、观察保留、项目隔离和重启读回 **61 通过、6 跳过**，最终 `step_count=8`、PG 事件数 8、`integrity.degraded=false`。录制相关扩大回归 **203 通过、69 跳过**，有 1 条既有 Starlette/AnyIO 弃用警告。详细依据、范围和限制见 `P0_RECORDING_DRAFT_RESEARCH.md`。人工 DeepSeek 业务流程、完整跨页面/跨域/Shadow DOM 清洗、场景/别名/失败定位、默认 AI 使用和其余 P0—P5 仍未完成。
+
+## 2026-10-10 录制草稿真实组件验收
+
+
+继续按现有 `test_case_import_browser.py`、`TestCaseContentDialog` 和 Pinia/路由契约验收。新增 `test_recording_case_draft_browser.py`：真实 Vite/Chromium 挂载生产时间线、Pinia、用例对话框，调用生产 recordings/case_management 路由和真实隔离 MySQL/PG/RustFS；读取 7.03 已采集的浏览器事件到测试所属 PG，不把夹具重新入库称为新人工录制或完整 App。
+
+实际点击生成，故意返回“提交成功后的503”；页面显示错误，再点击通过 GET 找回原用例，不增加第二个转换 POST。打开真实对话框，JSON 原文与原固定版本的兼容投影逐字段一致，长 Unicode 输入完整；页面提交评审/启用经真实 HTTP200 落库，刷新后自动读回同一 case/version 且不 POST。PG 仍 1 case/1 version，页面 JS 错误 0。最终 **1 passed in 6.00s**，compileall 退出0；没有改生产代码、模式、配置、表或依赖。
+
+前两批是验收脚本错误：直接比较 `content_json=None` 忽略既有旧结构投影；将请求中的 disabled 误判为启用终态。依现有对话框契约修正，最终等待实际 activate 响应和“当前启用”页面状态，旧失败日志/原件保留。范围、截图、实际请求和PG原件见 `P0_RECORDING_CASE_BROWSER_RESEARCH.md`、`p0-recording-case-browser-validation.json`。
+
+录制草稿组件联调已有直接证据；生产完整 Vue App/main 独立进程、人工 DeepSeek 业务录制、默认AI知识使用，以及回放报告/场景步骤别名/清洗遗漏/失败定位和其余 P0—P5 仍未完成。Step按用户决定待账号处理。
+
+实际命令：Agent_Server 内设置 `RUN_LIVE_RECORDING_CASE_BROWSER=1`、`RECORDING_CASE_BROWSER_EVIDENCE=../docs/upgrade_2026-10-03/p0-recording-case-browser-verified2`，执行 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_recording_case_draft_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-recording-case-browser-verified2.xml`；项目根 ` .\.venv\Scripts\python.exe -m compileall -q Agent_Server/tests/test_recording_case_draft_browser.py`。只新增验收测试和证据，没有生产代码更改；已通过的221/18项与build不重复运行。

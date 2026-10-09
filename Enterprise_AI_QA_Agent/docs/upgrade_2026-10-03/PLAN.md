@@ -3078,3 +3078,13 @@ JMeter沿原生HTTPArgument/postBodyRaw/UTF-8发送正文，已有JSR223PreProce
 最终真实 Chromium + 隔离 MySQL/PG/RustFS/Memgraph + Uvicorn TCP HTTP **1 passed in 6.41s**：3 并发请求中故意丢弃一个已提交响应，GET 找回同一结果，PG 仅 1 case/1 version；重放、重建服务、归档读原 V1、长输入/脱敏/重复点击、评审启用/完整规划证据及项目隔离通过。最终录制等回归 **221 passed、72 skipped**（门控外部场景）、前端 **18 passed**，vue-tsc/Vite build 和 compileall 退出 0。保留真实缺恢复的 409，以及测试夹具下标/middleware 生命周期失败证据；详情与工件见 `p0-recording-case-draft-validation.json`。
 
 本批已实现入口/原件恢复/会话过滤；物理 HTTP 是生产服务与测试专属 FastAPI 装配，不是完整 Vue App 或独立 main 进程验收。完整 App、人工 DeepSeek 业务、默认 AI 知识使用尚待验收；回放报告持久化、场景/步骤/别名、清洗遗漏和失败定位仍需推进。无新增表、迁移、配置或依赖。默认 Step 按用户决定待账号处理；完整 P0—P5 保持未完成。
+
+### 7.04 录制草稿真实 Vue 组件与物理 HTTP 联调〔2026-10-10〕
+
+继续按现有 `test_case_import_browser.py`、`TestCaseContentDialog` 和 Pinia/路由契约验收。新增 `test_recording_case_draft_browser.py`：真实 Vite/Chromium 挂载生产时间线、Pinia、用例对话框，调用生产 recordings/case_management 路由和真实隔离 MySQL/PG/RustFS；读取 7.03 已采集的浏览器事件到测试所属 PG，不把夹具重新入库称为新人工录制或完整 App。
+
+实际点击生成，故意返回“提交成功后的503”；页面显示错误，再点击通过 GET 找回原用例，不增加第二个转换 POST。打开真实对话框，JSON 原文与原固定版本的兼容投影逐字段一致，长 Unicode 输入完整；页面提交评审/启用经真实 HTTP200 落库，刷新后自动读回同一 case/version 且不 POST。PG 仍 1 case/1 version，页面 JS 错误 0。最终 **1 passed in 6.00s**，compileall 退出0；没有改生产代码、模式、配置、表或依赖。
+
+前两批是验收脚本错误：直接比较 `content_json=None` 忽略既有旧结构投影；将请求中的 disabled 误判为启用终态。依现有对话框契约修正，最终等待实际 activate 响应和“当前启用”页面状态，旧失败日志/原件保留。范围、截图、实际请求和PG原件见 `P0_RECORDING_CASE_BROWSER_RESEARCH.md`、`p0-recording-case-browser-validation.json`。
+
+录制草稿组件联调已有直接证据；生产完整 Vue App/main 独立进程、人工 DeepSeek 业务录制、默认AI知识使用，以及回放报告/场景步骤别名/清洗遗漏/失败定位和其余 P0—P5 仍未完成。Step按用户决定待账号处理。
