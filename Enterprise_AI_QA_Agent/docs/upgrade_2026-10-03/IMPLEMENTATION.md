@@ -4957,3 +4957,14 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 录制草稿组件联调已有直接证据；生产完整 Vue App/main 独立进程、人工 DeepSeek 业务录制、默认AI知识使用，以及回放报告/场景步骤别名/清洗遗漏/失败定位和其余 P0—P5 仍未完成。Step按用户决定待账号处理。
 
 实际命令：Agent_Server 内设置 `RUN_LIVE_RECORDING_CASE_BROWSER=1`、`RECORDING_CASE_BROWSER_EVIDENCE=../docs/upgrade_2026-10-03/p0-recording-case-browser-verified2`，执行 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_recording_case_draft_browser.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-recording-case-browser-verified2.xml`；项目根 ` .\.venv\Scripts\python.exe -m compileall -q Agent_Server/tests/test_recording_case_draft_browser.py`。只新增验收测试和证据，没有生产代码更改；已通过的221/18项与build不重复运行。
+
+## 2026-10-10 模板修改不重写固定版本：沿原完整产品验收补强
+
+
+当前基线 `b01cea74`。核对6.87确认手工模板及三种导入早已有完整构建 App 验收；不再把它们列为缺实现。先使用当前生产 main/完整源码 App 复验三布局 **3 passed in 74.24s**；随后移除重复测试入口，保留探针源码和证据，将“V1已启用且有V2草稿后再次修改模板”的检查并入原 `test_case_import_full_product.py`。
+
+原构建版 App/独立生产 main 验收本轮实际 **1 passed in 52.25s，0 skipped**：模板 PUT 后 MySQL 修订增加，PG case、V1/V2完整记录和启用指针不变；主进程重启后模板/用例读回相同。原三布局、错误行/冲突、提交重放、两项目隔离、新草稿不覆盖旧版本、完整JSON和原件下载均复验，PG最终3用例4版本。主动停API时轮询500单列保留，恢复后非预期API错误和pageerror均0。本轮 build/preview/main双流、网络、PG、截图和原件见 `p1-template-fixed-version-app-verified`；compileall退出0，仅附加检查。
+
+分类：模板/导入已有实现且已验；普通文档模块生成/恢复已有6.97受控产品验收，默认模型业务质量、更多容量/故障、正式部署/历史迁移仍待验。录制内部回放执行器未接 Agent 工具/资源管理，不能直接加 HTTP 入口替代既有授权和执行体系；场景/步骤/别名/清洗遗漏/报告仍需查证补齐。完整默认Agent及其余P0—P5保持未完成，Step按用户决定待账号处理。依据与本轮复验/新增检查的区别见 `P1_TEMPLATE_FIXED_VERSION_APP_RESEARCH.md` 与 `p1-template-fixed-version-app-validation.json`。
+
+实际命令、范围、第一批探针名称断言错误及既有6.87分类纠正详见研究。最终原测试使用本轮构建App和独立main，1通过52.25秒；完整源码App三布局复验3通过74.24秒；未改生产代码或配置/表/依赖，保留全部旧审计原件。

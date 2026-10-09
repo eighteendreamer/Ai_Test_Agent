@@ -205,6 +205,26 @@ async def test_product_templates_excel_json_review_restart_and_isolation(tmp_pat
                         assert all(version in versions_after for version in versions_before)
                         await content.get_by_role("button", name="关闭", exact=True).click()
 
+                        # Changing generation guidance after activation must not
+                        # rewrite either the enabled V1 or the new V2 draft.
+                        template_before_change = saved
+                        await page.get_by_role("button", name="用例生成模板", exact=True).click()
+                        editor = page.get_by_role("dialog", name="用例生成模板", exact=True)
+                        await expect(editor.get_by_label("AI 写作指导", exact=True)).to_have_value(saved["payload"]["writing_guidance"])
+                        await editor.get_by_label("AI 写作指导", exact=True).fill("仅后续生成使用新指导；旧用例及启用指针不变")
+                        async with page.expect_response(lambda r: r.request.method == "PUT" and r.url.endswith(template_path)) as pending:
+                            await editor.get_by_role("button", name="保存项目模板", exact=True).click()
+                        response = await pending.value
+                        assert response.status == 200, await response.text()
+                        saved = await response.json()
+                        assert saved["revision"] > template_before_change["revision"]
+                        assert mysql.get("test_case.generation_template", scope_key=project["id"]).payload == saved["payload"]
+                        assert (await client.get(f"/test-cases/{case['id']}")).json() == after
+                        assert (await client.get(f"/test-cases/{case['id']}/versions")).json() == versions_after
+                        facts["template_change_after_activation"] = {"before": template_before_change,
+                            "after": saved, "case_unchanged": True, "versions_unchanged": True}
+                        await editor.get_by_role("button", name="关闭", exact=True).click()
+
                         # Different options create a new preview, so conflict is exercised rather than committed-batch replay.
                         await page.get_by_role("button", name="导入 Excel / JSON", exact=True).click()
                         dialog = page.get_by_role("dialog", name="导入测试用例", exact=True)
