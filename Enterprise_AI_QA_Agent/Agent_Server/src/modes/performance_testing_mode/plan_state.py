@@ -196,6 +196,7 @@ class SmokeResult(BaseModel):
     checked_status: list[int] = Field(default_factory=list)
     extracted: dict[str, bool] = Field(default_factory=dict)
     detail: str = ""
+    evidence: dict[str, Any] = Field(default_factory=dict)
 
 
 class PerfRun(BaseModel):
@@ -216,6 +217,7 @@ class PerfRun(BaseModel):
     html_report_artifact: str = ""
     stdout_tail: str = ""
     exit_code: int | None = None
+    evidence: dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------------------------------------------------------------------------
@@ -288,6 +290,10 @@ class PerfReport(BaseModel):
     verdict: Verdict = "baseline"
     report_markdown: str = ""
     report_html: str = ""
+    execution_status: str = ""
+    engine_exit_code: int | None = None
+    evidence_status: str | None = None
+    evidence_warning: str = ""
 
 
 # ---------------------------------------------------------------------------
@@ -304,6 +310,7 @@ class PerformanceTestingState(BaseModel):
     workload_model: WorkloadModel | None = None
     plan: PerfPlan | None = None
     run: PerfRun | None = None
+    smoke_result: SmokeResult | None = None
     report: PerfReport | None = None
     failure_analysis: dict[str, Any] = Field(default_factory=dict)
     intake_complete: bool = False

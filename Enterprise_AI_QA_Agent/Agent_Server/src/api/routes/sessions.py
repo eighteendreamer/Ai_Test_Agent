@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 from pathlib import Path
 from urllib.parse import quote
@@ -280,10 +281,17 @@ async def get_session_artifact_content(session_id: str, artifact_id: str, reques
         except Exception as exc:
             raise HTTPException(status_code=404, detail="Artifact content not available") from exc
         media_type = str(stored.get("content_type") or "application/octet-stream")
+        content = stored.get("content") or b""
+        expected_hash = artifact.metadata.get("sha256")
+        expected_size = artifact.metadata.get("size_bytes")
+        if ((expected_hash and hashlib.sha256(content).hexdigest() != expected_hash)
+                or (expected_size is not None and len(content) != expected_size)):
+            logger.error("artifact_integrity_mismatch", extra={"artifact_id": artifact_id, "session_id": session_id})
+            raise HTTPException(status_code=409, detail="Artifact integrity check failed")
         if media_type == "application/octet-stream":
             media_type = _artifact_media_type(filename, media_type)
         return Response(
-            content=stored.get("content") or b"",
+            content=content,
             media_type=media_type,
             headers={"Content-Disposition": _attachment_header(filename)},
         )

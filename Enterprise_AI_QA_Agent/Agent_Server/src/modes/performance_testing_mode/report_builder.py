@@ -6,6 +6,7 @@ engine threshold crosscheck, load-side observations, and markdown/HTML output.
 from __future__ import annotations
 
 import uuid
+from html import escape
 from typing import Any
 
 from src.modes.performance_testing_mode.contracts import (
@@ -47,6 +48,10 @@ class PerfReportBuilder:
             run_id=run.run_id,
             run_intent=plan.run_intent,
             metrics=parsed.metrics,
+            execution_status=run.status,
+            engine_exit_code=run.exit_code,
+            evidence_status=run.evidence.get("status"),
+            evidence_warning=str(run.evidence.get("error") or ", ".join(run.evidence.get("missing_artifacts", []))),
         )
 
         report.error_breakdown = self._classify_errors(parsed, run)
@@ -196,6 +201,9 @@ class PerfReportBuilder:
             return VERDICT_FAIL
         if report.sla_result.passed is None:
             return VERDICT_INCONCLUSIVE
+        if (report.execution_status != "completed" or report.engine_exit_code not in {0, None}
+                or report.evidence_status not in {None, "saved"}):
+            return VERDICT_INCONCLUSIVE
         if report.run_intent == RUN_INTENT_PROBE:
             return VERDICT_BASELINE
 
@@ -219,6 +227,11 @@ class PerfReportBuilder:
         lines.append(f"**运行 ID**: {report.run_id}")
         lines.append(f"**意图**: {report.run_intent}")
         lines.append(f"**结论**: {report.verdict}")
+        lines.append(f"**引擎状态**: {report.execution_status}；退出码: {report.engine_exit_code}")
+        if report.evidence_status:
+            lines.append(f"**原件状态**: {report.evidence_status}")
+        if report.evidence_warning:
+            lines.append(f"**证据缺口**: {report.evidence_warning}")
         lines.append("")
 
         lines.append("## 核心指标")
@@ -306,6 +319,11 @@ class PerfReportBuilder:
             f'<h1>性能测试报告 <span class="{verdict_class}">[{report.verdict.upper()}]</span></h1>'
         )
         lines.append(f"<p>运行 ID: {report.run_id} | 意图: {report.run_intent}</p>")
+        lines.append(f"<p>引擎状态: {escape(report.execution_status)} | 退出码: {report.engine_exit_code}</p>")
+        if report.evidence_status:
+            lines.append(f"<p>原件状态: {escape(report.evidence_status)}</p>")
+        if report.evidence_warning:
+            lines.append(f"<p>证据缺口: {escape(report.evidence_warning)}</p>")
 
         m = report.metrics
         lines.append("<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>")

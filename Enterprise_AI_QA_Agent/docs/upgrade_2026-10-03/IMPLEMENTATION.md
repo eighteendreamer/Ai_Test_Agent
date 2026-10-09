@@ -4685,3 +4685,40 @@ $env:QA_DOCKER_PERF_MEASUREMENT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_
 ```
 
 CLI源文件在既有忽略规则下，本批按文件force-add；不修改用户.gitignore。审计p5-perf-measurement-audit.py核对历史153/413/200/408/151工件及受保护文件、三份计划、实际原件/四行PG/null/引擎阈值/清理和当前源哈希。旧:g中间批次仍保留，不将其替换为最终str版本证据。完整P0—P5保持未完成，下一步调查生产原件持久化、烟测缺证据和退出分支。
+
+
+## 2026-10-09 性能原件与失败结果闭环〔cf703e05〕
+
+修改共享工件文件上传接口、性能runner/模式/schema/报告及原下载完整性检查；新增evidence.py与实际反例/真实引擎验收测试，旧报告测试明确completed进程。依据P5_PERFORMANCE_EVIDENCE_RESEARCH.md及PLAN6.89。无新依赖/配置/数据库Schema或迁移，无真实提供商调用/前端改动。模板仅生成、执行读用例和上传独立于Git约定不变。
+
+所有pytest在Agent_Server运行，解释器 `..\.venv\Scripts\python.exe -X utf8`，参数 `-q --tb=short --junitxml=../docs/upgrade_2026-10-03/<前缀>.xml`，stdout/stderr重定向至同前缀.log：
+
+| 前缀p5-perf-evidence- | 命令及实际结果 |
+|---|---|
+| before | test_performance_evidence_live.py；1失败18.99秒，测试缺必填name，未执行k6 |
+| reproduction | 同模块实际4种smoke/异常load；1失败28.06秒，生产误判反例保留 |
+| contract-first | evidence_contract/measurement_contract/runner/report_builder/runtime_artifacts/artifact_storage_service/case_execution_verification；77通过12.78秒 |
+| verified | live；1失败51.43秒，持久业务输出与运行时展示字段比较错误 |
+| verified-final | live；1失败52.11秒，测试下载路径写成不存在的/download |
+| download-verified | live；1通过55.24秒，已通过重启下载/隔离/篡改/恢复 |
+| expanded | 下列19模块；123通过21.42秒，0跳过 |
+| measurement-regression | test_performance_docker_measurement.py；1通过35.91秒，真实四场景和PG指标 |
+| delivery | live；1通过51.26秒，另保留24份实际下载原字节，最终范围见PLAN6.89 |
+
+最终实际命令：
+
+```powershell
+$env:RUN_LIVE_PERF_EVIDENCE='1'
+$env:QA_PERF_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-perf-evidence-delivery'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_evidence_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-evidence-delivery.xml *> ../docs/upgrade_2026-10-03/p5-perf-evidence-delivery.log
+
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_evidence_contract.py tests/test_performance_measurement_contract.py tests/test_performance_k6_adapter.py tests/test_performance_jmeter_adapter.py tests/test_performance_report_builder.py tests/test_performance_result_parser.py tests/test_performance_runner.py tests/test_performance_runtime_artifacts.py tests/test_case_execution_verification.py tests/test_performance_coordinator.py tests/test_performance_task_pool.py tests/test_performance_guard.py tests/test_performance_failure_analyzer.py tests/test_performance_mode_skills.py tests/test_performance_case_execution_system.py tests/test_perf_high_level_runners.py tests/test_artifact_storage_service.py tests/test_xlsx_artifact_download.py tests/test_tool_runtime_heartbeat.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-evidence-expanded.xml *> ../docs/upgrade_2026-10-03/p5-perf-evidence-expanded.log
+
+$env:RUN_LIVE_DOCKER_PERF_MEASUREMENT='1'
+$env:QA_DOCKER_PERF_MEASUREMENT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-perf-evidence-measurement-regression'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_performance_docker_measurement.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-evidence-measurement-regression.xml *> ../docs/upgrade_2026-10-03/p5-perf-evidence-measurement-regression.log
+
+..\.venv\Scripts\python.exe -X utf8 -m compileall -q src/api/routes/sessions.py src/application/artifacts/artifact_storage_service.py src/application/performance src/application/runtime/tool_runtime_service.py src/modes/performance_testing_mode tests/test_performance_evidence_contract.py tests/test_performance_evidence_live.py tests/test_performance_docker_measurement.py tests/test_performance_report_builder.py
+```
+
+compileall退出0，空输出保存p5-perf-evidence-compile.log。不将其代替实际测试。原件按既有.gitattributes限定本批字节保留，用户.gitignore及其他无关文件不提交。项目根 `.\.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-evidence-audit.py --sync` 核对外部方案仍为旧HEAD再同步三份；随后不带--sync只读复核。首轮审计错误假设所有环境变量名为空，实际adapter冒烟设置已有3个QA_PERF_SMOKE变量名；按实际源码和原清单修正断言，原审计失败日志保留，生产代码未因此修改。最终审计退出0，253份本批工件/24份下载字节/4条PG结果/8个完整容器ID，以及前序155/153/413/200/408/151份原件未改校验通过，不改写旧审计。完整Agent/App/JMeter/容量/安全及全部P0—P5仍未完成。

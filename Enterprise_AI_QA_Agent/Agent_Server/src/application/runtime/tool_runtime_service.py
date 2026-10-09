@@ -299,6 +299,7 @@ class ToolRuntimeService:
                 session_store=session_store,
                 memory_runtime_service=memory_runtime_service,
                 api_docs_service=api_docs_service,
+                artifact_storage_service=artifact_storage_service,
             )
         self._handlers = {
             "workflow-router": self._run_workflow_router,

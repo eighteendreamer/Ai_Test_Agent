@@ -1,0 +1,77 @@
+[
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-mock-97fe5c84c5e9",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=97fe5c84c5e9495ab1da78fb65b27606",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=1",
+      "--label",
+      "qa.project_id=a32c8334-8737-4d57-98e2-28fd1d8d3eaa",
+      "--label",
+      "qa.session_id=1ba01f6c-6cab-4829-a69d-595f4b180367",
+      "--label",
+      "performance-engine=helper",
+      "-p",
+      "59245:5678",
+      "hashicorp/http-echo:1.0.0",
+      "-text",
+      "owned evidence target"
+    ],
+    "exit_code": 0,
+    "stdout": "fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec"
+    ],
+    "exit_code": 0,
+    "stdout": "fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "inspect",
+      "--format",
+      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+      "fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec"
+    ],
+    "exit_code": 0,
+    "stdout": "172.17.0.5\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec"
+    ],
+    "exit_code": 0,
+    "stdout": "fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=fb24c822edfb9aace1a0d91ac33bd3e95b49d00fcb7dcfbbbfbb29c9f079c6ec",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

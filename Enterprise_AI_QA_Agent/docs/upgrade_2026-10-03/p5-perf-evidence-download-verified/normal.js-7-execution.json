@@ -1,0 +1,42 @@
+{
+  "exit_code": 0,
+  "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/normal.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 32s max duration (incl. graceful stop):\n              * default: 1 looping VUs for 2s (gracefulStop: 30s)\n\n\nrunning (01.0s), 1/1 VUs, 19 complete and 0 interrupted iterations\ndefault   [  50% ] 1 VUs  1.0s/2s\n\nrunning (02.0s), 1/1 VUs, 38 complete and 0 interrupted iterations\ndefault   [ 100% ] 1 VUs  2.0s/2s\n\n\n  █ THRESHOLDS \n\n    http_req_duration\n    ✓ 'p(99)<1000' p(99)=725.36µs\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 39      19.484849/s\n    checks_succeeded...: 100.00% 39 out of 39\n    checks_failed......: 0.00%   0 out of 39\n\n    ✓ status is expected\n\n    HTTP\n    http_req_duration..............: avg=498.17µs min=354.33µs med=467.43µs max=756.42µs p(90)=628.15µs p(95)=656.01µs p(99)=725.36µs\n      { expected_response:true }...: avg=498.17µs min=354.33µs med=467.43µs max=756.42µs p(90)=628.15µs p(95)=656.01µs p(99)=725.36µs\n    http_req_failed................: 0.00%  0 out of 39\n    http_reqs......................: 39     19.484849/s\n\n    EXECUTION\n    iteration_duration.............: avg=51.28ms  min=50.79ms  med=51.24ms  max=51.95ms  p(90)=51.58ms  p(95)=51.67ms  p(99)=51.86ms \n    iterations.....................: 39     19.484849/s\n    vus............................: 1      min=1       max=1\n    vus_max........................: 1      min=1       max=1\n\n    NETWORK\n    data_received..................: 7.2 kB 3.6 kB/s\n    data_sent......................: 2.8 kB 1.4 kB/s\n\n\n\n\nrunning (02.0s), 0/1 VUs, 39 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  2s\n",
+  "stderr": "",
+  "summary_json": "{\n    \"metrics\": {\n        \"http_reqs\": {\n            \"count\": 39,\n            \"rate\": 19.484849409205502\n        },\n        \"http_req_duration{expected_response:true}\": {\n            \"avg\": 0.4981718461538462,\n            \"min\": 0.354333,\n            \"med\": 0.467438,\n            \"max\": 0.756426,\n            \"p(90)\": 0.6281592,\n            \"p(95)\": 0.656019,\n            \"p(99)\": 0.7253609999999998\n        },\n        \"vus\": {\n            \"value\": 1,\n            \"min\": 1,\n            \"max\": 1\n        },\n        \"http_req_connecting\": {\n            \"avg\": 0.006250846153846154,\n            \"min\": 0,\n            \"med\": 0,\n            \"max\": 0.243783,\n            \"p(90)\": 0,\n            \"p(95)\": 0,\n            \"p(99)\": 0.15114545999999937\n        },\n        \"vus_max\": {\n            \"value\": 1,\n            \"min\": 1,\n            \"max\": 1\n        },\n        \"iterations\": {\n            \"count\": 39,\n            \"rate\": 19.484849409205502\n        },\n        \"http_req_sending\": {\n            \"p(90)\": 0.04034500000000001,\n            \"p(95)\": 0.05485120000000002,\n            \"p(99)\": 0.07592467999999995,\n            \"avg\": 0.02347402564102564,\n            \"min\": 0.012392,\n            \"med\": 0.017163,\n            \"max\": 0.084195\n        },\n        \"http_req_waiting\": {\n            \"p(99)\": 0.51502234,\n            \"avg\": 0.38616725641025645,\n            \"min\": 0.279489,\n            \"med\": 0.365211,\n            \"max\": 0.516032,\n            \"p(90)\": 0.49995259999999997,\n            \"p(95)\": 0.5068806\n        },\n        \"http_req_receiving\": {\n            \"med\": 0.071369,\n            \"max\": 0.229189,\n            \"p(90)\": 0.1531142,\n            \"p(95)\": 0.17130430000000002,\n            \"p(99)\": 0.20880807999999987,\n            \"avg\": 0.08853056410256409,\n            \"min\": 0.047727\n        },\n        \"data_received\": {\n            \"rate\": 3585.2122912938125,\n            \"count\": 7176\n        },\n        \"http_req_blocked\": {\n            \"min\": 0.004404,\n            \"med\": 0.005685,\n            \"max\": 0.321026,\n            \"p(90)\": 0.0086372,\n            \"p(95)\": 0.015176700000000067,\n            \"p(99)\": 0.2209001799999993,\n            \"avg\": 0.015409000000000003\n        },\n        \"iteration_duration\": {\n            \"avg\": 51.28561171794872,\n            \"min\": 50.796953,\n            \"med\": 51.243568,\n            \"max\": 51.957598,\n            \"p(90)\": 51.582104,\n            \"p(95)\": 51.671261300000005,\n            \"p(99)\": 51.86776182\n        },\n        \"checks\": {\n            \"passes\": 39,\n            \"fails\": 0,\n            \"value\": 1\n        },\n        \"data_sent\": {\n            \"count\": 2769,\n            \"rate\": 1383.4243080535907\n        },\n        \"http_req_tls_handshaking\": {\n            \"p(99)\": 0,\n            \"avg\": 0,\n            \"min\": 0,\n            \"med\": 0,\n            \"max\": 0,\n            \"p(90)\": 0,\n            \"p(95)\": 0\n        },\n        \"http_req_failed\": {\n            \"passes\": 0,\n            \"fails\": 39,\n            \"value\": 0\n        },\n        \"http_req_duration\": {\n            \"avg\": 0.4981718461538462,\n            \"min\": 0.354333,\n            \"med\": 0.467438,\n            \"max\": 0.756426,\n            \"p(90)\": 0.6281592,\n            \"p(95)\": 0.656019,\n            \"p(99)\": 0.7253609999999998,\n            \"thresholds\": {\n                \"p(99)<1000\": false\n            }\n        }\n    },\n    \"root_group\": {\n        \"groups\": {},\n        \"checks\": {\n                \"status is expected\": {\n                    \"name\": \"status is expected\",\n                    \"path\": \"::status is expected\",\n                    \"id\": \"7900b1724c781e002b4ea556d2517ccc\",\n                    \"passes\": 39,\n                    \"fails\": 0\n                }\n            },\n        \"name\": \"\",\n        \"path\": \"\",\n        \"id\": \"d41d8cd98f00b204e9800998ecf8427e\"\n    }\n}",
+  "timed_out": false,
+  "container_id": "74302231eb52c495e67d620cf4913d55c794d62f52a51346eec953769ada6bef",
+  "evidence": {
+    "status": "partial",
+    "artifacts": [
+      {
+        "path": "rustfs://qa-agent/performance-evidence/9d1ea928-be0f-44b2-85e5-7a1181edc013/733f2e98-63a1-4341-9f22-3e46100fa2fb/d8ff2641a2394d5f80c32c02a76f5552/5890d171a0762e367da9e4106278d88bb0af218a404abfb69cf6b2d48a429123/normal.js",
+        "uri": "rustfs://qa-agent/performance-evidence/9d1ea928-be0f-44b2-85e5-7a1181edc013/733f2e98-63a1-4341-9f22-3e46100fa2fb/d8ff2641a2394d5f80c32c02a76f5552/5890d171a0762e367da9e4106278d88bb0af218a404abfb69cf6b2d48a429123/normal.js",
+        "storage_backend": "rustfs",
+        "bucket": "qa-agent",
+        "object_name": "performance-evidence/9d1ea928-be0f-44b2-85e5-7a1181edc013/733f2e98-63a1-4341-9f22-3e46100fa2fb/d8ff2641a2394d5f80c32c02a76f5552/5890d171a0762e367da9e4106278d88bb0af218a404abfb69cf6b2d48a429123/normal.js",
+        "content_type": "application/javascript",
+        "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-kin5u_cc\\normal.js",
+        "original_filename": "normal.js",
+        "size_bytes": 917,
+        "type": "performance_engine_file",
+        "label": "normal.js",
+        "filename": "normal.js",
+        "sha256": "5890d171a0762e367da9e4106278d88bb0af218a404abfb69cf6b2d48a429123",
+        "evidence_schema": "performance-execution-v1",
+        "execution_id": "d8ff2641a2394d5f80c32c02a76f5552",
+        "relative_path": "normal.js",
+        "owner": {
+          "project_id": "9d1ea928-be0f-44b2-85e5-7a1181edc013",
+          "session_id": "733f2e98-63a1-4341-9f22-3e46100fa2fb",
+          "turn_id": "perf-evidence-turn",
+          "trace_id": "trace_677348c11fa64a94b462f2c334519f42",
+          "run_id": null,
+          "run_item_id": null,
+          "attempt_id": null
+        }
+      }
+    ],
+    "missing_artifacts": [],
+    "error": "性能原件保存失败: controlled upload interruption after one saved original"
+  }
+}

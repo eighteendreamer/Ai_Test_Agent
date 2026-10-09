@@ -87,6 +87,20 @@ class ArtifactStorageService:
             "size_bytes": len(content),
         }
 
+    async def store_uploaded_file(self, *, path: Path, object_prefix: str,
+                                  object_name: str | None = None) -> dict[str, Any]:
+        """Stream a file to an explicit object identity using the shared client."""
+        if not self.enabled:
+            raise RuntimeError("Artifact storage backend is not enabled.")
+        path = Path(path).resolve()
+        size = path.stat().st_size
+        target = self._safe_object_name(object_name) if object_name else self._build_uploaded_object_name(
+            object_prefix=object_prefix, filename=path.name,
+        )
+        result = await asyncio.to_thread(self._store_artifact_dict, {"path": str(path)},
+            session_id="", turn_id="", tool_key="", cache={}, object_name=target)
+        return {**result, "original_filename": path.name, "size_bytes": size}
+
     async def delete_object_uri(self, uri: str) -> None:
         if not self.enabled:
             return
@@ -211,13 +225,14 @@ class ArtifactStorageService:
         turn_id: str,
         tool_key: str,
         cache: dict[str, dict[str, Any]],
+        object_name: str | None = None,
     ) -> dict[str, Any]:
         local_path = Path(str(artifact.get("path") or "")).resolve()
         cache_key = str(local_path)
         if cache_key in cache:
             return cache[cache_key]
 
-        object_name = self._object_name(
+        object_name = object_name or self._object_name(
             local_path,
             session_id=session_id,
             turn_id=turn_id,

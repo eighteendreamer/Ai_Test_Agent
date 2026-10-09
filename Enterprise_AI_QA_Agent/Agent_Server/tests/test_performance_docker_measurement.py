@@ -53,7 +53,7 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
             return result
 
     try:
-        async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
+        async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned_objects):
             settings.orchestration.performance_runner_backend = "docker"
             api_port = free_port()
             api = processes.start("perf-measurement-api", "-m", "uvicorn", "src.main:app",
@@ -85,8 +85,8 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
                             workload=PerfWorkloadConfig(model="closed", mode="constant_vus", virtual_users=1,
                                 hold_seconds=2, think_time_ms=50), sla=SLAConfig(p99_ms=1000))
                         adapter = K6EngineAdapter(image=image.strip())
-                        runner = ObservedRunner(settings, docker_resources=docker)
-                        runtime = PerformanceTestingModeRuntime(settings)
+                        runner = ObservedRunner(settings, docker_resources=docker, artifact_storage_service=objects)
+                        runtime = PerformanceTestingModeRuntime(settings, artifact_storage_service=objects)
                         variants = [
                             ("default", RunOptions(timeout_seconds=30), 1000, "pass"),
                             ("smoke", RunOptions(timeout_seconds=30, is_smoke=True), 1000, "pass"),
@@ -100,6 +100,7 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
                             script.filename = variant + ".js"
                             (evidence / script.filename).write_text(script.script_content, encoding="utf-8")
                             run = await runner.execute(variant_plan, script, options, adapter)
+                            owned_objects.extend(a["path"] for a in run.evidence.get("artifacts", []))
                             parsed = PerfResultParser().parse(adapter.parse_results((evidence / (script.filename + "-summary.json")).read_text(encoding="utf-8")))
                             report = PerfReportBuilder().build(parsed, variant_plan, run)
                             write_json(evidence / (variant + "-run.json"), run.model_dump(mode="json"))

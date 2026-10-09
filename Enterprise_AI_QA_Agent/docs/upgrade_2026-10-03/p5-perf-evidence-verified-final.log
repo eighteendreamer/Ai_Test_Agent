@@ -1,0 +1,24 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________________ test_actual_smoke_evidence_and_nonzero_exit _________________
+tests\test_performance_evidence_live.py:230: in test_actual_smoke_evidence_and_nonzero_exit
+    assert response.status_code == 200, response.text
+E   AssertionError: {"detail":"Not Found"}
+E   assert 404 == 200
+E    +  where 404 = <Response [404 Not Found]>.status_code
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:190 performance_smoke_summary_invalid
+ERROR    src.application.performance.evidence:evidence.py:79 performance_evidence_store_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\performance\evidence.py", line 62, in store_execution_evidence
+    capture["artifacts"].append(await upload(path))
+                                ^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\performance\evidence.py", line 50, in upload
+    stored = await objects.store_uploaded_file(path=path, object_prefix=prefix,
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_performance_evidence_live.py", line 177, in store_uploaded_file
+    raise RuntimeError("controlled upload interruption after one saved original")
+RuntimeError: controlled upload interruption after one saved original
+=========================== short test summary info ===========================
+FAILED tests/test_performance_evidence_live.py::test_actual_smoke_evidence_and_nonzero_exit
+1 failed in 52.11s

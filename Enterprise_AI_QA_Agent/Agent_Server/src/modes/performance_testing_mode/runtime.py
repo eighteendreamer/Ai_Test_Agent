@@ -72,6 +72,7 @@ class PerformanceTestingModeRuntime:
         session_store=None,
         memory_runtime_service=None,
         api_docs_service=None,
+        artifact_storage_service=None,
     ):
         self._settings = settings
         self._coordinator_runtime_service = coordinator_runtime_service
@@ -87,7 +88,7 @@ class PerformanceTestingModeRuntime:
 
         if settings:
             self._guard = PerfTargetGuard(settings)
-            self._runner = PerfRunnerService(settings)
+            self._runner = PerfRunnerService(settings, artifact_storage_service=artifact_storage_service)
             self._engine_adapter = self._create_engine_adapter(settings.orchestration.performance_default_engine)
             self._metrics_store = PerfMetricsStore(settings)
         else:
@@ -142,6 +143,7 @@ class PerformanceTestingModeRuntime:
 
         try:
             with bind_request_context(
+                trace_id=getattr(context, "trace_id", None),
                 project_id=bundle.get("project_id"), session_id=getattr(context, "session_id", None),
                 turn_id=getattr(context, "turn_id", None),
                 run_id=bundle.get("test_run_id"), run_item_id=bundle.get("run_item_id"),
@@ -491,6 +493,7 @@ class PerformanceTestingModeRuntime:
 
         script = engine_adapter.build_script(state.plan)
         smoke_result = await self._runner.run_smoke(state.plan, script, engine_adapter)
+        state.smoke_result = smoke_result
 
         if not smoke_result.passed:
             state.failure_analysis = self._failure_analyzer.analyze({
@@ -506,6 +509,7 @@ class PerformanceTestingModeRuntime:
                 "phase": PHASE_FAILED,
                 "summary": f"冒烟验证未通过: {smoke_result.detail}",
                 "smoke_result": smoke_result.model_dump(),
+                "artifacts": smoke_result.evidence.get("artifacts", []),
             }
 
         state.record_phase_transition(PHASE_SMOKE_VALIDATED)
@@ -536,6 +540,7 @@ class PerformanceTestingModeRuntime:
             state.record_phase_transition(PHASE_SMOKE_VALIDATED)
             raise
         state.run = run
+        run.smoke_result = state.smoke_result
 
         if run.status != "completed" and not run.raw_metrics:
             state.failure_analysis = self._failure_analyzer.analyze({
@@ -554,6 +559,9 @@ class PerformanceTestingModeRuntime:
                 "run_id": run.run_id,
                 "failure_analysis": state.failure_analysis,
                 "errors": state.errors,
+                "run": run.model_dump(),
+                "artifacts": run.evidence.get("artifacts", []) + (
+                    state.smoke_result.evidence.get("artifacts", []) if state.smoke_result else []),
             }
 
         state.record_phase_transition(PHASE_RESULT_COLLECTED)
@@ -620,6 +628,9 @@ class PerformanceTestingModeRuntime:
             "verdict": report.verdict,
             "metrics": report.metrics.model_dump(),
             "sla_result": report.sla_result.model_dump(),
+            "execution_status": report.execution_status,
+            "engine_exit_code": report.engine_exit_code,
+            "evidence_status": report.evidence_status,
             "engine_threshold_crosscheck": report.engine_threshold_crosscheck.model_dump(),
             "baseline_comparison": (
                 report.baseline_comparison.model_dump()
@@ -646,6 +657,12 @@ class PerformanceTestingModeRuntime:
                 else None
             ),
             "load_side_observations": state.report.load_side_observations,
+            "execution_status": report.execution_status,
+            "engine_exit_code": report.engine_exit_code,
+            "evidence_status": report.evidence_status,
+            "evidence_warning": report.evidence_warning,
+            "run": state.run.model_dump() if state.run else None,
+            "smoke_result": state.smoke_result.model_dump() if state.smoke_result else None,
             "report_markdown": state.report.report_markdown,
             "report_html": state.report.report_html,
             "artifacts": [
@@ -669,7 +686,8 @@ class PerformanceTestingModeRuntime:
                         default=str,
                     ),
                 },
-            ],
+            ] + (state.run.evidence.get("artifacts", []) if state.run else []) + (
+                state.smoke_result.evidence.get("artifacts", []) if state.smoke_result else []),
         }
 
     async def _emit_progress(

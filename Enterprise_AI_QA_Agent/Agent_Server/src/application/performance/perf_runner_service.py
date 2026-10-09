@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import tempfile
 import uuid
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -23,6 +23,8 @@ from src.runtime.docker_resource_manager import DockerResourceManager
 from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfRun, SmokeResult
 from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact
+from .engine_adapter import metric_number
+from .evidence import store_execution_evidence
 
 LOGGER = logging.getLogger(__name__)
 
@@ -35,17 +37,19 @@ class ExecutionResult:
     summary_json: str = ""
     timed_out: bool = False
     container_id: str = ""
+    evidence: dict[str, Any] = field(default_factory=dict)
 
 
 class PerfRunnerService:
     """Orchestrates performance test execution with backend detection and safety gates."""
 
-    def __init__(self, settings: Settings, *, docker_resources=None):
+    def __init__(self, settings: Settings, *, docker_resources=None, artifact_storage_service=None):
         self._settings = settings
         self._semaphore = asyncio.Semaphore(settings.orchestration.performance_max_concurrent_runs)
         self._container_prefix = settings.orchestration.performance_runner_docker_container_prefix
         self._workdir = settings.orchestration.performance_runner_docker_workdir
         self._docker_resources = docker_resources or DockerResourceManager(settings)
+        self._objects = artifact_storage_service
 
     def detect_backend(self, engine_key: str = "k6") -> str:
         configured = self._settings.orchestration.performance_runner_backend
@@ -95,13 +99,15 @@ class PerfRunnerService:
                     result = await self._run_local(cmd, script, run_opts.timeout_seconds)
 
                 run.exit_code = result.exit_code
+                run.evidence = result.evidence
                 if result.container_id:
                     run.container_or_cluster = result.container_id
                 run.stdout_tail = result.stdout[-2000:] if result.stdout else ""
                 run.status = "timed_out" if result.timed_out else ("completed" if result.exit_code == 0 else "failed")
 
                 if result.summary_json:
-                    run.result_artifact = f"inline:summary.json"
+                    run.result_artifact = next((a["path"] for a in result.evidence.get("artifacts", [])
+                        if a.get("relative_path") in {"summary.json", "report/statistics.json"}), "")
                     raw_metrics = engine_adapter.parse_results(result.summary_json)
                     run.raw_metrics = asdict(raw_metrics)
                     run.engine_thresholds = raw_metrics.thresholds
@@ -139,7 +145,8 @@ class PerfRunnerService:
             else:
                 result = await self._run_local(cmd, script, smoke_opts.timeout_seconds)
 
-            return self._validate_smoke(result, plan)
+            smoke = self._validate_smoke(result, plan)
+            return smoke.model_copy(update={"evidence": result.evidence})
         except ResourceUnavailable:
             raise
         except Exception as e:
@@ -150,7 +157,7 @@ class PerfRunnerService:
         if result.timed_out:
             return SmokeResult(passed=False, detail="冒烟验证超时")
 
-        if result.exit_code != 0 and not result.summary_json:
+        if result.exit_code != 0:
             return SmokeResult(
                 passed=False,
                 detail=f"冒烟执行失败 (exit_code={result.exit_code}): {result.stderr[:500]}",
@@ -159,26 +166,32 @@ class PerfRunnerService:
         checked_status: list[int] = []
         extracted: dict[str, bool] = {}
 
-        if result.summary_json:
-            try:
-                data = json.loads(result.summary_json)
-                count, failed_rate = self._extract_smoke_counts(data)
+        if not result.summary_json:
+            return SmokeResult(passed=False, detail="冒烟验证缺少引擎汇总，无法确认完成请求")
+        try:
+            data = json.loads(result.summary_json)
+            count, failed_rate = self._extract_smoke_counts(data)
 
-                if count == 0:
-                    diagnostics = self._format_execution_diagnostics(result)
-                    detail = "冒烟验证无请求完成"
-                    if diagnostics:
-                        detail = f"{detail}: {diagnostics}"
-                    return SmokeResult(passed=False, detail=detail)
+            if count is None or count <= 0:
+                diagnostics = self._format_execution_diagnostics(result)
+                detail = "冒烟验证无请求完成"
+                if diagnostics:
+                    detail = f"{detail}: {diagnostics}"
+                return SmokeResult(passed=False, detail=detail)
 
-                if failed_rate > 0.5:
-                    return SmokeResult(
-                        passed=False,
-                        checked_status=checked_status,
-                        detail=f"冒烟验证失败率过高: {failed_rate*100:.0f}%（预期状态码可能不匹配）",
-                    )
-            except (json.JSONDecodeError, TypeError, KeyError):
-                pass
+            if failed_rate is None:
+                return SmokeResult(passed=False, detail="冒烟验证缺少请求失败率")
+            if not 0 <= failed_rate <= 1 or count % 1:
+                raise ValueError("汇总中的请求数或失败率非法")
+            if failed_rate > 0.5:
+                return SmokeResult(passed=False, checked_status=checked_status,
+                    detail=f"冒烟验证失败率过高: {failed_rate*100:.0f}%（预期状态码可能不匹配）")
+        except (ValueError, TypeError, KeyError) as exc:
+            LOGGER.warning("performance_smoke_summary_invalid", extra={"engine": plan.engine, "error": str(exc)})
+            return SmokeResult(passed=False, detail=f"冒烟汇总解析失败: {exc}")
+
+        if result.evidence and result.evidence.get("status") != "saved":
+            return SmokeResult(passed=False, detail="冒烟原件未完整保存: " + str(result.evidence.get("error") or result.evidence.get("missing_artifacts")))
 
         for var in plan.smoke.expect_extract:
             found = var.lower() in result.stdout.lower()
@@ -211,23 +224,25 @@ class PerfRunnerService:
             return values
         return metric
 
-    def _extract_smoke_counts(self, data: dict[str, Any]) -> tuple[int, float]:
+    def _extract_smoke_counts(self, data: dict[str, Any]) -> tuple[float | None, float | None]:
         """Return completed request count and failed rate for k6 or JMeter summaries."""
+        if not isinstance(data, dict):
+            raise ValueError("汇总必须是JSON对象")
         metrics = data.get("metrics", {})
         if isinstance(metrics, dict) and metrics:
             values = self._metric_values(metrics.get("http_reqs", {}))
-            count = int(values.get("count", 0))
+            count = metric_number(values, "count")
             failed_values = self._metric_values(metrics.get("http_req_failed", {}))
-            failed_rate = float(failed_values.get("rate", failed_values.get("value", 1)))
+            failed_rate = metric_number(failed_values, "rate" if "rate" in failed_values else "value")
             return count, failed_rate
 
         total = data.get("Total", {})
         if isinstance(total, dict):
-            count = int(total.get("sampleCount", 0))
-            error_pct = float(total.get("errorPct", 100.0))
-            return count, error_pct / 100.0
+            count = metric_number(total, "sampleCount")
+            error_pct = metric_number(total, "errorPct")
+            return count, error_pct / 100.0 if error_pct is not None else None
 
-        return 0, 1.0
+        return None, None
 
     async def _run_in_docker(
         self,
@@ -264,11 +279,14 @@ class PerfRunnerService:
             result = await self._docker_resources.execute(
                 docker_cmd, name_prefix=container_name, timeout_seconds=timeout_seconds,
             )
-            return ExecutionResult(
+            captured = ExecutionResult(
                 exit_code=result.exit_code, stdout=result.stdout, stderr=result.stderr,
                 summary_json=self._read_summary_artifact(Path(tmpdir), summary_path),
                 timed_out=result.timed_out, container_id=result.container_id,
             )
+            captured.evidence = await store_execution_evidence(objects=self._objects, command=cmd,
+                script=script, result=captured, workdir=Path(tmpdir))
+            return captured
 
     async def _run_local(
         self,
@@ -303,14 +321,21 @@ class PerfRunnerService:
                 )
                 summary_json = self._read_summary_artifact(Path(tmpdir), summary_path)
 
-                return ExecutionResult(
+                captured = ExecutionResult(
                     exit_code=proc.returncode,
                     stdout=proc.stdout or "",
                     stderr=proc.stderr or "",
                     summary_json=summary_json,
                 )
-            except subprocess.TimeoutExpired:
-                return ExecutionResult(exit_code=-1, stdout="", stderr="timeout", timed_out=True)
+            except subprocess.TimeoutExpired as exc:
+                def text_output(value):
+                    return value.decode("utf-8", errors="replace") if isinstance(value, bytes) else (value or "")
+                captured = ExecutionResult(exit_code=-1, stdout=text_output(exc.output),
+                    stderr=text_output(exc.stderr), timed_out=True,
+                    summary_json=self._read_summary_artifact(Path(tmpdir), summary_path))
+            captured.evidence = await store_execution_evidence(objects=self._objects, command=cmd,
+                script=script, result=captured, workdir=Path(tmpdir), executed_command=local_cmd)
+            return captured
 
     @staticmethod
     def _read_summary_artifact(tmpdir: Path, summary_path: Path) -> str:
