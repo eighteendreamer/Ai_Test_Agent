@@ -75,7 +75,7 @@ class AgentCaseAssessmentService:
     async def build_assessment_request(self, *, context: AgentCaseExecutionContext,
         tool_records: list[ToolExecutionRecord], session_id: str, turn_id: str,
         attempt_id: str, validation_feedback: dict[str, Any] | None = None,
-        requested_item_keys: list[str] | None = None) -> ModelInvocationRequest:
+        requested_item_keys: list[str] | None = None, trace_id: str | None = None) -> ModelInvocationRequest:
         keys = [step.item.key for step in context.steps] if requested_item_keys is None else list(requested_item_keys)
         if not keys or len(set(keys)) != len(keys) or not set(keys) <= {step.item.key for step in context.steps}:
             raise ValueError("请求的执行项必须唯一且属于本次固定执行上下文")
@@ -83,7 +83,7 @@ class AgentCaseAssessmentService:
             session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, allow_pending=requested_item_keys is not None)
         # Explicitly name the two reference roots, presenting complete business
         # content once. Both prompts still use the same receipt schema/validator.
-        data = {"frozen_execution": context.execution_json(exclude={"steps"}),
+        data = {"frozen_execution": context.execution_json(exclude={"steps", "receipt_correction_transport_options"}),
             "requested_item_keys": keys,
             "execution_items": [{"item_key": step.item.key, "phase": step.phase,
                 "plan_item": step.item.model_dump(mode="json", exclude={"instructions"}),
@@ -119,7 +119,7 @@ class AgentCaseAssessmentService:
                 json.dumps(data, ensure_ascii=False, allow_nan=False))}],
             trace_context={"project_id": context.project_id, "test_run_id": context.run_id,
                 "run_item_id": context.run_item_id, "attempt_id": attempt_id, "session_id": session_id,
-                "turn_id": turn_id, "phase": "case_assessment"},
+                "turn_id": turn_id, "trace_id": trace_id or turn_id, "phase": "case_assessment"},
         )
 
     @staticmethod

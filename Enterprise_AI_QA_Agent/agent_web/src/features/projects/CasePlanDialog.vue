@@ -144,6 +144,20 @@ async function remember() {
   catch (err) { showError(err); }
   finally { busy.value = false; }
 }
+function chooseReceiptCorrection(event: Event) {
+  if (!config.value) return;
+  if ((event.target as HTMLInputElement).checked) config.value.policy.receipt_correction_protocol = "case-receipt-correction-v1";
+  else {
+    delete config.value.policy.receipt_correction_protocol;
+    delete config.value.policy.receipt_correction_transport_options;
+  }
+}
+function chooseReceiptTransport(event: Event) {
+  if (!config.value?.policy.receipt_correction_protocol) return;
+  if ((event.target as HTMLInputElement).checked) {
+    config.value.policy.receipt_correction_transport_options = { timeout_seconds: 60, max_retries: 0 };
+  } else delete config.value.policy.receipt_correction_transport_options;
+}
 function chooseActionBinding(event: Event) {
   if (!config.value) return;
   downgradeFormalEffects();
@@ -408,6 +422,20 @@ onMounted(loadPolicy);
           :checked="!!config.policy.planning_stage_protocol" @change="choosePlanningStages">分阶段生成执行计划</label>
         <p v-if="config.policy.planning_stage_protocol">先确定用例、必要前置和顺序，再补充执行证据；两阶段共用本次回合数和超时，全部校验后才可启动。</p>
         <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
+        <label><input type="checkbox" :disabled="busy" :checked="!!config.policy.receipt_correction_protocol"
+          @change="chooseReceiptCorrection">回执错误时只读纠正一次</label>
+        <p v-if="config.policy.receipt_correction_protocol">使用原预算和已保存证据，不重复测试操作。设置仅影响新计划，历史运行保留原策略。</p>
+        <template v-if="config.policy.receipt_correction_protocol">
+          <label><input data-testid="receipt-transport" type="checkbox" :disabled="busy"
+            :checked="!!config.policy.receipt_correction_transport_options" @change="chooseReceiptTransport">单独设置回执调用超时和重试</label>
+          <template v-if="config.policy.receipt_correction_transport_options">
+            <label>回执调用超时（秒）<input data-testid="receipt-timeout" v-model.number="config.policy.receipt_correction_transport_options.timeout_seconds"
+              :disabled="busy" type="number" min="0.1" max="600" step="0.1"></label>
+            <label>回执发送失败后的重试次数<input data-testid="receipt-retries" v-model.number="config.policy.receipt_correction_transport_options.max_retries"
+              :disabled="busy" type="number" min="0" max="10" step="1"></label>
+          </template>
+          <p>只读纠正最多进行一次。发送失败是否重试由这里的设置决定；0 表示只发送一次。未单独设置时沿用模型默认调用设置。</p>
+        </template>
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
       <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"

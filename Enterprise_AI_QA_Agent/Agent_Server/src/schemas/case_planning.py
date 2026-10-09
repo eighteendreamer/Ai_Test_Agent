@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_valid
 from src.schemas.business_planning import BusinessEnvironmentSelection, BusinessPlanningEnvironment
 from src.schemas.case_effects import EffectEvidenceDeclaration, EffectRelationDeclaration
 from src.schemas.case_effect_sources import SourceEffectRelationDeclaration
+from src.schemas.model_config import ModelTransportOptions
 
 
 class PlanningModel(BaseModel):
@@ -35,9 +36,13 @@ class CasePlanningPolicy(PlanningModel):
     linked_source_protocol: Literal["case-planning-linked-documents-v1"] | None = None
     evidence_reference_protocol: Literal["case-planning-evidence-references-v1"] | None = None
     consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
+    receipt_correction_protocol: Literal["case-receipt-correction-v1"] | None = None
+    receipt_correction_transport_options: ModelTransportOptions | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.receipt_correction_transport_options is not None and self.receipt_correction_protocol is None:
+            raise ValueError("回执调用设置需要启用只读纠正协议")
         if self.consumption_protocol and self.effect_coverage_protocol != "case-effect-coverage-v2":
             raise ValueError("消费阶段结束需要固定多效果关系和原动作领取")
         if self.evidence_reference_protocol and not self.source_identity_protocol:
@@ -82,6 +87,10 @@ class CasePlanningPolicy(PlanningModel):
     @model_serializer(mode="wrap")
     def preserve_original_policy(self, handler):
         data = handler(self)
+        if self.receipt_correction_protocol is None:
+            data.pop("receipt_correction_protocol", None)
+        if self.receipt_correction_transport_options is None:
+            data.pop("receipt_correction_transport_options", None)
         if self.consumption_protocol is None:
             data.pop("consumption_protocol", None)
         if self.evidence_reference_protocol is None:

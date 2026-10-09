@@ -38,7 +38,8 @@ from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection, postgres_engine
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.channel_config import ChannelAdvancedSettings
-from src.schemas.model_config import ModelCapabilitiesOverride
+from src.schemas.model_config import ModelCapabilitiesOverride, ModelTransportOptions
+from src.schemas.case_planning import CasePlanningPolicy
 from src.schemas.settings import GeneralSettingsPayload, ModelConfigUpdateRequest
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_EXECUTION_CLI_TESTS") != "1",
@@ -180,6 +181,20 @@ async def isolated_runtime(tmp_path):
         yield settings, processes, queue, objects, owned_objects
     finally:
         await processes.close()
+        if created_database:
+            # Preserve actual failed state too, before this owned database is removed.
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                original_tables = {}
+                for field in ("postgres_snapshot_table", "postgres_tool_job_table", "postgres_approval_table",
+                    "postgres_test_run_table", "postgres_test_run_item_table", "postgres_test_run_attempt_table",
+                    "postgres_test_case_result_table"):
+                    table = getattr(settings.database, field)
+                    cur.execute("SELECT to_regclass(%s) AS existing", (table,))
+                    if cur.fetchone()["existing"]:
+                        cur.execute(f"SELECT * FROM {table}")
+                        original_tables[field] = [dict(row) for row in cur.fetchall()]
+            (tmp_path / "postgres-finally.json").write_text(json.dumps(original_tables,
+                ensure_ascii=False, default=str, indent=2), encoding="utf-8")
         if queue is not None:
             await queue.close()
         for uri in owned_objects:
@@ -208,13 +223,13 @@ async def isolated_runtime(tmp_path):
             evidence.mkdir(exist_ok=True)
             for path in tmp_path.iterdir():
                 if (path.suffix in {".stdout", ".stderr"} or path.name in
-                    {"docker.json", "waiting.json", "requirements.md", "postgres-execution.json", "completed.json"}
-                    or path.name.startswith("model-")):
+                    {"docker.json", "waiting.json", "requirements.md", "postgres-execution.json", "postgres-finally.json", "completed.json"}
+                    or path.name.startswith(("model-", "receipt-"))):
                     shutil.copyfile(path, evidence / path.name)
 
 
 @asynccontextmanager
-async def controlled_http(tmp_path):
+async def controlled_http(tmp_path, *, mixed_report=False):
     calls, effects, orders, errors = [], [], {}, []
     actual_id = "actual-" + uuid4().hex
     body = {"order.id": actual_id, "flag": False, "count": 0, "nullable": None,
@@ -243,7 +258,15 @@ async def controlled_http(tmp_path):
                 messages = request["messages"]
                 system = "\n".join(str(m.get("content", "")) for m in messages if m["role"] == "system")
                 assert "DO-NOT-INJECT-TEMPLATE" not in json.dumps(request)
-                if "Complete Frozen Case and Preparation Data" in system:
+                if "Review this completed Agent execution against its complete frozen cases" in system:
+                    assert not request.get("tools")
+                    data = receipt()
+                    for field in ("flag", "count", "nullable"):
+                        data["steps"][1]["checks"].append({"name": field, "expected_path_tokens": ["期望", field],
+                            "operator": "equals", "observations": [{"call_id": "target",
+                                "output_path_tokens": ["task_result", "response_body", field]}]})
+                    result, reason, phase = {"role": "assistant", "content": json.dumps(data, ensure_ascii=False)}, "stop", "receipt_correction"
+                elif "Complete Frozen Case and Preparation Data" in system:
                     match = re.search(r'<untrusted_content[^>]*>\s*(\{.*?\})\s*</untrusted_content>',
                         system[system.index("Complete Frozen Case and Preparation Data"):], re.S)
                     frozen = json.loads(unescape(match.group(1)))
@@ -267,6 +290,9 @@ async def controlled_http(tmp_path):
                                 "operator": "equals", "observations": [{"call_id": "target",
                                     "output_path_tokens": ["task_result", "response_body", field]}]})
                         result, reason, phase = {"role": "assistant", "content": json.dumps(data, ensure_ascii=False)}, "stop", "receipt"
+                        if mixed_report:
+                            old = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p0-tool-evidence-production-final/trusted-parent/postgres-execution.json"
+                            result["content"] = json.loads(old.read_bytes())["tables"]["postgres_snapshot_table"]["records"][-1]["graph_state"]["model_response_text"]
                 else:
                     context = json.loads(next(m["content"] for m in messages if m["role"] == "user"))
                     target = item(context, "query", key="target", depends_on=["seed"],
@@ -347,13 +373,14 @@ async def wait_api(client, process):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_limit", [8, 3], ids=["complete", "budget-exhausted"])
-async def test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay(tmp_path, model_limit, monkeypatch):
+@pytest.mark.parametrize("model_limit,mixed_report", [(8, False), (3, False), (8, True)],
+    ids=["complete", "budget-exhausted", "receipt-correction"])
+async def test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay(tmp_path, model_limit, mixed_report, monkeypatch):
     if os.getenv("QA_APPROVAL_MODEL_BUDGET_CLI_DIR"):
-        target = Path(os.environ["QA_APPROVAL_MODEL_BUDGET_CLI_DIR"]) / str(model_limit)
+        target = Path(os.environ["QA_APPROVAL_MODEL_BUDGET_CLI_DIR"]) / (str(model_limit) + ("-receipt" if mixed_report else ""))
         target.mkdir(parents=True, exist_ok=False)
         monkeypatch.setenv("QA_TEST_GATE_OUTPUT_DIR", str(target))
-    async with controlled_http(tmp_path) as (business, calls, effects, orders, actual_id, errors):
+    async with controlled_http(tmp_path, mixed_report=mixed_report) as (business, calls, effects, orders, actual_id, errors):
         async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
             settings.orchestration.runtime_max_iterations = model_limit
             models = MySQLModelConfigStore(settings)
@@ -374,6 +401,11 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                     return response.json()
 
                 project = await post("/projects", {"project_key": "cli-" + uuid4().hex, "name": "实际 CLI 生命周期", "base_url": business}, 201)
+                if mixed_report:
+                    saved_policy = await client.put(f"/projects/{project['id']}/case-plans/policy",
+                        json=CasePlanningPolicy(receipt_correction_protocol="case-receipt-correction-v1",
+                            receipt_correction_transport_options=ModelTransportOptions(timeout_seconds=60, max_retries=0)).model_dump(mode="json"))
+                    assert saved_policy.status_code == 200 and saved_policy.json()["policy"]["receipt_correction_protocol"] == "case-receipt-correction-v1"
                 source = tmp_path / "requirements.md"
                 source.write_text(f"# 订单查询\nPOST {business}/orders 创建订单返回201和order.id。\n"
                     f"GET {business}/orders/{{id}} 查询已有订单返回200，flag=false、count=0、nullable=null。\n"
@@ -449,6 +481,15 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                 else:
                     assert "budget_exhausted" in result["error_message"]
                 assert not orders
+                if mixed_report:
+                    correction = result["actual"]["receipt_correction"]
+                    assert correction["phase"] == "response" and correction["total_model_calls"] == 5
+                    assert correction["runtime_parameters"]["transport_options"] == {"timeout_seconds": 60, "max_retries": 0}
+                    for key in ("request", "response"):
+                        owned.append(correction[key]["uri"])
+                        raw = (await objects.read_object_uri(correction[key]["uri"]))["content"]
+                        assert len(raw) == correction[key]["size_bytes"]
+                        (tmp_path / f"receipt-{key}.json").write_bytes(raw)
                 completed = (await client.get("/runs/" + run_id)).json()
                 (tmp_path / "completed.json").write_text(json.dumps(completed, ensure_ascii=False, indent=2), encoding="utf-8")
                 with postgres_connect(settings) as conn, conn.cursor() as cur:
@@ -465,7 +506,7 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                 assert final_states[0]["max_iterations"] == model_limit
                 assert completed["run"]["status"] == "completed" and completed["results"][0]["id"] == result["id"]
                 assert [verb for verb, _ in effects] == ["POST", "GET", "DELETE"]
-                expected_calls = 1 + min(model_limit, 4)  # one planning call, then this turn
+                expected_calls = 1 + min(model_limit, 4) + int(mixed_report)
                 assert len(calls) == expected_calls and not errors, (calls, errors)
                 await queue.enqueue(delivery[0]["payload"])
                 child = processes.start("worker-terminal", "-m", "src.cli.run_redis_worker", "--once", "--worker-id", "cli-terminal")
@@ -479,6 +520,8 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                     "actual_effects": effects,
                     "original_turn_limit": model_limit, "restarted_process_default": model_limit + 10,
                     "execution_model_calls": min(model_limit, 4), "formal_status": result["status"],
+                    "receipt_correction_calls": int(mixed_report),
+                    "receipt_transport_options": correction["runtime_parameters"].get("transport_options") if mixed_report else None,
                     "terminal_replay_model_calls": 0,
                     "model_calls": calls, "terminal_replay_effects": 0, "business_records_remaining": len(orders)}
                 target = Path(os.getenv("QA_TEST_GATE_OUTPUT_DIR", str(tmp_path))) / "p2-execution-worker-cli.json"

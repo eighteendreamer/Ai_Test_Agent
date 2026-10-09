@@ -280,7 +280,8 @@ async def adapter_environment(tmp_path, business_http, live=False, agent=None, s
 
         def adapter():
             return AgentCaseExecutionAdapter(run_service=runs, session_service=sessions,
-                session_store=reader, tool_job_service=env[1])
+                session_store=reader, tool_job_service=env[1], model_runtime_service=agent,
+                artifact_storage_service=base.objects)
 
         async def args():
             current = await runs.get_item(env[0].run_item_id)

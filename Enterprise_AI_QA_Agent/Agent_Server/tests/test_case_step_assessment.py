@@ -276,7 +276,12 @@ async def test_full_legacy_request_and_resolved_receipt_match_committed_baseline
             current, previous = AgentCaseAssessmentService(env[1]), module.AgentCaseAssessmentService(env[1])
             request = await current.build_assessment_request(**kwargs)
             old_request = await previous.build_assessment_request(**kwargs)
-            assert request.model_dump_json() == old_request.model_dump_json()
+            # The old input/receipt semantics stay identical; trace_id was
+            # missing and made this request fail in the real observability layer.
+            assert request.trace_context["trace_id"] == kwargs["turn_id"]
+            current_payload = request.model_dump(mode="json")
+            current_payload["trace_context"].pop("trace_id")
+            assert current_payload == old_request.model_dump(mode="json")
             outcomes = [await service.assess(**kwargs, receipt=receipt(), model_key='controlled', lease_token=env[6].items[0].lease_token)
                 for service in [current, previous]]
             normalized = []

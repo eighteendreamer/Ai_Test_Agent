@@ -113,6 +113,8 @@ def build_agent_case_context(
         effect_coverage_protocol=plan.config_snapshot.policy.effect_coverage_protocol,
         effect_coverage_max_bytes=plan.config_snapshot.policy.effect_coverage_max_bytes,
         consumption_protocol=plan.config_snapshot.policy.consumption_protocol,
+        receipt_correction_protocol=plan.config_snapshot.policy.receipt_correction_protocol,
+        receipt_correction_transport_options=plan.config_snapshot.policy.receipt_correction_transport_options,
         effect_owner_item_ids=deepcopy(snapshot.run_item_ids)
             if plan.config_snapshot.policy.effect_coverage_protocol else None,
         runtime_inputs=deepcopy(plan.request.runtime_context), business_environment=fixed,environment_admission=admission,

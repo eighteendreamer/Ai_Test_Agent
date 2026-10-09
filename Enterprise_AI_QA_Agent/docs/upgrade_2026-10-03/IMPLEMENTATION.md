@@ -4606,3 +4606,34 @@ $env:QA_CONSUMER_RECEIPT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_A
 两条实际命令将stdout/stderr重定向保存为同前缀.log。此次未重复真实默认模型、完整浏览器App、生产Worker或前端构建；6.85分别引用前序原始日志，不能算成本次重跑。前序扩大回归4失败因缺少消费证据目录，本次配置后受影响模块通过。真实默认模型原失败是ProviderClientError/Request timed out.，只读调用原响应已持久；尚无默认UI passed，不重做业务或暗增预算。
 
 项目根目录运行 `python docs/upgrade_2026-10-03/plan-receipt-current-audit.py --sync` 同步三份已读取方案并输出审计；再不带参数重跑只读校验。它核对200个预算工件、408个工具工件、受保护文件、当前源码哈希及测试XML，保存本次证据的SHA-256，不重写历史审计或原失败文件。此文档批次不表示全部P0—P5实施完成。
+
+
+## 2026-10-09 回执纠正与可选冻结传输（基线1904fe9f）
+
+改动仅回执服务/适配器、上下文/schema/提示投影、main注入、项目策略前端和相关测试。复用原运行时、MySQL项目策略、PG租约检查点和RustFS原件；不新增表/依赖或修改全局设置。请求trace_id补齐，旧状态max_iterations仅日志改可选读取；预算准入保持。研究见P0_RECEIPT_TRANSPORT_RESEARCH.md，方案6.86。
+
+实际命令（Agent_Server目录，输出均重定向至docs/upgrade_2026-10-03同前缀.log，XML由--junitxml保存）：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_RECEIPT_CORRECTION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-receipt-correction-transport-verified'
+$env:QA_RECEIPT_TRANSPORT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-receipt-transport-verified'
+$env:QA_CONSUMER_RECEIPT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p0-receipt-correction-consumer-verified'
+..\.venv\Scripts\python.exe -m pytest tests/test_agent_case_receipt_correction.py tests/test_agent_receipt_transport.py tests/test_agent_case_context.py tests/test_agent_case_execution.py tests/test_case_step_assessment.py tests/test_prompt_assembly_service.py tests/test_prompt_history_http.py tests/test_approval_model_budget.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-receipt-transport-verified.xml
+# exit0，98通过/4跳过266.01秒；跳过真实provider两参数、实际完整用例模型及public-worker。
+
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+# QA_RECEIPT_CORRECTION_DIR对应production-current、production-transport原输出目录
+..\.venv\Scripts\python.exe -m pytest tests/test_execution_worker_cli.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-receipt-correction-production-current.xml
+# exit0，3通过148.48秒，包含新增PG finally导出
+..\.venv\Scripts\python.exe -m pytest tests/test_execution_worker_cli.py -k receipt -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-receipt-correction-production-transport.xml
+# exit0，1通过66.90秒，2未选取，冻结timeout60/retry0
+```
+
+前端agent_web目录 `npm.cmd run test -- src/features/projects/CasePlanDialog.test.ts src/features/projects/CasePlanningTaskPanel.test.ts` 75通过5.04秒，`npm.cmd run build` 类型检查/构建exit0，Vite12.61秒；原日志p0-receipt-transport-web-first和web-build-first。
+
+真实Step单次试验原日志p0-receipt-correction-default-single：1失败、26未选取、11.99秒。记录1次HTTP403/0.485秒/SDK retry0 timeout60，real_name_required；实际API请求与原响应持久化。用户选择继续其他模块，账号处理后再验收，后续不再调用Step。原历史超时保留，SDK断连测试默认3次/显式0重试1次不能倒推历史发送次数。
+
+保存最初错误开关3跳过、首次1失败31通过1跳过、扩大5失败87通过3跳过及单模块1失败2通过。新审计核对原200/408/151工件、三份计划同步、受保护文件、新源码与原证据哈希；不重跑旧审计覆写历史。纠正故障恢复仍为提交后BaseException模拟，不声称真实进程故障或默认可信UI通过；完整P0—P5继续。
+
+本轮首次暂存遇到零字节index.lock（2026-10-09 09:15:56）。两次检查均无Git进程，将锁在原.git内改名为唯一stale-receipt备份后分批暂存；未删除索引/修改配置。413原工件已核对索引字节一致，diff --cached --check通过。

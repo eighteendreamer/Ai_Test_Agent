@@ -1980,6 +1980,8 @@ export interface CaseImportBatchView {
 }
 
 export interface CasePlanningPolicy {
+  receipt_correction_protocol?: "case-receipt-correction-v1" | null;
+  receipt_correction_transport_options?: { timeout_seconds: number; max_retries: number } | null;
   action_binding_protocol?: "case-action-binding-v1" | null;
   action_admission_protocol?: "case-action-admission-v1" | null;
   operation_protocol?: "case-operation-v1" | null;

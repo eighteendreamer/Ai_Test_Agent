@@ -10,6 +10,7 @@ from src.schemas.case_planning import (
 )
 from src.schemas.business_planning import BusinessPlanningEnvironment
 from src.schemas.business_execution import BusinessExecutionAdmission
+from src.schemas.model_config import ModelTransportOptions
 
 
 class BoundCaseInput(PlanningModel):
@@ -56,9 +57,13 @@ class AgentCaseExecutionContext(PlanningModel):
     effect_owner_item_ids: dict[str, str] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
     consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
+    receipt_correction_protocol: Literal["case-receipt-correction-v1"] | None = None
+    receipt_correction_transport_options: ModelTransportOptions | None = None
 
     @model_validator(mode="after")
     def require_operation_admission(self):
+        if self.receipt_correction_transport_options is not None and self.receipt_correction_protocol is None:
+            raise ValueError("回执调用设置缺少固定纠正协议")
         if self.consumption_protocol and self.effect_coverage_protocol != "case-effect-coverage-v2":
             raise ValueError("消费阶段结束上下文需要固定多效果关系")
         if self.effect_expected_source_protocol and self.effect_evidence_protocol != "case-effect-evidence-v2":
@@ -95,6 +100,10 @@ class AgentCaseExecutionContext(PlanningModel):
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
+        if self.receipt_correction_protocol is None:
+            omitted.add("receipt_correction_protocol")
+        if self.receipt_correction_transport_options is None:
+            omitted.add("receipt_correction_transport_options")
         if self.consumption_protocol is None:
             omitted.add("consumption_protocol")
         if self.effect_expected_source_protocol is None:
@@ -136,6 +145,36 @@ class AgentCaseExecutionContext(PlanningModel):
         }
 
 
+class CaseReceiptObject(PlanningModel):
+    uri: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: int = Field(ge=0)
+
+
+class CaseReceiptCorrectionCheckpoint(PlanningModel):
+    protocol: Literal["case-receipt-correction-v1"] = "case-receipt-correction-v1"
+    phase: Literal["invoking", "response"]
+    call_id: str = Field(min_length=1)
+    snapshot_id: str = Field(min_length=1)
+    prompt_version: str = Field(min_length=1)
+    model_key: str = Field(min_length=1)
+    model_parameters: dict[str, Any]
+    runtime_parameters: dict[str, Any]
+    execution_model_calls: int = Field(ge=0)
+    total_model_calls: int = Field(ge=1)
+    max_iterations: int = Field(ge=1)
+    request: CaseReceiptObject
+    response: CaseReceiptObject | None = None
+
+    @model_validator(mode="after")
+    def validate_saved_boundary(self):
+        if (self.phase == "response") != (self.response is not None):
+            raise ValueError("回执响应身份与持久阶段不一致")
+        if self.total_model_calls != self.execution_model_calls + 1 or self.total_model_calls > self.max_iterations:
+            raise ValueError("回执调用必须只消耗一次原剩余预算")
+        return self
+
+
 class AgentCaseExecutionCheckpoint(PlanningModel):
     schema_version: Literal[1] = 1
     project_id: str
@@ -149,6 +188,14 @@ class AgentCaseExecutionCheckpoint(PlanningModel):
     phase: Literal["admitted", "running", "snapshot"]
     snapshot_id: str | None = None
     snapshot_version: int | None = Field(default=None, ge=1)
+    receipt_correction: CaseReceiptCorrectionCheckpoint | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_checkpoint(self, handler):
+        data = handler(self)
+        if self.receipt_correction is None:
+            data.pop("receipt_correction", None)
+        return data
 
 
 class CaseToolEvidenceReference(PlanningModel):

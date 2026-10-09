@@ -1,0 +1,51 @@
+{
+  "runtime_parameters": {
+    "langchain_model_adapter_enabled": false,
+    "llm_request_timeout_seconds": 0.2,
+    "sdk_retry_policy": "explicit_transport_options",
+    "dependency_versions": {
+      "openai": "3.14.0"
+    },
+    "transport_options": {
+      "timeout_seconds": 0.2,
+      "max_retries": 0
+    }
+  },
+  "physical_http_requests": [
+    {
+      "messages": [
+        {
+          "role": "system",
+          "content": "You are a QA agent."
+        },
+        {
+          "role": "user",
+          "content": "ping"
+        }
+      ],
+      "model": "gpt-test",
+      "max_tokens": 4096,
+      "temperature": 0.2
+    }
+  ],
+  "response": {
+    "text": "Model invocation failed. Check the model provider and retry.",
+    "tool_calls": [],
+    "response_summary": {
+      "mode": "http_error",
+      "provider": "openai",
+      "provider_profile": "openai",
+      "transport": "openai_chat_completions",
+      "error_type": "ProviderClientError",
+      "status_code": null,
+      "error": "Connection error.",
+      "response_body": ""
+    },
+    "raw_response": {
+      "mode": "http_error",
+      "error": "Connection error.",
+      "status_code": null,
+      "response_body": ""
+    }
+  }
+}

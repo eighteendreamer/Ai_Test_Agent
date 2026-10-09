@@ -820,7 +820,8 @@ async def _initialize_lifespan_resources(
     cleanup.push_async_callback(_close_lifespan_resource, "session_service", session_service.close)
     test_run_execution_service.set_agent_execution_adapter(AgentCaseExecutionAdapter(
         run_service=test_run_service, session_service=session_service,
-        session_store=store, tool_job_service=tool_job_service))
+        session_store=store, tool_job_service=tool_job_service,
+        model_runtime_service=model_runtime_service, artifact_storage_service=artifact_storage_service))
     coordinator_runtime_service = CoordinatorRuntimeService(
         settings=settings,
         store=store,

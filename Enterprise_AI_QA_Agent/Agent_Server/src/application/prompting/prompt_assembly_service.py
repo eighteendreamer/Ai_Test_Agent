@@ -514,7 +514,7 @@ class PromptAssemblyService:
                 key="frozen_case_execution", title="Complete Frozen Case and Preparation Data",
                 source="test_runs.fixed_plan", cache_scope="dynamic", priority=84,
                 content=wrap_untrusted_content("retrieved_document",
-                    json.dumps(frozen.execution_json(), ensure_ascii=False, allow_nan=False)),
+                    json.dumps(frozen.execution_json(exclude={"receipt_correction_transport_options"}), ensure_ascii=False, allow_nan=False)),
                 metadata={"project_id": frozen.project_id, "run_id": frozen.run_id,
                     "run_item_id": frozen.run_item_id, "plan_id": frozen.plan_id, "trusted": False},
             ))

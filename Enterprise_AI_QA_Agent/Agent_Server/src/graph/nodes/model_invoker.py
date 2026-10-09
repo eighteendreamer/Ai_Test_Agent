@@ -151,7 +151,7 @@ def build_model_invoker_node(
             tool_candidates=",".join(model_visible_tool_keys) or "none",
             loop_iteration=state["loop_iteration"],
             model_call_count=count + 1 if count is not None else None,
-            max_iterations=state["max_iterations"],
+            max_iterations=state.get("max_iterations"),
         )
 
         if count is not None:

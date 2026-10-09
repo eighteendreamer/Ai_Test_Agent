@@ -1,0 +1,44 @@
+{
+  "calls": [
+    {
+      "path": "/v1/chat/completions",
+      "phase": "planning",
+      "tool_message_count": 0
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 0
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 1
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 2
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "receipt",
+      "tool_message_count": 3
+    }
+  ],
+  "effects": [
+    [
+      "POST",
+      "/orders"
+    ],
+    [
+      "GET",
+      "/orders/actual-f881c75dc3fe464d9e1a9daaed82a5d9"
+    ],
+    [
+      "DELETE",
+      "/orders/actual-f881c75dc3fe464d9e1a9daaed82a5d9"
+    ]
+  ],
+  "errors": []
+}

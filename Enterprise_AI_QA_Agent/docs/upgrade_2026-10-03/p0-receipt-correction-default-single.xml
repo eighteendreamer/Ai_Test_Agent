@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="11.803" timestamp="2026-10-09T09:09:22.213256+08:00" hostname="EIghteen"><testcase classname="tests.test_agent_case_receipt_correction" name="test_default_provider_readonly_correction_uses_owned_real_api_evidence[single-attempt]" time="5.738"><failure message="ValueError: 执行回执模型调用未成功: http_error">tests\test_agent_case_receipt_correction.py:252: in test_default_provider_readonly_correction_uses_owned_real_api_evidence
+    outcome = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:271: in _finish
+    outcome = await assess(response)
+              ^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:242: in assess
+    receipt=self._assessment.parse_response(candidate), tool_records=records,
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:130: in parse_response
+    raise ValueError("执行回执模型调用未成功: " + str(summary.get("mode")))
+E   ValueError: 执行回执模型调用未成功: http_error</failure></testcase></testsuite></testsuites>

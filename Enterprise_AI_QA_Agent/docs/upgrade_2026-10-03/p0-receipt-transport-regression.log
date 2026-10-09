@@ -1,0 +1,54 @@
+...................ss...............FFFF...s............................ [ 75%]
+................F......                                                  [100%]
+================================== FAILURES ===================================
+_ test_actual_json_file_and_original_produce_full_frozen_prompt[False-False] __
+tests\test_agent_case_context.py:137: in test_actual_json_file_and_original_produce_full_frozen_prompt
+    await invoke(state)
+src\graph\nodes\model_invoker.py:154: in model_invoker
+    max_iterations=state["max_iterations"],
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'max_iterations'
+__ test_actual_json_file_and_original_produce_full_frozen_prompt[False-True] __
+tests\test_agent_case_context.py:137: in test_actual_json_file_and_original_produce_full_frozen_prompt
+    await invoke(state)
+src\graph\nodes\model_invoker.py:154: in model_invoker
+    max_iterations=state["max_iterations"],
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'max_iterations'
+__ test_actual_json_file_and_original_produce_full_frozen_prompt[True-False] __
+tests\test_agent_case_context.py:137: in test_actual_json_file_and_original_produce_full_frozen_prompt
+    await invoke(state)
+src\graph\nodes\model_invoker.py:154: in model_invoker
+    max_iterations=state["max_iterations"],
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'max_iterations'
+__ test_actual_json_file_and_original_produce_full_frozen_prompt[True-True] ___
+tests\test_agent_case_context.py:137: in test_actual_json_file_and_original_produce_full_frozen_prompt
+    await invoke(state)
+src\graph\nodes\model_invoker.py:154: in model_invoker
+    max_iterations=state["max_iterations"],
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'max_iterations'
+_______ test_untrusted_memory_and_attachment_cannot_close_prompt_fence ________
+tests\test_prompt_assembly_service.py:87: in test_untrusted_memory_and_attachment_cannot_close_prompt_fence
+    asyncio.run(build_model_invoker_node(model_runtime, ToolRegistry())(assembled))
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+src\graph\nodes\model_invoker.py:154: in model_invoker
+    max_iterations=state["max_iterations"],
+                   ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'max_iterations'
+=========================== short test summary info ===========================
+FAILED tests/test_agent_case_context.py::test_actual_json_file_and_original_produce_full_frozen_prompt[False-False]
+FAILED tests/test_agent_case_context.py::test_actual_json_file_and_original_produce_full_frozen_prompt[False-True]
+FAILED tests/test_agent_case_context.py::test_actual_json_file_and_original_produce_full_frozen_prompt[True-False]
+FAILED tests/test_agent_case_context.py::test_actual_json_file_and_original_produce_full_frozen_prompt[True-True]
+FAILED tests/test_prompt_assembly_service.py::test_untrusted_memory_and_attachment_cannot_close_prompt_fence
+5 failed, 87 passed, 3 skipped in 273.71s (0:04:33)

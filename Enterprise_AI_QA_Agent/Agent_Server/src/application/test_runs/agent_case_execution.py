@@ -11,10 +11,11 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.sessions.session_service import SessionService
 from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService
 from src.application.test_runs.agent_case_context import build_agent_case_context
+from src.application.test_runs.agent_case_receipt import AgentCaseReceiptService, CaseReceiptOutcomeUnknown
 from src.application.test_runs.run_service import TestRunService
 from src.runtime.store import SessionStore
 from src.schemas.case_execution import AgentCaseExecutionCheckpoint
-from src.schemas.run_management import RunItemCheckpointRequest
+from src.schemas.run_management import RunItemCheckpointRequest, RunEvidenceRef
 from src.schemas.session import ApprovalDecisionRequest, CreateSessionRequest, SessionSnapshot
 from src.schemas.tool_runtime import ToolExecutionRecord
 from src.schemas.model_config import ModelInvocationResult
@@ -43,12 +44,15 @@ class AgentCaseExecutionAdapter:
     # RunStore checkpoints and local Agent trajectory course): frozen arbitrary
     # JSON needs graph execution, rather than legacy runner-argument compilation.
     def __init__(self, *, run_service: TestRunService, session_service: SessionService,
-        session_store: SessionStore, tool_job_service: ToolJobService) -> None:
+        session_store: SessionStore, tool_job_service: ToolJobService,
+        model_runtime_service=None, artifact_storage_service=None) -> None:
         self._runs = run_service
         self._sessions = session_service
         self._store = session_store
         self._jobs = tool_job_service
         self._assessment = AgentCaseAssessmentService(tool_job_service)
+        self._receipts = AgentCaseReceiptService(models=model_runtime_service,
+            objects=artifact_storage_service, assessment=self._assessment)
 
     async def _load(self, *, run, item, version, attempt_id):
         detail = await self._runs.get(run.id)
@@ -143,6 +147,8 @@ class AgentCaseExecutionAdapter:
             raise ValueError("Agent 用例与运行项目不一致")
         context, checkpoint, attempt = await self._load(run=run, item=item, version=version, attempt_id=attempt_id)
         snapshot = await self._snapshot(checkpoint)
+        if checkpoint.receipt_correction is not None and snapshot is not None:
+            return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
         if snapshot is None and checkpoint.phase != "admitted":
             logger.warning("agent_case_execution_requires_reconciliation", extra={"run_id": run.id,
                 "run_item_id": item.id, "attempt_id": attempt.id,
@@ -163,6 +169,8 @@ class AgentCaseExecutionAdapter:
         snapshot = await self._snapshot(checkpoint)
         if snapshot is None:
             raise AgentCaseRecoveryRequired("审批续执行缺少原图快照，需要核对原执行")
+        if checkpoint.receipt_correction is not None:
+            return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
         approvals = await self._store.list_approvals(checkpoint.session_id)
         approval = next((entry for entry in approvals if entry.id == approval_id), None)
         if approval is None:
@@ -229,11 +237,49 @@ class AgentCaseExecutionAdapter:
         response = ModelInvocationResult(text=state.get("model_response_text", ""),
             response_summary=state.get("model_response_summary", {}))
         records = [ToolExecutionRecord.model_validate(record) for record in state.get("tool_results", [])]
-        outcome = await self._assessment.assess(context=context,
-            receipt=self._assessment.parse_response(response), tool_records=records,
-            session_id=checkpoint.session_id, turn_id=checkpoint.turn_id,
-            attempt_id=checkpoint.execution_attempt_id, model_key=state.get("selected_model_key", ""),
-            lease_token=item.lease_token)
+        async def assess(candidate):
+            return await self._assessment.assess(context=context,
+                receipt=self._assessment.parse_response(candidate), tool_records=records,
+                session_id=checkpoint.session_id, turn_id=checkpoint.turn_id,
+                attempt_id=checkpoint.execution_attempt_id, model_key=state.get("selected_model_key", ""),
+                lease_token=item.lease_token)
+
+        if checkpoint.receipt_correction is None:
+            try:
+                outcome = await assess(response)
+            except ValueError as exc:
+                if context.receipt_correction_protocol is None:
+                    raise
+                logger.warning("agent_case_receipt_correction_requested", extra={"run_id": context.run_id,
+                    "run_item_id": item.id, "snapshot_id": snapshot.id, "validation_type": type(exc).__name__})
+                validation_error = str(exc)
+            else:
+                validation_error = None
+        else:
+            outcome, validation_error = None, None
+        if checkpoint.receipt_correction is not None or validation_error is not None:
+            async def save(updated):
+                nonlocal attempt
+                attempt = await self._save(item, attempt, updated)
+            with self._execution_scope(context, checkpoint, item):
+                try:
+                    response, checkpoint = await self._receipts.correct(context=context, checkpoint=checkpoint,
+                        snapshot=snapshot, records=records, validation_error=validation_error, save=save)
+                except CaseReceiptOutcomeUnknown as exc:
+                    raise AgentCaseRecoveryRequired(str(exc)) from exc
+            try:
+                outcome = await assess(response)
+            except ValueError as exc:
+                logger.warning("agent_case_corrected_receipt_rejected", extra={"run_id": context.run_id,
+                    "run_item_id": item.id, "logical_call_id": checkpoint.receipt_correction.call_id,
+                    "validation_type": type(exc).__name__})
+                raise
+            outcome.completion.actual["receipt_correction"] = checkpoint.receipt_correction.model_dump(mode="json")
+            outcome.completion.evidence_refs.extend(RunEvidenceRef(evidence_type="receipt_correction",
+                evidence_id=checkpoint.receipt_correction.call_id + ":" + key, label="只读回执" + key,
+                uri=getattr(checkpoint.receipt_correction, key).uri,
+                metadata=getattr(checkpoint.receipt_correction, key).model_dump(mode="json"))
+                for key in ("request", "response"))
         outcome.completion.actual["execution_identity"] = {
             "session_id": checkpoint.session_id, "turn_id": checkpoint.turn_id,
             "execution_attempt_id": checkpoint.execution_attempt_id, "result_attempt_id": attempt.id,

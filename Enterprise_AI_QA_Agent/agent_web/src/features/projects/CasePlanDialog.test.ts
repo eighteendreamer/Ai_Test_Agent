@@ -40,6 +40,34 @@ describe("case planning", () => {
     api.launchCasePlan.mockResolvedValue({ run: { id: "run-1", status: "queued" }, items: [], attempts: [], results: [] });
   });
 
+  it("saves evidence-only receipt correction as a project policy and can turn it off", async () => {
+    const wrapper = setup(); await flushPromises();
+    const label = () => wrapper.findAll("label").find(row => row.text().includes("回执错误时只读纠正一次"))!;
+    await label().get("input").setValue(true);
+    expect(wrapper.text()).toContain("使用原预算和已保存证据，不重复测试操作");
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", expect.objectContaining({ receipt_correction_protocol: "case-receipt-correction-v1" }));
+    await label().get("input").setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[api.saveCasePlanningPolicy.mock.calls.length - 1]?.[1]).not.toHaveProperty("receipt_correction_protocol");
+  });
+
+  it("saves explicit receipt timeout and retries, then clears them when correction is disabled", async () => {
+    api.saveCasePlanningPolicy.mockImplementation(async (_, policy) => ({ ...config(), revision: 2, policy }));
+    const wrapper = setup(); await flushPromises();
+    const label = () => wrapper.findAll("label").find(row => row.text().includes("回执错误时只读纠正一次"))!;
+    await label().get("input").setValue(true);
+    await wrapper.get('[data-testid="receipt-transport"]').setValue(true);
+    await wrapper.get('[data-testid="receipt-timeout"]').setValue(95);
+    await wrapper.get('[data-testid="receipt-retries"]').setValue(0);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", expect.objectContaining({
+      receipt_correction_transport_options: { timeout_seconds: 95, max_retries: 0 } }));
+    await label().get("input").setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1]).not.toHaveProperty("receipt_correction_transport_options");
+  });
+
   it("submits the objective and existing information, then displays full fixed content", async () => {
     const wrapper = setup(); await flushPromises();
     await wrapper.findAll("textarea")[0].setValue("验证未登录访问");
