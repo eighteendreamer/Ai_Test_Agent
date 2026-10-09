@@ -4976,3 +4976,11 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 最终真实 **1 passed in 27.78s，0 skipped**：9工件下载，完整流和PG hash/长度一致，失败stderr保存，终态读回不增加GET，另一会话下载404，3个完整ID容器已删除。9模块回归 **111 passed in 10.62s**，compileall退出0。4个旧纯路径/后端测试因简化_Settings无database失败，按既有内存任务库注入修正夹具，原断言保留；初次import与不存在测试名的命令错误全部保存，不作功能验证。详情及原件见 `P5_SECURITY_EVIDENCE_RESEARCH.md` 和 `p5-security-evidence-validation.json`。
 
 本批是现有响应头baseline与证据链实际验收，不是完整Agent或Vue报告，也不代表其他扫描器、超时/部分输出/存储故障、容量复用已验。API单进程不负责清理队列，本批只证明实际容器删除。安全完整Agent/报告、性能Agent/容量/AI流式、录制知识/场景/清洗遗漏、生产历史迁移及其余P0—P5继续未完成；Step按用户决定待账号处理。无新增配置、表、依赖或前端修改。
+
+## 2026-10-10 安全报告最终字段与报告中心产品验收
+
+本轮基线 `2f404e68`。真实响应头工具结果继续进入现有报告阶段，复现下载JSON的settlement/verification/evaluation为空但工具输出已有最终字段，且安全会话被报告中心code_review过滤排除（1失败28.68秒）。三条报告路径统一在最终字段写齐后生成工件，保留历史；SessionStore协议/内存/PG同步增加可选多模式过滤，在数据库分页前筛选。报告中心读取代码审查、安全、性能三模式，绑定最新报告ToolJob、识别性能工件名称、安全结算/核验/活动，增加原件下载和三语言文案。缺报告、缺最终结论或inconclusive不能良好；代码审查子会话流程保留。
+
+最终真实 **1 passed in 55.52s，0 skipped**：真实Kali/HTTP/PG/RustFS、构建版完整App/Chromium和独立main；3任务2完成1失败4发现，页面需关注/部分完成，浏览器JSON下载最终字段一致。12个default不挤占三模式分页，未生成性能报告显示进行中；再次重启API并点击刷新结果相同、无新增目标GET。计划停API期间1个轮询500保存，恢复后非预期API错误及pageerror均0。回归150通过33门控跳过，报告投影5通过，前端14通过，build/vue-tsc/compileall实际退出0。测试Node类型与旧metrics_persistence假定错误、50.04/55.47秒中间通过批次全部保留，详见 `P5_SECURITY_REPORT_PRODUCT_RESEARCH.md`、`p5-security-report-validation.json`。
+
+范围从真实工具结果的既有报告恢复边界开始，未调用AI选取/规划或其他扫描器；性能仅入口/合同和原真实工件兼容读取，真实性能完整App仍待验。完整安全Agent、其他扫描器/超时/存储故障、容量/AI流式、录制知识/场景/清洗遗漏、需求业务质量/生产历史迁移等继续未完成。Step按用户决定待实名认证。无新增模式、配置、表、依赖或邮件投递。

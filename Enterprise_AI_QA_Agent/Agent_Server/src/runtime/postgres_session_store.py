@@ -140,8 +140,9 @@ class PostgresSessionStore:
         offset: int = 0,
         mode_key: str | None = None,
         cursor_before: datetime | None = None,
+        mode_keys: list[str] | None = None,
     ) -> list[SessionRecord]:
-        return await asyncio.to_thread(self._list_sessions_sync, limit, offset, mode_key, cursor_before)
+        return await asyncio.to_thread(self._list_sessions_sync, limit, offset, mode_key, cursor_before, mode_keys)
 
     async def list_sessions_with_pending_input_queue(self) -> list[SessionRecord]:
         return await asyncio.to_thread(self._list_sessions_with_pending_input_queue_sync)
@@ -938,12 +939,16 @@ class PostgresSessionStore:
         offset: int = 0,
         mode_key: str | None = None,
         cursor_before: datetime | None = None,
+        mode_keys: list[str] | None = None,
     ) -> list[SessionRecord]:
         conditions: list[str] = []
         params: list[object] = []
         if mode_key:
             conditions.append("mode_key = %s")
             params.append(mode_key)
+        if mode_keys is not None:
+            conditions.append("mode_key = ANY(%s)")
+            params.append(mode_keys)
         if cursor_before is not None:
             conditions.append("updated_at < %s")
             params.append(cursor_before)

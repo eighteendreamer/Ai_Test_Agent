@@ -1,0 +1,20 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______________ test_real_security_report_artifact_and_built_app _______________
+tests\test_security_report_product.py:139: in test_real_security_report_artifact_and_built_app
+    await actual_header_evidence(tmp_path, report_probe=probe)
+tests\test_security_evidence_live.py:155: in actual_header_evidence
+    await report_probe(settings=settings, tools=tools, jobs=jobs, client=client,
+tests\test_security_report_product.py:95: in probe
+    async with product_browser(tmp_path, fixture["api_port"], evidence) as (page, errors, network):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:210: in __aenter__
+    return await anext(self.gen)
+           ^^^^^^^^^^^^^^^^^^^^^
+tests\test_document_full_product.py:44: in product_browser
+    assert built.returncode == 0, "actual product build failed; preserved stdout/stderr"
+E   AssertionError: actual product build failed; preserved stdout/stderr
+E   assert 2 == 0
+E    +  where 2 = CompletedProcess(args=['E:\\Nvm\\nodejs\\npm.cmd', 'run', 'build'], returncode=2).returncode
+=========================== short test summary info ===========================
+FAILED tests/test_security_report_product.py::test_real_security_report_artifact_and_built_app
+1 failed in 42.84s

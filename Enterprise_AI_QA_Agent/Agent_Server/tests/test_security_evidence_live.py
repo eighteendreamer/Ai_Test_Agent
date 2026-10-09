@@ -32,6 +32,10 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(
 
 
 async def test_actual_header_findings_and_originals(tmp_path):
+    await actual_header_evidence(tmp_path)
+
+
+async def actual_header_evidence(tmp_path, report_probe=None):
     evidence = Path(os.getenv("QA_SECURITY_EVIDENCE_DIR", str(tmp_path / "evidence")))
     evidence.mkdir(parents=True, exist_ok=True)
     events, observations = [], []
@@ -147,6 +151,10 @@ async def test_actual_header_findings_and_originals(tmp_path):
                     save("facts.json", {"scope": "existing ToolRuntime/header profile; real Kali/PG/RustFS/API restart; no Agent/model or full App",
                         "requests": len(events), "terminal_replay_new_requests": 0, "other_session_download": 404,
                         "observations": observations, "downloads": len(downloads)})
+                    if report_probe is not None:
+                        await report_probe(settings=settings, tools=tools, jobs=jobs, client=client,
+                            session=session, records=records, evidence=evidence, events=events,
+                            processes=processes, api_port=api_port, api=api, owned_objects=owned_objects)
                     problems = []
                     if [x["status"] for x in observations] != ["completed", "completed", "failed"]:
                         problems.append("real profile status mismatch")

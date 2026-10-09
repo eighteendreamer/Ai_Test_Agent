@@ -5,6 +5,7 @@ import { api } from "../services/api";
 import { t } from "../services/i18n";
 import { formatServerDateTime } from "../utils/datetime";
 import { renderMarkdown } from "../utils/reportMarkdown";
+import { primaryReportArtifact, reportExecutionStatus, reportGrade } from "../utils/reportPresentation";
 import type {
   ReportListPage,
   SessionSummary,
@@ -62,9 +63,7 @@ const selectedReportBody = computed(() => {
     return "";
   }
   const artifacts = [...report.reportArtifacts, ...report.artifacts];
-  const primaryArtifact =
-    artifacts.find((item) => item.artifact_type === "report_markdown") ??
-    artifacts.find((item) => item.artifact_type === "report_html");
+  const primaryArtifact = primaryReportArtifact(artifacts, report.reportMeta);
   const inlineContent = artifactInlineContent(primaryArtifact);
   if (inlineContent) {
     return inlineContent;
@@ -114,11 +113,7 @@ function artifactInlineContent(artifact?: ToolArtifactRecord | null): string {
 }
 
 function gradeForSession(entry: ReportEntry): string {
-  if (entry.session.status === "failed") return t("reports.grade_poor");
-  if (entry.session.status === "running" || entry.session.status === "waiting_approval") return t("reports.grade_in_progress");
-  if (entry.verifications.some((item) => item.status === "failed")) return t("reports.grade_attention");
-  if (entry.verifications.some((item) => item.status === "partial")) return t("reports.grade_attention");
-  return t("reports.grade_good");
+  return t(`reports.grade_${reportGrade(entry.session, entry.reportMeta, entry.verifications)}`);
 }
 
 function gradeTone(grade: string): string {
@@ -129,6 +124,7 @@ function gradeTone(grade: string): string {
 }
 
 function statusLabel(status: string): string {
+  if (status === "partial") return t("reports.status_partial");
   if (status === "waiting_approval") return t("taskpool.status_waiting_approval");
   if (status === "completed") return t("taskpool.status_completed");
   if (status === "failed") return t("taskpool.status_failed");
@@ -387,7 +383,7 @@ onMounted(() => {
             </div>
             <p class="detail-desc">
               <i class="fa-solid fa-robot"></i>
-              {{ statusLabel(selectedReport.session.status) }} ·
+              {{ statusLabel(reportExecutionStatus(selectedReport.session, selectedReport.reportMeta)) }} ·
               {{ formatDateTime(selectedReport.session.updated_at) }}
             </p>
           </div>
@@ -425,7 +421,7 @@ onMounted(() => {
           <section class="content-section">
             <div class="section-header">
               <h4>{{ t("reports.section_summary") }}</h4>
-              <span class="subtitle mono">code_review_report</span>
+              <span class="subtitle mono">{{ selectedReport.session.mode_key }}</span>
             </div>
             <div class="summary-card">
               <div
@@ -483,6 +479,9 @@ onMounted(() => {
                   <span class="artifact-type mono">{{ artifact.artifact_type }}</span>
                 </div>
                 <p class="artifact-path mono">{{ artifact.path }}</p>
+                <a :href="`/api/v1/sessions/${encodeURIComponent(artifact.session_id)}/artifacts/${encodeURIComponent(artifact.id)}/content`" download>
+                  {{ t("reports.download") }}
+                </a>
                 <pre v-if="artifactInlineContent(artifact)" class="artifact-preview">{{
                   artifactInlineContent(artifact)
                 }}</pre>

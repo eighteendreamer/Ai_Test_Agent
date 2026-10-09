@@ -1,0 +1,25 @@
+....F                                                                    [100%]
+================================== FAILURES ===================================
+____ test_existing_actual_performance_metrics_are_read_without_rescanning _____
+
+    def test_existing_actual_performance_metrics_are_read_without_rescanning():
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p5-perf-evidence-verified-final/normal-tool-record.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        source = next(a for a in record["output"]["artifacts"] if a["type"] == "performance_metrics_json")
+        artifact = _artifact("actual-perf-metrics", "actual-perf-session")
+        artifact.artifact_type = source["type"]
+        artifact.metadata = {"__content_text": source["content"]}
+        session = _session(artifact.session_id, {})
+        session.mode_key = "performance_testing"
+        meta, workers, verifications = ReportService._prepare_test_report(session, [artifact])
+        assert meta["ready"] and meta["verdict"] == record["output"]["verdict"] == "pass"
+>       assert meta["metrics_persistence"] == record["output"]["metrics_persistence"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'metrics_persistence'
+
+tests\test_report_service.py:158: KeyError
+=========================== short test summary info ===========================
+FAILED tests/test_report_service.py::test_existing_actual_performance_metrics_are_read_without_rescanning
+1 failed, 4 passed in 0.58s

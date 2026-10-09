@@ -108,6 +108,7 @@ class SessionStore(Protocol):
         offset: int = 0,
         mode_key: str | None = None,
         cursor_before: datetime | None = None,
+        mode_keys: list[str] | None = None,
     ) -> list[SessionRecord]: ...
     async def list_sessions_with_pending_input_queue(self) -> list[SessionRecord]: ...
     async def list_task_pool_sessions(
@@ -414,10 +415,13 @@ class InMemorySessionStore:
         offset: int = 0,
         mode_key: str | None = None,
         cursor_before: datetime | None = None,
+        mode_keys: list[str] | None = None,
     ) -> list[SessionRecord]:
         sessions = sorted(self._sessions.values(), key=lambda item: ensure_utc_datetime(item.updated_at), reverse=True)
         if mode_key:
             sessions = [item for item in sessions if item.mode_key == mode_key]
+        if mode_keys is not None:
+            sessions = [item for item in sessions if item.mode_key in mode_keys]
         if cursor_before is not None:
             sessions = [s for s in sessions if ensure_utc_datetime(s.updated_at) < ensure_utc_datetime(cursor_before)]
         start = max(int(offset or 0), 0)

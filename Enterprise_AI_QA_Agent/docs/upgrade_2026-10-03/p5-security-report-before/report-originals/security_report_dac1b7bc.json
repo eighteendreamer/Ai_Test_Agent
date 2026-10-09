@@ -1,0 +1,307 @@
+{
+  "campaign_id": "dac1b7bc-4408-4a10-939f-d741187853f6",
+  "title": "安全测试报告 - http://127.0.0.1 (url)",
+  "target_summary": "http://127.0.0.1 (url)",
+  "scope_description": "owned response header report",
+  "executive_summary": "本次安全测试完成 2 个任务，产生 4 个发现。 有 1 个任务执行失败，因此覆盖范围可能不完整。",
+  "total_tasks": 3,
+  "completed_tasks": 2,
+  "failed_tasks": 1,
+  "skipped_tasks": 0,
+  "total_findings": 4,
+  "critical_count": 0,
+  "high_count": 0,
+  "medium_count": 0,
+  "low_count": 4,
+  "info_count": 0,
+  "findings": [
+    {
+      "finding_id": "786b2171",
+      "title": "缺少 X-Frame-Options 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693",
+        "CWE-1021"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:50743/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: x-frame-options",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:50743/missing omitted x-frame-options.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:50743/missing.",
+        "Confirm HTTP 200 does not include the x-frame-options response header."
+      ],
+      "recommendation": "在服务器配置中添加 x-frame-options 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    },
+    {
+      "finding_id": "4eb79713",
+      "title": "缺少 X-Content-Type-Options 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:50743/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: x-content-type-options",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:50743/missing omitted x-content-type-options.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:50743/missing.",
+        "Confirm HTTP 200 does not include the x-content-type-options response header."
+      ],
+      "recommendation": "在服务器配置中添加 x-content-type-options 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    },
+    {
+      "finding_id": "3d8a377d",
+      "title": "缺少 HSTS 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:50743/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: strict-transport-security",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:50743/missing omitted strict-transport-security.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:50743/missing.",
+        "Confirm HTTP 200 does not include the strict-transport-security response header."
+      ],
+      "recommendation": "在服务器配置中添加 strict-transport-security 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    },
+    {
+      "finding_id": "dfff9415",
+      "title": "缺少 Content-Security-Policy 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:50743/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: content-security-policy",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:50743/missing omitted content-security-policy.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:50743/missing.",
+        "Confirm HTTP 200 does not include the content-security-policy response header."
+      ],
+      "recommendation": "在服务器配置中添加 content-security-policy 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    }
+  ],
+  "hypotheses": [],
+  "verification_attempts": [],
+  "security_bugs": [],
+  "hypothesis_count": 0,
+  "verification_attempt_count": 0,
+  "security_bug_count": 0,
+  "reproduced_bug_count": 0,
+  "fixed_bug_count": 0,
+  "retest_failed_bug_count": 0,
+  "verified_exploitable_count": 0,
+  "impact_verified_count": 0,
+  "blocked_by_control_count": 0,
+  "activities": [
+    {
+      "activity_id": "act_missing",
+      "agent_key": "security-web-verifier",
+      "agent_name": "security-web-verifier",
+      "task_id": "missing",
+      "action": "completed",
+      "summary": "Executed http_headers_probe with exit code 0; parsed 4 finding(s).",
+      "started_at": "2026-10-09T22:34:31.664657",
+      "completed_at": "2026-10-09T22:34:33.309539",
+      "duration_seconds": 1.644882,
+      "execution_mode": "local_worker_fallback",
+      "tool_calls": [
+        "http_headers_probe"
+      ],
+      "notes": ""
+    },
+    {
+      "activity_id": "act_complete",
+      "agent_key": "security-web-verifier",
+      "agent_name": "security-web-verifier",
+      "task_id": "complete",
+      "action": "completed",
+      "summary": "Executed http_headers_probe with exit code 0; parsed 0 finding(s).",
+      "started_at": "2026-10-09T22:34:33.310627",
+      "completed_at": "2026-10-09T22:34:34.809469",
+      "duration_seconds": 1.498842,
+      "execution_mode": "local_worker_fallback",
+      "tool_calls": [
+        "http_headers_probe"
+      ],
+      "notes": ""
+    },
+    {
+      "activity_id": "act_unreachable",
+      "agent_key": "security-web-verifier",
+      "agent_name": "security-web-verifier",
+      "task_id": "unreachable",
+      "action": "failed",
+      "summary": "Executed http_headers_probe with exit code 1; parsed 0 finding(s).",
+      "started_at": "2026-10-09T22:34:34.811166",
+      "completed_at": "2026-10-09T22:34:36.178475",
+      "duration_seconds": 1.367309,
+      "execution_mode": "local_worker_fallback",
+      "tool_calls": [
+        "http_headers_probe"
+      ],
+      "notes": ""
+    }
+  ],
+  "assets_discovered": 0,
+  "services_discovered": 0,
+  "evidence_count": 12,
+  "execution_record_count": 3,
+  "shell_session": null,
+  "exploit_workspaces": [],
+  "exploit_workspace_count": 0,
+  "exploit_workspace_completed_count": 0,
+  "tool_bootstraps": [],
+  "tool_bootstrap_count": 0,
+  "tool_bootstrap_completed_count": 0,
+  "threat_intelligence": [],
+  "threat_intelligence_count": 0,
+  "callback_leases": [],
+  "callback_lease_count": 0,
+  "graph_persistence": null,
+  "duration_seconds": 0.0,
+  "tested_at": "",
+  "generated_at": "2026-10-09T22:34:43.551335+00:00",
+  "recommendations": [
+    "在服务器配置中添加 x-frame-options 响应头",
+    "在服务器配置中添加 x-content-type-options 响应头",
+    "在服务器配置中添加 strict-transport-security 响应头",
+    "在服务器配置中添加 content-security-policy 响应头"
+  ],
+  "limitations": [
+    "环境限制（environment_limited）：1 个任务未能从隔离执行环境获得目标响应；未根据空响应生成漏洞发现。",
+    "本次运行产生 Finding，但未形成漏洞假设；攻击链验证覆盖不完整。"
+  ],
+  "artifacts": [],
+  "verification_result": {},
+  "evaluation_result": {},
+  "settlement": {}
+}

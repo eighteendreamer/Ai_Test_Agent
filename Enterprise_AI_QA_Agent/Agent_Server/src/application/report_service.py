@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import json
+import logging
 from typing import Any
 
 from src.application.runtime.tool_job_service import ToolJobService
@@ -8,6 +10,10 @@ from src.runtime.store import SessionStore
 from src.schemas.report import ReportListEntry, ReportListPage
 from src.schemas.session import SessionSummary
 from src.schemas.tool_job import ToolArtifactRecord
+
+logger = logging.getLogger(__name__)
+
+REPORT_MODES = ["code_review", "security_testing", "performance_testing"]
 
 
 class ReportService:
@@ -25,7 +31,7 @@ class ReportService:
         sessions = await self._store.list_sessions(
             limit=normalized_limit + 1,
             offset=normalized_offset,
-            mode_key="code_review",
+            mode_keys=REPORT_MODES,
         )
         has_more = len(sessions) > normalized_limit
         visible = sessions[:normalized_limit]
@@ -46,13 +52,17 @@ class ReportService:
 
         entries = []
         for session, report_meta, workers, verifications, report_session_id in prepared:
+            session_artifacts = artifacts_by_session.get(session.id, [])
+            if session.mode_key != "code_review":
+                report_meta, workers, verifications = self._prepare_test_report(session, session_artifacts)
+                report_session_id = session.id if report_meta.get("ready") else None
             report_artifacts = []
             if report_session_id and report_session_id != session.id:
                 report_artifacts = artifacts_by_session.get(report_session_id, [])
             entries.append(
                 ReportListEntry(
                     session=self._to_summary(session),
-                    artifacts=artifacts_by_session.get(session.id, []),
+                    artifacts=session_artifacts,
                     verifications=verifications,
                     worker_dispatches=workers,
                     report_meta=report_meta,
@@ -67,6 +77,44 @@ class ReportService:
             offset=normalized_offset,
             has_more=has_more,
         )
+
+    @staticmethod
+    def _prepare_test_report(session: SessionRecord, artifacts: list[ToolArtifactRecord]):
+        """Read the newest persisted report; absence is never a passing verdict."""
+        expected = "report_json" if session.mode_key == "security_testing" else "performance_metrics_json"
+        candidates = sorted((a for a in artifacts if a.artifact_type == expected),
+            key=lambda a: a.created_at, reverse=True)
+        meta = {"kind": session.mode_key, "ready": False}
+        if not candidates:
+            return meta, [], []
+        artifact = candidates[0]
+        meta["tool_job_id"] = artifact.tool_job_id
+        try:
+            payload = json.loads(artifact.metadata.get("__content_text") or "")
+            if not isinstance(payload, dict):
+                raise ValueError("report JSON is not an object")
+        except (ValueError, TypeError):
+            logger.warning("report_projection_unavailable", extra={"session_id": session.id,
+                "artifact_id": artifact.id, "artifact_type": expected})
+            return meta, [], []
+        for field in ("total_tasks", "completed_tasks", "failed_tasks", "total_findings",
+            "settlement", "verdict", "metrics_persistence"):
+            if field in payload:
+                meta[field] = payload[field]
+        meta.update(kind=session.mode_key, ready=True, tool_job_id=artifact.tool_job_id)
+        if session.mode_key == "performance_testing":
+            meta["summary"] = str(payload.get("verdict") or "inconclusive")
+            return meta, [], []
+        meta["summary"] = str(payload.get("executive_summary") or "")
+        workers = [{"task_id": str(item.get("task_id") or item.get("activity_id") or ""),
+            "agent_key": str(item.get("agent_key") or ""), "description": str(item.get("summary") or ""),
+            "status": str(item.get("action") or ""), "completed_at": item.get("completed_at")}
+            for item in payload.get("activities", []) if isinstance(item, dict)]
+        verdict = payload.get("verification_result")
+        verifications = [{"id": artifact.id, "verifier": "security-report-evidence",
+            "status": "passed" if verdict.get("passed") is True else "failed",
+            "summary": str(verdict.get("summary") or "")} ] if isinstance(verdict, dict) and verdict else []
+        return meta, workers, verifications
 
     @staticmethod
     def _prepare_session(

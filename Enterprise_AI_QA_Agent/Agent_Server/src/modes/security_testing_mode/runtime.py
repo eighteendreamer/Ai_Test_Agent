@@ -499,27 +499,8 @@ class SecurityTestingModeRuntime:
         report.settlement = campaign.settlement.model_dump(mode="json")
         report.verification_result = dict(state.verification_result)
         report.evaluation_result = dict(state.evaluation_result)
-        markdown_report = self._report_builder.build_markdown(report)
-        html_report = self._report_template.render(
-            report=report,
-            markdown_content=markdown_report,
-            sender=str(getattr(context, "selected_agent_key", "") or "security-testing-agent"),
-        )
-        artifacts = self._prepare_report_artifacts(
-            self._report_builder.build_artifacts(
-                report=report,
-                markdown_report=markdown_report,
-                html_report=html_report,
-            ),
-            state=state,
-            context=context,
-        )
-        state.report_markdown = markdown_report
-        state.report_html = html_report
-        state.artifacts = self._artifact_metadata(artifacts)
         state.errors = self._build_error_records(evaluation_result.to_dict(), campaign.tasks)
-        report.artifacts = list(state.artifacts)
-        state.report = report
+        markdown_report, html_report = self._materialize_report(report, state, context)
         state.execution_strategy = "dedicated_p4_runtime"
         state.notes.append(
             f"P4 bootstrap {bootstrap.bootstrap_id} projected into Campaign {campaign.campaign_id}; "
@@ -1342,24 +1323,6 @@ class SecurityTestingModeRuntime:
         await self._persist_security_graph(state)
 
         report = self._report_builder.build_report(state.campaign)
-        markdown_report = self._report_builder.build_markdown(report)
-        html_report = self._report_template.render(
-            report=report,
-            markdown_content=markdown_report,
-            sender=str(getattr(context, "selected_agent_key", "") or "security-testing-agent"),
-        )
-        artifacts = self._prepare_report_artifacts(
-            self._report_builder.build_artifacts(
-                report=report,
-                markdown_report=markdown_report,
-                html_report=html_report,
-            ),
-            state=state,
-            context=context,
-        )
-        state.report_markdown = markdown_report
-        state.report_html = html_report
-        state.artifacts = self._artifact_metadata(artifacts)
         verification_verdict = self._verification_policy.verify(campaign=state.campaign, report=report)
         evaluation_result = self._evaluation_policy.evaluate(
             campaign=state.campaign,
@@ -1416,11 +1379,10 @@ class SecurityTestingModeRuntime:
             finalized_at=datetime.now(timezone.utc).isoformat(),
         )
         state.errors = self._build_error_records(evaluation_result.to_dict(), completed_tasks)
-        report.artifacts = list(state.artifacts)
         report.verification_result = dict(state.verification_result)
         report.evaluation_result = dict(state.evaluation_result)
         report.settlement = state.campaign.settlement.model_dump(mode="json")
-        state.report = report
+        markdown_report, html_report = self._materialize_report(report, state, context)
         state.notes.append(f"Verification verdict: {verification_verdict.summary}")
         state.notes.append(f"Security evaluation: {evaluation_result.summary}")
         for recommendation in evaluation_result.recommendations[:5]:
@@ -2454,24 +2416,6 @@ class SecurityTestingModeRuntime:
         campaign.updated_at = datetime.now(timezone.utc).isoformat()
 
         report = self._report_builder.build_report(campaign)
-        markdown_report = self._report_builder.build_markdown(report)
-        html_report = self._report_template.render(
-            report=report,
-            markdown_content=markdown_report,
-            sender=str(getattr(context, "selected_agent_key", "") or "security-testing-agent"),
-        )
-        artifacts = self._prepare_report_artifacts(
-            self._report_builder.build_artifacts(
-                report=report,
-                markdown_report=markdown_report,
-                html_report=html_report,
-            ),
-            state=state,
-            context=context,
-        )
-        state.report_markdown = markdown_report
-        state.report_html = html_report
-        state.artifacts = self._artifact_metadata(artifacts)
 
         verification_verdict = self._verification_policy.verify(campaign=campaign, report=report)
         evaluation_result = self._evaluation_policy.evaluate(
@@ -2483,10 +2427,9 @@ class SecurityTestingModeRuntime:
         state.evaluation_result = evaluation_result.to_dict()
         state.errors = self._build_error_records(evaluation_result.to_dict(), campaign.tasks)
 
-        report.artifacts = list(state.artifacts)
         report.verification_result = dict(state.verification_result)
         report.evaluation_result = dict(state.evaluation_result)
-        state.report = report
+        markdown_report, html_report = self._materialize_report(report, state, context)
         state.campaign = campaign
         state.notes.append("Security failure report generated for an incomplete campaign.")
         state.notes.append(f"Verification verdict: {verification_verdict.summary}")
@@ -3904,6 +3847,37 @@ class SecurityTestingModeRuntime:
                 artifact["task_id"] = item.get("task_id")
             metadata.append(artifact)
         return metadata
+
+    def _materialize_report(self, report: SecurityReport, state: SecurityTestingState,
+                            context: Any) -> tuple[str, str]:
+        """Serialize only after final verification, evaluation and settlement."""
+        markdown_report = self._report_builder.build_markdown(report)
+        html_report = self._report_template.render(
+            report=report,
+            markdown_content=markdown_report,
+            sender=str(getattr(context, "selected_agent_key", "") or "security-testing-agent"),
+        )
+        artifacts = self._prepare_report_artifacts(
+            self._report_builder.build_artifacts(
+                report=report,
+                markdown_report=markdown_report,
+                html_report=html_report,
+            ),
+            state=state,
+            context=context,
+        )
+        state.report_markdown = markdown_report
+        state.report_html = html_report
+        state.artifacts = self._artifact_metadata(artifacts)
+        report.artifacts = list(state.artifacts)
+        state.report = report
+        logger.info("security_report_materialized", extra={
+            "session_id": state.session_id, "campaign_id": report.campaign_id,
+            "failed_tasks": report.failed_tasks, "finding_count": report.total_findings,
+            "settlement_status": report.settlement.get("status"),
+            "artifact_count": len(state.artifacts),
+        })
+        return markdown_report, html_report
 
     def _prepare_report_artifacts(
         self,

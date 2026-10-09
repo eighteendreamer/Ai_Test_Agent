@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="5" time="0.554" timestamp="2026-10-10T06:42:33.296308+08:00" hostname="EIghteen"><testcase classname="tests.test_report_service" name="test_report_page_uses_lightweight_session_data_and_batches_artifacts" time="0.002" /><testcase classname="tests.test_report_service" name="test_real_security_report_projection_keeps_counts_and_failed_activity" time="0.010" /><testcase classname="tests.test_report_service" name="test_malformed_newest_report_does_not_fall_back_to_old_success" time="0.001" /><testcase classname="tests.test_report_service" name="test_multiple_modes_are_filtered_before_paging_in_memory" time="0.002" /><testcase classname="tests.test_report_service" name="test_existing_actual_performance_metrics_are_read_without_rescanning" time="0.002"><failure message="KeyError: 'metrics_persistence'">def test_existing_actual_performance_metrics_are_read_without_rescanning():
+        import json
+        from pathlib import Path
+        path = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p5-perf-evidence-verified-final/normal-tool-record.json"
+        record = json.loads(path.read_text(encoding="utf-8"))
+        source = next(a for a in record["output"]["artifacts"] if a["type"] == "performance_metrics_json")
+        artifact = _artifact("actual-perf-metrics", "actual-perf-session")
+        artifact.artifact_type = source["type"]
+        artifact.metadata = {"__content_text": source["content"]}
+        session = _session(artifact.session_id, {})
+        session.mode_key = "performance_testing"
+        meta, workers, verifications = ReportService._prepare_test_report(session, [artifact])
+        assert meta["ready"] and meta["verdict"] == record["output"]["verdict"] == "pass"
+&gt;       assert meta["metrics_persistence"] == record["output"]["metrics_persistence"]
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       KeyError: 'metrics_persistence'
+
+tests\test_report_service.py:158: KeyError</failure></testcase></testsuite></testsuites>
