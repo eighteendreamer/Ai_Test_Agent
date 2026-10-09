@@ -66,7 +66,8 @@ class PerfResultParser:
             if points:
                 return points
 
-        if raw.throughput_tps > 0:
+        if (raw.throughput_tps is not None and raw.throughput_tps > 0
+                and raw.p95_ms is not None and raw.error_rate is not None):
             return [CurvePoint(
                 rate_or_vus=raw.throughput_tps,
                 p95_ms=raw.p95_ms,

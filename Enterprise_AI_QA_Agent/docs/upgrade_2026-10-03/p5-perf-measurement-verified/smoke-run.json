@@ -1,0 +1,157 @@
+{
+  "run_id": "perf-run-764f65b5",
+  "plan_id": "actual-perf-c549fe9418d3",
+  "engine": "k6",
+  "backend": "docker",
+  "container_or_cluster": "0cf421c7560ab89d6bd196d38a0a6747b8b6a2cda22116f32142a3b4a9999d98",
+  "status": "completed",
+  "smoke_result": null,
+  "started_at": "2026-10-09T02:02:39.418731",
+  "completed_at": "2026-10-09T02:02:41.264952",
+  "result_artifact": "inline:summary.json",
+  "raw_metrics": {
+    "samples": 3,
+    "throughput_tps": 19.422758215535385,
+    "avg_ms": 0.5317436666666667,
+    "min_ms": 0.519645,
+    "max_ms": 0.551938,
+    "p50_ms": 0.523648,
+    "p90_ms": 0.54628,
+    "p95_ms": 0.5491090000000001,
+    "p99_ms": 0.5513722000000001,
+    "error_rate": 0.0,
+    "error_count": 0,
+    "status_codes": {},
+    "thresholds": {},
+    "raw_data": {
+      "root_group": {
+        "name": "",
+        "path": "",
+        "id": "d41d8cd98f00b204e9800998ecf8427e",
+        "groups": {},
+        "checks": {
+          "status is expected": {
+            "id": "7900b1724c781e002b4ea556d2517ccc",
+            "passes": 3,
+            "fails": 0,
+            "name": "status is expected",
+            "path": "::status is expected"
+          }
+        }
+      },
+      "metrics": {
+        "http_req_duration": {
+          "max": 0.551938,
+          "p(90)": 0.54628,
+          "p(95)": 0.5491090000000001,
+          "p(99)": 0.5513722000000001,
+          "avg": 0.5317436666666667,
+          "min": 0.519645,
+          "med": 0.523648
+        },
+        "http_req_duration{expected_response:true}": {
+          "max": 0.551938,
+          "p(90)": 0.54628,
+          "p(95)": 0.5491090000000001,
+          "p(99)": 0.5513722000000001,
+          "avg": 0.5317436666666667,
+          "min": 0.519645,
+          "med": 0.523648
+        },
+        "http_req_tls_handshaking": {
+          "max": 0,
+          "p(90)": 0,
+          "p(95)": 0,
+          "p(99)": 0,
+          "avg": 0,
+          "min": 0,
+          "med": 0
+        },
+        "http_req_waiting": {
+          "avg": 0.3682113333333333,
+          "min": 0.335047,
+          "med": 0.345231,
+          "max": 0.424356,
+          "p(90)": 0.40853100000000003,
+          "p(95)": 0.4164435,
+          "p(99)": 0.4227735
+        },
+        "http_req_connecting": {
+          "p(95)": 0.39015449999999996,
+          "p(99)": 0.42483489999999996,
+          "avg": 0.14450166666666667,
+          "min": 0,
+          "med": 0,
+          "max": 0.433505,
+          "p(90)": 0.346804
+        },
+        "iteration_duration": {
+          "avg": 51.42743866666666,
+          "min": 51.181977,
+          "med": 51.488797,
+          "max": 51.611542,
+          "p(90)": 51.586993,
+          "p(95)": 51.599267499999996,
+          "p(99)": 51.609087099999996
+        },
+        "http_req_receiving": {
+          "max": 0.148322,
+          "p(90)": 0.144216,
+          "p(95)": 0.146269,
+          "p(99)": 0.1479114,
+          "avg": 0.12049766666666666,
+          "min": 0.085379,
+          "med": 0.127792
+        },
+        "checks": {
+          "passes": 3,
+          "fails": 0,
+          "value": 1
+        },
+        "http_req_sending": {
+          "p(90)": 0.0764976,
+          "p(95)": 0.08279829999999999,
+          "p(99)": 0.08783885999999999,
+          "avg": 0.043034666666666666,
+          "min": 0.013913,
+          "med": 0.026092,
+          "max": 0.089099
+        },
+        "iterations": {
+          "count": 3,
+          "rate": 19.422758215535385
+        },
+        "http_req_blocked": {
+          "p(90)": 0.40653779999999995,
+          "p(95)": 0.4565888999999999,
+          "p(99)": 0.4966297799999999,
+          "avg": 0.17280600000000002,
+          "min": 0.005649,
+          "med": 0.006129,
+          "max": 0.50664
+        },
+        "data_received": {
+          "count": 651,
+          "rate": 4214.738532771178
+        },
+        "http_reqs": {
+          "rate": 19.422758215535385,
+          "count": 3
+        },
+        "http_req_failed": {
+          "passes": 0,
+          "fails": 3,
+          "value": 0
+        },
+        "data_sent": {
+          "count": 213,
+          "rate": 1379.0158333030122
+        }
+      }
+    }
+  },
+  "engine_thresholds": {},
+  "html_report_artifact": "",
+  "stdout_tail": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/smoke.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 3       19.422758/s\n    checks_succeeded...: 100.00% 3 out of 3\n    checks_failed......: 0.00%   0 out of 3\n\n    ✓ status is expected\n\n    HTTP\n    http_req_duration..............: avg=531.74µs min=519.64µs med=523.64µs max=551.93µs p(90)=546.28µs p(95)=549.1µs p(99)=551.37µs\n      { expected_response:true }...: avg=531.74µs min=519.64µs med=523.64µs max=551.93µs p(90)=546.28µs p(95)=549.1µs p(99)=551.37µs\n    http_req_failed................: 0.00% 0 out of 3\n    http_reqs......................: 3     19.422758/s\n\n    EXECUTION\n    iteration_duration.............: avg=51.42ms  min=51.18ms  med=51.48ms  max=51.61ms  p(90)=51.58ms  p(95)=51.59ms p(99)=51.6ms  \n    iterations.....................: 3     19.422758/s\n\n    NETWORK\n    data_received..................: 651 B 4.2 kB/s\n    data_sent......................: 213 B 1.4 kB/s\n\n\n\n\nrunning (00m00.2s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.2s/10m0s  3/3 shared iters\n",
+  "exit_code": 0
+}

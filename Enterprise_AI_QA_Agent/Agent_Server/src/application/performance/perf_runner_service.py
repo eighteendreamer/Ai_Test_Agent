@@ -105,6 +105,11 @@ class PerfRunnerService:
                     raw_metrics = engine_adapter.parse_results(result.summary_json)
                     run.raw_metrics = asdict(raw_metrics)
                     run.engine_thresholds = raw_metrics.thresholds
+                    LOGGER.info("performance_metrics_parsed", extra={
+                        "perf_run_id": run_id, "engine": plan.engine,
+                        "missing_metrics": [key for key, value in run.raw_metrics.items() if value is None],
+                        "engine_threshold_count": len(run.engine_thresholds),
+                    })
 
             except ResourceUnavailable:
                 raise

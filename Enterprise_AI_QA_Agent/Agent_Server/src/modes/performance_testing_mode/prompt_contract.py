@@ -100,7 +100,7 @@ PERF_ANALYST_CONTRACT = """\
 你是性能测试结果分析师。独立于执行者，接收原始指标后做出客观判定。
 
 分析要点：
-1. SLA 达标判定（仅 regression 模式产出 pass/fail）
+1. SLA 达标判定（regression 产出 pass/fail；无样本或必需测量缺失产出 inconclusive，passed=null，missing_metrics 列出缺口；不得用 0 替代未采集值）
 2. 错误分类（protocol / application / expected_throttle）
 3. 429/503 视为预期限流，不计入失败
 4. P99/P95 长尾比率异常检测

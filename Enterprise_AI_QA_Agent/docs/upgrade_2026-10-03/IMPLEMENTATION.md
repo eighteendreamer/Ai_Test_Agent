@@ -4656,3 +4656,32 @@ exit0，1通过54.82秒，0跳过。真实xlsx行/分表/JSON和混合有效/错
 方案同步最初额外产生CRCRLF，提交前已按原CRLF修正三份文件并重跑审计，未改正文含义。再次遇到09:28:59创建的零字节index.lock，两次无Git进程确认后在原.git保存唯一stale-import备份，未删除索引。
 
 首次diff --check报告浏览器inner_text原件的Tab尾空白；沿既有原工件策略为本批.txt指定保留原空白，不改原件，不放宽代码检查。153原工件索引逐字节核对通过。
+
+## 2026-10-09 Docker性能测量与缺失指标〔055bf573〕
+
+依据、原件反例与实际修订见P5_PERFORMANCE_MEASUREMENT_RESEARCH.md、PLAN6.88。改两引擎解析及k6生成、统一nullable数据契约、报告/曲线/枚举/提示和runner日志；新增原失败summary回归与真实受管Docker验收。无新依赖/配置/数据库表，无真实提供商调用，不修改旧结果。未做容量压测、Agent全流程、JMeter真实运行、正式App报告或生产原件持久化，未重复前端构建（前端无改动）。
+
+所有pytest均从Agent_Server使用 `..\.venv\Scripts\python.exe -m pytest`、`-q --tb=short`，`--junitxml=../docs/upgrade_2026-10-03/<前缀>.xml`，stdout/stderr重定向到相同前缀.log；实际结果如下。
+
+| 前缀 | 命令范围及结果 |
+|---|---|
+| p5-perf-measurement-before | test_performance_docker_measurement.py；实际原件1失败29.93秒，P99缺失被读0并pass |
+| p5-perf-measurement-contract-first | measurement_contract/k6_adapter/jmeter_adapter/report_builder/result_parser/runner/runtime_artifacts/case_execution_verification八模块，64通过11.29秒 |
+| p5-perf-measurement-verified | 实际Docker四场景1通过42.29秒；另发现0.001阈值生成0，原件保留 |
+| p5-perf-measurement-expanded | 上述八模块+coordinator/task_pool/guard/failure_analyzer/mode_skills/case_execution_system/perf_high_level_runners，96通过17.36秒 |
+| p5-perf-measurement-delivery | 保留小数的中间:g版实际四场景1通过34.04秒 |
+| p5-perf-measurement-expanded-delivery | 上述十五模块97通过17.54秒；随后compileall退出0 |
+| p5-perf-measurement-precision-final | 最终str格式test_performance_measurement_contract.py及test_performance_k6_adapter.py，21通过12.04秒，0跳过 |
+| p5-perf-measurement-final | 最终实际Docker四场景1通过33.75秒，0跳过 |
+
+最终真实命令：
+
+```powershell
+$env:RUN_LIVE_DOCKER_PERF_MEASUREMENT='1'
+$env:QA_DOCKER_PERF_MEASUREMENT_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-perf-measurement-final'
+..\.venv\Scripts\python.exe -m pytest tests/test_performance_docker_measurement.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-measurement-final.xml *> ../docs/upgrade_2026-10-03/p5-perf-measurement-final.log
+..\.venv\Scripts\python.exe -m pytest tests/test_performance_measurement_contract.py tests/test_performance_k6_adapter.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-measurement-precision-final.xml *> ../docs/upgrade_2026-10-03/p5-perf-measurement-precision-final.log
+..\.venv\Scripts\python.exe -m compileall -q src/application/performance src/modes/performance_testing_mode tests/test_performance_measurement_contract.py tests/test_performance_docker_measurement.py
+```
+
+CLI源文件在既有忽略规则下，本批按文件force-add；不修改用户.gitignore。审计p5-perf-measurement-audit.py核对历史153/413/200/408/151工件及受保护文件、三份计划、实际原件/四行PG/null/引擎阈值/清理和当前源哈希。旧:g中间批次仍保留，不将其替换为最终str版本证据。完整P0—P5保持未完成，下一步调查生产原件持久化、烟测缺证据和退出分支。

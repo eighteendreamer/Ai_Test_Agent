@@ -13,6 +13,7 @@ from src.modes.performance_testing_mode.contracts import (
     RUN_INTENT_REGRESSION,
     VERDICT_BASELINE,
     VERDICT_FAIL,
+    VERDICT_INCONCLUSIVE,
     VERDICT_PASS,
     Verdict,
 )
@@ -96,40 +97,33 @@ class PerfReportBuilder:
     def _judge_sla(
         self, metrics: PerfMetrics, sla: SLAConfig, intent: str
     ) -> SLAResult:
-        if intent == RUN_INTENT_PROBE:
-            return SLAResult(passed=True, violations=[])
-
         violations: list[SLAViolation] = []
-
-        if sla.p95_ms and metrics.p95_ms > sla.p95_ms:
-            violations.append(SLAViolation(
-                metric="p95_ms", actual=metrics.p95_ms, threshold=sla.p95_ms
-            ))
-
-        if sla.p99_ms and metrics.p99_ms > sla.p99_ms:
-            violations.append(SLAViolation(
-                metric="p99_ms", actual=metrics.p99_ms, threshold=sla.p99_ms
-            ))
-
-        if sla.error_rate is not None and metrics.error_rate > sla.error_rate:
-            violations.append(SLAViolation(
-                metric="error_rate", actual=metrics.error_rate, threshold=sla.error_rate
-            ))
-
-        if sla.min_tps and metrics.throughput_tps < sla.min_tps:
-            violations.append(SLAViolation(
-                metric="throughput_tps",
-                actual=metrics.throughput_tps,
-                threshold=sla.min_tps,
-            ))
-
-        return SLAResult(passed=len(violations) == 0, violations=violations)
+        missing = ["samples"] if metrics.samples is None or metrics.samples <= 0 else []
+        if intent != RUN_INTENT_PROBE:
+            for name, threshold in (
+                ("p95_ms", sla.p95_ms), ("p99_ms", sla.p99_ms),
+                ("error_rate", sla.error_rate), ("throughput_tps", sla.min_tps),
+            ):
+                if threshold is None:
+                    continue
+                actual = getattr(metrics, name)
+                if actual is None:
+                    missing.append(name)
+                elif (actual < threshold if name == "throughput_tps" else actual > threshold):
+                    violations.append(SLAViolation(metric=name, actual=actual, threshold=threshold))
+        return SLAResult(
+            passed=False if violations else (None if missing else True),
+            violations=violations, missing_metrics=missing,
+        )
 
     def _crosscheck_thresholds(
         self, engine_thresholds: dict[str, Any], sla_result: SLAResult
     ) -> EngineThresholdCrosscheck:
         if not engine_thresholds:
             return EngineThresholdCrosscheck(agree=True, detail="引擎未输出 thresholds")
+
+        if sla_result.passed is None:
+            return EngineThresholdCrosscheck(agree=False, detail="缺少测量，无法与引擎判定交叉验证")
 
         engine_passed = all(
             v.get("ok", True) if isinstance(v, dict) else True
@@ -151,7 +145,7 @@ class PerfReportBuilder:
     def _compare_baseline(
         self, current: PerfMetrics, baseline: PerfMetrics
     ) -> BaselineComparison:
-        if baseline.p95_ms <= 0:
+        if baseline.p95_ms is None or baseline.p95_ms <= 0 or current.p95_ms is None:
             return BaselineComparison()
 
         delta_pct = ((current.p95_ms - baseline.p95_ms) / baseline.p95_ms) * 100
@@ -163,17 +157,17 @@ class PerfReportBuilder:
         observations: list[str] = []
         m = parsed.metrics
 
-        if m.error_rate > 0.1:
+        if m.error_rate is not None and m.error_rate > 0.1:
             observations.append(f"错误率较高 ({m.error_rate*100:.1f}%)，建议检查服务端日志")
 
-        if m.p99_ms > 0 and m.p95_ms > 0:
+        if m.p99_ms is not None and m.p95_ms is not None and m.p99_ms > 0 and m.p95_ms > 0:
             tail_ratio = m.p99_ms / m.p95_ms
             if tail_ratio > 3.0:
                 observations.append(
                     f"长尾效应明显 (P99/P95={tail_ratio:.1f}x)，可能存在 GC 或锁竞争"
                 )
 
-        if m.max_ms > m.p99_ms * 5 and m.max_ms > 5000:
+        if m.max_ms is not None and m.p99_ms is not None and m.max_ms > m.p99_ms * 5 and m.max_ms > 5000:
             observations.append(
                 f"极端异常值 (max={m.max_ms:.0f}ms >> P99={m.p99_ms:.0f}ms)，"
                 "建议排查超时/重试"
@@ -185,7 +179,7 @@ class PerfReportBuilder:
                 "超过此负载后延迟急剧上升"
             )
 
-        if m.throughput_tps > 0 and plan.workload.target_rate_rps:
+        if m.throughput_tps is not None and m.throughput_tps > 0 and plan.workload.target_rate_rps:
             achieved_ratio = m.throughput_tps / plan.workload.target_rate_rps
             if achieved_ratio < 0.8:
                 observations.append(
@@ -196,16 +190,25 @@ class PerfReportBuilder:
         return observations
 
     def _decide_verdict(self, report: PerfReport) -> Verdict:
+        if report.sla_result.passed is False:
+            return VERDICT_FAIL
+        if report.baseline_comparison and report.baseline_comparison.regressed:
+            return VERDICT_FAIL
+        if report.sla_result.passed is None:
+            return VERDICT_INCONCLUSIVE
         if report.run_intent == RUN_INTENT_PROBE:
             return VERDICT_BASELINE
 
-        if not report.sla_result.passed:
-            return VERDICT_FAIL
+        if report.baseline_comparison and report.baseline_comparison.p95_delta_pct is None:
+            return VERDICT_INCONCLUSIVE
 
-        if report.baseline_comparison and report.baseline_comparison.regressed:
-            return VERDICT_FAIL
-
+        if not report.engine_threshold_crosscheck.agree:
+            return VERDICT_INCONCLUSIVE
         return VERDICT_PASS
+
+    @staticmethod
+    def _measurement(value: float | int | None, suffix: str = "", precision: int = 1, scale: float = 1) -> str:
+        return "未采集" if value is None else f"{value * scale:.{precision}f}{suffix}"
 
     def _render_markdown(self, report: PerfReport) -> str:
         lines: list[str] = []
@@ -222,14 +225,14 @@ class PerfReportBuilder:
         lines.append("")
         lines.append("| 指标 | 值 |")
         lines.append("|------|-----|")
-        lines.append(f"| 样本数 | {m.samples} |")
-        lines.append(f"| 吞吐量 | {m.throughput_tps:.1f} tps |")
-        lines.append(f"| 平均延迟 | {m.avg_ms:.1f} ms |")
-        lines.append(f"| P50 | {m.p50_ms:.1f} ms |")
-        lines.append(f"| P90 | {m.p90_ms:.1f} ms |")
-        lines.append(f"| P95 | {m.p95_ms:.1f} ms |")
-        lines.append(f"| P99 | {m.p99_ms:.1f} ms |")
-        lines.append(f"| 错误率 | {m.error_rate*100:.2f}% |")
+        lines.append(f"| 样本数 | {self._measurement(m.samples, precision=0)} |")
+        lines.append(f"| 吞吐量 | {self._measurement(m.throughput_tps, ' tps')} |")
+        lines.append(f"| 平均延迟 | {self._measurement(m.avg_ms, ' ms')} |")
+        lines.append(f"| P50 | {self._measurement(m.p50_ms, ' ms')} |")
+        lines.append(f"| P90 | {self._measurement(m.p90_ms, ' ms')} |")
+        lines.append(f"| P95 | {self._measurement(m.p95_ms, ' ms')} |")
+        lines.append(f"| P99 | {self._measurement(m.p99_ms, ' ms')} |")
+        lines.append(f"| 错误率 | {self._measurement(m.error_rate, '%', 2, 100)} |")
         lines.append("")
 
         if report.error_breakdown.protocol_errors or report.error_breakdown.application_errors:
@@ -241,11 +244,17 @@ class PerfReportBuilder:
             lines.append(f"- 预期限流 (429/503): {eb.expected_throttle}")
             lines.append("")
 
-        if not report.sla_result.passed:
+        if report.sla_result.missing_metrics:
+            lines.append("## 测量缺口")
+            lines.append("")
+            lines.append("- 无有效样本或未采集必要指标：" + ", ".join(report.sla_result.missing_metrics))
+            lines.append("")
+        if report.sla_result.violations:
             lines.append("## SLA 违规")
             lines.append("")
             for v in report.sla_result.violations:
-                lines.append(f"- **{v.metric}**: 实际 {v.actual:.2f} > 阈值 {v.threshold:.2f}")
+                comparator = "<" if v.metric == "throughput_tps" else ">"
+                lines.append(f"- **{v.metric}**: 实际 {v.actual:.2f} {comparator} 阈值 {v.threshold:.2f}")
             lines.append("")
 
         if not report.engine_threshold_crosscheck.agree:
@@ -258,9 +267,12 @@ class PerfReportBuilder:
             lines.append("## 基线对比")
             lines.append("")
             bc = report.baseline_comparison
-            direction = "↑" if (bc.p95_delta_pct or 0) > 0 else "↓"
-            lines.append(f"- P95 变化: {direction} {abs(bc.p95_delta_pct or 0):.1f}%")
-            lines.append(f"- 回归判定: {'是' if bc.regressed else '否'}")
+            if bc.p95_delta_pct is None:
+                lines.append("- P95 变化: 无法计算（缺少测量或基线为零）")
+            else:
+                direction = "↑" if bc.p95_delta_pct > 0 else "↓"
+                lines.append(f"- P95 变化: {direction} {abs(bc.p95_delta_pct):.1f}%")
+                lines.append(f"- 回归判定: {'是' if bc.regressed else '否'}")
             lines.append("")
 
         if report.load_side_observations:
@@ -285,7 +297,7 @@ class PerfReportBuilder:
             "table{border-collapse:collapse;width:100%}",
             "th,td{border:1px solid #ddd;padding:8px;text-align:left}",
             "th{background:#f5f5f5}",
-            ".pass{color:#16a34a}.fail{color:#dc2626}.baseline{color:#2563eb}",
+            ".pass{color:#16a34a}.fail{color:#dc2626}.baseline{color:#2563eb}.inconclusive{color:#b45309}",
             "</style></head><body>",
         ]
 
@@ -298,15 +310,18 @@ class PerfReportBuilder:
         m = report.metrics
         lines.append("<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>")
         rows = [
-            ("样本数", f"{m.samples}"),
-            ("吞吐量", f"{m.throughput_tps:.1f} tps"),
-            ("P95", f"{m.p95_ms:.1f} ms"),
-            ("P99", f"{m.p99_ms:.1f} ms"),
-            ("错误率", f"{m.error_rate*100:.2f}%"),
+            ("样本数", self._measurement(m.samples, precision=0)),
+            ("吞吐量", self._measurement(m.throughput_tps, " tps")),
+            ("P95", self._measurement(m.p95_ms, " ms")),
+            ("P99", self._measurement(m.p99_ms, " ms")),
+            ("错误率", self._measurement(m.error_rate, "%", 2, 100)),
         ]
         for label, val in rows:
             lines.append(f"<tr><td>{label}</td><td>{val}</td></tr>")
         lines.append("</table>")
+
+        if report.sla_result.missing_metrics:
+            lines.append("<h2>测量缺口</h2><p>无有效样本或未采集必要指标：" + ", ".join(report.sla_result.missing_metrics) + "</p>")
 
         if report.load_side_observations:
             lines.append("<h2>负载侧观测</h2><ul>")

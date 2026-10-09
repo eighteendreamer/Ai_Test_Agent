@@ -11,7 +11,7 @@ from typing import Any
 from urllib.parse import urlparse
 
 from src.modes.performance_testing_mode.plan_state import PerfPlan
-from .engine_adapter import EngineCommand, RawMetrics, RunOptions, ScriptArtifact
+from .engine_adapter import EngineCommand, RawMetrics, RunOptions, ScriptArtifact, metric_number
 
 
 class JMeterEngineAdapter:
@@ -112,28 +112,28 @@ class JMeterEngineAdapter:
         )
 
     def parse_results(self, summary_json: str) -> RawMetrics:
-        try:
-            data = json.loads(summary_json)
-        except (json.JSONDecodeError, TypeError):
-            return RawMetrics()
-
-        total = data.get("Total", {})
-        samples = int(total.get("sampleCount", 0))
-        throughput = float(total.get("throughput", 0.0))
-        error_pct = float(total.get("errorPct", 0.0))
+        data = json.loads(summary_json)
+        if not isinstance(data, dict) or not isinstance(data.get("Total"), dict):
+            raise ValueError("Invalid JMeter summary: expected Total object")
+        total = data["Total"]
+        count = metric_number(total, "sampleCount")
+        samples = int(count) if count is not None else None
+        throughput = metric_number(total, "throughput")
+        error_pct = metric_number(total, "errorPct")
+        error_count = metric_number(total, "errorCount")
 
         return RawMetrics(
             samples=samples,
             throughput_tps=throughput,
-            avg_ms=float(total.get("meanResTime", 0.0)),
-            min_ms=float(total.get("minResTime", 0.0)),
-            max_ms=float(total.get("maxResTime", 0.0)),
-            p50_ms=float(total.get("medianResTime", 0.0)),
-            p90_ms=float(total.get("pct1ResTime", 0.0)),
-            p95_ms=float(total.get("pct2ResTime", 0.0)),
-            p99_ms=float(total.get("pct3ResTime", 0.0)),
-            error_rate=error_pct / 100.0,
-            error_count=int(total.get("errorCount", 0)),
+            avg_ms=metric_number(total, "meanResTime"),
+            min_ms=metric_number(total, "minResTime"),
+            max_ms=metric_number(total, "maxResTime"),
+            p50_ms=metric_number(total, "medianResTime"),
+            p90_ms=metric_number(total, "pct1ResTime"),
+            p95_ms=metric_number(total, "pct2ResTime"),
+            p99_ms=metric_number(total, "pct3ResTime"),
+            error_rate=error_pct / 100.0 if error_pct is not None else None,
+            error_count=int(error_count) if error_count is not None else None,
             raw_data=data,
         )
 

@@ -202,8 +202,9 @@ DEFAULT_MAX_DURATION_SECONDS = 1800
 VERDICT_PASS = "pass"
 VERDICT_FAIL = "fail"
 VERDICT_BASELINE = "baseline"
+VERDICT_INCONCLUSIVE = "inconclusive"
 
-Verdict = Literal["pass", "fail", "baseline"]
+Verdict = Literal["pass", "fail", "baseline", "inconclusive"]
 
 
 __all__ = [
@@ -288,5 +289,6 @@ __all__ = [
     "VERDICT_PASS",
     "VERDICT_FAIL",
     "VERDICT_BASELINE",
+    "VERDICT_INCONCLUSIVE",
     "Verdict",
 ]

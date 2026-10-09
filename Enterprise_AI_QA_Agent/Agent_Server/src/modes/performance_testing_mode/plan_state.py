@@ -236,8 +236,9 @@ class SLAViolation(BaseModel):
 
 
 class SLAResult(BaseModel):
-    passed: bool = True
+    passed: bool | None = True
     violations: list[SLAViolation] = Field(default_factory=list)
+    missing_metrics: list[str] = Field(default_factory=list)
 
 
 class BaselineComparison(BaseModel):
@@ -255,16 +256,16 @@ class EngineThresholdCrosscheck(BaseModel):
 class PerfMetrics(BaseModel):
     model_config = ConfigDict(extra="allow")
 
-    samples: int = 0
-    throughput_tps: float = 0.0
-    avg_ms: float = 0.0
-    min_ms: float = 0.0
-    max_ms: float = 0.0
-    p50_ms: float = 0.0
-    p90_ms: float = 0.0
-    p95_ms: float = 0.0
-    p99_ms: float = 0.0
-    error_rate: float = 0.0
+    samples: int | None = None
+    throughput_tps: float | None = None
+    avg_ms: float | None = None
+    min_ms: float | None = None
+    max_ms: float | None = None
+    p50_ms: float | None = None
+    p90_ms: float | None = None
+    p95_ms: float | None = None
+    p99_ms: float | None = None
+    error_rate: float | None = None
 
 
 class PerfReport(BaseModel):

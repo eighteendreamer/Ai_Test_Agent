@@ -12,7 +12,7 @@ from typing import Any
 from urllib.parse import urlparse, urlunparse
 
 from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfTarget, RampStage
-from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact
+from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact, metric_number
 
 
 class K6EngineAdapter:
@@ -62,9 +62,10 @@ class K6EngineAdapter:
         lines.extend(self._build_options_block(plan))
         lines.append("};")
         lines.append("")
+        lines.append('const __summaryTrendStats = ["avg", "min", "med", "max", "p(90)", "p(95)", "p(99)"];')
         lines.append("export const options = __smoke")
-        lines.append("  ? { vus: __smokeVus, iterations: __smokeIterations }")
-        lines.append("  : __loadOptions;")
+        lines.append("  ? { vus: __smokeVus, iterations: __smokeIterations, summaryTrendStats: __summaryTrendStats }")
+        lines.append("  : { ...__loadOptions, summaryTrendStats: __summaryTrendStats };")
         lines.append("")
 
         # Default function
@@ -103,10 +104,9 @@ class K6EngineAdapter:
         )
 
     def parse_results(self, summary_json: str) -> RawMetrics:
-        try:
-            data = json.loads(summary_json)
-        except (json.JSONDecodeError, TypeError):
-            return RawMetrics()
+        data = json.loads(summary_json)
+        if not isinstance(data, dict) or not isinstance(data.get("metrics"), dict):
+            raise ValueError("Invalid k6 summary: expected metrics object")
 
         metrics = data.get("metrics", {})
 
@@ -114,28 +114,37 @@ class K6EngineAdapter:
         duration_values = self._metric_values(metrics.get("http_req_duration", {}))
         failed_values = self._metric_values(metrics.get("http_req_failed", {}))
 
-        samples = int(http_reqs.get("count", 0))
-        rate = http_reqs.get("rate", 0)
-        error_rate = float(failed_values.get("rate", failed_values.get("value", 0)))
+        count = metric_number(http_reqs, "count")
+        samples = int(count) if count is not None else None
+        rate = metric_number(http_reqs, "rate")
+        error_rate = metric_number(failed_values, "rate" if "rate" in failed_values else "value")
 
         thresholds = {}
-        root_thresholds = data.get("root_group", {}).get("checks", [])
         if "thresholds" in data:
             for k, v in data["thresholds"].items():
                 thresholds[k] = v
+        for name, metric in metrics.items():
+            if not isinstance(metric, dict):
+                continue
+            for expression, result in metric.get("thresholds", {}).items():
+                # k6 summary-wrapper.js: legacy booleans are !threshold.ok.
+                if isinstance(result, bool):
+                    thresholds[f"{name}:{expression}"] = {"ok": not result}
+                elif isinstance(result, dict) and isinstance(result.get("ok"), bool):
+                    thresholds[f"{name}:{expression}"] = result
 
         return RawMetrics(
             samples=samples,
-            throughput_tps=float(rate),
-            avg_ms=float(duration_values.get("avg", 0)),
-            min_ms=float(duration_values.get("min", 0)),
-            max_ms=float(duration_values.get("max", 0)),
-            p50_ms=float(duration_values.get("med", 0)),
-            p90_ms=float(duration_values.get("p(90)", 0)),
-            p95_ms=float(duration_values.get("p(95)", 0)),
-            p99_ms=float(duration_values.get("p(99)", 0)),
+            throughput_tps=rate,
+            avg_ms=metric_number(duration_values, "avg"),
+            min_ms=metric_number(duration_values, "min"),
+            max_ms=metric_number(duration_values, "max"),
+            p50_ms=metric_number(duration_values, "med"),
+            p90_ms=metric_number(duration_values, "p(90)"),
+            p95_ms=metric_number(duration_values, "p(95)"),
+            p99_ms=metric_number(duration_values, "p(99)"),
             error_rate=error_rate,
-            error_count=int(samples * error_rate) if samples else 0,
+            error_count=int(samples * error_rate) if samples is not None and error_rate is not None else None,
             thresholds=thresholds,
             raw_data=data,
         )
@@ -222,9 +231,9 @@ class K6EngineAdapter:
         # Thresholds from SLA
         thresholds: dict[str, list[str]] = {}
         if plan.sla.p95_ms:
-            thresholds.setdefault("http_req_duration", []).append(f"p(95)<{int(plan.sla.p95_ms)}")
+            thresholds.setdefault("http_req_duration", []).append(f"p(95)<{str(plan.sla.p95_ms).removesuffix('.0')}")
         if plan.sla.p99_ms:
-            thresholds.setdefault("http_req_duration", []).append(f"p(99)<{int(plan.sla.p99_ms)}")
+            thresholds.setdefault("http_req_duration", []).append(f"p(99)<{str(plan.sla.p99_ms).removesuffix('.0')}")
         if plan.sla.error_rate is not None:
             thresholds["http_req_failed"] = [f"rate<{plan.sla.error_rate}"]
 

@@ -1,0 +1,243 @@
+[
+  {
+    "args": [
+      "image",
+      "inspect",
+      "grafana/k6:latest",
+      "--format",
+      "{{.Id}}"
+    ],
+    "exit_code": 0,
+    "stdout": "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "run",
+      "--rm",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "version"
+    ],
+    "exit_code": 0,
+    "stdout": "k6 v2.2.0 (commit/00a9a1b7f5, go1.26.5, linux/amd64)\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-mock-5fda17026514",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=5fda170265144784a3d63965784cd3a7",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=1",
+      "--label",
+      "qa.project_id=3cff9998-a1a3-4fda-867d-98e81be62287",
+      "--label",
+      "qa.session_id=dbbd82b7-d440-49bf-8ef6-f130507e3575",
+      "--label",
+      "performance-engine=helper",
+      "-p",
+      "62271:5678",
+      "hashicorp/http-echo:1.0.0",
+      "-text",
+      "QA actual measurement a56ecf01b6424e6c87587e227c4b9f8a"
+    ],
+    "exit_code": 0,
+    "stdout": "b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91"
+    ],
+    "exit_code": 0,
+    "stdout": "b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "inspect",
+      "--format",
+      "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+      "b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91"
+    ],
+    "exit_code": 0,
+    "stdout": "172.17.0.5\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-12d095f-fcb1ea1f7bd5",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=fcb1ea1f7bd543c88270abf4e95b376d",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-1",
+      "--label",
+      "qa.fencing_token=2",
+      "--label",
+      "qa.project_id=3cff9998-a1a3-4fda-867d-98e81be62287",
+      "--label",
+      "qa.session_id=dbbd82b7-d440-49bf-8ef6-f130507e3575",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-64v796b8:/work",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/default.js"
+    ],
+    "exit_code": 0,
+    "stdout": "fc33a2d1cde7b9e1a1686bb523b8886b6cab90c7729777da756f50c7bd588124\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "fc33a2d1cde7b9e1a1686bb523b8886b6cab90c7729777da756f50c7bd588124"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/default.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 32s max duration (incl. graceful stop):\n              * default: 1 looping VUs for 2s (gracefulStop: 30s)\n\n\nrunning (01.0s), 1/1 VUs, 19 complete and 0 interrupted iterations\ndefault   [  50% ] 1 VUs  1.0s/2s\n\nrunning (02.0s), 1/1 VUs, 39 complete and 0 interrupted iterations\ndefault   [ 100% ] 1 VUs  2.0s/2s\n\n\n  █ THRESHOLDS \n\n    http_req_duration\n    ✓ 'p(99)<1000' p(99)=554.17µs\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 40      19.537031/s\n    checks_succeeded...: 100.00% 40 out of 40\n    checks_failed......: 0.00%   0 out of 40\n\n    ✓ status is expected\n\n    HTTP\n    http_req_duration..............: avg=399.21µs min=296.08µs med=383.04µs max=555.02µs p(90)=492.1µs p(95)=534.46µs\n      { expected_response:true }...: avg=399.21µs min=296.08µs med=383.04µs max=555.02µs p(90)=492.1µs p(95)=534.46µs\n    http_req_failed................: 0.00%  0 out of 40\n    http_reqs......................: 40     19.537031/s\n\n    EXECUTION\n    iteration_duration.............: avg=51.14ms  min=50.78ms  med=51.12ms  max=51.7ms   p(90)=51.38ms p(95)=51.46ms \n    iterations.....................: 40     19.537031/s\n    vus............................: 1      min=1       max=1\n    vus_max........................: 1      min=1       max=1\n\n    NETWORK\n    data_received..................: 8.7 kB 4.2 kB/s\n    data_sent......................: 2.8 kB 1.4 kB/s\n\n\n\n\nrunning (02.0s), 0/1 VUs, 40 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  2s\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "fc33a2d1cde7b9e1a1686bb523b8886b6cab90c7729777da756f50c7bd588124"
+    ],
+    "exit_code": 0,
+    "stdout": "fc33a2d1cde7b9e1a1686bb523b8886b6cab90c7729777da756f50c7bd588124\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-3f9cc2e-9d44e35a74dd",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=9d44e35a74dd4dba8f7a3c1aa8bcf688",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-2",
+      "--label",
+      "qa.fencing_token=3",
+      "--label",
+      "qa.project_id=3cff9998-a1a3-4fda-867d-98e81be62287",
+      "--label",
+      "qa.session_id=dbbd82b7-d440-49bf-8ef6-f130507e3575",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-pyhs9iqd:/work",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "--summary-trend-stats=avg,min,med,max,p(90),p(95),p(99)",
+      "/work/configured.js"
+    ],
+    "exit_code": 0,
+    "stdout": "0296d640a2c87082f229017cb116b7dc792dcce5363a311433efa458a26e6529\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "0296d640a2c87082f229017cb116b7dc792dcce5363a311433efa458a26e6529"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/configured.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 32s max duration (incl. graceful stop):\n              * default: 1 looping VUs for 2s (gracefulStop: 30s)\n\n\nrunning (01.0s), 1/1 VUs, 19 complete and 0 interrupted iterations\ndefault   [  50% ] 1 VUs  1.0s/2s\n\nrunning (02.0s), 1/1 VUs, 39 complete and 0 interrupted iterations\ndefault ↓ [ 100% ] 1 VUs  2s\n\n\n  █ THRESHOLDS \n\n    http_req_duration\n    ✓ 'p(99)<1000' p(99)=741.48µs\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 40      19.498072/s\n    checks_succeeded...: 100.00% 40 out of 40\n    checks_failed......: 0.00%   0 out of 40\n\n    ✓ status is expected\n\n    HTTP\n    http_req_duration..............: avg=412.28µs min=301.15µs med=383.58µs max=823.81µs p(90)=547.59µs p(95)=575.6µs p(99)=741.48µs\n      { expected_response:true }...: avg=412.28µs min=301.15µs med=383.58µs max=823.81µs p(90)=547.59µs p(95)=575.6µs p(99)=741.48µs\n    http_req_failed................: 0.00%  0 out of 40\n    http_reqs......................: 40     19.498072/s\n\n    EXECUTION\n    iteration_duration.............: avg=51.24ms  min=50.67ms  med=51.2ms   max=52.09ms  p(90)=51.48ms  p(95)=51.63ms p(99)=52.03ms \n    iterations.....................: 40     19.498072/s\n    vus............................: 1      min=1       max=1\n    vus_max........................: 1      min=1       max=1\n\n    NETWORK\n    data_received..................: 8.7 kB 4.2 kB/s\n    data_sent......................: 2.8 kB 1.4 kB/s\n\n\n\n\nrunning (02.1s), 0/1 VUs, 40 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  2s\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "0296d640a2c87082f229017cb116b7dc792dcce5363a311433efa458a26e6529"
+    ],
+    "exit_code": 0,
+    "stdout": "0296d640a2c87082f229017cb116b7dc792dcce5363a311433efa458a26e6529\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91"
+    ],
+    "exit_code": 0,
+    "stdout": "b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=b517fdd885dd0bad5c226355b0a55c83795f37386d5c8016919da2bf37c87a91",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=fc33a2d1cde7b9e1a1686bb523b8886b6cab90c7729777da756f50c7bd588124",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=0296d640a2c87082f229017cb116b7dc792dcce5363a311433efa458a26e6529",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

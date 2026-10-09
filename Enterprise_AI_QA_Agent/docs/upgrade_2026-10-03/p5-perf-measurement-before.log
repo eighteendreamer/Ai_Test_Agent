@@ -1,0 +1,30 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______ test_actual_k6_default_and_configured_summary_match_measured_p99 _______
+tests\test_performance_docker_measurement.py:109: in test_actual_k6_default_and_configured_summary_match_measured_p99
+    assert parsed.metrics.p99_ms > 0, report.report_markdown
+E   AssertionError: # ���ܲ��Ա��� (rpt-6fad216c)
+E     
+E     **���� ID**: perf-run-12d095f1
+E     **��ͼ**: regression
+E     **����**: pass
+E     
+E     ## ����ָ��
+E     
+E     | ָ�� | ֵ |
+E     |------|-----|
+E     | ������ | 40 |
+E     | ������ | 19.5 tps |
+E     | ƽ���ӳ� | 0.4 ms |
+E     | P50 | 0.4 ms |
+E     | P90 | 0.5 ms |
+E     | P95 | 0.5 ms |
+E     | P99 | 0.0 ms |
+E     | ������ | 0.00% |
+E     
+E   assert 0.0 > 0
+E    +  where 0.0 = PerfMetrics(samples=40, throughput_tps=19.53703138726222, avg_ms=0.39921317500000014, min_ms=0.296089, max_ms=0.555027, p50_ms=0.383046, p90_ms=0.49210430000000005, p95_ms=0.5344681, p99_ms=0.0, error_rate=0.0).p99_ms
+E    +    where PerfMetrics(samples=40, throughput_tps=19.53703138726222, avg_ms=0.39921317500000014, min_ms=0.296089, max_ms=0.555027, p50_ms=0.383046, p90_ms=0.49210430000000005, p95_ms=0.5344681, p99_ms=0.0, error_rate=0.0) = ParsedMetrics(metrics=PerfMetrics(samples=40, throughput_tps=19.53703138726222, avg_ms=0.39921317500000014, min_ms=0.2...2899999984, 'min': 50.782152, 'med': 51.1235085, 'max': 51.705004, 'p(90)': 51.3864063, 'p(95)': 51.461248399999995}}}).metrics
+=========================== short test summary info ===========================
+FAILED tests/test_performance_docker_measurement.py::test_actual_k6_default_and_configured_summary_match_measured_p99
+1 failed in 29.93s

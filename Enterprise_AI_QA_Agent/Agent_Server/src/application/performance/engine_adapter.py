@@ -5,6 +5,7 @@ Defines the engine-agnostic interface that k6/JMeter adapters implement.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from pathlib import Path
 from typing import Any, Protocol, runtime_checkable
 
@@ -49,20 +50,34 @@ class EngineCommand:
 class RawMetrics:
     """Engine-parsed raw metrics in a unified schema."""
 
-    samples: int = 0
-    throughput_tps: float = 0.0
-    avg_ms: float = 0.0
-    min_ms: float = 0.0
-    max_ms: float = 0.0
-    p50_ms: float = 0.0
-    p90_ms: float = 0.0
-    p95_ms: float = 0.0
-    p99_ms: float = 0.0
-    error_rate: float = 0.0
-    error_count: int = 0
+    # None means unavailable; a measured zero remains a valid observation.
+    samples: int | None = None
+    throughput_tps: float | None = None
+    avg_ms: float | None = None
+    min_ms: float | None = None
+    max_ms: float | None = None
+    p50_ms: float | None = None
+    p90_ms: float | None = None
+    p95_ms: float | None = None
+    p99_ms: float | None = None
+    error_rate: float | None = None
+    error_count: int | None = None
     status_codes: dict[str, int] = field(default_factory=dict)
     thresholds: dict[str, Any] = field(default_factory=dict)
     raw_data: dict[str, Any] = field(default_factory=dict)
+
+
+def metric_number(values: dict[str, Any], key: str) -> float | None:
+    """Read a measured value without replacing missing data with zero."""
+    value = values.get(key)
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"Invalid performance metric {key}: boolean")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"Invalid performance metric {key}: non-finite value")
+    return number
 
 
 @runtime_checkable
