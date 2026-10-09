@@ -1,0 +1,22 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______________ test_actual_typed_response_and_header_constraints ______________
+tests\test_performance_typed_response_live.py:182: in test_actual_typed_response_and_header_constraints
+    correlations=[Correlation(extract="value", from_path=path, into_header=None if only else "X-Value", from_target="source", into_target=None if only else "consumer")],
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for Correlation
+E   into_header
+E     Input should be a valid string [type=string_type, input_value=None, input_type=NoneType]
+E       For further information visit https://errors.pydantic.dev/2.13/v/string_type
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.request_validation:request_validation.py:207 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:207 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:207 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:207 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+=========================== short test summary info ===========================
+FAILED tests/test_performance_typed_response_live.py::test_actual_typed_response_and_header_constraints
+1 failed in 69.49s (0:01:09)

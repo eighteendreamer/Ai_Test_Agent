@@ -60,7 +60,9 @@ def _jmeter_skipped_iterations(rows, plan, bindings, result):
                     continue
                 source = binding["source"]
                 source_rows = samples.get(plan.targets[source].name, [])
-                if source in blocked or len(source_rows) == 1 and source_rows[0].get(f"qa_extract_{binding['index']}") == "false":
+                name = f"qa_header_{binding['index']}" if source_rows and (
+                    f"qa_type_{binding['index']}" in source_rows[0] or f"qa_header_{binding['index']}" in source_rows[0]) else f"qa_extract_{binding['index']}"
+                if source in blocked or len(source_rows) == 1 and source_rows[0].get(name) == "false":
                     unavailable.append(binding["index"])
             if not observed and unavailable:
                 blocked.add(i)
@@ -146,18 +148,26 @@ def request_validation(data, plan):
             destination_rows = by_index[binding["destination"]] if binding["destination"] is not None else []
             extraction = jtl_check(f"qa_extract_{i}", source_rows, skipped.get(binding["source"], 0))
             extract_passed = extraction["passed"]
-            binding_passed = True
             detail = {"index": i, "name": binding["correlation"].extract,
                 "from_target": plan.targets[binding["source"]].name, "from_path": binding["correlation"].from_path,
                 "extraction": extraction}
+            if rows and (f"qa_type_{i}" in rows[0] or f"qa_header_{i}" in rows[0]):
+                types = [r.get(f"qa_type_{i}") for r in source_rows]
+                allowed = {"string", "number", "boolean", "array", "object", "null", "invalid"}
+                if any(t not in allowed for t in types):
+                    result["missing_checks"].append(f"qa_type_{i}")
+                detail.update({"selector_language": "jmespath",
+                    "value_types": {t: types.count(t) for t in sorted(set(types) & allowed)}})
+                if binding["destination"] is not None:
+                    detail["header_eligibility"] = jtl_check(f"qa_header_{i}", source_rows, skipped.get(binding["source"], 0))
             if binding["destination"] is not None:
                 dependency = jtl_check(f"qa_dependency_{i}", destination_rows, skipped.get(binding["destination"], 0))
-                binding_passed = dependency["passed"]
                 detail.update({"into_target": plan.targets[binding["destination"]].name,
                     "into_header": binding["correlation"].into_header,
                     "binding": dependency})
             result["correlations"].append(detail)
-            by_name.setdefault(binding["correlation"].extract, []).append(extract_passed and binding_passed)
+            # Actual extraction and downstream binding are separate facts.
+            by_name.setdefault(binding["correlation"].extract, []).append(extract_passed)
         for name in plan.smoke.expect_extract:
             result["extracted"][name] = bool(by_name.get(name)) and all(by_name[name])
             if name not in by_name:

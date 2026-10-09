@@ -1,0 +1,48 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: /work/script.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):
+              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)
+
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 15      139.425271/s
+    checks_succeeded...: 100.00% 15 out of 15
+    checks_failed......: 0.00%   0 out of 15
+
+    ✓ qa_status_0_200
+    ✓ qa_extract_0
+    ✓ qa_dependency_0
+    ✓ qa_status_1_200
+    ✓ qa_status_2_200
+
+    HTTP
+    http_req_duration..............: avg=1.22ms  min=906.95µs med=1.21ms  max=1.51ms  p(90)=1.37ms  p(95)=1.44ms  p(99)=1.49ms
+      { expected_response:true }...: avg=1.22ms  min=906.95µs med=1.21ms  max=1.51ms  p(90)=1.37ms  p(95)=1.44ms  p(99)=1.49ms
+    http_req_failed................: 0.00%  0 out of 9
+    http_reqs......................: 9      83.655162/s
+
+    EXECUTION
+    iteration_duration.............: avg=35.79ms min=35.3ms   med=35.55ms max=36.52ms p(90)=36.33ms p(95)=36.42ms p(99)=36.5ms
+    iterations.....................: 3      27.885054/s
+
+    NETWORK
+    data_received..................: 1.4 kB 13 kB/s
+    data_sent......................: 840 B  7.8 kB/s
+
+
+
+
+running (00m00.1s), 0/1 VUs, 3 complete and 0 interrupted iterations
+default ✓ [ 100% ] 1 VUs  00m00.1s/10m0s  3/3 shared iters

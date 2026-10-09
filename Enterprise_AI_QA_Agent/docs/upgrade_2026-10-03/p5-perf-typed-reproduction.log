@@ -1,0 +1,20 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______________ test_actual_typed_response_and_header_constraints ______________
+tests\test_performance_typed_response_live.py:185: in test_actual_typed_response_and_header_constraints
+    assert all(o["passed"] == o["expected"] and o["exit_code"] == 0
+E   AssertionError: [{'engine': 'k6', 'variant': 'string-null', 'passed': True, 'expected': True, ...}, {'engine': 'k6', 'variant': 'objec... 'expected': True, ...}, {'engine': 'jmeter', 'variant': 'object-header', 'passed': True, 'expected': False, ...}, ...]
+E   assert False
+E    +  where False = all(<generator object test_actual_typed_response_and_header_constraints.<locals>.<genexpr> at 0x000001CD05CFFF10>)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.request_validation:request_validation.py:197 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:197 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:197 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+=========================== short test summary info ===========================
+FAILED tests/test_performance_typed_response_live.py::test_actual_typed_response_and_header_constraints
+1 failed in 78.01s (0:01:18)

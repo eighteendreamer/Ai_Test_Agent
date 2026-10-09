@@ -1,0 +1,75 @@
+{
+  "plan_id": "",
+  "title": "",
+  "engine": "jmeter",
+  "run_intent": "regression",
+  "targets": [
+    {
+      "name": "source",
+      "method": "GET",
+      "url": "http://127.0.0.1:64686/source",
+      "headers": {},
+      "body_template": null
+    },
+    {
+      "name": "consumer",
+      "method": "GET",
+      "url": "http://127.0.0.1:64686/consumer",
+      "headers": {},
+      "body_template": null
+    },
+    {
+      "name": "plain",
+      "method": "GET",
+      "url": "http://127.0.0.1:64686/plain",
+      "headers": {},
+      "body_template": null
+    }
+  ],
+  "workload": {
+    "model": "open",
+    "mode": "ramping_arrival_rate",
+    "target_rate_rps": null,
+    "ramp_stages": [],
+    "virtual_users": 1,
+    "hold_seconds": 2,
+    "think_time_ms": 25
+  },
+  "smoke": {
+    "vus": 1,
+    "iterations": 3,
+    "expect_status": [
+      200
+    ],
+    "expect_extract": [
+      "value"
+    ]
+  },
+  "data_params": [],
+  "correlations": [
+    {
+      "extract": "value",
+      "from_path": "items[?kind == 'wanted'].value | [0]",
+      "into_header": "X-Value",
+      "from_target": "source",
+      "into_target": "consumer"
+    }
+  ],
+  "assertions": [],
+  "sla": {
+    "p95_ms": null,
+    "p99_ms": 10000.0,
+    "error_rate": 0.01,
+    "min_tps": null
+  },
+  "baseline_ref": null,
+  "topology": {
+    "backend": "auto",
+    "injector_count": 0
+  },
+  "limits": {
+    "max_vus": 2000,
+    "max_rate_rps": 1000,
+    "max_duration_seconds": 1800
+  }
+}

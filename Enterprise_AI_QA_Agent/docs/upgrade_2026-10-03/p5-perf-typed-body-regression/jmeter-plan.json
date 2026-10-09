@@ -1,0 +1,137 @@
+{
+  "plan_id": "",
+  "title": "",
+  "engine": "jmeter",
+  "run_intent": "regression",
+  "targets": [
+    {
+      "name": "json",
+      "method": "POST",
+      "url": "http://127.0.0.1:52937/json",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body_template": {
+        "enabled": false,
+        "count": 0,
+        "nullable": null,
+        "nested": [
+          "中文",
+          {
+            "literal": "${__groovy(1+1)}",
+            "extra": "keep"
+          }
+        ]
+      }
+    },
+    {
+      "name": "text",
+      "method": "POST",
+      "url": "http://127.0.0.1:52937/text",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "body_template": "中文 ${1+1}\\path\nline"
+    },
+    {
+      "name": "literal",
+      "method": "PUT",
+      "url": "http://127.0.0.1:52937/literal",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "body_template": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀"
+    },
+    {
+      "name": "patch",
+      "method": "PATCH",
+      "url": "http://127.0.0.1:52937/patch",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body_template": {
+        "unknown": {
+          "items": [
+            false,
+            0,
+            null,
+            "😀\r\n"
+          ]
+        }
+      }
+    },
+    {
+      "name": "empty",
+      "method": "POST",
+      "url": "http://127.0.0.1:52937/empty",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "body_template": ""
+    },
+    {
+      "name": "none",
+      "method": "PUT",
+      "url": "http://127.0.0.1:52937/none",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "body_template": null
+    },
+    {
+      "name": "dependent",
+      "method": "POST",
+      "url": "http://127.0.0.1:52937/dependent",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "body_template": "正文与当轮依赖同时存在 ${1+1}"
+    }
+  ],
+  "workload": {
+    "model": "open",
+    "mode": "ramping_arrival_rate",
+    "target_rate_rps": null,
+    "ramp_stages": [],
+    "virtual_users": 1,
+    "hold_seconds": 2,
+    "think_time_ms": 25
+  },
+  "smoke": {
+    "vus": 1,
+    "iterations": 3,
+    "expect_status": [
+      200
+    ],
+    "expect_extract": [
+      "matched"
+    ]
+  },
+  "data_params": [],
+  "correlations": [
+    {
+      "extract": "matched",
+      "from_path": "matched",
+      "into_header": "X-Match",
+      "from_target": "json",
+      "into_target": "dependent"
+    }
+  ],
+  "assertions": [],
+  "sla": {
+    "p95_ms": null,
+    "p99_ms": 10000.0,
+    "error_rate": 0.01,
+    "min_tps": null
+  },
+  "baseline_ref": null,
+  "topology": {
+    "backend": "auto",
+    "injector_count": 0
+  },
+  "limits": {
+    "max_vus": 2000,
+    "max_rate_rps": 1000,
+    "max_duration_seconds": 1800
+  }
+}

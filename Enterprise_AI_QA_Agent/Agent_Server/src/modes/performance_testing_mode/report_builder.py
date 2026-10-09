@@ -252,6 +252,10 @@ class PerfReportBuilder:
                     lines.append(f"- {key}: " + ", ".join(report.request_validation[key]))
             for target in report.request_validation.get("skipped_targets", []):
                 lines.append(f"- 依赖缺失，跳过 {target['name']}：{target['iterations']} 轮；来源关联 {target['blocked_by']}")
+            for correlation in report.request_validation.get("correlations", []):
+                if "value_types" in correlation:
+                    usage = f"header可用：{correlation['header_eligibility']['passed']}" if "header_eligibility" in correlation else "仅提取"
+                    lines.append(f"- 关联 {correlation['name']} 类型：{correlation['value_types']}；{usage}")
         lines.append("")
 
         lines.append("## 核心指标")
@@ -351,6 +355,10 @@ class PerfReportBuilder:
                     lines.append(f"<p>{key}: {escape(', '.join(report.request_validation[key]))}</p>")
             for target in report.request_validation.get("skipped_targets", []):
                 lines.append(f"<p>依赖缺失，跳过 {escape(target['name'])}：{target['iterations']} 轮；来源关联 {target['blocked_by']}</p>")
+            for correlation in report.request_validation.get("correlations", []):
+                if "value_types" in correlation:
+                    usage = f"header可用：{correlation['header_eligibility']['passed']}" if "header_eligibility" in correlation else "仅提取"
+                    lines.append(f"<p>关联 {escape(correlation['name'])} 类型：{escape(str(correlation['value_types']))}；{usage}</p>")
 
         m = report.metrics
         lines.append("<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>")

@@ -1,0 +1,16 @@
+docker_inventory_unverified_resource
+resource_lease_external_cleanup_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\runtime\resource_cleanup_worker.py", line 120, in __call__
+    await callback(lease)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\runtime\docker_resource_cleanup.py", line 57, in __call__
+    containers = await self._docker.list_containers()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\docker_management_service.py", line 171, in list_containers
+    proc = await self._run(
+           ^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\docker_management_service.py", line 393, in _run
+    raise DockerCommandError(self._error_detail(proc), exit_code=proc.returncode)
+src.application.docker_management_service.DockerCommandError: Error response from daemon: rw layer snapshot not found for container 87a26a6f535d4b288e0bd05ce62145463d9b701f710d84273e8138c611e91253
+redis_task_handler_failed
+redis_task_delivery_transferred

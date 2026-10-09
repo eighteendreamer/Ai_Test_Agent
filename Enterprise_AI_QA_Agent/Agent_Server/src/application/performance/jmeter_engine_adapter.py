@@ -109,7 +109,7 @@ class JMeterEngineAdapter:
         if getattr(script, "correlations", None):
             cmd.extend(["-Jsample_variables=qa_iteration," + ",".join(
                 name for i, _ in enumerate(script.correlations)
-                for name in (f"qa_extract_{i}", f"qa_dependency_{i}")
+                for name in (f"qa_extract_{i}", f"qa_dependency_{i}", f"qa_type_{i}", f"qa_header_{i}")
             )])
 
         env = dict(run_opts.environment)
@@ -207,7 +207,7 @@ class JMeterEngineAdapter:
             indent = "        "
             if dependencies:
                 condition = '${__groovy(' + " && ".join(
-                    f"vars.get('qa_extract_{b['index']}') == 'true'" for b in dependencies) + ')}'
+                    f"vars.get('qa_header_{b['index']}') == 'true'" for b in dependencies) + ')}'
                 lines.append(f'{indent}<IfController guiclass="IfControllerPanel" testclass="IfController" testname="Dependencies for target {i}" enabled="true">')
                 lines.append(f'{indent}  <stringProp name="IfController.condition">{_esc_xml(condition)}</stringProp><boolProp name="IfController.useExpression">true</boolProp><boolProp name="IfController.evaluateAll">false</boolProp>')
                 lines.append(f'{indent}</IfController><hashTree>')
@@ -262,7 +262,7 @@ class JMeterEngineAdapter:
             reset = "vars.put('qa_iteration', String.valueOf(vars.getIteration())); "
             for binding in bindings:
                 i = binding["index"]
-                reset += f"vars.remove('qa_corr_{i}'); vars.remove('qa_extract_{i}'); vars.remove('qa_dependency_{i}'); "
+                reset += f"vars.remove('qa_corr_{i}'); vars.remove('qa_value_{i}'); vars.remove('qa_extract_{i}'); vars.remove('qa_dependency_{i}'); vars.remove('qa_type_{i}'); vars.remove('qa_header_{i}'); "
             self._append_script_element(lines, indent, "JSR223PreProcessor", "Start correlation iteration", reset)
         if plan.workload.think_time_ms > 0:
             lines.append(f'{indent}  <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">{plan.workload.think_time_ms}</stringProp></ConstantTimer><hashTree/>')
@@ -287,22 +287,45 @@ class JMeterEngineAdapter:
             test_type = 8 | (32 if len(expected) > 1 else 0)
             lines.append(f'{indent}    </collectionProp><stringProp name="Assertion.custom_message">Unexpected HTTP status</stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">{test_type}</intProp>')
             lines.append(f'{indent}  </ResponseAssertion><hashTree/>')
-        for binding in source_bindings:
-            corr = binding["correlation"]
-            ref = f'qa_corr_{binding["index"]}'
-            lines.append(f'{indent}  <JMESPathExtractor guiclass="JMESPathExtractorGui" testclass="JMESPathExtractor" testname="Extract {ref}" enabled="true"><stringProp name="JMESExtractor.referenceName">{ref}</stringProp><stringProp name="JMESExtractor.jmesPathExpr">{_esc_xml(corr.from_path)}</stringProp><stringProp name="JMESExtractor.defaultValue"></stringProp><stringProp name="JMESExtractor.matchNumber">1</stringProp></JMESPathExtractor><hashTree/>')
-            self._append_script_element(lines, indent, "JSR223PostProcessor", f"Observe extraction {binding['index']}",
-                f"def value = vars.get('{ref}'); vars.put('qa_extract_{binding['index']}', "
-                "String.valueOf(value != null && !value.isEmpty() && value != 'null'))")
+        if source_bindings:
+            self._append_typed_extractions(lines, indent, source_bindings, expected)
         for binding in destination_bindings:
             self._append_script_element(lines, indent, "JSR223PreProcessor", f"Observe header binding {binding['index']}",
                 f"vars.put('qa_dependency_{binding['index']}', "
-                f"String.valueOf(vars.get('qa_extract_{binding['index']}') == 'true'))")
+                f"String.valueOf(vars.get('qa_header_{binding['index']}') == 'true'))")
         lines.append(f'{indent}</hashTree>')
+
+    def _append_typed_extractions(self, lines, indent, bindings, expected):
+        # JMeter's stock extractor flattens arrays and converts values to text.
+        # Reuse its public JMESPath cache and bundled Jackson tree parser to
+        # retain native types. Only scalar values may bind a request header.
+        script = []
+        for binding in bindings:
+            i = binding["index"]
+            script.append(f"vars.remove('qa_corr_{i}'); vars.remove('qa_value_{i}'); vars.put('qa_extract_{i}', 'false'); vars.put('qa_header_{i}', 'false'); vars.put('qa_type_{i}', 'invalid');")
+        script += ["def mapper = vars.getObject('qa_json_mapper');",
+            "if (mapper == null) { mapper = new com.fasterxml.jackson.databind.ObjectMapper(); mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS, true); vars.putObject('qa_json_mapper', mapper); }",
+            "def document;",
+            "try { document = mapper.readTree(prev.getResponseDataAsString()); } catch (Exception error) { log.warn('qa_response_json_invalid error_type={}', error.getClass().getSimpleName()); return; }"]
+        statuses = ", ".join(str(status) for status in expected)
+        for binding in bindings:
+            i, corr = binding["index"], binding["correlation"]
+            path = base64.b64encode(corr.from_path.strip().encode("utf-8")).decode("ascii")
+            script += ["try {",
+                f"  def path = new String(java.util.Base64.getDecoder().decode('{path}'), java.nio.charset.StandardCharsets.UTF_8);",
+                "  def value = org.apache.jmeter.extractor.json.jmespath.JMESPathCache.getInstance().get(path).search(document);",
+                "  def type = value == null || value.isNull() || value.isMissingNode() ? 'null' : value.isTextual() ? 'string' : value.isNumber() ? 'number' : value.isBoolean() ? 'boolean' : value.isArray() ? 'array' : 'object';",
+                f"  def available = [{statuses}].collect {{ String.valueOf(it) }}.contains(prev.getResponseCode()) && type != 'null' && !(type == 'string' && value.asText().isEmpty());",
+                "  def header = available && ['string', 'number', 'boolean'].contains(type);",
+                f"  vars.put('qa_type_{i}', type); vars.put('qa_extract_{i}', String.valueOf(available)); vars.put('qa_header_{i}', String.valueOf(header));",
+                f"  if (available) vars.putObject('qa_value_{i}', value);",
+                f"  if (header) vars.put('qa_corr_{i}', value.asText());",
+                f"}} catch (Exception error) {{ log.warn('qa_response_selector_invalid correlation_index={i} error_type={{}}', error.getClass().getSimpleName()); }}"]
+        self._append_script_element(lines, indent, "JSR223PostProcessor", "Extract typed response", "\n".join(script))
 
     @staticmethod
     def _append_script_element(lines, indent, kind, name, script):
-        # JMeter's standard sample_variables stores boolean facts only. Values
+        # JMeter's standard sample_variables stores type/boolean facts only. Values
         # used for request headers remain in the thread-local variable store.
         lines.append(f'{indent}  <{kind} guiclass="TestBeanGUI" testclass="{kind}" testname="{name}" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">{_esc_xml(script)}</stringProp><stringProp name="scriptLanguage">groovy</stringProp></{kind}><hashTree/>')
 

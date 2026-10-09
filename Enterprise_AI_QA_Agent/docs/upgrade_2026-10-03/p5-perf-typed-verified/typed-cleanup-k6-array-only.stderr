@@ -1,0 +1,16 @@
+docker_inventory_unverified_resource
+resource_lease_external_cleanup_failed
+Traceback (most recent call last):
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\runtime\resource_cleanup_worker.py", line 120, in __call__
+    await callback(lease)
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\runtime\docker_resource_cleanup.py", line 57, in __call__
+    containers = await self._docker.list_containers()
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\docker_management_service.py", line 171, in list_containers
+    proc = await self._run(
+           ^^^^^^^^^^^^^^^^
+  File "G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\src\application\docker_management_service.py", line 393, in _run
+    raise DockerCommandError(self._error_detail(proc), exit_code=proc.returncode)
+src.application.docker_management_service.DockerCommandError: Error response from daemon: snapshotter.Usage failed for e09812135a097e18c1272b9d41b3cd2e836f7aab11698e5c211b64b0dc36bd6d: lstat /var/lib/desktop-containerd/daemon/io.containerd.snapshotter.v1.overlayfs/snapshots/2289/fs/opt/software/RsutFS/data/.rustfs.sys/tmp/3e570b67-eba1-4a94-af14-e2b05d6dc719: no such file or directory
+redis_task_handler_failed
+redis_task_delivery_transferred

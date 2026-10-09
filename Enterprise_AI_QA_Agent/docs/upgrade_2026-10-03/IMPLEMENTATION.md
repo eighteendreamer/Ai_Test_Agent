@@ -4833,3 +4833,19 @@ Agent_Server实际命令（解释器..\.venv\Scripts\python.exe）：
 - -X utf8 -m compileall -q，确切文件：src/application/performance/jmeter_engine_adapter.py、k6_engine_adapter.py，src/modes/performance_testing_mode/prompt_contract.py，src/registry/tools.py，tests/test_performance_request_body.py、test_performance_request_body_live.py，../docs/upgrade_2026-10-03/p5-perf-body-audit.py；退出0，双流p5-perf-body-compile.log，仅为附加检查。
 
 项目根.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-body-audit.py --sync核对外部方案为原HEAD或新方案后同步，随后不带--sync复核。历史原件和用户无关文件保持，只提交本批文件，不推送/建PR。实际所有对象下载核验、关键原字节及容器/PG清理事实审计，不重复保存厂商静态资产。直接固定计划/原runner/report，不证明Agent/App/持续load/容量；动态正文与复杂响应等其余P0—P5继续，Step待账号处理后验收。
+
+## 2026-10-09 性能响应原生类型、完整输入及实际传值〔06ae1f33〕
+
+依据P5_PERFORMANCE_TYPED_RESPONSE_RESEARCH.md/PLAN6.96，修改JMeter adapter、request_validation、report_builder、Prompt，同步既有adapter测试并追加实际双引擎与原件回放。两个live测试以独立生产清理Worker和真实PG逐项回执验收，未改生产清理算法/重试/配额。配置MySQL、业务PG、原件RustFS职责保持，无新依赖/配置/表/迁移/前端，Step未调用。
+
+Agent_Server内命令均使用..\.venv\Scripts\python.exe -X utf8 -m pytest（before/reproduction/fixed早期批次未加-X utf8）：
+
+- RUN_LIVE_PERF_TYPED_RESPONSE=1，QA_PERF_TYPED_RESPONSE_DIR分别为本项目docs/upgrade_2026-10-03/p5-perf-typed-before、reproduction、fixed、expanded-live、expanded-reproduction、verified、delivery绝对路径（名称均保留p5-perf-typed-前缀）。tests/test_performance_typed_response_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/<同批次>.xml，双流同名.log：依次1失败81.06、1失败78.01、1通过110.36、1失败69.49、1失败331.43、1失败346.96、最终1通过279.29秒。失败源码副本/原件不覆盖；最终36冒烟、四报告、40回执与finally容器不存在。
+- RUN_LIVE_JMETER_DEPENDENCIES=1，QA_JMETER_DEPENDENCIES_DIR为p5-perf-typed-dependencies-regression/verified绝对路径，tests/test_performance_jmeter_dependencies_live.py同样-q --tb=short、对应XML/双流log。前者1失败120.88秒（6/7回执）；后者采用连续生产Worker，1通过104.40秒，7/7回执。数据传值哈希和实际HTTP不变，未添加忽略错误或绕过所有权。
+- RUN_LIVE_PERF_BODY=1，QA_PERF_BODY_DIR为p5-perf-typed-body-regression绝对路径，tests/test_performance_request_body_live.py同样参数，1通过68.65秒，84请求/两报告/四回执。
+- contract-first原24模块169通过26.61秒；新增tests/test_performance_typed_response.py最初6通过0.16秒；追加原生路径/完整JSON回放后，原6.95的24模块再加该文件，最终25模块182通过28.33秒、0跳过，p5-perf-typed-final.log/xml。精确前24个文件见6.94实施段及6.95追加的request_body，XML逐测试记录；既有Starlette/AnyIO警告1条。
+- -m compileall -q：src/application/performance/jmeter_engine_adapter.py、request_validation.py，src/modes/performance_testing_mode/prompt_contract.py、report_builder.py，tests/test_performance_jmeter_adapter.py、test_performance_jmeter_dependencies_live.py、test_performance_typed_response.py、test_performance_typed_response_live.py，../docs/upgrade_2026-10-03/p5-perf-typed-audit.py；退出0，双流p5-perf-typed-compile.log，仅附加检查。
+
+跨层读取已搜索qa_type/qa_header/header_eligibility/value_types及request_validation，沿原runtime/ToolRuntime通用dict和Markdown/HTML工件输出。前端为agent_web/src/ReportsView对应实际views文件，无强类型性能projection契约变更；未改前端，未重跑构建。误写Frontend/src和results.jtl的只读检索错误已按实际路径更正，没有修改产品路径。
+
+项目根.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-typed-audit.py --sync，核对外部副本仍HEAD或新方案后同步，再不带--sync复核。所有对象实际下载校验，关键原件保存，依赖回归保留原dashboard，局部.gitattributes保留字节/厂商空白。旧证据及用户无关文件保持；只提交本轮确切文件，不推送/建PR。固定计划/缓存镜像/短程runner与报告验收，不宣称Agent/App/容量或默认镜像通过。完整升级及用户最新清单分类见PLAN6.96，Step按用户决定待账号处理。

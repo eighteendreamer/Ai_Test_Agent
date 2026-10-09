@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<jmeterTestPlan version="1.2" properties="5.0" jmeter="5.6.3">
+  <hashTree>
+    <TestPlan guiclass="TestPlanGui" testclass="TestPlan" testname="Performance Test Plan" enabled="true">
+      <stringProp name="TestPlan.comments"></stringProp>
+      <boolProp name="TestPlan.functional_mode">false</boolProp>
+      <boolProp name="TestPlan.tearDown_on_shutdown">true</boolProp>
+      <boolProp name="TestPlan.serialize_threadgroups">false</boolProp>
+      <elementProp name="TestPlan.user_defined_variables" elementType="Arguments" guiclass="ArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true">
+        <collectionProp name="Arguments.arguments"/>
+      </elementProp>
+      <stringProp name="TestPlan.user_define_classpath"></stringProp>
+    </TestPlan>
+    <hashTree>
+      <ThreadGroup guiclass="ThreadGroupGui" testclass="ThreadGroup" testname="Performance-journey" enabled="true">
+        <stringProp name="ThreadGroup.on_sample_error">continue</stringProp>
+        <elementProp name="ThreadGroup.main_controller" elementType="LoopController" guiclass="LoopControlPanel" testclass="LoopController" testname="Loop Controller" enabled="true">
+          <boolProp name="LoopController.continue_forever">false</boolProp>
+          <stringProp name="LoopController.loops">${__P(qa_perf.smoke_iterations,-1)}</stringProp>
+        </elementProp>
+        <stringProp name="ThreadGroup.num_threads">${__P(qa_perf.smoke_vus,1)}</stringProp>
+        <stringProp name="ThreadGroup.ramp_time">1</stringProp>
+        <stringProp name="ThreadGroup.scheduler">${__P(qa_perf.scheduler,true)}</stringProp>
+        <stringProp name="ThreadGroup.duration">${__P(qa_perf.duration,2)}</stringProp>
+        <stringProp name="ThreadGroup.delay"></stringProp>
+        <boolProp name="ThreadGroup.same_user_on_next_iteration">true</boolProp>
+      </ThreadGroup>
+      <hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="source" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>
+          <stringProp name="HTTPSampler.domain">host.docker.internal</stringProp>
+          <stringProp name="HTTPSampler.port">55555</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding"></stringProp>
+          <stringProp name="HTTPSampler.path">/source</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+          <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Start correlation iteration" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">vars.put(&apos;qa_iteration&apos;, String.valueOf(vars.getIteration())); vars.remove(&apos;qa_corr_0&apos;); vars.remove(&apos;qa_value_0&apos;); vars.remove(&apos;qa_extract_0&apos;); vars.remove(&apos;qa_dependency_0&apos;); vars.remove(&apos;qa_type_0&apos;); vars.remove(&apos;qa_header_0&apos;); vars.remove(&apos;qa_corr_1&apos;); vars.remove(&apos;qa_value_1&apos;); vars.remove(&apos;qa_extract_1&apos;); vars.remove(&apos;qa_dependency_1&apos;); vars.remove(&apos;qa_type_1&apos;); vars.remove(&apos;qa_header_1&apos;); </stringProp><stringProp name="scriptLanguage">groovy</stringProp></JSR223PreProcessor><hashTree/>
+          <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">25</stringProp></ConstantTimer><hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true"><collectionProp name="HeaderManager.headers">
+            <elementProp name="X-QA-Thread" elementType="Header"><stringProp name="Header.name">X-QA-Thread</stringProp><stringProp name="Header.value">${__threadNum}</stringProp></elementProp>
+            <elementProp name="X-QA-Iteration" elementType="Header"><stringProp name="Header.name">X-QA-Iteration</stringProp><stringProp name="Header.value">${__groovy(vars.getIteration())}</stringProp></elementProp>
+          </collectionProp></HeaderManager><hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Expected status" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="status0_0">200</stringProp>
+            </collectionProp><stringProp name="Assertion.custom_message">Unexpected HTTP status</stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion><hashTree/>
+          <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Extract typed response" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">vars.remove(&apos;qa_corr_0&apos;); vars.remove(&apos;qa_value_0&apos;); vars.put(&apos;qa_extract_0&apos;, &apos;false&apos;); vars.put(&apos;qa_header_0&apos;, &apos;false&apos;); vars.put(&apos;qa_type_0&apos;, &apos;invalid&apos;);
+def mapper = vars.getObject(&apos;qa_json_mapper&apos;);
+if (mapper == null) { mapper = new com.fasterxml.jackson.databind.ObjectMapper(); mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS, true); vars.putObject(&apos;qa_json_mapper&apos;, mapper); }
+def document;
+try { document = mapper.readTree(prev.getResponseDataAsString()); } catch (Exception error) { log.warn(&apos;qa_response_json_invalid error_type={}&apos;, error.getClass().getSimpleName()); return; }
+try {
+  def path = new String(java.util.Base64.getDecoder().decode(&apos;c2Vzc2lvbi5jcmVkZW50aWFs&apos;), java.nio.charset.StandardCharsets.UTF_8);
+  def value = org.apache.jmeter.extractor.json.jmespath.JMESPathCache.getInstance().get(path).search(document);
+  def type = value == null || value.isNull() || value.isMissingNode() ? &apos;null&apos; : value.isTextual() ? &apos;string&apos; : value.isNumber() ? &apos;number&apos; : value.isBoolean() ? &apos;boolean&apos; : value.isArray() ? &apos;array&apos; : &apos;object&apos;;
+  def available = [200].collect { String.valueOf(it) }.contains(prev.getResponseCode()) &amp;&amp; type != &apos;null&apos; &amp;&amp; !(type == &apos;string&apos; &amp;&amp; value.asText().isEmpty());
+  def header = available &amp;&amp; [&apos;string&apos;, &apos;number&apos;, &apos;boolean&apos;].contains(type);
+  vars.put(&apos;qa_type_0&apos;, type); vars.put(&apos;qa_extract_0&apos;, String.valueOf(available)); vars.put(&apos;qa_header_0&apos;, String.valueOf(header));
+  if (available) vars.putObject(&apos;qa_value_0&apos;, value);
+  if (header) vars.put(&apos;qa_corr_0&apos;, value.asText());
+} catch (Exception error) { log.warn(&apos;qa_response_selector_invalid correlation_index=0 error_type={}&apos;, error.getClass().getSimpleName()); }</stringProp><stringProp name="scriptLanguage">groovy</stringProp></JSR223PostProcessor><hashTree/>
+        </hashTree>
+        <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="independent" enabled="true">
+          <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>
+          <stringProp name="HTTPSampler.domain">host.docker.internal</stringProp>
+          <stringProp name="HTTPSampler.port">55555</stringProp>
+          <stringProp name="HTTPSampler.protocol">http</stringProp>
+          <stringProp name="HTTPSampler.contentEncoding"></stringProp>
+          <stringProp name="HTTPSampler.path">/independent</stringProp>
+          <stringProp name="HTTPSampler.method">GET</stringProp>
+          <boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+          <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>
+        </HTTPSamplerProxy>
+        <hashTree>
+          <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">25</stringProp></ConstantTimer><hashTree/>
+          <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true"><collectionProp name="HeaderManager.headers">
+            <elementProp name="X-QA-Thread" elementType="Header"><stringProp name="Header.name">X-QA-Thread</stringProp><stringProp name="Header.value">${__threadNum}</stringProp></elementProp>
+            <elementProp name="X-QA-Iteration" elementType="Header"><stringProp name="Header.name">X-QA-Iteration</stringProp><stringProp name="Header.value">${__groovy(vars.getIteration())}</stringProp></elementProp>
+          </collectionProp></HeaderManager><hashTree/>
+          <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Expected status" enabled="true">
+            <collectionProp name="Asserion.test_strings">
+              <stringProp name="status1_0">200</stringProp>
+            </collectionProp><stringProp name="Assertion.custom_message">Unexpected HTTP status</stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">8</intProp>
+          </ResponseAssertion><hashTree/>
+        </hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Dependencies for target 2" enabled="true">
+          <stringProp name="IfController.condition">${__groovy(vars.get(&apos;qa_header_0&apos;) == &apos;true&apos;)}</stringProp><boolProp name="IfController.useExpression">true</boolProp><boolProp name="IfController.evaluateAll">false</boolProp>
+        </IfController><hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="bridge" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>
+            <stringProp name="HTTPSampler.domain">host.docker.internal</stringProp>
+            <stringProp name="HTTPSampler.port">55555</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.contentEncoding"></stringProp>
+            <stringProp name="HTTPSampler.path">/bridge</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">25</stringProp></ConstantTimer><hashTree/>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true"><collectionProp name="HeaderManager.headers">
+              <elementProp name="X-QA-Thread" elementType="Header"><stringProp name="Header.name">X-QA-Thread</stringProp><stringProp name="Header.value">${__threadNum}</stringProp></elementProp>
+              <elementProp name="X-QA-Iteration" elementType="Header"><stringProp name="Header.name">X-QA-Iteration</stringProp><stringProp name="Header.value">${__groovy(vars.getIteration())}</stringProp></elementProp>
+              <elementProp name="Authorization" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${qa_corr_0}</stringProp></elementProp>
+            </collectionProp></HeaderManager><hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Expected status" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="status2_0">200</stringProp>
+              </collectionProp><stringProp name="Assertion.custom_message">Unexpected HTTP status</stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion><hashTree/>
+            <JSR223PostProcessor guiclass="TestBeanGUI" testclass="JSR223PostProcessor" testname="Extract typed response" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">vars.remove(&apos;qa_corr_1&apos;); vars.remove(&apos;qa_value_1&apos;); vars.put(&apos;qa_extract_1&apos;, &apos;false&apos;); vars.put(&apos;qa_header_1&apos;, &apos;false&apos;); vars.put(&apos;qa_type_1&apos;, &apos;invalid&apos;);
+def mapper = vars.getObject(&apos;qa_json_mapper&apos;);
+if (mapper == null) { mapper = new com.fasterxml.jackson.databind.ObjectMapper(); mapper.configure(com.fasterxml.jackson.databind.DeserializationFeature.FAIL_ON_TRAILING_TOKENS, true); vars.putObject(&apos;qa_json_mapper&apos;, mapper); }
+def document;
+try { document = mapper.readTree(prev.getResponseDataAsString()); } catch (Exception error) { log.warn(&apos;qa_response_json_invalid error_type={}&apos;, error.getClass().getSimpleName()); return; }
+try {
+  def path = new String(java.util.Base64.getDecoder().decode(&apos;c2Vzc2lvbi5jcmVkZW50aWFs&apos;), java.nio.charset.StandardCharsets.UTF_8);
+  def value = org.apache.jmeter.extractor.json.jmespath.JMESPathCache.getInstance().get(path).search(document);
+  def type = value == null || value.isNull() || value.isMissingNode() ? &apos;null&apos; : value.isTextual() ? &apos;string&apos; : value.isNumber() ? &apos;number&apos; : value.isBoolean() ? &apos;boolean&apos; : value.isArray() ? &apos;array&apos; : &apos;object&apos;;
+  def available = [200].collect { String.valueOf(it) }.contains(prev.getResponseCode()) &amp;&amp; type != &apos;null&apos; &amp;&amp; !(type == &apos;string&apos; &amp;&amp; value.asText().isEmpty());
+  def header = available &amp;&amp; [&apos;string&apos;, &apos;number&apos;, &apos;boolean&apos;].contains(type);
+  vars.put(&apos;qa_type_1&apos;, type); vars.put(&apos;qa_extract_1&apos;, String.valueOf(available)); vars.put(&apos;qa_header_1&apos;, String.valueOf(header));
+  if (available) vars.putObject(&apos;qa_value_1&apos;, value);
+  if (header) vars.put(&apos;qa_corr_1&apos;, value.asText());
+} catch (Exception error) { log.warn(&apos;qa_response_selector_invalid correlation_index=1 error_type={}&apos;, error.getClass().getSimpleName()); }</stringProp><stringProp name="scriptLanguage">groovy</stringProp></JSR223PostProcessor><hashTree/>
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Observe header binding 0" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">vars.put(&apos;qa_dependency_0&apos;, String.valueOf(vars.get(&apos;qa_header_0&apos;) == &apos;true&apos;))</stringProp><stringProp name="scriptLanguage">groovy</stringProp></JSR223PreProcessor><hashTree/>
+          </hashTree>
+        </hashTree>
+        <IfController guiclass="IfControllerPanel" testclass="IfController" testname="Dependencies for target 3" enabled="true">
+          <stringProp name="IfController.condition">${__groovy(vars.get(&apos;qa_header_1&apos;) == &apos;true&apos;)}</stringProp><boolProp name="IfController.useExpression">true</boolProp><boolProp name="IfController.evaluateAll">false</boolProp>
+        </IfController><hashTree>
+          <HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="final" enabled="true">
+            <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>
+            <stringProp name="HTTPSampler.domain">host.docker.internal</stringProp>
+            <stringProp name="HTTPSampler.port">55555</stringProp>
+            <stringProp name="HTTPSampler.protocol">http</stringProp>
+            <stringProp name="HTTPSampler.contentEncoding"></stringProp>
+            <stringProp name="HTTPSampler.path">/final</stringProp>
+            <stringProp name="HTTPSampler.method">GET</stringProp>
+            <boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>
+            <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>
+          </HTTPSamplerProxy>
+          <hashTree>
+            <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">25</stringProp></ConstantTimer><hashTree/>
+            <HeaderManager guiclass="HeaderPanel" testclass="HeaderManager" testname="HTTP Header Manager" enabled="true"><collectionProp name="HeaderManager.headers">
+              <elementProp name="X-QA-Thread" elementType="Header"><stringProp name="Header.name">X-QA-Thread</stringProp><stringProp name="Header.value">${__threadNum}</stringProp></elementProp>
+              <elementProp name="X-QA-Iteration" elementType="Header"><stringProp name="Header.name">X-QA-Iteration</stringProp><stringProp name="Header.value">${__groovy(vars.getIteration())}</stringProp></elementProp>
+              <elementProp name="Authorization" elementType="Header"><stringProp name="Header.name">Authorization</stringProp><stringProp name="Header.value">Bearer ${qa_corr_1}</stringProp></elementProp>
+            </collectionProp></HeaderManager><hashTree/>
+            <ResponseAssertion guiclass="AssertionGui" testclass="ResponseAssertion" testname="Expected status" enabled="true">
+              <collectionProp name="Asserion.test_strings">
+                <stringProp name="status3_0">200</stringProp>
+              </collectionProp><stringProp name="Assertion.custom_message">Unexpected HTTP status</stringProp><stringProp name="Assertion.test_field">Assertion.response_code</stringProp><boolProp name="Assertion.assume_success">true</boolProp><intProp name="Assertion.test_type">8</intProp>
+            </ResponseAssertion><hashTree/>
+            <JSR223PreProcessor guiclass="TestBeanGUI" testclass="JSR223PreProcessor" testname="Observe header binding 1" enabled="true"><stringProp name="cacheKey">true</stringProp><stringProp name="filename"></stringProp><stringProp name="parameters"></stringProp><stringProp name="script">vars.put(&apos;qa_dependency_1&apos;, String.valueOf(vars.get(&apos;qa_header_1&apos;) == &apos;true&apos;))</stringProp><stringProp name="scriptLanguage">groovy</stringProp></JSR223PreProcessor><hashTree/>
+          </hashTree>
+        </hashTree>
+      </hashTree>
+      <ResultCollector guiclass="SummaryCollector" testclass="ResultCollector" testname="Summary Report" enabled="true">
+        <boolProp name="ResultCollector.error_logging">false</boolProp>
+        <objProp><name>saveConfig</name><value class="SampleSaveConfiguration">
+          <time>true</time><latency>true</latency><timestamp>true</timestamp>
+          <success>true</success><label>true</label><code>true</code>
+          <message>true</message><threadName>true</threadName>
+          <dataType>true</dataType><encoding>false</encoding>
+          <assertions>true</assertions><bytes>true</bytes><sentBytes>true</sentBytes>
+        </value></objProp>
+        <stringProp name="filename">/work/statistics.json</stringProp>
+      </ResultCollector>
+      <hashTree/>
+    </hashTree>
+  </hashTree>
+</jmeterTestPlan>

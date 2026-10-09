@@ -150,9 +150,26 @@ async def test_actual_jmeter_missing_dependencies_do_not_send_requests(tmp_path)
                         downloads.append({"path": saved.relative_to(evidence).as_posix(), "sha256": artifact["sha256"], "bytes": len(content)})
                     write_json(evidence / (variant + "-downloads.json"), downloads)
 
+                cleanup_child, cleanup_count = None, 0
+
                 async def cleanup(variant):
-                    child = processes.start("dependency-cleanup-" + variant, "-m", "src.cli.run_resource_cleanup_worker", "--once", "--worker-id", "jmeter-dependency-cleanup")
-                    assert await processes.wait(child) == 0
+                    nonlocal cleanup_child, cleanup_count
+                    if cleanup_child is None:
+                        cleanup_child = processes.start("dependency-cleanup", "-m", "src.cli.run_resource_cleanup_worker", "--worker-id", "jmeter-dependency-cleanup")
+                    cleanup_count += 1
+                    deadline = asyncio.get_running_loop().time() + 60
+                    while asyncio.get_running_loop().time() < deadline:
+                        assert cleanup_child.poll() is None, "production cleanup Worker exited before durable receipt"
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute("SELECT to_regclass(%s) AS existing", (settings.database.postgres_resource_cleanup_table,))
+                            if cur.fetchone()["existing"]:
+                                cur.execute(f"SELECT * FROM {settings.database.postgres_resource_cleanup_table}")
+                                receipts = [dict(row) for row in cur.fetchall()]
+                                write_json(evidence / (variant + "-cleanup-receipts.json"), receipts)
+                                if sum(row["status"] == "completed" for row in receipts) == cleanup_count:
+                                    return
+                        await asyncio.sleep(0.2)
+                    raise TimeoutError(f"durable cleanup receipt missing after {variant}")
 
                 with bind_request_context(project_id=project["id"], session_id=session["id"], trace_id="actual-jmeter-dependencies"):
                     for variant, vus, iterations in (("missing", 1, 3), ("mixed", 1, 4), ("valid", 2, 3), ("tail", 1, 3), ("multiple", 1, 3)):

@@ -1,0 +1,52 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______________ test_actual_typed_response_and_header_constraints ______________
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.UndefinedTable: relation "agent_perf_runs" does not exist
+E   LINE 1: SELECT * FROM agent_perf_runs ORDER BY created_at
+E                         ^
+
+The above exception was the direct cause of the following exception:
+tests\test_performance_typed_response_live.py:179: in test_actual_typed_response_and_header_constraints
+    await pg_facts()
+tests\test_performance_typed_response_live.py:148: in pg_facts
+    cur.execute(f"SELECT * FROM {settings.database.postgres_perf_runs_table} ORDER BY created_at")
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "agent_perf_runs" does not exist
+E   LINE 1: SELECT * FROM agent_perf_runs ORDER BY created_at
+E                         ^
+E   [SQL: SELECT * FROM agent_perf_runs ORDER BY created_at]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.request_validation:request_validation.py:197 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:197 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.request_validation:request_validation.py:197 performance_check_unavailable
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+=========================== short test summary info ===========================
+FAILED tests/test_performance_typed_response_live.py::test_actual_typed_response_and_header_constraints
+1 failed in 81.06s (0:01:21)

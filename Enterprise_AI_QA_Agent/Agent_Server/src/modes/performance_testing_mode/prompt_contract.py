@@ -100,6 +100,7 @@ PERF_PLANNER_CONTRACT = """\
 - 必须包含 smoke config（冒烟验证参数）
 - 必须包含 sla config（即使 probe 模式也需要记录 baseline 参考）
 - correlations读取明确JSON路径；from_target是来源目标名，into_target是后续消费目标名，into_header是header名，header_prefix仅按项目鉴权文档提供。不设置新字段时来源为首目标、消费为紧邻下一目标；不向全部目标广播凭据。
+- from_path遵循选定引擎的原生选择器：k6是GJSON（如items.1.value），JMeter是JMESPath（如items[1].value），不得直接复用另一引擎的复杂表达式。对象/数组提取成功不代表可作header；header仅使用非空字符串、数字或布尔值，JSON null/缺值/空字符串及非预期来源状态不能满足依赖；字符串"null"、0和false是有效标量。
 - smoke.expect_status提供明确预期状态，expect_extract必须对应实际correlations。变量保留在当前iteration内，禁止打印凭据来证明提取成功。
 - targets.body_template对象按JSON发送，字符串按UTF-8原文发送；${...}是正文数据，不执行JavaScript或JMeter函数。Content-Type按接口文档明确提供。动态正文替换尚未实现，不得声称会自动注入关联变量或CSV数据。
 - limits 必须在系统硬上限范围内

@@ -114,9 +114,9 @@ def test_ordered_journey_keeps_credentials_out_of_sample_variables():
     script = adapter.build_script(plan)
     assert script.script_content.count("<ThreadGroup ") == 1
     assert script.script_content.index('testname="login"') < script.script_content.index('testname="profile"')
-    assert "${qa_corr_0}" in script.script_content and "JMESPathExtractor" in script.script_content
+    assert "${qa_corr_0}" in script.script_content and "JMESPathCache" in script.script_content
     cmd = adapter.run_command(script, RunOptions(is_smoke=True, smoke_iterations=3, smoke_vus=1))
-    assert "-Jsample_variables=qa_iteration,qa_extract_0,qa_dependency_0" in cmd.command
+    assert "-Jsample_variables=qa_iteration,qa_extract_0,qa_dependency_0,qa_type_0,qa_header_0" in cmd.command
     assert "-Jqa_perf.scheduler=false" in cmd.command
     assert "-Jqa_perf.smoke_vus=1" in cmd.command
 
