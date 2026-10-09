@@ -1,0 +1,111 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+__________________ test_actual_header_findings_and_originals __________________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1334/test_actual_header_findings_an0')
+
+    async def test_actual_header_findings_and_originals(tmp_path):
+        evidence = Path(os.getenv("QA_SECURITY_EVIDENCE_DIR", str(tmp_path / "evidence")))
+        evidence.mkdir(parents=True, exist_ok=True)
+        events, observations = [], []
+    
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    
+        class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                events.append({"path": self.path, "method": "GET"})
+                self.send_response(200)
+                if self.path == "/complete":
+                    for name, value in (("X-Frame-Options", "DENY"), ("X-Content-Type-Options", "nosniff"),
+                        ("Strict-Transport-Security", "max-age=31536000"), ("Content-Security-Policy", "default-src 'none'"),
+                        ("Referrer-Policy", "no-referrer"), ("Permissions-Policy", "camera=()")):
+                        self.send_header(name, value)
+                # Non-sensitive evidence larger than the current transcript preview.
+                self.send_header("X-Owned-Evidence", "owned-prefix-" + "a" * 30000 + "-owned-suffix")
+                self.end_headers()
+                self.wfile.write(b"owned local security fixture")
+    
+            def log_message(self, *_args):
+                pass  # Request facts captured above; no production logging override.
+    
+        server = ThreadingHTTPServer(("0.0.0.0", 0), Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned_objects):
+                settings.security.security_runner_backend = "docker"
+                settings.security.security_runner_docker_image = "sha256:9520f0e11a5c74e80c758260e5ac2ad46bcae90fc0dda45670cb50b9f421c3d4"
+                settings.security.security_runner_docker_net_raw = False
+                settings.security.security_runner_docker_cleanup_after_run = True
+                settings.security.security_target_allowlist = "127.0.0.1"
+                api_port = free_port()
+                api = processes.start("security-evidence-api", "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(api_port))
+                jobs = ToolJobService(PostgresToolJobStore(settings))
+                await jobs.initialize()
+                tools = ToolRuntimeService(settings=settings, tool_job_service=jobs, artifact_storage_service=objects)
+                try:
+                    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{api_port}/api/v1", timeout=50) as client:
+                        await wait_api(client, api)
+                        response = await client.post("/projects", json={"project_key": "security-" + uuid4().hex[:10], "name": "��ȫ֤������"})
+                        response.raise_for_status()
+                        project = response.json()
+                        response = await client.post("/sessions", json=CreateSessionRequest(project_id=project["id"], mode_key="security_testing").model_dump(mode="json"))
+                        response.raise_for_status()
+                        session = response.json()
+                        tool = ToolDescriptor(key="web-scan-runner", name="web scan", description="owned header probe", category="test")
+                        records = []
+                        for variant in ("missing", "complete", "unreachable"):
+                            port = free_port() if variant == "unreachable" else server.server_port
+                            target = f"http://127.0.0.1:{port}/{variant}"
+                            context = ToolExecutionContext(session_id=session["id"], turn_id="security-" + variant,
+                                trace_id="security-evidence-" + variant, user_message="owned local header validation", normalized_input="security",
+                                context_bundle={"project_id": project["id"], "environment": "testing"})
+                            record = await tools.execute(tool, ModelToolCall(id=str(uuid4()), name=tool.key,
+                                arguments={"command_profile": "http_headers_probe", "target": target}), context)
+                            records.append(record)
+                            save(variant + "-record.json", record.model_dump(mode="json"))
+                            observations.append({"variant": variant, "status": record.status,
+                                "findings": len(record.output.get("findings", [])), "exit_code": record.output.get("exit_code"),
+                                "error": record.output.get("error")})
+                            save("observations.json", observations)
+                            for artifact in record.output.get("artifacts", []):
+                                if str(artifact.get("path", "")).startswith("rustfs://"):
+                                    owned_objects.append(artifact["path"])
+                        save("target-events.json", events)
+                        await processes.stop(api)
+                        api = processes.start("security-evidence-api-restarted", "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(api_port))
+                        await wait_api(client, api)
+                        downloads = []
+                        for variant, record in zip(("missing", "complete", "unreachable"), records):
+                            response = await client.get(f"/sessions/{session['id']}/tool-jobs/{record.job_id}")
+                            response.raise_for_status()
+                            detail = response.json()
+                            save(variant + "-persisted-job.json", detail)
+                            for artifact in detail["artifacts"]:
+                                response = await client.get(f"/sessions/{session['id']}/artifacts/{artifact['id']}/content")
+                                response.raise_for_status()
+                                filename = artifact["label"] or Path(artifact["path"]).name
+                                folder = evidence / "download-originals" / variant
+                                folder.mkdir(parents=True, exist_ok=True)
+                                (folder / filename).write_bytes(response.content)
+                                downloads.append({"variant": variant, "type": artifact["artifact_type"], "filename": filename,
+                                    "size_bytes": len(response.content), "sha256": hashlib.sha256(response.content).hexdigest()})
+                        save("downloads.json", downloads)
+                        problems = []
+                        if [x["status"] for x in observations] != ["completed", "completed", "failed"]:
+                            problems.append("real profile status mismatch")
+                        if [x["findings"] for x in observations] != [4, 0, 0]:
+                            problems.append("findings must require an observed HTTP response")
+                        for variant in ("missing", "complete"):
+                            files = list((evidence / "download-originals" / variant).glob("*"))
+                            if not any(b"owned-prefix-" + b"a" * 30000 + b"-owned-suffix" in p.read_bytes() for p in files):
+                                problems.append(variant + " complete raw output unavailable after restart")
+>                       assert not problems, problems
+E                       AssertionError: ['missing complete raw output unavailable after restart', 'complete complete raw output unavailable after restart']
+E                       assert not ['missing complete raw output unavailable after restart', 'complete complete raw output unavailable after restart']
+
+tests\test_security_evidence_live.py:130: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_security_evidence_live.py::test_actual_header_findings_and_originals
+1 failed in 28.45s

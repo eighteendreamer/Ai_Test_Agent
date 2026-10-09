@@ -1,0 +1,119 @@
+{
+  "id": "0b2cf9be-e452-42c2-84d4-401f9dba6fd7",
+  "session_id": "b78cb7bd-65dd-496d-aeb4-c282c73e4697",
+  "turn_id": "security-unreachable",
+  "trace_id": "security-evidence-unreachable",
+  "call_id": "f7f028b5-9333-41b8-8e03-e1cfa3ede17a",
+  "tool_key": "web-scan-runner",
+  "tool_name": "web scan",
+  "status": "failed",
+  "attempt": 1,
+  "input_payload": {
+    "target": "http://127.0.0.1:63502/unreachable",
+    "command_profile": "http_headers_probe"
+  },
+  "output_payload": {
+    "ok": false,
+    "error": "exit_code=1",
+    "status": "failed",
+    "stderr": "Traceback (most recent call last):\n  File \"/usr/lib/python3.13/urllib/request.py\", line 1319, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n              encode_chunked=req.has_header('Transfer-encoding'))\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1358, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1404, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1353, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1113, in _send_output\n    self.send(msg)\n    ~~~~~~~~~^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1057, in send\n    self.connect()\n    ~~~~~~~~~~~~^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1023, in connect\n    self.sock = self._create_connection(\n                ~~~~~~~~~~~~~~~~~~~~~~~^\n        (self.host,self.port), self.timeout, self.source_address)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/socket.py\", line 864, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.13/socket.py\", line 849, in create_connection\n    sock.connect(sa)\n    ~~~~~~~~~~~~^^^^\nOSError: [Errno 101] Network is unreachable\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json,os,urllib.request; u=os.environ.get(\"TARGET\", \"\"); req=urllib.request.Request(u, headers=dict([(\"User-Agent\",\"Enterprise-AI-QA-Agent security-smoke\")])); NoRaise=type(\"NoRaise\", (urllib.request.HTTPErrorProcessor,), dict(http_response=lambda self, request, response: response, https_response=lambda self, request, response: response)); r=urllib.request.build_opener(NoRaise).open(req, timeout=20); headers=dict((k.lower(), v) for k, v in r.headers.items()); security=[\"strict-transport-security\",\"content-security-policy\",\"x-frame-options\",\"x-content-type-options\",\"referrer-policy\",\"permissions-policy\"]; print(json.dumps(dict(url=r.geturl(), status_code=getattr(r, \"status\", 0), headers=headers, missing_security_headers=[h for h in security if h not in headers]), ensure_ascii=False))\n                                                                                                                                                                                                                                                                                                                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/usr/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/usr/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/usr/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/urllib/request.py\", line 1322, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 101] Network is unreachable>\n",
+    "target": "http://127.0.0.1:63502/unreachable",
+    "command": "sh -lc 'TARGET=\"$1\"; export TARGET; python3 -c \"import json,os,urllib.request; u=os.environ.get(\\\"TARGET\\\", \\\"\\\"); req=urllib.request.Request(u, headers=dict([(\\\"User-Agent\\\",\\\"Enterprise-AI-QA-Agent security-smoke\\\")])); NoRaise=type(\\\"NoRaise\\\", (urllib.request.HTTPErrorProcessor,), dict(http_response=lambda self, request, response: response, https_response=lambda self, request, response: response)); r=urllib.request.build_opener(NoRaise).open(req, timeout=20); headers=dict((k.lower(), v) for k, v in r.headers.items()); security=[\\\"strict-transport-security\\\",\\\"content-security-policy\\\",\\\"x-frame-options\\\",\\\"x-content-type-options\\\",\\\"referrer-policy\\\",\\\"permissions-policy\\\"]; print(json.dumps(dict(url=r.geturl(), status_code=getattr(r, \\\"status\\\", 0), headers=headers, missing_security_headers=[h for h in security if h not in headers]), ensure_ascii=False))\"' sh http://127.0.0.1:63502/unreachable",
+    "metrics": {
+      "stderr_chars": 3800,
+      "stdout_chars": 0,
+      "finding_count": 0,
+      "duration_seconds": 0.333946,
+      "bootstrap_applied": false
+    },
+    "success": false,
+    "summary": "Executed http_headers_probe with exit code 1; parsed 0 finding(s).",
+    "findings": [],
+    "trace_id": "security-evidence-unreachable",
+    "artifacts": [
+      {
+        "uri": "rustfs://qa-agent/b78cb7bd-65dd-496d-aeb4-c282c73e4697/security-unreachable/web-scan-runner_20261009_222632_0a9d6181bca2/security_tool_transcript.json",
+        "path": "rustfs://qa-agent/b78cb7bd-65dd-496d-aeb4-c282c73e4697/security-unreachable/web-scan-runner_20261009_222632_0a9d6181bca2/security_tool_transcript.json",
+        "type": "security_tool_transcript",
+        "bucket": "qa-agent",
+        "object_name": "b78cb7bd-65dd-496d-aeb4-c282c73e4697/security-unreachable/web-scan-runner_20261009_222632_0a9d6181bca2/security_tool_transcript.json",
+        "content_type": "application/json",
+        "storage_backend": "rustfs",
+        "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1334\\test_actual_header_findings_an0\\artifacts\\b78cb7bd-65dd-496d-aeb4-c282c73e4697\\security-unreachable\\web-scan-runner_20261009_222632_0a9d6181bca2\\security_tool_transcript.json"
+      }
+    ],
+    "exit_code": 1,
+    "timed_out": false,
+    "tool_name": "python3",
+    "raw_output": "Traceback (most recent call last):\n  File \"/usr/lib/python3.13/urllib/request.py\", line 1319, in do_open\n    h.request(req.get_method(), req.selector, req.data, headers,\n    ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n              encode_chunked=req.has_header('Transfer-encoding'))\n              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1358, in request\n    self._send_request(method, url, body, headers, encode_chunked)\n    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1404, in _send_request\n    self.endheaders(body, encode_chunked=encode_chunked)\n    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1353, in endheaders\n    self._send_output(message_body, encode_chunked=encode_chunked)\n    ~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1113, in _send_output\n    self.send(msg)\n    ~~~~~~~~~^^^^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1057, in send\n    self.connect()\n    ~~~~~~~~~~~~^^\n  File \"/usr/lib/python3.13/http/client.py\", line 1023, in connect\n    self.sock = self._create_connection(\n                ~~~~~~~~~~~~~~~~~~~~~~~^\n        (self.host,self.port), self.timeout, self.source_address)\n        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/socket.py\", line 864, in create_connection\n    raise exceptions[0]\n  File \"/usr/lib/python3.13/socket.py\", line 849, in create_connection\n    sock.connect(sa)\n    ~~~~~~~~~~~~^^^^\nOSError: [Errno 101] Network is unreachable\n\nDuring handling of the above exception, another exception occurred:\n\nTraceback (most recent call last):\n  File \"<string>\", line 1, in <module>\n    import json,os,urllib.request; u=os.environ.get(\"TARGET\", \"\"); req=urllib.request.Request(u, headers=dict([(\"User-Agent\",\"Enterprise-AI-QA-Agent security-smoke\")])); NoRaise=type(\"NoRaise\", (urllib.request.HTTPErrorProcessor,), dict(http_response=lambda self, request, response: response, https_response=lambda self, request, response: response)); r=urllib.request.build_opener(NoRaise).open(req, timeout=20); headers=dict((k.lower(), v) for k, v in r.headers.items()); security=[\"strict-transport-security\",\"content-security-policy\",\"x-frame-options\",\"x-content-type-options\",\"referrer-policy\",\"permissions-policy\"]; print(json.dumps(dict(url=r.geturl(), status_code=getattr(r, \"status\", 0), headers=headers, missing_security_headers=[h for h in security if h not in headers]), ensure_ascii=False))\n                                                                                                                                                                                                                                                                                                                                                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/urllib/request.py\", line 489, in open\n    response = self._open(req, data)\n  File \"/usr/lib/python3.13/urllib/request.py\", line 506, in _open\n    result = self._call_chain(self.handle_open, protocol, protocol +\n                              '_open', req)\n  File \"/usr/lib/python3.13/urllib/request.py\", line 466, in _call_chain\n    result = func(*args)\n  File \"/usr/lib/python3.13/urllib/request.py\", line 1348, in http_open\n    return self.do_open(http.client.HTTPConnection, req)\n           ~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/usr/lib/python3.13/urllib/request.py\", line 1322, in do_open\n    raise URLError(err)\nurllib.error.URLError: <urlopen error [Errno 101] Network is unreachable>\n",
+    "runner_key": "web-scan-runner",
+    "parsed_result": {
+      "url": "",
+      "tool": "http_headers",
+      "headers": {
+        "oserror": "[Errno 101] Network is unreachable",
+        "urllib.error.urlerror": "<urlopen error [Errno 101] Network is unreachable>",
+        "traceback (most recent call last)": "",
+        "during handling of the above exception, another exception occurred": "",
+        "import json,os,urllib.request; u=os.environ.get(\"target\", \"\"); req=urllib.request.request(u, headers=dict([(\"user-agent\",\"enterprise-ai-qa-agent security-smoke\")])); noraise=type(\"noraise\", (urllib.request.httperrorprocessor,), dict(http_response=lambda self, request, response": "response, https_response=lambda self, request, response: response)); r=urllib.request.build_opener(NoRaise).open(req, timeout=20); headers=dict((k.lower(), v) for k, v in r.headers.items()); security=[\"strict-transport-security\",\"content-security-policy\",\"x-frame-options\",\"x-content-type-options\",\"referrer-policy\",\"permissions-policy\"]; print(json.dumps(dict(url=r.geturl(), status_code=getattr(r, \"status\", 0), headers=headers, missing_security_headers=[h for h in security if h not in headers]), ensure_ascii=False))"
+      },
+      "status_code": null,
+      "header_count": 5,
+      "missing_security_headers": [
+        "strict-transport-security",
+        "content-security-policy",
+        "x-frame-options",
+        "x-content-type-options",
+        "referrer-policy",
+        "permissions-policy"
+      ],
+      "present_security_headers": []
+    },
+    "container_name": "qa-security-runner-b78cb-d1ff255e03ef",
+    "command_profile": "http_headers_probe",
+    "semantic_success": false,
+    "execution_backend": "docker"
+  },
+  "summary": "Executed http_headers_probe with exit code 1; parsed 0 finding(s).",
+  "error_message": "exit_code=1",
+  "artifact_count": 1,
+  "created_at": "2026-10-09T22:26:32.132554",
+  "updated_at": "2026-10-09T22:26:33.754094",
+  "heartbeat_at": "2026-10-09T22:26:32.139557",
+  "started_at": "2026-10-09T22:26:32.139557",
+  "completed_at": "2026-10-09T22:26:33.754094",
+  "metadata": {
+    "project_id": "96956602-c4c5-4f68-844d-5142c50d071b",
+    "selected_agent_key": "",
+    "selected_model_key": "",
+    "tool_output_observation": {
+      "status": "failed",
+      "observed_at": "2026-10-09T22:26:33.414484",
+      "output_hash": "b3740b6e0cec005576d89a3cc678333b910fed0da2b8641d18c7c51e76cf5109",
+      "schema_version": 1
+    }
+  },
+  "artifacts": [
+    {
+      "id": "7ec65630-6d93-49cc-a80e-593769053b69",
+      "tool_job_id": "0b2cf9be-e452-42c2-84d4-401f9dba6fd7",
+      "session_id": "b78cb7bd-65dd-496d-aeb4-c282c73e4697",
+      "turn_id": "security-unreachable",
+      "trace_id": "security-evidence-unreachable",
+      "tool_key": "web-scan-runner",
+      "artifact_type": "security_tool_transcript",
+      "label": null,
+      "path": "rustfs://qa-agent/b78cb7bd-65dd-496d-aeb4-c282c73e4697/security-unreachable/web-scan-runner_20261009_222632_0a9d6181bca2/security_tool_transcript.json",
+      "created_at": "2026-10-09T22:26:33.470945",
+      "metadata": {
+        "uri": "rustfs://qa-agent/b78cb7bd-65dd-496d-aeb4-c282c73e4697/security-unreachable/web-scan-runner_20261009_222632_0a9d6181bca2/security_tool_transcript.json",
+        "bucket": "qa-agent",
+        "object_name": "b78cb7bd-65dd-496d-aeb4-c282c73e4697/security-unreachable/web-scan-runner_20261009_222632_0a9d6181bca2/security_tool_transcript.json",
+        "content_type": "application/json",
+        "storage_backend": "rustfs",
+        "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1334\\test_actual_header_findings_an0\\artifacts\\b78cb7bd-65dd-496d-aeb4-c282c73e4697\\security-unreachable\\web-scan-runner_20261009_222632_0a9d6181bca2\\security_tool_transcript.json",
+        "__storage_mode": "path_only"
+      }
+    }
+  ]
+}

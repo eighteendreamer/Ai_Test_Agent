@@ -315,7 +315,8 @@ async def test_detached_job_returns_partial_output_then_completes_and_cleans_up(
 
 
 def test_container_file_paths_cannot_escape_workdir(tmp_path: Path):
-    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
+    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path,
+        tool_jobs=ToolJobService(InMemoryToolJobStore()))
     assert service._validated_container_path("inputs/words.txt", "/work") == "/work/inputs/words.txt"
     assert service._validated_container_path("/work/results/out.json", "/work") == "/work/results/out.json"
 
@@ -328,7 +329,8 @@ def test_container_file_paths_cannot_escape_workdir(tmp_path: Path):
 def test_get_file_rejects_host_destination_outside_artifact_dir(
     tmp_path: Path,
 ):
-    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
+    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path,
+        tool_jobs=ToolJobService(InMemoryToolJobStore()))
 
     with pytest.raises(ValueError, match="inside artifact_dir"):
         asyncio.run(
@@ -344,7 +346,8 @@ def test_get_file_rejects_host_destination_outside_artifact_dir(
 def test_detached_execution_rejects_local_backend(tmp_path: Path):
     settings = _Settings()
     settings.security.security_runner_backend = "local"
-    service = SecurityExecutionEnvironmentService(settings=settings, workspace_root=tmp_path)
+    service = SecurityExecutionEnvironmentService(settings=settings, workspace_root=tmp_path,
+        tool_jobs=ToolJobService(InMemoryToolJobStore()))
     with pytest.raises(ValueError, match="requires the Docker runner"):
         asyncio.run(
             service.execute_detached(
@@ -749,7 +752,8 @@ def test_p3_callback_runtime_is_explicit_and_releases_before_settlement():
 
 
 def test_docker_localhost_targets_are_rewritten_after_authorization(tmp_path: Path):
-    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
+    service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path,
+        tool_jobs=ToolJobService(InMemoryToolJobStore()))
     command, args = service._rewrite_localhost_for_docker(
         "httpx -u http://localhost:8089 && curl http://127.0.0.1:3000/",
         ["httpx", "-u", "http://localhost:8089", "http://127.0.0.1:3000/"],

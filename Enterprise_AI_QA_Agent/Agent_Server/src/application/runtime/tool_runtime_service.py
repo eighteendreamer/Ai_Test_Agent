@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 from copy import deepcopy
 from contextlib import nullcontext
 import json
@@ -3349,6 +3350,29 @@ class ToolRuntimeService:
         transcript_path = artifact_dir / "security_tool_transcript.json"
         transcript_path.write_text(json.dumps(transcript, ensure_ascii=False, indent=2), encoding="utf-8")
 
+        # Keep bounded previews in tool output, but persist the full captured
+        # streams through the same ToolJob/RustFS artifact path as tool files.
+        stream_artifacts = []
+        for stream_name, content in (("stdout", stdout_text), ("stderr", stderr_text)):
+            stream_path = artifact_dir / f"security_tool_{stream_name}.txt"
+            payload = content.encode("utf-8")
+            stream_path.write_bytes(payload)
+            stream_artifacts.append({
+                "type": f"security_tool_{stream_name}", "label": stream_path.name,
+                "path": str(stream_path), "size_bytes": len(payload),
+                "sha256": hashlib.sha256(payload).hexdigest(),
+                "evidence_schema": "security-command-output-v1",
+            })
+        logger.info("security_runner_result_parsed", extra={
+            "session_id": context.session_id, "call_id": context.call_id,
+            "runner_key": runner_key, "profile_key": profile.profile_key,
+            "exit_code": exit_code, "timed_out": timed_out,
+            "semantic_success": success, "semantic_error": semantic_error,
+            "finding_count": len(findings),
+            "stdout_bytes": stream_artifacts[0]["size_bytes"],
+            "stderr_bytes": stream_artifacts[1]["size_bytes"],
+        })
+
         summary = (
             f"Executed {profile.profile_key} with exit code {exit_code}; parsed {len(findings)} finding(s)."
             if not timed_out
@@ -3374,6 +3398,7 @@ class ToolRuntimeService:
             "stderr": stderr_text[-4000:],
             "artifacts": [
                 {"type": "security_tool_transcript", "path": str(transcript_path)},
+                *stream_artifacts,
                 *execution_result.output_artifacts,
             ],
             "metrics": {

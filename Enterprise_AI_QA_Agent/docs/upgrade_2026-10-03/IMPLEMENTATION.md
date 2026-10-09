@@ -4968,3 +4968,11 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 分类：模板/导入已有实现且已验；普通文档模块生成/恢复已有6.97受控产品验收，默认模型业务质量、更多容量/故障、正式部署/历史迁移仍待验。录制内部回放执行器未接 Agent 工具/资源管理，不能直接加 HTTP 入口替代既有授权和执行体系；场景/步骤/别名/清洗遗漏/报告仍需查证补齐。完整默认Agent及其余P0—P5保持未完成，Step按用户决定待账号处理。依据与本轮复验/新增检查的区别见 `P1_TEMPLATE_FIXED_VERSION_APP_RESEARCH.md` 与 `p1-template-fixed-version-app-validation.json`。
 
 实际命令、范围、第一批探针名称断言错误及既有6.87分类纠正详见研究。最终原测试使用本轮构建App和独立main，1通过52.25秒；完整源码App三布局复验3通过74.24秒；未改生产代码或配置/表/依赖，保留全部旧审计原件。
+
+## 2026-10-10 Docker安全响应头与完整原始输出
+
+本轮基线 `106a1114`。既有响应头工具/解析/授权/资源体系继续复用，不新增扫描模式。真实隔离 MySQL/PG/RustFS/Redis、缓存 Kali、生产 ToolRuntime、独立 main 启动及重启验证：缺响应头4项发现、齐全0、连接失败exit1/failed/0，已有有效状态码校验生效，未增加重复校验。复现长输出在转录中被截断、重启下载缺原始前半段（1失败28.45秒），已补完整stdout/stderr工件、字节数和SHA256，并沿原统一上传/PG metadata/会话下载链路保存，原模型预览限长保留。
+
+最终真实 **1 passed in 27.78s，0 skipped**：9工件下载，完整流和PG hash/长度一致，失败stderr保存，终态读回不增加GET，另一会话下载404，3个完整ID容器已删除。9模块回归 **111 passed in 10.62s**，compileall退出0。4个旧纯路径/后端测试因简化_Settings无database失败，按既有内存任务库注入修正夹具，原断言保留；初次import与不存在测试名的命令错误全部保存，不作功能验证。详情及原件见 `P5_SECURITY_EVIDENCE_RESEARCH.md` 和 `p5-security-evidence-validation.json`。
+
+本批是现有响应头baseline与证据链实际验收，不是完整Agent或Vue报告，也不代表其他扫描器、超时/部分输出/存储故障、容量复用已验。API单进程不负责清理队列，本批只证明实际容器删除。安全完整Agent/报告、性能Agent/容量/AI流式、录制知识/场景/清洗遗漏、生产历史迁移及其余P0—P5继续未完成；Step按用户决定待账号处理。无新增配置、表、依赖或前端修改。

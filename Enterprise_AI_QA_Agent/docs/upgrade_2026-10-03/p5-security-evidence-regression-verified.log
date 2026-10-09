@@ -1,0 +1,143 @@
+.....FFF.............F.................................................. [ 64%]
+.......................................                                  [100%]
+================================== FAILURES ===================================
+_______________ test_container_file_paths_cannot_escape_workdir _______________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1336/test_container_file_paths_cann0')
+
+    def test_container_file_paths_cannot_escape_workdir(tmp_path: Path):
+>       service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_security_execution_environment_upgrade.py:318: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\application\security\execution_environment_service.py:97: in __init__
+    self._background_jobs = tool_jobs or ToolJobService(PostgresToolJobStore(self._settings))
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_tool_job_store.py:17: in __init__
+    self.effect_evidence = PostgresCaseEffectEvidence(settings)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_effect_evidence.py:15: in __init__
+    self._operations = PostgresCaseOperations(settings)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.runtime.postgres_case_operations.PostgresCaseOperations object at 0x000001F5EA581D90>
+settings = <test_security_execution_environment_upgrade._Settings object at 0x000001F5EA533FD0>
+
+    def __init__(self, settings):
+        self._settings = settings
+>       jobs = settings.database.postgres_tool_job_table
+               ^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Settings' object has no attribute 'database'
+
+src\runtime\postgres_case_operations.py:19: AttributeError
+_________ test_get_file_rejects_host_destination_outside_artifact_dir _________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1336/test_get_file_rejects_host_des0')
+
+    def test_get_file_rejects_host_destination_outside_artifact_dir(
+        tmp_path: Path,
+    ):
+>       service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_security_execution_environment_upgrade.py:331: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\application\security\execution_environment_service.py:97: in __init__
+    self._background_jobs = tool_jobs or ToolJobService(PostgresToolJobStore(self._settings))
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_tool_job_store.py:17: in __init__
+    self.effect_evidence = PostgresCaseEffectEvidence(settings)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_effect_evidence.py:15: in __init__
+    self._operations = PostgresCaseOperations(settings)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.runtime.postgres_case_operations.PostgresCaseOperations object at 0x000001F5EA4DD710>
+settings = <test_security_execution_environment_upgrade._Settings object at 0x000001F5EA4DF890>
+
+    def __init__(self, settings):
+        self._settings = settings
+>       jobs = settings.database.postgres_tool_job_table
+               ^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Settings' object has no attribute 'database'
+
+src\runtime\postgres_case_operations.py:19: AttributeError
+________________ test_detached_execution_rejects_local_backend ________________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1336/test_detached_execution_reject0')
+
+    def test_detached_execution_rejects_local_backend(tmp_path: Path):
+        settings = _Settings()
+        settings.security.security_runner_backend = "local"
+>       service = SecurityExecutionEnvironmentService(settings=settings, workspace_root=tmp_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_security_execution_environment_upgrade.py:347: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\application\security\execution_environment_service.py:97: in __init__
+    self._background_jobs = tool_jobs or ToolJobService(PostgresToolJobStore(self._settings))
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_tool_job_store.py:17: in __init__
+    self.effect_evidence = PostgresCaseEffectEvidence(settings)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_effect_evidence.py:15: in __init__
+    self._operations = PostgresCaseOperations(settings)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.runtime.postgres_case_operations.PostgresCaseOperations object at 0x000001F5EABA7BD0>
+settings = <test_security_execution_environment_upgrade._Settings object at 0x000001F5EABA7910>
+
+    def __init__(self, settings):
+        self._settings = settings
+>       jobs = settings.database.postgres_tool_job_table
+               ^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Settings' object has no attribute 'database'
+
+src\runtime\postgres_case_operations.py:19: AttributeError
+_______ test_docker_localhost_targets_are_rewritten_after_authorization _______
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1336/test_docker_localhost_targets_0')
+
+    def test_docker_localhost_targets_are_rewritten_after_authorization(tmp_path: Path):
+>       service = SecurityExecutionEnvironmentService(settings=_Settings(), workspace_root=tmp_path)
+                  ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_security_execution_environment_upgrade.py:752: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\application\security\execution_environment_service.py:97: in __init__
+    self._background_jobs = tool_jobs or ToolJobService(PostgresToolJobStore(self._settings))
+                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_tool_job_store.py:17: in __init__
+    self.effect_evidence = PostgresCaseEffectEvidence(settings)
+                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_case_effect_evidence.py:15: in __init__
+    self._operations = PostgresCaseOperations(settings)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.runtime.postgres_case_operations.PostgresCaseOperations object at 0x000001F5EAADAF50>
+settings = <test_security_execution_environment_upgrade._Settings object at 0x000001F5EAADB290>
+
+    def __init__(self, settings):
+        self._settings = settings
+>       jobs = settings.database.postgres_tool_job_table
+               ^^^^^^^^^^^^^^^^^
+E       AttributeError: '_Settings' object has no attribute 'database'
+
+src\runtime\postgres_case_operations.py:19: AttributeError
+============================== warnings summary ===============================
+..\.venv\Lib\site-packages\starlette\testclient.py:53
+  G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_security_execution_environment_upgrade.py::test_container_file_paths_cannot_escape_workdir
+FAILED tests/test_security_execution_environment_upgrade.py::test_get_file_rejects_host_destination_outside_artifact_dir
+FAILED tests/test_security_execution_environment_upgrade.py::test_detached_execution_rejects_local_backend
+FAILED tests/test_security_execution_environment_upgrade.py::test_docker_localhost_targets_are_rewritten_after_authorization
+4 failed, 107 passed, 1 warning in 11.32s
