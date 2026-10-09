@@ -3022,3 +3022,16 @@ JMeter沿原生HTTPArgument/postBodyRaw/UTF-8发送正文，已有JSR223PreProce
 失败测试遗留的三个专属RustFS对象按完整原项目/run/item/attempt/call前缀确认归属，校验下载后删除并逐项HTTP404确认；失败输出、本地原件均保留。最终与历史批次的14次实际对象下载逐项核对SHA/大小，原有8176份工件和三份受保护文件不变。审计p0-receipt-process-audit.py核对实际记录、固定上下文、敏感字段、原件及三份方案；当前清单以p0-receipt-process-validation.json为准。
 
 **分类更新：已有一次只读纠正实现，本轮补验了真实进程中断与恢复；没有新增生产修复。** 仍未验默认AI可信UI回执、默认模型质量、完整准备状态、未知业务副作用的通用只读查证、执行中计划修订、其他模式及完整App。普通生成长文/默认质量、人工DeepSeek与完整清洗遗漏/网络关联/场景别名、完整Agent API鉴权续期、Docker Agent/App/容量流式及实际安全、更多需求业务/部署闭环、全阶段HTTP与生产历史迁移/旧Worker原件继续未完成。Step按用户决定待账号处理后验收，完整P0—P5目标保持active。
+### 6.99 API 写入未知结果禁止自动重试〔2026-10-10〕
+
+依据 [P2_UNKNOWN_WRITE_RECONCILIATION_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P2_UNKNOWN_WRITE_RECONCILIATION_RESEARCH.md) 查阅 API 执行器、直接/子 Agent 协调器、正式用例逻辑操作协议、效果证据协议及接口测试课程。旧 API 执行器把写请求超时当普通失败；两个协调器允许超时/连接错误或 5xx 自动重试。真实本地 HTTP 服务在客户端超时前已收到 POST，旧实现实际发送两次，证明会重复业务副作用。
+
+新增 ApiTestTask.request_outcome：写方法的传输异常和 5xx 响应统一记录 unknown，仍保存实际 HTTP 观察（若有）；普通成功为 completed，读请求传输失败为 known_failed。直接协调器和子 Agent 协调器遇到 unknown 均停止自动重试。报告任务摘要/失败证据增加 request_outcome 与 reconciliation_required，评估归类为 unknown_side_effect/critical；未知不能回写成功，也不能凭空生成查询接口。后续只读查证必须来自当前项目固定用例/接口契约明确声明的读操作或人工补充可靠依据。
+
+| 实际验证 | 结果 |
+| --- | --- |
+| `p2-unknown-write-verified` | 真实 HTTP 写入超时只发送 1 次，服务端已收到请求；写入 500 只发送 1 次；两者均为 unknown、要求只读查证。 |
+| 受影响回归 | 23 passed、3 skipped（默认外部模型项），10.16 秒；覆盖执行器、直接协调器、子 Agent 协调器、报告及评估。 |
+| 编译 | 本批生产文件与测试 compileall 退出 0；仅作附加检查。 |
+
+本批没有新增依赖、配置、数据库表/迁移或前端契约；配置仍使用 MySQL，业务状态使用 PostgreSQL，原件/证据使用 RustFS。Step 默认模型仍按用户决定暂缓。该修复只解决 API 写入未知结果的重复发送根因和可见性；通用只读查证任务的业务契约、默认 Agent 自主选择、完整 App、运行中计划修订、其他模式及其余 P0—P5 仍未完成。

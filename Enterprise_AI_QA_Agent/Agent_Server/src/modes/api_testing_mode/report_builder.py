@@ -202,6 +202,8 @@ class ReportBuilder:
             "check_count": len(task.check_results),
             "checks_passed": sum(1 for c in task.check_results if c.get("passed")),
             "checks_failed": sum(1 for c in task.check_results if not c.get("passed")),
+            "request_outcome": task.request_outcome,
+            "reconciliation_required": task.request_outcome == "unknown",
             "error": task.last_error or None,
             "checks": task.check_results,
         }
@@ -264,6 +266,8 @@ class ReportBuilder:
             },
             "assertions": task.check_results,
             "error": task.last_error,
+            "request_outcome": task.request_outcome,
+            "reconciliation_required": task.request_outcome == "unknown",
             "duration_ms": task.duration_ms,
             "attempts": task.attempts,
         }

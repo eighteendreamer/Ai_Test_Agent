@@ -105,6 +105,8 @@ class ApiTestCoordinator:
 
     def _is_retryable(self, task: ApiTestTask) -> bool:
         """Determine if a failed task should be retried."""
+        if task.request_outcome == "unknown":
+            return False
         error = (task.last_error or "").lower()
         # Retry on server errors and timeouts.
         if task.response_status and task.response_status >= 500:

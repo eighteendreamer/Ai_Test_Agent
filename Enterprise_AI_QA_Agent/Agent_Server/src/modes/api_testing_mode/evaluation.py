@@ -190,6 +190,8 @@ class ApiTestingEvaluationPolicy:
 
     def _categorize_failure(self, task: ApiTestTask) -> tuple[str, str, bool]:
         """Return (category, severity, is_transient)."""
+        if task.request_outcome == "unknown":
+            return "unknown_side_effect", SEVERITY_CRITICAL, False
         status = task.response_status or 0
         error = (task.last_error or "").lower()
 

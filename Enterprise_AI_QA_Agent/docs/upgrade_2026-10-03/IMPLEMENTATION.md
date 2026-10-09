@@ -4883,3 +4883,16 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 项目根执行.venv\Scripts\python.exe -X utf8 docs/upgrade_2026-10-03/p0-receipt-process-failure-cleanup.py：限定recovery失败的实际PG原件里三个完整项目/run/item/attempt/call对象键，实际SHA/大小下载后删除并逐项404确认；failure-cleanup.log/summary/native文件保留。
 
 审计.venv\Scripts\python.exe -X utf8 docs/upgrade_2026-10-03/p0-receipt-process-audit.py --sync，确认外部副本仍HEAD/新计划后同步，再不带--sync复核。核对14个实际下载原件、固定context/模型预算/传输、原attempt与新恢复链、真实等待和清理、终态HTTP/副作用0增量、旧8176工件及三受保护文件。相关.gitattributes保存原字节；只提交本轮文件，不推送/PR。已实现的回执恢复补了实际kill验收，默认AI/UI、通用未知业务效果只读查证和完整P0—P5仍未完成，详见PLAN6.98。
+## 2026-10-10 API 写入未知结果禁止自动重试
+
+依据 `P2_UNKNOWN_WRITE_RECONCILIATION_RESEARCH.md` 查阅现有 API 执行器、两个协调器、正式用例逻辑操作/效果证据协议和本地接口测试课程。真实受控 HTTP 服务先登记 POST，再延迟响应超过客户端超时；旧逻辑在 `max_retries=1` 下产生两次 POST。收到 500 的写请求也不能证明事务回滚，旧规则同样会重试。
+
+修改 `ApiTestTask` 增加 `request_outcome`。写方法的传输异常或 5xx 响应标记 `unknown`，继续保存网络观察；读方法传输失败标记 `known_failed`，成功/恢复回放标记 `completed`。直接 `ApiTestCoordinator` 和 `ApiSubagentCoordinator` 在 unknown 时不再自动重试。`ReportBuilder` 输出 `request_outcome` 和 `reconciliation_required`，评估归类 `unknown_side_effect` 且为 critical。没有发明通用副作用查询接口；未知状态后续必须由项目固定读用例、接口契约或人工评审提供只读依据。
+
+实际命令（Agent_Server 内）：
+
+- `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_unknown_write_recovery.py tests/test_api_task_executor_recovery.py tests/test_api_http_origin.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-unknown-write-verified.xml`：**23 passed、3 skipped，10.16 秒**；默认外部模型项仍按用户决定跳过。
+- 证据写入 `p2-unknown-write-verified/`，双流日志/XML及两场景任务JSON保留。
+- 未新增依赖、配置、表/迁移或前端契约；Step 默认模型没有调用。
+
+本批只完成写入未知结果的重复发送防护和结构化可见性，未完成通用业务只读查证契约、默认 Agent 自主选择、完整 App、运行中计划修订、其他模式、人工录制/知识闭环、性能容量/安全及完整 P0—P5。

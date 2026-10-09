@@ -12,6 +12,7 @@ import httpx
 
 from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.modes.api_testing_mode.contracts import TASK_COMPLETED, TASK_FAILED
+from src.modes.api_testing_mode.contracts import WRITE_METHODS
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.http_observation import (
     HTTP_OBSERVATION_KEY, HttpResponseObservation, response_observation,
@@ -42,6 +43,7 @@ class ApiTaskExecutor:
         # A fresh failed attempt must not retain a previous response or its origin.
         task.response_status, task.response_body = None, None
         task.response_headers, task.check_results = {}, []
+        task.request_outcome = "not_started"
         task.duration_ms, task.last_error, task.completed_at = 0.0, "", ""
         task.started_at = datetime.now(timezone.utc).isoformat()
         task.attempts += 1
@@ -79,24 +81,34 @@ class ApiTaskExecutor:
             task.response_status = response.status_code
             task.response_headers = dict(response.headers)
             task.response_body = self._parse_response_body(response)
+            task.request_outcome = self._response_outcome(task)
             task.execution_checkpoint[HTTP_OBSERVATION_KEY] = response_observation(response).model_dump(mode="json")
             logger.info("api_task_response_origin_observed", extra={"task_id": task.task_id,
                 "response_status": response.status_code, "redirect_count": len(response.history)})
+            if task.request_outcome == "unknown":
+                logger.warning("api_task_response_outcome_unknown", extra={
+                    "task_id": task.task_id, "method": task.method.upper(),
+                    "response_status": response.status_code,
+                    "reason": "write_request_server_error",
+                })
         except httpx.TimeoutException:
             task.status = TASK_FAILED
-            task.last_error = f"Request timed out after {task.timeout_seconds}s"
+            task.request_outcome = self._transport_outcome(task)
+            task.last_error = self._transport_error(task, f"Request timed out after {task.timeout_seconds}s")
             task.duration_ms = (time.perf_counter() - start_time) * 1000.0
             task.completed_at = datetime.now(timezone.utc).isoformat()
             return task
         except httpx.HTTPError as exc:
             task.status = TASK_FAILED
-            task.last_error = f"HTTP error: {exc}"
+            task.request_outcome = self._transport_outcome(task)
+            task.last_error = self._transport_error(task, f"HTTP error: {exc}")
             task.duration_ms = (time.perf_counter() - start_time) * 1000.0
             task.completed_at = datetime.now(timezone.utc).isoformat()
             return task
         except Exception as exc:
             task.status = TASK_FAILED
-            task.last_error = f"Unexpected error: {exc}"
+            task.request_outcome = self._transport_outcome(task)
+            task.last_error = self._transport_error(task, f"Unexpected error: {exc}")
             task.duration_ms = (time.perf_counter() - start_time) * 1000.0
             task.completed_at = datetime.now(timezone.utc).isoformat()
             return task
@@ -117,6 +129,28 @@ class ApiTaskExecutor:
         task.completed_at = datetime.now(timezone.utc).isoformat()
         return task
 
+    @staticmethod
+    def _transport_outcome(task: ApiTestTask) -> str:
+        return "unknown" if task.method.upper() in WRITE_METHODS else "known_failed"
+
+    @staticmethod
+    def _response_outcome(task: ApiTestTask) -> str:
+        # A server error proves that a response was observed, but does not
+        # prove that a write was rolled back.  Replaying it could duplicate a
+        # side effect without an explicit idempotency contract.
+        return "unknown" if task.method.upper() in WRITE_METHODS and (task.response_status or 0) >= 500 else "completed"
+
+    @classmethod
+    def _transport_error(cls, task: ApiTestTask, message: str) -> str:
+        if cls._transport_outcome(task) == "unknown":
+            logger.warning("api_task_request_outcome_unknown", extra={
+                "task_id": task.task_id, "method": task.method.upper(),
+                "path": task.path or task.full_url,
+                "reason": "write_request_transport_failure",
+            })
+            return message + "; write request outcome is unknown and requires read-only reconciliation before retry"
+        return message
+
     def _restore_completed_request(self, task: ApiTestTask) -> bool:
         """Reuse only a checkpoint with complete, matching request evidence."""
         checkpoint = task.execution_checkpoint
@@ -132,6 +166,7 @@ class ApiTaskExecutor:
         if "response_body" not in completed or not isinstance(completed.get("check_results"), list):
             return False
         task.status = TASK_COMPLETED
+        task.request_outcome = "completed"
         task.response_status = completed["response_status"]
         task.response_headers = dict(completed.get("response_headers") or {})
         task.response_body = deepcopy(completed["response_body"])

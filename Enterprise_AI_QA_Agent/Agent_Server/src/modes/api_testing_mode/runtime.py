@@ -810,6 +810,7 @@ class ApiTestingModeRuntime:
                 phase=state.phase,
                 attempts=task.attempts,
                 response_status=task.response_status,
+                request_outcome=task.request_outcome,
                 duration_ms=task.duration_ms,
                 worker_session_id=task.worker_session_id,
                 summary=summary or task.worker_summary,

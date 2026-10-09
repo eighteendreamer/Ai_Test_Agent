@@ -136,6 +136,8 @@ class ApiSubagentCoordinator:
                 self._pool.resolve_blocked()
 
     def _is_retryable(self, task: ApiTestTask) -> bool:
+        if task.request_outcome == "unknown":
+            return False
         error = (task.last_error or "").lower()
         if error.startswith(("worker_timeout:", "worker_unsettled:")):
             return False

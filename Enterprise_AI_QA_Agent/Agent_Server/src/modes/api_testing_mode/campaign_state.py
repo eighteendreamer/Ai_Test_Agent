@@ -179,6 +179,11 @@ class ApiTestTask(BaseModel):
     response_headers: dict[str, str] = Field(default_factory=dict)
     response_body: Any = None
     check_results: list[dict[str, Any]] = Field(default_factory=list)
+    # Transport failures on a write request may happen after the server has
+    # applied the mutation.  Keep this fact separate from the task verdict so
+    # retry policy and reports cannot mistake an unknown outcome for a normal
+    # transient failure.
+    request_outcome: str = "not_started"  # not_started / completed / known_failed / unknown
     duration_ms: float = 0.0
     worker_session_id: str = ""
     worker_status: str = ""
@@ -260,6 +265,7 @@ class ApiTaskEventRecord(BaseModel):
     phase: str = ""
     attempts: int = 0
     response_status: int | None = None
+    request_outcome: str = "not_started"
     duration_ms: float = 0.0
     worker_session_id: str = ""
     summary: str = ""
