@@ -5,6 +5,7 @@ and parses JMeter statistics.json into unified RawMetrics.
 """
 from __future__ import annotations
 
+import base64
 import json
 import re
 from typing import Any
@@ -230,17 +231,31 @@ class JMeterEngineAdapter:
         source_bindings = [b for b in bindings if b["source"] == index]
         sampler_name = _esc_xml(target.name or f"Sampler-{index}")
         lines.append(f'{indent}<HTTPSamplerProxy guiclass="HttpTestSampleGui" testclass="HTTPSamplerProxy" testname="{sampler_name}" enabled="true">')
-        lines.append(f'{indent}  <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>')
+        if target.body_template is None:
+            lines.append(f'{indent}  <elementProp name="HTTPsampler.Arguments" elementType="Arguments" guiclass="HTTPArgumentsPanel" testclass="Arguments" testname="User Defined Variables" enabled="true"><collectionProp name="Arguments.arguments"/></elementProp>')
+        else:
+            lines.append(f'{indent}  <elementProp name="HTTPsampler.Arguments" elementType="Arguments"><collectionProp name="Arguments.arguments"><elementProp name="" elementType="HTTPArgument"><boolProp name="HTTPArgument.always_encode">false</boolProp><boolProp name="HTTPArgument.use_equals">false</boolProp><stringProp name="Argument.name"></stringProp><stringProp name="Argument.value"></stringProp><stringProp name="Argument.metadata"></stringProp></elementProp></collectionProp></elementProp>')
+            lines.append(f'{indent}  <boolProp name="HTTPSampler.postBodyRaw">true</boolProp>')
         lines.append(f'{indent}  <stringProp name="HTTPSampler.domain">{_esc_xml(host)}</stringProp>')
         lines.append(f'{indent}  <stringProp name="HTTPSampler.port">{port}</stringProp>')
         lines.append(f'{indent}  <stringProp name="HTTPSampler.protocol">{_esc_xml(protocol)}</stringProp>')
-        lines.append(f'{indent}  <stringProp name="HTTPSampler.contentEncoding"></stringProp>')
+        encoding = "UTF-8" if target.body_template is not None else ""
+        lines.append(f'{indent}  <stringProp name="HTTPSampler.contentEncoding">{encoding}</stringProp>')
         lines.append(f'{indent}  <stringProp name="HTTPSampler.path">{_esc_xml(path)}</stringProp>')
         lines.append(f'{indent}  <stringProp name="HTTPSampler.method">{_esc_xml(target.method.upper())}</stringProp>')
         lines.append(f'{indent}  <boolProp name="HTTPSampler.follow_redirects">true</boolProp><boolProp name="HTTPSampler.auto_redirects">false</boolProp><boolProp name="HTTPSampler.use_keepalive">true</boolProp><boolProp name="HTTPSampler.DO_MULTIPART_POST">false</boolProp>')
         lines.append(f'{indent}  <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>')
         lines.append(f'{indent}</HTTPSamplerProxy>')
         lines.append(f'{indent}<hashTree>')
+        if target.body_template is not None:
+            body = target.body_template if isinstance(target.body_template, str) else json.dumps(target.body_template, ensure_ascii=False)
+            encoded = base64.b64encode(body.encode("utf-8")).decode("ascii")
+            # Standard JSR223 + HTTPArgument APIs set data after JMeter's tree
+            # compilation, preserving literal functions and XML control bytes.
+            # Base64 transports data only; it is not evaluated as Groovy code.
+            self._append_script_element(lines, indent, "JSR223PreProcessor", "Set literal request body",
+                "sampler.getArguments().getArgument(0).setValue(new String("
+                f"java.util.Base64.getDecoder().decode('{encoded}'), java.nio.charset.StandardCharsets.UTF_8))")
         if index == 0 and bindings:
             # Thread-local iteration identity is saved through standard JTL
             # sample_variables; no synthetic sampler distorts request metrics.

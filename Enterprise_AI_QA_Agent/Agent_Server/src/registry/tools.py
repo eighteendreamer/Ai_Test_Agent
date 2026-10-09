@@ -1478,7 +1478,7 @@ class ToolRegistry:
                             "sla_p99_ms": {"type": "number", "description": "SLA P99 延迟阈值 (ms)。"},
                             "sla_error_rate": {"type": "number", "description": "SLA 错误率阈值。"},
                             "headers": {"type": "object", "description": "自定义请求头。"},
-                            "body_template": {"description": "请求体模板。"},
+                            "body_template": {"description": "请求正文：对象按JSON发送，字符串按UTF-8原文发送（${...}不执行代码或动态替换）。Content-Type通过headers按接口文档提供。"},
                             "confirm_target": {"type": "boolean", "description": "用户已确认目标。"},
                             "worker_action": {"type": "string", "description": "Worker 模式动作。"},
                             "arguments": {"type": "object", "description": "透传参数。"},

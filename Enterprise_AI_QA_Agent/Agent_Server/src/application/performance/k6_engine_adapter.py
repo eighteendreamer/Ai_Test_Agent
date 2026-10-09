@@ -336,7 +336,9 @@ class K6EngineAdapter:
         if target.body_template is None:
             return "null"
         if isinstance(target.body_template, str):
-            return f"`{target.body_template}`"
+            # Request data must not become template-literal JavaScript. This
+            # preserves backslashes, backticks and literal ${...} content.
+            return json.dumps(target.body_template)
         return f"JSON.stringify({json.dumps(target.body_template)})"
 
     @staticmethod

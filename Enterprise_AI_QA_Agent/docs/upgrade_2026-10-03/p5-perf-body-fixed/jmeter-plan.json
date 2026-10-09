@@ -1,0 +1,73 @@
+{
+  "plan_id": "",
+  "title": "",
+  "engine": "jmeter",
+  "run_intent": "regression",
+  "targets": [
+    {
+      "name": "json",
+      "method": "POST",
+      "url": "http://127.0.0.1:62089/json",
+      "headers": {
+        "Content-Type": "application/json"
+      },
+      "body_template": {
+        "enabled": false,
+        "count": 0,
+        "nullable": null,
+        "nested": [
+          "中文",
+          {
+            "literal": "${__groovy(1+1)}",
+            "extra": "keep"
+          }
+        ]
+      }
+    },
+    {
+      "name": "text",
+      "method": "POST",
+      "url": "http://127.0.0.1:62089/text",
+      "headers": {
+        "Content-Type": "text/plain; charset=utf-8"
+      },
+      "body_template": "中文 ${1+1}\\path\nline"
+    }
+  ],
+  "workload": {
+    "model": "open",
+    "mode": "ramping_arrival_rate",
+    "target_rate_rps": null,
+    "ramp_stages": [],
+    "virtual_users": 1,
+    "hold_seconds": 2,
+    "think_time_ms": 25
+  },
+  "smoke": {
+    "vus": 1,
+    "iterations": 3,
+    "expect_status": [
+      200
+    ],
+    "expect_extract": []
+  },
+  "data_params": [],
+  "correlations": [],
+  "assertions": [],
+  "sla": {
+    "p95_ms": null,
+    "p99_ms": 10000.0,
+    "error_rate": 0.01,
+    "min_tps": null
+  },
+  "baseline_ref": null,
+  "topology": {
+    "backend": "auto",
+    "injector_count": 0
+  },
+  "limits": {
+    "max_vus": 2000,
+    "max_rate_rps": 1000,
+    "max_duration_seconds": 1800
+  }
+}

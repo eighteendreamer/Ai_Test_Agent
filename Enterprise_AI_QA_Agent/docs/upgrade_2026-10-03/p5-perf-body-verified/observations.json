@@ -1,0 +1,598 @@
+[
+  {
+    "engine": "k6",
+    "passed": true,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/json",
+        "method": "POST",
+        "content_type": "application/json",
+        "body_base64": "eyJlbmFibGVkIjpmYWxzZSwiY291bnQiOjAsIm51bGxhYmxlIjpudWxsLCJuZXN0ZWQiOlsi5Lit5paHIix7ImxpdGVyYWwiOiIke19fZ3Jvb3Z5KDErMSl9IiwiZXh0cmEiOiJrZWVwIn1dfQ==",
+        "body_sha256": "6dcd1c89d3ee529fca74cda470e82a1e24b3325d906515c64ec1ca6c757de2bb",
+        "bytes": 109,
+        "actual": {
+          "enabled": false,
+          "count": 0,
+          "nullable": null,
+          "nested": [
+            "中文",
+            {
+              "literal": "${__groovy(1+1)}",
+              "extra": "keep"
+            }
+          ]
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/text",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHICR7MSsxfVxwYXRoCmxpbmU=",
+        "body_sha256": "90b96aec08998590f5a9aa214673b48d6d73445a9f14d451bb0aaca83dc180c5",
+        "bytes": 23,
+        "actual": "中文 ${1+1}\\path\nline",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/literal",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHIGAgJHsxKzF9ICR7X19ncm9vdnkoMSsxKX0gXHBhdGgNCgkAZW5k8J+YgA==",
+        "body_sha256": "987a30de6cbd2d9795b2868d12bf6878ad628500c2b5de9e61069846609b009e",
+        "bytes": 49,
+        "actual": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/patch",
+        "method": "PATCH",
+        "content_type": "application/json",
+        "body_base64": "eyJ1bmtub3duIjp7Iml0ZW1zIjpbZmFsc2UsMCxudWxsLCLwn5iAXHJcbiJdfX0=",
+        "body_sha256": "a1e4a32c108214845e7179ed524f151928bea2b90dbc30209132505f12ca880f",
+        "bytes": 47,
+        "actual": {
+          "unknown": {
+            "items": [
+              false,
+              0,
+              null,
+              "😀\r\n"
+            ]
+          }
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/empty",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/none",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/dependent",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5q2j5paH5LiO5b2T6L2u5L6d6LWW5ZCM5pe25a2Y5ZyoICR7MSsxfQ==",
+        "body_sha256": "1a255d4c3318cfd7da575cf8baee6c9c34b21374ffcfc88f5c755f918b43cfb3",
+        "bytes": 40,
+        "actual": "正文与当轮依赖同时存在 ${1+1}",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/json",
+        "method": "POST",
+        "content_type": "application/json",
+        "body_base64": "eyJlbmFibGVkIjpmYWxzZSwiY291bnQiOjAsIm51bGxhYmxlIjpudWxsLCJuZXN0ZWQiOlsi5Lit5paHIix7ImxpdGVyYWwiOiIke19fZ3Jvb3Z5KDErMSl9IiwiZXh0cmEiOiJrZWVwIn1dfQ==",
+        "body_sha256": "6dcd1c89d3ee529fca74cda470e82a1e24b3325d906515c64ec1ca6c757de2bb",
+        "bytes": 109,
+        "actual": {
+          "enabled": false,
+          "count": 0,
+          "nullable": null,
+          "nested": [
+            "中文",
+            {
+              "literal": "${__groovy(1+1)}",
+              "extra": "keep"
+            }
+          ]
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/text",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHICR7MSsxfVxwYXRoCmxpbmU=",
+        "body_sha256": "90b96aec08998590f5a9aa214673b48d6d73445a9f14d451bb0aaca83dc180c5",
+        "bytes": 23,
+        "actual": "中文 ${1+1}\\path\nline",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/literal",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHIGAgJHsxKzF9ICR7X19ncm9vdnkoMSsxKX0gXHBhdGgNCgkAZW5k8J+YgA==",
+        "body_sha256": "987a30de6cbd2d9795b2868d12bf6878ad628500c2b5de9e61069846609b009e",
+        "bytes": 49,
+        "actual": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/patch",
+        "method": "PATCH",
+        "content_type": "application/json",
+        "body_base64": "eyJ1bmtub3duIjp7Iml0ZW1zIjpbZmFsc2UsMCxudWxsLCLwn5iAXHJcbiJdfX0=",
+        "body_sha256": "a1e4a32c108214845e7179ed524f151928bea2b90dbc30209132505f12ca880f",
+        "bytes": 47,
+        "actual": {
+          "unknown": {
+            "items": [
+              false,
+              0,
+              null,
+              "😀\r\n"
+            ]
+          }
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/empty",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/none",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/dependent",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5q2j5paH5LiO5b2T6L2u5L6d6LWW5ZCM5pe25a2Y5ZyoICR7MSsxfQ==",
+        "body_sha256": "1a255d4c3318cfd7da575cf8baee6c9c34b21374ffcfc88f5c755f918b43cfb3",
+        "bytes": 40,
+        "actual": "正文与当轮依赖同时存在 ${1+1}",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/json",
+        "method": "POST",
+        "content_type": "application/json",
+        "body_base64": "eyJlbmFibGVkIjpmYWxzZSwiY291bnQiOjAsIm51bGxhYmxlIjpudWxsLCJuZXN0ZWQiOlsi5Lit5paHIix7ImxpdGVyYWwiOiIke19fZ3Jvb3Z5KDErMSl9IiwiZXh0cmEiOiJrZWVwIn1dfQ==",
+        "body_sha256": "6dcd1c89d3ee529fca74cda470e82a1e24b3325d906515c64ec1ca6c757de2bb",
+        "bytes": 109,
+        "actual": {
+          "enabled": false,
+          "count": 0,
+          "nullable": null,
+          "nested": [
+            "中文",
+            {
+              "literal": "${__groovy(1+1)}",
+              "extra": "keep"
+            }
+          ]
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/text",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHICR7MSsxfVxwYXRoCmxpbmU=",
+        "body_sha256": "90b96aec08998590f5a9aa214673b48d6d73445a9f14d451bb0aaca83dc180c5",
+        "bytes": 23,
+        "actual": "中文 ${1+1}\\path\nline",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/literal",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHIGAgJHsxKzF9ICR7X19ncm9vdnkoMSsxKX0gXHBhdGgNCgkAZW5k8J+YgA==",
+        "body_sha256": "987a30de6cbd2d9795b2868d12bf6878ad628500c2b5de9e61069846609b009e",
+        "bytes": 49,
+        "actual": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/patch",
+        "method": "PATCH",
+        "content_type": "application/json",
+        "body_base64": "eyJ1bmtub3duIjp7Iml0ZW1zIjpbZmFsc2UsMCxudWxsLCLwn5iAXHJcbiJdfX0=",
+        "body_sha256": "a1e4a32c108214845e7179ed524f151928bea2b90dbc30209132505f12ca880f",
+        "bytes": 47,
+        "actual": {
+          "unknown": {
+            "items": [
+              false,
+              0,
+              null,
+              "😀\r\n"
+            ]
+          }
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/empty",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/none",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/dependent",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5q2j5paH5LiO5b2T6L2u5L6d6LWW5ZCM5pe25a2Y5ZyoICR7MSsxfQ==",
+        "body_sha256": "1a255d4c3318cfd7da575cf8baee6c9c34b21374ffcfc88f5c755f918b43cfb3",
+        "bytes": 40,
+        "actual": "正文与当轮依赖同时存在 ${1+1}",
+        "matched": true,
+        "status": 200
+      }
+    ]
+  },
+  {
+    "engine": "jmeter",
+    "passed": true,
+    "exit_code": 0,
+    "events": [
+      {
+        "path": "/json",
+        "method": "POST",
+        "content_type": "application/json",
+        "body_base64": "eyJlbmFibGVkIjogZmFsc2UsICJjb3VudCI6IDAsICJudWxsYWJsZSI6IG51bGwsICJuZXN0ZWQiOiBbIuS4reaWhyIsIHsibGl0ZXJhbCI6ICIke19fZ3Jvb3Z5KDErMSl9IiwgImV4dHJhIjogImtlZXAifV19",
+        "body_sha256": "e94458a7fb8c8b630aedd1927155a421ffaa0539dbe5d6305b3a9af8c9cffb28",
+        "bytes": 120,
+        "actual": {
+          "enabled": false,
+          "count": 0,
+          "nullable": null,
+          "nested": [
+            "中文",
+            {
+              "literal": "${__groovy(1+1)}",
+              "extra": "keep"
+            }
+          ]
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/text",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHICR7MSsxfVxwYXRoCmxpbmU=",
+        "body_sha256": "90b96aec08998590f5a9aa214673b48d6d73445a9f14d451bb0aaca83dc180c5",
+        "bytes": 23,
+        "actual": "中文 ${1+1}\\path\nline",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/literal",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHIGAgJHsxKzF9ICR7X19ncm9vdnkoMSsxKX0gXHBhdGgNCgkAZW5k8J+YgA==",
+        "body_sha256": "987a30de6cbd2d9795b2868d12bf6878ad628500c2b5de9e61069846609b009e",
+        "bytes": 49,
+        "actual": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/patch",
+        "method": "PATCH",
+        "content_type": "application/json",
+        "body_base64": "eyJ1bmtub3duIjogeyJpdGVtcyI6IFtmYWxzZSwgMCwgbnVsbCwgIvCfmIBcclxuIl19fQ==",
+        "body_sha256": "a4acc3fd7286844b7d66e7d9f7f174c4fb9362c727207d9f021a4dfd1874697c",
+        "bytes": 52,
+        "actual": {
+          "unknown": {
+            "items": [
+              false,
+              0,
+              null,
+              "😀\r\n"
+            ]
+          }
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/empty",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/none",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/dependent",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5q2j5paH5LiO5b2T6L2u5L6d6LWW5ZCM5pe25a2Y5ZyoICR7MSsxfQ==",
+        "body_sha256": "1a255d4c3318cfd7da575cf8baee6c9c34b21374ffcfc88f5c755f918b43cfb3",
+        "bytes": 40,
+        "actual": "正文与当轮依赖同时存在 ${1+1}",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/json",
+        "method": "POST",
+        "content_type": "application/json",
+        "body_base64": "eyJlbmFibGVkIjogZmFsc2UsICJjb3VudCI6IDAsICJudWxsYWJsZSI6IG51bGwsICJuZXN0ZWQiOiBbIuS4reaWhyIsIHsibGl0ZXJhbCI6ICIke19fZ3Jvb3Z5KDErMSl9IiwgImV4dHJhIjogImtlZXAifV19",
+        "body_sha256": "e94458a7fb8c8b630aedd1927155a421ffaa0539dbe5d6305b3a9af8c9cffb28",
+        "bytes": 120,
+        "actual": {
+          "enabled": false,
+          "count": 0,
+          "nullable": null,
+          "nested": [
+            "中文",
+            {
+              "literal": "${__groovy(1+1)}",
+              "extra": "keep"
+            }
+          ]
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/text",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHICR7MSsxfVxwYXRoCmxpbmU=",
+        "body_sha256": "90b96aec08998590f5a9aa214673b48d6d73445a9f14d451bb0aaca83dc180c5",
+        "bytes": 23,
+        "actual": "中文 ${1+1}\\path\nline",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/literal",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHIGAgJHsxKzF9ICR7X19ncm9vdnkoMSsxKX0gXHBhdGgNCgkAZW5k8J+YgA==",
+        "body_sha256": "987a30de6cbd2d9795b2868d12bf6878ad628500c2b5de9e61069846609b009e",
+        "bytes": 49,
+        "actual": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/patch",
+        "method": "PATCH",
+        "content_type": "application/json",
+        "body_base64": "eyJ1bmtub3duIjogeyJpdGVtcyI6IFtmYWxzZSwgMCwgbnVsbCwgIvCfmIBcclxuIl19fQ==",
+        "body_sha256": "a4acc3fd7286844b7d66e7d9f7f174c4fb9362c727207d9f021a4dfd1874697c",
+        "bytes": 52,
+        "actual": {
+          "unknown": {
+            "items": [
+              false,
+              0,
+              null,
+              "😀\r\n"
+            ]
+          }
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/empty",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/none",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/dependent",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5q2j5paH5LiO5b2T6L2u5L6d6LWW5ZCM5pe25a2Y5ZyoICR7MSsxfQ==",
+        "body_sha256": "1a255d4c3318cfd7da575cf8baee6c9c34b21374ffcfc88f5c755f918b43cfb3",
+        "bytes": 40,
+        "actual": "正文与当轮依赖同时存在 ${1+1}",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/json",
+        "method": "POST",
+        "content_type": "application/json",
+        "body_base64": "eyJlbmFibGVkIjogZmFsc2UsICJjb3VudCI6IDAsICJudWxsYWJsZSI6IG51bGwsICJuZXN0ZWQiOiBbIuS4reaWhyIsIHsibGl0ZXJhbCI6ICIke19fZ3Jvb3Z5KDErMSl9IiwgImV4dHJhIjogImtlZXAifV19",
+        "body_sha256": "e94458a7fb8c8b630aedd1927155a421ffaa0539dbe5d6305b3a9af8c9cffb28",
+        "bytes": 120,
+        "actual": {
+          "enabled": false,
+          "count": 0,
+          "nullable": null,
+          "nested": [
+            "中文",
+            {
+              "literal": "${__groovy(1+1)}",
+              "extra": "keep"
+            }
+          ]
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/text",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHICR7MSsxfVxwYXRoCmxpbmU=",
+        "body_sha256": "90b96aec08998590f5a9aa214673b48d6d73445a9f14d451bb0aaca83dc180c5",
+        "bytes": 23,
+        "actual": "中文 ${1+1}\\path\nline",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/literal",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5Lit5paHIGAgJHsxKzF9ICR7X19ncm9vdnkoMSsxKX0gXHBhdGgNCgkAZW5k8J+YgA==",
+        "body_sha256": "987a30de6cbd2d9795b2868d12bf6878ad628500c2b5de9e61069846609b009e",
+        "bytes": 49,
+        "actual": "中文 ` ${1+1} ${__groovy(1+1)} \\path\r\n\t\u0000end😀",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/patch",
+        "method": "PATCH",
+        "content_type": "application/json",
+        "body_base64": "eyJ1bmtub3duIjogeyJpdGVtcyI6IFtmYWxzZSwgMCwgbnVsbCwgIvCfmIBcclxuIl19fQ==",
+        "body_sha256": "a4acc3fd7286844b7d66e7d9f7f174c4fb9362c727207d9f021a4dfd1874697c",
+        "bytes": 52,
+        "actual": {
+          "unknown": {
+            "items": [
+              false,
+              0,
+              null,
+              "😀\r\n"
+            ]
+          }
+        },
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/empty",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/none",
+        "method": "PUT",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "",
+        "body_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "bytes": 0,
+        "actual": "",
+        "matched": true,
+        "status": 200
+      },
+      {
+        "path": "/dependent",
+        "method": "POST",
+        "content_type": "text/plain; charset=utf-8",
+        "body_base64": "5q2j5paH5LiO5b2T6L2u5L6d6LWW5ZCM5pe25a2Y5ZyoICR7MSsxfQ==",
+        "body_sha256": "1a255d4c3318cfd7da575cf8baee6c9c34b21374ffcfc88f5c755f918b43cfb3",
+        "bytes": 40,
+        "actual": "正文与当轮依赖同时存在 ${1+1}",
+        "matched": true,
+        "status": 200
+      }
+    ]
+  }
+]

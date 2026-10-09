@@ -1,0 +1,107 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________________ test_actual_request_body_bytes_and_reports __________________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1277/test_actual_request_body_bytes0')
+
+    async def test_actual_request_body_bytes_and_reports(tmp_path):
+        evidence = Path(os.getenv("QA_PERF_BODY_DIR", str(tmp_path / "evidence")))
+        evidence.mkdir(parents=True, exist_ok=True)
+        target = BodyTarget()
+        port = target.start()
+        commands, observations = [], []
+        docker = None
+    
+        class Docker(DockerResourceManager):
+            async def _command(self, args, *, timeout):
+                result = await super()._command(args, timeout=timeout)
+                commands.append({"args": args, "exit_code": result[0], "stdout": result[1], "stderr": result[2]})
+                write_json(evidence / "docker-commands.json", commands)
+                return result
+    
+        class Runner(PerfRunnerService):
+            variant = ""
+            last = None
+    
+            async def _run_in_docker(self, cmd, script, name, timeout):
+                self.last = await super()._run_in_docker(cmd, script, name, timeout)
+                write_json(evidence / (self.variant + "-execution.json"), asdict(self.last))
+                (evidence / (self.variant + "-summary.json")).write_text(self.last.summary_json, encoding="utf-8")
+                return self.last
+    
+        try:
+            async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned_objects):
+                settings.orchestration.performance_runner_backend = "docker"
+                api_port = free_port()
+                api = processes.start("body-api", "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(api_port))
+                async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{api_port}/api/v1", timeout=50) as client:
+                    await wait_api(client, api)
+                    response = await client.post("/projects", json={"project_key": "perf-body-" + uuid4().hex[:10], "name": "������������ʵ������"})
+                    response.raise_for_status()
+                    project = response.json()
+                    response = await client.post("/sessions", json=CreateSessionRequest(project_id=project["id"], mode_key="performance_testing").model_dump(mode="json"))
+                    response.raise_for_status()
+                    session = response.json()
+                    docker = Docker(settings)
+                    runner = Runner(settings, docker_resources=docker, artifact_storage_service=objects)
+                    adapters = [K6EngineAdapter(image="sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec"),
+                        JMeterEngineAdapter(image="sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7")]
+    
+                    async def originals(variant, execution_evidence):
+                        downloads = []
+                        for artifact in execution_evidence.get("artifacts", []):
+                            owned_objects.append(artifact["path"])
+                            original = await objects.read_object_uri(artifact["path"])
+                            content = original["content"]
+                            assert hashlib.sha256(content).hexdigest() == artifact["sha256"] and len(content) == artifact["size_bytes"]
+                            # Every object is actually downloaded and checked. Keep critical
+                            # inputs/results; vendor dashboard assets need not be duplicated.
+                            relative = artifact["relative_path"]
+                            saved = None
+                            if not relative.startswith("report/") or relative.endswith("statistics.json"):
+                                saved = evidence / (variant + "-originals") / relative
+                                saved.parent.mkdir(parents=True, exist_ok=True)
+                                saved.write_bytes(content)
+                            downloads.append({"relative_path": relative, "stored_path": saved.relative_to(evidence).as_posix() if saved else None,
+                                "sha256": artifact["sha256"], "bytes": len(content)})
+                        write_json(evidence / (variant + "-downloads.json"), downloads)
+    
+                    async def cleanup(variant):
+                        child = processes.start("body-cleanup-" + variant, "-m", "src.cli.run_resource_cleanup_worker", "--once", "--worker-id", "perf-body-cleanup")
+                        assert await processes.wait(child) == 0
+    
+                    plans = {}
+                    with bind_request_context(project_id=project["id"], session_id=session["id"], trace_id="actual-perf-body"):
+                        for adapter in adapters:
+                            runner.variant = adapter.engine_key
+                            plan = PerfPlan(engine=adapter.engine_key, targets=[PerfTarget(name=path[1:], method=method,
+                                url=f"http://127.0.0.1:{port}" + path, body_template=body,
+                                headers={"Content-Type": "application/json" if isinstance(body, dict) else "text/plain; charset=utf-8"})
+                                for path, (method, body) in target.expected.items()],
+                                smoke=SmokeConfig(vus=1, iterations=3, expect_status=[200]),
+                                workload=PerfWorkloadConfig(virtual_users=1, hold_seconds=2, think_time_ms=25),
+                                run_intent="regression", sla=SLAConfig(p99_ms=10000, error_rate=0.01))
+                            plans[adapter.engine_key] = plan
+                            script = adapter.build_script(plan)
+                            (evidence / (runner.variant + "." + ("js" if adapter.engine_key == "k6" else "jmx"))).write_text(script.script_content, encoding="utf-8")
+                            write_json(evidence / (runner.variant + "-plan.json"), plan.model_dump(mode="json"))
+                            prior = len(target.events)
+                            smoke = await runner.run_smoke(plan, script, adapter)
+                            write_json(evidence / (runner.variant + "-smoke.json"), smoke.model_dump(mode="json"))
+                            await originals(runner.variant, smoke.evidence)
+                            observations.append({"engine": adapter.engine_key, "passed": smoke.passed,
+                                "exit_code": runner.last.exit_code, "events": target.events[prior:]})
+                            write_json(evidence / "observations.json", observations)
+                            await cleanup(runner.variant)
+>                       assert all(o["passed"] and o["exit_code"] == 0 and len(o["events"]) == 3 * len(target.expected)
+                            and all(e["matched"] for e in o["events"]) for o in observations), observations
+E                           AssertionError: [{'engine': 'k6', 'passed': False, 'exit_code': 0, 'events': [{'path': '/json', 'method': 'POST', 'content_type': 'app...: '', ...}, {'path': '/text', 'method': 'POST', 'content_type': 'text/plain; charset=utf-8', 'body_base64': '', ...}]}]
+E                           assert False
+E                            +  where False = all(<generator object test_actual_request_body_bytes_and_reports.<locals>.<genexpr> at 0x0000020350AFE4D0>)
+
+tests\test_performance_request_body_live.py:177: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.performance.perf_runner_service:perf_runner_service.py:202 performance_smoke_request_invalid
+=========================== short test summary info ===========================
+FAILED tests/test_performance_request_body_live.py::test_actual_request_body_bytes_and_reports
+1 failed in 39.78s

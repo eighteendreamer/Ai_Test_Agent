@@ -1,0 +1,320 @@
+[
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-4271d5-8bd12088ec80",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=8bd12088ec8047baa2f5d2225fa27793",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=1",
+      "--label",
+      "qa.project_id=6762f123-a546-4aac-b833-61167025afd5",
+      "--label",
+      "qa.session_id=1590d1ca-fc9a-45db-a4f5-822a05523c28",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-7os04y5f:/work",
+      "-e",
+      "QA_PERF_SMOKE=true",
+      "-e",
+      "QA_PERF_SMOKE_VUS=1",
+      "-e",
+      "QA_PERF_SMOKE_ITERATIONS=3",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/script.js"
+    ],
+    "exit_code": 0,
+    "stdout": "d3c6777b21d02a5f3849fbed7aa0f8b360dc2da069ab4216c51a112ebd93352e\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "d3c6777b21d02a5f3849fbed7aa0f8b360dc2da069ab4216c51a112ebd93352e"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/script.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 27      189.035522/s\n    checks_succeeded...: 100.00% 27 out of 27\n    checks_failed......: 0.00%   0 out of 27\n\n    ✓ qa_status_0_200\n    ✓ qa_extract_0\n    ✓ qa_status_1_200\n    ✓ qa_status_2_200\n    ✓ qa_status_3_200\n    ✓ qa_status_4_200\n    ✓ qa_status_5_200\n    ✓ qa_dependency_0\n    ✓ qa_status_6_200\n\n    HTTP\n    http_req_duration..............: avg=1.28ms  min=913.54µs med=1.14ms max=2.6ms   p(90)=1.57ms  p(95)=2.22ms  p(99)=2.53ms \n      { expected_response:true }...: avg=1.28ms  min=913.54µs med=1.14ms max=2.6ms   p(90)=1.57ms  p(95)=2.22ms  p(99)=2.53ms \n    http_req_failed................: 0.00%  0 out of 21\n    http_reqs......................: 21     147.027629/s\n\n    EXECUTION\n    iteration_duration.............: avg=47.52ms min=46.54ms  med=46.6ms max=49.43ms p(90)=48.87ms p(95)=49.15ms p(99)=49.38ms\n    iterations.....................: 3      21.003947/s\n\n    NETWORK\n    data_received..................: 3.4 kB 24 kB/s\n    data_sent......................: 4.0 kB 28 kB/s\n\n\n\n\nrunning (00m00.1s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.1s/10m0s  3/3 shared iters\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "d3c6777b21d02a5f3849fbed7aa0f8b360dc2da069ab4216c51a112ebd93352e"
+    ],
+    "exit_code": 0,
+    "stdout": "d3c6777b21d02a5f3849fbed7aa0f8b360dc2da069ab4216c51a112ebd93352e\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-smoke-64eaa5-c1486a68e840",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=c1486a68e840413e913a1dde58863c1d",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=2",
+      "--label",
+      "qa.project_id=6762f123-a546-4aac-b833-61167025afd5",
+      "--label",
+      "qa.session_id=1590d1ca-fc9a-45db-a4f5-822a05523c28",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-n2kv7wtf:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jqa_perf.smoke=true",
+      "-Jqa_perf.smoke_iterations=3",
+      "-Jqa_perf.smoke_vus=1",
+      "-Jqa_perf.scheduler=false",
+      "-Jsample_variables=qa_iteration,qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "b0d0a5a46f28786b80242c247c06438197274aad2b8176aaaa4662ce86e0ec9a\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "b0d0a5a46f28786b80242c247c06438197274aad2b8176aaaa4662ce86e0ec9a"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 4:23:52 PM CEST (1791555832306)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =     21 in 00:00:02 =   13.2/s Avg:     5 Min:     3 Max:    35 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 4:23:54 PM CEST (1791555834158)\n... end of run\n",
+    "stderr": "Oct 09, 2026 4:23:51 PM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "b0d0a5a46f28786b80242c247c06438197274aad2b8176aaaa4662ce86e0ec9a"
+    ],
+    "exit_code": 0,
+    "stdout": "b0d0a5a46f28786b80242c247c06438197274aad2b8176aaaa4662ce86e0ec9a\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-4938e62-8c6473ca244e",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=8c6473ca244e414584b6afdf6331939e",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=3",
+      "--label",
+      "qa.project_id=6762f123-a546-4aac-b833-61167025afd5",
+      "--label",
+      "qa.session_id=1590d1ca-fc9a-45db-a4f5-822a05523c28",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-lkomnw3s:/work",
+      "-e",
+      "QA_PERF_SMOKE=true",
+      "-e",
+      "QA_PERF_SMOKE_VUS=1",
+      "-e",
+      "QA_PERF_SMOKE_ITERATIONS=3",
+      "sha256:5221b620a4f874faff6e32ba597aa667c058391fe4898b1c6f6377f062c6cdec",
+      "k6",
+      "run",
+      "--summary-export",
+      "/work/summary.json",
+      "/work/script.js"
+    ],
+    "exit_code": 0,
+    "stdout": "0fd8e225046d4e60b4232c71dc7b594de60d69dbc9b61d3f3e95d85bbb412a42\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "0fd8e225046d4e60b4232c71dc7b594de60d69dbc9b61d3f3e95d85bbb412a42"
+    ],
+    "exit_code": 0,
+    "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/script.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):\n              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)\n\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 27      186.901461/s\n    checks_succeeded...: 100.00% 27 out of 27\n    checks_failed......: 0.00%   0 out of 27\n\n    ✓ qa_status_0_200\n    ✓ qa_extract_0\n    ✓ qa_status_1_200\n    ✓ qa_status_2_200\n    ✓ qa_status_3_200\n    ✓ qa_status_4_200\n    ✓ qa_status_5_200\n    ✓ qa_dependency_0\n    ✓ qa_status_6_200\n\n    HTTP\n    http_req_duration..............: avg=1.19ms  min=838.29µs med=1.18ms  max=1.82ms  p(90)=1.36ms  p(95)=1.47ms  p(99)=1.75ms \n      { expected_response:true }...: avg=1.19ms  min=838.29µs med=1.18ms  max=1.82ms  p(90)=1.36ms  p(95)=1.47ms  p(99)=1.75ms \n    http_req_failed................: 0.00%  0 out of 21\n    http_reqs......................: 21     145.367803/s\n\n    EXECUTION\n    iteration_duration.............: avg=48.08ms min=46.55ms  med=48.71ms max=48.98ms p(90)=48.93ms p(95)=48.95ms p(99)=48.97ms\n    iterations.....................: 3      20.766829/s\n\n    NETWORK\n    data_received..................: 3.4 kB 24 kB/s\n    data_sent......................: 4.0 kB 28 kB/s\n\n\n\n\nrunning (00m00.1s), 0/1 VUs, 3 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  00m00.1s/10m0s  3/3 shared iters\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "0fd8e225046d4e60b4232c71dc7b594de60d69dbc9b61d3f3e95d85bbb412a42"
+    ],
+    "exit_code": 0,
+    "stdout": "0fd8e225046d4e60b4232c71dc7b594de60d69dbc9b61d3f3e95d85bbb412a42\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "create",
+      "--name",
+      "qa-perf-perf-run-d5dd3c0-eea07fff87b4",
+      "--label",
+      "enterprise-ai-qa-agent=managed",
+      "--label",
+      "qa.allocation_id=eea07fff87b4438b917a8c1c63d14881",
+      "--label",
+      "qa.lease_namespace=qa",
+      "--label",
+      "qa.resource_id=docker-slot-0",
+      "--label",
+      "qa.fencing_token=4",
+      "--label",
+      "qa.project_id=6762f123-a546-4aac-b833-61167025afd5",
+      "--label",
+      "qa.session_id=1590d1ca-fc9a-45db-a4f5-822a05523c28",
+      "--entrypoint=",
+      "--add-host",
+      "host.docker.internal:host-gateway",
+      "--workdir",
+      "/work",
+      "-v",
+      "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-73yltwch:/work",
+      "sha256:088ac52b759a198a5afa5ae13d0a6306e9f2017d71ad140ff57427f6930406f7",
+      "jmeter",
+      "-n",
+      "-t",
+      "/work/test.jmx",
+      "-l",
+      "/work/result.jtl",
+      "-e",
+      "-o",
+      "/work/report",
+      "-j",
+      "/work/jmeter.log",
+      "-Jqa_perf.smoke=true",
+      "-Jqa_perf.smoke_iterations=3",
+      "-Jqa_perf.smoke_vus=1",
+      "-Jqa_perf.scheduler=false",
+      "-Jsample_variables=qa_iteration,qa_extract_0,qa_dependency_0"
+    ],
+    "exit_code": 0,
+    "stdout": "4977fe18a48b5a0b5b82acf5606053eb27feba56a284d3ee5288f67c5fdf9a71\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "start",
+      "--attach",
+      "4977fe18a48b5a0b5b82acf5606053eb27feba56a284d3ee5288f67c5fdf9a71"
+    ],
+    "exit_code": 0,
+    "stdout": "Creating summariser <summary>\nCreated the tree successfully using /work/test.jmx\nStarting standalone test @ October 9, 2026 4:24:08 PM CEST (1791555848037)\nWaiting for possible Shutdown/StopTestNow/HeapDump/ThreadDump message on port 4445\nsummary =     21 in 00:00:02 =   13.7/s Avg:     5 Min:     3 Max:    37 Err:     0 (0.00%)\nTidying up ...    @ October 9, 2026 4:24:09 PM CEST (1791555849855)\n... end of run\n",
+    "stderr": "Oct 09, 2026 4:24:07 PM java.util.prefs.FileSystemPreferences$1 run\nINFO: Created user preferences directory.\n"
+  },
+  {
+    "args": [
+      "rm",
+      "--force",
+      "4977fe18a48b5a0b5b82acf5606053eb27feba56a284d3ee5288f67c5fdf9a71"
+    ],
+    "exit_code": 0,
+    "stdout": "4977fe18a48b5a0b5b82acf5606053eb27feba56a284d3ee5288f67c5fdf9a71\n",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=d3c6777b21d02a5f3849fbed7aa0f8b360dc2da069ab4216c51a112ebd93352e",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=b0d0a5a46f28786b80242c247c06438197274aad2b8176aaaa4662ce86e0ec9a",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=0fd8e225046d4e60b4232c71dc7b594de60d69dbc9b61d3f3e95d85bbb412a42",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  },
+  {
+    "args": [
+      "ps",
+      "--all",
+      "--no-trunc",
+      "--filter",
+      "id=4977fe18a48b5a0b5b82acf5606053eb27feba56a284d3ee5288f67c5fdf9a71",
+      "--format",
+      "{{.ID}}"
+    ],
+    "exit_code": 0,
+    "stdout": "",
+    "stderr": ""
+  }
+]

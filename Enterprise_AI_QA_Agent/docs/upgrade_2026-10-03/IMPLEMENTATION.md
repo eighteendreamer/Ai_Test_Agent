@@ -4821,3 +4821,15 @@ Agent_Server内实际命令使用`..\.venv\Scripts\python.exe -X utf8 -m pytest`
 - compileall四项生产文件、四测试及新audit退出0，双流p5-jmeter-dependencies-compile.log，仅为附加检查。
 
 项目根`.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-jmeter-dependencies-audit.py --sync`先检查外部方案仍原HEAD或新方案再同步，随后不带--sync复核。本轮实际所有对象下载校验、完整容器不存在和正式清理回执核对；前批156+274份原工件及用户无关文件保持。原dashboard依赖仅作为捕获证据保存，局部.gitattributes保留原字节/厂商空白。只提交本批确切文件，不推送/建PR。完整Agent/App、复杂JSON/body及其他P0—P5继续，Step按用户决定待账号处理后验收。
+
+## 2026-10-09 两引擎请求正文/实际字节〔1e97963e〕
+
+依据P5_PERFORMANCE_BODY_RESEARCH.md/PLAN6.95，修改两adapter、Prompt和工具正文描述；追加真实接收/两引擎/报告及修复前样本回归。生产配置MySQL、业务报告PG、原件RustFS；无新依赖/配置/表/迁移/前端，不调用Step。
+
+Agent_Server实际命令（解释器..\.venv\Scripts\python.exe）：
+
+- RUN_LIVE_PERF_BODY=1，QA_PERF_BODY_DIR分别为本项目docs/upgrade_2026-10-03/p5-perf-body-before、fixed、verified绝对路径。-m pytest tests/test_performance_request_body_live.py -q --junitxml=../docs/upgrade_2026-10-03/<同批次>.xml，双流同名.log；before/fixed未加-X utf8，verified加-X utf8及--tb=short。before 1失败39.78秒，fixed 1通过51.35秒，verified 1通过50.26秒。
+- -X utf8 -m pytest，原6.94的23模块再加tests/test_performance_request_body.py，-q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-perf-body-expanded.xml，双流同名.log：169通过26.56秒，0跳过，既有警告1条。精确文件名见6.94实施段；两个引擎正文实际验收另有独立.live证据。
+- -X utf8 -m compileall -q，确切文件：src/application/performance/jmeter_engine_adapter.py、k6_engine_adapter.py，src/modes/performance_testing_mode/prompt_contract.py，src/registry/tools.py，tests/test_performance_request_body.py、test_performance_request_body_live.py，../docs/upgrade_2026-10-03/p5-perf-body-audit.py；退出0，双流p5-perf-body-compile.log，仅为附加检查。
+
+项目根.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-body-audit.py --sync核对外部方案为原HEAD或新方案后同步，随后不带--sync复核。历史原件和用户无关文件保持，只提交本批文件，不推送/建PR。实际所有对象下载核验、关键原字节及容器/PG清理事实审计，不重复保存厂商静态资产。直接固定计划/原runner/report，不证明Agent/App/持续load/容量；动态正文与复杂响应等其余P0—P5继续，Step待账号处理后验收。
