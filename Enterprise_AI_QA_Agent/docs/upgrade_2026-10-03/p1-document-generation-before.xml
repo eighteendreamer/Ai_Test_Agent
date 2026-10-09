@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="25.574" timestamp="2026-10-09T23:28:38.359348+08:00" hostname="EIghteen"><testcase classname="tests.test_document_generation_production" name="test_ordinary_document_modules_and_independent_saved_response_recovery" time="18.856"><failure message="AssertionError: (404, '{&quot;detail&quot;:&quot;Not Found&quot;}')&#10;assert 404 == 202&#10; +  where 404 = &lt;Response [404 Not Found]&gt;.status_code">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1293/test_ordinary_document_modules0')
+
+    async def test_ordinary_document_modules_and_independent_saved_response_recovery(tmp_path):
+        evidence = Path(os.getenv("QA_DOCUMENT_GENERATION_EVIDENCE_DIR", str(tmp_path)))
+        evidence.mkdir(parents=True, exist_ok=True)
+        original = "# 商城需求\n所有接口均需登录，退款不能超过实付金额。\n\n## 注册\n手机号必须唯一，验证码五分钟有效。\n\n## 订单\n### 创建\n库存不足不能下单。\n### 退款\n退款金额上限为实付金额。\n\n## 查询\n仅能查询自己的订单，分页每页最多20条。\n"
+        source = evidence / "ordinary-requirements.md"
+        source.write_text(original, encoding="utf-8")
+        def responder(body):
+            context = json.loads(body["messages"][-1]["content"])["evidence_context"]["document_generation"]
+            segment = context["segment"]
+            content = {"目标": segment["title"], "依据": context["text"][segment["start_char"]:segment["end_char"]],
+                "全局规则": "所有接口均需登录，退款不能超过实付金额。", "嵌套": {"零": 0, "布尔": False, "空": None}}
+            if segment["index"] == 1: content["完整长字段"] = "保留长响应原件" * 10000
+            return json.dumps({"cases": [{"case_key": "ordinary-module-" + str(segment["index"]),
+                "title": segment["title"], "case_type": "json", "content_json": content,
+                "execution_notes": "根据完整JSON执行，核对业务结果并保留证据"}], "warnings": []}, ensure_ascii=False)
+        try:
+            with provider(responder=responder) as (endpoint, calls, _, _):
+                async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
+                    settings.orchestration.redis_task_outbox_streams = ",".join([DOCUMENT_PARSE_STREAM, GENERATION_STREAM])
+                    models = MySQLModelConfigStore(settings); models.initialize()
+                    model = models.upsert(ModelConfigUpdateRequest(model_name="ordinary-document-controlled", provider="openai",
+                        transport="openai_chat_completions", base_url=endpoint, api_key=uuid4().hex, is_active=True,
+                        use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                        context_window=128000, max_output_tokens=1024))
+                    processes.env = child_environment(settings)
+                    port = free_port()
+                    args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                    api = processes.start("ordinary-api", *args)
+                    queues = {}
+                    try:
+                        for stream, suffix in [(DOCUMENT_PARSE_STREAM, "document_parsing"), (GENERATION_STREAM, "case_generation")]:
+                            queues[stream] = RedisTaskQueue(settings.database.redis_url, stream=stream,
+                                group=settings.orchestration.redis_task_consumer_group + ":" + suffix)
+                            await queues[stream].connect()
+                        async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=50) as client:
+                            await wait_api(client, api)
+                            async def post(path, payload, status=200):
+                                response = await client.post(path, json=payload)
+                                (evidence / "last-http.json").write_text(json.dumps({"path": path,
+                                    "status": response.status_code, "body": response.text}, ensure_ascii=False, indent=2), encoding="utf-8")
+                                assert response.status_code == status, (response.status_code, response.text)
+                                return response.json()
+                            project = await post("/projects", {"project_key": "ordinary-"+uuid4().hex, "name": "普通文档模块生成"}, 201)
+                            doc = await post("/registry/api-docs/upload", {"project_id": project["id"], "filename": source.name,
+                                "request_id": "ordinary-upload", "content_base64": base64.b64encode(source.read_bytes()).decode()})
+                            owned.append(doc["original_asset"]["storage_uri"])
+                            base = f"/projects/{project['id']}/documents/{doc['id']}"
+                            parsed = await post(base+"/parse-tasks", {"creation_key": "ordinary-parse", "version_id": doc["current_version_id"]}, 202)
+                            await PostgresTaskOutbox(settings).relay_once(queues[DOCUMENT_PARSE_STREAM])
+                            worker = processes.start("ordinary-parser", "-m", "src.cli.run_document_parse_worker", "--once", "--worker-id", "ordinary-parser")
+                            assert await processes.wait(worker) == 0
+                            parsed = (await client.get(base+"/parse-tasks/"+parsed["id"])).json()
+                            assert parsed["status"] == "completed"
+                            snapshot = (await client.get(base+"/parse-snapshots/"+parsed["snapshot_id"])).json()
+                            owned.append(snapshot["snapshot"]["storage_uri"])
+                            assert "退款金额上限" in snapshot["result"]["text"] and not calls
+                            policy_path = f"/projects/{project['id']}/case-generation-settings"
+                            policy = (await client.get(policy_path)).json()["payload"]
+                            policy.update(transport_policy="single_attempt", call_timeout_seconds=15, max_response_bytes=25000)
+                            assert (await client.put(policy_path, json=policy)).status_code == 200
+                            request = {"creation_key": "ordinary-generation", "parse_snapshot_id": parsed["snapshot_id"],
+                                "objective": "覆盖商城需求的所有章节", "mode_key": "api_testing", "max_cases_per_module": 3, "model_key": model.key}
+&gt;                           group = await post(base+"/document-case-generations", request, 202)
+                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_document_generation_production.py:89: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+path = '/projects/75bd7b98-5cbc-4f3c-a5d3-88ccefdd2b78/documents/d88438c1-1bfd-5105-8c88-32d80e7787c4/document-case-generations'
+payload = {'creation_key': 'ordinary-generation', 'parse_snapshot_id': 'cdfde358-896f-4f37-b1e8-e40495ebb5e5', 'objective': '覆盖商城需求的所有章节', 'mode_key': 'api_testing', ...}
+status = 202
+
+    async def post(path, payload, status=200):
+        response = await client.post(path, json=payload)
+        (evidence / "last-http.json").write_text(json.dumps({"path": path,
+            "status": response.status_code, "body": response.text}, ensure_ascii=False, indent=2), encoding="utf-8")
+&gt;       assert response.status_code == status, (response.status_code, response.text)
+E       AssertionError: (404, '{"detail":"Not Found"}')
+E       assert 404 == 202
+E        +  where 404 = &lt;Response [404 Not Found]&gt;.status_code
+
+tests\test_document_generation_production.py:67: AssertionError</failure></testcase></testsuite></testsuites>

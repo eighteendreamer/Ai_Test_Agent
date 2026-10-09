@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_generation import IncrementalGenerationRequest, IncrementalGenerationScope, generation_hash
+from src.schemas.document_case_generation import DocumentGenerationRequest, DocumentGenerationScope, DocumentGenerationTaskRequest
 from src.schemas.case_generation_tasks import GenerationObject, GenerationTaskRequest
 from src.schemas.case_generation_tasks import GenerationRetryRequest, GenerationRetryView
 from src.application.test_cases.generation_retry import generation_retry_strategy
@@ -39,10 +40,11 @@ async def confirmed_generation_write(operation, *, stage, identity):
 
 
 class GenerationTaskService:
-    def __init__(self, *, store, sources, config, generator, cases, projects, documents, objects, stream):
+    def __init__(self, *, store, sources, config, generator, cases, projects, documents, objects, stream, document_sources=None):
         self._store, self._sources, self._config = store, sources, config
         self._generator, self._cases, self._projects = generator, cases, projects
         self._documents, self._objects, self._stream = documents, objects, stream
+        self._document_sources = document_sources
 
     async def initialize(self):
         await self._config.initialize()
@@ -67,8 +69,16 @@ class GenerationTaskService:
 
     async def submit(self, project_id, document_id, request):
         request = GenerationTaskRequest.model_validate_json(request.model_dump_json())
-        await self._require_document(project_id, document_id)
         original = IncrementalGenerationRequest.model_validate(request.model_dump(exclude={"creation_key"}))
+        return await self._submit(project_id, document_id, request, original, self._sources)
+
+    async def submit_document(self, project_id, document_id, request):
+        request = DocumentGenerationTaskRequest.model_validate_json(request.model_dump_json())
+        original = DocumentGenerationRequest.model_validate(request.model_dump(exclude={"creation_key"}))
+        return await self._submit(project_id, document_id, request, original, self._document_sources)
+
+    async def _submit(self, project_id, document_id, request, original, sources):
+        await self._require_document(project_id, document_id)
         digest = generation_hash(original.model_dump(mode="json"))
         prior = await self._store.get_group(project_id, document_id, creation_key=request.creation_key, request_hash=digest)
         if prior is not None:
@@ -76,8 +86,10 @@ class GenerationTaskService:
             return prior
         if not self._stream:
             raise RuntimeError("持久生成的派发流尚未启用")
+        if sources is None:
+            raise RuntimeError("普通文档固定生成来源尚未装配")
         config = await self._config.get(project_id)
-        scope = await self._sources.capture(project_id, document_id, original, transport_options=config.payload.transport_options)
+        scope = await sources.capture(project_id, document_id, original, transport_options=config.payload.transport_options)
         reference = await self._object(scope, f"{project_id}/scopes", "scope.json")
         group = await confirmed_generation_write(self._store.submit_group(scope, reference, config,
             creation_key=request.creation_key, request_hash=digest, stream=self._stream), stage="submit", identity=request.creation_key)
@@ -161,7 +173,14 @@ class GenerationTaskService:
         return await self._read_object(task.checkpoint.response, ModelInvocationResult)
 
     async def read_scope(self, group):
-        scope = await self._read_object(group.scope, IncrementalGenerationScope)
+        raw = (await self._objects.read_object_uri(group.scope.storage_uri))["content"]
+        if len(raw) != group.scope.size_bytes or hashlib.sha256(raw).hexdigest() != group.scope.sha256:
+            raise ValueError("生成范围对象大小或SHA不一致")
+        payload = json.loads(raw)
+        model = DocumentGenerationScope if payload.get("implementation_version") == "document-generation-scope-v1" else IncrementalGenerationScope
+        scope = model.model_validate(payload)
+        if isinstance(scope, DocumentGenerationScope) and scope.parse_snapshot.seed.version_id != group.version_id:
+            raise ValueError("普通生成组不能替换固定原件版本")
         if (scope.project_id != group.project_id or scope.document_id != group.document_id
             or scope.sha256 != group.scope_sha256 or [item.id for item in scope.modules] != group.module_ids
             or generation_hash(scope.request.model_dump(mode="json")) != group.request_hash):
@@ -201,16 +220,21 @@ class GenerationTaskService:
     async def _draft_entries(self, scope, group, module, response, batch, *, retry=None):
         context = json.loads(module.generation.invocation.messages[0]["content"])["evidence_context"]
         provenance = {"group_id": group.id, "module_id": module.id, "scope_sha256": scope.sha256,
-            "request_sha256": module.generation.sha256, "response": response.model_dump(mode="json"),
-            "requirement_id": scope.requirement.requirement_id, "requirement_version_id": scope.requirement.id,
-            "review_id": scope.review.id, "point_ids": [point.id for point in scope.requirement.points],
-            "target_case_version_id": module.target.version_id if module.target else None,
-            "deployment_status": "unknown"}
+            "request_sha256": module.generation.sha256, "response": response.model_dump(mode="json"), "deployment_status": "unknown"}
+        if isinstance(scope, DocumentGenerationScope):
+            provenance.update(parse_snapshot_id=scope.parse_snapshot.id, document_version_id=scope.parse_snapshot.seed.version_id,
+                segment=next(s.model_dump(mode="json") for s in scope.segments if s.module_id == module.id))
+            provenance_key = "document_generation"
+        else:
+            provenance.update(requirement_id=scope.requirement.requirement_id, requirement_version_id=scope.requirement.id,
+                review_id=scope.review.id, point_ids=[point.id for point in scope.requirement.points],
+                target_case_version_id=module.target.version_id if module.target else None)
+            provenance_key = "incremental_generation"
         if retry: provenance["retry"] = retry.model_dump(mode="json")
         payloads = []
         for case in batch.cases:
             content = case.model_dump(exclude={"case_key", "title", "priority", "case_type"})
-            content["generation_metadata"] = {**content["generation_metadata"], "template": scope.template.model_dump(mode="json"), "incremental_generation": provenance}
+            content["generation_metadata"] = {**content["generation_metadata"], "template": scope.template.model_dump(mode="json"), provenance_key: provenance}
             payloads.append(TestCaseDraftCreateRequest(**content, case_key=case.case_key, title=case.title,
                 case_type=case.case_type, priority=case.priority, mode_key=module.generation.request.mode_key,
                 source_refs=context["source_refs"], model_key=batch.model_key, prompt_version=batch.prompt_version,

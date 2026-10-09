@@ -18,7 +18,13 @@ const kinds = { update: "更新草稿", create: "新建草稿", retirement_candi
       <p class="generation-task-status" role="status">{{ labels[task.status] }} · {{ task.message }} · {{ task.phase }} · 第 {{ task.attempt_no }} 次领取</p>
       <p v-if="task.error_code">失败代码：{{ task.error_code }}</p>
       <p>{{ kinds[scope.modules.find(item => item.id === task!.module_id)!.kind] }} · 模块 {{ task.module_id }} · 原件版本 {{ task.version_id }}</p>
-      <p>固定需求：{{ scope.requirement.title }} · V{{ scope.requirement.version }} · {{ scope.requirement.id }}</p><p>{{ scope.requirement.statement }}</p>
+      <template v-if="scope.implementation_version === 'incremental-generation-scope-v1'">
+        <p>固定需求：{{ scope.requirement.title }} · V{{ scope.requirement.version }} · {{ scope.requirement.id }}</p><p>{{ scope.requirement.statement }}</p>
+      </template>
+      <template v-else>
+        <p>普通文档生成 · 固定解析快照 {{ scope.parse_snapshot.id }} · {{ scope.request.objective }}</p>
+        <p>章节：{{ scope.segments.find(item => item.module_id === task!.module_id)?.title }}</p>
+      </template>
       <p>来源限制：{{ scope.basis_limitations.join('、') || '本范围未声明限制' }}</p>
       <p>结果需逐版本评审和明确启用；设计覆盖、实际执行和环境是否生效分别确认。</p>
       <section v-if="origin" aria-label="固定重试来源"><p>原失败任务：{{ origin.retry.parent_task_id }}</p>

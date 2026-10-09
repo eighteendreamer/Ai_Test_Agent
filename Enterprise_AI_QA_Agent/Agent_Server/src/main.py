@@ -498,6 +498,7 @@ async def _initialize_lifespan_resources(
     app.state.business_applicability_service = business_applicability_service
     generation_runtime = build_generation_runtime(settings, container,
         requirements=document_impact_runtime.requirements, impact_tasks=document_impact_runtime.tasks,
+        parsing=document_parsing_service,
         stream=(GENERATION_STREAM if settings.orchestration.redis_task_dispatch_enabled
             and GENERATION_STREAM in settings.orchestration.task_stream_names else None))
     await generation_runtime.service.initialize()

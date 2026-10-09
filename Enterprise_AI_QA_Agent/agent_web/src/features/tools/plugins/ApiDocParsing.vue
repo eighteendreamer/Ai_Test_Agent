@@ -5,6 +5,7 @@ import type { ApiDocRecord, ApiDocVersionRecord, DocumentParsingSettingsRecord, 
   DocumentParseTaskRequest, DocumentParseSnapshot as SnapshotRecord, DocumentParseSnapshotView, DocumentParseFailureView, DocumentParserCapability } from "../../../types";
 import DocumentParsingSettings from "./DocumentParsingSettings.vue";
 import DocumentParseSnapshot from "./DocumentParseSnapshot.vue";
+import DocumentGenerationPanel from "./DocumentGenerationPanel.vue";
 
 const props = defineProps<{ document: ApiDocRecord; canWrite: boolean }>();
 const versions = ref<ApiDocVersionRecord[]>([]);
@@ -234,6 +235,7 @@ onBeforeUnmount(() => { disposed = true; ++epoch; ++contentRevision; ++catalogRe
       </div>
       <button v-if="moreSnapshots" class="secondary-btn" :disabled="loading" @click="loadCatalog('snapshots')">更多解析快照</button>
       <DocumentParseSnapshot v-if="view" :view="view" />
+      <DocumentGenerationPanel v-if="view" :key="view.snapshot.id" :view="view" :can-write="canWrite" />
       <article v-if="failure" class="parse-failure" aria-label="解析失败诊断">
         <h5>解析失败诊断 · 退出码 {{ failure.exit_code ?? '未取得' }}</h5>
         <p>{{ failure.error }}</p><h6>stdout</h6><pre>{{ failure.stdout || '空输出' }}</pre><h6>stderr</h6><pre>{{ failure.stderr || '空输出' }}</pre>

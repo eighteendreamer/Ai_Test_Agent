@@ -3,6 +3,7 @@ import type {
   GenerationGroup, GenerationGroupPage, GenerationGroupView, GenerationResponse,
   GenerationScope, GenerationTask, GenerationTaskPolicy, GenerationTaskRequest, GenerationTaskSettings,
   GenerationRetryRequest, GenerationRetryView, GenerationRetryPage,
+  DocumentGenerationTaskRequest,
 } from "./caseGeneration.types";
 
 const projectPath = (projectId: string) => `/api/v1/projects/${encodeURIComponent(projectId)}`;
@@ -17,6 +18,9 @@ export function saveGenerationSettings(projectId: string, payload: GenerationTas
 }
 export function submitCaseGeneration(projectId: string, documentId: string, payload: GenerationTaskRequest): Promise<GenerationGroup> {
   return request(`${documentPath(projectId, documentId)}/case-generations`, { method: "POST", body: JSON.stringify(payload) });
+}
+export function submitDocumentGeneration(projectId: string, documentId: string, payload: DocumentGenerationTaskRequest): Promise<GenerationGroup> {
+  return request(`${documentPath(projectId, documentId)}/document-case-generations`, { method: "POST", body: JSON.stringify(payload) });
 }
 export function getCaseGenerationSubmission(projectId: string, documentId: string, creationKey: string): Promise<GenerationGroup> {
   return request(`${documentPath(projectId, documentId)}/case-generations/by-request?${new URLSearchParams({ creation_key: creationKey })}`);

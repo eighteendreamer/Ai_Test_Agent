@@ -11,6 +11,8 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_document_operation_store import PostgresDocumentTaskStore
 from src.runtime.postgres_requirement_store import PostgresRequirementStore, fixed_requirement_version
 from src.schemas.case_generation import IncrementalGenerationModule, fixed_generation_snapshot, generation_hash
+from src.schemas.document_case_generation import DocumentGenerationScope
+from src.schemas.document_parsing import DocumentParseSnapshot
 from src.schemas.case_generation_tasks import (
     GenerationGroup, GenerationTaskSeed, GenerationTaskRecord, GenerationTaskPage,
     GenerationTaskClaim, GenerationCommand, GenerationModuleCheckpoint, GenerationGroupPage,
@@ -158,6 +160,38 @@ class PostgresGenerationTaskStore(PostgresDocumentTaskStore):
                 has_more=len(rows)>limit, limit=limit, offset=offset)
         return await asyncio.to_thread(read)
 
+    def _validate_basis(self, cur, scope):
+        if isinstance(scope, DocumentGenerationScope):
+            cur.execute(f"SELECT s.record FROM {self._docs}_parse_snapshots s JOIN {self._docs}_parse_tasks t "
+                "ON t.id=s.task_id WHERE s.id=%s AND s.project_id=%s AND s.document_id=%s AND t.status='completed' FOR SHARE OF s,t",
+                (scope.parse_snapshot.id, scope.project_id, scope.document_id))
+            row = cur.fetchone()
+            if not row or DocumentParseSnapshot.model_validate(row["record"]) != scope.parse_snapshot:
+                raise ValueError("普通文档生成的固定解析快照与原记录不同")
+            cur.execute(f"SELECT record FROM {self._docs}_versions WHERE id=%s AND document_id=%s FOR SHARE",
+                (scope.parse_snapshot.seed.version_id, scope.document_id))
+            version = cur.fetchone()
+            if not version or version["record"]["snapshot"].get("original_asset") != scope.parse_snapshot.seed.original_asset.model_dump(mode="json"):
+                raise ValueError("普通文档生成的原件版本与固定解析依据不同")
+            return scope.parse_snapshot.seed.version_id
+        cur.execute(f"SELECT v.record FROM {self._docs}_requirement_versions v JOIN {self._docs}_requirements r "
+            "ON r.id=v.requirement_id WHERE v.id=%s AND r.project_id=%s AND r.document_id=%s FOR SHARE OF r,v",
+            (scope.requirement.id, scope.project_id, scope.document_id))
+        requirement = cur.fetchone()
+        if not requirement or fixed_requirement_version(requirement["record"]) != scope.requirement:
+            raise ValueError("提交的确认需求版本与原记录不同")
+        cur.execute(f"SELECT record FROM {self._docs}_requirement_reviews WHERE id=%s AND project_id=%s AND document_id=%s FOR SHARE",
+            (scope.review.id, scope.project_id, scope.document_id))
+        review = cur.fetchone()
+        if not review or PostgresRequirementStore._review(review) != scope.review:
+            raise ValueError("提交的原接受决定不同")
+        cur.execute(f"SELECT version_id,input_checkpoint FROM {self._docs}_impact_tasks WHERE id=%s AND project_id=%s AND document_id=%s FOR SHARE",
+            (scope.review.source.task_id, scope.project_id, scope.document_id))
+        basis = cur.fetchone()
+        if not basis or basis["input_checkpoint"] != scope.input_checkpoint.model_dump(mode="json"):
+            raise ValueError("提交的固定影响输入不同")
+        return str(basis["version_id"])
+
     def _submit_group(self, scope, scope_object, config, creation_key, request_hash, stream):
         # No upstream counterpart (checked: document operation submit, import commit,
         # immutable requirement reviews): all modules share one frozen scope and atomic submission.
@@ -174,22 +208,7 @@ class PostgresGenerationTaskStore(PostgresDocumentTaskStore):
             cur.execute(f"SELECT project_id FROM {self._docs} WHERE id=%s FOR UPDATE", (scope.document_id,))
             doc = cur.fetchone()
             if not doc or str(doc["project_id"]) != scope.project_id: raise ValueError("文档不属于当前项目")
-            cur.execute(f"SELECT v.record FROM {self._docs}_requirement_versions v JOIN {self._docs}_requirements r "
-                "ON r.id=v.requirement_id WHERE v.id=%s AND r.project_id=%s AND r.document_id=%s FOR SHARE OF r,v",
-                (scope.requirement.id, scope.project_id, scope.document_id))
-            requirement = cur.fetchone()
-            if not requirement or fixed_requirement_version(requirement["record"]) != scope.requirement:
-                raise ValueError("提交的确认需求版本与原记录不同")
-            cur.execute(f"SELECT record FROM {self._docs}_requirement_reviews WHERE id=%s AND project_id=%s AND document_id=%s FOR SHARE",
-                (scope.review.id, scope.project_id, scope.document_id))
-            review = cur.fetchone()
-            if not review or PostgresRequirementStore._review(review) != scope.review:
-                raise ValueError("提交的原接受决定不同")
-            cur.execute(f"SELECT version_id,input_checkpoint FROM {self._docs}_impact_tasks WHERE id=%s AND project_id=%s AND document_id=%s FOR SHARE",
-                (scope.review.source.task_id, scope.project_id, scope.document_id))
-            basis = cur.fetchone()
-            if not basis or basis["input_checkpoint"] != scope.input_checkpoint.model_dump(mode="json"):
-                raise ValueError("提交的固定影响输入不同")
+            version_id = self._validate_basis(cur, scope)
             for module in scope.modules:
                 if not module.target: continue
                 cur.execute(f"SELECT c.project_id,v.record FROM {self._cases._version_table} v JOIN {self._cases._case_table} c ON c.id=v.case_id "
@@ -198,7 +217,7 @@ class PostgresGenerationTaskStore(PostgresDocumentTaskStore):
                 if not row or str(row["project_id"]) != scope.project_id or impact_record_hash(TestCaseVersionRecord.model_validate(row["record"])) != module.target.version_record_sha256:
                     raise ValueError("提交的固定用例版本或项目不同")
             group = fixed_generation_snapshot(GenerationGroup, id=str(uuid4()), project_id=scope.project_id,
-                document_id=scope.document_id, version_id=str(basis["version_id"]), creation_key=creation_key,
+                document_id=scope.document_id, version_id=version_id, creation_key=creation_key,
                 request_hash=request_hash, scope=scope_object, scope_sha256=scope.sha256,
                 module_ids=[item.id for item in scope.modules], config=config, created_at=datetime.now(timezone.utc))
             cur.execute(f"INSERT INTO {self._groups}(id,project_id,document_id,creation_key,request_hash,record) VALUES(%s,%s,%s,%s,%s,%s::jsonb)",

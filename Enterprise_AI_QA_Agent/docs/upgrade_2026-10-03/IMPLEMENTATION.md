@@ -4849,3 +4849,19 @@ Agent_Server内命令均使用..\.venv\Scripts\python.exe -X utf8 -m pytest（be
 跨层读取已搜索qa_type/qa_header/header_eligibility/value_types及request_validation，沿原runtime/ToolRuntime通用dict和Markdown/HTML工件输出。前端为agent_web/src/ReportsView对应实际views文件，无强类型性能projection契约变更；未改前端，未重跑构建。误写Frontend/src和results.jtl的只读检索错误已按实际路径更正，没有修改产品路径。
 
 项目根.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-typed-audit.py --sync，核对外部副本仍HEAD或新方案后同步，再不带--sync复核。所有对象实际下载校验，关键原件保存，依赖回归保留原dashboard，局部.gitattributes保留字节/厂商空白。旧证据及用户无关文件保持；只提交本轮确切文件，不推送/建PR。固定计划/缓存镜像/短程runner与报告验收，不宣称Agent/App/容量或默认镜像通过。完整升级及用户最新清单分类见PLAN6.96，Step按用户决定待账号处理。
+
+
+## 2026-10-09 普通需求文档独立模块生成〔基线b33ab70d〕
+
+依据P1_DOCUMENT_GENERATION_RESEARCH.md/PLAN6.97，新建普通来源scope/捕获器，接入既有生成Service/Store/Worker、API/实际文档页面、共享任务详情/重试。旧增量哈希字段不变；配置/模板MySQL，组/草稿/收据PG，原件/固定范围/响应RustFS。无新依赖/表/迁移，不调用Step。
+
+实际命令（Agent_Server内，解释器..\.venv\Scripts\python.exe）：
+
+- RUN_LIVE_DOCUMENT_GENERATION=1，QA_DOCUMENT_GENERATION_EVIDENCE_DIR为docs/upgrade_2026-10-03对应绝对目录；-m pytest tests/test_document_generation_production.py -q --junitxml=../docs/upgrade_2026-10-03/p1-document-generation-<批次>.xml，双流同名.log。before1失败25.58秒；verified1通过63.98秒。product增加RUN_LIVE_DOCUMENT_GENERATION_PRODUCT=1，1通过105.79秒；formats再加RUN_LIVE_DOCUMENT_GENERATION_FORMATS=1，1通过133.67秒。后三批PYTHONUTF8=1；每次独立实际数据库/Redis/API/CLI，原目录不覆盖。
+- -m pytest tests/test_document_generation_sources.py tests/test_test_case_generation_pipeline.py tests/test_document_parsers.py -q：25通过1跳过4.85秒，XML/log为p1-document-generation-contract。跳过既有证据导出项因未配置其单独目录；本轮真实md/docx/pdf原件保存在生产证据目录。
+- RUN_LIVE_DOCUMENT_IMPACT_TASKS=1，-m pytest tests/test_generation_tasks.py::test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts tests/test_generation_retries.py::test_actual_saved_response_retry_never_resends_and_old_failure_remains -q：4通过34.17秒；tests/test_generation_api.py::test_actual_public_settings_submission_fixed_report_and_archived_history -q：3通过27.17秒。XML/log分别incremental-regression/api-regression。
+- -m compileall -q：本轮API/Schema/来源/生成器/Service/运行装配/Store/main及三新增测试/场景文件，退出0，p1-document-generation-compile.json；附加语法检查。
+
+agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/DocumentGenerationProduct.test.ts src/features/tools/plugins/ApiDocParsing.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/GenerationTaskProduct.test.ts src/features/tools/plugins/GenerationRetryProduct.test.ts src/services/caseGeneration.api.test.ts：6文件67通过2.64秒；日志p1-document-generation-typecheck/frontend。真实product_browser独立执行npm run build、Vite预览和已安装Chromium，构建双流、页面错误、网络与截图均保留。
+
+项目根.venv\Scripts\python.exe docs/upgrade_2026-10-03/p1-document-generation-audit.py --sync，先确认外部方案仍是HEAD或新方案再同步，不带--sync复核。审计固定对象实际字节、原失败/子任务、原范围与三格式、历史证据及受保护文件。只提交本轮相关文件，不推送/建PR。未验证默认模型语义、长文容量、完整其他P0—P5；Step按用户决定延后。

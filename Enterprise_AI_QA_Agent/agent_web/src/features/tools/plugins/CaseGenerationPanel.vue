@@ -64,7 +64,9 @@ const kinds = { update: "更新用例草稿", create: "新建用例草稿", reti
       <button v-if="hasMore" type="button" class="secondary-btn" :disabled="historyBusy || busy" @click="loadHistory(true)">更多生成历史</button>
     </section>
     <section v-if="report && scope" aria-label="固定增量生成结果">
-      <h5>固定生成组 {{ report.group.id }}</h5><p>依据需求V{{ scope.requirement.version }} · {{ scope.requirement.id }} · {{ scope.requirement.statement }}</p>
+      <h5>固定生成组 {{ report.group.id }}</h5>
+      <p v-if="scope.implementation_version === 'incremental-generation-scope-v1'">依据需求V{{ scope.requirement.version }} · {{ scope.requirement.id }} · {{ scope.requirement.statement }}</p>
+      <p v-else>普通文档生成 · 固定解析快照 {{ scope.parse_snapshot.id }} · {{ scope.request.objective }}</p>
       <p>固定范围SHA256：{{ scope.sha256 }} · 配置修订 {{ report.group.config.revision }}</p>
       <p>{{ scope.basis_limitations.join('、') || '原范围未声明限制' }} · 当前环境是否生效未知</p>
       <button type="button" class="secondary-btn" :disabled="busy" @click="refreshReport">刷新当前生成结果</button>

@@ -1,4 +1,5 @@
 import type { RequirementReview, RequirementVersion } from "./requirements.types";
+import type { DocumentParseSnapshot } from "../types";
 
 export interface GenerationTaskPolicy {
   timeout_seconds: number;
@@ -46,7 +47,7 @@ export interface GenerationTask {
 }
 export interface GenerationGroupView { group: GenerationGroup; modules: GenerationTask[] }
 export interface GenerationGroupPage { items: GenerationGroup[]; has_more: boolean; limit: number; offset: number }
-export interface GenerationScope {
+export interface IncrementalGenerationScope {
   implementation_version: "incremental-generation-scope-v1";
   project_id: string; document_id: string;
   request: Omit<GenerationTaskRequest, "creation_key">;
@@ -59,6 +60,20 @@ export interface GenerationScope {
   }[];
   basis_limitations: string[]; sha256: string;
 }
+export interface DocumentGenerationTaskRequest {
+  creation_key: string; parse_snapshot_id: string; objective: string; mode_key: string;
+  max_cases_per_module: number; model_key: string | null;
+}
+export interface DocumentGenerationScope {
+  implementation_version: "document-generation-scope-v1";
+  project_id: string; document_id: string; request: Omit<DocumentGenerationTaskRequest, "creation_key">;
+  parse_snapshot: DocumentParseSnapshot; text: string;
+  segments: { module_id: string; index: number; title: string; section_id: string | null;
+    start_char: number; end_char: number; block_ids: string[] }[];
+  template: Record<string, unknown>; authoring: Record<string, unknown>;
+  modules: IncrementalGenerationScope["modules"]; basis_limitations: string[]; sha256: string;
+}
+export type GenerationScope = IncrementalGenerationScope | DocumentGenerationScope;
 export interface GenerationResponse {
   text: string; tool_calls: Record<string, unknown>[];
   request_payload: Record<string, unknown>; response_summary: Record<string, unknown>;

@@ -13,10 +13,25 @@ export function assertGenerationGroup(group: GenerationGroup, projectId: string,
 
 export function assertGenerationScope(scope: GenerationScope, group: GenerationGroup, request?: GenerationTaskRequest): void {
   if (scope.project_id !== group.project_id || scope.document_id !== group.document_id || scope.sha256 !== group.scope_sha256
-    || scope.requirement.id !== scope.request.requirement_version_id || scope.requirement.requirement_id !== scope.request.requirement_id
-    || scope.review.id !== scope.requirement.review_id || scope.review.requirement_version?.id !== scope.requirement.id
-    || scope.review.project_id !== group.project_id || scope.review.document_id !== group.document_id
     || JSON.stringify(scope.modules.map(item => item.id)) !== JSON.stringify(group.module_ids)) {
+    throw new Error("生成范围与原组、需求版本或评审不一致");
+  }
+  if (scope.implementation_version === "document-generation-scope-v1") {
+    const seed = scope.parse_snapshot.seed;
+    const textLength = Array.from(scope.text).length;
+    let end = 0;
+    if (request || scope.parse_snapshot.id !== scope.request.parse_snapshot_id || seed.project_id !== group.project_id
+      || seed.document_id !== group.document_id || seed.version_id !== group.version_id
+      || scope.segments.length !== group.module_ids.length || scope.segments.some((segment, index) => {
+        const invalid = segment.index !== index || segment.module_id !== group.module_ids[index]
+          || segment.start_char !== end || segment.end_char <= end || segment.end_char > textLength;
+        end = segment.end_char; return invalid;
+      }) || end !== textLength) throw new Error("普通文档生成与固定快照、原件或全文范围不同");
+    return;
+  }
+  if (scope.requirement.id !== scope.request.requirement_version_id || scope.requirement.requirement_id !== scope.request.requirement_id
+    || scope.review.id !== scope.requirement.review_id || scope.review.requirement_version?.id !== scope.requirement.id
+    || scope.review.project_id !== group.project_id || scope.review.document_id !== group.document_id) {
     throw new Error("生成范围与原组、需求版本或评审不一致");
   }
   if (request && (group.creation_key !== request.creation_key || JSON.stringify(normalizedGeneration({

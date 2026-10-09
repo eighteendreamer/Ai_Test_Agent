@@ -6,6 +6,7 @@ from fastapi import APIRouter, Query, Request
 
 from src.api.document_operation_calls import call_document_operation
 from src.schemas.case_generation import IncrementalGenerationScope
+from src.schemas.document_case_generation import DocumentGenerationScope, DocumentGenerationTaskRequest
 from src.schemas.case_generation_tasks import (
     GenerationGroup, GenerationGroupPage, GenerationGroupView, GenerationTaskPolicy,
     GenerationTaskRequest, GenerationTaskSettings, GenerationTaskView,
@@ -18,7 +19,7 @@ router = APIRouter(prefix="/projects/{project_id}", tags=["case-generation"])
 
 async def _call(request, project_id, operation, *args, service="generation_task_service", **kwargs):
     return await call_document_operation(request, project_id, service, operation, *args,
-        log_prefix="case_generation", label="增量生成", **kwargs)
+        log_prefix="case_generation", label="用例生成", **kwargs)
 
 
 @router.get("/case-generation-settings", response_model=GenerationTaskSettings)
@@ -42,6 +43,11 @@ async def get_by_request(project_id: UUID, document_id: UUID, request: Request,
     return await _call(request, project_id, "get_by_request", str(document_id), creation_key)
 
 
+@router.post("/documents/{document_id}/document-case-generations", response_model=GenerationGroup, status_code=202)
+async def submit_document(project_id: UUID, document_id: UUID, payload: DocumentGenerationTaskRequest, request: Request):
+    return await _call(request, project_id, "submit_document", str(document_id), payload)
+
+
 @router.get("/documents/{document_id}/case-generations", response_model=GenerationGroupPage)
 async def list_groups(project_id: UUID, document_id: UUID, request: Request,
     limit: int = Query(default=20, ge=1, le=100), offset: int = Query(default=0, ge=0)):
@@ -54,7 +60,7 @@ async def read_group(project_id: UUID, document_id: UUID, group_id: UUID, reques
     return {"group": group, "modules": modules}
 
 
-@router.get("/documents/{document_id}/case-generations/{group_id}/scope", response_model=IncrementalGenerationScope)
+@router.get("/documents/{document_id}/case-generations/{group_id}/scope", response_model=IncrementalGenerationScope | DocumentGenerationScope)
 async def read_scope(project_id: UUID, document_id: UUID, group_id: UUID, request: Request):
     return await _call(request, project_id, "read_scope_by_group", str(document_id), str(group_id))
 

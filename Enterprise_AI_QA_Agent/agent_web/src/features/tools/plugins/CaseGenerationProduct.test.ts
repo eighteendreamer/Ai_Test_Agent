@@ -16,7 +16,7 @@ import CaseGenerationSettings from "./CaseGenerationSettings.vue";
 import { normalizedGeneration } from "./caseGenerationProduct";
 
 const service = vi.hoisted(() => ({ getGenerationSettings: vi.fn(), saveGenerationSettings: vi.fn(),
-  submitCaseGeneration: vi.fn(), getCaseGenerationSubmission: vi.fn(), listCaseGenerations: vi.fn(),
+  submitCaseGeneration: vi.fn(), submitDocumentGeneration: vi.fn(), getCaseGenerationSubmission: vi.fn(), listCaseGenerations: vi.fn(),
   readCaseGeneration: vi.fn(), readCaseGenerationScope: vi.fn(), getCaseGenerationTask: vi.fn(), readCaseGenerationResponse: vi.fn(),
   retryCaseGeneration: vi.fn(), getCaseGenerationRetrySubmission: vi.fn(), listCaseGenerationRetries: vi.fn()
 } satisfies Record<keyof typeof import("../../../services/caseGeneration.api"), ReturnType<typeof vi.fn>>));

@@ -31,7 +31,7 @@ async def generation_worker_runtime(settings, *, stream=GENERATION_STREAM):
         await initialize("impact_sources", impact.tasks.initialize())
         await initialize("requirements", impact.requirements.initialize())
         runtime = build_generation_runtime(settings, container, requirements=impact.requirements,
-            impact_tasks=impact.tasks, stream=None)
+            impact_tasks=impact.tasks, stream=None, parsing=parsing)
         await initialize("generation", runtime.service.initialize())
         return runtime.service, runtime.store
 

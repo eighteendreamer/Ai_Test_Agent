@@ -261,6 +261,13 @@ class ModelTestCaseGenerator:
                 "For creation, generate only the specified new coverage. Never activate, disable or execute cases. "
                 "Do not infer deployment from requirement approval. Missing sources remain warnings."
             )
+        if isinstance(context.get("document_generation"), dict):
+            system_prompt += (
+                "\nGenerate cases for the focused document_generation.segment only, using the complete fixed text "
+                "to understand shared and cross-section rules. Preserve negative conditions and nested business JSON. "
+                "Use distinct stable case keys per module. Source range coverage does not prove case coverage. "
+                "Never activate or execute cases. Mark missing coverage and uncertainty in warnings."
+            )
         return ModelInvocationRequest(
             system_prompt=system_prompt,
             messages=[
@@ -301,8 +308,10 @@ class ModelTestCaseGenerator:
         fixed = CaseGenerationAuthoringSnapshot.model_validate_json(fixed.model_dump_json())
         invocation = self._build_request(request, context, [skill.prompt_block for skill in fixed.skills])
         incremental = isinstance(context.get("incremental_generation"), dict)
+        document = isinstance(context.get("document_generation"), dict)
         prepared = fixed_generation_snapshot(PreparedCaseGeneration, authoring=fixed, request=request,
-            invocation=invocation, prompt_version="test-case-generation-incremental-v1" if incremental else "test-case-generation-frozen-v1",
+            invocation=invocation, prompt_version="test-case-generation-incremental-v1" if incremental else
+                "test-case-generation-document-v1" if document else "test-case-generation-frozen-v1",
             requires_content_json=incremental or isinstance(context.get("generation_template"), dict))
         logger.info("case_generation_request_prepared", extra={"model_key": fixed.model_key,
             "request_sha256": prepared.sha256, "max_cases": request.max_cases})
