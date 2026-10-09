@@ -106,7 +106,8 @@ async def test_actual_jmeter_smoke_status_and_response_chain(tmp_path):
                         child = processes.start("jmeter-cleanup-" + variant, "-m", "src.cli.run_resource_cleanup_worker", "--once", "--worker-id", "jmeter-response-cleanup")
                         assert await processes.wait(child) == 0
                     assert [o["passed"] for o in observations] == [o["expected"] for o in observations], observations
-                    assert [o["request_count"] for o in observations] == [3, 3, 3, 6, 6], observations
+                    assert [o["request_count"] for o in observations] == [3, 3, 3, 3, 6], observations
+                    assert all(e["path"] == "/missing" for e in observations[3]["events"])
                     events = observations[-1]["events"]
                     assert [e["path"] for e in events] == ["/login", "/profile"] * 3
                     for source, consumer in zip(events[::2], events[1::2]):

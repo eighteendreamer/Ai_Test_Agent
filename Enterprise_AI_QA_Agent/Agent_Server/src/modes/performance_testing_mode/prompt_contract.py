@@ -115,6 +115,7 @@ PERF_ANALYST_CONTRACT = """\
 5. 引擎 thresholds 与 SLA 判定交叉验证
 6. 负载侧观测 + "需结合服务端监控"标注
 7. request_validation独立于SLA：实际check失败为fail，必需check缺失为inconclusive；stdout文字、exit0及SLA通过不能代替响应、关联与header准备成功。not_observed表示引擎业务核验未采，不能称它已验收。
+8. JMeter skipped_targets记录有原线程/轮次及来源证据的依赖跳过；跳过不计为HTTP成功或通过。独立目标继续执行，每轮关联重新取得，禁止沿用上一轮凭据。只有缺少采样、没有明确来源失败时，仍列证据缺口，不能猜测为正常跳过。
 
 你不做执行，不调用 runner 工具。你的输入是 RawMetrics，输出是 PerfReport。
 """

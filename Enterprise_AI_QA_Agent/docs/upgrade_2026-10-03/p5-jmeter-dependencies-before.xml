@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="55.582" timestamp="2026-10-09T15:53:59.152851+08:00" hostname="EIghteen"><testcase classname="tests.test_performance_jmeter_dependencies_live" name="test_actual_jmeter_missing_dependencies_do_not_send_requests" time="45.218"><failure message="AssertionError: {'variant': 'missing', 'events': [{'path': '/source', 'status': 200, 'accepted': False, 'header_present': False, ...},...esent': True, ...}, ...], 'counts': {'/source': 3, '/bridge': 3, '/final': 3, '/independent': 3}, 'passed': False, ...}&#10;assert {'/source': 3...dependent': 3} == {'/source': 3...dependent': 3}&#10;  &#10;  Omitting 2 identical items, use -vv to show&#10;  Left contains 2 more items:&#10;  {'/bridge': 3, '/final': 3}&#10;  Use -v to get more diff">tests\test_performance_jmeter_dependencies_live.py:171: in test_actual_jmeter_missing_dependencies_do_not_send_requests
+    assert observations[0]["counts"] == {"/source": 3, "/independent": 3}, observations[0]
+E   AssertionError: {'variant': 'missing', 'events': [{'path': '/source', 'status': 200, 'accepted': False, 'header_present': False, ...},...esent': True, ...}, ...], 'counts': {'/source': 3, '/bridge': 3, '/final': 3, '/independent': 3}, 'passed': False, ...}
+E   assert {'/source': 3...dependent': 3} == {'/source': 3...dependent': 3}
+E     
+E     Omitting 2 identical items, use -vv to show
+E     Left contains 2 more items:
+E     {'/bridge': 3, '/final': 3}
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

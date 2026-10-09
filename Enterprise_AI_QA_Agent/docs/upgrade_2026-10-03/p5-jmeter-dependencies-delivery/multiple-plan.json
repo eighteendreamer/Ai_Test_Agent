@@ -1,0 +1,122 @@
+{
+  "plan_id": "",
+  "title": "",
+  "engine": "jmeter",
+  "run_intent": "regression",
+  "targets": [
+    {
+      "name": "source",
+      "method": "GET",
+      "url": "http://127.0.0.1:51897/source",
+      "headers": {
+        "X-QA-Thread": "${__threadNum}",
+        "X-QA-Iteration": "${__groovy(vars.getIteration())}"
+      },
+      "body_template": null
+    },
+    {
+      "name": "extra",
+      "method": "GET",
+      "url": "http://127.0.0.1:51897/extra",
+      "headers": {
+        "X-QA-Thread": "${__threadNum}",
+        "X-QA-Iteration": "${__groovy(vars.getIteration())}"
+      },
+      "body_template": null
+    },
+    {
+      "name": "bridge",
+      "method": "GET",
+      "url": "http://127.0.0.1:51897/bridge",
+      "headers": {
+        "X-QA-Thread": "${__threadNum}",
+        "X-QA-Iteration": "${__groovy(vars.getIteration())}"
+      },
+      "body_template": null
+    },
+    {
+      "name": "final",
+      "method": "GET",
+      "url": "http://127.0.0.1:51897/final",
+      "headers": {
+        "X-QA-Thread": "${__threadNum}",
+        "X-QA-Iteration": "${__groovy(vars.getIteration())}"
+      },
+      "body_template": null
+    },
+    {
+      "name": "independent",
+      "method": "GET",
+      "url": "http://127.0.0.1:51897/independent",
+      "headers": {
+        "X-QA-Thread": "${__threadNum}",
+        "X-QA-Iteration": "${__groovy(vars.getIteration())}"
+      },
+      "body_template": null
+    }
+  ],
+  "workload": {
+    "model": "open",
+    "mode": "ramping_arrival_rate",
+    "target_rate_rps": null,
+    "ramp_stages": [],
+    "virtual_users": 1,
+    "hold_seconds": 2,
+    "think_time_ms": 25
+  },
+  "smoke": {
+    "vus": 1,
+    "iterations": 3,
+    "expect_status": [
+      200
+    ],
+    "expect_extract": [
+      "first",
+      "second",
+      "extra"
+    ]
+  },
+  "data_params": [],
+  "correlations": [
+    {
+      "extract": "first",
+      "from_path": "session.credential",
+      "into_header": "Authorization",
+      "from_target": "source",
+      "into_target": "bridge",
+      "header_prefix": "Bearer "
+    },
+    {
+      "extract": "second",
+      "from_path": "session.credential",
+      "into_header": "Authorization",
+      "from_target": "bridge",
+      "into_target": "final",
+      "header_prefix": "Bearer "
+    },
+    {
+      "extract": "extra",
+      "from_path": "session.credential",
+      "into_header": "X-Second",
+      "from_target": "extra",
+      "into_target": "bridge"
+    }
+  ],
+  "assertions": [],
+  "sla": {
+    "p95_ms": null,
+    "p99_ms": 10000.0,
+    "error_rate": 0.01,
+    "min_tps": null
+  },
+  "baseline_ref": null,
+  "topology": {
+    "backend": "auto",
+    "injector_count": 0
+  },
+  "limits": {
+    "max_vus": 2000,
+    "max_rate_rps": 1000,
+    "max_duration_seconds": 1800
+  }
+}

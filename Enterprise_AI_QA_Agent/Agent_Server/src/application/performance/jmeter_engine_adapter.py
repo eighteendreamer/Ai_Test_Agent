@@ -106,7 +106,7 @@ class JMeterEngineAdapter:
                         "-Jqa_perf.scheduler=false"])
 
         if getattr(script, "correlations", None):
-            cmd.extend(["-Jsample_variables=" + ",".join(
+            cmd.extend(["-Jsample_variables=qa_iteration," + ",".join(
                 name for i, _ in enumerate(script.correlations)
                 for name in (f"qa_extract_{i}", f"qa_dependency_{i}")
             )])
@@ -202,7 +202,18 @@ class JMeterEngineAdapter:
             lines.append(f'          <stringProp name="throughput">{target_cph}</stringProp><stringProp name="calcMode">1</stringProp>')
             lines.append('        </ConstantThroughputTimer><hashTree/>')
         for i, target in enumerate(targets):
-            self._append_sampler(lines, plan, target, i, indent="        ")
+            dependencies = [b for b in correlation_bindings(plan) if b["destination"] == i]
+            indent = "        "
+            if dependencies:
+                condition = '${__groovy(' + " && ".join(
+                    f"vars.get('qa_extract_{b['index']}') == 'true'" for b in dependencies) + ')}'
+                lines.append(f'{indent}<IfController guiclass="IfControllerPanel" testclass="IfController" testname="Dependencies for target {i}" enabled="true">')
+                lines.append(f'{indent}  <stringProp name="IfController.condition">{_esc_xml(condition)}</stringProp><boolProp name="IfController.useExpression">true</boolProp><boolProp name="IfController.evaluateAll">false</boolProp>')
+                lines.append(f'{indent}</IfController><hashTree>')
+                indent += "  "
+            self._append_sampler(lines, plan, target, i, indent=indent)
+            if dependencies:
+                lines.append('        </hashTree>')
         lines.append('      </hashTree>')
 
     def _append_sampler(self, lines: list[str], plan: PerfPlan, target: Any, index: int, *, indent: str) -> None:
@@ -230,6 +241,14 @@ class JMeterEngineAdapter:
         lines.append(f'{indent}  <stringProp name="HTTPSampler.embedded_url_re"></stringProp><stringProp name="HTTPSampler.connect_timeout"></stringProp><stringProp name="HTTPSampler.response_timeout"></stringProp>')
         lines.append(f'{indent}</HTTPSamplerProxy>')
         lines.append(f'{indent}<hashTree>')
+        if index == 0 and bindings:
+            # Thread-local iteration identity is saved through standard JTL
+            # sample_variables; no synthetic sampler distorts request metrics.
+            reset = "vars.put('qa_iteration', String.valueOf(vars.getIteration())); "
+            for binding in bindings:
+                i = binding["index"]
+                reset += f"vars.remove('qa_corr_{i}'); vars.remove('qa_extract_{i}'); vars.remove('qa_dependency_{i}'); "
+            self._append_script_element(lines, indent, "JSR223PreProcessor", "Start correlation iteration", reset)
         if plan.workload.think_time_ms > 0:
             lines.append(f'{indent}  <ConstantTimer guiclass="ConstantTimerGui" testclass="ConstantTimer" testname="Think Time" enabled="true"><stringProp name="ConstantTimer.delay">{plan.workload.think_time_ms}</stringProp></ConstantTimer><hashTree/>')
         vus = plan.workload.virtual_users or 50

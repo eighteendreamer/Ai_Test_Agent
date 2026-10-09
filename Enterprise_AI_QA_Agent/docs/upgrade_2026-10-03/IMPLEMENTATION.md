@@ -4807,3 +4807,17 @@ Agent_Server中均使用`..\.venv\Scripts\python.exe -X utf8 -m pytest`：
 - compileall生产性能文件、四测试及审计退出0，双流p5-perf-project-compile.log，仅作附加检查。
 
 日志和XML使用对应p5-perf-project-*批次名；所有测试进程已退出。项目根`.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-perf-project-audit.py --sync`在核对外部副本仍为原HEAD后同步三份方案，再不带--sync审计。保护前批274份工件及用户无关文件；只提交本轮确切文件，不推送/建PR。基线可比性、完整Agent/App及其余P0—P5仍未完成，真实Step待账号处理后验收。
+
+## 2026-10-09 JMeter缺值依赖、独立目标与当轮传值〔d3d03ec4〕
+
+依据P5_JMETER_DEPENDENCIES_RESEARCH.md/PLAN6.94，修改JMeter adapter/request_validation/报告/Prompt，同步既有adapter和真实响应测试；新增实际旅程及JTL回放测试。没有新依赖/配置/表/迁移/前端，生产配置MySQL、报告PG、原件RustFS边界保持。默认Step不调用。
+
+Agent_Server内实际命令使用`..\.venv\Scripts\python.exe -X utf8 -m pytest`：
+
+- `RUN_LIVE_JMETER_DEPENDENCIES=1`，`QA_JMETER_DEPENDENCIES_DIR`分别指向本项目docs/upgrade_2026-10-03/p5-jmeter-dependencies-before、fixed、verified、delivery绝对路径（后缀对应同一完整批次名）。`tests/test_performance_jmeter_dependencies_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/<同批次>.xml`，双流同名.log：before 1失败55.61秒，fixed 1通过53.27秒，verified 1通过147.32秒，delivery 1通过149.28秒。五个场景及两次三轮/单线程execute→真实PG报告；delivery逐线程/轮次比对来源/消费者凭据哈希。只短程测试，不声称持续load或容量。
+- `RUN_LIVE_JMETER_RESPONSE=1`、`QA_JMETER_RESPONSE_DIR=.../p5-jmeter-dependencies-response-regression`，`tests/test_performance_jmeter_live.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-jmeter-dependencies-response-regression.xml`：1通过116.76秒，双流同名.log。依赖缺失只发来源3次，其他原状态/正常传值行为保持。
+- 合同first：jmeter_adapter、correlation_contract、report_builder、runner四模块43通过6.67秒；追加`tests/test_performance_jmeter_dependencies.py`后contract 52通过7.17秒。新增9项从实际fixed原JTL和失效证据构造，不模拟JMeter执行。
+- 扩大首命令误写`tests/test_mode_skills.py`，退出4、0测试，expanded.log/XML保留；按rg实际目录更正为`test_performance_mode_skills.py`。最终expanded-verified 23模块163通过35.21秒、0跳过，1条既有Starlette/AnyIO警告。性能模块`tests/test_performance_<名称>.py`包括jmeter_dependencies、project_scope、report_persistence、correlation_contract、evidence_contract、measurement_contract、k6_adapter、jmeter_adapter、report_builder、result_parser、runner、runtime_artifacts、coordinator、task_pool、guard、failure_analyzer、mode_skills、case_execution_system；另五个确切文件为`tests/test_case_execution_verification.py`、`tests/test_perf_high_level_runners.py`、`tests/test_artifact_storage_service.py`、`tests/test_xlsx_artifact_download.py`、`tests/test_tool_runtime_heartbeat.py`。
+- compileall四项生产文件、四测试及新audit退出0，双流p5-jmeter-dependencies-compile.log，仅为附加检查。
+
+项目根`.venv\Scripts\python.exe docs/upgrade_2026-10-03/p5-jmeter-dependencies-audit.py --sync`先检查外部方案仍原HEAD或新方案再同步，随后不带--sync复核。本轮实际所有对象下载校验、完整容器不存在和正式清理回执核对；前批156+274份原工件及用户无关文件保持。原dashboard依赖仅作为捕获证据保存，局部.gitattributes保留原字节/厂商空白。只提交本批确切文件，不推送/建PR。完整Agent/App、复杂JSON/body及其他P0—P5继续，Step按用户决定待账号处理后验收。

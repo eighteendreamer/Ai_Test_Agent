@@ -38,6 +38,48 @@ def correlation_bindings(plan):
     return bindings
 
 
+def _jmeter_skipped_iterations(rows, plan, bindings, result):
+    """Join standard thread/iteration JTL facts; never infer skips from absence alone."""
+    if not rows or "qa_iteration" not in rows[0]:
+        return {}, {}
+    iterations = {}
+    for row in rows:
+        iteration, thread = row.get("qa_iteration", ""), row.get("threadName", "")
+        if not str(iteration).isdigit() or int(iteration) < 1 or not thread:
+            result["missing_checks"].append("jmeter_iteration_identity")
+            continue
+        iterations.setdefault((thread, iteration), {}).setdefault(row.get("label"), []).append(row)
+    skipped, reasons = {}, {}
+    for samples in iterations.values():
+        blocked = set()
+        for i, target in enumerate(plan.targets):
+            observed = samples.get(target.name, [])
+            unavailable = []
+            for binding in bindings:
+                if binding["destination"] != i:
+                    continue
+                source = binding["source"]
+                source_rows = samples.get(plan.targets[source].name, [])
+                if source in blocked or len(source_rows) == 1 and source_rows[0].get(f"qa_extract_{binding['index']}") == "false":
+                    unavailable.append(binding["index"])
+            if not observed and unavailable:
+                blocked.add(i)
+                skipped[i] = skipped.get(i, 0) + 1
+                reasons.setdefault(i, set()).update(unavailable)
+            elif not observed:
+                result["missing_checks"].append(f"iteration_sample:{target.name}")
+            elif len(observed) != 1:
+                result["missing_checks"].append(f"iteration_sample_identity:{target.name}")
+            elif unavailable:
+                result["failed_checks"].append(f"unexpected_dependency_request:{target.name}")
+    result["skipped_targets"] = [{"index": i, "name": plan.targets[i].name,
+        "iterations": count, "blocked_by": sorted(reasons[i]), "reason": "missing_dependency"}
+        for i, count in sorted(skipped.items())]
+    for i in skipped:
+        result["failed_checks"].append(f"dependency_unavailable:{plan.targets[i].name}")
+    return skipped, reasons
+
+
 def request_validation(data, plan):
     result = {"status": "not_requested", "targets": [], "correlations": [],
         "checked_status": [], "extracted": {}, "missing_checks": [], "failed_checks": []}
@@ -57,6 +99,7 @@ def request_validation(data, plan):
             return result
         rows = list(csv.DictReader(io.StringIO(jtl)))
         bindings = correlation_bindings(plan)
+        skipped, reasons = _jmeter_skipped_iterations(rows, plan, bindings, result)
         by_index = {i: [] for i in range(len(plan.targets))}
         for row in rows:
             label = str(row.get("label") or "")
@@ -69,7 +112,7 @@ def request_validation(data, plan):
             statuses = sorted({int(row["responseCode"]) for row in target_rows if str(row.get("responseCode", "")).isdigit()})
             passes = sum(1 for row in target_rows if str(row.get("responseCode")) in expected)
             fails = len(target_rows) - passes
-            if not target_rows:
+            if not target_rows and not skipped.get(i):
                 result["missing_checks"].append(f"status:{target.name}")
             elif fails:
                 result["failed_checks"].append(f"qa_status_{i}")
@@ -77,32 +120,38 @@ def request_validation(data, plan):
             result["targets"].append({"index": i, "name": target.name,
                 "expected_status": plan.smoke.expect_status, "observed_status": statuses,
                 "checks": [{"name": f"qa_status_{i}", "passes": passes, "fails": fails,
-                    "passed": not fails}]})
+                    "passed": not fails if target_rows else None}]})
+            if "skipped_targets" in result:
+                result["targets"][-1].update({"executed_samples": len(target_rows),
+                    "skipped_iterations": skipped.get(i, 0), "blocked_by": sorted(reasons.get(i, []))})
         by_name = {}
 
-        def jtl_check(name, target_rows):
+        def jtl_check(name, target_rows, skipped_count=0):
             values = [row.get(name) for row in target_rows]
             passes = sum(value == "true" for value in values)
             fails = sum(value == "false" for value in values)
-            if not values or passes + fails != len(values):
+            if (not values and not skipped_count) or passes + fails != len(values):
                 result["missing_checks"].append(name)
             if fails:
                 result["failed_checks"].append(name)
-            return {"name": name, "passes": passes, "fails": fails,
-                "passed": bool(values) and passes == len(values)}
+            observation = {"name": name, "passes": passes, "fails": fails,
+                "passed": bool(values) and passes == len(values) and not skipped_count}
+            if skipped_count:
+                observation["skipped_iterations"] = skipped_count
+            return observation
 
         for binding in bindings:
             i = binding["index"]
             source_rows = by_index[binding["source"]]
             destination_rows = by_index[binding["destination"]] if binding["destination"] is not None else []
-            extraction = jtl_check(f"qa_extract_{i}", source_rows)
+            extraction = jtl_check(f"qa_extract_{i}", source_rows, skipped.get(binding["source"], 0))
             extract_passed = extraction["passed"]
             binding_passed = True
             detail = {"index": i, "name": binding["correlation"].extract,
                 "from_target": plan.targets[binding["source"]].name, "from_path": binding["correlation"].from_path,
                 "extraction": extraction}
             if binding["destination"] is not None:
-                dependency = jtl_check(f"qa_dependency_{i}", destination_rows)
+                dependency = jtl_check(f"qa_dependency_{i}", destination_rows, skipped.get(binding["destination"], 0))
                 binding_passed = dependency["passed"]
                 detail.update({"into_target": plan.targets[binding["destination"]].name,
                     "into_header": binding["correlation"].into_header,
@@ -117,6 +166,7 @@ def request_validation(data, plan):
         result["status"] = "failed" if result["failed_checks"] else "missing" if result["missing_checks"] else "passed"
         logger.info("performance_jmeter_requests_validated", extra={"validation_status": result["status"],
             "target_count": len(result["targets"]), "correlation_count": len(bindings),
+            "skipped_targets": result.get("skipped_targets", []),
             "missing_checks": result["missing_checks"], "failed_checks": result["failed_checks"]})
         return result
 

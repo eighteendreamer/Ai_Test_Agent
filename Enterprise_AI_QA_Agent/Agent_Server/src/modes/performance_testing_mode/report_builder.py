@@ -250,6 +250,8 @@ class PerfReportBuilder:
             for key in ("failed_checks", "missing_checks"):
                 if report.request_validation.get(key):
                     lines.append(f"- {key}: " + ", ".join(report.request_validation[key]))
+            for target in report.request_validation.get("skipped_targets", []):
+                lines.append(f"- 依赖缺失，跳过 {target['name']}：{target['iterations']} 轮；来源关联 {target['blocked_by']}")
         lines.append("")
 
         lines.append("## 核心指标")
@@ -347,6 +349,8 @@ class PerfReportBuilder:
             for key in ("failed_checks", "missing_checks"):
                 if report.request_validation.get(key):
                     lines.append(f"<p>{key}: {escape(', '.join(report.request_validation[key]))}</p>")
+            for target in report.request_validation.get("skipped_targets", []):
+                lines.append(f"<p>依赖缺失，跳过 {escape(target['name'])}：{target['iterations']} 轮；来源关联 {target['blocked_by']}</p>")
 
         m = report.metrics
         lines.append("<h2>核心指标</h2><table><tr><th>指标</th><th>值</th></tr>")
