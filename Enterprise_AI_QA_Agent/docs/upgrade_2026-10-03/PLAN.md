@@ -3045,3 +3045,15 @@ JMeter沿原生HTTPArgument/postBodyRaw/UTF-8发送正文，已有JSR223PreProce
 另外复跑 `test_recording_embedded_product.py` 的 `settled`、`response-dom` 两个场景，真实 Electron + PostgreSQL/RustFS/图谱固化 `2 passed, 14 deselected in 23.97s`。因此现有录制驱动和真实产品存储各有直接证据，但本轮没有把外部 DeepSeek 事件写入正式业务库。
 
 仍未完成：人工登录态与真实业务步骤、完整清洗去重/干扰和遗漏检查、跨页面/跨域/Shadow DOM 关联、场景与步骤整理、元素别名、失败定位、默认 AI 使用及正式评审。默认 Step 模型仍因实名认证返回 403，按用户决定暂缓；完整 P0—P5 目标保持 active。
+
+### 7.01 API 鉴权输入与真实受保护接口〔2026-10-10〕
+
+依据 [P2_API_AUTH_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P2_API_AUTH_RESEARCH.md)、现有 `CredentialManager`/`ApiTaskExecutor` 以及接口测试课程 6.2、7.2 和登录鉴权章节，先用真实本地受保护 HTTP 服务复现，再修改执行链路。课程要求登录返回的 token 实际用于后续受保护接口；Cookie、Bearer、Basic、自定义 Header 不能混为一种输入。
+
+复现发现：用户 `auth_type=cookie` 的 `sid=abc; tenant=blue` 被原实现错误变成 `session=sid=abc; tenant=blue`，受保护接口返回 401；已声明的 `AUTH_CUSTOM` 没有读取用户 `headers`，`X-API-Key` 请求也返回 401。动态登录 Bearer 原路径先已通过，未改其语义。
+
+修改 `Agent_Server/src/modes/api_testing_mode/credential_manager.py`：Cookie 按名称和值解析，接受结构化字典；`AUTH_CUSTOM` 转发显式 headers；自定义 Header 名称和值拒绝 CR/LF 和非法名称，避免外部输入形成 Header 注入；API key 可使用显式 header name，默认行为保持。凭据不写日志，不新增依赖、配置键、表或迁移。
+
+实际验证见 `p2-api-auth-validation.json`：修复前真实 HTTP `2 failed, 1 passed`；修复后 Cookie/custom/Bearer 三项 `3 passed`；受影响 API 回归 `48 passed, 5 skipped`；全部 `test_api_*.py` `123 passed, 36 skipped`，保留一条既有 Starlette/AnyIO 警告。没有调用默认 Step 模型。
+
+`expires_at` 目前只是已有状态字段，刷新端点、refresh token 字段及自动续期没有可靠项目契约，本轮不猜测实现；鉴权续期仍属于未完成项。默认 Agent 完整流程、完整 App、其他模式以及其余 P0—P5 继续未完成。

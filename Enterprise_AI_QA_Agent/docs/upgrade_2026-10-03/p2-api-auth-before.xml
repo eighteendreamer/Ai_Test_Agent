@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="3" time="2.558" timestamp="2026-10-10T01:41:38.520647+08:00" hostname="EIghteen"><testcase classname="tests.test_api_authentication_live" name="test_user_cookie_header_is_parsed_and_sent_to_real_protected_endpoint" time="0.576"><failure message="AssertionError: {'task_id': 'cookie', 'name': '', 'method': 'GET', 'path': 'http://127.0.0.1:62646/cookie-protected', ...}&#10;assert 'failed' == 'completed'&#10;  &#10;  - completed&#10;  + failed">tests\test_api_authentication_live.py:74: in test_user_cookie_header_is_parsed_and_sent_to_real_protected_endpoint
+    assert task.status == "completed", task.model_dump(mode="json")
+E   AssertionError: {'task_id': 'cookie', 'name': '', 'method': 'GET', 'path': 'http://127.0.0.1:62646/cookie-protected', ...}
+E   assert 'failed' == 'completed'
+E     
+E     - completed
+E     + failed</failure></testcase><testcase classname="tests.test_api_authentication_live" name="test_custom_auth_header_is_sent_to_real_protected_endpoint" time="0.518"><failure message="AssertionError: {'task_id': 'custom', 'name': '', 'method': 'GET', 'path': 'http://127.0.0.1:62750/custom-protected', ...}&#10;assert 'failed' == 'completed'&#10;  &#10;  - completed&#10;  + failed">tests\test_api_authentication_live.py:91: in test_custom_auth_header_is_sent_to_real_protected_endpoint
+    assert task.status == "completed", task.model_dump(mode="json")
+E   AssertionError: {'task_id': 'custom', 'name': '', 'method': 'GET', 'path': 'http://127.0.0.1:62750/custom-protected', ...}
+E   assert 'failed' == 'completed'
+E     
+E     - completed
+E     + failed</failure></testcase><testcase classname="tests.test_api_authentication_live" name="test_dynamic_login_token_still_authenticates_downstream_request" time="0.526" /></testsuite></testsuites>

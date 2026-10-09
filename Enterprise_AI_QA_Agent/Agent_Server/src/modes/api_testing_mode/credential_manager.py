@@ -7,6 +7,7 @@ login flow executed by the executor.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from http.cookies import SimpleCookie
 from typing import Any
 from uuid import uuid4
 
@@ -44,13 +45,20 @@ class CredentialManager:
         if auth_type == AUTH_BEARER and token:
             headers["Authorization"] = f"Bearer {token}"
         elif auth_type == "api_key" and token:
-            headers["Authorization"] = token
+            header_name = self._safe_header_name(extracted.get("header_name")) or "Authorization"
+            headers[header_name] = token
         elif auth_type == AUTH_BASIC and username:
             import base64
             encoded = base64.b64encode(f"{username}:{password}".encode()).decode()
             headers["Authorization"] = f"Basic {encoded}"
-        elif auth_type == AUTH_COOKIE and cookie:
-            cookie_jar["session"] = cookie
+        elif auth_type == AUTH_COOKIE:
+            cookie_jar.update(self._parse_cookie_input(extracted.get("cookie")))
+        elif auth_type == AUTH_CUSTOM:
+            headers.update(self._normalize_headers(extracted.get("headers")))
+            header_name = self._safe_header_name(extracted.get("header_name"))
+            if header_name and token:
+                headers[header_name] = token
+            cookie_jar.update(self._parse_cookie_input(extracted.get("cookie")))
 
         session = CredentialSession(
             credential_session_id=str(uuid4()),
@@ -64,6 +72,63 @@ class CredentialManager:
         )
         self._sessions[session.credential_session_id] = session
         return session
+
+    @staticmethod
+    def _safe_header_name(value: Any) -> str:
+        """Return a usable header name without allowing line injection."""
+
+        name = str(value or "").strip()
+        if not name or "\r" in name or "\n" in name or ":" in name:
+            return ""
+        return name
+
+    @classmethod
+    def _normalize_headers(cls, value: Any) -> dict[str, str]:
+        """Keep only explicit scalar custom headers supplied by the user."""
+
+        if not isinstance(value, dict):
+            return {}
+        normalized: dict[str, str] = {}
+        for raw_name, raw_value in value.items():
+            name = cls._safe_header_name(raw_name)
+            if not name or raw_value is None:
+                continue
+            text = str(raw_value)
+            if "\r" in text or "\n" in text:
+                continue
+            normalized[name] = text
+        return normalized
+
+    @staticmethod
+    def _parse_cookie_input(value: Any) -> dict[str, str]:
+        """Parse a Cookie header into name/value pairs without persisting values in logs."""
+
+        if isinstance(value, dict):
+            return {
+                str(name).strip(): str(cookie_value)
+                for name, cookie_value in value.items()
+                if str(name).strip() and cookie_value is not None
+            }
+        raw = str(value or "").strip()
+        if not raw:
+            return {}
+
+        parsed = SimpleCookie()
+        try:
+            parsed.load(raw)
+        except (TypeError, ValueError):
+            parsed = SimpleCookie()
+        if parsed:
+            return {name: morsel.value for name, morsel in parsed.items()}
+
+        # Keep malformed but unambiguous pairs usable; never turn the whole
+        # header into a synthetic ``session=...`` cookie.
+        result: dict[str, str] = {}
+        for part in raw.split(";"):
+            name, separator, cookie_value = part.strip().partition("=")
+            if separator and name.strip() and "\r" not in name and "\n" not in name:
+                result[name.strip()] = cookie_value.strip()
+        return result
 
     def create_from_login_response(
         self,

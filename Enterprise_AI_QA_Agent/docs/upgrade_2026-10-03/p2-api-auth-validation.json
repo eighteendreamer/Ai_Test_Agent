@@ -1,0 +1,41 @@
+{
+  "scope": "api-auth-input-and-protected-http",
+  "date": "2026-10-10",
+  "research": "P2_API_AUTH_RESEARCH.md",
+  "before": {
+    "command": "..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests/test_api_authentication_live.py -q --tb=short",
+    "result": "2 failed, 1 passed in 2.56s",
+    "failure": [
+      "cookie input became synthetic session=<whole header> and protected request returned 401",
+      "AUTH_CUSTOM ignored explicit headers and protected request returned 401"
+    ],
+    "xml": "p2-api-auth-before.xml"
+  },
+  "fixed": {
+    "command": "..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests/test_api_authentication_live.py -q --tb=short",
+    "result": "3 passed in 2.35s",
+    "evidence": "p2-api-auth-verified.xml"
+  },
+  "regression": {
+    "selected": "48 passed, 5 skipped in 20.16s",
+    "all_api_files": "123 passed, 36 skipped in 31.43s",
+    "evidence": ["p2-api-auth-expanded.xml", "p2-api-auth-all.xml"]
+  },
+  "changes": [
+    "parse explicit Cookie name/value pairs",
+    "forward explicit custom headers",
+    "reject CR/LF and invalid custom header names/values",
+    "preserve bearer, basic, API key, and dynamic-login behavior"
+  ],
+  "not_implemented": [
+    "refresh endpoint and refresh-token protocol",
+    "automatic renewal based only on expires_at"
+  ],
+  "storage_boundary": {
+    "config": "MySQL",
+    "business_and_results": "PostgreSQL",
+    "originals_and_evidence": "RustFS",
+    "new_tables_or_dependencies": false,
+    "default_step_model_called": false
+  }
+}
