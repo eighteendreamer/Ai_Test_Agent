@@ -25,7 +25,7 @@ from urllib.parse import urlsplit, urlunsplit
 
 from src.core.config import Settings
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
-from src.schemas.recording import RecorderEvent, RecordingSession
+from src.schemas.recording import RecorderEvent, RecordingSession, masked_recording_event_payload
 
 logger = logging.getLogger(__name__)
 
@@ -666,34 +666,19 @@ class RecordingGraphStore:
 
     def _mask_sensitive_payload(self, event: RecorderEvent) -> dict[str, Any]:
         """防御性脱敏：采集端（recorder.js）已按红线脱敏，此处兜底密码字段。"""
-        payload = event.model_dump(mode="json")
+        payload = masked_recording_event_payload(event)
         value_masked: str | None = None
         value_length: int | None = None
-        value = event.value
+        value = payload["value"]
         if value is not None:
             if isinstance(value, dict) and "length" in value and set(value) == {"length"}:
                 value_length = int(value["length"])
-                value_masked = "masked"
-                payload["value"] = {"length": value_length}
-            elif self._is_password_field(event.target if isinstance(event.target, dict) else None):
-                text = str(value)
-                value_length = len(text)
                 value_masked = "masked"
                 payload["value"] = {"length": value_length}
             else:
                 text = str(value)
                 value_masked = text[:200]
         return {"payload": payload, "value_masked": value_masked, "value_length": value_length}
-
-    def _is_password_field(self, target: dict[str, Any] | None) -> bool:
-        if not target:
-            return False
-        attributes = target.get("attributes") if isinstance(target.get("attributes"), dict) else {}
-        if str(attributes.get("type") or "").strip().lower() == "password":
-            return True
-        return str(target.get("tag") or "").strip().lower() == "input" and "password" in str(
-            attributes.get("class") or ""
-        ).lower()
 
     def _node_properties(self, label: str, row: dict[str, Any], common: dict[str, Any]) -> dict[str, Any]:
         scalar = self._safe_scalar_map(row)

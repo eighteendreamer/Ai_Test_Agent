@@ -118,6 +118,22 @@ class RecorderEvent(BaseModel):
         return event_identity(recording_id, self.seq)
 
 
+def masked_recording_event_payload(event: RecorderEvent) -> dict[str, Any]:
+    """完整事件的派生载荷；沿既有图谱规则兜底密码值，不修改 PG 原件。"""
+    payload = event.model_dump(mode="json")
+    target = event.target if isinstance(event.target, dict) else {}
+    attributes = target.get("attributes") if isinstance(target.get("attributes"), dict) else {}
+    password = str(attributes.get("type") or "").strip().lower() == "password" or (
+        str(target.get("tag") or "").strip().lower() == "input"
+        and "password" in str(attributes.get("class") or "").lower()
+    )
+    if isinstance(event.value, dict) and set(event.value) == {"length"}:
+        payload["value"] = {"length": int(event.value["length"])}
+    elif password and event.value is not None:
+        payload["value"] = mask_sensitive_input(str(event.value))
+    return payload
+
+
 def dedupe_event_batch(events: list[RecorderEvent]) -> list[RecorderEvent]:
     """批内按 (seq) 幂等去重：保留首次出现，丢弃重复（方案 7.2 关口②）。
 

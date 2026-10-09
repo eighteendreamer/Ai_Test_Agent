@@ -4918,3 +4918,14 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 实际验证见 `p2-api-auth-validation.json`：修复前真实 HTTP `2 failed, 1 passed`；修复后 Cookie/custom/Bearer 三项 `3 passed`；受影响 API 回归 `48 passed, 5 skipped`；全部 `test_api_*.py` `123 passed, 36 skipped`，保留一条既有 Starlette/AnyIO 警告。没有调用默认 Step 模型。
 
 `expires_at` 目前只是已有状态字段，刷新端点、refresh token 字段及自动续期没有可靠项目契约，本轮不猜测实现；鉴权续期仍属于未完成项。默认 Agent 完整流程、完整 App、其他模式以及其余 P0—P5 继续未完成。
+
+
+### 7.02 录制草稿保留完整事件与停止快照〔2026-10-10〕
+
+依据 `P0_RECORDING_DRAFT_RESEARCH.md`、现有 `RecorderEvent`、`RecordingGraphStore`、`RecordingCaseDraftService`、`TestCaseStep.data` 和真实录制原件，先复现旧转换契约。旧草稿只保留定位摘要，丢失完整输入、文档/frame 身份和 `page_response` 观察；真实长输入、跨文档事件和截断响应分别复现失败。
+
+新增统一脱敏派生载荷。新规则版本 `p2-2.v2` 的动作步骤保留兼容摘要并写入完整脱敏 `data.event`；非动作事件写入 `test_data.recording_observations`，但不作为回放动作或自动通过依据。真实重复操作按不同 `seq` 原样保留，网络/批次重复仍由既有 `(recording_id, seq)` 幂等处理。来源 metadata 保存 `finalize_metrics`，日志只记录计数，不记录输入值。历史草稿、PG 原事件和旧哈希不改写。
+
+同时修复停止固化的快照根因：PG 事件 flush 后重新读取权威 `RecordingSession`，再做图谱完整性校验和 completed 更新，避免使用旧内存 `step_count` 把完整事件误报为 degraded；会话消失则失败。没有新增表、配置、依赖或前端契约，MySQL/PG/RustFS/Memgraph 职责保持。
+
+修复前真实原件转换 3 项失败，证据见 `p0-recording-draft-before`；修复后真实 Chromium + 隔离 MySQL/PG/RustFS/Memgraph 的长输入、密码脱敏、两次真实点击、观察保留、项目隔离和重启读回 **61 通过、6 跳过**，最终 `step_count=8`、PG 事件数 8、`integrity.degraded=false`。录制相关扩大回归 **203 通过、69 跳过**，有 1 条既有 Starlette/AnyIO 弃用警告。详细依据、范围和限制见 `P0_RECORDING_DRAFT_RESEARCH.md`。人工 DeepSeek 业务流程、完整跨页面/跨域/Shadow DOM 清洗、场景/别名/失败定位、默认 AI 使用和其余 P0—P5 仍未完成。

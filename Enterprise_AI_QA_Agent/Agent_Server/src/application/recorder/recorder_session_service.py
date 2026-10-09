@@ -406,6 +406,14 @@ class RecorderSessionService:
                 await asyncio.shield(runtime.consume_task)
             await self._cancel_task(runtime.ready_task)
             events = await self._store.get_events(recording_id)
+            # Event batches update PG step_count independently of the in-memory
+            # launch snapshot.  Refresh the authoritative session before graph
+            # integrity accounting; otherwise a complete stream is reported as
+            # degraded (or a missing stream can be compared with stale zero).
+            persisted = await self._store.get_session(recording_id)
+            if persisted is None:
+                raise RuntimeError(f"recording session disappeared before finalize: {recording_id}")
+            runtime.session = persisted
             self._verify_capture_receipt(runtime, finish, events, operation="stop")
             result = await self._graph_store.finalize(runtime.session, events)
             metrics = {
@@ -420,8 +428,9 @@ class RecorderSessionService:
             return await self._capture_failed(runtime, exc, finish, operation="stop")
 
         logger.info(
-            "recording finalized: recording_id=%s actions=%s",
+            "recording finalized: recording_id=%s actions=%s step_count=%s integrity_degraded=%s",
             recording_id, metrics.get("finalize", {}).get("action_vertices"),
+            runtime.session.step_count, metrics.get("integrity", {}).get("degraded"),
         )
         completed = await self._update(
             runtime, RecordingStatus.completed, finalize_metrics=metrics

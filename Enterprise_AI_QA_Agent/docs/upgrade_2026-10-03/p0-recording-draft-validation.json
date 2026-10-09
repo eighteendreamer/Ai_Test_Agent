@@ -1,0 +1,79 @@
+{
+  "protocol": "p0-recording-draft-validation-v1",
+  "date": "2026-10-10",
+  "head_before": "c4082384",
+  "before": {
+    "pytest": "1 process, 3 failures",
+    "xml": "p0-recording-draft-before.xml",
+    "facts": [
+      "full event absent from step data",
+      "page_response observation absent",
+      "long input evidence absent",
+      "stop snapshot reported stale step_count=0 and integrity degraded"
+    ]
+  },
+  "fixed": {
+    "focused": "61 passed, 6 skipped",
+    "expanded": "203 passed, 69 skipped",
+    "warning": "existing Starlette/AnyIO deprecation warning",
+    "evidence_dir": "p0-recording-draft-verified2",
+    "assertions": [
+      "step_count=8",
+      "pg_step_count=8",
+      "pg_event_count=8",
+      "integrity_degraded=false",
+      "two click seq values retained",
+      "password value absent from case version",
+      "project isolation and PG readback passed"
+    ]
+  },
+  "storage_boundaries": {
+    "mysql": "project/config settings only",
+    "postgresql": "recording events/session and case versions",
+    "rustfs": "large recording artifacts",
+    "memgraph": "rebuildable recording projection"
+  },
+  "model_calls": 0,
+  "file_hashes": [
+    {
+      "path": "p0-recording-draft-before.xml",
+      "bytes": 12804,
+      "sha256": "05e63bc6b7dc3125fb3de8131e9d12dbaa70b33e5448242ca275d30bc00666db"
+    },
+    {
+      "path": "p0-recording-draft-verified.xml",
+      "bytes": 8157,
+      "sha256": "3625be149b4546475d11be6963b24da3e0932edc3aa5dece7414543b4f4fe03d"
+    },
+    {
+      "path": "p0-recording-draft-verified2.xml",
+      "bytes": 11050,
+      "sha256": "953d7801072af4a3541cbd13dc7ac73d926a54115d0074d9aa691ed5390d22af"
+    },
+    {
+      "path": "p0-recording-draft-verified2/pg-events.json",
+      "bytes": 14954,
+      "sha256": "fd5f777be7c0c93ba36296f34652641057aaa1365df353a28a4b8de2fa465e41"
+    },
+    {
+      "path": "p0-recording-draft-verified2/pg-session.json",
+      "bytes": 3084,
+      "sha256": "bab11987aadbfed2efe0691e0459331a26f98dc0962b76517d847a86dcd4d9cb"
+    },
+    {
+      "path": "p0-recording-draft-verified2/case-version.json",
+      "bytes": 27347,
+      "sha256": "74911c5e6d90d27f69f11ed6bc918c88f4a2d9d6a1d082d29f97d297248cc878"
+    },
+    {
+      "path": "p0-recording-draft-verified2/planning-evidence.json",
+      "bytes": 30307,
+      "sha256": "c193a8ecca5c8002ed51066ace4a5af6a60386c9d6197b975934721acb09d0ae"
+    }
+  ],
+  "limitations": [
+    "no default Step model due HTTP403 real-name verification",
+    "no full DeepSeek business login/submission",
+    "no claim of full P0-P5 completion"
+  ]
+}

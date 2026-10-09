@@ -16,6 +16,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from typing import Any
 
 from src.application.recorder.assertion_suggester import suggest_assertions
@@ -26,12 +27,12 @@ from src.schemas.case_management import (
     TestCaseSourceRef,
     TestCaseStep,
 )
-from src.schemas.recording import RecorderEvent, RecordingSession
+from src.schemas.recording import RecorderEvent, RecordingSession, masked_recording_event_payload
 
 logger = logging.getLogger(__name__)
 
 CONVERSION_RULE_KEY = "rule-based-recorder-conversion"
-CONVERSION_RULE_VERSION = "p2-2.v1"
+CONVERSION_RULE_VERSION = "p2-2.v2"
 MODE_KEY_UI_AUTOMATION = "ui_automation"
 CASE_TYPE_UI_RECORDED = "ui_recorded"
 
@@ -80,7 +81,7 @@ def _step_action_text(event: RecorderEvent) -> str:
 
 
 def _locator_summary(event: RecorderEvent) -> dict[str, Any]:
-    """定位链摘要进 data（回放可执行、评审可查证据）。"""
+    """保留原定位摘要兼容，并携带完整脱敏事件供执行和评审。"""
     target = event.target if isinstance(event.target, dict) else {}
     locators = target.get("locators") if isinstance(target.get("locators"), dict) else {}
     return {
@@ -93,6 +94,7 @@ def _locator_summary(event: RecorderEvent) -> dict[str, Any]:
         },
         "pixel": event.pixel,
         "sensitive": _is_masked_value(event.value),
+        "event": event.model_dump(mode="json"),
     }
 
 
@@ -137,7 +139,10 @@ def build_recording_draft_payload(
     空事件流/纯采集副产物（无 page_scan 之外可回放动作）由调用方前置校验。
     """
     steps: list[TestCaseStep] = []
-    for event in events:
+    # The same write-side mask is used by graph knowledge and case conversion.
+    # Action labels are only summaries; never make them the execution evidence.
+    safe_events = [RecorderEvent.model_validate(masked_recording_event_payload(event)) for event in events]
+    for event in safe_events:
         if event.type not in _REPLAYABLE:
             continue  # page_scan 等采集副产物不进步骤
         steps.append(
@@ -158,8 +163,12 @@ def build_recording_draft_payload(
         preconditions=[f"入口地址 {session.entry_url}", "目标系统可访问且登录态可用"],
         steps=steps,
         # 断言 = 基线（必选，三级退化）+ 规则建议（P2-3，带 confidence 供评审筛选）
-        assertions=[_baseline_assertion(events), *suggest_assertions(events)],
-        test_data={"recording_id": session.id, "driver_kind": str(session.driver_kind)},
+        assertions=[_baseline_assertion(safe_events), *suggest_assertions(safe_events)],
+        execution_notes=("步骤 action 是显示摘要，执行时读取 data.event 的完整输入、定位和文档范围。"
+            "test_data.recording_observations 是采集观察，不执行为操作；截断、无变化或未采集不能证明业务通过。"
+            "脱敏输入与仅有文件名的记录需要可靠测试数据，不能恢复或猜测原值。"),
+        test_data={"recording_id": session.id, "driver_kind": str(session.driver_kind),
+            "recording_observations": [event.model_dump(mode="json") for event in safe_events if event.type not in _REPLAYABLE]},
         cleanup=[],
         source_refs=[
             TestCaseSourceRef(
@@ -167,7 +176,8 @@ def build_recording_draft_payload(
                 source_id=session.id,
                 version=CONVERSION_RULE_VERSION,
                 label=f"UI 录制 {session.name or session.entry_url[:80]}",
-                metadata={"event_count": len(events), "step_count": len(steps)},
+                metadata={"event_count": len(events), "step_count": len(steps),
+                    "finalize_metrics": deepcopy(session.finalize_metrics)},
             )
         ],
         model_key=CONVERSION_RULE_KEY,
@@ -213,13 +223,10 @@ class RecordingCaseDraftService:
             payload=payload,
             created_by=created_by,
         )
-        logger.info(
-            "recording case draft created: recording_id=%s project_id=%s case_id=%s steps=%s",
-            recording_id,
-            session.project_id,
-            bundle.case.id,
-            len(payload.steps),
-        )
+        logger.info("recording_case_draft_created", extra={"recording_id": recording_id,
+            "project_id": session.project_id, "case_id": bundle.case.id, "step_count": len(payload.steps),
+            "observation_count": len(payload.test_data["recording_observations"]),
+            "conversion_version": CONVERSION_RULE_VERSION})
         return {
             "case": bundle.case,
             "version": bundle.version,
