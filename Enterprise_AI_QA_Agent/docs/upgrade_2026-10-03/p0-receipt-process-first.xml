@@ -1,0 +1,433 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="147.319" timestamp="2026-10-10T00:05:20.781626+08:00" hostname="EIghteen"><testcase classname="tests.test_receipt_process_recovery_live" name="test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business[invoking]" time="120.734"><failure message="AssertionError: assert ('running' == 'completed'&#10;  &#10;  - completed&#10;  + running)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1300/test_owned_api_kill_recovers_r0')
+boundary = 'invoking'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("boundary", ["invoking", "response"])
+    async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business(tmp_path, boundary):
+        arrived, release = Event(), Event()
+    
+        def gate(request):
+            assert not request.get("tools"), "read-only correction must expose no tools"
+            arrived.set()
+            if boundary == "invoking":
+                assert release.wait(55), "test did not release its owned HTTP connection"
+                return False  # No reply; the API has already been killed.
+            return True
+    
+        root = Path(os.getenv("QA_RECEIPT_PROCESS_DIR", str(tmp_path.parent / "receipt-process-evidence")))
+        output = root / boundary
+        output.mkdir(parents=True, exist_ok=False)
+        try:
+            async with controlled_http(tmp_path, mixed_report=True, correction_gate=gate) as (
+                business, calls, effects, orders, actual_id, errors,
+            ):
+                async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+                    settings.orchestration.runtime_max_iterations = 8
+                    models = MySQLModelConfigStore(settings)
+                    models.initialize()
+                    model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-cli", provider="openai",
+                        transport="openai_chat_completions", base_url=business + "/v1", api_key=uuid4().hex,
+                        is_active=True, use_provider_defaults=False,
+                        capability_overrides=ModelCapabilitiesOverride(streaming=False), max_output_tokens=4096))
+                    processes.env = child_environment(settings)
+                    port = free_port()
+                    args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                    api = processes.start("api-before-kill", *args)
+                    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=55) as client:
+                        await wait_api(client, api)
+    
+                        async def post(path, payload=None, status=200):
+                            reply = await client.post(path, json=payload)
+                            assert reply.status_code == status, (reply.status_code, reply.text, errors)
+                            return reply.json()
+    
+                        project = await post("/projects", {"project_key": "receipt-kill-" + uuid4().hex,
+                            "name": "回执进程中断验收", "base_url": business}, 201)
+                        policy_path = f"/projects/{project['id']}/case-plans/policy"
+                        policy = CasePlanningPolicy(receipt_correction_protocol="case-receipt-correction-v1",
+                            receipt_correction_transport_options=ModelTransportOptions(timeout_seconds=60, max_retries=0))
+                        assert (await client.put(policy_path, json=policy.model_dump(mode="json"))).status_code == 200
+                        source = tmp_path / "requirements.md"
+                        source.write_text(f"# 订单查询\nPOST {business}/orders 创建，201，order.id。\n"
+                            f"GET {business}/orders/{{id}} 查询，200，flag=false，count=0，nullable=null。\n"
+                            f"DELETE {business}/orders/{{id}} 清理，200。\n", encoding="utf-8")
+                        document = await post("/registry/api-docs/upload", {"project_id": project["id"],
+                            "filename": source.name, "content_base64": base64.b64encode(source.read_bytes()).decode()})
+                        owned.append(document["storage_uri"])
+                        assert (await objects.read_object_uri(document["storage_uri"]))["content"] == source.read_bytes()
+                        bundle = await post(f"/projects/{project['id']}/test-cases", {"case_key": "query",
+                            "title": "查询已有订单", "mode_key": "api_testing", "case_type": "json",
+                            "content_json": {"objective": "查询已有订单", "检查": {"code": 200, "flag": False,
+                                "count": 0, "nullable": None}, "steps": [{"action": "查询并检查真实响应",
+                                "method": "GET", "url": business + "/orders/{id}"}]},
+                            "execution_notes": "完整读取 JSON；准备的订单在查询后清理",
+                            "source_refs": [{"source_type": "api_doc", "source_id": document["id"]}],
+                            "model_key": "manual", "prompt_version": "manual-v1", "skill_versions": {"manual": "v1"},
+                            "generation_metadata": {"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}}, 201)
+                        case_id = bundle["case"]["id"]
+                        await post(f"/test-cases/{case_id}/submit-review")
+                        await post(f"/test-cases/{case_id}/activate", {})
+                        plan = await post(f"/projects/{project['id']}/case-plans", {"objective": "验证订单详情",
+                            "model_key": model.key, "candidate_case_ids": [case_id]}, 201)
+                        assert plan["status"] == "planned", plan
+                        detail = await post(f"/projects/{project['id']}/case-plans/{plan['id']}/runs",
+                            {"creation_key": "receipt-kill", "mode_key": "api_testing"}, 201)
+                        run_id, item_id = detail["run"]["id"], detail["items"][0]["id"]
+                        assert await PostgresTaskOutbox(settings).relay_once(queue) == 1
+                        child = processes.start("worker-before-kill", "-m", "src.cli.run_redis_worker", "--once",
+                            "--worker-id", "receipt-initial")
+                        assert await processes.wait(child) == 0
+                        assert len(calls) == 2 and not effects
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table}")
+                            delivery = cur.fetchone()["payload"]
+    
+                        for index in range(2):
+                            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
+                                pending = cur.fetchall()
+                            assert len(pending) == 1
+                            outcome = await post(f"/run-items/{item_id}/approval",
+                                {"approval_id": str(pending[0]["id"]), "decision": "approved"})
+                            assert outcome["status"] == "waiting_approval" and len(effects) == index + 1
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
+                            pending = cur.fetchall()
+                        assert len(pending) == 1
+    
+                        blocker = postgres_connect(settings) if boundary == "response" else None
+                        approval_task = None
+                        try:
+                            if blocker:
+                                table = settings.database.postgres_test_case_result_table
+                                assert re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*", table)
+                                with blocker.cursor() as cur:
+                                    cur.execute("SET lock_timeout='5s'")
+                                    cur.execute(f"LOCK TABLE {table} IN SHARE MODE")
+                                    cur.execute("SELECT pg_backend_pid() AS pid")
+                                    blocker_pid = cur.fetchone()["pid"]
+                            approval_task = asyncio.create_task(client.post(f"/run-items/{item_id}/approval",
+                                json={"approval_id": str(pending[0]["id"]), "decision": "approved"}))
+                            state = await wait_boundary(settings, item_id, boundary)
+                            assert arrived.is_set() and len(calls) == 6
+                            assert [verb for verb, _ in effects] == ["POST", "GET", "DELETE"] and not orders
+                            if blocker:
+                                deadline = monotonic() + 10
+                                while monotonic() &lt; deadline:
+                                    locks = await asyncio.to_thread(blocked_result_insert, settings, blocker_pid)
+                                    if locks:
+                                        break
+                                    await asyncio.sleep(.1)
+                                assert locks and all("INSERT INTO " + table in row["query"] for row in locks), locks
+                                write(tmp_path, "blocked-insert.json", locks)
+                            write(tmp_path, "before-kill.json", state)
+                            killed_pid = api.pid
+                            api.kill()
+                            killed_exit = await processes.wait(api, timeout=10)
+                            assert killed_exit != 0
+                            release.set()
+                            try:
+                                reply = await approval_task
+                                raise AssertionError(("killed API returned a response", reply.status_code, reply.text))
+                            except httpx.TransportError as exc:
+                                write(tmp_path, "lost-approval-transport.json", {"error_type": type(exc).__name__})
+                        finally:
+                            release.set()
+                            if blocker:
+                                blocker.rollback()
+                                blocker.close()
+                            if approval_task and not approval_task.done():
+                                approval_task.cancel()
+                                await asyncio.gather(approval_task, return_exceptions=True)
+    
+                        correction = state["attempts"][-1]["checkpoint_payload"]["receipt_correction"]
+                        for kind in ("request", "response"):
+                            ref = correction.get(kind)
+                            if ref:
+                                owned.append(ref["uri"])
+                                raw = (await objects.read_object_uri(ref["uri"]))["content"]
+                                assert len(raw) == ref["size_bytes"] and hashlib.sha256(raw).hexdigest() == ref["sha256"]
+                                (tmp_path / f"receipt-{kind}.json").write_bytes(raw)
+                        # Changing current configuration must not rewrite the saved execution.
+                        settings.orchestration.runtime_max_iterations = 18
+                        models.upsert(ModelConfigUpdateRequest(model_name="controlled-cli", provider="openai",
+                            transport="openai_chat_completions", base_url=business + "/changed/v1", api_key=uuid4().hex,
+                            is_active=True, use_provider_defaults=False,
+                            capability_overrides=ModelCapabilitiesOverride(streaming=False), max_output_tokens=128))
+                        processes.env = child_environment(settings)
+                        api = processes.start("api-after-kill", *args)
+                        await wait_api(client, api)
+                        assert (await client.put(policy_path, json=CasePlanningPolicy().model_dump(mode="json"))).status_code == 200
+                        immediate = await post(f"/runs/{run_id}/recover-expired")
+                        assert immediate["recovered_count"] == 0
+                        expiry = datetime.fromisoformat(state["item"]["lease_expires_at"])
+                        deadline = monotonic() + 110
+                        while datetime.now(timezone.utc) &lt;= expiry:
+                            assert monotonic() &lt; deadline, "original lease did not naturally expire"
+                            await asyncio.sleep(.5)
+                        recovered = await post(f"/runs/{run_id}/recover-expired")
+                        assert recovered["recovered_count"] == 1
+                        await queue.enqueue(delivery)
+                        worker = processes.start("worker-recovery", "-m", "src.cli.run_redis_worker", "--once",
+                            "--worker-id", "receipt-recovery")
+                        assert await processes.wait(worker) == 0
+                        completed = (await client.get(f"/runs/{run_id}")).json()
+                        write(tmp_path, "completed.json", completed)
+&gt;                       assert completed["run"]["status"] == "completed" and len(completed["results"]) == 1
+E                       AssertionError: assert ('running' == 'completed'
+E                         
+E                         - completed
+E                         + running)
+
+tests\test_receipt_process_recovery_live.py:244: AssertionError</failure></testcase><testcase classname="tests.test_receipt_process_recovery_live" name="test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business[response]" time="20.737"><failure message="AttributeError: '_GeneratorContextManager' object has no attribute 'rollback'">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1300/test_owned_api_kill_recovers_r1')
+boundary = 'response'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("boundary", ["invoking", "response"])
+    async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business(tmp_path, boundary):
+        arrived, release = Event(), Event()
+    
+        def gate(request):
+            assert not request.get("tools"), "read-only correction must expose no tools"
+            arrived.set()
+            if boundary == "invoking":
+                assert release.wait(55), "test did not release its owned HTTP connection"
+                return False  # No reply; the API has already been killed.
+            return True
+    
+        root = Path(os.getenv("QA_RECEIPT_PROCESS_DIR", str(tmp_path.parent / "receipt-process-evidence")))
+        output = root / boundary
+        output.mkdir(parents=True, exist_ok=False)
+        try:
+            async with controlled_http(tmp_path, mixed_report=True, correction_gate=gate) as (
+                business, calls, effects, orders, actual_id, errors,
+            ):
+                async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+                    settings.orchestration.runtime_max_iterations = 8
+                    models = MySQLModelConfigStore(settings)
+                    models.initialize()
+                    model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-cli", provider="openai",
+                        transport="openai_chat_completions", base_url=business + "/v1", api_key=uuid4().hex,
+                        is_active=True, use_provider_defaults=False,
+                        capability_overrides=ModelCapabilitiesOverride(streaming=False), max_output_tokens=4096))
+                    processes.env = child_environment(settings)
+                    port = free_port()
+                    args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                    api = processes.start("api-before-kill", *args)
+                    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=55) as client:
+                        await wait_api(client, api)
+    
+                        async def post(path, payload=None, status=200):
+                            reply = await client.post(path, json=payload)
+                            assert reply.status_code == status, (reply.status_code, reply.text, errors)
+                            return reply.json()
+    
+                        project = await post("/projects", {"project_key": "receipt-kill-" + uuid4().hex,
+                            "name": "回执进程中断验收", "base_url": business}, 201)
+                        policy_path = f"/projects/{project['id']}/case-plans/policy"
+                        policy = CasePlanningPolicy(receipt_correction_protocol="case-receipt-correction-v1",
+                            receipt_correction_transport_options=ModelTransportOptions(timeout_seconds=60, max_retries=0))
+                        assert (await client.put(policy_path, json=policy.model_dump(mode="json"))).status_code == 200
+                        source = tmp_path / "requirements.md"
+                        source.write_text(f"# 订单查询\nPOST {business}/orders 创建，201，order.id。\n"
+                            f"GET {business}/orders/{{id}} 查询，200，flag=false，count=0，nullable=null。\n"
+                            f"DELETE {business}/orders/{{id}} 清理，200。\n", encoding="utf-8")
+                        document = await post("/registry/api-docs/upload", {"project_id": project["id"],
+                            "filename": source.name, "content_base64": base64.b64encode(source.read_bytes()).decode()})
+                        owned.append(document["storage_uri"])
+                        assert (await objects.read_object_uri(document["storage_uri"]))["content"] == source.read_bytes()
+                        bundle = await post(f"/projects/{project['id']}/test-cases", {"case_key": "query",
+                            "title": "查询已有订单", "mode_key": "api_testing", "case_type": "json",
+                            "content_json": {"objective": "查询已有订单", "检查": {"code": 200, "flag": False,
+                                "count": 0, "nullable": None}, "steps": [{"action": "查询并检查真实响应",
+                                "method": "GET", "url": business + "/orders/{id}"}]},
+                            "execution_notes": "完整读取 JSON；准备的订单在查询后清理",
+                            "source_refs": [{"source_type": "api_doc", "source_id": document["id"]}],
+                            "model_key": "manual", "prompt_version": "manual-v1", "skill_versions": {"manual": "v1"},
+                            "generation_metadata": {"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}}, 201)
+                        case_id = bundle["case"]["id"]
+                        await post(f"/test-cases/{case_id}/submit-review")
+                        await post(f"/test-cases/{case_id}/activate", {})
+                        plan = await post(f"/projects/{project['id']}/case-plans", {"objective": "验证订单详情",
+                            "model_key": model.key, "candidate_case_ids": [case_id]}, 201)
+                        assert plan["status"] == "planned", plan
+                        detail = await post(f"/projects/{project['id']}/case-plans/{plan['id']}/runs",
+                            {"creation_key": "receipt-kill", "mode_key": "api_testing"}, 201)
+                        run_id, item_id = detail["run"]["id"], detail["items"][0]["id"]
+                        assert await PostgresTaskOutbox(settings).relay_once(queue) == 1
+                        child = processes.start("worker-before-kill", "-m", "src.cli.run_redis_worker", "--once",
+                            "--worker-id", "receipt-initial")
+                        assert await processes.wait(child) == 0
+                        assert len(calls) == 2 and not effects
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table}")
+                            delivery = cur.fetchone()["payload"]
+    
+                        for index in range(2):
+                            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
+                                pending = cur.fetchall()
+                            assert len(pending) == 1
+                            outcome = await post(f"/run-items/{item_id}/approval",
+                                {"approval_id": str(pending[0]["id"]), "decision": "approved"})
+                            assert outcome["status"] == "waiting_approval" and len(effects) == index + 1
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
+                            pending = cur.fetchall()
+                        assert len(pending) == 1
+    
+                        blocker = postgres_connect(settings) if boundary == "response" else None
+                        approval_task = None
+                        try:
+                            if blocker:
+                                table = settings.database.postgres_test_case_result_table
+                                assert re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*", table)
+&gt;                               with blocker.cursor() as cur:
+                                     ^^^^^^^^^^^^^^
+E                               AttributeError: '_GeneratorContextManager' object has no attribute 'cursor'
+
+tests\test_receipt_process_recovery_live.py:172: AttributeError
+
+During handling of the above exception, another exception occurred:
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1300/test_owned_api_kill_recovers_r1')
+boundary = 'response'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("boundary", ["invoking", "response"])
+    async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business(tmp_path, boundary):
+        arrived, release = Event(), Event()
+    
+        def gate(request):
+            assert not request.get("tools"), "read-only correction must expose no tools"
+            arrived.set()
+            if boundary == "invoking":
+                assert release.wait(55), "test did not release its owned HTTP connection"
+                return False  # No reply; the API has already been killed.
+            return True
+    
+        root = Path(os.getenv("QA_RECEIPT_PROCESS_DIR", str(tmp_path.parent / "receipt-process-evidence")))
+        output = root / boundary
+        output.mkdir(parents=True, exist_ok=False)
+        try:
+            async with controlled_http(tmp_path, mixed_report=True, correction_gate=gate) as (
+                business, calls, effects, orders, actual_id, errors,
+            ):
+                async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+                    settings.orchestration.runtime_max_iterations = 8
+                    models = MySQLModelConfigStore(settings)
+                    models.initialize()
+                    model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-cli", provider="openai",
+                        transport="openai_chat_completions", base_url=business + "/v1", api_key=uuid4().hex,
+                        is_active=True, use_provider_defaults=False,
+                        capability_overrides=ModelCapabilitiesOverride(streaming=False), max_output_tokens=4096))
+                    processes.env = child_environment(settings)
+                    port = free_port()
+                    args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                    api = processes.start("api-before-kill", *args)
+                    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=55) as client:
+                        await wait_api(client, api)
+    
+                        async def post(path, payload=None, status=200):
+                            reply = await client.post(path, json=payload)
+                            assert reply.status_code == status, (reply.status_code, reply.text, errors)
+                            return reply.json()
+    
+                        project = await post("/projects", {"project_key": "receipt-kill-" + uuid4().hex,
+                            "name": "回执进程中断验收", "base_url": business}, 201)
+                        policy_path = f"/projects/{project['id']}/case-plans/policy"
+                        policy = CasePlanningPolicy(receipt_correction_protocol="case-receipt-correction-v1",
+                            receipt_correction_transport_options=ModelTransportOptions(timeout_seconds=60, max_retries=0))
+                        assert (await client.put(policy_path, json=policy.model_dump(mode="json"))).status_code == 200
+                        source = tmp_path / "requirements.md"
+                        source.write_text(f"# 订单查询\nPOST {business}/orders 创建，201，order.id。\n"
+                            f"GET {business}/orders/{{id}} 查询，200，flag=false，count=0，nullable=null。\n"
+                            f"DELETE {business}/orders/{{id}} 清理，200。\n", encoding="utf-8")
+                        document = await post("/registry/api-docs/upload", {"project_id": project["id"],
+                            "filename": source.name, "content_base64": base64.b64encode(source.read_bytes()).decode()})
+                        owned.append(document["storage_uri"])
+                        assert (await objects.read_object_uri(document["storage_uri"]))["content"] == source.read_bytes()
+                        bundle = await post(f"/projects/{project['id']}/test-cases", {"case_key": "query",
+                            "title": "查询已有订单", "mode_key": "api_testing", "case_type": "json",
+                            "content_json": {"objective": "查询已有订单", "检查": {"code": 200, "flag": False,
+                                "count": 0, "nullable": None}, "steps": [{"action": "查询并检查真实响应",
+                                "method": "GET", "url": business + "/orders/{id}"}]},
+                            "execution_notes": "完整读取 JSON；准备的订单在查询后清理",
+                            "source_refs": [{"source_type": "api_doc", "source_id": document["id"]}],
+                            "model_key": "manual", "prompt_version": "manual-v1", "skill_versions": {"manual": "v1"},
+                            "generation_metadata": {"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}}, 201)
+                        case_id = bundle["case"]["id"]
+                        await post(f"/test-cases/{case_id}/submit-review")
+                        await post(f"/test-cases/{case_id}/activate", {})
+                        plan = await post(f"/projects/{project['id']}/case-plans", {"objective": "验证订单详情",
+                            "model_key": model.key, "candidate_case_ids": [case_id]}, 201)
+                        assert plan["status"] == "planned", plan
+                        detail = await post(f"/projects/{project['id']}/case-plans/{plan['id']}/runs",
+                            {"creation_key": "receipt-kill", "mode_key": "api_testing"}, 201)
+                        run_id, item_id = detail["run"]["id"], detail["items"][0]["id"]
+                        assert await PostgresTaskOutbox(settings).relay_once(queue) == 1
+                        child = processes.start("worker-before-kill", "-m", "src.cli.run_redis_worker", "--once",
+                            "--worker-id", "receipt-initial")
+                        assert await processes.wait(child) == 0
+                        assert len(calls) == 2 and not effects
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table}")
+                            delivery = cur.fetchone()["payload"]
+    
+                        for index in range(2):
+                            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
+                                pending = cur.fetchall()
+                            assert len(pending) == 1
+                            outcome = await post(f"/run-items/{item_id}/approval",
+                                {"approval_id": str(pending[0]["id"]), "decision": "approved"})
+                            assert outcome["status"] == "waiting_approval" and len(effects) == index + 1
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT id FROM {settings.database.postgres_approval_table} WHERE status='pending'")
+                            pending = cur.fetchall()
+                        assert len(pending) == 1
+    
+                        blocker = postgres_connect(settings) if boundary == "response" else None
+                        approval_task = None
+                        try:
+                            if blocker:
+                                table = settings.database.postgres_test_case_result_table
+                                assert re.fullmatch(r"[a-zA-Z_][a-zA-Z_0-9]*", table)
+                                with blocker.cursor() as cur:
+                                    cur.execute("SET lock_timeout='5s'")
+                                    cur.execute(f"LOCK TABLE {table} IN SHARE MODE")
+                                    cur.execute("SELECT pg_backend_pid() AS pid")
+                                    blocker_pid = cur.fetchone()["pid"]
+                            approval_task = asyncio.create_task(client.post(f"/run-items/{item_id}/approval",
+                                json={"approval_id": str(pending[0]["id"]), "decision": "approved"}))
+                            state = await wait_boundary(settings, item_id, boundary)
+                            assert arrived.is_set() and len(calls) == 6
+                            assert [verb for verb, _ in effects] == ["POST", "GET", "DELETE"] and not orders
+                            if blocker:
+                                deadline = monotonic() + 10
+                                while monotonic() &lt; deadline:
+                                    locks = await asyncio.to_thread(blocked_result_insert, settings, blocker_pid)
+                                    if locks:
+                                        break
+                                    await asyncio.sleep(.1)
+                                assert locks and all("INSERT INTO " + table in row["query"] for row in locks), locks
+                                write(tmp_path, "blocked-insert.json", locks)
+                            write(tmp_path, "before-kill.json", state)
+                            killed_pid = api.pid
+                            api.kill()
+                            killed_exit = await processes.wait(api, timeout=10)
+                            assert killed_exit != 0
+                            release.set()
+                            try:
+                                reply = await approval_task
+                                raise AssertionError(("killed API returned a response", reply.status_code, reply.text))
+                            except httpx.TransportError as exc:
+                                write(tmp_path, "lost-approval-transport.json", {"error_type": type(exc).__name__})
+                        finally:
+                            release.set()
+                            if blocker:
+&gt;                               blocker.rollback()
+                                ^^^^^^^^^^^^^^^^
+E                               AttributeError: '_GeneratorContextManager' object has no attribute 'rollback'
+
+tests\test_receipt_process_recovery_live.py:205: AttributeError</failure></testcase></testsuite></testsuites>

@@ -1,0 +1,67 @@
+{
+  "scope": "production API lifespan and execution Worker CLI; local controlled model, real MySQL/PostgreSQL/RustFS/Redis",
+  "case_version_id": "f6e13f8e-f94e-4450-94b1-99670231f186",
+  "plan_id": "6a216dff-da4d-42fb-9004-be59ba702909",
+  "run_id": "074d27ee-cc0a-51bb-9d29-d21a441d9e0f",
+  "result_id": "879a3bf0-21d2-4701-b153-5ad31deee104",
+  "approval_survived_api_and_worker_restart": true,
+  "confirmed_create_survived_api_restart": true,
+  "actual_effects": [
+    [
+      "POST",
+      "/orders"
+    ],
+    [
+      "GET",
+      "/orders/actual-1834847d6b0b47b2b45101bf6912973b"
+    ],
+    [
+      "DELETE",
+      "/orders/actual-1834847d6b0b47b2b45101bf6912973b"
+    ]
+  ],
+  "original_turn_limit": 8,
+  "restarted_process_default": 18,
+  "execution_model_calls": 4,
+  "formal_status": "passed",
+  "receipt_correction_calls": 1,
+  "receipt_transport_options": {
+    "timeout_seconds": 60.0,
+    "max_retries": 0
+  },
+  "terminal_replay_model_calls": 0,
+  "model_calls": [
+    {
+      "path": "/v1/chat/completions",
+      "phase": "planning",
+      "tool_message_count": 0
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 0
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 1
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 2
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "receipt",
+      "tool_message_count": 3
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "receipt_correction",
+      "tool_message_count": 0
+    }
+  ],
+  "terminal_replay_effects": 0,
+  "business_records_remaining": 0
+}

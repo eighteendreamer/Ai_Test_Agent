@@ -4865,3 +4865,21 @@ Agent_Server内命令均使用..\.venv\Scripts\python.exe -X utf8 -m pytest（be
 agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/DocumentGenerationProduct.test.ts src/features/tools/plugins/ApiDocParsing.test.ts src/features/tools/plugins/CaseGenerationProduct.test.ts src/features/tools/plugins/GenerationTaskProduct.test.ts src/features/tools/plugins/GenerationRetryProduct.test.ts src/services/caseGeneration.api.test.ts：6文件67通过2.64秒；日志p1-document-generation-typecheck/frontend。真实product_browser独立执行npm run build、Vite预览和已安装Chromium，构建双流、页面错误、网络与截图均保留。
 
 项目根.venv\Scripts\python.exe docs/upgrade_2026-10-03/p1-document-generation-audit.py --sync，先确认外部方案仍是HEAD或新方案再同步，不带--sync复核。审计固定对象实际字节、原失败/子任务、原范围与三格式、历史证据及受保护文件。只提交本轮相关文件，不推送/建PR。未验证默认模型语义、长文容量、完整其他P0—P5；Step按用户决定延后。
+
+## 2026-10-10 正式回执纠正的真实进程中断〔基线5c6917e4〕
+
+依据P0_RECEIPT_PROCESS_RECOVERY_RESEARCH.md/PLAN6.98，确认最后审批后的纠正在API进程执行，实际终止完整API；调用现有恢复入口后，新独立执行CLI恢复。原RunItem约90秒、独立资源300秒均自然到期，生产清理CLI保存原归属skipped回执（未绑定外部资源）；无手工修改PG时钟/Redis TTL/配额。保存响应的现场通过隔离PG的SHARE结果表锁固定，实际pg_locks/INSERT等待保存后kill。
+
+修改仅为测试/调研/证据/方案：test_execution_worker_cli.py增加默认关闭的HTTP回应门控、抽取共享原用例；新增test_receipt_process_recovery_live.py、test_receipt_process_fixture.py；无生产逻辑、跨层协议、表、配置项、依赖或前端变化。MySQL配置、PG固定业务、RustFS原件职责不变。
+
+实际命令（Agent_Server内，解释器..\.venv\Scripts\python.exe -X utf8）：
+
+- RUN_LIVE_EXECUTION_CLI_TESTS=1，QA_RECEIPT_PROCESS_DIR为docs/upgrade_2026-10-03/p0-receipt-process-<批次>绝对路径；-m pytest tests/test_receipt_process_recovery_live.py -vv --junitxml=../docs/upgrade_2026-10-03/p0-receipt-process-<批次>.xml，双流同名.log。first2失败147.33秒；recovery2失败54.08秒；verified1通过/1失败677.98秒；最终delivery2通过687.30秒、0跳过。失败是测试现场/数据问题，分别见研究记录，不修改生产恢复、放宽预期或以Worker退出0算通过。
+- -m pytest tests/test_receipt_process_fixture.py -q，1通过4.34秒；回放实际失败响应，原错误字段仍拒绝，共享固定字段正确解析；对应fixture.log/xml。
+- RUN_LIVE_PLAN_RUN_CREATION=1，-m pytest tests/test_agent_case_receipt_correction.py tests/test_agent_receipt_transport.py tests/test_approval_model_budget.py tests/test_case_execution_adapter.py tests/test_case_execution_verification.py -q，82通过2跳过87.62秒，contract.log/xml。跳过两个实际默认外部模型项，按用户决定未调用Step。
+- RUN_LIVE_EXECUTION_CLI_TESTS=1，QA_APPROVAL_MODEL_BUDGET_CLI_DIR分别为p0-receipt-process-production-regression/final绝对路径，-m pytest tests/test_execution_worker_cli.py::test_production_api_and_execution_cli_preserve_approval_then_complete_and_ignore_terminal_replay[receipt-correction] -q，对应XML/log；原常规流程1通过47.02秒，共享样本后1通过46.90秒。实际生产API和独立Worker、原审批、POST/GET/DELETE与终态重投。
+- -m compileall -q 两个修改/新增进程测试、失败回放、审计和专属清理脚本，退出0，p0-receipt-process-compile.json保留完整命令/stdout/stderr；只为附加检查。无前端更改，未重跑前端构建。
+
+项目根执行.venv\Scripts\python.exe -X utf8 docs/upgrade_2026-10-03/p0-receipt-process-failure-cleanup.py：限定recovery失败的实际PG原件里三个完整项目/run/item/attempt/call对象键，实际SHA/大小下载后删除并逐项404确认；failure-cleanup.log/summary/native文件保留。
+
+审计.venv\Scripts\python.exe -X utf8 docs/upgrade_2026-10-03/p0-receipt-process-audit.py --sync，确认外部副本仍HEAD/新计划后同步，再不带--sync复核。核对14个实际下载原件、固定context/模型预算/传输、原attempt与新恢复链、真实等待和清理、终态HTTP/副作用0增量、旧8176工件及三受保护文件。相关.gitattributes保存原字节；只提交本轮文件，不推送/PR。已实现的回执恢复补了实际kill验收，默认AI/UI、通用未知业务效果只读查证和完整P0—P5仍未完成，详见PLAN6.98。

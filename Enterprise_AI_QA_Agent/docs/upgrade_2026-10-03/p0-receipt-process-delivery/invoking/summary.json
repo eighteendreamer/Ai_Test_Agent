@@ -1,0 +1,156 @@
+{
+  "boundary": "invoking",
+  "scope": "real owned API kill, natural lease expiry, production CLI, isolated stores, controlled HTTP",
+  "killed_api_pid": 22328,
+  "killed_api_exit_code": 1,
+  "original_lease_expires_at": "2026-10-09 16:28:33.220387+00:00",
+  "immediate_recovery": {
+    "recovered_count": 0
+  },
+  "expired_recovery": {
+    "recovered_count": 1
+  },
+  "original_resource_lease_expires_at": "2026-10-09 16:32:03.255000+00:00",
+  "resource_lease_seconds": 300,
+  "resource_cleanup_receipts": [
+    {
+      "task_id": "task_cleanup_8c6065135aaf4a83b8c6a8a944493856",
+      "record": {
+        "run_id": "d2473dbf-9647-5b72-9290-902743202c8c",
+        "turn_id": null,
+        "trace_id": "trace_665249f854bd4b4983350391e16d4278",
+        "worker_id": "receipt-initial",
+        "attempt_id": "ff6e0095-4f23-42ac-a73e-38b293988e2e",
+        "project_id": "02904b2e-8d47-4d57-a3f0-4af8beb57918",
+        "request_id": "req_35cc40508803489b8bdd5f221498f948",
+        "session_id": null,
+        "resource_id": "run-item:0f836552-9095-57a1-b87e-2b284a2b94a9",
+        "run_item_id": "0f836552-9095-57a1-b87e-2b284a2b94a9",
+        "allocation_id": null,
+        "fencing_token": 4,
+        "resource_type": "agent",
+        "external_resource_id": null
+      },
+      "status": "skipped",
+      "worker_id": "receipt-resource-cleanup",
+      "attempts": 1,
+      "error_type": null,
+      "updated_at": "2026-10-09 16:32:06.933453+00:00",
+      "completed_at": "2026-10-09 16:32:06.933453+00:00"
+    }
+  ],
+  "formal_status": "error",
+  "run_id": "d2473dbf-9647-5b72-9290-902743202c8c",
+  "result_id": "23be80ef-7b36-4ec3-bfe2-79a09966b00f",
+  "correction": {
+    "phase": "invoking",
+    "call_id": "7b1d8f05-f640-4972-b552-0f1b5cd9ebdc",
+    "request": {
+      "uri": "rustfs://qa-agent/case-receipts/02904b2e-8d47-4d57-a3f0-4af8beb57918/d2473dbf-9647-5b72-9290-902743202c8c/0f836552-9095-57a1-b87e-2b284a2b94a9/ff6e0095-4f23-42ac-a73e-38b293988e2e/7b1d8f05-f640-4972-b552-0f1b5cd9ebdc/e5c0e92ee9d7850e6fe3eab78cc7d72926ea5822c6d1eb28905cb8c17da360f3-request.json",
+      "sha256": "e5c0e92ee9d7850e6fe3eab78cc7d72926ea5822c6d1eb28905cb8c17da360f3",
+      "size_bytes": 45148
+    },
+    "protocol": "case-receipt-correction-v1",
+    "response": null,
+    "model_key": "controlled-cli",
+    "snapshot_id": "d8036c8a-6334-43ad-b799-5e4c1c15c088",
+    "max_iterations": 8,
+    "prompt_version": "case-execution-receipt-v4",
+    "model_parameters": {
+      "key": "controlled-cli",
+      "model_id": "controlled-cli",
+      "provider": "openai",
+      "auth_type": "api_key",
+      "transport": "openai_chat_completions",
+      "max_tokens": 4096,
+      "temperature": null,
+      "capabilities": {
+        "vision": true,
+        "json_mode": true,
+        "pdf_input": true,
+        "reasoning": true,
+        "streaming": false,
+        "file_input": true,
+        "text_input": true,
+        "multi_image": true,
+        "text_output": true,
+        "tool_calling": true,
+        "image_url_input": true,
+        "image_base64_input": true,
+        "parallel_tool_calls": true
+      },
+      "context_window": 128000,
+      "oauth_provider": null,
+      "api_base_url_hash": "c8ab3863634bbcb0a12a531bb2664d42cde994e1c32439a0b27f23c20aaf6986",
+      "max_output_tokens": 4096,
+      "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+    },
+    "total_model_calls": 5,
+    "runtime_parameters": {
+      "sdk_retry_policy": "explicit_transport_options",
+      "transport_options": {
+        "max_retries": 0,
+        "timeout_seconds": 60.0
+      },
+      "dependency_versions": {
+        "openai": "3.14.0"
+      },
+      "llm_request_timeout_seconds": 60.0,
+      "langchain_model_adapter_enabled": false
+    },
+    "execution_model_calls": 4
+  },
+  "model_calls": [
+    {
+      "path": "/v1/chat/completions",
+      "phase": "planning",
+      "tool_message_count": 0
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 0
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 1
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "agent_operation",
+      "tool_message_count": 2
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "receipt",
+      "tool_message_count": 3
+    },
+    {
+      "path": "/v1/chat/completions",
+      "phase": "receipt_correction",
+      "tool_message_count": 0
+    }
+  ],
+  "business_effects": [
+    [
+      "POST",
+      "/orders"
+    ],
+    [
+      "GET",
+      "/orders/actual-5d5b05b15a1f406ca309d0828650728e"
+    ],
+    [
+      "DELETE",
+      "/orders/actual-5d5b05b15a1f406ca309d0828650728e"
+    ]
+  ],
+  "terminal_replay_model_calls": 0,
+  "terminal_replay_business_effects": 0,
+  "remaining_business_records": 0,
+  "current_default_limit": 18,
+  "original_turn_limit": 8,
+  "current_correction_policy_disabled": true,
+  "current_model_configuration_changed": true
+}

@@ -229,7 +229,7 @@ async def isolated_runtime(tmp_path):
 
 
 @asynccontextmanager
-async def controlled_http(tmp_path, *, mixed_report=False):
+async def controlled_http(tmp_path, *, mixed_report=False, correction_gate=None):
     calls, effects, orders, errors = [], [], {}, []
     actual_id = "actual-" + uuid4().hex
     body = {"order.id": actual_id, "flag": False, "count": 0, "nullable": None,
@@ -307,6 +307,12 @@ async def controlled_http(tmp_path, *, mixed_report=False):
                 calls.append({"path": self.path, "phase": phase, "tool_message_count": len([m for m in messages if m["role"] == "tool"])})
                 (tmp_path / f"model-{len(calls):03d}-request.json").write_text(
                     json.dumps(request, ensure_ascii=False, indent=2), encoding="utf-8")
+                # A real HTTP request has arrived. Process-interruption tests
+                # can hold its reply without replacing any production service.
+                if phase == "receipt_correction" and correction_gate is not None:
+                    if not correction_gate(request):
+                        self.close_connection = True
+                        return
                 identity = "response-" + uuid4().hex
                 if request.get("stream"):
                     delta = dict(result)
@@ -372,6 +378,12 @@ async def wait_api(client, process):
     raise AssertionError("production API did not finish lifespan; see preserved stderr")
 
 
+def controlled_case_content(business):
+    """Shared fixed case matching this provider's literal receipt references."""
+    return {"objective": "查询已有订单", "期望": {"code": 200, "flag": False, "count": 0, "nullable": None},
+        "steps": [{"action": "查询并核对完整响应", "method": "GET", "url": business + "/orders/{id}"}]}
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_limit,mixed_report", [(8, False), (3, False), (8, True)],
     ids=["complete", "budget-exhausted", "receipt-correction"])
@@ -414,8 +426,7 @@ async def test_production_api_and_execution_cli_preserve_approval_then_complete_
                     "content_base64": base64.b64encode(source.read_bytes()).decode()})
                 owned.append(document["storage_uri"])
                 assert (await objects.read_object_uri(document["storage_uri"]))["content"] == source.read_bytes()
-                content = {"objective": "查询已有订单", "期望": {"code": 200, "flag": False, "count": 0, "nullable": None},
-                    "steps": [{"action": "查询并核对完整响应", "method": "GET", "url": business + "/orders/{id}"}]}
+                content = controlled_case_content(business)
                 bundle = await post(f"/projects/{project['id']}/test-cases", {"case_key": "query", "title": "查询已有订单",
                     "mode_key": "api_testing", "case_type": "json", "content_json": content,
                     "execution_notes": "执行完整 JSON，创建的订单在查询后清理。",
