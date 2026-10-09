@@ -4984,3 +4984,13 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 最终真实 **1 passed in 55.52s，0 skipped**：真实Kali/HTTP/PG/RustFS、构建版完整App/Chromium和独立main；3任务2完成1失败4发现，页面需关注/部分完成，浏览器JSON下载最终字段一致。12个default不挤占三模式分页，未生成性能报告显示进行中；再次重启API并点击刷新结果相同、无新增目标GET。计划停API期间1个轮询500保存，恢复后非预期API错误及pageerror均0。回归150通过33门控跳过，报告投影5通过，前端14通过，build/vue-tsc/compileall实际退出0。测试Node类型与旧metrics_persistence假定错误、50.04/55.47秒中间通过批次全部保留，详见 `P5_SECURITY_REPORT_PRODUCT_RESEARCH.md`、`p5-security-report-validation.json`。
 
 范围从真实工具结果的既有报告恢复边界开始，未调用AI选取/规划或其他扫描器；性能仅入口/合同和原真实工件兼容读取，真实性能完整App仍待验。完整安全Agent、其他扫描器/超时/存储故障、容量/AI流式、录制知识/场景/清洗遗漏、需求业务质量/生产历史迁移等继续未完成。Step按用户决定待实名认证。无新增模式、配置、表、依赖或邮件投递。
+
+## 2026-10-10 性能报告绑定最新执行与完整产品验收
+
+本轮基线 `653e8e6d`。依据现有冒烟失败返回和报告选择逻辑，实际复现同会话先pass、再failed仍绑定旧成功任务，页面显示良好/pass（1失败48.12秒）。新增工具库协议/内存/PG/服务的批量最新任务读取；报告按当前任务身份选择工件，失败或无报告不回退历史成功。按创建身份排序，迟到的历史更新不改变当前执行；非报告子工具不抢占主体。前端使用当前job_status与verdict，修复idle遮盖完成，历史卡片补本次/历史任务、ID及时间，三个语言同步。
+
+最终 **1 passed in 69.27s，0 skipped**：真实k6/受控目标/ToolRuntime、隔离MySQL/PG/RustFS/Redis、独立main和本轮构建完整App/Chromium。9个观察阶段覆盖pass、3类冒烟失败、真实排队/取消、异常退出与原件部分保存的inconclusive及重启；浏览器JSON指标/结论与实际输出一致，历史原件/任务归属可查。等待/取消与保存报告不增引擎调用，终态读回不重跑；跨项目404、同尺寸篡改409/恢复200，完整ID容器删除均实际核验。原件保存故障明确为第二次上传注入异常，不声称全RustFS断网；没有AI调用。
+
+十模块回归 **84 passed、6 skipped in 39.90s**，报告投影7通过，前端报告两文件11通过，实际安全报告产品回归1通过56.48秒；最终build/vue-tsc与compileall退出0。最初扩大到迁移模块因当前虚拟环境缺alembic.config而收集失败，保留原日志，不报迁移通过；本轮没有DDL/配置/依赖变更。70.98/70.04秒中间产品批次均保留，最终标签及滚动复位后截图见 `p5-perf-report-final2`。详情见 `P5_PERFORMANCE_REPORT_PRODUCT_RESEARCH.md`、`p5-perf-report-validation.json`。
+
+此批已有实现且已验的是性能工具结果/报告中心产品链路，从既有guard和analyzed检查点开始；完整默认Agent/规划、容量租约复用及AI流式仍待验。安全其他工具/故障、录制知识/场景/清洗遗漏/业务人工录制、API续期、需求业务质量及生产历史迁移等仍需继续。Step按用户决定等待账号处理；完整P0—P5不标完成。旧章节按当时范围解读，7.07的“绑定最新报告”现已进一步纠正为最新执行任务。

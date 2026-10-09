@@ -1,0 +1,559 @@
+{
+  "campaign_id": "eafd31af-0435-4da8-bb10-c32a66e79dbb",
+  "title": "安全测试报告 - http://127.0.0.1 (url)",
+  "target_summary": "http://127.0.0.1 (url)",
+  "scope_description": "owned response header report",
+  "executive_summary": "本次安全测试完成 2 个任务，产生 4 个发现。 有 1 个任务执行失败，因此覆盖范围可能不完整。",
+  "total_tasks": 3,
+  "completed_tasks": 2,
+  "failed_tasks": 1,
+  "skipped_tasks": 0,
+  "total_findings": 4,
+  "critical_count": 0,
+  "high_count": 0,
+  "medium_count": 0,
+  "low_count": 4,
+  "info_count": 0,
+  "findings": [
+    {
+      "finding_id": "cedd6205",
+      "title": "缺少 X-Frame-Options 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693",
+        "CWE-1021"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:58005/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: x-frame-options",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:58005/missing omitted x-frame-options.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:58005/missing.",
+        "Confirm HTTP 200 does not include the x-frame-options response header."
+      ],
+      "recommendation": "在服务器配置中添加 x-frame-options 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    },
+    {
+      "finding_id": "d6d37e79",
+      "title": "缺少 X-Content-Type-Options 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:58005/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: x-content-type-options",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:58005/missing omitted x-content-type-options.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:58005/missing.",
+        "Confirm HTTP 200 does not include the x-content-type-options response header."
+      ],
+      "recommendation": "在服务器配置中添加 x-content-type-options 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    },
+    {
+      "finding_id": "f8b7e1d3",
+      "title": "缺少 HSTS 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:58005/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: strict-transport-security",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:58005/missing omitted strict-transport-security.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:58005/missing.",
+        "Confirm HTTP 200 does not include the strict-transport-security response header."
+      ],
+      "recommendation": "在服务器配置中添加 strict-transport-security 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    },
+    {
+      "finding_id": "e6c99544",
+      "title": "缺少 Content-Security-Policy 响应头",
+      "category": "missing_control",
+      "surface_type": "web",
+      "severity": "low",
+      "confidence": "confirmed",
+      "cvss_score": 0.0,
+      "cvss_vector": "CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N",
+      "cvss_rationale": "The missing response control is confirmed, but this baseline check did not demonstrate exploitation or CIA impact; C/I/A remain None.",
+      "cve_id": "",
+      "cwe_ids": [
+        "CWE-693"
+      ],
+      "owasp_categories": [
+        "OWASP-A05:2021-Security-Misconfiguration"
+      ],
+      "affected_target": "http://host.docker.internal:58005/missing",
+      "affected_port": null,
+      "affected_service": "",
+      "description": "HTTP 响应中缺少安全响应头: content-security-policy",
+      "evidence_summary": "HTTP 200 response from http://host.docker.internal:58005/missing omitted content-security-policy.",
+      "reproduction_steps": [
+        "Send an authorized GET request to http://host.docker.internal:58005/missing.",
+        "Confirm HTTP 200 does not include the content-security-policy response header."
+      ],
+      "recommendation": "在服务器配置中添加 content-security-policy 响应头",
+      "references": [],
+      "source_task_ids": [
+        "missing"
+      ],
+      "raw_evidence": "",
+      "verified": false,
+      "verification_level": "confirmed",
+      "evidence_ids": [
+        "ev_missing_1",
+        "ev_missing_2",
+        "ev_missing_3",
+        "ev_missing_raw_output"
+      ],
+      "exposed_data_types": [],
+      "exposed_record_estimate": null,
+      "confidentiality_impact": "none",
+      "integrity_impact": "none",
+      "availability_impact": "none",
+      "false_positive": false,
+      "is_baseline_check": true
+    }
+  ],
+  "hypotheses": [],
+  "verification_attempts": [],
+  "security_bugs": [],
+  "hypothesis_count": 0,
+  "verification_attempt_count": 0,
+  "security_bug_count": 0,
+  "reproduced_bug_count": 0,
+  "fixed_bug_count": 0,
+  "retest_failed_bug_count": 0,
+  "verified_exploitable_count": 0,
+  "impact_verified_count": 0,
+  "blocked_by_control_count": 0,
+  "activities": [
+    {
+      "activity_id": "act_missing",
+      "agent_key": "security-web-verifier",
+      "agent_name": "security-web-verifier",
+      "task_id": "missing",
+      "action": "completed",
+      "summary": "Executed http_headers_probe with exit code 0; parsed 4 finding(s).",
+      "started_at": "2026-10-09T22:56:50.966081",
+      "completed_at": "2026-10-09T22:56:52.612348",
+      "duration_seconds": 1.646267,
+      "execution_mode": "local_worker_fallback",
+      "tool_calls": [
+        "http_headers_probe"
+      ],
+      "notes": ""
+    },
+    {
+      "activity_id": "act_complete",
+      "agent_key": "security-web-verifier",
+      "agent_name": "security-web-verifier",
+      "task_id": "complete",
+      "action": "completed",
+      "summary": "Executed http_headers_probe with exit code 0; parsed 0 finding(s).",
+      "started_at": "2026-10-09T22:56:52.613969",
+      "completed_at": "2026-10-09T22:56:53.990615",
+      "duration_seconds": 1.376646,
+      "execution_mode": "local_worker_fallback",
+      "tool_calls": [
+        "http_headers_probe"
+      ],
+      "notes": ""
+    },
+    {
+      "activity_id": "act_unreachable",
+      "agent_key": "security-web-verifier",
+      "agent_name": "security-web-verifier",
+      "task_id": "unreachable",
+      "action": "failed",
+      "summary": "Executed http_headers_probe with exit code 1; parsed 0 finding(s).",
+      "started_at": "2026-10-09T22:56:53.993432",
+      "completed_at": "2026-10-09T22:56:55.453930",
+      "duration_seconds": 1.460498,
+      "execution_mode": "local_worker_fallback",
+      "tool_calls": [
+        "http_headers_probe"
+      ],
+      "notes": ""
+    }
+  ],
+  "assets_discovered": 0,
+  "services_discovered": 0,
+  "evidence_count": 12,
+  "execution_record_count": 3,
+  "shell_session": null,
+  "exploit_workspaces": [],
+  "exploit_workspace_count": 0,
+  "exploit_workspace_completed_count": 0,
+  "tool_bootstraps": [],
+  "tool_bootstrap_count": 0,
+  "tool_bootstrap_completed_count": 0,
+  "threat_intelligence": [],
+  "threat_intelligence_count": 0,
+  "callback_leases": [],
+  "callback_lease_count": 0,
+  "graph_persistence": null,
+  "duration_seconds": 0.0,
+  "tested_at": "",
+  "generated_at": "2026-10-09T22:57:02.724274+00:00",
+  "recommendations": [
+    "在服务器配置中添加 x-frame-options 响应头",
+    "在服务器配置中添加 x-content-type-options 响应头",
+    "在服务器配置中添加 strict-transport-security 响应头",
+    "在服务器配置中添加 content-security-policy 响应头"
+  ],
+  "limitations": [
+    "环境限制（environment_limited）：1 个任务未能从隔离执行环境获得目标响应；未根据空响应生成漏洞发现。",
+    "本次运行产生 Finding，但未形成漏洞假设；攻击链验证覆盖不完整。"
+  ],
+  "artifacts": [],
+  "verification_result": {
+    "passed": true,
+    "verdict": "approved",
+    "summary": "Security campaign evidence approved: 8/8 rules passed; 4 finding(s).",
+    "evidence_count": 12,
+    "execution_record_count": 3,
+    "total_rules": 8,
+    "failed_rules": 0,
+    "rules": [
+      {
+        "rule_id": "tasks_settled",
+        "name": "All Planned Tasks Settled",
+        "passed": true,
+        "severity": "error",
+        "expected": 3,
+        "actual": 3,
+        "description": "3/3 planned task(s) reached a terminal state.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "execution_records",
+        "name": "Tool Execution Records",
+        "passed": true,
+        "severity": "error",
+        "expected": "records for 3 terminal task(s)",
+        "actual": "3 recorded",
+        "description": "Every completed or failed security task has an auditable tool execution record.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "finding_evidence",
+        "name": "Finding Evidence",
+        "passed": true,
+        "severity": "error",
+        "expected": "evidence summary or task evidence for every finding",
+        "actual": "4/4 linked",
+        "description": "Every finding is linked to evidence or contains an evidence summary.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "security_bug_quality",
+        "name": "Reproducible Security Bug Quality",
+        "passed": true,
+        "severity": "info",
+        "expected": null,
+        "actual": null,
+        "description": "No succeeded evidence-backed verification attempts were available for Bug promotion.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "exploit_workspace_quality",
+        "name": "Exploit Workspace Quality",
+        "passed": true,
+        "severity": "info",
+        "expected": null,
+        "actual": null,
+        "description": "No P2 Exploit Coder workspace was requested or executed.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "tool_bootstrap_quality",
+        "name": "P4 Tool Bootstrap Auditability",
+        "passed": true,
+        "severity": "info",
+        "expected": null,
+        "actual": null,
+        "description": "No P4 temporary-tool bootstrap was requested.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "high_risk_remediation",
+        "name": "High Risk Remediation Guidance",
+        "passed": true,
+        "severity": "warning",
+        "expected": "recommendation for every high/critical finding",
+        "actual": "0/0 with recommendation",
+        "description": "High and critical findings include remediation guidance.",
+        "affected_tasks": [],
+        "affected_findings": []
+      },
+      {
+        "rule_id": "failed_task_errors",
+        "name": "Failed Task Error Classification",
+        "passed": true,
+        "severity": "warning",
+        "expected": "error or summary for every failed task",
+        "actual": "1/1 classified",
+        "description": "Failed tasks include error summaries.",
+        "affected_tasks": [],
+        "affected_findings": []
+      }
+    ]
+  },
+  "evaluation_result": {
+    "campaign_id": "eafd31af-0435-4da8-bb10-c32a66e79dbb",
+    "quality_score": {
+      "score": 88.3,
+      "overall": 88.3,
+      "execution": 23.3,
+      "evidence": 25.0,
+      "verification": 25.0,
+      "coverage": 15.0,
+      "grade": "B"
+    },
+    "coverage": {
+      "total_tasks": 3,
+      "executed_tasks": 3,
+      "completed_tasks": 2,
+      "coverage_rate": 1.0,
+      "surface_types": [
+        "web"
+      ],
+      "tool_families": [
+        "web_scan"
+      ]
+    },
+    "failure_classifications": [
+      {
+        "task_id": "unreachable",
+        "task_name": "unreachable",
+        "severity": "medium",
+        "category": "timeout",
+        "description": "exit_code=1",
+        "command_profile": "http_headers_probe",
+        "target": "http://127.0.0.1:58233/unreachable",
+        "is_transient": true
+      }
+    ],
+    "risk_summary": {
+      "critical": 0,
+      "high": 0,
+      "medium": 0,
+      "low": 4,
+      "info": 0
+    },
+    "verification_verdict": {
+      "passed": true,
+      "verdict": "approved",
+      "summary": "Security campaign evidence approved: 8/8 rules passed; 4 finding(s).",
+      "evidence_count": 12,
+      "execution_record_count": 3,
+      "total_rules": 8,
+      "failed_rules": 0,
+      "rules": [
+        {
+          "rule_id": "tasks_settled",
+          "name": "All Planned Tasks Settled",
+          "passed": true,
+          "severity": "error",
+          "expected": 3,
+          "actual": 3,
+          "description": "3/3 planned task(s) reached a terminal state.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "execution_records",
+          "name": "Tool Execution Records",
+          "passed": true,
+          "severity": "error",
+          "expected": "records for 3 terminal task(s)",
+          "actual": "3 recorded",
+          "description": "Every completed or failed security task has an auditable tool execution record.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "finding_evidence",
+          "name": "Finding Evidence",
+          "passed": true,
+          "severity": "error",
+          "expected": "evidence summary or task evidence for every finding",
+          "actual": "4/4 linked",
+          "description": "Every finding is linked to evidence or contains an evidence summary.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "security_bug_quality",
+          "name": "Reproducible Security Bug Quality",
+          "passed": true,
+          "severity": "info",
+          "expected": null,
+          "actual": null,
+          "description": "No succeeded evidence-backed verification attempts were available for Bug promotion.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "exploit_workspace_quality",
+          "name": "Exploit Workspace Quality",
+          "passed": true,
+          "severity": "info",
+          "expected": null,
+          "actual": null,
+          "description": "No P2 Exploit Coder workspace was requested or executed.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "tool_bootstrap_quality",
+          "name": "P4 Tool Bootstrap Auditability",
+          "passed": true,
+          "severity": "info",
+          "expected": null,
+          "actual": null,
+          "description": "No P4 temporary-tool bootstrap was requested.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "high_risk_remediation",
+          "name": "High Risk Remediation Guidance",
+          "passed": true,
+          "severity": "warning",
+          "expected": "recommendation for every high/critical finding",
+          "actual": "0/0 with recommendation",
+          "description": "High and critical findings include remediation guidance.",
+          "affected_tasks": [],
+          "affected_findings": []
+        },
+        {
+          "rule_id": "failed_task_errors",
+          "name": "Failed Task Error Classification",
+          "passed": true,
+          "severity": "warning",
+          "expected": "error or summary for every failed task",
+          "actual": "1/1 classified",
+          "description": "Failed tasks include error summaries.",
+          "affected_tasks": [],
+          "affected_findings": []
+        }
+      ]
+    },
+    "recommendations": [
+      "Retry or re-run 1 transient security task failure(s) after checking environment/tool availability.",
+      "Prioritize remediation by severity and validate high/critical findings with evidence before remediation tracking."
+    ],
+    "summary": "Security campaign confidence score: 88/100 (grade B); coverage 100%; critical/high findings: 0/0; failed tasks classified: 1."
+  },
+  "settlement": {
+    "status": "partial",
+    "reason": "Security campaign evidence approved: 8/8 rules passed; 4 finding(s).",
+    "all_tasks_settled": true,
+    "all_chains_settled": true,
+    "report_ready": true,
+    "cleanup_complete": true,
+    "finalized_at": "2026-10-09T22:57:02.724274+00:00"
+  }
+}

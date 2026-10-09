@@ -1,0 +1,48 @@
+{
+  "project_id": "e19eb3f0-da1b-4633-8dd5-2759fcfb8ce5",
+  "session_id": "f6badc22-c206-4d1b-b8e5-863c3499c7f9",
+  "scope": "actual engine/tool/PG/RustFS/API restart and download; starts at previously validated guard phase; no Agent/model invocation",
+  "observations": [
+    {
+      "variant": "normal",
+      "passed": true,
+      "detail": "冒烟验证通过",
+      "tool_job_id": "25e0ed48-d92b-4a6b-ae99-0f78fcb36302",
+      "tool_status": "completed",
+      "engine_runs": 2
+    },
+    {
+      "variant": "missing",
+      "passed": false,
+      "detail": "冒烟验证缺少引擎汇总，无法确认完成请求",
+      "tool_job_id": "371c7aac-c6d3-4f07-966b-dc6fdb00b4b7",
+      "tool_status": "failed",
+      "engine_runs": 1
+    },
+    {
+      "variant": "malformed",
+      "passed": false,
+      "detail": "冒烟汇总解析失败: Expecting property name enclosed in double quotes: line 1 column 2 (char 1)",
+      "tool_job_id": "b4cb74dc-f2bf-4396-ab73-b5124d4d0764",
+      "tool_status": "failed",
+      "engine_runs": 1
+    },
+    {
+      "variant": "teardown",
+      "passed": false,
+      "detail": "冒烟执行失败 (exit_code=107): time=\"2026-10-09T22:55:44Z\" level=error msg=\"Error: controlled teardown failure\\n\\tat teardown (file:///work/teardown.js:38:36(3))\\n\" hint=\"script exception\" source=stacktrace\n",
+      "tool_job_id": "166f08d5-b7fb-41bc-a3c4-7b47f11bad91",
+      "tool_status": "failed",
+      "engine_runs": 1
+    }
+  ],
+  "api_restart_persisted": true,
+  "cross_project_download_status": 404,
+  "tampered_same_size_status": 409,
+  "restored_bytes_equal": true,
+  "replay_added_engine_runs": 0,
+  "storage_fault_scope": "injected second upload failure after real first RustFS upload",
+  "storage_fault_engine_runs": 1,
+  "storage_fault_preserved_originals": 1,
+  "storage_fault_verdict": "inconclusive"
+}

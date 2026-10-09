@@ -1,0 +1,42 @@
+{
+  "exit_code": 0,
+  "stdout": "\n         /\\      Grafana   /‾‾/  \n    /\\  /  \\     |\\  __   /  /   \n   /  \\/    \\    | |/ /  /   ‾‾\\ \n  /          \\   |   (  |  (‾)  |\n / __________ \\  |_|\\_\\  \\_____/ \n\n\n     execution: local\n        script: /work/normal.js\n        output: -\n\n     scenarios: (100.00%) 1 scenario, 1 max VUs, 32s max duration (incl. graceful stop):\n              * default: 1 looping VUs for 2s (gracefulStop: 30s)\n\n\nrunning (01.0s), 1/1 VUs, 19 complete and 0 interrupted iterations\ndefault   [  50% ] 1 VUs  1.0s/2s\n\nrunning (02.0s), 1/1 VUs, 39 complete and 0 interrupted iterations\ndefault   [ 100% ] 1 VUs  2.0s/2s\n\n\n  █ THRESHOLDS \n\n    http_req_duration\n    ✓ 'p(99)<1000' p(99)=576.53µs\n\n\n  █ TOTAL RESULTS \n\n    checks_total.......: 40      19.610367/s\n    checks_succeeded...: 100.00% 40 out of 40\n    checks_failed......: 0.00%   0 out of 40\n\n    ✓ qa_status_0_200\n\n    HTTP\n    http_req_duration..............: avg=386.87µs min=280.04µs med=363.22µs max=584.85µs p(90)=462.49µs p(95)=533.93µs p(99)=576.53µs\n      { expected_response:true }...: avg=386.87µs min=280.04µs med=363.22µs max=584.85µs p(90)=462.49µs p(95)=533.93µs p(99)=576.53µs\n    http_req_failed................: 0.00%  0 out of 40\n    http_reqs......................: 40     19.610367/s\n\n    EXECUTION\n    iteration_duration.............: avg=50.96ms  min=50.66ms  med=50.93ms  max=51.54ms  p(90)=51.19ms  p(95)=51.22ms  p(99)=51.45ms \n    iterations.....................: 40     19.610367/s\n    vus............................: 1      min=1       max=1\n    vus_max........................: 1      min=1       max=1\n\n    NETWORK\n    data_received..................: 7.4 kB 3.6 kB/s\n    data_sent......................: 2.8 kB 1.4 kB/s\n\n\n\n\nrunning (02.0s), 0/1 VUs, 40 complete and 0 interrupted iterations\ndefault ✓ [ 100% ] 1 VUs  2s\n",
+  "stderr": "",
+  "summary_json": "{\n    \"root_group\": {\n        \"groups\": {},\n        \"checks\": {\n                \"qa_status_0_200\": {\n                    \"fails\": 0,\n                    \"name\": \"qa_status_0_200\",\n                    \"path\": \"::qa_status_0_200\",\n                    \"id\": \"97d45ecbd97c7bffbb65f3df0385d661\",\n                    \"passes\": 40\n                }\n            },\n        \"name\": \"\",\n        \"path\": \"\",\n        \"id\": \"d41d8cd98f00b204e9800998ecf8427e\"\n    },\n    \"metrics\": {\n        \"vus_max\": {\n            \"value\": 1,\n            \"min\": 1,\n            \"max\": 1\n        },\n        \"http_req_duration{expected_response:true}\": {\n            \"p(99)\": 0.57653296,\n            \"avg\": 0.3868757749999999,\n            \"min\": 0.280046,\n            \"med\": 0.3632225,\n            \"max\": 0.584854,\n            \"p(90)\": 0.4624902000000001,\n            \"p(95)\": 0.5339311999999999\n        },\n        \"http_req_connecting\": {\n            \"med\": 0,\n            \"max\": 0.36685,\n            \"p(90)\": 0,\n            \"p(95)\": 0,\n            \"p(99)\": 0.2237784999999998,\n            \"avg\": 0.00917125,\n            \"min\": 0\n        },\n        \"vus\": {\n            \"value\": 1,\n            \"min\": 1,\n            \"max\": 1\n        },\n        \"http_req_waiting\": {\n            \"p(99)\": 0.42667394,\n            \"avg\": 0.29499472499999996,\n            \"min\": 0.195457,\n            \"med\": 0.2777985,\n            \"max\": 0.432077,\n            \"p(90)\": 0.36368680000000003,\n            \"p(95)\": 0.4094886999999999\n        },\n        \"http_req_blocked\": {\n            \"avg\": 0.018491450000000006,\n            \"min\": 0.003302,\n            \"med\": 0.004278499999999999,\n            \"max\": 0.530115,\n            \"p(90)\": 0.0099443,\n            \"p(95)\": 0.018851949999999992,\n            \"p(99)\": 0.33203360999999976\n        },\n        \"iteration_duration\": {\n            \"max\": 51.544176,\n            \"p(90)\": 51.1968673,\n            \"p(95)\": 51.22536645,\n            \"p(99)\": 51.45187704,\n            \"avg\": 50.96145162500001,\n            \"min\": 50.663898,\n            \"med\": 50.935304\n        },\n        \"http_req_tls_handshaking\": {\n            \"p(95)\": 0,\n            \"p(99)\": 0,\n            \"avg\": 0,\n            \"min\": 0,\n            \"med\": 0,\n            \"max\": 0,\n            \"p(90)\": 0\n        },\n        \"checks\": {\n            \"passes\": 40,\n            \"fails\": 0,\n            \"value\": 1\n        },\n        \"http_req_receiving\": {\n            \"p(95)\": 0.1209497,\n            \"p(99)\": 0.14881402999999999,\n            \"avg\": 0.07152452500000002,\n            \"min\": 0.0441,\n            \"med\": 0.0667115,\n            \"max\": 0.163292,\n            \"p(90)\": 0.09942020000000004\n        },\n        \"data_sent\": {\n            \"rate\": 1392.3360775563278,\n            \"count\": 2840\n        },\n        \"http_req_failed\": {\n            \"passes\": 0,\n            \"fails\": 40,\n            \"value\": 0\n        },\n        \"data_received\": {\n            \"count\": 7360,\n            \"rate\": 3608.307581272737\n        },\n        \"http_req_sending\": {\n            \"avg\": 0.020356525000000004,\n            \"min\": 0.010086,\n            \"med\": 0.012775,\n            \"max\": 0.166617,\n            \"p(90)\": 0.027412600000000002,\n            \"p(95)\": 0.0400682999999998,\n            \"p(99)\": 0.14297792999999998\n        },\n        \"http_reqs\": {\n            \"count\": 40,\n            \"rate\": 19.610367289525744\n        },\n        \"http_req_duration\": {\n            \"min\": 0.280046,\n            \"med\": 0.3632225,\n            \"max\": 0.584854,\n            \"p(90)\": 0.4624902000000001,\n            \"p(95)\": 0.5339311999999999,\n            \"p(99)\": 0.57653296,\n            \"avg\": 0.3868757749999999,\n            \"thresholds\": {\n                \"p(99)<1000\": false\n            }\n        },\n        \"iterations\": {\n            \"count\": 40,\n            \"rate\": 19.610367289525744\n        }\n    }\n}",
+  "timed_out": false,
+  "container_id": "59f07b7edd7907f85d72c474963c6dd74dec8dfb8b7adf26ade8871b1c447d50",
+  "evidence": {
+    "status": "partial",
+    "artifacts": [
+      {
+        "path": "rustfs://qa-agent/performance-evidence/eec2af2b-f8c3-499b-96f3-1593673ec6c9/4dd84e00-9868-4add-8d46-5804ca5202b9/fcc8aa4abec94d929adbbc1161ba1d7e/f1e52cd04e3ead01b16effd2e10bcf0b0fb9a6fc145b389c90723d3dcc396ba6/normal.js",
+        "uri": "rustfs://qa-agent/performance-evidence/eec2af2b-f8c3-499b-96f3-1593673ec6c9/4dd84e00-9868-4add-8d46-5804ca5202b9/fcc8aa4abec94d929adbbc1161ba1d7e/f1e52cd04e3ead01b16effd2e10bcf0b0fb9a6fc145b389c90723d3dcc396ba6/normal.js",
+        "storage_backend": "rustfs",
+        "bucket": "qa-agent",
+        "object_name": "performance-evidence/eec2af2b-f8c3-499b-96f3-1593673ec6c9/4dd84e00-9868-4add-8d46-5804ca5202b9/fcc8aa4abec94d929adbbc1161ba1d7e/f1e52cd04e3ead01b16effd2e10bcf0b0fb9a6fc145b389c90723d3dcc396ba6/normal.js",
+        "content_type": "application/javascript",
+        "original_local_path": "C:\\Users\\32734\\AppData\\Local\\Temp\\perf-ser1y99d\\normal.js",
+        "original_filename": "normal.js",
+        "size_bytes": 1167,
+        "type": "performance_engine_file",
+        "label": "normal.js",
+        "filename": "normal.js",
+        "sha256": "f1e52cd04e3ead01b16effd2e10bcf0b0fb9a6fc145b389c90723d3dcc396ba6",
+        "evidence_schema": "performance-execution-v1",
+        "execution_id": "fcc8aa4abec94d929adbbc1161ba1d7e",
+        "relative_path": "normal.js",
+        "owner": {
+          "project_id": "eec2af2b-f8c3-499b-96f3-1593673ec6c9",
+          "session_id": "4dd84e00-9868-4add-8d46-5804ca5202b9",
+          "turn_id": "perf-evidence-turn",
+          "trace_id": "trace_46fafc8a992940baacf02a9454a5b8f2",
+          "run_id": null,
+          "run_item_id": null,
+          "attempt_id": null
+        }
+      }
+    ],
+    "missing_artifacts": [],
+    "error": "性能原件保存失败: controlled upload interruption after one saved original"
+  }
+}

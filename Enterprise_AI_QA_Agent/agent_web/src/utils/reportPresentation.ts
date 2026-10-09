@@ -3,18 +3,29 @@ import type { SessionSummary, ToolArtifactRecord, VerificationResult } from "../
 export type ReportGrade = "poor" | "attention" | "in_progress" | "good";
 
 export function reportExecutionStatus(session: SessionSummary, meta: Record<string, unknown>): string {
+  if (session.mode_key !== "code_review" && typeof meta.job_status === "string") {
+    const status = meta.job_status;
+    if (["failed", "denied"].includes(status)) return "failed";
+    if (status === "cancelled") return "interrupted";
+    if (["partial", "resume_requested", "retry_requested"].includes(status)) return "partial";
+    if (status !== "completed") return status === "waiting_approval" ? status : "running";
+    if (meta.ready !== true) return "partial";
+  }
   if (session.mode_key === "security_testing" && meta.ready === true) {
     const settlement = meta.settlement as { status?: string } | undefined;
     if (settlement?.status === "partial" || settlement?.status === "failed") return settlement.status;
     if (settlement?.status === "success") return "completed";
   }
+  if (session.mode_key === "performance_testing" && meta.ready === true) return "completed";
   return session.status;
 }
 
 export function reportGrade(session: SessionSummary, meta: Record<string, unknown>, verifications: VerificationResult[]): ReportGrade {
   if (session.status === "failed") return "poor";
   if (session.mode_key !== "code_review") {
-    if (meta.ready !== true) return "in_progress";
+    if (["failed", "denied"].includes(String(meta.job_status))) return "poor";
+    if (["partial", "cancelled", "resume_requested", "retry_requested"].includes(String(meta.job_status))) return "attention";
+    if (meta.ready !== true) return meta.job_status === "completed" ? "attention" : "in_progress";
     if (session.mode_key === "performance_testing") {
       if (meta.verdict === "fail") return "poor";
       const persistence = meta.metrics_persistence as { status?: string } | undefined;

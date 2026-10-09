@@ -1,0 +1,44 @@
+
+         /\      Grafana   /‾‾/  
+    /\  /  \     |\  __   /  /   
+   /  \/    \    | |/ /  /   ‾‾\ 
+  /          \   |   (  |  (‾)  |
+ / __________ \  |_|\_\  \_____/ 
+
+
+     execution: local
+        script: /work/missing.js
+        output: -
+
+     scenarios: (100.00%) 1 scenario, 1 max VUs, 10m30s max duration (incl. graceful stop):
+              * default: 3 iterations shared among 1 VUs (maxDuration: 10m0s, gracefulStop: 30s)
+
+
+
+  █ TOTAL RESULTS 
+
+    checks_total.......: 3       19.34581/s
+    checks_succeeded...: 100.00% 3 out of 3
+    checks_failed......: 0.00%   0 out of 3
+
+    ✓ qa_status_0_200
+
+    HTTP
+    http_req_duration..............: avg=465.44µs min=369.8µs med=394.23µs max=632.29µs p(90)=584.68µs p(95)=608.48µs p(99)=627.53µs
+      { expected_response:true }...: avg=465.44µs min=369.8µs med=394.23µs max=632.29µs p(90)=584.68µs p(95)=608.48µs p(99)=627.53µs
+    http_req_failed................: 0.00% 0 out of 3
+    http_reqs......................: 3     19.34581/s
+
+    EXECUTION
+    iteration_duration.............: avg=51.58ms  min=51.1ms  med=51.36ms  max=52.27ms  p(90)=52.09ms  p(95)=52.18ms  p(99)=52.26ms 
+    iterations.....................: 3     19.34581/s
+
+    NETWORK
+    data_received..................: 552 B 3.6 kB/s
+    data_sent......................: 213 B 1.4 kB/s
+
+
+
+
+running (00m00.2s), 0/1 VUs, 3 complete and 0 interrupted iterations
+default ✓ [ 100% ] 1 VUs  00m00.2s/10m0s  3/3 shared iters

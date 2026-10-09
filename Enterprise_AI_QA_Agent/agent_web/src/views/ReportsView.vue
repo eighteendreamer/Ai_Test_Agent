@@ -478,6 +478,13 @@ onMounted(() => {
                   <strong>{{ artifactLabel(artifact) }}</strong>
                   <span class="artifact-type mono">{{ artifact.artifact_type }}</span>
                 </div>
+                <p class="artifact-path mono">
+                  <span v-if="selectedReport.reportMeta.tool_job_id">
+                    {{ t(artifact.tool_job_id === selectedReport.reportMeta.tool_job_id
+                      ? "reports.current_execution" : "reports.historical_execution") }} ·
+                  </span>
+                  {{ t("reports.execution_id") }} {{ artifact.tool_job_id.slice(0, 8) }} · {{ formatDateTime(artifact.created_at) }}
+                </p>
                 <p class="artifact-path mono">{{ artifact.path }}</p>
                 <a :href="`/api/v1/sessions/${encodeURIComponent(artifact.session_id)}/artifacts/${encodeURIComponent(artifact.id)}/content`" download>
                   {{ t("reports.download") }}

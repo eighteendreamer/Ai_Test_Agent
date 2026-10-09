@@ -20,7 +20,7 @@ from src.application.runtime.tool_runtime_service import ToolExecutionContext, T
 from src.core.request_context import bind_request_context
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfTarget, PerfWorkloadConfig, PerformanceTestingState, SLAConfig
-from src.modes.performance_testing_mode.contracts import PHASE_GUARD_PASSED, STATE_METADATA_KEY
+from src.modes.performance_testing_mode.contracts import PHASE_ANALYZED, PHASE_GUARD_PASSED, STATE_METADATA_KEY
 from src.modes.performance_testing_mode.report_builder import PerfReportBuilder
 from src.modes.performance_testing_mode.result_parser import PerfResultParser
 from src.runtime.docker_resource_manager import DockerResourceManager
@@ -36,6 +36,10 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_PERF_E
 
 
 async def test_actual_smoke_evidence_and_nonzero_exit(tmp_path):
+    await actual_performance_evidence(tmp_path)
+
+
+async def actual_performance_evidence(tmp_path, report_probe=None):
     evidence = Path(os.getenv("QA_PERF_EVIDENCE_DIR", str(tmp_path / "evidence")))
     evidence.mkdir(parents=True, exist_ok=True)
     commands, observations, records = [], [], []
@@ -145,6 +149,9 @@ async def test_actual_smoke_evidence_and_nonzero_exit(tmp_path):
                                 assert len({a["execution_id"] for a in record.output["artifacts"] if a.get("execution_id")}) == 2
                             else:
                                 assert record.status == "failed" and "run" not in record.output
+                            if report_probe is not None:
+                                await report_probe(stage=variant, client=client, session=session, record=record,
+                                    records=records, evidence=evidence, api_port=api_port, runner=runner, jobs=jobs, tool=tool)
                         assert [x["passed"] for x in observations] == [True, False, False, False], observations
 
                         # Valid samples from a real failed engine cannot be promoted to pass.
@@ -156,6 +163,24 @@ async def test_actual_smoke_evidence_and_nonzero_exit(tmp_path):
                         write_json(evidence / "teardown-load-run.json", run.model_dump(mode="json"))
                         write_json(evidence / "teardown-load-report.json", report.model_dump(mode="json"))
                         assert run.exit_code == 107 and report.sla_result.passed is True and report.verdict == "inconclusive"
+                        async def publish_actual_report(stage, actual_run, actual_report):
+                            # Reuse the production analyzed checkpoint; this saves the
+                            # actual run's report without calling an engine again.
+                            prior = runner.count
+                            state = PerformanceTestingState(session_id=session["id"], project_id=project["id"],
+                                phase=PHASE_ANALYZED, plan=plan, run=actual_run, report=actual_report)
+                            context = ToolExecutionContext(session_id=session["id"], turn_id=stage, trace_id=stage,
+                                user_message="persist actual performance report", normalized_input="performance report",
+                                context_bundle={"project_id": project["id"], STATE_METADATA_KEY: state.model_dump(mode="json")})
+                            saved = await tools.execute(tool, ModelToolCall(id=str(uuid4()), name=tool.key, arguments={}), context)
+                            assert runner.count == prior and saved.output["verdict"] == "inconclusive"
+                            assert saved.output["metrics_persistence"]["status"] == "saved"
+                            records.append(saved)
+                            write_json(evidence / (stage + "-tool-record.json"), saved.model_dump(mode="json"))
+                            await report_probe(stage=stage, client=client, session=session, record=saved,
+                                records=records, evidence=evidence, api_port=api_port, runner=runner, jobs=jobs, tool=tool)
+                        if report_probe is not None:
+                            await publish_actual_report("load-inconclusive", run, report)
 
                         # Actual local subprocess timeout must retain already-emitted streams.
                         local_script = ScriptArtifact(engine="k6", filename="local.py", script_content='import sys,time\nprint("captured stdout",flush=True)\nprint("captured stderr",file=sys.stderr,flush=True)\ntime.sleep(5)\n')
@@ -195,12 +220,17 @@ async def test_actual_smoke_evidence_and_nonzero_exit(tmp_path):
                         saved = partial.evidence["artifacts"][0]
                         original = await objects.read_object_uri(saved["path"])
                         assert hashlib.sha256(original["content"]).hexdigest() == saved["sha256"]
+                        if report_probe is not None:
+                            await publish_actual_report("storage-inconclusive", partial, partial_report)
 
                         before_replay = runner.count
                         replayed = await tools.record_from_job(await jobs.get_job(records[0].job_id))
                         assert replayed.output == records[0].output and runner.count == before_replay
 
                         # Independent production API restart must preserve PG references and RustFS bytes.
+                        if report_probe is not None:
+                            await report_probe(stage="restarting", client=client, session=session, record=records[-1],
+                                records=records, evidence=evidence, api_port=api_port, runner=runner, jobs=jobs, tool=tool)
                         await processes.stop(api)
                         api = processes.start("perf-evidence-api-restarted", "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(api_port))
                         await wait_api(client, api)
@@ -256,6 +286,9 @@ async def test_actual_smoke_evidence_and_nonzero_exit(tmp_path):
                             bucket_name=original["bucket"], object_name=original["object_name"], content_type=original["content_type"])
                         response = await client.get(target_artifact["url"])
                         assert response.status_code == 200 and response.content == original["content"]
+                        if report_probe is not None:
+                            await report_probe(stage="restarted", client=client, session=session, record=records[-1],
+                                records=records, evidence=evidence, api_port=api_port, runner=runner, jobs=jobs, tool=tool)
                         write_json(evidence / "facts.json", {"project_id": project["id"], "session_id": session["id"],
                             "scope": "actual engine/tool/PG/RustFS/API restart and download; starts at previously validated guard phase; no Agent/model invocation",
                             "observations": observations, "api_restart_persisted": True, "cross_project_download_status": 404,

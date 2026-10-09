@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import fixture from "../../../docs/upgrade_2026-10-03/p5-security-report-verified/report-record.json";
+import stale from "../../../docs/upgrade_2026-10-03/p5-perf-report-before/report-product-observations.json";
 import type { SessionSummary, ToolArtifactRecord, VerificationResult } from "../types";
 import { primaryReportArtifact, reportExecutionStatus, reportGrade } from "./reportPresentation";
 
@@ -32,5 +33,21 @@ describe("reports backed by actual persisted security evidence", () => {
     expect(primaryReportArtifact([old, current], { tool_job_id: "current" })).toBe(current);
     expect(primaryReportArtifact([old], { tool_job_id: "current" })).toBeUndefined();
     expect(primaryReportArtifact([old], { kind: "security_testing", ready: false })).toBeUndefined();
+  });
+  it("shows the reproduced failed attempt even when the session remains idle", () => {
+    const observed = stale.find((entry) => entry.stage === "missing")!;
+    const meta = { kind: "performance_testing", ready: false, job_status: "failed", tool_job_id: observed.expected_job_id };
+    const session = { ...perf, status: "idle" } as SessionSummary;
+    expect(reportGrade(session, meta, [])).toBe("poor");
+    expect(reportExecutionStatus(session, meta)).toBe("failed");
+    expect(primaryReportArtifact([{ tool_job_id: observed.meta.tool_job_id,
+      artifact_type: "performance_report_markdown" } as ToolArtifactRecord], meta)).toBeUndefined();
+  });
+  it("separates waiting, interrupted delivery and a completed report", () => {
+    expect(reportGrade(perf, { ready: false, job_status: "running" }, [])).toBe("in_progress");
+    expect(reportGrade(perf, { ready: false, job_status: "completed" }, [])).toBe("attention");
+    expect(reportGrade(perf, { ready: true, job_status: "partial", verdict: "pass" }, [])).toBe("attention");
+    expect(reportExecutionStatus(perf, { ready: true, job_status: "completed" })).toBe("completed");
+    expect(reportExecutionStatus(perf, { ready: false, job_status: "completed" })).toBe("partial");
   });
 });

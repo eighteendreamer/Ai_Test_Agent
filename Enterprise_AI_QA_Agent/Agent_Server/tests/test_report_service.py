@@ -157,3 +157,44 @@ def test_existing_actual_performance_metrics_are_read_without_rescanning():
     assert meta["ready"] and meta["verdict"] == record["output"]["verdict"] == "pass"
     assert meta.get("metrics_persistence") == record["output"].get("metrics_persistence")
     assert not workers and not verifications
+
+
+def test_latest_real_failed_attempt_without_json_cannot_reuse_previous_pass():
+    import json
+    from pathlib import Path
+    from src.schemas.tool_job import ToolJobRecord
+    folder = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p5-perf-report-before"
+    entry = json.loads((folder / "missing-reports.json").read_text(encoding="utf-8"))["items"][0]
+    snapshot = json.loads((folder / "postgres-finally.json").read_text(encoding="utf-8"))
+    # Source rows are actual failed k6 jobs captured before the projection fix.
+    rows = snapshot["postgres_tool_job_table"]
+    latest = next(ToolJobRecord.model_validate(row) for row in rows if row["turn_id"] == "perf-missing")
+    artifacts = [ToolArtifactRecord.model_validate(a) for a in entry["artifacts"]]
+    session = _session(latest.session_id, {})
+    session.mode_key = "performance_testing"
+    meta, workers, verifications = ReportService._prepare_test_report(session, artifacts, latest)
+    assert meta["ready"] is False and meta["tool_job_id"] == latest.id and meta["job_status"] == "failed"
+    assert "verdict" not in meta and not workers and not verifications
+
+
+def test_latest_lookup_uses_creation_identity_and_isolated_session_tool_pairs():
+    from datetime import timedelta
+    from src.runtime.tool_job_store import InMemoryToolJobStore
+    from src.schemas.tool_job import ToolJobRecord
+    store = InMemoryToolJobStore()
+    now = datetime.utcnow()
+    def job(identity, session, tool, age):
+        return ToolJobRecord(id=identity, session_id=session, tool_key=tool, tool_name=tool, call_id=identity,
+            turn_id="turn", trace_id="trace", status="queued", created_at=now + timedelta(seconds=age), updated_at=now)
+    async def exercise():
+        for item in [job("old", "a", "performance-test-runner", 0), job("new", "a", "performance-test-runner", 1),
+            job("other", "b", "performance-test-runner", 2), job("unrelated", "a", "http-probe-runner", 3),
+            job("security", "a", "security-scan-runner", 4)]:
+            await store.save_job(item)
+        # A late historical update cannot move the old execution ahead of new.
+        await store.save_job(await store.get_job("old"))
+        selected = await store.list_latest_jobs_for_sessions(["a"], ["performance-test-runner", "security-scan-runner"])
+        assert {j.id for j in selected} == {"new", "security"}
+        assert await store.list_latest_jobs_for_sessions([], ["performance-test-runner"]) == []
+        assert await store.list_latest_jobs_for_sessions(["a"], []) == []
+    asyncio.run(exercise())

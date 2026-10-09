@@ -149,6 +149,9 @@ class PostgresToolJobStore:
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         return await asyncio.to_thread(self._list_jobs_sync, session_id)
 
+    async def list_latest_jobs_for_sessions(self, session_ids: list[str], tool_keys: list[str]) -> list[ToolJobRecord]:
+        return await asyncio.to_thread(self._list_latest_jobs_for_sessions_sync, session_ids, tool_keys)
+
     async def save_artifact(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord:
         return await asyncio.to_thread(self._save_artifact_sync, artifact)
 
@@ -331,6 +334,18 @@ class PostgresToolJobStore:
                     )
                 rows = cur.fetchall() or []
         return [_job_from_row(row) for row in rows]
+
+    def _list_latest_jobs_for_sessions_sync(self, session_ids: list[str], tool_keys: list[str]) -> list[ToolJobRecord]:
+        if not session_ids or not tool_keys:
+            return []
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""
+                SELECT DISTINCT ON (session_id, tool_key) *
+                FROM {self._settings.database.postgres_tool_job_table}
+                WHERE session_id = ANY(%s) AND tool_key = ANY(%s)
+                ORDER BY session_id, tool_key, created_at DESC, id DESC
+            """, (session_ids, tool_keys))
+            return [_job_from_row(row) for row in cur.fetchall() or []]
 
     def _save_artifact_sync(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord:
         storage_mode = str(artifact.metadata.get("__storage_mode") or "path_only")

@@ -21,6 +21,7 @@ class ToolJobStore(Protocol):
                                    summary: str, error_message: str | None) -> ToolJobRecord | None: ...
     async def get_job(self, job_id: str) -> ToolJobRecord | None: ...
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]: ...
+    async def list_latest_jobs_for_sessions(self, session_ids: list[str], tool_keys: list[str]) -> list[ToolJobRecord]: ...
     async def save_artifact(self, artifact: ToolArtifactRecord) -> ToolArtifactRecord: ...
     async def get_artifact(self, artifact_id: str) -> ToolArtifactRecord | None: ...
     async def list_artifacts(
@@ -108,6 +109,14 @@ class InMemoryToolJobStore:
         if session_id:
             values = [job for job in values if job.session_id == session_id]
         return sorted(values, key=lambda item: item.created_at, reverse=True)
+
+    async def list_latest_jobs_for_sessions(self, session_ids: list[str], tool_keys: list[str]) -> list[ToolJobRecord]:
+        sessions, keys = set(session_ids), set(tool_keys)
+        latest: dict[tuple[str, str], ToolJobRecord] = {}
+        for job in sorted(self._jobs.values(), key=lambda item: (item.created_at, item.id), reverse=True):
+            if job.session_id in sessions and job.tool_key in keys:
+                latest.setdefault((job.session_id, job.tool_key), job)
+        return [job.model_copy(deep=True) for job in latest.values()]
 
     async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
                                    summary: str, error_message: str | None) -> ToolJobRecord | None:

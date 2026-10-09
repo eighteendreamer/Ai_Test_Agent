@@ -9,11 +9,12 @@ from src.domain.models import SessionRecord
 from src.runtime.store import SessionStore
 from src.schemas.report import ReportListEntry, ReportListPage
 from src.schemas.session import SessionSummary
-from src.schemas.tool_job import ToolArtifactRecord
+from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
 
 logger = logging.getLogger(__name__)
 
 REPORT_MODES = ["code_review", "security_testing", "performance_testing"]
+REPORT_TOOLS = {"security_testing": "security-scan-runner", "performance_testing": "performance-test-runner"}
 
 
 class ReportService:
@@ -50,11 +51,17 @@ class ReportService:
         for artifact in artifacts:
             artifacts_by_session.setdefault(artifact.session_id, []).append(artifact)
 
+        test_session_ids = [session.id for session in visible if session.mode_key in REPORT_TOOLS]
+        latest_jobs = await self._tool_job_service.list_latest_jobs_for_sessions(
+            test_session_ids, list(REPORT_TOOLS.values())) if test_session_ids else []
+        jobs_by_session_tool = {(job.session_id, job.tool_key): job for job in latest_jobs}
+
         entries = []
         for session, report_meta, workers, verifications, report_session_id in prepared:
             session_artifacts = artifacts_by_session.get(session.id, [])
             if session.mode_key != "code_review":
-                report_meta, workers, verifications = self._prepare_test_report(session, session_artifacts)
+                report_meta, workers, verifications = self._prepare_test_report(session, session_artifacts,
+                    jobs_by_session_tool.get((session.id, REPORT_TOOLS[session.mode_key])))
                 report_session_id = session.id if report_meta.get("ready") else None
             report_artifacts = []
             if report_session_id and report_session_id != session.id:
@@ -79,13 +86,21 @@ class ReportService:
         )
 
     @staticmethod
-    def _prepare_test_report(session: SessionRecord, artifacts: list[ToolArtifactRecord]):
-        """Read the newest persisted report; absence is never a passing verdict."""
+    def _prepare_test_report(session: SessionRecord, artifacts: list[ToolArtifactRecord], job: ToolJobRecord | None = None):
+        """Bind reports to the newest execution, including attempts with no report."""
         expected = "report_json" if session.mode_key == "security_testing" else "performance_metrics_json"
-        candidates = sorted((a for a in artifacts if a.artifact_type == expected),
-            key=lambda a: a.created_at, reverse=True)
         meta = {"kind": session.mode_key, "ready": False}
+        if job is not None:
+            meta.update(tool_job_id=job.id, job_status=job.status.value, summary=job.summary)
+            if job.status not in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                ToolJobStatus.denied, ToolJobStatus.cancelled}:
+                return meta, [], []
+        candidates = sorted((a for a in artifacts if a.artifact_type == expected
+            and (job is None or a.tool_job_id == job.id)), key=lambda a: (a.created_at, a.id), reverse=True)
         if not candidates:
+            if job is not None:
+                logger.info("report_current_attempt_without_report", extra={"session_id": session.id,
+                    "tool_job_id": job.id, "job_status": job.status.value, "artifact_type": expected})
             return meta, [], []
         artifact = candidates[0]
         meta["tool_job_id"] = artifact.tool_job_id

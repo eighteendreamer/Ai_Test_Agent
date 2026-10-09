@@ -354,6 +354,9 @@ class ToolJobService:
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         return await self._store.list_jobs(session_id=session_id)
 
+    async def list_latest_jobs_for_sessions(self, session_ids: list[str], tool_keys: list[str]) -> list[ToolJobRecord]:
+        return await self._store.list_latest_jobs_for_sessions(session_ids, tool_keys)
+
     async def list_artifacts(
         self,
         session_id: str | None = None,

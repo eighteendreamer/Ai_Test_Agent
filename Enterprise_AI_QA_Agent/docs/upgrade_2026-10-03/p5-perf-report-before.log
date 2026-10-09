@@ -1,0 +1,96 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+______________ test_latest_real_performance_attempt_in_built_app ______________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1345/test_latest_real_performance_a0')
+
+    async def test_latest_real_performance_attempt_in_built_app(tmp_path):
+        async with AsyncExitStack() as stack:
+            browser = None
+            observed = []
+    
+            async def probe(**fixture):
+                nonlocal browser
+                stage, record, evidence = fixture["stage"], fixture["record"], fixture["evidence"]
+                response = await fixture["client"].get("/reports?limit=100")
+                response.raise_for_status()
+                listing = response.json()
+                (evidence / (stage + "-reports.json")).write_text(json.dumps(listing, ensure_ascii=False, indent=2), encoding="utf-8")
+                entry = next(item for item in listing["items"] if item["session"]["id"] == fixture["session"]["id"])
+                if browser is None:
+                    browser = await stack.enter_async_context(product_browser(tmp_path, fixture["api_port"], evidence))
+                    page, _, _ = browser
+                    await expect(page.locator(".left-nav")).to_be_visible()
+                    await page.locator('.left-nav a[href="/reports"]').click()
+                page, errors, network = browser
+                async with page.expect_response(lambda r: "/api/v1/reports?" in r.url) as refresh:
+                    await page.locator(".report-page .head-actions button").click()
+                assert (await refresh.value).status == 200
+                await page.locator(".batch-item").filter(has_text=fixture["session"]["id"][:8]).click()
+                grade = await page.locator(".report-detail .grade-box").inner_text()
+                status = await page.locator(".report-detail .detail-desc").inner_text()
+                body = await page.locator(".report-detail .summary-body").first.inner_text()
+                facts = {"stage": stage, "expected_job_id": record.job_id, "meta": entry["report_meta"],
+                    "browser_grade": grade, "browser_status": status, "browser_body": body,
+                    "engine_runs": fixture["runner"].count}
+                observed.append(facts)
+                (evidence / "report-product-observations.json").write_text(json.dumps(observed, ensure_ascii=False, indent=2), encoding="utf-8")
+                await page.screenshot(path=str(evidence / (stage + "-report.png")), full_page=True)
+                assert entry["report_meta"]["tool_job_id"] == record.job_id, "older report masks the latest real attempt"
+                if stage == "normal":
+                    assert grade == "����" and entry["report_meta"]["verdict"] == "pass"
+                    assert "pass" in body
+                else:
+                    assert grade == "�ϲ�" and "ʧ��" in status
+                    assert entry["report_meta"]["ready"] is False
+                    assert "pass" not in body
+                assert not errors, errors
+    
+>           await actual_performance_evidence(tmp_path, report_probe=probe)
+
+tests\test_performance_report_product.py:58: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_performance_evidence_live.py:153: in actual_performance_evidence
+    await report_probe(stage=variant, client=client, session=session, record=record,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+fixture = {'stage': 'missing', 'client': <httpx.AsyncClient object at 0x00000256745F1950>, 'session': {'id': 'a0cf97c7-88ff-4ad1...atetime.datetime(2026, 10, 9, 22, 52, 2, 885772), completed_at=datetime.datetime(2026, 10, 9, 22, 52, 4, 710573)), ...}
+
+    async def probe(**fixture):
+        nonlocal browser
+        stage, record, evidence = fixture["stage"], fixture["record"], fixture["evidence"]
+        response = await fixture["client"].get("/reports?limit=100")
+        response.raise_for_status()
+        listing = response.json()
+        (evidence / (stage + "-reports.json")).write_text(json.dumps(listing, ensure_ascii=False, indent=2), encoding="utf-8")
+        entry = next(item for item in listing["items"] if item["session"]["id"] == fixture["session"]["id"])
+        if browser is None:
+            browser = await stack.enter_async_context(product_browser(tmp_path, fixture["api_port"], evidence))
+            page, _, _ = browser
+            await expect(page.locator(".left-nav")).to_be_visible()
+            await page.locator('.left-nav a[href="/reports"]').click()
+        page, errors, network = browser
+        async with page.expect_response(lambda r: "/api/v1/reports?" in r.url) as refresh:
+            await page.locator(".report-page .head-actions button").click()
+        assert (await refresh.value).status == 200
+        await page.locator(".batch-item").filter(has_text=fixture["session"]["id"][:8]).click()
+        grade = await page.locator(".report-detail .grade-box").inner_text()
+        status = await page.locator(".report-detail .detail-desc").inner_text()
+        body = await page.locator(".report-detail .summary-body").first.inner_text()
+        facts = {"stage": stage, "expected_job_id": record.job_id, "meta": entry["report_meta"],
+            "browser_grade": grade, "browser_status": status, "browser_body": body,
+            "engine_runs": fixture["runner"].count}
+        observed.append(facts)
+        (evidence / "report-product-observations.json").write_text(json.dumps(observed, ensure_ascii=False, indent=2), encoding="utf-8")
+        await page.screenshot(path=str(evidence / (stage + "-report.png")), full_page=True)
+>       assert entry["report_meta"]["tool_job_id"] == record.job_id, "older report masks the latest real attempt"
+E       AssertionError: older report masks the latest real attempt
+E       assert 'c6925af9-5a6...-b4deb4686460' == 'c2bc8eed-f7e...-0f6d4fffa823'
+E         
+E         - c2bc8eed-f7eb-400b-aaf3-0f6d4fffa823
+E         + c6925af9-5a6e-46f9-91ce-b4deb4686460
+
+tests\test_performance_report_product.py:48: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_performance_report_product.py::test_latest_real_performance_attempt_in_built_app
+1 failed in 48.12s
