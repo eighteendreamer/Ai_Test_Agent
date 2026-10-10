@@ -917,7 +917,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
           <article><span>测试套件</span><strong>{{ overview?.test_suite_count ?? 0 }}</strong></article>
           <article><span>测试运行</span><strong>{{ overview?.test_run_count ?? 0 }}</strong></article>
           <article><span>测试会话</span><strong>{{ overview?.session_count ?? 0 }}</strong></article>
-          <article><span>图谱节点</span><strong>{{ (overview?.graph.page_count ?? 0) + (overview?.graph.element_count ?? 0) + (overview?.graph.entity_count ?? 0) }}</strong></article>
+          <article><span>图谱节点</span><strong>{{ (overview?.graph.page_count ?? 0) + (overview?.graph.element_count ?? 0) + (overview?.graph.entity_count ?? 0) + (overview?.graph.recording_count ?? 0) + (overview?.graph.action_count ?? 0) }}</strong></article>
           <article><span>图谱关系</span><strong>{{ overview?.graph.edge_count ?? 0 }}</strong></article>
         </div>
         <dl class="facts">

@@ -1,0 +1,42 @@
+..........FF.......                                                      [100%]
+================================== FAILURES ===================================
+______ test_context_provider_reads_only_formally_bound_project_resources ______
+tests\test_test_case_generation_pipeline.py:139: in test_context_provider_reads_only_formally_bound_project_resources
+    asyncio.run(scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_test_case_generation_pipeline.py:131: in scenario
+    assert context["knowledge_graph"]["project_scope"] == "orders-graph"
+E   AssertionError: assert '2a6a8a26-060...-da4b0c995ac0' == 'orders-graph'
+E     
+E     - orders-graph
+E     + 2a6a8a26-060d-41f5-a1d4-da4b0c995ac0
+__ test_context_provider_reads_formal_project_knowledge_without_legacy_scope __
+tests\test_test_case_generation_pipeline.py:156: in test_context_provider_reads_formal_project_knowledge_without_legacy_scope
+    asyncio.run(scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_test_case_generation_pipeline.py:152: in scenario
+    assert context["knowledge_graph"]["project_scope"] == "orders-graph"
+E   AssertionError: assert '2a6a8a26-060...-da4b0c995ac0' == 'orders-graph'
+E     
+E     - orders-graph
+E     + 2a6a8a26-060d-41f5-a1d4-da4b0c995ac0
+=========================== short test summary info ===========================
+FAILED tests/test_test_case_generation_pipeline.py::test_context_provider_reads_only_formally_bound_project_resources
+FAILED tests/test_test_case_generation_pipeline.py::test_context_provider_reads_formal_project_knowledge_without_legacy_scope
+2 failed, 17 passed in 4.76s

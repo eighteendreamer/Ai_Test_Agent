@@ -22,6 +22,8 @@ class LegacyGraphProvider:
                 {"total": 1, "count_field": "page_count"},
                 {"total": 0, "count_field": "element_count"},
                 {"total": 0, "count_field": "entity_count"},
+                {"total": 0, "count_field": "recording_count"},
+                {"total": 0, "count_field": "action_count"},
                 {"total": 0, "count_field": "edge_count"},
             ]
         if "RETURN n.id" in query:

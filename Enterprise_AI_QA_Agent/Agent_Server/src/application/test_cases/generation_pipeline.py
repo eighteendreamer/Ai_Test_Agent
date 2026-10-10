@@ -131,28 +131,38 @@ class ProjectTestCaseContextProvider:
             )
 
         knowledge_graph: dict[str, Any] = {}
-        if request.include_knowledge_graph and project.graph_scope_key:
+        if request.include_knowledge_graph:
             try:
                 graph_identity = (
                     project.id
                     if getattr(self._knowledge, "_projects", None) is not None
                     else project.graph_scope_key
                 )
+                if not graph_identity:
+                    raise ValueError("Project has no graph identity")
                 knowledge_graph = await self._knowledge.get_generation_context(
                     graph_identity,
                     node_limit=100,
                     edge_limit=150,
                 )
-                source_refs.append(
-                    {
-                        "source_type": "knowledge_graph",
-                        "source_id": project.graph_scope_key,
-                        "version": knowledge_graph.get("latest_updated_at"),
-                        "label": f"{project.name} knowledge graph",
-                        "metadata": dict(knowledge_graph.get("summary") or {}),
-                    }
-                )
+                if knowledge_graph.get("nodes"):
+                    source_refs.append(
+                        {
+                            "source_type": "knowledge_graph",
+                            "source_id": str(project.graph_scope_key or project.id),
+                            "version": knowledge_graph.get("latest_updated_at"),
+                            "label": f"{project.name} knowledge graph",
+                            "metadata": dict(knowledge_graph.get("summary") or {}),
+                        }
+                    )
+                else:
+                    warnings.append("Project knowledge graph contains no source nodes")
+                logger.info("case_generation_graph_context_read", extra={"project_id": project.id,
+                    "node_count": len(knowledge_graph.get("nodes") or []),
+                    "recording_count": (knowledge_graph.get("summary") or {}).get("recording_count", 0)})
             except Exception as exc:
+                logger.warning("case_generation_graph_context_unavailable", extra={"project_id": project.id,
+                    "error_type": type(exc).__name__})
                 warnings.append(f"Knowledge graph context unavailable: {exc}")
 
         history: list[dict[str, Any]] = []

@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="19" time="4.755" timestamp="2026-10-10T09:13:16.487079+08:00" hostname="EIghteen"><testcase classname="tests.test_knowledge_graph_read_only" name="test_graph_get_reads_legacy_nodes_without_writing" time="0.009" /><testcase classname="tests.test_knowledge_graph_read_only" name="test_summary_generation_read_only_and_explicit_delete_covers_legacy_scope" time="0.004" /><testcase classname="tests.test_knowledge_graph_service" name="test_knowledge_graph_reads_legacy_scope_without_migrating_on_get" time="0.003" /><testcase classname="tests.test_knowledge_graph_service" name="test_knowledge_graph_rejects_archived_project_before_memgraph_access" time="0.001" /><testcase classname="tests.test_knowledge_graph_service" name="test_ui_graph_store_writes_formal_project_id_boundary" time="0.000" /><testcase classname="tests.test_knowledge_graph_service" name="test_knowledge_graph_list_projects_uses_single_query_and_merges_counts" time="0.002" /><testcase classname="tests.test_knowledge_graph_service" name="test_knowledge_graph_list_projects_reuses_recent_failure" time="0.001" /><testcase classname="tests.test_knowledge_graph_service" name="test_memgraph_provider_applies_connection_timeout" time="0.187" /><testcase classname="tests.test_project_overview" name="test_overview_uses_aggregate_sources_and_graph_scope_mapping" time="0.002" /><testcase classname="tests.test_project_overview" name="test_overview_reads_formal_project_graph_without_legacy_scope" time="0.001" /><testcase classname="tests.test_test_case_generation_pipeline" name="test_context_provider_reads_only_formally_bound_project_resources" time="2.296"><failure message="AssertionError: assert '2a6a8a26-060...-da4b0c995ac0' == 'orders-graph'&#10;  &#10;  - orders-graph&#10;  + 2a6a8a26-060d-41f5-a1d4-da4b0c995ac0">tests\test_test_case_generation_pipeline.py:139: in test_context_provider_reads_only_formally_bound_project_resources
+    asyncio.run(scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_test_case_generation_pipeline.py:131: in scenario
+    assert context["knowledge_graph"]["project_scope"] == "orders-graph"
+E   AssertionError: assert '2a6a8a26-060...-da4b0c995ac0' == 'orders-graph'
+E     
+E     - orders-graph
+E     + 2a6a8a26-060d-41f5-a1d4-da4b0c995ac0</failure></testcase><testcase classname="tests.test_test_case_generation_pipeline" name="test_context_provider_reads_formal_project_knowledge_without_legacy_scope" time="0.002"><failure message="AssertionError: assert '2a6a8a26-060...-da4b0c995ac0' == 'orders-graph'&#10;  &#10;  - orders-graph&#10;  + 2a6a8a26-060d-41f5-a1d4-da4b0c995ac0">tests\test_test_case_generation_pipeline.py:156: in test_context_provider_reads_formal_project_knowledge_without_legacy_scope
+    asyncio.run(scenario())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_test_case_generation_pipeline.py:152: in scenario
+    assert context["knowledge_graph"]["project_scope"] == "orders-graph"
+E   AssertionError: assert '2a6a8a26-060...-da4b0c995ac0' == 'orders-graph'
+E     
+E     - orders-graph
+E     + 2a6a8a26-060d-41f5-a1d4-da4b0c995ac0</failure></testcase><testcase classname="tests.test_test_case_generation_pipeline" name="test_context_provider_rejects_requested_document_outside_project" time="0.002" /><testcase classname="tests.test_test_case_generation_pipeline" name="test_model_generator_loads_skill_and_returns_validated_cases_without_fallback" time="0.007" /><testcase classname="tests.test_recording_knowledge_graph_projection" name="test_formal_identity_without_legacy_mapping_filters_only_its_id" time="0.001" /><testcase classname="tests.test_recording_knowledge_graph_projection" name="test_each_actual_action_metadata_remains_complete_after_reading" time="0.002" /><testcase classname="tests.test_recording_knowledge_graph_projection" name="test_historical_password_read_masks_the_value_without_rewriting_raw_projection" time="0.001" /><testcase classname="tests.test_recording_knowledge_graph_projection" name="test_corrupt_action_payload_is_unavailable_and_logs_only_identity" time="0.001" /><testcase classname="tests.test_recording_knowledge_graph_projection" name="test_historical_summary_defaults_keep_old_three_kind_shape_readable" time="0.000" /></testsuite></testsuites>

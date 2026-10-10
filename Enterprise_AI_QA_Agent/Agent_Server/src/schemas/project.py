@@ -82,6 +82,8 @@ class ProjectGraphOverview(BaseModel):
     page_count: int = 0
     element_count: int = 0
     entity_count: int = 0
+    recording_count: int = 0
+    action_count: int = 0
     edge_count: int = 0
     error: str | None = None
 

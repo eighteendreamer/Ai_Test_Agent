@@ -12,6 +12,9 @@ import pytest
 
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
+from src.application.projects.project_service import ProjectService
+from src.application.projects.project_store import PostgresProjectStore
 from src.schemas.session import CreateSessionRequest
 from test_document_full_product import product_browser
 from test_execution_worker_cli import free_port, isolated_runtime, wait_api
@@ -96,6 +99,23 @@ async def test_new_recording_steps_visible_in_project_knowledge(tmp_path, bind_l
                     response.raise_for_status()
                     knowledge = response.json()
                     save("knowledge-graph.json", knowledge)
+                    response = await client.get(f"/projects/{project_id}/overview")
+                    response.raise_for_status()
+                    overview = response.json()
+                    save("project-overview.json", overview)
+                    assert overview["graph"]["recording_count"] == 1
+                    assert overview["graph"]["action_count"] == len(detail["events"])
+                    knowledge_reader = KnowledgeGraphService(settings)
+                    knowledge_reader.set_project_service(ProjectService(store=PostgresProjectStore(settings)))
+                    try:
+                        generation_context = await knowledge_reader.get_generation_context(project_id)
+                    finally:
+                        await knowledge_reader.close()
+                    save("generation-context.json", generation_context)
+                    assert generation_context["project_id"] == project_id
+                    assert len([node for node in generation_context["nodes"] if node["kind"] == "recording"]) == 1
+                    assert len([node for node in generation_context["nodes"] if node["kind"] == "action"]) == len(detail["events"])
+                    assert value not in json.dumps(generation_context, ensure_ascii=False)
                     response = await client.get("/knowledge/projects")
                     response.raise_for_status()
                     summaries = response.json()
@@ -120,6 +140,11 @@ async def test_new_recording_steps_visible_in_project_knowledge(tmp_path, bind_l
                         await page.locator(".knowledge-select").select_option(project_id)
                         await page.locator(".knowledge-kind-tabs button").filter(has_text="录制").click()
                         await expect(page.locator(".node-list .node-row").filter(has_text="两次真实点击")).to_be_visible()
+                        await page.locator('.left-nav a[href="/projects"]').click()
+                        await page.locator(".project-card").filter(has_text="录制知识项目").click()
+                        await expect(page.locator(".stats")).to_contain_text("12")
+                        await page.locator('.left-nav a[href="/knowledge"]').click()
+                        await page.locator(".knowledge-select").select_option(project_id)
                         await page.locator(".knowledge-kind-tabs button").filter(has_text="动作").click()
                         assert await page.locator(".node-list .node-row").count() == len(detail["events"]) + 1
                         fill = next(event for event in detail["events"] if event["type"] == "fill")

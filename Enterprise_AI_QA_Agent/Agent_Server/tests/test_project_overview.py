@@ -22,6 +22,8 @@ class _Graph:
             "page_count": 2,
             "element_count": 3,
             "entity_count": 4,
+            "recording_count": 6,
+            "action_count": 8,
             "edge_count": 5,
         }
 
@@ -80,6 +82,35 @@ def test_overview_uses_aggregate_sources_and_graph_scope_mapping():
         assert result.test_run_count == 11
         assert result.graph.page_count == 2
         assert result.graph.edge_count == 5
+        assert result.graph.recording_count == 6
+        assert result.graph.action_count == 8
         assert graph.requested_scope == "legacy-orders-scope"
+
+    asyncio.run(scenario())
+
+
+def test_overview_reads_formal_project_graph_without_legacy_scope():
+    async def scenario():
+        projects = ProjectService(store=InMemoryProjectStore())
+        await projects.initialize()
+        project = await projects.create(ProjectCreateRequest(project_key="recordings", name="录制项目"))
+
+        class Graph:
+            _projects = object()
+            requested = None
+
+            async def get_project_summary(self, project_id):
+                self.requested = project_id
+                return {"page_count": 1, "element_count": 2, "entity_count": 0,
+                    "recording_count": 1, "action_count": 8, "edge_count": 24}
+
+        graph = Graph()
+        service = ProjectOverviewService(project_service=projects, api_doc_store=InMemoryApiDocStore(),
+            session_store=InMemorySessionStore(), knowledge_graph_service=graph)
+        result = await service.get(project.id)
+        assert graph.requested == project.id
+        assert result.graph.available
+        assert result.graph.project_scope is None
+        assert (result.graph.recording_count, result.graph.action_count) == (1, 8)
 
     asyncio.run(scenario())

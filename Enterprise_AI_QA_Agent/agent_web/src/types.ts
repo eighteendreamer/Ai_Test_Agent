@@ -1757,6 +1757,8 @@ export interface ProjectOverview {
     page_count: number;
     element_count: number;
     entity_count: number;
+    recording_count?: number;
+    action_count?: number;
     edge_count: number;
     error?: string | null;
   };

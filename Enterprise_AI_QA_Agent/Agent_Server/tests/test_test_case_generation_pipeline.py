@@ -137,6 +137,48 @@ def test_context_provider_reads_only_formally_bound_project_resources():
     asyncio.run(scenario())
 
 
+def test_context_provider_reads_formal_project_knowledge_without_legacy_scope():
+    async def scenario():
+        context_type, _ = _pipeline_components()
+        project = _project().model_copy(update={"graph_scope_key": None})
+        class _FormalGraph(_Graph):
+            _projects = object()
+
+        graph = _FormalGraph()
+        provider = context_type(api_docs_service=_ApiDocs(project.id), knowledge_graph_service=graph,
+            session_store=_Sessions())
+        context = await provider.collect(project=project, request=GenerateRequest(
+            objective="录制页面回归", mode_key="ui_automation", api_doc_ids=[], include_knowledge_graph=True,
+        ))
+        assert context["knowledge_graph"]["project_scope"] == project.id
+        assert any(ref["source_type"] == "knowledge_graph" and ref["source_id"] == project.id
+                   for ref in context["source_refs"])
+
+    asyncio.run(scenario())
+
+
+def test_empty_formal_project_graph_does_not_invent_generation_source():
+    async def scenario():
+        context_type, _ = _pipeline_components()
+        project = _project().model_copy(update={"graph_scope_key": None})
+
+        class EmptyGraph:
+            _projects = object()
+
+            async def get_generation_context(self, project_id, **kwargs):
+                assert project_id == project.id
+                return {"project_id": project_id, "nodes": [], "edges": [], "summary": {}}
+
+        provider = context_type(api_docs_service=_ApiDocs(project.id), knowledge_graph_service=EmptyGraph(),
+            session_store=_Sessions())
+        context = await provider.collect(project=project, request=GenerateRequest(
+            objective="空项目来源", mode_key="ui_automation", include_history=False))
+        assert not any(ref["source_type"] == "knowledge_graph" for ref in context["source_refs"])
+        assert "Project knowledge graph contains no source nodes" in context["warnings"]
+
+    asyncio.run(scenario())
+
+
 def test_context_provider_rejects_requested_document_outside_project():
     async def scenario():
         context_type, _ = _pipeline_components()

@@ -55,6 +55,18 @@
 
 默认 Agent 的项目选取/排序/必要准备/执行/正式回执继续待账号处理；API 续期、性能容量/AI 流式、安全其他扫描器故障、需求业务质量和生产历史迁移继续未完成。
 
+## 项目概览与生成上下文的后续修正
+
+继续沿现有代码查证后发现，`ProjectOverviewService` 原先只有 `graph_scope_key` 时才调用知识服务；所以本轮知识页已能读取的正式项目，在项目概览中仍会显示零。`ProjectTestCaseContextProvider` 也只在旧 scope 存在时注入知识上下文，导致录制知识不能进入后续生成上下文。
+
+修正保持同一身份规则：知识服务已绑定项目服务时传正式 `project_id`，没有绑定项目服务时才使用旧 scope；没有任何身份时明确记录不可用。概览新增录制和动作计数，生成上下文的有界节点集合加入 Recording/Action，但只传节点身份、标签和动作类型，不把事件原始值或凭据塞进生成上下文。原三类节点和旧项目兼容。
+
+合同回归 `p5-recording-formal-context-contract3` 为 **19 passed in 3.83s**，覆盖旧 scope 只读、正式无 scope 概览、正式项目生成上下文、知识投影和事件脱敏。真实录制产品最终批次 `p5-recording-overview-live3` **2 passed in 102.74s**，将项目概览 API 和完整 App 的“图谱节点”计数加入验收；live2 中因测试把实际 12 写成 11 的失败原件保留。这仍不等于默认模型已实际生成或执行用例。
+
+随后补实测真实知识服务的有界生成上下文，并补核心路径日志及旧前端类型兼容。交付批次 `p5-recording-overview-final` **2 passed in 94.80s，0 skipped**：两个新真实录制项目均读到 1 Recording/8 Action 上下文节点，完整 Unicode 输入原值未进入摘要。完整事件仍由既有专属录制查询提供，这个有界摘要仅供发现来源，不能代替完整执行依据；按种类限额及总额采样仍可能遗漏其他节点，未声称全量上下文。
+
+7 个受影响模块最终 `p5-recording-overview-regression-final` **27 passed in 4.11s**；空图不能制造知识来源引用，警告可见。前端项目切换 4 通过，实际 build/类型检查及最终 compileall 退出 0。原19/26项回归及两个合同夹具错误批次保留；夹具里旧scope模拟对象与正式ID模拟对象分别验证，未放宽生产身份边界。默认AI仍未调用，场景/步骤/业务别名编辑本轮只调研，尚未实现。
+
 ## 可复现命令
 
 在 Agent_Server 目录设置 `RUN_LIVE_RECORDING_KNOWLEDGE_PRODUCT=1` 和一个尚不存在的 `RECORDING_KNOWLEDGE_PRODUCT_EVIDENCE=../docs/upgrade_2026-10-03/<新批次目录>`，运行：

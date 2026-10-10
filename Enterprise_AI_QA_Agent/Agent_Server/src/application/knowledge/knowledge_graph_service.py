@@ -188,15 +188,16 @@ class KnowledgeGraphService:
         project_scope = str(identity.get("project_scope") or "")
         node_filter = self._project_filter("n", identity)
         relation_filter = self._project_filter("r", identity)
-        per_kind_limit = max(1, node_limit // 3)
+        per_kind_limit = max(1, node_limit // 5)
         nodes: list[dict[str, Any]] = []
-        for label, kind in (("Page", "page"), ("Element", "element"), ("Entity", "entity")):
+        for label, kind in (("Page", "page"), ("Element", "element"), ("Entity", "entity"),
+                            ("Recording", "recording"), ("Action", "action")):
             rows = self._provider.execute(
                 f"""
                 MATCH (n:{label})
                 WHERE {node_filter}
-                RETURN n.id AS id, n.label AS label, n.url AS url,
-                       n.role AS role, n.type AS type
+                RETURN n.id AS id, n.label AS label, n.name AS name, n.url AS url,
+                       n.role AS role, n.type AS type, n.action_type AS action_type
                 ORDER BY n.updated_at DESC
                 LIMIT {per_kind_limit}
                 """,
@@ -206,10 +207,11 @@ class KnowledgeGraphService:
                 {
                     "id": str(row.get("id") or ""),
                     "kind": kind,
-                    "label": str(row.get("label") or row.get("id") or ""),
+                    "label": str(row.get("label") or row.get("name") or row.get("action_type") or row.get("id") or ""),
                     "url": str(row.get("url") or ""),
                     "role": str(row.get("role") or ""),
                     "type": str(row.get("type") or ""),
+                    "action_type": str(row.get("action_type") or ""),
                 }
                 for row in rows
                 if row.get("id")

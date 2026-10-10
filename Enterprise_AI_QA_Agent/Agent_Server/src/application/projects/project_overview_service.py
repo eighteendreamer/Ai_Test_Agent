@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 from src.application.documents.api_doc_store import ApiDocStore
 from src.application.knowledge.knowledge_graph_service import KnowledgeGraphService
@@ -11,6 +12,7 @@ from src.application.test_runs.run_store import TestRunStore
 from src.runtime.store import SessionStore
 from src.schemas.project import ProjectGraphOverview, ProjectOverview
 
+logger = logging.getLogger(__name__)
 
 class ProjectOverviewService:
     def __init__(
@@ -42,28 +44,35 @@ class ProjectOverviewService:
             self._test_runs.count_by_project(project_id) if self._test_runs else _zero(),
         )
         graph = ProjectGraphOverview(project_scope=project.graph_scope_key)
-        if project.graph_scope_key:
-            try:
-                graph_identity = (
-                    project.id
-                    if getattr(self._knowledge, "_projects", None) is not None
-                    else project.graph_scope_key
-                )
-                summary = await self._knowledge.get_project_summary(graph_identity)
-                values = summary.model_dump() if hasattr(summary, "model_dump") else dict(summary)
-                graph = ProjectGraphOverview(
-                    project_scope=project.graph_scope_key,
-                    page_count=int(values.get("page_count") or 0),
-                    element_count=int(values.get("element_count") or 0),
-                    entity_count=int(values.get("entity_count") or 0),
-                    edge_count=int(values.get("edge_count") or 0),
-                )
-            except Exception as exc:
-                graph = ProjectGraphOverview(
-                    available=False,
-                    project_scope=project.graph_scope_key,
-                    error=str(exc),
-                )
+        try:
+            graph_identity = (
+                project.id
+                if getattr(self._knowledge, "_projects", None) is not None
+                else project.graph_scope_key
+            )
+            if not graph_identity:
+                raise ValueError("project has no graph identity")
+            summary = await self._knowledge.get_project_summary(graph_identity)
+            values = summary.model_dump() if hasattr(summary, "model_dump") else dict(summary)
+            graph = ProjectGraphOverview(
+                project_scope=project.graph_scope_key,
+                page_count=int(values.get("page_count") or 0),
+                element_count=int(values.get("element_count") or 0),
+                entity_count=int(values.get("entity_count") or 0),
+                recording_count=int(values.get("recording_count") or 0),
+                action_count=int(values.get("action_count") or 0),
+                edge_count=int(values.get("edge_count") or 0),
+            )
+            logger.info("project_overview_graph_read", extra={"project_id": project.id,
+                "recording_count": graph.recording_count, "action_count": graph.action_count})
+        except Exception as exc:
+            logger.warning("project_overview_graph_unavailable", extra={"project_id": project.id,
+                "error_type": type(exc).__name__})
+            graph = ProjectGraphOverview(
+                available=False,
+                project_scope=project.graph_scope_key,
+                error=str(exc),
+            )
         return ProjectOverview(
             project=project,
             api_doc_count=api_doc_count,
