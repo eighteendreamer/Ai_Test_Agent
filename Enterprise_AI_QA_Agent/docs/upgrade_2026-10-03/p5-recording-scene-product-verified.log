@@ -1,0 +1,172 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___________________ test_actual_recording_scene_management ____________________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1394/test_actual_recording_scene_ma0')
+
+    async def test_actual_recording_scene_management(tmp_path):
+        evidence = Path(os.environ["RECORDING_SCENE_EVIDENCE"])
+        evidence.mkdir(parents=True, exist_ok=False)
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
+        html = '<!doctype html><meta charset="utf-8"><title>场景整理验收</title><input id="value"><button id="repeat">增加计数</button><p id="count">0</p><script>repeat.onclick=()=>{count.textContent=String(Number(count.textContent)+1)}</script>'
+        fixture = tmp_path / "scene.html"
+        fixture.write_text(html, encoding="utf-8")
+        (evidence / "fixture.html").write_text(html, encoding="utf-8")
+        project_ids = []
+        graph = None
+        try:
+            async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
+                graph = MemgraphRuntimeProvider(settings)
+                port = free_port()
+                args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                api = processes.start("scene-api", *args)
+                async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=60) as client:
+                    await wait_api(client, api)
+                    for name in ("场景项目", "隔离项目"):
+                        response = await client.post("/projects", json={"project_key":"scene-"+uuid4().hex[:12],"name":name})
+                        response.raise_for_status()
+                        project_ids.append(response.json()["id"])
+                    project_id = project_ids[0]
+                    async with async_playwright() as playwright:
+                        cdp = free_port()
+                        browser = await playwright.chromium.launch(headless=True, args=[f"--remote-debugging-port={cdp}"])
+                        try:
+                            page = await browser.new_page()
+                            response = await client.post("/recordings", json={"project_id":project_id,"name":"实际录制场景","entry_url":fixture.resolve().as_uri(),"driver":{"kind":"cdp-attach","endpoint":f"http://127.0.0.1:{cdp}"}})
+                            response.raise_for_status()
+                            recording_id = response.json()["id"]
+                            async with asyncio.timeout(15):
+                                while (await client.get(f"/recordings/{recording_id}")).json()["status"] != "ready": await asyncio.sleep(.1)
+                            (await client.post(f"/recordings/{recording_id}/control", json={"action":"start"})).raise_for_status()
+                            await page.locator("#value").fill("完整输入😀"*40)
+                            await page.wait_for_timeout(600)
+                            await page.locator("#repeat").click()
+                            await page.locator("#repeat").click()
+                            assert await page.locator("#count").inner_text() == "2"
+                            response = await client.post(f"/recordings/{recording_id}/control", json={"action":"stop"})
+                            response.raise_for_status()
+                            assert response.json()["status"] == "completed"
+                        finally:
+                            await browser.close()
+                    original = (await client.get(f"/recordings/{recording_id}")).json()
+                    save("original-recording.json", original)
+                    url = f"/recordings/scenes/projects/{project_id}"
+                    creation = {"request_id":str(uuid4()),"recording_id":recording_id}
+                    response = await client.post(url, json=creation)
+                    save("scene-create-http.json", {"status":response.status_code,"payload":response.text})
+                    assert response.status_code == 201, response.text
+                    v1 = response.json()
+                    scene_id = v1["scene_id"]
+                    detail_url = url+"/"+scene_id
+                    assert v1["version"]["content"]["status"] == "draft"
+                    duplicates = await asyncio.gather(*[client.post(url,json=creation) for _ in range(2)])
+                    assert all(r.status_code==201 and r.json()["version"]["id"]==v1["version"]["id"] for r in duplicates)
+                    assert (await client.get(url+"/by-request/"+creation["request_id"])).json() == v1
+                    collision = await client.post(url,json={**creation,"recording_id":"different"})
+                    assert collision.status_code==409
+                    wrong_url = f"/recordings/scenes/projects/{project_ids[1]}/{scene_id}"
+                    assert (await client.get(wrong_url)).status_code==404
+                    assert (await client.post(f"/recordings/scenes/projects/{project_ids[1]}",json={**creation,"request_id":str(uuid4())})).status_code==404
+                    content = json.loads(json.dumps(v1["version"]["content"]))
+                    click_seq = next(step["data"]["seq"] for step in v1["version"]["source"]["original_draft"]["steps"] if step["data"]["recorder_type"]=="click")
+                    content["name"] = "两次点击业务场景"
+                    content["status"] = "organized"
+                    content["aliases"] = [{"name":"计数按钮","source_seq":click_seq,"description":"本次录制的按钮"}]
+                    next(s for s in content["steps"] if s["source_seq"]==click_seq).update(alias="计数按钮",expected="计数增加")
+                    content["steps"] = list(reversed(content["steps"]))
+                    edit = {"request_id":str(uuid4()),"parent_version_id":v1["version"]["id"],"change_reason":"整理说明与别名，保留完整证据","content":content}
+                    edits = await asyncio.gather(*[client.post(detail_url+"/versions",json=edit) for _ in range(2)])
+                    assert all(r.status_code==201 for r in edits),[r.text for r in edits]
+                    v2 = edits[0].json()
+                    assert edits[1].json()==v2 and v2["version"]["version"]==2
+                    save("version2.json",v2)
+                    assert (await client.get(detail_url,params={"version_id":v1["version"]["id"]})).json()["version"]==v1["version"]
+                    assert (await client.get(detail_url+"/versions/by-request/"+edit["request_id"])).json()==v2
+                    for changed in ({**edit,"request_id":str(uuid4())},{**edit,"change_reason":"更改相同请求"}):
+                        assert (await client.post(detail_url+"/versions",json=changed)).status_code==409
+                    bad = json.loads(json.dumps(edit))
+                    bad.update(request_id=str(uuid4()),parent_version_id=v2["version"]["id"])
+                    bad["content"]["steps"][0]["source_seq"]=999999
+                    assert (await client.post(detail_url+"/versions",json=bad)).status_code==409
+                    draft_url = detail_url+f"/versions/{v2['version']['id']}/case-draft"
+                    draft_response = await client.post(draft_url)
+                    draft_response.raise_for_status()
+                    draft = draft_response.json()
+                    save("formal-draft.json",draft)
+                    assert draft["case"]["lifecycle_status"]=="draft"
+                    assert draft["version"]["steps"][0]["data"]["seq"]==content["steps"][0]["source_seq"]
+                    assert next(s for s in draft["version"]["steps"] if s["data"]["seq"]==click_seq)["data"]["business_alias"]=="计数按钮"
+                    assert (await client.post(draft_url)).json()==draft
+                    assert (await client.get(draft_url)).json()==draft
+                    # A newer version cannot mutate the original case conversion.
+                    newer = {**edit,"request_id":str(uuid4()),"parent_version_id":v2["version"]["id"],"change_reason":"下一版本"}
+                    v3_response = await client.post(detail_url+"/versions",json=newer)
+                    v3_response.raise_for_status()
+                    v3=v3_response.json()
+                    assert (await client.get(draft_url)).json()==draft
+                    # Competing saves from the same parent have exactly one winner.
+                    races = await asyncio.gather(*[client.post(detail_url+"/versions",json={**newer,"request_id":str(uuid4()),"parent_version_id":v3["version"]["id"],"change_reason":f"并发{i}"}) for i in range(2)])
+                    assert sorted(r.status_code for r in races)==[201,409]
+                    save("concurrent-http.json",[{"status":r.status_code,"payload":r.json()} for r in races])
+                    async with product_browser(tmp_path,port,evidence) as (page,errors,network):
+                        await expect(page.locator(".left-nav")).to_be_visible()
+                        await page.goto(page.url.split("/home")[0]+f"/projects/{project_id}")
+                        await page.get_by_role("link",name="录制场景",exact=True).click()
+                        await expect(page.get_by_role("heading",name="录制场景 · 场景项目")).to_be_visible()
+                        async with page.expect_response(lambda r:r.request.method=="POST" and r.url.endswith(url)) as created:
+                            await page.get_by_role("button",name="从录制创建场景",exact=True).click()
+                        ui_v1 = await (await created.value).json()
+                        assert (await created.value).status==201
+                        await expect(page.get_by_role("status")).to_contain_text("已保存 V1")
+                        await page.get_by_label("场景名称",exact=True).fill("页面整理场景")
+                        ui_step = page.locator(".scene-step").filter(has_text=f"原事件 #{click_seq}")
+                        await ui_step.get_by_label("操作说明",exact=True).fill("点击计数按钮并检查页面响应")
+                        await ui_step.get_by_label("预期结果",exact=True).fill("计数增加，重复点击仍保留")
+                        await ui_step.get_by_role("button",name="上移",exact=True).click()
+                        await page.get_by_role("button",name="添加别名",exact=True).click()
+                        await page.locator(".scene-alias").get_by_label("别名",exact=True).fill("页面计数按钮")
+                        await page.locator(".scene-alias").get_by_label("原动作序号",exact=True).fill(str(click_seq))
+>                       await page.locator(".scene-step").filter(has_text=f"原事件 #{click_seq}").get_by_label("元素别名",exact=True).select_option("页面计数按钮")
+
+tests\test_recording_scene_product.py:144: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+..\.venv\Lib\site-packages\playwright\async_api\_generated.py:20051: in select_option
+    await self._impl_obj.select_option(
+..\.venv\Lib\site-packages\playwright\_impl\_locator.py:633: in select_option
+    return await self._frame.select_option(
+..\.venv\Lib\site-packages\playwright\_impl\_frame.py:814: in select_option
+    return await self._channel.send("selectOption", self._timeout, params)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:76: in send
+    return await self._connection.wrap_api_call(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <playwright._impl._connection.Connection object at 0x00000199B8AD2290>
+cb = <function Channel.send.<locals>.<lambda> at 0x00000199B8C6B1A0>
+is_internal = False, title = None
+
+    async def wrap_api_call(
+        self, cb: Callable[[], Any], is_internal: bool = False, title: str = None
+    ) -> Any:
+        if self._api_zone.get():
+            return await cb()
+        task = asyncio.current_task(self._loop)
+        parsed_st = _attach_api_call_information(
+            getattr(task, "__pw_stack__", None) or _capture_stack_trace(),
+            is_internal,
+            title,
+        )
+        self._api_zone.set(parsed_st)
+        try:
+            return await cb()
+        except Exception as error:
+>           raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E           playwright._impl._errors.TimeoutError: Locator.select_option: Timeout 30000ms exceeded.
+E           Call log:
+E             - waiting for locator(".scene-step").filter(has_text="原事件 #4").get_by_label("元素别名", exact=True)
+
+..\.venv\Lib\site-packages\playwright\_impl\_connection.py:632: TimeoutError
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scene_product.py::test_actual_recording_scene_management
+1 failed in 93.62s (0:01:33)

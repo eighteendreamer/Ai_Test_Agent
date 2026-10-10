@@ -1,0 +1,11 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 build
+> npm run typecheck && vite build
+
+
+> enterprise-ai-qa-agent-web@0.1.0 typecheck
+> vue-tsc --noEmit -p tsconfig.json
+
+src/views/RecordingScenesView.test.ts(16,16): error TS2352: Conversion of type '{ scene_id: string; project_id: string; current_version_id: string; version: { id: string; scene_id: string; project_id: string; version: number; parent_version_id: string; request_id: string; ... 4 more ...; source: { ...; }; }; }' to type 'SceneBundle' may be a mistake because neither type sufficiently overlaps with the other. If this was intentional, convert the expression to 'unknown' first.
+  The types of 'version.source.original_draft' are incompatible between these types.
+    Type '{ steps: ({ data: { seq: number; event: { seq: number; page: { dpr: number; url: string; title: string; viewport: { h: number; w: number; }; recording_scope: { page_id: string; frame_id: string; local_seq: number; frame_path: never[]; document_id: string; document_url: string; parent_frame_id: null; }; }; ... 6 more...' is missing the following properties from type 'TestCaseVersionRecord': id, case_id, version, content_hash, created_at

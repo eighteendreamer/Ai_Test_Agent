@@ -1,0 +1,29 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/views/RecordingScenesView.test.ts src/views/KnowledgeView.projectSwitch.test.ts src/features/recorder/recordingApi.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/views/RecordingScenesView.test.ts (0 test)
+
+⎯⎯⎯⎯⎯⎯ Failed Suites 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/views/RecordingScenesView.test.ts [ src/views/RecordingScenesView.test.ts ]
+TypeError: The URL must be of scheme file
+ ❯ src/views/RecordingScenesView.test.ts:15:27
+     13| vi.mock("vue-router",()=>({useRoute:()=>route}));
+     14| const route=reactive({params:{projectId:""}});
+     15| const recorded=JSON.parse(readFileSync(new URL("../../../docs/upgrade_…
+       |                           ^
+     16| const id=recorded.project_id;
+     17| const mountView=()=>mount(RecordingScenesView,{global:{stubs:{RouterLi…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  8 passed (8)
+   Start at  12:45:04
+   Duration  3.41s (transform 624ms, setup 0ms, import 767ms, tests 320ms, environment 4.58s)
+

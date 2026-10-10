@@ -907,6 +907,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
         <div class="detail-head">
           <div><h2>{{ selected.name }}</h2><p>{{ selected.description || "暂无项目说明" }}</p></div>
           <div class="actions">
+            <RouterLink :to="`/projects/${selected.id}/recording-scenes`">录制场景</RouterLink>
             <button :disabled="selected.status === 'archived'" @click="openEdit(selected)">编辑</button>
             <button class="danger" :disabled="selected.status === 'archived'" @click="archiveSelected">归档</button>
           </div>

@@ -549,6 +549,7 @@ function syncFullscreenState() {
       <div>
         <h2>{{ t("knowledge.page_title") }}</h2>
         <p class="head-desc">{{ t("knowledge.page_desc") }}</p>
+        <RouterLink v-if="selectedProjectId" :to="`/projects/${selectedProjectId}/recording-scenes`">录制场景与步骤整理</RouterLink>
       </div>
     </div>
 

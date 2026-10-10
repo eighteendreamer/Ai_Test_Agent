@@ -1,0 +1,37 @@
+
+> enterprise-ai-qa-agent-web@0.1.0 test
+> vitest run src/views/RecordingScenesView.test.ts
+
+
+ RUN  v4.1.11 G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/agent_web
+
+ ❯ src/views/RecordingScenesView.test.ts (4 tests | 1 failed) 167ms
+   × keeps the editor usable after a confirmed rejected save 31ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/views/RecordingScenesView.test.ts > keeps the editor usable after a confirmed rejected save
+AssertionError: expected true to be false // Object.is equality
+
+- Expected
++ Received
+
+- false
++ true
+
+ ❯ src/views/RecordingScenesView.test.ts:88:47
+     86|     await button(wrapper,"保存新版本").trigger("click");await flushPromises…
+     87|     expect(wrapper.get("[role=alert]").text()).toContain("newer versio…
+     88|     expect(wrapper.find(".pending").exists()).toBe(false);
+       |                                               ^
+     89|     expect(wrapper.get("fieldset").attributes("disabled")).toBeUndefin…
+     90|   } finally { wrapper.unmount(); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 3 passed (4)
+   Start at  12:46:50
+   Duration  2.45s (transform 216ms, setup 0ms, import 398ms, tests 167ms, environment 1.67s)
+

@@ -54,6 +54,8 @@ class DatabaseConfig(BaseModel):
     postgres_mcp_server_table: str = "agent_mcp_servers"
     postgres_recording_table: str = "ui_recording"
     postgres_recording_event_table: str = "ui_recording_event"
+    postgres_recording_scene_table: str = "ui_recording_scene"
+    postgres_recording_scene_version_table: str = "ui_recording_scene_version"
     postgres_perf_runs_table: str = "agent_perf_runs"
     postgres_task_outbox_table: str = "agent_task_outbox"
     postgres_agent_task_table: str = "agent_turn_tasks"

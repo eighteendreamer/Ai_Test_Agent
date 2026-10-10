@@ -922,6 +922,12 @@ async def _initialize_lifespan_resources(
         test_case_service=test_case_service,
     )
     app.state.recording_case_draft_service = recording_case_draft_service
+    from src.infrastructure.recording_scene_store import PostgresRecordingSceneStore
+    from src.application.recorder.scene_service import RecordingSceneService
+    scene_store = PostgresRecordingSceneStore(settings)
+    await scene_store.initialize()
+    app.state.recording_scene_service = RecordingSceneService(store=scene_store,
+        recorder_service=recorder_service, project_service=project_service, case_service=test_case_service)
 
     # UI 录制编排接线（方案第 4 章 / P0-8）：
     # 三源资源检索（图谱/用例/记忆）→ 录制审批 → 审批通过自动 launch

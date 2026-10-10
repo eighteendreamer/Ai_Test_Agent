@@ -38,7 +38,10 @@ from src.schemas.recording import (
 
 logger = logging.getLogger(__name__)
 
+from src.api.routes.recording_scenes import router as scene_router
+
 router = APIRouter(prefix="/recordings", tags=["recordings"])
+router.include_router(scene_router)
 
 # 注入脚本由后端持有统一下发（三端同版本，方案 5.2）
 _RECORDER_JS_PATH = (

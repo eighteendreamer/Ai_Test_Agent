@@ -1,0 +1,17 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_______________ test_saved_alias_has_the_recorded_locator_basis _______________
+
+    def test_saved_alias_has_the_recorded_locator_basis():
+        draft=json.loads(FILE.read_text(encoding="utf-8"))["version"]
+        alias=draft["test_data"]["scene"]["aliases"][0]
+        matching=next(s for s in draft["steps"] if s["data"]["seq"]==alias["source_seq"])
+>       assert alias.get("target")==matching["data"]["event"]["target"]
+E       AssertionError: assert None == {'tag': 'BUTTON', 'role': 'button', 'locators': {'id': 'repeat', 'css': '#repeat', 'text': '增加计数', 'xpath': '/html/body[1]/button[1]', ...}, 'in_iframe': False, ...}
+E        +  where None = <built-in method get of dict object at 0x000001EC17283B40>('target')
+E        +    where <built-in method get of dict object at 0x000001EC17283B40> = {'name': '计数按钮', 'source_seq': 4, 'description': '本次录制的按钮'}.get
+
+tests\test_recording_scene_draft_projection.py:13: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scene_draft_projection.py::test_saved_alias_has_the_recorded_locator_basis
+1 failed in 0.23s

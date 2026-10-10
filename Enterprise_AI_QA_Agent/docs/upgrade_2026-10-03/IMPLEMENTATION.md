@@ -5072,3 +5072,15 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 前端 `npm.cmd test -- src/services/settings.api.test.ts src/features/settings/plugins/ChannelSettingsPlugin.lifecycle.test.ts src/features/settings/plugins/GeneralSettingsPlugin.cleanupContract.test.ts` 3通过3.59秒。product_browser实际 `npm run build` 包含vue-tsc与Vite通过，stdout/stderr与界面/network原件均保留。compileall实际退出0仅语法补查；最后适配器修改后再次编译记compile-final。
 
 尚未执行：多家外部模型、默认Agent/用例正式评审启用和完整执行、跨模型媒体/更多推理模式/自动能力发现、独立invoke_structured与生产迁移/并发初始化。本轮MySQLDDL沿现有初始化需要ALTER权限。所有验证限定受控HTTP语义；不宣称模型业务判断质量合格。完整P0—P5仍active，audit核对新原件、旧工件、受保护文件及三份方案。仅提交本轮白名单，不推送/建PR。
+
+## 录制场景与版本化步骤/业务别名：基线5276887c，方案7.14
+
+读实际录制存储/转换器/项目/正式case版本与review、参考REPORT5.3/webui/action_schema和本地课程后，新增独立业务资产与不可变版本。PG新两表沿原初始化，旧录制/正式case不改；配置保持MySQL，原RustFS和Memgraph链保持。具体范围/原错误与纠正见P5_RECORDING_SCENE_RESEARCH.md。
+
+实际命令：Agent_Server目录 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_recording_scene_product.py -q --junitxml=../docs/upgrade_2026-10-03/p5-recording-scene-product-<batch>.xml`，RUN_LIVE_RECORDING_SCENE=1，RECORDING_SCENE_EVIDENCE每次独立绝对目录；完整API/main/实际PG/MySQL/Redis、真实CDP和built App/Chromium。before/api-first/product-first/verified/restored/final全部失败保留；delivery1通过70.42秒，补别名/说明正式投影后complete1通过62.00秒。实际HTML原件、新录制、提交丢响应、刷新只读恢复、步骤/别名编辑/历史、草稿固定/项目隔离/并发/API重启、PG原行与原事件完整性均留档。
+
+最终 `test_recording_scene_contract.py test_recording_scene_draft_projection.py test_recording_case_draft.py test_recording_case_draft_route.py test_recording_store.py test_recording_schema.py test_recording_knowledge_payloads.py test_knowledge_graph_service.py test_ui_automation_recording_orchestration.py` 72通过2门控跳过7.49秒；投影旧样本1失败0.23秒保存，最终专项读取complete新现场；旧live草稿开关没有启用，不算通过。前端 `npm.cmd test -- src/views/RecordingScenesView.test.ts src/views/KnowledgeView.projectSwitch.test.ts src/features/recorder/recordingApi.test.ts` 最终13通过2.32秒。实际product_browser的npm build/vue-tsc通过，独立typecheck和compileall仅补充检查；compile-final退出0。
+
+未验：默认模型/Agent完整知识查询和执行、人工DeepSeek、清洗遗漏/网络跨文档Shadow DOM、录制前场景、跨录制/selector修复/失败定位报告、场景归档版本专项、容量及生产历史/并发DDL。API重启窗口会话轮询网络错误单列，不将受控产品通过扩大成完整P0—P5完成。初始化新表需PG CREATE/INDEX权限。三份方案同步/历史与保护文件审计；白名单提交，不推送/PR。
+
+最终追加product-integrity独立实际验收1通过72.94秒，0跳过：整理前保存PG原始8条事件整行，步骤/别名/草稿/API重启后全列及payload逐行相等，补足此前只有API前后回读相等的证据范围。审计初次误将PG payload与API序列化逐字比较，已查明既有索引TIMESTAMPTZ→naive UTC投影；按既有实现核对时间时刻，并保留原始两份PG行证明。不改时间契约、不覆盖原complete工件。最终audit覆盖新工件、10批历史原件及受保护文件；新表生产迁移仍未验。

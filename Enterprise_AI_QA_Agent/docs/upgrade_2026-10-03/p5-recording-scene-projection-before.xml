@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="0.203" timestamp="2026-10-10T12:54:18.703139+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_scene_draft_projection" name="test_saved_alias_has_the_recorded_locator_basis" time="0.002"><failure message="AssertionError: assert None == {'tag': 'BUTTON', 'role': 'button', 'locators': {'id': 'repeat', 'css': '#repeat', 'text': '增加计数', 'xpath': '/html/body[1]/button[1]', ...}, 'in_iframe': False, ...}&#10; +  where None = &lt;built-in method get of dict object at 0x000001EC17283B40&gt;('target')&#10; +    where &lt;built-in method get of dict object at 0x000001EC17283B40&gt; = {'name': '计数按钮', 'source_seq': 4, 'description': '本次录制的按钮'}.get">def test_saved_alias_has_the_recorded_locator_basis():
+        draft=json.loads(FILE.read_text(encoding="utf-8"))["version"]
+        alias=draft["test_data"]["scene"]["aliases"][0]
+        matching=next(s for s in draft["steps"] if s["data"]["seq"]==alias["source_seq"])
+&gt;       assert alias.get("target")==matching["data"]["event"]["target"]
+E       AssertionError: assert None == {'tag': 'BUTTON', 'role': 'button', 'locators': {'id': 'repeat', 'css': '#repeat', 'text': '增加计数', 'xpath': '/html/body[1]/button[1]', ...}, 'in_iframe': False, ...}
+E        +  where None = &lt;built-in method get of dict object at 0x000001EC17283B40&gt;('target')
+E        +    where &lt;built-in method get of dict object at 0x000001EC17283B40&gt; = {'name': '计数按钮', 'source_seq': 4, 'description': '本次录制的按钮'}.get
+
+tests\test_recording_scene_draft_projection.py:13: AssertionError</failure></testcase></testsuite></testsuites>

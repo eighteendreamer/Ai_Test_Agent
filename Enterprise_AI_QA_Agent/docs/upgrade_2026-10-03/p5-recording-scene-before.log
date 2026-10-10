@@ -1,0 +1,66 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+___________________ test_actual_recording_scene_management ____________________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1391/test_actual_recording_scene_ma0')
+
+    async def test_actual_recording_scene_management(tmp_path):
+        evidence = Path(os.environ["RECORDING_SCENE_EVIDENCE"])
+        evidence.mkdir(parents=True, exist_ok=False)
+        def save(name, value):
+            (evidence / name).write_text(json.dumps(value, ensure_ascii=False, default=str, indent=2), encoding="utf-8")
+        html = '<!doctype html><meta charset="utf-8"><title>场景整理验收</title><input id="value"><button id="repeat">增加计数</button><p id="count">0</p><script>repeat.onclick=()=>{count.textContent=String(Number(count.textContent)+1)}</script>'
+        fixture = tmp_path / "scene.html"
+        fixture.write_text(html, encoding="utf-8")
+        (evidence / "fixture.html").write_text(html, encoding="utf-8")
+        project_ids = []
+        graph = None
+        try:
+            async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
+                graph = MemgraphRuntimeProvider(settings)
+                port = free_port()
+                args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+                api = processes.start("scene-api", *args)
+                async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=60) as client:
+                    await wait_api(client, api)
+                    for name in ("场景项目", "隔离项目"):
+                        response = await client.post("/projects", json={"project_key":"scene-"+uuid4().hex[:12],"name":name})
+                        response.raise_for_status()
+                        project_ids.append(response.json()["id"])
+                    project_id = project_ids[0]
+                    async with async_playwright() as playwright:
+                        cdp = free_port()
+                        browser = await playwright.chromium.launch(headless=True, args=[f"--remote-debugging-port={cdp}"])
+                        try:
+                            page = await browser.new_page()
+                            response = await client.post("/recordings", json={"project_id":project_id,"name":"实际录制场景","entry_url":fixture.resolve().as_uri(),"driver":{"kind":"cdp-attach","endpoint":f"http://127.0.0.1:{cdp}"}})
+                            response.raise_for_status()
+                            recording_id = response.json()["id"]
+                            async with asyncio.timeout(15):
+                                while (await client.get(f"/recordings/{recording_id}")).json()["status"] != "ready": await asyncio.sleep(.1)
+                            (await client.post(f"/recordings/{recording_id}/control", json={"action":"start"})).raise_for_status()
+                            await page.locator("#value").fill("完整输入😀"*40)
+                            await page.wait_for_timeout(600)
+                            await page.locator("#repeat").click()
+                            await page.locator("#repeat").click()
+                            assert await page.locator("#count").inner_text() == "2"
+                            response = await client.post(f"/recordings/{recording_id}/control", json={"action":"stop"})
+                            response.raise_for_status()
+                            assert response.json()["status"] == "completed"
+                        finally:
+                            await browser.close()
+                    original = (await client.get(f"/recordings/{recording_id}")).json()
+                    save("original-recording.json", original)
+                    url = f"/recordings/scenes/projects/{project_id}"
+                    creation = {"request_id":str(uuid4()),"recording_id":recording_id}
+                    response = await client.post(url, json=creation)
+                    save("scene-create-http.json", {"status":response.status_code,"payload":response.json()})
+>                   assert response.status_code == 201, response.text
+E                   AssertionError: {"detail":"Not Found"}
+E                   assert 404 == 201
+E                    +  where 404 = <Response [404 Not Found]>.status_code
+
+tests\test_recording_scene_product.py:71: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_recording_scene_product.py::test_actual_recording_scene_management
+1 failed in 34.94s
