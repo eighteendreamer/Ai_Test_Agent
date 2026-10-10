@@ -1,0 +1,88 @@
+{
+  "requests": [],
+  "result": {
+    "text": "Model invocation failed. Check the model provider and retry.",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:49938/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 1,
+      "tool_names": [
+        "inspect"
+      ],
+      "system_prompt_preview": "Return JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "http_error",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "error_type": "ProviderClientError",
+      "status_code": null,
+      "error": "LangChain model invocation failed for provider='fixture': `inspect` is not strict. Only `strict` function tools can be auto-parsed",
+      "response_body": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "mode": "http_error",
+      "error": "LangChain model invocation failed for provider='fixture': `inspect` is not strict. Only `strict` function tools can be auto-parsed",
+      "status_code": null,
+      "response_body": ""
+    }
+  }
+}

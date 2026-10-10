@@ -8,6 +8,7 @@ import type {
   ModelApplication,
   ModelConfigPublic,
   ModelConfigUpdateRequest,
+  ModelRequestProfile,
   OAuthModelItem,
   OAuthProviderProfile,
   OAuthStatusResponse,
@@ -25,6 +26,7 @@ const TRANSPORT_OPTIONS: DropdownSelectOption[] = [
 
 const loading = ref(false);
 const saving = ref(false);
+const requestProfileText = ref("");
 const showEditorModal = ref(false);
 const editingModelName = ref<string | null>(null);
 const busyActionKey = ref("");
@@ -194,6 +196,7 @@ function showMessage(tone: MessageTone, text: string) {
 }
 
 function resetModelDraft() {
+  requestProfileText.value = "";
   modelDraft.model_name = "";
   modelDraft.provider = "";
   modelDraft.transport = "openai_chat_completions";
@@ -218,6 +221,7 @@ function openCreateModal() {
 }
 
 function openEditModal(item: ModelConfigPublic) {
+  requestProfileText.value = item.request_profile ? JSON.stringify(item.request_profile, null, 2) : "";
   editingModelName.value = item.name;
   modelDraft.model_name = item.name;
   modelDraft.provider = item.provider;
@@ -293,6 +297,17 @@ async function saveModel() {
     }
   }
 
+  let request_profile: ModelRequestProfile | null = null;
+  try {
+    if (requestProfileText.value.trim()) {
+      const parsed: unknown = JSON.parse(requestProfileText.value);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Expected an object");
+      request_profile = parsed as ModelRequestProfile;
+    }
+  } catch {
+    showMessage("error", t("modelSettings.request_profile_invalid"));
+    return;
+  }
   saving.value = true;
 
   // For OAuth mode, auto-fill provider/transport/base_url from the profile
@@ -310,6 +325,7 @@ async function saveModel() {
   }
 
   const payload: ModelConfigUpdateRequest = {
+    request_profile,
     model_name: modelDraft.model_name.trim(),
     provider,
     transport,
@@ -885,6 +901,13 @@ async function deleteModel(item: ModelConfigPublic) {
               placeholder="8192"
             />
             <small>{{ t("modelSettings.max_output_tokens_hint") }}</small>
+          </label>
+
+          <label class="full">
+            <span>{{ t("modelSettings.request_profile") }}</span>
+            <textarea v-model="requestProfileText" rows="7" spellcheck="false"
+              :placeholder='JSON.stringify({ version: 1, revision: 1, output_formats: ["json_object"], chat_token_parameter: "max_tokens" }, null, 2)' />
+            <small>{{ t("modelSettings.request_profile_hint") }}</small>
           </label>
 
           <div class="full settings-application-section">

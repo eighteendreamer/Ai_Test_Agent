@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.application.model_clients.request_mapping import map_model_request
+
 import json
 from typing import Any
 
@@ -234,6 +236,7 @@ class GoogleGenAIClient:
                     ]
                 }
             ]
+        generate_config.update(map_model_request(config, request).parameters)
         return generate_config
 
     def _parse_response(self, response: Any) -> dict[str, Any]:

@@ -1,0 +1,160 @@
+{
+  "rejected": {
+    "text": "Unsupported model request option=output_format: format_not_declared",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:64188/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ]
+    },
+    "response_summary": {
+      "mode": "unsupported_request",
+      "model_key": "fixture",
+      "option": "output_format",
+      "reason": "format_not_declared"
+    },
+    "raw_response": {
+      "mode": "unsupported_request",
+      "option": "output_format",
+      "reason": "format_not_declared"
+    }
+  },
+  "fallback": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:64188/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "prompt_fallback",
+            "reason": "format_not_declared"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "ok",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "response_id": "chatcmpl_fixture",
+      "finish_reason": "stop",
+      "stop_reason": null,
+      "completion_status": "complete",
+      "usage": {
+        "completion_tokens": 3,
+        "prompt_tokens": 7,
+        "total_tokens": 10,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+      "tool_fallback": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "prompt_fallback",
+            "reason": "format_not_declared"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "id": "chatcmpl_fixture",
+      "choices": [
+        {
+          "finish_reason": "stop",
+          "index": 0,
+          "logprobs": null,
+          "message": {
+            "content": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+            "refusal": null,
+            "role": "assistant",
+            "annotations": null,
+            "audio": null,
+            "function_call": null,
+            "tool_calls": null
+          }
+        }
+      ],
+      "created": 1,
+      "model": "fixture-model",
+      "object": "chat.completion",
+      "metadata": null,
+      "moderation": null,
+      "service_tier": null,
+      "system_fingerprint": null,
+      "usage": {
+        "completion_tokens": 3,
+        "prompt_tokens": 7,
+        "total_tokens": 10,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      }
+    }
+  },
+  "requests": [
+    {
+      "path": "/v1/chat/completions",
+      "body": {
+        "messages": [
+          {
+            "role": "system",
+            "content": "Return JSON."
+          },
+          {
+            "role": "user",
+            "content": "{}"
+          }
+        ],
+        "model": "fixture-model",
+        "max_tokens": 2048
+      }
+    }
+  ]
+}

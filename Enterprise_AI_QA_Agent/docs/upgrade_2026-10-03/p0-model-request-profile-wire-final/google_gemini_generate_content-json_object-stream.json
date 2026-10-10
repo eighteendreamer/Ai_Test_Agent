@@ -1,0 +1,182 @@
+{
+  "physical_requests": [
+    {
+      "path": "/v1beta/models/fixture-model:streamGenerateContent?alt=sse",
+      "body": {
+        "contents": [
+          {
+            "parts": [
+              {
+                "text": "{}"
+              }
+            ],
+            "role": "user"
+          }
+        ],
+        "systemInstruction": {
+          "parts": [
+            {
+              "text": "Return one JSON object."
+            }
+          ],
+          "role": "user"
+        },
+        "generationConfig": {
+          "maxOutputTokens": 2048,
+          "responseMimeType": "application/json",
+          "thinkingConfig": {
+            "thinking_budget": 1024
+          }
+        }
+      }
+    }
+  ],
+  "physical_response": [
+    "data: {\"responseId\": \"gemini_fixture\", \"candidates\": [{\"index\": 0, \"content\": {\"role\": \"model\", \"parts\": [{\"text\": \"{\\\"action\\\": \\\"finish\\\", \\\"summary\\\": \\\"已按项目依据规划\\\", \\\"items\\\": []}\"}]}, \"finishReason\": \"STOP\"}], \"usageMetadata\": {\"promptTokenCount\": 7, \"candidatesTokenCount\": 3, \"totalTokenCount\": 10}}\n\n"
+  ],
+  "result": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "google_gemini_generate_content",
+      "api_base_url": "http://127.0.0.1:53190/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return one JSON object.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "budget"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "ok",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "google_gemini_generate_content",
+      "response_id": "gemini_fixture",
+      "finish_reason": "STOP",
+      "stop_reason": "STOP",
+      "completion_status": "complete",
+      "stream_terminal_received": true,
+      "usage": {
+        "promptTokenCount": 7,
+        "candidatesTokenCount": 3,
+        "totalTokenCount": 10
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+      "tool_fallback": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "budget"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "mode": "stream",
+      "provider": "fixture",
+      "stream_terminal_received": true,
+      "finish_reason": "STOP",
+      "usage": {
+        "promptTokenCount": 7,
+        "candidatesTokenCount": 3,
+        "totalTokenCount": 10
+      }
+    }
+  },
+  "config": {
+    "key": "fixture",
+    "provider": "fixture",
+    "transport": "google_gemini_generate_content",
+    "model_id": "fixture-model",
+    "temperature": null,
+    "max_tokens": 2048,
+    "context_window": 128000,
+    "max_output_tokens": 2048,
+    "capabilities": {
+      "text_input": true,
+      "text_output": true,
+      "tool_calling": true,
+      "vision": false,
+      "multi_image": false,
+      "file_input": false,
+      "pdf_input": false,
+      "reasoning": true,
+      "json_mode": false,
+      "streaming": true,
+      "parallel_tool_calls": false,
+      "image_url_input": true,
+      "image_base64_input": true
+    },
+    "auth_type": "api_key",
+    "oauth_provider": null,
+    "api_base_url_hash": "e94a8cf85bf361c16031c6030668d8171e4533f6205209c605baeccbcc250ba7",
+    "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "request_profile": {
+      "version": 1,
+      "revision": 1,
+      "output_formats": [
+        "json_object",
+        "json_schema"
+      ],
+      "chat_token_parameter": null,
+      "reasoning_style": "budget",
+      "reasoning_efforts": [],
+      "min_reasoning_budget": 0,
+      "max_reasoning_budget": null,
+      "default_reasoning": {
+        "effort": null,
+        "budget_tokens": 1024,
+        "required": true
+      }
+    },
+    "request_mapping_version": "model-request-v1",
+    "request_profile_hash": "edf0e6e7f2cdfa2c194145fc3eea6cab6e98c9c36542515e4e3291a3494e016f"
+  },
+  "runtime": {
+    "langchain_model_adapter_enabled": false,
+    "llm_request_timeout_seconds": 60.0,
+    "sdk_retry_policy": "existing_provider_defaults",
+    "dependency_versions": {
+      "google-genai": "2.23.0"
+    }
+  }
+}

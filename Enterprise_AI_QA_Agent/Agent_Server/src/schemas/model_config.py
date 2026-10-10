@@ -5,7 +5,9 @@ import json
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
+
+from src.schemas.model_request_options import ModelOutputFormat, ModelReasoningOptions, ModelRequestProfile, validate_profile_transport
 
 from src.schemas.prompting import PromptSection
 from src.schemas.tool_runtime import ModelToolCall
@@ -22,7 +24,7 @@ ModelAuthType = Literal["api_key", "oauth2"]
 ModelApplication = Literal["task_execution", "embedding_retrieval"]
 
 MODEL_FAILURE_MODES = frozenset(
-    {"missing_active_model", "auth_error", "missing_api_key", "http_error", "incomplete_response"}
+    {"missing_active_model", "auth_error", "missing_api_key", "http_error", "incomplete_response", "unsupported_request"}
 )
 
 
@@ -118,6 +120,7 @@ class ModelConfigRecord(BaseModel):
     extra_headers: dict[str, str] = Field(default_factory=dict)
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
     capability_overrides: ModelCapabilitiesOverride = Field(default_factory=ModelCapabilitiesOverride)
+    request_profile: ModelRequestProfile | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     auth_type: ModelAuthType = "api_key"
@@ -133,6 +136,8 @@ class ModelConfigRecord(BaseModel):
 
     @model_validator(mode="after")
     def _sync_capabilities(self):
+        validate_profile_transport(self.request_profile, self.transport,
+            max_output_tokens=self.max_output_tokens, temperature=self.temperature)
         self.capabilities.tool_calling = bool(self.supports_tools)
         self.capabilities.vision = bool(self.supports_vision)
         self.capabilities.reasoning = bool(self.supports_reasoning)
@@ -150,6 +155,12 @@ def model_invocation_parameters(config: ModelConfigRecord) -> dict[str, Any]:
     for name in ("api_base_url", "extra_headers"):
         encoded = json.dumps(getattr(config, name), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
         parameters[f"{name}_hash"] = hashlib.sha256(encoded.encode()).hexdigest()
+    if config.request_profile is not None:
+        profile = config.request_profile.model_dump(mode="json")
+        parameters["request_profile"] = profile
+        parameters["request_mapping_version"] = "model-request-v1"
+        parameters["request_profile_hash"] = hashlib.sha256(json.dumps(
+            profile, sort_keys=True, ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
     return parameters
 
 
@@ -174,6 +185,7 @@ class ModelConfigPublic(BaseModel):
     has_secret: bool = False
     capabilities: ModelCapabilities = Field(default_factory=ModelCapabilities)
     capability_overrides: ModelCapabilitiesOverride = Field(default_factory=ModelCapabilitiesOverride)
+    request_profile: ModelRequestProfile | None = None
     created_at: datetime | None = None
     updated_at: datetime | None = None
     auth_type: ModelAuthType = "api_key"
@@ -199,6 +211,16 @@ class ModelInvocationRequest(BaseModel):
     system_prompt_sections: list[PromptSection] = Field(default_factory=list)
     runtime_message_sections: list[PromptSection] = Field(default_factory=list)
     trace_context: dict[str, str] = Field(default_factory=dict)
+    output_format: ModelOutputFormat | None = None
+    reasoning: ModelReasoningOptions | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_request(self, handler):
+        data = handler(self)
+        for key in ("output_format", "reasoning"):
+            if data.get(key) is None:
+                data.pop(key, None)
+        return data
 
     @model_validator(mode="after")
     def _normalize_messages(self):

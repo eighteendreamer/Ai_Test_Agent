@@ -1,0 +1,102 @@
+.................................................F...................... [ 26%]
+...........................................................F............ [ 52%]
+...s.s.................sssssss.ssssss..........sssss.....sssssssssss.... [ 79%]
+sssss.s......................................s.......sss                 [100%]
+================================== FAILURES ===================================
+________________ test_model_runtime_reports_http_error_result _________________
+
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002A9BA9528D0>
+
+    def test_model_runtime_reports_http_error_result(monkeypatch: pytest.MonkeyPatch) -> None:
+        config = _config()
+    
+        class _AlwaysFailClient:
+            async def invoke(self, config, api_key, request):
+                raise ProviderClientError(
+                    "server exploded",
+                    status_code=500,
+                    response_body='{"error": "boom"}',
+                )
+    
+        monkeypatch.setattr(
+            "src.application.models.model_runtime_service.resolve_client",
+            lambda cfg, timeout_seconds: _AlwaysFailClient(),
+        )
+    
+        registry = SimpleNamespace(get_runtime_config=lambda key: config)
+        settings = SimpleNamespace(model=SimpleNamespace(llm_request_timeout_seconds=30))
+        service = ModelRuntimeService(model_registry=registry, settings=settings)
+    
+>       result = asyncio.run(service.invoke("chat-model", _request()))
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_model_clients.py:721: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+src\application\models\model_runtime_service.py:205: in invoke
+    if self._uses_langchain(config):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.application.models.model_runtime_service.ModelRuntimeService object at 0x000002A9BA951190>
+config = ModelConfigRecord(id=None, key='chat-model', name='chat-model', provider='openai', transport='openai_chat_completions'...ype='api_key', oauth_provider=None, oauth_refresh_token=None, applications=['task_execution'], active_application=None)
+
+    def _uses_langchain(self, config: ModelConfigRecord) -> bool:
+        return (config.transport == "openai_chat_completions" and
+>           bool(self._settings.model.langchain_model_adapter_enabled) and
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            not (config.request_profile and config.request_profile.chat_token_parameter == "max_tokens"))
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'langchain_model_adapter_enabled'
+
+src\application\models\model_runtime_service.py:221: AttributeError
+_______ test_model_failure_does_not_complete_assistant_turn[http_error] _______
+
+mode = 'http_error'
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x000002A9BAD74A50>
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("mode", ["missing_active_model", "auth_error", "missing_api_key", "http_error"])
+    async def test_model_failure_does_not_complete_assistant_turn(
+        mode: str, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+>       result = await _invoke_failure(mode, monkeypatch)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_model_failure_lifecycle.py:97: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_model_failure_lifecycle.py:86: in _invoke_failure
+    return await runtime.invoke(
+src\application\models\model_runtime_service.py:205: in invoke
+    if self._uses_langchain(config):
+       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.application.models.model_runtime_service.ModelRuntimeService object at 0x000002A9BAD12E50>
+config = ModelConfigRecord(id=None, key='test-model', name='test-model', provider='openai', transport='openai_chat_completions'...ype='api_key', oauth_provider=None, oauth_refresh_token=None, applications=['task_execution'], active_application=None)
+
+    def _uses_langchain(self, config: ModelConfigRecord) -> bool:
+        return (config.transport == "openai_chat_completions" and
+>           bool(self._settings.model.langchain_model_adapter_enabled) and
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+            not (config.request_profile and config.request_profile.chat_token_parameter == "max_tokens"))
+E       AttributeError: 'types.SimpleNamespace' object has no attribute 'langchain_model_adapter_enabled'
+
+src\application\models\model_runtime_service.py:221: AttributeError
+============================== warnings summary ===============================
+..\.venv\Lib\site-packages\starlette\testclient.py:53
+  G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\.venv\Lib\site-packages\starlette\testclient.py:53: DeprecationWarning: The anyio.abc.BlockingPortal alias is deprecated, use anyio.from_thread.BlockingPortal instead.
+    _PortalFactoryType = Callable[[], AbstractContextManager[anyio.abc.BlockingPortal]]
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_model_clients.py::test_model_runtime_reports_http_error_result
+FAILED tests/test_model_failure_lifecycle.py::test_model_failure_does_not_complete_assistant_turn[http_error]
+2 failed, 229 passed, 41 skipped, 1 warning in 69.90s (0:01:09)

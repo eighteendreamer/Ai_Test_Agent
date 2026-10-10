@@ -17,6 +17,7 @@ from src.graph.nodes.model_invoker import build_model_invoker_node
 from src.graph.nodes.responder import responder
 from src.registry.tools import ToolRegistry
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
+from src.schemas.model_request_options import ModelOutputFormat
 from src.schemas.session import (
     ChatMessage,
     MessageRole,
@@ -85,12 +86,13 @@ async def _invoke_failure(mode: str, monkeypatch: pytest.MonkeyPatch):
     )
     return await runtime.invoke(
         "test-model",
-        ModelInvocationRequest(system_prompt="Test", messages=[{"role": "user", "content": "Run"}]),
+        ModelInvocationRequest(system_prompt="Test", messages=[{"role": "user", "content": "Run"}],
+            output_format=ModelOutputFormat(kind="json_object") if mode == "unsupported_request" else None),
     )
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("mode", ["missing_active_model", "auth_error", "missing_api_key", "http_error"])
+@pytest.mark.parametrize("mode", ["missing_active_model", "auth_error", "missing_api_key", "http_error", "unsupported_request"])
 async def test_model_failure_does_not_complete_assistant_turn(
     mode: str, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -193,7 +195,7 @@ async def test_failed_model_result_is_not_saved_as_context_summary(
     assert "context_summary" not in session.metadata
 
 
-@pytest.mark.parametrize("mode", ["missing_active_model", "auth_error", "missing_api_key", "http_error"])
+@pytest.mark.parametrize("mode", ["missing_active_model", "auth_error", "missing_api_key", "http_error", "unsupported_request"])
 def test_old_model_failure_message_is_not_replayed_to_model(mode: str) -> None:
     message = ChatMessage(
         id="old-error",

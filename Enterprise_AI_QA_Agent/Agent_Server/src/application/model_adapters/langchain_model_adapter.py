@@ -11,6 +11,7 @@ from src.application.model_adapters.message_adapter import (
     to_langchain_tools,
 )
 from src.application.model_clients.base import ProviderClientError
+from src.application.model_clients.request_mapping import map_model_request
 from src.application.model_clients.completion import model_completion_status, model_response_mode, stream_completion_fields
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
 from src.runtime.execution_logging import truncate_text
@@ -57,6 +58,15 @@ class LangChainModelAdapter(ModelPort):
             model = self._build_model(config, api_key)
             if config.supports_tools and request.tools:
                 model = model.bind_tools(to_langchain_tools(request.tools), tool_choice="auto")
+            mapped = map_model_request(config, request).parameters
+            if "response_format" in mapped:
+                # ChatOpenAI chooses SDK parse/stream helpers when this key is
+                # top-level, rejecting our existing non-strict tool schemas.
+                # OpenAI's supported extra_body merge preserves the same wire
+                # field while leaving business validation with our callers.
+                mapped["extra_body"] = {"response_format": mapped.pop("response_format")}
+            if mapped:
+                model = model.bind(**mapped)
             messages = to_langchain_messages(request.system_prompt, request)
             if self._stream_handler is None:
                 response = await model.ainvoke(messages)
@@ -153,6 +163,8 @@ class LangChainModelAdapter(ModelPort):
         return parsed
 
     def _build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
+        if config.request_profile and config.request_profile.chat_token_parameter == "max_tokens":
+            raise ProviderClientError("Explicit max_tokens requires the native Chat client; LangChain renames this field.")
         kwargs: dict[str, Any] = {
             "model": config.model_id,
             "api_key": api_key,
@@ -174,7 +186,9 @@ class LangChainModelAdapter(ModelPort):
         and database-backed provider settings cannot diverge between the
         normal LangChain path and a Deep Agents pilot.
         """
-        return self._build_model(config, api_key)
+        model = self._build_model(config, api_key)
+        mapped = map_model_request(config, ModelInvocationRequest(system_prompt="", messages=[])).parameters
+        return model.bind(**mapped) if mapped else model
 
     async def _stream(self, model: Any, messages: list[Any]) -> Any:
         aggregate = None

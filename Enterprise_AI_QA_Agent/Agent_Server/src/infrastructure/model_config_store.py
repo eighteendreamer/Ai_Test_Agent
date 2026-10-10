@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 import json
+import logging
 
 from src.application.model_clients.provider_profiles import (
     normalize_provider,
@@ -16,6 +17,9 @@ from src.schemas.model_config import (
     ModelConfigRecord,
 )
 from src.schemas.settings import ModelConfigUpdateRequest
+from src.schemas.model_request_options import ModelRequestProfile, validate_profile_transport
+
+logger = logging.getLogger(__name__)
 
 
 # All model capabilities are enabled by default on the backend; the frontend no
@@ -55,6 +59,7 @@ class MySQLModelConfigStore:
                         `provider` VARCHAR(64) NOT NULL,
                         `transport` VARCHAR(64) NULL,
                         `capability_overrides` JSON NULL,
+                        `request_profile` JSON NULL,
                         `context_window` BIGINT NULL,
                         `max_output_tokens` INT NULL,
                         `is_active` TINYINT(1) NOT NULL DEFAULT 0,
@@ -63,6 +68,10 @@ class MySQLModelConfigStore:
                     ) ENGINE=InnoDB DEFAULT CHARSET={self._settings.database.mysql_charset}
                     """
                 )
+                cur.execute(f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'request_profile'")
+                if not cur.fetchone():
+                    cur.execute(f"ALTER TABLE `{self._settings.database.llm_model_table}` ADD COLUMN `request_profile` JSON NULL")
+                    logger.info("model_request_profile_column_added", extra={"table": self._settings.database.llm_model_table})
                 cur.execute(
                     f"SHOW COLUMNS FROM `{self._settings.database.llm_model_table}` LIKE 'id'"
                 )
@@ -296,7 +305,7 @@ class MySQLModelConfigStore:
         "id, model_name, api_key, base_url, provider, is_active, created_at, updated_at"
         ", capability_overrides, transport, applications, active_application"
         ", auth_type, oauth_provider, oauth_refresh_token"
-        ", context_window, max_output_tokens"
+        ", context_window, max_output_tokens, request_profile"
     )
 
     def list_all(self) -> list[ModelConfigRecord]:
@@ -372,8 +381,8 @@ class MySQLModelConfigStore:
                     f"""
                     INSERT INTO `{self._settings.database.llm_model_table}`
                     (`model_name`, `api_key`, `base_url`, `provider`, `transport`, `applications`, `active_application`, `capability_overrides`, `is_active`,
-                     `auth_type`, `oauth_provider`, `oauth_refresh_token`, `context_window`, `max_output_tokens`)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                     `auth_type`, `oauth_provider`, `oauth_refresh_token`, `context_window`, `max_output_tokens`, `request_profile`)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                     ON DUPLICATE KEY UPDATE
                         `api_key`=VALUES(`api_key`),
                         `base_url`=VALUES(`base_url`),
@@ -387,7 +396,8 @@ class MySQLModelConfigStore:
                         `oauth_provider`=VALUES(`oauth_provider`),
                         `oauth_refresh_token`=VALUES(`oauth_refresh_token`),
                         `context_window`=VALUES(`context_window`),
-                        `max_output_tokens`=VALUES(`max_output_tokens`)
+                        `max_output_tokens`=VALUES(`max_output_tokens`),
+                        `request_profile`=VALUES(`request_profile`)
                     """,
                     (
                         payload.model_name,
@@ -407,6 +417,7 @@ class MySQLModelConfigStore:
                         payload.oauth_refresh_token if payload.oauth_refresh_token else ((existing_row or {}).get("oauth_refresh_token") or None),
                         payload.context_window if payload.context_window else ((existing_row or {}).get("context_window") or None),
                         payload.max_output_tokens if payload.max_output_tokens else ((existing_row or {}).get("max_output_tokens") or None),
+                        self._serialize_request_profile(payload, existing_row),
                     ),
                 )
                 self._ensure_task_execution_active(cur)
@@ -471,7 +482,8 @@ class MySQLModelConfigStore:
                         `oauth_provider`=%s,
                         `oauth_refresh_token`=%s,
                         `context_window`=%s,
-                        `max_output_tokens`=%s
+                        `max_output_tokens`=%s,
+                        `request_profile`=%s
                     WHERE `model_name`=%s
                     """,
                     (
@@ -492,6 +504,7 @@ class MySQLModelConfigStore:
                         payload.oauth_refresh_token if payload.oauth_refresh_token else (existing_row.get("oauth_refresh_token") or None),
                         payload.context_window if payload.context_window else (existing_row.get("context_window") or None),
                         payload.max_output_tokens if payload.max_output_tokens else (existing_row.get("max_output_tokens") or None),
+                        self._serialize_request_profile(payload, existing_row),
                         original_model_name,
                     ),
                 )
@@ -694,6 +707,7 @@ class MySQLModelConfigStore:
             has_secret=bool(record.api_key),
             capabilities=record.capabilities,
             capability_overrides=record.capability_overrides,
+            request_profile=record.request_profile,
             created_at=record.created_at,
             updated_at=record.updated_at,
             auth_type=record.auth_type,
@@ -752,6 +766,7 @@ class MySQLModelConfigStore:
             extra_headers={},
             capabilities=capabilities,
             capability_overrides=capability_overrides,
+            request_profile=self._parse_request_profile(row.get("request_profile"), row.get("id")),
             created_at=self._normalize_datetime(created_at),
             updated_at=self._normalize_datetime(updated_at),
             auth_type=auth_type,
@@ -765,6 +780,27 @@ class MySQLModelConfigStore:
                 else None
             ),
         )
+
+    @staticmethod
+    def _parse_request_profile(value, row_id=None):
+        if value is None:
+            return None
+        try:
+            return ModelRequestProfile.model_validate(json.loads(value) if isinstance(value, str) else value)
+        except (ValueError, TypeError) as exc:
+            logger.error("model_request_profile_invalid", extra={"model_config_id": row_id})
+            raise ValueError(f"Invalid request profile for model config id={row_id}") from exc
+
+    def _serialize_request_profile(self, payload, existing_row):
+        existing_row = existing_row or {}
+        profile = (payload.request_profile if "request_profile" in payload.model_fields_set else
+            self._parse_request_profile(existing_row.get("request_profile"), existing_row.get("id")))
+        validate_profile_transport(profile, normalize_transport(payload.transport, provider=payload.provider),
+            max_output_tokens=payload.max_output_tokens or existing_row.get("max_output_tokens") or 8192)
+        logger.info("model_request_profile_serialized", extra={"model_config_id": existing_row.get("id"),
+            "profile_revision": profile.revision if profile else None,
+            "profile_action": "set" if "request_profile" in payload.model_fields_set else "preserve"})
+        return json.dumps(profile.model_dump(mode="json"), ensure_ascii=False) if profile is not None else None
 
     def _normalize_datetime(self, value) -> datetime | None:
         if value is None:

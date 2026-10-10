@@ -1,4 +1,7 @@
 export default {
+  "modelSettings.request_profile": "模型請求設定（JSON，選填）",
+  "modelSettings.request_profile_hint": "僅填寫此模型已確認支援的輸出格式、推理範圍和 Chat token 欄位。留空恢復原傳送方式；修改後，已凍結設定的任務需重新建立。",
+  "modelSettings.request_profile_invalid": "請求設定必須是有效的 JSON 物件。",
   // Sidebar
   "nav.home": "首頁",
   "nav.taskpool": "任務池",

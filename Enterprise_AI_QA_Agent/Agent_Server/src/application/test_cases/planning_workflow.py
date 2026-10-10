@@ -1,6 +1,8 @@
 """One planning loop for synchronous callers and durable Worker checkpoints."""
 from __future__ import annotations
 
+from src.schemas.model_request_options import ModelOutputFormat
+
 import asyncio
 import logging
 from datetime import datetime, timezone
@@ -216,7 +218,8 @@ class CasePlanningWorkflow:
                             "turn_id": f"{record.id}:{checkpoint.next_round}", "session_id": record.id,
                             "agent_key": "case-planning"} if persist is None else {})
                         model_request = ModelInvocationRequest(system_prompt=prompt,
-                            messages=[{"role": "user", "content": body}], tools=[], trace_context=trace)
+                            messages=[{"role": "user", "content": body}], tools=[], trace_context=trace,
+                            output_format=ModelOutputFormat(kind="json_object", required=False))
                         started = perf_counter()
                         async def observe_delta(delta):
                             if "first_text_seconds" not in round_record:
@@ -239,6 +242,8 @@ class CasePlanningWorkflow:
                             ("mode", "error_type", "status_code", "response_id", "finish_reason", "stop_reason", "usage")}
                         checkpoint.response_has_tools = bool(result.tool_calls)
                         checkpoint.response_metadata.update(stream_completion_fields(result.response_summary))
+                        if "request_mapping" in result.response_summary:
+                            checkpoint.response_metadata["request_mapping"] = result.response_summary["request_mapping"]
                         round_record.update({"status": "response_received", "response_mode": str(result.response_summary.get("mode") or "")[:80],
                             "response_metadata": checkpoint.response_metadata})
                         if round_record["response_mode"] in MODEL_FAILURE_MODES:

@@ -5,6 +5,8 @@ scope coverage, review, deployment applicability or a successful test result.
 """
 from __future__ import annotations
 
+from src.schemas.model_request_options import ModelOutputFormat
+
 import asyncio
 import hashlib
 import importlib.metadata
@@ -158,7 +160,8 @@ class DocumentImpactCallService:
             if protocol.version == "impact-call-v7":
                 payload["fixed_case_evidence"] = case_evidence_catalog(fixed_impact_case_evidence(manifest, [*prior, payload]))
         messages.append({"role": "user", "content": _json(payload)})
-        request = ModelInvocationRequest(system_prompt=seed.analysis_context.prompt.system_prompt, messages=messages, tools=[])
+        request = ModelInvocationRequest(system_prompt=seed.analysis_context.prompt.system_prompt, messages=messages, tools=[],
+            output_format=ModelOutputFormat(kind="json_object", required=False))
         return request
 
     async def read_fixed_scope(self, claim):
@@ -383,6 +386,8 @@ class DocumentImpactCallService:
         metadata = {key: result.response_summary.get(key) for key in
             ("mode", "error_type", "status_code", "response_id", "finish_reason", "stop_reason", "usage")}
         metadata.update(stream_completion_fields(result.response_summary))
+        if "request_mapping" in result.response_summary:
+            metadata["request_mapping"] = result.response_summary["request_mapping"]
         if options is not None and metadata.get("mode") == "http_error" and metadata.get("status_code") is None:
             logger.warning("document_impact_transport_outcome_unconfirmed", extra={"task_id": task.id,
                 "call_id": call_id, "error_type": metadata.get("error_type")})

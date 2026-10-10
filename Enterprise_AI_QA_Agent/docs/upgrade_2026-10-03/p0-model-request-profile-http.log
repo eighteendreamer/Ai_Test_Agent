@@ -1,0 +1,261 @@
+......F......F......F......F...F...                                      [100%]
+================================== FAILURES ===================================
+_ test_actual_profile_fields[json_schema-False-google_gemini_generate_content] _
+
+variant = 'google_gemini_generate_content', streaming = False
+kind = 'json_schema'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("variant", ["native_legacy", "native_completion", "langchain_legacy", "langchain_completion",
+        "openai_responses", "anthropic_messages", "google_gemini_generate_content"])
+    @pytest.mark.parametrize("streaming", [False, True])
+    @pytest.mark.parametrize("kind", ["json_schema", "json_object"])
+    async def test_actual_profile_fields(variant, streaming, kind):
+        transport = variant if variant in {"openai_responses", "anthropic_messages", "google_gemini_generate_content"} else "openai_chat_completions"
+        with provider(transport, False) as (url, sends, replies):
+            config, runtime = runtime_config(url, variant)
+            required = not (transport == "anthropic_messages" and kind == "json_object")
+            request = ModelInvocationRequest(system_prompt="Return one JSON object.", messages=[{"role": "user", "content": "{}"}],
+                output_format=ModelOutputFormat(kind=kind, schema_definition=SCHEMA if kind == "json_schema" else None, required=required))
+            async def delta(text): pass
+            if streaming:
+                async with runtime.stream_handler(delta):
+                    result = await runtime.invoke("fixture", request)
+            else:
+                result = await runtime.invoke("fixture", request)
+            evidence(f"{variant}-{kind}-{'stream' if streaming else 'sync'}", {"physical_requests": sends,
+                "physical_response": [raw.decode() for raw in replies], "result": result.model_dump(mode="json"),
+                "config": model_invocation_parameters(config), "runtime": runtime.get_invocation_runtime_parameters("fixture")})
+            assert result.response_summary["mode"] == "ok", result.model_dump()
+            assert len(sends) == 1
+            body = sends[0]["body"]
+            if transport == "openai_chat_completions":
+                token = config.request_profile.chat_token_parameter
+                assert body[token] == 2048 and ("max_tokens" if token == "max_completion_tokens" else "max_completion_tokens") not in body
+                assert body["reasoning_effort"] == "low"
+                assert body["response_format"]["type"] == kind
+                if kind == "json_schema": assert body["response_format"]["json_schema"]["schema"] == SCHEMA
+                assert runtime.get_invocation_runtime_parameters("fixture")["langchain_model_adapter_enabled"] == (variant == "langchain_completion")
+            elif transport == "openai_responses":
+                assert body["max_output_tokens"] == 2048 and body["reasoning"] == {"effort": "low"}
+                assert body["text"]["format"]["type"] == kind
+                if kind == "json_schema": assert body["text"]["format"]["schema"] == SCHEMA
+            elif transport == "anthropic_messages":
+                assert body["max_tokens"] == 2048 and body["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+                if kind == "json_schema": assert body["output_config"]["format"]["schema"] == SCHEMA
+                else: assert "output_config" not in body
+            else:
+                generated = body["generationConfig"]
+>               assert generated["maxOutputTokens"] == 2048 and generated["thinkingConfig"]["thinkingBudget"] == 1024
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               KeyError: 'thinkingBudget'
+
+tests\test_model_request_profile.py:87: KeyError
+------------------------------ Captured log call ------------------------------
+WARNING  google_genai.models:models.py:8422 Direct use of automatic function calling (AFC) in AsyncModels.generate_content is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message. Similarly, direct use of AFC in AsyncModels.generate_content_stream is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message_stream.
+_ test_actual_profile_fields[json_schema-True-google_gemini_generate_content] _
+
+variant = 'google_gemini_generate_content', streaming = True
+kind = 'json_schema'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("variant", ["native_legacy", "native_completion", "langchain_legacy", "langchain_completion",
+        "openai_responses", "anthropic_messages", "google_gemini_generate_content"])
+    @pytest.mark.parametrize("streaming", [False, True])
+    @pytest.mark.parametrize("kind", ["json_schema", "json_object"])
+    async def test_actual_profile_fields(variant, streaming, kind):
+        transport = variant if variant in {"openai_responses", "anthropic_messages", "google_gemini_generate_content"} else "openai_chat_completions"
+        with provider(transport, False) as (url, sends, replies):
+            config, runtime = runtime_config(url, variant)
+            required = not (transport == "anthropic_messages" and kind == "json_object")
+            request = ModelInvocationRequest(system_prompt="Return one JSON object.", messages=[{"role": "user", "content": "{}"}],
+                output_format=ModelOutputFormat(kind=kind, schema_definition=SCHEMA if kind == "json_schema" else None, required=required))
+            async def delta(text): pass
+            if streaming:
+                async with runtime.stream_handler(delta):
+                    result = await runtime.invoke("fixture", request)
+            else:
+                result = await runtime.invoke("fixture", request)
+            evidence(f"{variant}-{kind}-{'stream' if streaming else 'sync'}", {"physical_requests": sends,
+                "physical_response": [raw.decode() for raw in replies], "result": result.model_dump(mode="json"),
+                "config": model_invocation_parameters(config), "runtime": runtime.get_invocation_runtime_parameters("fixture")})
+            assert result.response_summary["mode"] == "ok", result.model_dump()
+            assert len(sends) == 1
+            body = sends[0]["body"]
+            if transport == "openai_chat_completions":
+                token = config.request_profile.chat_token_parameter
+                assert body[token] == 2048 and ("max_tokens" if token == "max_completion_tokens" else "max_completion_tokens") not in body
+                assert body["reasoning_effort"] == "low"
+                assert body["response_format"]["type"] == kind
+                if kind == "json_schema": assert body["response_format"]["json_schema"]["schema"] == SCHEMA
+                assert runtime.get_invocation_runtime_parameters("fixture")["langchain_model_adapter_enabled"] == (variant == "langchain_completion")
+            elif transport == "openai_responses":
+                assert body["max_output_tokens"] == 2048 and body["reasoning"] == {"effort": "low"}
+                assert body["text"]["format"]["type"] == kind
+                if kind == "json_schema": assert body["text"]["format"]["schema"] == SCHEMA
+            elif transport == "anthropic_messages":
+                assert body["max_tokens"] == 2048 and body["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+                if kind == "json_schema": assert body["output_config"]["format"]["schema"] == SCHEMA
+                else: assert "output_config" not in body
+            else:
+                generated = body["generationConfig"]
+>               assert generated["maxOutputTokens"] == 2048 and generated["thinkingConfig"]["thinkingBudget"] == 1024
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               KeyError: 'thinkingBudget'
+
+tests\test_model_request_profile.py:87: KeyError
+_ test_actual_profile_fields[json_object-False-google_gemini_generate_content] _
+
+variant = 'google_gemini_generate_content', streaming = False
+kind = 'json_object'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("variant", ["native_legacy", "native_completion", "langchain_legacy", "langchain_completion",
+        "openai_responses", "anthropic_messages", "google_gemini_generate_content"])
+    @pytest.mark.parametrize("streaming", [False, True])
+    @pytest.mark.parametrize("kind", ["json_schema", "json_object"])
+    async def test_actual_profile_fields(variant, streaming, kind):
+        transport = variant if variant in {"openai_responses", "anthropic_messages", "google_gemini_generate_content"} else "openai_chat_completions"
+        with provider(transport, False) as (url, sends, replies):
+            config, runtime = runtime_config(url, variant)
+            required = not (transport == "anthropic_messages" and kind == "json_object")
+            request = ModelInvocationRequest(system_prompt="Return one JSON object.", messages=[{"role": "user", "content": "{}"}],
+                output_format=ModelOutputFormat(kind=kind, schema_definition=SCHEMA if kind == "json_schema" else None, required=required))
+            async def delta(text): pass
+            if streaming:
+                async with runtime.stream_handler(delta):
+                    result = await runtime.invoke("fixture", request)
+            else:
+                result = await runtime.invoke("fixture", request)
+            evidence(f"{variant}-{kind}-{'stream' if streaming else 'sync'}", {"physical_requests": sends,
+                "physical_response": [raw.decode() for raw in replies], "result": result.model_dump(mode="json"),
+                "config": model_invocation_parameters(config), "runtime": runtime.get_invocation_runtime_parameters("fixture")})
+            assert result.response_summary["mode"] == "ok", result.model_dump()
+            assert len(sends) == 1
+            body = sends[0]["body"]
+            if transport == "openai_chat_completions":
+                token = config.request_profile.chat_token_parameter
+                assert body[token] == 2048 and ("max_tokens" if token == "max_completion_tokens" else "max_completion_tokens") not in body
+                assert body["reasoning_effort"] == "low"
+                assert body["response_format"]["type"] == kind
+                if kind == "json_schema": assert body["response_format"]["json_schema"]["schema"] == SCHEMA
+                assert runtime.get_invocation_runtime_parameters("fixture")["langchain_model_adapter_enabled"] == (variant == "langchain_completion")
+            elif transport == "openai_responses":
+                assert body["max_output_tokens"] == 2048 and body["reasoning"] == {"effort": "low"}
+                assert body["text"]["format"]["type"] == kind
+                if kind == "json_schema": assert body["text"]["format"]["schema"] == SCHEMA
+            elif transport == "anthropic_messages":
+                assert body["max_tokens"] == 2048 and body["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+                if kind == "json_schema": assert body["output_config"]["format"]["schema"] == SCHEMA
+                else: assert "output_config" not in body
+            else:
+                generated = body["generationConfig"]
+>               assert generated["maxOutputTokens"] == 2048 and generated["thinkingConfig"]["thinkingBudget"] == 1024
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               KeyError: 'thinkingBudget'
+
+tests\test_model_request_profile.py:87: KeyError
+_ test_actual_profile_fields[json_object-True-google_gemini_generate_content] _
+
+variant = 'google_gemini_generate_content', streaming = True
+kind = 'json_object'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("variant", ["native_legacy", "native_completion", "langchain_legacy", "langchain_completion",
+        "openai_responses", "anthropic_messages", "google_gemini_generate_content"])
+    @pytest.mark.parametrize("streaming", [False, True])
+    @pytest.mark.parametrize("kind", ["json_schema", "json_object"])
+    async def test_actual_profile_fields(variant, streaming, kind):
+        transport = variant if variant in {"openai_responses", "anthropic_messages", "google_gemini_generate_content"} else "openai_chat_completions"
+        with provider(transport, False) as (url, sends, replies):
+            config, runtime = runtime_config(url, variant)
+            required = not (transport == "anthropic_messages" and kind == "json_object")
+            request = ModelInvocationRequest(system_prompt="Return one JSON object.", messages=[{"role": "user", "content": "{}"}],
+                output_format=ModelOutputFormat(kind=kind, schema_definition=SCHEMA if kind == "json_schema" else None, required=required))
+            async def delta(text): pass
+            if streaming:
+                async with runtime.stream_handler(delta):
+                    result = await runtime.invoke("fixture", request)
+            else:
+                result = await runtime.invoke("fixture", request)
+            evidence(f"{variant}-{kind}-{'stream' if streaming else 'sync'}", {"physical_requests": sends,
+                "physical_response": [raw.decode() for raw in replies], "result": result.model_dump(mode="json"),
+                "config": model_invocation_parameters(config), "runtime": runtime.get_invocation_runtime_parameters("fixture")})
+            assert result.response_summary["mode"] == "ok", result.model_dump()
+            assert len(sends) == 1
+            body = sends[0]["body"]
+            if transport == "openai_chat_completions":
+                token = config.request_profile.chat_token_parameter
+                assert body[token] == 2048 and ("max_tokens" if token == "max_completion_tokens" else "max_completion_tokens") not in body
+                assert body["reasoning_effort"] == "low"
+                assert body["response_format"]["type"] == kind
+                if kind == "json_schema": assert body["response_format"]["json_schema"]["schema"] == SCHEMA
+                assert runtime.get_invocation_runtime_parameters("fixture")["langchain_model_adapter_enabled"] == (variant == "langchain_completion")
+            elif transport == "openai_responses":
+                assert body["max_output_tokens"] == 2048 and body["reasoning"] == {"effort": "low"}
+                assert body["text"]["format"]["type"] == kind
+                if kind == "json_schema": assert body["text"]["format"]["schema"] == SCHEMA
+            elif transport == "anthropic_messages":
+                assert body["max_tokens"] == 2048 and body["thinking"] == {"type": "enabled", "budget_tokens": 1024}
+                if kind == "json_schema": assert body["output_config"]["format"]["schema"] == SCHEMA
+                else: assert "output_config" not in body
+            else:
+                generated = body["generationConfig"]
+>               assert generated["maxOutputTokens"] == 2048 and generated["thinkingConfig"]["thinkingBudget"] == 1024
+                                                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               KeyError: 'thinkingBudget'
+
+tests\test_model_request_profile.py:87: KeyError
+_____ test_explicit_zero_reasoning_budget[google_gemini_generate_content] _____
+
+transport = 'google_gemini_generate_content'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("transport", ["anthropic_messages", "google_gemini_generate_content"])
+    async def test_explicit_zero_reasoning_budget(transport):
+        with provider(transport, False) as (url, sends, _):
+            _, runtime = runtime_config(url, transport)
+>           result = await runtime.invoke("fixture", ModelInvocationRequest(system_prompt="Return JSON.", messages=[],
+                reasoning=ModelReasoningOptions(budget_tokens=0)))
+
+tests\test_model_request_profile.py:115: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+src\application\models\model_runtime_service.py:213: in invoke
+    result = await self._invoke_with_client(client, config, api_key, request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\models\model_runtime_service.py:297: in _invoke_with_client
+    parsed = await self._send_with_client(client, config, api_key, request)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\models\model_runtime_service.py:354: in _send_with_client
+    return await client.invoke(config, api_key, request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\model_clients\google_client.py:91: in invoke
+    response = await client.aio.models.generate_content(
+..\.venv\Lib\site-packages\google\genai\models.py:8451: in generate_content
+    response = await self._generate_content(
+..\.venv\Lib\site-packages\google\genai\models.py:6881: in _generate_content
+    request_dict = _GenerateContentParameters_to_mldev(
+..\.venv\Lib\site-packages\google\genai\models.py:1635: in _GenerateContentParameters_to_mldev
+    for item in t.t_contents(getv(from_object, ['contents']))
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+contents = []
+
+    def t_contents(
+        contents: Optional[
+            Union[types.ContentListUnion, types.ContentListUnionDict, types.Content]
+        ],
+    ) -> list[types.Content]:
+      if contents is None or (isinstance(contents, list) and not contents):
+>       raise ValueError('contents are required.')
+E       ValueError: contents are required.
+
+..\.venv\Lib\site-packages\google\genai\_transformers.py:477: ValueError
+=========================== short test summary info ===========================
+FAILED tests/test_model_request_profile.py::test_actual_profile_fields[json_schema-False-google_gemini_generate_content]
+FAILED tests/test_model_request_profile.py::test_actual_profile_fields[json_schema-True-google_gemini_generate_content]
+FAILED tests/test_model_request_profile.py::test_actual_profile_fields[json_object-False-google_gemini_generate_content]
+FAILED tests/test_model_request_profile.py::test_actual_profile_fields[json_object-True-google_gemini_generate_content]
+FAILED tests/test_model_request_profile.py::test_explicit_zero_reasoning_budget[google_gemini_generate_content]
+5 failed, 30 passed in 27.85s

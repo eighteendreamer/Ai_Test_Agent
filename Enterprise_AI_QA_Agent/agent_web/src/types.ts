@@ -288,6 +288,7 @@ export interface ModelConfigPublic {
   has_secret: boolean;
   capabilities: ModelCapabilities;
   capability_overrides: ModelCapabilitiesOverride;
+  request_profile?: ModelRequestProfile | null;
   created_at?: string | null;
   updated_at?: string | null;
   auth_type: "api_key" | "oauth2";
@@ -297,6 +298,24 @@ export interface ModelConfigPublic {
 }
 
 export type ModelApplication = "task_execution" | "embedding_retrieval";
+
+export interface ModelReasoningOptions {
+  effort?: "none" | "minimal" | "low" | "medium" | "high" | "xhigh" | null;
+  budget_tokens?: number | null;
+  required?: boolean;
+}
+
+export interface ModelRequestProfile {
+  version?: 1;
+  revision?: number;
+  output_formats?: Array<"json_object" | "json_schema">;
+  chat_token_parameter?: "max_tokens" | "max_completion_tokens" | null;
+  reasoning_style?: "none" | "effort" | "budget";
+  reasoning_efforts?: Array<NonNullable<ModelReasoningOptions["effort"]>>;
+  min_reasoning_budget?: number;
+  max_reasoning_budget?: number | null;
+  default_reasoning?: ModelReasoningOptions | null;
+}
 
 export interface ModelCapabilities {
   text_input: boolean;
@@ -334,6 +353,7 @@ export interface ModelConfigUpdateRequest {
   model_name: string;
   provider: string;
   transport?: string | null;
+  request_profile?: ModelRequestProfile | null;
   base_url: string;
   api_key?: string | null;
   is_active: boolean;

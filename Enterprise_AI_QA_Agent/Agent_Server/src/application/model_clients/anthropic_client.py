@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.application.model_clients.request_mapping import map_model_request
+
 from typing import Any
 
 import anthropic
@@ -194,6 +196,7 @@ class AnthropicMessagesClient:
                 }
                 for item in request.tools
             ]
+        params.update(map_model_request(config, request).parameters)
         return params
 
     def _parse_response(self, config: ModelConfigRecord, data: dict[str, Any]) -> dict[str, Any]:

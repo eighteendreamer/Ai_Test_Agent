@@ -10,6 +10,7 @@ from src.schemas.model_config import (
     ModelConfigPublic,
     ModelTransport,
 )
+from src.schemas.model_request_options import ModelRequestProfile
 
 
 class GeneralSettingsPayload(BaseModel):
@@ -28,6 +29,7 @@ class ModelConfigUpdateRequest(BaseModel):
     model_name: str
     provider: str = ""
     transport: ModelTransport | None = None
+    request_profile: ModelRequestProfile | None = None
     base_url: str
     api_key: str | None = None
     is_active: bool = False
@@ -55,6 +57,7 @@ class ModelConfigEditRequest(BaseModel):
     model_name: str
     provider: str = ""
     transport: ModelTransport | None = None
+    request_profile: ModelRequestProfile | None = None
     base_url: str
     api_key: str | None = None
     is_active: bool = False

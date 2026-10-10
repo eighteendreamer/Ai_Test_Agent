@@ -5,6 +5,8 @@ and result validation belong to the impact analysis workflow.
 """
 from __future__ import annotations
 
+from src.schemas.model_request_options import ModelOutputFormat
+
 import asyncio
 import hashlib
 import importlib.metadata
@@ -101,4 +103,5 @@ class DocumentImpactAnalysisContexts:
                 "document_id": seed.document_id, "input_bytes": len(encoded),
                 "max_input_bytes": context.config.payload.max_input_bytes})
             raise ValueError("固定影响模型输入超过字节预算，未截断；需要分批分析")
-        return ModelInvocationRequest(system_prompt=context.prompt.system_prompt, messages=messages, tools=[])
+        return ModelInvocationRequest(system_prompt=context.prompt.system_prompt, messages=messages, tools=[],
+            output_format=ModelOutputFormat(kind="json_object", required=False))

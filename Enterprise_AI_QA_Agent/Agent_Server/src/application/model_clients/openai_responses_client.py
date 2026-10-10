@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.application.model_clients.request_mapping import map_model_request
+
 import json
 from typing import Any
 
@@ -169,6 +171,7 @@ class OpenAIResponsesClient:
             params["tool_choice"] = "auto"
             if config.capabilities.parallel_tool_calls:
                 params["parallel_tool_calls"] = True
+        params.update(map_model_request(config, request).parameters)
         return params
 
     def _parse_response(self, response: Any) -> dict[str, Any]:

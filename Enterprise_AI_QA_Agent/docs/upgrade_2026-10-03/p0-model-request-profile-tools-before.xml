@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="2" time="8.117" timestamp="2026-10-10T12:22:07.343884+08:00" hostname="EIghteen"><testcase classname="tests.test_model_request_profile" name="test_format_binding_keeps_existing_tools[native_completion]" time="1.373" /><testcase classname="tests.test_model_request_profile" name="test_format_binding_keeps_existing_tools[langchain_completion]" time="0.508"><failure message="AssertionError: {'text': 'Model invocation failed. Check the model provider and retry.', 'tool_calls': [], 'request_payload': {'model_... 'http_error', 'provider': 'fixture', 'provider_profile': 'fixture', 'transport': 'openai_chat_completions', ...}, ...}&#10;assert ('http_error' == 'ok'&#10;  &#10;  - ok&#10;  + http_error)">variant = 'langchain_completion'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("variant", ["native_completion", "langchain_completion"])
+    async def test_format_binding_keeps_existing_tools(variant):
+        with provider("openai_chat_completions", False) as (url, sends, _):
+            _, runtime = runtime_config(url, variant)
+            result = await runtime.invoke("fixture", ModelInvocationRequest(system_prompt="Return JSON.",
+                messages=[{"role": "user", "content": "{}"}], output_format=ModelOutputFormat(kind="json_object"),
+                tools=[{"name": "inspect", "description": "Read owned evidence", "input_schema": {"type": "object", "properties": {}}}]))
+            evidence(variant+"-tools-and-format", {"requests": sends, "result": result.model_dump(mode="json")})
+&gt;           assert result.response_summary["mode"] == "ok" and len(sends) == 1, result.model_dump()
+E           AssertionError: {'text': 'Model invocation failed. Check the model provider and retry.', 'tool_calls': [], 'request_payload': {'model_... 'http_error', 'provider': 'fixture', 'provider_profile': 'fixture', 'transport': 'openai_chat_completions', ...}, ...}
+E           assert ('http_error' == 'ok'
+E             
+E             - ok
+E             + http_error)
+
+tests\test_model_request_profile.py:198: AssertionError</failure></testcase></testsuite></testsuites>

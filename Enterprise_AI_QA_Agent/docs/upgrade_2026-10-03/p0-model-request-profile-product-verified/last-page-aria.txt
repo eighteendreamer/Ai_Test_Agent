@@ -1,0 +1,139 @@
+- navigation:
+  - img "Enterprise AI QA"
+  - link "":
+    - /url: /home
+  - link "":
+    - /url: /taskpool
+  - link "":
+    - /url: /projects
+  - link "":
+    - /url: /knowledge
+  - link "":
+    - /url: /tools
+  - link "":
+    - /url: /reports
+  - button ""
+  - link "":
+    - /url: /settings
+- main:
+  - text: 御策天检 / Settings
+  - listbox:
+    - option "E-API":
+      - button "E-API":
+        - img "E-API"
+  - button ""
+  - button " 编排轨迹"
+  - text: 系统就绪 4/4
+  - complementary:
+    - button "通用设置":
+      - strong: 通用设置
+    - button "模型设置":
+      - strong: 模型设置
+    - button "邮件设置":
+      - strong: 邮件设置
+    - button "管理平台接入":
+      - strong: 管理平台接入
+    - button "通讯渠道设置":
+      - strong: 通讯渠道设置
+    - button "存储设置":
+      - strong: 存储设置
+    - button "镜像与容器管理":
+      - strong: 镜像与容器管理
+    - button "关于系统":
+      - strong: 关于系统
+  - main:
+    - heading "模型设置" [level=3]
+    - paragraph: 维护当前系统可用的大模型配置，并显式区分供应商、协议与接入地址。
+    - article:
+      - strong: claude-sonnet-4-20250514
+      - text: " anthropic_messages  应用于: 任务执行  API Key"
+      - strong: 未配置
+      - text: 接口地址
+      - strong: https://api.anthropic.com
+      - button ""
+      - button ""
+      - button ""
+      - button ""
+    - article:
+      - strong: gpt-5.4
+      - text: " openai_chat_completions  应用于: 任务执行  API Key"
+      - strong: 未配置
+      - text: 接口地址
+      - strong: https://api.openai.com/v1
+      - button ""
+      - button ""
+      - button ""
+      - button ""
+    - article:
+      - strong: qwen-max
+      - text: " openai_chat_completions  应用于: 任务执行  API Key"
+      - strong: 未配置
+      - text: 接口地址
+      - strong: https://dashscope.aliyuncs.com/compatible-mode/v1
+      - button ""
+      - button ""
+      - button ""
+      - button ""
+    - article:
+      - strong: deepseek-reasoner
+      - text: " openai_chat_completions  应用于: 任务执行  API Key"
+      - strong: 未配置
+      - text: 接口地址
+      - strong: https://api.deepseek.com/v1
+      - button ""
+      - button ""
+      - button ""
+      - button ""
+    - article:
+      - text: 当前使用
+      - strong: owned-profile-model
+      - text: " openai_chat_completions  应用于: 任务执行  API Key"
+      - strong: 已配置
+      - text: 接口地址
+      - strong: http://127.0.0.1:56734/v1
+      - button ""
+      - button "" [disabled]
+      - button ""
+      - button ""
+    - button "+ 新增模型":
+      - text: +
+      - strong: 新增模型
+    - dialog "编辑模型":
+      - heading "编辑模型" [level=4]
+      - paragraph: 修改已有模型配置
+      - button ""
+      - text: 认证方式
+      - button " API Key"
+      - button " OAuth 2.0"
+      - text: 模型名称
+      - textbox "模型名称":
+        - /placeholder: claude-opus-4-7 / gpt-5.4
+        - text: owned-profile-model
+      - text: 协议
+      - button "协议": OpenAI Chat Completions 
+      - text: 接口地址
+      - textbox "接口地址":
+        - /placeholder: https://api.deepseek.com/v1
+        - text: http://127.0.0.1:56734/v1
+      - text: API Key
+      - textbox "API Key 系统不会显示已保存的密钥内容。":
+        - /placeholder: 留空则保留当前密钥
+      - text: 系统不会显示已保存的密钥内容。 上下文窗口（tokens）
+      - spinbutton "上下文窗口（tokens） 模型支持的最大上下文长度，如 128000 或 1000000；留空按 128000 处理。": "128000"
+      - text: 模型支持的最大上下文长度，如 128000 或 1000000；留空按 128000 处理。 最大输出 tokens
+      - spinbutton "最大输出 tokens 单次回复的最大生成长度；留空按 8192 处理。": "2048"
+      - text: 单次回复的最大生成长度；留空按 8192 处理。 模型请求配置（JSON，可选）
+      - textbox "模型请求配置（JSON，可选） 仅填写此模型已确认支持的输出格式、推理范围和 Chat token 字段。留空恢复原发送方式；修改后，已冻结配置的任务需重新创建。":
+        - /placeholder: "{\n  \"version\": 1,\n  \"revision\": 1,\n  \"output_formats\": [\n    \"json_object\"\n  ],\n  \"chat_token_parameter\": \"max_tokens\"\n}"
+        - text: "{ \"version\": 1, \"revision\": 3, \"output_formats\": [ \"json_object\" ], \"chat_token_parameter\": \"max_tokens\", \"reasoning_style\": \"effort\", \"reasoning_efforts\": [ \"low\" ], \"min_reasoning_budget\": 0, \"max_reasoning_budget\": null, \"default_reasoning\": { \"effort\": \"low\", \"budget_tokens\": null, \"required\": true } }"
+      - text: 仅填写此模型已确认支持的输出格式、推理范围和 Chat token 字段。留空恢复原发送方式；修改后，已冻结配置的任务需重新创建。 应用于
+      - radio "任务执行 用于对话、规划、推理和工具调用。" [checked]
+      - strong: 任务执行
+      - text: 用于对话、规划、推理和工具调用。
+      - radio "Embedding 检索 用于历史记忆向量写入、回填和相似度检索。"
+      - strong: Embedding 检索
+      - text: 用于历史记忆向量写入、回填和相似度检索。
+      - checkbox "保存后设为当前主模型" [checked]
+      - text: 保存后设为当前主模型
+      - button "取消"
+      - button "保存修改"

@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.schemas.model_request_options import ModelOutputFormat
+
 import hashlib
 import asyncio
 import json
@@ -281,6 +283,8 @@ class ModelTestCaseGenerator:
             )
         return ModelInvocationRequest(
             system_prompt=system_prompt,
+            output_format=ModelOutputFormat(kind="json_schema", schema_name="test_case_drafts",
+                schema_definition=_ModelGeneratedPayload.model_json_schema(), required=False),
             messages=[
                 {
                     "role": "user",

@@ -1,0 +1,192 @@
+{
+  "physical_requests": [
+    {
+      "path": "/v1/chat/completions",
+      "body": {
+        "messages": [
+          {
+            "content": "Return one JSON object.",
+            "role": "system"
+          },
+          {
+            "content": "{}",
+            "role": "user"
+          }
+        ],
+        "model": "fixture-model",
+        "max_completion_tokens": 2048,
+        "reasoning_effort": "low",
+        "response_format": {
+          "type": "json_schema",
+          "json_schema": {
+            "name": "response",
+            "schema": {
+              "type": "object",
+              "properties": {
+                "action": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "action"
+              ]
+            }
+          }
+        },
+        "stream": true
+      }
+    }
+  ],
+  "physical_response": [
+    "data: {\"id\": \"chatcmpl_fixture\", \"object\": \"chat.completion.chunk\", \"created\": 1, \"model\": \"fixture-model\", \"choices\": [{\"index\": 0, \"delta\": {\"role\": \"assistant\", \"content\": \"{\\\"action\\\": \\\"finish\\\", \\\"summary\\\": \\\"已按项目依据规划\\\", \\\"items\\\": []}\"}, \"finish_reason\": \"stop\"}], \"usage\": {\"prompt_tokens\": 7, \"completion_tokens\": 3, \"total_tokens\": 10}}\n\n"
+  ],
+  "result": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:63025/v1",
+      "tool_count": 0,
+      "tool_names": [],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_schema"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "ok",
+      "provider": "fixture",
+      "transport": "openai_chat_completions",
+      "response_id": "chatcmpl_fixture",
+      "finish_reason": "stop",
+      "stop_reason": null,
+      "completion_status": "complete",
+      "stream_terminal_received": true,
+      "usage": {
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "total_tokens": 10,
+        "input_token_details": {},
+        "output_token_details": {}
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_schema"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "finish_reason": "stop",
+      "model_provider": "openai",
+      "token_usage": {
+        "completion_tokens": 3,
+        "prompt_tokens": 7,
+        "total_tokens": 10,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "model_name": "fixture-model",
+      "system_fingerprint": null,
+      "id": "chatcmpl_fixture",
+      "stream_terminal_received": true
+    }
+  },
+  "config": {
+    "key": "fixture",
+    "provider": "fixture",
+    "transport": "openai_chat_completions",
+    "model_id": "fixture-model",
+    "temperature": null,
+    "max_tokens": 2048,
+    "context_window": 128000,
+    "max_output_tokens": 2048,
+    "capabilities": {
+      "text_input": true,
+      "text_output": true,
+      "tool_calling": true,
+      "vision": false,
+      "multi_image": false,
+      "file_input": false,
+      "pdf_input": false,
+      "reasoning": true,
+      "json_mode": false,
+      "streaming": true,
+      "parallel_tool_calls": false,
+      "image_url_input": true,
+      "image_base64_input": true
+    },
+    "auth_type": "api_key",
+    "oauth_provider": null,
+    "api_base_url_hash": "4094823600c671e8537a35e3ed1cc17ffa97d2775dc5226ce8b3bad8a2c8b8e5",
+    "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "request_profile": {
+      "version": 1,
+      "revision": 1,
+      "output_formats": [
+        "json_object",
+        "json_schema"
+      ],
+      "chat_token_parameter": "max_completion_tokens",
+      "reasoning_style": "effort",
+      "reasoning_efforts": [
+        "low",
+        "high"
+      ],
+      "min_reasoning_budget": 0,
+      "max_reasoning_budget": null,
+      "default_reasoning": {
+        "effort": "low",
+        "budget_tokens": null,
+        "required": true
+      }
+    },
+    "request_mapping_version": "model-request-v1",
+    "request_profile_hash": "460b3391fbf4b142a4494ab0389216914ecd4f63347ff777bff60db29af3db2f"
+  },
+  "runtime": {
+    "langchain_model_adapter_enabled": true,
+    "llm_request_timeout_seconds": 60.0,
+    "sdk_retry_policy": "existing_provider_defaults",
+    "dependency_versions": {
+      "openai": "3.14.0",
+      "langchain-openai": "1.6.2",
+      "langchain-core": "1.6.2"
+    }
+  }
+}

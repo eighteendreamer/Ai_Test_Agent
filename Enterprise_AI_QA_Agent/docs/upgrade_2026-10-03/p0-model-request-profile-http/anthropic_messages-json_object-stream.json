@@ -1,0 +1,187 @@
+{
+  "physical_requests": [
+    {
+      "path": "/v1/v1/messages",
+      "body": {
+        "max_tokens": 2048,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "{}"
+              }
+            ]
+          }
+        ],
+        "model": "fixture-model",
+        "stream": true,
+        "system": "Return one JSON object.",
+        "thinking": {
+          "type": "enabled",
+          "budget_tokens": 1024
+        }
+      }
+    }
+  ],
+  "physical_response": [
+    "event: message_start\ndata: {\"type\": \"message_start\", \"message\": {\"id\": \"msg_fixture\", \"type\": \"message\", \"role\": \"assistant\", \"model\": \"fixture-model\", \"content\": [], \"stop_reason\": null, \"stop_sequence\": null, \"usage\": {\"input_tokens\": 7, \"output_tokens\": 3}}}\n\nevent: content_block_start\ndata: {\"type\": \"content_block_start\", \"index\": 0, \"content_block\": {\"type\": \"text\", \"text\": \"\"}}\n\nevent: content_block_delta\ndata: {\"type\": \"content_block_delta\", \"index\": 0, \"delta\": {\"type\": \"text_delta\", \"text\": \"{\\\"action\\\": \\\"finish\\\", \\\"summary\\\": \\\"已按项目依据规划\\\", \\\"items\\\": []}\"}}\n\nevent: content_block_stop\ndata: {\"type\": \"content_block_stop\", \"index\": 0}\n\nevent: message_delta\ndata: {\"type\": \"message_delta\", \"delta\": {\"stop_reason\": \"end_turn\", \"stop_sequence\": null}, \"usage\": {\"output_tokens\": 3}}\n\nevent: message_stop\ndata: {\"type\": \"message_stop\"}\n\n"
+  ],
+  "result": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "anthropic_messages",
+      "api_base_url": "http://127.0.0.1:52736/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return one JSON object.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "prompt_fallback",
+            "reason": "format_not_declared"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "budget"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "ok",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "anthropic_messages",
+      "response_id": "msg_fixture",
+      "finish_reason": null,
+      "stop_reason": "end_turn",
+      "completion_status": "complete",
+      "stream_terminal_received": true,
+      "usage": {
+        "cache_creation": null,
+        "cache_creation_input_tokens": null,
+        "cache_read_input_tokens": null,
+        "inference_geo": null,
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "output_tokens_details": null,
+        "server_tool_use": null,
+        "service_tier": null
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+      "tool_fallback": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "prompt_fallback",
+            "reason": "format_not_declared"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "budget"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "mode": "stream",
+      "provider": "fixture",
+      "stream_terminal_received": true,
+      "stop_reason": "end_turn",
+      "usage": {
+        "cache_creation": null,
+        "cache_creation_input_tokens": null,
+        "cache_read_input_tokens": null,
+        "inference_geo": null,
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "output_tokens_details": null,
+        "server_tool_use": null,
+        "service_tier": null
+      }
+    }
+  },
+  "config": {
+    "key": "fixture",
+    "provider": "fixture",
+    "transport": "anthropic_messages",
+    "model_id": "fixture-model",
+    "temperature": null,
+    "max_tokens": 2048,
+    "context_window": 128000,
+    "max_output_tokens": 2048,
+    "capabilities": {
+      "text_input": true,
+      "text_output": true,
+      "tool_calling": true,
+      "vision": false,
+      "multi_image": false,
+      "file_input": false,
+      "pdf_input": false,
+      "reasoning": true,
+      "json_mode": false,
+      "streaming": true,
+      "parallel_tool_calls": false,
+      "image_url_input": true,
+      "image_base64_input": true
+    },
+    "auth_type": "api_key",
+    "oauth_provider": null,
+    "api_base_url_hash": "b9d6a64731cd8faae6644e18e47d5ed5f862d4b856a2704383c9fda786cbad69",
+    "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+    "request_profile": {
+      "version": 1,
+      "revision": 1,
+      "output_formats": [
+        "json_schema"
+      ],
+      "chat_token_parameter": null,
+      "reasoning_style": "budget",
+      "reasoning_efforts": [],
+      "min_reasoning_budget": 0,
+      "max_reasoning_budget": null,
+      "default_reasoning": {
+        "effort": null,
+        "budget_tokens": 1024,
+        "required": true
+      }
+    },
+    "request_mapping_version": "model-request-v1",
+    "request_profile_hash": "21c9cc6ebe556f64fe84b2f7e255138f87e013b790969204d778815aacd6d6a3"
+  },
+  "runtime": {
+    "langchain_model_adapter_enabled": false,
+    "llm_request_timeout_seconds": 60.0,
+    "sdk_retry_policy": "existing_provider_defaults",
+    "dependency_versions": {
+      "anthropic": "1.5.0"
+    }
+  }
+}

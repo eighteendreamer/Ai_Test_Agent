@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from src.application.model_clients.request_mapping import map_model_request
+
 import json
 from typing import Any
 
@@ -185,6 +187,10 @@ class OpenAIChatClient:
             params["tool_choice"] = "auto"
             if config.capabilities.parallel_tool_calls:
                 params["parallel_tool_calls"] = True
+        mapped = map_model_request(config, request).parameters
+        if config.request_profile and config.request_profile.chat_token_parameter:
+            params.pop("max_tokens", None)
+        params.update(mapped)
         return params
 
     def _parse_response(self, data: dict[str, Any]) -> dict[str, Any]:

@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-10；本次核对基线 `443f5af7`。正式项目录制知识接入见7.10，终态/usage修复见7.11；多模型流式结束、统一失败判定及工具路由见7.12。项目已有多模型适配层，本批完善现有边界；请求参数profile、JSON/推理/媒体能力治理仍待实施。默认Step上一批实际返回HTTP200，但旧单阶段完整规划因原截止时间失败，未产生Run或业务HTTP；不能沿用此前403作为当前阻塞原因，也不能据此宣布最新分阶段流程失败。完整P0—P5仍未完成。历史章节按各自批次与范围解读。
+修订日期：2026-10-10；本次核对基线 `06a66a17`。正式项目录制知识见7.10，终态/usage及工具路由见7.11—7.12。模型请求profile、JSON/推理/token映射及MySQL/API/设置页面本批已补实现并完成受控协议、真实存储和完整设置页面验收，见7.13；多家外部模型、跨模型媒体与默认Agent完整业务验收仍未完成。默认Step上一批实际返回HTTP200，但旧单阶段完整规划因原截止时间失败，未产生Run或业务HTTP；不能沿用此前403作为当前阻塞原因，也不能据此宣布最新分阶段流程失败。完整P0—P5仍未完成。历史章节按各自批次与范围解读。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
@@ -3190,3 +3190,29 @@ JMeter沿原生HTTPArgument/postBodyRaw/UTF-8发送正文，已有JSR223PreProce
 分类：流式结束观察、统一已知失败模式及工具路由本批补实现并实际验证；四种真实外部模型、默认AI/完整App、原人工DeepSeek及录制清洗遗漏/业务管理、API续期、性能容量/AI流式、安全其他工具、准备/未知副作用/修订及生产迁移仍待验收或补实现。请求profile配置/API/前端、JSON/推理/媒体治理保持未实施；本批无配置/DDL/依赖/前端改动，未重跑前端build。旧历史与受保护文件保留，三份方案同步见p0-model-stream-terminal-validation.json；完整目标保持未完成。
 
 7.12交付补验：最终日志字段专项trace-final **24通过18.04秒，0跳过**，真实SDK/HTTP及图节点失败事件携带统一completion_status；compileall退出0仅补语法检查。旧无观察字段仍按unknown兼容，不能证明其响应完整；Deep Agents pilot等独立模型路径未以本批替代验收。
+
+### 7.13 配置驱动的模型请求适配与实际设置页面〔2026-10-10〕
+
+基线06a66a17。先核对统一DTO、四native客户端、LangChain发送/解析分支、MySQL初始化和upsert/edit、API列表实际list契约、设置组件与任务固定来源；官方格式/推理/SDK和本地课程依据见P0_MODEL_REQUEST_PROFILE_RESEARCH.md。沿已有适配层补充严格profile，不新建调用平台，不按模型名称猜协议。
+
+MySQL新增可空request_profile JSON；配置声明version/revision、允许JSON格式、推理effort/预算及默认、Chat token字段。API字段遗漏保留、null清除，未知字段及不兼容传输/默认预算拒绝；旧行不回填，能力全true不作为支持证明。前端设置编辑/重载/保存及中英繁体同步。原任务参数固定完整profile/哈希/mapping版本和实际适配器/SDK；旧无配置/新选项字段省略，保留旧哈希。PG业务seed、版本及结果不改写，RustFS原件保持。
+
+生成请求携带原Schema，规划/影响携带可选JSON object；四传输各自映射，调用前必需不支持返回unsupported_request，可选保留原prompt并记录降级，不在400后换字段重发。Anthropic首期仅manual预算及Schema，Google仅generateContent预算；更多推理协议/媒体仍待补。显式max_tokens选既有native Chat，导出LangChain harness拒绝此配置；支持的默认推理按声明发送。独立invoke_structured旧路径未作为此轮验收。
+
+实际工具组合补验确认LangChain遇response_format会启用SDK自动解析，非strict现有工具被发送前拒绝。查证官方SDK extra_body合并和LangChain源分支后，适配器仅将映射的格式字段由此发送，HTTP出线仍标准顶层response_format；不篡改工具Schema/权限、不开任意透传。同步/流式组合补验通过，未宣称实际执行业务工具。
+
+| 实际批次 | 结果与范围 |
+|---|---|
+| 协议首轮/http及verified | 30通过5失败27.85秒；4项Google snake_case断言错误、1项空输入夹具。查证ProtoJSON/已安装SDK后修正测试，35通过24.52秒，不造SDK补丁 |
+| 扩大regression及delivery | 229通过2失败41门控跳过69.90秒；选择函数漏原可选开关默认，恢复getattr后234通过41跳过62.91秒，18模块。跳过项不计完成 |
+| wire-final及tools-before | 38通过1失败26.08秒；工具组合专门保存1通过1失败8.12秒，真实LangChain strict工具限制0HTTP |
+| 最终wire-delivery | 63通过27.58秒，0跳过；新41项协议/旧快照兼容/导出默认/同步流式工具组合及22适配器/失败生命周期回归。400仅1HTTP，必需不支持0HTTP |
+| 实际built App/product-verified | 1通过88.63秒，原首次1失败78.63秒为列表夹具封装错误。真实旧MySQL列迁移、重复初始化、页面编辑错误/保存/刷新、API重启/保留/清除，页面错误0；MySQL重载配置实际SDK发送已核对 |
+| 实际storage-final | 1通过10.83秒；新Markdown/RustFS→受控SDK→完整八步404 JSON草稿入PG并重读；PG固定profile1、MySQL改2后原生成/规划拒绝且0新增HTTP，原seed不变。首次夹具重复generation_metadata失败保留，修正批1通过17.84秒 |
+| 前端回归/构建 | settings API/设置生命周期3通过3.59秒；真实产品build包括vue-tsc/Vite通过。最终compileall退出0另存，仅语法补查 |
+
+分类：profile保存/API/设置页面、统一JSON/effort/manual预算/token映射及固定配置衔接本批已实现并按上表范围验证；外部真实供应商兼容、默认Agent业务闭环、媒体/更多推理协议/能力依据治理、独立结构化harness、生产历史与并发DDL仍未验或需补。初始化沿既有迁移设施需要MySQL ALTER权限；未改实际全局模型配置、依赖或PG表。
+
+其余原任务继续：人工DeepSeek/清洗遗漏/复杂采集/场景步骤与别名、默认AI用知识和正式断言；API续期及完整Agent异常/并发/幂等；性能容量/AI流式、其他安全工具与Agent报告；完整准备、未知副作用只读核验、计划修订/其他模式；业务需求评审、生产迁移、全阶段物理HTTP与旧Worker原件。不得用本轮设置页面或受控生成替代上述完整产品验收。
+
+三份方案同步、本批原件/前序工件及受保护文件核对见p0-model-request-profile-validation.json；实施命令见IMPLEMENTATION.md。完整目标保持未完成。

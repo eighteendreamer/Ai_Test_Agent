@@ -10,6 +10,7 @@ from typing import Any, Awaitable, Callable
 
 from src.application.model_clients import ProviderClient, ProviderClientError, resolve_client
 from src.application.model_clients.completion import model_completion_status, model_response_mode, stream_completion_fields
+from src.application.model_clients.request_mapping import map_model_request, UnsupportedModelRequest
 from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
 from src.application.model_clients.provider_profiles import (
     normalize_transport,
@@ -74,7 +75,7 @@ class ModelRuntimeService:
         config = self.get_model_config(model_key)
         if config is None:
             raise ValueError("没有可用模型，不能固定调用运行参数")
-        adapter = config.transport == "openai_chat_completions" and bool(self._settings.model.langchain_model_adapter_enabled)
+        adapter = self._uses_langchain(config)
         dependencies = (["openai", "langchain-openai", "langchain-core"] if adapter else ["openai"]) if config.transport in {
             "openai_chat_completions", "openai_responses"} else ["anthropic"] if config.transport == "anthropic_messages" else ["google-genai"]
         parameters = {"langchain_model_adapter_enabled": adapter,
@@ -103,6 +104,8 @@ class ModelRuntimeService:
                 "Deep Agents pilot currently supports only openai_chat_completions; "
                 f"received transport={config.transport!r}."
             )
+        if config.request_profile and config.request_profile.chat_token_parameter == "max_tokens":
+            raise ProviderClientError("Explicit max_tokens is incompatible with the LangChain harness.")
         api_key = await self._resolve_auth_token(config)
         if not api_key:
             raise ProviderClientError(f"Model '{config.name}' has no usable API key.")
@@ -150,6 +153,18 @@ class ModelRuntimeService:
             logger.info("model_invocation_transport_configured", extra={"model_key": config.key,
                 "timeout_seconds": transport_options.timeout_seconds, "max_retries": transport_options.max_retries})
         try:
+            mapped = map_model_request(config, request)
+        except UnsupportedModelRequest as exc:
+            logger.warning("model_request_option_unsupported", extra={"model_key": config.key,
+                "option": exc.option, "reason": exc.reason, "transport": config.transport})
+            return ModelInvocationResult(text=str(exc), request_payload=self._summarize_request(config, request),
+                response_summary={"mode": "unsupported_request", "model_key": config.key,
+                    "option": exc.option, "reason": exc.reason},
+                raw_response={"mode": "unsupported_request", "option": exc.option, "reason": exc.reason})
+        for decision in mapped.decisions:
+            logger.info("model_request_option_decided", extra={"model_key": config.key,
+                "transport": config.transport, **decision})
+        try:
             api_key = await self._resolve_auth_token(config)
         except Exception as exc:
             logger.warning(
@@ -187,18 +202,24 @@ class ModelRuntimeService:
                 raw_response={"mode": "missing_api_key", "model_key": config.key},
             )
 
-        if (
-            getattr(self._settings.model, "langchain_model_adapter_enabled", False)
-            and config.transport == "openai_chat_completions"
-        ):
-            return await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)
+        if self._uses_langchain(config):
+            result = await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)
+        else:
+            client = resolve_client(
+                config,
+                timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
+                **({"max_retries": transport_options.max_retries} if transport_options else {}),
+            )
+            result = await self._invoke_with_client(client, config, api_key, request)
+        if mapped.decisions:
+            result.request_payload["request_mapping"] = {"version": "model-request-v1", "decisions": mapped.decisions}
+            result.response_summary["request_mapping"] = result.request_payload["request_mapping"]
+        return result
 
-        client = resolve_client(
-            config,
-            timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
-            **({"max_retries": transport_options.max_retries} if transport_options else {}),
-        )
-        return await self._invoke_with_client(client, config, api_key, request)
+    def _uses_langchain(self, config: ModelConfigRecord) -> bool:
+        return (config.transport == "openai_chat_completions" and
+            bool(getattr(self._settings.model, "langchain_model_adapter_enabled", False)) and
+            not (config.request_profile and config.request_profile.chat_token_parameter == "max_tokens"))
 
     async def _invoke_with_langchain_adapter(
         self,

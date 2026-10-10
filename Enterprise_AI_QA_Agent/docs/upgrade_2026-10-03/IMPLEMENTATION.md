@@ -5057,3 +5057,18 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 前端及配置本轮未改未构建，完整P0—P5/默认Agent/多外部模型/请求profile仍未完成。三份方案、原历史工件与无关受保护文件由本批audit核对，跨消费按MODEL_FAILURE_MODES/is_model_failure_summary与新字段引用检查；不推送、不建PR。
 
 日志字段最终补验：`tests/test_model_stream_terminal_http.py tests/test_model_failure_lifecycle.py`，QA_MODEL_STREAM_TERMINAL_DIR独立目录；trace-final **24通过18.04秒，0跳过**。失败事件completion_status实际断言，正常tool_calls路由仍有效；最终compileall日志compileall_exit=0。
+
+## 配置驱动模型请求：基线06a66a17，方案7.13
+
+研究P0_MODEL_REQUEST_PROFILE_RESEARCH.md。实际read-before-write核对DTO/四clients/LangChain及SDK发送路径/MySQL/API/前端/固定任务。实现request_profile可空JSON迁移和模型固定参数、内部格式/推理语义、受控映射、可选降级/必需失败、设置页面及契约同步。现有模式、工具Schema/权限与旧哈希保持；无依赖升级、PG迁移或全局模型配置修改。
+
+在Agent_Server实际执行 `..\.venv\Scripts\python.exe -X utf8 -m pytest`：
+
+- `tests/test_model_request_profile.py`，QA_MODEL_REQUEST_PROFILE_DIR独立目录。首轮http35项（5夹具断言/输入错误）、verified35通过；追加实际工具组合wire-final发现LangChain非strict解析限制，tools-before1通过1失败保存。查证SDK额外请求体合并后用唯一映射格式参数避免自动解析，最终 `test_model_request_profile.py test_langchain_model_adapter.py test_model_failure_lifecycle.py`，wire-delivery63通过27.58秒（新矩阵41+原回归22）。400一次，不支持零HTTP；tools存在且正常结束，不执行实际工具。
+- 18模块：model_request_profile/clients、LangChain/legacy、completion_contract/http、stream_terminal_http、failure_lifecycle/settings_routes/embedding_routing、planning/tasks/stages、generation_pipeline、impact_analysis_context、incremental_generation_sources、agent_case_assessment、planning_response_completion。regression229通过2失败41跳过（漏原getattr默认）；修复后delivery234通过41门控跳过62.91秒。后来格式/工具修复影响路径另以上述63最终补验，不将重叠覆盖加总。
+- RUN_LIVE_MODEL_REQUEST_PROFILE=1；QA_MODEL_REQUEST_PROFILE_PRODUCT_DIR独立目录；`test_model_request_profile_product.py`。隔离MySQL/PG/RustFS/Redis、独立production API与完整built App/Chromium，无生产组件替换。迁移旧表重复初始化、页面错误保存刷新、重启/保留/清除/配置变更拒绝，最终1通过88.63秒；第一次误以为列表含items封装1失败保留。
+- 同开关、QA_MODEL_REQUEST_PROFILE_STORAGE_DIR独立目录；`test_model_request_profile_storage.py`。实际Markdown原件、MySQL配置、PG规划seed与完整八步/404/未知字段草稿、RustFS固定请求/响应及重读1HTTP；profile变更2后原任务0新增HTTP、seed1不变。首次夹具重复generation_metadata失败，修正1通过17.84秒，最终1通过10.83秒。
+
+前端 `npm.cmd test -- src/services/settings.api.test.ts src/features/settings/plugins/ChannelSettingsPlugin.lifecycle.test.ts src/features/settings/plugins/GeneralSettingsPlugin.cleanupContract.test.ts` 3通过3.59秒。product_browser实际 `npm run build` 包含vue-tsc与Vite通过，stdout/stderr与界面/network原件均保留。compileall实际退出0仅语法补查；最后适配器修改后再次编译记compile-final。
+
+尚未执行：多家外部模型、默认Agent/用例正式评审启用和完整执行、跨模型媒体/更多推理模式/自动能力发现、独立invoke_structured与生产迁移/并发初始化。本轮MySQLDDL沿现有初始化需要ALTER权限。所有验证限定受控HTTP语义；不宣称模型业务判断质量合格。完整P0—P5仍active，audit核对新原件、旧工件、受保护文件及三份方案。仅提交本轮白名单，不推送/建PR。

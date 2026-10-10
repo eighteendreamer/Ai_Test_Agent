@@ -104,10 +104,13 @@ async def list_model_configs(request: Request):
 
 @router.put("/models")
 async def update_model_config(payload: ModelConfigUpdateRequest, request: Request):
-    return await asyncio.to_thread(
-        request.app.state.settings_service.update_model_config,
-        payload,
-    )
+    try:
+        return await asyncio.to_thread(
+            request.app.state.settings_service.update_model_config,
+            payload,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.patch("/models/{model_name:path}")
