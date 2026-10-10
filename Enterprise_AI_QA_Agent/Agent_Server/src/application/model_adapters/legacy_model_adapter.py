@@ -4,6 +4,7 @@ from typing import Any
 
 from src.application.model_adapters.base import ModelPort
 from src.application.model_clients.base import ProviderClient
+from src.application.model_clients.completion import model_completion_status
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
 
 
@@ -45,6 +46,7 @@ class LegacyProviderAdapter(ModelPort):
                 "response_id": parsed.get("response_id"),
                 "finish_reason": parsed.get("finish_reason"),
                 "stop_reason": parsed.get("stop_reason"),
+                "completion_status": model_completion_status(parsed),
                 "usage": parsed.get("usage") or {},
                 "tool_call_count": len(tool_calls),
                 "tool_call_names": [getattr(call, "name", "") for call in tool_calls],

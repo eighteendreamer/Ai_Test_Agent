@@ -11,6 +11,7 @@ from src.application.model_adapters.message_adapter import (
     to_langchain_tools,
 )
 from src.application.model_clients.base import ProviderClientError
+from src.application.model_clients.completion import model_completion_status
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
 from src.runtime.execution_logging import truncate_text
 
@@ -90,6 +91,7 @@ class LangChainModelAdapter(ModelPort):
                 "response_id": parsed["response_id"],
                 "finish_reason": parsed["finish_reason"],
                 "stop_reason": parsed["stop_reason"],
+                "completion_status": model_completion_status(parsed),
                 "usage": parsed["usage"],
                 "tool_call_count": len(parsed["tool_calls"]),
                 "tool_call_names": [call.name for call in parsed["tool_calls"]],

@@ -1,0 +1,50 @@
+.......F...F.F..FFF.                                                     [100%]
+================================== FAILURES ===================================
+_ test_actual_sdk_fields_and_business_completion[False-True-anthropic_messages] _
+tests\test_model_completion_http.py:129: in test_actual_sdk_fields_and_business_completion
+    assert response.text == json.dumps(finish(), ensure_ascii=False)
+E   assert '' == '{"action": "... "items": []}'
+E     
+E     - {"action": "finish", "summary": "已按项目依据规划", "items": []}
+_ test_actual_sdk_fields_and_business_completion[True-False-openai_responses] _
+tests\test_model_completion_http.py:164: in test_actual_sdk_fields_and_business_completion
+    assert terminal.plan.status == ('planning_failed' if limited else 'no_match')
+E   AssertionError: assert 'no_match' == 'planning_failed'
+E     
+E     - planning_failed
+E     + no_match
+_ test_actual_sdk_fields_and_business_completion[True-False-google_gemini_generate_content] _
+tests\test_model_completion_http.py:164: in test_actual_sdk_fields_and_business_completion
+    assert terminal.plan.status == ('planning_failed' if limited else 'no_match')
+E   AssertionError: assert 'no_match' == 'planning_failed'
+E     
+E     - planning_failed
+E     + no_match
+_ test_actual_sdk_fields_and_business_completion[True-True-openai_responses] __
+tests\test_model_completion_http.py:164: in test_actual_sdk_fields_and_business_completion
+    assert terminal.plan.status == ('planning_failed' if limited else 'no_match')
+E   AssertionError: assert 'no_match' == 'planning_failed'
+E     
+E     - planning_failed
+E     + no_match
+_ test_actual_sdk_fields_and_business_completion[True-True-anthropic_messages] _
+tests\test_model_completion_http.py:129: in test_actual_sdk_fields_and_business_completion
+    assert response.text == json.dumps(finish(), ensure_ascii=False)
+E   assert '' == '{"action": "... "items": []}'
+E     
+E     - {"action": "finish", "summary": "已按项目依据规划", "items": []}
+_ test_actual_sdk_fields_and_business_completion[True-True-google_gemini_generate_content] _
+tests\test_model_completion_http.py:164: in test_actual_sdk_fields_and_business_completion
+    assert terminal.plan.status == ('planning_failed' if limited else 'no_match')
+E   AssertionError: assert 'no_match' == 'planning_failed'
+E     
+E     - planning_failed
+E     + no_match
+=========================== short test summary info ===========================
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[False-True-anthropic_messages]
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[True-False-openai_responses]
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[True-False-google_gemini_generate_content]
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[True-True-openai_responses]
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[True-True-anthropic_messages]
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[True-True-google_gemini_generate_content]
+6 failed, 14 passed in 22.24s

@@ -9,6 +9,7 @@ from uuid import uuid4
 from src.application.test_runs.agent_case_contract import RECEIPT_PROMPT_VERSION
 from src.schemas.case_execution import CaseReceiptCorrectionCheckpoint, CaseReceiptObject
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult, model_invocation_parameters
+from src.application.model_clients.completion import is_model_response_incomplete
 
 logger = logging.getLogger(__name__)
 
@@ -58,8 +59,7 @@ class AgentCaseReceiptService:
             return ModelInvocationResult.model_validate(await self._read(current.response)), checkpoint
 
         summary = state.get("model_response_summary") or {}
-        reasons = {str(summary.get(k) or "").lower() for k in ("finish_reason", "stop_reason")}
-        if summary.get("mode") != "ok" or reasons & {"length", "max_tokens", "max_output_tokens", "incomplete", "max_token"}:
+        if summary.get("mode") != "ok" or is_model_response_incomplete(summary):
             raise ValueError("原模型输出未成功完整结束，不自动纠正或重复发送")
         count, limit = state.get("model_call_count"), state.get("max_iterations")
         usage = state.get("turn_token_usage") or {}

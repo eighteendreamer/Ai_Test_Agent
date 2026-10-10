@@ -9,6 +9,7 @@ from contextlib import asynccontextmanager, nullcontext
 from typing import Any, Awaitable, Callable
 
 from src.application.model_clients import ProviderClient, ProviderClientError, resolve_client
+from src.application.model_clients.completion import model_completion_status
 from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
 from src.application.model_clients.provider_profiles import (
     normalize_transport,
@@ -225,7 +226,9 @@ class ModelRuntimeService:
         )
         try:
             with trace_manager:
-                return await adapter.invoke(config, api_key, request)
+                result = await adapter.invoke(config, api_key, request)
+            self._log_completion(config, result.response_summary)
+            return result
         except ProviderClientError as exc:
             return self._http_error_result(config, request, exc)
 
@@ -274,6 +277,7 @@ class ModelRuntimeService:
         except ProviderClientError as exc:
             return self._http_error_result(config, request, exc)
 
+        self._log_completion(config, parsed)
         return ModelInvocationResult(
             text=parsed["text"] or "",
             tool_calls=parsed["tool_calls"],
@@ -286,6 +290,7 @@ class ModelRuntimeService:
                 "response_id": parsed["response_id"],
                 "finish_reason": parsed["finish_reason"],
                 "stop_reason": parsed["stop_reason"],
+                "completion_status": model_completion_status(parsed),
                 "usage": parsed["usage"],
                 "tool_call_count": len(parsed["tool_calls"]),
                 "tool_call_names": [item.name for item in parsed["tool_calls"]],
@@ -294,6 +299,11 @@ class ModelRuntimeService:
             },
             raw_response=parsed["raw_response"],
         )
+
+    @staticmethod
+    def _log_completion(config: ModelConfigRecord, summary: dict[str, Any]) -> None:
+        logger.info("model_completion_observed", extra={"model_key": config.key,
+            "transport": config.transport, "completion_status": model_completion_status(summary)})
 
     async def _send_with_client(
         self,

@@ -21,6 +21,7 @@ from src.schemas.case_execution import (
     CaseOutputReference,
 )
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult
+from src.application.model_clients.completion import is_model_response_incomplete
 from src.schemas.run_management import RunEvidenceRef, RunItemCompleteRequest
 from src.schemas.session import VerificationEvidence, VerificationResult, VerificationStatus
 from src.schemas.tool_job import ToolJobDetail, ToolJobStatus
@@ -131,7 +132,7 @@ class AgentCaseAssessmentService:
         if response.tool_calls:
             raise ValueError("执行回执只读判定不得要求新的工具调用")
         reasons = {str(summary.get(key) or "").lower() for key in ("finish_reason", "stop_reason")}
-        if reasons & {"length", "max_tokens", "max_output_tokens", "incomplete", "max_token"}:
+        if is_model_response_incomplete(summary):
             raise ValueError("执行回执模型输出未完整结束: " + ",".join(sorted(reasons - {""})))
         raw = response.text.strip()
         if raw.startswith("```") and raw.endswith("```") and "\n" in raw:

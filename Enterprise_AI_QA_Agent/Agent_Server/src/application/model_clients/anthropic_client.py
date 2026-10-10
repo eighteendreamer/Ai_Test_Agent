@@ -111,7 +111,11 @@ class AnthropicMessagesClient:
                             stop_reason = delta.get("stop_reason") or stop_reason
                         usage_payload = data.get("usage")
                         if isinstance(usage_payload, dict) and usage_payload:
-                            usage = {**usage, **usage_payload}
+                            # MessageDeltaUsage expands omitted optional fields
+                            # to None. They must not erase message_start facts;
+                            # an explicit 0 is still an observed cumulative value.
+                            usage = {**usage, **{key: value for key, value in usage_payload.items()
+                                if value is not None}}
         except anthropic.APIStatusError as exc:
             raise self._wrap_status_error(exc) from exc
         except anthropic.APIError as exc:

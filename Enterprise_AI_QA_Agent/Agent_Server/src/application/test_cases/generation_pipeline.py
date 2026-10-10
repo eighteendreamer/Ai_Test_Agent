@@ -16,6 +16,7 @@ from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.runtime.store import SessionStore
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
+from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete
 from src.schemas.case_generation import CaseGenerationAuthoringSnapshot, PreparedCaseGeneration, fixed_generation_snapshot
 from src.schemas.project import ProjectRecord
 from src.schemas.case_management import (
@@ -332,8 +333,10 @@ class ModelTestCaseGenerator:
         summary = result.response_summary
         if summary.get("mode") in MODEL_FAILURE_MODES or result.tool_calls:
             raise ValueError("生成调用失败或返回工具操作，未创建草稿")
-        if summary.get("finish_reason") in {"length", "max_tokens"} or summary.get("stop_reason") == "max_tokens":
+        if model_completion_status(summary) == "truncated":
             raise ValueError("生成响应被截断，未把部分输出当完整候选")
+        if is_model_response_incomplete(summary):
+            raise ValueError("生成响应未完整结束，未创建草稿")
         payload = self._parse_payload(str(result.text or ""))
         if len(payload.cases) > fixed.request.max_cases:
             raise ValueError("生成输出超过固定范围，未截取或丢弃额外候选")

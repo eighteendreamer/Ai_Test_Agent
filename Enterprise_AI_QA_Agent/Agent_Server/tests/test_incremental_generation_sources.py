@@ -212,7 +212,11 @@ async def test_actual_fixed_config_guards_and_source_corruption_no_send(tmp_path
             assert not sends
             response = await generator.invoke_frozen(prepared_request)
             assert len(sends) == 1
-            for summary in [{"mode": "http_error"}, {"finish_reason": "length"}, {"stop_reason": "max_tokens"}]:
+            captured_summaries = [json.loads((Path(__file__).resolve().parents[2] /
+                'docs/upgrade_2026-10-03/p0-model-completion-before2' /
+                f'{transport}-native-limited/result.json').read_bytes())['response']['response_summary']
+                for transport in ['openai_responses', 'google_gemini_generate_content']]
+            for summary in [{"mode": "http_error"}, {"finish_reason": "length"}, {"stop_reason": "max_tokens"}, *captured_summaries]:
                 bad = response.model_copy(update={"response_summary": summary})
                 with pytest.raises(ValueError): sources.parse_module_response(scope.modules[0], bad)
             parsed = json.loads(response.text)

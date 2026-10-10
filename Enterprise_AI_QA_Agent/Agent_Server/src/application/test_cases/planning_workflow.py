@@ -27,6 +27,7 @@ from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest
+from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete
 
 logger = logging.getLogger(__name__)
 
@@ -254,11 +255,12 @@ class CasePlanningWorkflow:
                             raise ValueError("规划模型返回了不可执行的工具调用；此阶段只能查询项目依据")
                         if seed.response_protocol == PLANNING_RESPONSE_PROTOCOL:
                             metadata = checkpoint.response_metadata
-                            disposition = ("truncated" if metadata.get("finish_reason") in {"length", "max_tokens"}
-                                or metadata.get("stop_reason") == "max_tokens"
+                            disposition = ("truncated" if model_completion_status(metadata) == "truncated"
+                                else "incomplete" if is_model_response_incomplete(metadata)
                                 else "empty" if not (checkpoint.response_text or "").strip() else "received")
                             if disposition != "received":
-                                reason = "模型规划输出达到生成上限，响应不完整" if disposition == "truncated" else "模型规划响应正文为空"
+                                reason = ("模型规划输出达到生成上限，响应不完整" if disposition == "truncated"
+                                    else "模型规划输出未完整结束" if disposition == "incomplete" else "模型规划响应正文为空")
                                 round_record.update({"status": "response_rejected", "response_disposition": disposition,
                                     "response_protocol": seed.response_protocol, "validation_error": reason,
                                     "response_text": checkpoint.response_text})

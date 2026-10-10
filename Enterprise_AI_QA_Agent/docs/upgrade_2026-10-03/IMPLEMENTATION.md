@@ -5025,3 +5025,19 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 
 
 7.10交付补验：`p5-recording-overview-final` **2通过94.80秒，0跳过**，实际知识服务在两项目上下文中读到1Recording/8Action，长Unicode原值未进入安全摘要；有界摘要只供发现来源，不能代替完整录制执行依据。最终7模块回归 **27通过4.11秒**，补验空图不制造知识来源；前端项目切换4通过、build/类型检查和最终compileall退出0。无新增配置/表/依赖；默认AI未调用，场景/步骤/业务别名编辑本轮只调研，尚未实现。原live2测试计数错误和合同夹具错误批次均保留。原历史证据及受保护无关文件按哈希核对；详情见 `p5-recording-overview-validation.json`。
+
+## 2026-10-10 模型终态与Anthropic流式usage根因修复
+
+依据、方案、全部批次边界见 PLAN.md 7.11 与 P0_MODEL_ADAPTATION_RESEARCH.md。新增共享终态解释，由四客户端运行边界/两桥接、规划、生成、影响和正式回执消费；保留原finish/stop与原响应。Anthropic增量usage忽略SDK展开的None，明确0仍更新。无DDL、依赖、配置默认或前端变更；未启用全局JSON Mode，也没有替换多模型框架。
+
+实际从Agent_Server使用 `..\.venv\Scripts\python.exe -X utf8 -m pytest -q` 执行并保存日志/XML：
+
+- `tests/test_model_completion_http.py tests/test_model_completion_contract.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_legacy_model_adapter.py`；设置QA_MODEL_COMPLETION_DIR导出实际请求/响应，最终 `p0-model-completion-delivery` 78通过25.65秒。21实际SDK/HTTP场景（含显式0）与合同/桥接回归。
+- 上述合同与既有生成、规划、分阶段、影响响应、执行判定/纠正共十模块；`p0-model-completion-regression` 158通过48门控跳过44.45秒。门控未启用，未声称全部默认/live验收。
+- `tests/test_planning_response_completion.py` 的实际响应提交确认丢失恢复，以及生成守卫、影响响应失败专项；`p0-model-completion-live` 8通过65.31秒，规划原件见recovery目录。生成/影响首次导出变量错误已明确记录。
+- 启用RUN_LIVE_DOCUMENT_IMPACT_TASKS=1，QA_IMPACT_TASK_EVIDENCE_DIR与QA_INCREMENTAL_SOURCES_EVIDENCE_DIR设置实际目录，重跑生成固定配置/来源损坏守卫及五项影响响应；`p0-model-completion-storage-final` 6通过53.84秒。实际存储与SDK，生成未提交草稿；500 SDK3次尝试保留。
+- `tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case`；`p2-default-coverage-current` 1失败1未选中201.61秒，旧单阶段第二轮原180秒截止，2次真实HTTP200，无Run、无业务HTTP。
+
+原复现分别before 6失败（其中2夹具缺SSE事件名）、before2 4失败、final 2失败（扩大usage后的真实缺陷）、usage-before 2失败；修复后通过另存新前缀，不覆盖失败。最初Python路径指向backend/.venv启动失败，改为项目现有父层venv后执行，未将启动失败当成产品运行。已撤回的JSON Mode局部试验34通过7跳过只保留XML，不作为已交付能力。
+
+最终针对13项相关源码/测试实际运行 `python -m compileall -q`，日志compileall_exit=0；这是语法补充检查，不代替以上功能测试。本批无前端改动，未执行前端build，多家真实外部模型、请求profile治理、完整默认Agent/App和其余P0—P5未完成。旧文件/失败证据及三份同步由只读audit实际核对。提交前逐项scope及敏感字段扫描，不提交无关遗留文件、不推送。

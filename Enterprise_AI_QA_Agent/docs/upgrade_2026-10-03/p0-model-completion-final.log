@@ -1,0 +1,27 @@
+.......F.........F...................................................... [ 93%]
+.....                                                                    [100%]
+================================== FAILURES ===================================
+_ test_actual_sdk_fields_and_business_completion[False-True-anthropic_messages] _
+tests\test_model_completion_http.py:134: in test_actual_sdk_fields_and_business_completion
+    assert normalize_usage(response.response_summary['usage']).model_dump() == {
+E   AssertionError: assert {'prompt_toke...al_tokens': 3} == {'prompt_toke...l_tokens': 10}
+E     
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'total_tokens': 3} != {'total_tokens': 10}
+E     {'prompt_tokens': 0} != {'prompt_tokens': 7}
+E     Use -v to get more diff
+_ test_actual_sdk_fields_and_business_completion[True-True-anthropic_messages] _
+tests\test_model_completion_http.py:134: in test_actual_sdk_fields_and_business_completion
+    assert normalize_usage(response.response_summary['usage']).model_dump() == {
+E   AssertionError: assert {'prompt_toke...al_tokens': 3} == {'prompt_toke...l_tokens': 10}
+E     
+E     Omitting 1 identical items, use -vv to show
+E     Differing items:
+E     {'total_tokens': 3} != {'total_tokens': 10}
+E     {'prompt_tokens': 0} != {'prompt_tokens': 7}
+E     Use -v to get more diff
+=========================== short test summary info ===========================
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[False-True-anthropic_messages]
+FAILED tests/test_model_completion_http.py::test_actual_sdk_fields_and_business_completion[True-True-anthropic_messages]
+2 failed, 75 passed in 20.42s

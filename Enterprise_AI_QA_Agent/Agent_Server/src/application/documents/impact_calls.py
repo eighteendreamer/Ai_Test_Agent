@@ -26,6 +26,7 @@ from src.schemas.document_impact_calls import (
     DocumentImpactCallSelection, DocumentImpactTokenEstimate, DocumentImpactUnit,
 )
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
+from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete
 from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
 from src.schemas.document_impact_responses import DocumentImpactResponseAssessment
 from src.schemas.document_impact_grouped import impact_coordination_context
@@ -392,7 +393,8 @@ class DocumentImpactCallService:
         response = DocumentImpactCallResponse(call_id=call_id, request_sha256=record.request.sha256,
             text=result.text, tool_calls=result.tool_calls, metadata=metadata, raw_response=raw)
         disposition = ("provider_failure" if metadata.get("mode") in MODEL_FAILURE_MODES else "tool_calls" if result.tool_calls
-            else "truncated" if metadata.get("finish_reason") in {"length", "max_tokens"} or metadata.get("stop_reason") == "max_tokens"
+            else "truncated" if model_completion_status(metadata) == "truncated"
+            else "provider_failure" if is_model_response_incomplete(metadata)
             else "empty" if not result.text.strip() else "received")
         encoded = canonical_impact_json(response)
         if len(encoded) > snapshot.config.payload.max_response_bytes:
