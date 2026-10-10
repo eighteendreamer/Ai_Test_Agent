@@ -331,7 +331,7 @@ class ModelTestCaseGenerator:
     def parse_frozen(self, prepared, result):
         fixed = PreparedCaseGeneration.model_validate_json(prepared.model_dump_json())
         summary = result.response_summary
-        if summary.get("mode") in MODEL_FAILURE_MODES or result.tool_calls:
+        if summary.get("mode") in MODEL_FAILURE_MODES - {"incomplete_response"} or result.tool_calls:
             raise ValueError("生成调用失败或返回工具操作，未创建草稿")
         if model_completion_status(summary) == "truncated":
             raise ValueError("生成响应被截断，未把部分输出当完整候选")

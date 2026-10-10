@@ -27,7 +27,7 @@ from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest
-from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete
+from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete, stream_completion_fields
 
 logger = logging.getLogger(__name__)
 
@@ -238,6 +238,7 @@ class CasePlanningWorkflow:
                         checkpoint.response_metadata = {key: result.response_summary.get(key) for key in
                             ("mode", "error_type", "status_code", "response_id", "finish_reason", "stop_reason", "usage")}
                         checkpoint.response_has_tools = bool(result.tool_calls)
+                        checkpoint.response_metadata.update(stream_completion_fields(result.response_summary))
                         round_record.update({"status": "response_received", "response_mode": str(result.response_summary.get("mode") or "")[:80],
                             "response_metadata": checkpoint.response_metadata})
                         if round_record["response_mode"] in MODEL_FAILURE_MODES:
@@ -249,7 +250,8 @@ class CasePlanningWorkflow:
                     if checkpoint.phase == "response":
                         round_record = record.rounds[-1]
                         mode = str(checkpoint.response_metadata.get("mode") or "")
-                        if mode in MODEL_FAILURE_MODES:
+                        if mode in MODEL_FAILURE_MODES and (mode != "incomplete_response" or
+                            seed.response_protocol != PLANNING_RESPONSE_PROTOCOL):
                             raise ValueError(f"模型调用失败（{mode}）；未创建测试运行")
                         if checkpoint.response_has_tools:
                             raise ValueError("规划模型返回了不可执行的工具调用；此阶段只能查询项目依据")

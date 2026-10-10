@@ -127,7 +127,7 @@ class AgentCaseAssessmentService:
     def parse_response(response: ModelInvocationResult) -> AgentCaseExecutionReceipt:
         """Validate a complete read-only response; never repair truncated JSON."""
         summary = response.response_summary
-        if summary.get("mode") != "ok":
+        if summary.get("mode") not in {"ok", "incomplete_response"}:
             raise ValueError("执行回执模型调用未成功: " + str(summary.get("mode")))
         if response.tool_calls:
             raise ValueError("执行回执只读判定不得要求新的工具调用")

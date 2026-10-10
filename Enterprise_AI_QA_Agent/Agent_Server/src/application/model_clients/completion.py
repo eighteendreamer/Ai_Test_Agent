@@ -11,8 +11,10 @@ def model_completion_status(summary: dict[str, Any]) -> CompletionStatus:
     # incomplete_details, Gemini FinishReason, Anthropic stop_reason and
     # the existing receipt parser. Keep unknown vendor values unknown.
     reasons = {str(summary.get(key) or '').strip().lower() for key in ('finish_reason', 'stop_reason')}
-    if summary.get('mode') in MODEL_FAILURE_MODES:
+    if summary.get('mode') in MODEL_FAILURE_MODES - {'incomplete_response'}:
         return 'failed'
+    if summary.get('stream_terminal_received') is False:
+        return 'incomplete'
     if reasons & {'length', 'max_tokens', 'max_output_tokens', 'max_token', 'model_context_window_exceeded'}:
         return 'truncated'
     if reasons & {'incomplete', 'pause_turn'}:
@@ -21,6 +23,8 @@ def model_completion_status(summary: dict[str, Any]) -> CompletionStatus:
         return 'blocked'
     if reasons & {'failed', 'cancelled'}:
         return 'failed'
+    if summary.get('mode') == 'incomplete_response':
+        return 'incomplete'
     if reasons & {'tool_calls', 'tool_use', 'function_call'} or summary.get('tool_call_count') or summary.get('tool_calls'):
         return 'tool_calls'
     if reasons & {'stop', 'end_turn', 'stop_sequence', 'completed'}:
@@ -31,3 +35,14 @@ def model_completion_status(summary: dict[str, Any]) -> CompletionStatus:
 def is_model_response_incomplete(summary: dict[str, Any]) -> bool:
     """Reject only known non-completion; missing legacy fields remain unknown."""
     return model_completion_status(summary) in {'truncated', 'incomplete', 'blocked', 'failed'}
+
+
+def stream_completion_fields(summary: dict[str, Any]) -> dict[str, bool]:
+    """Omit new observations for native calls and unobserved legacy snapshots."""
+    value = summary.get('stream_terminal_received')
+    return {'stream_terminal_received': value} if isinstance(value, bool) else {}
+
+
+def model_response_mode(summary: dict[str, Any]) -> str:
+    """Known non-completion cannot finish an Agent turn or dispatch its tools."""
+    return 'incomplete_response' if is_model_response_incomplete(summary) else 'ok'

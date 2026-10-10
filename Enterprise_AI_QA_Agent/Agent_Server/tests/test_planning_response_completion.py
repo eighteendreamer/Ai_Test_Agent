@@ -112,9 +112,12 @@ async def test_synchronous_rejected_response_is_saved_with_its_actual_text(tmp_p
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv('RUN_LIVE_CASE_PLANNING_TASKS') != '1', reason='actual MySQL/PG/RustFS and HTTP/SDK')
-@pytest.mark.parametrize('streaming', [False, True])
-async def test_actual_http_response_ack_loss_recovers_without_third_send(tmp_path, monkeypatch, streaming):
+@pytest.mark.parametrize('streaming,response_variant', [(False, 'length'), (True, 'length'), (True, 'missing-terminal')])
+async def test_actual_http_response_ack_loss_recovers_without_third_send(tmp_path, monkeypatch, streaming, response_variant):
     _, failed_text, failed_metadata = captured_failure()
+    if response_variant == 'missing-terminal':
+        captured = json.loads((ROOT / 'docs/upgrade_2026-10-03/p0-model-stream-terminal-before/openai_chat_completions-missing-terminal/sdk-result.json').read_bytes())
+        failed_text, failed_metadata = captured['text'], captured['response_summary']
     requests, responses = [], []
     async with tasks_environment(tmp_path) as env:
         project = await env.projects.create(ProjectCreateRequest(project_key='http-completion', name='输出完整性实测'))
@@ -198,7 +201,12 @@ async def test_actual_http_response_ack_loss_recovers_without_third_send(tmp_pat
             assert terminal.deadline_at == before.deadline_at and terminal.attempt_no == 2
             plan = await env.service.get(project.id, terminal.plan_id)
             assert plan.status == 'planning_failed' and plan.decision is None
-            assert plan.rounds[-1]['response_disposition'] == 'truncated'
+            if response_variant == 'missing-terminal':
+                assert plan.rounds[-1]['response_metadata']['mode'] == 'incomplete_response'
+                assert plan.rounds[-1]['response_metadata']['stream_terminal_received'] is False
+                assert plan.rounds[-1]['response_disposition'] == 'incomplete'
+            else:
+                assert plan.rounds[-1]['response_disposition'] == 'truncated'
             await PlanningTaskHandler(env.service, store, worker_id='terminal-redelivery')(delivery(task))
             assert await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key='completion',
                 objective='按项目完整用例执行', candidate_case_ids=[target.case.id])) == terminal
@@ -210,7 +218,8 @@ async def test_actual_http_response_ack_loss_recovers_without_third_send(tmp_pat
             assert persisted['checkpoint']['response_text'] == failed_text
             assert persisted['checkpoint']['response_metadata']['usage'] == failed_metadata['usage']
             assert persisted['seed']['plan']['config_snapshot']['policy']['max_rounds'] == 5
-            directory = Path(os.environ['QA_PLANNING_COMPLETION_DIR'])/('stream' if streaming else 'native')
+            directory = Path(os.environ['QA_PLANNING_COMPLETION_DIR'])/(
+                response_variant if response_variant != 'length' else 'stream' if streaming else 'native')
             directory.mkdir(parents=True, exist_ok=False)
             (directory/source.name).write_bytes(source.read_bytes())
             for i, (request, response) in enumerate(zip(requests, responses), 1):
@@ -221,6 +230,7 @@ async def test_actual_http_response_ack_loss_recovers_without_third_send(tmp_pat
                 'physical_http_sends':len(requests),'response_committed_ack_lost':True,'recovery_no_new_model_call':True,
                 'original_deadline_preserved':True,'terminal_no_new_calls':True,'source_bytes_read_back':True,
                 'streaming':streaming,'controlled_provider':True,'usage_replayed_from_failure':True,
+                'response_variant':response_variant,
                 'default_autonomous_Agent_verified':False,'full_P0_P5_complete':False},ensure_ascii=False,indent=2),encoding='utf-8')
         finally:
             server.shutdown(); server.server_close(); serving.join(5)

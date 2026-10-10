@@ -11,7 +11,7 @@ from src.application.model_adapters.message_adapter import (
     to_langchain_tools,
 )
 from src.application.model_clients.base import ProviderClientError
-from src.application.model_clients.completion import model_completion_status
+from src.application.model_clients.completion import model_completion_status, model_response_mode, stream_completion_fields
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
 from src.runtime.execution_logging import truncate_text
 
@@ -85,13 +85,14 @@ class LangChainModelAdapter(ModelPort):
                 "tool_names": [str(item.get("name") or "") for item in request.tools],
             },
             response_summary={
-                "mode": "ok",
+                "mode": model_response_mode(parsed),
                 "provider": config.provider,
                 "transport": config.transport,
                 "response_id": parsed["response_id"],
                 "finish_reason": parsed["finish_reason"],
                 "stop_reason": parsed["stop_reason"],
                 "completion_status": model_completion_status(parsed),
+                **stream_completion_fields(parsed),
                 "usage": parsed["usage"],
                 "tool_call_count": len(parsed["tool_calls"]),
                 "tool_call_names": [call.name for call in parsed["tool_calls"]],
@@ -177,14 +178,18 @@ class LangChainModelAdapter(ModelPort):
 
     async def _stream(self, model: Any, messages: list[Any]) -> Any:
         aggregate = None
+        terminal_received = False
         async for chunk in model.astream(messages):
+            if getattr(chunk, "response_metadata", {}).get("finish_reason"):
+                terminal_received = True
             text = _text_from_content(getattr(chunk, "content", ""))
             if text and self._stream_handler is not None:
                 await self._stream_handler(text)
             aggregate = chunk if aggregate is None else aggregate + chunk
         if aggregate is None:
             raise ProviderClientError("LangChain streaming returned no response chunks.")
-        return aggregate
+        return aggregate.model_copy(update={"response_metadata": {
+            **aggregate.response_metadata, "stream_terminal_received": terminal_received}})
 
 
 def _text_from_content(content: Any) -> str:

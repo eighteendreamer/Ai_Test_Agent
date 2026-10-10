@@ -12,6 +12,7 @@ from langchain_core.messages import (
 )
 
 from src.application.model_clients.base import serialize_tool_result_text
+from src.application.model_clients.completion import stream_completion_fields
 from src.schemas.model_config import ContentPart, ModelInvocationRequest, UnifiedMessage
 from src.schemas.tool_runtime import ModelToolCall
 
@@ -82,6 +83,7 @@ def from_langchain_message(message: BaseMessage) -> dict[str, Any]:
         "finish_reason": response_metadata.get("finish_reason"),
         "stop_reason": response_metadata.get("stop_reason"),
         "raw_response": response_metadata,
+        **stream_completion_fields(response_metadata),
     }
 
 

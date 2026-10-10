@@ -26,7 +26,7 @@ from src.schemas.document_impact_calls import (
     DocumentImpactCallSelection, DocumentImpactTokenEstimate, DocumentImpactUnit,
 )
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest, model_invocation_parameters
-from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete
+from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete, stream_completion_fields
 from src.schemas.document_impact_workflow import DocumentImpactCoordinationContext
 from src.schemas.document_impact_responses import DocumentImpactResponseAssessment
 from src.schemas.document_impact_grouped import impact_coordination_context
@@ -382,19 +382,20 @@ class DocumentImpactCallService:
                 task_id=task.id, stage="dispatch_unknown")
         metadata = {key: result.response_summary.get(key) for key in
             ("mode", "error_type", "status_code", "response_id", "finish_reason", "stop_reason", "usage")}
+        metadata.update(stream_completion_fields(result.response_summary))
         if options is not None and metadata.get("mode") == "http_error" and metadata.get("status_code") is None:
             logger.warning("document_impact_transport_outcome_unconfirmed", extra={"task_id": task.id,
                 "call_id": call_id, "error_type": metadata.get("error_type")})
             return await confirmed_impact_write(self._store.calls.mark_unknown(claim, call_id,
                 code="transport_error_without_http_response"), task_id=task.id, stage="transport_unknown")
         # Provider errors may embed request credentials in their diagnostics.
-        raw = result.raw_response if metadata.get("mode") not in MODEL_FAILURE_MODES else {
+        raw = result.raw_response if metadata.get("mode") not in MODEL_FAILURE_MODES - {"incomplete_response"} else {
             "diagnostics_omitted": "provider error diagnostics may contain credentials", "metadata": metadata}
         response = DocumentImpactCallResponse(call_id=call_id, request_sha256=record.request.sha256,
             text=result.text, tool_calls=result.tool_calls, metadata=metadata, raw_response=raw)
-        disposition = ("provider_failure" if metadata.get("mode") in MODEL_FAILURE_MODES else "tool_calls" if result.tool_calls
-            else "truncated" if model_completion_status(metadata) == "truncated"
-            else "provider_failure" if is_model_response_incomplete(metadata)
+        disposition = ("provider_failure" if metadata.get("mode") in MODEL_FAILURE_MODES - {"incomplete_response"} else
+            "truncated" if model_completion_status(metadata) == "truncated" else
+            "provider_failure" if is_model_response_incomplete(metadata) else "tool_calls" if result.tool_calls
             else "empty" if not result.text.strip() else "received")
         encoded = canonical_impact_json(response)
         if len(encoded) > snapshot.config.payload.max_response_bytes:

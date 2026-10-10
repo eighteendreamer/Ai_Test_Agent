@@ -180,9 +180,10 @@ def build_model_invoker_node(
                 state,
                 "model.invocation_failed",
                 "model_invoker",
-                "Model invocation failed before an assistant response was generated.",
+                "Model response cannot complete this turn or dispatch tools.",
                 model_key=state["selected_model_key"],
                 response_mode=invocation_result.response_summary.get("mode", ""),
+                completion_status=invocation_result.response_summary.get("completion_status", "unknown"),
                 error_type=invocation_result.response_summary.get("error_type", ""),
                 status_code=invocation_result.response_summary.get("status_code"),
                 loop_iteration=state["loop_iteration"],
@@ -214,6 +215,8 @@ def build_model_invoker_node(
 
 
 def route_after_model_invoker(state: AgentGraphState) -> str:
+    if is_model_failure_summary(state.get("model_response_summary")):
+        return "finalizer"
     if state["model_tool_calls"]:
         return "tool_executor"
     return "finalizer"

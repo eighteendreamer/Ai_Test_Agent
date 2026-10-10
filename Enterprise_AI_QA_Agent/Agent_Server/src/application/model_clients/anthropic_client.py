@@ -59,6 +59,7 @@ class AnthropicMessagesClient:
 
         response_id = ""
         stop_reason: str | None = None
+        message_stop_received = False
         usage: dict[str, Any] = {}
         text_parts: list[str] = []
         tool_call_buffers: dict[int, dict[str, Any]] = {}
@@ -69,6 +70,9 @@ class AnthropicMessagesClient:
                 async for event in stream:
                     data = response_to_dict(event)
                     event_type = str(data.get("type") or "")
+                    if event_type == "message_stop":
+                        message_stop_received = True
+                        continue
                     if event_type == "message_start":
                         message = data.get("message") or {}
                         if isinstance(message, dict):
@@ -132,6 +136,7 @@ class AnthropicMessagesClient:
         return {
             "text": "".join(text_parts).strip(),
             "tool_calls": remap_tool_calls(tool_calls, tool_name_map),
+            "stream_terminal_received": message_stop_received and bool(stop_reason),
             "finish_reason": None,
             "stop_reason": stop_reason,
             "usage": usage,
@@ -139,6 +144,7 @@ class AnthropicMessagesClient:
             "raw_response": {
                 "mode": "stream",
                 "provider": config.provider,
+                "stream_terminal_received": message_stop_received and bool(stop_reason),
                 "stop_reason": stop_reason,
                 "usage": usage,
             },

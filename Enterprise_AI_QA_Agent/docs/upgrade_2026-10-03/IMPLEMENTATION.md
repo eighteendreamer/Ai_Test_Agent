@@ -5041,3 +5041,19 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 原复现分别before 6失败（其中2夹具缺SSE事件名）、before2 4失败、final 2失败（扩大usage后的真实缺陷）、usage-before 2失败；修复后通过另存新前缀，不覆盖失败。最初Python路径指向backend/.venv启动失败，改为项目现有父层venv后执行，未将启动失败当成产品运行。已撤回的JSON Mode局部试验34通过7跳过只保留XML，不作为已交付能力。
 
 最终针对13项相关源码/测试实际运行 `python -m compileall -q`，日志compileall_exit=0；这是语法补充检查，不代替以上功能测试。本批无前端改动，未执行前端build，多家真实外部模型、请求profile治理、完整默认Agent/App和其余P0—P5未完成。旧文件/失败证据及三份同步由只读audit实际核对。提交前逐项scope及敏感字段扫描，不提交无关遗留文件、不推送。
+
+## 2026-10-10 多模型流式结束与Agent统一失败生命周期
+
+研究见P0_MODEL_STREAM_TERMINAL_RESEARCH.md，方案7.12。四SDK与LangChain观察协议结束，统一mode由既有completion解释得出；规划/影响保存可选流式字段，生成/回执保留具体终态，图失败路由进入finalizer且保留工具请求。新增incomplete_response沿既有失败集合消费。无DDL、配置/依赖或前端修改，未知旧历史不重写。
+
+在Agent_Server用 `..\.venv\Scripts\python.exe -X utf8 -m pytest -q` 实际执行：
+
+- 13模块（stream_terminal_http、completion_http/contract、clients、两桥接、failure_lifecycle、生成管线、规划及stages、影响响应、执行判定/纠正），QA_MODEL_STREAM_TERMINAL_DIR与QA_MODEL_COMPLETION_DIR输出实际请求/响应原件；delivery **204通过48跳过62.61秒**。新增15协议/路由场景含两个正常工具对照；对照未实际执行工具或完整App。
+- RUN_LIVE_CASE_PLANNING_TASKS=1、QA_PLANNING_COMPLETION_DIR设置独立目录，`test_planning_response_completion.py -k actual_http_response_ack_loss`；recovery-final **3通过7未选中14.76秒**。新Markdown原件、完整八步用例、实际SDK和2次HTTP、MySQL模型配置、PG提交确认丢失/原截止/恢复/终态零新增调用。没有kill进程或调用默认外部模型。
+- RUN_LIVE_DOCUMENT_IMPACT_TASKS=1、QA_IMPACT_TASK_EVIDENCE_DIR及QA_INCREMENTAL_SOURCES_EVIDENCE_DIR设置独立目录；生成固定来源守卫与document_impact_calls五种失败；storage **6通过14未选中49.19秒**。保存原件，500为一次逻辑/3次HTTP，其他1次，不提交生成草稿。
+
+失败原件独立保留：before6失败；limit-before5夹具正常分支字段不足；limit-before2五个实际通用Agent完成误判；tool-before两个实际失败响应路由到tool_executor。初版verified6、contract93、recovery3和扩大final200均保存，最终delivery204另存不覆盖。日志字段补强后再跑actualSDK/图节点与failure_lifecycle专项，结果以trace-final原始XML/日志为准。最终compileall_exit=0仅语法补查。
+
+前端及配置本轮未改未构建，完整P0—P5/默认Agent/多外部模型/请求profile仍未完成。三份方案、原历史工件与无关受保护文件由本批audit核对，跨消费按MODEL_FAILURE_MODES/is_model_failure_summary与新字段引用检查；不推送、不建PR。
+
+日志字段最终补验：`tests/test_model_stream_terminal_http.py tests/test_model_failure_lifecycle.py`，QA_MODEL_STREAM_TERMINAL_DIR独立目录；trace-final **24通过18.04秒，0跳过**。失败事件completion_status实际断言，正常tool_calls路由仍有效；最终compileall日志compileall_exit=0。

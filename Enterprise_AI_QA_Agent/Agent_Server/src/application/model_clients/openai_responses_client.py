@@ -111,9 +111,11 @@ class OpenAIResponsesClient:
         parsed["raw_response"] = {
             "mode": "stream",
             "provider": config.provider,
+            "stream_terminal_received": final_response is not None,
             "finish_reason": parsed["finish_reason"],
             "usage": parsed["usage"],
         }
+        parsed["stream_terminal_received"] = final_response is not None
         return parsed
 
     def _make_client(self, config: ModelConfigRecord, api_key: str) -> AsyncOpenAI:

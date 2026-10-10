@@ -22,7 +22,7 @@ ModelAuthType = Literal["api_key", "oauth2"]
 ModelApplication = Literal["task_execution", "embedding_retrieval"]
 
 MODEL_FAILURE_MODES = frozenset(
-    {"missing_active_model", "auth_error", "missing_api_key", "http_error"}
+    {"missing_active_model", "auth_error", "missing_api_key", "http_error", "incomplete_response"}
 )
 
 

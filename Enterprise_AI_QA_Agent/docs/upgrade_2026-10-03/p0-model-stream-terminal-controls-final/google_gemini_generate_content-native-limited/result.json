@@ -1,0 +1,176 @@
+{
+  "response": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "google",
+      "provider_profile": "google",
+      "transport": "google_gemini_generate_content",
+      "api_base_url": "http://127.0.0.1:54641/v1",
+      "max_tokens": 512,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return the supplied JSON object.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}"
+        }
+      ]
+    },
+    "response_summary": {
+      "mode": "incomplete_response",
+      "provider": "google",
+      "provider_profile": "google",
+      "transport": "google_gemini_generate_content",
+      "response_id": "gemini_fixture",
+      "finish_reason": "MAX_TOKENS",
+      "stop_reason": "MAX_TOKENS",
+      "completion_status": "truncated",
+      "usage": {
+        "promptTokenCount": 7,
+        "candidatesTokenCount": 3,
+        "totalTokenCount": 10
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+      "tool_fallback": ""
+    },
+    "raw_response": {
+      "sdk_http_response": {
+        "headers": {
+          "server": "BaseHTTP/0.6 Python/3.11.16",
+          "date": "Sat, 10 Oct 2026 03:48:15 GMT",
+          "content-type": "application/json",
+          "content-length": "321"
+        }
+      },
+      "candidates": [
+        {
+          "content": {
+            "parts": [
+              {
+                "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}"
+              }
+            ],
+            "role": "model"
+          },
+          "finish_reason": "MAX_TOKENS",
+          "index": 0
+        }
+      ],
+      "response_id": "gemini_fixture",
+      "usage_metadata": {
+        "candidates_token_count": 3,
+        "prompt_token_count": 7,
+        "total_token_count": 10
+      },
+      "automatic_function_calling_history": []
+    }
+  },
+  "terminal": {
+    "plan": {
+      "id": "0c7fa91c-107c-42b6-940c-f874bbeedec2",
+      "project_id": "626fb6c8-d61a-498b-968e-563e02510366",
+      "request": {
+        "objective": "核验协议终态",
+        "model_key": null,
+        "candidate_case_ids": [],
+        "runtime_context": {},
+        "environment": null
+      },
+      "status": "planning_failed",
+      "summary": "模型规划输出达到生成上限，响应不完整；已保留响应，不自动重发；未创建测试运行",
+      "decision": null,
+      "evidence": [],
+      "config_snapshot": {
+        "scope_key": "global",
+        "revision": 1,
+        "policy": {
+          "max_rounds": 5,
+          "max_candidates": 20,
+          "max_items": 50,
+          "max_context_chars": 180000,
+          "timeout_seconds": 180.0
+        }
+      },
+      "model_key": "fixture",
+      "prompt_version": "case-planning-v5",
+      "rounds": [
+        {
+          "round": 1,
+          "status": "response_rejected",
+          "response_metadata": {
+            "mode": "incomplete_response",
+            "provider": "google",
+            "provider_profile": "google",
+            "transport": "google_gemini_generate_content",
+            "response_id": "gemini_fixture",
+            "finish_reason": "MAX_TOKENS",
+            "stop_reason": "MAX_TOKENS",
+            "completion_status": "truncated",
+            "usage": {
+              "promptTokenCount": 7,
+              "candidatesTokenCount": 3,
+              "totalTokenCount": 10
+            },
+            "tool_call_count": 0,
+            "tool_call_names": [],
+            "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+            "tool_fallback": ""
+          },
+          "response_disposition": "truncated",
+          "response_protocol": "case-planning-response-completion-v1",
+          "validation_error": "模型规划输出达到生成上限，响应不完整",
+          "response_text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}"
+        }
+      ],
+      "warnings": [],
+      "created_at": "2026-10-10T03:48:15.560612Z",
+      "regression": null,
+      "environment": null
+    },
+    "phase": "finished",
+    "catalog": {},
+    "query_results": [],
+    "validation_feedback": null,
+    "next_round": 1,
+    "query_index": 0,
+    "pending_decision": null,
+    "response_text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "response_metadata": {
+      "mode": "incomplete_response",
+      "provider": "google",
+      "provider_profile": "google",
+      "transport": "google_gemini_generate_content",
+      "response_id": "gemini_fixture",
+      "finish_reason": "MAX_TOKENS",
+      "stop_reason": "MAX_TOKENS",
+      "completion_status": "truncated",
+      "usage": {
+        "promptTokenCount": 7,
+        "candidatesTokenCount": 3,
+        "totalTokenCount": 10
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+      "tool_fallback": ""
+    },
+    "response_has_tools": false
+  },
+  "physical_sends": 1,
+  "real_provider": false,
+  "controlled_HTTP": true,
+  "streaming": false,
+  "private_headers_saved": false,
+  "full_P0_P5_complete": false
+}

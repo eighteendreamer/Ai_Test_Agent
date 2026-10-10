@@ -1,0 +1,124 @@
+{
+  "events": [
+    {
+      "id": "b5215511-3f13-44bb-9c4f-d47701e6ece1",
+      "timestamp": "2026-10-10T03:47:14.823494+00:00",
+      "type": "graph.execution_started",
+      "payload": {
+        "step": 1,
+        "phase": "model_invoker",
+        "message": "Runtime is preparing the Claude Code style model call stage.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:1",
+        "selected_agent": "fixture",
+        "selected_model": "fixture",
+        "model_visible_tool_count": 0,
+        "allowed_tool_count": 0,
+        "approval_required_count": 0,
+        "loop_iteration": 0
+      }
+    },
+    {
+      "id": "be7d01af-e481-40aa-95de-09254be7cea5",
+      "timestamp": "2026-10-10T03:47:14.825498+00:00",
+      "type": "model.request_prepared",
+      "payload": {
+        "step": 2,
+        "phase": "model_invoker",
+        "message": "Model request payload has been prepared.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:2",
+        "model_key": "fixture",
+        "model_name": "fixture",
+        "model_provider": "google",
+        "system_prompt_preview": "Return JSON.",
+        "system_prompt_section_count": 0,
+        "system_prompt_section_keys": "none",
+        "runtime_message_section_count": 0,
+        "runtime_message_section_keys": "none",
+        "messages": [
+          {
+            "role": "user",
+            "content_preview": "{}"
+          }
+        ],
+        "tool_candidates": "none",
+        "loop_iteration": 0,
+        "model_call_count": null,
+        "max_iterations": null
+      }
+    },
+    {
+      "id": "6152d781-9eb3-4cf5-95d5-b01a792ad339",
+      "timestamp": "2026-10-10T03:47:14.825498+00:00",
+      "type": "model.response_received",
+      "payload": {
+        "step": 3,
+        "phase": "model_invoker",
+        "message": "Model response has been received by the runtime.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:3",
+        "model_key": "fixture",
+        "model_name": "fixture",
+        "model_provider": "google",
+        "response_length": 56,
+        "response_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+        "finish_reason": "MAX_TOKENS",
+        "tool_call_count": 0,
+        "loop_iteration": 0,
+        "prompt_tokens": 7,
+        "completion_tokens": 3,
+        "turn_total_tokens": 10,
+        "model_call_count": null
+      }
+    },
+    {
+      "id": "9ed7d5af-5a43-471f-abff-17f712edc9c4",
+      "timestamp": "2026-10-10T03:47:14.825498+00:00",
+      "type": "graph.execution_completed",
+      "payload": {
+        "step": 4,
+        "phase": "finalizer",
+        "message": "Model finished without requesting any tools.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:4",
+        "final_response_length": 56
+      }
+    },
+    {
+      "id": "48d179c8-b7ac-4e5f-a566-409197e6b3b2",
+      "timestamp": "2026-10-10T03:47:14.825498+00:00",
+      "type": "graph.response_ready",
+      "payload": {
+        "step": 5,
+        "phase": "responder",
+        "message": "Assistant response payload has been finalized for the client.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:5",
+        "agent_key": "fixture",
+        "model_key": "fixture",
+        "agent_name": "fixture",
+        "model_name": "fixture",
+        "resolved_skills": "none",
+        "available_tools": "none",
+        "model_visible_tools": "none",
+        "allowed_tools": "none",
+        "execution_plan": "",
+        "tool_status": "- No tools selected for this turn.",
+        "approval_status": "No pending approvals. The runtime skeleton completed this turn without blocking tools.",
+        "pending_approval_count": 0,
+        "sensitive_output_redacted": false,
+        "response_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}"
+      }
+    }
+  ],
+  "termination_reason": "assistant_final",
+  "physical_sends": 1,
+  "actual_protocol_response_used": true,
+  "full_App_verified": false
+}

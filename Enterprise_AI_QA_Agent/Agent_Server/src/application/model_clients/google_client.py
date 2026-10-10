@@ -155,6 +155,7 @@ class GoogleGenAIClient:
         return {
             "text": "".join(text_parts).strip(),
             "tool_calls": remap_tool_calls(tool_calls, tool_name_map),
+            "stream_terminal_received": bool(finish_reason) and finish_reason != "FINISH_REASON_UNSPECIFIED",
             "finish_reason": finish_reason,
             "stop_reason": finish_reason,
             "usage": usage,
@@ -162,6 +163,7 @@ class GoogleGenAIClient:
             "raw_response": {
                 "mode": "stream",
                 "provider": config.provider,
+                "stream_terminal_received": bool(finish_reason) and finish_reason != "FINISH_REASON_UNSPECIFIED",
                 "finish_reason": finish_reason,
                 "usage": usage,
             },

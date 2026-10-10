@@ -1,0 +1,349 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="6" skipped="0" tests="6" time="11.929" timestamp="2026-10-10T11:40:08.037104+08:00" hostname="EIghteen"><testcase classname="tests.test_model_stream_terminal_http" name="test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[openai_chat_completions-missing-terminal]" time="1.506"><failure message="AssertionError: assert 'no_match' == 'planning_failed'&#10;  &#10;  - planning_failed&#10;  + no_match">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1372/test_actual_sdk_missing_termin0')
+transport = 'openai_chat_completions', variant = 'missing-terminal'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, False, stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+&gt;               assert terminal.plan.status == 'planning_failed'
+E               AssertionError: assert 'no_match' == 'planning_failed'
+E                 
+E                 - planning_failed
+E                 + no_match
+
+tests\test_model_stream_terminal_http.py:70: AssertionError</failure></testcase><testcase classname="tests.test_model_stream_terminal_http" name="test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[openai_responses-missing-terminal]" time="1.166"><failure message="AssertionError: assert 'no_match' == 'planning_failed'&#10;  &#10;  - planning_failed&#10;  + no_match">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1372/test_actual_sdk_missing_termin1')
+transport = 'openai_responses', variant = 'missing-terminal'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, False, stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+&gt;               assert terminal.plan.status == 'planning_failed'
+E               AssertionError: assert 'no_match' == 'planning_failed'
+E                 
+E                 - planning_failed
+E                 + no_match
+
+tests\test_model_stream_terminal_http.py:70: AssertionError</failure></testcase><testcase classname="tests.test_model_stream_terminal_http" name="test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[anthropic_messages-missing-terminal]" time="0.555"><failure message="AssertionError: assert 'no_match' == 'planning_failed'&#10;  &#10;  - planning_failed&#10;  + no_match">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1372/test_actual_sdk_missing_termin2')
+transport = 'anthropic_messages', variant = 'missing-terminal'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, False, stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+&gt;               assert terminal.plan.status == 'planning_failed'
+E               AssertionError: assert 'no_match' == 'planning_failed'
+E                 
+E                 - planning_failed
+E                 + no_match
+
+tests\test_model_stream_terminal_http.py:70: AssertionError</failure></testcase><testcase classname="tests.test_model_stream_terminal_http" name="test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[google_gemini_generate_content-missing-terminal]" time="0.686"><failure message="AssertionError: assert 'no_match' == 'planning_failed'&#10;  &#10;  - planning_failed&#10;  + no_match">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1372/test_actual_sdk_missing_termin3')
+transport = 'google_gemini_generate_content', variant = 'missing-terminal'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, False, stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+&gt;               assert terminal.plan.status == 'planning_failed'
+E               AssertionError: assert 'no_match' == 'planning_failed'
+E                 
+E                 - planning_failed
+E                 + no_match
+
+tests\test_model_stream_terminal_http.py:70: AssertionError</failure></testcase><testcase classname="tests.test_model_stream_terminal_http" name="test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[langchain_chat-missing-terminal]" time="0.540"><failure message="AssertionError: assert 'no_match' == 'planning_failed'&#10;  &#10;  - planning_failed&#10;  + no_match">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1372/test_actual_sdk_missing_termin4')
+transport = 'langchain_chat', variant = 'missing-terminal'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, False, stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+&gt;               assert terminal.plan.status == 'planning_failed'
+E               AssertionError: assert 'no_match' == 'planning_failed'
+E                 
+E                 - planning_failed
+E                 + no_match
+
+tests\test_model_stream_terminal_http.py:70: AssertionError</failure></testcase><testcase classname="tests.test_model_stream_terminal_http" name="test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[anthropic_messages-missing-message-stop]" time="0.526"><failure message="AssertionError: assert 'no_match' == 'planning_failed'&#10;  &#10;  - planning_failed&#10;  + no_match">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1372/test_actual_sdk_missing_termin5')
+transport = 'anthropic_messages', variant = 'missing-message-stop'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, False, stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+&gt;               assert terminal.plan.status == 'planning_failed'
+E               AssertionError: assert 'no_match' == 'planning_failed'
+E                 
+E                 - planning_failed
+E                 + no_match
+
+tests\test_model_stream_terminal_http.py:70: AssertionError</failure></testcase></testsuite></testsuites>

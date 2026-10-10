@@ -24,7 +24,7 @@ from src.application.context.token_usage import normalize_usage
 
 
 @contextmanager
-def provider(transport, limited, *, delta_input=None):
+def provider(transport, limited, *, delta_input=None, stream_variant='complete'):
     sends, replies = [], []
     content = json.dumps(finish(), ensure_ascii=False)
 
@@ -73,6 +73,23 @@ def provider(transport, limited, *, delta_input=None):
                     'usage': {'prompt_tokens': 7, 'completion_tokens': 3, 'total_tokens': 10}}
                 events = [{**response, 'object': 'chat.completion.chunk', 'choices': [{'index': 0,
                     'delta': {'role': 'assistant', 'content': content}, 'finish_reason': reason}]}]
+            if streaming and stream_variant == 'missing-terminal':
+                if transport == 'openai_responses':
+                    events = events[:-1]
+                elif transport == 'anthropic_messages':
+                    events = [event for event in events if event['type'] not in {'message_delta', 'message_stop'}]
+                elif transport == 'google_gemini_generate_content':
+                    events[0]['candidates'][0].pop('finishReason')
+                else:
+                    events[0]['choices'][0]['finish_reason'] = None
+            elif streaming and stream_variant == 'missing-message-stop':
+                assert transport == 'anthropic_messages'
+                events = events[:-1]
+            elif streaming and stream_variant in {'tool-missing-terminal', 'tool-complete'}:
+                assert transport == 'openai_chat_completions'
+                events[0]['choices'][0]['finish_reason'] = 'tool_calls' if stream_variant == 'tool-complete' else None
+                events[0]['choices'][0]['delta']['tool_calls'] = [{'index': 0, 'id': 'owned-fixture-call',
+                    'type': 'function', 'function': {'name': 'fixture_tool', 'arguments': '{"value":"owned"}'}}]
             if streaming:
                 raw = ''.join((('event: '+event['type']+'\n') if transport == 'anthropic_messages' else '')
                     +'data: '+json.dumps(event, ensure_ascii=False)+'\n\n' for event in events).encode()
@@ -137,7 +154,7 @@ async def test_actual_sdk_fields_and_business_completion(tmp_path, transport, st
             (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
             (directory/'physical-response.bin').write_bytes(replies[0])
             (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
-        assert response.response_summary['mode'] == 'ok', response.response_summary
+        assert response.response_summary['mode'] == ('incomplete_response' if limited else 'ok'), response.response_summary
         assert response.response_summary['completion_status'] == ('truncated' if limited else 'complete')
         assert model_completion_status(response.response_summary) == response.response_summary['completion_status']
         assert normalize_usage(response.response_summary['usage']).model_dump() == {

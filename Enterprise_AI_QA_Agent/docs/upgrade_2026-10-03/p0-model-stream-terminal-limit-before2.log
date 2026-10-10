@@ -1,0 +1,475 @@
+FFFFF                                                                    [100%]
+================================== FAILURES ===================================
+_ test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[openai_chat_completions-budget-limited] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1377/test_actual_sdk_missing_termin0')
+transport = 'openai_chat_completions', variant = 'budget-limited'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+        ('openai_chat_completions', 'budget-limited'), ('openai_responses', 'budget-limited'),
+        ('anthropic_messages', 'budget-limited'), ('google_gemini_generate_content', 'budget-limited'),
+        ('langchain_chat', 'budget-limited'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, variant == 'budget-limited', stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+                assert terminal.plan.status == 'planning_failed'
+                assert response.response_summary['completion_status'] == ('truncated' if variant == 'budget-limited' else 'incomplete')
+                assert not env.service._models.requests
+    
+            class SavedResponse:
+                async def invoke(self, *args, **kwargs):
+                    return response
+            state = {'session_id': 'stream-fixture', 'turn_id': 'turn', 'trace_id': 'trace',
+                'mode_key': 'default', 'selected_agent_key': 'fixture', 'selected_model_key': 'fixture',
+                'selected_model_name': 'fixture', 'selected_model_provider': config.provider,
+                'available_tool_keys': [], 'model_visible_tool_keys': [], 'allowed_tool_keys': [],
+                'approval_required_tool_keys': [], 'system_prompt': 'Return JSON.',
+                'runtime_messages': [{'role': 'user', 'content': '{}'}], 'system_prompt_sections': [],
+                'runtime_message_sections': [], 'context_bundle': {}, 'turn_token_usage': {},
+                'plan_steps': [], 'tool_results': [], 'resolved_skill_keys': [], 'pending_approvals': [],
+                'selected_agent_name': 'fixture',
+                'loop_iteration': 0, 'final_response': '', 'pending_turn': {}, 'continue_loop': False,
+                'termination_reason': '', 'control_state': 'running', 'event_log': []}
+            state = await build_model_invoker_node(SavedResponse(), ToolRegistry())(state)
+            state = await build_finalizer_node(model_runtime_service=None)(state)
+            state = responder(state)
+            assert len(sends) == 1
+            if directory:
+                (directory/'graph-facts.json').write_text(json.dumps({'events': state['event_log'],
+                    'termination_reason': state['termination_reason'], 'physical_sends': len(sends),
+                    'actual_protocol_response_used': True, 'full_App_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+>           assert state['termination_reason'] == 'interrupted'
+E           AssertionError: assert 'assistant_final' == 'interrupted'
+E             
+E             - interrupted
+E             + assistant_final
+
+tests\test_model_stream_terminal_http.py:104: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:438 case_planning_failed
+_ test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[openai_responses-budget-limited] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1377/test_actual_sdk_missing_termin1')
+transport = 'openai_responses', variant = 'budget-limited'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+        ('openai_chat_completions', 'budget-limited'), ('openai_responses', 'budget-limited'),
+        ('anthropic_messages', 'budget-limited'), ('google_gemini_generate_content', 'budget-limited'),
+        ('langchain_chat', 'budget-limited'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, variant == 'budget-limited', stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+                assert terminal.plan.status == 'planning_failed'
+                assert response.response_summary['completion_status'] == ('truncated' if variant == 'budget-limited' else 'incomplete')
+                assert not env.service._models.requests
+    
+            class SavedResponse:
+                async def invoke(self, *args, **kwargs):
+                    return response
+            state = {'session_id': 'stream-fixture', 'turn_id': 'turn', 'trace_id': 'trace',
+                'mode_key': 'default', 'selected_agent_key': 'fixture', 'selected_model_key': 'fixture',
+                'selected_model_name': 'fixture', 'selected_model_provider': config.provider,
+                'available_tool_keys': [], 'model_visible_tool_keys': [], 'allowed_tool_keys': [],
+                'approval_required_tool_keys': [], 'system_prompt': 'Return JSON.',
+                'runtime_messages': [{'role': 'user', 'content': '{}'}], 'system_prompt_sections': [],
+                'runtime_message_sections': [], 'context_bundle': {}, 'turn_token_usage': {},
+                'plan_steps': [], 'tool_results': [], 'resolved_skill_keys': [], 'pending_approvals': [],
+                'selected_agent_name': 'fixture',
+                'loop_iteration': 0, 'final_response': '', 'pending_turn': {}, 'continue_loop': False,
+                'termination_reason': '', 'control_state': 'running', 'event_log': []}
+            state = await build_model_invoker_node(SavedResponse(), ToolRegistry())(state)
+            state = await build_finalizer_node(model_runtime_service=None)(state)
+            state = responder(state)
+            assert len(sends) == 1
+            if directory:
+                (directory/'graph-facts.json').write_text(json.dumps({'events': state['event_log'],
+                    'termination_reason': state['termination_reason'], 'physical_sends': len(sends),
+                    'actual_protocol_response_used': True, 'full_App_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+>           assert state['termination_reason'] == 'interrupted'
+E           AssertionError: assert 'assistant_final' == 'interrupted'
+E             
+E             - interrupted
+E             + assistant_final
+
+tests\test_model_stream_terminal_http.py:104: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:438 case_planning_failed
+_ test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[anthropic_messages-budget-limited] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1377/test_actual_sdk_missing_termin2')
+transport = 'anthropic_messages', variant = 'budget-limited'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+        ('openai_chat_completions', 'budget-limited'), ('openai_responses', 'budget-limited'),
+        ('anthropic_messages', 'budget-limited'), ('google_gemini_generate_content', 'budget-limited'),
+        ('langchain_chat', 'budget-limited'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, variant == 'budget-limited', stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+                assert terminal.plan.status == 'planning_failed'
+                assert response.response_summary['completion_status'] == ('truncated' if variant == 'budget-limited' else 'incomplete')
+                assert not env.service._models.requests
+    
+            class SavedResponse:
+                async def invoke(self, *args, **kwargs):
+                    return response
+            state = {'session_id': 'stream-fixture', 'turn_id': 'turn', 'trace_id': 'trace',
+                'mode_key': 'default', 'selected_agent_key': 'fixture', 'selected_model_key': 'fixture',
+                'selected_model_name': 'fixture', 'selected_model_provider': config.provider,
+                'available_tool_keys': [], 'model_visible_tool_keys': [], 'allowed_tool_keys': [],
+                'approval_required_tool_keys': [], 'system_prompt': 'Return JSON.',
+                'runtime_messages': [{'role': 'user', 'content': '{}'}], 'system_prompt_sections': [],
+                'runtime_message_sections': [], 'context_bundle': {}, 'turn_token_usage': {},
+                'plan_steps': [], 'tool_results': [], 'resolved_skill_keys': [], 'pending_approvals': [],
+                'selected_agent_name': 'fixture',
+                'loop_iteration': 0, 'final_response': '', 'pending_turn': {}, 'continue_loop': False,
+                'termination_reason': '', 'control_state': 'running', 'event_log': []}
+            state = await build_model_invoker_node(SavedResponse(), ToolRegistry())(state)
+            state = await build_finalizer_node(model_runtime_service=None)(state)
+            state = responder(state)
+            assert len(sends) == 1
+            if directory:
+                (directory/'graph-facts.json').write_text(json.dumps({'events': state['event_log'],
+                    'termination_reason': state['termination_reason'], 'physical_sends': len(sends),
+                    'actual_protocol_response_used': True, 'full_App_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+>           assert state['termination_reason'] == 'interrupted'
+E           AssertionError: assert 'assistant_final' == 'interrupted'
+E             
+E             - interrupted
+E             + assistant_final
+
+tests\test_model_stream_terminal_http.py:104: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:438 case_planning_failed
+_ test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[google_gemini_generate_content-budget-limited] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1377/test_actual_sdk_missing_termin3')
+transport = 'google_gemini_generate_content', variant = 'budget-limited'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+        ('openai_chat_completions', 'budget-limited'), ('openai_responses', 'budget-limited'),
+        ('anthropic_messages', 'budget-limited'), ('google_gemini_generate_content', 'budget-limited'),
+        ('langchain_chat', 'budget-limited'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, variant == 'budget-limited', stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+                assert terminal.plan.status == 'planning_failed'
+                assert response.response_summary['completion_status'] == ('truncated' if variant == 'budget-limited' else 'incomplete')
+                assert not env.service._models.requests
+    
+            class SavedResponse:
+                async def invoke(self, *args, **kwargs):
+                    return response
+            state = {'session_id': 'stream-fixture', 'turn_id': 'turn', 'trace_id': 'trace',
+                'mode_key': 'default', 'selected_agent_key': 'fixture', 'selected_model_key': 'fixture',
+                'selected_model_name': 'fixture', 'selected_model_provider': config.provider,
+                'available_tool_keys': [], 'model_visible_tool_keys': [], 'allowed_tool_keys': [],
+                'approval_required_tool_keys': [], 'system_prompt': 'Return JSON.',
+                'runtime_messages': [{'role': 'user', 'content': '{}'}], 'system_prompt_sections': [],
+                'runtime_message_sections': [], 'context_bundle': {}, 'turn_token_usage': {},
+                'plan_steps': [], 'tool_results': [], 'resolved_skill_keys': [], 'pending_approvals': [],
+                'selected_agent_name': 'fixture',
+                'loop_iteration': 0, 'final_response': '', 'pending_turn': {}, 'continue_loop': False,
+                'termination_reason': '', 'control_state': 'running', 'event_log': []}
+            state = await build_model_invoker_node(SavedResponse(), ToolRegistry())(state)
+            state = await build_finalizer_node(model_runtime_service=None)(state)
+            state = responder(state)
+            assert len(sends) == 1
+            if directory:
+                (directory/'graph-facts.json').write_text(json.dumps({'events': state['event_log'],
+                    'termination_reason': state['termination_reason'], 'physical_sends': len(sends),
+                    'actual_protocol_response_used': True, 'full_App_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+>           assert state['termination_reason'] == 'interrupted'
+E           AssertionError: assert 'assistant_final' == 'interrupted'
+E             
+E             - interrupted
+E             + assistant_final
+
+tests\test_model_stream_terminal_http.py:104: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  google_genai.models:models.py:8668 Direct use of automatic function calling (AFC) in AsyncModels.generate_content_stream is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message_stream. Similarly, direct use of AFC in AsyncModels.generate_content is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message.
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:438 case_planning_failed
+_ test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[langchain_chat-budget-limited] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1377/test_actual_sdk_missing_termin4')
+transport = 'langchain_chat', variant = 'budget-limited'
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize('transport,variant', [
+        ('openai_chat_completions', 'missing-terminal'), ('openai_responses', 'missing-terminal'),
+        ('anthropic_messages', 'missing-terminal'), ('google_gemini_generate_content', 'missing-terminal'),
+        ('langchain_chat', 'missing-terminal'), ('anthropic_messages', 'missing-message-stop'),
+        ('openai_chat_completions', 'budget-limited'), ('openai_responses', 'budget-limited'),
+        ('anthropic_messages', 'budget-limited'), ('google_gemini_generate_content', 'budget-limited'),
+        ('langchain_chat', 'budget-limited'),
+    ])
+    async def test_actual_sdk_missing_terminal_cannot_accept_valid_JSON(tmp_path, transport, variant):
+        actual_transport = 'openai_chat_completions' if transport == 'langchain_chat' else transport
+        with provider(actual_transport, variant == 'budget-limited', stream_variant=variant) as (url, sends, replies):
+            settings = get_settings().model_copy(deep=True)
+            settings.model.langchain_model_adapter_enabled = transport == 'langchain_chat'
+            config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+                'google' if actual_transport.startswith('google') else
+                'anthropic' if actual_transport.startswith('anthropic') else 'openai'),
+                transport=actual_transport, model_id='fixture-model', api_base_url=url,
+                api_key='local-fixture-marker', max_output_tokens=512)
+            runtime = ModelRuntimeService(Registry(config), settings)
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            async with runtime.stream_handler(receive):
+                response = await runtime.invoke('fixture', ModelInvocationRequest(system_prompt='Return supplied JSON.',
+                    messages=[{'role': 'user', 'content': json.dumps(finish(), ensure_ascii=False)}]))
+            assert len(sends) == 1
+            directory = None
+            if name := os.getenv('QA_MODEL_STREAM_TERMINAL_DIR'):
+                directory = Path(name) / f'{transport}-{variant}'
+                directory.mkdir(parents=True, exist_ok=False)
+                (directory/'physical-request.json').write_text(json.dumps(sends[0], ensure_ascii=False, indent=2), encoding='utf-8')
+                (directory/'physical-response.bin').write_bytes(replies[0])
+                (directory/'sdk-result.json').write_text(response.model_dump_json(indent=2), encoding='utf-8')
+    
+            async with environment(tmp_path, model=SubmissionModel(json.dumps(finish()))) as env:
+                project = await env.projects.create(ProjectCreateRequest(project_key='stream-terminal', name='流式协议终态'))
+                seed = await env.service.prepare_task(project.id, CasePlanningRequest(objective='核验真实协议结束'))
+                seed.plan.rounds = [{'round': 1, 'status': 'response_received', 'response_metadata': response.response_summary}]
+                checkpoint = PlanningTaskCheckpoint(plan=seed.plan.model_copy(deep=True), phase='response',
+                    next_round=1, response_text=response.text, response_metadata=response.response_summary)
+                saved = []
+                async def persist(value, *, message):
+                    saved.append(value.model_copy(deep=True))
+                terminal = await CasePlanningWorkflow(env.service).run(seed, checkpoint,
+                    deadline_at=datetime.now(timezone.utc)+timedelta(seconds=30), persist=persist)
+                if directory:
+                    (directory/'facts.json').write_text(json.dumps({'terminal': terminal.model_dump(mode='json'),
+                        'physical_sends': len(sends), 'recovery_new_sends': len(env.service._models.requests),
+                        'visible_deltas': deltas, 'real_external_provider': False,
+                        'controlled_HTTP': True, 'business_execution_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+                assert response.text == json.dumps(finish(), ensure_ascii=False)
+                assert terminal.plan.status == 'planning_failed'
+                assert response.response_summary['completion_status'] == ('truncated' if variant == 'budget-limited' else 'incomplete')
+                assert not env.service._models.requests
+    
+            class SavedResponse:
+                async def invoke(self, *args, **kwargs):
+                    return response
+            state = {'session_id': 'stream-fixture', 'turn_id': 'turn', 'trace_id': 'trace',
+                'mode_key': 'default', 'selected_agent_key': 'fixture', 'selected_model_key': 'fixture',
+                'selected_model_name': 'fixture', 'selected_model_provider': config.provider,
+                'available_tool_keys': [], 'model_visible_tool_keys': [], 'allowed_tool_keys': [],
+                'approval_required_tool_keys': [], 'system_prompt': 'Return JSON.',
+                'runtime_messages': [{'role': 'user', 'content': '{}'}], 'system_prompt_sections': [],
+                'runtime_message_sections': [], 'context_bundle': {}, 'turn_token_usage': {},
+                'plan_steps': [], 'tool_results': [], 'resolved_skill_keys': [], 'pending_approvals': [],
+                'selected_agent_name': 'fixture',
+                'loop_iteration': 0, 'final_response': '', 'pending_turn': {}, 'continue_loop': False,
+                'termination_reason': '', 'control_state': 'running', 'event_log': []}
+            state = await build_model_invoker_node(SavedResponse(), ToolRegistry())(state)
+            state = await build_finalizer_node(model_runtime_service=None)(state)
+            state = responder(state)
+            assert len(sends) == 1
+            if directory:
+                (directory/'graph-facts.json').write_text(json.dumps({'events': state['event_log'],
+                    'termination_reason': state['termination_reason'], 'physical_sends': len(sends),
+                    'actual_protocol_response_used': True, 'full_App_verified': False}, ensure_ascii=False, indent=2), encoding='utf-8')
+>           assert state['termination_reason'] == 'interrupted'
+E           AssertionError: assert 'assistant_final' == 'interrupted'
+E             
+E             - interrupted
+E             + assistant_final
+
+tests\test_model_stream_terminal_http.py:104: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_cases.planning_workflow:planning_workflow.py:268 case_planning_response_incomplete
+ERROR    src.application.test_cases.planning_workflow:planning_workflow.py:438 case_planning_failed
+=========================== short test summary info ===========================
+FAILED tests/test_model_stream_terminal_http.py::test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[openai_chat_completions-budget-limited]
+FAILED tests/test_model_stream_terminal_http.py::test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[openai_responses-budget-limited]
+FAILED tests/test_model_stream_terminal_http.py::test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[anthropic_messages-budget-limited]
+FAILED tests/test_model_stream_terminal_http.py::test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[google_gemini_generate_content-budget-limited]
+FAILED tests/test_model_stream_terminal_http.py::test_actual_sdk_missing_terminal_cannot_accept_valid_JSON[langchain_chat-budget-limited]
+5 failed, 6 deselected in 9.17s
