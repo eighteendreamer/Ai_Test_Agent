@@ -5084,3 +5084,13 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 未验：默认模型/Agent完整知识查询和执行、人工DeepSeek、清洗遗漏/网络跨文档Shadow DOM、录制前场景、跨录制/selector修复/失败定位报告、场景归档版本专项、容量及生产历史/并发DDL。API重启窗口会话轮询网络错误单列，不将受控产品通过扩大成完整P0—P5完成。初始化新表需PG CREATE/INDEX权限。三份方案同步/历史与保护文件审计；白名单提交，不推送/PR。
 
 最终追加product-integrity独立实际验收1通过72.94秒，0跳过：整理前保存PG原始8条事件整行，步骤/别名/草稿/API重启后全列及payload逐行相等，补足此前只有API前后回读相等的证据范围。审计初次误将PG payload与API序列化逐字比较，已查明既有索引TIMESTAMPTZ→naive UTC投影；按既有实现核对时间时刻，并保留原始两份PG行证明。不改时间契约、不覆盖原complete工件。最终audit覆盖新工件、10批历史原件及受保护文件；新表生产迁移仍未验。
+
+## 场景知识进入现有Agent工具：基线cc2d74f5，方案7.15
+
+依据与范围见 `P5_SCENE_KNOWLEDGE_RESEARCH.md`。场景版本已存在PG，不新增副本；沿现有 `knowledge-rag` safe 工具增加 `scene_search`/`scene_read`，主进程注入项目绑定的读取服务。持久会话项目与上下文交叉核对；目录只给版本/哈希导航；正文按精确scene/version/hash读取完整步骤、原始响应/定位和别名target/page，并明确 `verification_status=not_executed`。ToolJob仍走原PG记录，旧Markdown/记忆检索保持原路径，未增加执行模式、模型或配置。
+
+旧实现复现1失败42.07秒：knowledge-rag缺场景读取，返回旧Markdown；修复验证首轮测试导入错误保留。此前final1通过80.26秒为直接Runtime范围。补充注册入口与恢复：Agent_Server中RUN_LIVE_SCENE_KNOWLEDGE=1，RECORDING_SCENE_EVIDENCE为独立绝对p5-scene-knowledge-complete目录，运行 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_knowledge_live.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-knowledge-complete.xml`，1通过64.97秒。
+
+真实HTML/CDP、built App和独立main创建资产；测试进程真实PG Runtime经注册StructuredTool/权限治理调用，无模型。API重启/头更新/项目归档后新建stores读取固定V2，终态重投沿原Job不再执行。完整正文/来源/别名依据实际断言；跨项目失败。不能宣称默认Agent或主进程工具调用完成，规划来源目录仍需补。
+
+最终受影响回归 `test_agent_case_assessment.py test_deep_agent_tool_replay.py test_langchain_tool_adapter.py test_scene_knowledge_contract.py test_recording_scene_contract.py test_recording_scene_draft_projection.py`，61通过2门控跳过19.28秒；跳过真实默认模型/单独存储门控，不计完成。实际产品已含build，未改前端且不另报新前端专项；最终compileall_exit=0仅补语法。审计原件、前序工件、受保护文件与三份方案后按白名单提交，不推送/PR。

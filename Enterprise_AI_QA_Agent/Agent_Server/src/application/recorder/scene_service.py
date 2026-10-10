@@ -7,6 +7,7 @@ import logging
 from uuid import uuid4
 
 from src.application.recorder.recording_case_draft_service import build_recording_draft_payload
+from src.application.recorder.scene_knowledge import scene_alias_evidence
 from src.application.test_cases.case_store import DuplicateCaseKeyError
 from src.application.test_cases.version_content import version_content_hash
 from src.infrastructure.recording_scene_store import scene_hash
@@ -131,9 +132,7 @@ class RecordingSceneService:
             generation_metadata={"scene_version_id":version.id,"scene_content_hash":version.content_hash})
         payload["test_data"]["scene"] = {"scene_id":scene_id,"version_id":version.id,"content_hash":version.content_hash,
             "description":version.content.description,
-            "aliases":[{**a.model_dump(mode="json"),
-                "target":deepcopy(originals[a.source_seq]["data"]["event"]["target"]),
-                "page":deepcopy(originals[a.source_seq]["data"]["event"]["page"])} for a in version.content.aliases],
+            "aliases":scene_alias_evidence(version),
             "alias_usage":"业务别名引用固定录制定位和页面范围；执行步骤仍读取各自的完整data.event，不用别名覆盖原定位。",
             "excluded_sequences":version.source["excluded_sequences"]}
         payload["source_refs"].append(TestCaseSourceRef(source_type="ui_recording_scene",source_id=scene_id,version=version.id,

@@ -19,6 +19,10 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_RECORD
 
 
 async def test_actual_recording_scene_management(tmp_path):
+    await actual_recording_scene_management(tmp_path)
+
+
+async def actual_recording_scene_management(tmp_path, scene_probe=None):
     evidence = Path(os.environ["RECORDING_SCENE_EVIDENCE"])
     evidence.mkdir(parents=True, exist_ok=False)
     def save(name, value):
@@ -100,6 +104,9 @@ async def test_actual_recording_scene_management(tmp_path):
                 v2 = edits[0].json()
                 assert edits[1].json()==v2 and v2["version"]["version"]==2
                 save("version2.json",v2)
+                if scene_probe is not None:
+                    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+                        project_ids=project_ids, version=v2)
                 assert (await client.get(detail_url,params={"version_id":v1["version"]["id"]})).json()["version"]==v1["version"]
                 assert (await client.get(detail_url+"/versions/by-request/"+edit["request_id"])).json()==v2
                 for changed in ({**edit,"request_id":str(uuid4())},{**edit,"change_reason":"更改相同请求"}):
@@ -195,6 +202,9 @@ async def test_actual_recording_scene_management(tmp_path):
                     after = (await client.get(detail_url)).json()
                     assert after["version"]["version"]==4
                     assert (await client.get(draft_url)).json()==draft
+                    if scene_probe is not None:
+                        await scene_probe(stage="restart", settings=settings, client=client, evidence=evidence,
+                            project_ids=project_ids, version=v2)
                     await page.reload()
                     await page.locator("aside button").filter(has_text="页面整理场景").click()
                     await expect(page.get_by_label("场景名称",exact=True)).to_have_value("页面整理场景")
@@ -213,6 +223,9 @@ async def test_actual_recording_scene_management(tmp_path):
                 archived_response.raise_for_status()
                 assert (await client.post(url,json={**creation,"request_id":str(uuid4())})).status_code==409
                 assert (await client.get(detail_url)).status_code==200
+                if scene_probe is not None:
+                    await scene_probe(stage="archived", settings=settings, client=client, evidence=evidence,
+                        project_ids=project_ids, version=v2)
                 save("facts.json",{"scene_heads":len(raw[settings.database.postgres_recording_scene_table]),"scene_versions":len(raw[settings.database.postgres_recording_scene_version_table]),"original_events_unchanged":True,"postgres_original_rows_unchanged":True,"excluded_sequence":excluded,"project_isolation":404,"archived_write":409,"race_statuses":[201,409],"default_ai_invoked":False})
     finally:
         if graph:

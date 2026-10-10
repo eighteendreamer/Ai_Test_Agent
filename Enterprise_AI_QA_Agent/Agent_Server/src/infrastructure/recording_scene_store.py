@@ -93,6 +93,25 @@ class PostgresRecordingSceneStore:
     async def versions(self, project_id, scene_id):
         return await asyncio.to_thread(self._history, project_id, scene_id)
 
+    async def search(self, project_id, query, limit, offset):
+        return await asyncio.to_thread(self._search, project_id, query, limit, offset)
+
+    def _search(self, project_id, query, limit, offset):
+        clauses = ["h.project_id=%s", "v.payload->'content'->>'status'<>%s"]
+        parameters = [project_id, "archived"]
+        if query:
+            clauses.append("(v.payload->'content'->>'name' ILIKE %s OR v.payload->'content'->>'description' ILIKE %s)")
+            parameters.extend([f"%{query}%", f"%{query}%"])
+        parameters.extend([limit+1, offset])
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT h.*, v.payload FROM {self._heads} h JOIN {self._versions} v ON v.id=h.current_version_id WHERE {' AND '.join(clauses)} ORDER BY h.updated_at DESC,h.id LIMIT %s OFFSET %s", parameters)
+            rows = cur.fetchall()
+        return {"items":[{"scene_id":row["id"],"version_id":row["current_version_id"],
+            "name":row["payload"]["content"]["name"],"status":row["payload"]["content"]["status"],
+            "version":row["payload"]["version"],"content_hash":row["payload"]["content_hash"],
+            "step_count":len(row["payload"]["content"]["steps"])} for row in rows[:limit]],
+            "has_more":len(rows)>limit,"limit":limit,"offset":offset}
+
     async def version_by_request(self, project_id, scene_id, request_id):
         return await asyncio.to_thread(self._version_by_request, project_id, scene_id, request_id)
 

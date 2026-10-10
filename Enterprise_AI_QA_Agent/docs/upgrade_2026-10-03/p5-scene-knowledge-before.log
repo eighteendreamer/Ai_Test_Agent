@@ -1,0 +1,76 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____________ test_new_scene_is_read_by_the_actual_knowledge_tool _____________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1402/test_new_scene_is_read_by_the_0')
+
+    async def test_new_scene_is_read_by_the_actual_knowledge_tool(tmp_path):
+        state = {}
+    
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            def save(name, value):
+                (evidence/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            jobs = ToolJobService(PostgresToolJobStore(settings))
+            await jobs.initialize()
+            sessions = PostgresSessionStore(settings)
+            tools = ToolRuntimeService(settings=settings, tool_job_service=jobs, session_store=sessions)
+            tool = ToolRegistry().get("knowledge-rag")
+            if stage == "initial":
+                response = await client.post("/sessions", json=CreateSessionRequest(project_id=project_ids[0]).model_dump(mode="json"))
+                response.raise_for_status()
+                state["session"] = response.json()
+                context = ToolExecutionContext(session_id=state["session"]["id"], turn_id="scene-read", trace_id="scene-read",
+                    user_message="读取本项目固定场景", normalized_input="场景", context_bundle={"project_id":project_ids[0]})
+                call = ModelToolCall(id=str(uuid4()), name=tool.key, arguments={"query":"", "operation":"scene_read",
+                    "scene_id":version["scene_id"], "version_id":version["version"]["id"], "content_hash":version["version"]["content_hash"]})
+                record = await tools.execute(tool, call, context)
+                save("scene-knowledge-before-or-fixed.json",record.model_dump(mode="json"))
+                assert record.status == "completed" and record.output.get("scene_knowledge"), record.output
+                state.update(call=call, context=context, record=record)
+    
+>       await actual_recording_scene_management(tmp_path, scene_probe=probe)
+
+tests\test_scene_knowledge_live.py:44: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:108: in actual_recording_scene_management
+    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+stage = 'initial'
+settings = Settings(app_name='Enterprise AI QA Agent', app_env='development', api_v1_prefix='/api/v1', api_auth_token=None, data_...int', checkpoint_pool_size=4, max_subagent_calls_per_turn=1, subagent_model_call_limit=6, subagent_tool_call_limit=12))
+client = <httpx.AsyncClient object at 0x0000027E21CED310>
+evidence = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p5-scene-knowledge-before')
+project_ids = ['f91cb098-8bf6-494d-88de-7295c4d7ffcb', '19ffc3ea-a344-4727-ad35-f90359ec1c23']
+version = {'scene_id': '0d4fe50b-b278-45eb-9330-ca39083ad2c7', 'project_id': 'f91cb098-8bf6-494d-88de-7295c4d7ffcb', 'current_ve..._id': '0d4fe50b-b278-45eb-9330-ca39083ad2c7', 'project_id': 'f91cb098-8bf6-494d-88de-7295c4d7ffcb', 'version': 2, ...}}
+
+    async def probe(*, stage, settings, client, evidence, project_ids, version):
+        def save(name, value):
+            (evidence/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        jobs = ToolJobService(PostgresToolJobStore(settings))
+        await jobs.initialize()
+        sessions = PostgresSessionStore(settings)
+        tools = ToolRuntimeService(settings=settings, tool_job_service=jobs, session_store=sessions)
+        tool = ToolRegistry().get("knowledge-rag")
+        if stage == "initial":
+            response = await client.post("/sessions", json=CreateSessionRequest(project_id=project_ids[0]).model_dump(mode="json"))
+            response.raise_for_status()
+            state["session"] = response.json()
+            context = ToolExecutionContext(session_id=state["session"]["id"], turn_id="scene-read", trace_id="scene-read",
+                user_message="读取本项目固定场景", normalized_input="场景", context_bundle={"project_id":project_ids[0]})
+            call = ModelToolCall(id=str(uuid4()), name=tool.key, arguments={"query":"", "operation":"scene_read",
+                "scene_id":version["scene_id"], "version_id":version["version"]["id"], "content_hash":version["version"]["content_hash"]})
+            record = await tools.execute(tool, call, context)
+            save("scene-knowledge-before-or-fixed.json",record.model_dump(mode="json"))
+>           assert record.status == "completed" and record.output.get("scene_knowledge"), record.output
+E           AssertionError: {'ok': True, 'query': '场景', 'chunks': [{'score': 86, 'source': 'security_testing_mode_continuous_pentest_upgrade_2026-...| --- | --- | | 父会话 ID | `03bf52df-e757-448f-a83a-d904291cc971` | | Campaign ID | `f3cc4fec-88b'}], 'metrics': {}, ...}
+E           assert ('completed' == 'completed'
+E             
+E               completed and None)
+E            +  where None = <built-in method get of dict object at 0x0000027E2337B580>('scene_knowledge')
+E            +    where <built-in method get of dict object at 0x0000027E2337B580> = {'ok': True, 'query': '场景', 'chunks': [{'score': 86, 'source': 'security_testing_mode_continuous_pentest_upgrade_2026-...| --- | --- | | 父会话 ID | `03bf52df-e757-448f-a83a-d904291cc971` | | Campaign ID | `f3cc4fec-88b'}], 'metrics': {}, ...}.get
+E            +      where {'ok': True, 'query': '场景', 'chunks': [{'score': 86, 'source': 'security_testing_mode_continuous_pentest_upgrade_2026-...| --- | --- | | 父会话 ID | `03bf52df-e757-448f-a83a-d904291cc971` | | Campaign ID | `f3cc4fec-88b'}], 'metrics': {}, ...} = ToolExecutionRecord(call_id='be721f67-8a93-4130-9e2e-ef7f9e351d0f', job_id='adca9d94-b8cf-4c5e-b71c-61e32d3a161f', too...at=datetime.datetime(2026, 10, 10, 5, 23, 58, 753198), completed_at=datetime.datetime(2026, 10, 10, 5, 23, 58, 845433)).output
+
+tests\test_scene_knowledge_live.py:41: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_scene_knowledge_live.py::test_new_scene_is_read_by_the_actual_knowledge_tool
+1 failed in 42.07s

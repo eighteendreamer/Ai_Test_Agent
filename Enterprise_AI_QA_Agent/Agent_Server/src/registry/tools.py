@@ -233,7 +233,10 @@ class ToolRegistry:
                 descriptor=ToolDescriptor(
                     key="knowledge-rag",
                     name="Knowledge RAG",
-                    description="Retrieve test rules, page knowledge, and historical defects.",
+                    description=("Retrieve test rules, page knowledge, and historical defects. "
+                        "scene_search lists scenes in the session-bound project; scene_read requires the exact scene_id, "
+                        "version_id and content_hash from that catalog to read full recorded steps, responses and aliases. "
+                        "Catalogs and organized scenes do not prove execution or test success."),
                     category="knowledge",
                     permission_level="safe",
                     input_schema={
@@ -241,11 +244,17 @@ class ToolRegistry:
                         "properties": {
                             "query": {"type": "string", "description": "The knowledge lookup query."},
                             "top_k": {"type": "integer", "description": "Maximum number of chunks to return.", "default": 3},
+                            "operation": {"type":"string", "enum":["scene_search","scene_read"], "description":"Omit for existing text retrieval. For scene operations omit top_k; project comes from the persisted session."},
+                            "scene_id": {"type":"string"},
+                            "version_id": {"type":"string"},
+                            "content_hash": {"type":"string", "pattern":"^[0-9a-f]{64}$"},
+                            "limit": {"type":"integer", "minimum":1, "maximum":50, "default":20},
+                            "offset": {"type":"integer", "minimum":0, "maximum":100000, "default":0},
                         },
                         "required": ["query"],
                     },
                     supports_streaming=True,
-                    output_schema={"chunks": "array"},
+                    output_schema={"chunks": "array", "scene_catalog":"object", "scene_knowledge":"object", "verification_status":"string"},
                     tags=["retrieval", "knowledge"],
                 ),
                 handler_key="knowledge-rag",

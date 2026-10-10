@@ -222,6 +222,7 @@ class ToolRuntimeService:
         self._artifact_storage_service = artifact_storage_service
         self._api_docs_service = api_docs_service
         self._session_store = session_store
+        self._recording_scene_knowledge = None
         self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._output_safety_policy = OutputSafetyPolicy()
         self._coordinator_runtime_service = coordinator_runtime_service
@@ -949,6 +950,20 @@ class ToolRuntimeService:
         arguments: dict[str, Any],
         context: ToolExecutionContext,
     ) -> dict[str, Any]:
+        if arguments.get("operation") in {"scene_search", "scene_read"}:
+            from pydantic import ValidationError
+            from src.application.recorder.scene_knowledge import SceneKnowledgeQuery
+            if self._recording_scene_knowledge is None:
+                logger.error("recording_scene_knowledge_unavailable", extra={"session_id":context.session_id})
+                return {"status":"failed","ok":False,"summary":"场景知识读取尚未初始化。","error":"scene_knowledge_unavailable","chunks":[]}
+            try:
+                request = SceneKnowledgeQuery.model_validate(arguments)
+                return await self._recording_scene_knowledge.query(request, context)
+            except (KeyError, ValueError) as exc:
+                reason = "场景查询参数不符合固定版本契约" if isinstance(exc, ValidationError) else str(exc)
+                logger.warning("recording_scene_knowledge_rejected", extra={"session_id":context.session_id,
+                    "operation":arguments.get("operation"),"error_type":type(exc).__name__})
+                return {"status":"failed","ok":False,"summary":reason,"error":"scene_knowledge_rejected","chunks":[]}
         query = str(arguments.get("query") or context.normalized_input).strip()
         top_k = int(arguments.get("top_k") or 3)
         if not query:
@@ -1002,6 +1017,9 @@ class ToolRuntimeService:
             "chunks": selected,
             "query": query,
         }
+
+    def set_recording_scene_knowledge(self, service) -> None:
+        self._recording_scene_knowledge = service
 
     async def _run_web_search(
         self,
