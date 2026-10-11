@@ -3421,3 +3421,10 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 修复后真实验收 `test_recording_network_live.py` **1通过16.43秒**：三个状态与一次点击关联，查询参数和响应体均未进入PG网络证据；Shadow DOM/策略/范围/质量回归 **17通过、40跳过、31.86秒**，Node语法检查通过。证据见 `p5-recording-network-before2/`、`p5-recording-network-verified2/` 和对应 XML。协议仍为 `recording-dom-response-v1`，新增 `network_correlation=instrumented_fetch_xhr_completion`、`network_observation_status` 和 `network` 字段，无新表/配置/依赖。
 
 这一步是可审计的 fetch/XHR 元数据关联，不等同服务端业务因果或网络全覆盖；beacon、WebSocket、Service Worker 内部请求、导航、closed Shadow DOM、selector修复、失败定位报告和默认AI使用仍未完成。
+### 7.28 安全工具结果到报告与完整 App 独立复验〔2026-10-11〕
+
+本批没有修改安全生产代码。沿现有 `http_headers_probe`、Kali Docker 执行器、`SecurityTestingModeRuntime` 报告恢复边界、报告列表 API 和已构建前端，用真实本地 HTTP 目标产生缺少安全响应头、完整响应头和不可达三种结果；不调用 Agent/模型。
+
+独立真实验收 `test_security_report_product.py` **1通过、64.13秒**：3个真实任务为2完成/1失败，4个发现，报告状态为部分完成；RustFS 原件下载后的 JSON 结算、核验、评估字段与最终报告一致；报告列表按模式过滤后分页，未就绪会话显示进行中；API 重启后报告内容一致且没有新增目标 GET。构建版完整 App 的报告页显示任务总数3、失败1、缺少 X-Frame-Options、等级“需关注”，浏览器下载成功，页面错误0。Kali/PG/RustFS/Redis、容器删除、跨会话404和 ToolJob 重放事实均保留在 `p5-security-report-current/`，JUnit 在 `p5-security-report-current.xml`。
+
+该批证明现有响应头工具结果可以进入报告及完整 App 展示，不等同其他安全扫描器、完整 Agent 自主规划、权限/超时/存储故障组合、连续性能容量或生产部署迁移验收。默认 Step/AI 仍按用户决定等待实名认证。

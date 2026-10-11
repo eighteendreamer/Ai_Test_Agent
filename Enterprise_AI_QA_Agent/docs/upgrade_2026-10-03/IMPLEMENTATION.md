@@ -5238,3 +5238,9 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 ## 2026-10-11 UI录制 fetch/XHR 网络响应元数据关联
 
 详见 `P5_RECORDING_NETWORK_RESEARCH.md`。生产脚本在响应窗口内为 fetch/XHR 保存脱敏路径、方法、HTTP状态、ok/outcome和耗时，并以action local sequence关联；不保存查询串、请求/响应体或头部。真实旧脚本复现一次点击触发fetch 200、404和XHR 201但没有network字段；修复后真实Chromium/生产API/隔离MySQL/PG/Redis/Memgraph测试1通过16.43秒，三个状态均被保存且敏感查询/响应体未泄露。Shadow/策略/范围/质量回归17通过40跳过31.86秒，Node语法检查通过。该关联仍不等同业务因果或网络全覆盖，默认AI继续暂缓。
+
+## 2026-10-11 安全工具结果到报告与完整 App 独立复验
+
+本批未修改安全生产代码。使用现有 `http_headers_probe` 与真实 Kali Docker，对本地 HTTP 目标生成缺少响应头、完整响应头、不可达三种结果，并沿已有报告恢复边界生成安全报告；没有 Agent/模型调用。`test_security_report_product.py` **1通过、64.13秒**。报告为3任务、2完成、1失败、4发现、部分完成；RustFS 原件下载的 JSON 结算/核验/评估字段与最终报告一致；报告中心分页和模式过滤成立，待处理会话显示进行中；独立 API 重启后报告一致且没有新增目标 GET。构建版完整 App 报告页显示3任务、失败1、缺少 X-Frame-Options、等级“需关注”，浏览器下载成功，页面错误0。证据目录 `p5-security-report-current/`，JUnit `p5-security-report-current.xml`。
+
+范围仍限现有响应头工具和报告产品链路；其他扫描器、完整默认 Agent、权限/超时/存储故障组合、连续容量、生产部署与迁移仍未验收。

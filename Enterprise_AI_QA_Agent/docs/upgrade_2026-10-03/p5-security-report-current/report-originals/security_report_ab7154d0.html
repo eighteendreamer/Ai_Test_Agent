@@ -1,0 +1,400 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>安全测试报告 - http://127.0.0.1 (url)</title>
+    <style>
+      :root {
+        --ink: #14213d;
+        --muted: #64748b;
+        --line: #d8e0ea;
+        --panel: #ffffff;
+        --soft: #f5f7fb;
+        --critical: #7f1d1d;
+        --high: #b91c1c;
+        --medium: #b45309;
+        --low: #0369a1;
+        --info: #475569;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        padding: 28px;
+        background:
+          radial-gradient(circle at 14% 10%, rgba(14, 165, 233, 0.16), transparent 30%),
+          radial-gradient(circle at 88% 0%, rgba(248, 113, 113, 0.12), transparent 26%),
+          linear-gradient(180deg, #eef4fb 0%, #f8fafc 100%);
+        color: var(--ink);
+        font-family: "Aptos", "Segoe UI", "Microsoft YaHei", sans-serif;
+      }
+
+      .shell {
+        max-width: 1100px;
+        margin: 0 auto;
+        overflow: hidden;
+        border: 1px solid var(--line);
+        border-radius: 24px;
+        background: var(--panel);
+        box-shadow: 0 24px 70px rgba(15, 23, 42, 0.14);
+      }
+
+      .hero {
+        padding: 34px 38px 30px;
+        color: #fff;
+        background:
+          linear-gradient(120deg, rgba(255, 255, 255, 0.1), transparent 36%),
+          linear-gradient(135deg, #08111f 0%, #12355b 48%, #7f1d1d 100%);
+      }
+
+      .eyebrow {
+        margin: 0 0 12px;
+        color: rgba(255, 255, 255, 0.72);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 860px;
+        font-size: 34px;
+        line-height: 1.15;
+      }
+
+      .hero-grid,
+      .kpi-grid,
+      .severity-grid {
+        display: grid;
+        gap: 14px;
+      }
+
+      .hero-grid {
+        grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
+        margin-top: 24px;
+      }
+
+      .hero-card {
+        min-height: 86px;
+        padding: 14px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.09);
+      }
+
+      .label {
+        margin: 0 0 6px;
+        color: rgba(255, 255, 255, 0.7);
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .value {
+        margin: 0;
+        font-size: 16px;
+        font-weight: 800;
+        line-height: 1.45;
+      }
+
+      .body {
+        padding: 32px 38px 40px;
+      }
+
+      .kpi-grid {
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        margin-bottom: 22px;
+      }
+
+      .kpi {
+        padding: 18px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+      }
+
+      .kpi span {
+        display: block;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .kpi strong {
+        display: block;
+        margin-top: 8px;
+        font-size: 30px;
+      }
+
+      .severity-grid {
+        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+        margin: 0 0 30px;
+      }
+
+      .severity {
+        padding: 15px 16px;
+        border-radius: 14px;
+        color: #fff;
+      }
+
+      .severity strong {
+        display: block;
+        font-size: 26px;
+      }
+
+      .severity span {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .critical { background: var(--critical); }
+      .high { background: var(--high); }
+      .medium { background: var(--medium); }
+      .low { background: var(--low); }
+      .info { background: var(--info); }
+
+      .content {
+        color: #24324a;
+        font-size: 15px;
+        line-height: 1.78;
+      }
+
+      .content h1,
+      .content h2,
+      .content h3,
+      .content h4 {
+        margin: 28px 0 12px;
+        color: #0f172a;
+        line-height: 1.25;
+      }
+
+      .content h1 { font-size: 28px; }
+      .content h2 { font-size: 23px; }
+      .content h3 { font-size: 19px; }
+
+      .content p {
+        margin: 0 0 14px;
+      }
+
+      .content ul,
+      .content ol {
+        margin: 0 0 16px 24px;
+        padding: 0;
+      }
+
+      .content li {
+        margin-bottom: 8px;
+      }
+
+      .content code {
+        padding: 2px 6px;
+        border-radius: 6px;
+        background: #edf2f7;
+        color: #9f1239;
+        font-family: "Cascadia Code", Consolas, monospace;
+      }
+
+      .content pre {
+        overflow-x: auto;
+        padding: 16px 18px;
+        border-radius: 14px;
+        background: #0f172a;
+        color: #dbeafe;
+      }
+
+      .content pre code {
+        padding: 0;
+        background: transparent;
+        color: inherit;
+      }
+
+      .report-table-shell {
+        margin: 18px 0;
+        overflow-x: auto;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 12px 14px;
+        border-bottom: 1px solid #e8edf3;
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: #f8fafc;
+        color: #334155;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+      }
+
+      .foot {
+        padding: 18px 38px 28px;
+        border-top: 1px solid var(--line);
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      @media (max-width: 720px) {
+        body {
+          padding: 14px;
+        }
+
+        .hero,
+        .body,
+        .foot {
+          padding-left: 22px;
+          padding-right: 22px;
+        }
+
+        h1 {
+          font-size: 26px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <article class="shell">
+      <header class="hero">
+        <p class="eyebrow">安全测试报告</p>
+        <h1>安全测试报告 - http://127.0.0.1 (url)</h1>
+        <section class="hero-grid">
+          <div class="hero-card">
+            <p class="label">测试目标</p>
+            <p class="value">http://127.0.0.1 (url)</p>
+          </div>
+          <div class="hero-card">
+            <p class="label">测试范围</p>
+            <p class="value">owned response header report</p>
+          </div>
+          <div class="hero-card">
+            <p class="label">生成时间</p>
+            <p class="value">2026-10-11T05:52:25.961128+00:00</p>
+          </div>
+          <div class="hero-card">
+            <p class="label">生成方</p>
+            <p class="value">security-testing-agent</p>
+          </div>
+        </section>
+      </header>
+
+      <main class="body">
+        <section class="kpi-grid">
+          <div class="kpi"><span>任务总数</span><strong>3</strong></div>
+          <div class="kpi"><span>已完成</span><strong>2</strong></div>
+          <div class="kpi"><span>失败</span><strong>1</strong></div>
+          <div class="kpi"><span>跳过</span><strong>0</strong></div>
+          <div class="kpi"><span>资产</span><strong>0</strong></div>
+          <div class="kpi"><span>服务</span><strong>0</strong></div>
+          <div class="kpi"><span>证据</span><strong>12</strong></div>
+          <div class="kpi"><span>执行记录</span><strong>3</strong></div>
+          <div class="kpi"><span>发现</span><strong>4</strong></div>
+          <div class="kpi"><span>耗时</span><strong>0s</strong></div>
+        </section>
+
+        <section class="severity-grid" aria-label="风险等级概览">
+          <div class="severity critical"><span>严重</span><strong>0</strong></div>
+          <div class="severity high"><span>高危</span><strong>0</strong></div>
+          <div class="severity medium"><span>中危</span><strong>0</strong></div>
+          <div class="severity low"><span>低危</span><strong>4</strong></div>
+          <div class="severity info"><span>信息</span><strong>0</strong></div>
+        </section>
+
+        <section class="content">
+          <h1>安全测试报告 - http://127.0.0.1 (url)</h1>
+<p><strong>报告名称</strong>：安全测试报告 - http://127.0.0.1 (url) <strong>生成日期</strong>：2026-10-11 <strong>生成时间</strong>：05:52:25 <strong>测试目标</strong>：http://127.0.0.1 (url) <strong>执行耗时</strong>：0 秒</p>
+<h2>执行摘要</h2>
+<p>本次安全测试完成 2 个任务，产生 4 个发现。 有 1 个任务执行失败，因此覆盖范围可能不完整。</p>
+<h2>测试结果</h2>
+<ul><li>任务总数：3</li><li>已完成：2</li><li>失败：1</li><li>跳过：0</li><li>发现资产：0</li><li>发现服务：0</li><li>执行记录：3</li><li>证据产物：12</li><li>漏洞假设：0</li><li>验证尝试：0</li><li>Security Bug：0</li><li>复测仍存在：0</li><li>复测已关闭：0</li></ul>
+<h2>风险等级概览</h2>
+<div class="report-table-shell"><table><thead><tr><th>风险等级</th><th>数量</th></tr></thead><tbody><tr><td>严重</td><td>0</td></tr><tr><td>高危</td><td>0</td></tr><tr><td>中危</td><td>0</td></tr><tr><td>低危</td><td>4</td></tr><tr><td>信息</td><td>0</td></tr></tbody></table></div>
+<h2>Agent 执行情况</h2>
+<p>执行策略：local<em>worker</em>fallback</p>
+<div class="report-table-shell"><table><thead><tr><th>Agent</th><th>任务</th><th>动作</th><th>执行模式</th><th>执行内容</th></tr></thead><tbody><tr><td>security-web-verifier</td><td>missing</td><td>completed</td><td>local<em>worker</em>fallback</td><td>Executed http<em>headers</em>probe with exit code 0; parsed 4 finding(s).</td></tr><tr><td>security-web-verifier</td><td>complete</td><td>completed</td><td>local<em>worker</em>fallback</td><td>Executed http<em>headers</em>probe with exit code 0; parsed 0 finding(s).</td></tr><tr><td>security-web-verifier</td><td>unreachable</td><td>failed</td><td>local<em>worker</em>fallback</td><td>Executed http<em>headers</em>probe with exit code 1; parsed 0 finding(s).</td></tr></tbody></table></div>
+<h2>发现、风险与错误</h2>
+<h3>1. 缺少 X-Frame-Options 响应头</h3>
+<ul><li><strong>风险等级</strong>：低危</li><li><strong>类别</strong>：missing_control</li><li><strong>受影响目标</strong>：http://host.docker.internal:49680/missing</li><li><strong>验证等级</strong>：confirmed</li><li><strong>CVSS</strong>: 0.0</li><li><strong>CVSS Vector</strong>: <code>CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N</code></li><li><strong>CWE</strong>: CWE-693, CWE-1021</li><li><strong>OWASP</strong>: OWASP-A05:2021-Security-Misconfiguration</li><li><strong>置信度</strong>：confirmed</li><li><strong>是否验证可利用</strong>：否</li></ul>
+<p><strong>描述</strong></p>
+<p>HTTP 响应中缺少安全响应头: x-frame-options</p>
+<p><strong>证据</strong></p>
+<pre><code>HTTP 200 response from http://host.docker.internal:49680/missing omitted x-frame-options.</code></pre>
+<p><strong>复现方式</strong></p>
+<ol><li>Send an authorized GET request to http://host.docker.internal:49680/missing.</li><li>Confirm HTTP 200 does not include the x-frame-options response header.</li></ol>
+<p><strong>修复建议</strong></p>
+<p>在服务器配置中添加 x-frame-options 响应头</p>
+<h3>2. 缺少 X-Content-Type-Options 响应头</h3>
+<ul><li><strong>风险等级</strong>：低危</li><li><strong>类别</strong>：missing_control</li><li><strong>受影响目标</strong>：http://host.docker.internal:49680/missing</li><li><strong>验证等级</strong>：confirmed</li><li><strong>CVSS</strong>: 0.0</li><li><strong>CVSS Vector</strong>: <code>CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N</code></li><li><strong>CWE</strong>: CWE-693</li><li><strong>OWASP</strong>: OWASP-A05:2021-Security-Misconfiguration</li><li><strong>置信度</strong>：confirmed</li><li><strong>是否验证可利用</strong>：否</li></ul>
+<p><strong>描述</strong></p>
+<p>HTTP 响应中缺少安全响应头: x-content-type-options</p>
+<p><strong>证据</strong></p>
+<pre><code>HTTP 200 response from http://host.docker.internal:49680/missing omitted x-content-type-options.</code></pre>
+<p><strong>复现方式</strong></p>
+<ol><li>Send an authorized GET request to http://host.docker.internal:49680/missing.</li><li>Confirm HTTP 200 does not include the x-content-type-options response header.</li></ol>
+<p><strong>修复建议</strong></p>
+<p>在服务器配置中添加 x-content-type-options 响应头</p>
+<h3>3. 缺少 HSTS 响应头</h3>
+<ul><li><strong>风险等级</strong>：低危</li><li><strong>类别</strong>：missing_control</li><li><strong>受影响目标</strong>：http://host.docker.internal:49680/missing</li><li><strong>验证等级</strong>：confirmed</li><li><strong>CVSS</strong>: 0.0</li><li><strong>CVSS Vector</strong>: <code>CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N</code></li><li><strong>CWE</strong>: CWE-693</li><li><strong>OWASP</strong>: OWASP-A05:2021-Security-Misconfiguration</li><li><strong>置信度</strong>：confirmed</li><li><strong>是否验证可利用</strong>：否</li></ul>
+<p><strong>描述</strong></p>
+<p>HTTP 响应中缺少安全响应头: strict-transport-security</p>
+<p><strong>证据</strong></p>
+<pre><code>HTTP 200 response from http://host.docker.internal:49680/missing omitted strict-transport-security.</code></pre>
+<p><strong>复现方式</strong></p>
+<ol><li>Send an authorized GET request to http://host.docker.internal:49680/missing.</li><li>Confirm HTTP 200 does not include the strict-transport-security response header.</li></ol>
+<p><strong>修复建议</strong></p>
+<p>在服务器配置中添加 strict-transport-security 响应头</p>
+<h3>4. 缺少 Content-Security-Policy 响应头</h3>
+<ul><li><strong>风险等级</strong>：低危</li><li><strong>类别</strong>：missing_control</li><li><strong>受影响目标</strong>：http://host.docker.internal:49680/missing</li><li><strong>验证等级</strong>：confirmed</li><li><strong>CVSS</strong>: 0.0</li><li><strong>CVSS Vector</strong>: <code>CVSS:3.1/AV:N/AC:H/PR:N/UI:R/S:U/C:N/I:N/A:N</code></li><li><strong>CWE</strong>: CWE-693</li><li><strong>OWASP</strong>: OWASP-A05:2021-Security-Misconfiguration</li><li><strong>置信度</strong>：confirmed</li><li><strong>是否验证可利用</strong>：否</li></ul>
+<p><strong>描述</strong></p>
+<p>HTTP 响应中缺少安全响应头: content-security-policy</p>
+<p><strong>证据</strong></p>
+<pre><code>HTTP 200 response from http://host.docker.internal:49680/missing omitted content-security-policy.</code></pre>
+<p><strong>复现方式</strong></p>
+<ol><li>Send an authorized GET request to http://host.docker.internal:49680/missing.</li><li>Confirm HTTP 200 does not include the content-security-policy response header.</li></ol>
+<p><strong>修复建议</strong></p>
+<p>在服务器配置中添加 content-security-policy 响应头</p>
+<h2>攻击链验证</h2>
+<p>本次运行没有证据支持的漏洞假设，因此未执行验证尝试。</p>
+<h2>Exploit Coder 与影响验证</h2>
+<p>本次运行未请求或未执行 P2 Exploit Coder 工作区。</p>
+<h2>安全情报与假设来源</h2>
+<p>本次运行未摄取结构化安全情报。</p>
+<h2>P3 回连 Broker 与安全图谱</h2>
+<p>本次运行未请求 P3 loopback callback lease。</p>
+<h2>P4 工具装配审计</h2>
+<p>本次运行未请求 P4 临时工具装配。</p>
+<h2>持久隔离攻击会话</h2>
+<p>本次运行未请求 P1 持久隔离攻击会话。</p>
+<h2>可复现 Security Bug</h2>
+<p>本次运行没有满足证据与复现质量门的 Security Bug。</p>
+<h2>修复建议</h2>
+<ol><li>在服务器配置中添加 x-frame-options 响应头</li><li>在服务器配置中添加 x-content-type-options 响应头</li><li>在服务器配置中添加 strict-transport-security 响应头</li><li>在服务器配置中添加 content-security-policy 响应头</li></ol>
+<h2>测试限制</h2>
+<ul><li>环境限制（environment_limited）：1 个任务未能从隔离执行环境获得目标响应；未根据空响应生成漏洞发现。</li><li>本次运行产生 Finding，但未形成漏洞假设；攻击链验证覆盖不完整。</li></ul>
+<hr>
+<p>由安全测试模式生成。</p>
+        </section>
+      </main>
+
+      <footer class="foot">
+        活动编号：ab7154d0-3742-4a34-8545-8d91bd1b91e7。由 Enterprise AI QA Agent 安全测试模式生成。
+      </footer>
+    </article>
+  </body>
+</html>

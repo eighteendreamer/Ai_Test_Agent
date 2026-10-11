@@ -30,3 +30,9 @@
 默认Step按用户决定继续等待实名认证。本批完成安全响应头结果的报告阶段与产品展示验收；安全其他扫描器、完整默认Agent、权限/超时/存储故障组合，真实性能报告完整App，容量/AI流式、录制知识/场景/清洗遗漏、需求业务质量和生产历史迁移等仍未完成。无推送或PR。
 
 实际命令在Agent_Server内设置 `RUN_LIVE_SECURITY_REPORT_PRODUCT=1`、`QA_SECURITY_EVIDENCE_DIR=G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p5-security-report-final3`，运行 `..\.venv\Scripts\python.exe -m pytest tests/test_security_report_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p5-security-report-final3.xml`。后端回归、投影、前端原始日志见同前缀；最终测试内部实际执行npm build，不能仅凭compileall报完成。
+
+## 2026-10-11 独立复验
+
+在不改生产代码的前提下，使用新的隔离存储和新的证据目录再次运行 `test_security_report_product.py`，实际构建前端并启动独立 API。结果为 **1通过、64.13秒**：报告计数3/2/1/4、状态partial；原件 JSON 下载字段与最终报告一致；报告中心过滤和分页、未就绪报告进行中状态、API 重启后内容相等及零新增目标 GET 均通过。完整 App 页面和浏览器下载无 pageerror，真实工具事实、PG/RustFS/容器清理及跨会话404保存在 `p5-security-report-current/`。
+
+这次复验仍只覆盖已有响应头工具和报告产品链路；不扩大为其他安全工具、完整默认 Agent 或生产部署迁移验收。
