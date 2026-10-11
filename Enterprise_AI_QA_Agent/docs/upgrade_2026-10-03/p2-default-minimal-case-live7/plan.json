@@ -1,0 +1,184 @@
+{
+  "id": "718d843e-83bf-4799-b638-61906cdeedf4",
+  "project_id": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+  "request": {
+    "objective": "验证健康检查接口并核对 ok=true",
+    "model_key": "step-5-preview",
+    "candidate_case_ids": [
+      "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe"
+    ],
+    "runtime_context": {},
+    "environment": null
+  },
+  "status": "planned",
+  "summary": "选取唯一正式用例 health-check 作为执行目标。该用例覆盖 GET /health 的 200 状态码与 body.ok=true 断言，且执行说明明确为只读请求，无需准备数据、前置依赖或清理。",
+  "decision": {
+    "action": "finish",
+    "summary": "选取唯一正式用例 health-check 作为执行目标。该用例覆盖 GET /health 的 200 状态码与 body.ok=true 断言，且执行说明明确为只读请求，无需准备数据、前置依赖或清理。",
+    "queries": [],
+    "items": [
+      {
+        "key": "health_check",
+        "reason": "该正式用例完整匹配用户目标：验证健康检查接口并核对 ok=true。用例内容包含完整 URL、方法、断言与只读执行模式；执行说明指出无需准备或清理数据，因此直接作为 target，无需 dependency 或 prepare。",
+        "evidence_ids": [
+          "case:047725f9-578a-4ff1-a721-7e640cd5817e"
+        ],
+        "depends_on": [],
+        "input_bindings": {},
+        "kind": "target",
+        "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+        "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e"
+      }
+    ],
+    "unresolved": []
+  },
+  "evidence": [
+    {
+      "id": "case:047725f9-578a-4ff1-a721-7e640cd5817e",
+      "kind": "case",
+      "source_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+      "version": "047725f9-578a-4ff1-a721-7e640cd5817e",
+      "content_hash": "4020a3ae83c3a737479bc0da801d3d3eea94e26d9cf5b9cb65002d384f61e298",
+      "payload": {
+        "title": "健康检查",
+        "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+        "content": {
+          "task": {
+            "name": "健康检查",
+            "path": "/health",
+            "method": "GET",
+            "task_id": "health-check",
+            "full_url": "http://127.0.0.1:61535/health",
+            "assertions": [
+              {
+                "kind": "status_code",
+                "expected": 200
+              },
+              {
+                "kind": "json_field_equals",
+                "path": "ok",
+                "expected": true
+              }
+            ],
+            "execution_mode": "read",
+            "timeout_seconds": 30
+          },
+          "steps": [
+            {
+              "order": 1,
+              "action": "按 task 执行 GET /health"
+            },
+            {
+              "order": 2,
+              "action": "核对 task.assertions 中的 HTTP 200 与 body.ok=true"
+            }
+          ],
+          "objective": "验证健康检查接口"
+        },
+        "case_key": "health-check",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "f8bf4ac4-8d20-5103-8ed6-6ec565a699fa",
+            "source_type": "api_doc"
+          }
+        ],
+        "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e",
+        "execution_notes": "只读请求；完整读取用例 JSON 和文档，不需要准备或清理数据。",
+        "historical_mode_key": "api_testing"
+      }
+    }
+  ],
+  "config_snapshot": {
+    "scope_key": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0,
+      "receipt_correction_protocol": "case-receipt-correction-v1"
+    }
+  },
+  "model_key": "step-5-preview",
+  "prompt_version": "case-planning-v5",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "parsed",
+      "decision": {
+        "items": [
+          {
+            "key": "health_check",
+            "kind": "target",
+            "reason": "该正式用例完整匹配用户目标：验证健康检查接口并核对 ok=true。用例内容包含完整 URL、方法、断言与只读执行模式；执行说明指出无需准备或清理数据，因此直接作为 target，无需 dependency 或 prepare。",
+            "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:047725f9-578a-4ff1-a721-7e640cd5817e"
+            ],
+            "input_bindings": {},
+            "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e"
+          }
+        ],
+        "action": "finish",
+        "queries": [],
+        "summary": "选取唯一正式用例 health-check 作为执行目标。该用例覆盖 GET /health 的 200 状态码与 body.ok=true 断言，且执行说明明确为只读请求，无需准备数据、前置依赖或清理。",
+        "unresolved": []
+      },
+      "streaming": true,
+      "attempt_id": "8e473ea6-50f6-4bf2-84e3-3290f05dfd8a",
+      "response_mode": "ok",
+      "logical_call_id": "9413a34e-838f-4c44-9ee7-efcb68923c48",
+      "response_metadata": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 3766,
+          "prompt_tokens": 2703,
+          "completion_tokens": 1063,
+          "prompt_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "image_tokens": null,
+            "cached_tokens": 0,
+            "cache_write_tokens": null
+          },
+          "completion_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": null,
+            "rejected_prediction_tokens": null
+          }
+        },
+        "error_type": null,
+        "response_id": "691e7ee5c190035669118afaede872f6.4fd955e709ed6b0c612ce2ff591e4a35",
+        "status_code": null,
+        "stop_reason": null,
+        "finish_reason": "stop",
+        "request_mapping": {
+          "version": "model-request-v1",
+          "decisions": [
+            {
+              "action": "prompt_fallback",
+              "option": "output_format",
+              "reason": "format_not_declared"
+            }
+          ]
+        },
+        "stream_terminal_received": true
+      },
+      "first_text_seconds": 11.148,
+      "received_text_chars": 566,
+      "model_elapsed_seconds": 13.638
+    }
+  ],
+  "warnings": [],
+  "created_at": "2026-10-11T12:26:32.424511Z",
+  "regression": null,
+  "environment": null
+}

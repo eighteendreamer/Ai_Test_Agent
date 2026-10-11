@@ -1,0 +1,703 @@
+{
+  "run": {
+    "id": "a202d868-505c-5d6a-8d4d-36f8a19b312e",
+    "project_id": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+    "suite_id": "ec007e26-5a2a-5f09-a509-8cef8d3ca1b5",
+    "run_kind": "normal",
+    "origin": "native",
+    "mode_key": "api_testing",
+    "execution_strategy": "agent",
+    "plan_snapshot": {
+      "plan": {
+        "id": "718d843e-83bf-4799-b638-61906cdeedf4",
+        "project_id": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+        "request": {
+          "objective": "验证健康检查接口并核对 ok=true",
+          "model_key": "step-5-preview",
+          "candidate_case_ids": [
+            "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe"
+          ],
+          "runtime_context": {},
+          "environment": null
+        },
+        "status": "planned",
+        "summary": "选取唯一正式用例 health-check 作为执行目标。该用例覆盖 GET /health 的 200 状态码与 body.ok=true 断言，且执行说明明确为只读请求，无需准备数据、前置依赖或清理。",
+        "decision": {
+          "action": "finish",
+          "summary": "选取唯一正式用例 health-check 作为执行目标。该用例覆盖 GET /health 的 200 状态码与 body.ok=true 断言，且执行说明明确为只读请求，无需准备数据、前置依赖或清理。",
+          "queries": [],
+          "items": [
+            {
+              "key": "health_check",
+              "reason": "该正式用例完整匹配用户目标：验证健康检查接口并核对 ok=true。用例内容包含完整 URL、方法、断言与只读执行模式；执行说明指出无需准备或清理数据，因此直接作为 target，无需 dependency 或 prepare。",
+              "evidence_ids": [
+                "case:047725f9-578a-4ff1-a721-7e640cd5817e"
+              ],
+              "depends_on": [],
+              "input_bindings": {},
+              "kind": "target",
+              "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+              "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e"
+            }
+          ],
+          "unresolved": []
+        },
+        "evidence": [
+          {
+            "id": "case:047725f9-578a-4ff1-a721-7e640cd5817e",
+            "kind": "case",
+            "source_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+            "version": "047725f9-578a-4ff1-a721-7e640cd5817e",
+            "content_hash": "4020a3ae83c3a737479bc0da801d3d3eea94e26d9cf5b9cb65002d384f61e298",
+            "payload": {
+              "title": "健康检查",
+              "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+              "content": {
+                "task": {
+                  "name": "健康检查",
+                  "path": "/health",
+                  "method": "GET",
+                  "task_id": "health-check",
+                  "full_url": "http://127.0.0.1:61535/health",
+                  "assertions": [
+                    {
+                      "kind": "status_code",
+                      "expected": 200
+                    },
+                    {
+                      "kind": "json_field_equals",
+                      "path": "ok",
+                      "expected": true
+                    }
+                  ],
+                  "execution_mode": "read",
+                  "timeout_seconds": 30
+                },
+                "steps": [
+                  {
+                    "order": 1,
+                    "action": "按 task 执行 GET /health"
+                  },
+                  {
+                    "order": 2,
+                    "action": "核对 task.assertions 中的 HTTP 200 与 body.ok=true"
+                  }
+                ],
+                "objective": "验证健康检查接口"
+              },
+              "case_key": "health-check",
+              "source_refs": [
+                {
+                  "uri": null,
+                  "label": "",
+                  "version": null,
+                  "metadata": {},
+                  "source_id": "f8bf4ac4-8d20-5103-8ed6-6ec565a699fa",
+                  "source_type": "api_doc"
+                }
+              ],
+              "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e",
+              "execution_notes": "只读请求；完整读取用例 JSON 和文档，不需要准备或清理数据。",
+              "historical_mode_key": "api_testing"
+            }
+          }
+        ],
+        "config_snapshot": {
+          "scope_key": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+          "revision": 1,
+          "policy": {
+            "max_rounds": 5,
+            "max_candidates": 20,
+            "max_items": 50,
+            "max_context_chars": 180000,
+            "timeout_seconds": 180.0,
+            "receipt_correction_protocol": "case-receipt-correction-v1"
+          }
+        },
+        "model_key": "step-5-preview",
+        "prompt_version": "case-planning-v5",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "parsed",
+            "decision": {
+              "items": [
+                {
+                  "key": "health_check",
+                  "kind": "target",
+                  "reason": "该正式用例完整匹配用户目标：验证健康检查接口并核对 ok=true。用例内容包含完整 URL、方法、断言与只读执行模式；执行说明指出无需准备或清理数据，因此直接作为 target，无需 dependency 或 prepare。",
+                  "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+                  "depends_on": [],
+                  "evidence_ids": [
+                    "case:047725f9-578a-4ff1-a721-7e640cd5817e"
+                  ],
+                  "input_bindings": {},
+                  "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e"
+                }
+              ],
+              "action": "finish",
+              "queries": [],
+              "summary": "选取唯一正式用例 health-check 作为执行目标。该用例覆盖 GET /health 的 200 状态码与 body.ok=true 断言，且执行说明明确为只读请求，无需准备数据、前置依赖或清理。",
+              "unresolved": []
+            },
+            "streaming": true,
+            "attempt_id": "8e473ea6-50f6-4bf2-84e3-3290f05dfd8a",
+            "response_mode": "ok",
+            "logical_call_id": "9413a34e-838f-4c44-9ee7-efcb68923c48",
+            "response_metadata": {
+              "mode": "ok",
+              "usage": {
+                "total_tokens": 3766,
+                "prompt_tokens": 2703,
+                "completion_tokens": 1063,
+                "prompt_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "image_tokens": null,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": null
+                },
+                "completion_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "reasoning_tokens": 0,
+                  "accepted_prediction_tokens": null,
+                  "rejected_prediction_tokens": null
+                }
+              },
+              "error_type": null,
+              "response_id": "691e7ee5c190035669118afaede872f6.4fd955e709ed6b0c612ce2ff591e4a35",
+              "status_code": null,
+              "stop_reason": null,
+              "finish_reason": "stop",
+              "request_mapping": {
+                "version": "model-request-v1",
+                "decisions": [
+                  {
+                    "action": "prompt_fallback",
+                    "option": "output_format",
+                    "reason": "format_not_declared"
+                  }
+                ]
+              },
+              "stream_terminal_received": true
+            },
+            "first_text_seconds": 11.148,
+            "received_text_chars": 566,
+            "model_elapsed_seconds": 13.638
+          }
+        ],
+        "warnings": [],
+        "created_at": "2026-10-11T12:26:32.424511Z",
+        "regression": null,
+        "environment": null
+      },
+      "run_item_ids": {
+        "health_check": "0f6807e0-0051-565f-b44e-00db6d654da3"
+      },
+      "owners": {
+        "health_check": "health_check"
+      },
+      "preparation_phases": {},
+      "regression": null
+    },
+    "creation_key": "minimal-default-run",
+    "creation_hash": "ad4aee8255b7c763b7dee95d2b67501b6ebadfcbe02e98d0a25ad88847e003e9",
+    "session_id": null,
+    "parent_run_id": null,
+    "status": "completed",
+    "stats": {
+      "total": 1,
+      "queued": 0,
+      "claimed": 0,
+      "running": 0,
+      "waiting_resource": 0,
+      "waiting_approval": 0,
+      "passed": 1,
+      "failed": 0,
+      "error": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "created_by": null,
+    "created_at": "2026-10-11T12:26:50.385222Z",
+    "updated_at": "2026-10-11T12:27:53.917698Z",
+    "started_at": "2026-10-11T12:26:56.132500Z",
+    "completed_at": "2026-10-11T12:27:53.917698Z",
+    "cancel_reason": null,
+    "active_duration_ms": 57090,
+    "waiting_duration_ms": 657,
+    "paused_duration_ms": 0,
+    "wall_clock_duration_ms": 63532
+  },
+  "items": [
+    {
+      "id": "0f6807e0-0051-565f-b44e-00db6d654da3",
+      "run_id": "a202d868-505c-5d6a-8d4d-36f8a19b312e",
+      "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+      "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e",
+      "position": 1,
+      "plan_item_key": "health_check",
+      "dependencies": [],
+      "status": "passed",
+      "waiting_reason": null,
+      "attempt_no": 1,
+      "lease_owner": "minimal-execute",
+      "lease_token": "24336181-5fb5-437d-9e69-a46c5d5b5e9f",
+      "lease_expires_at": "2026-10-11T12:29:02.382528Z",
+      "heartbeat_at": "2026-10-11T12:27:33.382528Z",
+      "approval_id": "0617b40e-ef6b-42a0-90d7-a5ef1f51d296",
+      "tool_job_id": "da323a6a-62e0-4dc0-9eae-421972a25523",
+      "result_id": "4e2df013-e213-41ec-814c-ec4d368e90b4",
+      "regression_source_result_id": null,
+      "created_at": "2026-10-11T12:26:50.385222Z",
+      "updated_at": "2026-10-11T12:27:53.917698Z",
+      "started_at": "2026-10-11T12:26:56.154991Z",
+      "completed_at": "2026-10-11T12:27:53.917698Z",
+      "resource_cleanup_completed_at": null,
+      "active_started_at": null,
+      "waiting_started_at": null,
+      "active_duration_ms": 57090,
+      "waiting_duration_ms": 657,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 63532
+    }
+  ],
+  "attempts": [
+    {
+      "id": "3acc14c2-9210-4daa-b5db-93264a26bc04",
+      "run_id": "a202d868-505c-5d6a-8d4d-36f8a19b312e",
+      "run_item_id": "0f6807e0-0051-565f-b44e-00db6d654da3",
+      "attempt_no": 1,
+      "worker_id": "minimal-execute",
+      "lease_token": "24336181-5fb5-437d-9e69-a46c5d5b5e9f",
+      "status": "passed",
+      "claimed_at": "2026-10-11T12:26:56.132500Z",
+      "started_at": "2026-10-11T12:26:56.154991Z",
+      "heartbeat_at": "2026-10-11T12:27:53.898055Z",
+      "approval_id": "0617b40e-ef6b-42a0-90d7-a5ef1f51d296",
+      "tool_job_id": "da323a6a-62e0-4dc0-9eae-421972a25523",
+      "completed_at": "2026-10-11T12:27:53.917698Z",
+      "active_started_at": null,
+      "waiting_started_at": null,
+      "active_duration_ms": 57090,
+      "waiting_duration_ms": 657,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 57785,
+      "checkpoint_version": 7,
+      "checkpoint_key": "agent_case_execution",
+      "checkpoint_payload": {
+        "phase": "snapshot",
+        "run_id": "a202d868-505c-5d6a-8d4d-36f8a19b312e",
+        "plan_id": "718d843e-83bf-4799-b638-61906cdeedf4",
+        "turn_id": "66e986f9-aa27-51d0-90d9-05eeb705e41d",
+        "project_id": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+        "session_id": "e2bf74ac-e44b-4452-9027-3ff94ec589e5",
+        "run_item_id": "0f6807e0-0051-565f-b44e-00db6d654da3",
+        "snapshot_id": "ff727279-f7d5-4ba1-a936-e8bf3c05555f",
+        "context_hash": "848f51b4bce2df8cfd9f803e9b728fc3bda13208425017f9927b9c5238f8c480",
+        "schema_version": 1,
+        "snapshot_version": 2,
+        "receipt_correction": {
+          "phase": "response",
+          "call_id": "f06b7944-6c67-466b-8b17-e77ae837876d",
+          "request": {
+            "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c-request.json",
+            "sha256": "0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c",
+            "size_bytes": 29026
+          },
+          "protocol": "case-receipt-correction-v1",
+          "response": {
+            "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec-response.json",
+            "sha256": "a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec",
+            "size_bytes": 33795
+          },
+          "model_key": "step-5-preview",
+          "snapshot_id": "ff727279-f7d5-4ba1-a936-e8bf3c05555f",
+          "max_iterations": 8,
+          "prompt_version": "case-execution-receipt-v4",
+          "model_parameters": {
+            "key": "step-5-preview",
+            "model_id": "step-5-preview",
+            "provider": "openai",
+            "auth_type": "api_key",
+            "transport": "openai_chat_completions",
+            "max_tokens": 8192,
+            "temperature": null,
+            "capabilities": {
+              "vision": true,
+              "json_mode": true,
+              "pdf_input": true,
+              "reasoning": true,
+              "streaming": true,
+              "file_input": true,
+              "text_input": true,
+              "multi_image": true,
+              "text_output": true,
+              "tool_calling": true,
+              "image_url_input": true,
+              "image_base64_input": true,
+              "parallel_tool_calls": true
+            },
+            "context_window": 128000,
+            "oauth_provider": null,
+            "api_base_url_hash": "eecc0149ab984536ac019d19a40f3724d97f75c02d34d582b5f4eb988b8db6ea",
+            "max_output_tokens": 8192,
+            "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "total_model_calls": 3,
+          "runtime_parameters": {
+            "sdk_retry_policy": "existing_provider_defaults",
+            "dependency_versions": {
+              "openai": "3.14.0"
+            },
+            "llm_request_timeout_seconds": 60.0,
+            "langchain_model_adapter_enabled": false
+          },
+          "execution_model_calls": 2
+        },
+        "execution_attempt_id": "3acc14c2-9210-4daa-b5db-93264a26bc04"
+      },
+      "checkpoint_at": "2026-10-11T12:27:53.898055Z",
+      "recovered_from_attempt_id": null
+    }
+  ],
+  "results": [
+    {
+      "id": "4e2df013-e213-41ec-814c-ec4d368e90b4",
+      "run_id": "a202d868-505c-5d6a-8d4d-36f8a19b312e",
+      "run_item_id": "0f6807e0-0051-565f-b44e-00db6d654da3",
+      "case_id": "1e1714d5-56e4-48dc-a8d9-0eb1fb4dd6fe",
+      "case_version_id": "047725f9-578a-4ff1-a721-7e640cd5817e",
+      "regression_source_result_id": null,
+      "attempt_id": "3acc14c2-9210-4daa-b5db-93264a26bc04",
+      "attempt_no": 1,
+      "status": "passed",
+      "summary": "已执行只读 GET http://127.0.0.1:61535/health，用例声明的两条断言均通过：HTTP 200 与 body.ok=true，无准备/清理步骤。",
+      "actual": {
+        "receipt": {
+          "steps": [
+            {
+              "checks": [
+                {
+                  "name": "HTTP 状态码为 200",
+                  "reason": "实际响应状态码 200 与用例断言 expected=200 一致。",
+                  "verdict": "passed",
+                  "operator": "equals",
+                  "observations": [
+                    {
+                      "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                      "output_path_tokens": [
+                        "task_result",
+                        "response_status"
+                      ]
+                    }
+                  ],
+                  "expected_path_tokens": [
+                    "task",
+                    "assertions",
+                    "0",
+                    "expected"
+                  ]
+                },
+                {
+                  "name": "响应体字段 ok 等于 true",
+                  "reason": "实际响应体 ok 字段值为 true，与用例断言 expected=true 一致。",
+                  "verdict": "passed",
+                  "operator": "equals",
+                  "observations": [
+                    {
+                      "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                      "output_path_tokens": [
+                        "task_result",
+                        "response_body",
+                        "ok"
+                      ]
+                    }
+                  ],
+                  "expected_path_tokens": [
+                    "task",
+                    "assertions",
+                    "1",
+                    "expected"
+                  ]
+                }
+              ],
+              "status": "passed",
+              "outputs": {
+                "response_status": {
+                  "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_status"
+                  ]
+                },
+                "response_body_ok": {
+                  "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_body",
+                    "ok"
+                  ]
+                }
+              },
+              "summary": "已执行只读 GET http://127.0.0.1:61535/health，用例声明的两条断言均通过：HTTP 200 与 body.ok=true，无准备/清理步骤。",
+              "item_key": "health_check",
+              "output_source": null
+            }
+          ],
+          "schema_version": 1
+        },
+        "case_output": {
+          "response_status": 200,
+          "response_body_ok": true
+        },
+        "case_status": "passed",
+        "preparations": {},
+        "execution_identity": {
+          "turn_id": "66e986f9-aa27-51d0-90d9-05eeb705e41d",
+          "session_id": "e2bf74ac-e44b-4452-9027-3ff94ec589e5",
+          "snapshot_id": "ff727279-f7d5-4ba1-a936-e8bf3c05555f",
+          "result_attempt_id": "3acc14c2-9210-4daa-b5db-93264a26bc04",
+          "execution_attempt_id": "3acc14c2-9210-4daa-b5db-93264a26bc04"
+        },
+        "receipt_correction": {
+          "phase": "response",
+          "call_id": "f06b7944-6c67-466b-8b17-e77ae837876d",
+          "request": {
+            "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c-request.json",
+            "sha256": "0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c",
+            "size_bytes": 29026
+          },
+          "protocol": "case-receipt-correction-v1",
+          "response": {
+            "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec-response.json",
+            "sha256": "a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec",
+            "size_bytes": 33795
+          },
+          "model_key": "step-5-preview",
+          "snapshot_id": "ff727279-f7d5-4ba1-a936-e8bf3c05555f",
+          "max_iterations": 8,
+          "prompt_version": "case-execution-receipt-v4",
+          "model_parameters": {
+            "key": "step-5-preview",
+            "model_id": "step-5-preview",
+            "provider": "openai",
+            "auth_type": "api_key",
+            "transport": "openai_chat_completions",
+            "max_tokens": 8192,
+            "temperature": null,
+            "capabilities": {
+              "vision": true,
+              "json_mode": true,
+              "pdf_input": true,
+              "reasoning": true,
+              "streaming": true,
+              "file_input": true,
+              "text_input": true,
+              "multi_image": true,
+              "text_output": true,
+              "tool_calling": true,
+              "image_url_input": true,
+              "image_base64_input": true,
+              "parallel_tool_calls": true
+            },
+            "context_window": 128000,
+            "oauth_provider": null,
+            "api_base_url_hash": "eecc0149ab984536ac019d19a40f3724d97f75c02d34d582b5f4eb988b8db6ea",
+            "max_output_tokens": 8192,
+            "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+          },
+          "total_model_calls": 3,
+          "runtime_parameters": {
+            "sdk_retry_policy": "existing_provider_defaults",
+            "dependency_versions": {
+              "openai": "3.14.0"
+            },
+            "llm_request_timeout_seconds": 60.0,
+            "langchain_model_adapter_enabled": false
+          },
+          "execution_model_calls": 2
+        },
+        "verification_results": [
+          {
+            "id": "00646695-3f2a-4875-90cc-49a7c3f9fd16",
+            "status": "passed",
+            "summary": "已执行只读 GET http://127.0.0.1:61535/health，用例声明的两条断言均通过：HTTP 200 与 body.ok=true，无准备/清理步骤。",
+            "turn_id": "66e986f9-aa27-51d0-90d9-05eeb705e41d",
+            "evidence": [
+              {
+                "label": "HTTP 状态码为 200",
+                "detail": "",
+                "metadata": {
+                  "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                  "plan_item_key": "health_check",
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_status"
+                  ],
+                  "expected_path_tokens": [
+                    "task",
+                    "assertions",
+                    "0",
+                    "expected"
+                  ]
+                },
+                "source_id": "da323a6a-62e0-4dc0-9eae-421972a25523",
+                "source_type": "tool_job"
+              },
+              {
+                "label": "响应体字段 ok 等于 true",
+                "detail": "",
+                "metadata": {
+                  "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                  "plan_item_key": "health_check",
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_body",
+                    "ok"
+                  ],
+                  "expected_path_tokens": [
+                    "task",
+                    "assertions",
+                    "1",
+                    "expected"
+                  ]
+                },
+                "source_id": "da323a6a-62e0-4dc0-9eae-421972a25523",
+                "source_type": "tool_job"
+              }
+            ],
+            "metadata": {
+              "phase": "case",
+              "checks": [
+                {
+                  "name": "HTTP 状态码为 200",
+                  "actual": 200,
+                  "method": "deterministic",
+                  "reason": "实际响应状态码 200 与用例断言 expected=200 一致。",
+                  "status": "passed",
+                  "verdict": "passed",
+                  "expected": 200,
+                  "operator": "equals",
+                  "model_key": null,
+                  "observations": [
+                    {
+                      "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                      "output_path_tokens": [
+                        "task_result",
+                        "response_status"
+                      ]
+                    }
+                  ],
+                  "expected_path_tokens": [
+                    "task",
+                    "assertions",
+                    "0",
+                    "expected"
+                  ]
+                },
+                {
+                  "name": "响应体字段 ok 等于 true",
+                  "actual": true,
+                  "method": "deterministic",
+                  "reason": "实际响应体 ok 字段值为 true，与用例断言 expected=true 一致。",
+                  "status": "passed",
+                  "verdict": "passed",
+                  "expected": true,
+                  "operator": "equals",
+                  "model_key": null,
+                  "observations": [
+                    {
+                      "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+                      "output_path_tokens": [
+                        "task_result",
+                        "response_body",
+                        "ok"
+                      ]
+                    }
+                  ],
+                  "expected_path_tokens": [
+                    "task",
+                    "assertions",
+                    "1",
+                    "expected"
+                  ]
+                }
+              ],
+              "run_id": "a202d868-505c-5d6a-8d4d-36f8a19b312e",
+              "model_key": "step-5-preview",
+              "project_id": "fab5ec12-1bcd-4709-888a-7b0f8570be3f",
+              "run_item_id": "0f6807e0-0051-565f-b44e-00db6d654da3",
+              "plan_item_key": "health_check",
+              "prompt_version": "case-execution-receipt-v4",
+              "reported_status": "passed",
+              "resolved_status": "passed"
+            },
+            "trace_id": "66e986f9-aa27-51d0-90d9-05eeb705e41d",
+            "verifier": "agent_case_receipt",
+            "created_at": "2026-10-11T12:27:53.917184Z",
+            "session_id": "e2bf74ac-e44b-4452-9027-3ff94ec589e5",
+            "failed_count": 0,
+            "passed_count": 2,
+            "assertion_count": 2
+          }
+        ]
+      },
+      "evidence_refs": [
+        {
+          "evidence_type": "tool_job",
+          "evidence_id": "da323a6a-62e0-4dc0-9eae-421972a25523",
+          "label": "API Test Runner",
+          "uri": null,
+          "metadata": {
+            "call_id": "chatcmpl-tool-99c7f05281ccb2ed",
+            "tool_key": "api-test-runner"
+          }
+        },
+        {
+          "evidence_type": "verification",
+          "evidence_id": "00646695-3f2a-4875-90cc-49a7c3f9fd16",
+          "label": "agent_case_receipt",
+          "uri": null,
+          "metadata": {
+            "status": "passed",
+            "plan_item_key": "health_check"
+          }
+        },
+        {
+          "evidence_type": "receipt_correction",
+          "evidence_id": "f06b7944-6c67-466b-8b17-e77ae837876d:request",
+          "label": "只读回执request",
+          "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c-request.json",
+          "metadata": {
+            "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c-request.json",
+            "sha256": "0ee02ba7d43d5b34b859d8eb315df066a0362d45ab2a5693af12cc24d27ba31c",
+            "size_bytes": 29026
+          }
+        },
+        {
+          "evidence_type": "receipt_correction",
+          "evidence_id": "f06b7944-6c67-466b-8b17-e77ae837876d:response",
+          "label": "只读回执response",
+          "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec-response.json",
+          "metadata": {
+            "uri": "rustfs://qa-agent/case-receipts/fab5ec12-1bcd-4709-888a-7b0f8570be3f/a202d868-505c-5d6a-8d4d-36f8a19b312e/0f6807e0-0051-565f-b44e-00db6d654da3/3acc14c2-9210-4daa-b5db-93264a26bc04/f06b7944-6c67-466b-8b17-e77ae837876d/a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec-response.json",
+            "sha256": "a5e059d67fc65fe62a0eeec7016df10d7b656a522ded8adf74e1730e46417aec",
+            "size_bytes": 33795
+          }
+        }
+      ],
+      "artifact_ids": [],
+      "verification_ids": [
+        "00646695-3f2a-4875-90cc-49a7c3f9fd16"
+      ],
+      "tool_job_id": "da323a6a-62e0-4dc0-9eae-421972a25523",
+      "metrics": {},
+      "error_message": null,
+      "payload_hash": "421e6276b4fc6ffd60b09bc7670fb68eb314b22e670147fba338797497f0c4f4",
+      "created_at": "2026-10-11T12:27:53.917698Z"
+    }
+  ]
+}

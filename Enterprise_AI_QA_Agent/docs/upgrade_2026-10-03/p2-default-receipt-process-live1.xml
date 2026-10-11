@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="350.923" timestamp="2026-10-11T20:32:51.860596+08:00" hostname="EIghteen"><testcase classname="tests.test_default_receipt_process_recovery_live" name="test_default_model_receipt_correction_api_kill_recovers_without_repeat" time="347.452"><failure message="httpx.ReadTimeout">..\.venv\Lib\site-packages\httpx\_transports\default.py:101: in map_httpcore_exceptions
+    yield
+..\.venv\Lib\site-packages\httpx\_transports\default.py:394: in handle_async_request
+    resp = await self._pool.handle_async_request(req)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\connection_pool.py:256: in handle_async_request
+    raise exc from None
+..\.venv\Lib\site-packages\httpcore\_async\connection_pool.py:236: in handle_async_request
+    response = await connection.handle_async_request(
+..\.venv\Lib\site-packages\httpcore\_async\connection.py:103: in handle_async_request
+    return await self._connection.handle_async_request(request)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:136: in handle_async_request
+    raise exc
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:106: in handle_async_request
+    ) = await self._receive_response_headers(**kwargs)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:177: in _receive_response_headers
+    event = await self._receive_event(timeout=timeout)
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpcore\_async\http11.py:217: in _receive_event
+    data = await self._network_stream.read(
+..\.venv\Lib\site-packages\httpcore\_backends\anyio.py:32: in read
+    with map_exceptions(exc_map):
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:158: in __exit__
+    self.gen.throw(typ, value, traceback)
+..\.venv\Lib\site-packages\httpcore\_exceptions.py:14: in map_exceptions
+    raise to_exc(exc) from exc
+E   httpcore.ReadTimeout
+
+The above exception was the direct cause of the following exception:
+tests\test_default_receipt_process_recovery_live.py:161: in test_default_model_receipt_correction_api_kill_recovers_without_repeat
+    first = await post("/run-items/" + item_id + "/approval",
+tests\test_default_receipt_process_recovery_live.py:83: in post
+    response = await client.post(path, json=payload)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_client.py:1859: in post
+    return await self.request(
+..\.venv\Lib\site-packages\httpx\_client.py:1540: in request
+    return await self.send(request, auth=auth, follow_redirects=follow_redirects)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_client.py:1629: in send
+    response = await self._send_handling_auth(
+..\.venv\Lib\site-packages\httpx\_client.py:1657: in _send_handling_auth
+    response = await self._send_handling_redirects(
+..\.venv\Lib\site-packages\httpx\_client.py:1694: in _send_handling_redirects
+    response = await self._send_single_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_client.py:1730: in _send_single_request
+    response = await transport.handle_async_request(request)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\httpx\_transports\default.py:393: in handle_async_request
+    with map_httpcore_exceptions():
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\contextlib.py:158: in __exit__
+    self.gen.throw(typ, value, traceback)
+..\.venv\Lib\site-packages\httpx\_transports\default.py:118: in map_httpcore_exceptions
+    raise mapped_exc(message) from exc
+E   httpx.ReadTimeout</failure></testcase></testsuite></testsuites>

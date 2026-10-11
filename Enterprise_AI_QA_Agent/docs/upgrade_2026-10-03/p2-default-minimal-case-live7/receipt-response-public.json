@@ -1,0 +1,47 @@
+{
+  "text": "{\"schema_version\":1,\"steps\":[{\"item_key\":\"health_check\",\"status\":\"passed\",\"summary\":\"已执行只读 GET http://127.0.0.1:61535/health，用例声明的两条断言均通过：HTTP 200 与 body.ok=true，无准备/清理步骤。\",\"checks\":[{\"name\":\"HTTP 状态码为 200\",\"expected_path_tokens\":[\"task\",\"assertions\",\"0\",\"expected\"],\"observations\":[{\"call_id\":\"chatcmpl-tool-99c7f05281ccb2ed\",\"output_path_tokens\":[\"task_result\",\"response_status\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际响应状态码 200 与用例断言 expected=200 一致。\"},{\"name\":\"响应体字段 ok 等于 true\",\"expected_path_tokens\":[\"task\",\"assertions\",\"1\",\"expected\"],\"observations\":[{\"call_id\":\"chatcmpl-tool-99c7f05281ccb2ed\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"ok\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际响应体 ok 字段值为 true，与用例断言 expected=true 一致。\"}],\"outputs\":{\"response_status\":{\"call_id\":\"chatcmpl-tool-99c7f05281ccb2ed\",\"output_path_tokens\":[\"task_result\",\"response_status\"]},\"response_body_ok\":{\"call_id\":\"chatcmpl-tool-99c7f05281ccb2ed\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"ok\"]}}}]}",
+  "tool_calls": [],
+  "response_summary": {
+    "completion_status": "complete",
+    "content_preview": "{\"schema_version\":1,\"steps\":[{\"item_key\":\"health_check\",\"status\":\"passed\",\"summary\":\"已执行只读 GET http://127.0.0.1:61535/health，用例声明的两条断言均通过：HTTP 200 与 body.ok=true，无准备/清理步骤。\",\"che...",
+    "finish_reason": "stop",
+    "mode": "ok",
+    "provider": "openai",
+    "provider_profile": "openai",
+    "request_mapping": {
+      "decisions": [
+        {
+          "action": "prompt_fallback",
+          "option": "output_format",
+          "reason": "format_not_declared"
+        }
+      ],
+      "version": "model-request-v1"
+    },
+    "response_id": "590eab9cf8f38b3b7d2086b933ef88a7.292e18d7ccd7e19c85e27b5503788a4e",
+    "stop_reason": null,
+    "tool_call_count": 0,
+    "tool_call_names": [],
+    "tool_fallback": "",
+    "transport": "openai_chat_completions",
+    "usage": {
+      "completion_tokens": 3606,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": null,
+        "audio_tokens": null,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": null,
+        "text_tokens": null
+      },
+      "prompt_tokens": 4314,
+      "prompt_tokens_details": {
+        "audio_tokens": null,
+        "cache_write_tokens": null,
+        "cached_tokens": 0,
+        "image_tokens": null,
+        "text_tokens": null
+      },
+      "total_tokens": 7920
+    }
+  }
+}

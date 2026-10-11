@@ -162,3 +162,42 @@ async def test_actual_http_failure_links_retries_without_saving_error_body(tmp_p
                 for p in tmp_path.glob('*.json'):(directory/p.name).write_bytes(p.read_bytes())
     finally:
         OpenAIChatClient._make_client=original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("cancel", [False, True])
+async def test_receipt_barrier_precedes_http_send_and_preserves_release_or_cancellation(tmp_path, monkeypatch, cancel):
+    marker, release = tmp_path / "marker.json", tmp_path / "release"
+    monkeypatch.setenv("QA_DEFAULT_PROBE_BLOCK_CORRECTION_MARKER", str(marker))
+    monkeypatch.setenv("QA_DEFAULT_PROBE_BLOCK_CORRECTION_RELEASE", str(release))
+    original = probe.install(tmp_path)
+    try:
+        with actual_provider("normal", "private") as (url, calls):
+            config = ModelConfigRecord(key="fixture", name="fixture", provider="openai",
+                transport="openai_chat_completions", model_id="fixture", api_base_url=url, max_output_tokens=80)
+            request = ModelInvocationRequest(system_prompt=
+                "Review this completed Agent execution against its complete frozen cases and owned preparations.",
+                messages=[{"role": "user", "content": "Actual correction fixture"}])
+            async def receive(_delta):
+                pass
+            task = asyncio.create_task(OpenAIChatClient(timeout_seconds=5, max_retries=0).stream(
+                config, "private-auth", request, receive))
+            async with asyncio.timeout(5):
+                while not marker.exists():
+                    await asyncio.sleep(.01)
+            assert not calls and not task.done()
+            observed = json.loads(marker.read_bytes())
+            raw = tmp_path / (observed["physical_request_id"] + ".request.json")
+            assert len(raw.read_bytes()) == observed["request_size_bytes"]
+            if cancel:
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await task
+                assert not calls
+            else:
+                release.write_text("release", encoding="utf-8")
+                result = await task
+                assert result["text"] == "正文😀" and len(calls) == 1
+                assert calls[0] == json.loads(raw.read_bytes())
+    finally:
+        OpenAIChatClient._make_client = original

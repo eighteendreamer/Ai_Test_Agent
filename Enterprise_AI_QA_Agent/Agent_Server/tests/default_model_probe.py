@@ -1,4 +1,5 @@
 """Record SDK sends without replacing network, responses or production modules."""
+import asyncio
 import hashlib
 import json
 import os
@@ -91,6 +92,29 @@ def install(directory):
                 "network_outcome": "unknown", "request_headers_saved": False,
                 "sdk_call_id": state['id'] if state else None,
             }, ensure_ascii=False, indent=2), encoding="utf-8")
+            marker_path = os.getenv("QA_DEFAULT_PROBE_BLOCK_CORRECTION_MARKER")
+            release_path = os.getenv("QA_DEFAULT_PROBE_BLOCK_CORRECTION_RELEASE")
+            if marker_path and release_path:
+                # The hook observes the actual serialized request and blocks only
+                # the read-only receipt-correction prompt. It never changes the
+                # request or response and is used solely by the process-recovery
+                # acceptance test.
+                try:
+                    payload = json.loads(raw)
+                    system = "\n".join(str(item.get("content", "")) for item in payload.get("messages", [])
+                        if item.get("role") == "system")
+                except (ValueError, TypeError):
+                    system = ""
+                if "Review this completed Agent execution against its complete frozen cases" in system:
+                    Path(marker_path).write_text(json.dumps({
+                        "process_id": os.getpid(), "physical_request_id": identity,
+                        "sha256": hashlib.sha256(raw).hexdigest(), "request_size_bytes": len(raw),
+                    }, ensure_ascii=False, indent=2), encoding="utf-8")
+                    deadline = perf_counter() + 120
+                    while not Path(release_path).exists():
+                        if perf_counter() >= deadline:
+                            raise TimeoutError("test-only receipt correction barrier was not released")
+                        await asyncio.sleep(0.1)
 
         async def response_hook(response):
             identity = response.request.extensions["qa_probe_identity"]

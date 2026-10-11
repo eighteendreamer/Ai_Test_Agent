@@ -12,7 +12,9 @@
 - 已冻结用例、解析、执行快照保存当时实际使用的配置内容/版本，属于业务证据，存 PostgreSQL；执行不读取可变生成模板。
 - 数据库连接及访问密钥等启动必需信息沿用既有环境变量，不向配置接口或日志公开。
 
-## 全量交付追踪
+## 初始交付追踪〔历史起点〕
+
+以下表格保留初始批次的状态，不代表当前进度。后续已完成的解析、版本、Git导入、追踪及报告等专项见对应日期记录和 `PLAN.md` 第六、七节；最新默认Step回执与进程恢复见文末。历史“待实施”和“待认证”不能作为当前阻塞依据。
 
 | 阶段 | 必须交付 | 当前证据/状态 |
 |---|---|---|
@@ -5292,3 +5294,15 @@ QA_GENERATION_TIMEOUT_PROBE_DIR独立stream-timeout目录，stream合同加实�
 本批未改全局模型、期限或Token/SDK重试、前端/配置表，不运行前端构建。默认生成/独立恢复质量、其他供应商外网质量、更多格式/进程故障、完整App/生产迁移与完整P0—P5继续未完成；原failed未知不重发。compileall、SHA审计和提交范围核验另附本轮日志/validation。
 
 最终对两生产文件、探针及三个测试文件和audit运行compileall -q，exit0；内部冻结字段及所有引用/消费方已搜索核对，git diff --check exit0。SHA审计确认旧60/101/199份证据及受保护工作区未变、三份方案字节相同；新清单排除执行中生成的audit输出日志自身，日志由Git单独保留。只按本轮白名单提交，不推送或创建PR。
+
+## 2026-10-11 默认Step只读回执纠正及发送前进程恢复
+
+基线b2685d81。重读目标附件及现有纠正/评估/模型探针/受控进程恢复测试。本批生产代码未变；默认模型真实成功是验证已有能力。纠正默认关闭，项目内显式启用；原模型/预算/配置分库及旧记录保持。
+
+Agent_Server实际命令：RUN_LIVE_DEFAULT_MINIMAL_CASE=1、QA_DEFAULT_MINIMAL_CASE_DIR独立live7，`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_default_minimal_case_live.py -q --tb=short --junitxml=<live7.xml>`，1通过103.97秒。实际进入纠正response，目标GET一次/终态业务0。live6直接合法回执无纠正，前批结论已修正。
+
+RUN_LIVE_DEFAULT_RECEIPT_RECOVERY=1、QA_DEFAULT_RECEIPT_RECOVERY_DIR独立live5/live6，`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_default_receipt_process_recovery_live.py -q --tb=short --junitxml=<对应XML>`。1通过385.93秒和最终1通过372.83秒：实际默认模型触发纠正意图，测试请求钩子发送前屏障，杀owned Windows进程树，重启API，自然租约到期、生产清理/恢复Worker，error/recovery_required而非虚假passed。目标始终一GET，恢复和终态不新发模型请求。live1—live4夹具失败XML保留；这些不是生产恢复缺陷。
+
+SDK真实HTTP/回执/评估/会话/profile命令五个受影响模块110通过18门控跳过59.67秒；compileall对四测试及证据脚本exit0。测试屏障120秒上限，仅观察实际纠正prompt；取消不发、释放原字节一次已实测。p2-default-receipt-evidence.py从RustFS核对历史本轮请求/响应SHA与size，响应只保存公共字段，PG只投影公开终态及业务表。最终live6在fixture销毁前保存请求原件、清理记录和CLI输出。
+
+三方案同步至7.35。没有schema/依赖/前端更改，未跑前端构建或宣称新完整App验证。供应商收请求后断网、保存响应后中断、默认UI、多候选排序/补全、准备/unknown/修订以及其他P0—P5仍未完成；下一步默认UI场景知识和正式断言需按实际代码调研。只提交本轮白名单，不推送/PR。

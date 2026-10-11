@@ -220,6 +220,7 @@ async def test_default_step_executes_minimal_project_case_and_terminal_replay_is
                 result = detail["results"][0]
                 assert result["status"] == "passed", detail
                 assert result["actual"]["case_status"] == "passed", result
+                correction_used = "receipt_correction" in result["actual"]
 
                 evidence.joinpath("final-run.json").write_text(json.dumps(detail, ensure_ascii=False, indent=2), encoding="utf-8")
                 evidence.joinpath("plan.json").write_text(json.dumps(plan, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -229,6 +230,7 @@ async def test_default_step_executes_minimal_project_case_and_terminal_replay_is
                     "project_id": project["id"],
                     "case_id": case_id,
                     "receipt_correction_protocol": "case-receipt-correction-v1",
+                    "receipt_correction_used": correction_used,
                     "planning_status": planning["status"],
                     "run_status": detail["run"]["status"],
                     "result_status": result["status"],
