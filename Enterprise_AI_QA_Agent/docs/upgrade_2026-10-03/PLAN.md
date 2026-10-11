@@ -3356,7 +3356,7 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 
 新增 `recording-quality-v1` 派生投影。原始事件继续追加写且不删除；`page_scan/page_response` 等观察事件列入 `noise`，可回放事件列入 `cleaned_event_sequences`；相邻相同稳定 DOM 定位和输入值仅列为 `duplicate_candidates`，不自动删除，连续真实点击仍保留；receipt 或序号无法确认时列出 `missing_sequences/sequence_gaps`，不猜测遗漏内容。终态 `finalize_metrics.recording_quality` 与录制草稿 `test_data.recording_quality` 使用同一结果。
 
-修复前测试无法导入质量分析模块；首次真实 Chromium 运行又发现稳定指纹错误包含动态 `recording_scope`，真实连续点击未被识别。收窄为页面/帧/文档身份、稳定 DOM 定位和输入值后，合同 `test_recording_quality.py` 7通过，受影响录制回归 74通过、8跳过，实际 Chromium/CDP、独立 API、隔离 MySQL/PG/Redis 及草稿转换 `test_recording_quality_live.py` 1通过；两次真实点击被保留并标为候选，观察事件被标记，原始 PG 行逐行不变；缺 receipt 或传输丢失计数时不报告已完整。失败 XML 和调试原件保留，见 `p5-recording-quality-live-before.xml`、`p5-recording-quality-live-debug/`、`p5-recording-quality-live-fixed/`、`p5-recording-quality-live-delivery/`。
+修复前测试无法导入质量分析模块；首次真实 Chromium 运行又发现稳定指纹错误包含动态 `recording_scope`，真实连续点击未被识别。收窄为页面/帧/文档身份、稳定 DOM 定位和输入值后，合同 `test_recording_quality.py` 6通过，受影响录制回归 74通过、8跳过，实际 Chromium/CDP、独立 API、隔离 MySQL/PG/Redis 及草稿转换 `test_recording_quality_live.py` 1通过；两次真实点击被保留并标为候选，观察事件被标记，原始 PG 行逐行不变；缺 receipt 或传输丢失计数时不报告已完整。失败 XML 和调试原件保留，见 `p5-recording-quality-live-before.xml`、`p5-recording-quality-live-debug/`、`p5-recording-quality-live-fixed/`、`p5-recording-quality-live-delivery/`。
 
 本批只完成确定性清洗投影和基础遗漏诊断。人工 DeepSeek、复杂网络/跨文档/Shadow DOM 关联、selector 修复评审、失败定位报告和默认 AI 使用仍未验收；不能把本批受控 HTML 测试当作完整 UI 录制业务闭环。目标继续 `active`。
 

@@ -21,8 +21,8 @@
 ## 实际验证
 
 - 修复前合同测试无法导入质量分析模块，证明该能力尚未存在；原始失败 XML 保留于 `p5-recording-quality-live-before.xml`。
-- `test_recording_quality.py`：7 项确定性合同通过，覆盖观察噪声、真实重复动作保留、序号缺口和未确认回执。
-- 后续质量合同扩展为 7 项，并覆盖真实 `recording_scope` 变化、receipt 丢失计数和敏感输入不进入诊断结果；受影响录制回归最终 74 通过、8 跳过、1 个既有弃用警告。
+- `test_recording_quality.py`：6 项确定性合同通过，覆盖观察噪声、真实重复动作保留、序号缺口和未确认回执。
+- 后续质量合同补充覆盖真实 `recording_scope` 变化、receipt 丢失计数和敏感输入不进入诊断结果；受影响录制回归最终 74 通过、8 跳过、1 个既有弃用警告。
 - `test_recording_quality_live.py`：实际 Chromium/CDP、独立 Uvicorn、隔离 MySQL/PG/Redis、真实录制 API 和用例草稿转换通过。两次真实点击得到两个回放序号，质量投影标记同一动作候选但 `removed_event_sequences=[]`；`page_response/page_scan` 被标为观察噪声；原始 PG 事件逐行保持不变；草稿中的质量投影与终态指标一致。证据在 `p5-recording-quality-live-fixed/`。
 - 首次真实运行发现稳定指纹错误地包含动态 `recording_scope`，导致真实重复点击未被识别；保留 `p5-recording-quality-live-debug/` 原件，随后只将稳定指纹收窄到 DOM 定位和输入值后通过。这是实际事件驱动的根因修复，不是阈值补丁。
 
