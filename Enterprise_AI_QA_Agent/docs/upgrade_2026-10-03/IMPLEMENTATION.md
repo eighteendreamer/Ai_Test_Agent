@@ -5190,3 +5190,9 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 上次性能响应关联扩大实测在第11个场景因 `resource_pending_reap` 暂停；查明生产 `DockerResourceManager` 的 `retire` 会等 PostgreSQL cleanup receipt 才释放配额。沿现有 `src.cli.run_resource_cleanup_worker --once` 逐场景启动生产清理，不改资源池、不手工释放租约。`p5-perf-correlation-worker-verified2` **1通过105.35秒**，实际覆盖12个 smoke、2个 load/report；14个PG allocation与cleanup receipt逐条对应且均completed，Redis占用每次归零，容器完整ID删除。链式登录/受保护请求、显式Bearer前缀、0/false/null/空串/坏JSON、负向401、缺值后独立目标继续、load失败报告均有原始事件和摘要。
 
 该次API启动还暴露录制质量文件末尾非法字面量 `\\n`，生产导入直接SyntaxError。删除非法行后，录制质量和会话回归 **19通过6.29秒**，修复提交 `4f6c492d`。既有性能测量 **1通过43.04秒**、性能证据下载与重启回归 **1通过53.09秒**；新证据保存在 `p5-perf-correlation-worker-verified2`、`p5-perf-measurement-regression2`、`p5-perf-evidence-regression2`。本批仍不覆盖默认AI、外部供应商、连续容量、完整Agent/App或JMeter全矩阵。
+
+## 2026-10-11 DeepSeek 真实页面人工录制补验
+
+依据 `P5_DEEPSEEK_RECORDING_RESEARCH.md`，使用现有 Playwright/Chromium、录制 API 和隔离 MySQL/PostgreSQL/Redis/Memgraph 实测公开 `https://www.deepseek.com/`。页面 HTTP 200，标题为 `DeepSeek | 深度求索`，实际点击“深度思考”两次、“智能搜索”一次并滚动、截图；不登录、不提交聊天、不调用默认 AI。最终 **1 通过、29.81 秒**：录制得到 8 条 PG 原始事件，终态回执 pending、未确认 frame、通道丢失和传输丢失均为 0，质量投影识别 3 条观察噪声和 1 组重复候选，原始事件无删除。
+
+首轮失败原件保留：测试先关闭浏览器再停止录制，实际 scope 未结束确认并返回 `finish_unconfirmed`；PG 事件仍完整。将停止动作移到关闭浏览器之前后通过，证明这是测试生命周期顺序问题，不是录制器丢事件。`business_capture_complete` 仍为 `unknown`，因此本批不宣称复杂网络关联、跨文档/Shadow DOM、selector 修复、失败定位或默认 AI 使用完成。默认 Step/模型按用户决定继续暂缓。
