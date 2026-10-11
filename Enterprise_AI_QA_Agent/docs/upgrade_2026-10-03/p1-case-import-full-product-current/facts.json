@@ -1,0 +1,2651 @@
+{
+  "full_P0_P5_complete": false,
+  "model_execution_requested": false,
+  "imports": [
+    {
+      "source": {
+        "id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+        "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+        "filename": "rows.xlsx",
+        "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+        "size_bytes": 5174,
+        "storage_uri": "rustfs://upload-safe/case-import/81c700d9-fce3-4a05-bca3-d3f26bd80010/c55aa320-c22f-4c91-ade1-6827f3895c54/safe/rows.xlsx",
+        "security_report": {
+          "profile": "chat_attachment",
+          "decision": "allow",
+          "filename": "rows.xlsx",
+          "findings": [],
+          "extension": ".xlsx",
+          "risk_score": 0,
+          "size_bytes": 5174,
+          "declared_content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "detected_content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        },
+        "sheets": [
+          {
+            "name": "用例",
+            "headers": [
+              "用例编号",
+              "标题",
+              "类型",
+              "优先级",
+              "前置条件",
+              "步骤",
+              "预期结果",
+              "测试数据JSON",
+              "清理",
+              "用例说明",
+              "完整JSON"
+            ],
+            "suggested_columns": {
+              "steps": "步骤",
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明",
+              "expected_results": "预期结果"
+            }
+          }
+        ],
+        "created_at": "2026-10-11T04:41:00.455119Z"
+      },
+      "preview": {
+        "batch": {
+          "id": "d7353c29-850f-53ad-b180-d93dbea7529e",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+          "preview_hash": "2d7e6a1cc527c67319f1c0df4c91dc0fea88e9705da8e5295a8aed5652c64f06",
+          "config_snapshot": {
+            "scope_key": "global",
+            "revision": 1,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": null
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "rows.xlsx",
+            "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+            "options": {
+              "layout": "rows",
+              "mode_key": "api_testing",
+              "case_sheet": "用例",
+              "step_sheet": null,
+              "header_row": 1,
+              "columns": {
+                "steps": "步骤",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": "预期结果"
+              },
+              "step_columns": {}
+            },
+            "sheets": [
+              {
+                "name": "用例",
+                "headers": [
+                  "用例编号",
+                  "标题",
+                  "类型",
+                  "优先级",
+                  "前置条件",
+                  "步骤",
+                  "预期结果",
+                  "测试数据JSON",
+                  "清理",
+                  "用例说明",
+                  "完整JSON"
+                ],
+                "suggested_columns": {
+                  "steps": "步骤",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": "预期结果"
+                }
+              }
+            ],
+            "candidates": [
+              {
+                "row": 2,
+                "sheet": "用例",
+                "step_rows": [],
+                "draft": {
+                  "content_json": {
+                    "steps": [
+                      {
+                        "order": 1,
+                        "action": "读取受保护详情",
+                        "expected": "拒绝访问"
+                      }
+                    ],
+                    "cleanup": [],
+                    "objective": "保持未登录验证拒绝",
+                    "test_data": {
+                      "id": 0,
+                      "flag": false
+                    },
+                    "preconditions": [
+                      "未登录"
+                    ],
+                    "expected_results": [
+                      "拒绝访问"
+                    ]
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "d7353c29-850f-53ad-b180-d93dbea7529e",
+                      "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+                      "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                      "preview_hash": "2d7e6a1cc527c67319f1c0df4c91dc0fea88e9705da8e5295a8aed5652c64f06",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                      "version": null,
+                      "label": "rows.xlsx",
+                      "uri": null,
+                      "metadata": {
+                        "row": 2,
+                        "sheet": "用例",
+                        "columns": {
+                          "steps": "步骤",
+                          "title": "标题",
+                          "cleanup": "清理",
+                          "case_key": "用例编号",
+                          "priority": "优先级",
+                          "case_type": "类型",
+                          "test_data": "测试数据JSON",
+                          "content_json": "完整JSON",
+                          "preconditions": "前置条件",
+                          "execution_notes": "用例说明",
+                          "expected_results": "预期结果"
+                        },
+                        "batch_id": "d7353c29-850f-53ad-b180-d93dbea7529e",
+                        "filename": "rows.xlsx",
+                        "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+                        "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                        "step_rows": [],
+                        "step_sheet": null,
+                        "preview_hash": "2d7e6a1cc527c67319f1c0df4c91dc0fea88e9705da8e5295a8aed5652c64f06",
+                        "step_columns": {},
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "标题": "保持未登录验证拒绝",
+                          "步骤": "读取受保护详情",
+                          "清理": null,
+                          "类型": null,
+                          "优先级": null,
+                          "前置条件": "未登录",
+                          "用例编号": "product-rows",
+                          "用例说明": "保持负向条件",
+                          "预期结果": "拒绝访问",
+                          "测试数据JSON": "{\"id\":0,\"flag\":false}"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-rows",
+                  "title": "保持未登录验证拒绝",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [],
+            "resolved_columns": {
+              "steps": "步骤",
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明",
+              "expected_results": "预期结果"
+            },
+            "resolved_step_columns": {},
+            "diagnostics": {}
+          },
+          "status": "previewed",
+          "case_ids": [],
+          "created_at": "2026-10-11T04:41:01.460994Z",
+          "committed_at": null
+        },
+        "conflicting_case_keys": []
+      },
+      "committed": {
+        "batch": {
+          "id": "d7353c29-850f-53ad-b180-d93dbea7529e",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+          "preview_hash": "2d7e6a1cc527c67319f1c0df4c91dc0fea88e9705da8e5295a8aed5652c64f06",
+          "config_snapshot": {
+            "scope_key": "global",
+            "revision": 1,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": null
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "rows.xlsx",
+            "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+            "options": {
+              "layout": "rows",
+              "mode_key": "api_testing",
+              "case_sheet": "用例",
+              "step_sheet": null,
+              "header_row": 1,
+              "columns": {
+                "steps": "步骤",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": "预期结果"
+              },
+              "step_columns": {}
+            },
+            "sheets": [
+              {
+                "name": "用例",
+                "headers": [
+                  "用例编号",
+                  "标题",
+                  "类型",
+                  "优先级",
+                  "前置条件",
+                  "步骤",
+                  "预期结果",
+                  "测试数据JSON",
+                  "清理",
+                  "用例说明",
+                  "完整JSON"
+                ],
+                "suggested_columns": {
+                  "steps": "步骤",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": "预期结果"
+                }
+              }
+            ],
+            "candidates": [
+              {
+                "row": 2,
+                "sheet": "用例",
+                "step_rows": [],
+                "draft": {
+                  "content_json": {
+                    "steps": [
+                      {
+                        "order": 1,
+                        "action": "读取受保护详情",
+                        "expected": "拒绝访问"
+                      }
+                    ],
+                    "cleanup": [],
+                    "objective": "保持未登录验证拒绝",
+                    "test_data": {
+                      "id": 0,
+                      "flag": false
+                    },
+                    "preconditions": [
+                      "未登录"
+                    ],
+                    "expected_results": [
+                      "拒绝访问"
+                    ]
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "d7353c29-850f-53ad-b180-d93dbea7529e",
+                      "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+                      "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                      "preview_hash": "2d7e6a1cc527c67319f1c0df4c91dc0fea88e9705da8e5295a8aed5652c64f06",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                      "version": null,
+                      "label": "rows.xlsx",
+                      "uri": null,
+                      "metadata": {
+                        "row": 2,
+                        "sheet": "用例",
+                        "columns": {
+                          "steps": "步骤",
+                          "title": "标题",
+                          "cleanup": "清理",
+                          "case_key": "用例编号",
+                          "priority": "优先级",
+                          "case_type": "类型",
+                          "test_data": "测试数据JSON",
+                          "content_json": "完整JSON",
+                          "preconditions": "前置条件",
+                          "execution_notes": "用例说明",
+                          "expected_results": "预期结果"
+                        },
+                        "batch_id": "d7353c29-850f-53ad-b180-d93dbea7529e",
+                        "filename": "rows.xlsx",
+                        "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+                        "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                        "step_rows": [],
+                        "step_sheet": null,
+                        "preview_hash": "2d7e6a1cc527c67319f1c0df4c91dc0fea88e9705da8e5295a8aed5652c64f06",
+                        "step_columns": {},
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "标题": "保持未登录验证拒绝",
+                          "步骤": "读取受保护详情",
+                          "清理": null,
+                          "类型": null,
+                          "优先级": null,
+                          "前置条件": "未登录",
+                          "用例编号": "product-rows",
+                          "用例说明": "保持负向条件",
+                          "预期结果": "拒绝访问",
+                          "测试数据JSON": "{\"id\":0,\"flag\":false}"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-rows",
+                  "title": "保持未登录验证拒绝",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [],
+            "resolved_columns": {
+              "steps": "步骤",
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明",
+              "expected_results": "预期结果"
+            },
+            "resolved_step_columns": {},
+            "diagnostics": {}
+          },
+          "status": "committed",
+          "case_ids": [
+            "51325bbd-deea-486e-8b7a-df170b858154"
+          ],
+          "created_at": "2026-10-11T04:41:01.460994Z",
+          "committed_at": "2026-10-11T04:41:01.697491Z"
+        },
+        "conflicting_case_keys": []
+      }
+    },
+    {
+      "source": {
+        "id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+        "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+        "filename": "split.xlsx",
+        "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+        "size_bytes": 5805,
+        "storage_uri": "rustfs://upload-safe/case-import/81c700d9-fce3-4a05-bca3-d3f26bd80010/521f441b-a384-495b-b5eb-456f7861f8d4/safe/split.xlsx",
+        "security_report": {
+          "profile": "chat_attachment",
+          "decision": "allow",
+          "filename": "split.xlsx",
+          "findings": [],
+          "extension": ".xlsx",
+          "risk_score": 0,
+          "size_bytes": 5805,
+          "declared_content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "detected_content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        },
+        "sheets": [
+          {
+            "name": "用例",
+            "headers": [
+              "用例编号",
+              "标题",
+              "类型",
+              "优先级",
+              "前置条件",
+              "测试数据JSON",
+              "清理",
+              "用例说明",
+              "完整JSON"
+            ],
+            "suggested_columns": {
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明"
+            }
+          },
+          {
+            "name": "步骤",
+            "headers": [
+              "用例编号",
+              "步骤序号",
+              "操作",
+              "步骤预期"
+            ],
+            "suggested_columns": {
+              "order": "步骤序号",
+              "action": "操作",
+              "case_key": "用例编号",
+              "expected": "步骤预期"
+            }
+          }
+        ],
+        "created_at": "2026-10-11T04:41:02.327395Z"
+      },
+      "preview": {
+        "batch": {
+          "id": "e9fd9104-f037-59de-bdfd-0446c0d232e7",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+          "preview_hash": "bf268648970318880e2234b8d5ef682271a79d0684c55623e2146d785e308900",
+          "config_snapshot": {
+            "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+            "revision": 1,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": {
+                "layout": "rows",
+                "mode_key": "api_testing",
+                "case_sheet": "用例",
+                "step_sheet": null,
+                "header_row": 1,
+                "columns": {
+                  "steps": "步骤",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": "预期结果"
+                },
+                "step_columns": {}
+              }
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "split.xlsx",
+            "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+            "options": {
+              "layout": "split",
+              "mode_key": "api_testing",
+              "case_sheet": "用例",
+              "step_sheet": "步骤",
+              "header_row": 1,
+              "columns": {
+                "steps": "",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": ""
+              },
+              "step_columns": {
+                "order": "步骤序号",
+                "action": "操作",
+                "case_key": "用例编号",
+                "expected": "步骤预期"
+              }
+            },
+            "sheets": [
+              {
+                "name": "用例",
+                "headers": [
+                  "用例编号",
+                  "标题",
+                  "类型",
+                  "优先级",
+                  "前置条件",
+                  "测试数据JSON",
+                  "清理",
+                  "用例说明",
+                  "完整JSON"
+                ],
+                "suggested_columns": {
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明"
+                }
+              },
+              {
+                "name": "步骤",
+                "headers": [
+                  "用例编号",
+                  "步骤序号",
+                  "操作",
+                  "步骤预期"
+                ],
+                "suggested_columns": {
+                  "order": "步骤序号",
+                  "action": "操作",
+                  "case_key": "用例编号",
+                  "expected": "步骤预期"
+                }
+              }
+            ],
+            "candidates": [
+              {
+                "row": 2,
+                "sheet": "用例",
+                "step_rows": [
+                  2,
+                  3
+                ],
+                "draft": {
+                  "content_json": {
+                    "steps": [
+                      {
+                        "order": 1,
+                        "action": "在未登录条件下请求",
+                        "expected": "拒绝访问",
+                        "source_columns": {
+                          "操作": "在未登录条件下请求",
+                          "步骤序号": 1,
+                          "步骤预期": "拒绝访问",
+                          "用例编号": "product-split"
+                        }
+                      },
+                      {
+                        "order": 2,
+                        "action": "核对拒绝响应",
+                        "expected": "验证通过",
+                        "source_columns": {
+                          "操作": "核对拒绝响应",
+                          "步骤序号": 2,
+                          "步骤预期": "验证通过",
+                          "用例编号": "product-split"
+                        }
+                      }
+                    ],
+                    "cleanup": [],
+                    "objective": "保持未登录验证拒绝",
+                    "test_data": {
+                      "id": 0,
+                      "flag": false
+                    },
+                    "preconditions": [
+                      "未登录"
+                    ],
+                    "expected_results": []
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "e9fd9104-f037-59de-bdfd-0446c0d232e7",
+                      "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+                      "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+                      "preview_hash": "bf268648970318880e2234b8d5ef682271a79d0684c55623e2146d785e308900",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+                      "version": null,
+                      "label": "split.xlsx",
+                      "uri": null,
+                      "metadata": {
+                        "row": 2,
+                        "sheet": "用例",
+                        "columns": {
+                          "title": "标题",
+                          "cleanup": "清理",
+                          "case_key": "用例编号",
+                          "priority": "优先级",
+                          "case_type": "类型",
+                          "test_data": "测试数据JSON",
+                          "content_json": "完整JSON",
+                          "preconditions": "前置条件",
+                          "execution_notes": "用例说明"
+                        },
+                        "batch_id": "e9fd9104-f037-59de-bdfd-0446c0d232e7",
+                        "filename": "split.xlsx",
+                        "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+                        "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+                        "step_rows": [
+                          2,
+                          3
+                        ],
+                        "step_sheet": "步骤",
+                        "preview_hash": "bf268648970318880e2234b8d5ef682271a79d0684c55623e2146d785e308900",
+                        "step_columns": {
+                          "order": "步骤序号",
+                          "action": "操作",
+                          "case_key": "用例编号",
+                          "expected": "步骤预期"
+                        },
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "标题": "保持未登录验证拒绝",
+                          "清理": null,
+                          "类型": null,
+                          "优先级": null,
+                          "前置条件": "未登录",
+                          "用例编号": "product-split",
+                          "用例说明": "保持负向条件",
+                          "测试数据JSON": "{\"id\":0,\"flag\":false}"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-split",
+                  "title": "保持未登录验证拒绝",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [],
+            "resolved_columns": {
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明"
+            },
+            "resolved_step_columns": {
+              "order": "步骤序号",
+              "action": "操作",
+              "case_key": "用例编号",
+              "expected": "步骤预期"
+            },
+            "diagnostics": {}
+          },
+          "status": "previewed",
+          "case_ids": [],
+          "created_at": "2026-10-11T04:41:02.995868Z",
+          "committed_at": null
+        },
+        "conflicting_case_keys": []
+      },
+      "committed": {
+        "batch": {
+          "id": "e9fd9104-f037-59de-bdfd-0446c0d232e7",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+          "preview_hash": "bf268648970318880e2234b8d5ef682271a79d0684c55623e2146d785e308900",
+          "config_snapshot": {
+            "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+            "revision": 1,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": {
+                "layout": "rows",
+                "mode_key": "api_testing",
+                "case_sheet": "用例",
+                "step_sheet": null,
+                "header_row": 1,
+                "columns": {
+                  "steps": "步骤",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": "预期结果"
+                },
+                "step_columns": {}
+              }
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "split.xlsx",
+            "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+            "options": {
+              "layout": "split",
+              "mode_key": "api_testing",
+              "case_sheet": "用例",
+              "step_sheet": "步骤",
+              "header_row": 1,
+              "columns": {
+                "steps": "",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": ""
+              },
+              "step_columns": {
+                "order": "步骤序号",
+                "action": "操作",
+                "case_key": "用例编号",
+                "expected": "步骤预期"
+              }
+            },
+            "sheets": [
+              {
+                "name": "用例",
+                "headers": [
+                  "用例编号",
+                  "标题",
+                  "类型",
+                  "优先级",
+                  "前置条件",
+                  "测试数据JSON",
+                  "清理",
+                  "用例说明",
+                  "完整JSON"
+                ],
+                "suggested_columns": {
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明"
+                }
+              },
+              {
+                "name": "步骤",
+                "headers": [
+                  "用例编号",
+                  "步骤序号",
+                  "操作",
+                  "步骤预期"
+                ],
+                "suggested_columns": {
+                  "order": "步骤序号",
+                  "action": "操作",
+                  "case_key": "用例编号",
+                  "expected": "步骤预期"
+                }
+              }
+            ],
+            "candidates": [
+              {
+                "row": 2,
+                "sheet": "用例",
+                "step_rows": [
+                  2,
+                  3
+                ],
+                "draft": {
+                  "content_json": {
+                    "steps": [
+                      {
+                        "order": 1,
+                        "action": "在未登录条件下请求",
+                        "expected": "拒绝访问",
+                        "source_columns": {
+                          "操作": "在未登录条件下请求",
+                          "步骤序号": 1,
+                          "步骤预期": "拒绝访问",
+                          "用例编号": "product-split"
+                        }
+                      },
+                      {
+                        "order": 2,
+                        "action": "核对拒绝响应",
+                        "expected": "验证通过",
+                        "source_columns": {
+                          "操作": "核对拒绝响应",
+                          "步骤序号": 2,
+                          "步骤预期": "验证通过",
+                          "用例编号": "product-split"
+                        }
+                      }
+                    ],
+                    "cleanup": [],
+                    "objective": "保持未登录验证拒绝",
+                    "test_data": {
+                      "id": 0,
+                      "flag": false
+                    },
+                    "preconditions": [
+                      "未登录"
+                    ],
+                    "expected_results": []
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "e9fd9104-f037-59de-bdfd-0446c0d232e7",
+                      "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+                      "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+                      "preview_hash": "bf268648970318880e2234b8d5ef682271a79d0684c55623e2146d785e308900",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+                      "version": null,
+                      "label": "split.xlsx",
+                      "uri": null,
+                      "metadata": {
+                        "row": 2,
+                        "sheet": "用例",
+                        "columns": {
+                          "title": "标题",
+                          "cleanup": "清理",
+                          "case_key": "用例编号",
+                          "priority": "优先级",
+                          "case_type": "类型",
+                          "test_data": "测试数据JSON",
+                          "content_json": "完整JSON",
+                          "preconditions": "前置条件",
+                          "execution_notes": "用例说明"
+                        },
+                        "batch_id": "e9fd9104-f037-59de-bdfd-0446c0d232e7",
+                        "filename": "split.xlsx",
+                        "file_hash": "8dcbd6c7244d15cde2d8aa7ae4d6b87516e3f90b01c4c5e38acb3cc087cb3caf",
+                        "source_id": "521f441b-a384-495b-b5eb-456f7861f8d4",
+                        "step_rows": [
+                          2,
+                          3
+                        ],
+                        "step_sheet": "步骤",
+                        "preview_hash": "bf268648970318880e2234b8d5ef682271a79d0684c55623e2146d785e308900",
+                        "step_columns": {
+                          "order": "步骤序号",
+                          "action": "操作",
+                          "case_key": "用例编号",
+                          "expected": "步骤预期"
+                        },
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "标题": "保持未登录验证拒绝",
+                          "清理": null,
+                          "类型": null,
+                          "优先级": null,
+                          "前置条件": "未登录",
+                          "用例编号": "product-split",
+                          "用例说明": "保持负向条件",
+                          "测试数据JSON": "{\"id\":0,\"flag\":false}"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-split",
+                  "title": "保持未登录验证拒绝",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [],
+            "resolved_columns": {
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明"
+            },
+            "resolved_step_columns": {
+              "order": "步骤序号",
+              "action": "操作",
+              "case_key": "用例编号",
+              "expected": "步骤预期"
+            },
+            "diagnostics": {}
+          },
+          "status": "committed",
+          "case_ids": [
+            "6d6e9352-cd81-4731-a4f1-f56a50c3c829"
+          ],
+          "created_at": "2026-10-11T04:41:02.995868Z",
+          "committed_at": "2026-10-11T04:41:03.228751Z"
+        },
+        "conflicting_case_keys": []
+      }
+    },
+    {
+      "source": {
+        "id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+        "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+        "filename": "cases.json",
+        "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+        "size_bytes": 606,
+        "storage_uri": "rustfs://upload-safe/case-import/81c700d9-fce3-4a05-bca3-d3f26bd80010/f61878df-356d-4d4d-92dd-2135a2f35ef8/safe/cases.json",
+        "security_report": {
+          "profile": "chat_attachment",
+          "decision": "allow",
+          "filename": "cases.json",
+          "findings": [],
+          "extension": ".json",
+          "risk_score": 0,
+          "size_bytes": 606,
+          "declared_content_type": "application/json",
+          "detected_content_type": "text/plain"
+        },
+        "sheets": [],
+        "created_at": "2026-10-11T04:41:03.892989Z"
+      },
+      "preview": {
+        "batch": {
+          "id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+          "config_snapshot": {
+            "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+            "revision": 2,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": {
+                "layout": "split",
+                "mode_key": "api_testing",
+                "case_sheet": "用例",
+                "step_sheet": "步骤",
+                "header_row": 1,
+                "columns": {
+                  "steps": "",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": ""
+                },
+                "step_columns": {
+                  "order": "步骤序号",
+                  "action": "操作",
+                  "case_key": "用例编号",
+                  "expected": "步骤预期"
+                }
+              }
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "cases.json",
+            "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+            "options": {
+              "layout": "json",
+              "mode_key": "api_testing",
+              "case_sheet": null,
+              "step_sheet": null,
+              "header_row": 1,
+              "columns": {
+                "steps": "",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": ""
+              },
+              "step_columns": {
+                "order": "步骤序号",
+                "action": "操作",
+                "case_key": "用例编号",
+                "expected": "步骤预期"
+              }
+            },
+            "sheets": [],
+            "candidates": [
+              {
+                "row": 1,
+                "sheet": null,
+                "step_rows": [],
+                "draft": {
+                  "content_json": {
+                    "steps": [
+                      {
+                        "action": "保持未登录",
+                        "expected": "拒绝"
+                      }
+                    ],
+                    "custom": {
+                      "nested": [
+                        false,
+                        0,
+                        null,
+                        {
+                          "原字段": "原值"
+                        }
+                      ]
+                    },
+                    "objective": "保留完整项目业务结构",
+                    "test_data": {
+                      "flag": false,
+                      "count": 0,
+                      "nullable": null
+                    }
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+                      "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+                      "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+                      "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+                      "version": null,
+                      "label": "cases.json",
+                      "uri": null,
+                      "metadata": {
+                        "row": 1,
+                        "sheet": null,
+                        "columns": {},
+                        "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+                        "filename": "cases.json",
+                        "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+                        "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+                        "step_rows": [],
+                        "step_sheet": null,
+                        "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+                        "step_columns": {},
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "title": "完整JSON导入",
+                          "case_key": "product-json",
+                          "content_json": {
+                            "steps": [
+                              {
+                                "action": "保持未登录",
+                                "expected": "拒绝"
+                              }
+                            ],
+                            "custom": {
+                              "nested": [
+                                false,
+                                0,
+                                null,
+                                {
+                                  "原字段": "原值"
+                                }
+                              ]
+                            },
+                            "objective": "保留完整项目业务结构",
+                            "test_data": {
+                              "flag": false,
+                              "count": 0,
+                              "nullable": null
+                            }
+                          },
+                          "execution_notes": "保持负向条件"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-json",
+                  "title": "完整JSON导入",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [],
+            "resolved_columns": {},
+            "resolved_step_columns": {},
+            "diagnostics": {}
+          },
+          "status": "previewed",
+          "case_ids": [],
+          "created_at": "2026-10-11T04:41:04.506777Z",
+          "committed_at": null
+        },
+        "conflicting_case_keys": []
+      },
+      "committed": {
+        "batch": {
+          "id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+          "config_snapshot": {
+            "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+            "revision": 2,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": {
+                "layout": "split",
+                "mode_key": "api_testing",
+                "case_sheet": "用例",
+                "step_sheet": "步骤",
+                "header_row": 1,
+                "columns": {
+                  "steps": "",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": ""
+                },
+                "step_columns": {
+                  "order": "步骤序号",
+                  "action": "操作",
+                  "case_key": "用例编号",
+                  "expected": "步骤预期"
+                }
+              }
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "cases.json",
+            "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+            "options": {
+              "layout": "json",
+              "mode_key": "api_testing",
+              "case_sheet": null,
+              "step_sheet": null,
+              "header_row": 1,
+              "columns": {
+                "steps": "",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": ""
+              },
+              "step_columns": {
+                "order": "步骤序号",
+                "action": "操作",
+                "case_key": "用例编号",
+                "expected": "步骤预期"
+              }
+            },
+            "sheets": [],
+            "candidates": [
+              {
+                "row": 1,
+                "sheet": null,
+                "step_rows": [],
+                "draft": {
+                  "content_json": {
+                    "steps": [
+                      {
+                        "action": "保持未登录",
+                        "expected": "拒绝"
+                      }
+                    ],
+                    "custom": {
+                      "nested": [
+                        false,
+                        0,
+                        null,
+                        {
+                          "原字段": "原值"
+                        }
+                      ]
+                    },
+                    "objective": "保留完整项目业务结构",
+                    "test_data": {
+                      "flag": false,
+                      "count": 0,
+                      "nullable": null
+                    }
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+                      "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+                      "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+                      "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+                      "version": null,
+                      "label": "cases.json",
+                      "uri": null,
+                      "metadata": {
+                        "row": 1,
+                        "sheet": null,
+                        "columns": {},
+                        "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+                        "filename": "cases.json",
+                        "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+                        "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+                        "step_rows": [],
+                        "step_sheet": null,
+                        "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+                        "step_columns": {},
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "title": "完整JSON导入",
+                          "case_key": "product-json",
+                          "content_json": {
+                            "steps": [
+                              {
+                                "action": "保持未登录",
+                                "expected": "拒绝"
+                              }
+                            ],
+                            "custom": {
+                              "nested": [
+                                false,
+                                0,
+                                null,
+                                {
+                                  "原字段": "原值"
+                                }
+                              ]
+                            },
+                            "objective": "保留完整项目业务结构",
+                            "test_data": {
+                              "flag": false,
+                              "count": 0,
+                              "nullable": null
+                            }
+                          },
+                          "execution_notes": "保持负向条件"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-json",
+                  "title": "完整JSON导入",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [],
+            "resolved_columns": {},
+            "resolved_step_columns": {},
+            "diagnostics": {}
+          },
+          "status": "committed",
+          "case_ids": [
+            "011ec9f7-3d81-48d6-857d-909b6b931add"
+          ],
+          "created_at": "2026-10-11T04:41:04.506777Z",
+          "committed_at": "2026-10-11T04:41:04.727689Z"
+        },
+        "conflicting_case_keys": []
+      }
+    },
+    {
+      "source": {
+        "id": "cda1ca99-6d82-4f68-8d90-d45fa023e699",
+        "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+        "filename": "invalid.xlsx",
+        "file_hash": "cf61729ca2c50a7edce0f77f35aba5fe6ae3e7aeb673f8380d601996e3deabda",
+        "size_bytes": 5231,
+        "storage_uri": "rustfs://upload-safe/case-import/81c700d9-fce3-4a05-bca3-d3f26bd80010/cda1ca99-6d82-4f68-8d90-d45fa023e699/safe/invalid.xlsx",
+        "security_report": {
+          "profile": "chat_attachment",
+          "decision": "allow",
+          "filename": "invalid.xlsx",
+          "findings": [],
+          "extension": ".xlsx",
+          "risk_score": 0,
+          "size_bytes": 5231,
+          "declared_content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "detected_content_type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        },
+        "sheets": [
+          {
+            "name": "用例",
+            "headers": [
+              "用例编号",
+              "标题",
+              "类型",
+              "优先级",
+              "前置条件",
+              "步骤",
+              "预期结果",
+              "测试数据JSON",
+              "清理",
+              "用例说明",
+              "完整JSON"
+            ],
+            "suggested_columns": {
+              "steps": "步骤",
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明",
+              "expected_results": "预期结果"
+            }
+          }
+        ],
+        "created_at": "2026-10-11T04:41:05.384335Z"
+      },
+      "preview": {
+        "batch": {
+          "id": "fe059959-c3f2-5156-b239-c7f9e843d339",
+          "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+          "source_id": "cda1ca99-6d82-4f68-8d90-d45fa023e699",
+          "preview_hash": "bcfb955e251bc14eaaa49cbf85af236bb02f5b17e0b1cfdbf9e3d59c6d79098b",
+          "config_snapshot": {
+            "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+            "revision": 3,
+            "payload": {
+              "policy": {
+                "limits": {
+                  "max_bytes": 5000000,
+                  "max_expanded_bytes": 50000000,
+                  "max_zip_entries": 2000,
+                  "max_sheets": 50,
+                  "max_rows": 5000,
+                  "max_columns": 100,
+                  "max_cell_chars": 20000,
+                  "max_cases": 1000
+                },
+                "timeout_seconds": 30.0,
+                "max_cpu_seconds": 20.0,
+                "max_memory_bytes": 268435456,
+                "max_output_bytes": 20000000
+              },
+              "options": {
+                "layout": "json",
+                "mode_key": "api_testing",
+                "case_sheet": null,
+                "step_sheet": null,
+                "header_row": 1,
+                "columns": {
+                  "steps": "",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": ""
+                },
+                "step_columns": {
+                  "order": "步骤序号",
+                  "action": "操作",
+                  "case_key": "用例编号",
+                  "expected": "步骤预期"
+                }
+              }
+            }
+          },
+          "preview": {
+            "parser_version": "case-import-v1",
+            "filename": "invalid.xlsx",
+            "file_hash": "cf61729ca2c50a7edce0f77f35aba5fe6ae3e7aeb673f8380d601996e3deabda",
+            "options": {
+              "layout": "rows",
+              "mode_key": "api_testing",
+              "case_sheet": "用例",
+              "step_sheet": null,
+              "header_row": 1,
+              "columns": {
+                "steps": "",
+                "title": "标题",
+                "cleanup": "清理",
+                "case_key": "用例编号",
+                "priority": "优先级",
+                "case_type": "类型",
+                "test_data": "测试数据JSON",
+                "content_json": "完整JSON",
+                "preconditions": "前置条件",
+                "execution_notes": "用例说明",
+                "expected_results": ""
+              },
+              "step_columns": {
+                "order": "步骤序号",
+                "action": "操作",
+                "case_key": "用例编号",
+                "expected": "步骤预期"
+              }
+            },
+            "sheets": [
+              {
+                "name": "用例",
+                "headers": [
+                  "用例编号",
+                  "标题",
+                  "类型",
+                  "优先级",
+                  "前置条件",
+                  "步骤",
+                  "预期结果",
+                  "测试数据JSON",
+                  "清理",
+                  "用例说明",
+                  "完整JSON"
+                ],
+                "suggested_columns": {
+                  "steps": "步骤",
+                  "title": "标题",
+                  "cleanup": "清理",
+                  "case_key": "用例编号",
+                  "priority": "优先级",
+                  "case_type": "类型",
+                  "test_data": "测试数据JSON",
+                  "content_json": "完整JSON",
+                  "preconditions": "前置条件",
+                  "execution_notes": "用例说明",
+                  "expected_results": "预期结果"
+                }
+              }
+            ],
+            "candidates": [
+              {
+                "row": 3,
+                "sheet": "用例",
+                "step_rows": [],
+                "draft": {
+                  "content_json": {
+                    "steps": [],
+                    "cleanup": [],
+                    "objective": "保持未登录验证拒绝",
+                    "test_data": {
+                      "id": 0,
+                      "flag": false
+                    },
+                    "preconditions": [
+                      "未登录"
+                    ],
+                    "expected_results": []
+                  },
+                  "execution_notes": "保持负向条件",
+                  "generation_metadata": {
+                    "import": {
+                      "batch_id": "fe059959-c3f2-5156-b239-c7f9e843d339",
+                      "file_hash": "cf61729ca2c50a7edce0f77f35aba5fe6ae3e7aeb673f8380d601996e3deabda",
+                      "source_id": "cda1ca99-6d82-4f68-8d90-d45fa023e699",
+                      "preview_hash": "bcfb955e251bc14eaaa49cbf85af236bb02f5b17e0b1cfdbf9e3d59c6d79098b",
+                      "parser_version": "case-import-v1"
+                    }
+                  },
+                  "preconditions": [],
+                  "steps": [],
+                  "assertions": [],
+                  "test_data": {},
+                  "cleanup": [],
+                  "source_refs": [
+                    {
+                      "source_type": "case_import",
+                      "source_id": "cda1ca99-6d82-4f68-8d90-d45fa023e699",
+                      "version": null,
+                      "label": "invalid.xlsx",
+                      "uri": null,
+                      "metadata": {
+                        "row": 3,
+                        "sheet": "用例",
+                        "columns": {
+                          "title": "标题",
+                          "cleanup": "清理",
+                          "case_key": "用例编号",
+                          "priority": "优先级",
+                          "case_type": "类型",
+                          "test_data": "测试数据JSON",
+                          "content_json": "完整JSON",
+                          "preconditions": "前置条件",
+                          "execution_notes": "用例说明"
+                        },
+                        "batch_id": "fe059959-c3f2-5156-b239-c7f9e843d339",
+                        "filename": "invalid.xlsx",
+                        "file_hash": "cf61729ca2c50a7edce0f77f35aba5fe6ae3e7aeb673f8380d601996e3deabda",
+                        "source_id": "cda1ca99-6d82-4f68-8d90-d45fa023e699",
+                        "step_rows": [],
+                        "step_sheet": null,
+                        "preview_hash": "bcfb955e251bc14eaaa49cbf85af236bb02f5b17e0b1cfdbf9e3d59c6d79098b",
+                        "step_columns": {},
+                        "parser_version": "case-import-v1",
+                        "source_columns": {
+                          "标题": "保持未登录验证拒绝",
+                          "步骤": "读取受保护详情",
+                          "清理": null,
+                          "类型": null,
+                          "优先级": null,
+                          "前置条件": "未登录",
+                          "用例编号": "product-valid-with-error",
+                          "用例说明": "保持负向条件",
+                          "预期结果": "拒绝访问",
+                          "测试数据JSON": "{\"id\":0,\"flag\":false}"
+                        }
+                      }
+                    }
+                  ],
+                  "model_key": "manual-import",
+                  "prompt_version": "not-used-manual-import",
+                  "skill_versions": {
+                    "manual-import": "not-used"
+                  },
+                  "case_key": "product-valid-with-error",
+                  "title": "保持未登录验证拒绝",
+                  "mode_key": "api_testing",
+                  "case_type": "imported",
+                  "priority": "P1"
+                }
+              }
+            ],
+            "issues": [
+              {
+                "severity": "warning",
+                "code": "review_business_content",
+                "message": "操作或预期不完整，草稿需要评审补充",
+                "sheet": "用例",
+                "row": 2,
+                "field": null
+              },
+              {
+                "severity": "error",
+                "code": "invalid_case",
+                "message": "title: String should have at least 1 character",
+                "sheet": "用例",
+                "row": 2,
+                "field": null
+              },
+              {
+                "severity": "warning",
+                "code": "review_business_content",
+                "message": "操作或预期不完整，草稿需要评审补充",
+                "sheet": "用例",
+                "row": 3,
+                "field": null
+              }
+            ],
+            "resolved_columns": {
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明"
+            },
+            "resolved_step_columns": {},
+            "diagnostics": {}
+          },
+          "status": "previewed",
+          "case_ids": [],
+          "created_at": "2026-10-11T04:41:06.086128Z",
+          "committed_at": null
+        },
+        "conflicting_case_keys": []
+      }
+    }
+  ],
+  "template_saved": {
+    "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+    "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+    "revision": 1,
+    "is_default": false,
+    "content_hash": "3d06b4bbe5a48f34d1b37eee191e1dcb4ed9b0e7e6ea2b2f72bf351aa16aa964",
+    "payload": {
+      "name": "本项目生成模板",
+      "writing_guidance": "依据本项目文档，保留负向场景和原字段",
+      "execution_notes": "本用例执行说明",
+      "example_json": {
+        "objective": "保留完整项目业务结构",
+        "steps": [
+          {
+            "action": "保持未登录",
+            "expected": "拒绝"
+          }
+        ],
+        "test_data": {
+          "count": 0,
+          "flag": false,
+          "nullable": null
+        },
+        "custom": {
+          "nested": [
+            false,
+            0,
+            null,
+            {
+              "原字段": "原值"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "template_change_after_activation": {
+    "before": {
+      "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+      "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+      "revision": 1,
+      "is_default": false,
+      "content_hash": "3d06b4bbe5a48f34d1b37eee191e1dcb4ed9b0e7e6ea2b2f72bf351aa16aa964",
+      "payload": {
+        "name": "本项目生成模板",
+        "writing_guidance": "依据本项目文档，保留负向场景和原字段",
+        "execution_notes": "本用例执行说明",
+        "example_json": {
+          "objective": "保留完整项目业务结构",
+          "steps": [
+            {
+              "action": "保持未登录",
+              "expected": "拒绝"
+            }
+          ],
+          "test_data": {
+            "count": 0,
+            "flag": false,
+            "nullable": null
+          },
+          "custom": {
+            "nested": [
+              false,
+              0,
+              null,
+              {
+                "原字段": "原值"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "after": {
+      "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+      "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+      "revision": 2,
+      "is_default": false,
+      "content_hash": "c718d6c70cf3d256213bb695259f14ec574c37cfef12b5fa4c8230da54083231",
+      "payload": {
+        "name": "本项目生成模板",
+        "writing_guidance": "仅后续生成使用新指导；旧用例及启用指针不变",
+        "execution_notes": "本用例执行说明",
+        "example_json": {
+          "objective": "保留完整项目业务结构",
+          "steps": [
+            {
+              "action": "保持未登录",
+              "expected": "拒绝"
+            }
+          ],
+          "test_data": {
+            "count": 0,
+            "flag": false,
+            "nullable": null
+          },
+          "custom": {
+            "nested": [
+              false,
+              0,
+              null,
+              {
+                "原字段": "原值"
+              }
+            ]
+          }
+        }
+      }
+    },
+    "case_unchanged": true,
+    "versions_unchanged": true
+  },
+  "project": {
+    "id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+    "project_key": "import-product-5023fb88f3",
+    "name": "完整导入项目一",
+    "description": null,
+    "base_url": null,
+    "graph_scope_key": null,
+    "status": "active",
+    "created_by": null,
+    "created_at": "2026-10-11T04:40:58.378687Z",
+    "updated_at": "2026-10-11T04:40:58.378687Z",
+    "archived_at": null
+  },
+  "other_project": {
+    "id": "07bbc02b-4c5c-4acd-b454-62c5be2bf159",
+    "project_key": "import-product-24909d9039",
+    "name": "完整导入项目二",
+    "description": null,
+    "base_url": null,
+    "graph_scope_key": null,
+    "status": "active",
+    "created_by": null,
+    "created_at": "2026-10-11T04:41:08.226325Z",
+    "updated_at": "2026-10-11T04:41:08.226325Z",
+    "archived_at": null
+  },
+  "active_before": {
+    "id": "011ec9f7-3d81-48d6-857d-909b6b931add",
+    "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+    "case_key": "product-json",
+    "title": "完整JSON导入",
+    "mode_key": "api_testing",
+    "case_type": "imported",
+    "priority": "P1",
+    "lifecycle_status": "active",
+    "active_version_id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4",
+    "latest_version": 1,
+    "created_by": "case-import",
+    "created_at": "2026-10-11T04:41:04.722460Z",
+    "updated_at": "2026-10-11T04:41:06.503729Z",
+    "archived_at": null,
+    "version_reviews": {
+      "e374b7ee-20b3-48a3-9b00-aba0d4e308d4": {
+        "version_id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4",
+        "version": 1,
+        "status": "approved",
+        "origin": "native",
+        "events": [
+          {
+            "action": "submitted",
+            "at": "2026-10-11T04:41:06.407938Z",
+            "request_id": "78e51ab6-43cf-47f4-bcf8-e961a7cb9023",
+            "request_hash": "6c1924251c19370dbd2f9b33cd1bf2068f3c92dca2c019a70c82dc668263de02"
+          },
+          {
+            "action": "activated",
+            "at": "2026-10-11T04:41:06.503729Z",
+            "request_id": "3175421b-ebe0-4f7c-a2ca-c66cca136e09",
+            "request_hash": "b1808ae6fd49498375ab1f95dea770b3cc5c823135e5075b3a1bf9788518e62f"
+          }
+        ]
+      }
+    }
+  },
+  "case_after_new_draft": {
+    "id": "011ec9f7-3d81-48d6-857d-909b6b931add",
+    "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+    "case_key": "product-json",
+    "title": "完整JSON导入",
+    "mode_key": "api_testing",
+    "case_type": "imported",
+    "priority": "P1",
+    "lifecycle_status": "active",
+    "active_version_id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4",
+    "latest_version": 2,
+    "created_by": "case-import",
+    "created_at": "2026-10-11T04:41:04.722460Z",
+    "updated_at": "2026-10-11T04:41:06.619544Z",
+    "archived_at": null,
+    "version_reviews": {
+      "b9608faa-fd8d-4c82-bba3-42406077082e": {
+        "version_id": "b9608faa-fd8d-4c82-bba3-42406077082e",
+        "version": 2,
+        "status": "draft",
+        "origin": "native",
+        "events": []
+      },
+      "e374b7ee-20b3-48a3-9b00-aba0d4e308d4": {
+        "version_id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4",
+        "version": 1,
+        "status": "approved",
+        "origin": "native",
+        "events": [
+          {
+            "action": "submitted",
+            "at": "2026-10-11T04:41:06.407938Z",
+            "request_id": "78e51ab6-43cf-47f4-bcf8-e961a7cb9023",
+            "request_hash": "6c1924251c19370dbd2f9b33cd1bf2068f3c92dca2c019a70c82dc668263de02"
+          },
+          {
+            "action": "activated",
+            "at": "2026-10-11T04:41:06.503729Z",
+            "request_id": "3175421b-ebe0-4f7c-a2ca-c66cca136e09",
+            "request_hash": "b1808ae6fd49498375ab1f95dea770b3cc5c823135e5075b3a1bf9788518e62f"
+          }
+        ]
+      }
+    }
+  },
+  "versions_before": [
+    {
+      "content_json": {
+        "steps": [
+          {
+            "action": "保持未登录",
+            "expected": "拒绝"
+          }
+        ],
+        "custom": {
+          "nested": [
+            false,
+            0,
+            null,
+            {
+              "原字段": "原值"
+            }
+          ]
+        },
+        "objective": "保留完整项目业务结构",
+        "test_data": {
+          "flag": false,
+          "count": 0,
+          "nullable": null
+        }
+      },
+      "execution_notes": "保持负向条件",
+      "generation_metadata": {
+        "import": {
+          "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+          "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+          "parser_version": "case-import-v1"
+        }
+      },
+      "preconditions": [],
+      "steps": [],
+      "assertions": [],
+      "test_data": {},
+      "cleanup": [],
+      "content_format": "json-v1",
+      "id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4",
+      "case_id": "011ec9f7-3d81-48d6-857d-909b6b931add",
+      "version": 1,
+      "content_hash": "72f933a31df49fcdc421f59cf76cc9f3e293530ac4da293cea08fb3a72f227c0",
+      "source_refs": [
+        {
+          "source_type": "case_import",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "version": null,
+          "label": "cases.json",
+          "uri": null,
+          "metadata": {
+            "row": 1,
+            "sheet": null,
+            "columns": {},
+            "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+            "filename": "cases.json",
+            "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+            "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+            "step_rows": [],
+            "step_sheet": null,
+            "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+            "step_columns": {},
+            "parser_version": "case-import-v1",
+            "source_columns": {
+              "title": "完整JSON导入",
+              "case_key": "product-json",
+              "content_json": {
+                "steps": [
+                  {
+                    "action": "保持未登录",
+                    "expected": "拒绝"
+                  }
+                ],
+                "custom": {
+                  "nested": [
+                    false,
+                    0,
+                    null,
+                    {
+                      "原字段": "原值"
+                    }
+                  ]
+                },
+                "objective": "保留完整项目业务结构",
+                "test_data": {
+                  "flag": false,
+                  "count": 0,
+                  "nullable": null
+                }
+              },
+              "execution_notes": "保持负向条件"
+            }
+          }
+        }
+      ],
+      "model_key": "manual-import",
+      "prompt_version": "not-used-manual-import",
+      "skill_versions": {
+        "manual-import": "not-used"
+      },
+      "created_at": "2026-10-11T04:41:04.722460Z"
+    }
+  ],
+  "versions_after": [
+    {
+      "content_json": {
+        "steps": [
+          {
+            "action": "保持未登录",
+            "expected": "拒绝"
+          }
+        ],
+        "custom": {
+          "nested": [
+            false,
+            0,
+            null,
+            {
+              "原字段": "原值"
+            }
+          ]
+        },
+        "objective": "保留完整项目业务结构",
+        "test_data": {
+          "flag": false,
+          "count": 0,
+          "nullable": null
+        }
+      },
+      "execution_notes": "保持负向条件",
+      "generation_metadata": {
+        "import": {
+          "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+          "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+          "parser_version": "case-import-v1"
+        }
+      },
+      "preconditions": [],
+      "steps": [],
+      "assertions": [],
+      "test_data": {},
+      "cleanup": [],
+      "content_format": "json-v1",
+      "id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4",
+      "case_id": "011ec9f7-3d81-48d6-857d-909b6b931add",
+      "version": 1,
+      "content_hash": "72f933a31df49fcdc421f59cf76cc9f3e293530ac4da293cea08fb3a72f227c0",
+      "source_refs": [
+        {
+          "source_type": "case_import",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "version": null,
+          "label": "cases.json",
+          "uri": null,
+          "metadata": {
+            "row": 1,
+            "sheet": null,
+            "columns": {},
+            "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+            "filename": "cases.json",
+            "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+            "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+            "step_rows": [],
+            "step_sheet": null,
+            "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+            "step_columns": {},
+            "parser_version": "case-import-v1",
+            "source_columns": {
+              "title": "完整JSON导入",
+              "case_key": "product-json",
+              "content_json": {
+                "steps": [
+                  {
+                    "action": "保持未登录",
+                    "expected": "拒绝"
+                  }
+                ],
+                "custom": {
+                  "nested": [
+                    false,
+                    0,
+                    null,
+                    {
+                      "原字段": "原值"
+                    }
+                  ]
+                },
+                "objective": "保留完整项目业务结构",
+                "test_data": {
+                  "flag": false,
+                  "count": 0,
+                  "nullable": null
+                }
+              },
+              "execution_notes": "保持负向条件"
+            }
+          }
+        }
+      ],
+      "model_key": "manual-import",
+      "prompt_version": "not-used-manual-import",
+      "skill_versions": {
+        "manual-import": "not-used"
+      },
+      "created_at": "2026-10-11T04:41:04.722460Z"
+    },
+    {
+      "content_json": {
+        "steps": [
+          {
+            "action": "保持未登录",
+            "expected": "拒绝"
+          }
+        ],
+        "custom": {
+          "nested": [
+            false,
+            0,
+            null,
+            {
+              "原字段": "原值"
+            }
+          ],
+          "revision": 2
+        },
+        "objective": "保留完整项目业务结构",
+        "test_data": {
+          "flag": false,
+          "count": 0,
+          "nullable": null
+        }
+      },
+      "execution_notes": "保持负向条件",
+      "generation_metadata": {
+        "import": {
+          "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+          "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+          "parser_version": "case-import-v1"
+        },
+        "manual_edit": {
+          "source_version_id": "e374b7ee-20b3-48a3-9b00-aba0d4e308d4"
+        }
+      },
+      "preconditions": [],
+      "steps": [],
+      "assertions": [],
+      "test_data": {},
+      "cleanup": [],
+      "content_format": "json-v1",
+      "id": "b9608faa-fd8d-4c82-bba3-42406077082e",
+      "case_id": "011ec9f7-3d81-48d6-857d-909b6b931add",
+      "version": 2,
+      "content_hash": "7a46369392146d096402c967d5f171f8cfbca8ccfb3fe8c58114823f3b7ae473",
+      "source_refs": [
+        {
+          "source_type": "case_import",
+          "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+          "version": null,
+          "label": "cases.json",
+          "uri": null,
+          "metadata": {
+            "row": 1,
+            "sheet": null,
+            "columns": {},
+            "batch_id": "4d1df04f-9b1c-5585-8504-dec0edba1f91",
+            "filename": "cases.json",
+            "file_hash": "c57b067655a302e0ea6c779a91018afd940513e65dbe8dfcaf6764d1ba822076",
+            "source_id": "f61878df-356d-4d4d-92dd-2135a2f35ef8",
+            "step_rows": [],
+            "step_sheet": null,
+            "preview_hash": "f353096e0ccc6d841aaa3ae1edbbbf4afe1b4c119aa899e75b6aaf5206ecfc00",
+            "step_columns": {},
+            "parser_version": "case-import-v1",
+            "source_columns": {
+              "title": "完整JSON导入",
+              "case_key": "product-json",
+              "content_json": {
+                "steps": [
+                  {
+                    "action": "保持未登录",
+                    "expected": "拒绝"
+                  }
+                ],
+                "custom": {
+                  "nested": [
+                    false,
+                    0,
+                    null,
+                    {
+                      "原字段": "原值"
+                    }
+                  ]
+                },
+                "objective": "保留完整项目业务结构",
+                "test_data": {
+                  "flag": false,
+                  "count": 0,
+                  "nullable": null
+                }
+              },
+              "execution_notes": "保持负向条件"
+            }
+          }
+        }
+      ],
+      "model_key": "manual-import",
+      "prompt_version": "not-used-manual-import",
+      "skill_versions": {
+        "manual-import": "not-used"
+      },
+      "created_at": "2026-10-11T04:41:06.619544Z"
+    }
+  ],
+  "conflict": {
+    "batch": {
+      "id": "a62ac881-084a-5f04-b6a5-ecf072f70cb5",
+      "project_id": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+      "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+      "preview_hash": "83b23dfc356d0bb6ddb184c5773eb16e5d41c9adb711d956c1e2d4115525ab99",
+      "config_snapshot": {
+        "scope_key": "81c700d9-fce3-4a05-bca3-d3f26bd80010",
+        "revision": 3,
+        "payload": {
+          "policy": {
+            "limits": {
+              "max_bytes": 5000000,
+              "max_expanded_bytes": 50000000,
+              "max_zip_entries": 2000,
+              "max_sheets": 50,
+              "max_rows": 5000,
+              "max_columns": 100,
+              "max_cell_chars": 20000,
+              "max_cases": 1000
+            },
+            "timeout_seconds": 30.0,
+            "max_cpu_seconds": 20.0,
+            "max_memory_bytes": 268435456,
+            "max_output_bytes": 20000000
+          },
+          "options": {
+            "layout": "json",
+            "mode_key": "api_testing",
+            "case_sheet": null,
+            "step_sheet": null,
+            "header_row": 1,
+            "columns": {
+              "steps": "",
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明",
+              "expected_results": ""
+            },
+            "step_columns": {
+              "order": "步骤序号",
+              "action": "操作",
+              "case_key": "用例编号",
+              "expected": "步骤预期"
+            }
+          }
+        }
+      },
+      "preview": {
+        "parser_version": "case-import-v1",
+        "filename": "rows.xlsx",
+        "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+        "options": {
+          "layout": "rows",
+          "mode_key": "ui_automation",
+          "case_sheet": "用例",
+          "step_sheet": null,
+          "header_row": 1,
+          "columns": {
+            "steps": "",
+            "title": "标题",
+            "cleanup": "清理",
+            "case_key": "用例编号",
+            "priority": "优先级",
+            "case_type": "类型",
+            "test_data": "测试数据JSON",
+            "content_json": "完整JSON",
+            "preconditions": "前置条件",
+            "execution_notes": "用例说明",
+            "expected_results": ""
+          },
+          "step_columns": {
+            "order": "步骤序号",
+            "action": "操作",
+            "case_key": "用例编号",
+            "expected": "步骤预期"
+          }
+        },
+        "sheets": [
+          {
+            "name": "用例",
+            "headers": [
+              "用例编号",
+              "标题",
+              "类型",
+              "优先级",
+              "前置条件",
+              "步骤",
+              "预期结果",
+              "测试数据JSON",
+              "清理",
+              "用例说明",
+              "完整JSON"
+            ],
+            "suggested_columns": {
+              "steps": "步骤",
+              "title": "标题",
+              "cleanup": "清理",
+              "case_key": "用例编号",
+              "priority": "优先级",
+              "case_type": "类型",
+              "test_data": "测试数据JSON",
+              "content_json": "完整JSON",
+              "preconditions": "前置条件",
+              "execution_notes": "用例说明",
+              "expected_results": "预期结果"
+            }
+          }
+        ],
+        "candidates": [
+          {
+            "row": 2,
+            "sheet": "用例",
+            "step_rows": [],
+            "draft": {
+              "content_json": {
+                "steps": [],
+                "cleanup": [],
+                "objective": "保持未登录验证拒绝",
+                "test_data": {
+                  "id": 0,
+                  "flag": false
+                },
+                "preconditions": [
+                  "未登录"
+                ],
+                "expected_results": []
+              },
+              "execution_notes": "保持负向条件",
+              "generation_metadata": {
+                "import": {
+                  "batch_id": "a62ac881-084a-5f04-b6a5-ecf072f70cb5",
+                  "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+                  "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                  "preview_hash": "83b23dfc356d0bb6ddb184c5773eb16e5d41c9adb711d956c1e2d4115525ab99",
+                  "parser_version": "case-import-v1"
+                }
+              },
+              "preconditions": [],
+              "steps": [],
+              "assertions": [],
+              "test_data": {},
+              "cleanup": [],
+              "source_refs": [
+                {
+                  "source_type": "case_import",
+                  "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                  "version": null,
+                  "label": "rows.xlsx",
+                  "uri": null,
+                  "metadata": {
+                    "row": 2,
+                    "sheet": "用例",
+                    "columns": {
+                      "title": "标题",
+                      "cleanup": "清理",
+                      "case_key": "用例编号",
+                      "priority": "优先级",
+                      "case_type": "类型",
+                      "test_data": "测试数据JSON",
+                      "content_json": "完整JSON",
+                      "preconditions": "前置条件",
+                      "execution_notes": "用例说明"
+                    },
+                    "batch_id": "a62ac881-084a-5f04-b6a5-ecf072f70cb5",
+                    "filename": "rows.xlsx",
+                    "file_hash": "0944049ae60aee0493582a9ef4555f7a7c0c45a769cae4ae7106fe58aa76c7f0",
+                    "source_id": "c55aa320-c22f-4c91-ade1-6827f3895c54",
+                    "step_rows": [],
+                    "step_sheet": null,
+                    "preview_hash": "83b23dfc356d0bb6ddb184c5773eb16e5d41c9adb711d956c1e2d4115525ab99",
+                    "step_columns": {},
+                    "parser_version": "case-import-v1",
+                    "source_columns": {
+                      "标题": "保持未登录验证拒绝",
+                      "步骤": "读取受保护详情",
+                      "清理": null,
+                      "类型": null,
+                      "优先级": null,
+                      "前置条件": "未登录",
+                      "用例编号": "product-rows",
+                      "用例说明": "保持负向条件",
+                      "预期结果": "拒绝访问",
+                      "测试数据JSON": "{\"id\":0,\"flag\":false}"
+                    }
+                  }
+                }
+              ],
+              "model_key": "manual-import",
+              "prompt_version": "not-used-manual-import",
+              "skill_versions": {
+                "manual-import": "not-used"
+              },
+              "case_key": "product-rows",
+              "title": "保持未登录验证拒绝",
+              "mode_key": "ui_automation",
+              "case_type": "imported",
+              "priority": "P1"
+            }
+          }
+        ],
+        "issues": [
+          {
+            "severity": "warning",
+            "code": "review_business_content",
+            "message": "操作或预期不完整，草稿需要评审补充",
+            "sheet": "用例",
+            "row": 2,
+            "field": null
+          }
+        ],
+        "resolved_columns": {
+          "title": "标题",
+          "cleanup": "清理",
+          "case_key": "用例编号",
+          "priority": "优先级",
+          "case_type": "类型",
+          "test_data": "测试数据JSON",
+          "content_json": "完整JSON",
+          "preconditions": "前置条件",
+          "execution_notes": "用例说明"
+        },
+        "resolved_step_columns": {},
+        "diagnostics": {}
+      },
+      "status": "previewed",
+      "case_ids": [],
+      "created_at": "2026-10-11T04:41:07.582730Z",
+      "committed_at": null
+    },
+    "conflicting_case_keys": [
+      "product-rows"
+    ]
+  },
+  "cross_project_source_status": 404,
+  "page_errors": [],
+  "unplanned_api_errors": [],
+  "planned_restart_response_failures": [
+    {
+      "url": "http://127.0.0.1:61293/api/v1/health",
+      "method": "GET",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:61293/api/v1/sessions/73a9442d-af78-4d39-81eb-cae8105b1bb8",
+      "method": "GET",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:61293/api/v1/projects/07bbc02b-4c5c-4acd-b454-62c5be2bf159/execution-summary",
+      "method": "GET",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:61293/api/v1/resource-occupancy?project_id=07bbc02b-4c5c-4acd-b454-62c5be2bf159",
+      "method": "GET",
+      "status": 500
+    },
+    {
+      "url": "http://127.0.0.1:61293/api/v1/projects/07bbc02b-4c5c-4acd-b454-62c5be2bf159/resource-quotas",
+      "method": "GET",
+      "status": 500
+    }
+  ],
+  "api_restart_persisted": true
+}

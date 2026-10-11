@@ -3392,3 +3392,12 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 证据目录为 `p5-perf-correlation-auth-refresh-verified`、`p5-perf-evidence-regression`、`p5-jmeter-dependencies-worker-verified`，SHA256/大小清单见 `p5-performance-regression-validation.json`。测量回归误用了非受支持的证据目录环境变量，本次临时原件未留存，仅保留JUnit；前批测量原件保持。本批固定计划直调生产组件和缓存引擎，不证明默认AI、自主Agent、完整App、容量或持续负载。历史JMeter及Worker能力已验，不重新标为本轮新实现；默认模型按用户决定暂缓，完整目标继续active。
 
 交付复核发现本次k6回归曾误复用旧目录；当前原件已移至独立auth-refresh目录，旧目录及XML按f3cda5e逐blob恢复并比对。测试结果保持，历史原件恢复，纠正过程保留提交记录。
+
+
+### 7.25 模板、Excel/JSON导入和模型适配层当前实测〔2026-10-11〕
+
+先读现有 `CaseImportParser`、`CaseImportService`、导入路由、生成模板服务、`ModelRuntimeService`、`request_mapping`、provider profiles 和五种 provider client，再运行真实项目页面测试；没有为已有适配层再套一层全局抽象。完整项目验收 **1通过、61.53秒**：构建前端并用 Chromium 操作真实项目页面，保存默认/项目生成模板和写作指导，上传并下载原件，预览并提交 rows Excel、split 分表 Excel、JSON，错误行只进预览不提交；提交幂等，项目隔离成立，API重启后模板、草稿和用例仍在。配置写入 MySQL，导入来源原件写 RustFS，用例草稿/版本写 PostgreSQL，未调用模型。导入逻辑回归 **29通过、9跳过、12.11秒**。
+
+模型适配层实际矩阵 **81通过、17.41秒**，覆盖 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini generateContent 和 LangChain OpenAI兼容路径的原生/流式、完整/截断终态、usage、工具调用、请求参数映射、错误包装和旧协议兼容。结论是当前已有统一应用请求/响应契约加 provider-specific client，不应再增加一层重复的全局适配；仍需外部供应商真实验收、供应商特有推理/输出能力核对和默认 Agent 路径验收。证据见 `p1-case-import-model-adapter-validation.json`、`p1-case-import-full-product-current.xml` 和 `p2-model-adapter-current.xml`。
+
+本批只证明导入/模板产品闭环和适配器边界，不证明普通需求文档经默认模型全量生成质量，也不证明默认 AI 选用例执行；账号实名认证完成后再验收。完整 P0—P5 继续 active。
