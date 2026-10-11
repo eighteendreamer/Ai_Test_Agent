@@ -607,10 +607,10 @@ class ToolRegistry:
                                 "description": "One of navigate, inspect, screenshot, evaluate_js, run_actions, or command.",
                             },
                             "target_url": {"type": "string", "description": "The target page URL."},
-                            "command": {"type": "string", "description": "A playwright-cli style command, used when action=command."},
+                            "command": {"type": "string", "description": "A complete playwright-cli command string, or a single verb such as open/click/eval with args holding its operands. Used when action=command."},
                             "args": {
                                 "type": "array",
-                                "description": "A playwright-cli style argument list, used when action=command.",
+                                "description": "For action=command: a complete command list including its verb when command is omitted, or operands of the single verb in command. Do not mix unrelated command representations.",
                                 "items": {"type": "string"},
                             },
                             "javascript": {"type": "string", "description": "JavaScript expression for evaluate_js."},

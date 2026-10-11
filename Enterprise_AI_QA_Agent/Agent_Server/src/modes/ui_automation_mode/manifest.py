@@ -12,6 +12,7 @@ MODE_MANIFEST = {
     "allowed_agent_keys": ["ui-automation-agent", "report-analyst"],
     "default_skill_keys": ["playwright-e2e-testing", "playwright-cli"],
     "registered_tool_keys": [
+        "knowledge-rag",
         "ui-automation-runner",
         "ui-page-explorer",
         "browser-automation",
@@ -23,7 +24,7 @@ MODE_MANIFEST = {
     "harness_key": "ui_automation_harness",
     "activation_policy": "confirm",
     "core_capability_keys": ["ui.automation"],
-    "on_demand_capability_keys": ["api.documentation.read", "report.generate"],
+    "on_demand_capability_keys": ["api.documentation.read", "knowledge.search", "report.generate"],
     "public_entry_tool_key": "ui-automation-runner",
     "placeholder": False,
     "tags": ["testing", "ui", "automation"],

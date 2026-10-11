@@ -1,0 +1,784 @@
+{
+  "run": {
+    "id": "a4f7ebc6-332b-5996-b8cd-30b19b7a1bf5",
+    "project_id": "1bd3372a-4e3b-48ca-922b-040d1d3fc16c",
+    "suite_id": "f2cb2ef8-9251-57bb-8ad7-12219825c952",
+    "run_kind": "normal",
+    "origin": "native",
+    "mode_key": "ui_automation",
+    "execution_strategy": "agent",
+    "plan_snapshot": {
+      "plan": {
+        "id": "ff76ee5b-311a-4894-b32e-b5aa00cf7fd2",
+        "project_id": "1bd3372a-4e3b-48ca-922b-040d1d3fc16c",
+        "request": {
+          "objective": "实际点击计数按钮一次并验证当前计数",
+          "model_key": "step-5-preview",
+          "candidate_case_ids": [
+            "a33fc1d7-97e7-4355-bddf-a9f054dbd3ca"
+          ],
+          "runtime_context": {},
+          "environment": null
+        },
+        "status": "planned",
+        "summary": "项目当前仅启用一个正式用例“增加一次真实验证”（case_id: a33fc1d7-97e7-4355-bddf-a9f054dbd3ca），其 objective、steps 与 execution_notes 完整覆盖用户目标：打开固定场景页面、真实点击增加一次、读取 #count 并与 expected_count=2 比对。目录、文档与录制均无更多可补充项，且无其他正式用例可作为前置依赖；录制知识仅作为操作证据保留，不构成独立执行项。因此选取该用例为唯一 target，无 prepare/dependency，无未解决缺口。",
+        "decision": {
+          "action": "finish",
+          "summary": "项目当前仅启用一个正式用例“增加一次真实验证”（case_id: a33fc1d7-97e7-4355-bddf-a9f054dbd3ca），其 objective、steps 与 execution_notes 完整覆盖用户目标：打开固定场景页面、真实点击增加一次、读取 #count 并与 expected_count=2 比对。目录、文档与录制均无更多可补充项，且无其他正式用例可作为前置依赖；录制知识仅作为操作证据保留，不构成独立执行项。因此选取该用例为唯一 target，无 prepare/dependency，无未解决缺口。",
+          "queries": [],
+          "items": [
+            {
+              "key": "count-one-target",
+              "reason": "该正式用例是项目目录中唯一启用用例，直接对应用户目标“实际点击计数按钮一次并验证当前计数”。用例已包含固定 target_url、明确步骤与 expected_count=2，执行条件完整，无需其他正式用例提供前置条件。",
+              "evidence_ids": [
+                "case:553da1fa-67bb-4ce0-aaba-5a15947b31f4",
+                "recording:0ed758e4-6a5c-476f-9270-50916c8ae924:9b6e35687cf6510e"
+              ],
+              "depends_on": [],
+              "input_bindings": {},
+              "kind": "target",
+              "case_id": "a33fc1d7-97e7-4355-bddf-a9f054dbd3ca",
+              "case_version_id": "553da1fa-67bb-4ce0-aaba-5a15947b31f4"
+            }
+          ],
+          "unresolved": []
+        },
+        "evidence": [
+          {
+            "id": "case:553da1fa-67bb-4ce0-aaba-5a15947b31f4",
+            "kind": "case",
+            "source_id": "a33fc1d7-97e7-4355-bddf-a9f054dbd3ca",
+            "version": "553da1fa-67bb-4ce0-aaba-5a15947b31f4",
+            "content_hash": "6c0aa6b573168422da482b7358a698cee6f31059a6a6c0ac9ffec4944122fcea",
+            "payload": {
+              "title": "增加一次真实验证",
+              "case_id": "a33fc1d7-97e7-4355-bddf-a9f054dbd3ca",
+              "content": {
+                "steps": [
+                  {
+                    "action": "先读取固定场景的别名和真实定位，再打开新的项目页面，真实点击增加一次并读取当前页面计数",
+                    "expected": "2"
+                  }
+                ],
+                "metadata": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                },
+                "objective": "实际点击计数按钮一次并验证当前计数",
+                "scene_read": {
+                  "query": "读取固定增加一次场景",
+                  "scene_id": "4d637d17-20a8-41a6-bdbf-a1b4144c0439",
+                  "operation": "scene_read",
+                  "version_id": "41669384-55ee-4474-b8e1-02652c163c7b",
+                  "content_hash": "32d09e1ff907c2ba8bbc702d7bfacf15f92582a5a06823c137c9a31b9a6b3912"
+                },
+                "target_url": "http://127.0.0.1:51837",
+                "expected_count": "2"
+              },
+              "case_key": "count-one",
+              "source_refs": [
+                {
+                  "uri": null,
+                  "label": "",
+                  "version": "41669384-55ee-4474-b8e1-02652c163c7b",
+                  "metadata": {
+                    "content_hash": "32d09e1ff907c2ba8bbc702d7bfacf15f92582a5a06823c137c9a31b9a6b3912"
+                  },
+                  "source_id": "4d637d17-20a8-41a6-bdbf-a1b4144c0439",
+                  "source_type": "ui_recording_scene"
+                }
+              ],
+              "case_version_id": "553da1fa-67bb-4ce0-aaba-5a15947b31f4",
+              "execution_notes": "先调用JSON中scene_read指定的knowledge-rag读取固定场景。录制只作操作知识，不能当本次实际值。然后使用现有browser-control的command/args打开项目页面并真实click一次，最后只读eval取得#count和#page-id。command调用共享会话；不要在读结果时重新打开页面，不得赋值DOM或改点击次数去满足预期。实际值与expected_count比较，不符则正式failed，遵守原回执协议与权限。",
+              "historical_mode_key": "ui_automation"
+            }
+          },
+          {
+            "id": "recording:0ed758e4-6a5c-476f-9270-50916c8ae924:9b6e35687cf6510e",
+            "kind": "recording",
+            "source_id": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+            "version": "2026-10-11T14:31:08.191447",
+            "content_hash": "9b6e35687cf6510e5057b6cdd0a2194ad138798f64a44ef858d0140a41beaf01",
+            "payload": {
+              "name": "物理增加一次",
+              "graph": {
+                "edges": [
+                  {
+                    "type": "HAS_STEP",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                    "target": "0ed758e4-6a5c-476f-9270-50916c8ae924:0"
+                  },
+                  {
+                    "type": "TARGETS",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924:0",
+                    "target": "ui_d4b6ef0d49ea4bed1bdd"
+                  },
+                  {
+                    "type": "ON_PAGE",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924:0",
+                    "target": "ui_e9a233f005fcc03ca2e2"
+                  },
+                  {
+                    "type": "HAS_STEP",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                    "target": "0ed758e4-6a5c-476f-9270-50916c8ae924:1"
+                  },
+                  {
+                    "type": "ON_PAGE",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924:1",
+                    "target": "ui_e9a233f005fcc03ca2e2"
+                  },
+                  {
+                    "type": "HAS_STEP",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                    "target": "0ed758e4-6a5c-476f-9270-50916c8ae924:2"
+                  },
+                  {
+                    "type": "ON_PAGE",
+                    "source": "0ed758e4-6a5c-476f-9270-50916c8ae924:2",
+                    "target": "ui_e9a233f005fcc03ca2e2"
+                  }
+                ],
+                "nodes": [
+                  {
+                    "id": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                    "kind": "recording",
+                    "name": "物理增加一次",
+                    "label": "recording"
+                  },
+                  {
+                    "id": "0ed758e4-6a5c-476f-9270-50916c8ae924:0",
+                    "seq": 0,
+                    "kind": "action",
+                    "event": {
+                      "seq": 0,
+                      "page": {
+                        "dpr": 1,
+                        "url": "http://127.0.0.1:51837/",
+                        "title": "场景计数验收",
+                        "viewport": {
+                          "h": 600,
+                          "w": 800
+                        },
+                        "recording_scope": {
+                          "page_id": "0e0530e9d2fb4c36b5a73250e354c11d",
+                          "frame_id": "3e87f50f848642a0a11ddbc51acef80f",
+                          "local_seq": 0,
+                          "frame_path": [],
+                          "document_id": "ee87d1b5fd8246658ddef1096bee7a21",
+                          "document_url": "http://127.0.0.1:51837/",
+                          "parent_frame_id": null
+                        }
+                      },
+                      "type": "click",
+                      "pixel": {
+                        "bbox": {
+                          "h": 23,
+                          "w": 69,
+                          "x": 8,
+                          "y": 8
+                        },
+                        "rel_offset": {
+                          "rx": 0.49,
+                          "ry": 0.478
+                        },
+                        "viewport_point": {
+                          "x": 42,
+                          "y": 19
+                        }
+                      },
+                      "value": null,
+                      "target": {
+                        "tag": "BUTTON",
+                        "role": "button",
+                        "locators": {
+                          "id": "increment",
+                          "css": "#increment",
+                          "text": "增加一次",
+                          "xpath": "/html/body[1]/main[1]/button[1]",
+                          "testid": null,
+                          "role_name": {
+                            "name": "增加一次",
+                            "role": "button"
+                          }
+                        },
+                        "in_iframe": false,
+                        "attributes": {
+                          "id": "increment"
+                        },
+                        "shadow_path": null
+                      },
+                      "timestamp": "2026-10-11T14:31:07.478000",
+                      "page_effect": {
+                        "dom_mutation_count": 0
+                      },
+                      "screenshot_ref": null
+                    },
+                    "label": "click #0",
+                    "action_type": "click",
+                    "occurred_at": "2026-10-11T14:31:07.478000",
+                    "resolution_status": "resolved"
+                  },
+                  {
+                    "id": "ui_d4b6ef0d49ea4bed1bdd",
+                    "kind": "element",
+                    "label": "增加一次"
+                  },
+                  {
+                    "id": "ui_e9a233f005fcc03ca2e2",
+                    "url": "http://127.0.0.1:51837/",
+                    "kind": "page",
+                    "label": "场景计数验收"
+                  },
+                  {
+                    "id": "0ed758e4-6a5c-476f-9270-50916c8ae924:1",
+                    "seq": 1,
+                    "kind": "action",
+                    "event": {
+                      "seq": 1,
+                      "page": {
+                        "dpr": 1,
+                        "url": "http://127.0.0.1:51837/",
+                        "title": "场景计数验收",
+                        "viewport": {
+                          "h": 600,
+                          "w": 800
+                        },
+                        "recording_scope": {
+                          "page_id": "0e0530e9d2fb4c36b5a73250e354c11d",
+                          "frame_id": "3e87f50f848642a0a11ddbc51acef80f",
+                          "local_seq": 1,
+                          "frame_path": [],
+                          "document_id": "ee87d1b5fd8246658ddef1096bee7a21",
+                          "document_url": "http://127.0.0.1:51837/",
+                          "parent_frame_id": null
+                        }
+                      },
+                      "type": "page_response",
+                      "pixel": null,
+                      "value": null,
+                      "target": null,
+                      "timestamp": "2026-10-11T14:31:07.744000",
+                      "page_effect": {
+                        "response": {
+                          "scope": "document_light_dom",
+                          "reason": "settled",
+                          "network": [
+                            {
+                              "ok": true,
+                              "method": "POST",
+                              "origin": "same-origin",
+                              "status": 200,
+                              "outcome": "response",
+                              "pathname": "/increment/a3a66f2be83442f68d4c89f56a00227d",
+                              "duration_ms": 10
+                            }
+                          ],
+                          "elements": [
+                            {
+                              "text": "1",
+                              "target": {
+                                "tag": "OUTPUT",
+                                "role": null,
+                                "locators": {
+                                  "id": "count",
+                                  "css": "#count",
+                                  "text": "1",
+                                  "xpath": "/html/body[1]/main[1]/output[1]",
+                                  "testid": null,
+                                  "role_name": {
+                                    "name": "1",
+                                    "role": null
+                                  }
+                                },
+                                "in_iframe": false,
+                                "attributes": {
+                                  "id": "count"
+                                },
+                                "shadow_path": null
+                              },
+                              "connected": true
+                            }
+                          ],
+                          "protocol": "recording-dom-response-v1",
+                          "max_nodes": 100,
+                          "truncated": false,
+                          "shadow_dom": "open_roots",
+                          "association": "temporal_after_actions",
+                          "max_actions": 100,
+                          "snapshot_at": "observation_end",
+                          "max_text_chars": 200,
+                          "mutation_count": 1,
+                          "action_local_seqs": [
+                            0
+                          ],
+                          "closed_shadow_dom": "unobserved",
+                          "observation_status": "observed_changes",
+                          "truncation_reasons": [],
+                          "network_correlation": "instrumented_fetch_xhr_completion",
+                          "network_observation_status": "observed"
+                        },
+                        "dom_mutation_count": 1
+                      },
+                      "screenshot_ref": null
+                    },
+                    "label": "page_response #1",
+                    "action_type": "page_response",
+                    "occurred_at": "2026-10-11T14:31:07.744000",
+                    "resolution_status": "no_target"
+                  },
+                  {
+                    "id": "0ed758e4-6a5c-476f-9270-50916c8ae924:2",
+                    "seq": 2,
+                    "kind": "action",
+                    "event": {
+                      "seq": 2,
+                      "page": {
+                        "dpr": 1,
+                        "url": "http://127.0.0.1:51837/",
+                        "title": "场景计数验收",
+                        "viewport": {
+                          "h": 600,
+                          "w": 800
+                        },
+                        "recording_scope": {
+                          "page_id": "0e0530e9d2fb4c36b5a73250e354c11d",
+                          "frame_id": "3e87f50f848642a0a11ddbc51acef80f",
+                          "local_seq": 2,
+                          "frame_path": [],
+                          "document_id": "ee87d1b5fd8246658ddef1096bee7a21",
+                          "document_url": "http://127.0.0.1:51837/",
+                          "parent_frame_id": null
+                        }
+                      },
+                      "type": "page_scan",
+                      "pixel": null,
+                      "value": null,
+                      "target": null,
+                      "timestamp": "2026-10-11T14:31:07.915000",
+                      "page_effect": {
+                        "dom_hash": "9c8e03061c2d28ce79900e92fb6e4426d67ada63",
+                        "interactive_count": 1,
+                        "dom_mutation_count": 0,
+                        "interactive_elements": [
+                          {
+                            "tag": "button",
+                            "href": "",
+                            "name": "增加一次",
+                            "role": "button"
+                          }
+                        ]
+                      },
+                      "screenshot_ref": null
+                    },
+                    "label": "page_scan #2",
+                    "action_type": "page_scan",
+                    "occurred_at": "2026-10-11T14:31:07.915000",
+                    "resolution_status": "no_target"
+                  }
+                ],
+                "status": "success",
+                "recording_id": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                "event_payloads": {
+                  "status": "complete",
+                  "protocol": "recording-event-payloads-v1",
+                  "warnings": [],
+                  "expected_count": 3,
+                  "available_count": 3
+                }
+              },
+              "finalize_metrics": {
+                "finalize": {
+                  "raw_events": 3,
+                  "on_page_edges": 3,
+                  "page_vertices": 1,
+                  "raw_page_urls": 3,
+                  "targets_edges": 1,
+                  "contains_edges": 1,
+                  "has_step_edges": 3,
+                  "action_vertices": 3,
+                  "element_vertices": 1,
+                  "raw_element_refs": 1,
+                  "navigated_to_edges": 0,
+                  "recording_vertices": 1,
+                  "deduplicated_page_urls": 1,
+                  "deduplicated_element_refs": 0,
+                  "degraded_resolution_actions": 0
+                },
+                "integrity": {
+                  "degraded": false,
+                  "seq_gaps": [],
+                  "reconciled": true,
+                  "pg_step_count": 3,
+                  "pg_event_count": 3,
+                  "action_vertices": 3,
+                  "step_count_mismatch": false,
+                  "degraded_resolution_actions": 0
+                },
+                "finish_receipt": {
+                  "scopes": [
+                    {
+                      "ended": false,
+                      "page_id": "0e0530e9d2fb4c36b5a73250e354c11d",
+                      "pending": 0,
+                      "frame_id": "3e87f50f848642a0a11ddbc51acef80f",
+                      "next_seq": 3,
+                      "confirmed": true,
+                      "frame_path": [],
+                      "document_id": "ee87d1b5fd8246658ddef1096bee7a21",
+                      "pg_verified": true,
+                      "document_url": "http://127.0.0.1:51837/",
+                      "emitted_count": 3,
+                      "received_count": 3,
+                      "parent_frame_id": null
+                    }
+                  ],
+                  "pending": 0,
+                  "next_seq": 3,
+                  "protocol": "recording-scopes-v2",
+                  "operation": "stop",
+                  "request_id": "23ccfe82ef5d4d06aa9fa5d58789325f",
+                  "pg_verified": true,
+                  "missing_seqs": [],
+                  "emitted_count": 3,
+                  "published_seqs": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "channel_dropped": 0,
+                  "transport_dropped": 0,
+                  "frames_unconfirmed": 0,
+                  "browser_saved_count": 3
+                },
+                "pause_receipts": [],
+                "recording_quality": {
+                  "noise": [
+                    {
+                      "seq": 1,
+                      "type": "page_response",
+                      "reason": "observation_only"
+                    },
+                    {
+                      "seq": 2,
+                      "type": "page_scan",
+                      "reason": "observation_only"
+                    }
+                  ],
+                  "omission": {
+                    "scope": "published_event_delivery",
+                    "status": "verified",
+                    "sequence_gaps": [],
+                    "missing_sequences": [],
+                    "unconfirmed_delivery": {
+                      "pending": 0,
+                      "channel_dropped": 0,
+                      "transport_dropped": 0,
+                      "frames_unconfirmed": 0
+                    },
+                    "business_capture_complete": "unknown"
+                  },
+                  "protocol": "recording-quality-v1",
+                  "raw_event_count": 3,
+                  "observation_policy": "retained_as_evidence_not_replayed",
+                  "duplicate_candidates": [],
+                  "replayable_event_count": 1,
+                  "cleaned_event_sequences": [
+                    0
+                  ],
+                  "observation_event_count": 2,
+                  "removed_event_sequences": []
+                }
+              }
+            }
+          }
+        ],
+        "config_snapshot": {
+          "scope_key": "1bd3372a-4e3b-48ca-922b-040d1d3fc16c",
+          "revision": 1,
+          "policy": {
+            "max_rounds": 5,
+            "max_candidates": 20,
+            "max_items": 50,
+            "max_context_chars": 180000,
+            "timeout_seconds": 180.0,
+            "receipt_correction_protocol": "case-receipt-correction-v1"
+          }
+        },
+        "model_key": "step-5-preview",
+        "prompt_version": "case-planning-v5",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "parsed",
+            "decision": {
+              "items": [],
+              "action": "query",
+              "queries": [
+                {
+                  "kind": "recording",
+                  "query": "",
+                  "offset": 0,
+                  "max_lines": 200,
+                  "source_id": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                  "start_line": 1
+                }
+              ],
+              "summary": "目标正式用例 count-one 的执行依赖固定场景的别名与真实定位（scene_read），当前证据仅包含该场景的引用标识，尚未取得其可操作的录制知识。需要先读取已固化的录制内容，以便为 target 形成有依据的 prepare 准备项。",
+              "unresolved": []
+            },
+            "streaming": true,
+            "attempt_id": "14a93fcc-a227-4563-8514-220577a82a2a",
+            "query_results": [
+              {
+                "query": {
+                  "kind": "recording",
+                  "query": "",
+                  "offset": 0,
+                  "max_lines": 200,
+                  "source_id": "0ed758e4-6a5c-476f-9270-50916c8ae924",
+                  "start_line": 1
+                },
+                "has_more": false,
+                "evidence_ids": [
+                  "recording:0ed758e4-6a5c-476f-9270-50916c8ae924:9b6e35687cf6510e"
+                ]
+              }
+            ],
+            "response_mode": "ok",
+            "logical_call_id": "23ea5f15-1287-4143-9ec4-d01280c19f7d",
+            "response_metadata": {
+              "mode": "ok",
+              "usage": {
+                "total_tokens": 5690,
+                "prompt_tokens": 2922,
+                "completion_tokens": 2768,
+                "prompt_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "image_tokens": null,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": null
+                },
+                "completion_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "reasoning_tokens": 0,
+                  "accepted_prediction_tokens": null,
+                  "rejected_prediction_tokens": null
+                }
+              },
+              "error_type": null,
+              "response_id": "3152f54201993ee4b6a74f982e19fb85.37dfd27cc0863a7ced46fef5ddee34f5",
+              "status_code": null,
+              "stop_reason": null,
+              "finish_reason": "stop",
+              "request_mapping": {
+                "version": "model-request-v1",
+                "decisions": [
+                  {
+                    "action": "prompt_fallback",
+                    "option": "output_format",
+                    "reason": "format_not_declared"
+                  }
+                ]
+              },
+              "stream_terminal_received": true
+            },
+            "first_text_seconds": 40.966,
+            "received_text_chars": 236,
+            "model_elapsed_seconds": 42.388
+          },
+          {
+            "round": 2,
+            "status": "parsed",
+            "decision": {
+              "items": [
+                {
+                  "key": "count-one-target",
+                  "kind": "target",
+                  "reason": "该正式用例是项目目录中唯一启用用例，直接对应用户目标“实际点击计数按钮一次并验证当前计数”。用例已包含固定 target_url、明确步骤与 expected_count=2，执行条件完整，无需其他正式用例提供前置条件。",
+                  "case_id": "a33fc1d7-97e7-4355-bddf-a9f054dbd3ca",
+                  "depends_on": [],
+                  "evidence_ids": [
+                    "case:553da1fa-67bb-4ce0-aaba-5a15947b31f4",
+                    "recording:0ed758e4-6a5c-476f-9270-50916c8ae924:9b6e35687cf6510e"
+                  ],
+                  "input_bindings": {},
+                  "case_version_id": "553da1fa-67bb-4ce0-aaba-5a15947b31f4"
+                }
+              ],
+              "action": "finish",
+              "queries": [],
+              "summary": "项目当前仅启用一个正式用例“增加一次真实验证”（case_id: a33fc1d7-97e7-4355-bddf-a9f054dbd3ca），其 objective、steps 与 execution_notes 完整覆盖用户目标：打开固定场景页面、真实点击增加一次、读取 #count 并与 expected_count=2 比对。目录、文档与录制均无更多可补充项，且无其他正式用例可作为前置依赖；录制知识仅作为操作证据保留，不构成独立执行项。因此选取该用例为唯一 target，无 prepare/dependency，无未解决缺口。",
+              "unresolved": []
+            },
+            "streaming": true,
+            "attempt_id": "14a93fcc-a227-4563-8514-220577a82a2a",
+            "response_mode": "ok",
+            "logical_call_id": "49511486-70fe-41a7-a1f4-cbee97c89b30",
+            "response_metadata": {
+              "mode": "ok",
+              "usage": {
+                "total_tokens": 9131,
+                "cached_tokens": 2560,
+                "prompt_tokens": 5681,
+                "completion_tokens": 3450,
+                "prompt_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "image_tokens": null,
+                  "cached_tokens": 2560,
+                  "cache_write_tokens": null
+                },
+                "completion_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "reasoning_tokens": 0,
+                  "accepted_prediction_tokens": null,
+                  "rejected_prediction_tokens": null
+                }
+              },
+              "error_type": null,
+              "response_id": "295c4a8c40da79380b0fb7a3678127d2.719014060f707f2912fafb3c166e88b8",
+              "status_code": null,
+              "stop_reason": null,
+              "finish_reason": "stop",
+              "request_mapping": {
+                "version": "model-request-v1",
+                "decisions": [
+                  {
+                    "action": "prompt_fallback",
+                    "option": "output_format",
+                    "reason": "format_not_declared"
+                  }
+                ]
+              },
+              "stream_terminal_received": true
+            },
+            "first_text_seconds": 40.54,
+            "received_text_chars": 872,
+            "model_elapsed_seconds": 44.779
+          }
+        ],
+        "warnings": [],
+        "created_at": "2026-10-11T14:31:08.511443Z",
+        "regression": null,
+        "environment": null
+      },
+      "run_item_ids": {
+        "count-one-target": "812e0309-147e-5302-a910-382ea2afc426"
+      },
+      "owners": {
+        "count-one-target": "count-one-target"
+      },
+      "preparation_phases": {},
+      "regression": null
+    },
+    "creation_key": "default-ui-run",
+    "creation_hash": "8e5a90ae49f47f5debcc63748d435c6f8e38caaa734c8e20f67a12af9d9b7bc4",
+    "session_id": "f4d2fa46-1686-40e2-a3cf-169d4e47f38f",
+    "parent_run_id": null,
+    "status": "running",
+    "stats": {
+      "total": 1,
+      "queued": 0,
+      "claimed": 0,
+      "running": 0,
+      "waiting_resource": 0,
+      "waiting_approval": 1,
+      "passed": 0,
+      "failed": 0,
+      "error": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "created_by": null,
+    "created_at": "2026-10-11T14:32:41.583459Z",
+    "updated_at": "2026-10-11T14:33:23.783524Z",
+    "started_at": "2026-10-11T14:32:50.495349Z",
+    "completed_at": null,
+    "cancel_reason": null,
+    "active_duration_ms": 32403,
+    "waiting_duration_ms": 816,
+    "paused_duration_ms": 0,
+    "wall_clock_duration_ms": 42200
+  },
+  "items": [
+    {
+      "id": "812e0309-147e-5302-a910-382ea2afc426",
+      "run_id": "a4f7ebc6-332b-5996-b8cd-30b19b7a1bf5",
+      "case_id": "a33fc1d7-97e7-4355-bddf-a9f054dbd3ca",
+      "case_version_id": "553da1fa-67bb-4ce0-aaba-5a15947b31f4",
+      "position": 1,
+      "plan_item_key": "count-one-target",
+      "dependencies": [],
+      "status": "waiting_approval",
+      "waiting_reason": null,
+      "attempt_no": 1,
+      "lease_owner": "ui-execute",
+      "lease_token": "35023558-d764-4bd2-abc3-54f2888cb127",
+      "lease_expires_at": null,
+      "heartbeat_at": "2026-10-11T14:33:23.783524Z",
+      "approval_id": "c58b19f1-8b1f-4b84-9576-786c9b97eb3e",
+      "tool_job_id": "f90983b1-e8bb-4941-995d-695f38d4e2ec",
+      "result_id": null,
+      "regression_source_result_id": null,
+      "created_at": "2026-10-11T14:32:41.583459Z",
+      "updated_at": "2026-10-11T14:33:23.783524Z",
+      "started_at": "2026-10-11T14:32:50.529436Z",
+      "completed_at": null,
+      "resource_cleanup_completed_at": null,
+      "active_started_at": null,
+      "waiting_started_at": "2026-10-11T14:33:23.783524Z",
+      "active_duration_ms": 32403,
+      "waiting_duration_ms": 816,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 0
+    }
+  ],
+  "attempts": [
+    {
+      "id": "bdc08962-a03c-411c-a13b-972d6383c9e7",
+      "run_id": "a4f7ebc6-332b-5996-b8cd-30b19b7a1bf5",
+      "run_item_id": "812e0309-147e-5302-a910-382ea2afc426",
+      "attempt_no": 1,
+      "worker_id": "ui-execute",
+      "lease_token": "35023558-d764-4bd2-abc3-54f2888cb127",
+      "status": "waiting_approval",
+      "claimed_at": "2026-10-11T14:32:50.495349Z",
+      "started_at": "2026-10-11T14:32:50.529436Z",
+      "heartbeat_at": "2026-10-11T14:33:23.783524Z",
+      "approval_id": "c58b19f1-8b1f-4b84-9576-786c9b97eb3e",
+      "tool_job_id": "f90983b1-e8bb-4941-995d-695f38d4e2ec",
+      "completed_at": null,
+      "active_started_at": null,
+      "waiting_started_at": "2026-10-11T14:33:23.783524Z",
+      "active_duration_ms": 32403,
+      "waiting_duration_ms": 816,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 0,
+      "checkpoint_version": 5,
+      "checkpoint_key": "agent_case_execution",
+      "checkpoint_payload": {
+        "phase": "snapshot",
+        "run_id": "a4f7ebc6-332b-5996-b8cd-30b19b7a1bf5",
+        "plan_id": "ff76ee5b-311a-4894-b32e-b5aa00cf7fd2",
+        "turn_id": "77ac276e-b955-5ddb-8e02-5ea07b38f505",
+        "project_id": "1bd3372a-4e3b-48ca-922b-040d1d3fc16c",
+        "session_id": "569b89b0-4367-4725-9456-b8d7ce176764",
+        "run_item_id": "812e0309-147e-5302-a910-382ea2afc426",
+        "snapshot_id": "52c5e6b0-60dd-4036-9d30-f02391564a01",
+        "context_hash": "c35da4511bce10705ba8e5553d686e231580c63046b7e827c76ab6291731e788",
+        "schema_version": 1,
+        "snapshot_version": 2,
+        "execution_attempt_id": "bdc08962-a03c-411c-a13b-972d6383c9e7"
+      },
+      "checkpoint_at": "2026-10-11T14:33:23.747958Z",
+      "recovered_from_attempt_id": null
+    }
+  ],
+  "results": []
+}

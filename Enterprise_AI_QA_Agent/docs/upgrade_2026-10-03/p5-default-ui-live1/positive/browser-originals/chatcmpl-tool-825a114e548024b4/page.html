@@ -1,0 +1,7 @@
+<html lang="zh"><head><meta charset="utf-8"><title>场景计数验收</title>
+</head><body><main><button id="increment">增加一次</button><output id="count">1</output>
+<output id="page-id">2049a307461e4abfbbf39133117d5870</output></main><script>
+document.querySelector('#increment').onclick=async()=>{
+ const r=await fetch('/increment/2049a307461e4abfbbf39133117d5870',{method:'POST'});const d=await r.json();
+ document.querySelector('#count').textContent=String(d.count);
+};</script></body></html>

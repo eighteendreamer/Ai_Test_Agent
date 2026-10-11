@@ -70,6 +70,30 @@ def test_malformed_command_is_logged_and_left_to_existing_runtime_validation(cap
         browser_command_args(payload)
 
 
+def test_actual_default_ui_split_command_preserves_verb_and_navigation_admission():
+    from src.application.runtime.browser_commands import browser_command_args
+    source = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03/p5-default-ui-live1/positive/tool-jobs.json"
+    captured = next(job["input_payload"] for job in json.loads(source.read_bytes())
+        if job["tool_key"] == "browser-control" and job["input_payload"].get("command") == "open")
+    assert browser_command_args(captured) == ["open", captured["args"][0]]
+    policy = ExecutionSafetyPolicy()
+    tool = ToolRegistry().get("browser-control")
+    assert policy.evaluate_tool_call(tool=tool, arguments=captured,
+        active_mode_key="ui_automation", context={}).reason_code == "untrusted_private_target"
+    assert policy.evaluate_tool_call(tool=tool, arguments=captured, active_mode_key="ui_automation",
+        context={"trusted_resource_scope": {"project_url": captured["args"][0]}}).behavior == "allow"
+
+
+@pytest.mark.parametrize("arguments", [
+    {"command": "open", "args": ["open", "http://127.0.0.1:8080/"]},
+    {"command": "open", "args": ["--raw", "-s=ignored", "open", "http://127.0.0.1:8080/"]},
+    {"command": "open", "args": ["http://127.0.0.1:8080/"]},
+])
+def test_complete_and_split_commands_have_same_navigation_target(arguments):
+    from src.application.runtime.browser_commands import browser_command_navigation_target
+    assert browser_command_navigation_target({"action": "command", **arguments}) == "http://127.0.0.1:8080/"
+
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv("RUN_LIVE_BROWSER_TESTS") != "1", reason="requires actual Chromium")
 async def test_actual_graph_admission_blocks_command_before_http_and_trusted_command_reaches_browser(tmp_path):
@@ -120,7 +144,7 @@ async def test_actual_graph_admission_blocks_command_before_http_and_trusted_com
     await jobs.initialize()
     runtime = ToolRuntimeService(settings=settings, mcp_runtime_service=mcp, tool_job_service=jobs)
     try:
-        arguments = {**captured_navigation(), "args": ["open", origin]}
+        arguments = {**captured_navigation(), "command": "open", "args": [origin]}
         state = _state("browser-control", arguments, mode_key="ui_automation")
         context = ToolExecutionContext(session_id=state["session_id"], turn_id=state["turn_id"],
             trace_id=state["trace_id"], user_message="受控页面", normalized_input="受控页面", context_bundle={})

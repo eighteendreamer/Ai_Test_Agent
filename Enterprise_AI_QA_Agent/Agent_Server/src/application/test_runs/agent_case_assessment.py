@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import logging
+import re
 from typing import Any
 from uuid import uuid4
 
@@ -144,7 +145,16 @@ class AgentCaseAssessmentService:
         if is_model_response_incomplete(summary):
             raise ValueError("执行回执模型输出未完整结束: " + ",".join(sorted(reasons - {""})))
         raw = response.text.strip()
-        if raw.startswith("```") and raw.endswith("```") and "\n" in raw:
+        # Planning already accepts fenced structured payloads. A final Agent
+        # report may wrap its one complete receipt in brief prose; decode only
+        # that explicit frame and keep all typed/owned-evidence checks below.
+        fences = list(re.finditer(r"^```(?:json)?[ \t]*\r?\n([\s\S]*?)^```[ \t]*$", raw, re.I | re.M))
+        if len(fences) > 1:
+            raise ValueError("执行回执包含多个 JSON 块，不能自动选择")
+        if len(fences) == 1:
+            raw = fences[0].group(1).strip()
+            logger.info("case_receipt_fenced_payload_decoded", extra={"fence_count": 1})
+        elif raw.startswith("```") and raw.endswith("```") and "\n" in raw:
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         try:
             candidate = json.loads(raw)

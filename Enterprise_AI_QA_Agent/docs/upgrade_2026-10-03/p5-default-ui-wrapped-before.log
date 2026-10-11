@@ -1,0 +1,26 @@
+F....                                                                    [100%]
+================================== FAILURES ===================================
+___ test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence ___
+src\application\test_runs\agent_case_assessment.py:150: in parse_response
+    candidate = json.loads(raw)
+                ^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\decoder.py:355: in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+E   json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+The above exception was the direct cause of the following exception:
+tests\test_agent_case_assessment.py:501: in test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence
+    parsed = AgentCaseAssessmentService.parse_response(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:152: in parse_response
+    raise ValueError(f"执行回执 JSON 不完整或格式错误: line={exc.lineno}, column={exc.colno}") from exc
+E   ValueError: 执行回执 JSON 不完整或格式错误: line=1, column=1
+=========================== short test summary info ===========================
+FAILED tests/test_agent_case_assessment.py::test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence
+1 failed, 4 passed, 41 deselected in 5.33s

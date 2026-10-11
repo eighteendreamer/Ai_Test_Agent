@@ -1,0 +1,301 @@
+{
+  "run": {
+    "id": "c9187afa-cce3-506a-9d18-468c81081557",
+    "project_id": "1764eef8-f7fa-4efb-9d54-fd96d5e02489",
+    "suite_id": "3eb8f26b-1301-5ab0-9391-3ac72351cd2d",
+    "run_kind": "normal",
+    "origin": "native",
+    "mode_key": "ui_automation",
+    "execution_strategy": "agent",
+    "plan_snapshot": {
+      "plan": {
+        "id": "0511a0df-a081-40c5-aaca-d789a9ad9c1b",
+        "project_id": "1764eef8-f7fa-4efb-9d54-fd96d5e02489",
+        "request": {
+          "objective": "实际点击计数按钮一次并验证当前计数",
+          "model_key": "step-5-preview",
+          "candidate_case_ids": [
+            "5f13ee9b-e6e9-4302-9b55-1efe910f13b3"
+          ],
+          "runtime_context": {},
+          "environment": null
+        },
+        "status": "planned",
+        "summary": "项目当前仅有一个正式用例，且其内容与执行说明完整覆盖目标场景：在 http://127.0.0.1:58619 页面真实点击增加一次并校验计数为 1。该用例无需额外正式依赖，也没有缺失到需要 prepare 的操作条件，因此直接将其作为唯一 target。",
+        "decision": {
+          "action": "finish",
+          "summary": "项目当前仅有一个正式用例，且其内容与执行说明完整覆盖目标场景：在 http://127.0.0.1:58619 页面真实点击增加一次并校验计数为 1。该用例无需额外正式依赖，也没有缺失到需要 prepare 的操作条件，因此直接将其作为唯一 target。",
+          "queries": [],
+          "items": [
+            {
+              "key": "count-one",
+              "reason": "catalog 中唯一启用用例，标题与目标一致，负责默认UI固定场景下增加一次并验证计数；执行说明已包含读取固定场景、browser-control 操作及结果比对方式，无其他正式用例或准备项依赖。",
+              "evidence_ids": [
+                "case:e7f0413e-13c2-408a-a2ab-0d4f46f29f50"
+              ],
+              "depends_on": [],
+              "input_bindings": {},
+              "kind": "target",
+              "case_id": "5f13ee9b-e6e9-4302-9b55-1efe910f13b3",
+              "case_version_id": "e7f0413e-13c2-408a-a2ab-0d4f46f29f50"
+            }
+          ],
+          "unresolved": []
+        },
+        "evidence": [
+          {
+            "id": "case:e7f0413e-13c2-408a-a2ab-0d4f46f29f50",
+            "kind": "case",
+            "source_id": "5f13ee9b-e6e9-4302-9b55-1efe910f13b3",
+            "version": "e7f0413e-13c2-408a-a2ab-0d4f46f29f50",
+            "content_hash": "f7d78eda2112fae45fdd88d837bc31add3dbc274cbf8ba28e8905469d33e42d8",
+            "payload": {
+              "title": "增加一次真实验证",
+              "case_id": "5f13ee9b-e6e9-4302-9b55-1efe910f13b3",
+              "content": {
+                "steps": [
+                  {
+                    "action": "先读取固定场景的别名和真实定位，再打开新的项目页面，真实点击增加一次并读取当前页面计数",
+                    "expected": "1"
+                  }
+                ],
+                "metadata": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                },
+                "objective": "实际点击计数按钮一次并验证当前计数",
+                "scene_read": {
+                  "query": "读取固定增加一次场景",
+                  "scene_id": "36288cd6-0d25-4a50-abd2-e7d9de3e7e08",
+                  "operation": "scene_read",
+                  "version_id": "0b78cb4e-a22f-44be-93ef-73ce831738a1",
+                  "content_hash": "ee317d7f78d90a6646e2e1d7db5e6840a7e469432434513831575fed0c526811"
+                },
+                "target_url": "http://127.0.0.1:58619",
+                "expected_count": "1"
+              },
+              "case_key": "count-one",
+              "source_refs": [
+                {
+                  "uri": null,
+                  "label": "",
+                  "version": "0b78cb4e-a22f-44be-93ef-73ce831738a1",
+                  "metadata": {
+                    "content_hash": "ee317d7f78d90a6646e2e1d7db5e6840a7e469432434513831575fed0c526811"
+                  },
+                  "source_id": "36288cd6-0d25-4a50-abd2-e7d9de3e7e08",
+                  "source_type": "ui_recording_scene"
+                }
+              ],
+              "case_version_id": "e7f0413e-13c2-408a-a2ab-0d4f46f29f50",
+              "execution_notes": "先调用JSON中scene_read指定的knowledge-rag读取固定场景。录制只作操作知识，不能当本次实际值。然后使用现有browser-control的command/args打开项目页面并真实click一次，最后只读eval取得#count和#page-id。command调用共享会话；不要在读结果时重新打开页面，不得赋值DOM或改点击次数去满足预期。实际值与expected_count比较，不符则正式failed，遵守原回执协议与权限。",
+              "historical_mode_key": "ui_automation"
+            }
+          }
+        ],
+        "config_snapshot": {
+          "scope_key": "1764eef8-f7fa-4efb-9d54-fd96d5e02489",
+          "revision": 1,
+          "policy": {
+            "max_rounds": 5,
+            "max_candidates": 20,
+            "max_items": 50,
+            "max_context_chars": 180000,
+            "timeout_seconds": 180.0,
+            "receipt_correction_protocol": "case-receipt-correction-v1"
+          }
+        },
+        "model_key": "step-5-preview",
+        "prompt_version": "case-planning-v5",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "parsed",
+            "decision": {
+              "items": [
+                {
+                  "key": "count-one",
+                  "kind": "target",
+                  "reason": "catalog 中唯一启用用例，标题与目标一致，负责默认UI固定场景下增加一次并验证计数；执行说明已包含读取固定场景、browser-control 操作及结果比对方式，无其他正式用例或准备项依赖。",
+                  "case_id": "5f13ee9b-e6e9-4302-9b55-1efe910f13b3",
+                  "depends_on": [],
+                  "evidence_ids": [
+                    "case:e7f0413e-13c2-408a-a2ab-0d4f46f29f50"
+                  ],
+                  "input_bindings": {},
+                  "case_version_id": "e7f0413e-13c2-408a-a2ab-0d4f46f29f50"
+                }
+              ],
+              "action": "finish",
+              "queries": [],
+              "summary": "项目当前仅有一个正式用例，且其内容与执行说明完整覆盖目标场景：在 http://127.0.0.1:58619 页面真实点击增加一次并校验计数为 1。该用例无需额外正式依赖，也没有缺失到需要 prepare 的操作条件，因此直接将其作为唯一 target。",
+              "unresolved": []
+            },
+            "streaming": true,
+            "attempt_id": "b8b8d578-dde1-47f9-8a44-f884ea61b964",
+            "response_mode": "ok",
+            "logical_call_id": "dde37d4a-4cc3-4403-917c-2c4cf2898a25",
+            "response_metadata": {
+              "mode": "ok",
+              "usage": {
+                "total_tokens": 5454,
+                "prompt_tokens": 2927,
+                "completion_tokens": 2527,
+                "prompt_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "image_tokens": null,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": null
+                },
+                "completion_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "reasoning_tokens": 0,
+                  "accepted_prediction_tokens": null,
+                  "rejected_prediction_tokens": null
+                }
+              },
+              "error_type": null,
+              "response_id": "bc7620dc56c124ba12cd1cdf3f0ebfd3.186e330878b182cd6ba9f846c12cdc9b",
+              "status_code": null,
+              "stop_reason": null,
+              "finish_reason": "stop",
+              "request_mapping": {
+                "version": "model-request-v1",
+                "decisions": [
+                  {
+                    "action": "prompt_fallback",
+                    "option": "output_format",
+                    "reason": "format_not_declared"
+                  }
+                ]
+              },
+              "stream_terminal_received": true
+            },
+            "first_text_seconds": 32.989,
+            "received_text_chars": 536,
+            "model_elapsed_seconds": 36.311
+          }
+        ],
+        "warnings": [],
+        "created_at": "2026-10-11T14:20:54.403859Z",
+        "regression": null,
+        "environment": null
+      },
+      "run_item_ids": {
+        "count-one": "82379980-2e32-52dc-a098-9f41a7744807"
+      },
+      "owners": {
+        "count-one": "count-one"
+      },
+      "preparation_phases": {},
+      "regression": null
+    },
+    "creation_key": "default-ui-run",
+    "creation_hash": "2deab7e4aee2a1ec1b65efa138b841a9d5122c73e3cbdcde10835f34fc67cff2",
+    "session_id": "727160bd-43b1-4d7b-9040-4f706ecd24ef",
+    "parent_run_id": null,
+    "status": "running",
+    "stats": {
+      "total": 1,
+      "queued": 0,
+      "claimed": 0,
+      "running": 0,
+      "waiting_resource": 0,
+      "waiting_approval": 1,
+      "passed": 0,
+      "failed": 0,
+      "error": 0,
+      "blocked": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "created_by": null,
+    "created_at": "2026-10-11T14:21:35.877762Z",
+    "updated_at": "2026-10-11T14:22:10.705665Z",
+    "started_at": "2026-10-11T14:21:43.899255Z",
+    "completed_at": null,
+    "cancel_reason": null,
+    "active_duration_ms": 26098,
+    "waiting_duration_ms": 649,
+    "paused_duration_ms": 0,
+    "wall_clock_duration_ms": 34827
+  },
+  "items": [
+    {
+      "id": "82379980-2e32-52dc-a098-9f41a7744807",
+      "run_id": "c9187afa-cce3-506a-9d18-468c81081557",
+      "case_id": "5f13ee9b-e6e9-4302-9b55-1efe910f13b3",
+      "case_version_id": "e7f0413e-13c2-408a-a2ab-0d4f46f29f50",
+      "position": 1,
+      "plan_item_key": "count-one",
+      "dependencies": [],
+      "status": "waiting_approval",
+      "waiting_reason": null,
+      "attempt_no": 1,
+      "lease_owner": "ui-execute",
+      "lease_token": "33d3641d-4942-4845-a007-d9bb5e817083",
+      "lease_expires_at": null,
+      "heartbeat_at": "2026-10-11T14:22:10.705665Z",
+      "approval_id": "7c048227-d965-4215-bc3b-8843b2a77edd",
+      "tool_job_id": "b18a969e-5459-49a0-a293-6ccb1378412d",
+      "result_id": null,
+      "regression_source_result_id": null,
+      "created_at": "2026-10-11T14:21:35.877762Z",
+      "updated_at": "2026-10-11T14:22:10.705665Z",
+      "started_at": "2026-10-11T14:21:43.932973Z",
+      "completed_at": null,
+      "resource_cleanup_completed_at": null,
+      "active_started_at": null,
+      "waiting_started_at": "2026-10-11T14:22:10.705665Z",
+      "active_duration_ms": 26098,
+      "waiting_duration_ms": 649,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 0
+    }
+  ],
+  "attempts": [
+    {
+      "id": "9775ad11-9c92-47e9-9689-b11c810d16f1",
+      "run_id": "c9187afa-cce3-506a-9d18-468c81081557",
+      "run_item_id": "82379980-2e32-52dc-a098-9f41a7744807",
+      "attempt_no": 1,
+      "worker_id": "ui-execute",
+      "lease_token": "33d3641d-4942-4845-a007-d9bb5e817083",
+      "status": "waiting_approval",
+      "claimed_at": "2026-10-11T14:21:43.899255Z",
+      "started_at": "2026-10-11T14:21:43.932973Z",
+      "heartbeat_at": "2026-10-11T14:22:10.705665Z",
+      "approval_id": "7c048227-d965-4215-bc3b-8843b2a77edd",
+      "tool_job_id": "b18a969e-5459-49a0-a293-6ccb1378412d",
+      "completed_at": null,
+      "active_started_at": null,
+      "waiting_started_at": "2026-10-11T14:22:10.705665Z",
+      "active_duration_ms": 26098,
+      "waiting_duration_ms": 649,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 0,
+      "checkpoint_version": 5,
+      "checkpoint_key": "agent_case_execution",
+      "checkpoint_payload": {
+        "phase": "snapshot",
+        "run_id": "c9187afa-cce3-506a-9d18-468c81081557",
+        "plan_id": "0511a0df-a081-40c5-aaca-d789a9ad9c1b",
+        "turn_id": "0245af31-c38e-542a-92c2-52d406542532",
+        "project_id": "1764eef8-f7fa-4efb-9d54-fd96d5e02489",
+        "session_id": "ccccd537-2c56-40e6-8a22-4355aece3f20",
+        "run_item_id": "82379980-2e32-52dc-a098-9f41a7744807",
+        "snapshot_id": "63db31a2-5f7d-44c9-9229-456ed0427276",
+        "context_hash": "2e7bc1e44f4074b4c08443bca241cd7524c54c8d15657dfb3be8f442254d7732",
+        "schema_version": 1,
+        "snapshot_version": 2,
+        "execution_attempt_id": "9775ad11-9c92-47e9-9689-b11c810d16f1"
+      },
+      "checkpoint_at": "2026-10-11T14:22:10.672610Z",
+      "recovered_from_attempt_id": null
+    }
+  ],
+  "results": []
+}

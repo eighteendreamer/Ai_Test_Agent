@@ -1,0 +1,24 @@
+FF.                                                                      [100%]
+================================== FAILURES ===================================
+________ test_ui_scene_reader_survives_actual_mode_and_agent_exposure _________
+tests\test_ui_case_knowledge_contract.py:23: in test_ui_scene_reader_survives_actual_mode_and_agent_exposure
+    assert "knowledge-rag" in {tool.key for tool in exposed}
+E   AssertionError: assert 'knowledge-rag' in {'browser-automation', 'browser-control', 'dom-inspector', 'file-artifact-manager', 'report-writer', 'ui-automation-runner', ...}
+_____ test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract _____
+tests\test_ui_case_knowledge_contract.py:47: in test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract
+    assert "Always call `ui-automation-runner` first" not in contract
+E   AssertionError: assert 'Always call...unner` first' not in 'You are the...e narration.'
+E     
+E     'Always call `ui-automation-runner` first' is contained here:
+E       cution.
+E     ?   ^
+E       - Always call `ui-automation-runner` first to assess knowledge sufficiency, collect target information, and choose direction/subdirection.
+E     ?   ^^^^^^^^^^^^^^^^^^  +++++++++++++++++++++++
+E       - If `ui-automation-runner` reports missing knowledge or missing target information, do not invent test tasks. Guide the user to exploration.
+E       - If the selected path is browser + information_exploration, treat Hermes-Agent as the brain and Playwright as the hands, while keeping graph persistence and UI reportin...
+E     
+E     ...Full output truncated (2 lines hidden), use '-vv' to show
+=========================== short test summary info ===========================
+FAILED tests/test_ui_case_knowledge_contract.py::test_ui_scene_reader_survives_actual_mode_and_agent_exposure
+FAILED tests/test_ui_case_knowledge_contract.py::test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract
+2 failed, 1 passed in 1.08s

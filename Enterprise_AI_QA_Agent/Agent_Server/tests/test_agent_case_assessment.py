@@ -485,6 +485,40 @@ def test_response_parser_preserves_complete_json_and_rejects_assessment_tool_cal
         AgentCaseAssessmentService.parse_response(response)
 
 
+def captured_wrapped_ui_response():
+    from src.schemas.model_config import ModelInvocationResult
+    path = Path(__file__).resolve().parents[2] / 'docs/upgrade_2026-10-03/p5-default-ui-live2/positive/postgres-public.json'
+    rows = json.loads(path.read_bytes())['postgres_snapshot_table']
+    final = next(row['public_graph'] for row in reversed(rows)
+        if '```json' in row.get('public_graph', {}).get('model_response_text', ''))
+    return ModelInvocationResult(text=final['model_response_text'], response_summary=final['model_response_summary'])
+
+
+def test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence(caplog):
+    from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService
+    response = captured_wrapped_ui_response()
+    caplog.set_level('INFO', logger='src.application.test_runs.agent_case_assessment')
+    original = response.text
+    parsed = AgentCaseAssessmentService.parse_response(response)
+    assert response.text == original
+    assert parsed.steps[0].item_key == 'count-one'
+    assert parsed.steps[0].checks[0].expected_path_tokens == ['expected_count']
+    assert parsed.steps[0].checks[0].observations[0].call_id == 'chatcmpl-tool-95929a1ac91afb7a'
+    assert 'case_receipt_fenced_payload_decoded' in caplog.text
+
+
+@pytest.mark.parametrize('corruption', ['second_receipt', 'truncated', 'incomplete_provider', 'tool_call'])
+def test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output(corruption):
+    from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService
+    response = captured_wrapped_ui_response()
+    if corruption == 'second_receipt': response.text += '\n```json\n{"schema_version":1,"steps":[]}\n```'
+    elif corruption == 'truncated': response.text = response.text.replace('\n}\n```', '\n```')
+    elif corruption == 'incomplete_provider': response.response_summary['finish_reason'] = 'length'
+    else: response.tool_calls = [ModelToolCall(id='unexpected', name='browser-control', arguments={})]
+    with pytest.raises(ValueError):
+        AgentCaseAssessmentService.parse_response(response)
+
+
 def test_actual_captured_length_response_never_becomes_a_passing_receipt():
     from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService
     from src.schemas.model_config import ModelInvocationResult

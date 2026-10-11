@@ -102,6 +102,7 @@ class SkillRegistry:
                 recommended_agents=["ui-automation-agent", "ui-executor"],
                 tags=["ui", "e2e", "playwright", "automation"],
                 tool_keys=[
+                    "knowledge-rag",
                     "ui-automation-runner",
                     "ui-page-explorer",
                     "browser-automation",

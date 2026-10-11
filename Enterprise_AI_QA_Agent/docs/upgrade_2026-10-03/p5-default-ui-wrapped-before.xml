@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="5" time="5.326" timestamp="2026-10-11T22:33:04.242819+08:00" hostname="EIghteen"><testcase classname="tests.test_agent_case_assessment" name="test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence" time="0.004"><failure message="ValueError: 执行回执 JSON 不完整或格式错误: line=1, column=1">src\application\test_runs\agent_case_assessment.py:150: in parse_response
+    candidate = json.loads(raw)
+                ^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\__init__.py:346: in loads
+    return _default_decoder.decode(s)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\decoder.py:337: in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\json\decoder.py:355: in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+E   json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+
+The above exception was the direct cause of the following exception:
+tests\test_agent_case_assessment.py:501: in test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence
+    parsed = AgentCaseAssessmentService.parse_response(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:152: in parse_response
+    raise ValueError(f"执行回执 JSON 不完整或格式错误: line={exc.lineno}, column={exc.colno}") from exc
+E   ValueError: 执行回执 JSON 不完整或格式错误: line=1, column=1</failure></testcase><testcase classname="tests.test_agent_case_assessment" name="test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output[second_receipt]" time="0.002" /><testcase classname="tests.test_agent_case_assessment" name="test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output[truncated]" time="0.002" /><testcase classname="tests.test_agent_case_assessment" name="test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output[incomplete_provider]" time="0.002" /><testcase classname="tests.test_agent_case_assessment" name="test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output[tool_call]" time="0.002" /></testsuite></testsuites>

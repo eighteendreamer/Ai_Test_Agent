@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="3" time="1.046" timestamp="2026-10-11T22:16:56.035208+08:00" hostname="EIghteen"><testcase classname="tests.test_ui_case_knowledge_contract" name="test_ui_scene_reader_survives_actual_mode_and_agent_exposure" time="0.009"><failure message="AssertionError: assert 'knowledge-rag' in {'browser-automation', 'browser-control', 'dom-inspector', 'file-artifact-manager', 'report-writer', 'ui-automation-runner', ...}">tests\test_ui_case_knowledge_contract.py:23: in test_ui_scene_reader_survives_actual_mode_and_agent_exposure
+    assert "knowledge-rag" in {tool.key for tool in exposed}
+E   AssertionError: assert 'knowledge-rag' in {'browser-automation', 'browser-control', 'dom-inspector', 'file-artifact-manager', 'report-writer', 'ui-automation-runner', ...}</failure></testcase><testcase classname="tests.test_ui_case_knowledge_contract" name="test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract" time="0.001"><failure message="ValueError: 固定用例执行上下文与项目或运行身份不一致">tests\test_ui_case_knowledge_contract.py:46: in test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract
+    contract = ui_contract("cases")
+               ^^^^^^^^^^^^^^^^^^^^
+tests\test_ui_case_knowledge_contract.py:37: in ui_contract
+    assembled = PromptAssemblyService().build_for_turn(
+src\application\prompting\prompt_assembly_service.py:78: in build_for_turn
+    system_sections = self._build_system_sections(
+src\application\prompting\prompt_assembly_service.py:458: in _build_system_sections
+    raise ValueError("固定用例执行上下文与项目或运行身份不一致")
+E   ValueError: 固定用例执行上下文与项目或运行身份不一致</failure></testcase><testcase classname="tests.test_ui_case_knowledge_contract" name="test_free_ui_keeps_original_entry_contract" time="0.001" /></testsuite></testsuites>

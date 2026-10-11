@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="3" time="1.081" timestamp="2026-10-11T22:17:06.739513+08:00" hostname="EIghteen"><testcase classname="tests.test_ui_case_knowledge_contract" name="test_ui_scene_reader_survives_actual_mode_and_agent_exposure" time="0.012"><failure message="AssertionError: assert 'knowledge-rag' in {'browser-automation', 'browser-control', 'dom-inspector', 'file-artifact-manager', 'report-writer', 'ui-automation-runner', ...}">tests\test_ui_case_knowledge_contract.py:23: in test_ui_scene_reader_survives_actual_mode_and_agent_exposure
+    assert "knowledge-rag" in {tool.key for tool in exposed}
+E   AssertionError: assert 'knowledge-rag' in {'browser-automation', 'browser-control', 'dom-inspector', 'file-artifact-manager', 'report-writer', 'ui-automation-runner', ...}</failure></testcase><testcase classname="tests.test_ui_case_knowledge_contract" name="test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract" time="0.002"><failure message="AssertionError: assert 'Always call...unner` first' not in 'You are the...e narration.'&#10;  &#10;  'Always call `ui-automation-runner` first' is contained here:&#10;    cution.&#10;  ?   ^&#10;    - Always call `ui-automation-runner` first to assess knowledge sufficiency, collect target information, and choose direction/subdirection.&#10;  ?   ^^^^^^^^^^^^^^^^^^  +++++++++++++++++++++++&#10;    - If `ui-automation-runner` reports missing knowledge or missing target information, do not invent test tasks. Guide the user to exploration.&#10;    - If the selected path is browser + information_exploration, treat Hermes-Agent as the brain and Playwright as the hands, while keeping graph persistence and UI reportin...&#10;  &#10;  ...Full output truncated (2 lines hidden), use '-vv' to show">tests\test_ui_case_knowledge_contract.py:47: in test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract
+    assert "Always call `ui-automation-runner` first" not in contract
+E   AssertionError: assert 'Always call...unner` first' not in 'You are the...e narration.'
+E     
+E     'Always call `ui-automation-runner` first' is contained here:
+E       cution.
+E     ?   ^
+E       - Always call `ui-automation-runner` first to assess knowledge sufficiency, collect target information, and choose direction/subdirection.
+E     ?   ^^^^^^^^^^^^^^^^^^  +++++++++++++++++++++++
+E       - If `ui-automation-runner` reports missing knowledge or missing target information, do not invent test tasks. Guide the user to exploration.
+E       - If the selected path is browser + information_exploration, treat Hermes-Agent as the brain and Playwright as the hands, while keeping graph persistence and UI reportin...
+E     
+E     ...Full output truncated (2 lines hidden), use '-vv' to show</failure></testcase><testcase classname="tests.test_ui_case_knowledge_contract" name="test_free_ui_keeps_original_entry_contract" time="0.000" /></testsuite></testsuites>

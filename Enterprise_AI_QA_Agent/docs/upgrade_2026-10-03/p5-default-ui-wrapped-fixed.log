@@ -1,0 +1,50 @@
+.s....................................FF.F...s.sFs.s.s.s.s.s.s.s..sss.s. [ 92%]
+s.s...                                                                   [100%]
+================================== FAILURES ===================================
+_ test_response_parser_preserves_complete_json_and_rejects_assessment_tool_call _
+tests\test_agent_case_assessment.py:482: in test_response_parser_preserves_complete_json_and_rejects_assessment_tool_call
+    assert AgentCaseAssessmentService.parse_response(response).model_dump(mode='json')['steps'][1]['item_key'] == 'target'
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:156: in parse_response
+    logger.info("case_receipt_fenced_payload_decoded", extra={"fence_count": 1})
+    ^^^^^^
+E   NameError: name 'LOGGER' is not defined
+___ test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence ___
+tests\test_agent_case_assessment.py:502: in test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence
+    parsed = AgentCaseAssessmentService.parse_response(response)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_assessment.py:156: in parse_response
+    logger.info("case_receipt_fenced_payload_decoded", extra={"fence_count": 1})
+    ^^^^^^
+E   NameError: name 'LOGGER' is not defined
+_ test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output[truncated] _
+tests\test_agent_case_assessment.py:519: in test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output
+    AgentCaseAssessmentService.parse_response(response)
+src\application\test_runs\agent_case_assessment.py:156: in parse_response
+    logger.info("case_receipt_fenced_payload_decoded", extra={"fence_count": 1})
+    ^^^^^^
+E   NameError: name 'LOGGER' is not defined
+_ test_actual_captured_mixed_report_corrects_from_owned_evidence_once_then_replays[captured-current-False] _
+tests\test_agent_case_receipt_correction.py:129: in test_actual_captured_mixed_report_corrects_from_owned_evidence_once_then_replays
+    outcome = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:250: in _finish
+    outcome = await assess(response)
+              ^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:242: in assess
+    receipt=self._assessment.parse_response(candidate,
+src\application\test_runs\agent_case_assessment.py:156: in parse_response
+    logger.info("case_receipt_fenced_payload_decoded", extra={"fence_count": 1})
+    ^^^^^^
+E   NameError: name 'LOGGER' is not defined
+=========================== short test summary info ===========================
+FAILED tests/test_agent_case_assessment.py::test_response_parser_preserves_complete_json_and_rejects_assessment_tool_call
+FAILED tests/test_agent_case_assessment.py::test_actual_default_ui_wrapped_receipt_keeps_original_business_evidence
+FAILED tests/test_agent_case_assessment.py::test_wrapped_ui_receipt_never_repairs_ambiguous_or_incomplete_output[truncated]
+FAILED tests/test_agent_case_receipt_correction.py::test_actual_captured_mixed_report_corrects_from_owned_evidence_once_then_replays[captured-current-False]
+4 failed, 57 passed, 17 skipped in 30.57s

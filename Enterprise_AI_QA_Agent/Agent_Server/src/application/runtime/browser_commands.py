@@ -12,10 +12,21 @@ logger = logging.getLogger(__name__)
 def browser_command_args(payload: dict[str, Any]) -> list[str]:
     raw = payload.get("args") or payload.get("command_args") or payload.get("command") or []
     if isinstance(raw, str):
-        return shlex.split(raw, posix=False)
-    if isinstance(raw, list):
-        return [str(item) for item in raw]
-    return []
+        args = shlex.split(raw, posix=False)
+    elif isinstance(raw, list):
+        args = [str(item) for item in raw]
+    else:
+        return []
+    command = payload.get("command")
+    if payload.get("args") and isinstance(command, str):
+        verb = shlex.split(command, posix=False)
+        # The registered tool permits a command verb plus its arguments. Keep
+        # legacy complete args (including global flags) without duplicating it.
+        plain, _ = strip_browser_global_options(args)
+        if len(verb) == 1 and (not plain or plain[0] != verb[0]):
+            logger.debug("browser_split_command_normalized", extra={"argument_count": len(args)})
+            return [verb[0], *args]
+    return args
 
 
 def strip_browser_global_options(args: list[str]) -> tuple[list[str], bool]:

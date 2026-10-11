@@ -322,6 +322,7 @@ class AgentRegistry:
                     summary="Execute UI automation workflows with page exploration and evidence capture.",
                     description="Dedicated mode agent for UI automation tasks, browser evidence, and repeatable UI execution.",
                     supported_tools=[
+                        "knowledge-rag",
                         "ui-automation-runner",
                         "ui-page-explorer",
                         "browser-automation",

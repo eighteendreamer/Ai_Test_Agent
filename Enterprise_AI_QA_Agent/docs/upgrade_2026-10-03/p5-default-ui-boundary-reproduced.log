@@ -1,0 +1,21 @@
+FF.                                                                      [100%]
+================================== FAILURES ===================================
+________ test_ui_scene_reader_survives_actual_mode_and_agent_exposure _________
+tests\test_ui_case_knowledge_contract.py:23: in test_ui_scene_reader_survives_actual_mode_and_agent_exposure
+    assert "knowledge-rag" in {tool.key for tool in exposed}
+E   AssertionError: assert 'knowledge-rag' in {'browser-automation', 'browser-control', 'dom-inspector', 'file-artifact-manager', 'report-writer', 'ui-automation-runner', ...}
+_____ test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract _____
+tests\test_ui_case_knowledge_contract.py:46: in test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract
+    contract = ui_contract("cases")
+               ^^^^^^^^^^^^^^^^^^^^
+tests\test_ui_case_knowledge_contract.py:37: in ui_contract
+    assembled = PromptAssemblyService().build_for_turn(
+src\application\prompting\prompt_assembly_service.py:78: in build_for_turn
+    system_sections = self._build_system_sections(
+src\application\prompting\prompt_assembly_service.py:458: in _build_system_sections
+    raise ValueError("固定用例执行上下文与项目或运行身份不一致")
+E   ValueError: 固定用例执行上下文与项目或运行身份不一致
+=========================== short test summary info ===========================
+FAILED tests/test_ui_case_knowledge_contract.py::test_ui_scene_reader_survives_actual_mode_and_agent_exposure
+FAILED tests/test_ui_case_knowledge_contract.py::test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract
+2 failed, 1 passed in 1.05s

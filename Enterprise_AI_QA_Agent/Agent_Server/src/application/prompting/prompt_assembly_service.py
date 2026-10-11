@@ -18,7 +18,7 @@ from src.modes.performance_testing_mode.prompt_contract import (
     PERFORMANCE_TESTING_SYSTEM_CONTRACT,
 )
 from src.modes.smoke_testing_mode.prompt_contract import SMOKE_TESTING_PROMPT_CONTRACT
-from src.modes.ui_automation_mode.prompt_contract import UI_AUTOMATION_PROMPT_CONTRACT
+from src.modes.ui_automation_mode.prompt_contract import UI_AUTOMATION_PROMPT_CONTRACT, UI_CASE_EXECUTION_PROMPT_CONTRACT
 from src.schemas.prompting import PromptAssemblyResult, PromptSection
 from src.schemas.case_execution import AgentCaseExecutionContext
 from src.application.test_runs.agent_case_contract import case_result_contract
@@ -278,7 +278,8 @@ class PromptAssemblyService:
                     source="prompt_assembly.ui_automation",
                     cache_scope="dynamic",
                     priority=50,
-                    content=UI_AUTOMATION_PROMPT_CONTRACT,
+                    content=(UI_CASE_EXECUTION_PROMPT_CONTRACT
+                        if context_bundle.get("execution_basis") == "cases" else UI_AUTOMATION_PROMPT_CONTRACT),
                 )
             )
         elif selected_agent_key == "api-testing-agent":
