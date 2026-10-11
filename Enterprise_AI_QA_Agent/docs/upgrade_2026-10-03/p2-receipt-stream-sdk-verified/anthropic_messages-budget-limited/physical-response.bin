@@ -1,0 +1,18 @@
+event: message_start
+data: {"type": "message_start", "message": {"id": "msg_fixture", "type": "message", "role": "assistant", "model": "fixture-model", "content": [], "stop_reason": null, "stop_sequence": null, "usage": {"input_tokens": 7, "output_tokens": 3}}}
+
+event: content_block_start
+data: {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}}
+
+event: content_block_delta
+data: {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": "{\"schema_version\": 1, \"steps\": [{\"item_key\": \"seed\", \"status\": \"passed\", \"summary\": \"seed\", \"checks\": [{\"name\": \"HTTP 状态\", \"expected_path_tokens\": [\"expected\"], \"observations\": [{\"call_id\": \"seed\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}], \"operator\": \"equals\"}], \"outputs\": {\"body\": {\"call_id\": \"seed\", \"output_path_tokens\": [\"task_result\", \"response_body\"]}}}, {\"item_key\": \"target\", \"status\": \"passed\", \"summary\": \"target\", \"checks\": [{\"name\": \"HTTP 状态\", \"expected_path_tokens\": [\"期望\", \"code\"], \"observations\": [{\"call_id\": \"target\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}], \"operator\": \"equals\"}, {\"name\": \"flag\", \"expected_path_tokens\": [\"期望\", \"flag\"], \"operator\": \"equals\", \"observations\": [{\"call_id\": \"target\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"flag\"]}]}, {\"name\": \"count\", \"expected_path_tokens\": [\"期望\", \"count\"], \"operator\": \"equals\", \"observations\": [{\"call_id\": \"target\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"count\"]}]}, {\"name\": \"nullable\", \"expected_path_tokens\": [\"期望\", \"nullable\"], \"operator\": \"equals\", \"observations\": [{\"call_id\": \"target\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"nullable\"]}]}, {\"name\": \"语义状态\", \"expected_path_tokens\": [\"期望\", \"semantic\"], \"operator\": \"semantic\", \"verdict\": \"passed\", \"reason\": \"受控语义回执：响应表明订单仍待支付且尚未出库\", \"observations\": [{\"call_id\": \"target\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"message\"]}]}], \"outputs\": {\"body\": {\"call_id\": \"target\", \"output_path_tokens\": [\"task_result\", \"response_body\"]}}}, {\"item_key\": \"cleanup\", \"status\": \"passed\", \"summary\": \"cleanup\", \"checks\": [{\"name\": \"HTTP 状态\", \"expected_path_tokens\": [\"expected\"], \"observations\": [{\"call_id\": \"cleanup\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}], \"operator\": \"equals\"}], \"outputs\": {\"body\": {\"call_id\": \"cleanup\", \"output_path_tokens\": [\"task_result\", \"response_body\"]}}}]}"}}
+
+event: content_block_stop
+data: {"type": "content_block_stop", "index": 0}
+
+event: message_delta
+data: {"type": "message_delta", "delta": {"stop_reason": "max_tokens", "stop_sequence": null}, "usage": {"output_tokens": 3}}
+
+event: message_stop
+data: {"type": "message_stop"}
+

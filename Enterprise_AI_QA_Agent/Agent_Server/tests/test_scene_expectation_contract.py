@@ -83,12 +83,12 @@ def test_original_schema_remains_selected_and_does_not_accept_scene_wire():
     with pytest.raises(ValueError): AgentCaseExecutionReceipt.model_validate(original)
     updated = deepcopy(original);updated["schema_version"] = 2
     assert SceneExecutionReceipt.model_validate(updated).steps[0].checks[0].expected_source
-    assert receipt_prompt_version() == "case-execution-receipt-v5"
-    assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v6"
+    assert receipt_prompt_version() == "case-execution-receipt-v6"
+    assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v7"
     assert '"SceneExecutionCheck"' in case_result_contract("case-scene-receipt-v1")
 
 
-def test_prompt_revision_only_adds_existing_deterministic_cardinality():
+def test_prompt_revision_only_clarifies_existing_path_types_and_cardinality():
     original = subprocess.run(["git","show",
         "c19415d0:Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_contract.py"],
         cwd=ROOT.parents[1],capture_output=True,text=True,encoding="utf-8",check=True)
@@ -99,7 +99,10 @@ def test_prompt_revision_only_adds_existing_deterministic_cardinality():
         "value to that scalar comparison; report other expectations as separate checks. ")
     current = case_result_contract()
     assert current.count(clarification) == 1
-    assert current.replace(clarification, "") == namespace["case_result_contract"]()
+    path_types = ('All path token arrays contain strings only, including array indexes: index 0 is "0", '
+        'never the JSON number 0. This applies to both expected_path_tokens and output_path_tokens. ')
+    assert current.count(path_types) == 1
+    assert current.replace(clarification, "").replace(path_types, "") == namespace["case_result_contract"]()
 
 
 def test_actual_scene_wire_is_parsed_only_for_the_frozen_new_protocol():

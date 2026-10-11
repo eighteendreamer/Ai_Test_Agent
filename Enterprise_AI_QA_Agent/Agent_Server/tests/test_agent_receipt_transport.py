@@ -10,7 +10,7 @@ import pytest
 from test_document_impact_calls import provider
 from test_model_clients import _config, _request
 from src.application.models.model_runtime_service import ModelRuntimeService
-from src.schemas.model_config import ModelTransportOptions
+from src.schemas.model_config import ModelCapabilities, ModelTransportOptions
 from src.schemas.case_planning import CasePlanningPolicy
 from src.schemas.case_execution import CaseReceiptCorrectionCheckpoint
 from test_agent_case_receipt_correction import ReceiptAgent, finish_graph, export, cleanup
@@ -68,7 +68,8 @@ async def test_frozen_receipt_transport_real_sdk_and_recovery(tmp_path, business
         assert "receipt_correction_transport_options" not in json.dumps(body)
         return holder["agent"].good.text
     with provider(mode="connection_closed" if mode == "connection_closed" else "ok", responder=reply) as (endpoint, sends, _, _):
-        config = _config(key="controlled-case-agent", api_base_url=endpoint)
+        config = _config(key="controlled-case-agent", api_base_url=endpoint,
+            capabilities=ModelCapabilities(streaming=False))
         runtime = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config),
             SimpleNamespace(model=SimpleNamespace(langchain_model_adapter_enabled=False, llm_request_timeout_seconds=.1)))
         class ActualReceiptAgent(ReceiptAgent):

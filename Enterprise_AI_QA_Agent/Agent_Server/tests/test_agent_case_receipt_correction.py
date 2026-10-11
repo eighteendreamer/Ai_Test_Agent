@@ -12,7 +12,7 @@ from test_agent_case_session import ControlledAgent
 from test_case_plan_run_creation import LIVE
 from src.application.test_runs.agent_case_execution import AgentCaseApprovalWait, AgentCaseRecoveryRequired
 from src.schemas.case_planning import CasePlanningPolicy
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationResult, ModelTransportOptions, model_invocation_parameters
+from src.schemas.model_config import ModelCapabilities, ModelConfigRecord, ModelInvocationResult, ModelTransportOptions, model_invocation_parameters
 from src.schemas.tool_runtime import ModelToolCall
 
 DOCS = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"
@@ -28,7 +28,7 @@ class ReceiptAgent(ControlledAgent):
     def get_model_config(self, key):
         return ModelConfigRecord(key=key, name="Controlled receipt model", provider="test",
             transport="openai_chat_completions", model_id="controlled", api_base_url="http://unused",
-            api_key="DO-NOT-PERSIST-RECEIPT-CREDENTIAL")
+            api_key="DO-NOT-PERSIST-RECEIPT-CREDENTIAL", capabilities=ModelCapabilities(streaming=False))
 
     def get_default_model_config(self):
         return self.get_model_config("controlled-case-agent")

@@ -1,0 +1,48 @@
+{
+  "text": "{\"schema_version\":1,\"steps\":[{\"item_key\":\"seed\",\"status\":\"passed\",\"summary\":\"POST /orders 创建准备数据，返回 201，响应体含 order.id=actual-1b4c2689524d40e5b5316e6979f6873e，供 target/cleanup 绑定使用。\",\"checks\":[{\"name\":\"准备数据状态码为201\",\"expected_path_tokens\":[\"expected\"],\"observations\":[{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_status\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际 response_status=201，与 expected=201 一致。\"},{\"name\":\"创建动作成功并产出可用ID\",\"expected_path_tokens\":[\"action\"],\"observations\":[{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_status\"]},{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"order.id\"]}],\"operator\":\"semantic\",\"verdict\":\"passed\",\"reason\":\"POST 返回 201 且响应体存在 order.id=actual-1b4c2689524d40e5b5316e6979f6873e，满足“创建本次数据”并可供下游绑定。\"}],\"outputs\":{\"order_id\":{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"order.id\"]},\"response_status\":{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_status\"]}}},{\"item_key\":\"target\",\"status\":\"passed\",\"summary\":\"GET /orders/{id} 使用 seed 产出的实际 ID 查询，code=200、flag=false、count=0、nullable=null，且语义为待支付未出库。\",\"checks\":[{\"name\":\"查询URL使用seed产出的实际ID\",\"expected_path_tokens\":[\"steps\",0,\"url\"],\"observations\":[{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"order.id\"]},{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"full_url\"]}],\"operator\":\"semantic\",\"verdict\":\"passed\",\"reason\":\"full_url=http://127.0.0.1:60006/orders/actual-1b4c2689524d40e5b5316e6979f6873e，{id} 被替换为 seed 返回的 order.id，未使用推断ID。\"},{\"name\":\"状态码code为200\",\"expected_path_tokens\":[\"期望\",\"code\"],\"observations\":[{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_status\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际 response_status=200，与期望 code=200 一致。\"},{\"name\":\"flag为false\",\"expected_path_tokens\":[\"期望\",\"flag\"],\"observations\":[{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"flag\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际 flag=false，与期望一致（保留负向条件）。\"},{\"name\":\"count为0\",\"expected_path_tokens\":[\"期望\",\"count\"],\"observations\":[{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"count\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际 count=0，与期望一致（保留负向条件）。\"},{\"name\":\"nullable为null\",\"expected_path_tokens\":[\"期望\",\"nullable\"],\"observations\":[{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"nullable\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"字段存在且值为 null，与期望一致。\"},{\"name\":\"语义：订单仍待支付且未出库\",\"expected_path_tokens\":[\"期望\",\"semantic\"],\"observations\":[{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"message\"]},{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"count\"]},{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"flag\"]}],\"operator\":\"semantic\",\"verdict\":\"passed\",\"reason\":\"message=“订单处于待支付状态，尚未进入出库流程”，且 count=0、flag=false，共同表明订单仍待支付且未出库。\"}],\"outputs\":{\"response_status\":{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_status\"]},\"response_body\":{\"call_id\":\"target\",\"output_path_tokens\":[\"task_result\",\"response_body\"]}}},{\"item_key\":\"cleanup\",\"status\":\"passed\",\"summary\":\"DELETE /orders/{id} 使用 seed 产出的实际 ID 清理，返回 200，删除的是本次创建的订单。\",\"checks\":[{\"name\":\"清理状态码为200\",\"expected_path_tokens\":[\"expected\"],\"observations\":[{\"call_id\":\"cleanup\",\"output_path_tokens\":[\"task_result\",\"response_status\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"实际 response_status=200，与 expected=200 一致。\"},{\"name\":\"删除动作针对本次数据\",\"expected_path_tokens\":[\"action\"],\"observations\":[{\"call_id\":\"seed\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"order.id\"]},{\"call_id\":\"cleanup\",\"output_path_tokens\":[\"task_result\",\"response_status\"]},{\"call_id\":\"cleanup\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"order.id\"]}],\"operator\":\"semantic\",\"verdict\":\"passed\",\"reason\":\"DELETE 返回 200，且响应体 order.id=actual-1b4c2689524d40e5b5316e6979f6873e 与 seed 创建的 ID 一致，确已删除本次数据。\"}],\"outputs\":{\"response_status\":{\"call_id\":\"cleanup\",\"output_path_tokens\":[\"task_result\",\"response_status\"]},\"deleted_order_id\":{\"call_id\":\"cleanup\",\"output_path_tokens\":[\"task_result\",\"response_body\",\"order.id\"]}}}]}",
+  "tool_calls": [],
+  "response_summary": {
+    "completion_status": "complete",
+    "content_preview": "{\"schema_version\":1,\"steps\":[{\"item_key\":\"seed\",\"status\":\"passed\",\"summary\":\"POST /orders 创建准备数据，返回 201，响应体含 order.id=actual-1b4c2689524d40e5b5316e6979f6873e，供 target/cleanup 绑定...",
+    "finish_reason": "stop",
+    "mode": "ok",
+    "provider": "openai",
+    "provider_profile": "openai",
+    "request_mapping": {
+      "decisions": [
+        {
+          "action": "prompt_fallback",
+          "option": "output_format",
+          "reason": "format_not_declared"
+        }
+      ],
+      "version": "model-request-v1"
+    },
+    "response_id": "eae2b155f799e3cc5ba8a00eb756afeb.033007c07b129de3b10ae11687ad90fd",
+    "stop_reason": null,
+    "stream_terminal_received": true,
+    "tool_call_count": 0,
+    "tool_call_names": [],
+    "tool_fallback": "",
+    "transport": "openai_chat_completions",
+    "usage": {
+      "completion_tokens": 7673,
+      "completion_tokens_details": {
+        "accepted_prediction_tokens": null,
+        "audio_tokens": null,
+        "reasoning_tokens": 0,
+        "rejected_prediction_tokens": null,
+        "text_tokens": null
+      },
+      "prompt_tokens": 8115,
+      "prompt_tokens_details": {
+        "audio_tokens": null,
+        "cache_write_tokens": null,
+        "cached_tokens": 0,
+        "image_tokens": null,
+        "text_tokens": null
+      },
+      "total_tokens": 15788
+    }
+  }
+}

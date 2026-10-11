@@ -83,11 +83,15 @@ class AgentCaseReceiptService:
         if model is None:
             raise ValueError("原执行模型不可用，不能切换默认模型纠正回执")
         runtime_parameters = self._models.get_invocation_runtime_parameters(model_key, **transport_kwargs)
+        model_parameters = model_invocation_parameters(model)
+        response_protocol = ("case-receipt-stream-response-v1"
+            if model_parameters.get("capabilities", {}).get("streaming") else None)
         prefix = f"case-receipts/{context.project_id}/{context.run_id}/{context.run_item_id}/{checkpoint.execution_attempt_id}/{call_id}"
         original = await self._write(request.model_dump(mode="json"), prefix=prefix, filename="request.json")
         current = CaseReceiptCorrectionCheckpoint(phase="invoking", call_id=call_id, snapshot_id=snapshot.id,
             prompt_version=receipt_prompt_version(context.scene_receipt_protocol), model_key=model_key,
-            model_parameters=model_invocation_parameters(model), runtime_parameters=runtime_parameters,
+            model_parameters=model_parameters, runtime_parameters=runtime_parameters,
+            response_transport_protocol=response_protocol,
             execution_model_calls=count, total_model_calls=count + 1, max_iterations=limit, request=original)
         checkpoint = checkpoint.model_copy(update={"receipt_correction": current})
         await save(checkpoint)
@@ -95,8 +99,26 @@ class AgentCaseReceiptService:
             "logical_call_id": call_id, "model_call_count": count + 1, "max_iterations": limit})
         # Re-read exactly the persisted input; no graph or business tools participate.
         request = ModelInvocationRequest.model_validate(await self._read(original))
-        response = await self._models.invoke(model_key, request, expected_parameters=current.model_parameters,
-            expected_runtime_parameters=current.runtime_parameters, **transport_kwargs)
+        async def invoke():
+            return await self._models.invoke(model_key, request, expected_parameters=current.model_parameters,
+                expected_runtime_parameters=current.runtime_parameters, **transport_kwargs)
+        logger.info("agent_case_receipt_transport_decided", extra={"run_id": context.run_id,
+            "run_item_id": context.run_item_id, "logical_call_id": call_id,
+            "response_transport_protocol": current.response_transport_protocol,
+            "model_streaming": bool(current.model_parameters.get("capabilities", {}).get("streaming"))})
+        if current.response_transport_protocol is not None:
+            # Existing counterpart: generation_pipeline.invoke_frozen. Persist
+            # the returned result for assessment; chunks are not a receipt.
+            observed = {"public_text_chunks": 0, "public_text_chars": 0}
+            async def receive(text):
+                observed["public_text_chunks"] += 1
+                observed["public_text_chars"] += len(text)
+            async with self._models.stream_handler(receive):
+                response = await invoke()
+            logger.info("agent_case_receipt_stream_received", extra={"run_id": context.run_id,
+                "logical_call_id": call_id, **observed})
+        else:
+            response = await invoke()
         saved = await self._write(response.model_dump(mode="json", exclude={"request_payload"}),
             prefix=prefix, filename="response.json")
         current = current.model_copy(update={"phase": "response", "response": saved})

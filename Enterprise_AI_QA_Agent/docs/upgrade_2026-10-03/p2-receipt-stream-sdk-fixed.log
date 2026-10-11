@@ -1,0 +1,43 @@
+....F....F....F.                                                         [100%]
+================================== FAILURES ===================================
+_ test_actual_stream_receipt_never_reexecutes_business[complete-google_gemini_generate_content] _
+tests\test_receipt_stream_response.py:63: in test_actual_stream_receipt_never_reexecutes_business
+    assert (await approval_continuation(runs, reader, adapter, args, pending)).completion.status == "passed"
+            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:267: in _finish
+    response, checkpoint = await self._receipts.correct(context=context, checkpoint=checkpoint,
+src\application\test_runs\agent_case_receipt.py:85: in correct
+    runtime_parameters = self._models.get_invocation_runtime_parameters(model_key, **transport_kwargs)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_receipt_stream_response.py:47: in get_invocation_runtime_parameters
+    return runtime.get_invocation_runtime_parameters(key, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\models\model_runtime_service.py:87: in get_invocation_runtime_parameters
+    raise ValueError("该模型传输尚未验证显式SDK重试设置")
+E   ValueError: 该模型传输尚未验证显式SDK重试设置
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:254 agent_case_receipt_correction_requested
+_ test_actual_stream_receipt_never_reexecutes_business[missing-terminal-google_gemini_generate_content] _
+tests\test_receipt_stream_response.py:67: in test_actual_stream_receipt_never_reexecutes_business
+    checkpoint = (await runs.get_latest_attempt((await args())["item"].id)).checkpoint_payload["receipt_correction"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'receipt_correction'
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:254 agent_case_receipt_correction_requested
+_ test_actual_stream_receipt_never_reexecutes_business[budget-limited-google_gemini_generate_content] _
+tests\test_receipt_stream_response.py:67: in test_actual_stream_receipt_never_reexecutes_business
+    checkpoint = (await runs.get_latest_attempt((await args())["item"].id)).checkpoint_payload["receipt_correction"]
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'receipt_correction'
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:254 agent_case_receipt_correction_requested
+=========================== short test summary info ===========================
+FAILED tests/test_receipt_stream_response.py::test_actual_stream_receipt_never_reexecutes_business[complete-google_gemini_generate_content]
+FAILED tests/test_receipt_stream_response.py::test_actual_stream_receipt_never_reexecutes_business[missing-terminal-google_gemini_generate_content]
+FAILED tests/test_receipt_stream_response.py::test_actual_stream_receipt_never_reexecutes_business[budget-limited-google_gemini_generate_content]
+3 failed, 13 passed in 23.99s

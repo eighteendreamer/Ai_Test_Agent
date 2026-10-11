@@ -7,7 +7,7 @@ from src.schemas.case_execution import AgentCaseExecutionReceipt
 from src.schemas.scene_receipt import case_receipt_type, SCENE_RECEIPT_PROMPT_VERSION
 
 
-RECEIPT_PROMPT_VERSION = "case-execution-receipt-v5"
+RECEIPT_PROMPT_VERSION = "case-execution-receipt-v6"
 
 
 def receipt_prompt_version(protocol=None):
@@ -46,8 +46,10 @@ def case_result_contract(protocol=None) -> str:
         "and checks=[] rather than inventing an observation for a not_run check. "
         "A tool message is a model-facing projection: download links, projection fields and "
         "digest truncation markers are not necessarily persisted output values. "
-        "Evidence availability alone does not prove any expectation. observations and "
-        "outputs reference actual call_id and literal output_path_tokens into persisted tool "
+        "Evidence availability alone does not prove any expectation. "
+        "All path token arrays contain strings only, including array indexes: index 0 is \"0\", "
+        "never the JSON number 0. This applies to both expected_path_tokens and output_path_tokens. "
+        "observations and outputs reference actual call_id and literal output_path_tokens into persisted tool "
         "output, never input examples or invented actual values. output_path_tokens is relative "
         "to the manifest entry's output value: do not prefix it with output or the call ID. "
         "For example an output {\"body\": {\"literal.key\": false}} is referenced by "

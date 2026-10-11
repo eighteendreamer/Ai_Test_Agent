@@ -163,11 +163,19 @@ class CaseReceiptCorrectionCheckpoint(PlanningModel):
     model_key: str = Field(min_length=1)
     model_parameters: dict[str, Any]
     runtime_parameters: dict[str, Any]
+    response_transport_protocol: Literal["case-receipt-stream-response-v1"] | None = None
     execution_model_calls: int = Field(ge=0)
     total_model_calls: int = Field(ge=1)
     max_iterations: int = Field(ge=1)
     request: CaseReceiptObject
     response: CaseReceiptObject | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_correction(self, handler):
+        data = handler(self)
+        if self.response_transport_protocol is None:
+            data.pop("response_transport_protocol", None)
+        return data
 
     @model_validator(mode="after")
     def validate_saved_boundary(self):
@@ -203,12 +211,14 @@ class AgentCaseExecutionCheckpoint(PlanningModel):
 
 class CaseToolEvidenceReference(PlanningModel):
     call_id: str = Field(min_length=1, max_length=256)
-    output_path_tokens: list[str] = Field(default_factory=list, max_length=32)
+    output_path_tokens: list[str] = Field(default_factory=list, max_length=32,
+        description='Literal string keys/indexes into persisted output. Array index 0 is "0", not a JSON number.')
 
 
 class CaseExecutionCheck(PlanningModel):
     name: str = Field(min_length=1, max_length=240)
-    expected_path_tokens: list[str] = Field(max_length=32)
+    expected_path_tokens: list[str] = Field(max_length=32,
+        description='Literal string keys/indexes into the fixed expected source. Array index 0 is "0", not a JSON number.')
     observations: list[CaseToolEvidenceReference] = Field(min_length=1, max_length=20,
         description="For any operator other than semantic, reference exactly one actual value. "
             "Semantic may reference multiple values. Do not add action-success evidence to a scalar comparison.")

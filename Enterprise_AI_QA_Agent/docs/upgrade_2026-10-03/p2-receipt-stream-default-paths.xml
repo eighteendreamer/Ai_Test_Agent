@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="113.565" timestamp="2026-10-11T23:37:37.379759+08:00" hostname="EIghteen"><testcase classname="tests.test_default_receipt_stream_live" name="test_default_correction_uses_frozen_stream_and_saved_response_once" time="109.118"><failure message="ValueError: 执行回执模型输出未完整结束: length">tests\test_default_receipt_stream_live.py:57: in test_default_correction_uses_frozen_stream_and_saved_response_once
+    outcome = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:272: in _finish
+    outcome = await assess(response)
+              ^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:242: in assess
+    receipt=self._assessment.parse_response(candidate,
+src\application\test_runs\agent_case_assessment.py:146: in parse_response
+    raise ValueError("执行回执模型输出未完整结束: " + ",".join(sorted(reasons - {""})))
+E   ValueError: 执行回执模型输出未完整结束: length</failure></testcase></testsuite></testsuites>

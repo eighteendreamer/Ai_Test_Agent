@@ -1,0 +1,599 @@
+{
+  "full_goal_complete": false,
+  "default_stream_correction_formally_passed": false,
+  "tests": {
+    "p2-receipt-stream-default-fixed.xml": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-default-paths.xml": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-default-verified.xml": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-default.xml": {
+      "tests": 1,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-expanded.xml": {
+      "tests": 163,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 5
+    },
+    "p2-receipt-stream-final.xml": {
+      "tests": 164,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 5
+    },
+    "p2-receipt-stream-initial.xml": {
+      "tests": 36,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 17
+    },
+    "p2-receipt-stream-process.xml": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-sdk-fixed.xml": {
+      "tests": 16,
+      "failures": 3,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-sdk-verified.xml": {
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-receipt-stream-sdk.xml": {
+      "tests": 16,
+      "failures": 15,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "three_plans_equal": true,
+  "prior_artifacts_unchanged": 351,
+  "protected_files_unchanged": true,
+  "configured_secret_present": false,
+  "controlled_process_recovery": {
+    "invoking": {
+      "boundary": "invoking",
+      "response_streaming": true,
+      "scope": "real owned API kill, natural lease expiry, production CLI, isolated stores, controlled HTTP",
+      "killed_api_pid": 7244,
+      "killed_api_exit_code": 1,
+      "original_lease_expires_at": "2026-10-11 15:41:42.934626+00:00",
+      "immediate_recovery": {
+        "recovered_count": 0
+      },
+      "expired_recovery": {
+        "recovered_count": 1
+      },
+      "original_resource_lease_expires_at": "2026-10-11 15:45:13.336000+00:00",
+      "resource_lease_seconds": 300,
+      "resource_cleanup_receipts": [
+        {
+          "task_id": "task_cleanup_8494b8abbd95435697a3ae222c132369",
+          "record": {
+            "run_id": "0441817e-0bca-5c8b-9f2b-e8db9f2136cd",
+            "turn_id": null,
+            "trace_id": "trace_b1767b57a3b74a0fb6df9abda45ec2e6",
+            "worker_id": "receipt-initial",
+            "attempt_id": "64125201-3b1a-4518-af77-83d545e3b8e7",
+            "project_id": "93e66495-8839-4714-abc9-c45c39c9d6c0",
+            "request_id": "req_1f70bb8fa9e447d7ad5824a33dca53a9",
+            "session_id": null,
+            "resource_id": "run-item:502ddc77-e7d9-5a13-a58e-22a201fd274b",
+            "run_item_id": "502ddc77-e7d9-5a13-a58e-22a201fd274b",
+            "allocation_id": null,
+            "fencing_token": 4,
+            "resource_type": "agent",
+            "external_resource_id": null
+          },
+          "status": "skipped",
+          "worker_id": "receipt-resource-cleanup",
+          "attempts": 1,
+          "error_type": null,
+          "updated_at": "2026-10-11 15:45:18.145997+00:00",
+          "completed_at": "2026-10-11 15:45:18.145997+00:00"
+        }
+      ],
+      "formal_status": "error",
+      "run_id": "0441817e-0bca-5c8b-9f2b-e8db9f2136cd",
+      "result_id": "f406f8f5-3ac3-403a-8496-16bbf1b8a1b9",
+      "correction": {
+        "phase": "invoking",
+        "call_id": "1d63488c-f78c-46d4-813f-0b1be52cffc2",
+        "request": {
+          "uri": "rustfs://qa-agent/case-receipts/93e66495-8839-4714-abc9-c45c39c9d6c0/0441817e-0bca-5c8b-9f2b-e8db9f2136cd/502ddc77-e7d9-5a13-a58e-22a201fd274b/64125201-3b1a-4518-af77-83d545e3b8e7/1d63488c-f78c-46d4-813f-0b1be52cffc2/5c616f566a1427fa5638045f18ad8f336b8ebfad23dee48614a95236338ebe3c-request.json",
+          "sha256": "5c616f566a1427fa5638045f18ad8f336b8ebfad23dee48614a95236338ebe3c",
+          "size_bytes": 50686
+        },
+        "protocol": "case-receipt-correction-v1",
+        "response": null,
+        "model_key": "controlled-cli",
+        "snapshot_id": "e0323eea-fa91-49ae-9b86-9ca64adfca77",
+        "max_iterations": 8,
+        "prompt_version": "case-execution-receipt-v6",
+        "model_parameters": {
+          "key": "controlled-cli",
+          "model_id": "controlled-cli",
+          "provider": "openai",
+          "auth_type": "api_key",
+          "transport": "openai_chat_completions",
+          "max_tokens": 4096,
+          "temperature": null,
+          "capabilities": {
+            "vision": true,
+            "json_mode": true,
+            "pdf_input": true,
+            "reasoning": true,
+            "streaming": true,
+            "file_input": true,
+            "text_input": true,
+            "multi_image": true,
+            "text_output": true,
+            "tool_calling": true,
+            "image_url_input": true,
+            "image_base64_input": true,
+            "parallel_tool_calls": true
+          },
+          "context_window": 128000,
+          "oauth_provider": null,
+          "api_base_url_hash": "41f5ea692659be8268c890a7a9249eb2237f7ad6c55916b7b1f40a70a32dde03",
+          "max_output_tokens": 4096,
+          "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        "total_model_calls": 5,
+        "runtime_parameters": {
+          "sdk_retry_policy": "explicit_transport_options",
+          "transport_options": {
+            "max_retries": 0,
+            "timeout_seconds": 60.0
+          },
+          "dependency_versions": {
+            "openai": "3.14.0"
+          },
+          "llm_request_timeout_seconds": 60.0,
+          "langchain_model_adapter_enabled": false
+        },
+        "execution_model_calls": 4,
+        "response_transport_protocol": "case-receipt-stream-response-v1"
+      },
+      "model_calls": [
+        {
+          "path": "/v1/chat/completions",
+          "phase": "planning",
+          "tool_message_count": 0
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "agent_operation",
+          "tool_message_count": 0
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "agent_operation",
+          "tool_message_count": 1
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "agent_operation",
+          "tool_message_count": 2
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "receipt",
+          "tool_message_count": 3
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "receipt_correction",
+          "tool_message_count": 0
+        }
+      ],
+      "business_effects": [
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "GET",
+          "/orders/actual-7b9cc56fdb7f42359e18dd3aa8a16449"
+        ],
+        [
+          "DELETE",
+          "/orders/actual-7b9cc56fdb7f42359e18dd3aa8a16449"
+        ]
+      ],
+      "terminal_replay_model_calls": 0,
+      "terminal_replay_business_effects": 0,
+      "remaining_business_records": 0,
+      "current_default_limit": 18,
+      "original_turn_limit": 8,
+      "current_correction_policy_disabled": true,
+      "current_model_configuration_changed": true
+    },
+    "response": {
+      "boundary": "response",
+      "response_streaming": true,
+      "scope": "real owned API kill, natural lease expiry, production CLI, isolated stores, controlled HTTP",
+      "killed_api_pid": 26564,
+      "killed_api_exit_code": 1,
+      "original_lease_expires_at": "2026-10-11 15:47:30.086414+00:00",
+      "immediate_recovery": {
+        "recovered_count": 0
+      },
+      "expired_recovery": {
+        "recovered_count": 1
+      },
+      "original_resource_lease_expires_at": "2026-10-11 15:51:00.770000+00:00",
+      "resource_lease_seconds": 300,
+      "resource_cleanup_receipts": [
+        {
+          "task_id": "task_cleanup_7d3a96ec015549b69f68cd62bc138101",
+          "record": {
+            "run_id": "df2d4d11-5f91-5d01-b4b9-772d95ccace4",
+            "turn_id": null,
+            "trace_id": "trace_548be822685c41e286feae5a74451c4b",
+            "worker_id": "receipt-initial",
+            "attempt_id": "d5a3cdbf-f7a9-4bb5-a637-8bdab0077832",
+            "project_id": "aa9cbbd4-8721-41cb-b520-ec69790b898b",
+            "request_id": "req_fa9b401c54e24b5ca24137e85867d045",
+            "session_id": null,
+            "resource_id": "run-item:3bb321e3-2e0c-5cbb-bd23-e57df995175e",
+            "run_item_id": "3bb321e3-2e0c-5cbb-bd23-e57df995175e",
+            "allocation_id": null,
+            "fencing_token": 4,
+            "resource_type": "agent",
+            "external_resource_id": null
+          },
+          "status": "skipped",
+          "worker_id": "receipt-resource-cleanup",
+          "attempts": 1,
+          "error_type": null,
+          "updated_at": "2026-10-11 15:51:02.914235+00:00",
+          "completed_at": "2026-10-11 15:51:02.914235+00:00"
+        }
+      ],
+      "formal_status": "passed",
+      "run_id": "df2d4d11-5f91-5d01-b4b9-772d95ccace4",
+      "result_id": "d59a7cf4-d87c-493d-8eca-cf268feb7d78",
+      "correction": {
+        "phase": "response",
+        "call_id": "c271fce9-b009-4bf5-b4da-fb77d282929f",
+        "request": {
+          "uri": "rustfs://qa-agent/case-receipts/aa9cbbd4-8721-41cb-b520-ec69790b898b/df2d4d11-5f91-5d01-b4b9-772d95ccace4/3bb321e3-2e0c-5cbb-bd23-e57df995175e/d5a3cdbf-f7a9-4bb5-a637-8bdab0077832/c271fce9-b009-4bf5-b4da-fb77d282929f/6c3dae42ba1e8e99535d7d7d6d231102f40b99e87447adb553963316f11ea1ca-request.json",
+          "sha256": "6c3dae42ba1e8e99535d7d7d6d231102f40b99e87447adb553963316f11ea1ca",
+          "size_bytes": 50690
+        },
+        "protocol": "case-receipt-correction-v1",
+        "response": {
+          "uri": "rustfs://qa-agent/case-receipts/aa9cbbd4-8721-41cb-b520-ec69790b898b/df2d4d11-5f91-5d01-b4b9-772d95ccace4/3bb321e3-2e0c-5cbb-bd23-e57df995175e/d5a3cdbf-f7a9-4bb5-a637-8bdab0077832/c271fce9-b009-4bf5-b4da-fb77d282929f/22cdecc756fb61d737462f2e20b53642e269f0f32ee39bcd2bffc6c1425b5668-response.json",
+          "sha256": "22cdecc756fb61d737462f2e20b53642e269f0f32ee39bcd2bffc6c1425b5668",
+          "size_bytes": 2825
+        },
+        "model_key": "controlled-cli",
+        "snapshot_id": "ed03411b-c897-48a8-a465-0ef6ceead5e1",
+        "max_iterations": 8,
+        "prompt_version": "case-execution-receipt-v6",
+        "model_parameters": {
+          "key": "controlled-cli",
+          "model_id": "controlled-cli",
+          "provider": "openai",
+          "auth_type": "api_key",
+          "transport": "openai_chat_completions",
+          "max_tokens": 4096,
+          "temperature": null,
+          "capabilities": {
+            "vision": true,
+            "json_mode": true,
+            "pdf_input": true,
+            "reasoning": true,
+            "streaming": true,
+            "file_input": true,
+            "text_input": true,
+            "multi_image": true,
+            "text_output": true,
+            "tool_calling": true,
+            "image_url_input": true,
+            "image_base64_input": true,
+            "parallel_tool_calls": true
+          },
+          "context_window": 128000,
+          "oauth_provider": null,
+          "api_base_url_hash": "b80f27b9daa8cbd2530686b7f83eb51dcadaf26b12aeab73078b2358567aab42",
+          "max_output_tokens": 4096,
+          "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+        },
+        "total_model_calls": 5,
+        "runtime_parameters": {
+          "sdk_retry_policy": "explicit_transport_options",
+          "transport_options": {
+            "max_retries": 0,
+            "timeout_seconds": 60.0
+          },
+          "dependency_versions": {
+            "openai": "3.14.0"
+          },
+          "llm_request_timeout_seconds": 60.0,
+          "langchain_model_adapter_enabled": false
+        },
+        "execution_model_calls": 4,
+        "response_transport_protocol": "case-receipt-stream-response-v1"
+      },
+      "model_calls": [
+        {
+          "path": "/v1/chat/completions",
+          "phase": "planning",
+          "tool_message_count": 0
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "agent_operation",
+          "tool_message_count": 0
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "agent_operation",
+          "tool_message_count": 1
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "agent_operation",
+          "tool_message_count": 2
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "receipt",
+          "tool_message_count": 3
+        },
+        {
+          "path": "/v1/chat/completions",
+          "phase": "receipt_correction",
+          "tool_message_count": 0
+        }
+      ],
+      "business_effects": [
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "GET",
+          "/orders/actual-6e6483d44b0f402196753f74e6108268"
+        ],
+        [
+          "DELETE",
+          "/orders/actual-6e6483d44b0f402196753f74e6108268"
+        ]
+      ],
+      "terminal_replay_model_calls": 0,
+      "terminal_replay_business_effects": 0,
+      "remaining_business_records": 0,
+      "current_default_limit": 18,
+      "original_turn_limit": 8,
+      "current_correction_policy_disabled": true,
+      "current_model_configuration_changed": true
+    }
+  },
+  "artifact_hashes": {
+    "docs/upgrade_2026-10-03/p2-receipt-stream-compile.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/checkpoint.json": "61bf74cd64934f8356b22677787355ec07f4ade9eb1316fda959a214c0b4693d",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/correction-request.json": "2db03727ce1d6dc697ef942a8c9a9653a075876bcab7d253cf3ca6789ab0bba0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/correction-response.json": "6f58f99361cb2152ebdb1cd4d7e5bdf1c090e45e098703e519ab31abdcc3fa12",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/downloads.json": "8febf13c8d3ed493e9a773d1eddf84696e3cfd7333d9165e805f0f6dd062954f",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/model-parameters.json": "1d7f9ed69c78c2a85dbbbe3f2b6df7e0391132faff88fbb46c35e858603a8164",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/physical/081115568c934226b2b713ea75fb39ae.attempt.json": "0b2521ede02504a1e491dbb5693e1bb3c2adcea886f79cb4d61cbc457a4688fd",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/physical/081115568c934226b2b713ea75fb39ae.request.json": "b7d0dbfcf70a90e56635e1ccb35ecb02d70d2d1ef56e8e6404f73a9069e95e02",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/physical/081115568c934226b2b713ea75fb39ae.response.json": "1c8a906226b16ab027a111950178c4b21ad546542c5379efb4d54f581fb35afa",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/physical/081115568c934226b2b713ea75fb39ae.sdk-stream.json": "45ea494ebfecd90cfc921a072bea8710c28325ca38e207f752bfb317c2139c78",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/physical/081115568c934226b2b713ea75fb39ae.send.json": "f556230162e64aef87efba74a39bbbe6bb96ccf6064e0afef5440ae00e0a705e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed/physical/093f874e98a041c3a9621e1a0ba63eb7.sdk-create.json": "3a48435bd83b2a7ca7e16ed90988896bab49d081841fe7d94bbe26669f2db76c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed.log": "90d46d57826bdfe880390d648e0b4704c43d29bd979f4bf53758bbb9bd79f2af",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-fixed.xml": "5bf157fd98496d662db055b73e7551c3552d7a16df97b1d323f1a2a934463f2c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/checkpoint.json": "192a8fe4cf5d796618d1d0a13f86072a94d51b4a16cfe60cb43e5a83b2983dc8",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/correction-request.json": "d1284b0d483779dc5040272c9c0642c8615c5a3d1b6eff7a7c14b1b051ba5efb",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/correction-response.json": "e885e0559cfbfceadbf9bb51c03807b25601cd2bdd38bc6d5e4bdb00385b3dfa",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/downloads.json": "89249c01a58b738dfe989cbf0062aa1a4c1e9a4cc3fbe3ce0625232cf2f3e10e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/model-parameters.json": "1d7f9ed69c78c2a85dbbbe3f2b6df7e0391132faff88fbb46c35e858603a8164",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/physical/3a8b5c12b430423bbcd314237f176cb3.attempt.json": "f1152ca63408719a8751ed286ba1a8e1f3215101d4027b3164f823f10bd9ef15",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/physical/3a8b5c12b430423bbcd314237f176cb3.request.json": "41c617fb7454892a7220b56a49f0769e0ca92b7f8b5f6fc1c54d5efca1b85071",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/physical/3a8b5c12b430423bbcd314237f176cb3.response.json": "99a7a74e9bb6cfc4b490c7f368289c94d88989dd43562e905fb208de9abbd53b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/physical/3a8b5c12b430423bbcd314237f176cb3.sdk-stream.json": "c446d7afbb44e3c3eaacbe893685d3e8f1dbedf311907eb663d7f8973f270a2b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/physical/3a8b5c12b430423bbcd314237f176cb3.send.json": "37922f27d096de6bc27ca92610abdf3805a732c724ce5ca01a1150b1335caca6",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths/physical/5d1ab7e517824453bf180bd5238975cc.sdk-create.json": "34199029cefd85734893af6c8962f0daa42b7db0bcbe4256a484d0fca7cfda73",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths.log": "e9c305d969036a3f6b78bf0a291b183b98a282027db8a02aa46e9df5d81d380f",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-paths.xml": "e81738895243d3d8e2571c194b37f340722dd7c624a6709ee051b21902ec4a61",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-verified/checkpoint.json": "7d7f53efc008fab45d85ff4eaad74b3d9c90f43467a7c0a8c1b5ba150c210ff2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-verified/downloads.json": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-verified/model-parameters.json": "1d7f9ed69c78c2a85dbbbe3f2b6df7e0391132faff88fbb46c35e858603a8164",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-verified.log": "b05e05b4fdb48fae1ff56bc8410fe9f7c4339efb4d8cb1b6b1a6c08bdf1e14c8",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default-verified.xml": "8a19551c17e9f78d50ae6e7597eae71d20226c2071773cb0c8c6899fb75c03e0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default.log": "6c25b20211c2f53b91945f048430337b40d9135f20bdb42bf84d559dee638fe5",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-default.xml": "73ef5e08bd664118347487169ded19530e9f7a9cd06f0d5708ad0b7b2324fdd6",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-expanded.log": "a9d60c2675e6f9da927fe743ce745fb93c235377e6ce445450317a9a137e75cc",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-expanded.xml": "edc60ce039b5c77fbb5adbb0b518000fd66c6545e60867eedfc31f2a969549d5",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-final.log": "1d15c487b4e0dbb3a0d57601dee418610bb4ac478ff850ab1b08a51f64217f68",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-final.xml": "67f815ab506d939c1d3990ec65780f10d8ddd42b610bfe80825dd00b577768ed",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-initial.log": "5d95188098d87eb432a0681158dae1fca17e07fd92803a05922b79856d463693",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-initial.xml": "ccc04b67385ce88758d5314b729d9eeb415509950c960a5d7f1868444b515f78",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/after-recovery.json": "1ccd2a31f85e1d36fa034c52208044b2d04086729381df897971167706e0953a",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/api-after-kill-tree.json": "c5e7025d197b9900609c1e90daaa0557ccd8be4eea768cc8bbcbdb181ae1b74b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/api-after-kill.stderr": "6d12bbf30629795b12cb52ddbd9e77ce1a0485993c504d58e550de27d92508cd",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/api-after-kill.stdout": "ceb923bb30ba18f0b2f5ae8cd4b03d361379f0886784f4948c61a509e4e94298",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/api-before-kill.stderr": "ce167f2ebe00a29e63ce850b22852be26779bd9f32bdc03020c39b1663ef0b2d",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/api-before-kill.stdout": "ad56cbf28daedf846e400294f942dc12e3087b7284b76291b2c8ec614d3fe40e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/api-kill-tree.json": "64d79eb25a8c56299d916e16fa276f2348dee9451f3a114bc7933896569282e0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/before-kill.json": "90c241b8c5d0f86df26a83259b9f7954bef2219c4fc440071e83a47bc9b334e1",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/completed.json": "f69bac794aef021bc429eb8c841e8a489509e1b170c2e11c9d24d5767008617f",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/docker.json": "a49c612e32ad0013e363f094228b3003ae9678de8172af9d2544b08cded4321d",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/expired-item.json": "76f9a164df4e543651815da9c5374dc740006f6547517980d8f6d748698e099a",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/http.json": "e8a5613e9eebc985effa2334d8ca72b5225f4c399dc423886f88f825760d85d8",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/lost-approval-transport.json": "3f69e1f83327dfa232704e9c1e27c8ffb42ee8a50e6cf59b977a78edadeb2396",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/model-001-request.json": "ab4a641f06dcfefa793e346d70932a3673c0e455f808531735b43b6e5fdebc11",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/model-002-request.json": "8568c1b8f4413ea3b9d7c38ee411c1e599788d28d761d6cada1fc04088360d73",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/model-003-request.json": "000108e76b7b22923065796457478f7a20a96995dc2cb9c7dedea3843a6dec87",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/model-004-request.json": "fe75ab76623b2d661313b5132df41d91bf5a0444707610c51fd5b140871f1c8e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/model-005-request.json": "21a4476c7343aa94faccbbe31dd1ad9712863cfe911ad7920eeabc3eb055ff5c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/model-006-request.json": "0cba5836ef908caf76418c22f1ccdfcb477e4e38170fc22b25a12c597fa670e2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/postgres-finally.json": "11983513efb9b464312f00ee2347ff9afe99a671bef3a8c5820d6d1a67f950d2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/receipt-request.json": "5c616f566a1427fa5638045f18ad8f336b8ebfad23dee48614a95236338ebe3c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/requirements.md": "7f1067e133ea50f3fcdf2258c3efc36eccf8ab808068c0c36b6d2a3d27602cad",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/resource-cleanup-receipts.json": "4f3b574437fc9f871db85ce320c0b7dd305e0dc7e0e5df17514e62718e759edb",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/resource-cleanup.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/resource-cleanup.stdout": "039ae3239cd0331ab2713c0b9f121df26cb81448bed1479ece5d12f3d8652ef0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/resources-after-cleanup.json": "4440f5d98385782904327956ef8731d184b3fe28c1dddd9e14acfddd6fbc8184",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/resources-before-kill.json": "ecdb4fa3010c2ccbf467ecd463119eb2b1f167bfbf355911f0471cfb0c47eecf",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/summary.json": "a395cc1968adbf6a5528e9535280e67d067cef043cca6436018ad0db38ece304",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/worker-before-kill.stderr": "6cc20718fdbb028a38b2591fd61910a47a825cb50df5e4b6e19a3f14a99e214c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/worker-before-kill.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/worker-recovery.stderr": "45b0ac84cbeb2082ec3132f3c086a990d1657219cbe9d5861807447e0c40ec5c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/worker-recovery.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/worker-terminal-replay.stderr": "fb69dfa7b82da19c7f0fe5ea43f0cc971a5fd7182d4d75cc2d1da527aa34e43b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/invoking/worker-terminal-replay.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/after-recovery.json": "c6c4945bf18d5677b929ab6b96311611d8aa28b2a09377790f436332c15cb97f",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/api-after-kill-tree.json": "14d1a96bd62bd4fe42df544a29ee078934e1f317eb558f86bfec0863add6ea5c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/api-after-kill.stderr": "c689eb2c580411046520ec72c5872c4f92aed9cfd84dd42d01cdc0720fea5bfc",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/api-after-kill.stdout": "9b992e642a23770603498185574beac4cfc949032421bbf392a12bb09996da72",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/api-before-kill.stderr": "45af0560e40d43cbfc694cf62c5b70e2cf7ec7b02f9b9bcef6b1c81156469574",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/api-before-kill.stdout": "a02c9aafebb5752c0cded9099daabf75c57e3057549799c7753f2dc4c95c7a9a",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/api-kill-tree.json": "84eb0f3c8c2b48ec87553bb7bdee95bab1513e7557a6fffda70dc82bb424a0c6",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/before-kill.json": "ac1c6b45b59855a7a41a16a85d0a712720a77309a26043737aceb6043b4a5a55",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/blocked-insert.json": "3a38c2c675e48293a925163eb4c123a3b8428e03f1bd94b18f429aa7f0687094",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/completed.json": "c49cd5f1ca624677bfd4ba7991388df53e5e66841f97ad6b6f9cfde6df2c9965",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/docker.json": "f24ed51b27d1d5ee4585b32052aca36033205bad4f200a9eaec5acae7ada2ec7",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/expired-item.json": "73771a712b356450d25cf67cb8e2546bc9dbca4d6ffe18109610854d15cbdf76",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/http.json": "3248de41d1f365d91382ef7df2e739cca50f00274a5ae5caa66fae8792c484d7",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/lost-approval-transport.json": "3f69e1f83327dfa232704e9c1e27c8ffb42ee8a50e6cf59b977a78edadeb2396",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/model-001-request.json": "62587c9577e3a4b6cb7e3118e532d5327163dabb6fa0f2b7a2163ef5c83b467e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/model-002-request.json": "9b848eda61393b7c1de4d76c9ebd2d5779fed4d5ad78723f8f7ac6184bfa82dd",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/model-003-request.json": "406b0eae1c7832e30e79273e6ded2fe746339cc9fb3d72d5d193b8602e350fae",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/model-004-request.json": "b676ddb31c5ce17b65da236dd454f9a6a03cd7ed0e38b05e18220f32b58b3c11",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/model-005-request.json": "765be72004aaf1774c256e4b55835cc03a0d5127cacd9b7d447294e12eaa0c7a",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/model-006-request.json": "67f4210676c2b8aff08fadd5b323431d8004ac6ca12379975db43aca8f541f77",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/postgres-finally.json": "372b7c3ff6e5d36e7aa8941a63ebc4f0fa77f23c6cc40ab8e0976f746f011d88",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/receipt-request.json": "6c3dae42ba1e8e99535d7d7d6d231102f40b99e87447adb553963316f11ea1ca",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/receipt-response.json": "22cdecc756fb61d737462f2e20b53642e269f0f32ee39bcd2bffc6c1425b5668",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/requirements.md": "9356a5609d0e74073f0215970474e33d664a7a06c08f88880766ebc39f98c17d",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/resource-cleanup-receipts.json": "977dcdb0607347356b130811a2719f5c75445354dc1cce5ccd00df55e3e1a7ad",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/resource-cleanup.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/resource-cleanup.stdout": "039ae3239cd0331ab2713c0b9f121df26cb81448bed1479ece5d12f3d8652ef0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/resources-after-cleanup.json": "4440f5d98385782904327956ef8731d184b3fe28c1dddd9e14acfddd6fbc8184",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/resources-before-kill.json": "0271f266120ec943eb549a6b429f91e67070ae1ee7652c22d6e6d31104b742a3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/summary.json": "9c354bedeadec6be604e3c4204a04c488fd923f650ee27c8c22d4f214631ee94",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/worker-before-kill.stderr": "70aeafc6dfb87450aa4bd3abeeeaf0ac1b0b28138cddfabbec0910522c3377b1",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/worker-before-kill.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/worker-recovery.stderr": "47adee76050e647f2162063cbb38135ff8ee4288fa909cd4c137c74f3bdb2d67",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/worker-recovery.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/worker-terminal-replay.stderr": "2a0a7c9464b00b816aac825f240cdea0e678e481a88310d7581a57e03f11b03e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process/response/worker-terminal-replay.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process.log": "42c8858462376905f01629e8ed8771fc706188eabf452535ff67cdcced4d74d9",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-process.xml": "836aaf5d48529402bf98e483e231e835ab92dcfcac7b5e0950fcbefefe928f2e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-budget-limited/checkpoint.json": "bfc70a5e1bbf10b4355395e9a19db3470196fc8c9bf82d8c699939615c13b731",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-budget-limited/physical-request.json": "4c56601f125c0545a81296709c6cebd2587e3cf144caffe6d104322268d970c7",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-budget-limited/physical-response.bin": "342168e5934a060ad9c33f88fce1175cc4852976af67c80833a0d636c39fe07f",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-complete/checkpoint.json": "755aacffd0d6c7384e227ae2f18794c26244a78869d5e63cb4e860a7517121c2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-complete/physical-request.json": "bba43e39fd4c8ace5cc7ba43903f50935cd45e669a3ec93d0994d75aa4638037",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-complete/physical-response.bin": "ab40bbd0bb9236a412ed257d28e0112e0ff73e98e5afe038b652bf99a40695d3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-missing-terminal/checkpoint.json": "16d4a655c9d40b7c7702484aeecd6f3d72797968ed6e0f386b3c59dc1412b049",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-missing-terminal/physical-request.json": "895e59c30a80d8b41fdbad3ab9c4db1b4697850ad93c9e5a915bba394210409e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/anthropic_messages-missing-terminal/physical-response.bin": "9ba88d5deb2a5667738df322cac3b8a257b61107ba06291a3a64e542cc630043",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-budget-limited/checkpoint.json": "9e49eb9b3a9b00633a078fd50ae58c84241da6bc08c939412b5f9b169fc75830",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-budget-limited/physical-request.json": "1a5f3bd37b5f0a3107f2b91213d8bb71b0ed594f4c51ceba73b5f54a5ce86273",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-budget-limited/physical-response.bin": "15808e19f8e985b1cc4b5842cc8bbf156fa545af4e196c9dad1c13da97fc6b12",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-complete/checkpoint.json": "9f14c6acdd4e08b4a39227ccd25e17e57cdf1b8504b8b1bab6e09a475fc4d51b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-complete/physical-request.json": "70f5a35812f1902ce49b7d3e135b6978cce738d330a3ec2ea0f27cea3a2f2cd3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-complete/physical-response.bin": "09cfb5e6bc90aaa55481afca98583c3f6d9a1322ac60e813e09c35dc13a77d01",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-missing-terminal/checkpoint.json": "7a098ba8d5bf9e9698fc6917bc486490162cead629276ea8440a564b380383b0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-missing-terminal/physical-request.json": "3abcb4615c1e2614f403759c0a2d31396d478b4b981a6020b0ad0f0473d8bccf",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/langchain_chat-missing-terminal/physical-response.bin": "f71a126b60b041ec16169ecccffd8821c96033b1d0a7a08c41ae7e749db13c21",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-budget-limited/checkpoint.json": "6df4d1dc0328e7a030b846fc1a24c9c647d307f79c2606cf7f5d70a2cc65ad30",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-budget-limited/physical-request.json": "3965d36615c525d226ddacad5f6f17f13b00e8320253df32f13d0edb277626c0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-budget-limited/physical-response.bin": "15808e19f8e985b1cc4b5842cc8bbf156fa545af4e196c9dad1c13da97fc6b12",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-complete/checkpoint.json": "b3d5ed512359a96a208baecdff6fac554a2eebb695610df290d8bbdab3e45754",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-complete/physical-request.json": "207ed9750eaf61123e89432afb05bbc34560821ae6679c3bacb05847e043b614",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-complete/physical-response.bin": "09cfb5e6bc90aaa55481afca98583c3f6d9a1322ac60e813e09c35dc13a77d01",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-missing-terminal/checkpoint.json": "7c916698af6007ddee3bc6be4e58316bd2c9c504d138437f846d25d5f3b0eb12",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-missing-terminal/physical-request.json": "17f3e21de664b688cb9c9689881e98c8d30245b06cea21831ba4cd527831ab1c",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_chat_completions-missing-terminal/physical-response.bin": "f71a126b60b041ec16169ecccffd8821c96033b1d0a7a08c41ae7e749db13c21",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-budget-limited/checkpoint.json": "e3d249f9f46b380360810c6347ef59d60b9c9da1de2e36fa84cab796bab1f24e",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-budget-limited/physical-request.json": "8d22c4c6609a1afed68bf14058ee1d970f5ac94f6c2d9a930bf2cd31b902d6c3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-budget-limited/physical-response.bin": "b2692a21dfaa802decad918a16a8b06d4cdfee03099ecf0a335c9c334eb8f9b1",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-complete/checkpoint.json": "c1dd1b492ecca931e85727d5ab04c35b583281ee6fa296a8751de47044daf1c3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-complete/physical-request.json": "d35b922db125e762b9a4445d139ce735334c72e7abba3e530be02495d99f19e1",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-complete/physical-response.bin": "76512cbd86c9283ade1d5d77d83adf7587bc939f93567068ee0cfb97b6f9066b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-missing-terminal/checkpoint.json": "073cc0b7056694534c6be973cab3a247758ff8db17fbaa42d5530afdf3a88ab0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-missing-terminal/physical-request.json": "0cf0cf6aa016abb211aaa63bde91ac8be518c77bbae3bc190bb16349f9303701",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed/openai_responses-missing-terminal/physical-response.bin": "dde8f0e81c2f8277adddd26f1f470bb029b6c7b8a42c0982f4baec679a691235",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed.log": "ec2c78ee0c1aab5e939c772585aa67356f468252840f3a3f565678fc265d9621",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-fixed.xml": "c26f9911c8d4bfcd72ee92a07bdf6fd802fd8a136987e0289d59bd105fda9876",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-budget-limited/checkpoint.json": "10ffbd2be2168d4199e20e662df43990236facecb50eecfed2c73b8761bb5520",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-budget-limited/physical-request.json": "ea2c1a576069e6fb7c6a4cc45edef85619080897fc1b7823f5e2d91186430204",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-budget-limited/physical-response.bin": "342168e5934a060ad9c33f88fce1175cc4852976af67c80833a0d636c39fe07f",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-complete/checkpoint.json": "37434b6695629cf34a20b1d9e5ee3312eaf03abc986616f90ccf200349a882d8",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-complete/physical-request.json": "34e1424abe33aac01e8a7cc20b8002febb5b77ec176b5a4e4013eef7a659e1f1",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-complete/physical-response.bin": "ab40bbd0bb9236a412ed257d28e0112e0ff73e98e5afe038b652bf99a40695d3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-missing-terminal/checkpoint.json": "77c70d5a3df02bf1deb1f4d36265583bb0f79407141883880ccc9dae59f5a6f2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-missing-terminal/physical-request.json": "2edf6b7a7ad64c677c5ea3d850d85efb73f13cbc313a6b220840914a55988b51",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/anthropic_messages-missing-terminal/physical-response.bin": "9ba88d5deb2a5667738df322cac3b8a257b61107ba06291a3a64e542cc630043",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-budget-limited/checkpoint.json": "7c57748474359ba109616874d432fe37166ea81c5405af667d666f317a5375f3",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-budget-limited/physical-request.json": "13cbbfab1e46c87b64fe30a6f9827be335647ea03c93bb9383c5a510897c377b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-budget-limited/physical-response.bin": "0e7c0bda4d497b65a3f5dfea82b177b3a48cb379902cfd5cec2e5b39d4e02caf",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-complete/checkpoint.json": "a05677f732f0ba1cb56e2963196d50694ad2966ae88e35944c2feaadf16e9f32",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-complete/physical-request.json": "b7a2a37598e2aa61d71f0ca96cdbf5e2aef75de37626d63f081a828eda8ae382",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-complete/physical-response.bin": "fea00b245ab96c85e5657d1542c986d94dad3814fe4489abd99fa9c1bc1fc7b0",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-missing-terminal/checkpoint.json": "b3ed4d6ada19acd7b1190536afe18c7fa70d91f6c1eefa200ce5351825ed7a22",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-missing-terminal/physical-request.json": "1fc564b585425e2d4e6b603f9a986b6ab6dfeab9baf3466ddbe02d1dae0d57eb",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/google_gemini_generate_content-missing-terminal/physical-response.bin": "5b71638f0b5394a902dd0b1ce19506e883fb72d9364c744011b313b2c037ff91",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-budget-limited/checkpoint.json": "f7ae71c1d7cb937d4c1f79a43377604b95daab073b6454f4e34992c576b76fb8",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-budget-limited/physical-request.json": "bab8b4257897a2c2d7e9e3a1205bd6898237f6868710b5db81d75e10d39dd659",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-budget-limited/physical-response.bin": "15808e19f8e985b1cc4b5842cc8bbf156fa545af4e196c9dad1c13da97fc6b12",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-complete/checkpoint.json": "28c89d79d200fd713be9a0b798e7e39259ddd205de79e5b41805f57219340f43",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-complete/physical-request.json": "82520a1f294a879751fbc02571c02c2b92af787154bac6a1cbec077c74f4b5aa",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-complete/physical-response.bin": "09cfb5e6bc90aaa55481afca98583c3f6d9a1322ac60e813e09c35dc13a77d01",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-missing-terminal/checkpoint.json": "e29de12b5812391ad60292a4ee23f06737501eb343032e1feed2655e939ec9e4",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-missing-terminal/physical-request.json": "653e91615d81ba9c0ec492c3ea81cd8ffe013c156f3be572f78f0f2ff79cf00a",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/langchain_chat-missing-terminal/physical-response.bin": "f71a126b60b041ec16169ecccffd8821c96033b1d0a7a08c41ae7e749db13c21",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-budget-limited/checkpoint.json": "3a99a43467982964719490b308a0ef089237beb2bf637fd6992706f322beca79",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-budget-limited/physical-request.json": "0ad9853e7b87a0e227cc361090c1398899600f66f6940b16becd5dcce70b7cce",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-budget-limited/physical-response.bin": "15808e19f8e985b1cc4b5842cc8bbf156fa545af4e196c9dad1c13da97fc6b12",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-complete/checkpoint.json": "f0973cd83e79b09c1bcb3c4bc92e90e421a098686c47c5855b0f95a3dd5bd160",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-complete/physical-request.json": "b682179e5e2d31b14067bd487fde174579d729317219ad31157b5b3cf266b8b2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-complete/physical-response.bin": "09cfb5e6bc90aaa55481afca98583c3f6d9a1322ac60e813e09c35dc13a77d01",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-missing-terminal/checkpoint.json": "0a7ba202d2203671b36ee961448cf1ab0958c866eb353f0cdea7bee572e23d42",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-missing-terminal/physical-request.json": "df27e0592471ee20d0b5fac2b9aa390d3e67cf721adee03ce89b730057ad3f14",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_chat_completions-missing-terminal/physical-response.bin": "f71a126b60b041ec16169ecccffd8821c96033b1d0a7a08c41ae7e749db13c21",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-budget-limited/checkpoint.json": "0c1fb73ed8bb6daa9c6a9d3bd6c6c31b04d1109caf731bfc3bed0a60b7544890",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-budget-limited/physical-request.json": "257a08aa8d6b002032435f1a532c8ffe1a8431b75c65fd5aea20b20ee18b056b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-budget-limited/physical-response.bin": "b2692a21dfaa802decad918a16a8b06d4cdfee03099ecf0a335c9c334eb8f9b1",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-complete/checkpoint.json": "715fcbf2ec63369078ac85f1bb5201cc89a25c3bb95c23e670de0195bfd32139",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-complete/physical-request.json": "98ee1e022d08f1aa02ad5d87bab5512b1604ab40ca6dfae2ebaa71e854faca97",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-complete/physical-response.bin": "76512cbd86c9283ade1d5d77d83adf7587bc939f93567068ee0cfb97b6f9066b",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-missing-terminal/checkpoint.json": "94b67a18c0c02f0aa5c94cc2c32981dc75182eb72f87b538ce5524400405133d",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-missing-terminal/physical-request.json": "689308cfc5fae333968f3e01654a205fd50e18cae63a6f956e85be33f29256a4",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified/openai_responses-missing-terminal/physical-response.bin": "dde8f0e81c2f8277adddd26f1f470bb029b6c7b8a42c0982f4baec679a691235",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified.log": "90d1caafbc49d8c5ae22787d4a2570741b981eaaffba027e6d3067df89bb774d",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk-verified.xml": "397956e82cda4be6baec29e2afda2fda9e7ca85626847cbbef6808e2ab06c5a2",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk.log": "3be2e6e41e4319cc1c46e26d4c917115a426caab46fddb4005e17b72cfc92aad",
+    "docs/upgrade_2026-10-03/p2-receipt-stream-sdk.xml": "c76c1044db4d26ef4aeb18e1f626004b2f7a267ab60cf3b78fa43bca35ad0a72"
+  }
+}

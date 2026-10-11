@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from contextlib import ExitStack
+from contextlib import AsyncExitStack, ExitStack
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -90,9 +90,22 @@ async def resource_state(settings, project_id):
 @pytest.mark.parametrize("boundary", ["invoking", "response"])
 async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business(tmp_path, boundary):
     arrived, release = Event(), Event()
+    response_streaming = os.getenv("QA_RECEIPT_PROCESS_STREAMING") == "1"
+
+    async def stop_owned_api(processes, process, name):
+        if process.poll() is not None: return
+        if os.name == "nt":
+            from test_default_receipt_process_recovery_live import _kill_owned_process_tree
+            stopped = await asyncio.to_thread(_kill_owned_process_tree, process.pid)
+            write(tmp_path, name + ".json", stopped)
+            assert stopped["exit_code"] == 0, stopped
+            await processes.wait(process, timeout=15)
+        else:
+            await processes.stop(process)
 
     def gate(request):
         assert not request.get("tools"), "read-only correction must expose no tools"
+        assert bool(request.get("stream")) == response_streaming
         arrived.set()
         if boundary == "invoking":
             assert release.wait(55), "test did not release its owned HTTP connection"
@@ -106,18 +119,19 @@ async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_bu
         async with controlled_http(tmp_path, mixed_report=True, correction_gate=gate) as (
             business, calls, effects, orders, actual_id, errors,
         ):
-            async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+            async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned), AsyncExitStack() as api_cleanup:
                 settings.orchestration.runtime_max_iterations = 8
                 models = MySQLModelConfigStore(settings)
                 models.initialize()
                 model = models.upsert(ModelConfigUpdateRequest(model_name="controlled-cli", provider="openai",
                     transport="openai_chat_completions", base_url=business + "/v1", api_key=uuid4().hex,
                     is_active=True, use_provider_defaults=False,
-                    capability_overrides=ModelCapabilitiesOverride(streaming=False), max_output_tokens=4096))
+                    capability_overrides=ModelCapabilitiesOverride(streaming=response_streaming), max_output_tokens=4096))
                 processes.env = child_environment(settings)
                 port = free_port()
                 args = ("-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
                 api = processes.start("api-before-kill", *args)
+                api_cleanup.push_async_callback(stop_owned_api, processes, api, "api-before-kill-tree")
                 async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=55) as client:
                     await wait_api(client, api)
 
@@ -211,7 +225,7 @@ async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_bu
                         resource_expiry = datetime.fromtimestamp(
                             resources_before["active"][0]["lease_expire_at_ms"] / 1000, timezone.utc)
                         killed_pid = api.pid
-                        api.kill()
+                        await stop_owned_api(processes, api, "api-kill-tree")
                         killed_exit = await processes.wait(api, timeout=10)
                         assert killed_exit != 0
                         release.set()
@@ -230,6 +244,8 @@ async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_bu
                             await asyncio.gather(approval_task, return_exceptions=True)
 
                     correction = state["attempts"][-1]["checkpoint_payload"]["receipt_correction"]
+                    assert correction.get("response_transport_protocol") == (
+                        "case-receipt-stream-response-v1" if response_streaming else None)
                     for kind in ("request", "response"):
                         ref = correction.get(kind)
                         if ref:
@@ -246,6 +262,7 @@ async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_bu
                     assert updated_model.key == model.key and updated_model.max_output_tokens == 128
                     processes.env = child_environment(settings)
                     api = processes.start("api-after-kill", *args)
+                    api_cleanup.push_async_callback(stop_owned_api, processes, api, "api-after-kill-tree")
                     await wait_api(client, api)
                     assert (await client.put(policy_path, json=CasePlanningPolicy().model_dump(mode="json"))).status_code == 200
                     immediate = await post(f"/runs/{run_id}/recover-expired")
@@ -313,7 +330,8 @@ async def test_owned_api_kill_recovers_receipt_without_resending_or_repeating_bu
                     assert await processes.wait(terminal) == 0 and not await queue.pending()
                     assert (await client.get(f"/runs/{run_id}")).json() == completed
                     assert len(calls) == 6 and len(effects) == 3
-                    write(tmp_path, "summary.json", {"boundary": boundary, "scope": "real owned API kill, natural lease expiry, production CLI, isolated stores, controlled HTTP",
+                    write(tmp_path, "summary.json", {"boundary": boundary, "response_streaming": response_streaming,
+                        "scope": "real owned API kill, natural lease expiry, production CLI, isolated stores, controlled HTTP",
                         "killed_api_pid": killed_pid, "killed_api_exit_code": killed_exit,
                         "original_lease_expires_at": expiry, "immediate_recovery": immediate, "expired_recovery": recovered,
                         "original_resource_lease_expires_at": resource_expiry,

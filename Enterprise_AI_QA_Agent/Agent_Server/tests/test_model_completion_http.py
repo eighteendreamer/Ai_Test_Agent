@@ -24,15 +24,16 @@ from src.application.context.token_usage import normalize_usage
 
 
 @contextmanager
-def provider(transport, limited, *, delta_input=None, stream_variant='complete'):
+def provider(transport, limited, *, delta_input=None, stream_variant='complete', content_supplier=None):
     sends, replies = [], []
-    content = json.dumps(finish(), ensure_ascii=False)
+    initial_content = json.dumps(finish(), ensure_ascii=False)
 
     class Provider(BaseHTTPRequestHandler):
         def log_message(self, *args):
             pass
 
         def do_POST(self):
+            content = json.dumps(content_supplier(), ensure_ascii=False) if content_supplier else initial_content
             body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             sends.append({'path': self.path, 'body': body})
             streaming = bool(body.get('stream')) or ':streamGenerateContent' in self.path

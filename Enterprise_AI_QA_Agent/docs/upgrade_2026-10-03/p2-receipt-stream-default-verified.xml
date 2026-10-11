@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="8.508" timestamp="2026-10-11T23:31:45.110114+08:00" hostname="EIghteen"><testcase classname="tests.test_default_receipt_stream_live" name="test_default_correction_uses_frozen_stream_and_saved_response_once" time="4.107"><failure message="AssertionError: assert 'controlled-case-agent' == 'step-5-preview'&#10;  &#10;  - step-5-preview&#10;  + controlled-case-agent">tests\test_default_receipt_stream_live.py:54: in test_default_correction_uses_frozen_stream_and_saved_response_once
+    outcome = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:267: in _finish
+    response, checkpoint = await self._receipts.correct(context=context, checkpoint=checkpoint,
+src\application\test_runs\agent_case_receipt.py:85: in correct
+    runtime_parameters = self._models.get_invocation_runtime_parameters(model_key, **transport_kwargs)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_default_receipt_stream_live.py:41: in get_invocation_runtime_parameters
+    return runtime.get_invocation_runtime_parameters(key, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\models\model_runtime_service.py:75: in get_invocation_runtime_parameters
+    config = self.get_model_config(model_key)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\models\model_runtime_service.py:69: in get_model_config
+    return self._model_registry.get_runtime_config(model_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_model_completion_http.py:123: in get_runtime_config
+    assert key == self.config.key
+E   AssertionError: assert 'controlled-case-agent' == 'step-5-preview'
+E     
+E     - step-5-preview
+E     + controlled-case-agent</failure></testcase></testsuite></testsuites>

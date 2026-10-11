@@ -1,0 +1,29 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____ test_default_correction_uses_frozen_stream_and_saved_response_once ______
+tests\test_default_receipt_stream_live.py:57: in test_default_correction_uses_frozen_stream_and_saved_response_once
+    outcome = await approval_continuation(runs, reader, adapter, args, pending)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_agent_case_execution.py:308: in approval_continuation
+    return await adapter().resume_approval(**await args(), approval_id=pending.approval_id,
+src\application\test_runs\agent_case_execution.py:180: in resume_approval
+    return await self._finish(context, checkpoint, attempt, item, snapshot, mode_key=run.mode_key)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:272: in _finish
+    outcome = await assess(response)
+              ^^^^^^^^^^^^^^^^^^^^^^
+src\application\test_runs\agent_case_execution.py:242: in assess
+    receipt=self._assessment.parse_response(candidate,
+src\application\test_runs\agent_case_assessment.py:163: in parse_response
+    return case_receipt_type(scene_receipt_protocol).model_validate(candidate)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   pydantic_core._pydantic_core.ValidationError: 1 validation error for AgentCaseExecutionReceipt
+E   steps.1.checks.0.expected_path_tokens.1
+E     Input should be a valid string [type=string_type, input_value=0, input_type=int]
+E       For further information visit https://errors.pydantic.dev/2.13/v/string_type
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:254 agent_case_receipt_correction_requested
+WARNING  src.application.test_runs.agent_case_execution:agent_case_execution.py:274 agent_case_corrected_receipt_rejected
+=========================== short test summary info ===========================
+FAILED tests/test_default_receipt_stream_live.py::test_default_correction_uses_frozen_stream_and_saved_response_once
+1 failed in 106.66s (0:01:46)

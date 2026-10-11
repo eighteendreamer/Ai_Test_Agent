@@ -5328,3 +5328,16 @@ SDK真实HTTP/回执/评估/会话/profile命令五个受影响模块110通过18
 最终十九模块214通过19门控跳过79.32秒，含实际Chromium及真实失败样本；较早批次重叠不累加。初次历史Prompt恒等断言与受控无参数eval夹具已按新契约修订，失败原件保留。compileall退出0。没有新增完整App/前端构建、复杂UI或其他模式通过声明。
 
 三方案同步7.37，旧原件/保护文件/秘密及字节核对另见p5-ui-observation-validation.json。本批中文白名单commit，不推送/PR。完整目标仍active；下一项只读纠正传输需要先沿既有冻结生成/stream_handler调研，其他未完成分类见方案7.37。
+
+
+## 2026-10-11 只读纠正冻结流式响应与生产中断恢复
+
+基线cd85f815。四个生产文件增加可省略的业务检查点协议、原模型streaming能力选择、公共chunk计数及字符串路径说明；普通Prompt v6、场景v7。复用现有多provider/runtime/generation机制，无新客户端/表/依赖/前端更改，配置仍MySQL，业务PG，原件RustFS。旧意图不重发、旧响应权威回读、原8轮/8192保留。
+
+Agent_Server实际命令：`..\.venv\Scripts\python.exe -X utf8 -m pytest`，十模块最终receipt_correction、agent_receipt_transport、receipt_stream_response、document_generation_stream、model_stream_terminal_http、model_completion_http、model_completion_contract、sdk_midstream_retry_boundary、planning_response_completion、scene_expectation_contract；RUN_LIVE_PLAN_RUN_CREATION=1，最终XML/log为p2-receipt-stream-final，159通过5跳过124.63秒。早期158通过5跳过120.86秒重叠，不累加。SDK专验五传输及三终态、旧记录16通过24.78秒；第一供应商夹具过早调用、第二Google显式重试不支持失败均保留。
+
+真实默认纠正default-fixed一失败106.66秒：stream完成但数字路径类型错误；default-paths一失败113.57秒：8192/length、公共正文0。两个更早default/default-verified夹具注册key错误、没有真实发送的失败也保留；默认质量未通过，不转换候选、不再发送旧意图。随后按用户安排暂缓后续外部模型验收。
+
+RUN_LIVE_EXECUTION_CLI_TESTS=1、QA_RECEIPT_PROCESS_STREAMING=1、QA_RECEIPT_PROCESS_DIR独立p2-receipt-stream-process，运行test_receipt_process_recovery_live.py，2通过693.48秒。实际Windows kill owned API进程树、自然90秒条目/300秒资源租约、生产cleanup CLI和新Redis Worker；invoking保留error/recovery_required，response回读原响应正式passed。两个六次模型HTTP/三次POST-GET-DELETE业务，原累计预算5/8保持；修改今日模型/策略/上限不改旧历史。终态零新增模型/业务、无残留订单；四存储现场记录及清理回执保存。模型HTTP受控，不冒充默认模型/完整App验收。
+
+compileall实际运行四生产/七测试/audit，退出0；pytest足以验证本批逻辑及真实SDK/进程边界，未宣称新前端构建。契约全局搜索核对现有PG泛型payload和前端政策字段，无额外前端消费字段需要迁移。三方案同步7.38，SHA审计/保护文件/秘密扫描/字节保留见p2-receipt-stream-validation.json。完整P0—P5保持active，只提交本批白名单，不推送或创建PR。
