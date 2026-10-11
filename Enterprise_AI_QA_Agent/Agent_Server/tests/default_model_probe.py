@@ -101,6 +101,23 @@ def install(directory):
 
         client._client.event_hooks["request"].append(request_hook)
         client._client.event_hooks["response"].append(response_hook)
+        send = client._client.send
+        async def observed_send(request, *args, **kwargs):
+            started = perf_counter()
+            record = {"response_headers_received": False, "request_headers_saved": False, "body_read_by_probe": False}
+            try:
+                response = await send(request, *args, **kwargs)
+                record.update(response_headers_received=True, status_code=response.status_code)
+                return response
+            except BaseException as exc:
+                record["error_type"] = type(exc).__name__
+                raise
+            finally:
+                identity = request.extensions.get("qa_probe_identity")
+                if identity:
+                    record["elapsed_seconds"] = round(perf_counter() - started, 3)
+                    (root / (identity + ".attempt.json")).write_text(json.dumps(record, indent=2), encoding="utf-8")
+        client._client.send = observed_send
         create = client.chat.completions.create
         async def observed_create(*args, **kwargs):
             state = {'id':uuid4().hex, 'started':perf_counter(), 'physical_requests':[]}

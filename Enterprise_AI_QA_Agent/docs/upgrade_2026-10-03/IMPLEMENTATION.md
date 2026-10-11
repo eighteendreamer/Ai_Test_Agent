@@ -5277,3 +5277,18 @@ agent_web运行CasePlanDialog既有test命令83通过3.26秒；npm run build含v
 真实test_default_coverage_production沿已有三项协议和QA_EFFECT_TASKS=1；隔离QA_DEFAULT_REQUEST_PROFILE，两个QA_DEFAULT_COVERAGE_DIR分别default/default-lifecycle，第二批QA_RECEIPT_CORRECTION=1仅项目配置。第一批1失败130.96秒：规划漏产生/清理角色，实际创建/查询/删除后正式回执error；第二批1失败207.65秒：produced被原180秒总期限中断，保存bindings，Run/业务HTTP0。6/3次物理HTTP均200、各SDK一次；原全局模型未改，未提高8192/180秒，未重发终态。公共终态回执导出路径尚未被真实新Run覆盖。
 
 本批只能交付可选策略及确定性恢复/兼容验证，不能声称默认AI根因修复或全目标完成。下一步复核技术声明与执行绑定职责及实际文档歧义；模型供应商真实质量、完整项目多候选/准备/执行/回执、其他P0—P5仍保持待办。旧原件及受保护工作区用SHA清单核对，三方案同步；按白名单中文commit，不推送/PR。
+
+
+## 2026-10-11 普通文档生成传输、恢复与真实默认失败
+
+基线1a59d832。修改generation_pipeline/case_generation：由原MySQL模型能力为新普通文档冻结stream传输身份，复用现有多provider入口，旧缺字段序列化/哈希、增量行为和未知结果不改。探针增加每次send异常/响应头状态及耗时，不保存头部或响应体；研究见P1_DEFAULT_GENERATION_RESEARCH.md，方案7.32。
+
+Agent_Server实际命令：RUN_LIVE_DEFAULT_DOCUMENT_GENERATION=1、QA_DEFAULT_DOCUMENT_GENERATION_DIR独立default-current-verified/default-stream目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_document_generation_default.py -q -s --tb=short --junitxml=<本轮XML>`。前者1失败146.88秒：1SDK/2发送、无响应头、CancelledError，保留未知；后者1失败147.60秒：1SDK/1HTTP200、length8192/公开正文0、response_saved后拒绝，草稿0。第一首轮夹具upsert公共对象误用1失败7.97秒/SDK0，原件保留。
+
+RUN_LIVE_DOCUMENT_IMPACT_TASKS=1、QA_GENERATION_TASK_EVIDENCE_DIR独立stream-store-regression目录；stream合同、generation_tasks/retries、incremental_sources四模块48通过288.87秒。RUN_LIVE_DOCUMENT_GENERATION=1、QA_DOCUMENT_GENERATION_EVIDENCE_DIR独立stream-production目录；test_document_generation_production两参数实际生产API/独立CLI/四存储2通过136.79秒。流式与非流式都三HTTP/模块成功-失败-成功，保存响应新任务恢复后仍三HTTP，false/0/null/项目404/终态重投核验。受控模型，不证明默认业务质量。
+
+QA_GENERATION_TIMEOUT_PROBE_DIR独立stream-timeout目录，stream合同加实际SDK无凭据流式测试7通过6.80秒；本地真实超时两个ReadTimeout/最终APITimeoutError，各请求byte同一。初次适配器扩大60通过15门控跳过14.50秒，两个本轮夹具警告随后修正。各批重叠，门控不计通过。
+
+本批未改全局模型、期限或Token/SDK重试、前端/配置表，不运行前端构建。默认生成/独立恢复质量、其他供应商外网质量、更多格式/进程故障、完整App/生产迁移与完整P0—P5继续未完成；原failed未知不重发。compileall、SHA审计和提交范围核验另附本轮日志/validation。
+
+最终对两生产文件、探针及三个测试文件和audit运行compileall -q，exit0；内部冻结字段及所有引用/消费方已搜索核对，git diff --check exit0。SHA审计确认旧60/101/199份证据及受保护工作区未变、三份方案字节相同；新清单排除执行中生成的audit输出日志自身，日志由Git单独保留。只按本轮白名单提交，不推送或创建PR。

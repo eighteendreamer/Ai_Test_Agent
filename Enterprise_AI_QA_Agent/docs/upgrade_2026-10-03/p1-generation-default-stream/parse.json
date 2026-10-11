@@ -1,0 +1,319 @@
+{
+  "snapshot": {
+    "id": "70c5fe90-fd42-4317-a604-d24cd06ea76a",
+    "task_id": "46538317-6fed-4d89-ac6b-6586b225b402",
+    "seed": {
+      "project_id": "f018a5ef-5186-4f8f-8465-dd56e0300c05",
+      "document_id": "7d683fc4-ce6a-5c09-820d-9ba0b9f80961",
+      "version_id": "6ca36aa3-bd5b-41c5-9f45-de220ef4aabc",
+      "original_asset": {
+        "id": "1fec6483-1f0b-4c17-ab14-f1d6e85faa18",
+        "version_id": "6ca36aa3-bd5b-41c5-9f45-de220ef4aabc",
+        "kind": "original",
+        "filename": "requirements.md",
+        "content_type": "text/plain",
+        "size_bytes": 702,
+        "sha256": "a71de856541ee3a56f82c14faf240fa682ef9d103d5d27fba3fc85b9486fbd53",
+        "storage_uri": "rustfs://upload-safe/api-docs/7d683fc4-ce6a-5c09-820d-9ba0b9f80961/6ca36aa3-bd5b-41c5-9f45-de220ef4aabc/original/safe/requirements.md",
+        "bucket": "upload-safe",
+        "object_name": "api-docs/7d683fc4-ce6a-5c09-820d-9ba0b9f80961/6ca36aa3-bd5b-41c5-9f45-de220ef4aabc/original/safe/requirements.md",
+        "created_at": "2026-10-11T09:42:39.969293Z",
+        "reason": "upload",
+        "security_report": {
+          "profile": "api_document",
+          "decision": "allow",
+          "filename": "requirements.md",
+          "findings": [],
+          "extension": ".md",
+          "risk_score": 0,
+          "size_bytes": 702,
+          "declared_content_type": "application/octet-stream",
+          "detected_content_type": "text/plain"
+        }
+      },
+      "config": {
+        "scope_key": "global",
+        "revision": 1,
+        "payload": {
+          "policy": {
+            "limits": {
+              "max_bytes": 20000000,
+              "max_expanded_bytes": 100000000,
+              "max_zip_entries": 3000,
+              "max_pages": 1000,
+              "max_blocks": 50000,
+              "max_text_chars": 5000000,
+              "max_table_cells": 50000
+            },
+            "timeout_seconds": 60.0,
+            "max_cpu_seconds": 30.0,
+            "max_memory_bytes": 536870912,
+            "max_output_bytes": 40000000
+          },
+          "options": {
+            "parser_id": "auto",
+            "encoding": "utf-8-sig",
+            "pdf_extraction_mode": "plain"
+          },
+          "parser_by_extension": {
+            ".md": "markdown",
+            ".pdf": "pdf",
+            ".txt": "markdown",
+            ".docx": "docx"
+          }
+        }
+      },
+      "options": {
+        "parser_id": "markdown",
+        "encoding": "utf-8-sig",
+        "pdf_extraction_mode": "plain"
+      },
+      "parser": {
+        "parser_id": "markdown",
+        "formats": [
+          ".md",
+          ".txt"
+        ],
+        "implementation_version": "lightweight-v1",
+        "text": true,
+        "sections": true,
+        "tables": true,
+        "ocr": false,
+        "source_positions": [
+          "line"
+        ],
+        "transport": "local",
+        "available": true
+      }
+    },
+    "storage_uri": "rustfs://qa-agent/document-parsing/f018a5ef-5186-4f8f-8465-dd56e0300c05/46538317-6fed-4d89-ac6b-6586b225b402/de14d21c-8ac7-4346-b467-276891536fa5/70c5fe90-fd42-4317-a604-d24cd06ea76a/result.json",
+    "sha256": "f546c11b5bbf4b3b172a9a183f198057aded5296a7cd132fea5bf55f033778d6",
+    "size_bytes": 4075,
+    "status": "complete",
+    "parser": {
+      "parser_id": "markdown",
+      "formats": [
+        ".md",
+        ".txt"
+      ],
+      "implementation_version": "lightweight-v1",
+      "text": true,
+      "sections": true,
+      "tables": true,
+      "ocr": false,
+      "source_positions": [
+        "line"
+      ],
+      "transport": "local",
+      "available": true
+    },
+    "dependency_versions": {},
+    "warnings": [],
+    "created_at": "2026-10-11T09:42:45.574362Z"
+  },
+  "result": {
+    "schema_version": "document-parse-v1",
+    "filename": "requirements.md",
+    "source_sha256": "a71de856541ee3a56f82c14faf240fa682ef9d103d5d27fba3fc85b9486fbd53",
+    "source_size_bytes": 702,
+    "parser": {
+      "parser_id": "markdown",
+      "formats": [
+        ".md",
+        ".txt"
+      ],
+      "implementation_version": "lightweight-v1",
+      "text": true,
+      "sections": true,
+      "tables": true,
+      "ocr": false,
+      "source_positions": [
+        "line"
+      ],
+      "transport": "local",
+      "available": true
+    },
+    "dependency_versions": {},
+    "options": {
+      "parser_id": "markdown",
+      "encoding": "utf-8-sig",
+      "pdf_extraction_mode": "plain"
+    },
+    "text": "# 任务系统业务需求\r\n所有写操作要求登录；未登录必须拒绝，不能增加记录。未指定具体接口路径、状态码或页面元素，不得编造。\r\n\r\n## 注册\r\n邮箱必须唯一。首次注册成功后可以登录；重复邮箱注册必须拒绝，已有账号不变。\r\n\r\n## 任务创建\r\n标题必填。合法创建后返回任务，初始业务JSON包含{\"done\":false,\"retry_count\":0,\"deleted_at\":null}。空标题必须拒绝，不增加任务；测试结束清理本次创建的任务。\r\n\r\n## 任务查询\r\n只返回当前用户自己的任务。分页每页最多20条，超出上限必须拒绝。不能泄露其他用户的任务，空结果是合法状态。\r\n",
+    "blocks": [
+      {
+        "id": "block-1",
+        "kind": "heading",
+        "text": "# 任务系统业务需求\r\n",
+        "start_char": 0,
+        "end_char": 12,
+        "source": {
+          "kind": "line",
+          "start_line": 1,
+          "end_line": 1,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": 1
+      },
+      {
+        "id": "block-2",
+        "kind": "text",
+        "text": "所有写操作要求登录；未登录必须拒绝，不能增加记录。未指定具体接口路径、状态码或页面元素，不得编造。\r\n",
+        "start_char": 12,
+        "end_char": 63,
+        "source": {
+          "kind": "line",
+          "start_line": 2,
+          "end_line": 2,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-3",
+        "kind": "heading",
+        "text": "## 注册\r\n",
+        "start_char": 65,
+        "end_char": 72,
+        "source": {
+          "kind": "line",
+          "start_line": 4,
+          "end_line": 4,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": 2
+      },
+      {
+        "id": "block-4",
+        "kind": "text",
+        "text": "邮箱必须唯一。首次注册成功后可以登录；重复邮箱注册必须拒绝，已有账号不变。\r\n",
+        "start_char": 72,
+        "end_char": 111,
+        "source": {
+          "kind": "line",
+          "start_line": 5,
+          "end_line": 5,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-5",
+        "kind": "heading",
+        "text": "## 任务创建\r\n",
+        "start_char": 113,
+        "end_char": 122,
+        "source": {
+          "kind": "line",
+          "start_line": 7,
+          "end_line": 7,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": 2
+      },
+      {
+        "id": "block-6",
+        "kind": "text",
+        "text": "标题必填。合法创建后返回任务，初始业务JSON包含{\"done\":false,\"retry_count\":0,\"deleted_at\":null}。空标题必须拒绝，不增加任务；测试结束清理本次创建的任务。\r\n",
+        "start_char": 122,
+        "end_char": 226,
+        "source": {
+          "kind": "line",
+          "start_line": 8,
+          "end_line": 8,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      },
+      {
+        "id": "block-7",
+        "kind": "heading",
+        "text": "## 任务查询\r\n",
+        "start_char": 228,
+        "end_char": 237,
+        "source": {
+          "kind": "line",
+          "start_line": 10,
+          "end_line": 10,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": 2
+      },
+      {
+        "id": "block-8",
+        "kind": "text",
+        "text": "只返回当前用户自己的任务。分页每页最多20条，超出上限必须拒绝。不能泄露其他用户的任务，空结果是合法状态。\r\n",
+        "start_char": 237,
+        "end_char": 292,
+        "source": {
+          "kind": "line",
+          "start_line": 11,
+          "end_line": 11,
+          "page": null,
+          "path": [],
+          "part": null
+        },
+        "heading_level": null
+      }
+    ],
+    "sections": [
+      {
+        "id": "section-1",
+        "heading_block_id": "block-1",
+        "title": "任务系统业务需求",
+        "level": 1,
+        "parent_id": null,
+        "start_char": 0,
+        "end_char": 292
+      },
+      {
+        "id": "section-2",
+        "heading_block_id": "block-3",
+        "title": "注册",
+        "level": 2,
+        "parent_id": "section-1",
+        "start_char": 65,
+        "end_char": 113
+      },
+      {
+        "id": "section-3",
+        "heading_block_id": "block-5",
+        "title": "任务创建",
+        "level": 2,
+        "parent_id": "section-1",
+        "start_char": 113,
+        "end_char": 228
+      },
+      {
+        "id": "section-4",
+        "heading_block_id": "block-7",
+        "title": "任务查询",
+        "level": 2,
+        "parent_id": "section-1",
+        "start_char": 228,
+        "end_char": 292
+      }
+    ],
+    "tables": [],
+    "warnings": [],
+    "status": "complete",
+    "metadata": {
+      "encoding": "utf-8-sig",
+      "line_count": 11
+    }
+  }
+}

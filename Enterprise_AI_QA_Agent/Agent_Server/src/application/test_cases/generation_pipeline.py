@@ -327,6 +327,8 @@ class ModelTestCaseGenerator:
         prepared = fixed_generation_snapshot(PreparedCaseGeneration, authoring=fixed, request=request,
             invocation=invocation, prompt_version="test-case-generation-incremental-v1" if incremental else
                 "test-case-generation-document-v1" if document else "test-case-generation-frozen-v1",
+            response_transport_protocol="case-generation-stream-response-v1" if document
+                and fixed.model_parameters.get("capabilities", {}).get("streaming") else None,
             requires_content_json=incremental or isinstance(context.get("generation_template"), dict))
         logger.info("case_generation_request_prepared", extra={"model_key": fixed.model_key,
             "request_sha256": prepared.sha256, "max_cases": request.max_cases})
@@ -353,10 +355,26 @@ class ModelTestCaseGenerator:
     async def invoke_frozen(self, prepared):
         """Caller must persist invocation intent and returned response; never auto-retry here."""
         fixed = PreparedCaseGeneration.model_validate_json(prepared.model_dump_json())
-        result = await self._models.invoke(fixed.authoring.model_key, fixed.invocation,
-            expected_parameters=fixed.authoring.model_parameters,
-            expected_runtime_parameters=fixed.authoring.runtime_parameters,
-            **({"transport_options": fixed.authoring.transport_options} if fixed.authoring.transport_options is not None else {}))
+        async def invoke():
+            return await self._models.invoke(fixed.authoring.model_key, fixed.invocation,
+                expected_parameters=fixed.authoring.model_parameters,
+                expected_runtime_parameters=fixed.authoring.runtime_parameters,
+                **({"transport_options": fixed.authoring.transport_options} if fixed.authoring.transport_options is not None else {}))
+        if fixed.response_transport_protocol is not None:
+            # Existing counterparts: ModelRuntimeService.stream_handler, native
+            # provider clients and planning workflow. Freeze only new document
+            # requests; old/unknown invocations keep their original transport.
+            observed = {"public_text_chunks": 0, "public_text_chars": 0}
+            async def receive(text):
+                observed["public_text_chunks"] += 1
+                observed["public_text_chars"] += len(text)
+            logger.info("case_generation_stream_invoking", extra={"request_sha256": fixed.sha256,
+                "model_key": fixed.authoring.model_key, "protocol": fixed.response_transport_protocol})
+            async with self._models.stream_handler(receive):
+                result = await invoke()
+            logger.info("case_generation_stream_received", extra={"request_sha256": fixed.sha256, **observed})
+        else:
+            result = await invoke()
         logger.info("case_generation_response_received", extra={"request_sha256": fixed.sha256,
             "mode": result.response_summary.get("mode"), "tool_call_count": len(result.tool_calls)})
         return result

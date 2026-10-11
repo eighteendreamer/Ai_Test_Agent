@@ -5,7 +5,7 @@ import hashlib
 import json
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from src.schemas.case_management import GenerationTemplateRecord, TestCaseGenerateRequest
 from src.schemas.document_differences import UUID_PATTERN
@@ -51,7 +51,15 @@ class PreparedCaseGeneration(GenerationSnapshot):
     invocation: ModelInvocationRequest
     prompt_version: str
     requires_content_json: bool
+    response_transport_protocol: Literal["case-generation-stream-response-v1"] | None = None
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @model_serializer(mode="wrap")
+    def preserve_original_request(self, handler):
+        data = handler(self)
+        if self.response_transport_protocol is None:
+            data.pop("response_transport_protocol", None)
+        return data
 
     @model_validator(mode="after")
     def validate_fixed(self):

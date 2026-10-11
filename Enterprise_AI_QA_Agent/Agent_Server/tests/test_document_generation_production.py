@@ -24,8 +24,11 @@ pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_DOCUME
     reason="actual isolated MySQL/PostgreSQL/RustFS/Redis and production API/CLI")]
 
 
-async def test_ordinary_document_modules_and_independent_saved_response_recovery(tmp_path):
+@pytest.mark.parametrize("streaming", [False, True])
+async def test_ordinary_document_modules_and_independent_saved_response_recovery(tmp_path, streaming):
     evidence = Path(os.getenv("QA_DOCUMENT_GENERATION_EVIDENCE_DIR", str(tmp_path)))
+    if streaming:
+        evidence = evidence / "stream"
     evidence.mkdir(parents=True, exist_ok=True)
     original = "# 商城需求 😀\n所有接口均需登录，退款不能超过实付金额。\n\n## 注册\n手机号必须唯一，验证码五分钟有效。\n\n## 订单\n### 创建\n库存不足不能下单。\n### 退款\n退款金额上限为实付金额。\n\n## 查询\n仅能查询自己的订单，分页每页最多20条。\n"
     source = evidence / "ordinary-requirements.md"
@@ -40,13 +43,14 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
             "title": segment["title"], "case_type": "json", "content_json": content,
             "execution_notes": "根据完整JSON执行，核对业务结果并保留证据"}], "warnings": []}, ensure_ascii=False)
     try:
-        with provider(responder=responder) as (endpoint, calls, _, _):
+        with provider(responder=responder, message_responder=
+                (lambda body: {"role": "assistant", "content": responder(body)}) if streaming else None) as (endpoint, calls, _, _):
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
                 settings.orchestration.redis_task_outbox_streams = ",".join([DOCUMENT_PARSE_STREAM, GENERATION_STREAM])
                 models = MySQLModelConfigStore(settings); models.initialize()
                 model = models.upsert(ModelConfigUpdateRequest(model_name="ordinary-document-controlled", provider="openai",
                     transport="openai_chat_completions", base_url=endpoint, api_key=uuid4().hex, is_active=True,
-                    use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                    use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=streaming),
                     context_window=128000, max_output_tokens=1024))
                 processes.env = child_environment(settings)
                 port = free_port()
@@ -90,6 +94,7 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
                         scope = (await client.get(base+f"/case-generations/{group['id']}/scope")).json()
                         assert scope["implementation_version"] == "document-generation-scope-v1"
                         assert len(scope["modules"]) == 3 and "requirement" not in scope
+                        assert all(("response_transport_protocol" in item["generation"]) is streaming for item in scope["modules"])
                         assert "".join(scope["text"][s["start_char"]:s["end_char"]] for s in scope["segments"]) == scope["text"]
                         assert scope["text"] == snapshot["result"]["text"]
                         template_path = f"/projects/{project['id']}/test-case-generation-template"
@@ -111,6 +116,7 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
                         assert [t["status"] for t in report["modules"]] == ["completed", "failed", "completed"], report
                         assert len(calls) == 3
                         for call, module in zip(calls, scope["modules"]):
+                            assert bool(call.get("stream")) is streaming
                             assert call["messages"][-1]["content"] == module["generation"]["invocation"]["messages"][0]["content"]
                             assert json.loads(call["messages"][-1]["content"])["evidence_context"]["generation_template"] == scope["template"]
                         failed = report["modules"][1]
@@ -199,7 +205,7 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
                         (evidence/"summary.json").write_text(json.dumps({"scope":"production API, real Markdown and independent parser/generation/retry CLI; controlled HTTP model only",
                             "group":group,"fixed_scope":scope,"report":report,"retry":retry,"child":child,"versions":versions,
                             "physical_http_requests":calls,"downloaded_objects":downloads,"terminal_replay_model_calls":terminal_calls,
-                            "template_changed_after_freeze":True,"formats":formats}, ensure_ascii=False, indent=2), encoding="utf-8")
+                            "template_changed_after_freeze":True,"streaming_transport":streaming,"formats":formats}, ensure_ascii=False, indent=2), encoding="utf-8")
                 finally:
                     for queue in queues.values(): await queue.close()
                     with postgres_connect(settings) as conn, conn.cursor() as cur:

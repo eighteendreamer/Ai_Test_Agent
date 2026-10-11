@@ -1,0 +1,15 @@
+F
+================================== FAILURES ===================================
+_ test_default_model_ordinary_modules_and_independent_configuration_recovery __
+tests\test_document_generation_default.py:61: in test_default_model_ordinary_modules_and_independent_configuration_recovery
+    assert model_invocation_parameters(models.upsert(clone)) == parameters
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\schemas\model_config.py:156: in model_invocation_parameters
+    encoded = json.dumps(getattr(config, name), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                         ^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\pydantic\main.py:1042: in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E   AttributeError: 'ModelConfigPublic' object has no attribute 'extra_headers'
+=========================== short test summary info ===========================
+FAILED tests/test_document_generation_default.py::test_default_model_ordinary_modules_and_independent_configuration_recovery
+1 failed in 7.97s

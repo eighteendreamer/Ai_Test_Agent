@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="7.943" timestamp="2026-10-11T17:34:58.359856+08:00" hostname="EIghteen"><testcase classname="tests.test_document_generation_default" name="test_default_model_ordinary_modules_and_independent_configuration_recovery" time="3.842"><failure message="AttributeError: 'ModelConfigPublic' object has no attribute 'extra_headers'">tests\test_document_generation_default.py:61: in test_default_model_ordinary_modules_and_independent_configuration_recovery
+    assert model_invocation_parameters(models.upsert(clone)) == parameters
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\schemas\model_config.py:156: in model_invocation_parameters
+    encoded = json.dumps(getattr(config, name), sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+                         ^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\pydantic\main.py:1042: in __getattr__
+    raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E   AttributeError: 'ModelConfigPublic' object has no attribute 'extra_headers'</failure></testcase></testsuite></testsuites>
