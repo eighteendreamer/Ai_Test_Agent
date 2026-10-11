@@ -66,3 +66,12 @@
 5. 配置库、Schema/API、前端编辑与展示、各适配器及任务消费方同步。先实际 HTTP 协议矩阵，再选已授权真实模型做服务端验收；结构化内容还须业务 Schema 核验，不能把 JSON 可解析当作业务正确。
 
 本批没有配置/表迁移、依赖或前端变更，也没有完成上述请求 profile、JSON/推理/媒体能力治理。没有多家真实外部模型或默认 Agent/App 完整成功证据。默认 Step 的旧单阶段失败继续跟踪；人工 DeepSeek、录制业务管理/清洗遗漏、API续期、性能容量/AI流式、安全其他工具、准备/未知副作用/计划修订、需求业务质量与生产历史迁移仍未完成。
+
+
+## 2026-10-11 当前实现复核与产品实测
+
+复核 `ModelRuntimeService`、`model_clients.request_mapping`、`provider_profiles`、`model_clients.registry`、各 ProviderClient 和 LangChain bridge 后，原文“请求映射待办”属于历史状态；当前代码已经提供配置驱动的输出格式、推理参数和 token 字段映射，且映射版本记录为 `model-request-v1`。本次没有再新建全局适配层。
+
+使用本地受控 HTTP 服务逐个捕获实际请求和响应，运行 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini generateContent、LangChain OpenAI-compatible 五种路径，覆盖原生/流式、完整/截断终态、usage、工具调用、错误包装和旧协议兼容，结果 **81通过、17.41秒**。这证明当前统一内部请求/结果契约和 provider-specific adapter 在受控协议范围内可工作；不证明外部供应商服务端都接受相同可选字段。
+
+当前结论：不增加第二套模型框架；继续使用 `ModelInvocationRequest/Result`、`UnifiedMessage`、`ModelCapabilities` 和 request profile。仍需外部供应商逐项验收、具体模型能力声明核对、真实流式/媒体质量，以及默认 Agent 完整路径；默认 Step 账号按用户决定暂缓。历史证据不改写。
