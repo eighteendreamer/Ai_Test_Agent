@@ -1,0 +1,346 @@
+{
+  "run": {
+    "id": "ef038153-0d4c-5fda-89f1-229bcd3844c6",
+    "project_id": "8c50c5f3-9f5a-49e1-8f20-717cb5f1a206",
+    "suite_id": "3fe9cb6f-a83a-5c16-89ce-71dbd4ace24a",
+    "run_kind": "normal",
+    "origin": "native",
+    "mode_key": "api_testing",
+    "execution_strategy": "agent",
+    "plan_snapshot": {
+      "plan": {
+        "id": "1143105a-211b-471a-853b-55b45e742691",
+        "project_id": "8c50c5f3-9f5a-49e1-8f20-717cb5f1a206",
+        "request": {
+          "objective": "验证健康检查接口并核对 ok=true",
+          "model_key": "step-5-preview",
+          "candidate_case_ids": [
+            "5024619e-f014-447b-8300-e9a426603fd5"
+          ],
+          "runtime_context": {},
+          "environment": null
+        },
+        "status": "planned",
+        "summary": "用户目标是验证健康检查接口并核对 ok=true。项目仅提供一个正式用例“健康检查”，该用例为只读请求，无前置依赖、无需准备或清理数据。已完整读取该用例的 JSON 内容，可直接作为 target 执行。",
+        "decision": {
+          "action": "finish",
+          "summary": "用户目标是验证健康检查接口并核对 ok=true。项目仅提供一个正式用例“健康检查”，该用例为只读请求，无前置依赖、无需准备或清理数据。已完整读取该用例的 JSON 内容，可直接作为 target 执行。",
+          "queries": [],
+          "items": [
+            {
+              "key": "health_check",
+              "reason": "正式用例“健康检查”直接对应用户目标：验证健康检查接口并核对 HTTP 200 与 body.ok=true。执行说明为只读请求，不需要准备或清理数据，也无其他前置条件。",
+              "evidence_ids": [
+                "case:bfdff44e-2f57-49b1-855e-199b4ed48e9e"
+              ],
+              "depends_on": [],
+              "input_bindings": {},
+              "kind": "target",
+              "case_id": "5024619e-f014-447b-8300-e9a426603fd5",
+              "case_version_id": "bfdff44e-2f57-49b1-855e-199b4ed48e9e"
+            }
+          ],
+          "unresolved": []
+        },
+        "evidence": [
+          {
+            "id": "case:bfdff44e-2f57-49b1-855e-199b4ed48e9e",
+            "kind": "case",
+            "source_id": "5024619e-f014-447b-8300-e9a426603fd5",
+            "version": "bfdff44e-2f57-49b1-855e-199b4ed48e9e",
+            "content_hash": "cb8f5d4f388d7cb30697247a8a3bcb1dc519024a094a88169c87d25868e66f64",
+            "payload": {
+              "title": "健康检查",
+              "case_id": "5024619e-f014-447b-8300-e9a426603fd5",
+              "content": {
+                "task": {
+                  "name": "健康检查",
+                  "path": "/health",
+                  "method": "GET",
+                  "task_id": "health-check",
+                  "full_url": "http://127.0.0.1:50415/health",
+                  "assertions": [
+                    {
+                      "kind": "status_code",
+                      "expected": 200
+                    },
+                    {
+                      "kind": "json_field_equals",
+                      "path": "ok",
+                      "expected": true
+                    }
+                  ],
+                  "execution_mode": "read",
+                  "timeout_seconds": 30
+                },
+                "steps": [
+                  {
+                    "order": 1,
+                    "action": "按 task 执行 GET /health"
+                  },
+                  {
+                    "order": 2,
+                    "action": "核对 task.assertions 中的 HTTP 200 与 body.ok=true"
+                  }
+                ],
+                "objective": "验证健康检查接口"
+              },
+              "case_key": "health-check",
+              "source_refs": [
+                {
+                  "uri": null,
+                  "label": "",
+                  "version": null,
+                  "metadata": {},
+                  "source_id": "31747873-b02b-5f1a-832d-5b98be9389ee",
+                  "source_type": "api_doc"
+                }
+              ],
+              "case_version_id": "bfdff44e-2f57-49b1-855e-199b4ed48e9e",
+              "execution_notes": "只读请求；完整读取用例 JSON 和文档，不需要准备或清理数据。",
+              "historical_mode_key": "api_testing"
+            }
+          }
+        ],
+        "config_snapshot": {
+          "scope_key": "global",
+          "revision": 1,
+          "policy": {
+            "max_rounds": 5,
+            "max_candidates": 20,
+            "max_items": 50,
+            "max_context_chars": 180000,
+            "timeout_seconds": 180.0
+          }
+        },
+        "model_key": "step-5-preview",
+        "prompt_version": "case-planning-v5",
+        "rounds": [
+          {
+            "round": 1,
+            "status": "parsed",
+            "decision": {
+              "items": [
+                {
+                  "key": "health_check",
+                  "kind": "target",
+                  "reason": "正式用例“健康检查”直接对应用户目标：验证健康检查接口并核对 HTTP 200 与 body.ok=true。执行说明为只读请求，不需要准备或清理数据，也无其他前置条件。",
+                  "case_id": "5024619e-f014-447b-8300-e9a426603fd5",
+                  "depends_on": [],
+                  "evidence_ids": [
+                    "case:bfdff44e-2f57-49b1-855e-199b4ed48e9e"
+                  ],
+                  "input_bindings": {},
+                  "case_version_id": "bfdff44e-2f57-49b1-855e-199b4ed48e9e"
+                }
+              ],
+              "action": "finish",
+              "queries": [],
+              "summary": "用户目标是验证健康检查接口并核对 ok=true。项目仅提供一个正式用例“健康检查”，该用例为只读请求，无前置依赖、无需准备或清理数据。已完整读取该用例的 JSON 内容，可直接作为 target 执行。",
+              "unresolved": []
+            },
+            "streaming": true,
+            "attempt_id": "bc94c8a1-ece0-4878-82b5-48289afe34d8",
+            "response_mode": "ok",
+            "logical_call_id": "8143c70c-74d3-4c9b-b105-8340da7b1f9d",
+            "response_metadata": {
+              "mode": "ok",
+              "usage": {
+                "total_tokens": 3660,
+                "prompt_tokens": 2693,
+                "completion_tokens": 967,
+                "prompt_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "image_tokens": null,
+                  "cached_tokens": 0,
+                  "cache_write_tokens": null
+                },
+                "completion_tokens_details": {
+                  "text_tokens": null,
+                  "audio_tokens": null,
+                  "reasoning_tokens": 0,
+                  "accepted_prediction_tokens": null,
+                  "rejected_prediction_tokens": null
+                }
+              },
+              "error_type": null,
+              "response_id": "6aedd6356bd74cb72982ea806f8cc855.92ff9102ec4e9335fbd75a5337d3a477",
+              "status_code": null,
+              "stop_reason": null,
+              "finish_reason": "stop",
+              "request_mapping": {
+                "version": "model-request-v1",
+                "decisions": [
+                  {
+                    "action": "prompt_fallback",
+                    "option": "output_format",
+                    "reason": "format_not_declared"
+                  }
+                ]
+              },
+              "stream_terminal_received": true
+            },
+            "first_text_seconds": 9.026,
+            "received_text_chars": 609,
+            "model_elapsed_seconds": 11.501
+          }
+        ],
+        "warnings": [],
+        "created_at": "2026-10-11T11:55:09.328589Z",
+        "regression": null,
+        "environment": null
+      },
+      "run_item_ids": {
+        "health_check": "30ee2ea8-94a5-58a9-84a3-b37ef0ecdffa"
+      },
+      "owners": {
+        "health_check": "health_check"
+      },
+      "preparation_phases": {},
+      "regression": null
+    },
+    "creation_key": "minimal-default-run",
+    "creation_hash": "3fc2e238a0c890bfe1b940d65afa43e0a5a69e8f15e9903cbd7457ee3f8b7288",
+    "session_id": null,
+    "parent_run_id": null,
+    "status": "completed",
+    "stats": {
+      "total": 1,
+      "queued": 0,
+      "claimed": 0,
+      "running": 0,
+      "waiting_resource": 0,
+      "waiting_approval": 0,
+      "passed": 0,
+      "failed": 0,
+      "error": 1,
+      "blocked": 0,
+      "skipped": 0,
+      "cancelled": 0
+    },
+    "created_by": null,
+    "created_at": "2026-10-11T11:55:25.167220Z",
+    "updated_at": "2026-10-11T11:56:15.478985Z",
+    "started_at": "2026-10-11T11:55:30.874923Z",
+    "completed_at": "2026-10-11T11:56:15.478985Z",
+    "cancel_reason": null,
+    "active_duration_ms": 43888,
+    "waiting_duration_ms": 679,
+    "paused_duration_ms": 0,
+    "wall_clock_duration_ms": 50311
+  },
+  "items": [
+    {
+      "id": "30ee2ea8-94a5-58a9-84a3-b37ef0ecdffa",
+      "run_id": "ef038153-0d4c-5fda-89f1-229bcd3844c6",
+      "case_id": "5024619e-f014-447b-8300-e9a426603fd5",
+      "case_version_id": "bfdff44e-2f57-49b1-855e-199b4ed48e9e",
+      "position": 1,
+      "plan_item_key": "health_check",
+      "dependencies": [],
+      "status": "error",
+      "waiting_reason": null,
+      "attempt_no": 1,
+      "lease_owner": "minimal-execute",
+      "lease_token": "b070ef16-3eb5-4b8c-8fcf-8c83505db96c",
+      "lease_expires_at": "2026-10-11T11:57:39.532373Z",
+      "heartbeat_at": "2026-10-11T11:56:10.532373Z",
+      "approval_id": "cac7bb20-c80f-4449-8218-7eaff840224b",
+      "tool_job_id": "8a43884c-b5c4-40ef-9dca-6f3652cd4fee",
+      "result_id": "c014fb7c-4135-4b84-a5ee-01e7c236fdf1",
+      "regression_source_result_id": null,
+      "created_at": "2026-10-11T11:55:25.167220Z",
+      "updated_at": "2026-10-11T11:56:15.478985Z",
+      "started_at": "2026-10-11T11:55:30.897793Z",
+      "completed_at": "2026-10-11T11:56:15.478985Z",
+      "resource_cleanup_completed_at": null,
+      "active_started_at": null,
+      "waiting_started_at": null,
+      "active_duration_ms": 43888,
+      "waiting_duration_ms": 679,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 50311
+    }
+  ],
+  "attempts": [
+    {
+      "id": "e98395d5-df20-4908-b3f8-ee2b44a522e0",
+      "run_id": "ef038153-0d4c-5fda-89f1-229bcd3844c6",
+      "run_item_id": "30ee2ea8-94a5-58a9-84a3-b37ef0ecdffa",
+      "attempt_no": 1,
+      "worker_id": "minimal-execute",
+      "lease_token": "b070ef16-3eb5-4b8c-8fcf-8c83505db96c",
+      "status": "error",
+      "claimed_at": "2026-10-11T11:55:30.874923Z",
+      "started_at": "2026-10-11T11:55:30.897793Z",
+      "heartbeat_at": "2026-10-11T11:56:15.456125Z",
+      "approval_id": "cac7bb20-c80f-4449-8218-7eaff840224b",
+      "tool_job_id": "8a43884c-b5c4-40ef-9dca-6f3652cd4fee",
+      "completed_at": "2026-10-11T11:56:15.478985Z",
+      "active_started_at": null,
+      "waiting_started_at": null,
+      "active_duration_ms": 43888,
+      "waiting_duration_ms": 679,
+      "paused_duration_ms": 0,
+      "wall_clock_duration_ms": 44604,
+      "checkpoint_version": 5,
+      "checkpoint_key": "agent_case_execution",
+      "checkpoint_payload": {
+        "phase": "snapshot",
+        "run_id": "ef038153-0d4c-5fda-89f1-229bcd3844c6",
+        "plan_id": "1143105a-211b-471a-853b-55b45e742691",
+        "turn_id": "f20230a0-4719-57a5-ae93-1a7b1b6366aa",
+        "project_id": "8c50c5f3-9f5a-49e1-8f20-717cb5f1a206",
+        "session_id": "3e000d29-5792-4a99-a133-528aeb47a930",
+        "run_item_id": "30ee2ea8-94a5-58a9-84a3-b37ef0ecdffa",
+        "snapshot_id": "5e2859ae-d1f8-4fa1-a4b5-39a2c3287ac2",
+        "context_hash": "73743c0d1a8f86984c22b1af5de6004c936c98e84eff75650fb9dad62131c7ab",
+        "schema_version": 1,
+        "snapshot_version": 2,
+        "execution_attempt_id": "e98395d5-df20-4908-b3f8-ee2b44a522e0"
+      },
+      "checkpoint_at": "2026-10-11T11:56:15.456125Z",
+      "recovered_from_attempt_id": null
+    }
+  ],
+  "results": [
+    {
+      "id": "c014fb7c-4135-4b84-a5ee-01e7c236fdf1",
+      "run_id": "ef038153-0d4c-5fda-89f1-229bcd3844c6",
+      "run_item_id": "30ee2ea8-94a5-58a9-84a3-b37ef0ecdffa",
+      "case_id": "5024619e-f014-447b-8300-e9a426603fd5",
+      "case_version_id": "bfdff44e-2f57-49b1-855e-199b4ed48e9e",
+      "regression_source_result_id": null,
+      "attempt_id": "e98395d5-df20-4908-b3f8-ee2b44a522e0",
+      "attempt_no": 1,
+      "status": "error",
+      "summary": "Test case runner failed: 1 validation error for AgentCaseExecutionReceipt\nsteps.0.checks.1\n  Value error, 确定性比较需要且只能引用一个实际值 [type=value_error, input_value={'name': '响应体字段...望值 true 一致。'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+      "actual": {
+        "runner_error": "1 validation error for AgentCaseExecutionReceipt\nsteps.0.checks.1\n  Value error, 确定性比较需要且只能引用一个实际值 [type=value_error, input_value={'name': '响应体字段...望值 true 一致。'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+        "execution_checkpoint": {
+          "phase": "snapshot",
+          "run_id": "ef038153-0d4c-5fda-89f1-229bcd3844c6",
+          "plan_id": "1143105a-211b-471a-853b-55b45e742691",
+          "turn_id": "f20230a0-4719-57a5-ae93-1a7b1b6366aa",
+          "project_id": "8c50c5f3-9f5a-49e1-8f20-717cb5f1a206",
+          "session_id": "3e000d29-5792-4a99-a133-528aeb47a930",
+          "run_item_id": "30ee2ea8-94a5-58a9-84a3-b37ef0ecdffa",
+          "snapshot_id": "5e2859ae-d1f8-4fa1-a4b5-39a2c3287ac2",
+          "context_hash": "73743c0d1a8f86984c22b1af5de6004c936c98e84eff75650fb9dad62131c7ab",
+          "schema_version": 1,
+          "snapshot_version": 2,
+          "execution_attempt_id": "e98395d5-df20-4908-b3f8-ee2b44a522e0"
+        }
+      },
+      "evidence_refs": [],
+      "artifact_ids": [],
+      "verification_ids": [],
+      "tool_job_id": null,
+      "metrics": {},
+      "error_message": "1 validation error for AgentCaseExecutionReceipt\nsteps.0.checks.1\n  Value error, 确定性比较需要且只能引用一个实际值 [type=value_error, input_value={'name': '响应体字段...望值 true 一致。'}, input_type=dict]\n    For further information visit https://errors.pydantic.dev/2.13/v/value_error",
+      "payload_hash": "e5af1b49ea48f90884e17c1f31960b40bf2a4f17f5ba251a106e14a0b23e905b",
+      "created_at": "2026-10-11T11:56:15.478985Z"
+    }
+  ]
+}

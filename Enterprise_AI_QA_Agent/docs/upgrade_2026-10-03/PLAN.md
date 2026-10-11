@@ -3501,3 +3501,11 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 本批回归：`tests/test_agent_case_session.py`、`test_agent_case_assessment.py`、`test_agent_case_receipt_correction.py`、`test_model_request_profile.py` **101通过、18跳过、50.63秒**。本批只收紧模型调用边界和证据导出，不提高普通工具预算、不修改旧运行、不重跑未知业务副作用。
 
 仍未完成：默认 Step 在预算充足时的正式回执纠正成功、完整默认 AI 的多用例选取/排序/补全/执行/断言闭环、准备状态与未知副作用、运行中修订及其他模式/App；模板导入后的默认模型生成质量、需求变更业务评审、UI失败定位与selector评审、API续期/Cookie/并发故障、性能容量/流式阶段、安全工具扩展、全阶段HTTP故障恢复、历史迁移和旧Worker原件追踪。完整 P0—P5 仍为 `active`。
+
+### 7.34 认证后默认 Step 最小用例闭环与回执纠正边界〔2026-10-11〕
+
+依据 `P2_DEFAULT_STEP_MINIMAL_RESEARCH.md` 及真实默认 Step、独立规划/执行 Worker、隔离 MySQL/PostgreSQL/RustFS/Redis、本地 HTTP 目标。首份自定义 `operations/expect` JSON 用例复现 `api-test-runner` 参数格式歧义：Step 连续生成非 `AssertionSpec` 字段，运行时返回 `invalid_task_payload`，真实目标请求为0；该事实说明“模板/自定义 JSON 可被 AI 理解”不能仅凭注册 schema 推定。改用现有 `ApiTestTask/AssertionSpec` 结构后，真实目标 GET、HTTP 200 和 `ok=true` 均通过，但第一次正式回执多引用一个实际值，严格校验落成 `error`，没有篡改为通过。
+
+在项目策略启用既有 `case-receipt-correction-v1` 后，真实最小闭环 **1通过75.04秒**：规划完成、按项目冻结唯一用例、审批后调用目标一次、只读回执纠正后结果 `passed`；同一终态调度重新投递，目标请求仍为1。此次没有改生产代码，保留失败与通过原件：`p2-default-minimal-case-live3/`、`p2-default-minimal-case-live5/`、`p2-default-minimal-case-live6/`。
+
+结论：认证后的默认 Step 已在最小只读链路证明“项目用例选取→冻结→审批→Agent工具→正式回执→结果→终态幂等”可运行；多候选排序/补全、准备/清理、未知副作用、修订、复杂 API 依赖、其他模式和完整 App 仍未验收。回执纠正当前默认关闭，关闭时模型回执结构错误可能使已成功业务请求落成 `error`；是否设为新项目默认，需另行评估额外模型调用预算与供应商能力，暂不擅自改全局默认。
