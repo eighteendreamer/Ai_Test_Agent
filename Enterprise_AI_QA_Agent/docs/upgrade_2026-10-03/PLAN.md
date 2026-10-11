@@ -3381,3 +3381,12 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 修复协调器：认证任务成功后，更新未来认证任务以及明确依赖该认证任务的未执行任务；无该认证依赖的任务保留显式凭据；结构化日志只记录任务身份，不记录 token。真实 `ThreadingHTTPServer`、CapabilityMapper、DependencyPlanner、ApiTaskCoordinator、ApiTaskExecutor 和 httpx 验证登录→刷新→受保护接口 **1通过、1.30秒**，完整鉴权实测 **4通过、2.87秒**，API依赖/恢复回归 **28通过、2跳过、4.53秒**。物理请求顺序和认证事实为 `/login` 无认证、`/auth/refresh` 使用 token-1、`/profile` 使用 token-2。
 
 本批只覆盖明确刷新端点且响应含可识别访问 token 的协议；`expires_at` 自动续期、不同供应商刷新字段、Cookie续期、并发刷新去重、默认 Agent 自主鉴权和完整 App 仍未验收。无新表、依赖、配置或前端改动，Step/默认模型按用户决定继续暂缓，完整 P0—P5 目标保持 `active`。
+
+
+### 7.24 鉴权修复后的真实性能回归〔2026-10-11，f3cda5e〕
+
+复核现有 k6/JMeter adapter、生产 runner、资源清理 CLI 和历史 7.21/6.94 验收；本批未新增性能生产代码，是现有能力的再次实测。k6 响应关联 **1通过87.12秒**，含12个冒烟及2个负载报告；测量四种判定回归 **1通过34.07秒**；ToolRuntime/PG/RustFS/API重启及原件下载 **1通过48.16秒**；JMeter依赖/独立目标/轮次及报告 **1通过95.55秒**，含5个冒烟变体和2个报告。
+
+实际 k6 缺值场景只跳过依赖目标，独立目标继续；有效凭据仅送到指定消费者，预期401通过，0/false有效，null/空串/坏JSON不通过。两份load均exit0且SLA通过，但缺值报告仍fail。JMeter missing/mixed/valid/tail/multiple实际请求计数和判定与预期一致；7份清理回执completed，PG报告fail/pass。原件接口跨项目404、同大小篡改409、恢复后字节相同，终态重投新增引擎0次。原始事件只保存凭据哈希及布尔事实。
+
+证据目录为 `p5-perf-correlation-worker-verified`、`p5-perf-evidence-regression`、`p5-jmeter-dependencies-worker-verified`，SHA256/大小清单见 `p5-performance-regression-validation.json`。测量回归误用了非受支持的证据目录环境变量，本次临时原件未留存，仅保留JUnit；前批测量原件保持。本批固定计划直调生产组件和缓存引擎，不证明默认AI、自主Agent、完整App、容量或持续负载。历史JMeter及Worker能力已验，不重新标为本轮新实现；默认模型按用户决定暂缓，完整目标继续active。

@@ -21,7 +21,7 @@ export default function () {
   const __correlations = Object.create(null);
   const __headers0 = {};
   if (true) {
-    const res0 = http.get("http://host.docker.internal:61529/missing", {
+    const res0 = http.get("http://host.docker.internal:62519/missing", {
       headers: __headers0,
       responseCallback: __responseCallback,
     });
@@ -48,7 +48,7 @@ export default function () {
   check(__canBind0, { "qa_dependency_0": (v) => v === true });
   if (__canBind0) __headers1["Authorization"] = "" + String(__bound0);
   if (__canBind0) {
-    const res1 = http.get("http://host.docker.internal:61529/profile", {
+    const res1 = http.get("http://host.docker.internal:62519/profile", {
       headers: __headers1,
       responseCallback: __responseCallback,
     });
@@ -60,7 +60,7 @@ export default function () {
 
   const __headers2 = {};
   if (true) {
-    const res2 = http.get("http://host.docker.internal:61529/plain", {
+    const res2 = http.get("http://host.docker.internal:62519/plain", {
       headers: __headers2,
       responseCallback: __responseCallback,
     });
