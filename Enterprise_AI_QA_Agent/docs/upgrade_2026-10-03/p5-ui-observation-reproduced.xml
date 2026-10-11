@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="1.397" timestamp="2026-10-11T22:55:01.265092+08:00" hostname="EIghteen"><testcase classname="tests.test_browser_evaluation_observation" name="test_persistent_eval_exposes_exact_typed_value_and_unchanged_original" time="0.765"><failure message="AssertionError: {'status': 'success', 'summary': 'Executed python playwright-cli command: --raw eval ({&quot;count&quot;: &quot;0&quot;, &quot;page_id&quot;: &quot;03e0e...3e0ef775b5d49449f3b2e7833ed3f22&quot;})'], 'stdout': '{&quot;count&quot;: &quot;0&quot;, &quot;page_id&quot;: &quot;03e0ef775b5d49449f3b2e7833ed3f22&quot;}&#10;  ', ...}&#10;assert 'result' in {'status': 'success', 'summary': 'Executed python playwright-cli command: --raw eval ({&quot;count&quot;: &quot;0&quot;, &quot;page_id&quot;: &quot;03e0e...3e0ef775b5d49449f3b2e7833ed3f22&quot;})'], 'stdout': '{&quot;count&quot;: &quot;0&quot;, &quot;page_id&quot;: &quot;03e0ef775b5d49449f3b2e7833ed3f22&quot;}\n', ...}">tests\test_browser_evaluation_observation.py:50: in test_persistent_eval_exposes_exact_typed_value_and_unchanged_original
+    asyncio.run(run())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_browser_evaluation_observation.py:37: in run
+    assert "result" in output, output
+E   AssertionError: {'status': 'success', 'summary': 'Executed python playwright-cli command: --raw eval ({"count": "0", "page_id": "03e0e...3e0ef775b5d49449f3b2e7833ed3f22"})'], 'stdout': '{"count": "0", "page_id": "03e0ef775b5d49449f3b2e7833ed3f22"}
+E     ', ...}
+E   assert 'result' in {'status': 'success', 'summary': 'Executed python playwright-cli command: --raw eval ({"count": "0", "page_id": "03e0e...3e0ef775b5d49449f3b2e7833ed3f22"})'], 'stdout': '{"count": "0", "page_id": "03e0ef775b5d49449f3b2e7833ed3f22"}\n', ...}</failure></testcase></testsuite></testsuites>

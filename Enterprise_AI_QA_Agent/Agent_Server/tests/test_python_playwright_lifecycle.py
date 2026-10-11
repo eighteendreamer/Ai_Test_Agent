@@ -49,7 +49,7 @@ def test_other_session_progresses_while_first_is_busy(tmp_path):
         first = asyncio.create_task(runtime.run("a", ["hold"], tmp_path))
         await runtime.entered.wait()
         try:
-            second = await asyncio.wait_for(runtime.run("b", ["eval"], tmp_path), 0.5)
+            second = await asyncio.wait_for(runtime.run("b", ["noop"], tmp_path), 0.5)
             assert second["stdout"] == "b"
         finally:
             runtime.resume.set()
@@ -63,7 +63,7 @@ def test_same_session_commands_serialize_and_release_unused_locks(tmp_path):
         runtime = ControlledRuntime()
         first = asyncio.create_task(runtime.run("a", ["hold"], tmp_path))
         await runtime.entered.wait()
-        second = asyncio.create_task(runtime.run("a", ["eval"], tmp_path))
+        second = asyncio.create_task(runtime.run("a", ["noop"], tmp_path))
         await asyncio.sleep(0)
         await asyncio.sleep(0)
         assert not second.done()
@@ -79,7 +79,7 @@ def test_same_session_commands_serialize_and_release_unused_locks(tmp_path):
 def test_cleanup_attempts_driver_stop_after_context_and_browser_errors(tmp_path):
     async def run():
         runtime = ControlledRuntime()
-        await runtime.run("a", ["eval"], tmp_path)
+        await runtime.run("a", ["noop"], tmp_path)
         session = runtime._sessions["a"]
         session.context.close.side_effect = RuntimeError("context close failed")
         session.browser.close.side_effect = RuntimeError("browser close failed")
@@ -98,7 +98,7 @@ def test_cleanup_attempts_driver_stop_after_context_and_browser_errors(tmp_path)
 def test_repeated_cancellation_does_not_interrupt_disposal(tmp_path):
     async def run():
         runtime = ControlledRuntime()
-        await runtime.run("a", ["eval"], tmp_path)
+        await runtime.run("a", ["noop"], tmp_path)
         session = runtime._sessions["a"]
         closing = asyncio.Event()
         release = asyncio.Event()
@@ -169,8 +169,8 @@ def test_command_close_all_and_list_are_scoped(tmp_path):
     async def run():
         runtime = ControlledRuntime()
         try:
-            await runtime.run("a", ["eval"], tmp_path)
-            await runtime.run("b", ["eval"], tmp_path)
+            await runtime.run("a", ["noop"], tmp_path)
+            await runtime.run("b", ["noop"], tmp_path)
             listing = await runtime.run("a", ["list"], tmp_path, raw=True)
             assert [item["name"] for item in json.loads(listing["stdout"])] == ["a"]
             await runtime.run("a", ["close-all"], tmp_path)
@@ -199,7 +199,7 @@ def test_cancel_waiter_preserves_active_command_but_cancel_owner_closes(tmp_path
         first = asyncio.create_task(runtime.run("a", ["hold"], tmp_path))
         await runtime.entered.wait()
         session = runtime._sessions["a"]
-        waiter = asyncio.create_task(runtime.run("a", ["eval"], tmp_path))
+        waiter = asyncio.create_task(runtime.run("a", ["noop"], tmp_path))
         await asyncio.sleep(0)
         waiter.cancel()
         with pytest.raises(asyncio.CancelledError):

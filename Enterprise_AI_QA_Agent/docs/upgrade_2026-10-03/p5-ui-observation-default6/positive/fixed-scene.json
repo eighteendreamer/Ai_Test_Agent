@@ -1,0 +1,600 @@
+{
+  "scene_id": "6ee608e5-4087-4ee4-92fe-5f3a0bcdadbc",
+  "project_id": "642c2573-e4da-48b1-af12-c601ea3b065f",
+  "current_version_id": "95da63c4-6631-468a-8fad-b62522b39392",
+  "version": {
+    "id": "95da63c4-6631-468a-8fad-b62522b39392",
+    "scene_id": "6ee608e5-4087-4ee4-92fe-5f3a0bcdadbc",
+    "project_id": "642c2573-e4da-48b1-af12-c601ea3b065f",
+    "version": 2,
+    "parent_version_id": "e5c0ae0d-84e3-4d0b-9ab0-4dbdfc9b4a69",
+    "request_id": "16211335-0d15-4988-88fc-91a8a5606fae",
+    "request_hash": "b9b99985b6427ac1a1e1340ab8215c9b7254bb9fe87a7a863468dd236a2171fd",
+    "content_hash": "fba5ad30d90a7046b117ea226d6bc8626f4b17564e54ac4d6f69da3eb73c0b4e",
+    "created_at": "2026-10-11T15:07:46.812370Z",
+    "content": {
+      "name": "增加一次场景",
+      "description": "",
+      "status": "organized",
+      "steps": [
+        {
+          "source_seq": 0,
+          "action": "点击「增加一次」",
+          "expected": "计数增加",
+          "alias": "计数按钮"
+        }
+      ],
+      "aliases": [
+        {
+          "name": "计数按钮",
+          "source_seq": 0,
+          "description": "增加一次"
+        }
+      ],
+      "assertions": [
+        {
+          "kind": "page",
+          "target": "#count",
+          "operator": "equals",
+          "expected": "1",
+          "description": ""
+        }
+      ],
+      "preconditions": [
+        "入口地址 http://127.0.0.1:60456",
+        "目标系统可访问且登录态可用"
+      ],
+      "execution_notes": "步骤 action 是显示摘要，执行时读取 data.event 的完整输入、定位和文档范围。test_data.recording_observations 是采集观察，不执行为操作；截断、无变化或未采集不能证明业务通过。脱敏输入与仅有文件名的记录需要可靠测试数据，不能恢复或猜测原值。"
+    },
+    "source": {
+      "event_count": 3,
+      "recording_id": "840c55f5-2a0c-4b4d-83a2-5422448ec757",
+      "change_reason": "整理业务别名与预期，保留原录制",
+      "original_hash": "d2f2b74db673cfb5b114ea9cb95bbde13ea2c656660d20b09a4a95d9fe98f9d4",
+      "original_draft": {
+        "steps": [
+          {
+            "data": {
+              "seq": 0,
+              "event": {
+                "seq": 0,
+                "page": {
+                  "dpr": 1,
+                  "url": "http://127.0.0.1:60456/",
+                  "title": "场景计数验收",
+                  "viewport": {
+                    "h": 600,
+                    "w": 800
+                  },
+                  "recording_scope": {
+                    "page_id": "f076c2b058f847ff8ab425e44a100d31",
+                    "frame_id": "c4e08f09ed604dacbbf48959b372d155",
+                    "local_seq": 0,
+                    "frame_path": [],
+                    "document_id": "2757138146f34fa0acf6e00fcdb4be11",
+                    "document_url": "http://127.0.0.1:60456/",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "click",
+                "pixel": {
+                  "bbox": {
+                    "h": 23,
+                    "w": 69,
+                    "x": 8,
+                    "y": 8
+                  },
+                  "rel_offset": {
+                    "rx": 0.49,
+                    "ry": 0.478
+                  },
+                  "viewport_point": {
+                    "x": 42,
+                    "y": 19
+                  }
+                },
+                "value": null,
+                "target": {
+                  "tag": "BUTTON",
+                  "role": "button",
+                  "locators": {
+                    "id": "increment",
+                    "css": "#increment",
+                    "text": "增加一次",
+                    "xpath": "/html/body[1]/main[1]/button[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "增加一次",
+                      "role": "button"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "increment"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T15:07:45.944000",
+                "page_effect": {
+                  "dom_mutation_count": 0
+                },
+                "screenshot_ref": null
+              },
+              "pixel": {
+                "bbox": {
+                  "h": 23,
+                  "w": 69,
+                  "x": 8,
+                  "y": 8
+                },
+                "rel_offset": {
+                  "rx": 0.49,
+                  "ry": 0.478
+                },
+                "viewport_point": {
+                  "x": 42,
+                  "y": 19
+                }
+              },
+              "locators": {
+                "id": "increment",
+                "css": "#increment",
+                "text": "增加一次",
+                "xpath": "/html/body[1]/main[1]/button[1]",
+                "role_name": {
+                  "name": "增加一次",
+                  "role": "button"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "click"
+            },
+            "kind": "ui_action",
+            "order": 1,
+            "action": "点击「增加一次」",
+            "expected": null
+          }
+        ],
+        "title": "物理增加一次",
+        "cleanup": [],
+        "case_key": "ui_rec_840c55f5_2a0",
+        "mode_key": "ui_automation",
+        "priority": "P1",
+        "case_type": "ui_recorded",
+        "model_key": "rule-based-recorder-conversion",
+        "test_data": {
+          "driver_kind": "RecordingDriverKind.cdp_attach",
+          "recording_id": "840c55f5-2a0c-4b4d-83a2-5422448ec757",
+          "recording_quality": {
+            "noise": [
+              {
+                "seq": 1,
+                "type": "page_response",
+                "reason": "observation_only"
+              },
+              {
+                "seq": 2,
+                "type": "page_scan",
+                "reason": "observation_only"
+              }
+            ],
+            "omission": {
+              "scope": "published_event_delivery",
+              "status": "verified",
+              "sequence_gaps": [],
+              "missing_sequences": [],
+              "unconfirmed_delivery": {
+                "pending": 0,
+                "channel_dropped": 0,
+                "transport_dropped": 0,
+                "frames_unconfirmed": 0
+              },
+              "business_capture_complete": "unknown"
+            },
+            "protocol": "recording-quality-v1",
+            "raw_event_count": 3,
+            "observation_policy": "retained_as_evidence_not_replayed",
+            "duplicate_candidates": [],
+            "replayable_event_count": 1,
+            "cleaned_event_sequences": [
+              0
+            ],
+            "observation_event_count": 2,
+            "removed_event_sequences": []
+          },
+          "recording_observations": [
+            {
+              "seq": 1,
+              "page": {
+                "dpr": 1,
+                "url": "http://127.0.0.1:60456/",
+                "title": "场景计数验收",
+                "viewport": {
+                  "h": 600,
+                  "w": 800
+                },
+                "recording_scope": {
+                  "page_id": "f076c2b058f847ff8ab425e44a100d31",
+                  "frame_id": "c4e08f09ed604dacbbf48959b372d155",
+                  "local_seq": 1,
+                  "frame_path": [],
+                  "document_id": "2757138146f34fa0acf6e00fcdb4be11",
+                  "document_url": "http://127.0.0.1:60456/",
+                  "parent_frame_id": null
+                }
+              },
+              "type": "page_response",
+              "pixel": null,
+              "value": null,
+              "target": null,
+              "timestamp": "2026-10-11T15:07:46.230000",
+              "page_effect": {
+                "response": {
+                  "scope": "document_light_dom",
+                  "reason": "settled",
+                  "network": [
+                    {
+                      "ok": true,
+                      "method": "POST",
+                      "origin": "same-origin",
+                      "status": 200,
+                      "outcome": "response",
+                      "pathname": "/increment/5e8f3fe1593c4e169abb0a6411387080",
+                      "duration_ms": 11
+                    }
+                  ],
+                  "elements": [
+                    {
+                      "text": "1",
+                      "target": {
+                        "tag": "OUTPUT",
+                        "role": null,
+                        "locators": {
+                          "id": "count",
+                          "css": "#count",
+                          "text": "1",
+                          "xpath": "/html/body[1]/main[1]/output[1]",
+                          "testid": null,
+                          "role_name": {
+                            "name": "1",
+                            "role": null
+                          }
+                        },
+                        "in_iframe": false,
+                        "attributes": {
+                          "id": "count"
+                        },
+                        "shadow_path": null
+                      },
+                      "connected": true
+                    }
+                  ],
+                  "protocol": "recording-dom-response-v1",
+                  "max_nodes": 100,
+                  "truncated": false,
+                  "shadow_dom": "open_roots",
+                  "association": "temporal_after_actions",
+                  "max_actions": 100,
+                  "snapshot_at": "observation_end",
+                  "max_text_chars": 200,
+                  "mutation_count": 1,
+                  "action_local_seqs": [
+                    0
+                  ],
+                  "closed_shadow_dom": "unobserved",
+                  "observation_status": "observed_changes",
+                  "truncation_reasons": [],
+                  "network_correlation": "instrumented_fetch_xhr_completion",
+                  "network_observation_status": "observed"
+                },
+                "dom_mutation_count": 1
+              },
+              "screenshot_ref": null
+            },
+            {
+              "seq": 2,
+              "page": {
+                "dpr": 1,
+                "url": "http://127.0.0.1:60456/",
+                "title": "场景计数验收",
+                "viewport": {
+                  "h": 600,
+                  "w": 800
+                },
+                "recording_scope": {
+                  "page_id": "f076c2b058f847ff8ab425e44a100d31",
+                  "frame_id": "c4e08f09ed604dacbbf48959b372d155",
+                  "local_seq": 2,
+                  "frame_path": [],
+                  "document_id": "2757138146f34fa0acf6e00fcdb4be11",
+                  "document_url": "http://127.0.0.1:60456/",
+                  "parent_frame_id": null
+                }
+              },
+              "type": "page_scan",
+              "pixel": null,
+              "value": null,
+              "target": null,
+              "timestamp": "2026-10-11T15:07:46.308000",
+              "page_effect": {
+                "dom_hash": "9c8e03061c2d28ce79900e92fb6e4426d67ada63",
+                "interactive_count": 1,
+                "dom_mutation_count": 0,
+                "interactive_elements": [
+                  {
+                    "tag": "button",
+                    "href": "",
+                    "name": "增加一次",
+                    "role": "button"
+                  }
+                ]
+              },
+              "screenshot_ref": null
+            }
+          ]
+        },
+        "assertions": [
+          {
+            "kind": "ui_title",
+            "target": "page.title",
+            "expected": "场景计数验收",
+            "operator": "contains",
+            "description": "录制末页标题（无导航目标时的退化基线）"
+          },
+          {
+            "kind": "ui_title",
+            "target": "page.title",
+            "expected": "场景计数验收",
+            "operator": "contains",
+            "description": "[medium] 录制末页标题包含「场景计数验收」（弱于 URL 断言）"
+          },
+          {
+            "kind": "ui_dom_changed",
+            "target": "page.dom",
+            "expected": true,
+            "operator": "changed",
+            "description": "[low] 录制条目[0]之后的观察窗口记录1条DOM变更；仅为时间关联，需评审业务含义"
+          },
+          {
+            "kind": "ui_element_count",
+            "target": "page.interactive_elements",
+            "expected": 1,
+            "operator": "gte",
+            "description": "[low] 页面扫描捕获 1 个可交互元素（易脆，页面改版即失效，仅参考）"
+          }
+        ],
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "UI 录制 物理增加一次",
+            "version": "p2-2.v2",
+            "metadata": {
+              "step_count": 1,
+              "event_count": 3,
+              "finalize_metrics": {
+                "finalize": {
+                  "raw_events": 3,
+                  "on_page_edges": 3,
+                  "page_vertices": 1,
+                  "raw_page_urls": 3,
+                  "targets_edges": 1,
+                  "contains_edges": 1,
+                  "has_step_edges": 3,
+                  "action_vertices": 3,
+                  "element_vertices": 1,
+                  "raw_element_refs": 1,
+                  "navigated_to_edges": 0,
+                  "recording_vertices": 1,
+                  "deduplicated_page_urls": 1,
+                  "deduplicated_element_refs": 0,
+                  "degraded_resolution_actions": 0
+                },
+                "integrity": {
+                  "degraded": false,
+                  "seq_gaps": [],
+                  "reconciled": true,
+                  "pg_step_count": 3,
+                  "pg_event_count": 3,
+                  "action_vertices": 3,
+                  "step_count_mismatch": false,
+                  "degraded_resolution_actions": 0
+                },
+                "finish_receipt": {
+                  "scopes": [
+                    {
+                      "ended": false,
+                      "page_id": "f076c2b058f847ff8ab425e44a100d31",
+                      "pending": 0,
+                      "frame_id": "c4e08f09ed604dacbbf48959b372d155",
+                      "next_seq": 3,
+                      "confirmed": true,
+                      "frame_path": [],
+                      "document_id": "2757138146f34fa0acf6e00fcdb4be11",
+                      "pg_verified": true,
+                      "document_url": "http://127.0.0.1:60456/",
+                      "emitted_count": 3,
+                      "received_count": 3,
+                      "parent_frame_id": null
+                    }
+                  ],
+                  "pending": 0,
+                  "next_seq": 3,
+                  "protocol": "recording-scopes-v2",
+                  "operation": "stop",
+                  "request_id": "d4a64fb1049b403fa595506ad2241b1e",
+                  "pg_verified": true,
+                  "missing_seqs": [],
+                  "emitted_count": 3,
+                  "published_seqs": [
+                    0,
+                    1,
+                    2
+                  ],
+                  "channel_dropped": 0,
+                  "transport_dropped": 0,
+                  "frames_unconfirmed": 0,
+                  "browser_saved_count": 3
+                },
+                "pause_receipts": [],
+                "recording_quality": {
+                  "noise": [
+                    {
+                      "seq": 1,
+                      "type": "page_response",
+                      "reason": "observation_only"
+                    },
+                    {
+                      "seq": 2,
+                      "type": "page_scan",
+                      "reason": "observation_only"
+                    }
+                  ],
+                  "omission": {
+                    "scope": "published_event_delivery",
+                    "status": "verified",
+                    "sequence_gaps": [],
+                    "missing_sequences": [],
+                    "unconfirmed_delivery": {
+                      "pending": 0,
+                      "channel_dropped": 0,
+                      "transport_dropped": 0,
+                      "frames_unconfirmed": 0
+                    },
+                    "business_capture_complete": "unknown"
+                  },
+                  "protocol": "recording-quality-v1",
+                  "raw_event_count": 3,
+                  "observation_policy": "retained_as_evidence_not_replayed",
+                  "duplicate_candidates": [],
+                  "replayable_event_count": 1,
+                  "cleaned_event_sequences": [
+                    0
+                  ],
+                  "observation_event_count": 2,
+                  "removed_event_sequences": []
+                }
+              }
+            },
+            "source_id": "840c55f5-2a0c-4b4d-83a2-5422448ec757",
+            "source_type": "ui_recording"
+          }
+        ],
+        "content_json": null,
+        "preconditions": [
+          "入口地址 http://127.0.0.1:60456",
+          "目标系统可访问且登录态可用"
+        ],
+        "prompt_version": "p2-2.v2",
+        "skill_versions": {
+          "recorder": "p2-2.v2"
+        },
+        "execution_notes": "步骤 action 是显示摘要，执行时读取 data.event 的完整输入、定位和文档范围。test_data.recording_observations 是采集观察，不执行为操作；截断、无变化或未采集不能证明业务通过。脱敏输入与仅有文件名的记录需要可靠测试数据，不能恢复或猜测原值。",
+        "generation_metadata": {}
+      },
+      "finalize_metrics": {
+        "finalize": {
+          "raw_events": 3,
+          "on_page_edges": 3,
+          "page_vertices": 1,
+          "raw_page_urls": 3,
+          "targets_edges": 1,
+          "contains_edges": 1,
+          "has_step_edges": 3,
+          "action_vertices": 3,
+          "element_vertices": 1,
+          "raw_element_refs": 1,
+          "navigated_to_edges": 0,
+          "recording_vertices": 1,
+          "deduplicated_page_urls": 1,
+          "deduplicated_element_refs": 0,
+          "degraded_resolution_actions": 0
+        },
+        "integrity": {
+          "degraded": false,
+          "seq_gaps": [],
+          "reconciled": true,
+          "pg_step_count": 3,
+          "pg_event_count": 3,
+          "action_vertices": 3,
+          "step_count_mismatch": false,
+          "degraded_resolution_actions": 0
+        },
+        "finish_receipt": {
+          "scopes": [
+            {
+              "ended": false,
+              "page_id": "f076c2b058f847ff8ab425e44a100d31",
+              "pending": 0,
+              "frame_id": "c4e08f09ed604dacbbf48959b372d155",
+              "next_seq": 3,
+              "confirmed": true,
+              "frame_path": [],
+              "document_id": "2757138146f34fa0acf6e00fcdb4be11",
+              "pg_verified": true,
+              "document_url": "http://127.0.0.1:60456/",
+              "emitted_count": 3,
+              "received_count": 3,
+              "parent_frame_id": null
+            }
+          ],
+          "pending": 0,
+          "next_seq": 3,
+          "protocol": "recording-scopes-v2",
+          "operation": "stop",
+          "request_id": "d4a64fb1049b403fa595506ad2241b1e",
+          "pg_verified": true,
+          "missing_seqs": [],
+          "emitted_count": 3,
+          "published_seqs": [
+            0,
+            1,
+            2
+          ],
+          "channel_dropped": 0,
+          "transport_dropped": 0,
+          "frames_unconfirmed": 0,
+          "browser_saved_count": 3
+        },
+        "pause_receipts": [],
+        "recording_quality": {
+          "noise": [
+            {
+              "seq": 1,
+              "type": "page_response",
+              "reason": "observation_only"
+            },
+            {
+              "seq": 2,
+              "type": "page_scan",
+              "reason": "observation_only"
+            }
+          ],
+          "omission": {
+            "scope": "published_event_delivery",
+            "status": "verified",
+            "sequence_gaps": [],
+            "missing_sequences": [],
+            "unconfirmed_delivery": {
+              "pending": 0,
+              "channel_dropped": 0,
+              "transport_dropped": 0,
+              "frames_unconfirmed": 0
+            },
+            "business_capture_complete": "unknown"
+          },
+          "protocol": "recording-quality-v1",
+          "raw_event_count": 3,
+          "observation_policy": "retained_as_evidence_not_replayed",
+          "duplicate_candidates": [],
+          "replayable_event_count": 1,
+          "cleaned_event_sequences": [
+            0
+          ],
+          "observation_event_count": 2,
+          "removed_event_sequences": []
+        }
+      },
+      "excluded_sequences": []
+    }
+  }
+}

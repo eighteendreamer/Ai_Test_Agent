@@ -7,7 +7,7 @@ from src.schemas.case_execution import AgentCaseExecutionReceipt
 from src.schemas.scene_receipt import case_receipt_type, SCENE_RECEIPT_PROMPT_VERSION
 
 
-RECEIPT_PROMPT_VERSION = "case-execution-receipt-v4"
+RECEIPT_PROMPT_VERSION = "case-execution-receipt-v5"
 
 
 def receipt_prompt_version(protocol=None):
@@ -61,6 +61,9 @@ def case_result_contract(protocol=None) -> str:
         "value. The server resolves the leaves; declare structure that matches the fixed plan's "
         "consumer paths. Choose only one of outputs, output_source or output_structure. "
         "Use deterministic operators when the fixed expected value is directly comparable. "
+        "For every operator other than semantic, observations must contain exactly one reference "
+        "to the actual value being compared. Do not append an action-success record or a second "
+        "value to that scalar comparison; report other expectations as separate checks. "
         "For natural-language business expectations, use semantic with verdict and a reason "
         "grounded in all necessary observations; identify incomplete evidence as not_run. "
         "These semantic decisions remain AI judgments. State blocked/skipped/error and the "

@@ -1,0 +1,177 @@
+{
+  "id": "75bb8164-ff2f-42ea-adb2-865bd1cf566e",
+  "project_id": "6695b22a-c424-41d7-b8e8-ea128a5e9399",
+  "request": {
+    "objective": "实际点击计数按钮一次并验证当前计数",
+    "model_key": "step-5-preview",
+    "candidate_case_ids": [
+      "3df1a056-1c35-433b-8dfe-30a9cca4a47a"
+    ],
+    "runtime_context": {},
+    "environment": null
+  },
+  "status": "planned",
+  "summary": "项目当前仅有一个正式用例“增加一次真实验证”，其目标与用户目标“实际点击计数按钮一次并验证当前计数”完全一致，直接作为目标执行；用例自带场景读取信息与初始条件，无需额外依赖或准备。",
+  "decision": {
+    "action": "finish",
+    "summary": "项目当前仅有一个正式用例“增加一次真实验证”，其目标与用户目标“实际点击计数按钮一次并验证当前计数”完全一致，直接作为目标执行；用例自带场景读取信息与初始条件，无需额外依赖或准备。",
+    "queries": [],
+    "items": [
+      {
+        "key": "case_count_one",
+        "reason": "该正式用例目标为实际点击计数按钮一次并验证当前计数，与用户目标一致；用例内含初始计数0、预期计数2及场景读取引用，执行条件完整。",
+        "evidence_ids": [
+          "case:1545b788-e946-4b9c-923b-0283ac85757b"
+        ],
+        "depends_on": [],
+        "input_bindings": {},
+        "kind": "target",
+        "case_id": "3df1a056-1c35-433b-8dfe-30a9cca4a47a",
+        "case_version_id": "1545b788-e946-4b9c-923b-0283ac85757b"
+      }
+    ],
+    "unresolved": []
+  },
+  "evidence": [
+    {
+      "id": "case:1545b788-e946-4b9c-923b-0283ac85757b",
+      "kind": "case",
+      "source_id": "3df1a056-1c35-433b-8dfe-30a9cca4a47a",
+      "version": "1545b788-e946-4b9c-923b-0283ac85757b",
+      "content_hash": "dbfdfda753ab102f3dcac5eb4963b87cecc5c6b0144fcb3373d6c74436a7e789",
+      "payload": {
+        "title": "增加一次真实验证",
+        "case_id": "3df1a056-1c35-433b-8dfe-30a9cca4a47a",
+        "content": {
+          "steps": [
+            {
+              "action": "先读取固定场景的别名和真实定位，再打开新的项目页面（初始计数必须0），真实点击增加一次并读取当前页面计数",
+              "expected": "2"
+            }
+          ],
+          "metadata": {
+            "zero": 0,
+            "false": false,
+            "nullable": null
+          },
+          "objective": "实际点击计数按钮一次并验证当前计数",
+          "scene_read": {
+            "query": "读取固定增加一次场景",
+            "scene_id": "e59efff8-e1cf-415f-b98b-f3841dd2fd39",
+            "operation": "scene_read",
+            "version_id": "ecb34def-c8ea-4206-b31b-fb050f767cef",
+            "content_hash": "1279ce7ec87daf43b05a2d0f532e43929b8bf01d01018fa4bcf35ad9a7f492a3"
+          },
+          "target_url": "http://127.0.0.1:58770",
+          "initial_count": "0",
+          "expected_count": "2"
+        },
+        "case_key": "count-one",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": "ecb34def-c8ea-4206-b31b-fb050f767cef",
+            "metadata": {
+              "content_hash": "1279ce7ec87daf43b05a2d0f532e43929b8bf01d01018fa4bcf35ad9a7f492a3"
+            },
+            "source_id": "e59efff8-e1cf-415f-b98b-f3841dd2fd39",
+            "source_type": "ui_recording_scene"
+          }
+        ],
+        "case_version_id": "1545b788-e946-4b9c-923b-0283ac85757b",
+        "execution_notes": "先调用JSON中scene_read指定的knowledge-rag读取固定场景。录制只作操作知识，不能当本次实际值。然后使用现有browser-control的command/args打开项目页面并真实click一次，最后只读eval取得#count和#page-id。command调用共享会话；不要在读结果时重新打开页面，不得赋值DOM或改点击次数去满足预期。实际值与expected_count比较，初始计数固定0，不能增加准备动作改变该条件；不符则正式failed，遵守原回执协议与权限。",
+        "historical_mode_key": "ui_automation"
+      }
+    }
+  ],
+  "config_snapshot": {
+    "scope_key": "6695b22a-c424-41d7-b8e8-ea128a5e9399",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0,
+      "receipt_correction_protocol": "case-receipt-correction-v1"
+    }
+  },
+  "model_key": "step-5-preview",
+  "prompt_version": "case-planning-v5",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "parsed",
+      "decision": {
+        "items": [
+          {
+            "key": "case_count_one",
+            "kind": "target",
+            "reason": "该正式用例目标为实际点击计数按钮一次并验证当前计数，与用户目标一致；用例内含初始计数0、预期计数2及场景读取引用，执行条件完整。",
+            "case_id": "3df1a056-1c35-433b-8dfe-30a9cca4a47a",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:1545b788-e946-4b9c-923b-0283ac85757b"
+            ],
+            "input_bindings": {},
+            "case_version_id": "1545b788-e946-4b9c-923b-0283ac85757b"
+          }
+        ],
+        "action": "finish",
+        "queries": [],
+        "summary": "项目当前仅有一个正式用例“增加一次真实验证”，其目标与用户目标“实际点击计数按钮一次并验证当前计数”完全一致，直接作为目标执行；用例自带场景读取信息与初始条件，无需额外依赖或准备。",
+        "unresolved": []
+      },
+      "streaming": true,
+      "attempt_id": "d5a4d193-3829-4f7d-8450-44e48d95bf09",
+      "response_mode": "ok",
+      "logical_call_id": "e210ef18-64b9-465d-a1e3-d75b87fa114f",
+      "response_metadata": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 4876,
+          "prompt_tokens": 2935,
+          "completion_tokens": 1941,
+          "prompt_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "image_tokens": null,
+            "cached_tokens": 0,
+            "cache_write_tokens": null
+          },
+          "completion_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": null,
+            "rejected_prediction_tokens": null
+          }
+        },
+        "error_type": null,
+        "response_id": "cd7e6c33f6203cf9fc30559cf371ccee.797f0393e4a13bf0a44db156c10deb69",
+        "status_code": null,
+        "stop_reason": null,
+        "finish_reason": "stop",
+        "request_mapping": {
+          "version": "model-request-v1",
+          "decisions": [
+            {
+              "action": "prompt_fallback",
+              "option": "output_format",
+              "reason": "format_not_declared"
+            }
+          ]
+        },
+        "stream_terminal_received": true
+      },
+      "first_text_seconds": 28.057,
+      "received_text_chars": 538,
+      "model_elapsed_seconds": 30.698
+    }
+  ],
+  "warnings": [],
+  "created_at": "2026-10-11T15:04:01.862233Z",
+  "regression": null,
+  "environment": null
+}

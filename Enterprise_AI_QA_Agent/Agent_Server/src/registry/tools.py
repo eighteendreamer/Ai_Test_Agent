@@ -607,7 +607,7 @@ class ToolRegistry:
                                 "description": "One of navigate, inspect, screenshot, evaluate_js, run_actions, or command.",
                             },
                             "target_url": {"type": "string", "description": "The target page URL."},
-                            "command": {"type": "string", "description": "A complete playwright-cli command string, or a single verb such as open/click/eval with args holding its operands. Used when action=command."},
+                            "command": {"type": "string", "description": "A complete shell-quoted playwright-cli command string, or a single verb such as open/click/eval with args holding its operands. For eval prefer command=eval and args=[the complete JavaScript expression]; spaces inside the expression must stay in one array element."},
                             "args": {
                                 "type": "array",
                                 "description": "For action=command: a complete command list including its verb when command is omitted, or operands of the single verb in command. Do not mix unrelated command representations.",
@@ -635,7 +635,8 @@ class ToolRegistry:
                         "required": ["action"],
                     },
                     supports_streaming=True,
-                    output_schema={"artifacts": "array", "steps": "array"},
+                    output_schema={"artifacts": "array", "steps": "array", "stdout": "string",
+                        "stderr": "string", "result": "Evaluation value; command eval preserves its original type, including null. Return an object directly to reference its fields; JSON.stringify returns a string."},
                     tags=["ui", "browser", "automation"],
                 ),
                 handler_key="browser-control",

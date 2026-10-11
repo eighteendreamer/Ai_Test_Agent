@@ -1,0 +1,23 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ test_persistent_eval_exposes_exact_typed_value_and_unchanged_original ____
+tests\test_browser_evaluation_observation.py:29: in run
+    captured = next(job["output_payload"] for job in json.loads(captured_path.read_bytes())
+E   StopIteration
+
+The above exception was the direct cause of the following exception:
+tests\test_browser_evaluation_observation.py:50: in test_persistent_eval_exposes_exact_typed_value_and_unchanged_original
+    asyncio.run(run())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+E   RuntimeError: coroutine raised StopIteration
+=========================== short test summary info ===========================
+FAILED tests/test_browser_evaluation_observation.py::test_persistent_eval_exposes_exact_typed_value_and_unchanged_original
+1 failed in 0.81s

@@ -1,0 +1,22 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ test_persistent_eval_exposes_exact_typed_value_and_unchanged_original ____
+tests\test_browser_evaluation_observation.py:50: in test_persistent_eval_exposes_exact_typed_value_and_unchanged_original
+    asyncio.run(run())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_browser_evaluation_observation.py:37: in run
+    assert "result" in output, output
+E   AssertionError: {'status': 'success', 'summary': 'Executed python playwright-cli command: --raw eval ({"count": "0", "page_id": "03e0e...3e0ef775b5d49449f3b2e7833ed3f22"})'], 'stdout': '{"count": "0", "page_id": "03e0ef775b5d49449f3b2e7833ed3f22"}
+E     ', ...}
+E   assert 'result' in {'status': 'success', 'summary': 'Executed python playwright-cli command: --raw eval ({"count": "0", "page_id": "03e0e...3e0ef775b5d49449f3b2e7833ed3f22"})'], 'stdout': '{"count": "0", "page_id": "03e0ef775b5d49449f3b2e7833ed3f22"}\n', ...}
+=========================== short test summary info ===========================
+FAILED tests/test_browser_evaluation_observation.py::test_persistent_eval_exposes_exact_typed_value_and_unchanged_original
+1 failed in 1.41s

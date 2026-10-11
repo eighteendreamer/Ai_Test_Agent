@@ -209,7 +209,9 @@ class CaseToolEvidenceReference(PlanningModel):
 class CaseExecutionCheck(PlanningModel):
     name: str = Field(min_length=1, max_length=240)
     expected_path_tokens: list[str] = Field(max_length=32)
-    observations: list[CaseToolEvidenceReference] = Field(min_length=1, max_length=20)
+    observations: list[CaseToolEvidenceReference] = Field(min_length=1, max_length=20,
+        description="For any operator other than semantic, reference exactly one actual value. "
+            "Semantic may reference multiple values. Do not add action-success evidence to a scalar comparison.")
     operator: Literal["equals", "not_equals", "contains", "not_contains", "lt", "lte", "gt", "gte", "semantic"]
     verdict: Literal["passed", "failed", "not_run"] | None = None
     reason: str = Field(default="", max_length=4000)

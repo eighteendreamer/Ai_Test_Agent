@@ -455,7 +455,7 @@ class MCPRuntimeService:
             await self._register_browser_resources(context, session_name, args, artifact_dir)
             command_log.append(result)
             transcript_path = self._write_transcript(artifact_dir, command_log)
-            return {
+            output = {
                 "status": "success",
                 "summary": f"Executed python playwright-cli command: {' '.join(args)}",
                 "command": args,
@@ -464,6 +464,9 @@ class MCPRuntimeService:
                 "runtime_backend": self._runtime_backend(),
                 "artifacts": [*result.get("artifacts", []), {"type": "transcript", "path": str(transcript_path)}],
             }
+            if "result" in result:
+                output["result"] = result["result"]
+            return output
         finally:
             if command_completed and args[0] in {"close", "delete-data", "close-all", "kill-all"}:
                 if self._session_resource_service is not None and self.browser_resources is None:

@@ -22,5 +22,16 @@ case collection. Keep intentional repeated actions and negative conditions from 
 completed actions merely to obtain a cleaner report. Do not assign expected values to page state or
 substitute historical recording results for this execution's observations.
 Collect actual tool outputs and finish with the requested evidence-backed case receipt. Tool success
-alone is not a case verification verdict. Missing knowledge, unresolved conditions and failed assertions
+alone is not a case verification verdict. For observations in a persistent command session, use eval
+to return the value or object directly, without JSON.stringify. Command eval exposes the original typed
+value. Use action="command", command="eval", args=[the entire JavaScript expression as one string].
+For example args=["({field: document.querySelector('#field').textContent})"]. Do not put an unquoted
+expression after eval in a command string: whitespace splits it into expression and locator arguments.
+Keep observations in the same command session that performed the action; evaluate_js opens a separate
+target page and does not observe that persistent session's changed state. The command result contains the
+value as result and keeps the original stdout. An eval object {field: value} is referenced with
+output_path_tokens=["result", "field"]; a scalar or null uses ["result"]. Paths start inside the
+persisted tool output, without the tool message wrapper's "output" prefix. Compare the observed
+field to the frozen expected value; the entire stdout JSON string is not a scalar field.
+Missing knowledge, unresolved conditions and failed assertions
 remain explicit. Respect existing permissions and approval requirements for every call."""

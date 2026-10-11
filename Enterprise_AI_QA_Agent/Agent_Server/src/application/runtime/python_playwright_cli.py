@@ -183,6 +183,14 @@ class PythonPlaywrightCliRuntime:
                     return self._success(command, "" if raw else f"Closed browser session '{session_name}'.\n")
 
                 session = await self._ensure_session(session_name, cwd, rest if verb == "open" else [])
+                if verb == "eval":
+                    value = await self._evaluate(session, rest)
+                    response = self._success(command, self._format_value(value, raw))
+                    response["result"] = value
+                    LOGGER.debug("browser_evaluation_observed", extra={
+                        "browser_session": session_name, "value_type": type(value).__name__,
+                    })
+                    return response
                 stdout, artifacts = await self._execute(session, verb, rest, cwd, raw)
                 return self._success(command, stdout, artifacts)
             except asyncio.CancelledError:
@@ -405,6 +413,14 @@ class PythonPlaywrightCliRuntime:
         session.page.on("requestfinished", on_request_done)
         session.page.on("requestfailed", on_request_done)
 
+    async def _evaluate(self, session: _BrowserSession, args: list[str]) -> Any:
+        self._require_args(args, 1, "eval <expression> [ref]")
+        expression = args[0]
+        target = args[1] if len(args) > 1 else ""
+        if target:
+            return await self._locator(session, target).evaluate(expression)
+        return await session.page.evaluate(expression)
+
     async def _execute(
         self,
         session: _BrowserSession,
@@ -471,15 +487,6 @@ class PythonPlaywrightCliRuntime:
             path.parent.mkdir(parents=True, exist_ok=True)
             await page.pdf(path=str(path))
             return ("" if raw else f"Saved PDF to {path}\n", [{"type": "pdf", "path": str(path)}])
-        if verb == "eval":
-            self._require_args(args, 1, "eval <expression> [ref]")
-            expression = args[0]
-            target = args[1] if len(args) > 1 else ""
-            if target:
-                result = await self._locator(session, target).evaluate(expression)
-            else:
-                result = await page.evaluate(expression)
-            return (self._format_value(result, raw), [])
         if verb == "click":
             self._require_args(args, 1, "click <ref> [button]")
             await self._locator(session, args[0]).click(button=args[1] if len(args) > 1 else "left")

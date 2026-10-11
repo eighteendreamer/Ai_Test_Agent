@@ -83,18 +83,23 @@ def test_original_schema_remains_selected_and_does_not_accept_scene_wire():
     with pytest.raises(ValueError): AgentCaseExecutionReceipt.model_validate(original)
     updated = deepcopy(original);updated["schema_version"] = 2
     assert SceneExecutionReceipt.model_validate(updated).steps[0].checks[0].expected_source
-    assert receipt_prompt_version() == "case-execution-receipt-v4"
-    assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v5"
+    assert receipt_prompt_version() == "case-execution-receipt-v5"
+    assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v6"
     assert '"SceneExecutionCheck"' in case_result_contract("case-scene-receipt-v1")
 
 
-def test_original_prompt_matches_implementation_before_this_upgrade():
+def test_prompt_revision_only_adds_existing_deterministic_cardinality():
     original = subprocess.run(["git","show",
         "c19415d0:Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_contract.py"],
         cwd=ROOT.parents[1],capture_output=True,text=True,encoding="utf-8",check=True)
     namespace = {}
     exec(compile(original.stdout,"recorded-old-contract","exec"),namespace)
-    assert case_result_contract() == namespace["case_result_contract"]()
+    clarification = ("For every operator other than semantic, observations must contain exactly one reference "
+        "to the actual value being compared. Do not append an action-success record or a second "
+        "value to that scalar comparison; report other expectations as separate checks. ")
+    current = case_result_contract()
+    assert current.count(clarification) == 1
+    assert current.replace(clarification, "") == namespace["case_result_contract"]()
 
 
 def test_actual_scene_wire_is_parsed_only_for_the_frozen_new_protocol():

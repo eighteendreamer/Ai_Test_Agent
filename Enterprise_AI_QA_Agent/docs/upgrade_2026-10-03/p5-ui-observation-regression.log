@@ -1,0 +1,43 @@
+FF.............s...........................................s...s........ [ 77%]
+...s.................                                                    [100%]
+================================== FAILURES ===================================
+______________ test_other_session_progresses_while_first_is_busy ______________
+tests\test_python_playwright_lifecycle.py:58: in test_other_session_progresses_while_first_is_busy
+    asyncio.run(run())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_python_playwright_lifecycle.py:53: in run
+    assert second["stdout"] == "b"
+E   AssertionError: assert '' == 'b'
+E     
+E     - b
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.python_playwright_cli:python_playwright_cli.py:208 browser_command_failed
+________ test_same_session_commands_serialize_and_release_unused_locks ________
+tests\test_python_playwright_lifecycle.py:76: in test_same_session_commands_serialize_and_release_unused_locks
+    asyncio.run(run())
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+tests\test_python_playwright_lifecycle.py:72: in run
+    assert (await second)["exit_code"] == 0
+E   assert 1 == 0
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.runtime.python_playwright_cli:python_playwright_cli.py:208 browser_command_failed
+=========================== short test summary info ===========================
+FAILED tests/test_python_playwright_lifecycle.py::test_other_session_progresses_while_first_is_busy
+FAILED tests/test_python_playwright_lifecycle.py::test_same_session_commands_serialize_and_release_unused_locks
+2 failed, 87 passed, 4 skipped in 22.15s

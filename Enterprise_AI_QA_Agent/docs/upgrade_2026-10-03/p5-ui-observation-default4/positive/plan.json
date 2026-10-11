@@ -1,0 +1,177 @@
+{
+  "id": "0298b552-d139-410a-b3fc-caa31e411d89",
+  "project_id": "900869d2-71d8-4984-9f8f-7c27a3c0a552",
+  "request": {
+    "objective": "实际点击计数按钮一次并验证当前计数",
+    "model_key": "step-5-preview",
+    "candidate_case_ids": [
+      "666b2d65-0f3e-45e9-960f-411ab3cf3913"
+    ],
+    "runtime_context": {},
+    "environment": null
+  },
+  "status": "planned",
+  "summary": "选取唯一正式用例“增加一次真实验证”作为 target，无必要 dependency 或 prepare 项。",
+  "decision": {
+    "action": "finish",
+    "summary": "选取唯一正式用例“增加一次真实验证”作为 target，无必要 dependency 或 prepare 项。",
+    "queries": [],
+    "items": [
+      {
+        "key": "count-one",
+        "reason": "项目当前唯一正式用例，目标与实际点击计数按钮一次并验证当前计数完全一致；用例内容完整，目标地址、步骤与预期均已提供，无需额外依赖或准备项。",
+        "evidence_ids": [
+          "case:71c21830-adcf-4280-bba6-7f7ac76e0e84"
+        ],
+        "depends_on": [],
+        "input_bindings": {},
+        "kind": "target",
+        "case_id": "666b2d65-0f3e-45e9-960f-411ab3cf3913",
+        "case_version_id": "71c21830-adcf-4280-bba6-7f7ac76e0e84"
+      }
+    ],
+    "unresolved": []
+  },
+  "evidence": [
+    {
+      "id": "case:71c21830-adcf-4280-bba6-7f7ac76e0e84",
+      "kind": "case",
+      "source_id": "666b2d65-0f3e-45e9-960f-411ab3cf3913",
+      "version": "71c21830-adcf-4280-bba6-7f7ac76e0e84",
+      "content_hash": "3abec71e949a2f526779308fb48f32531c42c93d7d2caadf57f5118684a789f6",
+      "payload": {
+        "title": "增加一次真实验证",
+        "case_id": "666b2d65-0f3e-45e9-960f-411ab3cf3913",
+        "content": {
+          "steps": [
+            {
+              "action": "先读取固定场景的别名和真实定位，再打开新的项目页面（初始计数必须0），真实点击增加一次并读取当前页面计数",
+              "expected": "1"
+            }
+          ],
+          "metadata": {
+            "zero": 0,
+            "false": false,
+            "nullable": null
+          },
+          "objective": "实际点击计数按钮一次并验证当前计数",
+          "scene_read": {
+            "query": "读取固定增加一次场景",
+            "scene_id": "c1e5d6fc-05ea-4ac0-8560-54e10403df82",
+            "operation": "scene_read",
+            "version_id": "6483887e-3861-488b-8010-50ecd8492235",
+            "content_hash": "c36de19e7d412bbb2c6570bd6b22b15e10b2ead7ad372caec7ec5728bad40d1c"
+          },
+          "target_url": "http://127.0.0.1:59794",
+          "initial_count": "0",
+          "expected_count": "1"
+        },
+        "case_key": "count-one",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": "6483887e-3861-488b-8010-50ecd8492235",
+            "metadata": {
+              "content_hash": "c36de19e7d412bbb2c6570bd6b22b15e10b2ead7ad372caec7ec5728bad40d1c"
+            },
+            "source_id": "c1e5d6fc-05ea-4ac0-8560-54e10403df82",
+            "source_type": "ui_recording_scene"
+          }
+        ],
+        "case_version_id": "71c21830-adcf-4280-bba6-7f7ac76e0e84",
+        "execution_notes": "先调用JSON中scene_read指定的knowledge-rag读取固定场景。录制只作操作知识，不能当本次实际值。然后使用现有browser-control的command/args打开项目页面并真实click一次，最后只读eval取得#count和#page-id。command调用共享会话；不要在读结果时重新打开页面，不得赋值DOM或改点击次数去满足预期。实际值与expected_count比较，初始计数固定0，不能增加准备动作改变该条件；不符则正式failed，遵守原回执协议与权限。",
+        "historical_mode_key": "ui_automation"
+      }
+    }
+  ],
+  "config_snapshot": {
+    "scope_key": "900869d2-71d8-4984-9f8f-7c27a3c0a552",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0,
+      "receipt_correction_protocol": "case-receipt-correction-v1"
+    }
+  },
+  "model_key": "step-5-preview",
+  "prompt_version": "case-planning-v5",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "parsed",
+      "decision": {
+        "items": [
+          {
+            "key": "count-one",
+            "kind": "target",
+            "reason": "项目当前唯一正式用例，目标与实际点击计数按钮一次并验证当前计数完全一致；用例内容完整，目标地址、步骤与预期均已提供，无需额外依赖或准备项。",
+            "case_id": "666b2d65-0f3e-45e9-960f-411ab3cf3913",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:71c21830-adcf-4280-bba6-7f7ac76e0e84"
+            ],
+            "input_bindings": {},
+            "case_version_id": "71c21830-adcf-4280-bba6-7f7ac76e0e84"
+          }
+        ],
+        "action": "finish",
+        "queries": [],
+        "summary": "选取唯一正式用例“增加一次真实验证”作为 target，无必要 dependency 或 prepare 项。",
+        "unresolved": []
+      },
+      "streaming": true,
+      "attempt_id": "7449aaee-0c6a-4dc0-ad59-0da49ccf45ba",
+      "response_mode": "ok",
+      "logical_call_id": "757cba07-099c-41a8-938a-1904d01d960a",
+      "response_metadata": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 4478,
+          "prompt_tokens": 2937,
+          "completion_tokens": 1541,
+          "prompt_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "image_tokens": null,
+            "cached_tokens": 0,
+            "cache_write_tokens": null
+          },
+          "completion_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": null,
+            "rejected_prediction_tokens": null
+          }
+        },
+        "error_type": null,
+        "response_id": "12f7329b8f225501c2cd93011f15636f.42a013377af0d5988bbc2e70a7e598ea",
+        "status_code": null,
+        "stop_reason": null,
+        "finish_reason": "stop",
+        "request_mapping": {
+          "version": "model-request-v1",
+          "decisions": [
+            {
+              "action": "prompt_fallback",
+              "option": "output_format",
+              "reason": "format_not_declared"
+            }
+          ]
+        },
+        "stream_terminal_received": true
+      },
+      "first_text_seconds": 20.703,
+      "received_text_chars": 433,
+      "model_elapsed_seconds": 22.817
+    }
+  ],
+  "warnings": [],
+  "created_at": "2026-10-11T14:56:24.256333Z",
+  "regression": null,
+  "environment": null
+}
