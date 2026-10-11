@@ -29,6 +29,7 @@ from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, 
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL
 from src.schemas.case_planning_stages import STAGE_PROTOCOL
 from src.schemas.settings import ModelConfigUpdateRequest
+from src.schemas.model_request_options import ModelRequestProfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -64,6 +65,12 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     global_settings = get_settings().model_copy(deep=True)
     original_model = MySQLModelConfigStore(global_settings).get_default_active()
     parameters = model_invocation_parameters(original_model)
+    invocation_model = original_model.model_copy(deep=True)
+    profile_path = os.getenv("QA_DEFAULT_REQUEST_PROFILE")
+    if profile_path:
+        invocation_model.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
+        invocation_model = ModelConfigRecord.model_validate(invocation_model.model_dump())
+    invocation_parameters = model_invocation_parameters(invocation_model)
     assert original_model.transport == "openai_chat_completions", "Probe currently targets the actual OpenAI-compatible SDK"
     endpoint, effects, _ = regression_business_http[0]
     orders, created = regression_business_http[1:]
@@ -71,6 +78,8 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     directory.mkdir(parents=True, exist_ok=False)
     report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
+    report["isolated_invocation_parameters"] = invocation_parameters
+    report["isolated_profile_override"] = bool(profile_path)
     if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
         report["baseline"] = "d81b25e8 plus formal effect relations v2"
     def save(name, value):
@@ -81,12 +90,13 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
         models = MySQLModelConfigStore(settings)
         models.initialize()
         model = models.upsert(ModelConfigUpdateRequest(model_name=original_model.model_id, provider=original_model.provider,
-            transport=original_model.transport, base_url=original_model.api_base_url, api_key=original_model.api_key,
+            transport=original_model.transport, request_profile=invocation_model.request_profile,
+            base_url=original_model.api_base_url, api_key=original_model.api_key,
             auth_type=original_model.auth_type, oauth_provider=original_model.oauth_provider,
             oauth_refresh_token=original_model.oauth_refresh_token, applications=original_model.applications, is_active=True,
             use_provider_defaults=False, capability_overrides=original_model.capability_overrides,
             context_window=original_model.context_window, max_output_tokens=original_model.max_output_tokens))
-        assert model_invocation_parameters(models.get_default_active()) == parameters
+        assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
         processes.env = child_environment(settings)
         processes.env["QA_DEFAULT_PROBE_DIR"] = str(directory / "physical")
         port = free_port()

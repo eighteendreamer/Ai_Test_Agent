@@ -5244,3 +5244,12 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 本批未修改安全生产代码。使用现有 `http_headers_probe` 与真实 Kali Docker，对本地 HTTP 目标生成缺少响应头、完整响应头、不可达三种结果，并沿已有报告恢复边界生成安全报告；没有 Agent/模型调用。`test_security_report_product.py` **1通过、64.13秒**。报告为3任务、2完成、1失败、4发现、部分完成；RustFS 原件下载的 JSON 结算/核验/评估字段与最终报告一致；报告中心分页和模式过滤成立，待处理会话显示进行中；独立 API 重启后报告一致且没有新增目标 GET。构建版完整 App 报告页显示3任务、失败1、缺少 X-Frame-Options、等级“需关注”，浏览器下载成功，页面错误0。证据目录 `p5-security-report-current/`，JUnit `p5-security-report-current.xml`。
 
 范围仍限现有响应头工具和报告产品链路；其他扫描器、完整默认 Agent、权限/超时/存储故障组合、连续容量、生产部署与迁移仍未验收。
+
+
+## 2026-10-11 恢复当前默认Step真实验收
+
+用户确认认证完成后恢复，不将历史403当现状。MySQL缺request_profile列按现有初始化补齐，8条原字段前后完全一致、两次初始化幂等；见p2-default-current-migration/facts.json。
+
+实际命令（Agent_Server）：RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION=1、QA_ITEM_OPERATION_SELECTION=1、QA_LINKED_SOURCES=1、QA_EVIDENCE_REFERENCES=1，QA_DEFAULT_COVERAGE_DIR分别独立staged/profile目录，后者另指定QA_DEFAULT_REQUEST_PROFILE=p2-default-current-step-profile.json。运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=<本轮XML>`。两个失败分别183.00/183.42秒，均2次HTTP200、effects length/8192/正文0、Run与业务HTTP0；不重置旧终态、不扩大预算。全局模型不变；profile仅隔离MySQL，实际mapped字段已核对。
+
+合同SDK探针/profile42通过25.38秒，改夹具后42通过1跳过24.83秒；实际存储另开启RUN_LIVE_MODEL_REQUEST_PROFILE=1与独立QA_MODEL_REQUEST_PROFILE_STORAGE_DIR，test_model_request_profile_storage.py 1通过6.55秒。夹具支持通用可选profile文件、复制当前profile，未修改生产模型适配层。研究/后续架构复核见P2_DEFAULT_CURRENT_RESEARCH.md和PLAN7.29。原完整失败证据保留；其他完整P0—P5继续未完成。
