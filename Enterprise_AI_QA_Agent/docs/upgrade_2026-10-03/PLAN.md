@@ -3401,3 +3401,15 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 模型适配层实际矩阵 **81通过、17.41秒**，覆盖 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini generateContent 和 LangChain OpenAI兼容路径的原生/流式、完整/截断终态、usage、工具调用、请求参数映射、错误包装和旧协议兼容。结论是当前已有统一应用请求/响应契约加 provider-specific client，不应再增加一层重复的全局适配；仍需外部供应商真实验收、供应商特有推理/输出能力核对和默认 Agent 路径验收。证据见 `p1-case-import-model-adapter-validation.json`、`p1-case-import-full-product-current.xml` 和 `p2-model-adapter-current.xml`。
 
 本批只证明导入/模板产品闭环和适配器边界，不证明普通需求文档经默认模型全量生成质量，也不证明默认 AI 选用例执行；账号实名认证完成后再验收。完整 P0—P5 继续 active。
+
+### 7.26 Shadow DOM 响应关联补验
+
+现有脚本虽能给 open Shadow DOM 目标生成 `shadow_path`，但原 MutationObserver 只观察普通文档树。真实 Chromium/CDP/API/隔离存储复现后，点击已入 PG，shadow、动态 shadow root 和 iframe shadow root 的响应均丢失；依据 DOM Standard 确认这是观察边界缺口。生产脚本现递归观察已有和后续创建的 open root，响应文本进入 open root，并跨 shadow host 做敏感祖先判断；保留旧协议字段，增加 `shadow_dom=open_roots` 和 `closed_shadow_dom=unobserved` 能力声明。修复后 `test_recording_shadow_live.py` 1通过22.49秒，17项录制回归通过。原始事件、响应关联和草稿读取均查证，敏感 fixture 不泄露。复杂网络因果、closed root、selector修复、失败定位和默认AI仍未验收。
+
+当前未完成项继续按两类管理：
+
+| 方向 | 已有实现、仍待验收 | 仍需补实现或查证实际缺口 |
+|---|---|---|
+| UI录制与知识 | open Shadow DOM 响应采集、跨文档/iframe范围和确定性质量投影已有真实专项 | 网络请求因果关联、closed Shadow DOM、selector 修复评审、失败定位报告、默认 AI 使用和完整业务闭环 |
+
+外部AI按用户决定暂缓；完整 P0—P5 目标继续 active。

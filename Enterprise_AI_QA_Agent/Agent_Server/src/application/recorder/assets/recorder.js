@@ -731,7 +731,9 @@
     var el = node && (node.nodeType === 1 ? node : node.parentElement);
     while (el) {
       if (isSensitiveField(el)) return true;
-      el = el.parentElement;
+      // parentElement stops at a ShadowRoot. Continue through its host so a
+      // sensitive host cannot leak text from an open shadow tree.
+      el = el.parentElement || (el.getRootNode && el.getRootNode().host) || null;
     }
     return false;
   }
@@ -791,6 +793,9 @@
           if (stack.length >= captureSettings.max_nodes) { windowState.reasons.add('text_node_limit'); break; }
           stack.push(children[i]);
         }
+        // ShadowRoot is not part of the light-DOM childNodes tree. Include an
+        // open root when the observed node is its host.
+        if (node.nodeType === 1 && node.shadowRoot) stack.push(node.shadowRoot);
       }
     }
     return text;
@@ -826,7 +831,7 @@
         association: 'temporal_after_actions', action_local_seqs: windowState.actions,
         reason: reason, mutation_count: windowState.mutations, elements: elements,
         observation_status: observer ? (windowState.mutations ? 'observed_changes' : 'no_changes_observed') : 'unavailable',
-        scope: 'document_light_dom', snapshot_at: 'observation_end',
+        scope: 'document_light_dom', shadow_dom: 'open_roots', closed_shadow_dom: 'unobserved', snapshot_at: 'observation_end',
         truncated: windowState.reasons.size > 0, truncation_reasons: Array.from(windowState.reasons),
         max_nodes: captureSettings.max_nodes, max_text_chars: captureSettings.max_text_chars,
         max_actions: captureSettings.max_actions } } });
@@ -839,12 +844,47 @@
       state.mutationCount += records.length;
       collectResponse(records);
     });
+    var observedShadowRoots = typeof WeakSet === 'function' ? new WeakSet() : null;
+    var observeShadowRoot = function (root) {
+      if (!root || !root.host || (observedShadowRoots && observedShadowRoots.has(root))) return;
+      if (observedShadowRoots) observedShadowRoots.add(root);
+      try {
+        observer.observe(root, { childList: true, subtree: true, attributes: true, characterData: true });
+      } catch (e) { /* detached root: the host/document observer remains active */ }
+      var children = root.querySelectorAll ? root.querySelectorAll('*') : [];
+      for (var i = 0; i < children.length; i++) {
+        if (children[i].shadowRoot) observeShadowRoot(children[i].shadowRoot);
+      }
+    };
+    var observeOpenShadowRoots = function (root) {
+      var hosts = root.querySelectorAll ? root.querySelectorAll('*') : [];
+      for (var i = 0; i < hosts.length; i++) {
+        if (hosts[i].shadowRoot) observeShadowRoot(hosts[i].shadowRoot);
+      }
+    };
+    // The application may attach roots before or after the recorder script.
+    // Observe existing roots and hook future open roots without touching closed
+    // roots, which are intentionally outside the browser-visible contract.
+    var nativeAttachShadow = Element.prototype.attachShadow;
+    if (nativeAttachShadow && !Element.prototype.__qaRecorderAttachShadow) {
+      var wrappedAttachShadow = function (init) {
+        var root = nativeAttachShadow.call(this, init);
+        if (init && init.mode === 'open') observeShadowRoot(root);
+        return root;
+      };
+      try {
+        Object.defineProperty(Element.prototype, '__qaRecorderAttachShadow', { value: true });
+        Element.prototype.attachShadow = wrappedAttachShadow;
+      } catch (e) { /* CSP or frozen prototype: existing roots still observed */ }
+    }
     var startObserve = function () {
       try {
         observer.observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+        observeOpenShadowRoots(document);
       } catch (e) { /* 文档未就绪：DOM ready 后再挂 */
         document.addEventListener('DOMContentLoaded', function () {
           observer.observe(document, { childList: true, subtree: true, attributes: true, characterData: true });
+          observeOpenShadowRoots(document);
         });
       }
     };

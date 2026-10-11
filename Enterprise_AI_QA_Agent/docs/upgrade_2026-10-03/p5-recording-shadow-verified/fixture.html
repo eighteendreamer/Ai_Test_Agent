@@ -1,0 +1,22 @@
+<!doctype html><meta charset="utf-8"><title>Shadow response fixture</title>
+<div id="host"></div><div id="late"></div><button id="create">Create root</button>
+<iframe id="frame" srcdoc="&lt;div id='frame-host'&gt;&lt;/div&gt;&lt;script&gt;
+const r=document.querySelector('#frame-host').attachShadow({mode:'open'});
+r.innerHTML='&lt;button id=frame-action&gt;Frame action&lt;/button&gt;&lt;p id=frame-result&gt;&lt;/p&gt;';
+r.querySelector('#frame-action').onclick=()=>r.querySelector('#frame-result').textContent='frame response';
+&lt;/script&gt;"></iframe>
+<script>
+const r=document.querySelector('#host').attachShadow({mode:'open'});
+r.innerHTML='<section id=nest></section><section id=password-zone><div id=private></div></section>';
+const n=r.querySelector('#nest').attachShadow({mode:'open'});
+n.innerHTML='<button id=action>Nested action</button><p id=result></p>';
+n.querySelector('#action').onclick=()=>{
+  n.querySelector('#result').textContent='nested response';
+  const privateRoot=r.querySelector('#private').shadowRoot || r.querySelector('#private').attachShadow({mode:'open'});
+  privateRoot.innerHTML='<p>fixture-sensitive-marker</p>';
+};
+document.querySelector('#create').onclick=()=>{
+ const late=document.querySelector('#late').attachShadow({mode:'open'});
+ late.innerHTML='<p id=late-result>late root response</p>';
+};
+</script>

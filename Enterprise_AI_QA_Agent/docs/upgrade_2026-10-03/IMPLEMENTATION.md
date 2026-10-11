@@ -5224,3 +5224,13 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 模型适配层实际矩阵 **81通过、17.41秒**，覆盖 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini generateContent 和 LangChain OpenAI兼容路径的原生/流式、完整/截断终态、usage、工具调用、请求参数映射、错误包装和旧协议兼容。结论是当前已有统一应用请求/响应契约加 provider-specific client，不应再增加一层重复的全局适配；仍需外部供应商真实验收、供应商特有推理/输出能力核对和默认 Agent 路径验收。证据见 `p1-case-import-model-adapter-validation.json`、`p1-case-import-full-product-current.xml` 和 `p2-model-adapter-current.xml`。
 
 本批只证明导入/模板产品闭环和适配器边界，不证明普通需求文档经默认模型全量生成质量，也不证明默认 AI 选用例执行；账号实名认证完成后再验收。完整 P0—P5 继续 active。
+
+## 2026-10-11 Shadow DOM 响应关联补验
+
+先按现有 `recorder.js`、`RecordingCaptureSettings` 和录制范围测试查证。原实现使用 `MutationObserver.observe(document, {subtree:true})`，能记录 open Shadow DOM 内的点击目标和 `shadow_path`，但 MutationObserver 不会跨越独立的 shadow tree；真实复现 `nested shadow action → DOM update`、动态创建 shadow root 和 iframe 内 shadow root 时，点击事件已写入 PG，而 `page_response.elements=[]`，响应内容丢失。该结论与 [DOM Standard 的 shadow tree 与 mutation observer 定义](https://dom.spec.whatwg.org/#mutation-observers)一致。
+
+修复 `recorder.js`：递归观察已有 open shadow roots；包装 `Element.prototype.attachShadow` 以观察后续创建的 open root；响应文本遍历 host 的 open root；敏感判断从 shadow 节点继续走到 host，防止敏感祖先内容泄露。响应协议保留 `recording-dom-response-v1` 和旧 `scope=document_light_dom` 兼容字段，新增 `shadow_dom=open_roots`、`closed_shadow_dom=unobserved` 能力声明。closed shadow root 不宣称可见。
+
+真实验收 `tests/test_recording_shadow_live.py`：生产 Uvicorn/API、隔离 MySQL/PostgreSQL/Redis/Memgraph、Chromium/CDP、PG 原始事件和草稿读取均参与；nested、动态、iframe 三种响应均进入与点击 local sequence 关联的 `page_response`，敏感 fixture 内容未进入响应或草稿，模型调用为0。修复前原件在 `p5-recording-shadow-before/`，修复后在 `p5-recording-shadow-verified/`；修复后 **1通过22.49秒**。既有录制策略/跨文档/质量/E2E 回归 **17通过、40跳过、4.39秒**，Node 语法检查通过。
+
+本批完成 open Shadow DOM 的确定性响应采集，仍不等同网络请求因果、closed shadow root、selector 自动修复、失败定位报告、默认 AI 使用或 DeepSeek 全业务闭环。
