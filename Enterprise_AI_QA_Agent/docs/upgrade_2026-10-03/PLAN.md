@@ -3361,3 +3361,9 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 本批只完成确定性清洗投影和基础遗漏诊断。人工 DeepSeek、复杂网络/跨文档/Shadow DOM 关联、selector 修复评审、失败定位报告和默认 AI 使用仍未验收；不能把本批受控 HTML 测试当作完整 UI 录制业务闭环。目标继续 `active`。
 
 实际命令：Agent_Server内RUN_LIVE_SCENE_CLI=1、RECORDING_SCENE_EVIDENCE独立绝对first/verified/tree-verified/complete目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_cli_live.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-cli-complete.xml`。合同复验RUN_LIVE_CASE_PLANNING_TASKS=1，运行test_scene_query_contract.py/test_scene_planning_contract.py/test_planning_worker_runtime.py，输出contract-live。按白名单中文commit，不推送/PR。
+
+### 7.21 性能关联清理 Worker 与回归补验〔2026-10-11〕
+
+上次响应关联扩大实测在第11个场景因 `resource_pending_reap` 暂停；根因是生产 `DockerResourceManager.retire` 必须等待 PostgreSQL cleanup receipt 才释放配额。沿现有 `src.cli.run_resource_cleanup_worker --once` 逐场景启动清理，不扩大资源池、不手工释放租约。`p5-perf-correlation-worker-verified2` **1通过105.35秒**：12个 smoke、2个 load/report，14个 allocation 与14个 `completed` cleanup receipt 一一对应，Redis四类占用每次归零，容器完整ID删除；链式登录/受保护请求、独立目标、Bearer前缀、0/false/null/空串/坏JSON、负向401、缺值后独立目标继续及load失败报告均保留证据。
+
+运行中发现录制质量文件末尾字面量 `\\n` 导致生产API导入SyntaxError；删除非法行后录制质量和会话回归 **19通过6.29秒**，提交 `4f6c492d`。既有性能测量 **1通过43.04秒**、性能证据重启/下载 **1通过53.09秒**。本批仍是缓存k6、受控本地HTTP、隔离存储和现有Worker验收，不代表默认AI、外部供应商、连续容量或完整App。完整目标继续 `active`。

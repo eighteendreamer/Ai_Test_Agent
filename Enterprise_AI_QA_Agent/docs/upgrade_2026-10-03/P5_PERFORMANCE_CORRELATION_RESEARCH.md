@@ -30,3 +30,11 @@ Correlation增加可选from_target/into_target/header_prefix；未设置字段�
 按现有src.cli.run_resource_cleanup_worker --once逐次调用真实生产清理，保存stdout/stderr、14份PG分配与completed回执、Redis占用1→0及完整ID不存在。worker-verified最终1通过155.86秒：12smoke与2load；动态凭据只在目标和VU内存，服务端记录哈希及真实鉴权接受。缺依赖跳过/profile但/plain仍实际执行；显式login→profile、Bearer前缀、0/false与null/空串/坏JSON、实际401均核对。两load引擎exit0/SLA通过，提取失败仍reportfail，现有PG两行pass/fail保存。
 
 新增判定结构化日志后delivery-contract140通过38.25秒；真实measurement-regression1通过65.82秒；evidence-regression1通过89.65秒，重启读回request_validation、24份原件下载、跨项目/篡改/终态重投/8个容器删除。compileall0附加，不代替功能。初次pool失败与原件保持。无Agent/真实模型/正式App/JMeter/容量/安全验收；默认Step按用户决定暂缓。三份方案及原253/155/153/413/200/408/151工件审计见p5-perf-correlation-validation.json。
+
+## 2026-10-11 交付补验
+
+上次 `full-verified` 失败后，按现有生产 CLI 启动 `src.cli.run_resource_cleanup_worker --once`，没有扩大资源池或直接释放租约。最新 `p5-perf-correlation-worker-verified2` 实际 **1通过105.35秒**：12个 smoke 变体和2个 load/report 变体全部执行；14个 allocation 与14个 PostgreSQL cleanup receipt 一一对应，状态均为 `completed`，每次 Redis 四类占用从1回到空，容器完整ID均已删除。`load-chain` 报告通过，`load-missing` 在引擎退出0且SLA通过时仍因提取检查失败报告失败。
+
+本次启动过程中发现此前录制质量提交的三个文件末尾含字面量 `\\n`，生产 API 导入时产生 SyntaxError。删除该非法行后，`test_recording_quality.py test_recorder_session_service.py` **19通过6.29秒**，单文件 `py_compile` 通过，修复提交为 `4f6c492d`；原性能失败批次保留未覆盖。
+
+修复后既有回归重新通过：`test_performance_docker_measurement.py` **1通过43.04秒**，`test_performance_evidence_live.py` **1通过53.09秒**。证据目录分别为 `p5-perf-measurement-regression2`、`p5-perf-evidence-regression2` 和 `p5-perf-correlation-worker-verified2`。这些是缓存 k6、受控本地 HTTP、隔离存储和现有 Worker/ToolRuntime 的验收，不等同默认 Agent、外部模型、持续容量或完整 App 验收。

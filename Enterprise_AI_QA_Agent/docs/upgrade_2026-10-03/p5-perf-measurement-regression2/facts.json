@@ -1,0 +1,42 @@
+{
+  "project_id": "62b6708f-0333-4fb5-ac8e-6849a7268d59",
+  "session_id": "d8852c3b-f242-4338-b75c-a7b2f5af63bd",
+  "scope": "production runner/parser/report with managed actual Docker; no Agent/model invocation",
+  "target": {
+    "ok": true,
+    "action": "start",
+    "container_name": "qa-perf-mock-be0ca4405ba4",
+    "port": 61646,
+    "response_text": "QA actual measurement 672e17dcc65347ce89a382614e0cad95",
+    "selected_image_key": "helper_mock_target",
+    "selected_image": "hashicorp/http-echo:1.0.0",
+    "scenario": "local_link_verify",
+    "reason": "mock target started on port 61646",
+    "stdout": "12105881ef3d9af82edce89df1f682ff08ae26d23c30dea357cfd17dd87821a0",
+    "stderr": "",
+    "fallback_used": false
+  },
+  "target_url": "http://172.17.0.5:5678/",
+  "variants": [
+    {
+      "variant": "default",
+      "parsed_p99_ms": 2.2781831399999963,
+      "report_verdict": "pass"
+    },
+    {
+      "variant": "smoke",
+      "parsed_p99_ms": 1.88398604,
+      "report_verdict": "pass"
+    },
+    {
+      "variant": "missing",
+      "parsed_p99_ms": null,
+      "report_verdict": "inconclusive"
+    },
+    {
+      "variant": "violating",
+      "parsed_p99_ms": 0.9633667799999998,
+      "report_verdict": "fail"
+    }
+  ]
+}

@@ -5184,3 +5184,9 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 终态 `finalize_metrics.recording_quality` 和录制转草稿的 `test_data.recording_quality` 使用同一投影。合同 `tests/test_recording_quality.py` 6项通过；受影响录制回归最终 74通过、8跳过、1个既有弃用警告；实际 Chromium/CDP、独立 API 和隔离 MySQL/PG/Redis 的 `tests/test_recording_quality_live.py` 1项通过，证据 `p5-recording-quality-live-fixed/` 与 `p5-recording-quality-live-delivery/`。初次真实运行暴露动态 `recording_scope` 被误纳入指纹，修正后重新通过；原始事件和失败原件均保留。
 
 这不是完整 UI 录制业务闭环：DeepSeek 人工操作、复杂响应/跨文档/Shadow DOM、selector 修复、失败定位报告和默认 AI 使用仍待验收。
+
+## 2026-10-11 性能关联清理 Worker 与回归补验
+
+上次性能响应关联扩大实测在第11个场景因 `resource_pending_reap` 暂停；查明生产 `DockerResourceManager` 的 `retire` 会等 PostgreSQL cleanup receipt 才释放配额。沿现有 `src.cli.run_resource_cleanup_worker --once` 逐场景启动生产清理，不改资源池、不手工释放租约。`p5-perf-correlation-worker-verified2` **1通过105.35秒**，实际覆盖12个 smoke、2个 load/report；14个PG allocation与cleanup receipt逐条对应且均completed，Redis占用每次归零，容器完整ID删除。链式登录/受保护请求、显式Bearer前缀、0/false/null/空串/坏JSON、负向401、缺值后独立目标继续、load失败报告均有原始事件和摘要。
+
+该次API启动还暴露录制质量文件末尾非法字面量 `\\n`，生产导入直接SyntaxError。删除非法行后，录制质量和会话回归 **19通过6.29秒**，修复提交 `4f6c492d`。既有性能测量 **1通过43.04秒**、性能证据下载与重启回归 **1通过53.09秒**；新证据保存在 `p5-perf-correlation-worker-verified2`、`p5-perf-measurement-regression2`、`p5-perf-evidence-regression2`。本批仍不覆盖默认AI、外部供应商、连续容量、完整Agent/App或JMeter全矩阵。
