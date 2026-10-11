@@ -1,0 +1,60 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="19.533" timestamp="2026-10-11T10:50:12.475316+08:00" hostname="EIghteen"><testcase classname="tests.test_recording_quality_live" name="test_actual_recording_quality_and_case_draft" time="15.664"><failure message="assert []">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1445/test_actual_recording_quality_0')
+
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_RECORDING_QUALITY") != "1", reason="real Chromium/main/PG/MySQL/Redis")
+    async def test_actual_recording_quality_and_case_draft(tmp_path):
+        evidence = Path(os.environ["RECORDING_QUALITY_EVIDENCE"])
+        evidence.mkdir(parents=True, exist_ok=False)
+        html = (
+            '&lt;!doctype html&gt;&lt;meta charset="utf-8"&gt;&lt;title&gt;质量诊断&lt;/title&gt;'
+            '&lt;button id="save"&gt;保存&lt;/button&gt;&lt;p id="count"&gt;0&lt;/p&gt;'
+            '&lt;script&gt;save.onclick=()=&gt;count.textContent=String(Number(count.textContent)+1)&lt;/script&gt;'
+        )
+        fixture = tmp_path / "quality.html"
+        fixture.write_text(html, encoding="utf-8")
+        (evidence / "fixture.html").write_text(html, encoding="utf-8")
+        graph = None
+        project_id = None
+        recording_id = None
+        async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
+            graph = MemgraphRuntimeProvider(settings)
+            port = free_port()
+            api = processes.start("recording-quality-api", "-m", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=60) as client:
+                await wait_api(client, api)
+                project = await client.post("/projects", json={"project_key": "quality-" + uuid4().hex[:12], "name": "质量诊断项目"})
+                project.raise_for_status()
+                project_id = project.json()["id"]
+                async with async_playwright() as playwright:
+                    cdp = free_port()
+                    browser = await playwright.chromium.launch(headless=True, args=[f"--remote-debugging-port={cdp}"])
+                    try:
+                        page = await browser.new_page()
+                        created = await client.post("/recordings", json={
+                            "project_id": project_id,
+                            "name": "质量诊断录制",
+                            "entry_url": fixture.resolve().as_uri(),
+                            "driver": {"kind": "cdp-attach", "endpoint": f"http://127.0.0.1:{cdp}"},
+                        })
+                        created.raise_for_status()
+                        recording_id = created.json()["id"]
+                        async with asyncio.timeout(15):
+                            while (await client.get(f"/recordings/{recording_id}")).json()["status"] != "ready":
+                                await asyncio.sleep(0.1)
+                        (await client.post(f"/recordings/{recording_id}/control", json={"action": "start"})).raise_for_status()
+                        await page.goto(fixture.resolve().as_uri())
+                        await page.locator("#save").click()
+                        await page.locator("#save").click()
+                        await page.wait_for_timeout(800)
+                        assert await page.locator("#count").inner_text() == "2"
+                        stopped = await client.post(f"/recordings/{recording_id}/control", json={"action": "stop"})
+                        stopped.raise_for_status()
+                        detail = stopped.json()
+                    finally:
+                        await browser.close()
+                quality = detail["finalize_metrics"]["recording_quality"]
+                assert quality["protocol"] == "recording-quality-v1"
+                assert quality["omission"]["status"] == "verified"
+&gt;               assert quality["duplicate_candidates"]
+E               assert []
+
+tests\test_recording_quality_live.py:74: AssertionError</failure></testcase></testsuite></testsuites>

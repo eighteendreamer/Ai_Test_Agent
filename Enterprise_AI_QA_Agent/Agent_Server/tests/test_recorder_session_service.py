@@ -351,6 +351,8 @@ def test_control_flow_reports_known_paused_delivery_gap_at_stop() -> None:
         assert session.status == RecordingStatus.failed
         assert session.ended_at is not None
         assert session.finalize_metrics["finish_receipt"]["missing_seqs"] == [2]
+        assert session.finalize_metrics["recording_quality"]["omission"]["missing_sequences"] == [2]
+        assert session.finalize_metrics["recording_quality"]["omission"]["status"] == "missing"
         assert graph.finalize_calls == []
         assert driver.closed is True
 

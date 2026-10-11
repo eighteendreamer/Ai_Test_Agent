@@ -170,6 +170,8 @@ def build_recording_draft_payload(
             "test_data.recording_observations 是采集观察，不执行为操作；截断、无变化或未采集不能证明业务通过。"
             "脱敏输入与仅有文件名的记录需要可靠测试数据，不能恢复或猜测原值。"),
         test_data={"recording_id": session.id, "driver_kind": str(session.driver_kind),
+            **({"recording_quality": deepcopy(session.finalize_metrics["recording_quality"])}
+                if "recording_quality" in session.finalize_metrics else {}),
             "recording_observations": [event.model_dump(mode="json") for event in safe_events if event.type not in _REPLAYABLE]},
         cleanup=[],
         source_refs=[

@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from src.application.exploration.recording_graph_store import RecordingGraphStore
+from src.application.recorder.recording_quality import analyze_recording_quality
 from src.application.recorder.drivers import (
     BrowserDriver,
     DriverRegistry,
@@ -420,9 +421,11 @@ class RecorderSessionService:
             runtime.session = persisted
             self._verify_capture_receipt(runtime, finish, events, operation="stop")
             result = await self._graph_store.finalize(runtime.session, events)
+            quality = analyze_recording_quality(events, finish)
             metrics = {
                 "finalize": result.get("metrics", {}),
                 "integrity": result.get("integrity", {}),
+                "recording_quality": quality,
                 "finish_receipt": finish,
                 "pause_receipts": runtime.session.finalize_metrics.get("pause_receipts", []),
             }
@@ -432,9 +435,12 @@ class RecorderSessionService:
             return await self._capture_failed(runtime, exc, finish, operation="stop")
 
         logger.info(
-            "recording finalized: recording_id=%s actions=%s step_count=%s integrity_degraded=%s",
+            "recording finalized: recording_id=%s actions=%s step_count=%s integrity_degraded=%s quality_status=%s duplicate_candidates=%s noise_events=%s",
             recording_id, metrics.get("finalize", {}).get("action_vertices"),
             runtime.session.step_count, metrics.get("integrity", {}).get("degraded"),
+            metrics.get("recording_quality", {}).get("omission", {}).get("status"),
+            len(metrics.get("recording_quality", {}).get("duplicate_candidates", [])),
+            len(metrics.get("recording_quality", {}).get("noise", [])),
         )
         completed = await self._update(
             runtime, RecordingStatus.completed, finalize_metrics=metrics
@@ -481,8 +487,16 @@ class RecorderSessionService:
         await self._cancel_task(runtime.consume_task)
         await self._cancel_task(runtime.ready_task)
         prefix = "finish" if operation == "stop" else "pause"
+        quality = None
+        try:
+            events = await self._store.get_events(runtime.session.id)
+            quality = analyze_recording_quality(events, receipt)
+        except Exception:
+            logger.exception("recording_failure_quality_unavailable", extra={
+                "recording_id": runtime.session.id, "operation": operation})
         failed = await self._update(runtime, RecordingStatus.failed, finalize_metrics={
             **runtime.session.finalize_metrics, "finalize_error": error,
+            **({"recording_quality": quality} if quality is not None else {}),
             "failure_reason": f"{prefix}_timeout" if isinstance(exc, TimeoutError) else f"{prefix}_unconfirmed",
             f"{prefix}_receipt": receipt, "parse_failures": runtime.parse_failures,
             "dropped_on_db_error": runtime.dropped_on_db_error})

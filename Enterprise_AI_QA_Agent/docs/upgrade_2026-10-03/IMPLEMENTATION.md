@@ -18,7 +18,7 @@
 |---|---|---|
 | P0 消息 | 修复完整历史重复追加、相同原始/归一请求重复拼接；分阶段追踪调用与 HTTP 重试 | 修复前新增回归：6 失败、1 通过；修复后针对测试 37 通过，含真实本地 HTTP SDK 与 LangChain 两条路径。当前真实模型/工具/SSE 测试 1 通过。完整调用追踪待实施 |
 | P0 API | 修复端点/任务身份错位；实际依赖执行与传值 | 已修复身份映射、按参数选择来源、写操作假依赖循环及显式绑定优先级；实际文档/RustFS/PostgreSQL/HTTP 验证与相关回归 53 通过。完整 Agent 模式与 GUI 报告待验收 |
-| P0 录制 | 验证 DeepSeek 人工录制、响应、清洗、持久化、AI 使用 | 待实际验证 |
+| P0 录制 | 验证 DeepSeek 人工录制、响应、清洗、持久化、AI 使用 | 基础 Chromium/CDP 录制、原始 PG 流水、响应和质量投影已有真实验收；DeepSeek 人工、复杂关联、selector 修复、失败报告及默认 AI 使用仍待验收 |
 | P0 Docker | 验证真实性能/安全工具调用、工件、解析及报告 | Docker 可用；具体测试待执行 |
 | 配置 | 所有本次新增可编辑配置使用 MySQL；纠正相关文件配置路径 | MySQL 通用配置存储及通用/通道高级设置迁移已提交，API/Prompt 共用来源；后端 70 通过、前端 4 通过及构建通过。模板已接入工作区实现；解析配置待实施；遗留通道配对业务文件待迁移 PG |
 | P1 模板 | 系统默认、项目自定义、指导与示例、模板弹窗 | 本轮提交实现。隔离真实 MySQL 模板保存、修订及项目隔离和组件测试已通过；产品浏览器操作待验收 |
@@ -5177,3 +5177,10 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 新增 `case-scene-receipt-v1` 为可选协议，场景预期从已读且冻结的场景原件中解析，不能使用录制实际响应、别名或 `not_executed` 状态作为通过标准。场景资产和投影均校验哈希及项目/版本/证据身份；旧回执协议保持兼容。
 
 验证包括实际录制场景、真实 Chromium browser-control、持久 ToolJob、PostgreSQL 固定运行和 RustFS artifact 下载。计数、错误预期及 0/false/null 类型均已验证，策略和场景头变更不影响已冻结运行；消费候选在原事务中校验但不完成 RunItem。
+## P5 UI录制质量投影（本轮）
+
+依据 `P5_RECORDING_QUALITY_RESEARCH.md`，现有录制流水已经按 `recording_id + seq` 做传输幂等，并在停止时校验 receipt 和序号完整性，但没有统一的清洗/重复候选/遗漏派生结果。本轮新增 `Agent_Server/src/application/recorder/recording_quality.py`：原始事件仍追加写且不删除；`page_scan/page_response` 等非回放事件进入噪声说明；连续相同稳定 DOM 定位和输入值只形成重复候选，真实重复操作继续保留；receipt 或序号不能确认时报告遗漏缺口。
+
+终态 `finalize_metrics.recording_quality` 和录制转草稿的 `test_data.recording_quality` 使用同一投影。合同 `tests/test_recording_quality.py` 7项通过；受影响录制回归最终 74通过、8跳过、1个既有弃用警告；实际 Chromium/CDP、独立 API 和隔离 MySQL/PG/Redis 的 `tests/test_recording_quality_live.py` 1项通过，证据 `p5-recording-quality-live-fixed/` 与 `p5-recording-quality-live-delivery/`。初次真实运行暴露动态 `recording_scope` 被误纳入指纹，修正后重新通过；原始事件和失败原件均保留。
+
+这不是完整 UI 录制业务闭环：DeepSeek 人工操作、复杂响应/跨文档/Shadow DOM、selector 修复、失败定位报告和默认 AI 使用仍待验收。

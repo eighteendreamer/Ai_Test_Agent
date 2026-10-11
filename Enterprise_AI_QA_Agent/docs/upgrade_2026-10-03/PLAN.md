@@ -3343,11 +3343,21 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 |---|---|---|
 | 模板、生成、导入与需求变更 | 默认/项目模板、Excel/JSON完整页面及普通模块生成已有专项；真实模型业务质量、更多容量/故障、业务评审与生产部署仍待验 | 根据新增实际失败定位补强；不把已验模板/页面重新列为未实现 |
 | 按用例执行 | 真实AI项目选取、排序、补全、工具执行、断言、回执与结果完整闭环 | 完整准备状态、未知副作用只读查证、执行中计划修订及其他模式仍需逐项核验补齐 |
-| UI录制与知识 | 场景编辑/步骤/别名/查询、固定规划、独立CLI恢复及可选场景业务预期回执已有专项；人工DeepSeek和默认AI业务使用仍待验 | 清洗干扰及遗漏诊断、复杂网络/跨文档/Shadow DOM关联、selector修复评审和失败定位报告 |
+| UI录制与知识 | 场景编辑/步骤/别名/查询、固定规划、独立CLI恢复、可选场景业务预期回执及确定性清洗/遗漏投影已有专项；人工DeepSeek和默认AI业务使用仍待验 | 复杂网络/跨文档/Shadow DOM关联、selector修复评审和失败定位报告 |
 | Agent API | 依赖来源、响应提取、参数传值等专项已有；完整默认Agent与异常/并发/幂等组合待验 | 鉴权续期、未覆盖故障和结果呈现按实际缺口补齐 |
 | 性能、安全 | Docker原输出、工件、解析及报告已有专项；完整Agent闭环、其他工具和故障待验 | 逐级容量、负载/环境可比性、AI流式阶段指标及其他安全发现证据仍需推进 |
 | 模型适配、重复请求与交付 | 现有多传输/profile及终态映射已有专项，外部多供应商/推理/媒体质量待验 | 全阶段逻辑调用/SDK重试/物理HTTP故障追踪、生产历史迁移与投影核对、旧Worker汇总原件追踪 |
 
 外部AI按用户决定暂缓；旧Step200/403均为历史，不推断当前账号状态。完整P0—P5目标继续active。
+
+### 7.20 UI录制清洗投影与遗漏诊断〔2026-10-11〕
+
+依据 `P5_RECORDING_QUALITY_RESEARCH.md` 和现有 `PostgresRecordingStore`、`RecorderSessionService`、`recording_case_draft_service.py`、`recorder.js`。现有能力已能按 `(recording_id, seq)` 消除重复投递，并在停止时核对 receipt、序号和 PG 对账；这不能判断不同序号是否是用户真实重复操作，也没有统一保存观察噪声和质量诊断。
+
+新增 `recording-quality-v1` 派生投影。原始事件继续追加写且不删除；`page_scan/page_response` 等观察事件列入 `noise`，可回放事件列入 `cleaned_event_sequences`；相邻相同稳定 DOM 定位和输入值仅列为 `duplicate_candidates`，不自动删除，连续真实点击仍保留；receipt 或序号无法确认时列出 `missing_sequences/sequence_gaps`，不猜测遗漏内容。终态 `finalize_metrics.recording_quality` 与录制草稿 `test_data.recording_quality` 使用同一结果。
+
+修复前测试无法导入质量分析模块；首次真实 Chromium 运行又发现稳定指纹错误包含动态 `recording_scope`，真实连续点击未被识别。收窄为页面/帧/文档身份、稳定 DOM 定位和输入值后，合同 `test_recording_quality.py` 7通过，受影响录制回归 74通过、8跳过，实际 Chromium/CDP、独立 API、隔离 MySQL/PG/Redis 及草稿转换 `test_recording_quality_live.py` 1通过；两次真实点击被保留并标为候选，观察事件被标记，原始 PG 行逐行不变；缺 receipt 或传输丢失计数时不报告已完整。失败 XML 和调试原件保留，见 `p5-recording-quality-live-before.xml`、`p5-recording-quality-live-debug/`、`p5-recording-quality-live-fixed/`、`p5-recording-quality-live-delivery/`。
+
+本批只完成确定性清洗投影和基础遗漏诊断。人工 DeepSeek、复杂网络/跨文档/Shadow DOM 关联、selector 修复评审、失败定位报告和默认 AI 使用仍未验收；不能把本批受控 HTML 测试当作完整 UI 录制业务闭环。目标继续 `active`。
 
 实际命令：Agent_Server内RUN_LIVE_SCENE_CLI=1、RECORDING_SCENE_EVIDENCE独立绝对first/verified/tree-verified/complete目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_cli_live.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-cli-complete.xml`。合同复验RUN_LIVE_CASE_PLANNING_TASKS=1，运行test_scene_query_contract.py/test_scene_planning_contract.py/test_planning_worker_runtime.py，输出contract-live。按白名单中文commit，不推送/PR。
