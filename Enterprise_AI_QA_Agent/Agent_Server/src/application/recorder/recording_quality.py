@@ -119,4 +119,3 @@ def analyze_recording_quality(
         "omission": _omission(ordered, finish_receipt),
     }
 
-\n

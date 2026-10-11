@@ -112,4 +112,3 @@ async def test_actual_recording_quality_and_case_draft(tmp_path, request):
                 "original_events_unchanged": True,
             }, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
 
-\n

@@ -88,4 +88,3 @@ def test_absent_receipt_cannot_prove_delivery_and_payload_values_are_not_exposed
     assert result["omission"]["status"] == "unknown"
     assert "private-test-value" not in str(result)
 
-\n
