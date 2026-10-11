@@ -78,4 +78,6 @@ def linked_context_prompts(stages):
     )
     stages.logic = instruction + stages.logic
     stages.effects = instruction + stages.effects
+    if stages.effect_tasks is not None:
+        stages.effect_tasks = {key: instruction + prompt for key, prompt in stages.effect_tasks.items()}
     return stages

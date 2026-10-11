@@ -5264,3 +5264,16 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 真实默认Step命令沿前批`test_default_coverage_production`，启用已有三项协议及隔离Step profile、独立`p2-linked-context-default`目录；1失败197.07秒。2次HTTP200，各SDK1物理发送；logic60.620秒stop/正文1820，effects109.902秒length/8192/正文0。固定导航4724→982字符，evidence仍8292，PG保留failed/incomplete_response，Run/业务HTTP0。没有更改全局配置，未增预算或重发旧任务。详见研究、PLAN7.30及validation清单；投影局部验证不能代替默认AI完整闭环。后续证据声明职责拆分尚需设计，目标继续active。
 
 最终实际对5个生产文件、5个测试文件和audit运行`compileall -q` exit0；契约引用/提交调用方核对及`git diff --check` exit0。本轮102文件高置信度敏感值扫描无命中；旧60原件及受保护工作区SHA未变。未改前端，无内部seed新字段的前端消费，未运行前端构建；无新增数据库schema迁移。交付只提交本轮文件，不推送、不建PR。
+
+
+## 2026-10-11 分任务证据规划：实现及真实模型未通过
+
+研究P2_EFFECT_TASKS_RESEARCH.md，当前基线28fc566c。沿原策略第三种协议，冻结传值/产生/清理Prompt，PG保存不可改写的分任务回执，合并原声明后沿既有执行。MySQL可编辑项目策略/前端同步；原模型框架和总预算不变，无schema迁移。
+
+实际命令在Agent_Server：RUN_LIVE_CASE_PLANNING_TASKS=1、QA_EFFECT_TASKS_DIR为独立绝对证据目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_planning_effect_tasks.py tests/test_planning_effect_tasks_live.py -q --tb=short --junitxml=<p2-effect-tasks-live-query-final.xml>`，18通过13.00秒；最终同两文件加test_case_effect_evidence.py/test_planning_linked_context.py，29通过9门控跳过13.97秒。旧task/scene/source/reference/文档读取专项启用RUN_LIVE_DOCUMENT_PARSERS=1和独立来源/引用目录，70通过64.57秒；第一次17失败53通过的无目标变量错误已修复，原失败XML保留。扩大回归79通过53门控跳过7.34秒。
+
+agent_web运行CasePlanDialog既有test命令83通过3.26秒；npm run build含vue-tsc exit0/Vite10.04秒。设置合同与构建不能替代App人工业务验收。
+
+真实test_default_coverage_production沿已有三项协议和QA_EFFECT_TASKS=1；隔离QA_DEFAULT_REQUEST_PROFILE，两个QA_DEFAULT_COVERAGE_DIR分别default/default-lifecycle，第二批QA_RECEIPT_CORRECTION=1仅项目配置。第一批1失败130.96秒：规划漏产生/清理角色，实际创建/查询/删除后正式回执error；第二批1失败207.65秒：produced被原180秒总期限中断，保存bindings，Run/业务HTTP0。6/3次物理HTTP均200、各SDK一次；原全局模型未改，未提高8192/180秒，未重发终态。公共终态回执导出路径尚未被真实新Run覆盖。
+
+本批只能交付可选策略及确定性恢复/兼容验证，不能声称默认AI根因修复或全目标完成。下一步复核技术声明与执行绑定职责及实际文档歧义；模型供应商真实质量、完整项目多候选/准备/执行/回执、其他P0—P5仍保持待办。旧原件及受保护工作区用SHA清单核对，三方案同步；按白名单中文commit，不推送/PR。

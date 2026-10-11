@@ -260,6 +260,17 @@ class PostgresPlanningTaskStore:
                     raise ValueError("检查点不能回退阶段或改写固定逻辑决定")
         elif checkpoint.stages is not None:
             raise ValueError("旧任务不能改用新阶段协议")
+        if original.config_snapshot.policy.planning_stage_protocol == "case-planning-staged-evidence-v3":
+            from src.application.test_cases.planning_effect_tasks import check_task_progress
+            check_task_progress(prior.effect_tasks, checkpoint.effect_tasks)
+            if checkpoint.effect_tasks is not None and (checkpoint.stages is None or checkpoint.stages.stage != "effects"):
+                raise ValueError("声明任务不能越过固定逻辑阶段")
+            count = len(prior.effect_tasks.completed) if prior.effect_tasks is not None else 0
+            if checkpoint.effect_tasks is not None and len(checkpoint.effect_tasks.completed) > count:
+                if not checkpoint.plan.rounds or checkpoint.effect_tasks.completed[-1].model_dump(mode="json") != checkpoint.plan.rounds[-1].get("canonical_task_receipt"):
+                    raise ValueError("声明任务回执必须对应原调用已校验结果")
+        elif checkpoint.effect_tasks is not None:
+            raise ValueError("旧任务不能新增分任务证据检查点")
         if checkpoint.next_round < prior.next_round or checkpoint.next_round > original.config_snapshot.policy.max_rounds:
             raise ValueError("规划检查点不能重置或超过原回合预算")
         # Any evidence already used by a persisted round stays byte-for-byte

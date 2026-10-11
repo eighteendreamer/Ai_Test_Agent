@@ -137,9 +137,26 @@ def logical_decision_hash(decision, operation_selections=None):
 
 
 class PlanningStagePrompts(PlanningModel):
-    protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] = STAGE_PROTOCOL
+    protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2", "case-planning-staged-evidence-v3"] = STAGE_PROTOCOL
     logic: str
     effects: str
+    effect_tasks: dict[Literal["bindings", "produced", "cleanup"], str] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_prompts(self, handler):
+        data = handler(self)
+        if self.effect_tasks is None:
+            data.pop("effect_tasks", None)
+        return data
+
+    @model_validator(mode="after")
+    def task_prompts_are_frozen(self):
+        if self.protocol == "case-planning-staged-evidence-v3":
+            if not self.effect_tasks or set(self.effect_tasks) != {"bindings", "produced", "cleanup"} or self.effects != self.effect_tasks["bindings"]:
+                raise ValueError("分任务协议需要一致的完整固定Prompt")
+        elif self.effect_tasks is not None:
+            raise ValueError("旧阶段协议不能新增声明任务Prompt")
+        return self
 
 
 class PlanningStageCheckpoint(PlanningModel):

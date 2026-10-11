@@ -269,7 +269,7 @@ function choosePlanningStages(event: Event) {
 function downgradeFormalEffects() {
   const policy = config.value?.policy;
   if (policy) { delete policy.consumption_protocol; delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; delete policy.linked_source_protocol; delete policy.evidence_reference_protocol; delete policy.scene_query_protocol; delete policy.scene_receipt_protocol; }
-  if (policy?.planning_stage_protocol !== "case-planning-staged-evidence-v2") return;
+  if (!policy?.planning_stage_protocol || !["case-planning-staged-evidence-v2", "case-planning-staged-evidence-v3"].includes(policy.planning_stage_protocol)) return;
   policy.preparation_scope_protocol = "preparation-scope-v1";
   policy.effect_evidence_protocol = "case-effect-evidence-v1";
   policy.effect_coverage_protocol = "case-effect-coverage-v1";
@@ -284,11 +284,12 @@ function chooseFormalEffects(event: Event) {
   config.value.policy.preparation_scope_protocol = "preparation-scope-v2";
   config.value.policy.effect_evidence_protocol = "case-effect-evidence-v2";
   config.value.policy.effect_coverage_protocol = "case-effect-coverage-v2";
-  config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
+  if (config.value.policy.planning_stage_protocol !== "case-planning-staged-evidence-v3") config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
 }
 function chooseDocumentExpected(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) {
+    downgradeEffectTasks();
     delete config.value.policy.effect_expected_source_protocol; delete config.value.policy.operation_prefetch_protocol;
     delete config.value.policy.source_identity_protocol; delete config.value.policy.linked_source_protocol; delete config.value.policy.evidence_reference_protocol; delete config.value.policy.scene_query_protocol; delete config.value.policy.scene_receipt_protocol; return;
   }
@@ -310,6 +311,7 @@ function chooseOperationPrefetch(event: Event) {
 function chooseSourceIdentity(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) {
+    downgradeEffectTasks();
     delete config.value.policy.evidence_reference_protocol;
     delete config.value.policy.linked_source_protocol;
     delete config.value.policy.source_identity_protocol;
@@ -346,9 +348,18 @@ function chooseLinkedSources(event: Event) {
 }
 function chooseEvidenceReferences(event: Event) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.evidence_reference_protocol; return; }
+  if (!(event.target as HTMLInputElement).checked) { downgradeEffectTasks(); delete config.value.policy.evidence_reference_protocol; return; }
   chooseSourceIdentity(event);
   config.value.policy.evidence_reference_protocol = "case-planning-evidence-references-v1";
+}
+function downgradeEffectTasks() {
+  if (config.value?.policy.planning_stage_protocol === "case-planning-staged-evidence-v3") config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
+}
+function chooseEffectTasks(event: Event) {
+  if (!config.value) return;
+  if (!(event.target as HTMLInputElement).checked) { downgradeEffectTasks(); return; }
+  chooseEvidenceReferences(event);
+  config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v3";
 }
 function chooseSceneQueries(event: Event) {
   if (!config.value) return;
@@ -413,7 +424,7 @@ onMounted(loadPolicy);
         <label><input data-testid="effect-evidence" type="checkbox" :disabled="busy"
           :checked="!!config.policy.effect_evidence_protocol" @change="chooseEffectEvidence">保存实际对象证据</label>
         <label><input data-testid="formal-effects" type="checkbox" :disabled="busy"
-          :checked="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v2'" @change="chooseFormalEffects">支持正式用例内的产生与清理</label>
+          :checked="['case-planning-staged-evidence-v2', 'case-planning-staged-evidence-v3'].includes(config.policy.planning_stage_protocol || '')" @change="chooseFormalEffects">支持正式用例内的产生与清理</label>
         <label><input data-testid="document-expected" type="checkbox" :disabled="busy"
           :checked="!!config.policy.effect_expected_source_protocol" @change="chooseDocumentExpected">允许引用固定项目文档中的预期</label>
         <p v-if="config.policy.effect_expected_source_protocol">保留原用例内容，预期引用已读取的文档版本和具体原文。影响后续计划。</p>
@@ -435,6 +446,9 @@ onMounted(loadPolicy);
         <p v-if="config.policy.scene_receipt_protocol">后续运行可引用已读场景中保存的预期，与本次真实工具记录核对；仍须验证用例要求，场景可读不代表通过。</p>
         <label><input data-testid="evidence-references" type="checkbox" :disabled="busy"
           :checked="!!config.policy.evidence_reference_protocol" @change="chooseEvidenceReferences">由系统还原证据引用</label>
+        <label><input data-testid="effect-tasks" type="checkbox" :disabled="busy"
+          :checked="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v3'" @change="chooseEffectTasks">分开补充传值、产生与清理证据</label>
+        <p v-if="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v3'">每步保存结果并共用原回合数和超时；全部校验后才能启动测试。</p>
         <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
         <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
           type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>

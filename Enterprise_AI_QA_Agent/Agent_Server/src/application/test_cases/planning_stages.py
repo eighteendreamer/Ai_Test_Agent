@@ -24,6 +24,8 @@ SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
 def stage_prompt_version(policy, stages):
+    if stages.protocol == "case-planning-staged-evidence-v3":
+        return stage_prompt_version(policy, stages.model_copy(update={"protocol": RELATION_STAGE_PROTOCOL})) + "+effect-tasks-v1"
     if policy.scene_query_protocol:
         return SCENE_QUERY_PROMPT_VERSION
     if policy.linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
@@ -44,6 +46,15 @@ def stage_prompt_version(policy, stages):
 
 
 def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None, scene_query_protocol=None):
+    if protocol == "case-planning-staged-evidence-v3":
+        from src.application.test_cases.planning_effect_tasks import effect_task_prompts
+        base = build_stage_prompts(RELATION_STAGE_PROTOCOL, expected_source_protocol, operation_prefetch_protocol,
+            source_identity_protocol, linked_source_protocol, evidence_reference_protocol, scene_query_protocol)
+        prompts = effect_task_prompts()
+        logic = ("本版本必须区分外部依赖与内部清理：正式用例在自身步骤创建并清理数据时，"
+            "cleanup_sources明确引用自身item_key，不因depends_on为空或没有prepare就省略。"
+            "不清理的项保留空关系，不能根据HTTP方法猜业务；依据完整操作与原文判断。") + base.logic
+        return PlanningStagePrompts(protocol=protocol, logic=logic, effects=prompts["bindings"], effect_tasks=prompts)
     if scene_query_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol)

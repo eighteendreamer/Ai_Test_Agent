@@ -13,6 +13,7 @@ from src.schemas.model_config import model_invocation_parameters as planning_mod
 from src.schemas.case_planning_sources import PlanningLinkedSources
 from src.schemas.case_planning_scenes import SceneLogicalPlanningDecisionV3, SceneLogicalPlanningDecisionV4, SceneEvidencePlanningDecision
 from src.schemas.case_planning_stages import EvidencePlanningDecision, EvidencePlanningDecisionV2, EvidencePlanningDecisionV3, PlanningStageCheckpoint, PlanningStagePrompts
+from src.schemas.case_planning_effect_tasks import EffectTaskCheckpoint
 
 
 TERMINAL_PLANNING_TASK_STATUSES = frozenset({"completed", "failed"})
@@ -70,6 +71,7 @@ class PlanningTaskCheckpoint(PlanningModel):
     response_has_tools: bool = False
     stages: PlanningStageCheckpoint | None = None
     linked_sources: PlanningLinkedSources | None = None
+    effect_tasks: EffectTaskCheckpoint | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_checkpoint(self, handler):
@@ -78,6 +80,8 @@ class PlanningTaskCheckpoint(PlanningModel):
             data.pop("linked_sources", None)
         if self.stages is None:
             data.pop("stages", None)
+        if self.effect_tasks is None:
+            data.pop("effect_tasks", None)
         return data
 
 

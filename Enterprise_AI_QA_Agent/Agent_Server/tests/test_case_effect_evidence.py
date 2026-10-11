@@ -162,7 +162,10 @@ def test_actual_old_snapshot_and_three_prompts_preserve_wire():
         exec(compile(ast.Module(body=[func], type_ignores=[]), "<actual_prompt>", "exec"), ns)
         return ns["_system_prompt"]
     def old(path):
-        return subprocess.check_output(["git", "show", "186679a8:Enterprise_AI_QA_Agent/" + path], cwd=ROOT).decode("utf-8")
+        # Historical snapshots above remain exact. The factory intentionally
+        # acquired recording knowledge instructions after 186679a8; compare
+        # this change with its actual pre-change factory, not regenerate history.
+        return subprocess.check_output(["git", "show", "28fc566c:Enterprise_AI_QA_Agent/" + path], cwd=ROOT).decode("utf-8")
     module = types.ModuleType("effect_evidence_old_schema")
     sys.modules[module.__name__] = module
     exec(compile(old("Agent_Server/src/schemas/case_planning.py"), "<old_schema>", "exec"), module.__dict__)

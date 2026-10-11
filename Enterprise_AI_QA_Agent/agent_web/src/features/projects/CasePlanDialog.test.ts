@@ -451,6 +451,18 @@ describe("case planning", () => {
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].evidence_reference_protocol).toBeUndefined();
     wrapper.unmount();
   });
+  it.each(["evidence-references", "source-identity", "document-expected", "formal-effects"])("freezes separate evidence tasks and clears them with %s", async (name) => {
+    api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="effect-tasks"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ planning_stage_protocol: "case-planning-staged-evidence-v3",
+      evidence_reference_protocol: "case-planning-evidence-references-v1", timeout_seconds: 180, max_rounds: 5 });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].planning_stage_protocol).not.toBe("case-planning-staged-evidence-v3");
+    wrapper.unmount();
+  });
   it("keeps the actual old document policy until the user enables scene reads", async () => {
     const actual = linkedSourceActual.plan.config_snapshot;
     api.getCasePlanningPolicy.mockResolvedValue(actual);

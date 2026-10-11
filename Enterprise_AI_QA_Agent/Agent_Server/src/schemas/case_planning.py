@@ -29,7 +29,7 @@ class CasePlanningPolicy(PlanningModel):
     effect_evidence_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     effect_coverage_protocol: Literal["case-effect-coverage-v1", "case-effect-coverage-v2"] | None = None
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
-    planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2"] | None = None
+    planning_stage_protocol: Literal["case-planning-staged-evidence-v1", "case-planning-staged-evidence-v2", "case-planning-staged-evidence-v3"] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
     operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1", "case-planning-item-operation-prefetch-v2"] | None = None
     source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
@@ -43,6 +43,8 @@ class CasePlanningPolicy(PlanningModel):
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.planning_stage_protocol == "case-planning-staged-evidence-v3" and not self.evidence_reference_protocol:
+            raise ValueError("分任务证据规划需要固定短引用及文档预期协议")
         if self.scene_receipt_protocol and not (self.scene_query_protocol or self.linked_source_protocol == "case-planning-linked-sources-v2"):
             raise ValueError("场景预期回执需要固定场景查询或明确关联来源读取")
         if self.scene_query_protocol and not self.source_identity_protocol:
@@ -61,12 +63,13 @@ class CasePlanningPolicy(PlanningModel):
             raise ValueError("完整摘要来源身份需要固定文档预期及分阶段协议")
         if self.operation_prefetch_protocol and not self.effect_expected_source_protocol:
             raise ValueError("明确操作预读需要固定文档预期及分阶段协议")
-        if self.effect_expected_source_protocol and self.planning_stage_protocol != "case-planning-staged-evidence-v2":
+        if self.effect_expected_source_protocol and self.planning_stage_protocol not in {"case-planning-staged-evidence-v2", "case-planning-staged-evidence-v3"}:
             raise ValueError("文档预期引用需要固定多效果分阶段协议")
         protocols = (self.preparation_scope_protocol, self.effect_evidence_protocol,
             self.effect_coverage_protocol, self.planning_stage_protocol)
-        if any(value and value.endswith("-v2") for value in protocols) and protocols != (
-            "preparation-scope-v2", "case-effect-evidence-v2", "case-effect-coverage-v2", "case-planning-staged-evidence-v2"):
+        if any(value and value.endswith("-v2") for value in protocols) and (protocols[:3] != (
+            "preparation-scope-v2", "case-effect-evidence-v2", "case-effect-coverage-v2") or protocols[3] not in {
+                "case-planning-staged-evidence-v2", "case-planning-staged-evidence-v3"}):
             raise ValueError("正式多效果关系需要一致的v2范围、证据、覆盖和分阶段协议")
         if self.action_admission_protocol and not self.action_binding_protocol:
             raise ValueError("动作确认检查需要固定执行项关联")

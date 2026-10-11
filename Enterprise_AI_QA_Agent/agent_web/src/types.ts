@@ -2018,7 +2018,7 @@ export interface CasePlanningPolicy {
   effect_evidence_max_bytes?: number | null;
   effect_coverage_protocol?: "case-effect-coverage-v1" | "case-effect-coverage-v2" | null;
   effect_coverage_max_bytes?: number | null;
-  planning_stage_protocol?: "case-planning-staged-evidence-v1" | "case-planning-staged-evidence-v2" | null;
+  planning_stage_protocol?: "case-planning-staged-evidence-v1" | "case-planning-staged-evidence-v2" | "case-planning-staged-evidence-v3" | null;
   effect_expected_source_protocol?: "case-effect-document-expected-v1" | null;
   operation_prefetch_protocol?: "case-planning-declared-operation-prefetch-v1" | "case-planning-item-operation-prefetch-v2" | null;
   source_identity_protocol?: "case-planning-source-full-hash-v1" | null;

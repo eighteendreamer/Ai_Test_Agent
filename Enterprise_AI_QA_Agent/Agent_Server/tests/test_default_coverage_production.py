@@ -184,6 +184,12 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 if os.getenv("QA_EVIDENCE_REFERENCES") == "1":
                     policy.evidence_reference_protocol = "case-planning-evidence-references-v1"
                     report["baseline"] = "43f1700b plus evidence references v11"
+                if os.getenv("QA_EFFECT_TASKS") == "1":
+                    policy.planning_stage_protocol = "case-planning-staged-evidence-v3"
+                    report["baseline"] = "28fc566c plus separate evidence tasks"
+                if os.getenv("QA_RECEIPT_CORRECTION") == "1":
+                    policy.receipt_correction_protocol = "case-receipt-correction-v1"
+                    report["isolated_receipt_correction_enabled"] = True
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
@@ -279,6 +285,21 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 with postgres_connect(settings) as conn, conn.cursor() as cur:
                     cur.execute(f"SELECT id,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (detail["run"]["id"],))
                     save("PG-tool-jobs.json", [dict(row) for row in cur.fetchall()])
+                    sessions = {(i.get("execution_checkpoint") or {}).get("session_id") for i in detail["items"]}
+                    sessions.update(((r.get("actual") or {}).get("execution_checkpoint") or {}).get("session_id") for r in detail["results"])
+                    sessions.discard(None)
+                    if sessions:
+                        # Public model response and numeric/state identity only;
+                        # never export the whole graph or private reasoning.
+                        cur.execute(f"""SELECT id,session_id,version,stage,
+                            graph_state->'model_response_text' AS model_response_text,
+                            graph_state->'final_response' AS final_response,
+                            graph_state->'model_call_count' AS model_call_count,
+                            graph_state->'max_iterations' AS max_iterations
+                            FROM {settings.database.postgres_snapshot_table} WHERE session_id=ANY(%s) ORDER BY session_id,version""", (list(sessions),))
+                        save("PG-public-receipt-snapshots.json", [dict(row) for row in cur.fetchall()])
+                    else:
+                        report["public_receipt_snapshot_session_identity_missing"] = True
             collect_objects(settings, owned)
             await processes.close()
             for p in tmp_path.iterdir():

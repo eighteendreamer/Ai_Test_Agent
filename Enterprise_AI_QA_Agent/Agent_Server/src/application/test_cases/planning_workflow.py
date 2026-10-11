@@ -28,6 +28,10 @@ from src.application.test_cases.planning_linked_sources import (
 )
 from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT_VERSION, required_source_prompt_version, validate_required_sources
 from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
+from src.application.test_cases.planning_effect_tasks import (
+    DECISIONS, next_effect_task, task_roles, accept_task_decision,
+)
+from src.schemas.case_planning_effect_tasks import EFFECT_TASK_PROTOCOL, EffectTaskDecision, EffectTaskCheckpoint
 from src.schemas.case_planning_references import ReferencedEvidenceDecision
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
@@ -77,6 +81,14 @@ class CasePlanningWorkflow:
                         "plan_id": record.id, "phase": checkpoint.phase, "error_type": type(exc).__name__})
                     raise PlanningCheckpointUnavailable("规划检查点提交尚不能确认") from exc
 
+        async def validate_plan(decision, *, validate_effects):
+            versions = {item.source_id: item.version for item in record.evidence if item.kind == "case"} if pin_read_versions else {}
+            versions.update(fixed_case_versions)
+            await self._planner._validate(record, decision, fixed_case_versions=versions,
+                preserve_read_metadata=pin_read_versions, validate_effects=validate_effects)
+            if fixed_case_versions and {item.case_id: item.case_version_id for item in decision.items if item.kind == "target"} != fixed_case_versions:
+                raise ValueError("回归目标必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
+
         try:
             if checkpoint.phase == "finished" and record.decision is not None:
                 validate_required_sources(record, record.decision)
@@ -99,6 +111,8 @@ class CasePlanningWorkflow:
             remaining = remaining_seconds if remaining_seconds is not None else (deadline_at - datetime.now(timezone.utc)).total_seconds()
             if checkpoint.linked_sources is not None and not policy.linked_source_protocol:
                 raise ValueError("旧规划任务不能新增关联来源状态")
+            if checkpoint.effect_tasks is not None and policy.planning_stage_protocol != EFFECT_TASK_PROTOCOL:
+                raise ValueError("旧规划任务不能新增分任务证据状态")
             if policy.linked_source_protocol and checkpoint.phase not in {"retrieval", "finished"} and checkpoint.linked_sources is None:
                 raise ValueError("固定关联来源预读缺少原检查点")
             if remaining <= 0:
@@ -205,6 +219,16 @@ class CasePlanningWorkflow:
                                 context["logical_hash"] = checkpoint.stages.logical_hash
                                 if checkpoint.stages.operation_selections is not None:
                                     context["operation_selections"] = [entry.model_dump(mode="json") for entry in checkpoint.stages.operation_selections]
+                                if seed.stage_prompts.protocol == EFFECT_TASK_PROTOCOL:
+                                    if checkpoint.effect_tasks is None:
+                                        raise ValueError("分任务证据阶段缺少原检查点")
+                                    task = next_effect_task(checkpoint.stages, checkpoint.effect_tasks)
+                                    if task is None:
+                                        raise ValueError("声明任务已完成但缺少最终校验结果")
+                                    scope = [item.key for item in checkpoint.stages.logical_decision.items] if task == "bindings" else task_roles(checkpoint.stages, checkpoint.effect_tasks)[task]
+                                    context["evidence_task"] = {"task": task, "scope": scope}
+                                    context["completed_tasks"] = checkpoint.effect_tasks.model_dump(mode="json")
+                                    prompt = seed.stage_prompts.effect_tasks[task]
                         if seed.required_source_prompt is not None:
                             context["required_sources"] = [source.model_dump(mode="json") for source in request.required_sources]
                             prompt += "\n" + seed.required_source_prompt
@@ -225,6 +249,8 @@ class CasePlanningWorkflow:
                             "logical_call_id": str(uuid4()), "attempt_id": attempt_id, "streaming": model_config.capabilities.streaming}
                         if stage is not None:
                             round_record["planning_stage"] = stage
+                        if "evidence_task" in context:
+                            round_record["evidence_task"] = context["evidence_task"]
                         record.rounds.append(round_record)
                         if checkpoint.linked_sources is not None:
                             round_record["linked_source_reads"] = checkpoint.linked_sources.model_dump(mode="json")
@@ -300,6 +326,7 @@ class CasePlanningWorkflow:
                                     "finish_reason": metadata.get("finish_reason"), "stop_reason": metadata.get("stop_reason")})
                                 raise ValueError(f"{reason}；已保留响应，不自动重发；未创建测试运行")
                         try:
+                            task_candidate = None
                             stage = checkpoint.stages.stage if seed.stage_prompts is not None else None
                             if stage == "effects" and policy.evidence_reference_protocol:
                                 round_record["wire_response_text"] = checkpoint.response_text
@@ -315,10 +342,34 @@ class CasePlanningWorkflow:
                             if policy.scene_query_protocol:
                                 logic_type, effects_type = scene_decision_types(
                                     policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL, policy.evidence_reference_protocol)
+                            if stage == "effects" and seed.stage_prompts.protocol == EFFECT_TASK_PROTOCOL:
+                                effects_type = DECISIONS[next_effect_task(checkpoint.stages, checkpoint.effect_tasks)]
                             decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
                                 logic_type if stage == "logic" else effects_type))
                                 if stage is not None else self._planner._parse(checkpoint.response_text or ""))
                             wire_decision = decision.model_copy(deep=True)
+                            if isinstance(decision, EffectTaskDecision):
+                                if decision.task != round_record["evidence_task"]["task"]:
+                                    raise ValueError("声明任务响应与原调用身份不同")
+                                if decision.action == "query":
+                                    query_type = SceneEvidencePlanningDecision if policy.scene_query_protocol else EvidencePlanningDecisionV3
+                                    decision = query_type.model_validate(decision.model_dump(mode="json", exclude={"task"}))
+                                else:
+                                    task_candidate, decision = accept_task_decision(checkpoint.stages, checkpoint.effect_tasks,
+                                        decision, round_record["evidence_reference_catalog"], record.evidence)
+                                    if next_effect_task(checkpoint.stages, task_candidate) is not None:
+                                        await validate_plan(decision, validate_effects=False)
+                                        checkpoint.effect_tasks = task_candidate
+                                        round_record.update(status="parsed", decision=wire_decision.model_dump(mode="json"),
+                                            canonical_task_receipt=task_candidate.completed[-1].model_dump(mode="json"))
+                                        checkpoint.validation_feedback = None
+                                        checkpoint.response_text = None
+                                        checkpoint.phase = "ready"
+                                        logger.info("case_planning_effect_task_accepted", extra={"project_id": record.project_id,
+                                            "plan_id": record.id, "task": wire_decision.task, "round": checkpoint.next_round,
+                                            "completed_tasks": len(task_candidate.completed)})
+                                        await save("声明任务回执已保存，继续原剩余预算")
+                                        continue
                             if isinstance(decision, ReferencedEvidenceDecision):
                                 reference_options = {"query_decision_type":SceneEvidencePlanningDecision} if policy.scene_query_protocol else {}
                                 decision = bind_evidence_references(decision,
@@ -327,7 +378,7 @@ class CasePlanningWorkflow:
                             if isinstance(decision, LogicalPlanningDecisionV4) and (decision.action == "finish" or not policy.scene_query_protocol):
                                 validate_operation_selections(decision, decision.operation_selections, record.evidence)
                                 decision = LogicalPlanningDecisionV3.model_validate(decision.model_dump(mode="json", exclude={"operation_selections"}))
-                            if decision.action == "finish" and stage == "effects":
+                            if decision.action == "finish" and stage == "effects" and not isinstance(wire_decision, EffectTaskDecision):
                                 decision = merge_evidence_decision(checkpoint.stages, decision, record.evidence)
                             if decision.action == "finish":
                                 if policy.preparation_scope_protocol is not None:
@@ -335,14 +386,7 @@ class CasePlanningWorkflow:
                                         item.key: {"cleanup_sources": list(item.cleanup_sources),
                                             "depends_on": list(item.depends_on)}
                                         for item in decision.items if getattr(item, "cleanup_sources", None) is not None}
-                                versions = {}
-                                if pin_read_versions:
-                                    versions.update({item.source_id: item.version for item in record.evidence if item.kind == "case"})
-                                versions.update(fixed_case_versions)
-                                await self._planner._validate(record, decision, fixed_case_versions=versions,
-                                    preserve_read_metadata=pin_read_versions, validate_effects=stage != "logic")
-                                if fixed_case_versions and {item.case_id: item.case_version_id for item in decision.items if item.kind == "target"} != fixed_case_versions:
-                                    raise ValueError("回归目标必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
+                                await validate_plan(decision, validate_effects=stage != "logic")
                         except ValueError as exc:
                             round_record.update({"status": "validation_rejected", "validation_error": str(exc)})
                             checkpoint.validation_feedback = {"error": str(exc), "candidate_response": checkpoint.response_text,
@@ -356,6 +400,12 @@ class CasePlanningWorkflow:
                             await save("模型计划校验未通过，已保存具体反馈")
                             continue
                         checkpoint.validation_feedback = None
+                        if task_candidate is not None:
+                            checkpoint.effect_tasks = task_candidate
+                            round_record["canonical_task_receipt"] = task_candidate.completed[-1].model_dump(mode="json")
+                            logger.info("case_planning_effect_task_accepted", extra={"project_id": record.project_id,
+                                "plan_id": record.id, "task": wire_decision.task, "round": checkpoint.next_round,
+                                "completed_tasks": len(task_candidate.completed)})
                         round_record.update({"status": "parsed", "decision": (
                             wire_decision if stage is not None else decision).model_dump(mode="json")})
                         logger.info("case_planning_round", extra={"project_id": record.project_id, "plan_id": record.id,
@@ -365,6 +415,8 @@ class CasePlanningWorkflow:
                             if stage == "logic":
                                 selections = wire_decision.operation_selections if isinstance(wire_decision, LogicalPlanningDecisionV4) else None
                                 checkpoint.stages = seal_logical_decision(decision, operation_selections=selections)
+                                if seed.stage_prompts.protocol == EFFECT_TASK_PROTOCOL:
+                                    checkpoint.effect_tasks = EffectTaskCheckpoint()
                                 round_record["logical_hash"] = checkpoint.stages.logical_hash
                                 if any(item.kind == "target" for item in decision.items):
                                     checkpoint.query_results = []
@@ -384,8 +436,7 @@ class CasePlanningWorkflow:
                                     logger.info("case_planning_logic_frozen", extra={"project_id": record.project_id,
                                         "plan_id": record.id, "logical_hash": checkpoint.stages.logical_hash})
                                     continue
-                                await self._planner._validate(record, decision, fixed_case_versions=versions,
-                                    preserve_read_metadata=pin_read_versions)
+                                await validate_plan(decision, validate_effects=True)
                             await self._planner._projects.require_active(record.project_id)
                             record.decision, record.summary = decision, decision.summary
                             record.status = ("no_match" if not any(item.kind == "target" for item in decision.items)
