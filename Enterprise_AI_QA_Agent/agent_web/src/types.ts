@@ -2025,6 +2025,7 @@ export interface CasePlanningPolicy {
   linked_source_protocol?: "case-planning-linked-documents-v1" | "case-planning-linked-sources-v2" | null;
   evidence_reference_protocol?: "case-planning-evidence-references-v1" | null;
   scene_query_protocol?: "case-planning-scene-query-v1" | null;
+  scene_receipt_protocol?: "case-scene-receipt-v1" | null;
   consumption_protocol?: "case-consumption-phase-v1" | null;
   max_rounds: number;
   max_candidates: number;

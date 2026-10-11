@@ -1,0 +1,108 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="17.571" timestamp="2026-10-11T09:08:19.509846+08:00" hostname="EIghteen"><testcase classname="tests.test_scene_expectation_before" name="test_new_scene_expectation_is_available_to_formal_receipt" time="13.699"><failure message="AssertionError: Actual scene has expected=2 and actual DOM count=2, but original receipt has no fixed scene source contract&#10;assert None is not None">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1430/test_new_scene_expectation_is_0')
+
+    async def test_new_scene_expectation_is_available_to_formal_receipt(tmp_path):
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            if stage != "initial":
+                return
+            def save(name,value):
+                (evidence/name).write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding="utf-8")
+            root=f"/recordings/scenes/projects/{project_ids[0]}"
+            result=await client.post(root,json={"request_id":str(uuid4()),
+                "recording_id":version["version"]["source"]["recording_id"]})
+            result.raise_for_status(); fresh=result.json()
+            content=fresh["version"]["content"]
+            content["name"]="逐项回执来源场景"
+            content["assertions"]=[{"kind":"page","target":"#count","operator":"equals","expected":2,
+                "description":"点击两次后计数为2"}]
+            result=await client.post(root+f"/{fresh['scene_id']}/versions",json={"request_id":str(uuid4()),
+                "parent_version_id":fresh["version"]["id"],"change_reason":"明确填写业务预期","content":content})
+            result.raise_for_status(); scene=result.json()
+            save("scene-expectation-new-asset.json",scene)
+            async with async_playwright() as playwright:
+                browser=await playwright.chromium.launch()
+                try:
+                    page=await browser.new_page()
+                    await page.goto((tmp_path/"scene.html").as_uri())
+                    await page.locator("#repeat").click(); await page.locator("#repeat").click()
+                    observed=int(await page.locator("#count").inner_text())
+                    await page.screenshot(path=str(evidence/"scene-expectation-observation.png"))
+                    save("scene-expectation-direct-observation.json",{"actual_count":observed,
+                        "source":"actual DOM after two clicks; not persisted ToolRuntime evidence"})
+                    assert observed==2
+                finally:
+                    await browser.close()
+            v=scene["version"]
+            candidate={"schema_version":1,"steps":[{"item_key":"target","status":"passed","summary":"计数核对",
+                "checks":[{"name":"两次点击计数","expected_source":{
+                    "evidence_id":f"ui_recording_scene:{scene['scene_id']}:{v['id']}:{v['content_hash']}",
+                    "content_hash":v["content_hash"],"payload_path_tokens":["content","assertions","0","expected"]},
+                    "operator":"equals","observations":[{"call_id":"ui-read-count","output_path_tokens":["page","count"]}]}]}]}
+            save("scene-expectation-proposed-receipt.json",candidate)
+            parsed=None
+            try:
+                parsed=AgentCaseExecutionReceipt.model_validate(candidate)
+            except ValueError as exc:
+                save("scene-expectation-schema-error.json",{"error":str(exc),"new_scene_exists":True,"actual_count":observed})
+            assert parsed is not None,"Actual scene has expected=2 and actual DOM count=2, but original receipt has no fixed scene source contract"
+&gt;       await actual_recording_scene_management(tmp_path,scene_probe=probe,additional_scenes=1)
+
+tests\test_scene_expectation_before.py:61: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:108: in actual_recording_scene_management
+    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+stage = 'initial'
+settings = Settings(app_name='Enterprise AI QA Agent', app_env='development', api_v1_prefix='/api/v1', api_auth_token=None, data_...int', checkpoint_pool_size=4, max_subagent_calls_per_turn=1, subagent_model_call_limit=6, subagent_tool_call_limit=12))
+client = &lt;httpx.AsyncClient object at 0x00000172ABA12910&gt;
+evidence = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p5-scene-expectation-before')
+project_ids = ['2f9ccf0f-908b-4fa7-99fb-d211df960d36', '43baccb5-a825-450f-b9ca-4ebe84a9beb8']
+version = {'scene_id': 'eee20cc0-724b-4ffa-95c4-2b7721d2d748', 'project_id': '2f9ccf0f-908b-4fa7-99fb-d211df960d36', 'current_ve..._id': 'eee20cc0-724b-4ffa-95c4-2b7721d2d748', 'project_id': '2f9ccf0f-908b-4fa7-99fb-d211df960d36', 'version': 2, ...}}
+
+    async def probe(*, stage, settings, client, evidence, project_ids, version):
+        if stage != "initial":
+            return
+        def save(name,value):
+            (evidence/name).write_text(json.dumps(value,ensure_ascii=False,indent=2),encoding="utf-8")
+        root=f"/recordings/scenes/projects/{project_ids[0]}"
+        result=await client.post(root,json={"request_id":str(uuid4()),
+            "recording_id":version["version"]["source"]["recording_id"]})
+        result.raise_for_status(); fresh=result.json()
+        content=fresh["version"]["content"]
+        content["name"]="逐项回执来源场景"
+        content["assertions"]=[{"kind":"page","target":"#count","operator":"equals","expected":2,
+            "description":"点击两次后计数为2"}]
+        result=await client.post(root+f"/{fresh['scene_id']}/versions",json={"request_id":str(uuid4()),
+            "parent_version_id":fresh["version"]["id"],"change_reason":"明确填写业务预期","content":content})
+        result.raise_for_status(); scene=result.json()
+        save("scene-expectation-new-asset.json",scene)
+        async with async_playwright() as playwright:
+            browser=await playwright.chromium.launch()
+            try:
+                page=await browser.new_page()
+                await page.goto((tmp_path/"scene.html").as_uri())
+                await page.locator("#repeat").click(); await page.locator("#repeat").click()
+                observed=int(await page.locator("#count").inner_text())
+                await page.screenshot(path=str(evidence/"scene-expectation-observation.png"))
+                save("scene-expectation-direct-observation.json",{"actual_count":observed,
+                    "source":"actual DOM after two clicks; not persisted ToolRuntime evidence"})
+                assert observed==2
+            finally:
+                await browser.close()
+        v=scene["version"]
+        candidate={"schema_version":1,"steps":[{"item_key":"target","status":"passed","summary":"计数核对",
+            "checks":[{"name":"两次点击计数","expected_source":{
+                "evidence_id":f"ui_recording_scene:{scene['scene_id']}:{v['id']}:{v['content_hash']}",
+                "content_hash":v["content_hash"],"payload_path_tokens":["content","assertions","0","expected"]},
+                "operator":"equals","observations":[{"call_id":"ui-read-count","output_path_tokens":["page","count"]}]}]}]}
+        save("scene-expectation-proposed-receipt.json",candidate)
+        parsed=None
+        try:
+            parsed=AgentCaseExecutionReceipt.model_validate(candidate)
+        except ValueError as exc:
+            save("scene-expectation-schema-error.json",{"error":str(exc),"new_scene_exists":True,"actual_count":observed})
+&gt;       assert parsed is not None,"Actual scene has expected=2 and actual DOM count=2, but original receipt has no fixed scene source contract"
+E       AssertionError: Actual scene has expected=2 and actual DOM count=2, but original receipt has no fixed scene source contract
+E       assert None is not None
+
+tests\test_scene_expectation_before.py:60: AssertionError</failure></testcase></testsuite></testsuites>

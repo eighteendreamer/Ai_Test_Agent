@@ -6,7 +6,7 @@ import json
 import logging
 from uuid import uuid4
 
-from src.application.test_runs.agent_case_contract import RECEIPT_PROMPT_VERSION
+from src.application.test_runs.agent_case_contract import receipt_prompt_version
 from src.schemas.case_execution import CaseReceiptCorrectionCheckpoint, CaseReceiptObject
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult, model_invocation_parameters
 from src.application.model_clients.completion import is_model_response_incomplete
@@ -86,7 +86,7 @@ class AgentCaseReceiptService:
         prefix = f"case-receipts/{context.project_id}/{context.run_id}/{context.run_item_id}/{checkpoint.execution_attempt_id}/{call_id}"
         original = await self._write(request.model_dump(mode="json"), prefix=prefix, filename="request.json")
         current = CaseReceiptCorrectionCheckpoint(phase="invoking", call_id=call_id, snapshot_id=snapshot.id,
-            prompt_version=RECEIPT_PROMPT_VERSION, model_key=model_key,
+            prompt_version=receipt_prompt_version(context.scene_receipt_protocol), model_key=model_key,
             model_parameters=model_invocation_parameters(model), runtime_parameters=runtime_parameters,
             execution_model_calls=count, total_model_calls=count + 1, max_iterations=limit, request=original)
         checkpoint = checkpoint.model_copy(update={"receipt_correction": current})

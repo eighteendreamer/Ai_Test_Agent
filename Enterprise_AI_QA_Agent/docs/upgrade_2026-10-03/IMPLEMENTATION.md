@@ -5170,3 +5170,10 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 外部AI按用户决定暂缓；旧Step200/403均为历史，不推断当前账号状态。完整P0—P5目标继续active。
 
 实际命令：Agent_Server内RUN_LIVE_SCENE_CLI=1、RECORDING_SCENE_EVIDENCE独立绝对first/verified/tree-verified/complete目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_cli_live.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-cli-complete.xml`。合同复验RUN_LIVE_CASE_PLANNING_TASKS=1，运行test_scene_query_contract.py/test_scene_planning_contract.py/test_planning_worker_runtime.py，输出contract-live。按白名单中文commit，不推送/PR。
+
+
+## 场景业务预期回执（本轮已验）
+
+新增 `case-scene-receipt-v1` 为可选协议，场景预期从已读且冻结的场景原件中解析，不能使用录制实际响应、别名或 `not_executed` 状态作为通过标准。场景资产和投影均校验哈希及项目/版本/证据身份；旧回执协议保持兼容。
+
+验证包括实际录制场景、真实 Chromium browser-control、持久 ToolJob、PostgreSQL 固定运行和 RustFS artifact 下载。计数、错误预期及 0/false/null 类型均已验证，策略和场景头变更不影响已冻结运行；消费候选在原事务中校验但不完成 RunItem。

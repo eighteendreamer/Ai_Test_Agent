@@ -239,7 +239,8 @@ class AgentCaseExecutionAdapter:
         records = [ToolExecutionRecord.model_validate(record) for record in state.get("tool_results", [])]
         async def assess(candidate):
             return await self._assessment.assess(context=context,
-                receipt=self._assessment.parse_response(candidate), tool_records=records,
+                receipt=self._assessment.parse_response(candidate,
+                    **({"scene_receipt_protocol":context.scene_receipt_protocol} if context.scene_receipt_protocol else {})), tool_records=records,
                 session_id=checkpoint.session_id, turn_id=checkpoint.turn_id,
                 attempt_id=checkpoint.execution_attempt_id, model_key=state.get("selected_model_key", ""),
                 lease_token=item.lease_token)

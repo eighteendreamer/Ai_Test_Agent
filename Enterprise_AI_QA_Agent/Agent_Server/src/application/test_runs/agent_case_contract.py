@@ -4,12 +4,31 @@ from __future__ import annotations
 import json
 
 from src.schemas.case_execution import AgentCaseExecutionReceipt
+from src.schemas.scene_receipt import case_receipt_type, SCENE_RECEIPT_PROMPT_VERSION
 
 
 RECEIPT_PROMPT_VERSION = "case-execution-receipt-v4"
 
 
-def case_result_contract() -> str:
+def receipt_prompt_version(protocol=None):
+    case_receipt_type(protocol)
+    return SCENE_RECEIPT_PROMPT_VERSION if protocol else RECEIPT_PROMPT_VERSION
+
+
+def case_result_contract(protocol=None) -> str:
+    if protocol:
+        return ("Use schema_version=2. Each check selects exactly one expected basis: expected_path_tokens "
+            "into its own complete frozen case/preparation, or expected_source pointing to an already-read "
+            "scene in this item's evidence_ids, with exact evidence_id/content_hash/payload_path_tokens. "
+            "Scene paths reference content.steps[index].expected or content.assertions[index].expected; "
+            "never take recorded actual responses, aliases or organized/not_executed as expected results. "
+            "The server verifies the frozen scene asset and projection, then resolves the expectation. "
+            "Scene expectations supplement the formal case; still cover every case expectation. "
+            "For a textual expectation, semantic may cite the full string; excerpt/literal/encoding may "
+            "select an unambiguous scalar. JSON only decodes the selected literal, never infers a rule. "
+            "Observations still require actual owned persisted tool output; knowledge availability is not a pass.\n"
+            + case_result_contract().replace(json.dumps(AgentCaseExecutionReceipt.model_json_schema(),ensure_ascii=False),
+                json.dumps(case_receipt_type(protocol).model_json_schema(),ensure_ascii=False)))
     return (
         "Return only compact JSON matching the following schema. Account for every requested step "
         "(all owned steps unless requested_item_keys explicitly limits this read-only assessment), "

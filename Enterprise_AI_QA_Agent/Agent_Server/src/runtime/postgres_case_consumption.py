@@ -10,7 +10,7 @@ from src.application.runtime.case_effect_relations import compile_relations, def
 from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService, SETTLED_EVIDENCE_STATUSES
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_tool_job_store import _job_from_row
-from src.schemas.case_execution import CaseConsumptionClosure
+from src.schemas.scene_receipt import consumption_closure_type
 from src.schemas.tool_job import ToolOutputObservation
 
 logger = logging.getLogger(__name__)
@@ -151,7 +151,7 @@ class PostgresCaseConsumption:
         return {'new_record':candidate if existing is None else None, 'proof':proof}, None
 
     def _candidate(self, cur, context, job, binding, payload, now):
-        closing = CaseConsumptionClosure.model_validate(payload)
+        closing = consumption_closure_type(context.scene_receipt_protocol).model_validate(payload)
         receipt = closing.receipt
         if (len(receipt.steps) != 1 or receipt.steps[0].item_key != context.target_key or
             not receipt.steps[0].checks or receipt.steps[0].status not in {'passed','failed'}):

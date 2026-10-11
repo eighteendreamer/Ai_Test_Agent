@@ -522,7 +522,7 @@ class PromptAssemblyService:
                 sections.append(PromptSection(
                     key="case_result_contract", title="Evidence-backed Case Result Receipt",
                     source="test_runs.agent_execution", cache_scope="dynamic", priority=85,
-                    content="After execution, " + case_result_contract(),
+                    content="After execution, " + case_result_contract(frozen.scene_receipt_protocol),
                 ))
         test_case_blocks = (list(state.get("test_case_prompt_blocks") or [])
             if execution_basis not in {"free", "cases"} else [])

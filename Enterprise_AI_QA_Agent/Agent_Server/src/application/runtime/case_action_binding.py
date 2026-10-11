@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 from src.schemas.case_execution import AgentCaseExecutionContext, CaseConsumptionClosure
+from src.schemas.scene_receipt import SceneConsumptionClosure, consumption_closure_type
 
 
 PROTOCOL = "case-action-binding-v1"
@@ -38,6 +39,10 @@ class CaseOperationSelection(CaseActionSelection):
 
 class CaseConsumptionSelection(CaseOperationSelection):
     consumption_closure: CaseConsumptionClosure | None = None
+
+
+class SceneConsumptionSelection(CaseOperationSelection):
+    consumption_closure: SceneConsumptionClosure | None = None
 
 
 class CaseActionBinding(BaseModel):
@@ -113,7 +118,7 @@ def action_input_schema(schema: dict[str, Any], bundle: dict[str, Any]) -> dict[
                 "deliberate new operation or read refresh. This is not a business endpoint idempotency key."}
         properties[ARGUMENT]["required"].append("operation_key")
     if context.consumption_protocol is not None:
-        closure_schema = CaseConsumptionClosure.model_json_schema()
+        closure_schema = consumption_closure_type(context.scene_receipt_protocol).model_json_schema()
         definitions = closure_schema.pop("$defs", {})
         if set(definitions) & set(result.get("$defs", {})):
             raise ValueError("消费回执Schema与原工具定义冲突")
@@ -134,7 +139,7 @@ def bind_case_action(*, bundle: dict[str, Any], arguments: dict[str, Any],
     context = fixed_action_context(bundle)
     if context is None:
         return None
-    selection_type = (CaseConsumptionSelection if context.consumption_protocol is not None else
+    selection_type = ((SceneConsumptionSelection if context.scene_receipt_protocol else CaseConsumptionSelection) if context.consumption_protocol is not None else
         CaseOperationSelection if context.operation_protocol is not None else CaseActionSelection)
     selection = selection_type.model_validate(arguments.get(ARGUMENT))
     step = next((step for step in context.steps if step.item.key == selection.item_key), None)

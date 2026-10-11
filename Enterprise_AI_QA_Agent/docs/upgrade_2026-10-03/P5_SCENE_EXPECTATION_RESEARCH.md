@@ -1,0 +1,26 @@
+# 场景预期应进入业务回执，而不是充当对象生命周期效果
+
+基线c19415d0；外部AI按用户决定暂缓。上一批独立CLI恢复属于已验进展，完整P0—P5仍未完成。
+
+## 代码依据与方案纠正
+
+- scene_knowledge.scene_knowledge_payload完整保留content.steps.expected、content.assertions和原始source，verification_status=not_executed。scene_service.to_case_draft也保留步骤预期与断言。不是“知识没有预期字段”。
+- case_effect_relations.py的declaration.role为produced/cleanup，捕获对象并核对消费清理；该机制不是普通UI业务验证器。旧方案把场景预期仅归到“技术效果声明”会遗漏正式回执，应纠正为现有业务回执的固定来源引用。不得为点击计数编造产生对象/清理声明。
+- case_execution.CaseExecutionCheck要求expected_path_tokens指向当前固定用例/prepare.instructions，AgentCaseAssessmentService._assess_steps只从此source取值；case_result_contract也声明完整用例预期。已读scene在execution.evidence中，但没有作为回执预期来源的契约。
+- planning_evidence_references.py的E场景条目已有native content_hash与payload_hash，旧文档expected_source严格限制document，不能直接放宽旧协议。scene预期要校验原场景资产(content/source)、已读投影、project/scene/version及当前item.evidence_ids，不能把原录制实际响应或organized状态当预期或通过。
+- literal_evidence.literal_value支持字面量键和数组索引；VerificationService已按operator比较实际值。应复用现有取值/比较和真实ToolJob归属校验，不新增执行器，不修改正式用例JSON，不给旧运行静默升级。
+- agent_case_contract、AgentCaseAssessmentService、AgentCaseExecutionService、PromptAssemblyService、逐项消费回执、纠正/恢复都是消费方。正式实施前必须核对全部调用点及旧Schema/Prompt冻结；配置MySQL、任务/上下文/结果PG、原件RustFS。
+
+## 首先实测
+
+复用actual_recording_scene_management创建全新HTML/CDP录制、实际API场景，再保存明确业务断言“计数=2”。独立真实浏览器加载同一原HTML点击两次，从DOM读取实际计数；用此新资产和实际观察构造固定场景引用，测试旧回执能否接受。保存原件、场景/PG与解析错误。这一步只定位回执契约，不把直接浏览器观察伪称为正式ToolRuntime证据或AI判定。
+
+后续实施以实际复现为依据。默认旧回执维持原Schema和Prompt；新协议需冻结到原计划/执行上下文，受控实际UI工具及持久ToolJob验证通过/失败/缺来源/哈希或归属错误、终态和恢复。不得借新协议跳过其他用例预期、依赖或权限。
+
+## 实测结论与实施决定
+
+before实际1失败17.58秒：全新CDP录制/API场景保存断言expected=2，独立真实浏览器点击两次读取DOM实际2；旧回执拒绝expected_source并要求自身expected_path_tokens。原场景、截图、DOM观察和Schema错误已保存。这证明业务回执引用缺口；不是对象生命周期或UI执行器故障。
+
+采用可选scene_receipt_protocol=case-scene-receipt-v1，MySQL项目策略冻结到原PG计划/执行上下文。旧回执schema_version=1与v4 Prompt逐字保持；新协议选择独立schema_version=2和v5 Prompt，checks二选一引用自身路径或当前项已读固定场景的明确steps.expected/assertions.expected。取值/字面量解码复用原来源模块，比较仍走原服务器VerificationService。该引用只是判定依据，不代表已有实际观察、不自动替换或省略用例预期。
+
+同步正式/逐项评估、执行提示、纠正请求版本、消费结束回执和PG验证；旧无开关路径保持原类型、字节序列和逻辑。场景原件native hash与投影hash都验证，不能改读当前头或引用录制响应当期望。UI页面开关及类型同步，关闭来源身份依赖时清除新选项。无新表/依赖、模型专有字段或额外Agent循环。

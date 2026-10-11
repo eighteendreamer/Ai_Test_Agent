@@ -3315,6 +3315,16 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 
 仍需推进：场景预期用于技术效果声明、独立CLI/Worker进程故障、人工DeepSeek、清洗/遗漏/复杂网络及跨文档/Shadow DOM响应关联、selector修复与失败定位报告；准备状态/未知副作用/执行修订/其他模式，API完整Agent及续期，性能容量/流式与其他安全工具，用户业务评审/部署/历史迁移及全阶段物理HTTP、旧Worker原件。完整P0—P5继续active，外部AI按用户决定暂缓。无新表/依赖/全局模型或旧项目配置修改。原件、前序456+149工件、保护文件及三份方案同步见p5-scene-query-validation.json。
 
+### 7.19 场景业务预期回执与真实浏览器结果〔2026-10-11〕
+
+依据：`P5_SCENE_EXPECTATION_RESEARCH.md`、全新录制场景、实际 Chromium、现有 browser-control/ToolRuntime、PostgreSQL 运行结果和 RustFS 原件。旧回执实测拒绝 `expected_source`，因此没有放宽旧 Schema，也没有把普通 UI 断言误归入 `produced/cleanup` 对象效果。
+
+已实现可选 `case-scene-receipt-v1`：项目策略在 MySQL 保存，规划后冻结到 PostgreSQL 执行上下文。新回执使用 `schema_version=2`，每个检查只能引用当前项目已读场景中保存的 `content.steps[index].expected` 或 `content.assertions[index].expected`；服务器核对场景原件、投影哈希、项目、场景、版本、证据归属和路径，再用现有确定性比较服务核对真实持久化 ToolJob 输出。旧 `schema_version=1`、旧 V4 Prompt、旧文档预期路径保持原行为，关闭开关时上下文和工具 Schema 不带新字段。
+
+真实验收：新场景保存计数 `2`，现有 browser-control 通过本机 HTTP 页面实际点击两次并读取 DOM；计数 `2` 通过，错误预期 `5` 失败，`0`、`false`、`null` 类型保持；修改当前策略和场景头后，已冻结运行仍使用原版本。实际工具 JSON 与 transcript 从 RustFS 下载并校验字节数/SHA256；同一 PostgreSQL 事务内生成消费候选，`run_item_completed=false`。前端场景预期开关测试 79 项通过；后端新旧契约 27 项通过；完整真实场景 1 项通过 69.60 秒；旧链路回归 145 通过、3 项因真实模型门控跳过；compileall 及前端 typecheck/build 通过。原始失败复现、旧兼容回归和每次实测原件均保留。
+
+边界：这批是受控规划模型和真实浏览器/工具/存储验收，不代表默认 AI 已完成场景选取、理解或断言质量；默认模型因账号实名认证暂缓。消费候选验证不代表自动完成消费或 RunItem。场景预期不处理录制清洗、遗漏诊断、网络/跨文档/Shadow DOM 关联、selector 修复和失败定位报告。
+
 ### 7.18 独立规划CLI的场景查询真实进程恢复〔2026-10-11〕
 
 基线1776cdd9，依据见P5_SCENE_CLI_RESEARCH.md。该能力已有生产实现，本批补真实独立进程验收，未修改生产代码。沿原CLI、planning_worker_runtime、RedisTaskWorker、PlanningTaskHandler及模型适配器；受控localhost HTTP模型配置存于本轮独立MySQL表，真实PG固定任务与场景、Redis投递、main/CDP新录制和已构建App。
@@ -3333,7 +3343,7 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 |---|---|---|
 | 模板、生成、导入与需求变更 | 默认/项目模板、Excel/JSON完整页面及普通模块生成已有专项；真实模型业务质量、更多容量/故障、业务评审与生产部署仍待验 | 根据新增实际失败定位补强；不把已验模板/页面重新列为未实现 |
 | 按用例执行 | 真实AI项目选取、排序、补全、工具执行、断言、回执与结果完整闭环 | 完整准备状态、未知副作用只读查证、执行中计划修订及其他模式仍需逐项核验补齐 |
-| UI录制与知识 | 场景编辑/步骤/别名/查询、固定规划与独立CLI恢复已有专项；人工DeepSeek和默认AI业务使用仍待验 | 清洗干扰及遗漏诊断、复杂网络/跨文档/Shadow DOM关联、场景预期技术效果声明、selector修复评审和失败定位报告 |
+| UI录制与知识 | 场景编辑/步骤/别名/查询、固定规划、独立CLI恢复及可选场景业务预期回执已有专项；人工DeepSeek和默认AI业务使用仍待验 | 清洗干扰及遗漏诊断、复杂网络/跨文档/Shadow DOM关联、selector修复评审和失败定位报告 |
 | Agent API | 依赖来源、响应提取、参数传值等专项已有；完整默认Agent与异常/并发/幂等组合待验 | 鉴权续期、未覆盖故障和结果呈现按实际缺口补齐 |
 | 性能、安全 | Docker原输出、工件、解析及报告已有专项；完整Agent闭环、其他工具和故障待验 | 逐级容量、负载/环境可比性、AI流式阶段指标及其他安全发现证据仍需推进 |
 | 模型适配、重复请求与交付 | 现有多传输/profile及终态映射已有专项，外部多供应商/推理/媒体质量待验 | 全阶段逻辑调用/SDK重试/物理HTTP故障追踪、生产历史迁移与投影核对、旧Worker汇总原件追踪 |

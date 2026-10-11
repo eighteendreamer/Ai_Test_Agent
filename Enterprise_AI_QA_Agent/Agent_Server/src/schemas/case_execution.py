@@ -56,6 +56,7 @@ class AgentCaseExecutionContext(PlanningModel):
     effect_coverage_max_bytes: int | None = Field(default=None, ge=1, le=10000000)
     effect_owner_item_ids: dict[str, str] | None = None
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
+    scene_receipt_protocol: Literal["case-scene-receipt-v1"] | None = None
     consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
     receipt_correction_protocol: Literal["case-receipt-correction-v1"] | None = None
     receipt_correction_transport_options: ModelTransportOptions | None = None
@@ -100,6 +101,8 @@ class AgentCaseExecutionContext(PlanningModel):
 
     def execution_json(self, *, exclude=None) -> dict[str, Any]:
         omitted = set(exclude or ())
+        if self.scene_receipt_protocol is None:
+            omitted.add("scene_receipt_protocol")
         if self.receipt_correction_protocol is None:
             omitted.add("receipt_correction_protocol")
         if self.receipt_correction_transport_options is None:

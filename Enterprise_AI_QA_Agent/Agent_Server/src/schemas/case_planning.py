@@ -36,12 +36,15 @@ class CasePlanningPolicy(PlanningModel):
     linked_source_protocol: Literal["case-planning-linked-documents-v1", "case-planning-linked-sources-v2"] | None = None
     evidence_reference_protocol: Literal["case-planning-evidence-references-v1"] | None = None
     scene_query_protocol: Literal["case-planning-scene-query-v1"] | None = None
+    scene_receipt_protocol: Literal["case-scene-receipt-v1"] | None = None
     consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
     receipt_correction_protocol: Literal["case-receipt-correction-v1"] | None = None
     receipt_correction_transport_options: ModelTransportOptions | None = None
 
     @model_validator(mode="after")
     def require_action_ownership(self):
+        if self.scene_receipt_protocol and not (self.scene_query_protocol or self.linked_source_protocol == "case-planning-linked-sources-v2"):
+            raise ValueError("场景预期回执需要固定场景查询或明确关联来源读取")
         if self.scene_query_protocol and not self.source_identity_protocol:
             raise ValueError("场景按需查询需要固定完整来源身份")
         if self.receipt_correction_transport_options is not None and self.receipt_correction_protocol is None:
@@ -90,6 +93,8 @@ class CasePlanningPolicy(PlanningModel):
     @model_serializer(mode="wrap")
     def preserve_original_policy(self, handler):
         data = handler(self)
+        if self.scene_receipt_protocol is None:
+            data.pop("scene_receipt_protocol", None)
         if self.scene_query_protocol is None:
             data.pop("scene_query_protocol", None)
         if self.receipt_correction_protocol is None:

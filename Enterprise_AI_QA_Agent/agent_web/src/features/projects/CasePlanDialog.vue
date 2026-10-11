@@ -268,7 +268,7 @@ function choosePlanningStages(event: Event) {
 }
 function downgradeFormalEffects() {
   const policy = config.value?.policy;
-  if (policy) { delete policy.consumption_protocol; delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; delete policy.linked_source_protocol; delete policy.evidence_reference_protocol; delete policy.scene_query_protocol; }
+  if (policy) { delete policy.consumption_protocol; delete policy.effect_expected_source_protocol; delete policy.operation_prefetch_protocol; delete policy.source_identity_protocol; delete policy.linked_source_protocol; delete policy.evidence_reference_protocol; delete policy.scene_query_protocol; delete policy.scene_receipt_protocol; }
   if (policy?.planning_stage_protocol !== "case-planning-staged-evidence-v2") return;
   policy.preparation_scope_protocol = "preparation-scope-v1";
   policy.effect_evidence_protocol = "case-effect-evidence-v1";
@@ -290,7 +290,7 @@ function chooseDocumentExpected(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) {
     delete config.value.policy.effect_expected_source_protocol; delete config.value.policy.operation_prefetch_protocol;
-    delete config.value.policy.source_identity_protocol; delete config.value.policy.linked_source_protocol; delete config.value.policy.evidence_reference_protocol; delete config.value.policy.scene_query_protocol; return;
+    delete config.value.policy.source_identity_protocol; delete config.value.policy.linked_source_protocol; delete config.value.policy.evidence_reference_protocol; delete config.value.policy.scene_query_protocol; delete config.value.policy.scene_receipt_protocol; return;
   }
   chooseFormalEffects(event);
   config.value.policy.effect_expected_source_protocol = "case-effect-document-expected-v1";
@@ -314,6 +314,7 @@ function chooseSourceIdentity(event: Event) {
     delete config.value.policy.linked_source_protocol;
     delete config.value.policy.source_identity_protocol;
     delete config.value.policy.scene_query_protocol;
+    delete config.value.policy.scene_receipt_protocol;
     if (config.value.policy.operation_prefetch_protocol === "case-planning-item-operation-prefetch-v2") {
       config.value.policy.operation_prefetch_protocol = "case-planning-declared-operation-prefetch-v1";
     }
@@ -335,7 +336,11 @@ function chooseItemOperations(event: Event) {
 }
 function chooseLinkedSources(event: Event) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.linked_source_protocol; return; }
+  if (!(event.target as HTMLInputElement).checked) {
+    delete config.value.policy.linked_source_protocol;
+    if (!config.value.policy.scene_query_protocol) delete config.value.policy.scene_receipt_protocol;
+    return;
+  }
   chooseSourceIdentity(event);
   config.value.policy.linked_source_protocol = "case-planning-linked-sources-v2";
 }
@@ -347,9 +352,19 @@ function chooseEvidenceReferences(event: Event) {
 }
 function chooseSceneQueries(event: Event) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.scene_query_protocol; return; }
+  if (!(event.target as HTMLInputElement).checked) {
+    delete config.value.policy.scene_query_protocol;
+    if (config.value.policy.linked_source_protocol !== "case-planning-linked-sources-v2") delete config.value.policy.scene_receipt_protocol;
+    return;
+  }
   chooseSourceIdentity(event);
   config.value.policy.scene_query_protocol = "case-planning-scene-query-v1";
+}
+function chooseSceneReceipt(event: Event) {
+  if (!config.value) return;
+  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.scene_receipt_protocol; return; }
+  chooseSceneQueries(event);
+  config.value.policy.scene_receipt_protocol = "case-scene-receipt-v1";
 }
 async function openSaved() {
   if (!savedId.value.trim() || busy.value) return;
@@ -416,6 +431,8 @@ onMounted(loadPolicy);
         <label><input data-testid="scene-queries" type="checkbox" :disabled="busy"
           :checked="!!config.policy.scene_query_protocol" @change="chooseSceneQueries">允许规划时查询项目场景</label>
         <p v-if="config.policy.scene_query_protocol">按缺口查找场景，再读取固定版本的完整步骤、响应和元素别名；目录不代表已执行。</p>
+        <label><input data-testid="scene-receipts" type="checkbox" :disabled="busy" :checked="!!config.policy.scene_receipt_protocol" @change="chooseSceneReceipt">允许按固定场景预期核对结果</label>
+        <p v-if="config.policy.scene_receipt_protocol">后续运行可引用已读场景中保存的预期，与本次真实工具记录核对；仍须验证用例要求，场景可读不代表通过。</p>
         <label><input data-testid="evidence-references" type="checkbox" :disabled="busy"
           :checked="!!config.policy.evidence_reference_protocol" @change="chooseEvidenceReferences">由系统还原证据引用</label>
         <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
