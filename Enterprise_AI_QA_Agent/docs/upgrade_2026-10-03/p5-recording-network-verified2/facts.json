@@ -1,0 +1,43 @@
+{
+  "fixture_requests": [
+    "/fixture",
+    "/fixture",
+    "/api/data?q=redaction-probe",
+    "/api/missing?q=redaction-probe",
+    "/api/xhr?q=redaction-probe"
+  ],
+  "action_local_seqs": [
+    0
+  ],
+  "network": [
+    {
+      "ok": true,
+      "method": "GET",
+      "origin": "same-origin",
+      "status": 200,
+      "outcome": "response",
+      "pathname": "/api/data",
+      "duration_ms": 11
+    },
+    {
+      "ok": false,
+      "method": "GET",
+      "origin": "same-origin",
+      "status": 404,
+      "outcome": "response",
+      "pathname": "/api/missing",
+      "duration_ms": 2
+    },
+    {
+      "ok": true,
+      "method": "GET",
+      "origin": "same-origin",
+      "status": 201,
+      "outcome": "response",
+      "pathname": "/api/xhr",
+      "duration_ms": 3
+    }
+  ],
+  "query_or_body_leaked": false,
+  "model_calls": 0
+}

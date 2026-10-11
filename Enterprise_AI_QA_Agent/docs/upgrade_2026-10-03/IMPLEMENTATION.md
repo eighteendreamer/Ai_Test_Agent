@@ -5234,3 +5234,7 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 真实验收 `tests/test_recording_shadow_live.py`：生产 Uvicorn/API、隔离 MySQL/PostgreSQL/Redis/Memgraph、Chromium/CDP、PG 原始事件和草稿读取均参与；nested、动态、iframe 三种响应均进入与点击 local sequence 关联的 `page_response`，敏感 fixture 内容未进入响应或草稿，模型调用为0。修复前原件在 `p5-recording-shadow-before/`，修复后在 `p5-recording-shadow-verified/`；修复后 **1通过22.49秒**。既有录制策略/跨文档/质量/E2E 回归 **17通过、40跳过、4.39秒**，Node 语法检查通过。
 
 本批完成 open Shadow DOM 的确定性响应采集，仍不等同网络请求因果、closed shadow root、selector 自动修复、失败定位报告、默认 AI 使用或 DeepSeek 全业务闭环。
+
+## 2026-10-11 UI录制 fetch/XHR 网络响应元数据关联
+
+详见 `P5_RECORDING_NETWORK_RESEARCH.md`。生产脚本在响应窗口内为 fetch/XHR 保存脱敏路径、方法、HTTP状态、ok/outcome和耗时，并以action local sequence关联；不保存查询串、请求/响应体或头部。真实旧脚本复现一次点击触发fetch 200、404和XHR 201但没有network字段；修复后真实Chromium/生产API/隔离MySQL/PG/Redis/Memgraph测试1通过16.43秒，三个状态均被保存且敏感查询/响应体未泄露。Shadow/策略/范围/质量回归17通过40跳过31.86秒，Node语法检查通过。该关联仍不等同业务因果或网络全覆盖，默认AI继续暂缓。

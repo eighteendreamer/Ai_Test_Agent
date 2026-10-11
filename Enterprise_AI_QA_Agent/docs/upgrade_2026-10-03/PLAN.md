@@ -3413,3 +3413,11 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 | UI录制与知识 | open Shadow DOM 响应采集、跨文档/iframe范围和确定性质量投影已有真实专项 | 网络请求因果关联、closed Shadow DOM、selector 修复评审、失败定位报告、默认 AI 使用和完整业务闭环 |
 
 外部AI按用户决定暂缓；完整 P0—P5 目标继续 active。
+
+### 7.27 UI录制 fetch/XHR 网络响应元数据关联〔2026-10-11〕
+
+依据现有 `recorder.js`/`RecordingCaptureSettings`/PG事件消费者和浏览器 API 语义查证：原实现只观察 DOM，`page_response` 没有网络状态。真实 Chromium 夹具一次点击触发 fetch 200、fetch 404、XHR 201，旧脚本已有点击和 DOM响应但缺 network 字段，复现失败。修复脚本仅在录制响应窗口内包装 fetch/XHR，记录脱敏 pathname、method、status、ok、outcome、耗时，并与 action local sequence 同窗关联；不保存请求/响应体、查询串、头部或 token。HTTP 404保留为response且ok=false，网络异常/abort/timeout单独标记，XHR error/loadend重复收口。
+
+修复后真实验收 `test_recording_network_live.py` **1通过16.43秒**：三个状态与一次点击关联，查询参数和响应体均未进入PG网络证据；Shadow DOM/策略/范围/质量回归 **17通过、40跳过、31.86秒**，Node语法检查通过。证据见 `p5-recording-network-before2/`、`p5-recording-network-verified2/` 和对应 XML。协议仍为 `recording-dom-response-v1`，新增 `network_correlation=instrumented_fetch_xhr_completion`、`network_observation_status` 和 `network` 字段，无新表/配置/依赖。
+
+这一步是可审计的 fetch/XHR 元数据关联，不等同服务端业务因果或网络全覆盖；beacon、WebSocket、Service Worker 内部请求、导航、closed Shadow DOM、selector修复、失败定位报告和默认AI使用仍未完成。

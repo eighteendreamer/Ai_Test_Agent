@@ -722,8 +722,93 @@
     if (observer) collectResponse(observer.takeRecords());
     if (responseWindow && responseWindow.actions.length >= captureSettings.max_actions) flushResponse('action_limit');
     if (!responseWindow) {
-      responseWindow = { actions: [], nodes: new Set(), redacted: new Set(), mutations: 0, reasons: new Set(), settle: null, deadline: null };
+      responseWindow = { actions: [], nodes: new Set(), redacted: new Set(), mutations: 0, reasons: new Set(), settle: null, deadline: null,
+        network: [], network_pending: 0 };
       responseWindow.deadline = setTimeout(function () { flushResponse('max_wait'); }, captureSettings.max_wait_ms);
+    }
+  }
+
+  function networkPath(value) {
+    try {
+      var parsed = new URL(String(value), document.baseURI);
+      return { origin: parsed.origin === window.location.origin ? 'same-origin' : 'cross-origin', pathname: parsed.pathname };
+    } catch (e) {
+      return { origin: 'unknown', pathname: null };
+    }
+  }
+
+  function networkStart(method, url) {
+    if (!responseEnabled || !state.enabled || !responseWindow) return null;
+    responseWindow.network_pending += 1;
+    return { windowState: responseWindow, method: String(method || 'GET').toUpperCase(),
+      path: networkPath(url), started: Date.now() };
+  }
+
+  function networkFinish(record, status, ok, outcome) {
+    if (!record || !record.windowState || record.finished) return;
+    record.finished = true;
+    var windowState = record.windowState;
+    windowState.network_pending = Math.max(0, windowState.network_pending - 1);
+    windowState.network.push({ method: record.method, origin: record.path.origin, pathname: record.path.pathname,
+      status: Number.isFinite(status) ? status : null, ok: ok === true, outcome: outcome,
+      duration_ms: Math.max(0, Date.now() - record.started) });
+    clearTimeout(windowState.settle);
+    windowState.settle = setTimeout(function () { flushResponse('settled'); }, captureSettings.settle_ms);
+  }
+
+  function installNetworkObservers() {
+    if (!responseEnabled || window.__qaRecorderNetworkInstalled) return;
+    try {
+      var nativeFetch = window.fetch;
+      if (typeof nativeFetch === 'function') {
+        window.fetch = function (resource, options) {
+          var method = options && options.method;
+          if (!method && resource && resource.method) method = resource.method;
+          var url = resource && resource.url ? resource.url : resource;
+          var record = networkStart(method || 'GET', url);
+          var promise;
+          try {
+            promise = nativeFetch.apply(this, arguments);
+          } catch (error) {
+            networkFinish(record, null, false, 'error');
+            throw error;
+          }
+          return Promise.resolve(promise).then(function (response) {
+            networkFinish(record, response && response.status, response && response.ok === true, 'response');
+            return response;
+          }, function (error) {
+            networkFinish(record, null, false, 'error');
+            throw error;
+          });
+        };
+      }
+      var xhrOpen = XMLHttpRequest.prototype.open;
+      var xhrSend = XMLHttpRequest.prototype.send;
+      var xhrRecords = typeof WeakMap === 'function' ? new WeakMap() : null;
+      if (xhrOpen && xhrSend && xhrRecords) {
+        XMLHttpRequest.prototype.open = function (method, url) {
+          xhrRecords.set(this, { method: method, url: url });
+          return xhrOpen.apply(this, arguments);
+        };
+        XMLHttpRequest.prototype.send = function () {
+          var request = xhrRecords.get(this) || { method: 'GET', url: '' };
+          var record = networkStart(request.method, request.url);
+          if (record) {
+            this.addEventListener('loadend', function () {
+              networkFinish(record, this.status, this.status >= 200 && this.status < 400, 'response');
+            }, { once: true });
+            this.addEventListener('error', function () { networkFinish(record, null, false, 'error'); }, { once: true });
+            this.addEventListener('abort', function () { networkFinish(record, null, false, 'aborted'); }, { once: true });
+            this.addEventListener('timeout', function () { networkFinish(record, null, false, 'timeout'); }, { once: true });
+          }
+          return xhrSend.apply(this, arguments);
+        };
+      }
+      Object.defineProperty(window, '__qaRecorderNetworkInstalled', { value: true });
+    } catch (e) {
+      // A frozen prototype or CSP must not stop UI action capture. The response
+      // payload will declare network observation unavailable in that document.
+      window.__qaRecorderNetworkUnavailable = true;
     }
   }
 
@@ -771,7 +856,9 @@
       }
     }
     clearTimeout(windowState.settle);
-    windowState.settle = setTimeout(function () { flushResponse('settled'); }, captureSettings.settle_ms);
+    if (!windowState.network_pending) {
+      windowState.settle = setTimeout(function () { flushResponse('settled'); }, captureSettings.settle_ms);
+    }
   }
 
   function responseText(el, windowState) {
@@ -803,6 +890,9 @@
 
   function flushResponse(reason) {
     if (!responseWindow) return;
+    if (reason === 'settled' && responseWindow.network_pending) {
+      return;
+    }
     if (reason === 'settled' && state.fillTimers.size) {
       responseWindow.settle = setTimeout(function () { flushResponse('settled'); }, INPUT_DEBOUNCE_MS);
       return;
@@ -831,11 +921,16 @@
         association: 'temporal_after_actions', action_local_seqs: windowState.actions,
         reason: reason, mutation_count: windowState.mutations, elements: elements,
         observation_status: observer ? (windowState.mutations ? 'observed_changes' : 'no_changes_observed') : 'unavailable',
-        scope: 'document_light_dom', shadow_dom: 'open_roots', closed_shadow_dom: 'unobserved', snapshot_at: 'observation_end',
+        scope: 'document_light_dom', shadow_dom: 'open_roots', closed_shadow_dom: 'unobserved',
+        network_correlation: 'instrumented_fetch_xhr_completion',
+        network_observation_status: window.__qaRecorderNetworkUnavailable ? 'unavailable' : (windowState.network.length ? 'observed' : 'no_requests_observed'),
+        network: windowState.network, snapshot_at: 'observation_end',
         truncated: windowState.reasons.size > 0, truncation_reasons: Array.from(windowState.reasons),
         max_nodes: captureSettings.max_nodes, max_text_chars: captureSettings.max_text_chars,
         max_actions: captureSettings.max_actions } } });
   }
+
+  installNetworkObservers();
 
   // ---------------------------------------------------- MutationObserver 计数
 
