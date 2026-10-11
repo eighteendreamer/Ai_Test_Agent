@@ -20,7 +20,7 @@ export const options = __smoke
 export default function () {
   const __headers0 = {};
   if (true) {
-    const res = http.get("http://host.docker.internal:62519/profile", {
+    const res = http.get("http://host.docker.internal:61529/profile", {
       headers: __headers0,
       responseCallback: __responseCallback,
     });

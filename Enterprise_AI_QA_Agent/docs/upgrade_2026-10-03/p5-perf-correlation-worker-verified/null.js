@@ -21,7 +21,7 @@ export default function () {
   const __correlations = Object.create(null);
   const __headers0 = {};
   if (true) {
-    const res = http.get("http://host.docker.internal:62519/null", {
+    const res = http.get("http://host.docker.internal:61529/null", {
       headers: __headers0,
       responseCallback: __responseCallback,
     });

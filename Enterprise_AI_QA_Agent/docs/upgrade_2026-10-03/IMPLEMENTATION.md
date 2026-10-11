@@ -5212,4 +5212,6 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 
 实际 k6 缺值场景只跳过依赖目标，独立目标继续；有效凭据仅送到指定消费者，预期401通过，0/false有效，null/空串/坏JSON不通过。两份load均exit0且SLA通过，但缺值报告仍fail。JMeter missing/mixed/valid/tail/multiple实际请求计数和判定与预期一致；7份清理回执completed，PG报告fail/pass。原件接口跨项目404、同大小篡改409、恢复后字节相同，终态重投新增引擎0次。原始事件只保存凭据哈希及布尔事实。
 
-证据目录为 `p5-perf-correlation-worker-verified`、`p5-perf-evidence-regression`、`p5-jmeter-dependencies-worker-verified`，SHA256/大小清单见 `p5-performance-regression-validation.json`。测量回归误用了非受支持的证据目录环境变量，本次临时原件未留存，仅保留JUnit；前批测量原件保持。本批固定计划直调生产组件和缓存引擎，不证明默认AI、自主Agent、完整App、容量或持续负载。历史JMeter及Worker能力已验，不重新标为本轮新实现；默认模型按用户决定暂缓，完整目标继续active。
+证据目录为 `p5-perf-correlation-auth-refresh-verified`、`p5-perf-evidence-regression`、`p5-jmeter-dependencies-worker-verified`，SHA256/大小清单见 `p5-performance-regression-validation.json`。测量回归误用了非受支持的证据目录环境变量，本次临时原件未留存，仅保留JUnit；前批测量原件保持。本批固定计划直调生产组件和缓存引擎，不证明默认AI、自主Agent、完整App、容量或持续负载。历史JMeter及Worker能力已验，不重新标为本轮新实现；默认模型按用户决定暂缓，完整目标继续active。
+
+交付复核发现本次k6回归曾误复用旧目录；当前原件已移至独立auth-refresh目录，旧目录及XML按f3cda5e逐blob恢复并比对。测试结果保持，历史原件恢复，纠正过程保留提交记录。
