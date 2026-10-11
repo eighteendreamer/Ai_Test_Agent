@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="24.775" timestamp="2026-10-11T08:53:39.902102+08:00" hostname="EIghteen"><testcase classname="tests.test_scene_cli_live" name="test_actual_scene_query_cli_kill_and_recover[logic-pending-read]" time="18.830"><failure message="AssertionError: assert (None is None and 21352 == 18676)&#10; +  where None = poll()&#10; +    where poll = &lt;Popen: returncode: None args: ['G:\\Code_Warehouse\\Ai_Test_Agent\\Enterpri...&gt;.poll&#10; +  and   18676 = &lt;Popen: returncode: None args: ['G:\\Code_Warehouse\\Ai_Test_Agent\\Enterpri...&gt;.pid">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1426/test_actual_scene_query_cli_ki0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001AF76E50E50&gt;
+query_stage = 'logic', fault = 'pending-read'
+
+    @pytest.mark.parametrize("query_stage,fault", [("logic","pending-read"),("logic","read-ack"),
+        ("effects","pending-read"),("effects","read-ack")])
+    async def test_actual_scene_query_cli_kill_and_recover(tmp_path, monkeypatch, query_stage, fault):
+        evidence = Path(os.environ["RECORDING_SCENE_EVIDENCE"])/(query_stage+"-"+fault)
+        monkeypatch.setenv("RECORDING_SCENE_EVIDENCE", str(evidence))
+        state = {"http":[], "provider_errors":[]}
+        processes = queue = None
+    
+        def save(name, data):
+            (evidence/name).write_text(json.dumps(data,ensure_ascii=False,indent=2,default=str),encoding="utf-8")
+    
+        def decide(context):
+            if query_stage == "effects" and len(state["http"]) == 1:
+                return finish(item(context,"scene-cli-target",effect_schema=3))
+            scene = next((e for e in context["evidence"] if e["kind"] == "scene"),None)
+            if scene is not None:
+                expected = state["version"]["version"]
+                assert scene["version"] == expected["id"] and scene["content_hash"] == expected["content_hash"]
+                assert scene["payload"]["content"] == expected["content"]
+                assert scene["payload"]["source"] == expected["source"]
+                assert scene["payload"]["verification_status"] == "not_executed"
+                if context["planning_stage"] == "logic":
+                    return finish(item(context,"scene-cli-target",effect_schema=3,
+                        evidence_ids=[f"case:{state['case'].version.id}",scene["id"]]))
+                key = scene["id"]
+                if query_stage == "effects":
+                    key = next(k for k,v in context["evidence_reference_catalog"]["evidence"].items() if v["evidence_id"] == key)
+                return {"action":"finish","summary":"固定场景完整读取","bindings":[
+                    {"item_key":"scene-cli-target","evidence_ids":[key]}]}
+            catalogs = [r["scene_catalog"] for r in context["query_results"] if "scene_catalog" in r]
+            if not catalogs:
+                return {"action":"query","summary":"查询项目场景目录","queries":[{"kind":"scenes"}]}
+            found = next(e for e in catalogs[-1]["items"] if e["scene_id"] == state["version"]["scene_id"])
+            return {"action":"query","summary":"读取目录指明的固定版本","queries":[{"kind":"scene",
+                "source_id":found["scene_id"],"version_id":found["version_id"],"content_hash":found["content_hash"]}]}
+    
+        class Provider(BaseHTTPRequestHandler):
+            def log_message(self, *args):
+                pass
+    
+            def do_POST(self):
+                try:
+                    body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    context = json.loads(body["messages"][-1]["content"])
+                    observation = {"path":self.path,"body":body,"context":context}
+                    state["http"].append(observation)
+                    decision = decide(context)
+                    response = {"id":"scene-cli-fixture","object":"chat.completion","model":body["model"],
+                        "choices":[{"index":0,"message":{"role":"assistant","content":json.dumps(decision)},
+                            "finish_reason":"stop"}],"usage":{"prompt_tokens":10,"completion_tokens":10,"total_tokens":20}}
+                    observation["response"] = response
+                    encoded = json.dumps(response).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type","application/json")
+                    self.send_header("Content-Length",str(len(encoded)))
+                    self.end_headers()
+                    self.wfile.write(encoded)
+                except Exception as exc:
+                    state["provider_errors"].append({"error_type":type(exc).__name__,"message":str(exc)})
+                    self.send_error(500,"Controlled response validation failed")
+                finally:
+                    save("scene-cli-http.json",state["http"])
+                    save("scene-cli-provider-errors.json",state["provider_errors"])
+    
+        provider = ThreadingHTTPServer(("127.0.0.1",0),Provider)
+        provider.daemon_threads = True
+        serving = threading.Thread(target=provider.serve_forever,daemon=True)
+        serving.start()
+    
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            nonlocal processes, queue
+            if stage not in {"initial","restart"}:
+                return
+            jobs = PostgresPlanningTaskStore(settings,lease_seconds=settings.orchestration.task_outbox_lease_seconds)
+    
+            def pg():
+                with postgres_connect(settings) as conn,conn.cursor() as cur:
+                    cur.execute(f"SELECT id,status,seed,checkpoint,attempt_no,attempt_id,attempts,worker_id,"
+                        f"deadline_at,lease_expires_at,clock_timestamp() AS server_now FROM {jobs._table} WHERE id=%s",
+                        (state["task"].id,))
+                    return dict(cur.fetchone())
+    
+            def start(name, interrupt=False):
+                processes.env["QA_SCENE_CLI_FAULT"] = fault if interrupt else ""
+                return processes.start(name,"tests/scene_cli_probe.py","--once","--worker-id",name)
+    
+            def reads():
+                path = evidence/"scene-cli-reads.jsonl"
+                return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    
+            try:
+                if stage == "initial":
+                    state["version"] = version
+                    stream = "isolated:scene-cli:"+uuid4().hex+":case_planning"
+                    settings.orchestration.redis_task_outbox_streams = stream
+                    assert settings.orchestration.case_planning_task_stream == stream
+                    settings.orchestration.redis_task_consumer_group = "scene-cli-owned"
+                    settings.orchestration.redis_task_reclaim_idle_ms = 1000
+                    settings.orchestration.redis_task_block_ms = 100
+                    assert settings.orchestration.task_outbox_lease_seconds == 30
+                    models = MySQLModelConfigStore(settings)
+                    models.initialize()
+                    config = models.upsert(ModelConfigUpdateRequest(model_name="scene-cli-fixture",provider="openai",
+                        transport="openai_chat_completions",base_url=f"http://127.0.0.1:{provider.server_port}/v1",
+                        api_key="local-fixture-marker",is_active=True,use_provider_defaults=False,
+                        capability_overrides=ModelCapabilitiesOverride(streaming=False),max_output_tokens=1024))
+                    container = AppContainer(); container.settings.override(settings)
+                    runtime = ModelRuntimeService(ModelRegistry(models),settings)
+                    container.model_runtime_service.override(runtime)
+                    container.test_case_embedding_service.override(None)
+                    planner = container.case_planning_service()
+                    tasks = CasePlanningTaskService(store=jobs,planning_service=planner,
+                        project_service=container.project_service(),dispatch_stream=stream)
+                    await tasks.initialize()
+                    project = await container.project_service().get(project_ids[0])
+                    env = SimpleNamespace(settings=settings,cases=container.test_case_service())
+                    case = await active_case(env,project,"scene-cli-target",{"objective":"场景计数验证",
+                        "steps":[{"action":"按完整场景两次点击","expected":"计数增加"}],
+                        "未知嵌套":{"输入":[0,False,"😀"]}},mode="ui_testing")
+                    state["case"] = case
+                    assert all(r.source_type != "ui_recording_scene" for r in case.version.source_refs)
+                    chosen = linked_policy().model_dump(mode="json")
+                    chosen.pop("linked_source_protocol")
+                    chosen.update(scene_query_protocol=SCENE_QUERY_PROTOCOL,max_rounds=6,timeout_seconds=600)
+                    if query_stage == "effects": chosen["evidence_reference_protocol"] = "case-planning-evidence-references-v1"
+                    response = await client.put(f"/projects/{project.id}/case-plans/policy",json=chosen)
+                    response.raise_for_status(); save("scene-cli-policy.json",response.json())
+                    state["task"] = await tasks.submit(project.id,CasePlanningTaskRequest(creation_key=str(uuid4()),
+                        objective="查项目场景后规划计数测试",model_key=config.key,candidate_case_ids=[case.case.id]))
+                    queue = RedisTaskQueue(settings.database.redis_url,stream=stream,group="scene-cli-owned:case_planning")
+                    await queue.connect()
+                    assert await PostgresTaskOutbox(settings).relay_once(queue) == 1
+                    processes = Processes(evidence,settings)
+                    processes.env["QA_SCENE_CLI_DIR"] = str(evidence)
+                    child = start("scene-cli-before-kill",True)
+                    async with asyncio.timeout(40):
+                        while not (evidence/"scene-cli-commit-marker.json").exists():
+                            assert child.poll() is None, (evidence/"scene-cli-before-kill.stderr").read_text(encoding="utf-8")
+                            await asyncio.sleep(.05)
+                    marker = json.loads((evidence/"scene-cli-commit-marker.json").read_bytes())
+                    assert child.poll() is None and marker["pid"] == child.pid
+                    first = pg()
+                    assert first["checkpoint"] == marker["checkpoint"] and first["attempt_no"] == 1
+                    assert first["checkpoint"]["query_index"] == (0 if fault == "pending-read" else 1)
+                    assert len(reads()) == (0 if fault == "pending-read" else 1)
+                    child.kill()
+                    code = await processes.wait(child,timeout=10)
+                    assert code != 0
+                    state["first"] = first
+                    save("scene-cli-killed-pg.json",first)
+                    save("scene-cli-kill.json",{"pid":child.pid,"exit_code":code,"alive_before_kill":True,
+                        "committed_checkpoint_confirmed":True,"pg_lease_seconds":30,"redis_reclaim_idle_ms":1000})
+                else:
+                    response = await client.put(f"/projects/{project_ids[0]}/case-plans/policy",json=linked_policy().model_dump(mode="json"))
+                    response.raise_for_status(); save("scene-cli-current-policy.json",response.json())
+                    current = (await client.get(f"/recordings/scenes/projects/{project_ids[0]}/{version['scene_id']}")).json()
+                    assert current["version"]["version"] == 4
+                    save("scene-cli-current-scene.json",current)
+                    async with asyncio.timeout(40):
+                        while True:
+                            expired = pg()
+                            if expired["server_now"] &gt;= expired["lease_expires_at"]:
+                                break
+                            await asyncio.sleep(.2)
+                    assert expired["seed"] == state["first"]["seed"]
+                    assert expired["checkpoint"] == state["first"]["checkpoint"]
+                    save("scene-cli-natural-expiry-pg.json",expired)
+                    child = start("scene-cli-after-kill")
+                    assert await processes.wait(child,timeout=40) == 0, (evidence/"scene-cli-after-kill.stderr").read_text(encoding="utf-8")
+                    assert "case_planning_processed=1" in (evidence/"scene-cli-after-kill.stdout").read_text(encoding="utf-8")
+                    final = pg()
+                    result = await jobs.get(project_ids[0],state["task"].id)
+                    save("scene-cli-recovered-pg.json",final)
+                    save("scene-cli-completed.json",result.model_dump(mode="json"))
+                    assert result.status == "completed",result.message
+                    assert final["seed"] == state["first"]["seed"] and final["deadline_at"] == state["first"]["deadline_at"]
+                    assert final["attempt_no"] == 2 and final["attempts"][-1]["reason"] == "lease_expired"
+                    scene = next(e for e in final["checkpoint"]["plan"]["evidence"] if e["kind"] == "scene")
+                    assert scene["version"] == version["version"]["id"]
+                    assert scene["payload"]["content"] == version["version"]["content"]
+                    assert scene["id"] in final["checkpoint"]["plan"]["decision"]["items"][0]["evidence_ids"]
+                    assert len(reads()) == 1 and len(state["http"]) == 4 and not state["provider_errors"]
+                    assert all(r["path"] == "/v1/chat/completions" for r in state["http"])
+                    await queue.enqueue(delivery(state["task"]).payload)
+                    replay = start("scene-cli-terminal")
+                    assert await processes.wait(replay,timeout=40) == 0
+                    assert "case_planning_processed=1" in (evidence/"scene-cli-terminal.stdout").read_text(encoding="utf-8")
+                    after = pg()
+                    assert len(state["http"]) == 4 and len(reads()) == 1
+                    for key in ("seed","checkpoint","attempt_no","attempt_id","attempts","deadline_at"):
+                        assert after[key] == final[key],key
+                    save("scene-cli-terminal-pg.json",after)
+                    save("scene-cli-facts.json",{"query_stage":query_stage,"fault":fault,"http_calls":4,
+                        "fixed_scene_reads":1,"attempt_count":2,"natural_pg_expiry":True,
+                        "terminal_additional_http":0,"terminal_additional_reads":0,"independent_production_cli":True,
+                        "controlled_local_http_model":True,"default_ai_invoked":False})
+                    await processes.close(); processes = None
+                    await queue.close(); queue = None
+            except BaseException:
+                if processes: await processes.close(); processes = None
+                if queue: await queue.close(); queue = None
+                raise
+    
+        try:
+&gt;           await actual_recording_scene_management(tmp_path,scene_probe=probe)
+
+tests\test_scene_cli_live.py:240: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:108: in actual_recording_scene_management
+    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+stage = 'initial'
+settings = Settings(app_name='Enterprise AI QA Agent', app_env='development', api_v1_prefix='/api/v1', api_auth_token=None, data_...int', checkpoint_pool_size=4, max_subagent_calls_per_turn=1, subagent_model_call_limit=6, subagent_tool_call_limit=12))
+client = &lt;httpx.AsyncClient object at 0x000001AF76B2D350&gt;
+evidence = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p5-scene-cli-verified/logic-pending-read')
+project_ids = ['69974e76-5e72-4330-b884-f16e1a349e2c', 'abe89f3f-c914-4325-9f51-bf3482e8203a']
+version = {'scene_id': '9c680c13-a4f7-40c3-9ae2-f695d557127b', 'project_id': '69974e76-5e72-4330-b884-f16e1a349e2c', 'current_ve..._id': '9c680c13-a4f7-40c3-9ae2-f695d557127b', 'project_id': '69974e76-5e72-4330-b884-f16e1a349e2c', 'version': 2, ...}}
+
+    async def probe(*, stage, settings, client, evidence, project_ids, version):
+        nonlocal processes, queue
+        if stage not in {"initial","restart"}:
+            return
+        jobs = PostgresPlanningTaskStore(settings,lease_seconds=settings.orchestration.task_outbox_lease_seconds)
+    
+        def pg():
+            with postgres_connect(settings) as conn,conn.cursor() as cur:
+                cur.execute(f"SELECT id,status,seed,checkpoint,attempt_no,attempt_id,attempts,worker_id,"
+                    f"deadline_at,lease_expires_at,clock_timestamp() AS server_now FROM {jobs._table} WHERE id=%s",
+                    (state["task"].id,))
+                return dict(cur.fetchone())
+    
+        def start(name, interrupt=False):
+            processes.env["QA_SCENE_CLI_FAULT"] = fault if interrupt else ""
+            return processes.start(name,"tests/scene_cli_probe.py","--once","--worker-id",name)
+    
+        def reads():
+            path = evidence/"scene-cli-reads.jsonl"
+            return [json.loads(line) for line in path.read_text(encoding="utf-8").splitlines()] if path.exists() else []
+    
+        try:
+            if stage == "initial":
+                state["version"] = version
+                stream = "isolated:scene-cli:"+uuid4().hex+":case_planning"
+                settings.orchestration.redis_task_outbox_streams = stream
+                assert settings.orchestration.case_planning_task_stream == stream
+                settings.orchestration.redis_task_consumer_group = "scene-cli-owned"
+                settings.orchestration.redis_task_reclaim_idle_ms = 1000
+                settings.orchestration.redis_task_block_ms = 100
+                assert settings.orchestration.task_outbox_lease_seconds == 30
+                models = MySQLModelConfigStore(settings)
+                models.initialize()
+                config = models.upsert(ModelConfigUpdateRequest(model_name="scene-cli-fixture",provider="openai",
+                    transport="openai_chat_completions",base_url=f"http://127.0.0.1:{provider.server_port}/v1",
+                    api_key="local-fixture-marker",is_active=True,use_provider_defaults=False,
+                    capability_overrides=ModelCapabilitiesOverride(streaming=False),max_output_tokens=1024))
+                container = AppContainer(); container.settings.override(settings)
+                runtime = ModelRuntimeService(ModelRegistry(models),settings)
+                container.model_runtime_service.override(runtime)
+                container.test_case_embedding_service.override(None)
+                planner = container.case_planning_service()
+                tasks = CasePlanningTaskService(store=jobs,planning_service=planner,
+                    project_service=container.project_service(),dispatch_stream=stream)
+                await tasks.initialize()
+                project = await container.project_service().get(project_ids[0])
+                env = SimpleNamespace(settings=settings,cases=container.test_case_service())
+                case = await active_case(env,project,"scene-cli-target",{"objective":"场景计数验证",
+                    "steps":[{"action":"按完整场景两次点击","expected":"计数增加"}],
+                    "未知嵌套":{"输入":[0,False,"😀"]}},mode="ui_testing")
+                state["case"] = case
+                assert all(r.source_type != "ui_recording_scene" for r in case.version.source_refs)
+                chosen = linked_policy().model_dump(mode="json")
+                chosen.pop("linked_source_protocol")
+                chosen.update(scene_query_protocol=SCENE_QUERY_PROTOCOL,max_rounds=6,timeout_seconds=600)
+                if query_stage == "effects": chosen["evidence_reference_protocol"] = "case-planning-evidence-references-v1"
+                response = await client.put(f"/projects/{project.id}/case-plans/policy",json=chosen)
+                response.raise_for_status(); save("scene-cli-policy.json",response.json())
+                state["task"] = await tasks.submit(project.id,CasePlanningTaskRequest(creation_key=str(uuid4()),
+                    objective="查项目场景后规划计数测试",model_key=config.key,candidate_case_ids=[case.case.id]))
+                queue = RedisTaskQueue(settings.database.redis_url,stream=stream,group="scene-cli-owned:case_planning")
+                await queue.connect()
+                assert await PostgresTaskOutbox(settings).relay_once(queue) == 1
+                processes = Processes(evidence,settings)
+                processes.env["QA_SCENE_CLI_DIR"] = str(evidence)
+                child = start("scene-cli-before-kill",True)
+                async with asyncio.timeout(40):
+                    while not (evidence/"scene-cli-commit-marker.json").exists():
+                        assert child.poll() is None, (evidence/"scene-cli-before-kill.stderr").read_text(encoding="utf-8")
+                        await asyncio.sleep(.05)
+                marker = json.loads((evidence/"scene-cli-commit-marker.json").read_bytes())
+&gt;               assert child.poll() is None and marker["pid"] == child.pid
+E               AssertionError: assert (None is None and 21352 == 18676)
+E                +  where None = poll()
+E                +    where poll = &lt;Popen: returncode: None args: ['G:\\Code_Warehouse\\Ai_Test_Agent\\Enterpri...&gt;.poll
+E                +  and   18676 = &lt;Popen: returncode: None args: ['G:\\Code_Warehouse\\Ai_Test_Agent\\Enterpri...&gt;.pid
+
+tests\test_scene_cli_live.py:176: AssertionError</failure></testcase></testsuite></testsuites>

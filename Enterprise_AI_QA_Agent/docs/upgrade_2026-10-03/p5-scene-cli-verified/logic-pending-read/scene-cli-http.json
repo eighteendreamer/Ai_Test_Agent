@@ -1,0 +1,880 @@
+[
+  {
+    "path": "/v1/chat/completions",
+    "body": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "可以按业务缺口查询当前项目的未关联场景。scenes使用query/offset搜索，目录仅导航；scene使用source_id、version_id和完整content_hash读取固定正文。不得省略版本或读取当前头替代。完整scene证据包含原始响应/步骤/别名，not_executed不等于通过；错误保留缺口，不猜元素。目录has_more可继续分页；已读场景不要重复读取，引用实际证据或本阶段要求的E引用。逻辑finish时可在operation_selections明确选择本计划项要用的工具接口：item_key引用现有正式项或prepare，tool_key/operation原样使用available_tools的名称，evidence_ids引用该项已读业务依据。正式项自行准备和清理同样可以选择，不为读取接口增添prepare；不改正式content。operation为空表示读取完整tool；未知时不猜，可不填，effects仍可query。选择只触发只读契约查询，不代表业务授权、参数编译或执行成功。本计划文档/录制依据id使用完整content_hash摘要，查询结果与evidence.id为同一身份；引用该完整id，不截断或补写摘要。你为当前正式项目只读制定测试计划，不执行业务、不报告通过。只返回符合Schema的JSON。完整content/execution_notes是执行依据，不读取生成模板、不按historical_mode_key过滤。引用已读evidence_ids；目录不是原文，has_more可继续；document按source_id/start_line/max_lines读。constraints.required_case_versions是固定回归目标，不换版本；business_environment是固定环境。两阶段共享remaining_rounds和原总时限，validation_feedback说明具体错误。逻辑阶段：理解用户目标→当前项目选用例→初排→判断必要信息或状态由谁提供→补全→最终依赖排序。正式项引用完整固定case_id/case_version_id；必要前置可不直接匹配用户目标，优先查询正式用例。没有正式前置而项目原文有可靠依据才补prepare.instructions；不虚构接口/元素；负向条件不补正向。完整正式用例可自行创建、查询和清理，也可清理prepare产生的数据，不强制拆成多个用例或准备项。谁实际执行清理就由谁声明cleanup_sources，正式项也可声明；prepare创建、target清理时来源写在target，不能写在只创建的prepare。同项内部创建后清理可cleanup_sources引用自身，表示操作效果来源，不添加depends_on自身。外部来源应先提供条件；共享清理需在必要消费者之后，依赖不能循环；不凭标题/HTTP方法猜关系。input_bindings为空，effect_declarations不填：下一阶段绑定技术证据。只查询业务用例、文档、录制。finish的items仅有必要目标/前置/准备；缺依据写unresolved，没有目标说明原因。\nJSON Schema: {\"$defs\":{\"LogicalFormalCaseItemV3\":{\"additionalProperties\":false,\"properties\":{\"case_id\":{\"maxLength\":160,\"minLength\":1,\"title\":\"Case Id\",\"type\":\"string\"},\"case_version_id\":{\"maxLength\":160,\"minLength\":1,\"title\":\"Case Version Id\",\"type\":\"string\"},\"cleanup_sources\":{\"anyOf\":[{\"items\":{\"maxLength\":80,\"minLength\":1,\"type\":\"string\"},\"maxItems\":200,\"minItems\":1,\"type\":\"array\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Cleanup Sources\"},\"depends_on\":{\"items\":{\"type\":\"string\"},\"maxItems\":200,\"title\":\"Depends On\",\"type\":\"array\"},\"effect_declarations\":{\"default\":null,\"title\":\"Effect Declarations\",\"type\":\"null\"},\"effect_evidence\":{\"default\":null,\"title\":\"Effect Evidence\",\"type\":\"null\"},\"effect_schema\":{\"const\":3,\"default\":3,\"title\":\"Effect Schema\",\"type\":\"integer\"},\"evidence_ids\":{\"items\":{\"type\":\"string\"},\"maxItems\":50,\"minItems\":1,\"title\":\"Evidence Ids\",\"type\":\"array\"},\"input_bindings\":{\"additionalProperties\":true,\"maxProperties\":0,\"title\":\"Input Bindings\",\"type\":\"object\"},\"key\":{\"maxLength\":80,\"minLength\":1,\"pattern\":\"^[a-zA-Z0-9_-]+$\",\"title\":\"Key\",\"type\":\"string\"},\"kind\":{\"enum\":[\"target\",\"dependency\"],\"title\":\"Kind\",\"type\":\"string\"},\"reason\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Reason\",\"type\":\"string\"}},\"required\":[\"key\",\"reason\",\"evidence_ids\",\"kind\",\"case_id\",\"case_version_id\"],\"title\":\"LogicalFormalCaseItemV3\",\"type\":\"object\"},\"LogicalPreparationItemV3\":{\"additionalProperties\":false,\"properties\":{\"case_id\":{\"default\":null,\"title\":\"Case Id\",\"type\":\"null\"},\"case_version_id\":{\"default\":null,\"title\":\"Case Version Id\",\"type\":\"null\"},\"cleanup_sources\":{\"anyOf\":[{\"items\":{\"maxLength\":80,\"minLength\":1,\"type\":\"string\"},\"maxItems\":200,\"minItems\":1,\"type\":\"array\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Cleanup Sources\"},\"depends_on\":{\"items\":{\"type\":\"string\"},\"maxItems\":200,\"title\":\"Depends On\",\"type\":\"array\"},\"effect_declarations\":{\"default\":null,\"title\":\"Effect Declarations\",\"type\":\"null\"},\"effect_evidence\":{\"default\":null,\"title\":\"Effect Evidence\",\"type\":\"null\"},\"effect_schema\":{\"const\":3,\"default\":3,\"title\":\"Effect Schema\",\"type\":\"integer\"},\"evidence_ids\":{\"items\":{\"type\":\"string\"},\"maxItems\":50,\"minItems\":1,\"title\":\"Evidence Ids\",\"type\":\"array\"},\"input_bindings\":{\"additionalProperties\":true,\"maxProperties\":0,\"title\":\"Input Bindings\",\"type\":\"object\"},\"instructions\":{\"additionalProperties\":true,\"minProperties\":1,\"title\":\"Instructions\",\"type\":\"object\"},\"key\":{\"maxLength\":80,\"minLength\":1,\"pattern\":\"^[a-zA-Z0-9_-]+$\",\"title\":\"Key\",\"type\":\"string\"},\"kind\":{\"const\":\"prepare\",\"title\":\"Kind\",\"type\":\"string\"},\"reason\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Reason\",\"type\":\"string\"}},\"required\":[\"key\",\"reason\",\"evidence_ids\",\"kind\",\"instructions\"],\"title\":\"LogicalPreparationItemV3\",\"type\":\"object\"},\"PlanningGap\":{\"additionalProperties\":false,\"properties\":{\"condition\":{\"maxLength\":2000,\"minLength\":1,\"title\":\"Condition\",\"type\":\"string\"},\"item_key\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Item Key\"},\"reason\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Reason\",\"type\":\"string\"}},\"required\":[\"condition\",\"reason\"],\"title\":\"PlanningGap\",\"type\":\"object\"},\"PlanningOperationSelection\":{\"additionalProperties\":false,\"properties\":{\"evidence_ids\":{\"items\":{\"minLength\":1,\"type\":\"string\"},\"maxItems\":50,\"minItems\":1,\"title\":\"Evidence Ids\",\"type\":\"array\"},\"item_key\":{\"maxLength\":80,\"minLength\":1,\"title\":\"Item Key\",\"type\":\"string\"},\"operation\":{\"anyOf\":[{\"maxLength\":160,\"minLength\":1,\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Operation\"},\"tool_key\":{\"maxLength\":160,\"minLength\":1,\"title\":\"Tool Key\",\"type\":\"string\"}},\"required\":[\"item_key\",\"tool_key\",\"evidence_ids\"],\"title\":\"PlanningOperationSelection\",\"type\":\"object\"},\"SceneBusinessPlanningQuery\":{\"additionalProperties\":false,\"properties\":{\"content_hash\":{\"anyOf\":[{\"pattern\":\"^[0-9a-f]{64}$\",\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Content Hash\"},\"kind\":{\"enum\":[\"cases\",\"documents\",\"document\",\"recordings\",\"recording\",\"scenes\",\"scene\"],\"title\":\"Kind\",\"type\":\"string\"},\"max_lines\":{\"default\":200,\"maximum\":500,\"minimum\":1,\"title\":\"Max Lines\",\"type\":\"integer\"},\"offset\":{\"default\":0,\"maximum\":100000,\"minimum\":0,\"title\":\"Offset\",\"type\":\"integer\"},\"operation\":{\"default\":null,\"title\":\"Operation\",\"type\":\"null\"},\"query\":{\"default\":\"\",\"maxLength\":1000,\"title\":\"Query\",\"type\":\"string\"},\"source_id\":{\"anyOf\":[{\"maxLength\":160,\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Source Id\"},\"start_line\":{\"default\":1,\"minimum\":1,\"title\":\"Start Line\",\"type\":\"integer\"},\"version_id\":{\"anyOf\":[{\"maxLength\":160,\"minLength\":1,\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Version Id\"}},\"required\":[\"kind\"],\"title\":\"SceneBusinessPlanningQuery\",\"type\":\"object\"}},\"additionalProperties\":false,\"properties\":{\"action\":{\"enum\":[\"query\",\"finish\"],\"title\":\"Action\",\"type\":\"string\"},\"items\":{\"items\":{\"discriminator\":{\"mapping\":{\"dependency\":\"#/$defs/LogicalFormalCaseItemV3\",\"prepare\":\"#/$defs/LogicalPreparationItemV3\",\"target\":\"#/$defs/LogicalFormalCaseItemV3\"},\"propertyName\":\"kind\"},\"oneOf\":[{\"$ref\":\"#/$defs/LogicalFormalCaseItemV3\"},{\"$ref\":\"#/$defs/LogicalPreparationItemV3\"}]},\"maxItems\":200,\"title\":\"Items\",\"type\":\"array\"},\"operation_selections\":{\"items\":{\"$ref\":\"#/$defs/PlanningOperationSelection\"},\"maxItems\":200,\"title\":\"Operation Selections\",\"type\":\"array\"},\"queries\":{\"items\":{\"$ref\":\"#/$defs/SceneBusinessPlanningQuery\"},\"maxItems\":8,\"title\":\"Queries\",\"type\":\"array\"},\"summary\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Summary\",\"type\":\"string\"},\"unresolved\":{\"items\":{\"$ref\":\"#/$defs/PlanningGap\"},\"maxItems\":200,\"title\":\"Unresolved\",\"type\":\"array\"}},\"required\":[\"action\",\"summary\"],\"title\":\"SceneLogicalPlanningDecisionV4\",\"type\":\"object\"}"
+        },
+        {
+          "role": "user",
+          "content": "{\"available_tools\":[{\"key\":\"skill\",\"name\":\"Skill Loader\",\"operations\":[]},{\"key\":\"mail-list\",\"name\":\"Mail List\",\"operations\":[]},{\"key\":\"mail-read\",\"name\":\"Mail Read\",\"operations\":[]},{\"key\":\"mail-send\",\"name\":\"Mail Send Prepare\",\"operations\":[]},{\"key\":\"api-tester\",\"name\":\"API Tester\",\"operations\":[]},{\"key\":\"mail-reply\",\"name\":\"Mail Reply\",\"operations\":[]},{\"key\":\"mail-trash\",\"name\":\"Mail Trash Prepare\",\"operations\":[]},{\"key\":\"web_search\",\"name\":\"Web Search\",\"operations\":[]},{\"key\":\"mail-search\",\"name\":\"Mail Search\",\"operations\":[]},{\"key\":\"mail-status\",\"name\":\"Mail Status\",\"operations\":[]},{\"key\":\"cli-executor\",\"name\":\"CLI Executor\",\"operations\":[]},{\"key\":\"mail-confirm\",\"name\":\"Mail Confirm\",\"operations\":[]},{\"key\":\"mail-forward\",\"name\":\"Mail Forward\",\"operations\":[]},{\"key\":\"dom-inspector\",\"name\":\"DOM Inspector\",\"operations\":[]},{\"key\":\"knowledge-rag\",\"name\":\"Knowledge RAG\",\"operations\":[]},{\"key\":\"report-writer\",\"name\":\"Report Writer\",\"operations\":[]},{\"key\":\"api-docs-ingest\",\"name\":\"API Docs Ingest\",\"operations\":[]},{\"key\":\"api-test-runner\",\"name\":\"API Test Runner\",\"operations\":[\"execute_task\"]},{\"key\":\"browser-control\",\"name\":\"Browser Control\",\"operations\":[]},{\"key\":\"session-history\",\"name\":\"Session History\",\"operations\":[]},{\"key\":\"web-scan-runner\",\"name\":\"Web Scan Runner\",\"operations\":[]},{\"key\":\"workflow-router\",\"name\":\"Workflow Router\",\"operations\":[]},{\"key\":\"api-docs-library\",\"name\":\"API Docs Library\",\"operations\":[]},{\"key\":\"session-timeline\",\"name\":\"Session Timeline\",\"operations\":[]},{\"key\":\"ui-page-explorer\",\"name\":\"UI Explorer Agent\",\"operations\":[]},{\"key\":\"attachment-reader\",\"name\":\"Attachment Reader\",\"operations\":[]},{\"key\":\"http-probe-runner\",\"name\":\"HTTP Probe Runner\",\"operations\":[]},{\"key\":\"subagent-dispatch\",\"name\":\"Subagent Dispatch\",\"operations\":[]},{\"key\":\"browser-automation\",\"name\":\"Browser Automation\",\"operations\":[]},{\"key\":\"mock-target-runner\",\"name\":\"Mock Target Runner\",\"operations\":[]},{\"key\":\"observation-search\",\"name\":\"Observation Search\",\"operations\":[]},{\"key\":\"perf-engine-select\",\"name\":\"Perf Engine Select\",\"operations\":[]},{\"key\":\"perf-plan-compiler\",\"name\":\"Perf Plan Compiler\",\"operations\":[]},{\"key\":\"smoke-suite-runner\",\"name\":\"Smoke Suite Runner\",\"operations\":[]},{\"key\":\"project-diff-reader\",\"name\":\"Project Diff Reader\",\"operations\":[]},{\"key\":\"project-file-reader\",\"name\":\"Project File Reader\",\"operations\":[]},{\"key\":\"test-case-generator\",\"name\":\"Test Case Generator\",\"operations\":[]},{\"key\":\"network-recon-runner\",\"name\":\"Network Recon Runner\",\"operations\":[]},{\"key\":\"perf-result-analyzer\",\"name\":\"Perf Result Analyzer\",\"operations\":[]},{\"key\":\"project-tree-scanner\",\"name\":\"Project Tree Scanner\",\"operations\":[]},{\"key\":\"security-scan-runner\",\"name\":\"Security Scan Runner\",\"operations\":[]},{\"key\":\"service-audit-runner\",\"name\":\"Service Audit Runner\",\"operations\":[]},{\"key\":\"ui-automation-runner\",\"name\":\"UI Automation Runner\",\"operations\":[]},{\"key\":\"file-artifact-manager\",\"name\":\"File Artifact Manager\",\"operations\":[]},{\"key\":\"project-source-loader\",\"name\":\"Project Source Loader\",\"operations\":[]},{\"key\":\"code-governance-runner\",\"name\":\"Code Governance Runner\",\"operations\":[]},{\"key\":\"perf-container-manager\",\"name\":\"Perf Container Manager\",\"operations\":[]},{\"key\":\"performance-test-runner\",\"name\":\"Performance Test Runner\",\"operations\":[]},{\"key\":\"security-tool-bootstrap\",\"name\":\"Security Tool Bootstrap\",\"operations\":[]},{\"key\":\"test-case-xlsx-exporter\",\"name\":\"Test Case XLSX Exporter\",\"operations\":[]},{\"key\":\"traffic-analysis-runner\",\"name\":\"Traffic Analysis Runner\",\"operations\":[]},{\"key\":\"code-review-orchestrator\",\"name\":\"Code Review Orchestrator\",\"operations\":[]},{\"key\":\"credential-attack-runner\",\"name\":\"Credential Attack Runner\",\"operations\":[]},{\"key\":\"exploit-workbench-runner\",\"name\":\"Exploit Workbench Runner\",\"operations\":[]},{\"key\":\"mail-download-attachment\",\"name\":\"Mail Download Attachment\",\"operations\":[]},{\"key\":\"compatibility-test-runner\",\"name\":\"Compatibility Test Runner\",\"operations\":[]},{\"key\":\"performance-engine-runner\",\"name\":\"Performance Engine Runner\",\"operations\":[]}],\"catalog\":{\"cases\":[{\"case_key\":\"scene-cli-target\",\"id\":\"30f50d9c-dece-4850-8284-ec4d24b5b6bc\",\"title\":\"场景计数验证\"}],\"cases_has_more\":false,\"documents\":[],\"documents_has_more\":false,\"offset\":0,\"recording_knowledge_available\":true,\"recordings\":[{\"id\":\"374fb838-bd8f-40c8-a371-5d7ae2ecc48a\",\"name\":\"实际录制场景\",\"status\":\"completed\"}],\"recordings_has_more\":false,\"scene_catalog\":{\"has_more\":false,\"items\":[{\"content_hash\":\"9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92\",\"name\":\"两次点击业务场景\",\"scene_id\":\"9c680c13-a4f7-40c3-9ae2-f695d557127b\",\"status\":\"organized\",\"step_count\":6,\"version\":2,\"version_id\":\"9288bb0f-e8a6-4573-8e1d-05432c49f093\"}],\"limit\":20,\"offset\":0},\"scene_knowledge_available\":true},\"evidence\":[{\"content_hash\":\"65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e\",\"id\":\"case:650e14fb-edbe-4736-90e2-f83421fb27f1\",\"kind\":\"case\",\"payload\":{\"case_id\":\"30f50d9c-dece-4850-8284-ec4d24b5b6bc\",\"case_key\":\"scene-cli-target\",\"case_version_id\":\"650e14fb-edbe-4736-90e2-f83421fb27f1\",\"content\":{\"objective\":\"场景计数验证\",\"steps\":[{\"action\":\"按完整场景两次点击\",\"expected\":\"计数增加\"}],\"未知嵌套\":{\"输入\":[0,false,\"😀\"]}},\"execution_notes\":\"读取全部步骤；保持负向条件。\",\"historical_mode_key\":\"ui_testing\",\"source_refs\":[{\"label\":\"\",\"metadata\":{},\"source_id\":\"scene-cli-target\",\"source_type\":\"manual\",\"uri\":null,\"version\":null}],\"title\":\"场景计数验证\"},\"source_id\":\"30f50d9c-dece-4850-8284-ec4d24b5b6bc\",\"version\":\"650e14fb-edbe-4736-90e2-f83421fb27f1\"}],\"objective\":\"查项目场景后规划计数测试\",\"planning_stage\":\"logic\",\"project\":{\"base_url\":null,\"description\":null,\"id\":\"69974e76-5e72-4330-b884-f16e1a349e2c\",\"name\":\"场景项目\"},\"query_results\":[],\"remaining_rounds\":6,\"round\":1,\"runtime_context\":{},\"validation_feedback\":null,\"warnings\":[]}"
+        }
+      ],
+      "model": "scene-cli-fixture",
+      "max_tokens": 1024
+    },
+    "context": {
+      "available_tools": [
+        {
+          "key": "skill",
+          "name": "Skill Loader",
+          "operations": []
+        },
+        {
+          "key": "mail-list",
+          "name": "Mail List",
+          "operations": []
+        },
+        {
+          "key": "mail-read",
+          "name": "Mail Read",
+          "operations": []
+        },
+        {
+          "key": "mail-send",
+          "name": "Mail Send Prepare",
+          "operations": []
+        },
+        {
+          "key": "api-tester",
+          "name": "API Tester",
+          "operations": []
+        },
+        {
+          "key": "mail-reply",
+          "name": "Mail Reply",
+          "operations": []
+        },
+        {
+          "key": "mail-trash",
+          "name": "Mail Trash Prepare",
+          "operations": []
+        },
+        {
+          "key": "web_search",
+          "name": "Web Search",
+          "operations": []
+        },
+        {
+          "key": "mail-search",
+          "name": "Mail Search",
+          "operations": []
+        },
+        {
+          "key": "mail-status",
+          "name": "Mail Status",
+          "operations": []
+        },
+        {
+          "key": "cli-executor",
+          "name": "CLI Executor",
+          "operations": []
+        },
+        {
+          "key": "mail-confirm",
+          "name": "Mail Confirm",
+          "operations": []
+        },
+        {
+          "key": "mail-forward",
+          "name": "Mail Forward",
+          "operations": []
+        },
+        {
+          "key": "dom-inspector",
+          "name": "DOM Inspector",
+          "operations": []
+        },
+        {
+          "key": "knowledge-rag",
+          "name": "Knowledge RAG",
+          "operations": []
+        },
+        {
+          "key": "report-writer",
+          "name": "Report Writer",
+          "operations": []
+        },
+        {
+          "key": "api-docs-ingest",
+          "name": "API Docs Ingest",
+          "operations": []
+        },
+        {
+          "key": "api-test-runner",
+          "name": "API Test Runner",
+          "operations": [
+            "execute_task"
+          ]
+        },
+        {
+          "key": "browser-control",
+          "name": "Browser Control",
+          "operations": []
+        },
+        {
+          "key": "session-history",
+          "name": "Session History",
+          "operations": []
+        },
+        {
+          "key": "web-scan-runner",
+          "name": "Web Scan Runner",
+          "operations": []
+        },
+        {
+          "key": "workflow-router",
+          "name": "Workflow Router",
+          "operations": []
+        },
+        {
+          "key": "api-docs-library",
+          "name": "API Docs Library",
+          "operations": []
+        },
+        {
+          "key": "session-timeline",
+          "name": "Session Timeline",
+          "operations": []
+        },
+        {
+          "key": "ui-page-explorer",
+          "name": "UI Explorer Agent",
+          "operations": []
+        },
+        {
+          "key": "attachment-reader",
+          "name": "Attachment Reader",
+          "operations": []
+        },
+        {
+          "key": "http-probe-runner",
+          "name": "HTTP Probe Runner",
+          "operations": []
+        },
+        {
+          "key": "subagent-dispatch",
+          "name": "Subagent Dispatch",
+          "operations": []
+        },
+        {
+          "key": "browser-automation",
+          "name": "Browser Automation",
+          "operations": []
+        },
+        {
+          "key": "mock-target-runner",
+          "name": "Mock Target Runner",
+          "operations": []
+        },
+        {
+          "key": "observation-search",
+          "name": "Observation Search",
+          "operations": []
+        },
+        {
+          "key": "perf-engine-select",
+          "name": "Perf Engine Select",
+          "operations": []
+        },
+        {
+          "key": "perf-plan-compiler",
+          "name": "Perf Plan Compiler",
+          "operations": []
+        },
+        {
+          "key": "smoke-suite-runner",
+          "name": "Smoke Suite Runner",
+          "operations": []
+        },
+        {
+          "key": "project-diff-reader",
+          "name": "Project Diff Reader",
+          "operations": []
+        },
+        {
+          "key": "project-file-reader",
+          "name": "Project File Reader",
+          "operations": []
+        },
+        {
+          "key": "test-case-generator",
+          "name": "Test Case Generator",
+          "operations": []
+        },
+        {
+          "key": "network-recon-runner",
+          "name": "Network Recon Runner",
+          "operations": []
+        },
+        {
+          "key": "perf-result-analyzer",
+          "name": "Perf Result Analyzer",
+          "operations": []
+        },
+        {
+          "key": "project-tree-scanner",
+          "name": "Project Tree Scanner",
+          "operations": []
+        },
+        {
+          "key": "security-scan-runner",
+          "name": "Security Scan Runner",
+          "operations": []
+        },
+        {
+          "key": "service-audit-runner",
+          "name": "Service Audit Runner",
+          "operations": []
+        },
+        {
+          "key": "ui-automation-runner",
+          "name": "UI Automation Runner",
+          "operations": []
+        },
+        {
+          "key": "file-artifact-manager",
+          "name": "File Artifact Manager",
+          "operations": []
+        },
+        {
+          "key": "project-source-loader",
+          "name": "Project Source Loader",
+          "operations": []
+        },
+        {
+          "key": "code-governance-runner",
+          "name": "Code Governance Runner",
+          "operations": []
+        },
+        {
+          "key": "perf-container-manager",
+          "name": "Perf Container Manager",
+          "operations": []
+        },
+        {
+          "key": "performance-test-runner",
+          "name": "Performance Test Runner",
+          "operations": []
+        },
+        {
+          "key": "security-tool-bootstrap",
+          "name": "Security Tool Bootstrap",
+          "operations": []
+        },
+        {
+          "key": "test-case-xlsx-exporter",
+          "name": "Test Case XLSX Exporter",
+          "operations": []
+        },
+        {
+          "key": "traffic-analysis-runner",
+          "name": "Traffic Analysis Runner",
+          "operations": []
+        },
+        {
+          "key": "code-review-orchestrator",
+          "name": "Code Review Orchestrator",
+          "operations": []
+        },
+        {
+          "key": "credential-attack-runner",
+          "name": "Credential Attack Runner",
+          "operations": []
+        },
+        {
+          "key": "exploit-workbench-runner",
+          "name": "Exploit Workbench Runner",
+          "operations": []
+        },
+        {
+          "key": "mail-download-attachment",
+          "name": "Mail Download Attachment",
+          "operations": []
+        },
+        {
+          "key": "compatibility-test-runner",
+          "name": "Compatibility Test Runner",
+          "operations": []
+        },
+        {
+          "key": "performance-engine-runner",
+          "name": "Performance Engine Runner",
+          "operations": []
+        }
+      ],
+      "catalog": {
+        "cases": [
+          {
+            "case_key": "scene-cli-target",
+            "id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+            "title": "场景计数验证"
+          }
+        ],
+        "cases_has_more": false,
+        "documents": [],
+        "documents_has_more": false,
+        "offset": 0,
+        "recording_knowledge_available": true,
+        "recordings": [
+          {
+            "id": "374fb838-bd8f-40c8-a371-5d7ae2ecc48a",
+            "name": "实际录制场景",
+            "status": "completed"
+          }
+        ],
+        "recordings_has_more": false,
+        "scene_catalog": {
+          "has_more": false,
+          "items": [
+            {
+              "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92",
+              "name": "两次点击业务场景",
+              "scene_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+              "status": "organized",
+              "step_count": 6,
+              "version": 2,
+              "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093"
+            }
+          ],
+          "limit": 20,
+          "offset": 0
+        },
+        "scene_knowledge_available": true
+      },
+      "evidence": [
+        {
+          "content_hash": "65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e",
+          "id": "case:650e14fb-edbe-4736-90e2-f83421fb27f1",
+          "kind": "case",
+          "payload": {
+            "case_id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+            "case_key": "scene-cli-target",
+            "case_version_id": "650e14fb-edbe-4736-90e2-f83421fb27f1",
+            "content": {
+              "objective": "场景计数验证",
+              "steps": [
+                {
+                  "action": "按完整场景两次点击",
+                  "expected": "计数增加"
+                }
+              ],
+              "未知嵌套": {
+                "输入": [
+                  0,
+                  false,
+                  "😀"
+                ]
+              }
+            },
+            "execution_notes": "读取全部步骤；保持负向条件。",
+            "historical_mode_key": "ui_testing",
+            "source_refs": [
+              {
+                "label": "",
+                "metadata": {},
+                "source_id": "scene-cli-target",
+                "source_type": "manual",
+                "uri": null,
+                "version": null
+              }
+            ],
+            "title": "场景计数验证"
+          },
+          "source_id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+          "version": "650e14fb-edbe-4736-90e2-f83421fb27f1"
+        }
+      ],
+      "objective": "查项目场景后规划计数测试",
+      "planning_stage": "logic",
+      "project": {
+        "base_url": null,
+        "description": null,
+        "id": "69974e76-5e72-4330-b884-f16e1a349e2c",
+        "name": "场景项目"
+      },
+      "query_results": [],
+      "remaining_rounds": 6,
+      "round": 1,
+      "runtime_context": {},
+      "validation_feedback": null,
+      "warnings": []
+    },
+    "response": {
+      "id": "scene-cli-fixture",
+      "object": "chat.completion",
+      "model": "scene-cli-fixture",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"action\": \"query\", \"summary\": \"\\u67e5\\u8be2\\u9879\\u76ee\\u573a\\u666f\\u76ee\\u5f55\", \"queries\": [{\"kind\": \"scenes\"}]}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 10,
+        "total_tokens": 20
+      }
+    }
+  },
+  {
+    "path": "/v1/chat/completions",
+    "body": {
+      "messages": [
+        {
+          "role": "system",
+          "content": "可以按业务缺口查询当前项目的未关联场景。scenes使用query/offset搜索，目录仅导航；scene使用source_id、version_id和完整content_hash读取固定正文。不得省略版本或读取当前头替代。完整scene证据包含原始响应/步骤/别名，not_executed不等于通过；错误保留缺口，不猜元素。目录has_more可继续分页；已读场景不要重复读取，引用实际证据或本阶段要求的E引用。逻辑finish时可在operation_selections明确选择本计划项要用的工具接口：item_key引用现有正式项或prepare，tool_key/operation原样使用available_tools的名称，evidence_ids引用该项已读业务依据。正式项自行准备和清理同样可以选择，不为读取接口增添prepare；不改正式content。operation为空表示读取完整tool；未知时不猜，可不填，effects仍可query。选择只触发只读契约查询，不代表业务授权、参数编译或执行成功。本计划文档/录制依据id使用完整content_hash摘要，查询结果与evidence.id为同一身份；引用该完整id，不截断或补写摘要。你为当前正式项目只读制定测试计划，不执行业务、不报告通过。只返回符合Schema的JSON。完整content/execution_notes是执行依据，不读取生成模板、不按historical_mode_key过滤。引用已读evidence_ids；目录不是原文，has_more可继续；document按source_id/start_line/max_lines读。constraints.required_case_versions是固定回归目标，不换版本；business_environment是固定环境。两阶段共享remaining_rounds和原总时限，validation_feedback说明具体错误。逻辑阶段：理解用户目标→当前项目选用例→初排→判断必要信息或状态由谁提供→补全→最终依赖排序。正式项引用完整固定case_id/case_version_id；必要前置可不直接匹配用户目标，优先查询正式用例。没有正式前置而项目原文有可靠依据才补prepare.instructions；不虚构接口/元素；负向条件不补正向。完整正式用例可自行创建、查询和清理，也可清理prepare产生的数据，不强制拆成多个用例或准备项。谁实际执行清理就由谁声明cleanup_sources，正式项也可声明；prepare创建、target清理时来源写在target，不能写在只创建的prepare。同项内部创建后清理可cleanup_sources引用自身，表示操作效果来源，不添加depends_on自身。外部来源应先提供条件；共享清理需在必要消费者之后，依赖不能循环；不凭标题/HTTP方法猜关系。input_bindings为空，effect_declarations不填：下一阶段绑定技术证据。只查询业务用例、文档、录制。finish的items仅有必要目标/前置/准备；缺依据写unresolved，没有目标说明原因。\nJSON Schema: {\"$defs\":{\"LogicalFormalCaseItemV3\":{\"additionalProperties\":false,\"properties\":{\"case_id\":{\"maxLength\":160,\"minLength\":1,\"title\":\"Case Id\",\"type\":\"string\"},\"case_version_id\":{\"maxLength\":160,\"minLength\":1,\"title\":\"Case Version Id\",\"type\":\"string\"},\"cleanup_sources\":{\"anyOf\":[{\"items\":{\"maxLength\":80,\"minLength\":1,\"type\":\"string\"},\"maxItems\":200,\"minItems\":1,\"type\":\"array\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Cleanup Sources\"},\"depends_on\":{\"items\":{\"type\":\"string\"},\"maxItems\":200,\"title\":\"Depends On\",\"type\":\"array\"},\"effect_declarations\":{\"default\":null,\"title\":\"Effect Declarations\",\"type\":\"null\"},\"effect_evidence\":{\"default\":null,\"title\":\"Effect Evidence\",\"type\":\"null\"},\"effect_schema\":{\"const\":3,\"default\":3,\"title\":\"Effect Schema\",\"type\":\"integer\"},\"evidence_ids\":{\"items\":{\"type\":\"string\"},\"maxItems\":50,\"minItems\":1,\"title\":\"Evidence Ids\",\"type\":\"array\"},\"input_bindings\":{\"additionalProperties\":true,\"maxProperties\":0,\"title\":\"Input Bindings\",\"type\":\"object\"},\"key\":{\"maxLength\":80,\"minLength\":1,\"pattern\":\"^[a-zA-Z0-9_-]+$\",\"title\":\"Key\",\"type\":\"string\"},\"kind\":{\"enum\":[\"target\",\"dependency\"],\"title\":\"Kind\",\"type\":\"string\"},\"reason\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Reason\",\"type\":\"string\"}},\"required\":[\"key\",\"reason\",\"evidence_ids\",\"kind\",\"case_id\",\"case_version_id\"],\"title\":\"LogicalFormalCaseItemV3\",\"type\":\"object\"},\"LogicalPreparationItemV3\":{\"additionalProperties\":false,\"properties\":{\"case_id\":{\"default\":null,\"title\":\"Case Id\",\"type\":\"null\"},\"case_version_id\":{\"default\":null,\"title\":\"Case Version Id\",\"type\":\"null\"},\"cleanup_sources\":{\"anyOf\":[{\"items\":{\"maxLength\":80,\"minLength\":1,\"type\":\"string\"},\"maxItems\":200,\"minItems\":1,\"type\":\"array\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Cleanup Sources\"},\"depends_on\":{\"items\":{\"type\":\"string\"},\"maxItems\":200,\"title\":\"Depends On\",\"type\":\"array\"},\"effect_declarations\":{\"default\":null,\"title\":\"Effect Declarations\",\"type\":\"null\"},\"effect_evidence\":{\"default\":null,\"title\":\"Effect Evidence\",\"type\":\"null\"},\"effect_schema\":{\"const\":3,\"default\":3,\"title\":\"Effect Schema\",\"type\":\"integer\"},\"evidence_ids\":{\"items\":{\"type\":\"string\"},\"maxItems\":50,\"minItems\":1,\"title\":\"Evidence Ids\",\"type\":\"array\"},\"input_bindings\":{\"additionalProperties\":true,\"maxProperties\":0,\"title\":\"Input Bindings\",\"type\":\"object\"},\"instructions\":{\"additionalProperties\":true,\"minProperties\":1,\"title\":\"Instructions\",\"type\":\"object\"},\"key\":{\"maxLength\":80,\"minLength\":1,\"pattern\":\"^[a-zA-Z0-9_-]+$\",\"title\":\"Key\",\"type\":\"string\"},\"kind\":{\"const\":\"prepare\",\"title\":\"Kind\",\"type\":\"string\"},\"reason\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Reason\",\"type\":\"string\"}},\"required\":[\"key\",\"reason\",\"evidence_ids\",\"kind\",\"instructions\"],\"title\":\"LogicalPreparationItemV3\",\"type\":\"object\"},\"PlanningGap\":{\"additionalProperties\":false,\"properties\":{\"condition\":{\"maxLength\":2000,\"minLength\":1,\"title\":\"Condition\",\"type\":\"string\"},\"item_key\":{\"anyOf\":[{\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Item Key\"},\"reason\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Reason\",\"type\":\"string\"}},\"required\":[\"condition\",\"reason\"],\"title\":\"PlanningGap\",\"type\":\"object\"},\"PlanningOperationSelection\":{\"additionalProperties\":false,\"properties\":{\"evidence_ids\":{\"items\":{\"minLength\":1,\"type\":\"string\"},\"maxItems\":50,\"minItems\":1,\"title\":\"Evidence Ids\",\"type\":\"array\"},\"item_key\":{\"maxLength\":80,\"minLength\":1,\"title\":\"Item Key\",\"type\":\"string\"},\"operation\":{\"anyOf\":[{\"maxLength\":160,\"minLength\":1,\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Operation\"},\"tool_key\":{\"maxLength\":160,\"minLength\":1,\"title\":\"Tool Key\",\"type\":\"string\"}},\"required\":[\"item_key\",\"tool_key\",\"evidence_ids\"],\"title\":\"PlanningOperationSelection\",\"type\":\"object\"},\"SceneBusinessPlanningQuery\":{\"additionalProperties\":false,\"properties\":{\"content_hash\":{\"anyOf\":[{\"pattern\":\"^[0-9a-f]{64}$\",\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Content Hash\"},\"kind\":{\"enum\":[\"cases\",\"documents\",\"document\",\"recordings\",\"recording\",\"scenes\",\"scene\"],\"title\":\"Kind\",\"type\":\"string\"},\"max_lines\":{\"default\":200,\"maximum\":500,\"minimum\":1,\"title\":\"Max Lines\",\"type\":\"integer\"},\"offset\":{\"default\":0,\"maximum\":100000,\"minimum\":0,\"title\":\"Offset\",\"type\":\"integer\"},\"operation\":{\"default\":null,\"title\":\"Operation\",\"type\":\"null\"},\"query\":{\"default\":\"\",\"maxLength\":1000,\"title\":\"Query\",\"type\":\"string\"},\"source_id\":{\"anyOf\":[{\"maxLength\":160,\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Source Id\"},\"start_line\":{\"default\":1,\"minimum\":1,\"title\":\"Start Line\",\"type\":\"integer\"},\"version_id\":{\"anyOf\":[{\"maxLength\":160,\"minLength\":1,\"type\":\"string\"},{\"type\":\"null\"}],\"default\":null,\"title\":\"Version Id\"}},\"required\":[\"kind\"],\"title\":\"SceneBusinessPlanningQuery\",\"type\":\"object\"}},\"additionalProperties\":false,\"properties\":{\"action\":{\"enum\":[\"query\",\"finish\"],\"title\":\"Action\",\"type\":\"string\"},\"items\":{\"items\":{\"discriminator\":{\"mapping\":{\"dependency\":\"#/$defs/LogicalFormalCaseItemV3\",\"prepare\":\"#/$defs/LogicalPreparationItemV3\",\"target\":\"#/$defs/LogicalFormalCaseItemV3\"},\"propertyName\":\"kind\"},\"oneOf\":[{\"$ref\":\"#/$defs/LogicalFormalCaseItemV3\"},{\"$ref\":\"#/$defs/LogicalPreparationItemV3\"}]},\"maxItems\":200,\"title\":\"Items\",\"type\":\"array\"},\"operation_selections\":{\"items\":{\"$ref\":\"#/$defs/PlanningOperationSelection\"},\"maxItems\":200,\"title\":\"Operation Selections\",\"type\":\"array\"},\"queries\":{\"items\":{\"$ref\":\"#/$defs/SceneBusinessPlanningQuery\"},\"maxItems\":8,\"title\":\"Queries\",\"type\":\"array\"},\"summary\":{\"maxLength\":4000,\"minLength\":1,\"title\":\"Summary\",\"type\":\"string\"},\"unresolved\":{\"items\":{\"$ref\":\"#/$defs/PlanningGap\"},\"maxItems\":200,\"title\":\"Unresolved\",\"type\":\"array\"}},\"required\":[\"action\",\"summary\"],\"title\":\"SceneLogicalPlanningDecisionV4\",\"type\":\"object\"}"
+        },
+        {
+          "role": "user",
+          "content": "{\"available_tools\":[{\"key\":\"skill\",\"name\":\"Skill Loader\",\"operations\":[]},{\"key\":\"mail-list\",\"name\":\"Mail List\",\"operations\":[]},{\"key\":\"mail-read\",\"name\":\"Mail Read\",\"operations\":[]},{\"key\":\"mail-send\",\"name\":\"Mail Send Prepare\",\"operations\":[]},{\"key\":\"api-tester\",\"name\":\"API Tester\",\"operations\":[]},{\"key\":\"mail-reply\",\"name\":\"Mail Reply\",\"operations\":[]},{\"key\":\"mail-trash\",\"name\":\"Mail Trash Prepare\",\"operations\":[]},{\"key\":\"web_search\",\"name\":\"Web Search\",\"operations\":[]},{\"key\":\"mail-search\",\"name\":\"Mail Search\",\"operations\":[]},{\"key\":\"mail-status\",\"name\":\"Mail Status\",\"operations\":[]},{\"key\":\"cli-executor\",\"name\":\"CLI Executor\",\"operations\":[]},{\"key\":\"mail-confirm\",\"name\":\"Mail Confirm\",\"operations\":[]},{\"key\":\"mail-forward\",\"name\":\"Mail Forward\",\"operations\":[]},{\"key\":\"dom-inspector\",\"name\":\"DOM Inspector\",\"operations\":[]},{\"key\":\"knowledge-rag\",\"name\":\"Knowledge RAG\",\"operations\":[]},{\"key\":\"report-writer\",\"name\":\"Report Writer\",\"operations\":[]},{\"key\":\"api-docs-ingest\",\"name\":\"API Docs Ingest\",\"operations\":[]},{\"key\":\"api-test-runner\",\"name\":\"API Test Runner\",\"operations\":[\"execute_task\"]},{\"key\":\"browser-control\",\"name\":\"Browser Control\",\"operations\":[]},{\"key\":\"session-history\",\"name\":\"Session History\",\"operations\":[]},{\"key\":\"web-scan-runner\",\"name\":\"Web Scan Runner\",\"operations\":[]},{\"key\":\"workflow-router\",\"name\":\"Workflow Router\",\"operations\":[]},{\"key\":\"api-docs-library\",\"name\":\"API Docs Library\",\"operations\":[]},{\"key\":\"session-timeline\",\"name\":\"Session Timeline\",\"operations\":[]},{\"key\":\"ui-page-explorer\",\"name\":\"UI Explorer Agent\",\"operations\":[]},{\"key\":\"attachment-reader\",\"name\":\"Attachment Reader\",\"operations\":[]},{\"key\":\"http-probe-runner\",\"name\":\"HTTP Probe Runner\",\"operations\":[]},{\"key\":\"subagent-dispatch\",\"name\":\"Subagent Dispatch\",\"operations\":[]},{\"key\":\"browser-automation\",\"name\":\"Browser Automation\",\"operations\":[]},{\"key\":\"mock-target-runner\",\"name\":\"Mock Target Runner\",\"operations\":[]},{\"key\":\"observation-search\",\"name\":\"Observation Search\",\"operations\":[]},{\"key\":\"perf-engine-select\",\"name\":\"Perf Engine Select\",\"operations\":[]},{\"key\":\"perf-plan-compiler\",\"name\":\"Perf Plan Compiler\",\"operations\":[]},{\"key\":\"smoke-suite-runner\",\"name\":\"Smoke Suite Runner\",\"operations\":[]},{\"key\":\"project-diff-reader\",\"name\":\"Project Diff Reader\",\"operations\":[]},{\"key\":\"project-file-reader\",\"name\":\"Project File Reader\",\"operations\":[]},{\"key\":\"test-case-generator\",\"name\":\"Test Case Generator\",\"operations\":[]},{\"key\":\"network-recon-runner\",\"name\":\"Network Recon Runner\",\"operations\":[]},{\"key\":\"perf-result-analyzer\",\"name\":\"Perf Result Analyzer\",\"operations\":[]},{\"key\":\"project-tree-scanner\",\"name\":\"Project Tree Scanner\",\"operations\":[]},{\"key\":\"security-scan-runner\",\"name\":\"Security Scan Runner\",\"operations\":[]},{\"key\":\"service-audit-runner\",\"name\":\"Service Audit Runner\",\"operations\":[]},{\"key\":\"ui-automation-runner\",\"name\":\"UI Automation Runner\",\"operations\":[]},{\"key\":\"file-artifact-manager\",\"name\":\"File Artifact Manager\",\"operations\":[]},{\"key\":\"project-source-loader\",\"name\":\"Project Source Loader\",\"operations\":[]},{\"key\":\"code-governance-runner\",\"name\":\"Code Governance Runner\",\"operations\":[]},{\"key\":\"perf-container-manager\",\"name\":\"Perf Container Manager\",\"operations\":[]},{\"key\":\"performance-test-runner\",\"name\":\"Performance Test Runner\",\"operations\":[]},{\"key\":\"security-tool-bootstrap\",\"name\":\"Security Tool Bootstrap\",\"operations\":[]},{\"key\":\"test-case-xlsx-exporter\",\"name\":\"Test Case XLSX Exporter\",\"operations\":[]},{\"key\":\"traffic-analysis-runner\",\"name\":\"Traffic Analysis Runner\",\"operations\":[]},{\"key\":\"code-review-orchestrator\",\"name\":\"Code Review Orchestrator\",\"operations\":[]},{\"key\":\"credential-attack-runner\",\"name\":\"Credential Attack Runner\",\"operations\":[]},{\"key\":\"exploit-workbench-runner\",\"name\":\"Exploit Workbench Runner\",\"operations\":[]},{\"key\":\"mail-download-attachment\",\"name\":\"Mail Download Attachment\",\"operations\":[]},{\"key\":\"compatibility-test-runner\",\"name\":\"Compatibility Test Runner\",\"operations\":[]},{\"key\":\"performance-engine-runner\",\"name\":\"Performance Engine Runner\",\"operations\":[]}],\"catalog\":{\"cases\":[{\"case_key\":\"scene-cli-target\",\"id\":\"30f50d9c-dece-4850-8284-ec4d24b5b6bc\",\"title\":\"场景计数验证\"}],\"cases_has_more\":false,\"documents\":[],\"documents_has_more\":false,\"offset\":0,\"recording_knowledge_available\":true,\"recordings\":[{\"id\":\"374fb838-bd8f-40c8-a371-5d7ae2ecc48a\",\"name\":\"实际录制场景\",\"status\":\"completed\"}],\"recordings_has_more\":false,\"scene_catalog\":{\"has_more\":false,\"items\":[{\"content_hash\":\"9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92\",\"name\":\"两次点击业务场景\",\"scene_id\":\"9c680c13-a4f7-40c3-9ae2-f695d557127b\",\"status\":\"organized\",\"step_count\":6,\"version\":2,\"version_id\":\"9288bb0f-e8a6-4573-8e1d-05432c49f093\"}],\"limit\":20,\"offset\":0},\"scene_knowledge_available\":true},\"evidence\":[{\"content_hash\":\"65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e\",\"id\":\"case:650e14fb-edbe-4736-90e2-f83421fb27f1\",\"kind\":\"case\",\"payload\":{\"case_id\":\"30f50d9c-dece-4850-8284-ec4d24b5b6bc\",\"case_key\":\"scene-cli-target\",\"case_version_id\":\"650e14fb-edbe-4736-90e2-f83421fb27f1\",\"content\":{\"objective\":\"场景计数验证\",\"steps\":[{\"action\":\"按完整场景两次点击\",\"expected\":\"计数增加\"}],\"未知嵌套\":{\"输入\":[0,false,\"😀\"]}},\"execution_notes\":\"读取全部步骤；保持负向条件。\",\"historical_mode_key\":\"ui_testing\",\"source_refs\":[{\"label\":\"\",\"metadata\":{},\"source_id\":\"scene-cli-target\",\"source_type\":\"manual\",\"uri\":null,\"version\":null}],\"title\":\"场景计数验证\"},\"source_id\":\"30f50d9c-dece-4850-8284-ec4d24b5b6bc\",\"version\":\"650e14fb-edbe-4736-90e2-f83421fb27f1\"}],\"objective\":\"查项目场景后规划计数测试\",\"planning_stage\":\"logic\",\"project\":{\"base_url\":null,\"description\":null,\"id\":\"69974e76-5e72-4330-b884-f16e1a349e2c\",\"name\":\"场景项目\"},\"query_results\":[{\"evidence_ids\":[],\"has_more\":false,\"offset\":0,\"query\":{\"kind\":\"scenes\",\"max_lines\":200,\"offset\":0,\"query\":\"\",\"source_id\":null,\"start_line\":1},\"scene_catalog\":{\"has_more\":false,\"items\":[{\"content_hash\":\"9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92\",\"name\":\"两次点击业务场景\",\"scene_id\":\"9c680c13-a4f7-40c3-9ae2-f695d557127b\",\"status\":\"organized\",\"step_count\":6,\"version\":2,\"version_id\":\"9288bb0f-e8a6-4573-8e1d-05432c49f093\"}],\"limit\":20,\"offset\":0}}],\"remaining_rounds\":5,\"round\":2,\"runtime_context\":{},\"validation_feedback\":null,\"warnings\":[]}"
+        }
+      ],
+      "model": "scene-cli-fixture",
+      "max_tokens": 1024
+    },
+    "context": {
+      "available_tools": [
+        {
+          "key": "skill",
+          "name": "Skill Loader",
+          "operations": []
+        },
+        {
+          "key": "mail-list",
+          "name": "Mail List",
+          "operations": []
+        },
+        {
+          "key": "mail-read",
+          "name": "Mail Read",
+          "operations": []
+        },
+        {
+          "key": "mail-send",
+          "name": "Mail Send Prepare",
+          "operations": []
+        },
+        {
+          "key": "api-tester",
+          "name": "API Tester",
+          "operations": []
+        },
+        {
+          "key": "mail-reply",
+          "name": "Mail Reply",
+          "operations": []
+        },
+        {
+          "key": "mail-trash",
+          "name": "Mail Trash Prepare",
+          "operations": []
+        },
+        {
+          "key": "web_search",
+          "name": "Web Search",
+          "operations": []
+        },
+        {
+          "key": "mail-search",
+          "name": "Mail Search",
+          "operations": []
+        },
+        {
+          "key": "mail-status",
+          "name": "Mail Status",
+          "operations": []
+        },
+        {
+          "key": "cli-executor",
+          "name": "CLI Executor",
+          "operations": []
+        },
+        {
+          "key": "mail-confirm",
+          "name": "Mail Confirm",
+          "operations": []
+        },
+        {
+          "key": "mail-forward",
+          "name": "Mail Forward",
+          "operations": []
+        },
+        {
+          "key": "dom-inspector",
+          "name": "DOM Inspector",
+          "operations": []
+        },
+        {
+          "key": "knowledge-rag",
+          "name": "Knowledge RAG",
+          "operations": []
+        },
+        {
+          "key": "report-writer",
+          "name": "Report Writer",
+          "operations": []
+        },
+        {
+          "key": "api-docs-ingest",
+          "name": "API Docs Ingest",
+          "operations": []
+        },
+        {
+          "key": "api-test-runner",
+          "name": "API Test Runner",
+          "operations": [
+            "execute_task"
+          ]
+        },
+        {
+          "key": "browser-control",
+          "name": "Browser Control",
+          "operations": []
+        },
+        {
+          "key": "session-history",
+          "name": "Session History",
+          "operations": []
+        },
+        {
+          "key": "web-scan-runner",
+          "name": "Web Scan Runner",
+          "operations": []
+        },
+        {
+          "key": "workflow-router",
+          "name": "Workflow Router",
+          "operations": []
+        },
+        {
+          "key": "api-docs-library",
+          "name": "API Docs Library",
+          "operations": []
+        },
+        {
+          "key": "session-timeline",
+          "name": "Session Timeline",
+          "operations": []
+        },
+        {
+          "key": "ui-page-explorer",
+          "name": "UI Explorer Agent",
+          "operations": []
+        },
+        {
+          "key": "attachment-reader",
+          "name": "Attachment Reader",
+          "operations": []
+        },
+        {
+          "key": "http-probe-runner",
+          "name": "HTTP Probe Runner",
+          "operations": []
+        },
+        {
+          "key": "subagent-dispatch",
+          "name": "Subagent Dispatch",
+          "operations": []
+        },
+        {
+          "key": "browser-automation",
+          "name": "Browser Automation",
+          "operations": []
+        },
+        {
+          "key": "mock-target-runner",
+          "name": "Mock Target Runner",
+          "operations": []
+        },
+        {
+          "key": "observation-search",
+          "name": "Observation Search",
+          "operations": []
+        },
+        {
+          "key": "perf-engine-select",
+          "name": "Perf Engine Select",
+          "operations": []
+        },
+        {
+          "key": "perf-plan-compiler",
+          "name": "Perf Plan Compiler",
+          "operations": []
+        },
+        {
+          "key": "smoke-suite-runner",
+          "name": "Smoke Suite Runner",
+          "operations": []
+        },
+        {
+          "key": "project-diff-reader",
+          "name": "Project Diff Reader",
+          "operations": []
+        },
+        {
+          "key": "project-file-reader",
+          "name": "Project File Reader",
+          "operations": []
+        },
+        {
+          "key": "test-case-generator",
+          "name": "Test Case Generator",
+          "operations": []
+        },
+        {
+          "key": "network-recon-runner",
+          "name": "Network Recon Runner",
+          "operations": []
+        },
+        {
+          "key": "perf-result-analyzer",
+          "name": "Perf Result Analyzer",
+          "operations": []
+        },
+        {
+          "key": "project-tree-scanner",
+          "name": "Project Tree Scanner",
+          "operations": []
+        },
+        {
+          "key": "security-scan-runner",
+          "name": "Security Scan Runner",
+          "operations": []
+        },
+        {
+          "key": "service-audit-runner",
+          "name": "Service Audit Runner",
+          "operations": []
+        },
+        {
+          "key": "ui-automation-runner",
+          "name": "UI Automation Runner",
+          "operations": []
+        },
+        {
+          "key": "file-artifact-manager",
+          "name": "File Artifact Manager",
+          "operations": []
+        },
+        {
+          "key": "project-source-loader",
+          "name": "Project Source Loader",
+          "operations": []
+        },
+        {
+          "key": "code-governance-runner",
+          "name": "Code Governance Runner",
+          "operations": []
+        },
+        {
+          "key": "perf-container-manager",
+          "name": "Perf Container Manager",
+          "operations": []
+        },
+        {
+          "key": "performance-test-runner",
+          "name": "Performance Test Runner",
+          "operations": []
+        },
+        {
+          "key": "security-tool-bootstrap",
+          "name": "Security Tool Bootstrap",
+          "operations": []
+        },
+        {
+          "key": "test-case-xlsx-exporter",
+          "name": "Test Case XLSX Exporter",
+          "operations": []
+        },
+        {
+          "key": "traffic-analysis-runner",
+          "name": "Traffic Analysis Runner",
+          "operations": []
+        },
+        {
+          "key": "code-review-orchestrator",
+          "name": "Code Review Orchestrator",
+          "operations": []
+        },
+        {
+          "key": "credential-attack-runner",
+          "name": "Credential Attack Runner",
+          "operations": []
+        },
+        {
+          "key": "exploit-workbench-runner",
+          "name": "Exploit Workbench Runner",
+          "operations": []
+        },
+        {
+          "key": "mail-download-attachment",
+          "name": "Mail Download Attachment",
+          "operations": []
+        },
+        {
+          "key": "compatibility-test-runner",
+          "name": "Compatibility Test Runner",
+          "operations": []
+        },
+        {
+          "key": "performance-engine-runner",
+          "name": "Performance Engine Runner",
+          "operations": []
+        }
+      ],
+      "catalog": {
+        "cases": [
+          {
+            "case_key": "scene-cli-target",
+            "id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+            "title": "场景计数验证"
+          }
+        ],
+        "cases_has_more": false,
+        "documents": [],
+        "documents_has_more": false,
+        "offset": 0,
+        "recording_knowledge_available": true,
+        "recordings": [
+          {
+            "id": "374fb838-bd8f-40c8-a371-5d7ae2ecc48a",
+            "name": "实际录制场景",
+            "status": "completed"
+          }
+        ],
+        "recordings_has_more": false,
+        "scene_catalog": {
+          "has_more": false,
+          "items": [
+            {
+              "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92",
+              "name": "两次点击业务场景",
+              "scene_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+              "status": "organized",
+              "step_count": 6,
+              "version": 2,
+              "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093"
+            }
+          ],
+          "limit": 20,
+          "offset": 0
+        },
+        "scene_knowledge_available": true
+      },
+      "evidence": [
+        {
+          "content_hash": "65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e",
+          "id": "case:650e14fb-edbe-4736-90e2-f83421fb27f1",
+          "kind": "case",
+          "payload": {
+            "case_id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+            "case_key": "scene-cli-target",
+            "case_version_id": "650e14fb-edbe-4736-90e2-f83421fb27f1",
+            "content": {
+              "objective": "场景计数验证",
+              "steps": [
+                {
+                  "action": "按完整场景两次点击",
+                  "expected": "计数增加"
+                }
+              ],
+              "未知嵌套": {
+                "输入": [
+                  0,
+                  false,
+                  "😀"
+                ]
+              }
+            },
+            "execution_notes": "读取全部步骤；保持负向条件。",
+            "historical_mode_key": "ui_testing",
+            "source_refs": [
+              {
+                "label": "",
+                "metadata": {},
+                "source_id": "scene-cli-target",
+                "source_type": "manual",
+                "uri": null,
+                "version": null
+              }
+            ],
+            "title": "场景计数验证"
+          },
+          "source_id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+          "version": "650e14fb-edbe-4736-90e2-f83421fb27f1"
+        }
+      ],
+      "objective": "查项目场景后规划计数测试",
+      "planning_stage": "logic",
+      "project": {
+        "base_url": null,
+        "description": null,
+        "id": "69974e76-5e72-4330-b884-f16e1a349e2c",
+        "name": "场景项目"
+      },
+      "query_results": [
+        {
+          "evidence_ids": [],
+          "has_more": false,
+          "offset": 0,
+          "query": {
+            "kind": "scenes",
+            "max_lines": 200,
+            "offset": 0,
+            "query": "",
+            "source_id": null,
+            "start_line": 1
+          },
+          "scene_catalog": {
+            "has_more": false,
+            "items": [
+              {
+                "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92",
+                "name": "两次点击业务场景",
+                "scene_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+                "status": "organized",
+                "step_count": 6,
+                "version": 2,
+                "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093"
+              }
+            ],
+            "limit": 20,
+            "offset": 0
+          }
+        }
+      ],
+      "remaining_rounds": 5,
+      "round": 2,
+      "runtime_context": {},
+      "validation_feedback": null,
+      "warnings": []
+    },
+    "response": {
+      "id": "scene-cli-fixture",
+      "object": "chat.completion",
+      "model": "scene-cli-fixture",
+      "choices": [
+        {
+          "index": 0,
+          "message": {
+            "role": "assistant",
+            "content": "{\"action\": \"query\", \"summary\": \"\\u8bfb\\u53d6\\u76ee\\u5f55\\u6307\\u660e\\u7684\\u56fa\\u5b9a\\u7248\\u672c\", \"queries\": [{\"kind\": \"scene\", \"source_id\": \"9c680c13-a4f7-40c3-9ae2-f695d557127b\", \"version_id\": \"9288bb0f-e8a6-4573-8e1d-05432c49f093\", \"content_hash\": \"9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92\"}]}"
+          },
+          "finish_reason": "stop"
+        }
+      ],
+      "usage": {
+        "prompt_tokens": 10,
+        "completion_tokens": 10,
+        "total_tokens": 20
+      }
+    }
+  }
+]

@@ -1,0 +1,474 @@
+{
+  "pid": 6780,
+  "parent_pid": 10756,
+  "task_id": "8d962be1-3027-4301-9729-091bf82814a3",
+  "attempt_id": "c0f0fa7a-8d85-4338-b768-cd0c23e2210d",
+  "checkpoint": {
+    "plan": {
+      "id": "0c7d431f-34d2-4df7-bed1-2a74805dc3cd",
+      "project_id": "e0fd706f-33d0-495d-aae5-ce73989a4f28",
+      "request": {
+        "objective": "查项目场景后规划计数测试",
+        "model_key": "scene-cli-fixture",
+        "candidate_case_ids": [
+          "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14"
+        ],
+        "runtime_context": {},
+        "environment": null
+      },
+      "status": "planning_failed",
+      "summary": "规划尚未完成",
+      "decision": null,
+      "evidence": [
+        {
+          "id": "case:42624121-87fe-4763-bc42-5cac73301636",
+          "kind": "case",
+          "source_id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+          "version": "42624121-87fe-4763-bc42-5cac73301636",
+          "content_hash": "65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e",
+          "payload": {
+            "case_id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+            "case_version_id": "42624121-87fe-4763-bc42-5cac73301636",
+            "case_key": "scene-cli-target",
+            "title": "场景计数验证",
+            "historical_mode_key": "ui_testing",
+            "content": {
+              "steps": [
+                {
+                  "action": "按完整场景两次点击",
+                  "expected": "计数增加"
+                }
+              ],
+              "objective": "场景计数验证",
+              "未知嵌套": {
+                "输入": [
+                  0,
+                  false,
+                  "😀"
+                ]
+              }
+            },
+            "execution_notes": "读取全部步骤；保持负向条件。",
+            "source_refs": [
+              {
+                "source_type": "manual",
+                "source_id": "scene-cli-target",
+                "version": null,
+                "label": "",
+                "uri": null,
+                "metadata": {}
+              }
+            ]
+          }
+        }
+      ],
+      "config_snapshot": {
+        "scope_key": "e0fd706f-33d0-495d-aae5-ce73989a4f28",
+        "revision": 1,
+        "policy": {
+          "max_rounds": 6,
+          "max_candidates": 20,
+          "max_items": 50,
+          "max_context_chars": 180000,
+          "timeout_seconds": 600.0,
+          "action_binding_protocol": "case-action-binding-v1",
+          "action_admission_protocol": "case-action-admission-v1",
+          "operation_protocol": "case-operation-v1",
+          "preparation_scope_protocol": "preparation-scope-v2",
+          "effect_evidence_protocol": "case-effect-evidence-v2",
+          "effect_evidence_max_bytes": 512000,
+          "effect_coverage_protocol": "case-effect-coverage-v2",
+          "effect_coverage_max_bytes": 1024000,
+          "planning_stage_protocol": "case-planning-staged-evidence-v2",
+          "effect_expected_source_protocol": "case-effect-document-expected-v1",
+          "operation_prefetch_protocol": "case-planning-item-operation-prefetch-v2",
+          "source_identity_protocol": "case-planning-source-full-hash-v1",
+          "evidence_reference_protocol": "case-planning-evidence-references-v1",
+          "scene_query_protocol": "case-planning-scene-query-v1"
+        }
+      },
+      "model_key": "scene-cli-fixture",
+      "prompt_version": "case-planning-scene-query-v13",
+      "rounds": [
+        {
+          "round": 1,
+          "status": "parsed",
+          "logical_call_id": "0cea45d7-6375-4a32-8d0d-3ae9742e6f59",
+          "attempt_id": "c0f0fa7a-8d85-4338-b768-cd0c23e2210d",
+          "streaming": false,
+          "planning_stage": "logic",
+          "model_elapsed_seconds": 0.529,
+          "response_mode": "ok",
+          "response_metadata": {
+            "mode": "ok",
+            "error_type": null,
+            "status_code": null,
+            "response_id": "scene-cli-fixture",
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "usage": {
+              "completion_tokens": 10,
+              "prompt_tokens": 10,
+              "total_tokens": 20,
+              "completion_tokens_details": null,
+              "prompt_tokens_details": null
+            },
+            "request_mapping": {
+              "version": "model-request-v1",
+              "decisions": [
+                {
+                  "option": "output_format",
+                  "action": "prompt_fallback",
+                  "reason": "format_not_declared"
+                }
+              ]
+            }
+          },
+          "preparation_scope_declaration": {},
+          "decision": {
+            "action": "finish",
+            "summary": "已按项目依据规划",
+            "queries": [],
+            "items": [
+              {
+                "key": "scene-cli-target",
+                "reason": "依据完整用例规划",
+                "evidence_ids": [
+                  "case:42624121-87fe-4763-bc42-5cac73301636"
+                ],
+                "depends_on": [],
+                "input_bindings": {},
+                "kind": "target",
+                "case_id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+                "case_version_id": "42624121-87fe-4763-bc42-5cac73301636",
+                "effect_schema": 3
+              }
+            ],
+            "unresolved": [],
+            "operation_selections": []
+          },
+          "logical_hash": "73775c703e622e5e14565ef735f3331d03a555c00d833e16231468e59bb87e45"
+        },
+        {
+          "round": 2,
+          "status": "parsed",
+          "logical_call_id": "755a22b5-66e8-4d0b-804d-e08c56e1ae93",
+          "attempt_id": "c0f0fa7a-8d85-4338-b768-cd0c23e2210d",
+          "streaming": false,
+          "planning_stage": "effects",
+          "evidence_reference_catalog": {
+            "protocol": "case-planning-evidence-references-v1",
+            "evidence": {
+              "E1": {
+                "evidence_id": "case:42624121-87fe-4763-bc42-5cac73301636",
+                "kind": "case",
+                "source_id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+                "version": "42624121-87fe-4763-bc42-5cac73301636",
+                "content_hash": "65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e"
+              }
+            },
+            "texts": {},
+            "sha256": "1f5b2b0817b5396c33bdc204be9c9515e0a55a1e50c8890fb843a37631a59127"
+          },
+          "model_elapsed_seconds": 0.009,
+          "response_mode": "ok",
+          "response_metadata": {
+            "mode": "ok",
+            "error_type": null,
+            "status_code": null,
+            "response_id": "scene-cli-fixture",
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "usage": {
+              "completion_tokens": 10,
+              "prompt_tokens": 10,
+              "total_tokens": 20,
+              "completion_tokens_details": null,
+              "prompt_tokens_details": null
+            },
+            "request_mapping": {
+              "version": "model-request-v1",
+              "decisions": [
+                {
+                  "option": "output_format",
+                  "action": "prompt_fallback",
+                  "reason": "format_not_declared"
+                }
+              ]
+            }
+          },
+          "wire_response_text": "{\"action\": \"query\", \"summary\": \"\\u67e5\\u8be2\\u9879\\u76ee\\u573a\\u666f\\u76ee\\u5f55\", \"queries\": [{\"kind\": \"scenes\"}]}",
+          "canonical_evidence_decision": {
+            "action": "query",
+            "summary": "查询项目场景目录",
+            "queries": [
+              {
+                "kind": "scenes",
+                "query": "",
+                "source_id": null,
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0
+              }
+            ],
+            "bindings": [],
+            "unresolved": []
+          },
+          "decision": {
+            "action": "query",
+            "summary": "查询项目场景目录",
+            "queries": [
+              {
+                "kind": "scenes",
+                "query": "",
+                "source_id": null,
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0
+              }
+            ],
+            "bindings": [],
+            "unresolved": []
+          },
+          "query_results": [
+            {
+              "query": {
+                "kind": "scenes",
+                "query": "",
+                "source_id": null,
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0
+              },
+              "evidence_ids": [],
+              "scene_catalog": {
+                "items": [
+                  {
+                    "scene_id": "0b505ae0-51d2-4449-af75-a70925afde1e",
+                    "version_id": "0b6f6491-6271-4d95-8d33-7b8d664c4532",
+                    "name": "两次点击业务场景",
+                    "status": "organized",
+                    "version": 2,
+                    "content_hash": "df4f834a4b0d4c7c2f9e2bd0f90fb24276ae019f2647f96d5218aeec8ed550f6",
+                    "step_count": 6
+                  }
+                ],
+                "has_more": false,
+                "limit": 20,
+                "offset": 0
+              },
+              "has_more": false,
+              "offset": 0
+            }
+          ]
+        },
+        {
+          "round": 3,
+          "status": "parsed",
+          "logical_call_id": "38442f26-5cb2-42db-8d7b-9db2ed8fe578",
+          "attempt_id": "c0f0fa7a-8d85-4338-b768-cd0c23e2210d",
+          "streaming": false,
+          "planning_stage": "effects",
+          "evidence_reference_catalog": {
+            "protocol": "case-planning-evidence-references-v1",
+            "evidence": {
+              "E1": {
+                "evidence_id": "case:42624121-87fe-4763-bc42-5cac73301636",
+                "kind": "case",
+                "source_id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+                "version": "42624121-87fe-4763-bc42-5cac73301636",
+                "content_hash": "65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e"
+              }
+            },
+            "texts": {},
+            "sha256": "1f5b2b0817b5396c33bdc204be9c9515e0a55a1e50c8890fb843a37631a59127"
+          },
+          "model_elapsed_seconds": 0.009,
+          "response_mode": "ok",
+          "response_metadata": {
+            "mode": "ok",
+            "error_type": null,
+            "status_code": null,
+            "response_id": "scene-cli-fixture",
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "usage": {
+              "completion_tokens": 10,
+              "prompt_tokens": 10,
+              "total_tokens": 20,
+              "completion_tokens_details": null,
+              "prompt_tokens_details": null
+            },
+            "request_mapping": {
+              "version": "model-request-v1",
+              "decisions": [
+                {
+                  "option": "output_format",
+                  "action": "prompt_fallback",
+                  "reason": "format_not_declared"
+                }
+              ]
+            }
+          },
+          "wire_response_text": "{\"action\": \"query\", \"summary\": \"\\u8bfb\\u53d6\\u76ee\\u5f55\\u6307\\u660e\\u7684\\u56fa\\u5b9a\\u7248\\u672c\", \"queries\": [{\"kind\": \"scene\", \"source_id\": \"0b505ae0-51d2-4449-af75-a70925afde1e\", \"version_id\": \"0b6f6491-6271-4d95-8d33-7b8d664c4532\", \"content_hash\": \"df4f834a4b0d4c7c2f9e2bd0f90fb24276ae019f2647f96d5218aeec8ed550f6\"}]}",
+          "canonical_evidence_decision": {
+            "action": "query",
+            "summary": "读取目录指明的固定版本",
+            "queries": [
+              {
+                "kind": "scene",
+                "query": "",
+                "source_id": "0b505ae0-51d2-4449-af75-a70925afde1e",
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0,
+                "version_id": "0b6f6491-6271-4d95-8d33-7b8d664c4532",
+                "content_hash": "df4f834a4b0d4c7c2f9e2bd0f90fb24276ae019f2647f96d5218aeec8ed550f6"
+              }
+            ],
+            "bindings": [],
+            "unresolved": []
+          },
+          "decision": {
+            "action": "query",
+            "summary": "读取目录指明的固定版本",
+            "queries": [
+              {
+                "kind": "scene",
+                "query": "",
+                "source_id": "0b505ae0-51d2-4449-af75-a70925afde1e",
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0,
+                "version_id": "0b6f6491-6271-4d95-8d33-7b8d664c4532",
+                "content_hash": "df4f834a4b0d4c7c2f9e2bd0f90fb24276ae019f2647f96d5218aeec8ed550f6"
+              }
+            ],
+            "bindings": [],
+            "unresolved": []
+          }
+        }
+      ],
+      "warnings": [],
+      "created_at": "2026-10-11T00:58:52.526196Z",
+      "regression": null,
+      "environment": null
+    },
+    "phase": "query",
+    "catalog": {
+      "cases": [
+        {
+          "id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+          "case_key": "scene-cli-target",
+          "title": "场景计数验证"
+        }
+      ],
+      "cases_has_more": false,
+      "documents": [],
+      "documents_has_more": false,
+      "recordings": [
+        {
+          "id": "cb6f4c4a-120b-4ff2-9a8c-c738d66a6090",
+          "name": "实际录制场景",
+          "status": "completed"
+        }
+      ],
+      "recordings_has_more": false,
+      "offset": 0,
+      "recording_knowledge_available": true,
+      "scene_knowledge_available": true,
+      "scene_catalog": {
+        "items": [
+          {
+            "scene_id": "0b505ae0-51d2-4449-af75-a70925afde1e",
+            "version_id": "0b6f6491-6271-4d95-8d33-7b8d664c4532",
+            "name": "两次点击业务场景",
+            "status": "organized",
+            "version": 2,
+            "content_hash": "df4f834a4b0d4c7c2f9e2bd0f90fb24276ae019f2647f96d5218aeec8ed550f6",
+            "step_count": 6
+          }
+        ],
+        "has_more": false,
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    "query_results": [],
+    "validation_feedback": null,
+    "next_round": 3,
+    "query_index": 0,
+    "pending_decision": {
+      "action": "query",
+      "summary": "读取目录指明的固定版本",
+      "queries": [
+        {
+          "kind": "scene",
+          "query": "",
+          "source_id": "0b505ae0-51d2-4449-af75-a70925afde1e",
+          "start_line": 1,
+          "max_lines": 200,
+          "offset": 0,
+          "version_id": "0b6f6491-6271-4d95-8d33-7b8d664c4532",
+          "content_hash": "df4f834a4b0d4c7c2f9e2bd0f90fb24276ae019f2647f96d5218aeec8ed550f6"
+        }
+      ],
+      "bindings": [],
+      "unresolved": []
+    },
+    "response_text": null,
+    "response_metadata": {
+      "mode": "ok",
+      "error_type": null,
+      "status_code": null,
+      "response_id": "scene-cli-fixture",
+      "finish_reason": "stop",
+      "stop_reason": null,
+      "usage": {
+        "completion_tokens": 10,
+        "prompt_tokens": 10,
+        "total_tokens": 20,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "prompt_fallback",
+            "reason": "format_not_declared"
+          }
+        ]
+      }
+    },
+    "response_has_tools": false,
+    "stages": {
+      "stage": "effects",
+      "logical_decision": {
+        "action": "finish",
+        "summary": "已按项目依据规划",
+        "queries": [],
+        "items": [
+          {
+            "key": "scene-cli-target",
+            "reason": "依据完整用例规划",
+            "evidence_ids": [
+              "case:42624121-87fe-4763-bc42-5cac73301636"
+            ],
+            "depends_on": [],
+            "input_bindings": {},
+            "kind": "target",
+            "case_id": "9bc06ab6-a7b5-4dbd-8ea2-0a37daaa2d14",
+            "case_version_id": "42624121-87fe-4763-bc42-5cac73301636",
+            "effect_schema": 3
+          }
+        ],
+        "unresolved": []
+      },
+      "logical_hash": "73775c703e622e5e14565ef735f3331d03a555c00d833e16231468e59bb87e45",
+      "operation_selections": []
+    }
+  },
+  "sql_commit_returned": true
+}

@@ -1,0 +1,331 @@
+{
+  "pid": 21352,
+  "task_id": "c537aef7-cc60-4cac-bca4-18bc621a39c5",
+  "attempt_id": "d0d16b98-464a-4756-ac25-09417ee0fb09",
+  "checkpoint": {
+    "plan": {
+      "id": "8ef5f0ea-30b4-4716-9f58-b9aac05f3726",
+      "project_id": "69974e76-5e72-4330-b884-f16e1a349e2c",
+      "request": {
+        "objective": "查项目场景后规划计数测试",
+        "model_key": "scene-cli-fixture",
+        "candidate_case_ids": [
+          "30f50d9c-dece-4850-8284-ec4d24b5b6bc"
+        ],
+        "runtime_context": {},
+        "environment": null
+      },
+      "status": "planning_failed",
+      "summary": "规划尚未完成",
+      "decision": null,
+      "evidence": [
+        {
+          "id": "case:650e14fb-edbe-4736-90e2-f83421fb27f1",
+          "kind": "case",
+          "source_id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+          "version": "650e14fb-edbe-4736-90e2-f83421fb27f1",
+          "content_hash": "65479e901f572f9a62c8f7e79709c9b7559327052cb794c450e5eeee4870ef6e",
+          "payload": {
+            "case_id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+            "case_version_id": "650e14fb-edbe-4736-90e2-f83421fb27f1",
+            "case_key": "scene-cli-target",
+            "title": "场景计数验证",
+            "historical_mode_key": "ui_testing",
+            "content": {
+              "steps": [
+                {
+                  "action": "按完整场景两次点击",
+                  "expected": "计数增加"
+                }
+              ],
+              "objective": "场景计数验证",
+              "未知嵌套": {
+                "输入": [
+                  0,
+                  false,
+                  "😀"
+                ]
+              }
+            },
+            "execution_notes": "读取全部步骤；保持负向条件。",
+            "source_refs": [
+              {
+                "source_type": "manual",
+                "source_id": "scene-cli-target",
+                "version": null,
+                "label": "",
+                "uri": null,
+                "metadata": {}
+              }
+            ]
+          }
+        }
+      ],
+      "config_snapshot": {
+        "scope_key": "69974e76-5e72-4330-b884-f16e1a349e2c",
+        "revision": 1,
+        "policy": {
+          "max_rounds": 6,
+          "max_candidates": 20,
+          "max_items": 50,
+          "max_context_chars": 180000,
+          "timeout_seconds": 600.0,
+          "action_binding_protocol": "case-action-binding-v1",
+          "action_admission_protocol": "case-action-admission-v1",
+          "operation_protocol": "case-operation-v1",
+          "preparation_scope_protocol": "preparation-scope-v2",
+          "effect_evidence_protocol": "case-effect-evidence-v2",
+          "effect_evidence_max_bytes": 512000,
+          "effect_coverage_protocol": "case-effect-coverage-v2",
+          "effect_coverage_max_bytes": 1024000,
+          "planning_stage_protocol": "case-planning-staged-evidence-v2",
+          "effect_expected_source_protocol": "case-effect-document-expected-v1",
+          "operation_prefetch_protocol": "case-planning-item-operation-prefetch-v2",
+          "source_identity_protocol": "case-planning-source-full-hash-v1",
+          "scene_query_protocol": "case-planning-scene-query-v1"
+        }
+      },
+      "model_key": "scene-cli-fixture",
+      "prompt_version": "case-planning-scene-query-v13",
+      "rounds": [
+        {
+          "round": 1,
+          "status": "parsed",
+          "logical_call_id": "5c0ea4e3-a5b1-4275-95a9-bdae2b73c3d1",
+          "attempt_id": "d0d16b98-464a-4756-ac25-09417ee0fb09",
+          "streaming": false,
+          "planning_stage": "logic",
+          "model_elapsed_seconds": 0.762,
+          "response_mode": "ok",
+          "response_metadata": {
+            "mode": "ok",
+            "error_type": null,
+            "status_code": null,
+            "response_id": "scene-cli-fixture",
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "usage": {
+              "completion_tokens": 10,
+              "prompt_tokens": 10,
+              "total_tokens": 20,
+              "completion_tokens_details": null,
+              "prompt_tokens_details": null
+            },
+            "request_mapping": {
+              "version": "model-request-v1",
+              "decisions": [
+                {
+                  "option": "output_format",
+                  "action": "prompt_fallback",
+                  "reason": "format_not_declared"
+                }
+              ]
+            }
+          },
+          "decision": {
+            "action": "query",
+            "summary": "查询项目场景目录",
+            "queries": [
+              {
+                "kind": "scenes",
+                "query": "",
+                "source_id": null,
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0
+              }
+            ],
+            "items": [],
+            "unresolved": [],
+            "operation_selections": []
+          },
+          "query_results": [
+            {
+              "query": {
+                "kind": "scenes",
+                "query": "",
+                "source_id": null,
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0
+              },
+              "evidence_ids": [],
+              "scene_catalog": {
+                "items": [
+                  {
+                    "scene_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+                    "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093",
+                    "name": "两次点击业务场景",
+                    "status": "organized",
+                    "version": 2,
+                    "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92",
+                    "step_count": 6
+                  }
+                ],
+                "has_more": false,
+                "limit": 20,
+                "offset": 0
+              },
+              "has_more": false,
+              "offset": 0
+            }
+          ]
+        },
+        {
+          "round": 2,
+          "status": "parsed",
+          "logical_call_id": "c3bdaa3d-8820-4d85-a92f-d50daf654049",
+          "attempt_id": "d0d16b98-464a-4756-ac25-09417ee0fb09",
+          "streaming": false,
+          "planning_stage": "logic",
+          "model_elapsed_seconds": 0.008,
+          "response_mode": "ok",
+          "response_metadata": {
+            "mode": "ok",
+            "error_type": null,
+            "status_code": null,
+            "response_id": "scene-cli-fixture",
+            "finish_reason": "stop",
+            "stop_reason": null,
+            "usage": {
+              "completion_tokens": 10,
+              "prompt_tokens": 10,
+              "total_tokens": 20,
+              "completion_tokens_details": null,
+              "prompt_tokens_details": null
+            },
+            "request_mapping": {
+              "version": "model-request-v1",
+              "decisions": [
+                {
+                  "option": "output_format",
+                  "action": "prompt_fallback",
+                  "reason": "format_not_declared"
+                }
+              ]
+            }
+          },
+          "decision": {
+            "action": "query",
+            "summary": "读取目录指明的固定版本",
+            "queries": [
+              {
+                "kind": "scene",
+                "query": "",
+                "source_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+                "start_line": 1,
+                "max_lines": 200,
+                "offset": 0,
+                "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093",
+                "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92"
+              }
+            ],
+            "items": [],
+            "unresolved": [],
+            "operation_selections": []
+          }
+        }
+      ],
+      "warnings": [],
+      "created_at": "2026-10-11T00:53:57.461518Z",
+      "regression": null,
+      "environment": null
+    },
+    "phase": "query",
+    "catalog": {
+      "cases": [
+        {
+          "id": "30f50d9c-dece-4850-8284-ec4d24b5b6bc",
+          "case_key": "scene-cli-target",
+          "title": "场景计数验证"
+        }
+      ],
+      "cases_has_more": false,
+      "documents": [],
+      "documents_has_more": false,
+      "recordings": [
+        {
+          "id": "374fb838-bd8f-40c8-a371-5d7ae2ecc48a",
+          "name": "实际录制场景",
+          "status": "completed"
+        }
+      ],
+      "recordings_has_more": false,
+      "offset": 0,
+      "recording_knowledge_available": true,
+      "scene_knowledge_available": true,
+      "scene_catalog": {
+        "items": [
+          {
+            "scene_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+            "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093",
+            "name": "两次点击业务场景",
+            "status": "organized",
+            "version": 2,
+            "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92",
+            "step_count": 6
+          }
+        ],
+        "has_more": false,
+        "limit": 20,
+        "offset": 0
+      }
+    },
+    "query_results": [],
+    "validation_feedback": null,
+    "next_round": 2,
+    "query_index": 0,
+    "pending_decision": {
+      "action": "query",
+      "summary": "读取目录指明的固定版本",
+      "queries": [
+        {
+          "kind": "scene",
+          "query": "",
+          "source_id": "9c680c13-a4f7-40c3-9ae2-f695d557127b",
+          "start_line": 1,
+          "max_lines": 200,
+          "offset": 0,
+          "version_id": "9288bb0f-e8a6-4573-8e1d-05432c49f093",
+          "content_hash": "9b66e7b662bfff1ccf89bf50f18814f79e3c76722c83c97a791ccabe4c324a92"
+        }
+      ],
+      "items": [],
+      "unresolved": [],
+      "operation_selections": []
+    },
+    "response_text": null,
+    "response_metadata": {
+      "mode": "ok",
+      "error_type": null,
+      "status_code": null,
+      "response_id": "scene-cli-fixture",
+      "finish_reason": "stop",
+      "stop_reason": null,
+      "usage": {
+        "completion_tokens": 10,
+        "prompt_tokens": 10,
+        "total_tokens": 20,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "prompt_fallback",
+            "reason": "format_not_declared"
+          }
+        ]
+      }
+    },
+    "response_has_tools": false,
+    "stages": {
+      "stage": "logic",
+      "logical_decision": null,
+      "logical_hash": null
+    }
+  },
+  "sql_commit_returned": true
+}
