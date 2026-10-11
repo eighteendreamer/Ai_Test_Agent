@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="20.944" timestamp="2026-10-11T07:56:49.091489+08:00" hostname="EIghteen"><testcase classname="tests.test_scene_planning_live" name="test_actual_scene_source_before_planning_and_fixed_recovery" time="14.450"><failure message="AssertionError: {'entries': [{'read': False, 'basis': None, 'error': '该来源不是可读取的文档引用', 'source': {'uri': None, 'label': '', 'version': ...a': {'content_hash': '7da60a6ac8b4239c30f188f5e646be1ad89c1fdba1902cea208c598a02c32a3a'}, ...}, ...}], 'next_index': 1}&#10;assert None is not None">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1409/test_actual_scene_source_befor0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x000001A30333A150&gt;
+
+    async def test_actual_scene_source_before_planning_and_fixed_recovery(tmp_path, monkeypatch):
+        state = {}
+    
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            def save(name, value):
+                (evidence/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            container = AppContainer()
+            container.settings.override(settings)
+            model = SubmissionModel()
+            container.model_runtime_service.override(model)
+            container.test_case_embedding_service.override(None)
+            sources = container.project_planning_sources()
+            if hasattr(sources, "set_scene_sources"):
+                sources.set_scene_sources(PostgresRecordingSceneStore(settings))
+            planner = container.case_planning_service()
+            jobs = PostgresPlanningTaskStore(settings, lease_seconds=30)
+            tasks = CasePlanningTaskService(store=jobs, planning_service=planner,
+                project_service=container.project_service(), dispatch_stream="scene-planning-acceptance")
+            await tasks.initialize()
+            env = SimpleNamespace(settings=settings, cases=container.test_case_service(), jobs=jobs)
+            if stage == "initial":
+                source = {"source_type":"ui_recording_scene", "source_id":version["scene_id"],
+                    "version":version["version"]["id"], "metadata":{"content_hash":version["version"]["content_hash"]}}
+                project = await container.project_service().get(project_ids[0])
+                case = await active_case(env, project, "scene-linked-actual", {
+                    "objective":"按已录制计数页面验证两次点击", "steps":version["version"]["source"]["original_draft"]["steps"],
+                    "未知嵌套":{"保留":[0,False,"中文😀"]}}, mode="ui_testing", source_refs=[source])
+                chosen = linked_policy().model_dump(mode="json")
+                chosen["linked_source_protocol"] = os.getenv("SCENE_PLANNING_PROTOCOL", "case-planning-linked-sources-v2")
+                response = await client.put(f"/projects/{project.id}/case-plans/policy", json=chosen)
+                response.raise_for_status()
+                save("scene-planning-policy.json", response.json())
+                task = await tasks.submit(project.id, CasePlanningTaskRequest(creation_key=str(uuid4()),
+                    objective="按项目固定用例规划", candidate_case_ids=[case.case.id]))
+                state.update(task=task, case=case, source=source, version=version)
+                original = jobs.save_checkpoint
+                async def lose_ack(claim, checkpoint, *, message):
+                    await original(claim, checkpoint, message=message)
+                    p = checkpoint.linked_sources
+                    if p and p.entries[0].basis is not None and p.next_index == 0:
+                        raise RuntimeError("Actual committed scene basis acknowledgement lost")
+                if chosen["linked_source_protocol"].endswith("v2"):
+                    monkeypatch.setattr(jobs, "save_checkpoint", lose_ack)
+                    with pytest.raises(PlanningCheckpointUnavailable):
+                        await PlanningTaskHandler(planner, jobs, worker_id="scene-first")(delivery(task))
+                    assert model.requests == []
+                else:
+                    def require_scene(context):
+                        assert context["linked_source_reads"]["entries"][0]["read"], context["linked_source_reads"]
+                        return finish()
+                    model.replies = [require_scene]
+                    await PlanningTaskHandler(planner, jobs, worker_id="scene-before")(delivery(task))
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed,checkpoint FROM {jobs._table} WHERE id=%s", (task.id,))
+                    raw = dict(cur.fetchone())
+                save("scene-planning-initial-pg.json", raw)
+                assert raw["checkpoint"]["linked_sources"]["entries"][0]["basis"] is not None, raw["checkpoint"]["linked_sources"]
+            elif stage == "restart":
+                task = state["task"]
+                # Change current MySQL policy; the PG seed remains the original V2.
+                changed = linked_policy().model_dump(mode="json")
+                changed.update(linked_source_protocol="case-planning-linked-documents-v1", max_rounds=1)
+                response = await client.put(f"/projects/{project_ids[0]}/case-plans/policy", json=changed)
+                response.raise_for_status()
+                def logic(context):
+                    entry = context["linked_source_reads"]["entries"][0]
+                    assert entry["read"] and not entry["error"]
+                    scene = next(e for e in context["evidence"] if e["kind"] == "scene")
+                    expected = state["version"]["version"]
+                    assert scene["version"] == expected["id"] and scene["content_hash"] == expected["content_hash"]
+                    assert scene["payload"]["content"] == expected["content"]
+                    assert scene["payload"]["source"] == expected["source"]
+                    assert scene["payload"]["verification_status"] == "not_executed"
+                    return finish(item(context, "scene-linked-actual", effect_schema=3,
+                        evidence_ids=[f"case:{state['case'].version.id}", scene["id"]]))
+                model.replies = [logic, {"action":"finish", "summary":"固定来源保持", "bindings":[]}]
+                expire(env, task)
+                await PlanningTaskHandler(planner, jobs, worker_id="scene-restarted")(delivery(task))
+                completed = await jobs.get(project_ids[0], task.id)
+                save("scene-planning-completed.json", completed.model_dump(mode="json"))
+                assert completed.status == "completed", completed.summary
+                before = len(model.requests)
+                await PlanningTaskHandler(planner, jobs, worker_id="scene-terminal")(delivery(task))
+                assert len(model.requests) == before == 2
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed,checkpoint FROM {jobs._table} WHERE id=%s", (task.id,))
+                    raw = dict(cur.fetchone())
+                save("scene-planning-recovered-pg.json", raw)
+                assert raw["seed"] == json.loads((evidence/"scene-planning-initial-pg.json").read_bytes())["seed"]
+    
+&gt;       await actual_recording_scene_management(tmp_path, scene_probe=probe)
+
+tests\test_scene_planning_live.py:116: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:108: in actual_recording_scene_management
+    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+stage = 'initial'
+settings = Settings(app_name='Enterprise AI QA Agent', app_env='development', api_v1_prefix='/api/v1', api_auth_token=None, data_...int', checkpoint_pool_size=4, max_subagent_calls_per_turn=1, subagent_model_call_limit=6, subagent_tool_call_limit=12))
+client = &lt;httpx.AsyncClient object at 0x000001A303675250&gt;
+evidence = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p5-scene-planning-before')
+project_ids = ['13ddb9b1-fd0b-4b05-a35d-33afc84db8fb', 'c7dc80f3-b5d2-4fad-a666-3cd2b62970f4']
+version = {'scene_id': '7a4ce1b6-c34b-4a7e-a3d6-10f8514a482d', 'project_id': '13ddb9b1-fd0b-4b05-a35d-33afc84db8fb', 'current_ve..._id': '7a4ce1b6-c34b-4a7e-a3d6-10f8514a482d', 'project_id': '13ddb9b1-fd0b-4b05-a35d-33afc84db8fb', 'version': 2, ...}}
+
+    async def probe(*, stage, settings, client, evidence, project_ids, version):
+        def save(name, value):
+            (evidence/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        container = AppContainer()
+        container.settings.override(settings)
+        model = SubmissionModel()
+        container.model_runtime_service.override(model)
+        container.test_case_embedding_service.override(None)
+        sources = container.project_planning_sources()
+        if hasattr(sources, "set_scene_sources"):
+            sources.set_scene_sources(PostgresRecordingSceneStore(settings))
+        planner = container.case_planning_service()
+        jobs = PostgresPlanningTaskStore(settings, lease_seconds=30)
+        tasks = CasePlanningTaskService(store=jobs, planning_service=planner,
+            project_service=container.project_service(), dispatch_stream="scene-planning-acceptance")
+        await tasks.initialize()
+        env = SimpleNamespace(settings=settings, cases=container.test_case_service(), jobs=jobs)
+        if stage == "initial":
+            source = {"source_type":"ui_recording_scene", "source_id":version["scene_id"],
+                "version":version["version"]["id"], "metadata":{"content_hash":version["version"]["content_hash"]}}
+            project = await container.project_service().get(project_ids[0])
+            case = await active_case(env, project, "scene-linked-actual", {
+                "objective":"按已录制计数页面验证两次点击", "steps":version["version"]["source"]["original_draft"]["steps"],
+                "未知嵌套":{"保留":[0,False,"中文😀"]}}, mode="ui_testing", source_refs=[source])
+            chosen = linked_policy().model_dump(mode="json")
+            chosen["linked_source_protocol"] = os.getenv("SCENE_PLANNING_PROTOCOL", "case-planning-linked-sources-v2")
+            response = await client.put(f"/projects/{project.id}/case-plans/policy", json=chosen)
+            response.raise_for_status()
+            save("scene-planning-policy.json", response.json())
+            task = await tasks.submit(project.id, CasePlanningTaskRequest(creation_key=str(uuid4()),
+                objective="按项目固定用例规划", candidate_case_ids=[case.case.id]))
+            state.update(task=task, case=case, source=source, version=version)
+            original = jobs.save_checkpoint
+            async def lose_ack(claim, checkpoint, *, message):
+                await original(claim, checkpoint, message=message)
+                p = checkpoint.linked_sources
+                if p and p.entries[0].basis is not None and p.next_index == 0:
+                    raise RuntimeError("Actual committed scene basis acknowledgement lost")
+            if chosen["linked_source_protocol"].endswith("v2"):
+                monkeypatch.setattr(jobs, "save_checkpoint", lose_ack)
+                with pytest.raises(PlanningCheckpointUnavailable):
+                    await PlanningTaskHandler(planner, jobs, worker_id="scene-first")(delivery(task))
+                assert model.requests == []
+            else:
+                def require_scene(context):
+                    assert context["linked_source_reads"]["entries"][0]["read"], context["linked_source_reads"]
+                    return finish()
+                model.replies = [require_scene]
+                await PlanningTaskHandler(planner, jobs, worker_id="scene-before")(delivery(task))
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT seed,checkpoint FROM {jobs._table} WHERE id=%s", (task.id,))
+                raw = dict(cur.fetchone())
+            save("scene-planning-initial-pg.json", raw)
+&gt;           assert raw["checkpoint"]["linked_sources"]["entries"][0]["basis"] is not None, raw["checkpoint"]["linked_sources"]
+E           AssertionError: {'entries': [{'read': False, 'basis': None, 'error': '该来源不是可读取的文档引用', 'source': {'uri': None, 'label': '', 'version': ...a': {'content_hash': '7da60a6ac8b4239c30f188f5e646be1ad89c1fdba1902cea208c598a02c32a3a'}, ...}, ...}], 'next_index': 1}
+E           assert None is not None
+
+tests\test_scene_planning_live.py:82: AssertionError</failure></testcase></testsuite></testsuites>

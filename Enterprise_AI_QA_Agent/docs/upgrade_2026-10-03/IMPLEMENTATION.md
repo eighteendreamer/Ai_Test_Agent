@@ -5094,3 +5094,29 @@ agent_web内npm run typecheck退出0；npm test -- src/features/tools/plugins/Do
 真实HTML/CDP、built App和独立main创建资产；测试进程真实PG Runtime经注册StructuredTool/权限治理调用，无模型。API重启/头更新/项目归档后新建stores读取固定V2，终态重投沿原Job不再执行。完整正文/来源/别名依据实际断言；跨项目失败。不能宣称默认Agent或主进程工具调用完成，规划来源目录仍需补。
 
 最终受影响回归 `test_agent_case_assessment.py test_deep_agent_tool_replay.py test_langchain_tool_adapter.py test_scene_knowledge_contract.py test_recording_scene_contract.py test_recording_scene_draft_projection.py`，61通过2门控跳过19.28秒；跳过真实默认模型/单独存储门控，不计完成。实际产品已含build，未改前端且不另报新前端专项；最终compileall_exit=0仅补语法。审计原件、前序工件、受保护文件与三份方案后按白名单提交，不推送/PR。
+
+## 明确关联场景的固定规划预读：基线fee770f0，方案7.16
+
+研究P5_SCENE_PLANNING_RESEARCH.md。沿文档预读的现有来源、基准、检查点和阶段Prompt扩展v2，旧v1保持。严格场景版本/hash、完整知识投影与项目隔离；PG拒绝原基准/结果改写；MySQL政策字段/API/前端开关与类型同步。原main注入PG场景store，无新表/依赖或全局配置修改。
+
+Agent_Server实际运行 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_planning_live.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-planning-<batch>.xml`，RUN_LIVE_SCENE_PLANNING=1，RECORDING_SCENE_EVIDENCE独立绝对目录。before用旧v1，1失败21.00秒；verified夹具任务summary误用，1失败55.25秒，原件保留。修正字段后delivery1通过52.32秒；扩大两个确认丢失位置final2通过95.15秒。实际HTML/CDP/main/App/MySQL/PG/Redis，完整事件不变；新建服务/租约恢复，策略和场景头变化不改原seed/V2。终态0追加调用；模型是受控响应，不调用默认AI。App build含vue-tsc/Vite通过，原stdout/stderr留档。
+
+RUN_LIVE_CASE_PLANNING_TASKS=1：`test_planning_linked_sources.py test_planning_evidence_references.py test_case_planning_stages.py test_case_planning_tasks.py test_scene_knowledge_contract.py test_recording_scene_draft_projection.py`，59通过3解析门控跳过55.75秒；跳过项不算验收。`test_scene_planning_contract.py` 5通过5.23秒，SCENE_PLANNING_DOC_EVIDENCE独立目录：实际旧快照/知识投影不变、新Markdown/RustFS/MySQL-v2/PG预读与终态1次调用不重复。
+
+agent_web实际 `npm.cmd test -- src/features/projects/CasePlanDialog.test.ts`：66通过1旧标题断言失败；最终68通过3.36秒，包括实际旧配置保留/重新选择v2。最后compileall全src与两项新增测试退出0。命令输出、SQL原件、新原件hash、前序149工件和受保护文件审计后白名单提交，不推送/PR。
+
+未验：真实Worker kill、默认Agent的规划/知识理解/UI执行、未关联场景按需查询及场景预期技术声明、清洗遗漏/DeepSeek/复杂采集/失败报告；其余P0—P5保持未完成。配置保留旧项目，不强制升级；新开关保存仅影响后续任务，旧运行不重写。
+
+场景预读最终补验：
+交叉核对实际已保存场景证据，发现旧短引用目录将content_hash与整个payload哈希比较；场景content_hash是原始content/source快照哈希，两者不同。真实原件复现见p5-scene-planning-reference-before.log。新增可选payload_hash覆盖完整知识投影，目录校验同时核对原始快照与投影，场景E目录包含投影哈希防止同一快照下投影漂移；旧证据省略该可选字段，旧seed/checkpoint/Prompt和文档目录保持。logic仍用正式ID，开启短引用时effects使用E并由系统还原，不把场景冒充文档预期。
+
+| 本次追加实际验证 | 结果及边界 |
+|---|---|
+| reference-final | 4失败189.70秒：新增篡改检查误用alias字段，实际SceneAlias为name；原失败及SQL保留，修正夹具后重新验收 |
+| reference-complete | 4通过189.44秒，0跳过；普通/短引用×基准/已读结果提交确认丢失。每例独立HTML/CDP/main/App/真实数据库，首次推理前固定；头版本/当前策略变化和服务恢复后原seed与V2保持；E还原正式场景ID。每例3种快照/投影篡改、4种错误来源与2种检查点变更拒绝；原始事件整行不变，终态0追加调用 |
+| regression-final | 69通过3格式解析门控跳过64.05秒；包含实际文档兼容、旧快照/Prompt等价、原知识投影、实际场景双哈希/目录漂移核验。3跳过不计完成 |
+| worker-before/worker-complete | 新场景经正式planning_worker_runtime复现1失败19.88秒，未配置场景store。补齐原启动流程的初始化/注入及日志，最终5通过53.53秒；其中1项真实main/App/CDP/MySQL/PG/Redis和两次Worker Runtime初始化/关闭，API重启后读相同V2完整证据；其余4项CLI导入隔离和原部分启动清理回归，模型调用0 |
+
+Worker专项是正式启动函数在测试进程的真实存储读取，不是独立CLI完成规划、更不是默认AI执行；上述规划仍由受控模型响应驱动。真实进程kill、独立CLI完整场景规划、未关联场景按需查询、场景预期技术声明和全部默认AI业务验收仍待推进。最新compile-worker-final退出0仅补语法。无新表/依赖、全局模型修改或旧配置自动升级；Worker初始化已有场景表沿既有PG初始化权限执行，生产部署/历史迁移未验。原件和旧工件校验、三份方案同步见p5-scene-planning-validation.json。
+
+实际Worker命令：RUN_LIVE_SCENE_PLANNING=1、RECORDING_SCENE_EVIDENCE独立绝对worker-before/worker-complete目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_planning_worker_live.py tests/test_planning_worker_runtime.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-planning-worker-complete.xml`。规划四组合命令仍为test_scene_planning_live.py，使用独立reference-complete目录；最终回归加入test_scene_planning_contract.py，输出regression-final，文档原件独立document-final目录。最新compileall覆盖src及三项新增测试，输出compile-worker-final。

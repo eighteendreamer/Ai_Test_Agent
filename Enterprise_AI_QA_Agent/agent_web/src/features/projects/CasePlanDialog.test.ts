@@ -418,7 +418,7 @@ describe("case planning", () => {
     const wrapper = setup(); await flushPromises();
     await wrapper.get('[data-testid="linked-sources"]').setValue(true);
     await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
-    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ linked_source_protocol: "case-planning-linked-documents-v1",
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ linked_source_protocol: "case-planning-linked-sources-v2",
       source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180 });
     await wrapper.get(`[data-testid="${name}"]`).setValue(false);
     await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
@@ -451,13 +451,28 @@ describe("case planning", () => {
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].evidence_reference_protocol).toBeUndefined();
     wrapper.unmount();
   });
+  it("keeps the actual old document policy until the user enables scene reads", async () => {
+    const actual = linkedSourceActual.plan.config_snapshot;
+    api.getCasePlanningPolicy.mockResolvedValue(actual);
+    api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
+    const wrapper = setup(); await flushPromises();
+    expect(wrapper.text()).toContain("当前配置只读取关联文档");
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1].linked_source_protocol).toBe("case-planning-linked-documents-v1");
+    await wrapper.get('[data-testid="linked-sources"]').setValue(false);
+    await wrapper.get('[data-testid="linked-sources"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].linked_source_protocol).toBe("case-planning-linked-sources-v2");
+    expect(wrapper.text()).not.toContain("当前配置只读取关联文档");
+    wrapper.unmount();
+  });
   it("renders actual authored source read before the first model with complete fixed content", async () => {
     const actual = linkedSourceActual.plan;
     api.getCasePlan.mockResolvedValue(actual);
     api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "linked-task", project_id: projectId,
       creation_key: payload.creation_key, status: "completed", plan_id: actual.id, round_count: 2, message: "完成" }));
     const wrapper = setup(actual.project_id); await generate(wrapper);
-    expect(wrapper.text()).toContain("用例关联文档的固定读取记录");
+    expect(wrapper.text()).toContain("用例关联来源的固定读取记录");
     expect(wrapper.text()).toContain("authored_snapshot");
     expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
     expect(wrapper.text()).not.toContain("证据契约");

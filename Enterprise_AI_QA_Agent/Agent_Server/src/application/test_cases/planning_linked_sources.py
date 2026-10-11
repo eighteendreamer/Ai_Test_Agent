@@ -1,6 +1,7 @@
 """Deterministic source ownership; no inferred project-wide source mapping."""
 from src.application.test_cases.planning_sources import json_text
 from src.schemas.case_planning_sources import PlanningLinkedSource, PlanningLinkedSources
+from src.schemas.document_content import DocumentContentBasis
 
 
 def linked_source_queue(evidence):
@@ -22,7 +23,7 @@ def linked_document_bases(progress):
     result = {}
     for entry in progress.entries:
         if entry.source.source_type == "api_doc":result.setdefault(entry.source.source_id, [])
-        if entry.basis is not None:
+        if isinstance(entry.basis, DocumentContentBasis):
             bases = result.setdefault(entry.source.source_id, [])
             if entry.basis not in bases:bases.append(entry.basis)
     return result

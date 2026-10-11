@@ -18,6 +18,7 @@ from src.core.config import Settings
 from src.core.request_context import bind_request_context
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.infrastructure.redis_vector_store import RedisVectorStore
+from src.infrastructure.recording_scene_store import PostgresRecordingSceneStore
 from src.infrastructure.sqlalchemy_runtime import sqlalchemy_engine_lifespan
 from src.runtime.postgres_planning_task_store import PostgresPlanningTaskStore
 from src.runtime.postgres_document_parse_store import PostgresDocumentParseStore
@@ -84,6 +85,9 @@ async def planning_worker_runtime(settings: Settings):
         await initialize("recordings", container.recording_store().initialize())
         container.project_planning_sources().set_recording_sources(
             recording_store=container.recording_store(), recording_graph_store=graphs)
+        scenes = PostgresRecordingSceneStore(settings)
+        await initialize("recording_scenes", scenes.initialize())
+        container.project_planning_sources().set_scene_sources(scenes)
         embeddings = container.test_case_embedding_service()
         embeddings.set_vector_store(vector)
         await initialize("case_embeddings", embeddings.initialize())

@@ -2022,7 +2022,7 @@ export interface CasePlanningPolicy {
   effect_expected_source_protocol?: "case-effect-document-expected-v1" | null;
   operation_prefetch_protocol?: "case-planning-declared-operation-prefetch-v1" | "case-planning-item-operation-prefetch-v2" | null;
   source_identity_protocol?: "case-planning-source-full-hash-v1" | null;
-  linked_source_protocol?: "case-planning-linked-documents-v1" | null;
+  linked_source_protocol?: "case-planning-linked-documents-v1" | "case-planning-linked-sources-v2" | null;
   evidence_reference_protocol?: "case-planning-evidence-references-v1" | null;
   consumption_protocol?: "case-consumption-phase-v1" | null;
   max_rounds: number;
@@ -2132,7 +2132,7 @@ export interface CasePlanRecord {
     items: CasePlanItem[];
     unresolved: Array<{ item_key: string | null; condition: string; reason: string }>;
   } | null;
-  evidence: Array<{ id: string; kind: "case" | "document" | "recording" | "tool"; source_id: string; version: string; content_hash: string; payload: Record<string, unknown> }>;
+  evidence: Array<{ id: string; kind: "case" | "document" | "recording" | "scene" | "tool"; source_id: string; version: string; content_hash: string; payload: Record<string, unknown>; payload_hash?: string | null }>;
   config_snapshot: CasePlanningConfig;
   model_key: string | null;
   prompt_version: string;

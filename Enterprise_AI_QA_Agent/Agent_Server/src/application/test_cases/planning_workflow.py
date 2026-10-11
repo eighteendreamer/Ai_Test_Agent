@@ -21,6 +21,7 @@ from src.application.test_cases.planning_operation_prefetch import (
     PREFETCH_QUERY_BATCH_SIZE, declared_operation_queries, validate_operation_selections, ITEM_PREFETCH_PROTOCOL,
 )
 from src.schemas.case_planning import PlanningQuery
+from src.schemas.case_planning_sources import SCENE_LINKED_SOURCE_PROTOCOL, SceneContentBasis
 from src.application.test_cases.planning_linked_sources import linked_source_queue, linked_document_bases
 from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT_VERSION, required_source_prompt_version, validate_required_sources
 from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
@@ -117,16 +118,24 @@ class CasePlanningWorkflow:
                             entry = progress.entries[progress.next_index]
                             if entry.basis is None and entry.error is None:
                                 try:
-                                    entry.basis = await self._planner._sources.capture_document_basis(record.project_id, entry.source)
+                                    capture = (self._planner._sources.capture_linked_basis
+                                        if policy.linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL
+                                        else self._planner._sources.capture_document_basis)
+                                    entry.basis = await capture(record.project_id, entry.source)
                                 except (KeyError, ValueError, RuntimeError, OSError) as exc:
                                     entry.error = str(exc)
                                 await save("关联来源固定身份已保存")
                             if entry.error is None and not entry.read:
                                 try:
-                                    evidence, metadata = await self._planner._sources.query(record.project_id,
-                                        PlanningQuery(kind="document", source_id=entry.source.source_id, max_lines=500), policy.max_candidates,
-                                        identity_protocol=policy.source_identity_protocol,
-                                        fixed_documents={entry.source.source_id: [entry.basis]})
+                                    if isinstance(entry.basis, SceneContentBasis):
+                                        if policy.linked_source_protocol != SCENE_LINKED_SOURCE_PROTOCOL:
+                                            raise ValueError("旧关联文档协议不能读取场景基准")
+                                        evidence, metadata = await self._planner._sources.read_scene_basis(record.project_id, entry.basis)
+                                    else:
+                                        evidence, metadata = await self._planner._sources.query(record.project_id,
+                                            PlanningQuery(kind="document", source_id=entry.source.source_id, max_lines=500), policy.max_candidates,
+                                            identity_protocol=policy.source_identity_protocol,
+                                            fixed_documents={entry.source.source_id: [entry.basis]})
                                     self._planner._merge_evidence(record, evidence)
                                     entry.evidence_ids = [item.id for item in evidence]
                                     entry.read = True

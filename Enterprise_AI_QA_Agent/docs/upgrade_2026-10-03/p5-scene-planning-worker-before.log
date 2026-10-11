@@ -1,0 +1,55 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_________ test_production_worker_bootstrap_uses_the_fixed_scene_store _________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1418/test_production_worker_bootstr0')
+
+    async def test_production_worker_bootstrap_uses_the_fixed_scene_store(tmp_path):
+        observations = []
+    
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            if stage not in {"initial", "restart"}:
+                return
+            stream = settings.orchestration.case_planning_task_stream
+            settings.orchestration.redis_task_outbox_streams = stream
+            original = version["version"]
+            basis = SceneContentBasis(project_id=project_ids[0], scene_id=version["scene_id"],
+                version_id=original["id"], content_hash=original["content_hash"])
+            async with planning_worker_runtime(settings) as runtime:
+                entries, metadata = await runtime.planner._sources.read_scene_basis(project_ids[0], basis)
+                scene = entries[0]
+                assert scene.payload["content"] == original["content"]
+                assert scene.payload["source"] == original["source"]
+                assert scene.version == original["id"] and scene.content_hash == original["content_hash"]
+                assert scene.payload["verification_status"] == "not_executed"
+                assert metadata == {"has_more":False}
+                observations.append({"stage":stage, "evidence":scene.model_dump(mode="json"),
+                    "production_bootstrap":True, "model_invocations":0})
+                (evidence/"scene-planning-worker-reads.json").write_text(
+                    json.dumps(observations, ensure_ascii=False, indent=2), encoding="utf-8")
+    
+>       await actual_recording_scene_management(tmp_path, scene_probe=probe)
+
+tests\test_scene_planning_worker_live.py:39: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:108: in actual_recording_scene_management
+    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+tests\test_scene_planning_worker_live.py:27: in probe
+    entries, metadata = await runtime.planner._sources.read_scene_basis(project_ids[0], basis)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <src.application.test_cases.planning_sources.ProjectPlanningSources object at 0x000002C92DD732D0>
+project_id = '3fe14699-5ef7-4f4a-b35f-ab408c05338a'
+basis = SceneContentBasis(project_id='3fe14699-5ef7-4f4a-b35f-ab408c05338a', scene_id='fbe256d7-8516-473f-aa04-e8251ecc5247', ...0c6f', content_hash='2221b9f06c8d335b10e56faa2b85cdb873fc845995d9ea36c2d4179bca86143a', role='authored_scene_snapshot')
+
+    async def read_scene_basis(self, project_id, basis):
+        from src.application.recorder.scene_knowledge import scene_knowledge_payload
+        if self._scenes is None or basis.project_id != project_id:
+>           raise ValueError("场景固定来源不属于当前项目或读取尚未配置")
+E           ValueError: 场景固定来源不属于当前项目或读取尚未配置
+
+src\application\test_cases\planning_sources.py:89: ValueError
+=========================== short test summary info ===========================
+FAILED tests/test_scene_planning_worker_live.py::test_production_worker_bootstrap_uses_the_fixed_scene_store
+1 failed in 19.88s

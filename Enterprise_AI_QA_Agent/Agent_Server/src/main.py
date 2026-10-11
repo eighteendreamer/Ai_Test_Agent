@@ -926,6 +926,7 @@ async def _initialize_lifespan_resources(
     from src.application.recorder.scene_service import RecordingSceneService
     scene_store = PostgresRecordingSceneStore(settings)
     await scene_store.initialize()
+    container.project_planning_sources().set_scene_sources(scene_store)
     app.state.recording_scene_service = RecordingSceneService(store=scene_store,
         recorder_service=recorder_service, project_service=project_service, case_service=test_case_service)
     from src.application.recorder.scene_knowledge import RecordingSceneKnowledge

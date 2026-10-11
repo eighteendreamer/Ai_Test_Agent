@@ -223,6 +223,11 @@ class PostgresPlanningTaskStore:
             if checkpoint.phase not in {"retrieval", "finished"} and progress is None:
                 raise ValueError("关联来源检查点不能丢弃")
             if progress is not None:
+                from src.schemas.case_planning_sources import SceneContentBasis, SCENE_LINKED_SOURCE_PROTOCOL
+                if any(isinstance(entry.basis, SceneContentBasis) and (
+                    original.config_snapshot.policy.linked_source_protocol != SCENE_LINKED_SOURCE_PROTOCOL
+                    or entry.basis.project_id != original.project_id) for entry in progress.entries):
+                    raise ValueError("场景基准需要固定关联来源v2及同一正式项目")
                 if progress.next_index > len(progress.entries):
                     raise ValueError("关联来源进度超过固定范围")
                 if prior.linked_sources is None:

@@ -14,7 +14,8 @@ from src.application.test_cases.planning_operation_prefetch import (
     PREFETCH_PROTOCOL, PREFETCH_PROMPT_VERSION, ITEM_PREFETCH_PROTOCOL, ITEM_PREFETCH_PROMPT_VERSION,
 )
 
-from src.schemas.case_planning_sources import LINKED_SOURCE_PROMPT_VERSION
+from src.schemas.case_planning_sources import (LINKED_SOURCE_PROTOCOL, LINKED_SOURCE_PROMPT_VERSION,
+    SCENE_LINKED_SOURCE_PROTOCOL, SCENE_LINKED_SOURCE_PROMPT_VERSION)
 from src.schemas.case_planning_references import REFERENCE_PROMPT_VERSION, ReferencedEvidenceDecision
 from src.application.test_cases.planning_evidence_references import reference_effects_prompt
 
@@ -22,6 +23,8 @@ SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
 def stage_prompt_version(policy, stages):
+    if policy.linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
+        return SCENE_LINKED_SOURCE_PROMPT_VERSION
     if policy.evidence_reference_protocol:
         return REFERENCE_PROMPT_VERSION
     if policy.linked_source_protocol:
@@ -38,6 +41,17 @@ def stage_prompt_version(policy, stages):
 
 
 def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None):
+    if linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
+        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
+            source_identity_protocol, LINKED_SOURCE_PROTOCOL, evidence_reference_protocol)
+        instruction = ("linked_source_reads还包含正式用例明确关联场景的固定读取。scene证据是完整不可变场景版本、原始响应与别名定位依据；"
+            "不把目录、organized或not_executed当执行成功。"
+            "错误/缺版本/缺hash保留缺口，不自动改读当前场景。场景引用未读不能假装有依据。"
+            "本版本仅自动预读明确关联场景，不支持scene查询kind；其他资料仍用原query。")
+        original.logic = instruction + "逻辑项引用实际evidence.id和content_hash。" + original.logic
+        original.effects = instruction + ("证据阶段按原Schema使用E短引用，场景只能作为已读依据引用；文档预期不能冒充场景预期。"
+            if evidence_reference_protocol else "证据阶段引用实际evidence.id和content_hash。") + original.effects
+        return original
     if evidence_reference_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol, linked_source_protocol)
         original.effects = reference_effects_prompt(ReferencedEvidenceDecision.model_json_schema())

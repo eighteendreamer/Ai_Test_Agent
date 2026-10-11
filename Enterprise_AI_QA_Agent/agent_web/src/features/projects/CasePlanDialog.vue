@@ -336,7 +336,7 @@ function chooseLinkedSources(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.linked_source_protocol; return; }
   chooseSourceIdentity(event);
-  config.value.policy.linked_source_protocol = "case-planning-linked-documents-v1";
+  config.value.policy.linked_source_protocol = "case-planning-linked-sources-v2";
 }
 function chooseEvidenceReferences(event: Event) {
   if (!config.value) return;
@@ -403,8 +403,9 @@ onMounted(loadPolicy);
           :checked="config.policy.operation_prefetch_protocol === 'case-planning-item-operation-prefetch-v2'"
           @change="chooseItemOperations">读取正式用例及准备项已选操作的接口</label>
         <label><input data-testid="linked-sources" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.linked_source_protocol" @change="chooseLinkedSources">规划前读取用例明确关联的文档</label>
-        <p v-if="config.policy.linked_source_protocol">保留来源版本和读取范围。仅有文档编号的引用标为当前关联资料；历史解析缺失时显示缺口。</p>
+          :checked="!!config.policy.linked_source_protocol" @change="chooseLinkedSources">规划前读取用例明确关联的文档与场景</label>
+        <p v-if="config.policy.linked_source_protocol">保留来源版本和读取范围。仅有文档编号的引用标为当前关联资料；场景必须有明确版本和哈希，缺失时显示缺口。</p>
+        <p v-if="config.policy.linked_source_protocol === 'case-planning-linked-documents-v1'">当前配置只读取关联文档。取消后重新勾选并保存，可同时读取明确关联的场景。</p>
         <label><input data-testid="evidence-references" type="checkbox" :disabled="busy"
           :checked="!!config.policy.evidence_reference_protocol" @change="chooseEvidenceReferences">由系统还原证据引用</label>
         <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
@@ -460,7 +461,7 @@ onMounted(loadPolicy);
         </section>
         <ul v-if="plan.warnings.length"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
         <details v-if="operationSelections.length"><summary>逻辑阶段选定的工具接口</summary><JsonContentTree :value="operationSelections" /></details>
-        <details v-if="linkedSourceReads"><summary>用例关联文档的固定读取记录</summary><JsonContentTree :value="linkedSourceReads" /></details>
+        <details v-if="linkedSourceReads"><summary>用例关联来源的固定读取记录</summary><JsonContentTree :value="linkedSourceReads" /></details>
         <ul v-if="plan.decision?.unresolved.length" class="gaps"><li v-for="(gap, index) in plan.decision.unresolved" :key="index">{{ gap.item_key ? `${gap.item_key}：` : '' }}{{ gap.condition }} · {{ gap.reason }}</li></ul>
         <ol class="plan-items"><li v-for="item in plan.decision?.items" :key="item.key">
           <h4>{{ kindLabels[item.kind] }} · {{ title(item) }}</h4><p>{{ item.reason }}</p>

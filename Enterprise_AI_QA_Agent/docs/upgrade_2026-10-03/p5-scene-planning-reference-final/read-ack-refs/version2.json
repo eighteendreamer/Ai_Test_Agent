@@ -1,0 +1,935 @@
+{
+  "scene_id": "1e319b13-6755-4d01-bc77-4def405c4fde",
+  "project_id": "f6279027-4a2d-4e8a-83da-bb9b9b1b2df0",
+  "current_version_id": "b624ce24-048d-46c6-9afa-9100d11a7349",
+  "version": {
+    "id": "b624ce24-048d-46c6-9afa-9100d11a7349",
+    "scene_id": "1e319b13-6755-4d01-bc77-4def405c4fde",
+    "project_id": "f6279027-4a2d-4e8a-83da-bb9b9b1b2df0",
+    "version": 2,
+    "parent_version_id": "9b8b71ee-2eed-418b-8d34-2576887192cc",
+    "request_id": "4db9af6e-84e2-401b-8852-c548494b03a4",
+    "request_hash": "98faf223972e0174876798eafb3b98644635a4af59869bbd2a4d85e9b6aaa37d",
+    "content_hash": "648048fca84f70459bd48c806996c31fa29c9be3c30ad38269e6e9aa82976a6e",
+    "created_at": "2026-10-11T00:15:51.966356Z",
+    "content": {
+      "name": "两次点击业务场景",
+      "description": "重复点击需要保留两个独立操作，完整输入与定位供后续理解",
+      "status": "organized",
+      "steps": [
+        {
+          "source_seq": 6,
+          "action": "点击「增加计数」",
+          "expected": null,
+          "alias": null
+        },
+        {
+          "source_seq": 5,
+          "action": "滚动页面",
+          "expected": null,
+          "alias": null
+        },
+        {
+          "source_seq": 4,
+          "action": "点击「增加计数」",
+          "expected": "计数增加",
+          "alias": "计数按钮"
+        },
+        {
+          "source_seq": 3,
+          "action": "在「完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入」输入 完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀",
+          "expected": null,
+          "alias": null
+        },
+        {
+          "source_seq": 2,
+          "action": "在「完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入」输入 完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀",
+          "expected": null,
+          "alias": null
+        },
+        {
+          "source_seq": 0,
+          "action": "滚动页面",
+          "expected": null,
+          "alias": null
+        }
+      ],
+      "aliases": [
+        {
+          "name": "计数按钮",
+          "source_seq": 4,
+          "description": "本次录制的按钮"
+        }
+      ],
+      "assertions": [
+        {
+          "kind": "ui_title",
+          "target": "page.title",
+          "operator": "contains",
+          "expected": "场景整理验收",
+          "description": "录制末页标题（无导航目标时的退化基线）"
+        },
+        {
+          "kind": "ui_title",
+          "target": "page.title",
+          "operator": "contains",
+          "expected": "场景整理验收",
+          "description": "[medium] 录制末页标题包含「场景整理验收」（弱于 URL 断言）"
+        },
+        {
+          "kind": "ui_dom_changed",
+          "target": "page.dom",
+          "operator": "changed",
+          "expected": true,
+          "description": "[low] 录制条目[0, 2, 3, 4, 5, 6]之后的观察窗口记录2条DOM变更；仅为时间关联，需评审业务含义"
+        },
+        {
+          "kind": "ui_element_count",
+          "target": "page.interactive_elements",
+          "operator": "gte",
+          "expected": 2,
+          "description": "[low] 页面扫描捕获 2 个可交互元素（易脆，页面改版即失效，仅参考）"
+        }
+      ],
+      "preconditions": [
+        "入口地址 file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+        "目标系统可访问且登录态可用"
+      ],
+      "execution_notes": "步骤 action 是显示摘要，执行时读取 data.event 的完整输入、定位和文档范围。test_data.recording_observations 是采集观察，不执行为操作；截断、无变化或未采集不能证明业务通过。脱敏输入与仅有文件名的记录需要可靠测试数据，不能恢复或猜测原值。"
+    },
+    "source": {
+      "event_count": 8,
+      "recording_id": "496ba17b-4414-4208-9797-8004bc586855",
+      "change_reason": "整理说明与别名，保留完整证据",
+      "original_hash": "0931f74c5734ac38a5f37e22ab358c7d5078801d1959c419b43db1b4c6d1df42",
+      "original_draft": {
+        "steps": [
+          {
+            "data": {
+              "seq": 0,
+              "event": {
+                "seq": 0,
+                "page": {
+                  "dpr": 1,
+                  "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "title": "场景整理验收",
+                  "viewport": {
+                    "h": 720,
+                    "w": 1280
+                  },
+                  "recording_scope": {
+                    "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                    "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                    "local_seq": 0,
+                    "frame_path": [],
+                    "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                    "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "scroll",
+                "pixel": null,
+                "value": {
+                  "container": "#value",
+                  "scroll_top": 0,
+                  "scroll_left": 2695
+                },
+                "target": {
+                  "tag": "INPUT",
+                  "role": "textbox",
+                  "locators": {
+                    "id": "value",
+                    "css": "#value",
+                    "text": null,
+                    "xpath": "/html/body[1]/input[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                      "role": "textbox"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "value"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T00:15:50.895000",
+                "page_effect": {
+                  "dom_mutation_count": 0
+                },
+                "screenshot_ref": null
+              },
+              "pixel": null,
+              "locators": {
+                "id": "value",
+                "css": "#value",
+                "xpath": "/html/body[1]/input[1]",
+                "role_name": {
+                  "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                  "role": "textbox"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "scroll"
+            },
+            "kind": "ui_action",
+            "order": 1,
+            "action": "滚动页面",
+            "expected": null
+          },
+          {
+            "data": {
+              "seq": 2,
+              "event": {
+                "seq": 2,
+                "page": {
+                  "dpr": 1,
+                  "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "title": "场景整理验收",
+                  "viewport": {
+                    "h": 720,
+                    "w": 1280
+                  },
+                  "recording_scope": {
+                    "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                    "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                    "local_seq": 2,
+                    "frame_path": [],
+                    "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                    "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "fill",
+                "pixel": null,
+                "value": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀",
+                "target": {
+                  "tag": "INPUT",
+                  "role": "textbox",
+                  "locators": {
+                    "id": "value",
+                    "css": "#value",
+                    "text": null,
+                    "xpath": "/html/body[1]/input[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                      "role": "textbox"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "value"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T00:15:51.398000",
+                "page_effect": {
+                  "dom_mutation_count": 0
+                },
+                "screenshot_ref": null
+              },
+              "pixel": null,
+              "locators": {
+                "id": "value",
+                "css": "#value",
+                "xpath": "/html/body[1]/input[1]",
+                "role_name": {
+                  "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                  "role": "textbox"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "fill"
+            },
+            "kind": "ui_action",
+            "order": 2,
+            "action": "在「完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入」输入 完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀",
+            "expected": null
+          },
+          {
+            "data": {
+              "seq": 3,
+              "event": {
+                "seq": 3,
+                "page": {
+                  "dpr": 1,
+                  "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "title": "场景整理验收",
+                  "viewport": {
+                    "h": 720,
+                    "w": 1280
+                  },
+                  "recording_scope": {
+                    "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                    "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                    "local_seq": 3,
+                    "frame_path": [],
+                    "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                    "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "fill",
+                "pixel": null,
+                "value": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀",
+                "target": {
+                  "tag": "INPUT",
+                  "role": "textbox",
+                  "locators": {
+                    "id": "value",
+                    "css": "#value",
+                    "text": null,
+                    "xpath": "/html/body[1]/input[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                      "role": "textbox"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "value"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T00:15:51.529000",
+                "page_effect": {
+                  "dom_mutation_count": 0
+                },
+                "screenshot_ref": null
+              },
+              "pixel": null,
+              "locators": {
+                "id": "value",
+                "css": "#value",
+                "xpath": "/html/body[1]/input[1]",
+                "role_name": {
+                  "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                  "role": "textbox"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "fill"
+            },
+            "kind": "ui_action",
+            "order": 3,
+            "action": "在「完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入」输入 完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀",
+            "expected": null
+          },
+          {
+            "data": {
+              "seq": 4,
+              "event": {
+                "seq": 4,
+                "page": {
+                  "dpr": 1,
+                  "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "title": "场景整理验收",
+                  "viewport": {
+                    "h": 720,
+                    "w": 1280
+                  },
+                  "recording_scope": {
+                    "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                    "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                    "local_seq": 4,
+                    "frame_path": [],
+                    "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                    "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "click",
+                "pixel": {
+                  "bbox": {
+                    "h": 23,
+                    "w": 69,
+                    "x": 185,
+                    "y": 8
+                  },
+                  "rel_offset": {
+                    "rx": 0.49,
+                    "ry": 0.478
+                  },
+                  "viewport_point": {
+                    "x": 219,
+                    "y": 19
+                  }
+                },
+                "value": null,
+                "target": {
+                  "tag": "BUTTON",
+                  "role": "button",
+                  "locators": {
+                    "id": "repeat",
+                    "css": "#repeat",
+                    "text": "增加计数",
+                    "xpath": "/html/body[1]/button[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "增加计数",
+                      "role": "button"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "repeat"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T00:15:51.530000",
+                "page_effect": {
+                  "dom_mutation_count": 0
+                },
+                "screenshot_ref": null
+              },
+              "pixel": {
+                "bbox": {
+                  "h": 23,
+                  "w": 69,
+                  "x": 185,
+                  "y": 8
+                },
+                "rel_offset": {
+                  "rx": 0.49,
+                  "ry": 0.478
+                },
+                "viewport_point": {
+                  "x": 219,
+                  "y": 19
+                }
+              },
+              "locators": {
+                "id": "repeat",
+                "css": "#repeat",
+                "text": "增加计数",
+                "xpath": "/html/body[1]/button[1]",
+                "role_name": {
+                  "name": "增加计数",
+                  "role": "button"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "click"
+            },
+            "kind": "ui_action",
+            "order": 4,
+            "action": "点击「增加计数」",
+            "expected": null
+          },
+          {
+            "data": {
+              "seq": 5,
+              "event": {
+                "seq": 5,
+                "page": {
+                  "dpr": 1,
+                  "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "title": "场景整理验收",
+                  "viewport": {
+                    "h": 720,
+                    "w": 1280
+                  },
+                  "recording_scope": {
+                    "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                    "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                    "local_seq": 5,
+                    "frame_path": [],
+                    "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                    "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "scroll",
+                "pixel": null,
+                "value": {
+                  "container": "#value",
+                  "scroll_top": 0,
+                  "scroll_left": 0
+                },
+                "target": {
+                  "tag": "INPUT",
+                  "role": "textbox",
+                  "locators": {
+                    "id": "value",
+                    "css": "#value",
+                    "text": null,
+                    "xpath": "/html/body[1]/input[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                      "role": "textbox"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "value"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T00:15:51.542000",
+                "page_effect": {
+                  "dom_mutation_count": 1
+                },
+                "screenshot_ref": null
+              },
+              "pixel": null,
+              "locators": {
+                "id": "value",
+                "css": "#value",
+                "xpath": "/html/body[1]/input[1]",
+                "role_name": {
+                  "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                  "role": "textbox"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "scroll"
+            },
+            "kind": "ui_action",
+            "order": 5,
+            "action": "滚动页面",
+            "expected": null
+          },
+          {
+            "data": {
+              "seq": 6,
+              "event": {
+                "seq": 6,
+                "page": {
+                  "dpr": 1,
+                  "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "title": "场景整理验收",
+                  "viewport": {
+                    "h": 720,
+                    "w": 1280
+                  },
+                  "recording_scope": {
+                    "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                    "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                    "local_seq": 6,
+                    "frame_path": [],
+                    "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                    "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                    "parent_frame_id": null
+                  }
+                },
+                "type": "click",
+                "pixel": {
+                  "bbox": {
+                    "h": 23,
+                    "w": 69,
+                    "x": 185,
+                    "y": 8
+                  },
+                  "rel_offset": {
+                    "rx": 0.49,
+                    "ry": 0.478
+                  },
+                  "viewport_point": {
+                    "x": 219,
+                    "y": 19
+                  }
+                },
+                "value": null,
+                "target": {
+                  "tag": "BUTTON",
+                  "role": "button",
+                  "locators": {
+                    "id": "repeat",
+                    "css": "#repeat",
+                    "text": "增加计数",
+                    "xpath": "/html/body[1]/button[1]",
+                    "testid": null,
+                    "role_name": {
+                      "name": "增加计数",
+                      "role": "button"
+                    }
+                  },
+                  "in_iframe": false,
+                  "attributes": {
+                    "id": "repeat"
+                  },
+                  "shadow_path": null
+                },
+                "timestamp": "2026-10-11T00:15:51.561000",
+                "page_effect": {
+                  "dom_mutation_count": 0
+                },
+                "screenshot_ref": null
+              },
+              "pixel": {
+                "bbox": {
+                  "h": 23,
+                  "w": 69,
+                  "x": 185,
+                  "y": 8
+                },
+                "rel_offset": {
+                  "rx": 0.49,
+                  "ry": 0.478
+                },
+                "viewport_point": {
+                  "x": 219,
+                  "y": 19
+                }
+              },
+              "locators": {
+                "id": "repeat",
+                "css": "#repeat",
+                "text": "增加计数",
+                "xpath": "/html/body[1]/button[1]",
+                "role_name": {
+                  "name": "增加计数",
+                  "role": "button"
+                }
+              },
+              "sensitive": false,
+              "recorder_type": "click"
+            },
+            "kind": "ui_action",
+            "order": 6,
+            "action": "点击「增加计数」",
+            "expected": null
+          }
+        ],
+        "title": "实际录制场景",
+        "cleanup": [],
+        "case_key": "ui_rec_496ba17b_441",
+        "mode_key": "ui_automation",
+        "priority": "P1",
+        "case_type": "ui_recorded",
+        "model_key": "rule-based-recorder-conversion",
+        "test_data": {
+          "driver_kind": "RecordingDriverKind.cdp_attach",
+          "recording_id": "496ba17b-4414-4208-9797-8004bc586855",
+          "recording_observations": [
+            {
+              "seq": 1,
+              "page": {
+                "dpr": 1,
+                "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                "title": "场景整理验收",
+                "viewport": {
+                  "h": 720,
+                  "w": 1280
+                },
+                "recording_scope": {
+                  "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                  "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                  "local_seq": 1,
+                  "frame_path": [],
+                  "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                  "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "parent_frame_id": null
+                }
+              },
+              "type": "page_scan",
+              "pixel": null,
+              "value": null,
+              "target": null,
+              "timestamp": "2026-10-11T00:15:51.347000",
+              "page_effect": {
+                "dom_hash": "071039fd9b4c3709294619252b5af1f6b922751b",
+                "interactive_count": 2,
+                "dom_mutation_count": 0,
+                "interactive_elements": [
+                  {
+                    "tag": "input",
+                    "href": "",
+                    "name": "完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入😀完整输入",
+                    "role": "textbox"
+                  },
+                  {
+                    "tag": "button",
+                    "href": "",
+                    "name": "增加计数",
+                    "role": "button"
+                  }
+                ]
+              },
+              "screenshot_ref": null
+            },
+            {
+              "seq": 7,
+              "page": {
+                "dpr": 1,
+                "url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                "title": "场景整理验收",
+                "viewport": {
+                  "h": 720,
+                  "w": 1280
+                },
+                "recording_scope": {
+                  "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                  "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                  "local_seq": 7,
+                  "frame_path": [],
+                  "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                  "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                  "parent_frame_id": null
+                }
+              },
+              "type": "page_response",
+              "pixel": null,
+              "value": null,
+              "target": null,
+              "timestamp": "2026-10-11T00:15:51.576000",
+              "page_effect": {
+                "response": {
+                  "scope": "document_light_dom",
+                  "reason": "stop",
+                  "elements": [
+                    {
+                      "text": "2",
+                      "target": {
+                        "tag": "P",
+                        "role": null,
+                        "locators": {
+                          "id": "count",
+                          "css": "#count",
+                          "text": "2",
+                          "xpath": "/html/body[1]/p[1]",
+                          "testid": null,
+                          "role_name": {
+                            "name": "2",
+                            "role": null
+                          }
+                        },
+                        "in_iframe": false,
+                        "attributes": {
+                          "id": "count"
+                        },
+                        "shadow_path": null
+                      },
+                      "connected": true
+                    }
+                  ],
+                  "protocol": "recording-dom-response-v1",
+                  "max_nodes": 100,
+                  "truncated": false,
+                  "association": "temporal_after_actions",
+                  "max_actions": 100,
+                  "snapshot_at": "observation_end",
+                  "max_text_chars": 200,
+                  "mutation_count": 2,
+                  "action_local_seqs": [
+                    0,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6
+                  ],
+                  "observation_status": "observed_changes",
+                  "truncation_reasons": []
+                },
+                "dom_mutation_count": 1
+              },
+              "screenshot_ref": null
+            }
+          ]
+        },
+        "assertions": [
+          {
+            "kind": "ui_title",
+            "target": "page.title",
+            "expected": "场景整理验收",
+            "operator": "contains",
+            "description": "录制末页标题（无导航目标时的退化基线）"
+          },
+          {
+            "kind": "ui_title",
+            "target": "page.title",
+            "expected": "场景整理验收",
+            "operator": "contains",
+            "description": "[medium] 录制末页标题包含「场景整理验收」（弱于 URL 断言）"
+          },
+          {
+            "kind": "ui_dom_changed",
+            "target": "page.dom",
+            "expected": true,
+            "operator": "changed",
+            "description": "[low] 录制条目[0, 2, 3, 4, 5, 6]之后的观察窗口记录2条DOM变更；仅为时间关联，需评审业务含义"
+          },
+          {
+            "kind": "ui_element_count",
+            "target": "page.interactive_elements",
+            "expected": 2,
+            "operator": "gte",
+            "description": "[low] 页面扫描捕获 2 个可交互元素（易脆，页面改版即失效，仅参考）"
+          }
+        ],
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "UI 录制 实际录制场景",
+            "version": "p2-2.v2",
+            "metadata": {
+              "step_count": 6,
+              "event_count": 8,
+              "finalize_metrics": {
+                "finalize": {
+                  "raw_events": 8,
+                  "on_page_edges": 8,
+                  "page_vertices": 1,
+                  "raw_page_urls": 8,
+                  "targets_edges": 6,
+                  "contains_edges": 2,
+                  "has_step_edges": 8,
+                  "action_vertices": 8,
+                  "element_vertices": 2,
+                  "raw_element_refs": 6,
+                  "navigated_to_edges": 0,
+                  "recording_vertices": 1,
+                  "deduplicated_page_urls": 1,
+                  "deduplicated_element_refs": 4,
+                  "degraded_resolution_actions": 0
+                },
+                "integrity": {
+                  "degraded": false,
+                  "seq_gaps": [],
+                  "reconciled": true,
+                  "pg_step_count": 8,
+                  "pg_event_count": 8,
+                  "action_vertices": 8,
+                  "step_count_mismatch": false,
+                  "degraded_resolution_actions": 0
+                },
+                "finish_receipt": {
+                  "scopes": [
+                    {
+                      "ended": false,
+                      "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+                      "pending": 0,
+                      "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+                      "next_seq": 8,
+                      "confirmed": true,
+                      "frame_path": [],
+                      "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+                      "pg_verified": true,
+                      "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+                      "emitted_count": 8,
+                      "received_count": 8,
+                      "parent_frame_id": null
+                    }
+                  ],
+                  "pending": 0,
+                  "next_seq": 8,
+                  "protocol": "recording-scopes-v2",
+                  "operation": "stop",
+                  "request_id": "703180345795498ca8fde9e0d406db7f",
+                  "pg_verified": true,
+                  "missing_seqs": [],
+                  "emitted_count": 8,
+                  "published_seqs": [
+                    0,
+                    1,
+                    2,
+                    3,
+                    4,
+                    5,
+                    6,
+                    7
+                  ],
+                  "channel_dropped": 0,
+                  "transport_dropped": 0,
+                  "frames_unconfirmed": 0,
+                  "browser_saved_count": 8
+                },
+                "pause_receipts": []
+              }
+            },
+            "source_id": "496ba17b-4414-4208-9797-8004bc586855",
+            "source_type": "ui_recording"
+          }
+        ],
+        "content_json": null,
+        "preconditions": [
+          "入口地址 file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+          "目标系统可访问且登录态可用"
+        ],
+        "prompt_version": "p2-2.v2",
+        "skill_versions": {
+          "recorder": "p2-2.v2"
+        },
+        "execution_notes": "步骤 action 是显示摘要，执行时读取 data.event 的完整输入、定位和文档范围。test_data.recording_observations 是采集观察，不执行为操作；截断、无变化或未采集不能证明业务通过。脱敏输入与仅有文件名的记录需要可靠测试数据，不能恢复或猜测原值。",
+        "generation_metadata": {}
+      },
+      "finalize_metrics": {
+        "finalize": {
+          "raw_events": 8,
+          "on_page_edges": 8,
+          "page_vertices": 1,
+          "raw_page_urls": 8,
+          "targets_edges": 6,
+          "contains_edges": 2,
+          "has_step_edges": 8,
+          "action_vertices": 8,
+          "element_vertices": 2,
+          "raw_element_refs": 6,
+          "navigated_to_edges": 0,
+          "recording_vertices": 1,
+          "deduplicated_page_urls": 1,
+          "deduplicated_element_refs": 4,
+          "degraded_resolution_actions": 0
+        },
+        "integrity": {
+          "degraded": false,
+          "seq_gaps": [],
+          "reconciled": true,
+          "pg_step_count": 8,
+          "pg_event_count": 8,
+          "action_vertices": 8,
+          "step_count_mismatch": false,
+          "degraded_resolution_actions": 0
+        },
+        "finish_receipt": {
+          "scopes": [
+            {
+              "ended": false,
+              "page_id": "4c076daa8a7d4c5897e6d6473e0d349b",
+              "pending": 0,
+              "frame_id": "9f4d9026de524750924ffff1eb01a58f",
+              "next_seq": 8,
+              "confirmed": true,
+              "frame_path": [],
+              "document_id": "e01ea524296d4f41bd4138bdb5cd7adc",
+              "pg_verified": true,
+              "document_url": "file:///C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1415/test_actual_scene_source_befor3/scene.html",
+              "emitted_count": 8,
+              "received_count": 8,
+              "parent_frame_id": null
+            }
+          ],
+          "pending": 0,
+          "next_seq": 8,
+          "protocol": "recording-scopes-v2",
+          "operation": "stop",
+          "request_id": "703180345795498ca8fde9e0d406db7f",
+          "pg_verified": true,
+          "missing_seqs": [],
+          "emitted_count": 8,
+          "published_seqs": [
+            0,
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7
+          ],
+          "channel_dropped": 0,
+          "transport_dropped": 0,
+          "frames_unconfirmed": 0,
+          "browser_saved_count": 8
+        },
+        "pause_receipts": []
+      },
+      "excluded_sequences": []
+    }
+  }
+}

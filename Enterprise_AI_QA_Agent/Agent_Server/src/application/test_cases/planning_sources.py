@@ -22,6 +22,10 @@ class ProjectPlanningSources:
         self._docs = api_docs_service
         self._recordings = recording_store
         self._graphs = recording_graph_store
+        self._scenes = None
+
+    def set_scene_sources(self, scene_store):
+        self._scenes = scene_store
 
     def set_recording_sources(self, *, recording_store, recording_graph_store):
         self._recordings = recording_store
@@ -61,6 +65,37 @@ class ProjectPlanningSources:
 
     async def capture_document_basis(self, project_id, source):
         return await self._docs.capture_content_basis(project_id, source)
+
+    async def capture_linked_basis(self, project_id, source):
+        if source.source_type != "ui_recording_scene":
+            return await self.capture_document_basis(project_id, source)
+        from src.schemas.case_planning_sources import SceneContentBasis
+        from pydantic import ValidationError
+        if self._scenes is None:
+            raise ValueError("场景规划来源读取尚未配置")
+        try:
+            basis = SceneContentBasis(project_id=project_id, scene_id=source.source_id,
+                version_id=source.version, content_hash=source.metadata.get("content_hash"))
+        except ValidationError:
+            raise ValueError("明确场景来源需要有效scene_id、version_id和完整content_hash") from None
+        await self.read_scene_basis(project_id, basis)
+        logger.info("case_planning_scene_basis_captured", extra={"project_id":project_id,
+            "scene_id":basis.scene_id,"scene_version_id":basis.version_id,"content_hash":basis.content_hash})
+        return basis
+
+    async def read_scene_basis(self, project_id, basis):
+        from src.application.recorder.scene_knowledge import scene_knowledge_payload
+        if self._scenes is None or basis.project_id != project_id:
+            raise ValueError("场景固定来源不属于当前项目或读取尚未配置")
+        version = (await self._scenes.get(project_id, basis.scene_id, basis.version_id)).version
+        if version.content_hash != basis.content_hash:
+            raise ValueError("场景固定来源内容hash不一致")
+        payload = scene_knowledge_payload(version)
+        logger.info("case_planning_scene_source_read", extra={"project_id":project_id,
+            "scene_id":version.scene_id,"scene_version_id":version.id,"content_hash":version.content_hash})
+        return [PlanningEvidence(id=payload["evidence_id"], kind="scene", source_id=version.scene_id,
+            version=version.id, content_hash=version.content_hash, payload=payload,
+            payload_hash=hashlib.sha256(json_text(payload).encode("utf-8")).hexdigest())], {"has_more":False}
 
     async def query(self, project_id, request: PlanningQuery, limit, *, identity_protocol=None, fixed_documents=None):
         if identity_protocol not in {None, FULL_SOURCE_IDENTITY_PROTOCOL}:

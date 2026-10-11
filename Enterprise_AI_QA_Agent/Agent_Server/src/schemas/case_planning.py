@@ -33,7 +33,7 @@ class CasePlanningPolicy(PlanningModel):
     effect_expected_source_protocol: Literal["case-effect-document-expected-v1"] | None = None
     operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1", "case-planning-item-operation-prefetch-v2"] | None = None
     source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
-    linked_source_protocol: Literal["case-planning-linked-documents-v1"] | None = None
+    linked_source_protocol: Literal["case-planning-linked-documents-v1", "case-planning-linked-sources-v2"] | None = None
     evidence_reference_protocol: Literal["case-planning-evidence-references-v1"] | None = None
     consumption_protocol: Literal["case-consumption-phase-v1"] | None = None
     receipt_correction_protocol: Literal["case-receipt-correction-v1"] | None = None
@@ -263,11 +263,19 @@ class PlanningDecision(PlanningModel):
 
 class PlanningEvidence(PlanningModel):
     id: str
-    kind: Literal["case", "document", "recording", "tool"]
+    kind: Literal["case", "document", "recording", "scene", "tool"]
     source_id: str
     version: str
     content_hash: str
     payload: dict[str, Any]
+    payload_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+
+    @model_serializer(mode="wrap")
+    def preserve_original_evidence(self, handler):
+        data = handler(self)
+        if self.payload_hash is None:
+            data.pop("payload_hash", None)
+        return data
 
 
 class FormalCasePlanItemV2(FormalCasePlanItem):

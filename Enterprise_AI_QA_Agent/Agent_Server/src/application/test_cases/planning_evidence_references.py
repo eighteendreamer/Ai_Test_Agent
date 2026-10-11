@@ -11,11 +11,19 @@ def evidence_reference_catalog(evidence):
     entries, texts = {}, {}
     for index, entry in enumerate(evidence, 1):
         # Case hashes belong to the case version, not its planning wrapper.
-        if entry.kind != "case" and entry.content_hash != _digest(entry.payload):
+        # Scene content_hash belongs to its immutable asset; payload_hash covers
+        # the delivered knowledge projection including identities and aliases.
+        if entry.kind == "scene":
+            asset = {"content": entry.payload.get("content"), "source": entry.payload.get("source")}
+            if entry.content_hash != _digest(asset) or entry.payload_hash != _digest(entry.payload):
+                raise ValueError("场景原始快照或已读知识投影哈希不一致")
+        elif entry.kind != "case" and entry.content_hash != _digest(entry.payload):
             raise ValueError("短引用目录的已读证据哈希不一致")
         ref = f"E{index}"
         entries[ref] = {"evidence_id": entry.id, "kind": entry.kind,
             "source_id": entry.source_id, "version": entry.version, "content_hash": entry.content_hash}
+        if entry.kind == "scene":
+            entries[ref]["payload_hash"] = entry.payload_hash
         content = entry.payload.get("content")
         if entry.kind != "document" or not isinstance(content, str) or not content:
             continue

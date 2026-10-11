@@ -35,6 +35,13 @@ def scene_alias_evidence(version):
         "page": deepcopy(original[alias.source_seq]["data"]["event"]["page"])} for alias in version.content.aliases]
 
 
+def scene_knowledge_payload(version):
+    return {"evidence_id":f"ui_recording_scene:{version.scene_id}:{version.id}:{version.content_hash}",
+        "project_id":version.project_id,"scene_id":version.scene_id,"version_id":version.id,"version":version.version,
+        "content_hash":version.content_hash,"content":version.content.model_dump(mode="json"),
+        "source":deepcopy(version.source),"aliases":scene_alias_evidence(version),"verification_status":"not_executed"}
+
+
 class RecordingSceneKnowledge:
     def __init__(self, *, scenes, projects, sessions):
         self._scenes, self._projects, self._sessions = scenes, projects, sessions
@@ -59,10 +66,7 @@ class RecordingSceneKnowledge:
         version = bundle.version
         if version.content_hash != request.content_hash:
             raise ValueError("场景固定版本内容hash不一致")
-        knowledge = {"evidence_id":f"ui_recording_scene:{version.scene_id}:{version.id}:{version.content_hash}",
-            "project_id":project_id,"scene_id":version.scene_id,"version_id":version.id,"version":version.version,
-            "content_hash":version.content_hash,"content":version.content.model_dump(mode="json"),
-            "source":deepcopy(version.source),"aliases":scene_alias_evidence(version),"verification_status":"not_executed"}
+        knowledge = scene_knowledge_payload(version)
         logger.info("recording_scene_knowledge_read", extra={"session_id":session.id,"project_id":project_id,
             "scene_id":version.scene_id,"scene_version_id":version.id,"content_hash":version.content_hash})
         return {"status":"completed","ok":True,"summary":"固定场景完整知识已读取；整理状态不代表测试通过。",

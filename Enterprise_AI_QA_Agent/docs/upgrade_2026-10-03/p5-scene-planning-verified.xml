@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="55.227" timestamp="2026-10-11T07:59:15.948021+08:00" hostname="EIghteen"><testcase classname="tests.test_scene_planning_live" name="test_actual_scene_source_before_planning_and_fixed_recovery" time="50.447"><failure message="AttributeError: 'CasePlanningTaskRecord' object has no attribute 'summary'">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1410/test_actual_scene_source_befor0')
+monkeypatch = &lt;_pytest.monkeypatch.MonkeyPatch object at 0x0000027C4C93FED0&gt;
+
+    async def test_actual_scene_source_before_planning_and_fixed_recovery(tmp_path, monkeypatch):
+        state = {}
+    
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            def save(name, value):
+                (evidence/name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+            container = AppContainer()
+            container.settings.override(settings)
+            model = SubmissionModel()
+            container.model_runtime_service.override(model)
+            container.test_case_embedding_service.override(None)
+            sources = container.project_planning_sources()
+            if hasattr(sources, "set_scene_sources"):
+                sources.set_scene_sources(PostgresRecordingSceneStore(settings))
+            planner = container.case_planning_service()
+            jobs = PostgresPlanningTaskStore(settings, lease_seconds=30)
+            tasks = CasePlanningTaskService(store=jobs, planning_service=planner,
+                project_service=container.project_service(), dispatch_stream="scene-planning-acceptance")
+            await tasks.initialize()
+            env = SimpleNamespace(settings=settings, cases=container.test_case_service(), jobs=jobs)
+            if stage == "initial":
+                source = {"source_type":"ui_recording_scene", "source_id":version["scene_id"],
+                    "version":version["version"]["id"], "metadata":{"content_hash":version["version"]["content_hash"]}}
+                project = await container.project_service().get(project_ids[0])
+                case = await active_case(env, project, "scene-linked-actual", {
+                    "objective":"按已录制计数页面验证两次点击", "steps":version["version"]["source"]["original_draft"]["steps"],
+                    "未知嵌套":{"保留":[0,False,"中文😀"]}}, mode="ui_testing", source_refs=[source])
+                chosen = linked_policy().model_dump(mode="json")
+                chosen["linked_source_protocol"] = os.getenv("SCENE_PLANNING_PROTOCOL", "case-planning-linked-sources-v2")
+                response = await client.put(f"/projects/{project.id}/case-plans/policy", json=chosen)
+                response.raise_for_status()
+                save("scene-planning-policy.json", response.json())
+                task = await tasks.submit(project.id, CasePlanningTaskRequest(creation_key=str(uuid4()),
+                    objective="按项目固定用例规划", candidate_case_ids=[case.case.id]))
+                state.update(task=task, case=case, source=source, version=version)
+                original = jobs.save_checkpoint
+                async def lose_ack(claim, checkpoint, *, message):
+                    await original(claim, checkpoint, message=message)
+                    p = checkpoint.linked_sources
+                    if p and p.entries[0].basis is not None and p.next_index == 0:
+                        raise RuntimeError("Actual committed scene basis acknowledgement lost")
+                if chosen["linked_source_protocol"].endswith("v2"):
+                    monkeypatch.setattr(jobs, "save_checkpoint", lose_ack)
+                    with pytest.raises(PlanningCheckpointUnavailable):
+                        await PlanningTaskHandler(planner, jobs, worker_id="scene-first")(delivery(task))
+                    assert model.requests == []
+                else:
+                    def require_scene(context):
+                        assert context["linked_source_reads"]["entries"][0]["read"], context["linked_source_reads"]
+                        return finish()
+                    model.replies = [require_scene]
+                    await PlanningTaskHandler(planner, jobs, worker_id="scene-before")(delivery(task))
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed,checkpoint FROM {jobs._table} WHERE id=%s", (task.id,))
+                    raw = dict(cur.fetchone())
+                save("scene-planning-initial-pg.json", raw)
+                assert raw["checkpoint"]["linked_sources"]["entries"][0]["basis"] is not None, raw["checkpoint"]["linked_sources"]
+            elif stage == "restart":
+                task = state["task"]
+                # Change current MySQL policy; the PG seed remains the original V2.
+                changed = linked_policy().model_dump(mode="json")
+                changed.update(linked_source_protocol="case-planning-linked-documents-v1", max_rounds=1)
+                response = await client.put(f"/projects/{project_ids[0]}/case-plans/policy", json=changed)
+                response.raise_for_status()
+                def logic(context):
+                    entry = context["linked_source_reads"]["entries"][0]
+                    assert entry["read"] and not entry["error"]
+                    scene = next(e for e in context["evidence"] if e["kind"] == "scene")
+                    expected = state["version"]["version"]
+                    assert scene["version"] == expected["id"] and scene["content_hash"] == expected["content_hash"]
+                    assert scene["payload"]["content"] == expected["content"]
+                    assert scene["payload"]["source"] == expected["source"]
+                    assert scene["payload"]["verification_status"] == "not_executed"
+                    return finish(item(context, "scene-linked-actual", effect_schema=3,
+                        evidence_ids=[f"case:{state['case'].version.id}", scene["id"]]))
+                model.replies = [logic, {"action":"finish", "summary":"固定来源保持", "bindings":[]}]
+                expire(env, task)
+                await PlanningTaskHandler(planner, jobs, worker_id="scene-restarted")(delivery(task))
+                completed = await jobs.get(project_ids[0], task.id)
+                save("scene-planning-completed.json", completed.model_dump(mode="json"))
+                assert completed.status == "completed", completed.summary
+                before = len(model.requests)
+                await PlanningTaskHandler(planner, jobs, worker_id="scene-terminal")(delivery(task))
+                assert len(model.requests) == before == 2
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed,checkpoint FROM {jobs._table} WHERE id=%s", (task.id,))
+                    raw = dict(cur.fetchone())
+                save("scene-planning-recovered-pg.json", raw)
+                assert raw["seed"] == json.loads((evidence/"scene-planning-initial-pg.json").read_bytes())["seed"]
+                failures = []
+                for fault in ("missing-version", "missing-hash", "wrong-hash", "foreign-project"):
+                    source = deepcopy(state["source"])
+                    if fault == "missing-version": source.pop("version")
+                    if fault == "missing-hash": source["metadata"].pop("content_hash")
+                    if fault == "wrong-hash": source["metadata"]["content_hash"] = "0" * 64
+                    owner = project_ids[1] if fault == "foreign-project" else project_ids[0]
+                    project = await container.project_service().get(owner)
+                    case = await active_case(env, project, "scene-source-" + fault,
+                        {"objective":"校验固定来源拒绝", "steps":state["version"]["version"]["source"]["original_draft"]["steps"]},
+                        mode="ui_testing", source_refs=[source])
+                    chosen = linked_policy().model_dump(mode="json")
+                    chosen["linked_source_protocol"] = "case-planning-linked-sources-v2"
+                    response = await client.put(f"/projects/{owner}/case-plans/policy", json=chosen)
+                    response.raise_for_status()
+                    failed_task = await tasks.submit(owner, CasePlanningTaskRequest(creation_key=str(uuid4()),
+                        objective="只读检查错误来源", candidate_case_ids=[case.case.id]))
+                    def rejected(context):
+                        entry = context["linked_source_reads"]["entries"][0]
+                        assert entry["error"] and not entry["read"] and entry["basis"] is None
+                        assert not any(e["kind"] == "scene" for e in context["evidence"])
+                        return finish()
+                    model.replies = [rejected]
+                    await PlanningTaskHandler(planner, jobs, worker_id="scene-" + fault)(delivery(failed_task))
+                    result = await jobs.get(owner, failed_task.id)
+                    assert result.status == "completed" and result.summary == "已按项目依据规划", result.summary
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        cur.execute(f"SELECT seed,checkpoint FROM {jobs._table} WHERE id=%s", (failed_task.id,))
+                        failures.append({"fault":fault, **dict(cur.fetchone())})
+                save("scene-planning-source-rejections.json", failures)
+    
+&gt;       await actual_recording_scene_management(tmp_path, scene_probe=probe)
+
+tests\test_scene_planning_live.py:147: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:206: in actual_recording_scene_management
+    await scene_probe(stage="restart", settings=settings, client=client, evidence=evidence,
+tests\test_scene_planning_live.py:141: in probe
+    assert result.status == "completed" and result.summary == "已按项目依据规划", result.summary
+                                            ^^^^^^^^^^^^^^
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = CasePlanningTaskRecord(id='4c9c3f89-9cf1-4f56-aab1-304e6e87fdda', project_id='61ca692b-4dec-40b2-94b2-8c050cea43ae', c...fo=datetime.timezone.utc), completed_at=datetime.datetime(2026, 10, 11, 0, 0, 9, 324554, tzinfo=datetime.timezone.utc))
+item = 'summary'
+
+    def __getattr__(self, item: str) -&gt; Any:
+        private_attributes = object.__getattribute__(self, '__private_attributes__')
+        if item in private_attributes:
+            attribute = private_attributes[item]
+            if hasattr(attribute, '__get__'):
+                return attribute.__get__(self, type(self))  # type: ignore
+    
+            try:
+                # Note: self.__pydantic_private__ cannot be None if self.__private_attributes__ has items
+                return self.__pydantic_private__[item]  # type: ignore
+            except KeyError as exc:
+                raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}') from exc
+        else:
+            # `__pydantic_extra__` can fail to be set if the model is not yet fully initialized.
+            # See `BaseModel.__repr_args__` for more details
+            try:
+                pydantic_extra = object.__getattribute__(self, '__pydantic_extra__')
+            except AttributeError:
+                pydantic_extra = None
+    
+            if pydantic_extra and item in pydantic_extra:
+                return pydantic_extra[item]
+            else:
+                if hasattr(self.__class__, item):
+                    return super().__getattribute__(item)  # Raises AttributeError if appropriate
+                else:
+                    # this is the current error
+&gt;                   raise AttributeError(f'{type(self).__name__!r} object has no attribute {item!r}')
+E                   AttributeError: 'CasePlanningTaskRecord' object has no attribute 'summary'
+
+..\.venv\Lib\site-packages\pydantic\main.py:1042: AttributeError</failure></testcase></testsuite></testsuites>
