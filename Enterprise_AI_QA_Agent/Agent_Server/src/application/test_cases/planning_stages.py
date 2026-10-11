@@ -18,11 +18,14 @@ from src.schemas.case_planning_sources import (LINKED_SOURCE_PROTOCOL, LINKED_SO
     SCENE_LINKED_SOURCE_PROTOCOL, SCENE_LINKED_SOURCE_PROMPT_VERSION)
 from src.schemas.case_planning_references import REFERENCE_PROMPT_VERSION, ReferencedEvidenceDecision
 from src.application.test_cases.planning_evidence_references import reference_effects_prompt
+from src.schemas.case_planning_scenes import SCENE_QUERY_PROMPT_VERSION, scene_decision_types
 
 SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 
 def stage_prompt_version(policy, stages):
+    if policy.scene_query_protocol:
+        return SCENE_QUERY_PROMPT_VERSION
     if policy.linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
         return SCENE_LINKED_SOURCE_PROMPT_VERSION
     if policy.evidence_reference_protocol:
@@ -40,7 +43,26 @@ def stage_prompt_version(policy, stages):
     return RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
 
 
-def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None):
+def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None, scene_query_protocol=None):
+    if scene_query_protocol:
+        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
+            source_identity_protocol, linked_source_protocol, evidence_reference_protocol)
+        logic_type = LogicalPlanningDecisionV4 if operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL else LogicalPlanningDecisionV3
+        effects_type = ReferencedEvidenceDecision if evidence_reference_protocol else EvidencePlanningDecisionV3
+        new_logic, new_effects = scene_decision_types(operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL, evidence_reference_protocol)
+        instruction = ("可以按业务缺口查询当前项目的未关联场景。scenes使用query/offset搜索，目录仅导航；"
+            "scene使用source_id、version_id和完整content_hash读取固定正文。不得省略版本或读取当前头替代。"
+            "完整scene证据包含原始响应/步骤/别名，not_executed不等于通过；错误保留缺口，不猜元素。"
+            "目录has_more可继续分页；已读场景不要重复读取，引用实际证据或本阶段要求的E引用。")
+        for stage, old, new in (("logic",logic_type,new_logic),("effects",effects_type,new_effects)):
+            prompt = getattr(original, stage)
+            schema = json_text(old.model_json_schema())
+            if prompt.count(schema) != 1:
+                raise ValueError("场景查询阶段Schema无法与原固定协议对应")
+            prompt = prompt.replace(schema, json_text(new.model_json_schema()))
+            prompt = prompt.replace("本版本仅自动预读明确关联场景，不支持scene查询kind；其他资料仍用原query。", "明确关联场景预读仍保留，其他场景按需查询。")
+            setattr(original, stage, instruction + prompt)
+        return original
     if linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, LINKED_SOURCE_PROTOCOL, evidence_reference_protocol)

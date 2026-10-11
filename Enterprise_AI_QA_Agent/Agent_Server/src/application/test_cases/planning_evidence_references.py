@@ -41,7 +41,7 @@ def evidence_reference_catalog(evidence):
     return {**value, "sha256": _digest(value)}
 
 
-def bind_evidence_references(decision, catalog, evidence):
+def bind_evidence_references(decision, catalog, evidence, *, query_decision_type=None):
     if catalog != evidence_reference_catalog(evidence):
         raise ValueError("本次调用短引用目录与固定已读证据不同")
 
@@ -73,7 +73,8 @@ def bind_evidence_references(decision, catalog, evidence):
                     raise ValueError("文档预期短引用不能指向用例或工具")
                 check["expected_source"] = {**normalized,
                     "evidence_id": source["evidence_id"], "content_hash": source["content_hash"]}
-    return EvidencePlanningDecisionV3.model_validate(value)
+    model = query_decision_type if decision.action == "query" and query_decision_type is not None else EvidencePlanningDecisionV3
+    return model.model_validate(value)
 
 
 def reference_effects_prompt(schema):

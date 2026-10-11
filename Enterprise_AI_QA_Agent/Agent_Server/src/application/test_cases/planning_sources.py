@@ -50,18 +50,30 @@ class ProjectPlanningSources:
             priority=None, query=query or None, limit=limit, offset=offset)
         return [await self.case(project_id, case.id) for case in page.items], page.has_more
 
-    async def catalog(self, project_id, limit, offset=0):
+    async def catalog(self, project_id, limit, offset=0, *, scene_queries=False):
         cases = await self._cases.list_cases(project_id=project_id, status="active", mode_key=None,
             priority=None, query=None, limit=limit, offset=offset)
         docs = await self._docs.list_documents(project_id=project_id)
         recordings = await self._recordings.list_sessions(project_id=project_id, limit=limit + 1, offset=offset) if self._recordings else []
-        return {"cases": [{"id": case.id, "case_key": case.case_key, "title": case.title} for case in cases.items],
+        catalog = {"cases": [{"id": case.id, "case_key": case.case_key, "title": case.title} for case in cases.items],
                 "cases_has_more": cases.has_more,
                 "documents": [{"id": doc.id, "title": doc.title, "filename": doc.filename} for doc in docs[offset:offset + limit]],
                 "documents_has_more": len(docs) > offset + limit,
                 "recordings": [{"id": item.id, "name": item.name, "status": item.status.value} for item in recordings[:limit]],
                 "recordings_has_more": len(recordings) > limit, "offset": offset,
                 "recording_knowledge_available": self._recordings is not None and self._graphs is not None}
+        if scene_queries:
+            catalog["scene_knowledge_available"] = self._scenes is not None
+            catalog["scene_catalog"] = await self.scene_catalog(project_id, "", limit, offset)
+        return catalog
+
+    async def scene_catalog(self, project_id, query, limit, offset):
+        if self._scenes is None:
+            raise ValueError("场景规划来源读取尚未配置")
+        catalog = await self._scenes.search(project_id, query, limit, offset)
+        logger.info("case_planning_scene_catalog_read", extra={"project_id":project_id,
+            "offset":offset,"item_count":len(catalog["items"]),"has_more":catalog["has_more"]})
+        return catalog
 
     async def capture_document_basis(self, project_id, source):
         return await self._docs.capture_content_basis(project_id, source)
@@ -97,9 +109,20 @@ class ProjectPlanningSources:
             version=version.id, content_hash=version.content_hash, payload=payload,
             payload_hash=hashlib.sha256(json_text(payload).encode("utf-8")).hexdigest())], {"has_more":False}
 
-    async def query(self, project_id, request: PlanningQuery, limit, *, identity_protocol=None, fixed_documents=None):
+    async def query(self, project_id, request: PlanningQuery, limit, *, identity_protocol=None, fixed_documents=None, scene_query_protocol=None):
         if identity_protocol not in {None, FULL_SOURCE_IDENTITY_PROTOCOL}:
             raise ValueError("项目来源查询不支持该固定身份协议")
+        if request.kind in {"scenes", "scene"}:
+            from src.schemas.case_planning_scenes import SCENE_QUERY_PROTOCOL, ScenePlanningQuery
+            from src.schemas.case_planning_sources import SceneContentBasis
+            if scene_query_protocol != SCENE_QUERY_PROTOCOL or identity_protocol != FULL_SOURCE_IDENTITY_PROTOCOL:
+                raise ValueError("当前固定策略未启用场景按需查询")
+            request = ScenePlanningQuery.model_validate(request.model_dump(mode="json"))
+            if request.kind == "scenes":
+                catalog = await self.scene_catalog(project_id, request.query, limit, request.offset)
+                return [], {"scene_catalog":catalog,"has_more":catalog["has_more"],"offset":request.offset}
+            return await self.read_scene_basis(project_id, SceneContentBasis(project_id=project_id,
+                scene_id=request.source_id, version_id=request.version_id, content_hash=request.content_hash))
         if request.kind == "cases":
             if request.source_id:
                 return [await self.case(project_id, request.source_id)], {"has_more": False}

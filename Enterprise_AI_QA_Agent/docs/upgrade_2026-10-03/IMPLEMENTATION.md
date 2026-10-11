@@ -5120,3 +5120,26 @@ agent_web实际 `npm.cmd test -- src/features/projects/CasePlanDialog.test.ts`�
 Worker专项是正式启动函数在测试进程的真实存储读取，不是独立CLI完成规划、更不是默认AI执行；上述规划仍由受控模型响应驱动。真实进程kill、独立CLI完整场景规划、未关联场景按需查询、场景预期技术声明和全部默认AI业务验收仍待推进。最新compile-worker-final退出0仅补语法。无新表/依赖、全局模型修改或旧配置自动升级；Worker初始化已有场景表沿既有PG初始化权限执行，生产部署/历史迁移未验。原件和旧工件校验、三份方案同步见p5-scene-planning-validation.json。
 
 实际Worker命令：RUN_LIVE_SCENE_PLANNING=1、RECORDING_SCENE_EVIDENCE独立绝对worker-before/worker-complete目录，运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_planning_worker_live.py tests/test_planning_worker_runtime.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-planning-worker-complete.xml`。规划四组合命令仍为test_scene_planning_live.py，使用独立reference-complete目录；最终回归加入test_scene_planning_contract.py，输出regression-final，文档原件独立document-final目录。最新compileall覆盖src及三项新增测试，输出compile-worker-final。
+
+
+### 7.17 规划按需查询未关联项目场景〔2026-10-11〕
+
+基线b8c69d4e，依据见P5_SCENE_QUERY_RESEARCH.md。已有场景search能给项目隔离、分页及version_id/content_hash导航，固定正文读取也已存在；原PlanningQuery/BusinessPlanningQuery不接受scene/scenes，规划目录未列场景。本批新HTML/CDP/main/PG场景复现before1失败20.46秒：数据库有实际场景，但旧Schema拒绝scenes。属于需补查询契约与消费能力，不能只把场景目录当正文。
+
+新增MySQL可选scene_query_protocol；旧配置不回填，新政策冻结到PG seed。新增独立查询/两阶段Schema和v13 Prompt，保留旧Schema/Prompt/序列化；同步原pending_decision、logic/effects解析和查询消费。scenes按项目查询目录并分页；scene必须有source_id/version_id/content_hash，沿原PG固定读取完整步骤/原始响应/别名及双哈希投影。目录不产生已读证据；not_executed不代表通过。查询请求/逐项结果沿原检查点，共用原回合/时间，不新建规划循环。关闭查询策略仍保留历史任务恢复。
+
+项目页面增加“允许规划时查询项目场景”；类型/API/保存与依赖策略关闭同步。不要求用例先关联场景，不修改原测试模式、不将用例编译为模式参数、不读取生成模板。main和正式Worker沿上批已接的同一场景store，未新增模型依赖或单一模型限制。
+
+| 实际验证 | 结果与范围 |
+|---|---|
+| before | 1失败20.46秒，实际新场景存在、旧Schema拒绝。原PG导航与错误原件保留 |
+| verified | 4失败146.66秒，分页新增1个真实场景，原产品夹具将总数写死2而实际3；按additional_scenes参数核对，默认夹具行为不变。原失败/SQL保留 |
+| complete | 4通过186.79秒，0跳过；logic/effects×查询请求/读取结果提交确认丢失。每例真实HTML/CDP/main/App/MySQL/PG/Redis；正式用例无场景来源引用，page0/page1导航无scene证据，读取才产生正文；API重启、场景头/当前政策变化后原seed及V2保持。原任务5个受控模型回合、固定读取1次、终态追加0。证据阶段E还原正式ID；跨项目/错误hash/关闭策略拒绝，原事件整行不变 |
+| 合同及回归 | 新合同12通过0.68秒，读取实际原导航与4份v12 seed/checkpoint/Prompt，保持等价。初查27通过9门控跳过4.48秒；实际规划存储开关启用后回归85通过3格式解析门控跳过68.89秒，最后恢复旧协议V4 query转换的原行为再验85通过3跳过61.03秒；不累加两次回归数量 |
+| 页面/构建 | 73通过3.30秒；新开关保存及关闭依赖策略同步。4次实际product build包含vue-tsc/Vite通过、页面错误0。compileall退出0仅补语法 |
+
+确认丢失发生在真实PG commit之后；新建服务/租约恢复不等同真实进程kill。规划handler在测试进程使用实际存储与受控模型；不宣称独立CLI完成新查询、更不宣称默认AI自主查询/理解/UI执行。已有查询契约与恢复已验，默认AI质量仍待验。
+
+仍需推进：场景预期用于技术效果声明、独立CLI/Worker进程故障、人工DeepSeek、清洗/遗漏/复杂网络及跨文档/Shadow DOM响应关联、selector修复与失败定位报告；准备状态/未知副作用/执行修订/其他模式，API完整Agent及续期，性能容量/流式与其他安全工具，用户业务评审/部署/历史迁移及全阶段物理HTTP、旧Worker原件。完整P0—P5继续active，外部AI按用户决定暂缓。无新表/依赖/全局模型或旧项目配置修改。原件、前序456+149工件、保护文件及三份方案同步见p5-scene-query-validation.json。
+
+实际命令：Agent_Server内RUN_LIVE_SCENE_QUERY=1，RECORDING_SCENE_EVIDENCE独立绝对before/verified/complete目录；`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_scene_query_live.py -q --junitxml=../docs/upgrade_2026-10-03/p5-scene-query-<batch>.xml`。最后回归启用RUN_LIVE_CASE_PLANNING_TASKS=1，运行linked_sources/evidence_references/stages/tasks/scene_knowledge/recording_scene_draft/scene_planning_contract/scene_query_contract/planning_worker_runtime九模块，输出regression-final；不启用默认模型。前端命令`npm.cmd test -- src/features/projects/CasePlanDialog.test.ts`。编译src与新查询两测试/产品夹具，输出compile.log。按白名单提交，不推送/PR。

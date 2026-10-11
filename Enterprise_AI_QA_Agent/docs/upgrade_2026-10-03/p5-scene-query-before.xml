@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="20.432" timestamp="2026-10-11T08:29:59.253413+08:00" hostname="EIghteen"><testcase classname="tests.test_scene_query_live" name="test_actual_unlinked_scene_query" time="14.285"><failure message="AssertionError: 1 validation error for PlanningQuery&#10;  kind&#10;    Input should be 'cases', 'documents', 'document', 'recordings', 'recording', 'tools' or 'tool' [type=literal_error, input_value='scenes', input_type=str]&#10;      For further information visit https://errors.pydantic.dev/2.13/v/literal_error&#10;assert None is not None">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1420/test_actual_unlinked_scene_que0')
+
+    async def test_actual_unlinked_scene_query(tmp_path):
+        async def probe(*, stage, settings, client, evidence, project_ids, version):
+            if stage != "initial":
+                return
+            catalog = await PostgresRecordingSceneStore(settings).search(project_ids[0], "", 1, 0)
+            assert catalog["items"][0]["scene_id"] == version["scene_id"]
+            assert catalog["items"][0]["content_hash"] == version["version"]["content_hash"]
+            error = None
+            try:
+                query = PlanningQuery.model_validate({"kind":"scenes", "query":catalog["items"][0]["name"]})
+            except ValueError as exc:
+                error = str(exc)
+                query = None
+            (evidence/"scene-query-before.json").write_text(json.dumps({"actual_pg_catalog":catalog,
+                "schema_error":error, "query":query.model_dump(mode="json") if query else None},
+                ensure_ascii=False, indent=2), encoding="utf-8")
+            assert query is not None, error
+&gt;       await actual_recording_scene_management(tmp_path, scene_probe=probe)
+
+tests\test_scene_query_live.py:33: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+tests\test_recording_scene_product.py:108: in actual_recording_scene_management
+    await scene_probe(stage="initial", settings=settings, client=client, evidence=evidence,
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+stage = 'initial'
+settings = Settings(app_name='Enterprise AI QA Agent', app_env='development', api_v1_prefix='/api/v1', api_auth_token=None, data_...int', checkpoint_pool_size=4, max_subagent_calls_per_turn=1, subagent_model_call_limit=6, subagent_tool_call_limit=12))
+client = &lt;httpx.AsyncClient object at 0x0000022406C5F890&gt;
+evidence = WindowsPath('G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/p5-scene-query-before')
+project_ids = ['baabde37-9708-4744-bb91-20674e552c6d', '3a3c4ca8-da27-47c1-882c-e0e75b18c2f2']
+version = {'scene_id': '9be79662-84d2-4ef1-a5d3-0d421f4c31be', 'project_id': 'baabde37-9708-4744-bb91-20674e552c6d', 'current_ve..._id': '9be79662-84d2-4ef1-a5d3-0d421f4c31be', 'project_id': 'baabde37-9708-4744-bb91-20674e552c6d', 'version': 2, ...}}
+
+    async def probe(*, stage, settings, client, evidence, project_ids, version):
+        if stage != "initial":
+            return
+        catalog = await PostgresRecordingSceneStore(settings).search(project_ids[0], "", 1, 0)
+        assert catalog["items"][0]["scene_id"] == version["scene_id"]
+        assert catalog["items"][0]["content_hash"] == version["version"]["content_hash"]
+        error = None
+        try:
+            query = PlanningQuery.model_validate({"kind":"scenes", "query":catalog["items"][0]["name"]})
+        except ValueError as exc:
+            error = str(exc)
+            query = None
+        (evidence/"scene-query-before.json").write_text(json.dumps({"actual_pg_catalog":catalog,
+            "schema_error":error, "query":query.model_dump(mode="json") if query else None},
+            ensure_ascii=False, indent=2), encoding="utf-8")
+&gt;       assert query is not None, error
+E       AssertionError: 1 validation error for PlanningQuery
+E         kind
+E           Input should be 'cases', 'documents', 'document', 'recordings', 'recording', 'tools' or 'tool' [type=literal_error, input_value='scenes', input_type=str]
+E             For further information visit https://errors.pydantic.dev/2.13/v/literal_error
+E       assert None is not None
+
+tests\test_scene_query_live.py:32: AssertionError</failure></testcase></testsuite></testsuites>

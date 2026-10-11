@@ -22,7 +22,7 @@ async def test_actual_recording_scene_management(tmp_path):
     await actual_recording_scene_management(tmp_path)
 
 
-async def actual_recording_scene_management(tmp_path, scene_probe=None):
+async def actual_recording_scene_management(tmp_path, scene_probe=None, *, additional_scenes=0):
     evidence = Path(os.environ["RECORDING_SCENE_EVIDENCE"])
     evidence.mkdir(parents=True, exist_ok=False)
     def save(name, value):
@@ -168,7 +168,7 @@ async def actual_recording_scene_management(tmp_path, scene_probe=None):
                     await expect(page.locator(".pending")).to_be_visible()
                     await page.get_by_role("button",name="恢复提交",exact=True).click()
                     await expect(page.get_by_role("status")).to_contain_text("已恢复保存结果")
-                    assert len((await client.get(url)).json()["items"])==2
+                    assert len((await client.get(url)).json()["items"])==2+additional_scenes
                     await page.get_by_label("场景名称",exact=True).fill("页面整理场景")
                     ui_step = page.locator(".scene-step").filter(has_text=f"原事件 #{click_seq}")
                     await ui_step.get_by_label("操作说明",exact=True).fill("点击计数按钮并检查页面响应")

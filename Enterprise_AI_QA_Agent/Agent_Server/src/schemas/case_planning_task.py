@@ -11,6 +11,7 @@ from src.schemas.case_planning import (
 )
 from src.schemas.model_config import model_invocation_parameters as planning_model_parameters
 from src.schemas.case_planning_sources import PlanningLinkedSources
+from src.schemas.case_planning_scenes import SceneLogicalPlanningDecisionV3, SceneLogicalPlanningDecisionV4, SceneEvidencePlanningDecision
 from src.schemas.case_planning_stages import EvidencePlanningDecision, EvidencePlanningDecisionV2, EvidencePlanningDecisionV3, PlanningStageCheckpoint, PlanningStagePrompts
 
 
@@ -60,7 +61,7 @@ class PlanningTaskCheckpoint(PlanningModel):
     validation_feedback: dict[str, Any] | None = None
     next_round: int = Field(default=0, ge=0)
     query_index: int = Field(default=0, ge=0)
-    pending_decision: PlanningDecision | PlanningDecisionV2 | PlanningDecisionV3 | EvidencePlanningDecision | EvidencePlanningDecisionV2 | EvidencePlanningDecisionV3 | None = None
+    pending_decision: PlanningDecision | PlanningDecisionV2 | PlanningDecisionV3 | EvidencePlanningDecision | EvidencePlanningDecisionV2 | EvidencePlanningDecisionV3 | SceneLogicalPlanningDecisionV3 | SceneLogicalPlanningDecisionV4 | SceneEvidencePlanningDecision | None = None
     response_text: str | None = None
     response_metadata: dict[str, Any] = Field(default_factory=dict)
     response_has_tools: bool = False

@@ -493,6 +493,19 @@ describe("case planning", () => {
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].source_identity_protocol).toBeUndefined();
     wrapper.unmount();
   });
+  it.each(["scene-queries", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves scene queries and clears them with %s", async (name) => {
+    const wrapper = setup(); await flushPromises();
+    await wrapper.get('[data-testid="scene-queries"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
+      scene_query_protocol: "case-planning-scene-query-v1", source_identity_protocol: "case-planning-source-full-hash-v1",
+      planning_stage_protocol: "case-planning-staged-evidence-v2", timeout_seconds: 180,
+    });
+    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1].scene_query_protocol).toBeUndefined();
+    wrapper.unmount();
+  });
   it.each(["document-expected", "formal-effects", "operation-recovery"])("saves declared operation reading and clears it with %s", async (name) => {
     const wrapper = setup(); await flushPromises();
     await wrapper.get('[data-testid="operation-prefetch"]').setValue(true);

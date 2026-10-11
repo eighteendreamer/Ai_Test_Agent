@@ -22,6 +22,7 @@ from src.application.test_cases.planning_operation_prefetch import (
 )
 from src.schemas.case_planning import PlanningQuery
 from src.schemas.case_planning_sources import SCENE_LINKED_SOURCE_PROTOCOL, SceneContentBasis
+from src.schemas.case_planning_scenes import scene_decision_types, SceneEvidencePlanningDecision
 from src.application.test_cases.planning_linked_sources import linked_source_queue, linked_document_bases
 from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT_VERSION, required_source_prompt_version, validate_required_sources
 from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
@@ -104,7 +105,8 @@ class CasePlanningWorkflow:
                     await self._planner._projects.require_active(record.project_id)
                     if checkpoint.phase == "retrieval":
                         await self._planner._recall(record, fixed_case_versions)
-                        checkpoint.catalog = await self._planner._sources.catalog(record.project_id, policy.max_candidates)
+                        catalog_options = {"scene_queries":True} if policy.scene_query_protocol else {}
+                        checkpoint.catalog = await self._planner._sources.catalog(record.project_id, policy.max_candidates, **catalog_options)
                         if policy.linked_source_protocol:
                             checkpoint.linked_sources = linked_source_queue(record.evidence)
                         checkpoint.phase = "sources" if policy.linked_source_protocol else "ready"
@@ -298,15 +300,19 @@ class CasePlanningWorkflow:
                                 logic_type = LogicalPlanningDecisionV4
                             if stage == "effects" and policy.evidence_reference_protocol:
                                 effects_type = ReferencedEvidenceDecision
+                            if policy.scene_query_protocol:
+                                logic_type, effects_type = scene_decision_types(
+                                    policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL, policy.evidence_reference_protocol)
                             decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
                                 logic_type if stage == "logic" else effects_type))
                                 if stage is not None else self._planner._parse(checkpoint.response_text or ""))
                             wire_decision = decision.model_copy(deep=True)
                             if isinstance(decision, ReferencedEvidenceDecision):
+                                reference_options = {"query_decision_type":SceneEvidencePlanningDecision} if policy.scene_query_protocol else {}
                                 decision = bind_evidence_references(decision,
-                                    round_record.get("evidence_reference_catalog"), record.evidence)
+                                    round_record.get("evidence_reference_catalog"), record.evidence, **reference_options)
                                 round_record["canonical_evidence_decision"] = decision.model_dump(mode="json")
-                            if isinstance(decision, LogicalPlanningDecisionV4):
+                            if isinstance(decision, LogicalPlanningDecisionV4) and (decision.action == "finish" or not policy.scene_query_protocol):
                                 validate_operation_selections(decision, decision.operation_selections, record.evidence)
                                 decision = LogicalPlanningDecisionV3.model_validate(decision.model_dump(mode="json", exclude={"operation_selections"}))
                             if decision.action == "finish" and stage == "effects":
@@ -401,6 +407,8 @@ class CasePlanningWorkflow:
                                         "evidence_scope": metadata.get("scope", "full-tool" if evidence else "catalog")})
                                 else:
                                     identity_options = {"identity_protocol": policy.source_identity_protocol} if policy.source_identity_protocol else {}
+                                    if policy.scene_query_protocol:
+                                        identity_options["scene_query_protocol"] = policy.scene_query_protocol
                                     if checkpoint.linked_sources is not None:
                                         identity_options["fixed_documents"] = linked_document_bases(checkpoint.linked_sources)
                                     evidence, metadata = await self._planner._sources.query(record.project_id, query, policy.max_candidates, **identity_options)

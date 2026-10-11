@@ -105,7 +105,7 @@ class CasePlanningService:
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
         stages = build_stage_prompts(config.policy.planning_stage_protocol, config.policy.effect_expected_source_protocol,
             config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol, config.policy.linked_source_protocol,
-            config.policy.evidence_reference_protocol) if config.policy.planning_stage_protocol else None
+            config.policy.evidence_reference_protocol, config.policy.scene_query_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
             record.prompt_version = stage_prompt_version(config.policy, stages)
         record.prompt_version = required_source_prompt_version(record.prompt_version, request)
@@ -147,7 +147,7 @@ class CasePlanningService:
         contracts = capture_tool_contracts() if config.policy.effect_coverage_protocol else None
         stages = build_stage_prompts(config.policy.planning_stage_protocol, config.policy.effect_expected_source_protocol,
             config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol, config.policy.linked_source_protocol,
-            config.policy.evidence_reference_protocol) if config.policy.planning_stage_protocol else None
+            config.policy.evidence_reference_protocol, config.policy.scene_query_protocol) if config.policy.planning_stage_protocol else None
         if stages is not None:
             record.prompt_version = stage_prompt_version(config.policy, stages)
         record.prompt_version = required_source_prompt_version(record.prompt_version, request)
