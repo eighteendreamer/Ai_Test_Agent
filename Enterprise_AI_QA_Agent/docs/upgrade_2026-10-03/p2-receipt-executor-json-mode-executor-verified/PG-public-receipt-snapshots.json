@@ -1,0 +1,223 @@
+[
+  {
+    "id": "4aa9cdec-ac24-4815-9993-b52cfb44d702",
+    "session_id": "e700e784-010d-4d49-80e9-e48e84da47e5",
+    "version": 1,
+    "stage": "completed",
+    "model_response_text": "{ \"schema_version\": 1, \"steps\": [] }",
+    "final_response": "{ \"schema_version\": 1, \"steps\": [] }",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+              "document:cfbaf1ee-1889-5fee-b477-72c195d6f996:bec5786adc2b8848"
+            ],
+            "input_bindings": {},
+            "case_version_id": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:61067/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "52ecc580-21a3-53a2-8c04-428571533888",
+      "plan_id": "4c296695-cf23-42ed-bd50-0c33e42c9ccc",
+      "evidence": [
+        {
+          "id": "case:7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+          "source_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+          "content_hash": "7a3960818b06c1dbfcd55a446ce7ac3091050e6afac2dbca988867c29391908c"
+        },
+        {
+          "id": "document:cfbaf1ee-1889-5fee-b477-72c195d6f996:bec5786adc2b8848",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:61067/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:61067/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/cfbaf1ee-1889-5fee-b477-72c195d6f996/b400ae77-0a64-4b6b-8d97-63b1dd8611f3/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "e8b54e9909fb822927639188aaa68dfe3ea13be41967a95c7f1314abc7dea2f5",
+            "catalog_revision": 0,
+            "content_asset_id": "5b455bfd-65e8-471a-b4cc-14efb681a4b1"
+          },
+          "version": "b400ae77-0a64-4b6b-8d97-63b1dd8611f3",
+          "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+          "content_hash": "bec5786adc2b8848b6b6f10bd717c11b8d476fc4584d1bcb3aa0fcdf9d137459"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "90d47b14-ff8b-4e5c-bc63-dfa3b94e001d",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "d7b05274-3988-5bb7-a9fe-e7b8ad602f19",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "d7b05274-3988-5bb7-a9fe-e7b8ad602f19"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 14177,
+        "prompt_tokens": 13911,
+        "completion_tokens": 266,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 0,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "fe1a8f2a59821c60fb8c2e1c0642d10a.9e58d4445dfa8b64e387db9340b794dc",
+      "stop_reason": null,
+      "finish_reason": "stop",
+      "tool_fallback": "",
+      "content_preview": "{ \"schema_version\": 1, \"steps\": [] }",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "action": "json_object_fallback",
+            "option": "output_format",
+            "reason": "schema_not_declared"
+          },
+          {
+            "action": "mapped",
+            "format": "json_object",
+            "option": "output_format"
+          },
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "provider_profile": "openai",
+      "completion_status": "complete",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 1,
+    "max_iterations": 8
+  }
+]

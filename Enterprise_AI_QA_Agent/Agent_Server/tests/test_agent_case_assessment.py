@@ -414,6 +414,10 @@ async def test_rejected_real_model_source_reference_is_visible_to_read_only_corr
             session_id=session, turn_id=turn, attempt_id=attempt,
             validation_feedback={'error': str(failure.value), 'candidate_response': data})
         assert not request.tools
+        assert request.output_format is not None
+        assert request.output_format.kind == 'json_schema'
+        assert request.output_format.schema_name == 'agent_case_receipt'
+        assert request.output_format.required is False
         assert 'validation_feedback' in request.messages[0]['content']
         assert 'execution_items' in request.messages[0]['content']
         assert 'expected_source' in request.messages[0]['content']
@@ -442,6 +446,8 @@ async def test_read_only_assessment_can_request_one_complete_owned_item(tmp_path
         request = await service.build_assessment_request(context=context, tool_records=records,
             session_id=session, turn_id=turn, attempt_id=attempt, requested_item_keys=['target'])
         assert not request.tools
+        assert request.output_format is not None
+        assert request.output_format.kind == 'json_schema'
         content = request.messages[0]['content']
         assert '"requested_item_keys": ["target"]' in content
         assert content.count('"expected_source"') == 1

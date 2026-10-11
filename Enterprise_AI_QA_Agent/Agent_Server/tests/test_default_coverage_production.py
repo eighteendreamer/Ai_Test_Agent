@@ -1,5 +1,6 @@
 """Actual configured default model plans and executes full fixed JSON cases."""
 import base64
+from contextlib import ExitStack
 from copy import deepcopy
 import hashlib
 import json
@@ -25,7 +26,7 @@ from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelCapabilitiesOverride, ModelTransportOptions, model_invocation_parameters
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL
 from src.schemas.case_planning_stages import STAGE_PROTOCOL
 from src.schemas.settings import ModelConfigUpdateRequest
@@ -80,6 +81,9 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
     report["isolated_invocation_parameters"] = invocation_parameters
     report["isolated_profile_override"] = bool(profile_path)
+    executor_only = os.getenv("QA_RECEIPT_EXECUTOR_ONLY") == "1"
+    report["controlled_planning"] = executor_only
+    planning_providers = ExitStack()
     if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
         report["baseline"] = "d81b25e8 plus formal effect relations v2"
     def save(name, value):
@@ -89,13 +93,14 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
         settings.orchestration.redis_task_outbox_streams = settings.orchestration.case_planning_task_stream
         models = MySQLModelConfigStore(settings)
         models.initialize()
-        model = models.upsert(ModelConfigUpdateRequest(model_name=original_model.model_id, provider=original_model.provider,
+        execution_model = ModelConfigUpdateRequest(model_name=original_model.model_id, provider=original_model.provider,
             transport=original_model.transport, request_profile=invocation_model.request_profile,
             base_url=original_model.api_base_url, api_key=original_model.api_key,
             auth_type=original_model.auth_type, oauth_provider=original_model.oauth_provider,
             oauth_refresh_token=original_model.oauth_refresh_token, applications=original_model.applications, is_active=True,
             use_provider_defaults=False, capability_overrides=original_model.capability_overrides,
-            context_window=original_model.context_window, max_output_tokens=original_model.max_output_tokens))
+            context_window=original_model.context_window, max_output_tokens=original_model.max_output_tokens)
+        model = models.upsert(execution_model)
         assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
         processes.env = child_environment(settings)
         processes.env["QA_DEFAULT_PROBE_DIR"] = str(directory / "physical")
@@ -190,9 +195,40 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 if os.getenv("QA_RECEIPT_CORRECTION") == "1":
                     policy.receipt_correction_protocol = "case-receipt-correction-v1"
                     report["isolated_receipt_correction_enabled"] = True
+                    transport = os.getenv("QA_RECEIPT_TRANSPORT_OPTIONS")
+                    if transport:
+                        policy.receipt_correction_transport_options = ModelTransportOptions.model_validate_json(transport)
+                if executor_only:
+                    # Diagnose the existing execution adapter using a real HTTP
+                    # planning fixture, not a second external planning attempt.
+                    # This path is explicitly NOT a default-model planning pass.
+                    from test_case_planning import item as plan_item, finish as plan_finish
+                    policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1",
+                        "effect_coverage_max_bytes": 1024000,
+                        "receipt_correction_protocol": policy.receipt_correction_protocol,
+                        "receipt_correction_transport_options": policy.receipt_correction_transport_options})
+                    def receipt_diagnostic_plan(body):
+                        context = json.loads(body["messages"][-1]["content"])
+                        documents = [e for e in context["evidence"] if e["kind"] == "document"]
+                        if not documents:
+                            return json.dumps({"action": "query", "summary": "读取真实项目文档用于执行诊断",
+                                "queries": [{"kind": "document", "source_id": doc["id"]}]}, ensure_ascii=False)
+                        target = plan_item(context, "default-query", key="target_order_query")
+                        target["evidence_ids"].extend(e["id"] for e in documents)
+                        return json.dumps(plan_finish(target), ensure_ascii=False)
+                    planning_endpoint, planning_calls, _, _ = planning_providers.enter_context(
+                        provider(responder=receipt_diagnostic_plan))
+                    planning_model = models.upsert(ModelConfigUpdateRequest(model_name="receipt-diagnostic-controlled-plan",
+                        provider="openai", transport="openai_chat_completions", base_url=planning_endpoint,
+                        api_key=uuid4().hex, is_active=True, use_provider_defaults=False,
+                        capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                        context_window=128000, max_output_tokens=4096))
+                    report["baseline"] = "ef28497f; controlled HTTP planning; real default Agent execution only"
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
+                if executor_only:
+                    request["model_key"] = planning_model.key
                 task = await post(root + "/case-planning-tasks", request, 202)
                 save("submission.json", task)
                 with postgres_connect(settings) as conn, conn.cursor() as cur:
@@ -221,13 +257,18 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 plan = await get(root + "/case-plans/" + task["plan_id"])
                 save("plan.json", plan)
                 report["planning_completed"] = True
+                report["default_model_planning_completed"] = not executor_only
+                if executor_only:
+                    save("controlled-planning-requests.json", planning_calls)
+                    models.upsert(execution_model)
+                    assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
                 assert plan["config_snapshot"]["policy"]["effect_coverage_protocol"] == policy.effect_coverage_protocol
                 detail = await post(root + "/case-plans/" + plan["id"] + "/runs", {"creation_key": "default-complete-run", "mode_key": "api_testing"}, 201)
                 rid = detail["run"]["id"]
                 assert await PostgresTaskOutbox(settings).relay_once(queue, limit=1) == 1
                 worker = processes.start("default-execution-worker", "-m", "tests.default_model_probe", "src.cli.run_redis_worker",
                     "--once", "--worker-id", "default-execute")
-                assert await processes.wait(worker, timeout=260) == 0
+                assert await processes.wait(worker, timeout=420) == 0
                 for index in range(12):
                     detail = await get("/runs/" + rid)
                     save(f"run-{index}.json", detail)
@@ -238,9 +279,25 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 detail = await get("/runs/" + rid)
                 save("final-run.json", detail)
                 with postgres_connect(settings) as conn, conn.cursor() as cur:
-                    cur.execute(f"SELECT id,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (rid,))
+                    cur.execute(f"SELECT id,tool_key,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (rid,))
                     jobs = [dict(row) for row in cur.fetchall()]
                 save("PG-tool-jobs.json", jobs)
+                if executor_only:
+                    # Redeliver the actual owned terminal dispatch. Never reset
+                    # a RunItem or infer a new task payload.
+                    assert all(i["status"] in {"passed", "failed", "error", "blocked", "skipped"} for i in detail["items"])
+                    sends_before = len(list((directory / "physical").glob("*.send.json")))
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table} WHERE payload->>'run_id'=%s", (rid,))
+                        dispatches = [row["payload"] for row in cur.fetchall()]
+                    assert len(dispatches) == 1
+                    await queue.enqueue(dispatches[0])
+                    worker = processes.start("default-execution-terminal", "-m", "tests.default_model_probe",
+                        "src.cli.run_redis_worker", "--once", "--worker-id", "default-terminal")
+                    assert await processes.wait(worker, timeout=60) == 0
+                    assert len(list((directory / "physical").glob("*.send.json"))) == sends_before
+                    assert await get("/runs/" + rid) == detail
+                    report["terminal_replay_extra_physical_requests"] = 0
                 assert all(i["status"] == "passed" for i in detail["items"]), detail
                 assert len(created) == 2 and not orders, (effects, orders)
                 assert [method for method, _ in effects].count("POST") == 2
@@ -282,11 +339,29 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 if row:
                     save("PG-planning.json", dict(row))
             if detail:
+                downloaded = []
+                for attempt in detail["attempts"]:
+                    correction = (attempt.get("checkpoint_payload") or {}).get("receipt_correction")
+                    if not correction:
+                        continue
+                    for key in ("request", "response"):
+                        ref = correction.get(key)
+                        if not ref:
+                            continue
+                        owned.append(ref["uri"])
+                        raw = (await objects.read_object_uri(ref["uri"]))["content"]
+                        assert len(raw) == ref["size_bytes"]
+                        assert hashlib.sha256(raw).hexdigest() == ref["sha256"]
+                        name = "receipt-" + correction["call_id"] + "-" + key + ".json"
+                        (directory / name).write_bytes(raw)
+                        downloaded.append({"file": name, **ref, "download_verified": True})
+                save("receipt-original-downloads.json", downloaded)
                 with postgres_connect(settings) as conn, conn.cursor() as cur:
-                    cur.execute(f"SELECT id,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (detail["run"]["id"],))
+                    cur.execute(f"SELECT id,tool_key,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (detail["run"]["id"],))
                     save("PG-tool-jobs.json", [dict(row) for row in cur.fetchall()])
                     sessions = {(i.get("execution_checkpoint") or {}).get("session_id") for i in detail["items"]}
                     sessions.update(((r.get("actual") or {}).get("execution_checkpoint") or {}).get("session_id") for r in detail["results"])
+                    sessions.update((a.get("checkpoint_payload") or {}).get("session_id") for a in detail["attempts"])
                     sessions.discard(None)
                     if sessions:
                         # Public model response and numeric/state identity only;
@@ -294,6 +369,8 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         cur.execute(f"""SELECT id,session_id,version,stage,
                             graph_state->'model_response_text' AS model_response_text,
                             graph_state->'final_response' AS final_response,
+                            graph_state->'context_bundle'->'case_execution' AS case_execution,
+                            graph_state->'model_response_summary' AS model_response_summary,
                             graph_state->'model_call_count' AS model_call_count,
                             graph_state->'max_iterations' AS max_iterations
                             FROM {settings.database.postgres_snapshot_table} WHERE session_id=ANY(%s) ORDER BY session_id,version""", (list(sessions),))
@@ -302,6 +379,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         report["public_receipt_snapshot_session_identity_missing"] = True
             collect_objects(settings, owned)
             await processes.close()
+            planning_providers.close()
             for p in tmp_path.iterdir():
                 if p.suffix in {".stdout", ".stderr"}:
                     shutil.copyfile(p, directory / p.name)

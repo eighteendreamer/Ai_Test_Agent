@@ -65,6 +65,9 @@ class ReceiptAgent(ControlledAgent):
                 return response
             if self.original == "truncated":
                 return ModelInvocationResult(text=response.text[:30], response_summary={"mode": "ok", "finish_reason": "length"})
+            if self.original == "captured-current":
+                original = json.loads((DOCS / "p2-receipt-executor-before/PG-public-receipt-snapshots.json").read_bytes())[-1]["model_response_text"]
+                return ModelInvocationResult(text=original, response_summary={"mode": "ok", "finish_reason": "stop"})
             tables = json.loads((DOCS / "p0-tool-evidence-production-final/trusted-parent/postgres-execution.json").read_bytes())
             original = tables["tables"]["postgres_snapshot_table"]["records"][-1]["graph_state"]["model_response_text"]
             return ModelInvocationResult(text=original, response_summary={"mode": "ok", "finish_reason": "stop"})
@@ -115,8 +118,9 @@ async def cleanup(values):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("live", [False, LIVE])
-async def test_actual_captured_mixed_report_corrects_from_owned_evidence_once_then_replays(tmp_path, business_http, live):
-    agent = ReceiptAgent()
+@pytest.mark.parametrize("original", ["captured", "captured-current"])
+async def test_actual_captured_mixed_report_corrects_from_owned_evidence_once_then_replays(tmp_path, business_http, live, original):
+    agent = ReceiptAgent(original=original)
     async with adapter_environment(tmp_path, business_http, live, agent=agent,
         planning_policy=CasePlanningPolicy(receipt_correction_protocol="case-receipt-correction-v1")) as values:
         _, _, reader, _, runs, _, adapter, args, _, services = values
@@ -125,6 +129,9 @@ async def test_actual_captured_mixed_report_corrects_from_owned_evidence_once_th
             outcome = await approval_continuation(runs, reader, adapter, args, pending)
             assert outcome.completion.status == "passed"
             assert len(agent.requests) == 4 and len(agent.correction_requests) == 1
+            fixed_output = agent.correction_requests[0].output_format
+            assert fixed_output.kind == "json_schema" and fixed_output.required is False
+            assert fixed_output.schema_name == "agent_case_receipt"
             assert [method for method, _ in business_http[1]] == ["POST", "GET", "DELETE"]
             cp = (await runs.get_latest_attempt((await args())["item"].id)).checkpoint_payload["receipt_correction"]
             assert cp["phase"] == "response" and cp["execution_model_calls"] == 4 and cp["total_model_calls"] == 5
@@ -134,7 +141,7 @@ async def test_actual_captured_mixed_report_corrects_from_owned_evidence_once_th
             for key in ("request", "response"):
                 raw = (await services["environment"].objects.read_object_uri(cp[key]["uri"]))["content"]
                 assert b"DO-NOT-PERSIST-RECEIPT-CREDENTIAL" not in raw
-            await export(values, name="passed-postgres" if live else "passed-memory", effects=business_http[1])
+            await export(values, name=original + ("-passed-postgres" if live else "-passed-memory"), effects=business_http[1])
         finally:
             await cleanup(values)
 

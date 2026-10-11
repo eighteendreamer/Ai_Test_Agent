@@ -1,0 +1,285 @@
+{
+  "id": "4c296695-cf23-42ed-bd50-0c33e42c9ccc",
+  "project_id": "90d47b14-ff8b-4e5c-bc63-dfa3b94e001d",
+  "request": {
+    "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+    "model_key": "receipt-diagnostic-controlled-plan",
+    "candidate_case_ids": [
+      "fceed5a1-0c44-4a7a-831c-c1f509fae131"
+    ],
+    "runtime_context": {},
+    "environment": null
+  },
+  "status": "planned",
+  "summary": "已按项目依据规划",
+  "decision": {
+    "action": "finish",
+    "summary": "已按项目依据规划",
+    "queries": [],
+    "items": [
+      {
+        "key": "target_order_query",
+        "reason": "依据完整用例规划",
+        "evidence_ids": [
+          "case:7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+          "document:cfbaf1ee-1889-5fee-b477-72c195d6f996:bec5786adc2b8848"
+        ],
+        "depends_on": [],
+        "input_bindings": {},
+        "kind": "target",
+        "case_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+        "case_version_id": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d"
+      }
+    ],
+    "unresolved": []
+  },
+  "evidence": [
+    {
+      "id": "case:7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+      "kind": "case",
+      "source_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+      "version": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+      "content_hash": "7a3960818b06c1dbfcd55a446ce7ac3091050e6afac2dbca988867c29391908c",
+      "payload": {
+        "title": "完整八步已有订单查询",
+        "case_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+        "content": {
+          "steps": [
+            {
+              "order": 1,
+              "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+            },
+            {
+              "order": 2,
+              "action": "确认准备两条记录且记录两个实际ID"
+            },
+            {
+              "order": 3,
+              "action": "GET第一条/orders/{id}"
+            },
+            {
+              "order": 4,
+              "action": "核对状态码200"
+            },
+            {
+              "order": 5,
+              "action": "核对flag为False"
+            },
+            {
+              "order": 6,
+              "action": "核对count为1"
+            },
+            {
+              "order": 7,
+              "action": "核对nullable为null并清理所有本次记录"
+            },
+            {
+              "order": 8,
+              "action": "LAST-DEFAULT-COVERAGE-STEP",
+              "business": {
+                "zero": 0,
+                "false": false,
+                "nullable": null
+              }
+            }
+          ],
+          "期望": {
+            "code": 200,
+            "flag": false,
+            "count": 1,
+            "nullable": null
+          },
+          "requires": [
+            "actual_order_id"
+          ],
+          "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+          "operations": {
+            "query": "http://127.0.0.1:61067/orders/{id}"
+          },
+          "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+        },
+        "case_key": "default-query",
+        "source_refs": [
+          {
+            "uri": null,
+            "label": "",
+            "version": null,
+            "metadata": {},
+            "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+            "source_type": "api_doc"
+          }
+        ],
+        "case_version_id": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+        "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。",
+        "historical_mode_key": "api_testing"
+      }
+    },
+    {
+      "id": "document:cfbaf1ee-1889-5fee-b477-72c195d6f996:bec5786adc2b8848",
+      "kind": "document",
+      "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+      "version": "b400ae77-0a64-4b6b-8d97-63b1dd8611f3",
+      "content_hash": "bec5786adc2b8848b6b6f10bd717c11b8d476fc4584d1bcb3aa0fcdf9d137459",
+      "payload": {
+        "title": "requirements",
+        "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:61067/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:61067/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+        "end_line": 5,
+        "has_more": false,
+        "source_uri": "rustfs://upload-safe/api-docs/cfbaf1ee-1889-5fee-b477-72c195d6f996/b400ae77-0a64-4b6b-8d97-63b1dd8611f3/original/safe/requirements.md",
+        "start_line": 1,
+        "content_sha256": "e8b54e9909fb822927639188aaa68dfe3ea13be41967a95c7f1314abc7dea2f5",
+        "catalog_revision": 0,
+        "content_asset_id": "5b455bfd-65e8-471a-b4cc-14efb681a4b1"
+      }
+    }
+  ],
+  "config_snapshot": {
+    "scope_key": "90d47b14-ff8b-4e5c-bc63-dfa3b94e001d",
+    "revision": 1,
+    "policy": {
+      "max_rounds": 5,
+      "max_candidates": 20,
+      "max_items": 50,
+      "max_context_chars": 180000,
+      "timeout_seconds": 180.0,
+      "action_binding_protocol": "case-action-binding-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "operation_protocol": "case-operation-v1",
+      "preparation_scope_protocol": "preparation-scope-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "effect_evidence_max_bytes": 512000,
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_coverage_max_bytes": 1024000
+    }
+  },
+  "model_key": "receipt-diagnostic-controlled-plan",
+  "prompt_version": "case-planning-tool-operations-v3",
+  "rounds": [
+    {
+      "round": 1,
+      "status": "parsed",
+      "decision": {
+        "items": [],
+        "action": "query",
+        "queries": [
+          {
+            "kind": "document",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+            "start_line": 1
+          }
+        ],
+        "summary": "读取真实项目文档用于执行诊断",
+        "unresolved": []
+      },
+      "streaming": false,
+      "attempt_id": "799a1d6a-7b6f-46cf-9f40-253cc50f4dc1",
+      "query_results": [
+        {
+          "query": {
+            "kind": "document",
+            "query": "",
+            "offset": 0,
+            "max_lines": 200,
+            "source_id": "cfbaf1ee-1889-5fee-b477-72c195d6f996",
+            "start_line": 1
+          },
+          "has_more": false,
+          "evidence_ids": [
+            "document:cfbaf1ee-1889-5fee-b477-72c195d6f996:bec5786adc2b8848"
+          ]
+        }
+      ],
+      "response_mode": "ok",
+      "logical_call_id": "df161e10-e0df-4d88-a44e-3286b47d3eab",
+      "response_metadata": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 54,
+          "prompt_tokens": 41,
+          "completion_tokens": 13,
+          "prompt_tokens_details": null,
+          "completion_tokens_details": null
+        },
+        "error_type": null,
+        "response_id": "impact-fixture-response",
+        "status_code": null,
+        "stop_reason": null,
+        "finish_reason": "stop",
+        "request_mapping": {
+          "version": "model-request-v1",
+          "decisions": [
+            {
+              "action": "prompt_fallback",
+              "option": "output_format",
+              "reason": "format_not_declared"
+            }
+          ]
+        }
+      },
+      "model_elapsed_seconds": 0.489
+    },
+    {
+      "round": 2,
+      "status": "parsed",
+      "decision": {
+        "items": [
+          {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "fceed5a1-0c44-4a7a-831c-c1f509fae131",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:7fa76134-ce0f-45d0-86ad-7b1338d0cd6d",
+              "document:cfbaf1ee-1889-5fee-b477-72c195d6f996:bec5786adc2b8848"
+            ],
+            "input_bindings": {},
+            "case_version_id": "7fa76134-ce0f-45d0-86ad-7b1338d0cd6d"
+          }
+        ],
+        "action": "finish",
+        "queries": [],
+        "summary": "已按项目依据规划",
+        "unresolved": []
+      },
+      "streaming": false,
+      "attempt_id": "799a1d6a-7b6f-46cf-9f40-253cc50f4dc1",
+      "response_mode": "ok",
+      "logical_call_id": "24c86863-7cec-4454-9963-0eb829759518",
+      "response_metadata": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 54,
+          "prompt_tokens": 41,
+          "completion_tokens": 13,
+          "prompt_tokens_details": null,
+          "completion_tokens_details": null
+        },
+        "error_type": null,
+        "response_id": "impact-fixture-response",
+        "status_code": null,
+        "stop_reason": null,
+        "finish_reason": "stop",
+        "request_mapping": {
+          "version": "model-request-v1",
+          "decisions": [
+            {
+              "action": "prompt_fallback",
+              "option": "output_format",
+              "reason": "format_not_declared"
+            }
+          ]
+        }
+      },
+      "model_elapsed_seconds": 0.01,
+      "preparation_scope_declaration": {}
+    }
+  ],
+  "warnings": [],
+  "created_at": "2026-10-11T10:44:50.109368Z",
+  "regression": null,
+  "environment": null
+}

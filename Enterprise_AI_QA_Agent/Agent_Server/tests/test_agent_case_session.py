@@ -85,6 +85,9 @@ class ControlledAgent:
         self.requests.append(request)
         assert 'Complete Frozen Case' in request.system_prompt
         assert 'case_result_contract' in {section.key for section in request.system_prompt_sections}
+        # The execution loop keeps the ordinary tool-call protocol. Structured
+        # output is requested only by the later evidence-only receipt review.
+        assert request.output_format is None
         assert 'full lifecycle: project discovery' not in request.system_prompt
         previous = [json.loads(m['content']) for m in request.messages if m.get('role') == 'tool']
         index = len(previous)

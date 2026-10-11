@@ -23,6 +23,7 @@ from src.schemas.case_execution import (
     CaseOutputReference,
 )
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult
+from src.schemas.model_request_options import ModelOutputFormat
 from src.application.model_clients.completion import is_model_response_incomplete
 from src.schemas.run_management import RunEvidenceRef, RunItemCompleteRequest
 from src.schemas.session import VerificationEvidence, VerificationResult, VerificationStatus
@@ -104,6 +105,12 @@ class AgentCaseAssessmentService:
         if validation_feedback is not None:
             data["validation_feedback"] = deepcopy(validation_feedback)
         return ModelInvocationRequest(
+            # Existing counterparts: document impact and frozen generation use
+            # the same provider-specific mapping. Undeclared providers retain
+            # the prompt fallback; persisted old correction requests stay fixed.
+            output_format=ModelOutputFormat(kind="json_schema", schema_name="agent_case_receipt",
+                schema_definition=case_receipt_type(context.scene_receipt_protocol).model_json_schema(),
+                required=False),
             system_prompt=(("Review only the explicitly requested execution items against their complete frozen cases. "
                 "The manifest may contain unfinished sibling operations; never cite them as observations or outputs. "
                 "This item assessment does not complete the run item or establish consumption completion. "

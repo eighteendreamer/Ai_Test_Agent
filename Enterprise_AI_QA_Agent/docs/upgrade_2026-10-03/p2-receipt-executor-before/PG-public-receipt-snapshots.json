@@ -1,0 +1,2153 @@
+[
+  {
+    "id": "7046931e-fb31-45cf-9321-d87142a2332e",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 1,
+    "stage": "waiting_approval",
+    "model_response_text": "我将按照冻结用例执行：先准备两条订单记录，再查询第一条并验证，最后清理全部记录。首先并行创建两条订单：",
+    "final_response": "我将按照冻结用例执行：先准备两条订单记录，再查询第一条并验证，最后清理全部记录。首先并行创建两条订单：\n\nExecution is waiting for approval before protected tools can run.\n\nPending approvals:\n- API Test Runner: approval_id=ea7d1c6a-7181-4981-a32f-9bbccf2313e8\n- API Test Runner: approval_id=f04cd1e5-6fa5-4bd1-93bf-b6a78a6deb01\n\nAgent: API Testing Agent | Model: step-5-preview",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 15149,
+        "prompt_tokens": 13901,
+        "completion_tokens": 1248,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 0,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "a7a001dbc35b35e6c24f0879f74b39f8.0522a38ebafeb30564a0bb2a23dbb0d6",
+      "stop_reason": null,
+      "finish_reason": "tool_calls",
+      "tool_fallback": "",
+      "content_preview": "我将按照冻结用例执行：先准备两条订单记录，再查询第一条并验证，最后清理全部记录。首先并行创建两条订单：",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 2,
+      "tool_call_names": [
+        "api-test-runner",
+        "api-test-runner"
+      ],
+      "provider_profile": "openai",
+      "completion_status": "tool_calls",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 1,
+    "max_iterations": 8
+  },
+  {
+    "id": "b72b0600-7d3d-43a1-9056-9c6e8f64abb1",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 2,
+    "stage": "waiting_approval",
+    "model_response_text": "",
+    "final_response": "",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {},
+    "model_call_count": 1,
+    "max_iterations": 8
+  },
+  {
+    "id": "16465723-f5f5-4807-b54d-15f6d667c282",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 3,
+    "stage": "waiting_approval",
+    "model_response_text": "断言格式缺少 `kind` 字段，且未发送任何 HTTP 请求。使用相同的 operation_key 修正后重试：",
+    "final_response": "断言格式缺少 `kind` 字段，且未发送任何 HTTP 请求。使用相同的 operation_key 修正后重试：\n\nExecution is waiting for approval before protected tools can run.\n\nPending approvals:\n- API Test Runner: approval_id=e13d1ddf-21d0-4ce5-b320-36e35c05df1c\n- API Test Runner: approval_id=72b325c3-4236-4251-bf3b-ab653ea5b501\n\nAgent: API Testing Agent | Model: step-5-preview",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 16192,
+        "cached_tokens": 5632,
+        "prompt_tokens": 15805,
+        "completion_tokens": 387,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 5632,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "ba4a6d756aba1565c790f2a97b8383e2.7106e8d9888d1c8dc2da3cef6e9ba3ce",
+      "stop_reason": null,
+      "finish_reason": "tool_calls",
+      "tool_fallback": "",
+      "content_preview": "断言格式缺少 `kind` 字段，且未发送任何 HTTP 请求。使用相同的 operation_key 修正后重试：",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 2,
+      "tool_call_names": [
+        "api-test-runner",
+        "api-test-runner"
+      ],
+      "provider_profile": "openai",
+      "completion_status": "tool_calls",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 2,
+    "max_iterations": 8
+  },
+  {
+    "id": "26cf7853-adac-4bdc-885f-3b8017e047d3",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 4,
+    "stage": "waiting_approval",
+    "model_response_text": "",
+    "final_response": "",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {},
+    "model_call_count": 2,
+    "max_iterations": 8
+  },
+  {
+    "id": "4717ac2c-e111-451c-a52f-3f43bb6ddfac",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 5,
+    "stage": "waiting_approval",
+    "model_response_text": "第一次尝试因断言格式缺少 `kind` 在预校验阶段失败（`http_request_sent: false`，未产生任何 HTTP 副作用）；修正后使用原 key 重试被判定为输入冲突而拒绝。由于两次尝试均未实际发送请求、无未知副作用，且原始 key 的输入哈希已被锁定无法再次承载修正后的载荷，我改用新的逻辑操作 key 重新执行创建操作（不携带断言，直接核验实际返回）：",
+    "final_response": "第一次尝试因断言格式缺少 `kind` 在预校验阶段失败（`http_request_sent: false`，未产生任何 HTTP 副作用）；修正后使用原 key 重试被判定为输入冲突而拒绝。由于两次尝试均未实际发送请求、无未知副作用，且原始 key 的输入哈希已被锁定无法再次承载修正后的载荷，我改用新的逻辑操作 key 重新执行创建操作（不携带断言，直接核验实际返回）：\n\nExecution is waiting for approval before protected tools can run.\n\nPending approvals:\n- API Test Runner: approval_id=68cda7cb-8e22-45b8-8923-0fdeaffd6b98\n- API Test Runner: approval_id=ad355086-6683-44d2-b87e-9f34bf5c69c0\n\nAgent: API Testing Agent | Model: step-5-preview",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 19367,
+        "cached_tokens": 5632,
+        "prompt_tokens": 17440,
+        "completion_tokens": 1927,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 5632,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "9d11c5944baf2182c156a8f2ace4c8dc.65feced852f3eec89c46f23de32812c9",
+      "stop_reason": null,
+      "finish_reason": "tool_calls",
+      "tool_fallback": "",
+      "content_preview": "第一次尝试因断言格式缺少 `kind` 在预校验阶段失败（`http_request_sent: false`，未产生任何 HTTP 副作用）；修正后使用原 key 重试被判定为输入冲突而拒绝。由于两次尝试均未实际发送请求、无未知副作用，且原始 key 的输入哈希已被锁定无法再次承载修正后的载荷，我改用新的逻辑操作 key 重新执行创建操作（不携带断言...",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 2,
+      "tool_call_names": [
+        "api-test-runner",
+        "api-test-runner"
+      ],
+      "provider_profile": "openai",
+      "completion_status": "tool_calls",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 3,
+    "max_iterations": 8
+  },
+  {
+    "id": "ceb60888-10e4-4738-8ade-5b7cb8424cbf",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 6,
+    "stage": "waiting_approval",
+    "model_response_text": "",
+    "final_response": "",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {},
+    "model_call_count": 3,
+    "max_iterations": 8
+  },
+  {
+    "id": "78fbdd87-9111-432a-8d0d-8a8ff1b1443b",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 7,
+    "stage": "waiting_approval",
+    "model_response_text": "两条订单已准备完成，第一条 ID 为 `regression-d650b2c631f542d0adb36e7089beea51`（count=1），第二条 ID 为 `regression-47f458a98701452b984983d69ea38b6b`（count=0）。现在查询第一条订单并验证：",
+    "final_response": "两条订单已准备完成，第一条 ID 为 `regression-d650b2c631f542d0adb36e7089beea51`（count=1），第二条 ID 为 `regression-47f458a98701452b984983d69ea38b6b`（count=0）。现在查询第一条订单并验证：\n\nExecution is waiting for approval before protected tools can run.\n\nCompleted tools:\n- API Test Runner: Executed API task create-order-1 with final status completed and HTTP 201.\n- API Test Runner: Executed API task create-order-2 with final status completed and HTTP 201.\n\nPending approvals:\n- API Test Runner: approval_id=7631868b-e100-4ccc-8d21-41db8e79413a\n\nAgent: API Testing Agent | Model: step-5-preview",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 20789,
+        "cached_tokens": 5632,
+        "prompt_tokens": 20362,
+        "completion_tokens": 427,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 5632,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "8cbcc3064119b1739909e688c274b5e4.4b87f39f73c4320015e914caa2d51a19",
+      "stop_reason": null,
+      "finish_reason": "tool_calls",
+      "tool_fallback": "",
+      "content_preview": "两条订单已准备完成，第一条 ID 为 `regression-d650b2c631f542d0adb36e7089beea51`（count=1），第二条 ID 为 `regression-47f458a98701452b984983d69ea38b6b`（count=0）。现在查询第一条订单并验证：",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 1,
+      "tool_call_names": [
+        "api-test-runner"
+      ],
+      "provider_profile": "openai",
+      "completion_status": "tool_calls",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 4,
+    "max_iterations": 8
+  },
+  {
+    "id": "f811a304-5436-4e82-9c0e-a2c9c328a0c3",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 8,
+    "stage": "waiting_approval",
+    "model_response_text": "断言 kind 字段只接受特定的字面量值，\"status\" 不是合法枚举。改用不带断言的方式执行 GET，直接核验实际返回体：",
+    "final_response": "断言 kind 字段只接受特定的字面量值，\"status\" 不是合法枚举。改用不带断言的方式执行 GET，直接核验实际返回体：\n\nExecution is waiting for approval before protected tools can run.\n\nCompleted tools:\n- API Test Runner: Executed API task create-order-1 with final status completed and HTTP 201.\n- API Test Runner: Executed API task create-order-2 with final status completed and HTTP 201.\n\nPending approvals:\n- API Test Runner: approval_id=d695bb0c-167b-4758-ada9-0164608913ee\n\nAgent: API Testing Agent | Model: step-5-preview",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 21672,
+        "cached_tokens": 5632,
+        "prompt_tokens": 21476,
+        "completion_tokens": 196,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 5632,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "a61117b10bf2287593b33b3bab324334.2e0765ae4dcc4e6085f438744a2363f7",
+      "stop_reason": null,
+      "finish_reason": "tool_calls",
+      "tool_fallback": "",
+      "content_preview": "断言 kind 字段只接受特定的字面量值，\"status\" 不是合法枚举。改用不带断言的方式执行 GET，直接核验实际返回体：",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 1,
+      "tool_call_names": [
+        "api-test-runner"
+      ],
+      "provider_profile": "openai",
+      "completion_status": "tool_calls",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 5,
+    "max_iterations": 8
+  },
+  {
+    "id": "8eebd926-09d3-43bd-ae6b-ab9395de19fe",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 9,
+    "stage": "waiting_approval",
+    "model_response_text": "第一条订单查询验证通过：200、flag=false、count=1、nullable=null。现在逐条清理本次两个订单：",
+    "final_response": "第一条订单查询验证通过：200、flag=false、count=1、nullable=null。现在逐条清理本次两个订单：\n\nExecution is waiting for approval before protected tools can run.\n\nCompleted tools:\n- API Test Runner: Executed API task create-order-1 with final status completed and HTTP 201.\n- API Test Runner: Executed API task create-order-2 with final status completed and HTTP 201.\n- API Test Runner: Executed API task query-order-1 with final status completed and HTTP 200.\n\nPending approvals:\n- API Test Runner: approval_id=f1c52acd-560f-4a93-8062-9b26eb13fadc\n- API Test Runner: approval_id=c20844af-7ffa-4add-b2d8-88ff9be95a5e\n\nAgent: API Testing Agent | Model: step-5-preview",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 23419,
+        "cached_tokens": 5632,
+        "prompt_tokens": 23048,
+        "completion_tokens": 371,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 5632,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "8c01041cdf631af104f6c53ea3e3fb2e.9740833a24bd3f479cae1251f79ec763",
+      "stop_reason": null,
+      "finish_reason": "tool_calls",
+      "tool_fallback": "",
+      "content_preview": "第一条订单查询验证通过：200、flag=false、count=1、nullable=null。现在逐条清理本次两个订单：",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 2,
+      "tool_call_names": [
+        "api-test-runner",
+        "api-test-runner"
+      ],
+      "provider_profile": "openai",
+      "completion_status": "tool_calls",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 6,
+    "max_iterations": 8
+  },
+  {
+    "id": "d8d262f1-abb4-4dd5-af79-afc0d47952a2",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 10,
+    "stage": "waiting_approval",
+    "model_response_text": "",
+    "final_response": "",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {},
+    "model_call_count": 6,
+    "max_iterations": 8
+  },
+  {
+    "id": "557c92d1-c2e7-4524-b0e5-e76398996caa",
+    "session_id": "3e78f18f-644d-4fab-a617-db87071882b1",
+    "version": 11,
+    "stage": "completed",
+    "model_response_text": "全部执行完成，用例通过。以下是证据回执：\n\n```json\n{\n  \"schema_version\": 1,\n  \"steps\": [\n    {\n      \"item_key\": \"target_order_query\",\n      \"status\": \"passed\",\n      \"summary\": \"已完成两条订单准备、第一条订单查询验证（code=200、flag=false、count=1、nullable=null）及全部本次记录清理。两条记录均使用实际返回的 order.id（含点号的完整键），未使用任何推断ID；未查询的第二条订单保留至最后与第一条一并删除。\",\n      \"checks\": [\n        {\n          \"name\": \"准备第一条订单并取得实际ID\",\n          \"expected_path_tokens\": [\"steps\", 1, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9e2fc18b19342ede\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-9e2fc18b19342ede\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"POST http://127.0.0.1:51703/orders 实际返回 201 与 order.id=regression-d650b2c631f542d0adb36e7089beea51，创建时 count=1，符合准备第一条记录的要求。\"\n        },\n        {\n          \"name\": \"准备第二条（未查询）订单并取得实际ID\",\n          \"expected_path_tokens\": [\"steps\", 1, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-843372a93936fe82\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-843372a93936fe82\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"POST http://127.0.0.1:51703/orders 实际返回 201 与 order.id=regression-47f458a98701452b984983d69ea38b6b，创建时 count=0，作为未查询的独立记录保留至最后清理。\"\n        },\n        {\n          \"name\": \"GET第一条订单状态码200\",\n          \"expected_path_tokens\": [\"期望\", \"code\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际响应状态码为 200，与期望 code=200 一致。\"\n        },\n        {\n          \"name\": \"GET第一条订单flag为false\",\n          \"expected_path_tokens\": [\"期望\", \"flag\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"flag\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际返回 flag=false，与期望一致。\"\n        },\n        {\n          \"name\": \"GET第一条订单count为1\",\n          \"expected_path_tokens\": [\"期望\", \"count\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"count\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际返回 count=1，与期望一致。\"\n        },\n        {\n          \"name\": \"GET第一条订单nullable为null\",\n          \"expected_path_tokens\": [\"期望\", \"nullable\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"nullable\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际返回 nullable=null（字段存在且值为 null），与期望一致。\"\n        },\n        {\n          \"name\": \"清理第一条订单\",\n          \"expected_path_tokens\": [\"steps\", 6, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-895c41feb8c97c46\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-895c41feb8c97c46\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"DELETE /orders/regression-d650b2c631f542d0adb36e7089beea51 实际返回 200 及该订单完整 JSON，删除完成。\"\n        },\n        {\n          \"name\": \"清理第二条（未查询）订单\",\n          \"expected_path_tokens\": [\"steps\", 6, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-8d31e9b9c40affc0\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-8d31e9b9c40affc0\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"DELETE /orders/regression-47f458a98701452b984983d69ea38b6b 实际返回 200 及该订单完整 JSON，本次两条记录已全部清理。\"\n        }\n      ],\n      \"output_structure\": {\n        \"kind\": \"object\",\n        \"fields\": {\n          \"first_order_id\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-9e2fc18b19342ede\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          },\n          \"second_order_id\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-843372a93936fe82\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          },\n          \"query_response\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\"]}\n          },\n          \"delete_first_status\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-895c41feb8c97c46\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}\n          },\n          \"delete_second_status\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-8d31e9b9c40affc0\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}\n          }\n        }\n      }\n    }\n  ]\n}\n```\n\n补充说明：\n- 首次两条创建请求因断言 `kind` 字段格式问题在预校验阶段失败，`http_request_sent=false`，未产生任何副作用；随后以新逻辑操作 key 完成实际创建，无重复写入。\n- 第一次 GET 尝试同样在预校验阶段失败未发送，实际查询以 key `query-order-1b` 成功执行，结果有效。",
+    "final_response": "全部执行完成，用例通过。以下是证据回执：\n\n```json\n{\n  \"schema_version\": 1,\n  \"steps\": [\n    {\n      \"item_key\": \"target_order_query\",\n      \"status\": \"passed\",\n      \"summary\": \"已完成两条订单准备、第一条订单查询验证（code=200、flag=false、count=1、nullable=null）及全部本次记录清理。两条记录均使用实际返回的 order.id（含点号的完整键），未使用任何推断ID；未查询的第二条订单保留至最后与第一条一并删除。\",\n      \"checks\": [\n        {\n          \"name\": \"准备第一条订单并取得实际ID\",\n          \"expected_path_tokens\": [\"steps\", 1, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9e2fc18b19342ede\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-9e2fc18b19342ede\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"POST http://127.0.0.1:51703/orders 实际返回 201 与 order.id=regression-d650b2c631f542d0adb36e7089beea51，创建时 count=1，符合准备第一条记录的要求。\"\n        },\n        {\n          \"name\": \"准备第二条（未查询）订单并取得实际ID\",\n          \"expected_path_tokens\": [\"steps\", 1, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-843372a93936fe82\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-843372a93936fe82\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"POST http://127.0.0.1:51703/orders 实际返回 201 与 order.id=regression-47f458a98701452b984983d69ea38b6b，创建时 count=0，作为未查询的独立记录保留至最后清理。\"\n        },\n        {\n          \"name\": \"GET第一条订单状态码200\",\n          \"expected_path_tokens\": [\"期望\", \"code\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际响应状态码为 200，与期望 code=200 一致。\"\n        },\n        {\n          \"name\": \"GET第一条订单flag为false\",\n          \"expected_path_tokens\": [\"期望\", \"flag\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"flag\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际返回 flag=false，与期望一致。\"\n        },\n        {\n          \"name\": \"GET第一条订单count为1\",\n          \"expected_path_tokens\": [\"期望\", \"count\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"count\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际返回 count=1，与期望一致。\"\n        },\n        {\n          \"name\": \"GET第一条订单nullable为null\",\n          \"expected_path_tokens\": [\"期望\", \"nullable\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"nullable\"]}\n          ],\n          \"operator\": \"equals\",\n          \"verdict\": \"passed\",\n          \"reason\": \"实际返回 nullable=null（字段存在且值为 null），与期望一致。\"\n        },\n        {\n          \"name\": \"清理第一条订单\",\n          \"expected_path_tokens\": [\"steps\", 6, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-895c41feb8c97c46\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-895c41feb8c97c46\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"DELETE /orders/regression-d650b2c631f542d0adb36e7089beea51 实际返回 200 及该订单完整 JSON，删除完成。\"\n        },\n        {\n          \"name\": \"清理第二条（未查询）订单\",\n          \"expected_path_tokens\": [\"steps\", 6, \"action\"],\n          \"observations\": [\n            {\"call_id\": \"chatcmpl-tool-8d31e9b9c40affc0\", \"output_path_tokens\": [\"task_result\", \"response_status\"]},\n            {\"call_id\": \"chatcmpl-tool-8d31e9b9c40affc0\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          ],\n          \"operator\": \"semantic\",\n          \"verdict\": \"passed\",\n          \"reason\": \"DELETE /orders/regression-47f458a98701452b984983d69ea38b6b 实际返回 200 及该订单完整 JSON，本次两条记录已全部清理。\"\n        }\n      ],\n      \"output_structure\": {\n        \"kind\": \"object\",\n        \"fields\": {\n          \"first_order_id\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-9e2fc18b19342ede\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          },\n          \"second_order_id\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-843372a93936fe82\", \"output_path_tokens\": [\"task_result\", \"response_body\", \"order.id\"]}\n          },\n          \"query_response\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-9ce525981f2edabb\", \"output_path_tokens\": [\"task_result\", \"response_body\"]}\n          },\n          \"delete_first_status\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-895c41feb8c97c46\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}\n          },\n          \"delete_second_status\": {\n            \"kind\": \"reference\",\n            \"source\": {\"call_id\": \"chatcmpl-tool-8d31e9b9c40affc0\", \"output_path_tokens\": [\"task_result\", \"response_status\"]}\n          }\n        }\n      }\n    }\n  ]\n}\n```\n\n补充说明：\n- 首次两条创建请求因断言 `kind` 字段格式问题在预校验阶段失败，`http_request_sent=false`，未产生任何副作用；随后以新逻辑操作 key 完成实际创建，无重复写入。\n- 第一次 GET 尝试同样在预校验阶段失败未发送，实际查询以 key `query-order-1b` 成功执行，结果有效。",
+    "case_execution": {
+      "steps": [
+        {
+          "item": {
+            "key": "target_order_query",
+            "kind": "target",
+            "reason": "依据完整用例规划",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "depends_on": [],
+            "evidence_ids": [
+              "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+              "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb"
+            ],
+            "input_bindings": {},
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05"
+          },
+          "phase": "case",
+          "inputs": {},
+          "source_refs": [
+            {
+              "uri": null,
+              "label": "",
+              "version": null,
+              "metadata": {},
+              "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+              "source_type": "api_doc"
+            }
+          ],
+          "content_json": {
+            "steps": [
+              {
+                "order": 1,
+                "action": "读取项目需求和实际ID来源；没有ID需要先准备"
+              },
+              {
+                "order": 2,
+                "action": "确认准备两条记录且记录两个实际ID"
+              },
+              {
+                "order": 3,
+                "action": "GET第一条/orders/{id}"
+              },
+              {
+                "order": 4,
+                "action": "核对状态码200"
+              },
+              {
+                "order": 5,
+                "action": "核对flag为False"
+              },
+              {
+                "order": 6,
+                "action": "核对count为1"
+              },
+              {
+                "order": 7,
+                "action": "核对nullable为null并清理所有本次记录"
+              },
+              {
+                "order": 8,
+                "action": "LAST-DEFAULT-COVERAGE-STEP",
+                "business": {
+                  "zero": 0,
+                  "false": false,
+                  "nullable": null
+                }
+              }
+            ],
+            "期望": {
+              "code": 200,
+              "flag": false,
+              "count": 1,
+              "nullable": null
+            },
+            "requires": [
+              "actual_order_id"
+            ],
+            "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+            "operations": {
+              "query": "http://127.0.0.1:51703/orders/{id}"
+            },
+            "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回"
+          },
+          "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。"
+        }
+      ],
+      "run_id": "c2d05d92-6e88-5cff-a80f-b43e014b161f",
+      "plan_id": "3d017ff0-0ee8-4c46-b688-64de18b3ce06",
+      "evidence": [
+        {
+          "id": "case:70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "kind": "case",
+          "payload": {
+            "title": "完整八步已有订单查询",
+            "case_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+            "case_key": "default-query",
+            "source_refs": [
+              {
+                "uri": null,
+                "label": "",
+                "version": null,
+                "metadata": {},
+                "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+                "source_type": "api_doc"
+              }
+            ],
+            "case_version_id": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+            "historical_mode_key": "api_testing"
+          },
+          "version": "70fe0fab-cc78-4f96-a998-e0093ba5db05",
+          "source_id": "bf8fb5d6-431d-41c7-b893-b5d087c18728",
+          "content_hash": "83e1e95ca7e276d6ada3e5c42664aa60c822e1fedee281d802d8ad3922af3f53"
+        },
+        {
+          "id": "document:6a49c86b-6705-597e-a91f-30db20d39135:53c30739c1d441cb",
+          "kind": "document",
+          "payload": {
+            "title": "requirements",
+            "content": "# 实际查询及准备清理\nPOST http://127.0.0.1:51703/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\nGET http://127.0.0.1:51703/orders/{id} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。",
+            "end_line": 5,
+            "has_more": false,
+            "source_uri": "rustfs://upload-safe/api-docs/6a49c86b-6705-597e-a91f-30db20d39135/d670f6b9-9d3d-46e7-8d7e-475632ac8a9a/original/safe/requirements.md",
+            "start_line": 1,
+            "content_sha256": "a6520676e3ed34ff1d1287c3dca91512a366ae1d41516ac724e77a080565648d",
+            "catalog_revision": 0,
+            "content_asset_id": "6ad3c61d-5795-42d1-935e-8d9cdef39000"
+          },
+          "version": "d670f6b9-9d3d-46e7-8d7e-475632ac8a9a",
+          "source_id": "6a49c86b-6705-597e-a91f-30db20d39135",
+          "content_hash": "53c30739c1d441cbe04afce4b0512e03477e4f881666f36ad4b080bd4651eaf5"
+        }
+      ],
+      "objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录",
+      "project_id": "d6ccea37-abd8-4b8a-8cdb-cd1e69be9670",
+      "target_key": "target_order_query",
+      "unresolved": [],
+      "run_item_id": "3ba9740e-2bd4-578e-b4f9-7c011756073e",
+      "runtime_inputs": {},
+      "schema_version": 1,
+      "operation_protocol": "case-operation-v1",
+      "preparation_scopes": {},
+      "effect_owner_item_ids": {
+        "target_order_query": "3ba9740e-2bd4-578e-b4f9-7c011756073e"
+      },
+      "action_binding_protocol": "case-action-binding-v1",
+      "effect_coverage_protocol": "case-effect-coverage-v1",
+      "effect_evidence_protocol": "case-effect-evidence-v1",
+      "action_admission_protocol": "case-action-admission-v1",
+      "effect_coverage_max_bytes": 1024000,
+      "effect_evidence_max_bytes": 512000,
+      "preparation_scope_protocol": "preparation-scope-v1"
+    },
+    "model_response_summary": {
+      "mode": "ok",
+      "usage": {
+        "total_tokens": 28476,
+        "cached_tokens": 5632,
+        "prompt_tokens": 26045,
+        "completion_tokens": 2431,
+        "prompt_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "image_tokens": null,
+          "cached_tokens": 5632,
+          "cache_write_tokens": null
+        },
+        "completion_tokens_details": {
+          "text_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "accepted_prediction_tokens": null,
+          "rejected_prediction_tokens": null
+        }
+      },
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "c111a38ec83ab43fd836e16c95addaf9.01a12a6f7eb27006b4fe38fafcc8e8a0",
+      "stop_reason": null,
+      "finish_reason": "stop",
+      "tool_fallback": "",
+      "content_preview": "全部执行完成，用例通过。以下是证据回执： ```json { \"schema_version\": 1, \"steps\": [ { \"item_key\": \"target_order_query\", \"status\": \"passed\", \"summary\": \"已完成两条订单准备、第一条订单查询验证（code=200、flag=false、count=...",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "style": "effort",
+            "action": "mapped",
+            "option": "reasoning"
+          },
+          {
+            "field": "max_tokens",
+            "action": "mapped",
+            "option": "token_parameter"
+          }
+        ]
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "provider_profile": "openai",
+      "completion_status": "complete",
+      "stream_terminal_received": true
+    },
+    "model_call_count": 7,
+    "max_iterations": 8
+  }
+]
