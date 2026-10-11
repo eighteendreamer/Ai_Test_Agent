@@ -1,0 +1,34 @@
+{
+  "scope": "api-auth-explicit-refresh-chain",
+  "date": "2026-10-11",
+  "research": "P2_API_AUTH_RESEARCH.md",
+  "before": {
+    "result": "1 failed in 1.43s",
+    "fact": "profile still received Bearer token-1 after refresh returned token-2",
+    "root_cause": "coordinator only propagated to tasks without auth_ref"
+  },
+  "fixed": {
+    "result": "1 passed in 1.30s",
+    "full_auth_live": "4 passed in 2.87s",
+    "api_dependency_recovery_regression": "28 passed, 2 skipped in 4.53s",
+    "physical_requests": [
+      {"path": "/login", "authorization": "absent"},
+      {"path": "/auth/refresh", "authorization": "token-1"},
+      {"path": "/profile", "authorization": "token-2"}
+    ],
+    "evidence": "p2-api-auth-refresh-verified.xml"
+  },
+  "storage_boundary": {
+    "config": "MySQL",
+    "business_and_results": "PostgreSQL",
+    "originals_and_evidence": "RustFS",
+    "new_tables_or_dependencies": false,
+    "default_step_model_called": false
+  },
+  "remaining": [
+    "automatic renewal from expires_at",
+    "provider-specific refresh request and response fields",
+    "cookie renewal and concurrent refresh de-duplication",
+    "default Agent autonomous authentication selection"
+  ]
+}

@@ -3373,3 +3373,11 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 依据 `P5_DEEPSEEK_RECORDING_RESEARCH.md` 和现有录制实现，使用 Playwright 驱动真实 Chromium 访问 `https://www.deepseek.com/`，通过生产录制 API 写入隔离 MySQL/PostgreSQL/Redis/Memgraph。页面返回 HTTP 200，标题为 `DeepSeek | 深度求索`；实际点击“深度思考”两次、“智能搜索”一次，滚动并截图，不登录、不提交聊天、不调用默认 AI。最终 `test_recording_deepseek_live.py` **1通过、29.81秒**：PG 原始事件 8 条，`recording-scopes-v2` 的 pending、未确认 frame、通道丢失和传输丢失均为 0，质量投影识别 3 条观察噪声和 1 组重复候选，`removed_event_sequences=[]`。
 
 首轮失败原件保留在 `p5-deepseek-recording-live/`：测试先关闭浏览器再停止录制，scope 未结束确认并返回 `finish_unconfirmed`，但 PG 事件仍为 8 条。把停止动作移到浏览器关闭之前后通过，根因是测试生命周期顺序，不是录制器丢事件。`business_capture_complete` 仍为 `unknown`，本批只证明公开页面人工操作进入现有录制、落库、回执和确定性质量投影链路；复杂网络/跨文档/Shadow DOM 响应关联、selector 修复评审、失败定位报告和默认 AI 读取/执行仍未验收。Step/默认模型按用户决定等待账号实名认证后再验收，完整 P0—P5 目标继续 `active`。
+
+### 7.23 API 显式刷新凭据传播补验〔2026-10-11〕
+
+依据 `P2_API_AUTH_RESEARCH.md`、`CapabilityMapper`、`DependencyPlanner`、`ApiTaskCoordinator`、`CredentialManager` 及接口测试课程登录/鉴权章节，先用真实本地受保护 HTTP 服务验证项目已有显式刷新端点链路。修复前登录返回 token-1、刷新返回 token-2 均成功，但 `/profile` 仍携带 token-1；根因是协调器只给没有 `auth_ref` 的任务传播凭据。
+
+修复协调器：认证任务成功后，更新未来认证任务以及明确依赖该认证任务的未执行任务；无该认证依赖的任务保留显式凭据；结构化日志只记录任务身份，不记录 token。真实 `ThreadingHTTPServer`、CapabilityMapper、DependencyPlanner、ApiTaskCoordinator、ApiTaskExecutor 和 httpx 验证登录→刷新→受保护接口 **1通过、1.30秒**，完整鉴权实测 **4通过、2.87秒**，API依赖/恢复回归 **28通过、2跳过、4.53秒**。物理请求顺序和认证事实为 `/login` 无认证、`/auth/refresh` 使用 token-1、`/profile` 使用 token-2。
+
+本批只覆盖明确刷新端点且响应含可识别访问 token 的协议；`expires_at` 自动续期、不同供应商刷新字段、Cookie续期、并发刷新去重、默认 Agent 自主鉴权和完整 App 仍未验收。无新表、依赖、配置或前端改动，Step/默认模型按用户决定继续暂缓，完整 P0—P5 目标保持 `active`。

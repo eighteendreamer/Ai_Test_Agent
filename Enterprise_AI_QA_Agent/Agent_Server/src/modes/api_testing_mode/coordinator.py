@@ -9,6 +9,7 @@ Concurrency rules:
 from __future__ import annotations
 
 import asyncio
+import logging
 from typing import Any, Callable, Awaitable
 
 from src.modes.api_testing_mode.campaign_state import ApiTestTask, ExecutionPolicy
@@ -27,6 +28,7 @@ from src.modes.api_testing_mode.input_binding import bind_path_parameters, subst
 # Type alias for the executor callback.
 TaskExecutorFn = Callable[[ApiTestTask], Awaitable[ApiTestTask]]
 CheckpointCallback = Callable[[str, ApiTestTask, list[ApiTestTask]], None]
+logger = logging.getLogger("uvicorn.error.api_testing_mode.coordinator")
 
 
 class ApiTestCoordinator:
@@ -193,7 +195,7 @@ class ApiTestCoordinator:
                 self._task_outputs[task.task_id] = result.response_body
                 # If auth task completed, propagate credential to dependent tasks.
                 if result.execution_mode == EXECUTION_MODE_AUTH and result.auth_ref:
-                    self._propagate_auth_ref(result.auth_ref)
+                    self._propagate_auth_ref(result.auth_ref, source_task_id=task.task_id)
             else:
                 self._pool.mark_failed(task.task_id, result.last_error or "execution_failed")
                 self._emit_checkpoint("task_failed", task)
@@ -214,13 +216,29 @@ class ApiTestCoordinator:
         except Exception:
             return
 
-    def _propagate_auth_ref(self, auth_ref: str) -> None:
-        """Update all blocked/ready tasks that lack an auth_ref."""
+    def _propagate_auth_ref(self, auth_ref: str, *, source_task_id: str) -> None:
+        """Propagate the latest auth session to tasks depending on this auth step.
+
+        A refresh task must replace a credential previously propagated by an
+        earlier login. Tasks without this auth dependency retain an explicitly
+        configured credential instead of being overwritten by an unrelated
+        authentication flow.
+        """
         for task in self._pool.all_tasks:
             if task.status in {TASK_COMPLETED, TASK_FAILED, "skipped"}:
                 continue
-            if not task.auth_ref:
+            is_future_auth = task.execution_mode == EXECUTION_MODE_AUTH
+            depends_on_source = source_task_id in task.depends_on
+            if is_future_auth or depends_on_source:
                 task.auth_ref = auth_ref
+                logger.info(
+                    "api_auth_ref_propagated",
+                    extra={
+                        "source_task_id": source_task_id,
+                        "target_task_id": task.task_id,
+                        "dependency_match": depends_on_source,
+                    },
+                )
 
     def _apply_input_bindings(self, task: ApiTestTask) -> None:
         """Resolve input bindings: substitute path parameters and request body from prior task outputs."""
