@@ -36,6 +36,7 @@ class PlanningTaskSeed(PlanningModel):
     response_protocol: Literal["case-planning-response-completion-v1"] | None = None
     stage_prompts: PlanningStagePrompts | None = None
     required_source_prompt: str | None = Field(default=None, min_length=1, max_length=20000)
+    linked_source_context_protocol: Literal["case-planning-linked-navigation-v1"] | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_seed(self, handler):
@@ -50,6 +51,8 @@ class PlanningTaskSeed(PlanningModel):
             data.pop("stage_prompts", None)
         if self.required_source_prompt is None:
             data.pop("required_source_prompt", None)
+        if self.linked_source_context_protocol is None:
+            data.pop("linked_source_context_protocol", None)
         return data
 
 

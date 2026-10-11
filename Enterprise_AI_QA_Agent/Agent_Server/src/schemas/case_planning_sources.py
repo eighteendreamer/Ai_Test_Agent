@@ -9,6 +9,7 @@ LINKED_SOURCE_PROTOCOL = "case-planning-linked-documents-v1"
 LINKED_SOURCE_PROMPT_VERSION = "case-planning-linked-documents-v10"
 SCENE_LINKED_SOURCE_PROTOCOL = "case-planning-linked-sources-v2"
 SCENE_LINKED_SOURCE_PROMPT_VERSION = "case-planning-linked-scenes-v12"
+LINKED_CONTEXT_PROTOCOL = "case-planning-linked-navigation-v1"
 
 
 class SceneContentBasis(PlanningModel):

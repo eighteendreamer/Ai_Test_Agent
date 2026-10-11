@@ -18,6 +18,9 @@ from src.application.test_runs.preparation_scopes import normalize_preparation_s
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.application.test_cases.planning_tool_contracts import OPERATION_PROMPT_VERSION, capture_tool_contracts, capture_tool_operations
 from src.application.test_cases.planning_stages import build_stage_prompts, stage_prompt_version
+from src.application.test_cases.planning_linked_sources import (
+    LINKED_CONTEXT_PROTOCOL, linked_context_prompts, linked_context_prompt_version,
+)
 from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT, required_source_prompt_version, validate_required_sources
 from src.infrastructure.application_config_store import ApplicationConfigStore
 from src.schemas.case_planning import (
@@ -106,8 +109,11 @@ class CasePlanningService:
         stages = build_stage_prompts(config.policy.planning_stage_protocol, config.policy.effect_expected_source_protocol,
             config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol, config.policy.linked_source_protocol,
             config.policy.evidence_reference_protocol, config.policy.scene_query_protocol) if config.policy.planning_stage_protocol else None
+        context_protocol = LINKED_CONTEXT_PROTOCOL if stages is not None and config.policy.linked_source_protocol else None
         if stages is not None:
-            record.prompt_version = stage_prompt_version(config.policy, stages)
+            if context_protocol:
+                stages = linked_context_prompts(stages)
+            record.prompt_version = linked_context_prompt_version(stage_prompt_version(config.policy, stages), context_protocol)
         record.prompt_version = required_source_prompt_version(record.prompt_version, request)
         return PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
@@ -119,6 +125,7 @@ class CasePlanningService:
             tool_contracts=contracts,
             tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
             response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages,
+            linked_source_context_protocol=context_protocol,
             required_source_prompt=REQUIRED_SOURCE_PROMPT if request.required_sources else None)
 
     async def create(self, project_id: str, request: CasePlanningRequest, *,
@@ -148,8 +155,11 @@ class CasePlanningService:
         stages = build_stage_prompts(config.policy.planning_stage_protocol, config.policy.effect_expected_source_protocol,
             config.policy.operation_prefetch_protocol, config.policy.source_identity_protocol, config.policy.linked_source_protocol,
             config.policy.evidence_reference_protocol, config.policy.scene_query_protocol) if config.policy.planning_stage_protocol else None
+        context_protocol = LINKED_CONTEXT_PROTOCOL if stages is not None and config.policy.linked_source_protocol else None
         if stages is not None:
-            record.prompt_version = stage_prompt_version(config.policy, stages)
+            if context_protocol:
+                stages = linked_context_prompts(stages)
+            record.prompt_version = linked_context_prompt_version(stage_prompt_version(config.policy, stages), context_protocol)
         record.prompt_version = required_source_prompt_version(record.prompt_version, request)
         seed = PlanningTaskSeed(plan=record, project_context={"id": project.id, "name": project.name,
             "base_url": project.base_url, "description": project.description},
@@ -161,6 +171,7 @@ class CasePlanningService:
             tool_contracts=contracts,
             tool_operations=capture_tool_operations(contracts) if contracts is not None else None,
             response_protocol=PLANNING_RESPONSE_PROTOCOL, stage_prompts=stages,
+            linked_source_context_protocol=context_protocol,
             required_source_prompt=REQUIRED_SOURCE_PROMPT if request.required_sources else None)
         checkpoint = PlanningTaskCheckpoint(plan=record)
         await CasePlanningWorkflow(self).run(seed, checkpoint,

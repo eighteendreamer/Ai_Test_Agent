@@ -114,7 +114,7 @@ async def test_linked_source_v2_still_reads_the_actual_authored_document(tmp_pat
         terminal = await env.jobs.get(project.id, task.id)
         plan = await env.service.get(project.id, terminal.plan_id)
         assert terminal.status == "completed" and plan.status == "no_match", plan.summary
-        assert plan.prompt_version == "case-planning-linked-scenes-v12"
+        assert plan.prompt_version == "case-planning-linked-scenes-v12+linked-navigation-v1"
         await PlanningTaskHandler(env.service, env.jobs, worker_id="scene-v2-doc-terminal")(delivery(task))
         assert len(env.model.requests) == 1
         if os.getenv("SCENE_PLANNING_DOC_EVIDENCE"):

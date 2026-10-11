@@ -161,7 +161,7 @@ async def test_actual_durable_references_survive_response_commit_and_current_cha
         terminal=await restored.get(project.id,task.id)
         plan=await env.service.get(project.id,terminal.plan_id)
         assert terminal.status=='completed' and plan.status=='planned',plan.summary
-        assert plan.prompt_version=='case-planning-evidence-references-v11'
+        assert plan.prompt_version=='case-planning-evidence-references-v11+linked-navigation-v1'
         assert len(env.model.requests)==(3 if fault=='unknown-reference' else 2)
         assert plan.rounds[-1]['canonical_evidence_decision']['bindings'][0]['effect_declarations']
         assert ReferencedEvidenceDecision.model_validate_json(plan.rounds[-1]['wire_response_text']).model_dump(mode='json') == plan.rounds[-1]['decision']

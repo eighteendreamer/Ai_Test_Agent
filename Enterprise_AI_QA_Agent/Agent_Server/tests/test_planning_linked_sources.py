@@ -83,6 +83,7 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
         bad=fault in {'foreign','wrong-version','legacy-version','wrong-asset','wrong-hash','manual'}
         def respond(context):
             reads=context['linked_source_reads'];assert reads['next_index']==1 and len(reads['entries'])==1
+            assert reads['protocol']=='case-planning-linked-navigation-v1'
             entry=reads['entries'][0]
             assert len(entry['case_evidence_ids'])==(2 if fault=='two-cases' else 1)
             assert next(e['payload']['content'] for e in context['evidence'] if e['kind']=='case')==content
@@ -91,6 +92,8 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
                 assert entry['error'] and not entry['read'] and docs==[]
                 return finish()
             assert entry['read'] and docs
+            assert entry['basis']['version_id']==docs[0]['version']
+            assert 'snapshot' not in entry['basis'] and 'asset' not in entry['basis']
             if fault=='pagination' and len(docs)==1:
                 assert docs[0]['payload']['has_more'] and docs[0]['payload']['end_line']==500
                 return {'action':'query','summary':'读取固定来源剩余行','queries':[{'kind':'document','source_id':document.id,'start_line':501,'max_lines':500}]}
@@ -143,13 +146,17 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
         terminal=await restored.get(project.id,task.id)
         plan=await env.service.get(project.id,terminal.plan_id)
         assert terminal.status=='completed' and plan.status=='no_match',plan.summary
-        assert len(env.model.requests)==(2 if fault=='pagination' else 1) and plan.prompt_version=='case-planning-linked-documents-v10'
+        assert len(env.model.requests)==(2 if fault=='pagination' else 1) and plan.prompt_version=='case-planning-linked-documents-v10+linked-navigation-v1'
         if before:assert terminal.attempt_no==2 and terminal.deadline_at==before.deadline_at
         await PlanningTaskHandler(env.service,restored,worker_id='terminal')(delivery(task))
         assert len(env.model.requests)==(2 if fault=='pagination' else 1)
         with postgres_connect(env.settings) as conn,conn.cursor() as cur:
             cur.execute(f'SELECT seed,checkpoint,status,attempt_no,deadline_at FROM {restored._table} WHERE id=%s',(task.id,));saved=dict(cur.fetchone())
         saved['deadline_at']=saved['deadline_at'].isoformat()
+        assert saved['seed']['linked_source_context_protocol']=='case-planning-linked-navigation-v1'
+        if not bad:
+            basis=saved['checkpoint']['linked_sources']['entries'][0]['basis']
+            assert basis['asset']['storage_uri'] and basis['version']['snapshot']
         if os.getenv('QA_LINKED_SOURCE_DIR'):
             out=Path(os.environ['QA_LINKED_SOURCE_DIR'])/fault;out.mkdir(parents=True,exist_ok=False)
             (out/'requirements.md').write_bytes(raw)
@@ -207,13 +214,18 @@ async def test_actual_authored_parser_basis_survives_new_version_and_reparse(tmp
         await env.service.save_policy(project.id,linked_policy())
         def respond(context):
             assert context['round']==1 and context['linked_source_reads']['next_index']==1
+            projected=context['linked_source_reads']['entries'][0]['basis']
+            assert projected['parse_snapshot_id']==snapshot.id
+            assert projected['parse_snapshot_sha256']==snapshot.sha256
+            assert projected['version_id']==document.current_version_id
+            assert 'snapshot' not in projected and 'storage_uri' not in projected
             delivered=next(e for e in context['evidence'] if e['kind']=='document')
             assert delivered['version']==document.current_version_id and delivered['payload']['parse_snapshot']['id']==snapshot.id
             assert next(e['payload']['content'] for e in context['evidence'] if e['kind']=='case')==content
             return finish()
         model=SequenceModel(respond);env.service._models=model
         plan=await env.service.create(project.id,CasePlanningRequest(objective='读取完整用例及当时来源',candidate_case_ids=[bundle.case.id]))
-        assert plan.status=='no_match' and len(model.requests)==1 and plan.prompt_version=='case-planning-linked-documents-v10'
+        assert plan.status=='no_match' and len(model.requests)==1 and plan.prompt_version=='case-planning-linked-documents-v10+linked-navigation-v1'
         with postgres_connect(env.settings) as conn,conn.cursor() as cur:
             cur.execute(f'SELECT record FROM {env.settings.database.postgres_case_plan_table} WHERE id=%s',(plan.id,));actual_plan=cur.fetchone()['record']
         assert actual_plan==plan.model_dump(mode='json')

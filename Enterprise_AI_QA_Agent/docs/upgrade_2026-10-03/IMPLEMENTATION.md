@@ -5253,3 +5253,14 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 实际命令（Agent_Server）：RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION=1、QA_ITEM_OPERATION_SELECTION=1、QA_LINKED_SOURCES=1、QA_EVIDENCE_REFERENCES=1，QA_DEFAULT_COVERAGE_DIR分别独立staged/profile目录，后者另指定QA_DEFAULT_REQUEST_PROFILE=p2-default-current-step-profile.json。运行`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q -s --tb=short --junitxml=<本轮XML>`。两个失败分别183.00/183.42秒，均2次HTTP200、effects length/8192/正文0、Run与业务HTTP0；不重置旧终态、不扩大预算。全局模型不变；profile仅隔离MySQL，实际mapped字段已核对。
 
 合同SDK探针/profile42通过25.38秒，改夹具后42通过1跳过24.83秒；实际存储另开启RUN_LIVE_MODEL_REQUEST_PROFILE=1与独立QA_MODEL_REQUEST_PROFILE_STORAGE_DIR，test_model_request_profile_storage.py 1通过6.55秒。夹具支持通用可选profile文件、复制当前profile，未修改生产模型适配层。研究/后续架构复核见P2_DEFAULT_CURRENT_RESEARCH.md和PLAN7.29。原完整失败证据保留；其他完整P0—P5继续未完成。
+
+
+## 2026-10-11 固定来源导航投影与真实模型复验
+
+沿现有`planning_linked_sources`/`planning_service`/`planning_workflow`和PG seed实现`case-planning-linked-navigation-v1`；完整basis仍保存，模型读取固定身份/进度/警告及同一evidence正文。已有MySQL策略控制关联预读，新提交冻结行为身份，无新增配置/表/依赖/前端开关。旧seed缺字段保持原输入、旧Prompt/序列化。完整JSON/正文/契约未截断。
+
+实际命令在Agent_Server运行：`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_planning_linked_context.py tests/test_planning_linked_sources.py tests/test_planning_evidence_references.py tests/test_scene_planning_contract.py tests/test_scene_query_contract.py tests/test_case_planning_tasks.py -q --tb=short --junitxml=<p2-linked-context-live.xml>`，启用`RUN_LIVE_CASE_PLANNING_TASKS=1`及独立来源/引用目录：67通过3格式门控跳过57.30秒。再对linked_context/linked_sources启用`RUN_LIVE_DOCUMENT_PARSERS=1`和独立原件目录，补强断言：24通过0跳过23.14秒，实际md/docx/pdf、V2与重解析。初次合同36通过21跳过，不将门控计通过。
+
+真实默认Step命令沿前批`test_default_coverage_production`，启用已有三项协议及隔离Step profile、独立`p2-linked-context-default`目录；1失败197.07秒。2次HTTP200，各SDK1物理发送；logic60.620秒stop/正文1820，effects109.902秒length/8192/正文0。固定导航4724→982字符，evidence仍8292，PG保留failed/incomplete_response，Run/业务HTTP0。没有更改全局配置，未增预算或重发旧任务。详见研究、PLAN7.30及validation清单；投影局部验证不能代替默认AI完整闭环。后续证据声明职责拆分尚需设计，目标继续active。
+
+最终实际对5个生产文件、5个测试文件和audit运行`compileall -q` exit0；契约引用/提交调用方核对及`git diff --check` exit0。本轮102文件高置信度敏感值扫描无命中；旧60原件及受保护工作区SHA未变。未改前端，无内部seed新字段的前端消费，未运行前端构建；无新增数据库schema迁移。交付只提交本轮文件，不推送、不建PR。

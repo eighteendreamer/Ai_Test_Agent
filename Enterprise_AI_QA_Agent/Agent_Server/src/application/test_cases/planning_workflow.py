@@ -23,7 +23,9 @@ from src.application.test_cases.planning_operation_prefetch import (
 from src.schemas.case_planning import PlanningQuery
 from src.schemas.case_planning_sources import SCENE_LINKED_SOURCE_PROTOCOL, SceneContentBasis
 from src.schemas.case_planning_scenes import scene_decision_types, SceneEvidencePlanningDecision
-from src.application.test_cases.planning_linked_sources import linked_source_queue, linked_document_bases
+from src.application.test_cases.planning_linked_sources import (
+    linked_source_queue, linked_document_bases, linked_source_context, linked_context_prompt_version,
+)
 from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT_VERSION, required_source_prompt_version, validate_required_sources
 from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
 from src.schemas.case_planning_references import ReferencedEvidenceDecision
@@ -81,7 +83,8 @@ class CasePlanningWorkflow:
             elif bool(seed.required_source_prompt) != bool(request.required_sources):
                 raise ValueError("明确来源要求与原固定Prompt不一致")
             if seed.stage_prompts is not None:
-                expected_version = required_source_prompt_version(stage_prompt_version(policy, seed.stage_prompts), request)
+                expected_version = required_source_prompt_version(linked_context_prompt_version(
+                    stage_prompt_version(policy, seed.stage_prompts), seed.linked_source_context_protocol), request)
                 if (record.prompt_version != expected_version or seed.system_prompt != seed.stage_prompts.logic
                     or policy.planning_stage_protocol != seed.stage_prompts.protocol):
                     raise ValueError("阶段Prompt与固定规划版本不一致")
@@ -178,7 +181,16 @@ class CasePlanningWorkflow:
                             "warnings": record.warnings, "validation_feedback": checkpoint.validation_feedback,
                             "round": checkpoint.next_round + 1, "remaining_rounds": policy.max_rounds - checkpoint.next_round}
                         if checkpoint.linked_sources is not None:
-                            context["linked_source_reads"] = checkpoint.linked_sources.model_dump(mode="json")
+                            context["linked_source_reads"] = linked_source_context(
+                                checkpoint.linked_sources, seed.linked_source_context_protocol)
+                            if seed.linked_source_context_protocol:
+                                logger.info("case_planning_linked_context_projected", extra={
+                                    "project_id": record.project_id, "plan_id": record.id,
+                                    "protocol": seed.linked_source_context_protocol,
+                                    "source_count": len(checkpoint.linked_sources.entries),
+                                    "snapshot_chars": len(json_text(checkpoint.linked_sources.model_dump(mode="json"))),
+                                    "navigation_chars": len(json_text(context["linked_source_reads"])),
+                                })
                         stage = checkpoint.stages.stage if seed.stage_prompts is not None else None
                         prompt = seed.system_prompt
                         if stage is not None:

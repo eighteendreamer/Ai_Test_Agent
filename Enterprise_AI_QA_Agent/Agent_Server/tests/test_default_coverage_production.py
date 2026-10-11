@@ -194,6 +194,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     frozen = cur.fetchone()["seed"]
                 assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
                 report["frozen_response_protocol"] = frozen["response_protocol"]
+                report["frozen_linked_source_context_protocol"] = frozen.get("linked_source_context_protocol")
                 if os.getenv("QA_STAGED_PLANNING") == "1" or os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1" or os.getenv("QA_OPERATION_PREFETCH") == "1" or os.getenv("QA_SOURCE_IDENTITY") == "1" or os.getenv("QA_ITEM_OPERATION_SELECTION") == "1":
                     assert frozen["stage_prompts"]["protocol"] == policy.planning_stage_protocol
                     report["frozen_stage_protocol"] = frozen["stage_prompts"]["protocol"]
