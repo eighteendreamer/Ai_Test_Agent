@@ -1,0 +1,22 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+____________ test_wait_checkpoint_keeps_original_approval_context _____________
+tests\test_tool_wait_batch.py:57: in test_wait_checkpoint_keeps_original_approval_context
+    assert state['pending_turn']['pending_approval_ids'] == ['remaining']
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'pending_approval_ids'
+__________ test_both_original_waits_settle_before_entering_the_model __________
+tests\test_tool_wait_batch.py:78: in test_both_original_waits_settle_before_entering_the_model
+    settled = await runtime._resume_waiting_tool(session, state)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\runtime_service.py:1032: in _resume_waiting_tool
+    return await self._execute_state(session, state, on_model_chunk=on_model_chunk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_tool_wait_batch.py:75: in model_boundary
+    assert all(item['status'] == 'completed' for item in current['tool_results'])
+E   assert False
+E    +  where False = all(<generator object test_both_original_waits_settle_before_entering_the_model.<locals>.model_boundary.<locals>.<genexpr> at 0x00000201EB88B920>)
+=========================== short test summary info ===========================
+FAILED tests/test_tool_wait_batch.py::test_wait_checkpoint_keeps_original_approval_context
+FAILED tests/test_tool_wait_batch.py::test_both_original_waits_settle_before_entering_the_model
+2 failed in 9.94s

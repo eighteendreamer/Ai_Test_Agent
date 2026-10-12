@@ -5424,3 +5424,15 @@ layer1/2/3局部生产实验2失败2排除142.66/54.17/49.78秒，同进程业�
 用户Anthropic协议核对复验：QA_MODEL_SDK_FAULT_DIR=p2-tool-child-wait-anthropic，test_model_sdk_fault_http、test_model_clients -k anthropic，14通过60排除20.80秒；真实/v1/messages和Messages正文、流事件不变，当前共用helper await_provider_io仅I/O异常统一。此名称此前已提交更正，本轮模型文件未改。agent_web实际npm run build含类型检查成功9.70秒；compileall退出0附加。原始stdout/stderr/XML/PG/HTTP证据、SHA/凭据/保护文件/三方案核验由p2-tool-child-wait-audit.py生成validation。
 
 原7.43跨层缺失在本轮固定campaign原图入口实测解决；拒绝/未知写入及加密边界kill、正式用例管理运行/多工具混合等待/Deep Agents入口、自动401/Cookie/并发多认证和默认AI完整质量仍未验收或需补实现。全P0—P5目标保持active，外部AI按用户安排暂缓，白名单提交、不push/PR。
+
+## 2026-10-12 批量等待、剩余审批和子通知原子投影
+
+基线8df999ef，修改RuntimeService/state_persistence/tool_child_wait/CoordinatorRuntime，新增test_tool_wait_batch；没有其他生产、前端、供应商、配置或表变更。既有完整检查点函数体共用，保留原入口及旧单等待；整批原Job身份预核、原子领取/终态回读、审批优先及唯一原调用回复。子通知用既有行锁只更新自身元数据，真实stop仍原策略，避免旧会话保存覆盖并发Runtime状态。依据P2_TOOL_WAIT_BATCH_RESEARCH.md、PLAN7.47。
+
+实际Agent_Server执行`..\.venv\Scripts\python.exe -m pytest tests/test_tool_wait_batch.py -q --tb=short --junitxml=<本批XML>`，QA_TOOL_WAIT_BATCH_DIR每批owned目录；PG批另RUN_LIVE_TOOL_WAIT_BATCH=1。before 2失败9.94秒；first附旧wait/预算18通过1跳过5.57秒；functional-first 4通过2跳过8.37秒；live2失败4通过21.62秒、pg-probe2失败7排除13.46秒，原snapshot已出现但Session仍running，夹具close取消未完成保存。按实际Session状态/续跑任务结算后pg-settled9通过20.58秒。通知旧整会话保存并发强制窗口notification-before2失败9排除7.99秒；原件保留。最终notification-verified11通过19.19秒，内存/真实PG完整图、实际POST/GET、批准/拒绝、重建服务、原结果唯一/预算、历史单等待/身份/全子状态及并发覆盖。4原Job保持，拒绝原Job denied无HTTP，整批原模型计数1→2/max8，不继承新默认99；不是正式case Run或独立Agent进程验收。
+
+RUN_LIVE_API_AGENT_WORKER=1、QA_API_AGENT_APPROVAL_HOLD_SECONDS=3、QA_API_AGENT_RESTART_WHILE_CHILD_WAIT=1、QA_API_AGENT_WORKER_DIR各owned目录，test_api_agent_worker_live -k real_agent_worker：agent首批1失败1通过2排除142.95秒，真实API无HTTP的同进程路径揭示并发覆盖；修复最终agent-final2通过2排除159.46秒，原完整固定campaign的main/独立Agent CLI两路径全鉴权200、报告3完成0失败、等待重启快照保持、终态原Agent消息重投0业务/模型HTTP。凭据原文不导出，外部AI0。
+
+既有p2-api-agent-worker-regression.py owned隔离5模块，PYTHONPATH=.、QA_API_AGENT_REGRESSION_DIR本批目录，61通过1跳过40.74秒；相关11模块最终regression-final79通过42门控跳过91.12秒〔PG等门控未全开〕，前序78通过41跳过90.55秒，重叠不累加。test_intent_safety_routing/test_report_service -k 'coordinator or report'，41通过66排除10.57秒，故障停止/报告合同保持。compileall退出0；前端未改，未重复build。原serializer函数体AST与8df999ef一致，新增等待元数据所有消费方已搜索核对。
+
+失败和原日志/PG/HTTP/快照全部保留，原件/历史/保护4文件/三方案/配置凭据由p2-tool-wait-batch-audit.py核对。正式用例管理等待、unknown只读查证、计划修订、Deep Agents/default AI及其他全目标尚未完成；完整P0—P5active，白名单中文提交、无push/PR。

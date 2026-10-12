@@ -3726,3 +3726,13 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **已有实现但未由本批证明**：真实默认AI的意图/文档发现/项目选取→排序→补全→执行质量，其他供应商全阶段及正式用例管理运行、多工具混合审批/等待、Deep Agents治理入口。这里使用固定campaign_ready与本地受控模型，不替代外部AI验收；按用户安排继续暂缓外部AI。
 
 **仍需补实现或继续专项核验**：API拒绝与未知写入恢复、自动过期401续期/Cookie/并发多认证/加密边界kill；完整准备/只读查证/运行内计划修订；复杂UI响应关联/修复/报告、持续容量/AI流式指标/安全故障组合、更广需求业务评审/部署环境/历史迁移、全阶段重试故障和两份旧Worker原件。模板导入、普通生成、简单UI/录制、回执和Docker既有成功证据保持，不重新归为未实现。完整P0—P5保持active，仅本批白名单提交，无push/PR。
+
+### 7.47 整批工具等待、审批检查点与通知并发保存〔2026-10-12〕
+
+基线8df999ef，依据P2_TOOL_WAIT_BATCH_RESEARCH.md。先实测复现剩余审批ID丢失、第二等待工具未结算却交回模型，before2失败9.94秒。Runtime原完整_build_pending_turn迁至state_persistence共用，原入口和字段不变，AST原函数体一致；等待保存整批waiting_tools兼容旧单waiting_tool，沿原预算/原call/input/Job/快照。剩余父审批保持waiting_approval，全部审批后才进入子等待；整批结算才按原assistant顺序提交唯一结果给模型。Coordinator核验所有子及等待列表，不只首项。没有新表/依赖/配置、Session状态或模型协议变更。
+
+独立Agent首批1失败1通过142.95秒，又确认子通知的旧整会话save覆盖Worker新pending/status。强制相同窗口内存/实际PG均2失败7.99秒；沿现有行锁mutate_metadata只写通知自身guard/report字段，再读当前Session，无自动父继续分支保留原事件投影、不整会话保存临时通知。原停止策略与权限保持。早期PG夹具两批失败是只等snapshot出现就close取消未完成Session保存，诊断保存原现场；按真实状态和审批续跑结算等待后9通过20.58秒，不扩大生产等待超时、不重置记录。
+
+**已实现且本批实测**：notification-verified 11通过19.19秒，实际PG/内存真实图+HTTP，2等待工具/2父审批，批准全产生POST/POST/GET/GET，拒绝第二项产生POST/GET/GET且原Job denied；服务重建同一turn，预算1→2/max8〔新默认99未捐赠〕；唯一4工具结果，只有一子完成不自动继续；旧单等待、第二项身份/快照变化及通知覆盖边界通过。生产等待来源与模型决策受控，非正式case Run或默认AI质量。最终真实main/独立Agent CLI两路径agent-final 2通过2排除159.46秒：login/refresh/profile全200、报告3完成0失败、等待重启原snapshot保持、终态原消息任务重投0业务/模型HTTP。原5模块owned回归61通过1跳过40.74秒；11模块最终79通过42门控跳过91.12秒，未全启用PG等门控；Coordinator/报告41通过66排除10.57秒。重叠不累加，失败原件/报告保留。compileall退出0附加，前端未改未重构建。
+
+**尚未验收或需继续补实现**：正式用例管理运行的等待组合、未知副作用只读查证、准备生命周期、执行中计划修订及Deep Agents入口；真实默认AI多候选项目选取→排序→补全→执行/断言质量；API自动401续期/Cookie/并发多认证/加密边界kill；复杂UI因果/选择器修复/失败报告、持续容量/AI流式阶段指标/安全故障、更广需求业务评审/部署适用性/生产历史迁移、全阶段发送追踪及两份旧Worker原件。批准/拒绝在本批普通图混合等待中已验，不能扩大称所有API恢复已通过。模板/生成/简单录制UI/回执/Docker既有证据保持。完整P0—P5继续active，外部AI按用户安排暂缓；三方案同步和白名单提交，无push/PR。

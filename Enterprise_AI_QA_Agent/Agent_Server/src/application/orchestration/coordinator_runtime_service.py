@@ -16,6 +16,7 @@ from xml.sax.saxutils import escape
 
 from src.application.observability import LangSmithObservabilityAdapter
 from src.application.sessions.session_service import SessionService
+from src.application.runtime.tool_child_wait import waiting_tool_checkpoints
 from src.core.agent_communication import AgentMessageBus, ChildSessionWatcher
 from src.core.agent_control import AgentControlService
 from src.core.config import Settings
@@ -174,7 +175,8 @@ class CoordinatorRuntimeService:
         wait = pending.get("waiting_tool") or {}
         if parent.status != SessionStatus.interrupted or not wait or parent.metadata.get("turn_lease_token"):
             return False
-        child_ids = wait.get("child_session_ids") or []
+        waits = waiting_tool_checkpoints(pending)
+        child_ids = list(dict.fromkeys(identity for item in waits for identity in item.get("child_session_ids", [])))
         if not child_ids:
             return False
         for child_id in child_ids:
@@ -188,7 +190,8 @@ class CoordinatorRuntimeService:
                     "parent_session_id": parent.id, "child_session_id": child_id})
                 return False
         snapshot = await self._store.get_latest_snapshot(parent.id)
-        if snapshot is None or snapshot.graph_state.get("pending_turn", {}).get("waiting_tool") != wait:
+        saved = snapshot.graph_state.get("pending_turn", {}) if snapshot is not None else {}
+        if (not saved.get("waiting_tool") or waiting_tool_checkpoints(saved) != waits):
             logger.warning("tool_child_wait_resume_checkpoint_changed", extra={"parent_session_id": parent.id})
             return False
         payload = ResumeSessionRequest(reason="Original child tasks settled", source="tool.child_settled",
@@ -1552,21 +1555,25 @@ class CoordinatorRuntimeService:
         if parent_session is None:
             return None
 
-        should_stop, stop_message = self._update_failure_guard(
-            session=parent_session,
-            parent_turn_id=parent_turn_id,
-            status=status,
-            worker=worker,
-            failure_reason=failure_reason or self._extract_failure_reason(content),
-        )
-        self._update_code_review_report_metadata(
-            session=parent_session,
-            worker=worker,
-            status=status,
-            child_session_id=child_session_id,
-            content=content,
-        )
-        await self._store.save_session(parent_session)
+        stop_result = (False, "")
+        def project_notification_metadata(metadata):
+            nonlocal stop_result
+            # Only notification-owned metadata is written under the existing
+            # row lock. Runtime status/pending checkpoints belong to the turn.
+            projection = SimpleNamespace(id=parent_session_id, metadata=metadata)
+            stop_result = self._update_failure_guard(
+                session=projection, parent_turn_id=parent_turn_id, status=status,
+                worker=worker, failure_reason=failure_reason or self._extract_failure_reason(content))
+            self._update_code_review_report_metadata(session=projection, worker=worker,
+                status=status, child_session_id=child_session_id, content=content)
+        await self._store.mutate_metadata(parent_session_id, project_notification_metadata)
+        parent_session = await self._store.get_session(parent_session_id)
+        if parent_session is None:
+            return None
+        should_stop, stop_message = stop_result
+        logger.info("coordinator_notification_metadata_projected", extra={
+            "parent_session_id": parent_session_id, "parent_turn_id": parent_turn_id,
+            "task_id": worker.task_id, "worker_status": status, "should_stop": should_stop})
 
         if should_stop:
             parent_session.messages.append(
@@ -1928,26 +1935,11 @@ class CoordinatorRuntimeService:
                 SessionStatus.waiting_approval,
             }
             if not auto_resume:
-                parent_session.messages.append(
-                    ChatMessage(
-                        id=str(uuid4()),
-                        role=MessageRole.user,
-                        content=content,
-                        created_at=datetime.utcnow(),
-                        metadata={
-                            "message_kind": "task_notification",
-                            "task_id": worker.task_id,
-                            "child_session_id": child_session_id,
-                            "worker_agent_key": worker.agent_key,
-                            "worker_status": status,
-                            "persist_transcript": False,
-                            "context_eligible": False,
-                            "transcript_bucket": "event",
-                        },
-                    )
-                )
-                parent_session.updated_at = datetime.utcnow()
-                await self._store.save_session(parent_session)
+                # The notification event is already durable. This branch is
+                # event-only; a whole Session save could rewind a newer turn.
+                parent_session = await self._store.get_session(parent_session_id)
+                if parent_session is None:
+                    return
                 if (parent_session.metadata.get("pending_turn") or {}).get("waiting_tool"):
                     await self._maybe_resume_waiting_tool(parent_session)
                 return

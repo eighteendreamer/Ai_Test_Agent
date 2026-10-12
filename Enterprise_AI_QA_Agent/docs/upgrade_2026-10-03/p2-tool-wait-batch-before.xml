@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="9.936" timestamp="2026-10-12T15:43:56.487739+08:00" hostname="EIghteen"><testcase classname="tests.test_tool_wait_batch" name="test_wait_checkpoint_keeps_original_approval_context" time="0.072"><failure message="KeyError: 'pending_approval_ids'">tests\test_tool_wait_batch.py:57: in test_wait_checkpoint_keeps_original_approval_context
+    assert state['pending_turn']['pending_approval_ids'] == ['remaining']
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'pending_approval_ids'</failure></testcase><testcase classname="tests.test_tool_wait_batch" name="test_both_original_waits_settle_before_entering_the_model" time="0.446"><failure message="assert False&#10; +  where False = all(&lt;generator object test_both_original_waits_settle_before_entering_the_model.&lt;locals&gt;.model_boundary.&lt;locals&gt;.&lt;genexpr&gt; at 0x00000201EB88B920&gt;)">tests\test_tool_wait_batch.py:78: in test_both_original_waits_settle_before_entering_the_model
+    settled = await runtime._resume_waiting_tool(session, state)
+              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\application\runtime\runtime_service.py:1032: in _resume_waiting_tool
+    return await self._execute_state(session, state, on_model_chunk=on_model_chunk)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_tool_wait_batch.py:75: in model_boundary
+    assert all(item['status'] == 'completed' for item in current['tool_results'])
+E   assert False
+E    +  where False = all(&lt;generator object test_both_original_waits_settle_before_entering_the_model.&lt;locals&gt;.model_boundary.&lt;locals&gt;.&lt;genexpr&gt; at 0x00000201EB88B920&gt;)</failure></testcase></testsuite></testsuites>

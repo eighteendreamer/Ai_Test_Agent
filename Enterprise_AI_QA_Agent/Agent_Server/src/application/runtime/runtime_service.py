@@ -19,8 +19,8 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.agent_loop import AgentLoop
 from src.application.runtime.error_recovery import ErrorRecoveryCascade
-from src.application.runtime.state_persistence import persisted_turn_budget
-from src.application.runtime.tool_child_wait import park_tool_wait
+from src.application.runtime.state_persistence import build_pending_turn, persisted_turn_budget
+from src.application.runtime.tool_child_wait import park_tool_wait, waiting_tool_checkpoints
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_messages import build_tool_message
@@ -702,6 +702,13 @@ class RuntimeService:
         state["pending_turn"] = {}
         state["control_state"] = "resuming"
 
+        waiting = [item for item in tool_results if item.get("status") == "waiting_children"]
+        if waiting:
+            state["context_bundle"] = context.context_bundle
+            state["pending_turn"] = pending_turn
+            state["runtime_messages"] = list(pending_turn.get("conversation_messages", []))
+            return self._park_tool_result(session, state, ToolExecutionRecord.model_validate(waiting[0]))
+
         if pending_ids:
             pending_turn["tool_results"] = tool_results
             pending_turn["tool_messages"] = tool_messages
@@ -987,48 +994,65 @@ class RuntimeService:
             tool_messages=[], pending_turn=state["pending_turn"])
 
     async def _resume_waiting_tool(self, session, state, *, on_model_chunk=None):
-        wait = state["pending_turn"]["waiting_tool"]
-        job = await self._tool_job_service.get_job(wait["job_id"]) if self._tool_job_service is not None else None
-        if (job is None or job.session_id != session.id or job.turn_id != state["turn_id"]
-            or job.call_id != wait["call_id"] or job.tool_key != wait["tool_key"]
-            or job.input_payload != wait["input"]):
-            raise ValueError("Original waiting tool identity or frozen input changed")
+        waits = waiting_tool_checkpoints(state["pending_turn"])
+        jobs = []
         terminal = {"completed", "partial", "failed", "denied", "cancelled"}
-        if job.status.value not in terminal | {"waiting_children"}:
-            raise RuntimeError("Original waiting tool outcome is unknown; reconcile before resuming")
-        call = ModelToolCall(id=job.call_id, name=job.tool_key, arguments=job.input_payload)
-        tool = self._tool_registry.get(job.tool_key)
-        trusted = job.metadata.get("child_wait") or {}
-        context = ToolExecutionContext(session_id=session.id, turn_id=state["turn_id"], trace_id=state["trace_id"],
-            user_message=state["user_message"], normalized_input=state["normalized_input"],
-            context_bundle=dict(state["context_bundle"]), selected_agent_key=state["selected_agent_key"],
-            selected_model_key=state["selected_model_key"], tool_job_id=job.id,
-            server_approval_granted=trusted.get("server_approval_granted") is True,
-            approval_scope_hash=str(trusted.get("approval_scope_hash") or "")).bind_call(call)
-        if job.status.value in terminal:
-            record = await self._tool_runtime_service.record_from_job(job)
-        else:
-            safety = ExecutionSafetyPolicy().evaluate_tool_call(tool=tool, arguments=call.arguments,
-                active_mode_key=state["mode_key"], context=state["context_bundle"])
-            if safety.behavior == "deny":
-                raise ValueError("Original waiting tool is no longer permitted: " + safety.reason_code)
-            record = await self._tool_runtime_service.execute(tool=tool, call=call, context=context)
-        state["context_bundle"] = context.context_bundle
-        state["tool_results"] = [item for item in state["tool_results"] if item.get("call_id") != call.id]
-        state["tool_results"].append(record.model_dump(mode="python"))
-        if record.status == "waiting_children":
-            return self._park_tool_result(session, state, record)
-        message = self._build_tool_message(record)
-        state["tool_messages"] = [item for item in state["tool_messages"] if item.get("tool_call_id") != call.id] + [message]
+        for wait in waits:
+            job = await self._tool_job_service.get_job(wait["job_id"]) if self._tool_job_service is not None else None
+            if (job is None or job.session_id != session.id or job.turn_id != state["turn_id"]
+                or job.call_id != wait["call_id"] or job.tool_key != wait["tool_key"]
+                or job.input_payload != wait["input"]):
+                raise ValueError("Original waiting tool identity or frozen input changed")
+            if job.status.value not in terminal | {"waiting_children"}:
+                raise RuntimeError("Original waiting tool outcome is unknown; reconcile before resuming")
+            jobs.append(job)
+        for job in jobs:
+            call = ModelToolCall(id=job.call_id, name=job.tool_key, arguments=job.input_payload)
+            tool = self._tool_registry.get(job.tool_key)
+            trusted = job.metadata.get("child_wait") or {}
+            context = ToolExecutionContext(session_id=session.id, turn_id=state["turn_id"], trace_id=state["trace_id"],
+                user_message=state["user_message"], normalized_input=state["normalized_input"],
+                context_bundle=dict(state["context_bundle"]), selected_agent_key=state["selected_agent_key"],
+                selected_model_key=state["selected_model_key"], tool_job_id=job.id,
+                server_approval_granted=trusted.get("server_approval_granted") is True,
+                approval_scope_hash=str(trusted.get("approval_scope_hash") or "")).bind_call(call)
+            if job.status.value in terminal:
+                record = await self._tool_runtime_service.record_from_job(job)
+            else:
+                safety = ExecutionSafetyPolicy().evaluate_tool_call(tool=tool, arguments=call.arguments,
+                    active_mode_key=state["mode_key"], context=state["context_bundle"])
+                if safety.behavior == "deny":
+                    raise ValueError("Original waiting tool is no longer permitted: " + safety.reason_code)
+                record = await self._tool_runtime_service.execute(tool=tool, call=call, context=context)
+            state["context_bundle"] = context.context_bundle
+            state["tool_results"] = [record.model_dump(mode="python") if item.get("call_id") == call.id else item
+                for item in state["tool_results"]]
+            if record.status == "waiting_children":
+                return self._park_tool_result(session, state, record)
+            message = self._build_tool_message(record)
+            state["tool_messages"] = [item for item in state["tool_messages"] if item.get("tool_call_id") != call.id] + [message]
+            append_graph_event(state, "tool.child_wait_resumed", "runtime",
+                "Original tool settled; retaining its original batch.", tool_job_id=job.id, status=record.status)
+        call_ids = self._latest_assistant_tool_call_ids(state["runtime_messages"])
+        if state["pending_approvals"]:
+            state["runtime_messages"] = [item for item in state["runtime_messages"]
+                if not (item.get("role") == "tool" and item.get("tool_call_id") in call_ids)]
+            state["control_state"] = state["termination_reason"] = "waiting_approval"
+            state["pending_turn"] = self._build_pending_turn(state, stage="waiting_approval")
+            return RuntimeTurnResult(output_text="", events=self._events_from_log(session.id, state["event_log"]),
+                snapshot=self._build_snapshot(session, state, session.snapshot_count + 1), approvals=[], state=state,
+                tool_messages=[], pending_turn=state["pending_turn"])
+        messages = {item["tool_call_id"]: item for item in state["tool_messages"]}
+        if not call_ids:  # Historical snapshots without a batch assistant message.
+            call_ids = [job.call_id for job in jobs]
         state["runtime_messages"] = [item for item in state["runtime_messages"]
-            if not (item.get("role") == "tool" and item.get("tool_call_id") == call.id)] + [message]
+            if not (item.get("role") == "tool" and item.get("tool_call_id") in call_ids)] + [
+                messages[identity] for identity in call_ids if identity in messages]
         state["pending_turn"] = {}
         state["termination_reason"] = ""
         state["control_state"] = "resuming"
         state["interrupt_requested"] = False
         state["interrupt_reason"] = ""
-        append_graph_event(state, "tool.child_wait_resumed", "runtime",
-            "Original tool settled; continuing the original Agent turn.", tool_job_id=job.id, status=record.status)
         return await self._execute_state(session, state, on_model_chunk=on_model_chunk)
 
     async def _execute_state(
@@ -2083,109 +2107,7 @@ class RuntimeService:
         return "completed"
 
     def _build_pending_turn(self, state: dict[str, Any], stage: str) -> dict[str, Any]:
-        return {
-            "turn_id": state["turn_id"],
-            "trace_id": state["trace_id"],
-            "session_mode": state["session_mode"],
-            "runtime_mode": state["runtime_mode"],
-            "mode_key": state["mode_key"],
-            "selected_agent_key": state["selected_agent_key"],
-            "selected_agent_name": state["selected_agent_name"],
-            "selected_model_key": state["selected_model_key"],
-            "selected_model_name": state["selected_model_name"],
-            "selected_model_provider": state["selected_model_provider"],
-            "requested_skill_keys": state["requested_skill_keys"],
-            "resolved_skill_keys": state["resolved_skill_keys"],
-            "skill_prompt_blocks": state["skill_prompt_blocks"],
-            "memory_hits": state["memory_hits"],
-            "memory_prompt_blocks": state["memory_prompt_blocks"],
-            "test_case_hits": state.get("test_case_hits", []),
-            "test_case_prompt_blocks": state.get("test_case_prompt_blocks", []),
-            "observation_hits": state["observation_hits"],
-            "observation_prompt_blocks": state["observation_prompt_blocks"],
-            "active_mcp_servers": state["active_mcp_servers"],
-            "mcp_prompt_blocks": state["mcp_prompt_blocks"],
-            "available_tool_keys": state["available_tool_keys"],
-            "deferred_tool_keys": state["deferred_tool_keys"],
-            "model_visible_tool_keys": state["model_visible_tool_keys"],
-            "allowed_tool_keys": state["allowed_tool_keys"],
-            "approval_required_tool_keys": state["approval_required_tool_keys"],
-            "denied_tool_keys": state["denied_tool_keys"],
-            "permission_decisions": state["permission_decisions"],
-            "user_message": state["user_message"],
-            "normalized_input": state["normalized_input"],
-            "loop_iteration": state["loop_iteration"],
-            "max_iterations": state["max_iterations"],
-            "context_bundle": state["context_bundle"],
-            "system_prompt_sections": state["system_prompt_sections"],
-            "runtime_message_sections": state["runtime_message_sections"],
-            "system_prompt": state["system_prompt"],
-            "conversation_messages": state["runtime_messages"],
-            "runtime_messages": state["runtime_messages"],
-            **persisted_turn_budget(state),
-            "tool_results": state["tool_results"],
-            "tool_messages": state["tool_messages"],
-            "worker_dispatches": state["worker_dispatches"],
-            "pending_approval_ids": [item.get("id") for item in state["pending_approvals"] if item.get("id")],
-            "pending_approvals": state["pending_approvals"],
-            "latest_execution_stage": stage,
-            "control_state": state["control_state"],
-            "graph_state": {
-                "turn_id": state["turn_id"],
-                "trace_id": state["trace_id"],
-                "user_message": state["user_message"],
-                "normalized_input": state["normalized_input"],
-                "session_mode": state["session_mode"],
-                "runtime_mode": state["runtime_mode"],
-                "mode_key": state["mode_key"],
-                "selected_agent_key": state["selected_agent_key"],
-                "selected_agent_name": state["selected_agent_name"],
-                "selected_model_key": state["selected_model_key"],
-                "selected_model_name": state["selected_model_name"],
-                "selected_model_provider": state["selected_model_provider"],
-                "requested_skill_keys": state["requested_skill_keys"],
-                "resolved_skill_keys": state["resolved_skill_keys"],
-                "skill_prompt_blocks": state["skill_prompt_blocks"],
-                "memory_hits": state["memory_hits"],
-                "memory_prompt_blocks": state["memory_prompt_blocks"],
-                "test_case_hits": state.get("test_case_hits", []),
-                "test_case_prompt_blocks": state.get("test_case_prompt_blocks", []),
-                "observation_hits": state["observation_hits"],
-                "observation_prompt_blocks": state["observation_prompt_blocks"],
-                "active_mcp_servers": state["active_mcp_servers"],
-                "mcp_prompt_blocks": state["mcp_prompt_blocks"],
-                "available_tool_keys": state["available_tool_keys"],
-                "deferred_tool_keys": state["deferred_tool_keys"],
-                "model_visible_tool_keys": state["model_visible_tool_keys"],
-                "allowed_tool_keys": state["allowed_tool_keys"],
-                "approval_required_tool_keys": state["approval_required_tool_keys"],
-                "denied_tool_keys": state["denied_tool_keys"],
-                "permission_decisions": state["permission_decisions"],
-                "pending_approvals": state["pending_approvals"],
-                "plan_steps": state["plan_steps"],
-                "system_prompt_sections": state["system_prompt_sections"],
-                "runtime_message_sections": state["runtime_message_sections"],
-                "system_prompt": state["system_prompt"],
-                "runtime_messages": state["runtime_messages"],
-                "model_request_payload": state["model_request_payload"],
-                "model_response_summary": state["model_response_summary"],
-                "model_response_text": state["model_response_text"],
-                **persisted_turn_budget(state),
-                "assistant_tool_call_message": state["assistant_tool_call_message"],
-                "model_tool_calls": state["model_tool_calls"],
-                "tool_results": state["tool_results"],
-                "tool_messages": state["tool_messages"],
-                "worker_dispatches": state["worker_dispatches"],
-                "context_bundle": state["context_bundle"],
-                "event_log": state["event_log"],
-                "control_state": state["control_state"],
-                "loop_iteration": state["loop_iteration"],
-                "max_iterations": state["max_iterations"],
-                "continue_loop": False,
-                "termination_reason": state["termination_reason"],
-                "final_response": state["final_response"],
-            },
-        }
+        return build_pending_turn(state, stage)
 
     def _events_from_log(self, session_id: str, event_log: list[dict[str, Any]]) -> list[ExecutionEvent]:
         return [

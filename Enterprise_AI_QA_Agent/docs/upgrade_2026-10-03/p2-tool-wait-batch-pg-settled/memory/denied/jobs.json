@@ -1,0 +1,311 @@
+[
+  {
+    "id": "8c36e486-fec2-49cd-b051-0a1f29ce1242",
+    "session_id": "acb09c77-542f-4d3f-88ca-bcee438fa8d2",
+    "turn_id": "358b9095-170f-41b0-97ab-c81e2c6a5640",
+    "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae",
+    "call_id": "write-one",
+    "tool_key": "api-test-runner",
+    "tool_name": "API Test Runner",
+    "status": "completed",
+    "attempt": 1,
+    "input_payload": {
+      "worker_action": "execute_task",
+      "task": {
+        "task_id": "write-one",
+        "method": "POST",
+        "path": "/orders",
+        "full_url": "http://127.0.0.1:58687/orders",
+        "timeout_seconds": 5
+      }
+    },
+    "output_payload": {
+      "status": "completed",
+      "ok": true,
+      "idempotency_key": "api-task:write-one:POST:http://127.0.0.1:58687/orders",
+      "summary": "Executed API task write-one with final status completed and HTTP 201.",
+      "worker_kind": "api_test_task_execution",
+      "task_result": {
+        "task_id": "write-one",
+        "name": "",
+        "method": "POST",
+        "path": "/orders",
+        "full_url": "http://127.0.0.1:58687/orders",
+        "capability": "",
+        "execution_mode": "read",
+        "depends_on": [],
+        "auth_ref": "",
+        "request_headers": {},
+        "request_query": {},
+        "request_body": null,
+        "input_bindings": [],
+        "path_parameter_sources": {},
+        "assertions": [],
+        "resource_locks": [],
+        "timeout_seconds": 5.0,
+        "status": "completed",
+        "attempts": 1,
+        "last_error": "",
+        "dependency_skip_task_id": "",
+        "started_at": "2026-10-12T08:03:16.815970+00:00",
+        "completed_at": "2026-10-12T08:03:16.836387+00:00",
+        "response_status": 201,
+        "response_headers": {
+          "server": "BaseHTTP/0.6 Python/3.11.16",
+          "date": "Mon, 12 Oct 2026 08:03:16 GMT",
+          "content-type": "application/json; charset=utf-8",
+          "content-length": "169"
+        },
+        "response_body": {
+          "order.id": "actual-12d02528a41d4e098307a3354e529c02",
+          "flag": false,
+          "count": 0,
+          "nullable": null,
+          "message": "订单处于待支付状态，尚未进入出库流程"
+        },
+        "check_results": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 201,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "request_outcome": "completed",
+        "duration_ms": 19.95,
+        "worker_session_id": "",
+        "worker_status": "",
+        "worker_summary": "",
+        "execution_checkpoint": {
+          "http_observation_v1": {
+            "implementation_version": "api-http-observation-v1",
+            "acquisition": "network",
+            "observed_at": "2026-10-12T08:03:16.836387Z",
+            "hops": [
+              {
+                "method": "POST",
+                "target": {
+                  "scheme": "http",
+                  "host": "127.0.0.1",
+                  "port": 58687,
+                  "path": "/orders",
+                  "query_omitted": false,
+                  "userinfo_omitted": false,
+                  "fragment_omitted": false
+                },
+                "status_code": 201
+              }
+            ]
+          }
+        }
+      },
+      "credential_session": "[REDACTED]",
+      "artifacts": [],
+      "metrics": {},
+      "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae",
+      "_security": {
+        "untrusted_content": true,
+        "indirect_injection_signals": [],
+        "redacted_field_count": 1
+      }
+    },
+    "summary": "Executed API task write-one with final status completed and HTTP 201.",
+    "error_message": null,
+    "artifact_count": 0,
+    "created_at": "2026-10-12T08:03:16.655575",
+    "updated_at": "2026-10-12T08:03:16.838394",
+    "heartbeat_at": "2026-10-12T08:03:16.815970",
+    "started_at": "2026-10-12T08:03:16.815970",
+    "completed_at": "2026-10-12T08:03:16.838394",
+    "metadata": {
+      "selected_agent_key": "api-testing-agent",
+      "selected_model_key": "controlled-case-agent",
+      "project_id": "b4dbefa6-4bef-428d-b241-1e9f180c4269",
+      "phase": "approval_pending",
+      "permission_behavior": "ask",
+      "permission_source": "policy_engine",
+      "permission_reason": "Tool 'API Test Runner' requires explicit approval before execution in normal mode.",
+      "permission_visibility": "visible",
+      "permission_reason_code": "approval_required_default",
+      "permission_policy_key": "permission_level.ask",
+      "tool_output_observation": {
+        "schema_version": 1,
+        "status": "completed",
+        "output_hash": "5cc426355c498f39f30a79d6e73b9ab6fcb65835d8f3aeac2957a8d81e5750a0",
+        "observed_at": "2026-10-12T08:03:16.837407"
+      }
+    }
+  },
+  {
+    "id": "2a073c18-6407-4e45-a4c4-da0136070aa6",
+    "session_id": "acb09c77-542f-4d3f-88ca-bcee438fa8d2",
+    "turn_id": "358b9095-170f-41b0-97ab-c81e2c6a5640",
+    "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae",
+    "call_id": "write-two",
+    "tool_key": "api-test-runner",
+    "tool_name": "API Test Runner",
+    "status": "denied",
+    "attempt": 1,
+    "input_payload": {
+      "worker_action": "execute_task",
+      "task": {
+        "task_id": "write-two",
+        "method": "POST",
+        "path": "/orders",
+        "full_url": "http://127.0.0.1:58687/orders",
+        "timeout_seconds": 5
+      }
+    },
+    "output_payload": {
+      "decision_note": null
+    },
+    "summary": "Approval denied for tool 'API Test Runner'.",
+    "error_message": null,
+    "artifact_count": 0,
+    "created_at": "2026-10-12T08:03:16.655575",
+    "updated_at": "2026-10-12T08:03:16.888328",
+    "heartbeat_at": null,
+    "started_at": null,
+    "completed_at": "2026-10-12T08:03:16.888328",
+    "metadata": {
+      "selected_agent_key": "api-testing-agent",
+      "selected_model_key": "controlled-case-agent",
+      "project_id": "b4dbefa6-4bef-428d-b241-1e9f180c4269",
+      "phase": "approval_pending",
+      "permission_behavior": "ask",
+      "permission_source": "policy_engine",
+      "permission_reason": "Tool 'API Test Runner' requires explicit approval before execution in normal mode.",
+      "permission_visibility": "visible",
+      "permission_reason_code": "approval_required_default",
+      "permission_policy_key": "permission_level.ask"
+    }
+  },
+  {
+    "id": "c40cfef3-99f5-4162-92c0-6f7760d31761",
+    "session_id": "acb09c77-542f-4d3f-88ca-bcee438fa8d2",
+    "turn_id": "358b9095-170f-41b0-97ab-c81e2c6a5640",
+    "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae",
+    "call_id": "one",
+    "tool_key": "knowledge-rag",
+    "tool_name": "Knowledge RAG",
+    "status": "completed",
+    "attempt": 1,
+    "input_payload": {
+      "query": "one"
+    },
+    "output_payload": {
+      "status": "completed",
+      "summary": "Actual original read",
+      "body": {
+        "order.id": "actual-12d02528a41d4e098307a3354e529c02",
+        "flag": false,
+        "count": 0,
+        "nullable": null,
+        "message": "订单处于待支付状态，尚未进入出库流程"
+      },
+      "artifacts": [],
+      "metrics": {},
+      "ok": true,
+      "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae"
+    },
+    "summary": "Actual original read",
+    "error_message": null,
+    "artifact_count": 0,
+    "created_at": "2026-10-12T08:03:16.654480",
+    "updated_at": "2026-10-12T08:03:17.082026",
+    "heartbeat_at": "2026-10-12T08:03:17.062012",
+    "started_at": "2026-10-12T08:03:16.654480",
+    "completed_at": "2026-10-12T08:03:17.082026",
+    "metadata": {
+      "selected_agent_key": "api-testing-agent",
+      "selected_model_key": "controlled-case-agent",
+      "project_id": "b4dbefa6-4bef-428d-b241-1e9f180c4269",
+      "output_payload": {
+        "status": "waiting_children",
+        "summary": "Original child still waiting",
+        "waiting_child_session_ids": [
+          "caa11094-1974-4aae-a21e-3fafd7b1e64b"
+        ],
+        "artifacts": [],
+        "metrics": {},
+        "ok": true,
+        "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae"
+      },
+      "child_wait": {
+        "server_approval_granted": false,
+        "approval_scope_hash": ""
+      },
+      "tool_output_observation": {
+        "schema_version": 1,
+        "status": "completed",
+        "output_hash": "b1eb94f74f55f83acda3258d5be58e44e870b3b5ed2c4464cfb76a464894f89c",
+        "observed_at": "2026-10-12T08:03:17.081026"
+      }
+    }
+  },
+  {
+    "id": "cfc699aa-994b-4afa-ac0f-a88ae8495d2a",
+    "session_id": "acb09c77-542f-4d3f-88ca-bcee438fa8d2",
+    "turn_id": "358b9095-170f-41b0-97ab-c81e2c6a5640",
+    "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae",
+    "call_id": "two",
+    "tool_key": "knowledge-rag",
+    "tool_name": "Knowledge RAG",
+    "status": "completed",
+    "attempt": 1,
+    "input_payload": {
+      "query": "two"
+    },
+    "output_payload": {
+      "status": "completed",
+      "summary": "Actual original read",
+      "body": {
+        "order.id": "actual-12d02528a41d4e098307a3354e529c02",
+        "flag": false,
+        "count": 0,
+        "nullable": null,
+        "message": "订单处于待支付状态，尚未进入出库流程"
+      },
+      "artifacts": [],
+      "metrics": {},
+      "ok": true,
+      "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae"
+    },
+    "summary": "Actual original read",
+    "error_message": null,
+    "artifact_count": 0,
+    "created_at": "2026-10-12T08:03:16.654480",
+    "updated_at": "2026-10-12T08:03:17.104084",
+    "heartbeat_at": "2026-10-12T08:03:17.082026",
+    "started_at": "2026-10-12T08:03:16.654480",
+    "completed_at": "2026-10-12T08:03:17.104084",
+    "metadata": {
+      "selected_agent_key": "api-testing-agent",
+      "selected_model_key": "controlled-case-agent",
+      "project_id": "b4dbefa6-4bef-428d-b241-1e9f180c4269",
+      "output_payload": {
+        "status": "waiting_children",
+        "summary": "Original child still waiting",
+        "waiting_child_session_ids": [
+          "46fa570d-9140-40a7-9d03-e417493ebf91"
+        ],
+        "artifacts": [],
+        "metrics": {},
+        "ok": true,
+        "trace_id": "56e6e816-1df6-42a3-baf6-706150c493ae"
+      },
+      "child_wait": {
+        "server_approval_granted": false,
+        "approval_scope_hash": ""
+      },
+      "tool_output_observation": {
+        "schema_version": 1,
+        "status": "completed",
+        "output_hash": "b1eb94f74f55f83acda3258d5be58e44e870b3b5ed2c4464cfb76a464894f89c",
+        "observed_at": "2026-10-12T08:03:17.104084"
+      }
+    }
+  }
+]

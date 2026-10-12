@@ -1,0 +1,508 @@
+{
+  "baseline": "8df999ef",
+  "full_goal_complete": false,
+  "external_ai_calls": 0,
+  "mixed_batch_runtime_verified": true,
+  "controlled_wait_producer": true,
+  "default_external_ai_acceptance": false,
+  "formal_case_run_wait_acceptance": false,
+  "notification_stale_write_fixed": true,
+  "legacy_pending_serializer_body_identical": true,
+  "tests": {
+    "p2-tool-wait-batch-agent-final.xml": {
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-agent-regression/regression.xml": {
+      "tests": 62,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "p2-tool-wait-batch-agent.xml": {
+      "tests": 2,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-before.xml": {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-first.xml": {
+      "tests": 19,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 1
+    },
+    "p2-tool-wait-batch-functional-first.xml": {
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 2
+    },
+    "p2-tool-wait-batch-live.xml": {
+      "tests": 6,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-notification-before.xml": {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-notification-regression.xml": {
+      "tests": 41,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-notification-verified.xml": {
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-pg-probe.xml": {
+      "tests": 2,
+      "failures": 2,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-pg-settled.xml": {
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "p2-tool-wait-batch-regression-final.xml": {
+      "tests": 121,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 42
+    },
+    "p2-tool-wait-batch-regression.xml": {
+      "tests": 119,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 41
+    }
+  },
+  "mixed_batch_facts": {
+    "memory/approved": {
+      "external_ai_calls": 0,
+      "full_goal_complete": false,
+      "real_postgres": false,
+      "independent_agent_process": false,
+      "controlled_wait_producer": true,
+      "second_approval": "approved",
+      "events": [
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "GET",
+          "/orders/actual-bd4fcaa560704e86ad5bc2611991db99"
+        ],
+        [
+          "GET",
+          "/orders/actual-bd4fcaa560704e86ad5bc2611991db99"
+        ]
+      ],
+      "job_count": 4,
+      "model_calls_before_settled": 1,
+      "model_calls_final": 2,
+      "max_iterations": 8,
+      "extra_model_calls": 0,
+      "extra_http": 0,
+      "all_children_required": true,
+      "final_tool_ids": [
+        "one",
+        "two",
+        "write-one",
+        "write-two"
+      ],
+      "final_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "completed"
+      ],
+      "job_statuses": {
+        "write-one": "completed",
+        "write-two": "completed",
+        "one": "completed",
+        "two": "completed"
+      }
+    },
+    "memory/denied": {
+      "external_ai_calls": 0,
+      "full_goal_complete": false,
+      "real_postgres": false,
+      "independent_agent_process": false,
+      "controlled_wait_producer": true,
+      "second_approval": "denied",
+      "events": [
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "GET",
+          "/orders/actual-3951766c43ce4699af5df525e977fd67"
+        ],
+        [
+          "GET",
+          "/orders/actual-3951766c43ce4699af5df525e977fd67"
+        ]
+      ],
+      "job_count": 4,
+      "model_calls_before_settled": 1,
+      "model_calls_final": 2,
+      "max_iterations": 8,
+      "extra_model_calls": 0,
+      "extra_http": 0,
+      "all_children_required": true,
+      "final_tool_ids": [
+        "one",
+        "two",
+        "write-one",
+        "write-two"
+      ],
+      "final_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "denied"
+      ],
+      "job_statuses": {
+        "write-two": "denied",
+        "write-one": "completed",
+        "two": "completed",
+        "one": "completed"
+      }
+    },
+    "postgres/approved": {
+      "external_ai_calls": 0,
+      "full_goal_complete": false,
+      "real_postgres": true,
+      "independent_agent_process": false,
+      "controlled_wait_producer": true,
+      "second_approval": "approved",
+      "events": [
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "GET",
+          "/orders/actual-ef65b0c31f654dfaafd2d40f3d30f396"
+        ],
+        [
+          "GET",
+          "/orders/actual-ef65b0c31f654dfaafd2d40f3d30f396"
+        ]
+      ],
+      "job_count": 4,
+      "model_calls_before_settled": 1,
+      "model_calls_final": 2,
+      "max_iterations": 8,
+      "extra_model_calls": 0,
+      "extra_http": 0,
+      "all_children_required": true,
+      "final_tool_ids": [
+        "one",
+        "two",
+        "write-one",
+        "write-two"
+      ],
+      "final_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "completed"
+      ],
+      "job_statuses": {
+        "write-two": "completed",
+        "write-one": "completed",
+        "two": "completed",
+        "one": "completed"
+      }
+    },
+    "postgres/denied": {
+      "external_ai_calls": 0,
+      "full_goal_complete": false,
+      "real_postgres": true,
+      "independent_agent_process": false,
+      "controlled_wait_producer": true,
+      "second_approval": "denied",
+      "events": [
+        [
+          "POST",
+          "/orders"
+        ],
+        [
+          "GET",
+          "/orders/actual-c1500243782f48069ae45ddef3671aa8"
+        ],
+        [
+          "GET",
+          "/orders/actual-c1500243782f48069ae45ddef3671aa8"
+        ]
+      ],
+      "job_count": 4,
+      "model_calls_before_settled": 1,
+      "model_calls_final": 2,
+      "max_iterations": 8,
+      "extra_model_calls": 0,
+      "extra_http": 0,
+      "all_children_required": true,
+      "final_tool_ids": [
+        "one",
+        "two",
+        "write-one",
+        "write-two"
+      ],
+      "final_statuses": [
+        "completed",
+        "completed",
+        "completed",
+        "denied"
+      ],
+      "job_statuses": {
+        "write-two": "denied",
+        "write-one": "completed",
+        "two": "completed",
+        "one": "completed"
+      }
+    }
+  },
+  "fixed_campaign_agent_facts": {
+    "in-process": {
+      "target_statuses": [
+        200,
+        200,
+        200
+      ],
+      "parent_report_completed": 3,
+      "physical_model_http": 8,
+      "snapshot_preserved": true,
+      "terminal_extra_http": 0,
+      "terminal_extra_model_http": 0
+    },
+    "durable": {
+      "target_statuses": [
+        200,
+        200,
+        200
+      ],
+      "parent_report_completed": 3,
+      "physical_model_http": 8,
+      "snapshot_preserved": true,
+      "terminal_extra_http": 0,
+      "terminal_extra_model_http": 0
+    }
+  },
+  "historical_artifacts_unchanged": {
+    "p2-tool-child-wait-validation.json": 170,
+    "p2-api-result-readback-validation.json": 58,
+    "p2-api-agent-worker-validation.json": 172,
+    "p0-sdk-fault-validation.json": 1355,
+    "p2-api-credential-reference-validation.json": 106,
+    "p2-api-worker-auth-validation.json": 35,
+    "p2-api-approval-wait-validation.json": 193
+  },
+  "protected_files_unchanged": true,
+  "three_plans_equal": true,
+  "plan_sha256": "cdbd493820b37b413def9255506db48f27e49558b509c978e2c46626acea4342",
+  "configured_credentials_present": false,
+  "frontend_changed": false,
+  "frontend_build_rerun": false,
+  "artifact_hashes": {
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-api-child-wait-restarted.stderr": "16c827e20369610302e4830ea37dbc8bfa7c437b31da8f0dabd36813a5f29d5b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-api-child-wait-restarted.stdout": "63622ab032591e98bb1b4f2f9359fc7255bfd69a674d9b87b6da72669aa37012",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-api-restarted.stderr": "a23e54353937d77195b27509932245e6dbb789ff1f39e39157f5723d3c58a56b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-api-restarted.stdout": "79daa6090936f77b3851c7b087aa058378bde56c2774a7ff61108b2bfa8ed99d",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-api.stderr": "700ca301a602012315e96aa6d642fbdd81d198c78952bfbed70350f14a55f1d4",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-api.stdout": "ee9978036b5701b24219af3fa94e5abe1bce6c1394e05a92ac856770872fe755",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-worker-0.stderr": "ce18793677a451aa8076130a5940ef33ee2a69958baa7ebfbf0074b3e21cc0c8",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-worker-0.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-worker-1.stderr": "8c913844eb0c86197a74903dc65eea7708b175afb0d6b5dc5982325a27f19780",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-worker-1.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-worker-terminal.stderr": "6144018a76415efa76c22787946e302bafea95f04ef76418af573c971d851448",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/agent-worker-terminal.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/docker.json": "91499bcf30eb49b283699d31e5eb83d5a8c804bdf6fe3cb7a9b85b31e11a04dc",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/observed.json": "ae6b2546a7b0b28e6966a4d7852021d20c64e84843c9549fadd7534cfc1e8c40",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/postgres-finally.json": "a1446e7c6134dcc3cdf5c0403e764dd95110a6a0d80006321895ef9e7535528a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/public-records.json": "2eb9af16de9470eb7dd0a0cb6ff431aa516461a5276ca3d00ea2fe15f60e710f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/target-events-at-cleanup.json": "72646de8e7d7b7dba3a20d27bbf39ac8f16fad8a8e2b2a6d6427956e011dedd3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/durable/verification.json": "47ccd33ec5ea20761b89d9f045842e1d45846fb279834e24ecbd47e7df34e09e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/agent-api.stderr": "79aa444c2f227613f5212027779818205b19e3b81d5d02af933feeb1abf22ae2",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/agent-api.stdout": "7916cee4844711a409adf13e00babd93e060860b870277ea6d3aa1f2d79396fc",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/agent-worker-0.stderr": "f5e1f56da9424b1b3aae06cafae43a25476bfe5159ba47c62331fa74f7e73a64",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/agent-worker-0.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/docker.json": "56fc3d00f44fbe41e3604e54f57ea106af668dc5f32b822e93e5c12528a45252",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/model-request-diagnostics.json": "54065641254b9f602d782825652e597871fc8bfce3befaca4640fe6e7ce8ed17",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/observed.json": "affc7391b6d80c520e4b89318c73412aafc26fedb955cea8839e962f29243fc2",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/postgres-finally.json": "e870fa2806941a55a6917d511acff133f69cb34965e3aa9a2e1db460bd53e7c1",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent/in-process/target-events-at-cleanup.json": "13971b2d4232460a1adf25112b3284c1c93cedea2247ecb61bff8b8231d940d2",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-api-child-wait-restarted.stderr": "8f156cd2bdc71a77b44772d663c195858f6f26c7adc9420a8bcf3ff229e6d790",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-api-child-wait-restarted.stdout": "413e4dce7ba692c38d6f492b4a24055c2bb264102017cfbbdf789ba31de13363",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-api-restarted.stderr": "b1381eeadec30934c8638d9fe416b61a6af48d4a56c57b5850fb801257fb915e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-api-restarted.stdout": "1a1840e9fdaa4f8ca8def67d264f4b71205a5f431fc0dc462919b98e4e06ce1c",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-api.stderr": "b81fb27391085c21dc5ffb07dc3f242bd5ecec5497aeb6a011efb9b330f36069",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-api.stdout": "e2f160f1e5bf10787c1f5fc823885e7f332db43cabd02b3b0074c0164add653e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-worker-0.stderr": "e8022f239a228493630f357c442060fb4f4b20ae0866bcf61dd4b3743eb9b8f0",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-worker-0.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-worker-1.stderr": "7b885a15b5556e42820d2f6c6126762f60432642f47f3eebe79f7dd4aec57601",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-worker-1.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-worker-terminal.stderr": "bf2bc9ec996fd4b9b6f9fcf3c65b13648096d7ab8e352202585cacb7466284bb",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/agent-worker-terminal.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/docker.json": "1cc09cafbd9b9a7d2a4d7380784645b07f95f4de43a05f4d06c15791fee3ce12",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/observed.json": "1454888758c90901fc7e60603150161df3a619b4fd86d3b76de77bc2dad6513e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/postgres-finally.json": "5e2dc720f53ce21fc78173ad329f0272fc106e7cca266e7b5f8471d3a0de059a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/public-records.json": "0ea8b40cc263a5a0611137207d3a4a3aedcbcbed71761d08cece0807ff37a4fc",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/target-events-at-cleanup.json": "72646de8e7d7b7dba3a20d27bbf39ac8f16fad8a8e2b2a6d6427956e011dedd3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/durable/verification.json": "1da31f059366428e9fc458d2c4e3875cbb9293dde0b4fba848495f0fcca38800",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-api-child-wait-restarted.stderr": "9411830083f6b7779fcf5979e2eb5005356fc7e74bc50b4f59bc7f64c6d1fccb",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-api-child-wait-restarted.stdout": "e10057de01c4c529ac9e72bcfad6273712c9da7796c30a24cc4fc8fbf5abd814",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-api-restarted.stderr": "6f35c9159c60892cea0879e0ad3332ab981a941765b61c0b46ebcac9d31f966d",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-api-restarted.stdout": "f7c6ab79e340a56437c96bf32c55d864d79537744627e3fe34b66579cce591af",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-api.stderr": "b3364726d04fd094187de4b5144a3601b8bc33d874b4c61c641bc3d270aa55c0",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-api.stdout": "ea8b1398ba4de517e3fdd2fc12031183415ae59035add6a0b583c66f556d71b1",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-worker-0.stderr": "785a51f099ea192ca8516e8e84b2cf8b1b0f723a479fed1bd925a27dab8a766b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-worker-0.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-worker-terminal.stderr": "328e5ae68aaf7a2bae9340bdbc2a8573c9ade246b8f97f5b60672c6066888dea",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/agent-worker-terminal.stdout": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/docker.json": "7d6a5b566fc72ba03facb24ebb6e6c32c9c09668466bef2ec3298218b7922e4f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/observed.json": "f000eea62f9277f74fde866b906c919091b2826ad93e069ece3aa943b44996d7",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/postgres-finally.json": "6664d21ff3e300a249f9f8ed58e83c4133a4174dadec6020e2d9d5060813ed81",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/public-records.json": "e4a29ff55f0d3cb96d48f9e62f7d8d30a454f41be378699cdf90509b4fcaa1c7",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/target-events-at-cleanup.json": "72646de8e7d7b7dba3a20d27bbf39ac8f16fad8a8e2b2a6d6427956e011dedd3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final/in-process/verification.json": "f6d9b5e8a257182e85deae41bbc3efdb317afcd22c8f0eea73bbaef9d1654eac",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final.log": "ad69511c940fbb3d8652751f504d31cf3073f920f2926b07bb3e6e4d7adea92a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-final.xml": "6e3d2e3944879e95057b409aa2f28f7d6fdc0b6aed1f65e50f1c2cd122842fdc",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-regression/agent-regression.stderr": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-regression/agent-regression.stdout": "51555d37bcca7130214d83aa22f46a2a77246803358bc9b25d217a2dd32fe8ab",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-regression/docker.json": "fef4b0fbc6b9e726430bf2ad2094c3e9858f108a7dd723cf3b1e84103172d219",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-regression/regression.xml": "2cff9adc22c695ca8632ffebdee23313f59198516207139bbe30341022593dc2",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent-regression-launcher.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent.log": "b4ab1f754b16135049cb70eea26f7b8149e9cb2babc42c91cb6e12b50d1dea44",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-agent.xml": "239fba35e65abc8ba4ec92d10590652efa53222847ab46e0eaae2f8741a34db2",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-before.log": "ebd4c5ca903a8d8285e974420266f0edca752235b9f00aef7bcc9e10566b3a53",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-before.xml": "0eeff0a56b6d4142aa834a6373e0dd462ed36f1684ec22592e40c9c3f15a083c",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-compile.log": "b5440854d4f2ae4dd50b91cd4c884a28068fbe97dbb655551e0f750037352014",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-first.log": "b6086264ff7d4e6c79bfba487df27b4da3d48edbdbfaf34158b6456674c543b8",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-first.xml": "3b98f88748a4dfc6b0800c2f4d467d48087538c5a2396e6673aaf016149754fd",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first/memory/approved/facts.json": "cb99747a8585812656cc455c37121b26b24d693e20bd7e16460aa9734c64db2a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first/memory/approved/jobs.json": "519b33c90348e10ec8094135953470ab7e7626674304dcf258b7037389b0509a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first/memory/approved/snapshots.json": "3c58b7ecd407011dc4efdd0993e30546fcf7d4c2479367375efc98cb1d3baa9a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first/memory/denied/facts.json": "43fe31b4606a72954b5188e2ad0d2853c6f600dd1d334f18b77a8244d43ee0ce",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first/memory/denied/jobs.json": "9807645bc251812125083d00e01d37093a161eebbff28ee808ff8ac1de7aca14",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first/memory/denied/snapshots.json": "cbddefca7601770d7ce8a7561b3b171e830affb3e6df47ece8ff5814da1bc5c1",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first.log": "8562680c1823931a055c003690583897006a4492bf4637fa3690a6dc0922c1a0",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-functional-first.xml": "939f192b7e409c2afb76a233ffca69880cf8642c6465b7b2f819eb15ca6fa4b5",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live/memory/approved/facts.json": "1ae51e349ff4bd3b252965fc5ce2c287dfcf0f81486e9f4bb163f268e932137f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live/memory/approved/jobs.json": "7c5942106c6001318b527dfe1f47b0e8dcdbac73c5f91017706ad8d8f928fe0a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live/memory/approved/snapshots.json": "db8766f89674ff5249c4ae624a83d61f31af212b604664146afd4b697c8d2c4a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live/memory/denied/facts.json": "84b0d06407fd4a92ea1beb8910dd3624237067ff1048591b7d4825d74df85522",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live/memory/denied/jobs.json": "b5e762d8474d53f9d8b789f4c6e0e40bba5e4279c9a70493f9ddad34cf3b330a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live/memory/denied/snapshots.json": "ac301ae31b1f17b4f0d1f30a205afad7534d782c5a6e760e0ef5ef611726fc3a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live.log": "f9fcdebee110d9a242e637ee8310dd8f88e1137af080260050e46c3721ff7f73",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-live.xml": "0c32b66d84fadd8606feaaad4dd45fffec614938e332774a831cf239a62f9d8b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-before/notification-race/memory/facts.json": "463965a945daa9ae451128e6c00dc4ab24d126404c34bacdb54d92b688a4cc94",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-before/notification-race/postgres/facts.json": "bb5159c51035e5dbe7bc64beee27fa6a456bc6ecd7d12b6d74486d9525c4a8a3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-before.log": "cd41600f0dff1c3d23ac894e0f314ab488b0180929322635942911a8bbff320b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-before.xml": "021abe4fced14dcc6b142888422414034958f3514a473a6fba4fb0219ed41cd8",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-regression.log": "6d1002fedd92f9e56655be1a5b9fff4b8276f6e2507c76d7adfb989d43f592a3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-regression.xml": "23ac2f14e36731e2063944fcc24c0b95301c5ce036941d1bde3785fd31be893a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/approved/after-initial-service-close.json": "e27eb0adf0c65e9caa01915775df863fe69fb8386f680ea435a876a194707f0b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/approved/before-original-resume.json": "a710c2bbfce1184d78470f07ec6bacf3170c9a07804a0f44bb32914d4bb1b89e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/approved/facts.json": "983d983c91c7488d91ba738f2133bc744b12100fe256ff5c47c0ad3d2f5fc8b5",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/approved/jobs.json": "886a73fc590862cd58753430fdf106aebb48457f492d778dbe4e4e0751602757",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/approved/snapshots.json": "148ffd8fc26bed2f586b0c0750b6360a56f65df2772ceaa3f58e61b9ce827233",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/denied/after-initial-service-close.json": "14e05b490fe4477e1045aca769542a2f2e67c5ccfd2aaea386cfcad218813529",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/denied/before-original-resume.json": "275f7b2e795c2ba84579a6c1cfa77c9cdcfaac96847a1b74ec5d8fa64f98fcc0",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/denied/facts.json": "4048e29c8836f4c45c4bf0912cffda2992d38d68368a9940e51fd66f838a4b05",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/denied/jobs.json": "78bb9384fd51ab9908180deb658ccd37570b8ea3b12ed648b9bb872156340b07",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/memory/denied/snapshots.json": "f5e12c2f3cb5de9da00954ef62e419b64ec6d98e2bcbc1f8ca9e3e45e02fbb95",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/notification-race/memory/facts.json": "d3bc97fe8be26c23132aa88785ebe863f990eec2a7deeaa6cb9f3982650bafa6",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/notification-race/postgres/facts.json": "6f74d7a7a1cadfafe9652d266fd63a73845f15e61ea7c1ea094f8423ed628035",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/approved/after-initial-service-close.json": "6c24b6f5e115650dc21bf8ab26c34439dd1e1349d615c9d212fb356fc398f2af",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/approved/before-original-resume.json": "2e45abbe869bb7f2f43cfc218ba34ed4ecc91f4f66fdfbdad453d15d19031383",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/approved/facts.json": "0da807d8601bc5e44bbdef9038a7ea7f4745e5ded02c203ad56c4a3e361000d1",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/approved/jobs.json": "164fedf13b9bda300057434fa7c4dfe4098d2c552e138d66dc1b70bbd44a04bf",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/approved/snapshots.json": "faec9ecb75d73d43938f7f8322ca0ff3edefae99a880a7e91564896537b4f993",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/denied/after-initial-service-close.json": "9da8b57b59f7a59a453a506e9b774edf935f93c4a27dd6c9a5ed198723350ae4",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/denied/before-original-resume.json": "4b3d062fd4cf8785fc3e5647adfc8ea9225ca1ef6a62e5694099632f4be59347",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/denied/facts.json": "94de74a1349df0ba4200e1168af27581790cd90056b9aa78c486732d6e4db42d",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/denied/jobs.json": "9a5b25da7372b8ea851817cab4d4417e126976b5ec446d5715513a1867dfb833",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified/postgres/denied/snapshots.json": "642a989f3b78cc41063fd98136e49dabeee132c1262edbf66b1813dec01e037b",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified.log": "a5eeaea7aec842a0c1dea94527a8f71eaf230ccd2389462ab10d8444449a3a3f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-notification-verified.xml": "6517b4192d789261a7af2c1ee16d44139fca4ed06a8bd64c7526b27b42ca5d41",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-probe/postgres/approved/after-initial-service-close.json": "19a5c603d3b77230dfb9cf13470ec74ceee16927270b891c47de17298e6af3c7",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-probe/postgres/approved/before-original-resume.json": "4b2d269abf2012ab21749e90c1622f826f5288590e3519bceb4d8172667a830e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-probe/postgres/denied/after-initial-service-close.json": "f09b7754f3e56d6891f3153139f7e28864f5307328c4ac7bda8e314c5483ac8f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-probe/postgres/denied/before-original-resume.json": "189452339fd70d3b6b78ca2fd7731ee57f8c0e39992697805b9319f956761cdf",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-probe.log": "2a9ef5d96e1af2eb9d65032fefc5cee601e3c48130ab299be34e05152df98e1a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-probe.xml": "6fd2637e6c8d763fcb1832dd5b7af7db03e24f987609f779f3499f4264e17416",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/approved/after-initial-service-close.json": "0a4df14145c56195bb6aea5400be0675aee51b9626594f91635219043a5a3d9f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/approved/before-original-resume.json": "5b11ad37c3259dacc9f53d64e15ea80e0a2550d13a94f595585939b29fd8579e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/approved/facts.json": "d17d442da3e2e025cefcebfe215ee372ba69479ea1a141ac86e209f28f0b02d7",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/approved/jobs.json": "f53882ec2c82c3a2f354a7ce0368dc626f8f8eb024bb8706568d2d874e8c6816",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/approved/snapshots.json": "c3dcbc0a6a6bb0eb871a2a3a7f7c2cf4d9164f8ab0ee31fc63bf465ed381b741",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/denied/after-initial-service-close.json": "c6d013f03763891c179ba3921af515f90a16e868e9073e234e4afaa85ac1e321",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/denied/before-original-resume.json": "9d5ed01e28a86e543becd4305666271785ec866ec7657eedd5552f17688d9a71",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/denied/facts.json": "82e9627852cd7328dc2d64def44fa7a0087624e2ca72b149eb04a84fa30b1455",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/denied/jobs.json": "c43b692f40140c364bfb39fd64ee3105f90261684118dcfdbcfed61933182ba8",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/memory/denied/snapshots.json": "08bbcadaf3786b3caf81c1e5dd49641fc5ac759afb2bb06efad0aff4eec2e16d",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/approved/after-initial-service-close.json": "4c7ecf4019dbeb716c535f14da097c9aab05ca62b7a16a7b663522300d459dd4",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/approved/before-original-resume.json": "bb6655b52764feb1f6287993ad529c2128d4df3c4c09f3428260823189b1bd80",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/approved/facts.json": "29d19a02614808ccb0304fb68a449377a87dc4147fc16951fa7d5a901d7c2dcd",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/approved/jobs.json": "0c4809cc5b3066540b2baff09cbb8714cd50e052c8556ab55dbd6cec50fa7a8f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/approved/snapshots.json": "5c45fb1b0370b1498962f3404130b37f412acb310538d0364565eb53ade15cfa",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/denied/after-initial-service-close.json": "2c80befef7299b2071cbbce364866d2b28e60199549457919edb6914d203e6e6",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/denied/before-original-resume.json": "d482f777d38d2503052350bb33cf6d8dbb48def0396612cb75703ed0a67aeb11",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/denied/facts.json": "8264c50a5f08098b4769c271a7030c03aef04cb039e637c322001357664efb89",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/denied/jobs.json": "bb7c37da051a0b0b7c1d26f089d6a97b520f29ccee4f9801f6cecb4e83e48824",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled/postgres/denied/snapshots.json": "935ca3eef548f415bbf4c44c50aa4a59786a308039bf130fb44c7d7b18ec926f",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled.log": "af6aae523b2cdb94bc512a20bcf48629ecd07c6e957c7207148db02a2d8fe7ac",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-pg-settled.xml": "5a4c3a70271a82bd04d046da43f58527dfac4ef016c90b773ee45f0b360cd6ae",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression/memory/approved/facts.json": "02c5b2c4bc524fa27bca56389d4d2b541aaf800ac4cc3a8f1ddd85d62eea235d",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression/memory/approved/jobs.json": "f0d9e796197d9bd04ef0573dcb61017b003aee19dca3c02bc3cb4c38dacc2493",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression/memory/approved/snapshots.json": "1081ea5436914e6c02d28366d20ed83eab8e49508d88a7e9089795a2bf7de5e6",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression/memory/denied/facts.json": "cd2ca52da2e3f13c2b489c935fe6d50812a8fe8b31de93661719c5bf65268498",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression/memory/denied/jobs.json": "270a093dc24b9c9090f942448f954ccc8220d05b74c5383d357d32225a774275",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression/memory/denied/snapshots.json": "9618542371c132df3f65aa193aa10be945fe156c165f515e5c44807118e838ab",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/approved/after-initial-service-close.json": "4f0045c4c01525628d3f7977c1146e265d3932300c9578f61b4c76df8b733938",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/approved/before-original-resume.json": "d25769d53aa37b242fbb9a088b1cd73204d9ef2e53837adf516972f67c88f108",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/approved/facts.json": "fba4ac28234f985141814a3c45225a78147624e3a2ccf52ade4f2bf99c789886",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/approved/jobs.json": "3fb6a703c25fa3f08adf45b3160d074705ad657a939931713225d625033a52e3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/approved/snapshots.json": "923380d485a81aaf6745eb15a347b10e84e3b319b60b74220c4fa070f51a2fb0",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/denied/after-initial-service-close.json": "5517c7993c01b6a6ddd477e88492c4b3a7651b6f893af224007a9348161f4ccd",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/denied/before-original-resume.json": "e9e099f4714bead9d74655e929f0cb277a1cb7ecb5f2ac38713b3b0dea56f690",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/denied/facts.json": "45ffbd2efc127b2e4c39f23c21251a18b995d440042ae65222f6c2fe76e8ad4a",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/denied/jobs.json": "2536a5c5adb86d3212204809f22b81f4b2488c87dc2feb5b7acd9a16874df89e",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/memory/denied/snapshots.json": "c3a3c5eb907b8bec45af7fd257c7a2fe24cdf9343e7b3c7a4ff4df93a66bd6f4",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final/notification-race/memory/facts.json": "24198bd5e96a04c229dd4841a996725c31809657a5d77676dc616b3573674760",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final.log": "35c576fcf8f0d3c50dc3f4c16413fac7edb889b9941970bac8cfa792cef1b439",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression-final.xml": "a73147e0e57108cf96de2609802d9362121c30237f934fbbdf1fc0576c0072a4",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression.log": "02c790c819b03a90e7c2e6990c7277f6eb87a9e222e3925e3ff7080ec7dc75b3",
+    "docs/upgrade_2026-10-03/p2-tool-wait-batch-regression.xml": "36d30bacc38d47aabf9878c4c981aae4d0c495b4b7e905e7a3e0e950f6c2b01a"
+  }
+}
