@@ -46,7 +46,9 @@ class ApiProjectLocator:
         *,
         request: ApiTestingRequestState,
     ) -> ProjectLocatorResult:
-        documents = await self._api_docs_service.list_documents()
+        documents = await self._api_docs_service.list_documents(
+            project_id=request.project_id or None,
+        )
         if not documents:
             return ProjectLocatorResult(
                 candidates=[],
@@ -83,6 +85,8 @@ class ApiProjectLocator:
     # ------------------------------------------------------------------
 
     def _project_key(self, record: ApiDocRecord) -> str:
+        if record.project_id:
+            return f"project_id:{record.project_id}"
         name = (record.project_name or "").strip()
         if name:
             return name
@@ -106,6 +110,7 @@ class ApiProjectLocator:
             DocumentCandidate(
                 doc_id=record.id,
                 title=record.title,
+                project_id=record.project_id or "",
                 filename=record.filename,
                 project_name=project_name,
                 project_url=record.project_url or project_url,
@@ -125,6 +130,7 @@ class ApiProjectLocator:
         return (
             ProjectCandidate(
                 project_name=project_name,
+                project_id=str(records[0].project_id or ""),
                 project_url=project_url,
                 doc_ids=doc_ids,
                 doc_count=len(records),

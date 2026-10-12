@@ -3756,3 +3756,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 基线2c0bc397，依据P3_CASE_RETRIEVAL_FAILURE_RESEARCH.md。调研确认项目用例召回已按project_id、active version、environment和mode_key过滤，但router捕获召回异常后仅记录日志并以空hits继续，可能把故障误判为无匹配。修复后在context_bundle标记`test_case_retrieval_status`和错误类型，写入`test_case_retrieval_failed`事件和明确提示；成功为completed，未请求为not_requested。不会切换自由测试、虚构用例或放宽项目隔离。
 
 实际三模块19通过3.21秒，包含召回故障模拟、项目范围、版本索引与embedding缓存。默认AI、正式Run和外部模型继续暂缓，完整P0—P5保持active。
+
+### 7.51 API项目候选正式身份与同名隔离〔2026-10-12〕
+
+基线74a283ac，依据P3_PROJECT_IDENTITY_RESEARCH.md。原项目候选按project_name分组，正式同名项目可能合并；本批让ApiDocRecord.project_id沿请求、ProjectCandidate、DocumentCandidate、ApiTestCampaign传递，绑定会话项目ID先过滤目录，再按ID分组，文档选择优先按ID。旧无ID文档保留兼容分组，但正式项目绑定不会读取无ID文档。没有新表、配置、依赖或模型协议。
+
+实际16通过、1跳过、2排除、7.36秒，覆盖同名不同ID不合并、绑定ID过滤、用例召回、会话隔离和非live Agent回归。默认AI项目理解与多候选排序质量仍未验收，完整P0—P5保持active。

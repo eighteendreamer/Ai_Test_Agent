@@ -249,6 +249,7 @@ class ApiTestingModeRuntime:
                     "label": c.project_name,
                     "value": c.project_name,
                     "project_name": c.project_name,
+                    "project_id": c.project_id,
                     "project_url": c.project_url,
                     "doc_count": c.doc_count,
                     "endpoint_count": c.endpoint_count,
@@ -275,7 +276,8 @@ class ApiTestingModeRuntime:
         state.selected_documents = [
             doc
             for doc in (state.document_candidates or [])
-            if doc.project_name == project.project_name
+            if ((project.project_id and doc.project_id == project.project_id)
+                or (not project.project_id and doc.project_name == project.project_name))
         ]
         # If we don't have document_candidates yet, build them from project.
         if not state.selected_documents:
@@ -284,6 +286,7 @@ class ApiTestingModeRuntime:
                 DocumentCandidate(
                     doc_id=doc_id,
                     title=project.project_name,
+                    project_id=project.project_id,
                     project_name=project.project_name,
                     project_url=project.project_url,
                 )
@@ -419,6 +422,7 @@ class ApiTestingModeRuntime:
 
         campaign = ApiTestCampaign(
             campaign_id=str(uuid4()),
+            project_id=state.selected_project.project_id if state.selected_project else state.request.project_id,
             project_name=state.selected_project.project_name if state.selected_project else "",
             project_url=base_url,
             objective=state.request.objective,
@@ -793,6 +797,7 @@ class ApiTestingModeRuntime:
 
         return ApiTestingRequestState(
             objective=objective,
+            project_id=str(bundle.get("project_id") or mode_request.get("project_id") or "").strip(),
             project_hint=str(arguments.get("project_hint") or mode_request.get("project_hint") or "").strip(),
             domain_hint=str(arguments.get("domain_hint") or mode_request.get("domain_hint") or "").strip(),
             endpoint_hint=str(arguments.get("endpoint") or mode_request.get("endpoint") or "").strip(),

@@ -22,6 +22,7 @@ class ApiTestingRequestState(BaseModel):
     model_config = ConfigDict(extra="allow")
 
     objective: str = ""
+    project_id: str = ""
     project_hint: str = ""
     domain_hint: str = ""
     endpoint_hint: str = ""
@@ -42,6 +43,7 @@ class ProjectCandidate(BaseModel):
     """A candidate project that matches the user's request."""
 
     project_name: str
+    project_id: str = ""
     project_url: str = ""
     doc_ids: list[str] = Field(default_factory=list)
     doc_count: int = 0
@@ -55,6 +57,7 @@ class DocumentCandidate(BaseModel):
 
     doc_id: str
     title: str
+    project_id: str = ""
     filename: str = ""
     project_name: str = ""
     project_url: str = ""
@@ -217,6 +220,7 @@ class ApiTestCampaign(BaseModel):
     """Represents one API test campaign."""
 
     campaign_id: str
+    project_id: str = ""
     project_name: str = ""
     project_url: str = ""
     objective: str = ""
