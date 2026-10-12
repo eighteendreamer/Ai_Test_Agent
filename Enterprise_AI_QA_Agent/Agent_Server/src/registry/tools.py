@@ -1188,6 +1188,10 @@ class ToolRegistry:
                                 "type": "object",
                                 "description": "Optional serialized credential session for worker task execution.",
                             },
+                            "dispatch_ref": {
+                                "type": "string",
+                                "description": "Server-issued opaque reference for an API execution Worker. Use it unchanged with worker_action=execute_task; do not add task, credentials, token-field or checkpoint overrides. Only the registered child session can resolve the frozen private input.",
+                            },
                             "auth_token_field": {
                                 "type": "string",
                                 "description": "Response JSON field used to extract auth tokens from login tasks.",

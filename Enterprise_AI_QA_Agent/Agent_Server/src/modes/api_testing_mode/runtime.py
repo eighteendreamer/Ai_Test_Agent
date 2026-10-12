@@ -70,6 +70,7 @@ from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.tools import API_TESTING_TOOL_KEYS
 from src.modes.api_testing_mode.verification import ApiTestingVerificationPolicy
 from src.modes.api_testing_mode.evaluation import ApiTestingEvaluationPolicy
+from src.runtime.postgres_api_credential_store import ApiCredentialReferenceError
 
 logger = logging.getLogger("uvicorn.error.api_testing_mode.runtime")
 
@@ -84,11 +85,13 @@ class ApiTestingModeRuntime:
         settings: Any = None,
         coordinator_runtime_service: Any = None,
         session_store: Any = None,
+        credential_reference_service: Any = None,
     ) -> None:
         self._api_docs_service = api_docs_service
         self._settings = settings
         self._coordinator_runtime_service = coordinator_runtime_service
         self._session_store = session_store
+        self._credential_references = credential_reference_service
         self._project_locator = ApiProjectLocator(api_docs_service=api_docs_service)
         self._doc_parser = ApiDocParser(api_docs_service=api_docs_service)
         self._capability_mapper = CapabilityMapper()
@@ -109,9 +112,21 @@ class ApiTestingModeRuntime:
         """Main entry: restore state, drive phase machine, return result."""
         worker_action = str(arguments.get("worker_action") or "").strip().lower()
         if worker_action == "execute_task":
-            return await self._execute_dispatched_task(arguments)
+            return await self._execute_dispatched_task(arguments, context)
 
         state = self._restore_state(context)
+        if self._credential_references is not None and state.credential_session is None and state.execution_checkpoint.get("credential_ref"):
+            restored = await self._credential_references.load_parent_credential(
+                state.execution_checkpoint["credential_ref"], self._build_dispatch_context(context))
+            self._credential_manager.restore_session(restored)
+            state.credential_session = restored
+        if self._credential_references is not None and state.credential_session is not None:
+            existing = state.credential_session
+            if existing.credential_session_id and not (existing.token or existing.headers or existing.cookie_jar):
+                restored = await self._credential_references.load_parent_credential(
+                    existing.credential_session_id, self._build_dispatch_context(context))
+                self._credential_manager.restore_session(restored)
+                state.credential_session = restored
         request = self._build_request(arguments, context)
 
         # If state is in a terminal phase and user sends a new request, reset for a new campaign.
@@ -138,6 +153,8 @@ class ApiTestingModeRuntime:
         state = await self._advance(state, context)
 
         # Persist state for next turn.
+        if self._credential_references is not None and state.credential_session is not None:
+            await self._credential_references.save_parent_credential(state.credential_session, self._build_dispatch_context(context))
         self._persist_state(state, context)
         return self._build_output(state)
 
@@ -448,6 +465,7 @@ class ApiTestingModeRuntime:
                 session_store=self._session_store,
                 parent_context=self._build_dispatch_context(context),
                 credential_manager=self._credential_manager,
+                credential_reference_service=self._credential_references,
                 auth_token_field=auth_token_field,
                 worker_model_key=getattr(context, "selected_model_key", "") or None,
                 checkpoint_callback=self._build_checkpoint_callback(state, context),
@@ -631,7 +649,15 @@ class ApiTestingModeRuntime:
         state.last_updated_at = datetime.now(timezone.utc).isoformat()
         bundle = getattr(context, "context_bundle", None)
         if isinstance(bundle, dict):
-            bundle[STATE_METADATA_KEY] = state.model_dump(mode="json")
+            bundle[STATE_METADATA_KEY] = self._state_payload(state)
+
+    def _state_payload(self, state: ApiTestingState) -> dict[str, Any]:
+        payload = state.model_dump(mode="json")
+        if self._credential_references is not None:
+            payload.pop("credential_session")
+            if state.credential_session is not None:
+                payload["execution_checkpoint"]["credential_ref"] = state.credential_session.credential_session_id
+        return payload
 
     # ==================================================================
     # Output builder
@@ -701,7 +727,7 @@ class ApiTestingModeRuntime:
         if state.notes:
             output["notes"] = list(state.notes)
 
-        output[STATE_METADATA_KEY] = state.model_dump(mode="json")
+        output[STATE_METADATA_KEY] = self._state_payload(state)
         return output
 
     def _build_summary(self, state: ApiTestingState, note: str = "") -> str:
@@ -953,7 +979,23 @@ class ApiTestingModeRuntime:
         except ValueError:
             return None
 
-    async def _execute_dispatched_task(self, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def _execute_dispatched_task(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
+        dispatch_ref = str(arguments.get("dispatch_ref") or "")
+        credential, credential_owner = None, None
+        if dispatch_ref:
+            try:
+                if self._credential_references is None:
+                    raise ApiCredentialReferenceError("api_credential_service_unavailable")
+                if any(key in arguments for key in ("task", "credential_session", "execution_checkpoint", "auth_token_field")):
+                    raise ApiCredentialReferenceError("api_worker_frozen_input_override")
+                frozen, credential, credential_owner = await self._credential_references.resolve_dispatch(dispatch_ref, context)
+                arguments = {"worker_action": "execute_task", "task": frozen["task"],
+                    "auth_token_field": frozen["auth_token_field"]}
+            except ApiCredentialReferenceError as exc:
+                logger.warning("api_worker_private_input_rejected", extra={"dispatch_ref": dispatch_ref,
+                    "reason": str(exc), "http_request_sent": False})
+                return {"status": "failed", "ok": False, "error": str(exc),
+                    "summary": "API Worker private input could not be resolved before HTTP.", "http_request_sent": False}
         raw_task = arguments.get("task")
         if not isinstance(raw_task, dict):
             return {
@@ -980,6 +1022,8 @@ class ApiTestingModeRuntime:
         if isinstance(checkpoint, dict):
             task.execution_checkpoint = dict(checkpoint)
         credential_manager = CredentialManager()
+        if credential is not None:
+            credential_manager.restore_session(credential)
 
         raw_credential = arguments.get("credential_session")
         if isinstance(raw_credential, dict):
@@ -996,12 +1040,15 @@ class ApiTestingModeRuntime:
         )
         result = await executor.execute(task)
         latest_credential = credential_manager.get_latest()
+        if credential_owner is not None and latest_credential is not None:
+            # Persist private material before ToolRuntime stores only public output.
+            await self._credential_references.save_worker_credential(latest_credential, credential_owner)
         summary = (
             f"Executed API task {result.task_id} with final status {result.status}."
             if result.response_status is None
             else f"Executed API task {result.task_id} with final status {result.status} and HTTP {result.response_status}."
         )
-        return {
+        output = {
             "status": "completed",
             "ok": result.status == "completed",
             "idempotency_key": result.idempotency_key,
@@ -1010,6 +1057,23 @@ class ApiTestingModeRuntime:
             "task_result": result.model_dump(mode="json"),
             "credential_session": latest_credential.model_dump(mode="json") if latest_credential else None,
         }
+        if credential_owner is not None:
+            output.pop("credential_session")
+            output["credential_ref"] = latest_credential.credential_session_id if latest_credential else ""
+            # Concrete credential values can also occur under a custom response field.
+            # Redact the known values, without globally treating generic 'token' as secret.
+            sessions = [s for s in (credential, latest_credential) if s is not None]
+            private_values = {v for s in sessions for v in [s.token, *s.headers.values(), *s.cookie_jar.values()] if v}
+            def public(value):
+                if isinstance(value, dict):
+                    return {k: public(v) for k, v in value.items()}
+                if isinstance(value, list):
+                    return [public(v) for v in value]
+                if isinstance(value, str) and value in private_values:
+                    return "[REDACTED]"
+                return value
+            output["task_result"] = public(output["task_result"])
+        return output
 
     def _can_use_subagent_execution(self, context: Any) -> bool:
         if self._coordinator_runtime_service is None or self._session_store is None:

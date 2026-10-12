@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-12；当前核对基线 `15d8687b`。按用户安排暂缓后续真实AI验收，继续其他模块。本批复现并统一API两条执行路径的刷新凭据传播规则，修复具体凭据容器的公开脱敏遗漏；九模块175通过1门控跳过，消费方另24通过3门控跳过，各批重叠不累加。真实ToolRuntime/PG Worker链路仍失败：登录200、刷新401、查询跳过；公开脱敏投影不能作为内部凭据传输，需补持久化内部引用，见7.39。未宣称独立Worker/默认AI续期通过。7.38流式纠正恢复、7.37简单默认UI正负及导入/App专项保持原验收范围；完整P0—P5仍active。
+修订日期：2026-10-12；当前核对基线 `70a1daf8`。按用户安排暂缓后续真实AI验收，继续其他模块。7.39发现的API内部凭据传输缺口已接入加密PG引用、固定派发输入和可信会话范围；真实ToolRuntime登录→刷新→查询均200，无依赖public不带认证，父模式报告/状态回读及原Job终态零重发已验证。最终205通过21门控跳过；另正式用例/操作/审批恢复32通过，生产main启动/重启1通过，各批重叠不累加。报告原正文保留并按既有PG inline索引验证；不冒充独立Agent Worker或默认AI验收，见7.40。自动续期/Cookie/并发刷新及其他未完成分类保留；完整P0—P5仍active。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
@@ -3606,3 +3606,24 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 **本批已验证**：两协调器来源传播一致、真实HTTP显式刷新后的受保护调用、无依赖public不携带凭据、终态run_all零新增HTTP、具体凭据容器公开脱敏。**仍需补实现**：正常ToolRuntime脱敏与PG持久化后的内部凭据传输及恢复。父子SessionStore已有正式project_id和父session/turn来源，ChannelCredentialCodec现有Fernet当前available=True；这些是后续研究依据，尚未实现API凭据vault。需持久化不透明引用，由可信executor按实际项目/派发关系解密，Prompt/公开Job/报告不保存明文，验证缺/错密钥、跨范围拒绝、服务重建及终态零重发；不能从公开token还原认证或直接关闭脱敏。
 
 完整准备/unknown/计划修订、复杂UI失败定位/响应关联、自动续期/Cookie/并发刷新、持续性能/AI流式指标、安全故障组合、更多业务/部署/生产历史迁移及两份旧Worker原件仍保持未完成；默认生成/多候选排序补全执行/纠正正式成功等按用户安排待真实AI验收。没有新表/依赖/前端修改，没有新前端构建或完整App通过声明。研究、全部失败及SHA审计见P2_API_WORKER_AUTH_RESEARCH.md、p2-api-worker-auth-*。三份方案同步，只提交本批白名单，不推送/PR，完整目标不标完成。
+
+
+### 7.40 API内部凭据引用、父报告与终态真实恢复〔2026-10-12〕
+
+基线70a1daf8，上一轮为已提交实际进展。本批依据SessionStore真实父子身份、协调器先注册receipt、既有Fernet和PG业务存储调研，补上7.39的内部传输缺口。新增Session派生的两个PG业务表保存加密凭据/固定Worker输入，不新增依赖或可编辑PG配置；main初始化并注入。配置延续原MySQL体系/现有密钥管理，未改模型或测试模式。
+
+新Worker Prompt只携带dispatch_ref；父session/turn/task/project及真实receipt匹配后可信executor取固定task和凭据。模型不能通过叠加task/body/checkpoint改变引用。凭据先加密入库，父协调器内部回读，公开输出不承担私密传输；父模式状态仅保存credential_ref。旧一次性task合同与历史快照保留，不原地重写。失败均有安全原因码和结构化日志。
+
+| 实际验证 | 结果及明确边界 |
+|---|---|
+| 十六模块types-final | 205通过21门控跳过61.33秒。核心及public两参数真实ToolRuntime/PG/HTTP；login、refresh、profile均200，独立public没有Authorization；新服务读旧引用、Job终态重投零HTTP |
+| 引用/恢复边界 | 缺/错密钥、覆盖固定输入、错误turn/task/role/project/父会话/缺引用、固定派发内容冲突、错误/不存在/跨会话Job拒绝；旧记录及公开输出不被拒绝调用改写/回泄。生成凭据不在Prompt、公开状态/Job或PG密文行中 |
+| 父模式和报告 | 实际父ToolRuntime→受控启动的生产runner→父报告通过。两份报告以既有PG inline_text正文/索引保存，新服务回读；report-originals补采1通过7排除9.56秒，原JSON/Markdown现场保存及SHA/size核对；没有强改为RustFS |
+| 正式动作/审批回归 | 首次遗漏owned证据目录，15个场景保存证据时KeyError、17通过；补正确QA_STATEFUL_RESEARCH_EVIDENCE_DIR后四模块32通过57.50秒，实际PG/原Agent操作、unknown、改call ID、回读、审批预算保持 |
+| 独立main生产启动/重启 | 原HTTP origin专项1通过22.66秒，实际API进程与MySQL/PG/Redis/RustFS原件；新增表初始化不破坏冷启动/历史检查。不能据此说独立API Agent Worker已验收 |
+
+初次receipt夹具错误、普通调用未指定原Job、旧冻结Schema断言、RustFS报告假设均保留。按原Job恢复还真实发现非case路径重复HTTP〔3变6〕：已补终态权威回读及scope/input校验，不重领终态。Worker合并已验证字段时先序列化会把AssertionSpec降为dict，父报告出现三个警告；保留原验证字段类型，实际类型断言和最终无警告验证通过。此前204/205/23通过批次重叠不累加。compileall退出0为附加检查。
+
+**本批已实现且在上述真实范围验证**：加密内部传输、固定派发、范围隔离、父状态/报告、原Job终态回读。**已有实现尚未验收**：新的真实独立Agent Worker/默认AI鉴权闭环、完整App及更广业务模型质量。**仍需依据缺口补强**：自动过期/401续期、Cookie获取和并发刷新、任意多认证流隔离、加密保存边界进程kill、生产历史明文凭据迁移审计；其余准备/unknown/修订、复杂UI/响应因果、持续性能/AI流式、安全组合与生产历史投影继续保留。两份旧Worker原件仍缺失。
+
+研究与全部失败见P2_API_CREDENTIAL_REFERENCE_RESEARCH.md和p2-api-credential-reference-*。无新增前端构建、外部AI或完整系统通过声明。三份方案同步，旧工件/保护文件/原件字节及秘密扫描另附validation；仅提交本批白名单，不推送/PR，完整目标不标完成。

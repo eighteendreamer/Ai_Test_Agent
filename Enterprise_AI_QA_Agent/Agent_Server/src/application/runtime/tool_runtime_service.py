@@ -209,6 +209,7 @@ class ToolRuntimeService:
         runtime_control=None,
         security_bug_service=None,
         tool_job_heartbeat_interval_seconds: float | None = None,
+        api_credential_reference_service=None,
     ) -> None:
         self._request_timeout_seconds = request_timeout_seconds
         self._settings = settings
@@ -222,6 +223,7 @@ class ToolRuntimeService:
         self._artifact_storage_service = artifact_storage_service
         self._api_docs_service = api_docs_service
         self._session_store = session_store
+        self._api_credential_references = api_credential_reference_service
         self._recording_scene_knowledge = None
         self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._output_safety_policy = OutputSafetyPolicy()
@@ -568,6 +570,11 @@ class ToolRuntimeService:
             if self._tool_job_service is not None:
                 if context.tool_job_id:
                     job = await self._tool_job_service.get_job(context.tool_job_id)
+                    if job is None:
+                        raise ValueError("Original ToolJob is unavailable; execution cannot be restarted implicitly.")
+                    if job.session_id != context.session_id or job.tool_key != tool.key or job.input_payload != call.arguments:
+                        job = None  # A rejected reference must not expose another Job's preserved output.
+                        raise ValueError("Original ToolJob scope or frozen input differs from this recovery call.")
                 if job is None:
                     job = await self._tool_job_service.create_job(
                         tool=tool,
@@ -583,6 +590,11 @@ class ToolRuntimeService:
                     or job.metadata.get("case_action_binding") != context.case_action_binding.model_dump(mode="json")
                 ):
                     raise ValueError("工具任务执行项关联与原固定调用不一致")
+                if context.tool_job_id and job.status in {ToolJobStatus.completed, ToolJobStatus.partial,
+                    ToolJobStatus.failed, ToolJobStatus.denied, ToolJobStatus.cancelled}:
+                    logger.info("tool_terminal_job_replayed", extra={"tool_job_id": job.id,
+                        "tool_key": tool.key, "session_id": context.session_id, "status": job.status.value})
+                    return await self.record_from_job(job)
                 if action_admission:
                     if context.claimed_job is not None:
                         if (context.claimed_job.id != job.id or context.claimed_job.status != ToolJobStatus.running
@@ -2800,6 +2812,7 @@ class ToolRuntimeService:
             settings=self._settings,
             coordinator_runtime_service=self._coordinator_runtime_service,
             session_store=self._session_store,
+            credential_reference_service=self._api_credential_references,
         )
         return await runtime.handle(arguments, context)
 

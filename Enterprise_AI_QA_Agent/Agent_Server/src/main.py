@@ -168,6 +168,8 @@ from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.session_resource_store import PostgresSessionResourceStore
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
+from src.modes.api_testing_mode.credential_reference_service import ApiCredentialReferenceService
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
@@ -275,6 +277,10 @@ async def _initialize_lifespan_resources(
     store = container.session_store()
     await store.initialize()
     store.set_hot_memory_store(hot_memory_store)
+    api_credential_references = ApiCredentialReferenceService(
+        store=PostgresApiCredentialStore(settings), session_store=store)
+    await api_credential_references.initialize()
+    logger.info("lifespan_api_credentials_initialized")
 
     # Durable task intent is initialized independently of Redis delivery.
     # Business services can write the outbox in the same PostgreSQL transaction
@@ -589,6 +595,7 @@ async def _initialize_lifespan_resources(
         memory_runtime_service=memory_runtime_service,
         tool_job_service=tool_job_service,
         session_store=store,
+        api_credential_reference_service=api_credential_references,
         transcript_hygiene_service=transcript_hygiene_service,
         artifact_storage_service=artifact_storage_service,
         api_docs_service=api_docs_service,

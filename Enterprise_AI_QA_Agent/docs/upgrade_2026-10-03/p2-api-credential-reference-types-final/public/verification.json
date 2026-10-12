@@ -1,0 +1,101 @@
+{
+  "scope": "actual ToolRuntime/ToolJob/PG sessions/RustFS/owned HTTP; controlled worker launch; no external model or independent API",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": true,
+      "current_credential": false
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": false,
+      "current_credential": true
+    },
+    {
+      "method": "GET",
+      "path": "/public",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    }
+  ],
+  "jobs": [
+    {
+      "id": "84aeb063-bff5-4ce5-b9ac-a2a030659a40",
+      "session_id": "97036487-ceeb-4942-8897-92b0a51f9b9c",
+      "status": "completed",
+      "task_id": "task_000_login",
+      "response_status": 200,
+      "auth_ref": "67bfe78b-c1c3-4f1a-b0cd-cab83f012839",
+      "replay_same_job": true
+    },
+    {
+      "id": "55eddc73-db88-40ff-b01d-5a6b24a7f83a",
+      "session_id": "746074c0-ba7b-4b3a-a038-29945197ddc9",
+      "status": "completed",
+      "task_id": "task_001_refresh",
+      "response_status": 200,
+      "auth_ref": "2658ad24-f6aa-4bc0-897b-b23d4da9136c",
+      "replay_same_job": true
+    },
+    {
+      "id": "c2b8ac50-fa90-416f-b47e-98fc58867f0f",
+      "session_id": "488f18ae-cab4-4843-b4f2-780f2fb5a74d",
+      "status": "completed",
+      "task_id": "task_002_profile",
+      "response_status": 200,
+      "auth_ref": "2658ad24-f6aa-4bc0-897b-b23d4da9136c",
+      "replay_same_job": true
+    },
+    {
+      "id": "b8ec5649-e37a-4d41-a2e5-7ad861878362",
+      "session_id": "d47810a4-5ba6-495f-97ac-2322ad469cb9",
+      "status": "completed",
+      "task_id": "public",
+      "response_status": 200,
+      "auth_ref": "",
+      "replay_same_job": true
+    }
+  ],
+  "artifacts": [],
+  "new_service_reads_original_sessions": true,
+  "terminal_replay_new_http": 0,
+  "encrypted_private_rows": 6,
+  "opaque_worker_prompts": true,
+  "generated_credentials_absent_from_public_output": true,
+  "denied_before_http": {
+    "task": "api_worker_frozen_input_override",
+    "credential_session": "api_worker_frozen_input_override",
+    "execution_checkpoint": "api_worker_frozen_input_override",
+    "auth_token_field": "api_worker_frozen_input_override",
+    "wrong_key": "api_credential_decryption_failed",
+    "missing_key": "api_credential_key_unavailable",
+    "parent_turn_id": "api_worker_dispatch_receipt_missing",
+    "task_id": "api_worker_dispatch_receipt_missing",
+    "dispatch_role": "api_worker_dispatch_scope_invalid",
+    "project": "api_worker_project_scope_invalid",
+    "missing_reference": "api_credential_reference_unavailable",
+    "parent_session": "api_credential_reference_unavailable",
+    "foreign_job": "recovery_scope_rejected_without_saved_output",
+    "changed_job_input": "recovery_scope_rejected_without_saved_output",
+    "missing_job": "recovery_scope_rejected_without_saved_output"
+  },
+  "fixed_dispatch_conflict_preserves_original": true,
+  "parent_state_restored_from_reference": true,
+  "full_goal_complete": false
+}

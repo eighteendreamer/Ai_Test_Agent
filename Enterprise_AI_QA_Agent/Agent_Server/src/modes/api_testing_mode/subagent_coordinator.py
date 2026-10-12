@@ -23,6 +23,7 @@ from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
 from src.runtime.store import SessionStore
+from src.runtime.postgres_api_credential_store import ApiCredentialReferenceError
 from src.schemas.session import MessageRole, SessionStatus
 
 CheckpointCallback = Callable[[str, ApiTestTask, list[ApiTestTask]], None]
@@ -46,6 +47,7 @@ class ApiSubagentCoordinator:
         worker_model_key: str | None = None,
         poll_interval_seconds: float = 0.25,
         checkpoint_callback: CheckpointCallback | None = None,
+        credential_reference_service: Any = None,
     ) -> None:
         self._pool = pool
         self._policy = policy
@@ -53,6 +55,8 @@ class ApiSubagentCoordinator:
         self._session_store = session_store
         self._parent_context = parent_context
         self._credential_manager = credential_manager
+        self._credential_references = credential_reference_service
+        self._dispatch_refs: dict[str, str] = {}
         self._auth_token_field = auth_token_field
         self._worker_agent_key = worker_agent_key
         self._worker_model_key = worker_model_key
@@ -208,6 +212,15 @@ class ApiSubagentCoordinator:
                 self._apply_input_bindings(task)
                 launched_tasks.append(task)
 
+            if self._credential_references is not None:
+                for task in launched_tasks:
+                    task_payload = task.model_dump(mode="json")
+                    task_payload["attempts"] = max(0, task.attempts - 1)
+                    identity = task.task_id if task.attempts <= 1 else f"{task.task_id}:attempt:{task.attempts}"
+                    self._dispatch_refs[task.task_id] = await self._credential_references.freeze_dispatch(
+                        parent_context=self._parent_context, dispatch_task_id=identity, task=task_payload,
+                        token_field=self._auth_token_field,
+                        credential=self._credential_manager.get(task.auth_ref) if task.auth_ref else None)
             workers = [self._build_worker_spec(task) for task in launched_tasks]
             dispatch_task_ids = {
                 task.task_id: worker["task_id"]
@@ -280,7 +293,19 @@ class ApiSubagentCoordinator:
                 if not tool_output:
                     self._fail_task(task, task.worker_summary or f"Worker finished without api-test-runner output ({session.status.value}).")
                     continue
+                if self._credential_references is not None:
+                    result_payload = tool_output.get("task_result") or {}
+                    if isinstance(result_payload, dict) and result_payload.get("auth_ref"):
+                        restored = await self._credential_references.load_parent_credential(
+                            result_payload["auth_ref"], self._parent_context)
+                        self._credential_manager.restore_session(restored)
                 self._apply_worker_output(task, tool_output)
+        except ApiCredentialReferenceError as exc:
+            logger.warning("api_worker_private_input_unavailable", extra={
+                "parent_session_id": str(self._parent_context.get("session_id") or ""), "reason": str(exc)})
+            for task in launched_tasks:
+                if task.status not in {TASK_COMPLETED, TASK_FAILED}:
+                    self._fail_task(task, str(exc))
         finally:
             for task in launched_tasks:
                 for lock in task.resource_locks:
@@ -299,7 +324,9 @@ class ApiSubagentCoordinator:
             "task": task_payload,
             "auth_token_field": self._auth_token_field,
         }
-        if current_credential is not None:
+        if self._credential_references is not None:
+            runner_args = {"worker_action": "execute_task", "dispatch_ref": self._dispatch_refs[task.task_id]}
+        elif current_credential is not None:
             runner_args["credential_session"] = current_credential.model_dump(mode="json")
 
         prompt = (
@@ -382,8 +409,10 @@ class ApiSubagentCoordinator:
         merged_worker_session_id = task.worker_session_id
         merged_worker_status = task.worker_status
         merged_worker_summary = task.worker_summary or str(tool_output.get("summary") or "")
-        for field_name, value in result_task.model_dump(mode="python").items():
-            setattr(task, field_name, value)
+        for field_name in result_task.model_dump(mode="python"):
+            # Keep validated nested models; serializing their values here turns
+            # AssertionSpec into dicts and breaks the parent state contract.
+            setattr(task, field_name, getattr(result_task, field_name))
         task.worker_session_id = merged_worker_session_id
         task.worker_status = merged_worker_status
         task.worker_summary = merged_worker_summary

@@ -40,7 +40,9 @@ def test_actual_failed_contract_keeps_complete_native_model_and_explicit_scope()
     full, _ = query_tool_contracts(contracts, request.model_copy(update={'operation':None}), 20)
     evidence = values[0]
     assert full[0].payload == original['api-test-runner'] and contracts == original
-    assert evidence.payload['models']['ApiTestTask'] == ApiTestTask.model_json_schema()
+    frozen_variant = next(value for value in original['api-test-runner']['output_variants']
+        if value['when'] == {'worker_action': 'execute_task'})
+    assert evidence.payload['models']['ApiTestTask'] == frozen_variant['schema']
     assert metadata['scope'] == evidence.payload['scope'] == 'named-operation'
     assert evidence.payload['parent_contract_hash'] == _digest(full[0].payload)
     assert evidence.source_id != full[0].source_id and evidence.id != full[0].id
