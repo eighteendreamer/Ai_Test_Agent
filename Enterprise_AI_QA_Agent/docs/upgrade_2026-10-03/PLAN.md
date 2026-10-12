@@ -3768,3 +3768,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 基线b9d1ab60，依据P3_API_PROJECT_SCOPE_RESEARCH.md。实际上传核验发现发现结果未保存真实文档候选、选择会按名称扩大文档集合、恢复未在正文读取前核对项目/文档ID，嵌套api_testing_request还能伪造project_id。修复后正式身份唯一来自context_bundle.project_id；发现保存真实DocumentCandidate，选择只消费候选doc_ids；目录过滤、Campaign和恢复校验均使用正式ID，冲突在正文读取前拒绝并记录事件。旧无ID文档保留兼容，不替代正式绑定。
 
 内存与隔离PG/RustFS实际上传/解析/恢复共6通过4.28/9.09秒，跨项目伪造0正文读取；正式身份/召回回归16通过，前端npm run build成功7.56秒。业务HTTP和外部AI均0。默认AI候选排序质量、正式Run完整查证和完整产品流程仍未验收，完整P0—P5保持active。
+
+### 7.53 API项目选择确认门禁一致性〔2026-10-12〕
+
+基线e8d340cc，依据P3_PROJECT_SELECTION_GATE_RESEARCH.md。Locator和Runtime原本对唯一未命名项目的确认规则不一致，Runtime会自动选择临时名称。已对齐：无正式名称且用户没有项目线索时进入awaiting_project_selection；只有正式名称或明确线索才自动选择。多候选分数规则保持。
+
+项目身份/上传/解析/恢复和召回回归17通过1跳过3.72秒；默认AI多候选排序质量仍暂缓，完整P0—P5保持active。

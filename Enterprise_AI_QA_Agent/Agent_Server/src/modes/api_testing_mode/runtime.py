@@ -62,7 +62,7 @@ from src.modes.api_testing_mode.doc_parser import ApiDocParser
 from src.modes.api_testing_mode.endpoint_scope_service import EndpointScopeService
 from src.modes.api_testing_mode.executor import ApiTaskExecutor
 from src.modes.api_testing_mode.precondition_resolver import PreconditionResolver
-from src.modes.api_testing_mode.project_locator import ApiProjectLocator
+from src.modes.api_testing_mode.project_locator import ApiProjectLocator, UNSET_PROJECT_LABEL
 from src.modes.api_testing_mode.report_builder import ReportBuilder
 from src.modes.api_testing_mode.selection_resolver import SelectionResolver
 from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
@@ -240,7 +240,11 @@ class ApiTestingModeRuntime:
         # Re-run the locator's clarification logic inline.
         needs_clarification = len(candidates) > 1
         if len(candidates) == 1:
-            needs_clarification = False
+            only = candidates[0]
+            needs_clarification = (
+                only.project_name == UNSET_PROJECT_LABEL
+                and not state.request.project_hint
+            )
         elif state.request.project_hint:
             top = candidates[0]
             second = candidates[1] if len(candidates) > 1 else None
