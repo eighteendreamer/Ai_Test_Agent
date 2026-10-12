@@ -3744,3 +3744,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 实际4项未知写入专项通过2.00秒：真实超时仅1次HTTP，真实500仅1次HTTP，匹配500断言仍failed，后续依赖没有执行，评估分类`unknown_side_effect`并提示只读查证。API执行器、结果回读、操作观察、效果关系、鉴权刷新回归61通过50跳过30.04秒；compileall退出0。外部AI0，受控/真实本地HTTP，不代替默认AI或正式Run验收。
 
 已实现但未覆盖：只读查证具体工具选择、查证后确认、跨进程正式用例Run恢复仍需后续专项；完整P0—P5保持active。
+
+### 7.49 正式用例恢复与效果生命周期复核〔2026-10-12〕
+
+基线b2f234a5，依据P3_FORMAL_CASE_RECOVERY_RESEARCH.md。正式AgentCaseExecutionAdapter沿现有Run/RunItem/Attempt/turn固定身份先保存执行意图，缺快照直接要求RecoveryRequired，不重新发送；原ToolJob项目/Run/Item/Attempt/call/input必须匹配，逻辑操作与对象效果证据用于区分可靠回执、未知副作用、准备成功和目标通过。准备/清理范围依赖和回执纠正沿既有协议。
+
+相关正式用例研究回归22通过、34门控跳过、60.17秒；通过部分覆盖租约、恢复链、逻辑操作、共享效果/清理、回执处理。门控真实PG/RustFS/Redis与完整产品Run未启用，因此不宣称正式跨进程未知查证已完成。API未知写入真实HTTP已在7.48修复并验证；默认AI选取/排序/补全、查证工具选择和外部AI继续暂缓，完整P0—P5保持active。

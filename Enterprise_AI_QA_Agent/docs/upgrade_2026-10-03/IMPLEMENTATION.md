@@ -5442,3 +5442,9 @@ RUN_LIVE_API_AGENT_WORKER=1、QA_API_AGENT_APPROVAL_HOLD_SECONDS=3、QA_API_AGEN
 基线a0097a5a。调研确认 `ApiTaskExecutor` 的未知结果规则与现有 `ApiTestPool` 依赖传播已经存在，缺口在 Executor 的最终状态覆盖：5xx写请求被标为unknown后，匹配断言仍会改为completed。本轮只修改 Executor 和评估建议，并新增真实HTTP回归；未知写保留观察/响应/断言证据、强制failed、写结构化日志，现有依赖变为skipped，不自动重试，不引入新状态/表/配置。
 
 `test_api_unknown_write_recovery.py`最终4通过2.00秒：超时只发送一次，500只发送一次，500断言匹配仍failed，依赖未执行，评估提示只读查证/禁止重试。相关61通过50跳过30.04秒：API执行、结果回读、操作观察、效果关系、鉴权刷新；compileall退出0。失败首轮仅为两种错误文案断言不一致，已按生产实际文案修正，现场保留。完整P0—P5仍active，默认AI和正式Run未知查证流程继续待验收。
+
+## 2026-10-12 正式用例恢复与效果生命周期复核
+
+基线b2f234a5。调研现有AgentCaseExecutionAdapter、TestRunExecutionService、case_operation、case_effect_evidence和preparation_scopes，确认正式Run已有固定项目/RunItem/Attempt/turn身份、执行意图先行、缺快照RecoveryRequired、原ToolJob身份核验、逻辑操作恢复和对象效果/清理范围协议。运行正式研究回归22通过34跳过60.17秒；门控项需要真实PG/RustFS/Redis，本轮只报告实现边界，不把内存结果扩大成产品验收。
+
+API未知写入单独由7.48处理，正式Run的只读查证工具选择、确认及跨进程恢复仍未完成；默认AI与外部模型按用户安排暂缓。
