@@ -11,7 +11,7 @@ from pathlib import Path
 from threading import Thread
 from threading import Event
 
-from src.modes.api_testing_mode.campaign_state import ApiTestTask, ExecutionPolicy
+from src.modes.api_testing_mode.campaign_state import ApiTestCampaign, ApiTestTask, ExecutionPolicy
 from src.modes.api_testing_mode.coordinator import ApiTestCoordinator
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.evaluation import ApiTestingEvaluationPolicy
@@ -95,7 +95,7 @@ def test_actual_unknown_write_timeout_is_not_retried_and_is_reported_for_reconci
         assert result.status == "failed"
         assert result.request_outcome == "unknown"
         assert result.response_status is None and result.response_body is None
-        assert "requires read-only reconciliation" in result.last_error
+        assert "reconciliation" in result.last_error and "unknown" in result.last_error
         assert classification == ("unknown_side_effect", "critical", False)
 
 
@@ -109,6 +109,7 @@ def test_actual_write_server_error_is_unknown_and_not_retried():
             execution_mode="write",
             request_body={"sku": "controlled"},
             timeout_seconds=1,
+            assertions=[{"kind": "status_code", "expected": 500, "description": "Expected server error"}],
             status="ready",
         )
         result = asyncio.run(ApiTestCoordinator(
@@ -122,3 +123,44 @@ def test_actual_write_server_error_is_unknown_and_not_retried():
         assert result.attempts == 1
         assert result.response_status == 500
         assert result.request_outcome == "unknown"
+        assert result.status == "failed"
+        assert "reconciliation" in result.last_error and "unknown" in result.last_error
+
+
+def test_unknown_write_blocks_dependents_even_when_error_assertion_matches():
+    calls = []
+
+    async def executor(task):
+        calls.append(task.task_id)
+        if task.task_id == "create":
+            task.status = "failed"
+            task.request_outcome = "unknown"
+            task.response_status = 500
+            task.check_results = [{"name": "expected error", "passed": True}]
+            task.last_error = "Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry."
+        else:
+            task.status = "completed"
+            task.request_outcome = "completed"
+        return task
+
+    create = ApiTestTask(task_id="create", method="POST", path="/orders", execution_mode="write",
+        status="ready")
+    dependent = ApiTestTask(task_id="read", method="GET", path="/orders/{id}", depends_on=["create"],
+        status="pending")
+    result = asyncio.run(ApiTestCoordinator(pool=ApiTaskPool([create, dependent]),
+        policy=ExecutionPolicy(max_retries=1), executor_fn=executor).run_all())
+    assert calls == ["create"]
+    assert result[0].status == "failed" and result[0].request_outcome == "unknown"
+    assert result[1].status == "skipped"
+    assert "dependency create failed" in result[1].last_error
+
+
+def test_unknown_write_evaluation_requires_read_only_reconciliation():
+    task = ApiTestTask(task_id="unknown", method="POST", path="/orders", status="failed",
+        request_outcome="unknown", response_status=500,
+        last_error="Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.")
+    evaluation = ApiTestingEvaluationPolicy().evaluate(
+        campaign=ApiTestCampaign(campaign_id="unknown-write", objective="unknown write", tasks=[task]),
+    )
+    assert any("只读查证" in item and "禁止重试" in item for item in evaluation.recommendations)
+    assert evaluation.failure_classifications[0].category == "unknown_side_effect"

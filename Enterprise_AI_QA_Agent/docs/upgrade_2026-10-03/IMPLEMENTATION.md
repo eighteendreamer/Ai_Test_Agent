@@ -5436,3 +5436,9 @@ RUN_LIVE_API_AGENT_WORKER=1、QA_API_AGENT_APPROVAL_HOLD_SECONDS=3、QA_API_AGEN
 既有p2-api-agent-worker-regression.py owned隔离5模块，PYTHONPATH=.、QA_API_AGENT_REGRESSION_DIR本批目录，61通过1跳过40.74秒；相关11模块最终regression-final79通过42门控跳过91.12秒〔PG等门控未全开〕，前序78通过41跳过90.55秒，重叠不累加。test_intent_safety_routing/test_report_service -k 'coordinator or report'，41通过66排除10.57秒，故障停止/报告合同保持。compileall退出0；前端未改，未重复build。原serializer函数体AST与8df999ef一致，新增等待元数据所有消费方已搜索核对。
 
 失败和原日志/PG/HTTP/快照全部保留，原件/历史/保护4文件/三方案/配置凭据由p2-tool-wait-batch-audit.py核对。正式用例管理等待、unknown只读查证、计划修订、Deep Agents/default AI及其他全目标尚未完成；完整P0—P5active，白名单中文提交、无push/PR。
+
+## 2026-10-12 未知写入结果阻断依赖
+
+基线a0097a5a。调研确认 `ApiTaskExecutor` 的未知结果规则与现有 `ApiTestPool` 依赖传播已经存在，缺口在 Executor 的最终状态覆盖：5xx写请求被标为unknown后，匹配断言仍会改为completed。本轮只修改 Executor 和评估建议，并新增真实HTTP回归；未知写保留观察/响应/断言证据、强制failed、写结构化日志，现有依赖变为skipped，不自动重试，不引入新状态/表/配置。
+
+`test_api_unknown_write_recovery.py`最终4通过2.00秒：超时只发送一次，500只发送一次，500断言匹配仍failed，依赖未执行，评估提示只读查证/禁止重试。相关61通过50跳过30.04秒：API执行、结果回读、操作观察、效果关系、鉴权刷新；compileall退出0。失败首轮仅为两种错误文案断言不一致，已按生产实际文案修正，现场保留。完整P0—P5仍active，默认AI和正式Run未知查证流程继续待验收。

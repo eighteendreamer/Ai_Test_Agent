@@ -1,0 +1,13 @@
+.F.                                                                      [100%]
+================================== FAILURES ===================================
+__________ test_actual_write_server_error_is_unknown_and_not_retried __________
+tests\test_api_unknown_write_recovery.py:127: in test_actual_write_server_error_is_unknown_and_not_retried
+    assert "requires read-only reconciliation" in result.last_error
+E   AssertionError: assert 'requires read-only reconciliation' in 'Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.'
+E    +  where 'Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.' = ApiTestTask(task_id='server-error-write', name='', method='POST', path='http://127.0.0.1:51102/orders', full_url='http...ath': '/orders', 'query_omitted': False, 'userinfo_omitted': False, 'fragment_omitted': False}, 'status_code': 500}]}}).last_error
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.executor:executor.py:89 api_task_response_outcome_unknown
+WARNING  uvicorn.error.api_testing_mode.executor:executor.py:130 api_task_unknown_write_blocks_dependents
+=========================== short test summary info ===========================
+FAILED tests/test_api_unknown_write_recovery.py::test_actual_write_server_error_is_unknown_and_not_retried
+1 failed, 2 passed in 2.53s

@@ -1,0 +1,90 @@
+{
+  "request_count": 1,
+  "server_requests": [
+    {
+      "method": "POST",
+      "path": "/orders"
+    }
+  ],
+  "task": {
+    "task_id": "server-error-write",
+    "name": "",
+    "method": "POST",
+    "path": "http://127.0.0.1:51102/orders",
+    "full_url": "http://127.0.0.1:51102/orders",
+    "capability": "",
+    "execution_mode": "write",
+    "depends_on": [],
+    "auth_ref": "",
+    "request_headers": {},
+    "request_query": {},
+    "request_body": {
+      "sku": "controlled"
+    },
+    "input_bindings": [],
+    "path_parameter_sources": {},
+    "assertions": [
+      {
+        "kind": "status_code",
+        "expected": 500,
+        "path": "",
+        "description": "Expected server error"
+      }
+    ],
+    "resource_locks": [],
+    "timeout_seconds": 1.0,
+    "status": "failed",
+    "attempts": 1,
+    "last_error": "Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.",
+    "dependency_skip_task_id": "",
+    "started_at": "2026-10-12T08:26:24.027045+00:00",
+    "completed_at": "2026-10-12T08:26:24.043057+00:00",
+    "response_status": 500,
+    "response_headers": {
+      "server": "BaseHTTP/0.6 Python/3.11.16",
+      "date": "Mon, 12 Oct 2026 08:26:24 GMT",
+      "content-type": "application/json",
+      "content-length": "14"
+    },
+    "response_body": {
+      "created": 1
+    },
+    "check_results": [
+      {
+        "name": "status_code=500",
+        "kind": "status_code",
+        "passed": true,
+        "expected": 500,
+        "actual": 500,
+        "description": "Expected server error"
+      }
+    ],
+    "request_outcome": "unknown",
+    "duration_ms": 12.54,
+    "worker_session_id": "",
+    "worker_status": "",
+    "worker_summary": "",
+    "execution_checkpoint": {
+      "http_observation_v1": {
+        "implementation_version": "api-http-observation-v1",
+        "acquisition": "network",
+        "observed_at": "2026-10-12T08:26:24.038822Z",
+        "hops": [
+          {
+            "method": "POST",
+            "target": {
+              "scheme": "http",
+              "host": "127.0.0.1",
+              "port": 51102,
+              "path": "/orders",
+              "query_omitted": false,
+              "userinfo_omitted": false,
+              "fragment_omitted": false
+            },
+            "status_code": 500
+          }
+        ]
+      }
+    }
+  }
+}

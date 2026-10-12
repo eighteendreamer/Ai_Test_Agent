@@ -1,0 +1,22 @@
+FF...................................s.s.s.s.s.s.ssssssssssssss.ssssssss [ 70%]
+ssssssss....ss.......sssssssss                                           [100%]
+================================== FAILURES ===================================
+_ test_actual_unknown_write_timeout_is_not_retried_and_is_reported_for_reconciliation _
+tests\test_api_unknown_write_recovery.py:98: in test_actual_unknown_write_timeout_is_not_retried_and_is_reported_for_reconciliation
+    assert "read-only reconciliation is required" in result.last_error
+E   AssertionError: assert 'read-only reconciliation is required' in 'Request timed out after 0.05s; write request outcome is unknown and requires read-only reconciliation before retry'
+E    +  where 'Request timed out after 0.05s; write request outcome is unknown and requires read-only reconciliation before retry' = ApiTestTask(task_id='unknown-write', name='', method='POST', path='http://127.0.0.1:51745/orders', full_url='http://12...wn', duration_ms=97.50349999740138, worker_session_id='', worker_status='', worker_summary='', execution_checkpoint={}).last_error
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.executor:executor.py:161 api_task_request_outcome_unknown
+__________ test_actual_write_server_error_is_unknown_and_not_retried __________
+tests\test_api_unknown_write_recovery.py:127: in test_actual_write_server_error_is_unknown_and_not_retried
+    assert "requires read-only reconciliation" in result.last_error
+E   AssertionError: assert 'requires read-only reconciliation' in 'Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.'
+E    +  where 'Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.' = ApiTestTask(task_id='server-error-write', name='', method='POST', path='http://127.0.0.1:51749/orders', full_url='http...ath': '/orders', 'query_omitted': False, 'userinfo_omitted': False, 'fragment_omitted': False}, 'status_code': 500}]}}).last_error
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.executor:executor.py:89 api_task_response_outcome_unknown
+WARNING  uvicorn.error.api_testing_mode.executor:executor.py:130 api_task_unknown_write_blocks_dependents
+=========================== short test summary info ===========================
+FAILED tests/test_api_unknown_write_recovery.py::test_actual_unknown_write_timeout_is_not_retried_and_is_reported_for_reconciliation
+FAILED tests/test_api_unknown_write_recovery.py::test_actual_write_server_error_is_unknown_and_not_retried
+2 failed, 53 passed, 47 skipped in 30.62s

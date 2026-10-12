@@ -367,6 +367,12 @@ class ApiTestingEvaluationPolicy:
                 f"⏱️ {len(unsettled)} 个子会话结果未结算，请核对子会话后再决定是否重试。"
             )
 
+        unknown_effects = [c for c in classifications if c.category == "unknown_side_effect"]
+        if unknown_effects:
+            recommendations.append(
+                f"🛑 {len(unknown_effects)} 个写操作结果未知，必须先执行只读查证；禁止重试或继续依赖步骤。"
+            )
+
         # Low coverage.
         if coverage.coverage_rate < 0.5:
             recommendations.append(

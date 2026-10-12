@@ -117,8 +117,23 @@ class ApiTaskExecutor:
         check_results = self._evaluate_assertions(task)
         task.check_results = check_results
         all_passed = all(item.get("passed") for item in check_results)
-        task.status = TASK_COMPLETED if all_passed else TASK_FAILED
-        if not all_passed:
+        if task.request_outcome == "unknown":
+            # A response to a write-side error does not prove whether the
+            # effect happened. Even a matching status assertion cannot release
+            # dependent writes or mark the campaign successful. Keep all
+            # response/assertion evidence and force read-only reconciliation.
+            task.status = TASK_FAILED
+            task.last_error = (
+                "Write request outcome is unknown; read-only reconciliation is required "
+                "before dependent tasks or retry."
+            )
+            logger.warning("api_task_unknown_write_blocks_dependents", extra={
+                "task_id": task.task_id, "response_status": task.response_status,
+                "assertions_passed": all_passed,
+            })
+        else:
+            task.status = TASK_COMPLETED if all_passed else TASK_FAILED
+        if not all_passed and task.request_outcome != "unknown":
             failed_names = [item.get("name", "") for item in check_results if not item.get("passed")]
             task.last_error = f"Assertions failed: {', '.join(failed_names)}"
 
