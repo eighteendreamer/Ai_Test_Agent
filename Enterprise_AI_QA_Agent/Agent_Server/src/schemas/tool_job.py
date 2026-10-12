@@ -12,6 +12,7 @@ class ToolJobStatus(str, Enum):
     running = "running"
     waiting_approval = "waiting_approval"
     waiting_resource = "waiting_resource"
+    waiting_children = "waiting_children"
     resume_requested = "resume_requested"
     retry_requested = "retry_requested"
     completed = "completed"

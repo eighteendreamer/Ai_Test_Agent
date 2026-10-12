@@ -27,7 +27,7 @@ function metricCount(output: Record<string, unknown>) {
 
 function tone(status: string) {
   if (status === "completed") return "online";
-  if (status === "partial" || status === "waiting_approval") return "degraded";
+  if (status === "partial" || status === "waiting_approval" || status === "waiting_children") return "degraded";
   if (status === "denied" || status === "failed") return "offline";
   return "online";
 }
@@ -40,6 +40,8 @@ function statusLabel(status: string) {
       return t("toolActivity.status_partial");
     case "waiting_approval":
       return t("toolActivity.status_waiting_approval");
+    case "waiting_children":
+      return t("toolActivity.status_waiting_children");
     case "denied":
       return t("toolActivity.status_denied");
     case "failed":

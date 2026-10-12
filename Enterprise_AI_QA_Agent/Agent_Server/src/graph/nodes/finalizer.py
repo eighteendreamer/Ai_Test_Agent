@@ -9,6 +9,9 @@ def build_finalizer_node(
     model_runtime_service,
 ):
     async def finalizer(state: AgentGraphState) -> AgentGraphState:
+        if state.get("pending_turn", {}).get("waiting_tool"):
+            state["continue_loop"] = False
+            return state
         if state.get("interrupt_requested"):
             state["continue_loop"] = False
             return state

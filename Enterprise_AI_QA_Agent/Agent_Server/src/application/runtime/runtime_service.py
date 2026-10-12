@@ -20,6 +20,7 @@ from src.application.resources.session_resource_service import SessionResourceSe
 from src.application.runtime.agent_loop import AgentLoop
 from src.application.runtime.error_recovery import ErrorRecoveryCascade
 from src.application.runtime.state_persistence import persisted_turn_budget
+from src.application.runtime.tool_child_wait import park_tool_wait
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_messages import build_tool_message
@@ -626,7 +627,8 @@ class RuntimeService:
                 )
             append_graph_event(
                 state,
-                "tool.execution_completed" if execution_record.status == "completed" else "tool.execution_failed",
+                {"completed": "tool.execution_completed", "waiting_children": "tool.waiting_children"}.get(
+                    execution_record.status, "tool.execution_failed"),
                 "approval_resume",
                 execution_record.summary,
                 tool_key=execution_record.tool_key,
@@ -673,6 +675,15 @@ class RuntimeService:
                 tool_key=execution_record.tool_key,
                 approval_id=approval["id"],
             )
+
+        if execution_record.status == "waiting_children":
+            state["context_bundle"] = context.context_bundle
+            state["runtime_messages"] = list(pending_turn.get("conversation_messages", []))
+            state["pending_approvals"] = [item for item in state["pending_approvals"]
+                if str(item.get("id") or "") != approval["id"]]
+            state["tool_results"] = [item for item in tool_results if item.get("approval_id") != approval["id"]]
+            state["tool_results"].append(execution_record.model_dump(mode="python"))
+            return self._park_tool_result(session, state, execution_record)
 
         tool_results = [item for item in tool_results if item.get("approval_id") != approval["id"]]
         tool_results.append(execution_record.model_dump(mode="python"))
@@ -953,6 +964,8 @@ class RuntimeService:
         state = self._state_from_snapshot(session, snapshot)
         state["_event_queue"] = event_queue
         await self._attach_session_resources(state)
+        if state.get("pending_turn", {}).get("waiting_tool"):
+            return await self._resume_waiting_tool(session, state, on_model_chunk=on_model_chunk)
         state["control_state"] = "resuming"
         state["interrupt_requested"] = False
         state["interrupt_reason"] = ""
@@ -965,6 +978,57 @@ class RuntimeService:
             snapshot_id=snapshot.id,
             snapshot_stage=snapshot.stage,
         )
+        return await self._execute_state(session, state, on_model_chunk=on_model_chunk)
+
+    def _park_tool_result(self, session, state, record):
+        park_tool_wait(state, record)
+        return RuntimeTurnResult(output_text="", events=self._events_from_log(session.id, state["event_log"]),
+            snapshot=self._build_snapshot(session, state, session.snapshot_count + 1), approvals=[], state=state,
+            tool_messages=[], pending_turn=state["pending_turn"])
+
+    async def _resume_waiting_tool(self, session, state, *, on_model_chunk=None):
+        wait = state["pending_turn"]["waiting_tool"]
+        job = await self._tool_job_service.get_job(wait["job_id"]) if self._tool_job_service is not None else None
+        if (job is None or job.session_id != session.id or job.turn_id != state["turn_id"]
+            or job.call_id != wait["call_id"] or job.tool_key != wait["tool_key"]
+            or job.input_payload != wait["input"]):
+            raise ValueError("Original waiting tool identity or frozen input changed")
+        terminal = {"completed", "partial", "failed", "denied", "cancelled"}
+        if job.status.value not in terminal | {"waiting_children"}:
+            raise RuntimeError("Original waiting tool outcome is unknown; reconcile before resuming")
+        call = ModelToolCall(id=job.call_id, name=job.tool_key, arguments=job.input_payload)
+        tool = self._tool_registry.get(job.tool_key)
+        trusted = job.metadata.get("child_wait") or {}
+        context = ToolExecutionContext(session_id=session.id, turn_id=state["turn_id"], trace_id=state["trace_id"],
+            user_message=state["user_message"], normalized_input=state["normalized_input"],
+            context_bundle=dict(state["context_bundle"]), selected_agent_key=state["selected_agent_key"],
+            selected_model_key=state["selected_model_key"], tool_job_id=job.id,
+            server_approval_granted=trusted.get("server_approval_granted") is True,
+            approval_scope_hash=str(trusted.get("approval_scope_hash") or "")).bind_call(call)
+        if job.status.value in terminal:
+            record = await self._tool_runtime_service.record_from_job(job)
+        else:
+            safety = ExecutionSafetyPolicy().evaluate_tool_call(tool=tool, arguments=call.arguments,
+                active_mode_key=state["mode_key"], context=state["context_bundle"])
+            if safety.behavior == "deny":
+                raise ValueError("Original waiting tool is no longer permitted: " + safety.reason_code)
+            record = await self._tool_runtime_service.execute(tool=tool, call=call, context=context)
+        state["context_bundle"] = context.context_bundle
+        state["tool_results"] = [item for item in state["tool_results"] if item.get("call_id") != call.id]
+        state["tool_results"].append(record.model_dump(mode="python"))
+        if record.status == "waiting_children":
+            return self._park_tool_result(session, state, record)
+        message = self._build_tool_message(record)
+        state["tool_messages"] = [item for item in state["tool_messages"] if item.get("tool_call_id") != call.id] + [message]
+        state["runtime_messages"] = [item for item in state["runtime_messages"]
+            if not (item.get("role") == "tool" and item.get("tool_call_id") == call.id)] + [message]
+        state["pending_turn"] = {}
+        state["termination_reason"] = ""
+        state["control_state"] = "resuming"
+        state["interrupt_requested"] = False
+        state["interrupt_reason"] = ""
+        append_graph_event(state, "tool.child_wait_resumed", "runtime",
+            "Original tool settled; continuing the original Agent turn.", tool_job_id=job.id, status=record.status)
         return await self._execute_state(session, state, on_model_chunk=on_model_chunk)
 
     async def _execute_state(

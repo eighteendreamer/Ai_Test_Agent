@@ -1042,6 +1042,7 @@ export type ToolJobStatus =
   | "queued"
   | "running"
   | "waiting_approval"
+  | "waiting_children"
   | "resume_requested"
   | "retry_requested"
   | "completed"

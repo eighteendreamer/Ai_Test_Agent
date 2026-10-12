@@ -72,6 +72,11 @@ class ApiSubagentCoordinator:
         }
         self._unsettled_child_session_ids: set[str] = set()
         self._unsettled_task_ids: set[str] = set()
+        self._waiting_child_session_ids: set[str] = set()
+
+    @property
+    def waiting_child_session_ids(self) -> list[str]:
+        return sorted(self._waiting_child_session_ids)
 
     @property
     def has_unsettled_workers(self) -> bool:
@@ -101,7 +106,7 @@ class ApiSubagentCoordinator:
                         "parent_session_id": self._parent_context.get("session_id"),
                         "task_id": task.task_id, "child_session_id": task.worker_session_id})
             restored_running = self._pool.running_tasks()
-            if self.has_unsettled_workers:
+            if self.has_unsettled_workers or self.waiting_child_session_ids:
                 return self._pool.all_tasks
         if restored_running:
             logger.warning(
@@ -132,11 +137,11 @@ class ApiSubagentCoordinator:
                     continue
                 break
             await self._dispatch_batch(batch)
-            if self.has_unsettled_workers:
+            if self.has_unsettled_workers or self.waiting_child_session_ids:
                 break
             self._pool.resolve_blocked()
 
-        if self._policy.max_retries > 0 and not self.has_unsettled_workers:
+        if self._policy.max_retries > 0 and not self.has_unsettled_workers and not self.waiting_child_session_ids:
             await self._retry_failed()
 
         return self._pool.all_tasks
@@ -165,7 +170,7 @@ class ApiSubagentCoordinator:
                         continue
                     break
                 await self._dispatch_batch(batch)
-                if self.has_unsettled_workers:
+                if self.has_unsettled_workers or self.waiting_child_session_ids:
                     return
                 self._pool.resolve_blocked()
 
@@ -323,6 +328,11 @@ class ApiSubagentCoordinator:
                 if session is None:
                     self._fail_task(task, "worker_session_not_found")
                     continue
+                if self._tool_jobs is not None and session.status == SessionStatus.waiting_approval:
+                    task.worker_status = session.status.value
+                    self._waiting_child_session_ids.add(session.id)
+                    self._emit_checkpoint("task_waiting_approval", task)
+                    continue
                 await self._merge_session_result(task, session)
         except ApiCredentialReferenceError as exc:
             logger.warning("api_worker_private_input_unavailable", extra={
@@ -339,6 +349,9 @@ class ApiSubagentCoordinator:
 
     async def _restore_settled_worker(self, task: ApiTestTask) -> bool | None:
         session = await self._session_store.get_session(task.worker_session_id) if task.worker_session_id else None
+        if session is not None and session.status in {SessionStatus.running, SessionStatus.waiting_approval}:
+            self._waiting_child_session_ids.add(session.id)
+            return None
         if session is None or session.status not in {SessionStatus.completed, SessionStatus.failed, SessionStatus.interrupted}:
             return None
         return await self._merge_session_result(task, session)

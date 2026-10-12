@@ -34,6 +34,29 @@ class PostgresToolJobStore:
     async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._heartbeat_job_execution_sync, job_id)
 
+    async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None:
+        return await asyncio.to_thread(self._park_child_wait_sync, job_id, summary, metadata)
+
+    def _park_child_wait_sync(self, job_id, summary, metadata):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""UPDATE {self._settings.database.postgres_tool_job_table}
+                SET status='waiting_children', summary=%s, metadata=metadata || %s::jsonb, updated_at=now()
+                WHERE id=%s AND status='running' AND NOT (metadata ? 'tool_output_observation') RETURNING *""",
+                (summary, json.dumps(make_json_safe(metadata), ensure_ascii=False), job_id))
+            row = cur.fetchone()
+            return _job_from_row(row) if row else None
+
+    async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None:
+        return await asyncio.to_thread(self._claim_child_wait_sync, job_id)
+
+    def _claim_child_wait_sync(self, job_id):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""UPDATE {self._settings.database.postgres_tool_job_table}
+                SET status='running', heartbeat_at=now(), updated_at=now()
+                WHERE id=%s AND status='waiting_children' RETURNING *""", (job_id,))
+            row = cur.fetchone()
+            return _job_from_row(row) if row else None
+
     async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation)
 

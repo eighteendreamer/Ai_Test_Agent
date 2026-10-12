@@ -1,0 +1,64 @@
+...F                                                                     [100%]
+================================== FAILURES ===================================
+_____________ test_actual_pg_original_wait_claim_and_cancellation _____________
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   psycopg.errors.UndefinedTable: relation "agent_projects" does not exist
+
+The above exception was the direct cause of the following exception:
+tests\test_tool_child_wait.py:81: in test_actual_pg_original_wait_claim_and_cancellation
+    await store.initialize()
+src\runtime\postgres_session_store.py:55: in initialize
+    await asyncio.to_thread(self._initialize_sync)
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\threads.py:25: in to_thread
+    return await loop.run_in_executor(None, func_call)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\concurrent\futures\thread.py:58: in run
+    result = self.fn(*self.args, **self.kwargs)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+src\runtime\postgres_session_store.py:486: in _initialize_sync
+    cur.execute(
+src\infrastructure\sqlalchemy_runtime.py:163: in execute
+    result = self._connection.exec_driver_sql(statement)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1781: in exec_driver_sql
+    ret = self._execute_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1848: in _execute_context
+    return self._exec_single_context(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1988: in _exec_single_context
+    self._handle_dbapi_exception(
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:2365: in _handle_dbapi_exception
+    raise sqlalchemy_exception.with_traceback(exc_info[2]) from e
+..\.venv\Lib\site-packages\sqlalchemy\engine\base.py:1969: in _exec_single_context
+    self.dialect.do_execute(
+..\.venv\Lib\site-packages\sqlalchemy\engine\default.py:952: in do_execute
+    cursor.execute(statement, parameters)
+..\.venv\Lib\site-packages\psycopg\cursor.py:117: in execute
+    raise ex.with_traceback(None)
+E   sqlalchemy.exc.ProgrammingError: (psycopg.errors.UndefinedTable) relation "agent_projects" does not exist
+E   [SQL: 
+E                       CREATE TABLE IF NOT EXISTS agent_sessions (
+E                           id TEXT PRIMARY KEY,
+E                           title TEXT NOT NULL,
+E                           status TEXT NOT NULL,
+E                           session_mode TEXT NOT NULL,
+E                           runtime_mode TEXT NOT NULL,
+E                           mode_key TEXT NOT NULL DEFAULT 'default',
+E                           project_id UUID NULL REFERENCES agent_projects(id),
+E                           created_at TIMESTAMPTZ NOT NULL,
+E                           updated_at TIMESTAMPTZ NOT NULL,
+E                           preferred_model TEXT NULL,
+E                           selected_agent TEXT NULL,
+E                           metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+E                           event_count INTEGER NOT NULL DEFAULT 0,
+E                           snapshot_count INTEGER NOT NULL DEFAULT 0
+E                       )
+E                       ]
+E   (Background on this error at: https://sqlalche.me/e/20/f405)
+=========================== short test summary info ===========================
+FAILED tests/test_tool_child_wait.py::test_actual_pg_original_wait_claim_and_cancellation
+1 failed, 3 passed in 8.12s

@@ -17,7 +17,7 @@ const artifacts = computed(() =>
 
 function tone(status: string) {
   if (status === "completed") return "online";
-  if (status === "running" || status === "waiting_approval" || status === "partial") return "degraded";
+  if (status === "running" || status === "waiting_approval" || status === "waiting_children" || status === "partial") return "degraded";
   if (status === "failed" || status === "denied" || status === "cancelled") return "offline";
   return "online";
 }
@@ -38,6 +38,8 @@ function statusLabel(status: string) {
       return t("toolJob.status_running");
     case "waiting_approval":
       return t("toolJob.status_waiting_approval");
+    case "waiting_children":
+      return t("toolJob.status_waiting_children");
     case "resume_requested":
       return t("toolJob.status_resume_requested");
     case "retry_requested":

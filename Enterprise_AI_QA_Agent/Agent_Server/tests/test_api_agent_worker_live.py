@@ -29,6 +29,7 @@ from src.modes.api_testing_mode.dependency_planner import DependencyPlanner
 from src.modes.api_testing_mode.precondition_resolver import PreconditionAnalysis
 from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.postgres_session_store import PostgresSessionStore
 from src.schemas.model_config import ModelCapabilitiesOverride
 from src.schemas.settings import ModelConfigUpdateRequest
 
@@ -274,10 +275,39 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                         held_child_approvals = {}
                         approval_hold_seconds = float(os.getenv('QA_API_AGENT_APPROVAL_HOLD_SECONDS', '0'))
                         approval_wait_observations = []
+                        restart_child_wait = os.getenv('QA_API_AGENT_RESTART_WHILE_CHILD_WAIT') == '1'
+                        restarted_child_wait = False
                         while monotonic() < deadline:
                             await PostgresTaskOutbox(settings).relay_once(queue, limit=10)
                             tasks = await get(f"/sessions/{parent['id']}/tasks")
                             session = await get(f"/sessions/{parent['id']}")
+                            wait = (session['metadata'].get('pending_turn') or {}).get('waiting_tool')
+                            if restart_child_wait and wait and not restarted_child_wait:
+                                snapshot = await PostgresSessionStore(settings).get_latest_snapshot(parent['id'])
+                                assert snapshot.graph_state['pending_turn']['waiting_tool'] == wait
+                                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                    cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} WHERE id=%s",
+                                        (wait['job_id'],))
+                                    waiting_job = dict(cur.fetchone())
+                                assert waiting_job['status'] == 'waiting_children'
+                                assert waiting_job['call_id'] == wait['call_id']
+                                assert waiting_job['input_payload'] == wait['input']
+                                assert not waiting_job['output_payload'].get('report')
+                                before_restart = len(events), len(requests)
+                                await processes.stop(api)
+                                api = processes.start('agent-api-child-wait-restarted', *api_args)
+                                await wait_api(client, api)
+                                saved = await PostgresSessionStore(settings).get_latest_snapshot(parent['id'])
+                                assert saved.id == snapshot.id
+                                assert saved.graph_state == snapshot.graph_state
+                                assert (len(events), len(requests)) == before_restart
+                                facts['child_wait_restart'] = {'snapshot_id': snapshot.id,
+                                    'tool_job_id': waiting_job['id'], 'call_id': waiting_job['call_id'],
+                                    'turn_id': snapshot.graph_state['turn_id'],
+                                    'model_call_count': snapshot.graph_state['model_call_count'],
+                                    'max_iterations': snapshot.graph_state['max_iterations'],
+                                    'extra_http': 0, 'extra_model_http': 0, 'snapshot_preserved': True}
+                                restarted_child_wait = True
                             # Observe the persisted parent boundary before any
                             # approval forwarding. A child may expose its
                             # approval only after the parent API runner has
@@ -332,7 +362,8 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                                         {'decision': 'approved', 'reason': 'owned local API test fixture'}, (200, 202))
                                     approvals.append(approval['id'])
                             original = next(t for t in tasks if t['id'] == task_id)
-                            if (original['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'}
+                            if (not (session['metadata'].get('pending_turn') or {}).get('waiting_tool')
+                                and original['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'}
                                 and session['status'] != 'waiting_approval'
                                 and all(t['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'} for t in tasks)):
                                 break
@@ -365,6 +396,8 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                             (output / 'model-request-diagnostics.json').write_text(
                                 json.dumps(requests, ensure_ascii=False, indent=2), encoding='utf8')
                         assert not failures
+                        if restart_child_wait:
+                            assert restarted_child_wait, 'No persisted original child wait was restarted'
                         if approval_hold_seconds > 0:
                             assert approval_wait_observations, 'No actual child approval wait was observed'
                             assert not any(item['parent_report_already_saved'] for item in approval_wait_observations), facts

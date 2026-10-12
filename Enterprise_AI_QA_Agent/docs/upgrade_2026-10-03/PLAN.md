@@ -3714,3 +3714,15 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **完整独立Agent仍未通过**：agent 2通过2失败57.04秒，同进程/持久子都仅login200，完整目标应为login/refresh/profile200；后续API重启/终态断言未到达。before、verified、evidence-final等夹具及证据导出失败全部保留，不用后续通过覆盖。外部AI0，受控子启动专项不代替独立Agent/默认模型验收。
 
 本批完成原结果回读基础，**仍需补实现**7.43父工具持久等待/原snapshot/outbox继续与自动合并；现有子waiting_approval终态及过早报告结算未修。其他默认AI多候选用例执行、准备/unknown/修订、复杂UI、容量/安全、业务评审/部署/历史迁移等完整P0—P5范围不缩减。三份方案同步，原件、历史/保护文件和敏感材料核对见p2-api-result-readback-audit.py/validation。仅提交本批白名单，无push/PR，完整目标保持active。
+
+### 7.46 原工具子任务等待、快照续跑与独立Agent闭环〔2026-10-12〕
+
+基线2df2e1ca，依据P2_TOOL_CHILD_WAIT_RESEARCH.md及7.43已确认跨层缺失实现。本批新增ToolJob/ToolExecution非终态waiting_children；Session沿原interrupted可恢复快照，pending_turn.waiting_tool区分子等待与人工中断。原父Job固定call/input、子身份及服务端授权检查点保留，PG条件停驻/领取避免取消复活和竞争所有者被覆盖。Runtime在普通工具与父审批后保存原快照；子通知、提交后核对和已有reaper从PG权威重读，通过原snapshot幂等manual_resume/outbox继续，先读原子结果和凭据再派发依赖；等待期间不构造最终报告、不再次调用模型。沿原预算与安全政策，无新表/依赖/配置，不修改模型协议。前端工具状态合同、两面板及中英文标签同步。
+
+**已实现且本轮实测**：最终fixed campaign独立main/Agent CLI同进程子与持久子两种路径2通过2排除177.71秒，真实login→refresh→profile全200，父唯一报告3完成/0失败。子审批等待期间重启API，原snapshot/graph_state保持、业务/模型HTTP增量0；三次子等待父模型计数均1/8，最终2/8。终态重投原Agent消息任务0业务/模型HTTP，最终重启任务历史投影一致。随机凭据不在公共请求/Session/Job及密文原文中。first/restart前序成功及7.41/7.43/7.45失败全部保留，重叠结果不累加，不覆盖旧报告。
+
+**附加验证**：10模块56通过4门控跳过25.61秒；原五模块owned隔离Agent回归61通过1跳过41.23秒。PG竞争/恢复边界12通过7.60秒；最终owner/回读/预算/审批/心跳38通过3門控跳过10.91秒，含实际PG八路领取仅一成功、取消原记录不变，以及真实ToolRuntime领取未确认时不覆盖所有者。PG夹具两次失败〔漏项目表、漏Session必需字段〕原log/XML保留，按现有main和构造顺序修正。Anthropic真实本地HTTP/原client14通过60排除20.80秒，实际仍/v1/messages、messages/system和message流事件；`await_provider_io`只处理I/O，该名称已由此前SDK提交更正。前端npm run build含vue-tsc/Vite成功9.70秒；compileall退出0。审计脚本及validation保留原件SHA、三方案同步、四保护文件和配置凭据核对。
+
+**已有实现但未由本批证明**：真实默认AI的意图/文档发现/项目选取→排序→补全→执行质量，其他供应商全阶段及正式用例管理运行、多工具混合审批/等待、Deep Agents治理入口。这里使用固定campaign_ready与本地受控模型，不替代外部AI验收；按用户安排继续暂缓外部AI。
+
+**仍需补实现或继续专项核验**：API拒绝与未知写入恢复、自动过期401续期/Cookie/并发多认证/加密边界kill；完整准备/只读查证/运行内计划修订；复杂UI响应关联/修复/报告、持续容量/AI流式指标/安全故障组合、更广需求业务评审/部署环境/历史迁移、全阶段重试故障和两份旧Worker原件。模板导入、普通生成、简单UI/录制、回执和Docker既有成功证据保持，不重新归为未实现。完整P0—P5保持active，仅本批白名单提交，无push/PR。

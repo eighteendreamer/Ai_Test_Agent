@@ -5412,3 +5412,15 @@ layer1/2/3局部生产实验2失败2排除142.66/54.17/49.78秒，同进程业�
 实际Agent_Server命令`..\.venv\Scripts\python.exe -m pytest`，RUN_LIVE_API_WORKER_RESULT_RECOVERY=1、QA_API_WORKER_RESULT_RECOVERY_DIR每批owned目录：reproduction 1失败9.45秒；public-final 1通过10.07秒（真实存储/HTTP，受控子启动）；deadline-final五模块39通过1跳过14.43秒。RUN_LIVE_API_WORKER_AUTH_STORAGE=1、RUN_LIVE_UPGRADE_STORAGE_TESTS=1的12模块regression 86通过3门控跳过48.98秒。RUN_LIVE_API_AGENT_WORKER=1的独立main/CLI Agent 2通过2失败57.04秒，两路径仅login200；完整API仍失败，重启/终态断言未执行到。各原日志/XML和公开PG/目标观测完整保留；证据夹具导出失败也保留。compileall真实退出0，不替代功能验收。
 
 全3子任务无聊天仍能回读原Job/加密auth_ref；重建任务后额外HTTP0，跨父拒绝。checkpoint仍未持久化，父审批挂起和snapshot/outbox自动续跑仍需补实现，不宣称本批完成完整API。外部AI0，完整P0—P5保持active，仅白名单提交，不推送/PR。
+
+## 2026-10-12 原工具等待子任务与独立Agent恢复
+
+基线2df2e1ca，本轮新增tool_child_wait及测试，扩展原ToolRuntime/Runtime/Coordinator/AgentTask、PG/InMemory ToolJob条件停驻与领取、API campaign等待/结果回读、图节点和前端工具状态。依据P2_TOOL_CHILD_WAIT_RESEARCH.md、PLAN7.46，原快照/预算/权限/outbox沿用，新增waiting_children是非终态工具事实，无新Session状态、表、依赖或MySQL配置。
+
+实际Agent_Server运行`..\.venv\Scripts\python.exe -m pytest tests/test_api_agent_worker_live.py -k real_agent_worker -q --tb=short --junitxml=<各本批XML>`：RUN_LIVE_API_AGENT_WORKER=1，QA_API_AGENT_APPROVAL_HOLD_SECONDS=3；QA_API_AGENT_WORKER_DIR各owned目录，restart/final再设QA_API_AGENT_RESTART_WHILE_CHILD_WAIT=1。first 2通过2排除190.84秒；restart 2通过2排除196.30秒；最终final 2通过2排除177.71秒。原真实失败严格断言保留；两种子路径login/refresh/profile200、唯一父报告3完成0失败，等待审批无报告；等待期间重启原snapshot/graph_state不变/0HTTP，最终API重启任务投影一致、原Agent终态消息任务重投0业务及模型HTTP。父快照模型预算三次等待仍1/8最终2/8，生成凭据原文不导出。固定campaign与本地模型，不是外部默认AI质量或正式用例Run验收。
+
+10模块本轮regression 56通过4门控跳过25.61秒，含RUN_LIVE_API_WORKER_RESULT_RECOVERY=1/独立目录原结果回读；原p2-api-agent-worker-regression.py使用owned隔离环境五模块61通过1跳过41.23秒，QA_API_AGENT_REGRESSION_DIR=p2-tool-child-wait-agent-regression，PYTHONPATH=.。实际PG测试RUN_LIVE_TOOL_CHILD_WAIT_STORE=1、QA_TOOL_CHILD_WAIT_STORE_DIR各owned目录：首轮漏agent_projects 1失败3通过8.12秒、第二轮Session必需字段缺失1失败3通过7.06秒，未改生产结构/断言，失败log/XML保留。verified 12通过7.60秒；最终test_tool_child_wait、test_tool_runtime_heartbeat、test_api_worker_result_reader、test_turn_budget_persistence、test_approval_model_budget共38通过3门控跳过10.91秒，PG八路仅一领取、取消原件相同、领取未确认真实Runtime不进处理器/不覆盖所有者。相关重复批次不累加。
+
+用户Anthropic协议核对复验：QA_MODEL_SDK_FAULT_DIR=p2-tool-child-wait-anthropic，test_model_sdk_fault_http、test_model_clients -k anthropic，14通过60排除20.80秒；真实/v1/messages和Messages正文、流事件不变，当前共用helper await_provider_io仅I/O异常统一。此名称此前已提交更正，本轮模型文件未改。agent_web实际npm run build含类型检查成功9.70秒；compileall退出0附加。原始stdout/stderr/XML/PG/HTTP证据、SHA/凭据/保护文件/三方案核验由p2-tool-child-wait-audit.py生成validation。
+
+原7.43跨层缺失在本轮固定campaign原图入口实测解决；拒绝/未知写入及加密边界kill、正式用例管理运行/多工具混合等待/Deep Agents入口、自动401/Cookie/并发多认证和默认AI完整质量仍未验收或需补实现。全P0—P5目标保持active，外部AI按用户安排暂缓，白名单提交、不push/PR。

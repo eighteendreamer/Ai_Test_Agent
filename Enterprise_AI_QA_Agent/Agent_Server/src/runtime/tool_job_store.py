@@ -13,6 +13,8 @@ class ToolJobStore(Protocol):
     async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
     async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
+    async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None: ...
+    async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None: ...
     async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None: ...
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
                                output_payload: dict, status: ToolJobStatus, summary: str,
@@ -87,6 +89,25 @@ class InMemoryToolJobStore:
             job.output_payload = output_payload
             job.metadata["tool_output_observation"] = observation
             job.updated_at = datetime.utcnow()
+            return job.model_copy(deep=True)
+
+    async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != ToolJobStatus.running or "tool_output_observation" in job.metadata:
+                return None
+            job.status, job.summary = ToolJobStatus.waiting_children, summary
+            job.metadata.update(metadata)
+            job.updated_at = datetime.utcnow()
+            return job.model_copy(deep=True)
+
+    async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None:
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None or job.status != ToolJobStatus.waiting_children:
+                return None
+            job.status = ToolJobStatus.running
+            job.updated_at = job.heartbeat_at = datetime.utcnow()
             return job.model_copy(deep=True)
 
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,

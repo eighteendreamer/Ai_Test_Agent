@@ -515,6 +515,7 @@ class ToolRuntimeService:
         started_at = datetime.utcnow()
         job = None
         observed_output = False
+        child_wait_recovery = False
         job_heartbeat_stop: asyncio.Event | None = None
         job_heartbeat_task: asyncio.Task | None = None
         handler = self._handlers.get(tool.key)
@@ -614,6 +615,16 @@ class ToolRuntimeService:
                         if job.status in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
                             ToolJobStatus.denied, ToolJobStatus.cancelled}:
                             return await self.record_from_job(job)
+                elif job.status == ToolJobStatus.waiting_children:
+                    child_wait_recovery = True
+                    claimed = await self._tool_job_service.claim_child_wait(job.id)
+                    if claimed is None:
+                        latest = await self._tool_job_service.get_job(job.id)
+                        if latest is not None and latest.status in {ToolJobStatus.completed, ToolJobStatus.partial,
+                            ToolJobStatus.failed, ToolJobStatus.denied, ToolJobStatus.cancelled}:
+                            return await self.record_from_job(latest)
+                        raise RuntimeError("Original child-wait tool is already running; reconcile its outcome")
+                    job = claimed
                 else:
                     await self._tool_job_service.mark_running(job)
                 job_heartbeat_stop = asyncio.Event()
@@ -724,6 +735,18 @@ class ToolRuntimeService:
                         summary=summary,
                         metadata={"output_payload": result},
                     )
+                elif resolved_status == "waiting_children":
+                    parked = await self._tool_job_service.mark_waiting_children(job.id, summary=summary, metadata={
+                        "output_payload": result,
+                        "child_wait": {"server_approval_granted": job_context.server_approval_granted,
+                            "approval_scope_hash": job_context.approval_scope_hash},
+                    })
+                    if parked is None:
+                        latest = await self._tool_job_service.get_job(job.id)
+                        if latest is not None and latest.status in {ToolJobStatus.completed, ToolJobStatus.partial,
+                            ToolJobStatus.failed, ToolJobStatus.denied, ToolJobStatus.cancelled}:
+                            return await self.record_from_job(latest)
+                        raise RuntimeError("Original child-wait checkpoint could not be committed")
                 elif resolved_status == "denied":
                     await self._tool_job_service.mark_denied(
                         job.id,
@@ -757,9 +780,16 @@ class ToolRuntimeService:
                 input=call.arguments,
                 output=record_output,
                 started_at=started_at,
-                completed_at=datetime.utcnow(),
+                completed_at=None if resolved_status == "waiting_children" else datetime.utcnow(),
             )
         except Exception as exc:
+            if child_wait_recovery:
+                # A failed claim acknowledgement or resumed handler has an
+                # unknown outcome. The losing reader must not settle the owner.
+                logger.exception("tool_child_wait_recovery_required", extra={
+                    "tool_job_id": job.id if job is not None else context.tool_job_id,
+                    "tool_key": tool.key, "session_id": context.session_id})
+                raise
             if action_admission and not observed_output:
                 # Before a reliable returned-output checkpoint, execution may be unknown.
                 # In particular, never turn a lost claim acknowledgement into a retryable failure.
@@ -913,7 +943,7 @@ class ToolRuntimeService:
         explicit_status = str(result.get("status") or "").strip().lower()
         if explicit_status == "interrupted":
             return "partial"
-        if explicit_status in {"completed", "partial", "failed", "waiting_approval", "waiting_resource", "denied"}:
+        if explicit_status in {"completed", "partial", "failed", "waiting_approval", "waiting_resource", "waiting_children", "denied"}:
             return explicit_status
         if result.get("ok") is False:
             workers = result.get("workers")

@@ -14,7 +14,7 @@ def is_reserved_tool_argument(key: str) -> bool:
     return key.startswith("_server_") or key == "_p4_approval_scope_hash"
 
 
-ToolExecutionStatus = Literal["completed", "partial", "failed", "waiting_approval", "waiting_resource", "denied"]
+ToolExecutionStatus = Literal["completed", "partial", "failed", "waiting_approval", "waiting_resource", "waiting_children", "denied"]
 
 
 class ModelToolCall(BaseModel):

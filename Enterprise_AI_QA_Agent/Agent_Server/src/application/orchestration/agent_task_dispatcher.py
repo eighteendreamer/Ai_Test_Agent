@@ -735,6 +735,14 @@ class AgentTaskDispatcher:
                 )
                 if notification is not None:
                     await self._notify_parent_child_done(task, notification)
+                if (response.session.metadata.get("pending_turn") or {}).get("waiting_tool") and self._coordinator is not None:
+                    try:
+                        await self._coordinator.on_parent_tool_wait(task.session_id)
+                    except Exception:
+                        # The wait snapshot/task outcome is already committed.
+                        # The durable dispatch reaper will retry reconciliation.
+                        LOGGER.exception("tool_child_wait_post_commit_reconcile_failed",
+                            extra={"session_id": task.session_id, "task_id": task.id})
         except TaskDeferred:
             raise
         except ContinuationLeaseLostError as exc:

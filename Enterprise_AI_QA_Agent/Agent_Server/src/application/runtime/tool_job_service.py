@@ -231,6 +231,12 @@ class ToolJobService:
     ) -> ToolJobRecord:
         return await self._mark(job_id, ToolJobStatus.waiting_resource, summary=summary, metadata=metadata)
 
+    async def mark_waiting_children(self, job_id: str, *, summary: str, metadata: dict[str, Any]) -> ToolJobRecord | None:
+        return await self._store.park_child_wait(job_id, summary=summary, metadata=metadata)
+
+    async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None:
+        return await self._store.claim_child_wait(job_id)
+
     async def mark_completed(
         self,
         job_id: str,

@@ -13,6 +13,7 @@ from src.application.runtime.tool_input_validation import validate_tool_input as
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_messages import build_tool_message
 from src.application.runtime.state_persistence import persisted_turn_budget
+from src.application.runtime.tool_child_wait import park_tool_wait
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.core.safety_gate import SafetyGate, SecurityContext, SafetyDecision
 from src.graph.state import AgentGraphState
@@ -169,6 +170,9 @@ def build_tool_executor_node(
                     tool_result_count=len(tool_results),
                 )
 
+        waiting = [item for item in tool_results if item.get("status") == "waiting_children"]
+        if waiting:
+            park_tool_wait(state, ToolExecutionRecord.model_validate(waiting[0]))
         return state
 
     return tool_executor

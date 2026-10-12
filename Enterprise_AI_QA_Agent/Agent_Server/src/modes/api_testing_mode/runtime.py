@@ -203,7 +203,8 @@ class ApiTestingModeRuntime:
             return state
 
         # Phase: campaign_ready -> execute.
-        if state.phase == PHASE_CAMPAIGN_READY:
+        if state.phase == PHASE_CAMPAIGN_READY or (state.phase == PHASE_TASK_RUNNING
+            and state.execution_checkpoint.get("waiting_child_session_ids")):
             state = await self._execute_campaign(state, context)
 
         return state
@@ -489,6 +490,15 @@ class ApiTestingModeRuntime:
             completed_tasks = await coordinator.run_all()
         state.campaign.tasks = completed_tasks
         state.campaign.updated_at = datetime.now(timezone.utc).isoformat()
+        if isinstance(coordinator, ApiSubagentCoordinator) and coordinator.waiting_child_session_ids:
+            latest = self._credential_manager.get_latest()
+            if latest is not None:
+                state.credential_session = latest.model_copy(deep=True)
+            self._checkpoint_execution_state(state=state, context=context, event_type="campaign_waiting_children",
+                tasks=completed_tasks, summary="Campaign paused for original child tasks.")
+            state.execution_checkpoint["waiting_child_session_ids"] = coordinator.waiting_child_session_ids
+            self._persist_state(state, context)
+            return state
         has_unsettled_workers = (
             isinstance(coordinator, ApiSubagentCoordinator)
             and coordinator.has_unsettled_workers
@@ -730,6 +740,10 @@ class ApiTestingModeRuntime:
         if state.notes:
             output["notes"] = list(state.notes)
 
+        if state.execution_checkpoint.get("waiting_child_session_ids"):
+            output["status"] = "waiting_children"
+            output["waiting_child_session_ids"] = state.execution_checkpoint["waiting_child_session_ids"]
+            output["summary"] = "API campaign is waiting for its original child tasks."
         output[STATE_METADATA_KEY] = self._state_payload(state)
         return output
 

@@ -25,12 +25,14 @@ from src.domain.models import SessionRecord
 from src.registry.agents import AgentRegistry
 from src.runtime.session_lock_map import SessionLockMap
 from src.runtime.store import SessionStore
+from src.runtime.postgres_agent_task_store import AgentSubmissionConflict
 from src.schemas.session import (
     ChatMessage,
     CreateSessionRequest,
     ExecutionEvent,
     MessageRole,
     RuntimeMode,
+    ResumeSessionRequest,
     SendMessageRequest,
     SessionMode,
     SessionStatus,
@@ -146,11 +148,65 @@ class CoordinatorRuntimeService:
                 return
             try:
                 await self.recover_orphaned_dispatches()
+                await self.resume_waiting_tools()
             except Exception:
                 logger.exception("coordinator_dispatch_reaper_pass_failed")
 
     def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
         self._observability_service = service
+
+    async def resume_waiting_tools(self) -> None:
+        # Existing dispatch reaper supplies recovery after a restart or an early
+        # child notification. No process-local watcher is the authoritative state.
+        for parent in await self._store.list_sessions(limit=None):
+            try:
+                await self._maybe_resume_waiting_tool(parent)
+            except Exception:
+                logger.exception("tool_child_wait_resume_failed", extra={"parent_session_id": parent.id})
+
+    async def on_parent_tool_wait(self, session_id: str) -> None:
+        parent = await self._store.get_session(session_id)
+        if parent is not None:
+            await self._maybe_resume_waiting_tool(parent)
+
+    async def _maybe_resume_waiting_tool(self, parent) -> bool:
+        pending = parent.metadata.get("pending_turn") or {}
+        wait = pending.get("waiting_tool") or {}
+        if parent.status != SessionStatus.interrupted or not wait or parent.metadata.get("turn_lease_token"):
+            return False
+        child_ids = wait.get("child_session_ids") or []
+        if not child_ids:
+            return False
+        for child_id in child_ids:
+            child = await self._store.get_session(child_id)
+            if child is None or child.status in {SessionStatus.running, SessionStatus.waiting_approval, SessionStatus.idle}:
+                return False
+            if (child.project_id != parent.project_id
+                or child.metadata.get("parent_session_id") != parent.id
+                or child.metadata.get("parent_turn_id") != pending.get("turn_id")):
+                logger.warning("tool_child_wait_resume_scope_rejected", extra={
+                    "parent_session_id": parent.id, "child_session_id": child_id})
+                return False
+        snapshot = await self._store.get_latest_snapshot(parent.id)
+        if snapshot is None or snapshot.graph_state.get("pending_turn", {}).get("waiting_tool") != wait:
+            logger.warning("tool_child_wait_resume_checkpoint_changed", extra={"parent_session_id": parent.id})
+            return False
+        payload = ResumeSessionRequest(reason="Original child tasks settled", source="tool.child_settled",
+            client_request_id=f"child_wait:{snapshot.id}")
+        try:
+            if self._agent_task_dispatcher is not None:
+                await self._agent_task_dispatcher.submit_resume(parent.id, payload)
+            else:
+                # Legacy in-process ownership still uses the same Session turn
+                # lease and original snapshot, never a newly orchestrated message.
+                await self._session_service.resume_session(parent.id, payload)
+        except AgentSubmissionConflict:
+            logger.info("tool_child_wait_resume_pending", extra={"parent_session_id": parent.id,
+                "snapshot_id": snapshot.id})
+            return False
+        logger.info("tool_child_wait_resume_submitted", extra={"parent_session_id": parent.id,
+            "snapshot_id": snapshot.id, "tool_job_id": wait["job_id"]})
+        return True
 
     def set_agent_task_dispatcher(self, dispatcher) -> None:
         """Inject the durable task dispatcher; built after the dispatcher itself."""
@@ -1190,7 +1246,7 @@ class CoordinatorRuntimeService:
         for record in pending:
             if record.turn_id != parent_turn_id:
                 continue
-            if record.operation not in {"message", "coordinator_resume", "approval_resume"}:
+            if record.operation not in {"message", "coordinator_resume", "approval_resume", "manual_resume"}:
                 continue
             if record.status not in {"claimed", "running"}:
                 continue
@@ -1573,6 +1629,11 @@ class CoordinatorRuntimeService:
             if should_stop:
                 return
 
+            if (parent_session.metadata.get("pending_turn") or {}).get("waiting_tool"):
+                if self._agent_task_dispatcher is not None:
+                    await self._maybe_resume_waiting_tool(parent_session)
+                return
+
             initial_launches = await self._maybe_launch_initial_workers(
                 parent_session=parent_session,
                 parent_turn_id=parent_turn_id,
@@ -1887,6 +1948,8 @@ class CoordinatorRuntimeService:
                 )
                 parent_session.updated_at = datetime.utcnow()
                 await self._store.save_session(parent_session)
+                if (parent_session.metadata.get("pending_turn") or {}).get("waiting_tool"):
+                    await self._maybe_resume_waiting_tool(parent_session)
                 return
             resume_content = content
             resume_agent_key = parent_session.selected_agent or "coordinator"
@@ -2019,9 +2082,9 @@ class CoordinatorRuntimeService:
         while True:
             await asyncio.sleep(1)
             parent_session = await self._store.get_session(parent_session_id)
-            if parent_session is None or parent_session.status in {
+            if parent_session is None or (parent_session.status in {
                 SessionStatus.failed, SessionStatus.interrupted,
-            }:
+            } and not (parent_session.metadata.get("pending_turn") or {}).get("waiting_tool")):
                 logger.info(
                     "coordinator_child_watch_parent_settled",
                     extra={
