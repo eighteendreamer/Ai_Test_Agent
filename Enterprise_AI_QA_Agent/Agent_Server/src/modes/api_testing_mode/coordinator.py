@@ -22,7 +22,11 @@ from src.modes.api_testing_mode.contracts import (
     TASK_RUNNING,
 )
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
-from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
+from src.modes.api_testing_mode.input_binding import (
+    bind_path_parameters,
+    substitute_path_parameter,
+    unresolved_path_parameters,
+)
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
 
 
@@ -177,15 +181,24 @@ class ApiTestCoordinator:
     # ------------------------------------------------------------------
 
     async def _execute_one(self, task: ApiTestTask) -> None:
+        # Bind before claiming the task as running. An unresolved placeholder
+        # is a planning gap, not an HTTP result and must not hit the target.
+        self._apply_input_bindings(task)
+        unresolved = unresolved_path_parameters(task)
+        if unresolved:
+            self._pool.mark_failed(
+                task.task_id,
+                "Required path parameter(s) unresolved: " + ", ".join(unresolved)
+                + "; provide project data or a producer test case before execution.",
+            )
+            self._emit_checkpoint("task_failed", task)
+            return
         self._pool.mark_running(task.task_id)
         self._emit_checkpoint("task_running", task)
         for lock in task.resource_locks:
             self._active_resource_locks.add(lock)
         if task.execution_mode == EXECUTION_MODE_WRITE:
             self._write_running = True
-
-        # Apply input bindings: resolve path parameters from completed task outputs.
-        self._apply_input_bindings(task)
 
         try:
             result = await self._executor_fn(task)

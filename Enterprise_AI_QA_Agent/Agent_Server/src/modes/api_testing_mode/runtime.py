@@ -439,6 +439,7 @@ class ApiTestingModeRuntime:
             verification_focus=state.request.verification_focus,
             selected_document_ids=[doc.doc_id for doc in state.selected_documents],
             selected_endpoints=state.selected_endpoints,
+            preconditions=[preconditions.to_dict()],
             credential_session_id=credential_session_id,
             tasks=graph.tasks,
             execution_policy=ExecutionPolicy(max_workers=2),

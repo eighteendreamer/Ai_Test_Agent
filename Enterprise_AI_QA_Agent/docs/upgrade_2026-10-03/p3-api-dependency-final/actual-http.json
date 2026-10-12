@@ -1,0 +1,277 @@
+{
+  "requests": [
+    [
+      "POST",
+      "/orders"
+    ],
+    [
+      "GET",
+      "/orders/0"
+    ]
+  ],
+  "report": {
+    "campaign_id": "dependency-admission",
+    "project_name": "",
+    "summary": "✅ Campaign 'dependency-admission' completed: 2/2 tasks passed, 0 failed, 0 skipped. Checks: 2 passed, 0 failed. Total time: 77ms.",
+    "total_tasks": 2,
+    "completed": 2,
+    "failed": 0,
+    "skipped": 0,
+    "passed_checks": 2,
+    "failed_checks": 0,
+    "duration_ms": 77.41,
+    "tasks": [
+      {
+        "task_id": "read",
+        "name": "",
+        "method": "GET",
+        "path": "/orders/0",
+        "full_url": "http://127.0.0.1:59652/orders/0",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 12.21,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-12T14:43:48.440544Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 59652,
+                "path": "/orders/0",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "create",
+        "name": "",
+        "method": "POST",
+        "path": "/orders",
+        "full_url": "http://127.0.0.1:59652/orders",
+        "capability": "",
+        "status": "completed",
+        "response_status": 201,
+        "duration_ms": 65.2,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 201,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-12T14:43:48.427828Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 59652,
+                "path": "/orders",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 201
+            }
+          ]
+        }
+      }
+    ],
+    "findings": [],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-12T14:43:48.441102+00:00"
+  },
+  "tasks": [
+    {
+      "task_id": "read",
+      "name": "",
+      "method": "GET",
+      "path": "/orders/0",
+      "full_url": "http://127.0.0.1:59652/orders/0",
+      "capability": "",
+      "execution_mode": "read",
+      "depends_on": [
+        "create"
+      ],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": null,
+      "input_bindings": [],
+      "path_parameter_sources": {
+        "id": "create"
+      },
+      "assertions": [],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "completed",
+      "attempts": 1,
+      "last_error": "",
+      "dependency_skip_task_id": "",
+      "started_at": "2026-10-12T14:43:48.427828+00:00",
+      "completed_at": "2026-10-12T14:43:48.440544+00:00",
+      "response_status": 200,
+      "response_headers": {
+        "server": "BaseHTTP/0.6 Python/3.11.16",
+        "date": "Mon, 12 Oct 2026 14:43:48 GMT",
+        "content-type": "application/json",
+        "content-length": "9"
+      },
+      "response_body": {
+        "id": 0
+      },
+      "check_results": [
+        {
+          "name": "default_status_check",
+          "kind": "status_code_range",
+          "passed": true,
+          "expected": "2xx",
+          "actual": 200,
+          "description": "Default: expect 2xx response status."
+        }
+      ],
+      "request_outcome": "completed",
+      "duration_ms": 12.21,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-12T14:43:48.440544Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 59652,
+                "path": "/orders/0",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      }
+    },
+    {
+      "task_id": "create",
+      "name": "",
+      "method": "POST",
+      "path": "/orders",
+      "full_url": "http://127.0.0.1:59652/orders",
+      "capability": "",
+      "execution_mode": "write",
+      "depends_on": [],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": null,
+      "input_bindings": [],
+      "path_parameter_sources": {},
+      "assertions": [],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "completed",
+      "attempts": 1,
+      "last_error": "",
+      "dependency_skip_task_id": "",
+      "started_at": "2026-10-12T14:43:48.362591+00:00",
+      "completed_at": "2026-10-12T14:43:48.427828+00:00",
+      "response_status": 201,
+      "response_headers": {
+        "server": "BaseHTTP/0.6 Python/3.11.16",
+        "date": "Mon, 12 Oct 2026 14:43:48 GMT",
+        "content-type": "application/json",
+        "content-length": "9"
+      },
+      "response_body": {
+        "id": 0
+      },
+      "check_results": [
+        {
+          "name": "default_status_check",
+          "kind": "status_code_range",
+          "passed": true,
+          "expected": "2xx",
+          "actual": 201,
+          "description": "Default: expect 2xx response status."
+        }
+      ],
+      "request_outcome": "completed",
+      "duration_ms": 65.2,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-12T14:43:48.427828Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 59652,
+                "path": "/orders",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 201
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "terminal_extra_http": 0,
+  "external_ai_calls": 0
+}

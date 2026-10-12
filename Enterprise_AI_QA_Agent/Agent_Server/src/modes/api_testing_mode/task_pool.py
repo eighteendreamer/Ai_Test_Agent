@@ -5,6 +5,9 @@ coordinator to pick the next batch of ready tasks.
 """
 from __future__ import annotations
 
+from graphlib import CycleError, TopologicalSorter
+import logging
+
 from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.modes.api_testing_mode.contracts import (
     TASK_BLOCKED,
@@ -16,6 +19,8 @@ from src.modes.api_testing_mode.contracts import (
     TASK_SKIPPED,
 )
 
+logger = logging.getLogger("uvicorn.error.api_testing_mode.task_pool")
+
 
 class ApiTaskPool:
     """In-memory task pool for one campaign."""
@@ -23,7 +28,10 @@ class ApiTaskPool:
     def __init__(self, tasks: list[ApiTestTask] | None = None) -> None:
         self._tasks: dict[str, ApiTestTask] = {}
         for task in tasks or []:
+            if task.task_id in self._tasks:
+                self._reject_graph("duplicate_task", task.task_id)
             self._tasks[task.task_id] = task
+        self._validate_dependencies()
 
     @property
     def all_tasks(self) -> list[ApiTestTask]:
@@ -41,6 +49,7 @@ class ApiTaskPool:
         return any(task.status == TASK_RUNNING for task in self._tasks.values())
 
     def ready_tasks(self) -> list[ApiTestTask]:
+        self._reconcile_dependencies()
         return [task for task in self._tasks.values() if task.status == TASK_READY]
 
     def blocked_tasks(self) -> list[ApiTestTask]:
@@ -106,17 +115,42 @@ class ApiTaskPool:
     # Internal
     # ------------------------------------------------------------------
 
+    def _reject_graph(self, reason: str, task_id: str = "") -> None:
+        logger.warning("api_task_dependency_graph_rejected", extra={
+            "reason": reason, "task_id": task_id, "task_count": len(self._tasks),
+            "business_execution_started": False,
+        })
+        raise ValueError(f"API task dependency graph invalid: {reason} ({task_id})")
+
+    def _validate_dependencies(self) -> None:
+        # Match validate_run_dependencies: deterministic identities/edges only;
+        # business dependencies remain the planner's responsibility.
+        graph = {}
+        for identity, task in self._tasks.items():
+            if not identity or task.task_id != identity:
+                self._reject_graph("task_identity_changed", identity)
+            if len(set(task.depends_on)) != len(task.depends_on):
+                self._reject_graph("duplicate_dependency", identity)
+            if any(parent not in self._tasks or parent == identity for parent in task.depends_on):
+                self._reject_graph("missing_or_self_dependency", identity)
+            graph[identity] = task.depends_on
+        try:
+            tuple(TopologicalSorter(graph).static_order())
+        except CycleError:
+            self._reject_graph("dependency_cycle")
+
     def _reconcile_dependencies(self) -> int:
+        self._validate_dependencies()
         promoted = 0
         changed = True
         while changed:
             changed = False
             for task in self._tasks.values():
-                if task.status not in {TASK_BLOCKED, TASK_PENDING, TASK_SKIPPED}:
+                if task.status not in {TASK_BLOCKED, TASK_PENDING, TASK_READY, TASK_SKIPPED}:
                     continue
                 if task.status == TASK_SKIPPED and not self._dependency_skip_source(task):
                     continue
-                dependencies = [self._tasks[dep_id] for dep_id in task.depends_on if dep_id in self._tasks]
+                dependencies = [self._tasks[dep_id] for dep_id in task.depends_on]
                 failed = next(
                     (dep for dep in dependencies if dep.status in {TASK_FAILED, TASK_SKIPPED}),
                     None,
@@ -139,6 +173,11 @@ class ApiTaskPool:
                     continue
                 if status == TASK_READY:
                     promoted += 1
+                logger.info("api_task_dependency_status_changed", extra={
+                    "task_id": task.task_id, "previous_status": task.status,
+                    "status": status, "dependency_task_ids": task.depends_on,
+                    "dependency_skip_task_id": skip_source,
+                })
                 task.status = status
                 task.dependency_skip_task_id = skip_source
                 task.last_error = error

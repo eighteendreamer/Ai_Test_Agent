@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="9" skipped="0" tests="9" time="1.487" timestamp="2026-10-12T22:25:39.291256+08:00" hostname="EIghteen"><testcase classname="tests.test_api_dependency_admission" name="test_invalid_graph_rejected_before_task_status_changes[missing]" time="0.001"><failure message="Failed: DID NOT RAISE ValueError">defect = 'missing'
+
+    @pytest.mark.parametrize("defect", ["missing", "self", "cycle", "duplicate_task", "duplicate_dependency"])
+    def test_invalid_graph_rejected_before_task_status_changes(defect):
+        first, second = task("first"), task("second")
+        tasks = [first, second]
+        if defect == "missing": first.depends_on = ["absent"]
+        if defect == "self": first.depends_on = [first.task_id]
+        if defect == "cycle":
+            first.depends_on, second.depends_on = [second.task_id], [first.task_id]
+        if defect == "duplicate_task": second.task_id = first.task_id
+        if defect == "duplicate_dependency": first.depends_on = [second.task_id, second.task_id]
+        before = [item.model_dump(mode="json") for item in tasks]
+&gt;       with pytest.raises(ValueError, match="API task"):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_api_dependency_admission.py:36: Failed</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_invalid_graph_rejected_before_task_status_changes[self]" time="0.001"><failure message="Failed: DID NOT RAISE ValueError">defect = 'self'
+
+    @pytest.mark.parametrize("defect", ["missing", "self", "cycle", "duplicate_task", "duplicate_dependency"])
+    def test_invalid_graph_rejected_before_task_status_changes(defect):
+        first, second = task("first"), task("second")
+        tasks = [first, second]
+        if defect == "missing": first.depends_on = ["absent"]
+        if defect == "self": first.depends_on = [first.task_id]
+        if defect == "cycle":
+            first.depends_on, second.depends_on = [second.task_id], [first.task_id]
+        if defect == "duplicate_task": second.task_id = first.task_id
+        if defect == "duplicate_dependency": first.depends_on = [second.task_id, second.task_id]
+        before = [item.model_dump(mode="json") for item in tasks]
+&gt;       with pytest.raises(ValueError, match="API task"):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_api_dependency_admission.py:36: Failed</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_invalid_graph_rejected_before_task_status_changes[cycle]" time="0.000"><failure message="Failed: DID NOT RAISE ValueError">defect = 'cycle'
+
+    @pytest.mark.parametrize("defect", ["missing", "self", "cycle", "duplicate_task", "duplicate_dependency"])
+    def test_invalid_graph_rejected_before_task_status_changes(defect):
+        first, second = task("first"), task("second")
+        tasks = [first, second]
+        if defect == "missing": first.depends_on = ["absent"]
+        if defect == "self": first.depends_on = [first.task_id]
+        if defect == "cycle":
+            first.depends_on, second.depends_on = [second.task_id], [first.task_id]
+        if defect == "duplicate_task": second.task_id = first.task_id
+        if defect == "duplicate_dependency": first.depends_on = [second.task_id, second.task_id]
+        before = [item.model_dump(mode="json") for item in tasks]
+&gt;       with pytest.raises(ValueError, match="API task"):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_api_dependency_admission.py:36: Failed</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_invalid_graph_rejected_before_task_status_changes[duplicate_task]" time="0.001"><failure message="Failed: DID NOT RAISE ValueError">defect = 'duplicate_task'
+
+    @pytest.mark.parametrize("defect", ["missing", "self", "cycle", "duplicate_task", "duplicate_dependency"])
+    def test_invalid_graph_rejected_before_task_status_changes(defect):
+        first, second = task("first"), task("second")
+        tasks = [first, second]
+        if defect == "missing": first.depends_on = ["absent"]
+        if defect == "self": first.depends_on = [first.task_id]
+        if defect == "cycle":
+            first.depends_on, second.depends_on = [second.task_id], [first.task_id]
+        if defect == "duplicate_task": second.task_id = first.task_id
+        if defect == "duplicate_dependency": first.depends_on = [second.task_id, second.task_id]
+        before = [item.model_dump(mode="json") for item in tasks]
+&gt;       with pytest.raises(ValueError, match="API task"):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_api_dependency_admission.py:36: Failed</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_invalid_graph_rejected_before_task_status_changes[duplicate_dependency]" time="0.000"><failure message="Failed: DID NOT RAISE ValueError">defect = 'duplicate_dependency'
+
+    @pytest.mark.parametrize("defect", ["missing", "self", "cycle", "duplicate_task", "duplicate_dependency"])
+    def test_invalid_graph_rejected_before_task_status_changes(defect):
+        first, second = task("first"), task("second")
+        tasks = [first, second]
+        if defect == "missing": first.depends_on = ["absent"]
+        if defect == "self": first.depends_on = [first.task_id]
+        if defect == "cycle":
+            first.depends_on, second.depends_on = [second.task_id], [first.task_id]
+        if defect == "duplicate_task": second.task_id = first.task_id
+        if defect == "duplicate_dependency": first.depends_on = [second.task_id, second.task_id]
+        before = [item.model_dump(mode="json") for item in tasks]
+&gt;       with pytest.raises(ValueError, match="API task"):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_api_dependency_admission.py:36: Failed</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_saved_ready_label_does_not_bypass_actual_predecessor[ApiTestCoordinator]" time="0.001"><failure message="AssertionError: assert ['child', 'parent'] == ['parent']&#10;  &#10;  At index 0 diff: 'child' != 'parent'&#10;  Left contains one more item: 'parent'&#10;  Use -v to get more diff">coordinator_type = &lt;class 'src.modes.api_testing_mode.coordinator.ApiTestCoordinator'&gt;
+
+    @pytest.mark.parametrize("coordinator_type", [ApiTestCoordinator, ApiSubagentCoordinator])
+    def test_saved_ready_label_does_not_bypass_actual_predecessor(coordinator_type):
+        parent = task("parent")
+        child = task("child", depends_on=[parent.task_id])
+        pool = ApiTaskPool([child, parent])
+        coordinator = object.__new__(coordinator_type)
+        coordinator._pool, coordinator._policy = pool, ExecutionPolicy()
+        coordinator._write_running, coordinator._active_resource_locks = False, set()
+&gt;       assert [item.task_id for item in coordinator._select_batch()] == [parent.task_id]
+E       AssertionError: assert ['child', 'parent'] == ['parent']
+E         
+E         At index 0 diff: 'child' != 'parent'
+E         Left contains one more item: 'parent'
+E         Use -v to get more diff
+
+tests\test_api_dependency_admission.py:49: AssertionError</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_saved_ready_label_does_not_bypass_actual_predecessor[ApiSubagentCoordinator]" time="0.001"><failure message="AssertionError: assert ['child', 'parent'] == ['parent']&#10;  &#10;  At index 0 diff: 'child' != 'parent'&#10;  Left contains one more item: 'parent'&#10;  Use -v to get more diff">coordinator_type = &lt;class 'src.modes.api_testing_mode.subagent_coordinator.ApiSubagentCoordinator'&gt;
+
+    @pytest.mark.parametrize("coordinator_type", [ApiTestCoordinator, ApiSubagentCoordinator])
+    def test_saved_ready_label_does_not_bypass_actual_predecessor(coordinator_type):
+        parent = task("parent")
+        child = task("child", depends_on=[parent.task_id])
+        pool = ApiTaskPool([child, parent])
+        coordinator = object.__new__(coordinator_type)
+        coordinator._pool, coordinator._policy = pool, ExecutionPolicy()
+        coordinator._write_running, coordinator._active_resource_locks = False, set()
+&gt;       assert [item.task_id for item in coordinator._select_batch()] == [parent.task_id]
+E       AssertionError: assert ['child', 'parent'] == ['parent']
+E         
+E         At index 0 diff: 'child' != 'parent'
+E         Left contains one more item: 'parent'
+E         Use -v to get more diff
+
+tests\test_api_dependency_admission.py:49: AssertionError</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_revalidation_rejects_changed_reference_without_rewriting_terminal_result" time="0.000"><failure message="Failed: DID NOT RAISE ValueError">def test_revalidation_rejects_changed_reference_without_rewriting_terminal_result():
+        completed = task("completed", response_status=200, response_body={"id": 0})
+        completed.status = "completed"
+        child = task("child", depends_on=[completed.task_id])
+        pool = ApiTaskPool([completed, child])
+        frozen = completed.model_dump(mode="json")
+        child.depends_on = ["foreign-task"]
+&gt;       with pytest.raises(ValueError, match="API task"):
+E       Failed: DID NOT RAISE ValueError
+
+tests\test_api_dependency_admission.py:63: Failed</failure></testcase><testcase classname="tests.test_api_dependency_admission" name="test_real_http_obeys_predecessor_even_when_every_saved_task_is_ready" time="0.560"><failure message="AssertionError: assert [['GET', '/or...', '/orders']] == [['POST', '/o... '/orders/0']]&#10;  &#10;  At index 0 diff: ['GET', '/orders/%7Bid%7D'] != ['POST', '/orders']&#10;  Use -v to get more diff">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1650/test_real_http_obeys_predecess0')
+
+    def test_real_http_obeys_predecessor_even_when_every_saved_task_is_ready(tmp_path):
+        with target() as (url, requests):
+            create = ApiTestTask(task_id="create", method="POST", path="/orders", full_url=url+"/orders",
+                execution_mode="write", status="ready")
+            read = ApiTestTask(task_id="read", method="GET", path="/orders/{id}", full_url=url+"/orders/{id}",
+                depends_on=[create.task_id], path_parameter_sources={"id": create.task_id}, status="ready")
+            executor = ApiTaskExecutor(credential_manager=CredentialManager())
+            pool = ApiTaskPool([read, create])
+            coordinator = ApiTestCoordinator(pool=pool, policy=ExecutionPolicy(), executor_fn=executor.execute)
+            result = asyncio.run(coordinator.run_all())
+&gt;           assert requests == [["POST", "/orders"], ["GET", "/orders/0"]]
+E           AssertionError: assert [['GET', '/or...', '/orders']] == [['POST', '/o... '/orders/0']]
+E             
+E             At index 0 diff: ['GET', '/orders/%7Bid%7D'] != ['POST', '/orders']
+E             Use -v to get more diff
+
+tests\test_api_dependency_admission.py:110: AssertionError</failure></testcase></testsuite></testsuites>

@@ -3774,3 +3774,11 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 基线e8d340cc，依据P3_PROJECT_SELECTION_GATE_RESEARCH.md。Locator和Runtime原本对唯一未命名项目的确认规则不一致，Runtime会自动选择临时名称。已对齐：无正式名称且用户没有项目线索时进入awaiting_project_selection；只有正式名称或明确线索才自动选择。多候选分数规则保持。
 
 项目身份/上传/解析/恢复和召回回归17通过1跳过3.72秒；默认AI多候选排序质量仍暂缓，完整P0—P5保持active。
+
+### 7.54 API任务依赖领取与缺失路径前置〔2026-10-12〕
+
+基线5156e19c。对照正式RunItem的`validate_run_dependencies`、`dependencies_ready`和API两个协调器后，真实复现API task pool静默忽略不存在的`depends_on`、保存的`ready`标签绕过未完成前置，以及未解析路径占位符被发送到目标。前置缺口不通过增加注册/登录清单解决；只在确定性执行边界校验任务图和实际输入。
+
+`ApiTaskPool`构造及每次协调使用标准库`TopologicalSorter`拒绝重复任务、缺失/自引用、重复依赖和循环；`ready_tasks()`重新按依赖状态协调，恢复标签不能越过前置。路径参数只解析URL path，端口不再被识别为`:parameter`；本地协调器和Worker派发前对剩余占位符失败，不发HTTP、不派发Worker，具体缺口进入报告。Campaign保存`PreconditionAnalysis.to_dict()`，使人工数据缺口、来源和解析细节随冻结计划可查。无新表、配置、依赖、模型协议或权限。
+
+首次复现9项失败；修复后`p3-api-dependency-final.xml` **11通过**，真实本地HTTP证明创建→实际输出`id=0`→查询顺序、未解析路径零HTTP/零Worker和终态零额外请求；相关回归`p3-api-dependency-verified4.xml` **70通过、3跳过**，加入 Campaign 前置摘要后的完整回归`p3-api-dependency-regression2.xml` **101通过、5跳过**，覆盖文档解析依赖、创建/查询、重试、未知写入、结果回读、工具等待、项目范围和模式隔离。外部AI调用0。该专项完成API确定性依赖门槛，不能替代默认AI多候选选取/排序/补全质量和正式用例Run全流程验收；完整P0—P5保持active，外部AI按用户安排暂缓。

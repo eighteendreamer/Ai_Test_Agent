@@ -67,7 +67,11 @@ def test_api_campaign_retries_parent_and_runs_previously_skipped_dependents():
         task.attempts += 1
         if task.task_id == "create" and task.attempts == 1:
             return task.model_copy(update={"status": "failed", "last_error": "timeout"})
-        return task.model_copy(update={"status": "completed", "response_status": 200})
+        if task.task_id == "create":
+            return task.model_copy(update={"status": "completed", "response_status": 201,
+                                           "response_body": {"id": 0}})
+        return task.model_copy(update={"status": "completed", "response_status": 200,
+                                       "response_body": {"id": 0}})
 
     result = asyncio.run(ApiTestCoordinator(
         pool=pool,

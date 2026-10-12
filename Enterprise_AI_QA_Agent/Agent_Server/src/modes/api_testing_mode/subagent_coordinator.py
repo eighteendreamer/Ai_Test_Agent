@@ -20,7 +20,11 @@ from src.modes.api_testing_mode.contracts import (
 )
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
-from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
+from src.modes.api_testing_mode.input_binding import (
+    bind_path_parameters,
+    substitute_path_parameter,
+    unresolved_path_parameters,
+)
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
 from src.modes.api_testing_mode.worker_result_reader import ApiWorkerResultReader
 from src.runtime.store import SessionStore
@@ -235,6 +239,17 @@ class ApiSubagentCoordinator:
         launched_tasks: list[ApiTestTask] = []
         try:
             for task in batch:
+                # Resolve inputs before claiming/dispatching. A remaining
+                # placeholder is a missing prerequisite, never a valid URL.
+                self._apply_input_bindings(task)
+                unresolved = unresolved_path_parameters(task)
+                if unresolved:
+                    self._fail_task(
+                        task,
+                        "Required path parameter(s) unresolved: " + ", ".join(unresolved)
+                        + "; provide project data or a producer test case before execution.",
+                    )
+                    continue
                 self._pool.mark_running(task.task_id)
                 task.attempts += 1
                 task.worker_status = "dispatching"
@@ -243,8 +258,10 @@ class ApiSubagentCoordinator:
                     self._active_resource_locks.add(lock)
                 if task.execution_mode == EXECUTION_MODE_WRITE:
                     self._write_running = True
-                self._apply_input_bindings(task)
                 launched_tasks.append(task)
+
+            if not launched_tasks:
+                return
 
             if self._credential_references is not None:
                 for task in launched_tasks:

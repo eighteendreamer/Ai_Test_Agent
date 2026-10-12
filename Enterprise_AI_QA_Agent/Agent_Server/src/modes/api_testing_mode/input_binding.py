@@ -3,6 +3,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import Any
+from urllib.parse import urlsplit
 
 from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.modes.api_testing_mode.precondition_resolver import PATH_PARAM_PATTERN
@@ -20,7 +21,7 @@ def substitute_path_parameter(task: ApiTestTask, parameter: str, value: Any) -> 
 
 def bind_path_parameters(task: ApiTestTask, outputs: Mapping[str, Any]) -> None:
     parameters = [match.group(1) or match.group(2)
-                  for match in PATH_PARAM_PATTERN.finditer(task.full_url or task.path)]
+                  for match in PATH_PARAM_PATTERN.finditer(_path_text(task))]
     for parameter in parameters:
         source = task.path_parameter_sources.get(parameter)
         # Old persisted tasks lack parameter-level provenance. Preserve their
@@ -34,6 +35,25 @@ def bind_path_parameters(task: ApiTestTask, outputs: Mapping[str, Any]) -> None:
             if value is not None:
                 substitute_path_parameter(task, parameter, value)
                 break
+
+
+def unresolved_path_parameters(task: ApiTestTask) -> list[str]:
+    """Return placeholders that remain after planned input binding.
+
+    Callers must fail before opening an HTTP connection. Sending ``{id}``
+    would turn a planning gap into a misleading business result.
+    """
+    text = _path_text(task)
+    return list(dict.fromkeys(
+        match.group(1) or match.group(2)
+        for match in PATH_PARAM_PATTERN.finditer(text or "")
+    ))
+
+
+def _path_text(task: ApiTestTask) -> str:
+    """Inspect only the URL path; ``:8000`` is a port, not a placeholder."""
+    raw = task.path or task.full_url or ""
+    return urlsplit(raw).path if "://" in raw else raw
 
 
 def _parameter_value(output: dict[str, Any], parameter: str) -> Any:

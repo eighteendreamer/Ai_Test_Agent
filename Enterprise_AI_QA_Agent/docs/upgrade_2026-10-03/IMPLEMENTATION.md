@@ -5464,3 +5464,11 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 ## 2026-10-12 API项目选择确认门禁一致性
 
 修复ApiProjectLocator与ApiTestingModeRuntime对唯一未命名项目的规则分叉，避免用临时名称自动选项目。回归17通过1跳过3.72秒；未新增配置/表/协议，默认AI质量仍待验收。
+
+## 2026-10-12 API任务依赖领取与缺失路径前置
+
+基线5156e19c。先对照正式RunItem的`validate_run_dependencies`、`dependencies_ready`及API的两个协调器/任务池，真实复现了API任务池静默忽略缺失依赖、保存的ready标签绕过前置，以及未绑定的`{id}`仍被发送到目标的问题。没有把业务依赖启发式扩成固定清单；只补确定性的任务图和输入门槛。
+
+`ApiTaskPool`现在用标准库`TopologicalSorter`在构造和每次协调时拒绝重复任务、缺失/自引用、重复依赖和循环；`ready_tasks()`重新依据前置状态协调，恢复或外部修改的ready标签不能绕过未完成前置。路径绑定只解析URL path，避免把`:8000`误当参数；本地协调器和Worker派发前都检查剩余占位符，缺失时失败并记录具体参数，不发HTTP、不派发Worker。Campaign同时保存`PreconditionAnalysis.to_dict()`，使人工数据缺口和来源可查。无新增表、配置、依赖、模型协议或权限。
+
+证据：首次复现9项失败；修复后`p3-api-dependency-final.xml` **11通过**，含真实本地HTTP创建→实际`id=0`→查询、未解析路径零HTTP/零Worker派发和终态零额外请求。相关回归`p3-api-dependency-verified4.xml` **70通过、3跳过**；加入 Campaign 前置摘要后的完整回归`p3-api-dependency-regression2.xml` **101通过、5跳过**，覆盖文档解析依赖、创建/查询HTTP、重试、未知写入、结果回读、工具等待、项目范围和模式隔离。跳过项是既有真实存储门控。外部AI调用0；配置仍MySQL、业务仍PostgreSQL、原件仍RustFS。完整P0—P5及默认AI质量继续保持未完成。
