@@ -5400,3 +5400,7 @@ compileall、原件/前序工件SHA、受保护4文件、三方案、配置凭�
 layer1/2/3局部生产实验2失败2排除142.66/54.17/49.78秒，同进程业务0、持久子仅login200。所有API生产实验撤回到已验HEAD（session_service、tool_executor、api_testing_mode/runtime、subagent_coordinator），按实际失败升级到原父ToolJob/snapshot/outbox等待设计；严禁把局部逻辑通过代替现场。附加逻辑初次2失败27通过1跳过/后续1失败等未形成独立XML，不能伪造原命令日志；工具原输出保留在会话。恢复生产HEAD后原6模块正式保存p2-api-approval-wait-restored-regression.xml/log：46通过22门控跳过15.25秒；未启用live外部，不声明完整Agent认证通过。
 
 详细依据、已纠正的观察结论、待实现路线见P2_API_APPROVAL_RECOVERY_RESEARCH.md。方案7.43及三份同步、原件/保护文件SHA、代码与已提交HEAD一致和配置敏感材料审计另见validation。本批没有API生产修复提交，不推送/PR，完整目标保持active，外部AI按用户安排暂缓。
+
+## 2026-10-12 模板与导入当前代码复验
+
+基线05688163。Agent_Server执行`..\.venv\Scripts\python.exe -m pytest`：RUN_LIVE_CASE_IMPORT_TESTS=1，test_case_import_service.py -k True -q，6通过8排除10.70秒；RUN_LIVE_CASE_IMPORT_BROWSER=1，test_case_import_browser.py -q，3通过12.74秒；RUN_LIVE_CASE_IMPORT_FULL_PRODUCT=1，QA_CASE_IMPORT_FULL_PRODUCT_DIR指定本轮current2目录，test_case_import_full_product.py -q，1通过66.89秒。真实文件、MySQL/PG/RustFS/Redis、Chromium及完整App/独立API重启已验。没有修改生产代码或调用外部AI，属于既有6.87/7.05能力复验。原pytest结果来自工具终态输出，无独立原日志/XML；21份产品工件和输入hash由p1-current2-audit.py实际核对，validation明确范围。完整升级未完成。
