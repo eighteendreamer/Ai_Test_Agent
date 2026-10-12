@@ -23,6 +23,7 @@ from src.modes.api_testing_mode.contracts import (
 )
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
+from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
 
 
 # Type alias for the executor callback.
@@ -224,21 +225,7 @@ class ApiTestCoordinator:
         configured credential instead of being overwritten by an unrelated
         authentication flow.
         """
-        for task in self._pool.all_tasks:
-            if task.status in {TASK_COMPLETED, TASK_FAILED, "skipped"}:
-                continue
-            is_future_auth = task.execution_mode == EXECUTION_MODE_AUTH
-            depends_on_source = source_task_id in task.depends_on
-            if is_future_auth or depends_on_source:
-                task.auth_ref = auth_ref
-                logger.info(
-                    "api_auth_ref_propagated",
-                    extra={
-                        "source_task_id": source_task_id,
-                        "target_task_id": task.task_id,
-                        "dependency_match": depends_on_source,
-                    },
-                )
+        propagate_auth_ref(self._pool.all_tasks, auth_ref, source_task_id=source_task_id)
 
     def _apply_input_bindings(self, task: ApiTestTask) -> None:
         """Resolve input bindings: substitute path parameters and request body from prior task outputs."""

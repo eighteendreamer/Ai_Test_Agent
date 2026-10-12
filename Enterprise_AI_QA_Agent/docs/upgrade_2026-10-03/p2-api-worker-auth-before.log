@@ -1,0 +1,18 @@
+.F.F                                                                     [100%]
+================================== FAILURES ===================================
+_ test_actual_worker_credentials_follow_completed_auth_source[refresh-worker] _
+tests\test_api_worker_auth_refresh_live.py:131: in test_actual_worker_credentials_follow_completed_auth_source
+    assert all(t.status == "completed" for t in results), facts
+E   AssertionError: {'scope': 'actual target HTTP, both production coordinators, actual worker runner; controlled launch and in-memory ses...n_present': True, ...}, {'method': 'GET', 'path': '/profile', 'status': 401, 'authorization_present': True, ...}], ...}
+E   assert False
+E    +  where False = all(<generator object test_actual_worker_credentials_follow_completed_auth_source.<locals>.<genexpr> at 0x000002BD5A2BC450>)
+_ test_actual_worker_credentials_follow_completed_auth_source[no-broadcast-worker] _
+tests\test_api_worker_auth_refresh_live.py:131: in test_actual_worker_credentials_follow_completed_auth_source
+    assert all(t.status == "completed" for t in results), facts
+E   AssertionError: {'scope': 'actual target HTTP, both production coordinators, actual worker runner; controlled launch and in-memory ses...on_present': True, ...}, {'method': 'GET', 'path': '/public', 'status': 401, 'authorization_present': True, ...}], ...}
+E   assert False
+E    +  where False = all(<generator object test_actual_worker_credentials_follow_completed_auth_source.<locals>.<genexpr> at 0x000002BD582AAE90>)
+=========================== short test summary info ===========================
+FAILED tests/test_api_worker_auth_refresh_live.py::test_actual_worker_credentials_follow_completed_auth_source[refresh-worker]
+FAILED tests/test_api_worker_auth_refresh_live.py::test_actual_worker_credentials_follow_completed_auth_source[no-broadcast-worker]
+2 failed, 2 passed in 3.52s

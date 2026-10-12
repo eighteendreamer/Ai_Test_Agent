@@ -27,6 +27,7 @@ class OutputSafetyPolicy:
         "proxy_authorization",
         "cookie",
         "set_cookie",
+        "credential_session",
     }
     TEXT_PATTERNS = (
         re.compile(r"(?i)\b(authorization\s*:\s*bearer\s+)[A-Za-z0-9._~+/=-]+"),

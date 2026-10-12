@@ -21,6 +21,7 @@ from src.modes.api_testing_mode.contracts import (
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
+from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
 from src.runtime.store import SessionStore
 from src.schemas.session import MessageRole, SessionStatus
 
@@ -399,7 +400,7 @@ class ApiSubagentCoordinator:
             self._emit_checkpoint("task_completed", task)
             self._task_outputs[task.task_id] = task.response_body
             if task.execution_mode == EXECUTION_MODE_AUTH and task.auth_ref:
-                self._propagate_auth_ref(task.auth_ref)
+                self._propagate_auth_ref(task.auth_ref, source_task_id=task.task_id)
             return
 
         self._pool.mark_failed(task.task_id, task.last_error or str(tool_output.get("summary") or "execution_failed"))
@@ -419,12 +420,8 @@ class ApiSubagentCoordinator:
         except Exception:
             return
 
-    def _propagate_auth_ref(self, auth_ref: str) -> None:
-        for task in self._pool.all_tasks:
-            if task.status in {TASK_COMPLETED, TASK_FAILED, "skipped"}:
-                continue
-            if not task.auth_ref:
-                task.auth_ref = auth_ref
+    def _propagate_auth_ref(self, auth_ref: str, *, source_task_id: str) -> None:
+        propagate_auth_ref(self._pool.all_tasks, auth_ref, source_task_id=source_task_id)
 
     def _apply_input_bindings(self, task: ApiTestTask) -> None:
         if not task.input_bindings and not task.depends_on:

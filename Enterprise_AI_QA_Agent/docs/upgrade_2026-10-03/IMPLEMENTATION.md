@@ -5341,3 +5341,16 @@ Agent_Server实际命令：`..\.venv\Scripts\python.exe -X utf8 -m pytest`，十
 RUN_LIVE_EXECUTION_CLI_TESTS=1、QA_RECEIPT_PROCESS_STREAMING=1、QA_RECEIPT_PROCESS_DIR独立p2-receipt-stream-process，运行test_receipt_process_recovery_live.py，2通过693.48秒。实际Windows kill owned API进程树、自然90秒条目/300秒资源租约、生产cleanup CLI和新Redis Worker；invoking保留error/recovery_required，response回读原响应正式passed。两个六次模型HTTP/三次POST-GET-DELETE业务，原累计预算5/8保持；修改今日模型/策略/上限不改旧历史。终态零新增模型/业务、无残留订单；四存储现场记录及清理回执保存。模型HTTP受控，不冒充默认模型/完整App验收。
 
 compileall实际运行四生产/七测试/audit，退出0；pytest足以验证本批逻辑及真实SDK/进程边界，未宣称新前端构建。契约全局搜索核对现有PG泛型payload和前端政策字段，无额外前端消费字段需要迁移。三方案同步7.38，SHA审计/保护文件/秘密扫描/字节保留见p2-receipt-stream-validation.json。完整P0—P5保持active，只提交本批白名单，不推送或创建PR。
+
+
+## 2026-10-12 API Worker认证传播与真实持久化缺口
+
+基线15d8687b。抽出直接协调器已有认证来源传播，两个协调器复用；Worker完成时传来源task_id；不再只填空auth_ref或向无依赖public广播。具体credential_session容器纳入现有公开脱敏，普通usage.token不做全局误杀。无schema/依赖/配置/前端变动，未运行前端build。
+
+实际执行Agent_Server目录下 `..\.venv\Scripts\python.exe -X utf8 -m pytest`。before：2失败2通过3.52秒；原48/50通过批次重叠。最终RUN_LIVE_UPGRADE_STORAGE_TESTS=1，九模块api_worker_auth_refresh_live、api_authentication_live、api_document_dependency_http、api_mode_session_isolation、api_request_body_contract、api_task_executor_recovery、api_unknown_write_recovery、intent_safety_routing、observability_contracts，175通过1跳过28.27秒。后续消费方api_worker_auth_refresh_live、api_dispatched_task_contract、security_output_compaction、security_approval_boundary、security_profile_capabilities、security_report_product，24通过3门控跳过13.94秒。pytest包含实际本地HTTP及现有真实存储专项，不是语法代验；控制Worker启动明确不冒充独立Worker/default AI。
+
+RUN_LIVE_API_WORKER_AUTH_STORAGE=1、QA_API_WORKER_AUTH_STORAGE_DIR唯一owned目录，保存生产ToolRuntime/PG Job及子会话实际结果。captured一失败四通过9.03秒；容器脱敏后的redacted专项一失败五排除6.97秒，期待[200,200,200]，实际[200,401,null]。原始认证值未输出，观察只保存随机身份、状态、布尔事实。全部失败保留；没有放宽断言、关闭脱敏或把这条链路说成已完成。环境重启恢复原PG数据目录和现有RustFS脚本，错误集群已停止，历史库未重置。原件中夹具ProjectStore初始化/读取字段错误也明确保留。
+
+研究修正：真实链路需要范围约束的内部持久化凭据引用。已查证父子会话继承project_id及父session/turn，现有ChannelCredentialCodec可用，密钥不打印；尚无API vault实现。本批已修复来源传播和具体公开泄漏，正常ToolRuntime内部鉴权传输、独立Worker/默认AI、Cookie/自动续期/并发、多认证流完整隔离仍未完成。按用户决定本轮零外部AI调用。
+
+三方案同步7.39；编译、历史工件/保护文件SHA核对及敏感材料扫描见p2-api-worker-auth-validation.json和相关日志。完整P0—P5仍active，仅提交本批白名单，不推送/PR。
