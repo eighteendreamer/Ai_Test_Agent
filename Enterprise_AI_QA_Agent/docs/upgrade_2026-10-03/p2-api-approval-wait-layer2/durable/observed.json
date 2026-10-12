@@ -1,0 +1,143 @@
+{
+  "external_ai_calls": 0,
+  "full_goal_complete": false,
+  "durable_children": true,
+  "project_id": "2ce8613a-31db-4d80-995f-23ffaef7fb40",
+  "parent_session_id": "0c0af77c-1bef-4b76-85fb-dc911e5713fe",
+  "parent_task_id": "task_39df32664e864fb9bbb1a0ebe8bf7ce2",
+  "parent_tasks": [
+    {
+      "id": "task_83fd4e871b644ac8ba4fbe76e31ecf3d",
+      "operation": "approval_resume",
+      "session_id": "0c0af77c-1bef-4b76-85fb-dc911e5713fe",
+      "turn_id": "38853620-9149-4808-96f3-8026a352db66",
+      "project_id": "2ce8613a-31db-4d80-995f-23ffaef7fb40",
+      "request_id": "req_670132627f1542079433c3a675bcd8bc",
+      "trace_id": "trace_30c6cd787ab14aceb4f531ba1afd3e24",
+      "run_id": null,
+      "run_item_id": null,
+      "status": "completed",
+      "priority": 50,
+      "attempt_id": "0d3493f0-2741-46ad-be59-29ad864d9bea",
+      "attempt_no": 1,
+      "worker_id": "api-auth-0",
+      "waiting_reason": null,
+      "result_status": "completed",
+      "error_code": null,
+      "resource_id": "turn:task_83fd4e871b644ac8ba4fbe76e31ecf3d",
+      "reference_id": "4a07865e-9622-40f9-afae-35c47c8f6177",
+      "parent_task_id": null,
+      "root_trace_id": null,
+      "result_payload": null,
+      "created_at": "2026-10-12T05:06:30.156369Z",
+      "updated_at": "2026-10-12T05:06:32.499314Z"
+    },
+    {
+      "id": "task_39df32664e864fb9bbb1a0ebe8bf7ce2",
+      "operation": "message",
+      "session_id": "0c0af77c-1bef-4b76-85fb-dc911e5713fe",
+      "turn_id": "38853620-9149-4808-96f3-8026a352db66",
+      "project_id": "2ce8613a-31db-4d80-995f-23ffaef7fb40",
+      "request_id": "req_b32e57d1a9e84103804767b1015b9321",
+      "trace_id": "trace_22d8e6b38ddc47dca7c803662a9b82e5",
+      "run_id": null,
+      "run_item_id": null,
+      "status": "completed",
+      "priority": 50,
+      "attempt_id": "18d2d85a-e296-4a13-912a-fed104fccc45",
+      "attempt_no": 1,
+      "worker_id": "api-auth-1",
+      "waiting_reason": null,
+      "result_status": "waiting_approval",
+      "error_code": null,
+      "resource_id": "turn:task_39df32664e864fb9bbb1a0ebe8bf7ce2",
+      "reference_id": null,
+      "parent_task_id": null,
+      "root_trace_id": null,
+      "result_payload": null,
+      "created_at": "2026-10-12T05:06:19.873334Z",
+      "updated_at": "2026-10-12T05:06:29.948667Z"
+    }
+  ],
+  "parent_status": "completed",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    }
+  ],
+  "approval_wait_observations": [],
+  "physical_model_http": 4,
+  "fixture_errors": [],
+  "tool_messages": [
+    {
+      "id": "9cefbaa4-77ec-47c2-909b-448f5273d7b1",
+      "role": "tool",
+      "content": "API Test Runner\nstatus: partial\nsummary: 正在执行 API 测试任务...\n\n{\n  \"ok\": true,\n  \"phase\": \"task_running\",\n  \"status\": \"partial\",\n  \"metrics\": {},\n  \"summary\": \"正在执行 API 测试任务...\",\n  \"trace_id\": \"f5f67845-6473-4d26-afaa-5aa66391510a\",\n  \"artifacts\": [],\n  \"task_count\": 3,\n  \"campaign_id\": \"f6d89182-ca89-4524-a9b7-46a780181d11\",\n  \"task_events\": [\n    {\n      \"at\": \"2026-10-12T05:06:29.375497+00:00\",\n      \"path\": \"/login\",\n      \"error\": \"\",\n      \"phase\": \"task_running\",\n      \"method\": \"POST\",\n      \"status\": \"running\",\n      \"summary\": \"\",\n      \"task_id\": \"task_000_login\",\n      \"attempts\": 1,\n      \"event_id\": \"task_running_task_000_login_1_1\",\n      \"task_name\": \"POST /login\",\n      \"event_type\": \"task_running\",\n      \"duration_ms\": 0.0,\n      \"request_outcome\": \"not_started\",\n      \"response_status\": null,\n      \"worker_session_id\": \"\"\n    }\n  ],\n  \"selected_agent\": \"api-testing-agent\",\n  \"selected_tools\": [\n    \"api-test-runner\",\n    \"api-docs-library\",\n    \"api-tester\",\n    \"knowledge-rag\",\n    \"report-writer\"\n  ],\n  \"api_testing_state\": {\n    \"notes\": [],\n    \"phase\": \"task_running\",\n    \"errors\": [],\n    \"report\": null,\n    \"history\": [\n      {\n        \"at\": \"2026-10-12T05:06:29.374972+00:00\",\n        \"phase\": \"task_dispatching\",\n        \"reason\": \"Dispatching campaign tasks to worker agents.\"\n      },\n      {\n        \"at\": \"2026-10-12T05:06:29.375497+00:00\",\n        \"phase\": \"task_running\",\n        \"reason\": \"Executing campaign tasks.\"\n      }\n    ],\n    \"request\": {\n      \"auth_hint\": \"\",\n      \"objective\": \"执行已固定的接口测试任务，保存实际认证链路结果。\",\n      \"domain_hint\": \"\",\n      \"method_hint\": \"\",\n      \"raw_message\": \"执行已固定的接口测试任务，保存实际认证链路结果。\",\n      \"project_hint\": \"\",\n      \"endpoint_hint\": \"\",\n      \"scope_preference\": \"\",\n      \"source_preferences\": [],\n      \"verification_focus\": \"payload_validation\"\n    },\n    \"campaign\": {\n      \"tasks\": [\n        {\n          \"name\": \"POST /login\",\n          \"path\": \"/login\",\n          \"method\": \"POST\",\n          \"status\": \"running\",\n          \"task_id\": \"task_000_login\",\n          \"attempts\": 1,\n          \"auth_ref\": \"\",\n          \"full_url\": \"http://127.0.0.1:58149/login\",\n          \"assertions\": [\n            {\n              \"kind\": \"status_code_range\",\n              \"path\": \"\",\n              \"expected\": [\n                200,\n                201,\n                204\n              ],\n              \"description\": \"Expect success status for POST /login\"\n            }\n          ],\n          \"capability\": \"login\",\n          \"depends_on\": [],\n          \"last_error\": \"\",\n          \"started_at\": \"\",\n          \"duration_ms\": 0.0,\n          \"completed_at\": \"\",\n          \"request_body\": null,\n          \"check_results\": [],\n          \"request_query\": {},\n          \"response_body\": null,\n          \"worker_status\": \"waiting_approval\",\n          \"execution_mode\": \"auth\",\n          \"input_bindings\": [],\n          \"resource_locks\": [\n            \"login\"\n          ],\n          \"worker_summary\": \"执行固定接口任务\\n\\nExecution is waiting for approval before protected tools can run.\\n\\nPending approvals:\\n- API Test Runner: approval_id=eba39fba-0f86-41cd-bf3c-e84dbebf4cdf\\n\\nAgent: API Executor Worker | Model: local-api-worker\",\n          \"request_headers\": {},\n          \"request_outcome\": \"not_started\",\n          \"response_status\": null,\n          \"timeout_seconds\": 30.0,\n          \"response_headers\": {},\n          \"worker_session_id\": \"61cae06e-49d4-4b07-af83-2bf7a418545f\",\n          \"execution_checkpoint\": {},\n          \"path_parameter_sources\": {},\n          \"dependency_skip_task_id\": \"\"\n        },\n        {\n          \"name\": \"POST /auth/refresh\",\n          \"path\": \"/auth/refresh\",\n          \"method\": \"POST\",\n          \"status\": \"ready\",\n          \"task_id\": \"task_001_refresh\",\n          \"attempts\": 0,\n          \"auth_ref\": \"\",\n          \"full_url\": \"http://127.0.0.1:58149/auth/refresh\",\n          \"assertions\": [\n            {\n              \"kind\": \"status_code_range\",\n              \"path\": \"\",\n              \"expected\": [\n                200,\n                201,\n                204\n              ],\n              \"description\": \"Expect success status for POST /auth/refresh\"\n            }\n          ],\n          \"capability\": \"refresh_token\",\n          \"depends_on\": [],\n          \"last_error\": \"\",\n          \"started_at\": \"\",\n          \"duration_ms\": 0.0,\n          \"completed_at\": \"\",\n          \"request_body\": null,\n          \"check_results\": [],\n          \"request_query\": {},\n          \"response_body\": null,\n          \"worker_status\": \"\",\n          \"execution_mode\": \"auth\",\n          \"input_bindings\": [],\n          \"resource_locks\": [\n            \"refresh\"\n          ],\n          \"worker_summary\": \"\",\n          \"request_headers\": {},\n          \"request_outcome\": \"not_started\",\n          \"response_status\": null,\n          \"timeout_seconds\": 30.0,\n          \"response_headers\": {},\n          \"worker_session_id\": \"\",\n          \"execution_checkpoint\": {},\n          \"path_parameter_sources\": {},\n          \"dependency_skip_task_id\": \"\"\n        },\n        {\n          \"name\": \"GET /profile\",\n          \"path\": \"/profile\",\n          \"method\": \"GET\",\n          \"status\": \"blocked\",\n          \"task_id\": \"task_002_profile\",\n          \"attempts\": 0,\n          \"auth_ref\": \"\",\n          \"full_url\": \"http://127.0.0.1:58149/profile\",\n          \"assertions\": [\n            {\n              \"kind\": \"status_code_range\",\n              \"path\": \"\",\n              \"expected\": [\n                200,\n                201,\n                204\n              ],\n              \"description\": \"Expect success status for GET /profile\"\n            }\n          ],\n          \"capability\": \"list\",\n          \"depends_on\": [\n            \"task_000_login\",\n            \"task_001_refresh\"\n          ],\n          \"last_error\": \"\",\n          \"started_at\": \"\",\n          \"duration_ms\": 0.0,\n          \"completed_at\": \"\",\n          \"request_body\": null,\n          \"check_results\": [],\n          \"request_query\": {},\n          \"response_body\": null,\n          \"worker_status\": \"\",\n          \"execution_mode\": \"read\",\n          \"input_bindings\": [],\n          \"resource_locks\": [\n            \"profile\"\n          ],\n          \"worker_summary\": \"\",\n          \"request_headers\": {},\n          \"request_outcome\": \"not_started\",\n          \"response_status\": null,\n          \"timeout_seconds\": 30.0,\n          \"response_headers\": {},\n          \"worker_session_id\": \"\",\n          \"execution_checkpoint\": {},\n          \"path_parameter_sources\": {},\n          \"dependency_skip_task_id\": \"\"\n        }\n      ],\n      \"objective\": \"\",\n      \"created_at\": \"\",\n      \"updated_at\": \"2026-10-12T05:06:30.314571+00:00\",\n      \"campaign_id\": \"f6d89182-ca89-4524-a9b7-46a780181d11\",\n      \"project_url\": \"\",\n      \"project_name\": \"独立 API Agent Worker 验收\",\n      \"preconditions\": [],\n      \"execution_policy\": {\n        \"max_retries\": 0,\n        \"max_workers\": 2,\n        \"write_serial\": true,\n        \"read_parallel\": true,\n        \"serialize_by_auth\": true,\n        \"request_timeout_seconds\": 30.0,\n        \"serialize_by_resource_lock\": true\n      },\n      \"selected_endpoints\": [],\n      \"verification_focus\": \"general\",\n      \"credential_session_id\": \"\",\n      \"selected_document_ids\": []\n    },\n    \"trace_id\": \"f5f67845-6473-4d26-afaa-5aa66391510a\",\n    \"artifacts\": [],\n    \"auth_hint\": {},\n    \"session_id\": \"0c0af77c-1bef-4b76-85fb-dc911e5713fe\",\n    \"task_events\": [\n      {\n        \"at\": \"2026-10-12T05:06:29.375497+00:00\",\n        \"path\": \"/login\",\n        \"error\": \"\",\n        \"phase\": \"task_running\",\n        \"method\": \"POST\",\n        \"status\": \"running\",\n        \"summary\": \"\",\n        \"task_id\": \"task_000_login\",\n        \"attempts\": 1,\n        \"event_id\": \"task_running_task_000_login_1_1\",\n        \"task_name\": \"POST /login\",\n        \"event_type\": \"task_running\",\n        \"duration_ms\": 0.0,\n        \"request_outcome\": \"not_started\",\n        \"response_status\": null,\n        \"worker_session_id\": \"\"\n      }\n    ],\n    \"context_refs\": [],\n    \"previous_phase\": \"task_dispatching\",\n    \"selected_agent\": \"api-testing-agent\",\n    \"selected_scope\": \"\",\n    \"selected_tools\": [\n      \"api-test-runner\",\n      \"api-docs-library\",\n      \"api-tester\",\n      \"knowledge-rag\",\n      \"report-writer\"\n    ],\n    \"last_updated_at\": \"2026-10-12T05:06:30.315097+00:00\",\n    \"selected_project\": null,\n    \"evaluation_result\": {},\n    \"pending_selection\": null,\n    \"project_candidates\": [],\n    \"selected_documents\": [],\n    \"selected_endpoints\": [],\n    \"document_candidates\": [],\n    \"endpoint_candidates\": [],\n    \"verification_result\": {},\n    \"execution_checkpoint\": {\n      \"phase\": \"task_running\",\n      \"trace_id\": \"f5f67845-6473-4d26-afaa-5aa66391510a\",\n      \"updated_at\": \"2026-10-12T05:06:30.314571+00:00\",\n      \"campaign_id\": \"f6d89182-ca89-4524-a9b7-46a780181d11\",\n      \"event_count\": 1,\n      \"task_summary\": {\n        \"ready\": 1,\n        \"total\": 3,\n        \"blocked\": 1,\n        \"running\": 1\n      },\n      \"active_task_id\": \"\",\n      \"last_event_type\": \"campaign_waiting_approval\",\n      \"active_task_status\": \"\",\n      \"completed_task_ids\": [],\n      \"active_task_idempotency_key\": \"\"\n    }\n  },\n  \"execution_checkpoint\": {\n    \"phase\": \"task_running\",\n    \"trace_id\": \"f5f67845-6473-4d26-afaa-5aa66391510a\",\n    \"updated_at\": \"2026-10-12T05:06:30.314571+00:00\",\n    \"campaign_id\": \"f6d89182-ca89-4524-a9b7-46a780181d11\",\n    \"event_count\": 1,\n    \"task_summary\": {\n      \"ready\": 1,\n      \"total\": 3,\n      \"blocked\": 1,\n      \"running\": 1\n    },\n    \"active_task_id\": \"\",\n    \"last_event_type\": \"campaign_waiting_approval\",\n    \"active_task_status\": \"\",\n    \"completed_task_ids\": [],\n    \"active_task_idempotency_key\": \"\"\n  }\n}",
+      "created_at": "2026-10-12T05:06:31.148613",
+      "metadata": {
+        "status": "partial",
+        "ordinal": 1,
+        "turn_id": "38853620-9149-4808-96f3-8026a352db66",
+        "tool_key": "api-test-runner",
+        "trace_id": "f5f67845-6473-4d26-afaa-5aa66391510a",
+        "tool_name": "API Test Runner",
+        "tool_call_id": "call-30e96e47b3214a019fb88c7c9fad7eb3",
+        "context_eligible": false,
+        "transcript_bucket": "tool"
+      }
+    }
+  ],
+  "approved_parent_calls": 2,
+  "worker_dispatches": [
+    {
+      "status": "waiting_approval",
+      "task_id": "task_000_login",
+      "agent_key": "api-executor-worker",
+      "model_key": "local-api-worker",
+      "description": "POST /login",
+      "completed_at": "2026-10-12T05:06:30.455188",
+      "debate_stage": "",
+      "source_stage": "",
+      "child_task_id": "task_fcea0e71a37a470ab1e6d103035f8648",
+      "dispatch_role": "api_execution_worker",
+      "parent_turn_id": "38853620-9149-4808-96f3-8026a352db66",
+      "child_session_id": "61cae06e-49d4-4b07-af83-2bf7a418545f",
+      "debate_round_index": 0,
+      "source_round_index": 0,
+      "debate_total_round_count": 0
+    }
+  ],
+  "children_observed": [
+    {
+      "id": "61cae06e-49d4-4b07-af83-2bf7a418545f",
+      "mode_key": "api_testing",
+      "status": "completed",
+      "pending_approvals": 0,
+      "messages": [
+        {
+          "id": "e5ab9202-76b0-491c-b48d-efd2f424af58",
+          "role": "tool",
+          "content": "API Test Runner\nstatus: completed\nsummary: Executed API task task_000_login with final status completed and HTTP 200.\n\n{\n  \"ok\": true,\n  \"status\": \"completed\",\n  \"metrics\": {},\n  \"summary\": \"Executed API task task_000_login with final status completed and HTTP 200.\",\n  \"trace_id\": \"86ea1489-7428-4d1f-a782-3648783211b5\",\n  \"_security\": {\n    \"untrusted_content\": true,\n    \"redacted_field_count\": 1,\n    \"indirect_injection_signals\": []\n  },\n  \"artifacts\": [],\n  \"task_result\": {\n    \"name\": \"POST /login\",\n    \"path\": \"/login\",\n    \"method\": \"POST\",\n    \"status\": \"completed\",\n    \"task_id\": \"task_000_login\",\n    \"attempts\": 1,\n    \"auth_ref\": \"473ec5b8-95fe-4b72-aefd-cd4d757ddcc4\",\n    \"full_url\": \"http://127.0.0.1:58149/login\",\n    \"assertions\": [\n      {\n        \"kind\": \"status_code_range\",\n        \"path\": \"\",\n        \"expected\": [\n          200,\n          201,\n          204\n        ],\n        \"description\": \"Expect success status for POST /login\"\n      }\n    ],\n    \"capability\": \"login\",\n    \"depends_on\": [],\n    \"last_error\": \"\",\n    \"started_at\": \"2026-10-12T05:06:31.097631+00:00\",\n    \"duration_ms\": 59.04,\n    \"completed_at\": \"2026-10-12T05:06:31.157209+00:00\",\n    \"request_body\": null,\n    \"check_results\": [\n      {\n        \"kind\": \"status_code_range\",\n        \"name\": \"status_in_[200, 201, 204]\",\n        \"actual\": 200,\n        \"passed\": true,\n        \"expected\": [\n          200,\n          201,\n          204\n        ],\n        \"description\": \"Expect success status for POST /login\"\n      }\n    ],\n    \"request_query\": {},\n    \"response_body\": {\n      \"access_token\": \"[REDACTED]\"\n    },\n    \"worker_status\": \"dispatching\",\n    \"execution_mode\": \"auth\",\n    \"input_bindings\": [],\n    \"resource_locks\": [\n      \"login\"\n    ],\n    \"worker_summary\": \"\",\n    \"request_headers\": {},\n    \"request_outcome\": \"completed\",\n    \"response_status\": 200,\n    \"timeout_seconds\": 30.0,\n    \"response_headers\": {\n      \"date\": \"Mon, 12 Oct 2026 05:06:31 GMT\",\n      \"server\": \"BaseHTTP/0.6 Python/3.11.16\",\n      \"content-type\": \"application/json\",\n      \"content-length\": \"52\"\n    },\n    \"worker_session_id\": \"\",\n    \"execution_checkpoint\": {\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"POST\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/login\",\n              \"port\": 58149,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-12T05:06:31.156676Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    },\n    \"path_parameter_sources\": {},\n    \"dependency_skip_task_id\": \"\"\n  },\n  \"worker_kind\": \"api_test_task_execution\",\n  \"credential_ref\": \"473ec5b8-95fe-4b72-aefd-cd4d757ddcc4\",\n  \"idempotency_key\": \"api-task:task_000_login:POST:http://127.0.0.1:58149/login\"\n}",
+          "created_at": "2026-10-12T05:06:31.307292",
+          "metadata": {
+            "status": "completed",
+            "ordinal": 1,
+            "turn_id": "fc4a1150-9e0e-47d1-afb7-c9f6bce999cb",
+            "tool_key": "api-test-runner",
+            "trace_id": "86ea1489-7428-4d1f-a782-3648783211b5",
+            "tool_name": "API Test Runner",
+            "tool_call_id": "call-14dcec8437344d5a961093b572700b72",
+            "context_eligible": false,
+            "transcript_bucket": "tool"
+          }
+        }
+      ]
+    }
+  ],
+  "observed_public_credential_scan_passed": true
+}

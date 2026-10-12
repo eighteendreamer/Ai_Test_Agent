@@ -271,13 +271,63 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                         deadline = monotonic() + 100
                         tasks, session = [], None
                         approvals = []
+                        held_child_approvals = {}
+                        approval_hold_seconds = float(os.getenv('QA_API_AGENT_APPROVAL_HOLD_SECONDS', '0'))
+                        approval_wait_observations = []
                         while monotonic() < deadline:
                             await PostgresTaskOutbox(settings).relay_once(queue, limit=10)
                             tasks = await get(f"/sessions/{parent['id']}/tasks")
                             session = await get(f"/sessions/{parent['id']}")
+                            # Observe the persisted parent boundary before any
+                            # approval forwarding. A child may expose its
+                            # approval only after the parent API runner has
+                            # already returned, so checking only mirrored
+                            # approval metadata would miss the actual defect.
+                            if approval_hold_seconds > 0 and not approval_wait_observations:
+                                waiting_tasks = [task for task in tasks
+                                    if str(task.get('result_status') or '') == 'waiting_approval']
+                                if waiting_tasks:
+                                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                        cur.execute(f"SELECT id,status,output_payload FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s",
+                                            (parent['id'],))
+                                        parent_jobs = [dict(row) for row in cur.fetchall()]
+                                    reports = [job for job in parent_jobs if (job.get('output_payload') or {}).get('report')]
+                                    approval_wait_observations.append({'observation': 'parent_boundary_before_approval',
+                                        'parent_status': session['status'],
+                                        'parent_report_already_saved': bool(reports),
+                                        'parent_report_counts': [{key: report['output_payload']['report'][key]
+                                            for key in ('completed', 'failed', 'skipped')} for report in reports],
+                                        'waiting_task_ids': [task['id'] for task in waiting_tasks],
+                                        'actual_target_statuses_before_approval': [event['status'] for event in events],
+                                        'dispatches_before_approval': [{key: item.get(key)
+                                            for key in ('task_id', 'child_session_id', 'status')}
+                                            for item in session['metadata'].get('worker_dispatches', [])]})
                             for approval in session['pending_approvals']:
                                 proxy = bool((approval.get('metadata') or {}).get('proxy_child_session_id'))
                                 if approval['id'] not in approvals and (proxy or session['status'] == 'waiting_approval'):
+                                    if approval_hold_seconds > 0:
+                                        held_since = held_child_approvals.setdefault(approval['id'], monotonic())
+                                        if monotonic() - held_since < approval_hold_seconds:
+                                            continue
+                                        # Read actual saved parent facts before forwarding the child decision.
+                                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                            cur.execute(f"SELECT id,status,output_payload FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s",
+                                                (parent['id'],))
+                                            parent_jobs = [dict(row) for row in cur.fetchall()]
+                                        reports = [job for job in parent_jobs if (job.get('output_payload') or {}).get('report')]
+                                        pending_session_id = str(
+                                            approval['metadata'].get('proxy_child_session_id') or parent['id'])
+                                        pending_child = await get('/sessions/' + pending_session_id)
+                                        approval_wait_observations.append({'approval_id': approval['id'],
+                                            'held_seconds': monotonic() - held_since,
+                                            'parent_status': session['status'], 'child_status': pending_child['status'],
+                                            'parent_report_already_saved': bool(reports),
+                                            'parent_report_counts': [{key: report['output_payload']['report'][key]
+                                                for key in ('completed', 'failed', 'skipped')} for report in reports],
+                                            'actual_target_statuses_before_approval': [event['status'] for event in events],
+                                            'dispatches_before_approval': [{key: item.get(key)
+                                                for key in ('task_id', 'child_session_id', 'status')}
+                                                for item in session['metadata'].get('worker_dispatches', [])]})
                                     await post(f"/sessions/{parent['id']}/approvals/{approval['id']}",
                                         {'decision': 'approved', 'reason': 'owned local API test fixture'}, (200, 202))
                                     approvals.append(approval['id'])
@@ -289,6 +339,7 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                             assert all(w.poll() is None for w in workers), 'Agent CLI exited before terminal state'
                             await asyncio.sleep(.25)
                         facts.update(parent_tasks=tasks, parent_status=session['status'], events=events,
+                            approval_wait_observations=approval_wait_observations,
                             physical_model_http=len(requests), fixture_errors=failures,
                             tool_messages=[m for m in session['messages'] if m['role'] == 'tool'],
                             approved_parent_calls=len(approvals), worker_dispatches=session['metadata'].get('worker_dispatches', []))
@@ -314,6 +365,9 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                             (output / 'model-request-diagnostics.json').write_text(
                                 json.dumps(requests, ensure_ascii=False, indent=2), encoding='utf8')
                         assert not failures
+                        if approval_hold_seconds > 0:
+                            assert approval_wait_observations, 'No actual child approval wait was observed'
+                            assert not any(item['parent_report_already_saved'] for item in approval_wait_observations), facts
                         assert [e['status'] for e in events] == [200, 200, 200], facts
                         assert original['status'] == 'completed', facts
                         with postgres_connect(settings) as conn, conn.cursor() as cur:

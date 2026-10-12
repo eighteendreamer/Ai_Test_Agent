@@ -5392,3 +5392,11 @@ compileall、原件/前序工件SHA、受保护4文件、三方案、配置凭�
 源代码及相关契约检索、Git diff检查、历史/保护文件SHA、新原件及配置敏感材料核对另见p0-sdk-fault-audit.py与validation。三份方案同步7.42；完整P0—P5仍active。此验收不代替真实默认AI的全阶段请求追踪、API父子审批/鉴权闭环、进程故障和历史数据迁移，仅提交本批白名单，无推送/PR。
 
 后续用户协议核对：Anthropic原SDK调用保持`client.messages.create`，辅助await函数改名`await_provider_io`，避免response命名误解。实际测试发现共用夹具额外/v1导致Anthropic/v1/v1/messages；修正夹具Anthropic根URL，并在五传输矩阵逐请求校验正式路径/Anthropic Messages正文。p0-sdk-fault-final补采55通过4排除81.14秒仅为响应序号/hash，保留；协议最终QA_MODEL_SDK_FAULT_DIR=p0-sdk-fault-protocol-final，test_model_sdk_fault_http、test_sdk_midstream_retry_boundary、test_model_clients、test_langchain_model_adapter共87通过86.51秒。共用夹具修正后原十模块p0-sdk-fault-regression-final再跑152通过3门控跳过53.84秒。没有改生产API地址/配置、没有换协议，重复批次不累加。
+
+## 2026-10-12 API父子审批恢复现场复核
+
+基线742331d。test_api_agent_worker_live增加批准前PG/Session安全观察，QA_API_AGENT_APPROVAL_HOLD_SECONDS仅为测试等待，不是业务配置。实际 `RUN_LIVE_API_AGENT_WORKER=1`、各批QA_API_AGENT_WORKER_DIR独立owned目录、pytest `tests/test_api_agent_worker_live.py -k real_agent_worker -q --tb=short --junitxml=...`。before2失败57.63秒、observed2失败54.07秒、delay-final2失败54.96秒（普通审批误取proxy字段KeyError）、delay-final2目录2失败58.73秒、resume-final2失败52.35秒。各2排除，原件保持。probe-final2通过52.80秒仅为提前return的普通父审批等待探针，该return已删除，不作为完整API验收。
+
+layer1/2/3局部生产实验2失败2排除142.66/54.17/49.78秒，同进程业务0、持久子仅login200。所有API生产实验撤回到已验HEAD（session_service、tool_executor、api_testing_mode/runtime、subagent_coordinator），按实际失败升级到原父ToolJob/snapshot/outbox等待设计；严禁把局部逻辑通过代替现场。附加逻辑初次2失败27通过1跳过/后续1失败等未形成独立XML，不能伪造原命令日志；工具原输出保留在会话。恢复生产HEAD后原6模块正式保存p2-api-approval-wait-restored-regression.xml/log：46通过22门控跳过15.25秒；未启用live外部，不声明完整Agent认证通过。
+
+详细依据、已纠正的观察结论、待实现路线见P2_API_APPROVAL_RECOVERY_RESEARCH.md。方案7.43及三份同步、原件/保护文件SHA、代码与已提交HEAD一致和配置敏感材料审计另见validation。本批没有API生产修复提交，不推送/PR，完整目标保持active，外部AI按用户安排暂缓。

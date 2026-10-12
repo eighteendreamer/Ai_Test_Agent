@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="142.643" timestamp="2026-10-12T12:09:02.826256+08:00" hostname="EIghteen"><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]" time="25.488"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '75afb568-d556-4445-a920-6d7dadd50c13', ...}&#10;assert [] == [200, 200, 200]&#10;  &#10;  Right contains 3 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:377: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '75afb568-d556-4445-a920-6d7dadd50c13', ...}
+E   assert [] == [200, 200, 200]
+E     
+E     Right contains 3 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]" time="111.695"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '2aee8ad2-07da-4771-addb-0f7690ecc774', ...}&#10;assert [200] == [200, 200, 200]&#10;  &#10;  Right contains 2 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:377: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '2aee8ad2-07da-4771-addb-0f7690ecc774', ...}
+E   assert [200] == [200, 200, 200]
+E     
+E     Right contains 2 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>
