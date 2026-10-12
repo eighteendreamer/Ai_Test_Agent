@@ -1,0 +1,18 @@
+...................F....F.....                                           [100%]
+================================== FAILURES ===================================
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[disconnect-langchain_chat] _
+tests\test_model_sdk_fault_http.py:182: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert response.response_summary["cause_error_type"] in {
+E   AssertionError: assert 'OpenAIConnectionError' in {'APIConnectionError', 'APITimeoutError', 'ReadTimeout', 'RemoteProtocolError'}
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:528 model_invocation_failed
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[timeout-langchain_chat] _
+tests\test_model_sdk_fault_http.py:182: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert response.response_summary["cause_error_type"] in {
+E   AssertionError: assert 'OpenAITimeoutError' in {'APIConnectionError', 'APITimeoutError', 'ReadTimeout', 'RemoteProtocolError'}
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:528 model_invocation_failed
+=========================== short test summary info ===========================
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[disconnect-langchain_chat]
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[timeout-langchain_chat]
+2 failed, 28 passed in 49.90s

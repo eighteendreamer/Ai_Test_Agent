@@ -524,13 +524,16 @@ class ModelRuntimeService:
     ) -> ModelInvocationResult:
         response_body = truncate_text(exc.response_body or "", 400)
         status_code = exc.status_code
+        cause_error_type = type(exc.__cause__).__name__ if exc.__cause__ is not None else ""
         logger.warning(
             "model_invocation_failed",
             extra={
                 "model_key": config.key,
                 "mode": "http_error",
                 "provider": config.provider,
+                "transport": self._resolved_transport(config),
                 "error_type": type(exc).__name__,
+                "cause_error_type": cause_error_type,
                 "status_code": status_code,
             },
         )
@@ -543,6 +546,7 @@ class ModelRuntimeService:
                 "provider_profile": self._provider_profile_name(config),
                 "transport": self._resolved_transport(config),
                 "error_type": exc.__class__.__name__,
+                "cause_error_type": cause_error_type,
                 "status_code": status_code,
                 "error": truncate_text(str(exc), 180),
                 "response_body": response_body,

@@ -89,7 +89,7 @@ async def test_sdk_does_not_retry_after_first_streamed_delta(
     async def receive_delta(delta: str) -> None:
         deltas.append(delta)
 
-    with pytest.raises((ProviderClientError, httpx2.ReadError)):
+    with pytest.raises(ProviderClientError):
         await client.stream(config, "test-key", request, receive_delta)
 
     assert deltas == ["first"]

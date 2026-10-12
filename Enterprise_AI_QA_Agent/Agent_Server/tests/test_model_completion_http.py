@@ -107,7 +107,9 @@ def provider(transport, limited, *, delta_input=None, stream_variant='complete',
     serving = threading.Thread(target=server.serve_forever, daemon=True)
     serving.start()
     try:
-        yield f'http://127.0.0.1:{server.server_port}/v1', sends, replies
+        # Anthropic's SDK adds /v1/messages itself; OpenAI uses the /v1 base.
+        prefix = '' if transport == 'anthropic_messages' else '/v1'
+        yield f'http://127.0.0.1:{server.server_port}{prefix}', sends, replies
     finally:
         server.shutdown()
         server.server_close()

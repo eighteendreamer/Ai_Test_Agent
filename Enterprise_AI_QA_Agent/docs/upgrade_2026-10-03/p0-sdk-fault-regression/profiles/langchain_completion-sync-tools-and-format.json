@@ -1,0 +1,128 @@
+{
+  "requests": [
+    {
+      "path": "/v1/chat/completions",
+      "body": {
+        "messages": [
+          {
+            "content": "Return JSON.",
+            "role": "system"
+          },
+          {
+            "content": "{}",
+            "role": "user"
+          }
+        ],
+        "model": "fixture-model",
+        "max_completion_tokens": 2048,
+        "reasoning_effort": "low",
+        "stream": false,
+        "tool_choice": "auto",
+        "tools": [
+          {
+            "type": "function",
+            "function": {
+              "name": "inspect",
+              "description": "Read owned evidence",
+              "parameters": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          }
+        ],
+        "response_format": {
+          "type": "json_object"
+        }
+      }
+    }
+  ],
+  "result": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:61328/v1",
+      "tool_count": 1,
+      "tool_names": [
+        "inspect"
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "ok",
+      "provider": "fixture",
+      "transport": "openai_chat_completions",
+      "response_id": "chatcmpl_fixture",
+      "finish_reason": "stop",
+      "stop_reason": null,
+      "completion_status": "complete",
+      "usage": {
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "total_tokens": 10,
+        "input_token_details": {},
+        "output_token_details": {}
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "token_usage": {
+        "completion_tokens": 3,
+        "prompt_tokens": 7,
+        "total_tokens": 10,
+        "completion_tokens_details": null,
+        "prompt_tokens_details": null
+      },
+      "model_provider": "openai",
+      "model_name": "fixture-model",
+      "system_fingerprint": null,
+      "id": "chatcmpl_fixture",
+      "finish_reason": "stop",
+      "logprobs": null
+    }
+  }
+}

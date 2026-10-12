@@ -1,0 +1,79 @@
+{
+  "events": [
+    {
+      "id": "17962a40-2296-48d9-a2b6-08410b5b71c0",
+      "timestamp": "2026-10-12T02:41:46.651702+00:00",
+      "type": "graph.execution_started",
+      "payload": {
+        "step": 1,
+        "phase": "model_invoker",
+        "message": "Runtime is preparing the Claude Code style model call stage.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:1",
+        "selected_agent": "fixture",
+        "selected_model": "fixture",
+        "model_visible_tool_count": 0,
+        "allowed_tool_count": 0,
+        "approval_required_count": 0,
+        "loop_iteration": 0
+      }
+    },
+    {
+      "id": "b9bcdb59-b5ed-43b7-9bd5-c3d44b44ed62",
+      "timestamp": "2026-10-12T02:41:46.651702+00:00",
+      "type": "model.request_prepared",
+      "payload": {
+        "step": 2,
+        "phase": "model_invoker",
+        "message": "Model request payload has been prepared.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:2",
+        "model_key": "fixture",
+        "model_name": "fixture",
+        "model_provider": "openai",
+        "system_prompt_preview": "Return JSON.",
+        "system_prompt_section_count": 0,
+        "system_prompt_section_keys": "none",
+        "runtime_message_section_count": 0,
+        "runtime_message_section_keys": "none",
+        "messages": [
+          {
+            "role": "user",
+            "content_preview": "{}"
+          }
+        ],
+        "tool_candidates": "none",
+        "loop_iteration": 0,
+        "model_call_count": null,
+        "max_iterations": null
+      }
+    },
+    {
+      "id": "7f03eeed-db5c-4c34-96f2-b087011ac339",
+      "timestamp": "2026-10-12T02:41:46.651702+00:00",
+      "type": "model.invocation_failed",
+      "payload": {
+        "step": 3,
+        "phase": "model_invoker",
+        "message": "Model response cannot complete this turn or dispatch tools.",
+        "turn_id": "turn",
+        "trace_id": "trace",
+        "correlation_id": "trace:3",
+        "model_key": "fixture",
+        "response_mode": "incomplete_response",
+        "completion_status": "incomplete",
+        "error_type": "",
+        "status_code": null,
+        "loop_iteration": 0
+      }
+    }
+  ],
+  "termination_reason": "interrupted",
+  "physical_sends": 1,
+  "route": "finalizer",
+  "retained_model_tool_calls": [],
+  "actual_protocol_response_used": true,
+  "full_App_verified": false
+}

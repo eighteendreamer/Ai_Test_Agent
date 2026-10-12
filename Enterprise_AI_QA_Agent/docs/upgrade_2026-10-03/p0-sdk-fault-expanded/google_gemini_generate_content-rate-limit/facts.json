@@ -1,0 +1,65 @@
+{
+  "transport": "google_gemini_generate_content",
+  "fault": "rate-limit",
+  "streaming": true,
+  "logical_runtime_invocations": 1,
+  "external_ai_calls": 0,
+  "full_P0_P5_complete": false,
+  "dependency_versions": {
+    "openai": "3.14.0",
+    "anthropic": "1.5.0",
+    "google-genai": "2.23.0",
+    "httpx": "0.28.1",
+    "langchain-openai": "1.6.2"
+  },
+  "physical_requests": 1,
+  "fixture_errors": [],
+  "escaped_exception_type": null,
+  "visible_deltas": [],
+  "response": {
+    "text": "Model invocation failed. Check the model provider and retry.",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "google",
+      "provider_profile": "google",
+      "transport": "google_gemini_generate_content",
+      "api_base_url": "http://127.0.0.1:59068/v1",
+      "max_tokens": 512,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return the supplied JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "Real HTTP fault acceptance"
+        }
+      ]
+    },
+    "response_summary": {
+      "mode": "http_error",
+      "provider": "google",
+      "provider_profile": "google",
+      "transport": "google_gemini_generate_content",
+      "error_type": "ProviderClientError",
+      "cause_error_type": "ClientError",
+      "status_code": 429,
+      "error": "429 UNAVAILABLE. {'error': {'code': 429, 'type': 'fixture_failure', 'status': 'UNAVAILABLE', 'message': 'controlled HTTP fault'}}",
+      "response_body": "{\"error\": {\"code\": 429, \"type\": \"fixture_failure\", \"status\": \"UNAVAILABLE\", \"message\": \"controlled HTTP fault\"}}"
+    },
+    "raw_response": {
+      "mode": "http_error",
+      "error": "429 UNAVAILABLE. {'error': {'code': 429, 'type': 'fixture_failure', 'status': 'UNAVAILABLE', 'message': 'controlled HTTP fault'}}",
+      "status_code": 429,
+      "response_body": "{\"error\": {\"code\": 429, \"type\": \"fixture_failure\", \"status\": \"UNAVAILABLE\", \"message\": \"controlled HTTP fault\"}}"
+    }
+  },
+  "sdk_defaults_preserved": true,
+  "authentication_headers_saved": false
+}

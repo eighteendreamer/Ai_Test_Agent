@@ -2,7 +2,20 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Awaitable, Callable, Protocol
+from typing import Any, AsyncIterator, Awaitable, Callable, Protocol
+
+import httpx
+
+# Current official SDKs may use httpx2, while older supported versions use
+# httpx. Both expose RequestError, but their exception classes are distinct.
+try:
+    import httpx2
+except ModuleNotFoundError as exc:
+    if exc.name != "httpx2":
+        raise
+    PROVIDER_NETWORK_ERRORS = (httpx.RequestError,)
+else:
+    PROVIDER_NETWORK_ERRORS = (httpx.RequestError, httpx2.RequestError)
 
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
 from src.schemas.tool_runtime import ModelToolCall
@@ -27,6 +40,28 @@ class ProviderClientError(Exception):
         super().__init__(message)
         self.status_code = status_code
         self.response_body = response_body
+
+
+async def await_provider_io(operation: Awaitable[Any], *, transport: str) -> Any:
+    """Await the original SDK operation and normalize only its I/O errors."""
+    try:
+        return await operation
+    except PROVIDER_NETWORK_ERRORS as exc:
+        raise ProviderClientError(
+            f"{transport} request transport failed ({type(exc).__name__})."
+        ) from exc
+
+
+async def provider_stream_events(stream: Any, *, transport: str) -> AsyncIterator[Any]:
+    # Mirrors official OpenAI AsyncStream._iter_events: handle network failures
+    # while advancing the provider stream, before handing data to the consumer.
+    try:
+        async for event in stream:
+            yield event
+    except PROVIDER_NETWORK_ERRORS as exc:
+        raise ProviderClientError(
+            f"{transport} stream transport failed ({type(exc).__name__})."
+        ) from exc
 
 
 class ProviderClient(Protocol):

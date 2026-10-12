@@ -14,6 +14,8 @@ from src.application.model_clients.base import (
     TextDeltaHandler,
     build_tool_name_map,
     remap_tool_calls,
+    await_provider_io,
+    provider_stream_events,
     response_to_dict,
 )
 from src.core.request_context import new_id
@@ -88,11 +90,11 @@ class GoogleGenAIClient:
         generate_config = self._build_generate_config(config, request, tool_name_map)
         try:
             client = self._make_client(config, api_key)
-            response = await client.aio.models.generate_content(
+            response = await await_provider_io(client.aio.models.generate_content(
                 model=config.model_id,
                 contents=contents,
                 config=generate_config,
-            )
+            ), transport=self.client_key)
         except genai_errors.APIError as exc:
             raise self._wrap_api_error(exc) from exc
         parsed = self._parse_response(response)
@@ -118,12 +120,12 @@ class GoogleGenAIClient:
 
         try:
             client = self._make_client(config, api_key)
-            stream = await client.aio.models.generate_content_stream(
+            stream = await await_provider_io(client.aio.models.generate_content_stream(
                 model=config.model_id,
                 contents=contents,
                 config=generate_config,
-            )
-            async for chunk in stream:
+            ), transport=self.client_key)
+            async for chunk in provider_stream_events(stream, transport=self.client_key):
                 chunk_usage = self._extract_usage(chunk)
                 if chunk_usage:
                     usage = chunk_usage

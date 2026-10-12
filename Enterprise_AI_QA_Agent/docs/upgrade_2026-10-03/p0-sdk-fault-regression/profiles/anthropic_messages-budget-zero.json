@@ -1,0 +1,126 @@
+{
+  "requests": [
+    {
+      "path": "/v1/v1/messages",
+      "body": {
+        "max_tokens": 2048,
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "{}"
+              }
+            ]
+          }
+        ],
+        "model": "fixture-model",
+        "system": "Return JSON.",
+        "thinking": {
+          "type": "disabled"
+        }
+      }
+    }
+  ],
+  "result": {
+    "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "anthropic_messages",
+      "api_base_url": "http://127.0.0.1:61271/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "budget"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "ok",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "anthropic_messages",
+      "response_id": "msg_fixture",
+      "finish_reason": null,
+      "stop_reason": "end_turn",
+      "completion_status": "complete",
+      "usage": {
+        "cache_creation": null,
+        "cache_creation_input_tokens": null,
+        "cache_read_input_tokens": null,
+        "inference_geo": null,
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "output_tokens_details": null,
+        "server_tool_use": null,
+        "service_tier": null
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+      "tool_fallback": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "budget"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "id": "msg_fixture",
+      "container": null,
+      "content": [
+        {
+          "citations": null,
+          "text": "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}",
+          "type": "text"
+        }
+      ],
+      "model": "fixture-model",
+      "role": "assistant",
+      "stop_details": null,
+      "stop_reason": "end_turn",
+      "stop_sequence": null,
+      "type": "message",
+      "usage": {
+        "cache_creation": null,
+        "cache_creation_input_tokens": null,
+        "cache_read_input_tokens": null,
+        "inference_geo": null,
+        "input_tokens": 7,
+        "output_tokens": 3,
+        "output_tokens_details": null,
+        "server_tool_use": null,
+        "service_tier": null
+      }
+    }
+  }
+}

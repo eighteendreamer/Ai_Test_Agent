@@ -13,6 +13,8 @@ from src.application.model_clients.base import (
     build_tool_name_map,
     parse_tool_arguments,
     remap_tool_calls,
+    await_provider_io,
+    provider_stream_events,
     response_to_dict,
     serialize_tool_result_text,
 )
@@ -39,7 +41,8 @@ class AnthropicMessagesClient:
         params = self._build_params(config, request, tool_name_map)
         try:
             async with self._make_client(config, api_key) as client:
-                response = await client.messages.create(**params)
+                response = await await_provider_io(
+                    client.messages.create(**params), transport=self.client_key)
         except anthropic.APIStatusError as exc:
             raise self._wrap_status_error(exc) from exc
         except anthropic.APIError as exc:
@@ -68,8 +71,9 @@ class AnthropicMessagesClient:
 
         try:
             async with self._make_client(config, api_key) as client:
-                stream = await client.messages.create(**params)
-                async for event in stream:
+                stream = await await_provider_io(
+                    client.messages.create(**params), transport=self.client_key)
+                async for event in provider_stream_events(stream, transport=self.client_key):
                     data = response_to_dict(event)
                     event_type = str(data.get("type") or "")
                     if event_type == "message_stop":

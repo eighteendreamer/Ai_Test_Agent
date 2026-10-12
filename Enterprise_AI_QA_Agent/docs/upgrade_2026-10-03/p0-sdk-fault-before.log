@@ -1,0 +1,47 @@
+...F....F........FF...FF......                                           [100%]
+================================== FAILURES ===================================
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[rate-limit-google_gemini_generate_content] _
+tests\test_model_sdk_fault_http.py:161: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert len(sends) == 2 and sends[0]["sha256"] == sends[1]["sha256"], facts
+E   AssertionError: {'transport': 'google_gemini_generate_content', 'fault': 'rate-limit', 'logical_runtime_invocations': 1, 'external_ai_calls': 0, ...}
+E   assert (1 == 2)
+E    +  where 1 = len([{'sequence': 1, 'path': '/v1beta/models/fixture-model:streamGenerateContent?alt=sse', 'sha256': '9b7532b80124963330ec...n': {'parts': [{'text': 'Return the supplied JSON.'}], 'role': 'user'}, 'generationConfig': {'maxOutputTokens': 512}}}])
+------------------------------ Captured log call ------------------------------
+WARNING  google_genai.models:models.py:8668 Direct use of automatic function calling (AFC) in AsyncModels.generate_content_stream is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message_stream. Similarly, direct use of AFC in AsyncModels.generate_content is not recommended. Instead, we recommend to use AFC in AsyncChat.send_message.
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:527 model_invocation_failed
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[unavailable-google_gemini_generate_content] _
+tests\test_model_sdk_fault_http.py:161: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert len(sends) == 2 and sends[0]["sha256"] == sends[1]["sha256"], facts
+E   AssertionError: {'transport': 'google_gemini_generate_content', 'fault': 'unavailable', 'logical_runtime_invocations': 1, 'external_ai_calls': 0, ...}
+E   assert (1 == 2)
+E    +  where 1 = len([{'sequence': 1, 'path': '/v1beta/models/fixture-model:streamGenerateContent?alt=sse', 'sha256': '9b7532b80124963330ec...n': {'parts': [{'text': 'Return the supplied JSON.'}], 'role': 'user'}, 'generationConfig': {'maxOutputTokens': 512}}}])
+------------------------------ Captured log call ------------------------------
+WARNING  src.application.models.model_runtime_service:model_runtime_service.py:527 model_invocation_failed
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[disconnect-anthropic_messages] _
+tests\test_model_sdk_fault_http.py:157: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert escaped is None, facts
+E   AssertionError: {'transport': 'anthropic_messages', 'fault': 'disconnect', 'logical_runtime_invocations': 1, 'external_ai_calls': 0, ...}
+E   assert 'RemoteProtocolError' is None
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[disconnect-google_gemini_generate_content] _
+tests\test_model_sdk_fault_http.py:157: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert escaped is None, facts
+E   AssertionError: {'transport': 'google_gemini_generate_content', 'fault': 'disconnect', 'logical_runtime_invocations': 1, 'external_ai_calls': 0, ...}
+E   assert 'RemoteProtocolError' is None
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[timeout-anthropic_messages] _
+tests\test_model_sdk_fault_http.py:157: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert escaped is None, facts
+E   AssertionError: {'transport': 'anthropic_messages', 'fault': 'timeout', 'logical_runtime_invocations': 1, 'external_ai_calls': 0, ...}
+E   assert 'ReadTimeout' is None
+_ test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[timeout-google_gemini_generate_content] _
+tests\test_model_sdk_fault_http.py:157: in test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend
+    assert escaped is None, facts
+E   AssertionError: {'transport': 'google_gemini_generate_content', 'fault': 'timeout', 'logical_runtime_invocations': 1, 'external_ai_calls': 0, ...}
+E   assert 'ReadTimeout' is None
+=========================== short test summary info ===========================
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[rate-limit-google_gemini_generate_content]
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[unavailable-google_gemini_generate_content]
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[disconnect-anthropic_messages]
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[disconnect-google_gemini_generate_content]
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[timeout-anthropic_messages]
+FAILED tests/test_model_sdk_fault_http.py::test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend[timeout-google_gemini_generate_content]
+6 failed, 24 passed in 49.43s

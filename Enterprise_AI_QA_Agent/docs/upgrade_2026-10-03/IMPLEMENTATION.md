@@ -5380,3 +5380,15 @@ Agent_Server实际运行 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/te
 真实初次409是UUID/string错误；自己的首轮修改遗漏SQLAlchemy RowMapping不可修改造成500，已修正且保留失败。夹具缺SessionRecord.mode_key、消息未显式Agent、普通审批202/代理200及过早审批400均按实际API合同修订，不改变生产权限。最终父子审批失败未放宽断言：waiting_approval被父campaign当终态，无工具结果即先保存失败报告，后续子审批完成未重合并。该生命周期恢复必须后续深度调研，不以删除一个终态、增加等待或自动批准解决。完整P0—P5保持active。
 
 compileall、原件/前序工件SHA、受保护4文件、三方案、配置凭据扫描和白名单提交检查另附本批audit/validation。仅提交本批相关文件，保留受保护改动，无推送/PR。
+
+## 2026-10-12 多模型SDK真实HTTP故障与统一异常边界
+
+基线7fe85eca，研究P0_SDK_FAULT_RESEARCH.md。原API审批问题继续保留，用户指定外部AI暂缓；本批改验重复请求与模型适配中的SDK故障范围。只修改model_clients/base、anthropic_client、google_client及model_runtime_service。共用SDK请求/取流边界包装httpx/httpx2 RequestError，避免消费回调被误归为供应商故障；新增安全cause_error_type诊断，不改各SDK原重试和取消语义。
+
+实际在Agent_Server执行 `..\.venv\Scripts\python.exe -X utf8 -m pytest`。QA_MODEL_SDK_FAULT_DIR分别为owned before/verified/expanded目录，test_model_sdk_fault_http及最后的test_sdk_midstream_retry_boundary：初批24通过6失败49.43秒（4个真实裸异常，2个错误Google重试假设）；修复后28通过2失败49.90秒（LangChain原异常类型断言遗漏）；扩展61通过82.97秒（55实际运行时HTTP、4实际回调HTTP、2原MockTransport）。失败原件全部保留。Google生产retry_options=None实际不重试，未按其他SDK强行设置；当前SDK版本写入各facts。
+
+十模块既有回归命令参数：tests/test_model_clients.py、test_model_completion_contract.py、test_model_completion_http.py、test_model_stream_terminal_http.py、test_model_request_profile.py、test_model_trace_project_binding.py、test_sdk_stream_observation.py、test_langchain_model_adapter.py、test_langchain_message_adapter.py、test_approval_model_budget.py；各QA_*输出定向本批p0-sdk-fault-regression子目录。152通过3门控跳过52.89秒，PG审批参数未启用；没有外部AI调用。compileall实际退出0，前端未改未构建；没有MySQL配置或PG业务结构迁移。
+
+源代码及相关契约检索、Git diff检查、历史/保护文件SHA、新原件及配置敏感材料核对另见p0-sdk-fault-audit.py与validation。三份方案同步7.42；完整P0—P5仍active。此验收不代替真实默认AI的全阶段请求追踪、API父子审批/鉴权闭环、进程故障和历史数据迁移，仅提交本批白名单，无推送/PR。
+
+后续用户协议核对：Anthropic原SDK调用保持`client.messages.create`，辅助await函数改名`await_provider_io`，避免response命名误解。实际测试发现共用夹具额外/v1导致Anthropic/v1/v1/messages；修正夹具Anthropic根URL，并在五传输矩阵逐请求校验正式路径/Anthropic Messages正文。p0-sdk-fault-final补采55通过4排除81.14秒仅为响应序号/hash，保留；协议最终QA_MODEL_SDK_FAULT_DIR=p0-sdk-fault-protocol-final，test_model_sdk_fault_http、test_sdk_midstream_retry_boundary、test_model_clients、test_langchain_model_adapter共87通过86.51秒。共用夹具修正后原十模块p0-sdk-fault-regression-final再跑152通过3门控跳过53.84秒。没有改生产API地址/配置、没有换协议，重复批次不累加。

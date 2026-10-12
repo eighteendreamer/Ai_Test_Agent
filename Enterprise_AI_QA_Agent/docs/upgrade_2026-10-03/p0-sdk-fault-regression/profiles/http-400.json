@@ -1,0 +1,107 @@
+{
+  "requests": [
+    {
+      "messages": [
+        {
+          "content": "Return JSON.",
+          "role": "system"
+        },
+        {
+          "content": "{}",
+          "role": "user"
+        }
+      ],
+      "model": "fixture-model",
+      "max_completion_tokens": 2048,
+      "reasoning_effort": "low",
+      "stream": false,
+      "response_format": {
+        "type": "json_object"
+      }
+    }
+  ],
+  "result": {
+    "text": "Model invocation failed. Check the model provider and retry.",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:61301/v1",
+      "max_tokens": 2048,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "{}"
+        }
+      ],
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "response_summary": {
+      "mode": "http_error",
+      "provider": "fixture",
+      "provider_profile": "fixture",
+      "transport": "openai_chat_completions",
+      "error_type": "ProviderClientError",
+      "cause_error_type": "OpenAIInvalidRequestError",
+      "status_code": 400,
+      "error": "LangChain model invocation failed for provider='fixture': Error code: 400 - {'error': {'message': 'Declared parameter rejected by controlled model', 'type': 'invalid_request_err...",
+      "response_body": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_completion_tokens"
+          }
+        ]
+      }
+    },
+    "raw_response": {
+      "mode": "http_error",
+      "error": "LangChain model invocation failed for provider='fixture': Error code: 400 - {'error': {'message': 'Declared parameter rejected by controlled model', 'type': 'invalid_request_error'}}",
+      "status_code": 400,
+      "response_body": ""
+    }
+  }
+}

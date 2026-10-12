@@ -1,0 +1,67 @@
+{
+  "transport": "langchain_chat",
+  "fault": "timeout",
+  "streaming": true,
+  "logical_runtime_invocations": 1,
+  "external_ai_calls": 0,
+  "full_P0_P5_complete": false,
+  "dependency_versions": {
+    "openai": "3.14.0",
+    "anthropic": "1.5.0",
+    "google-genai": "2.23.0",
+    "httpx": "0.28.1",
+    "langchain-openai": "1.6.2"
+  },
+  "physical_requests": 1,
+  "fixture_errors": [],
+  "escaped_exception_type": null,
+  "visible_deltas": [
+    "{\"action\": \"finish\", \"summary\": \"已按项目依据规划\", \"items\": []}"
+  ],
+  "response": {
+    "text": "Model invocation failed. Check the model provider and retry.",
+    "tool_calls": [],
+    "request_payload": {
+      "model_key": "fixture",
+      "model_id": "fixture-model",
+      "provider": "openai",
+      "provider_profile": "openai",
+      "transport": "openai_chat_completions",
+      "api_base_url": "http://127.0.0.1:52024/v1",
+      "max_tokens": 512,
+      "temperature": null,
+      "tool_count": 0,
+      "tool_names": [],
+      "system_prompt_preview": "Return the supplied JSON.",
+      "system_prompt_section_count": 0,
+      "system_prompt_section_keys": [],
+      "runtime_message_section_count": 0,
+      "runtime_message_section_keys": [],
+      "messages": [
+        {
+          "role": "user",
+          "content_preview": "Real HTTP fault acceptance"
+        }
+      ]
+    },
+    "response_summary": {
+      "mode": "http_error",
+      "provider": "openai",
+      "provider_profile": "openai",
+      "transport": "openai_chat_completions",
+      "error_type": "ProviderClientError",
+      "cause_error_type": "OpenAITimeoutError",
+      "status_code": null,
+      "error": "LangChain model invocation failed for provider='openai': Request timed out.",
+      "response_body": ""
+    },
+    "raw_response": {
+      "mode": "http_error",
+      "error": "LangChain model invocation failed for provider='openai': Request timed out.",
+      "status_code": null,
+      "response_body": ""
+    }
+  },
+  "sdk_defaults_preserved": true,
+  "authentication_headers_saved": false
+}
