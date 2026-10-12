@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="4" time="50.840" timestamp="2026-10-12T10:14:35.184050+08:00" hostname="EIghteen"><testcase classname="tests.test_api_agent_worker_live" name="test_api_dispatch_mode_and_original_approval_task_owner" time="0.075" /><testcase classname="tests.test_api_agent_worker_live" name="test_project_uuid_submission_and_resume_preserve_foreign_project_rejection" time="2.082" /><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]" time="21.910"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '90606cb7-cdf5-4036-9301-6e3b5e4948de', ...}&#10;assert [200] == [200, 200, 200]&#10;  &#10;  Right contains 2 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:308: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '90606cb7-cdf5-4036-9301-6e3b5e4948de', ...}
+E   assert [200] == [200, 200, 200]
+E     
+E     Right contains 2 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]" time="22.614"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '50a8d8fb-f7b5-40ce-a0a6-46d2b1b0cc4c', ...}&#10;assert [200, 401] == [200, 200, 200]&#10;  &#10;  At index 1 diff: 401 != 200&#10;  Right contains one more item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:308: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '50a8d8fb-f7b5-40ce-a0a6-46d2b1b0cc4c', ...}
+E   assert [200, 401] == [200, 200, 200]
+E     
+E     At index 1 diff: 401 != 200
+E     Right contains one more item: 200
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

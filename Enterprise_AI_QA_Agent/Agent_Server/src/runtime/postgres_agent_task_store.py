@@ -8,6 +8,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -26,6 +27,8 @@ from src.schemas.session import (
     ToolApprovalRequest,
     ToolApprovalStatus,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class AgentSubmissionConflict(ValueError):
@@ -955,6 +958,11 @@ class PostgresAgentTaskStore:
         session = cur.fetchone()
         if session is None:
             raise KeyError(session_id)
+        # Match PostgresSessionStore's public identity conversion: PostgreSQL
+        # returns UUID objects, while AgentTaskCommand carries string IDs.
+        session = {**session, "project_id": str(session["project_id"]) if session["project_id"] is not None else None}
+        logger.debug("agent_session_identity_loaded", extra={"session_id": session_id,
+            "project_id": session["project_id"]})
         return session
 
     def _claim_sync(self, task_id, worker_id):

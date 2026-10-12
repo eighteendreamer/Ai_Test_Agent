@@ -1,0 +1,23 @@
+..FF                                                                     [100%]
+================================== FAILURES ===================================
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child] _
+tests\test_api_agent_worker_live.py:317: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '0a589fa7-d026-4076-a84a-a65c4c96b2bd', ...}
+E   assert [200] == [200, 200, 200]
+E     
+E     Right contains 2 more items, first extra item: 200
+E     Use -v to get more diff
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process] _
+tests\test_api_agent_worker_live.py:317: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '904ef056-b29b-4e0a-bd05-8e06061c12ab', ...}
+E   assert [200, 401] == [200, 200, 200]
+E     
+E     At index 1 diff: 401 != 200
+E     Right contains one more item: 200
+E     Use -v to get more diff
+=========================== short test summary info ===========================
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]
+2 failed, 2 passed in 50.39s

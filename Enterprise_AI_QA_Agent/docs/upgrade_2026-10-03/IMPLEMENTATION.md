@@ -5367,3 +5367,16 @@ RUN_LIVE_PLAN_RUN_CREATION=1补验case_operations、agent_receipt_transport、ap
 initial receipt测试夹具使用save_session而非原mutate_metadata，受保护元数据不被覆写，修正夹具不放宽检查。按原tool_job_id恢复发现真实非case终态HTTP重复；补原Job终态回读、会话/工具/原输入校验，拒绝时不让异常恢复泄漏原输出。历史Schema断言用HEAD原代码证明原投影相同、旧Schema不等于当前；改为与原冻结variant核对。父报告既有PG inline_text不是RustFS，按实际正文/索引验证而非强改存储。合并Worker模型时序列化造成AssertionSpec变dict，保留验证原字段；最终无三个Pydantic警告。
 
 report-originals补采父模式1通过7排除9.56秒，PG两份原JSON/Markdown保存到owned evidence，SHA/size和新服务回读通过。完整通用原件按实际机制保持；无全局报告迁移。compileall退出0；未运行前端build。新引用的独立Agent Worker、外部AI、自动过期/Cookie/并发、多认证流/加密边界kill/生产历史明文凭据审计仍待推进，完整P0—P5保持active。三方案7.40同步及白名单提交，无推送/PR；旧工件、保护文件和原件字节核对见本批validation。
+
+
+## 2026-10-12 独立API Agent Worker、项目UUID及子审批缺口
+
+基线8e7ebeb5，研究P2_API_AGENT_WORKER_RESEARCH.md。本批三个生产文件修正PG Session项目身份转换、API派发mode_key和approval_resume父任务识别，保留原模式/权限/模型/历史。没有新表或依赖，未运行前端构建。
+
+Agent_Server实际运行 `..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_agent_worker_live.py -q --tb=short --junitxml=<本批XML>`，RUN_LIVE_API_AGENT_WORKER=1，QA_API_AGENT_WORKER_DIR各批独立owned目录。最终p2-api-agent-worker-final：2通过2失败50.39秒，真实PG身份/模式合同通过；真实API/Agent CLI及本地模型，默认同进程子仅login200，持久子login200→refresh401且无Authorization。两份父报告均0完成/2失败/1跳过；子mode/project已正确，HTTP/模型计数及最终PG快照、stderr/stdout保留。外部AI0，不冒充默认模型/完整认证或终态恢复通过。
+
+相关17模块：RUN_LIVE_API_WORKER_AUTH_STORAGE=1、RUN_LIVE_UPGRADE_STORAGE_TESTS=1，QA_API_WORKER_AUTH_STORAGE_DIR独立p2-api-agent-worker-auth-regression；排除新的完整独立/身份三项〔另独立实测〕，206通过21门控跳过3排除60.51秒。此前205批次重叠不累加。五既有Agent/持久子/领取/生命周期/CLI模块首次RUN_LIVE_POSTGRES_TESTS=1使用默认Redis47 setup错误、14通过1跳过15.08秒。p2-api-agent-worker-regression.py复用原isolated_runtime、初始化项目表、独立真实Redis/PG后61通过1跳过35.96秒，最终QA_API_AGENT_REGRESSION_DIR指新owned目录再跑61通过1跳过35.53秒；不改原配置/数据库。
+
+真实初次409是UUID/string错误；自己的首轮修改遗漏SQLAlchemy RowMapping不可修改造成500，已修正且保留失败。夹具缺SessionRecord.mode_key、消息未显式Agent、普通审批202/代理200及过早审批400均按实际API合同修订，不改变生产权限。最终父子审批失败未放宽断言：waiting_approval被父campaign当终态，无工具结果即先保存失败报告，后续子审批完成未重合并。该生命周期恢复必须后续深度调研，不以删除一个终态、增加等待或自动批准解决。完整P0—P5保持active。
+
+compileall、原件/前序工件SHA、受保护4文件、三方案、配置凭据扫描和白名单提交检查另附本批audit/validation。仅提交本批相关文件，保留受保护改动，无推送/PR。

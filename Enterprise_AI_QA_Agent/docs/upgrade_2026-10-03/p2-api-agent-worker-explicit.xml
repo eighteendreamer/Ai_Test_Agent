@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="0" tests="3" time="43.553" timestamp="2026-10-12T10:03:53.860276+08:00" hostname="EIghteen"><testcase classname="tests.test_api_agent_worker_live" name="test_project_uuid_submission_and_resume_preserve_foreign_project_rejection" time="2.320"><failure message="TypeError: SessionRecord.__init__() missing 1 required positional argument: 'mode_key'">tests\test_api_agent_worker_live.py:74: in test_project_uuid_submission_and_resume_preserve_foreign_project_rejection
+    bound, unbound = await session(project.id), await session(None)
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^
+tests\test_api_agent_worker_live.py:61: in session
+    record = SessionRecord(id=str(uuid4()), title='Project identity fixture', status=status,
+E   TypeError: SessionRecord.__init__() missing 1 required positional argument: 'mode_key'</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]" time="17.841"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '4d151073-1d6e-4b76-bd3a-42fd8436c24b', ...}&#10;assert [] == [200, 200, 200]&#10;  &#10;  Right contains 3 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:250: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '4d151073-1d6e-4b76-bd3a-42fd8436c24b', ...}
+E   assert [] == [200, 200, 200]
+E     
+E     Right contains 3 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]" time="18.850"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '4ba135e0-2c2e-42db-8b70-f4f4dce78a95', ...}&#10;assert [] == [200, 200, 200]&#10;  &#10;  Right contains 3 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:250: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': '4ba135e0-2c2e-42db-8b70-f4f4dce78a95', ...}
+E   assert [] == [200, 200, 200]
+E     
+E     Right contains 3 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

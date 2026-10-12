@@ -1190,7 +1190,7 @@ class CoordinatorRuntimeService:
         for record in pending:
             if record.turn_id != parent_turn_id:
                 continue
-            if record.operation not in {"message", "coordinator_resume"}:
+            if record.operation not in {"message", "coordinator_resume", "approval_resume"}:
                 continue
             if record.status not in {"claimed", "running"}:
                 continue

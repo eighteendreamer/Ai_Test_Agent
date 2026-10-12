@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="29.820" timestamp="2026-10-12T09:57:47.095404+08:00" hostname="EIghteen"><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]" time="12.783"><failure message="AssertionError: ('/sessions/227b3652-ca6e-4af6-b2e1-a2c55080792e/messages', 409, '{&quot;detail&quot;:&quot;Session project changed before submission&quot;}')&#10;assert 409 == 202&#10; +  where 409 = &lt;Response [409 Conflict]&gt;.status_code">tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/227b3652-ca6e-4af6-b2e1-a2c55080792e/messages', 409, '{"detail":"Session project changed before submission"}')
+E   assert 409 == 202
+E    +  where 409 = &lt;Response [409 Conflict]&gt;.status_code</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]" time="11.205"><failure message="AssertionError: ('/sessions/0800273c-120f-4f79-8059-27c03c2d8a2e/messages', 409, '{&quot;detail&quot;:&quot;Session project changed before submission&quot;}')&#10;assert 409 == 202&#10; +  where 409 = &lt;Response [409 Conflict]&gt;.status_code">tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/0800273c-120f-4f79-8059-27c03c2d8a2e/messages', 409, '{"detail":"Session project changed before submission"}')
+E   assert 409 == 202
+E    +  where 409 = &lt;Response [409 Conflict]&gt;.status_code</failure></testcase></testsuite></testsuites>

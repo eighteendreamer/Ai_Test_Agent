@@ -1,0 +1,22 @@
+.FF                                                                      [100%]
+================================== FAILURES ===================================
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child] _
+tests\test_api_agent_worker_live.py:245: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    await post(f"/sessions/{parent['id']}/approvals/{approval['id']}",
+tests\test_api_agent_worker_live.py:207: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/6a5cdbec-1c42-438d-9eb9-cdc4e7403a7e/approvals/worker-approval-task_000_login-0c5bf693-d054-42d4-bb72-eb77...3c","proxy_worker_agent_key":"api-executor-worker","proxy_child_approval_id":"0c5bf693-d054-42d4-bb72-eb77bda5b880"}}')
+E   assert 200 == 202
+E    +  where 200 = <Response [200 OK]>.status_code
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process] _
+tests\test_api_agent_worker_live.py:245: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    await post(f"/sessions/{parent['id']}/approvals/{approval['id']}",
+tests\test_api_agent_worker_live.py:207: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/ab689473-660b-4cf9-85b6-7db7e187a76b/approvals/4cb75680-18f3-45eb-b2ed-32b98c1b6d55', 400, '{"detail":"Session is not waiting for an approval continuation"}')
+E   assert 400 == 202
+E    +  where 400 = <Response [400 Bad Request]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]
+2 failed, 1 passed in 46.45s

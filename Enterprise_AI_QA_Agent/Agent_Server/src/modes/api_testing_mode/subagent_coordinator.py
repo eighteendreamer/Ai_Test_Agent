@@ -342,6 +342,7 @@ class ApiSubagentCoordinator:
             "agent_key": self._worker_agent_key,
             "model_key": self._worker_model_key,
             "context": {
+                "mode_key": "api_testing",
                 "dispatch_role": "api_execution_worker",
                 "api_task_id": task.task_id,
                 "api_execution_mode": task.execution_mode,

@@ -1,0 +1,22 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child] _
+tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/227b3652-ca6e-4af6-b2e1-a2c55080792e/messages', 409, '{"detail":"Session project changed before submission"}')
+E   assert 409 == 202
+E    +  where 409 = <Response [409 Conflict]>.status_code
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process] _
+tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/0800273c-120f-4f79-8059-27c03c2d8a2e/messages', 409, '{"detail":"Session project changed before submission"}')
+E   assert 409 == 202
+E    +  where 409 = <Response [409 Conflict]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]
+2 failed in 29.83s

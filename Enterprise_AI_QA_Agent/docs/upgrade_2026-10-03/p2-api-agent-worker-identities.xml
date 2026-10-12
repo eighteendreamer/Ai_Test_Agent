@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="27.747" timestamp="2026-10-12T09:59:38.111562+08:00" hostname="EIghteen"><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]" time="11.750"><failure message="AssertionError: ('/sessions/c5750976-bf43-44b3-8c28-c991caaa0ea1/messages', 500, 'Internal Server Error')&#10;assert 500 == 202&#10; +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code">tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/c5750976-bf43-44b3-8c28-c991caaa0ea1/messages', 500, 'Internal Server Error')
+E   assert 500 == 202
+E    +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]" time="10.743"><failure message="AssertionError: ('/sessions/8f7538d1-b4c9-44ca-be5c-2ba38b5d03f8/messages', 500, 'Internal Server Error')&#10;assert 500 == 202&#10; +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code">tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/8f7538d1-b4c9-44ca-be5c-2ba38b5d03f8/messages', 500, 'Internal Server Error')
+E   assert 500 == 202
+E    +  where 500 = &lt;Response [500 Internal Server Error]&gt;.status_code</failure></testcase></testsuite></testsuites>

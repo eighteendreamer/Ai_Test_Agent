@@ -1,0 +1,22 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child] _
+tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/c5750976-bf43-44b3-8c28-c991caaa0ea1/messages', 500, 'Internal Server Error')
+E   assert 500 == 202
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process] _
+tests\test_api_agent_worker_live.py:153: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    accepted = await post(f"/sessions/{parent['id']}/messages", {
+tests\test_api_agent_worker_live.py:132: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/8f7538d1-b4c9-44ca-be5c-2ba38b5d03f8/messages', 500, 'Internal Server Error')
+E   assert 500 == 202
+E    +  where 500 = <Response [500 Internal Server Error]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]
+2 failed in 27.83s

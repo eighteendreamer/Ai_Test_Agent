@@ -1,0 +1,22 @@
+.FF                                                                      [100%]
+================================== FAILURES ===================================
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child] _
+tests\test_api_agent_worker_live.py:245: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    await post(f"/sessions/{parent['id']}/approvals/{approval['id']}",
+tests\test_api_agent_worker_live.py:207: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/adc3c48f-a8b5-4461-8e1e-2a0db03115bb/approvals/8c1e90ff-983b-4d67-8775-233c2b34412b', 202, '{"session":{"i...d":null,"result_payload":null,"created_at":"2026-10-12T02:06:04.212772Z","updated_at":"2026-10-12T02:06:04.212772Z"}}')
+E   assert 202 == 200
+E    +  where 202 = <Response [202 Accepted]>.status_code
+_ test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process] _
+tests\test_api_agent_worker_live.py:245: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    await post(f"/sessions/{parent['id']}/approvals/{approval['id']}",
+tests\test_api_agent_worker_live.py:207: in post
+    assert response.status_code == status, (path, response.status_code, response.text)
+E   AssertionError: ('/sessions/ac59c072-8ec1-46da-a785-33ad44e55460/approvals/4e23c263-dae7-4f89-8970-db6a74f07129', 202, '{"session":{"i...d":null,"result_payload":null,"created_at":"2026-10-12T02:06:23.326321Z","updated_at":"2026-10-12T02:06:23.326321Z"}}')
+E   assert 202 == 200
+E    +  where 202 = <Response [202 Accepted]>.status_code
+=========================== short test summary info ===========================
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]
+FAILED tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]
+2 failed, 1 passed in 39.45s

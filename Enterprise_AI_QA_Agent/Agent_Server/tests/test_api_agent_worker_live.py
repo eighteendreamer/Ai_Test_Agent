@@ -1,0 +1,369 @@
+"""Real Agent Worker CLI; only the local model HTTP response is controlled."""
+from contextlib import contextmanager
+from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import asyncio
+import json
+import os
+from pathlib import Path
+import re
+import shutil
+from threading import Thread
+from time import monotonic
+from uuid import uuid4
+from types import SimpleNamespace
+
+import httpx
+import pytest
+from pydantic import SecretStr
+
+from test_api_worker_auth_refresh_live import auth_target
+from test_execution_worker_cli import child_environment, free_port, isolated_runtime, wait_api
+from src.infrastructure.model_config_store import MySQLModelConfigStore
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.redis_task_queue import RedisTaskQueue
+from src.modes.api_testing_mode.campaign_state import ApiTestingState, ApiTestCampaign, EndpointCandidate, ExecutionPolicy
+from src.modes.api_testing_mode.capability_mapper import CapabilityMapper
+from src.modes.api_testing_mode.contracts import PHASE_CAMPAIGN_READY, STATE_METADATA_KEY
+from src.modes.api_testing_mode.dependency_planner import DependencyPlanner
+from src.modes.api_testing_mode.precondition_resolver import PreconditionAnalysis
+from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
+from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.schemas.model_config import ModelCapabilitiesOverride
+from src.schemas.settings import ModelConfigUpdateRequest
+
+
+@pytest.mark.asyncio
+async def test_api_dispatch_mode_and_original_approval_task_owner():
+    from src.application.orchestration.coordinator_runtime_service import CoordinatorRuntimeService, WorkerDispatchSpec
+    from src.core.config import get_settings
+    from src.modes.api_testing_mode.campaign_state import ApiTestTask
+    from src.modes.api_testing_mode.credential_manager import CredentialManager
+    from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
+    from src.modes.api_testing_mode.task_pool import ApiTaskPool
+    from src.registry.agents import AgentRegistry
+    from src.runtime.store import InMemorySessionStore
+
+    owner = SimpleNamespace(turn_id='original-turn', operation='approval_resume', status='running')
+
+    class Pending:
+        async def list_session(self, session_id, *, pending_only):
+            assert session_id == 'parent' and pending_only
+            return [owner]
+
+    runtime = CoordinatorRuntimeService(store=InMemorySessionStore(), session_service=None,
+        agent_registry=AgentRegistry(), settings=get_settings())
+    runtime._agent_task_store = Pending()
+    coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks=[]), policy=ExecutionPolicy(),
+        coordinator_runtime_service=runtime, session_store=InMemorySessionStore(),
+        parent_context={}, credential_manager=CredentialManager())
+    spec = WorkerDispatchSpec(**coordinator._build_worker_spec(
+        ApiTestTask(task_id='task', method='GET', path='/profile')))
+    assert runtime._resolve_worker_mode_key(spec) == 'api_testing'
+    assert await runtime._resolve_parent_task('parent', 'original-turn') is owner
+    assert await runtime._resolve_parent_task('parent', 'different-turn') is None
+    owner.status = 'completed'
+    assert await runtime._resolve_parent_task('parent', 'original-turn') is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv('RUN_LIVE_API_AGENT_WORKER') != '1', reason='actual PostgreSQL UUID project rows')
+async def test_project_uuid_submission_and_resume_preserve_foreign_project_rejection(tmp_path):
+    from src.application.projects.project_store import PostgresProjectStore
+    from src.domain.models import SessionRecord
+    from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore, AgentSubmissionConflict
+    from src.runtime.postgres_session_store import PostgresSessionStore
+    from src.schemas.agent_task import AgentTaskCommand
+    from src.schemas.project import ProjectRecord
+    from src.schemas.session import (ChatMessage, MessageRole, ResumeSessionRequest, SendMessageRequest,
+        SessionSnapshot, SessionStatus, SessionMode, RuntimeMode)
+
+    output = Path(os.environ['QA_API_AGENT_WORKER_DIR']) / 'identity'
+    output.mkdir(parents=True, exist_ok=False)
+    async with isolated_runtime(tmp_path) as (settings, _, _, _, _):
+        projects, sessions = PostgresProjectStore(settings), PostgresSessionStore(settings)
+        await projects.initialize()
+        await sessions.initialize()
+        await PostgresTaskOutbox(settings).initialize()
+        tasks = PostgresAgentTaskStore(settings, sessions)
+        await tasks.initialize()
+        now = datetime.now(UTC)
+        project = await projects.create(ProjectRecord(id=str(uuid4()), project_key='uuid-regression',
+            name='真实 UUID 身份回归', created_at=now, updated_at=now))
+
+        async def session(project_id, status='idle'):
+            record = SessionRecord(id=str(uuid4()), title='Project identity fixture', status=SessionStatus(status),
+                session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive, mode_key='default',
+                project_id=project_id, created_at=now, updated_at=now)
+            await sessions.save_session(record)
+            return record
+
+        def command(record, **updates):
+            return AgentTaskCommand(task_id=str(uuid4()), session_id=record.id, turn_id=str(uuid4()),
+                project_id=record.project_id, request_id=str(uuid4()), trace_id=str(uuid4())).model_copy(update=updates)
+
+        async def submit(record, project_id):
+            return await tasks.submit(command(record, project_id=project_id), SendMessageRequest(content='验证项目身份'),
+                ChatMessage(id=str(uuid4()), role=MessageRole.user, content='验证项目身份', created_at=now), idempotency_key=str(uuid4()))
+
+        bound, unbound = await session(project.id), await session(None)
+        with pytest.raises(AgentSubmissionConflict, match='project changed'):
+            await submit(bound, str(uuid4()))
+        with pytest.raises(AgentSubmissionConflict, match='project changed'):
+            await submit(bound, None)
+        bound_task = await submit(bound, project.id)
+        unbound_task = await submit(unbound, None)
+        resumable = await session(project.id, 'interrupted')
+        turn = str(uuid4())
+        resumable.metadata['pending_turn'] = {'turn_id': turn}
+        await sessions.save_session(resumable)
+        snapshot = SessionSnapshot(id=str(uuid4()), session_id=resumable.id, version=1,
+            stage='interrupted', created_at=now, graph_state={'turn_id': turn})
+        await sessions.save_snapshot(resumable.id, snapshot)
+        resume_command = command(resumable, operation='manual_resume', reference_id=snapshot.id, turn_id=turn)
+        with pytest.raises(AgentSubmissionConflict, match='project changed'):
+            await tasks.submit_resume(resume_command.model_copy(update={'project_id': str(uuid4())}),
+                ResumeSessionRequest(), idempotency_key='foreign-resume')
+        resumed = await tasks.submit_resume(resume_command, ResumeSessionRequest(), idempotency_key='same-project-resume')
+        reread = await tasks.submit_resume(resume_command, ResumeSessionRequest(), idempotency_key='same-project-resume')
+        assert resumed.id == reread.id and resumed.project_id == project.id
+        assert bound_task.project_id == project.id and unbound_task.project_id is None
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(f'SELECT count(*) AS count FROM {settings.database.postgres_agent_task_table}')
+            assert cur.fetchone()['count'] == 3
+            cur.execute(f'SELECT count(*) AS count FROM {settings.database.postgres_task_outbox_table}')
+            assert cur.fetchone()['count'] == 3
+        (output / 'verification.json').write_text(json.dumps({'actual_postgres_uuid_to_string': True,
+            'same_project_message_accepted': True, 'unbound_message_accepted': True,
+            'same_project_resume_accepted': True, 'resume_idempotent': True,
+            'foreign_project_message_resume_rejected': True, 'missing_bound_project_rejected': True,
+            'task_rows': 3, 'outbox_rows': 3, 'external_ai_calls': 0}, ensure_ascii=False, indent=2), encoding='utf8')
+
+
+@contextmanager
+def worker_model():
+    requests, failures = [], []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_POST(self):
+            try:
+                request = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
+                messages = request['messages']
+                user = next(m['content'] for m in reversed(messages) if m['role'] == 'user')
+                previous = [m for m in messages if m['role'] == 'tool']
+                match = re.search(r'Tool arguments:\s*(\{.*?\})\s*After the tool finishes', user, re.S)
+                phase = 'child' if match else 'parent'
+                if not previous:
+                    args = json.loads(match.group(1)) if match else {}
+                    if match:
+                        assert set(args) == {'worker_action', 'dispatch_ref'}
+                    message = {'role': 'assistant', 'content': '执行固定接口任务', 'tool_calls': [{
+                        'id': 'call-' + uuid4().hex, 'type': 'function',
+                        'function': {'name': 'api-test-runner', 'arguments': json.dumps(args)}}]}
+                    reason = 'tool_calls'
+                else:
+                    message = {'role': 'assistant', 'content': '固定接口任务已完成；以工具结果和保存的报告为准。'}
+                    reason = 'stop'
+                requests.append({'phase': phase, 'request': request})
+                identity = 'local-' + uuid4().hex
+                if request.get('stream'):
+                    for index, call in enumerate(message.get('tool_calls', [])):
+                        call['index'] = index
+                    body = ('data: ' + json.dumps({'id': identity, 'object': 'chat.completion.chunk',
+                        'created': 1, 'model': 'local-api-worker', 'choices': [{'index': 0,
+                            'delta': message, 'finish_reason': reason}]}, ensure_ascii=False) + '\n\n'
+                        'data: [DONE]\n\n').encode()
+                    content_type = 'text/event-stream'
+                else:
+                    body = json.dumps({'id': identity, 'object': 'chat.completion', 'created': 1,
+                        'model': 'local-api-worker', 'choices': [{'index': 0,
+                            'message': message, 'finish_reason': reason}]}, ensure_ascii=False).encode()
+                    content_type = 'application/json'
+                self.send_response(200)
+                self.send_header('Content-Type', content_type)
+                self.send_header('Content-Length', str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except Exception as exc:
+                failures.append(type(exc).__name__)
+                self.send_error(500, 'controlled fixture error')
+
+    server = ThreadingHTTPServer(('127.0.0.1', 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f'http://127.0.0.1:{server.server_port}/v1', requests, failures
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+        assert not thread.is_alive()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('durable', [False, True], ids=['same-process-child', 'durable-child-process'])
+@pytest.mark.skipif(os.getenv('RUN_LIVE_API_AGENT_WORKER') != '1',
+    reason='independent production API and Agent CLI; real isolated MySQL/PG/Redis/RustFS')
+async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, durable):
+    output = Path(os.environ['QA_API_AGENT_WORKER_DIR']) / ('durable' if durable else 'in-process')
+    output.mkdir(parents=True, exist_ok=False)
+    facts = {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': durable}
+    secret_values = []
+    with auth_target() as (business, events), worker_model() as (model_url, requests, failures):
+        try:
+            async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
+                settings.api_auth_token = SecretStr(uuid4().hex)
+                settings.orchestration.coordinator_durable_children = durable
+                settings.orchestration.redis_task_outbox_streams = settings.orchestration.agent_task_stream
+                models = MySQLModelConfigStore(settings)
+                models.initialize()
+                model = models.upsert(ModelConfigUpdateRequest(model_name='local-api-worker', provider='openai',
+                    transport='openai_chat_completions', base_url=model_url, api_key=uuid4().hex, is_active=True,
+                    use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                    context_window=128000, max_output_tokens=1024))
+                processes.env = child_environment(settings)
+                api_port = free_port()
+                api_args = ('-m', 'uvicorn', 'src.main:app', '--host', '127.0.0.1', '--port', str(api_port))
+                api = processes.start('agent-api', *api_args)
+                queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.agent_task_stream,
+                    group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
+                await queue.connect()
+                try:
+                    async with httpx.AsyncClient(base_url=f'http://127.0.0.1:{api_port}/api/v1', timeout=30,
+                        headers={'Authorization': 'Bearer ' + settings.api_auth_token.get_secret_value()}) as client:
+                        await wait_api(client, api)
+
+                        async def post(path, body, status=200):
+                            response = await client.post(path, json=body)
+                            expected = status if isinstance(status, tuple) else (status,)
+                            assert response.status_code in expected, (path, response.status_code, response.text)
+                            return response.json()
+
+                        async def get(path):
+                            response = await client.get(path)
+                            assert response.status_code == 200, (path, response.status_code)
+                            return response.json()
+
+                        project = await post('/projects', {'project_key': 'api-agent-worker',
+                            'name': '独立 API Agent Worker 验收'}, 201)
+                        graph = DependencyPlanner().plan(mapped_endpoints=CapabilityMapper().map_many([
+                            EndpointCandidate(endpoint_id=key, method=method, path=path, full_url=business + path)
+                            for key, method, path in [('login', 'POST', '/login'),
+                                ('refresh', 'POST', '/auth/refresh'), ('profile', 'GET', '/profile')]]),
+                            preconditions=PreconditionAnalysis())
+                        state = ApiTestingState(phase=PHASE_CAMPAIGN_READY, campaign=ApiTestCampaign(
+                            campaign_id=str(uuid4()), project_name=project['name'], tasks=graph.tasks,
+                            execution_policy=ExecutionPolicy(max_retries=0)))
+                        parent = await post('/sessions', {'title': '固定 API 认证链路', 'project_id': project['id'],
+                            'session_mode': 'background_task', 'runtime_mode': 'background', 'mode_key': 'api_testing',
+                            'selected_agent': 'api-testing-agent', 'preferred_model': model.key})
+                        accepted = await post(f"/sessions/{parent['id']}/messages", {
+                            'content': '执行已固定的接口测试任务，保存实际认证链路结果。', 'model_key': model.key,
+                            'agent_key': 'api-testing-agent',
+                            'context': {STATE_METADATA_KEY: state.model_dump(mode='json')}}, 202)
+                        task_id = accepted['task']['id']
+                        facts.update(project_id=project['id'], parent_session_id=parent['id'], parent_task_id=task_id)
+                        workers = [processes.start('agent-worker-' + str(i), '-m', 'src.cli.run_agent_worker',
+                            '--worker-id', 'api-auth-' + str(i)) for i in range(2 if durable else 1)]
+                        deadline = monotonic() + 100
+                        tasks, session = [], None
+                        approvals = []
+                        while monotonic() < deadline:
+                            await PostgresTaskOutbox(settings).relay_once(queue, limit=10)
+                            tasks = await get(f"/sessions/{parent['id']}/tasks")
+                            session = await get(f"/sessions/{parent['id']}")
+                            for approval in session['pending_approvals']:
+                                proxy = bool((approval.get('metadata') or {}).get('proxy_child_session_id'))
+                                if approval['id'] not in approvals and (proxy or session['status'] == 'waiting_approval'):
+                                    await post(f"/sessions/{parent['id']}/approvals/{approval['id']}",
+                                        {'decision': 'approved', 'reason': 'owned local API test fixture'}, (200, 202))
+                                    approvals.append(approval['id'])
+                            original = next(t for t in tasks if t['id'] == task_id)
+                            if (original['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'}
+                                and session['status'] != 'waiting_approval'
+                                and all(t['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'} for t in tasks)):
+                                break
+                            assert all(w.poll() is None for w in workers), 'Agent CLI exited before terminal state'
+                            await asyncio.sleep(.25)
+                        facts.update(parent_tasks=tasks, parent_status=session['status'], events=events,
+                            physical_model_http=len(requests), fixture_errors=failures,
+                            tool_messages=[m for m in session['messages'] if m['role'] == 'tool'],
+                            approved_parent_calls=len(approvals), worker_dispatches=session['metadata'].get('worker_dispatches', []))
+                        children_observed = []
+                        for dispatch in facts['worker_dispatches']:
+                            child = await get('/sessions/' + dispatch['child_session_id'])
+                            children_observed.append({'id': child['id'], 'mode_key': child['mode_key'],
+                                'status': child['status'], 'pending_approvals': len(child['pending_approvals']),
+                                'messages': [m for m in child['messages'] if m['role'] == 'tool']})
+                        facts['children_observed'] = children_observed
+                        internal = PostgresApiCredentialStore(settings)
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f'SELECT * FROM {internal.tables[1]}')
+                            encrypted = [dict(row) for row in cur.fetchall()]
+                        secret_values = [(await internal.load_credential(r['id'], owner_session_id=r['owner_session_id'],
+                            project_id=str(r['project_id']) if r['project_id'] else None))['token'] for r in encrypted]
+                        safe_public = json.dumps({'facts': facts, 'requests': requests}, default=str)
+                        assert all(value not in safe_public for value in secret_values), 'Generated credentials in public evidence'
+                        facts['observed_public_credential_scan_passed'] = True
+                        (output / 'observed.json').write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding='utf8')
+                        if not events:
+                            # No target response means this fixture has not generated any credentials.
+                            (output / 'model-request-diagnostics.json').write_text(
+                                json.dumps(requests, ensure_ascii=False, indent=2), encoding='utf8')
+                        assert not failures
+                        assert [e['status'] for e in events] == [200, 200, 200], facts
+                        assert original['status'] == 'completed', facts
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} ORDER BY created_at")
+                            jobs = [dict(row) for row in cur.fetchall()]
+                            cur.execute(f"SELECT * FROM {settings.database.postgres_session_table} ORDER BY created_at")
+                            sessions = [dict(row) for row in cur.fetchall()]
+                            cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table} WHERE payload->>'task_id'=%s", (task_id,))
+                            replay_command = cur.fetchone()['payload']
+                        reports = [j for j in jobs if isinstance(j.get('output_payload'), dict)
+                            and j['output_payload'].get('report')]
+                        assert len(reports) == 1 and reports[0]['output_payload']['report']['completed'] == 3
+                        assert reports[0]['output_payload']['report']['failed'] == 0
+                        children = [s for s in sessions if (s.get('metadata') or {}).get('parent_session_id') == parent['id']]
+                        assert len(children) == 3 and all(str(s['project_id']) == project['id'] for s in children)
+                        internal = PostgresApiCredentialStore(settings)
+                        with postgres_connect(settings) as conn, conn.cursor() as cur:
+                            cur.execute(f'SELECT * FROM {internal.tables[1]}')
+                            encrypted = [dict(row) for row in cur.fetchall()]
+                        assert len(encrypted) == 2
+                        secret_values = [(await internal.load_credential(r['id'], owner_session_id=parent['id'],
+                            project_id=project['id']))['token'] for r in encrypted]
+                        public = json.dumps({'requests': requests, 'sessions': sessions, 'jobs': jobs}, default=str)
+                        assert all(value not in public for value in secret_values)
+                        assert all(value not in r['ciphertext'] for value in secret_values for r in encrypted)
+                        facts.update(real_child_sessions=len(children), parent_report=reports[0]['output_payload']['report'],
+                            parent_job_id=reports[0]['id'], generated_credentials_absent_from_public_output=True)
+                        for worker in workers:
+                            await processes.stop(worker)
+                        await processes.stop(api)
+                        api = processes.start('agent-api-restarted', *api_args)
+                        await wait_api(client, api)
+                        assert (await get(f"/sessions/{parent['id']}/tasks")) == tasks
+                        await queue.enqueue(replay_command)
+                        before = len(requests), len(events)
+                        replay = processes.start('agent-worker-terminal', '-m', 'src.cli.run_agent_worker', '--once',
+                            '--worker-id', 'api-auth-terminal')
+                        assert await processes.wait(replay, timeout=30) == 0
+                        assert (len(requests), len(events)) == before
+                        facts.update(api_restart_history_preserved=True, terminal_redelivery_new_http=0,
+                            terminal_redelivery_new_model_http=0)
+                        (output / 'verification.json').write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding='utf8')
+                        (output / 'public-records.json').write_text(public, encoding='utf8')
+                finally:
+                    await queue.close()
+        finally:
+            for path in tmp_path.iterdir():
+                if path.suffix in {'.stdout', '.stderr'} or path.name in {'docker.json', 'postgres-finally.json'}:
+                    assert all(value.encode() not in path.read_bytes() for value in secret_values), 'Generated credentials in preserved logs'
+                    shutil.copyfile(path, output / path.name)
+            (output / 'target-events-at-cleanup.json').write_text(json.dumps({'events': events,
+                'physical_model_http': len(requests), 'fixture_errors': failures,
+                'external_ai_calls': 0, 'public_credential_scan_passed': True}, indent=2), encoding='utf8')

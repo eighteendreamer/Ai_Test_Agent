@@ -1,0 +1,1884 @@
+EEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEEE..........s....           [100%]
+=================================== ERRORS ====================================
+_ ERROR at setup of test_http_submission_is_atomic_idempotent_and_does_not_execute _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_legacy_pending_input_handoff_recovers_after_committed_submit_loses_ack _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_http_resume_is_atomic_idempotent_and_runs_only_in_worker _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_resume_checkpoint_change_fails_without_replaying_runtime _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_duplicate_running_resume_cannot_fail_the_active_owner _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_http_approval_resolution_is_atomic_idempotent_and_worker_owned _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_headless_http_submission_creates_session_task_and_outbox_atomically _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_headless_transaction_failure_rolls_back_new_session __
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_submission_failure_rolls_back_input_event_and_outbox _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_finalizing_old_session_snapshot_does_not_rewind_renewed_lease _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_worker_commits_result_before_ack_and_ignores_duplicate_delivery _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_admission_wait_creates_new_attempt_and_fifo_excludes_future_input _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_expired_owner_retries_only_before_runtime_started[False] _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_expired_owner_retries_only_before_runtime_started[True] _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_other_api_instance_can_interrupt_worker_and_cancel_queued_input _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_separate_worker_process_executes_persisted_api_input _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+__ ERROR at setup of test_separate_worker_process_executes_persisted_resume ___
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_separate_worker_process_executes_persisted_approval __
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_killed_worker_pending_is_reclaimed_without_replaying_started_agent _
+tests\test_agent_task_dispatch.py:177: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_coordinator_child_submission_is_durable_and_idempotent _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+___ ERROR at setup of test_coordinator_child_delivers_through_redis_stream ____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_duplicate_child_completion_does_not_requeue_parent_resume _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_terminal_child_projection_can_resume_after_submit_failure _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_settled_child_recovery_scan_requeues_missing_parent_resume _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_timed_out_child_recovery_uses_durable_result_after_notify_failure _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_two_coordinators_do_not_project_the_same_child_twice _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+____ ERROR at setup of test_child_execution_failure_still_notifies_parent _____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_____________ ERROR at setup of test_child_depth_and_count_guard ______________
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_two_coordinators_claim_one_followup_batch_without_duplicate_workers _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_____ ERROR at setup of test_two_coordinators_claim_initial_overflow_once _____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_postgres_duplicate_dispatch_returns_original_worker_receipt _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_____ ERROR at setup of test_child_parent_cycle_and_missing_parent_guard ______
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+__ ERROR at setup of test_cancel_parent_children_only_cancels_unstarted_rows __
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_preserves_queue_wait_and_live_execution_lease[queued] _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_preserves_queue_wait_and_live_execution_lease[waiting_resource] _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_preserves_queue_wait_and_live_execution_lease[claimed] _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_preserves_queue_wait_and_live_execution_lease[running] _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+___ ERROR at setup of test_reap_expired_children_fails_and_notifies[False] ____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+____ ERROR at setup of test_reap_expired_children_fails_and_notifies[True] ____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_grants_timeout_from_recent_activity_not_creation[progress] _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_grants_timeout_from_recent_activity_not_creation[lease] _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_child_reaper_skips_locked_session_and_preserves_concurrent_renewal _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+___ ERROR at setup of test_child_reaper_does_not_clear_another_turns_lease ____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+__________ ERROR at setup of test_child_reaper_loop_starts_and_stops __________
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+____ ERROR at setup of test_start_child_reaper_stays_off_without_the_flag _____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+____ ERROR at setup of test_coordinator_launch_prefers_durable_child_task _____
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+_ ERROR at setup of test_coordinator_launch_keeps_in_process_path_when_flag_off _
+tests\test_coordinator_durable_children.py:174: in harness
+    await resources.connect()
+src\runtime\resource_lease_manager.py:131: in connect
+    await self._client.ping()
+..\.venv\Lib\site-packages\redis\asyncio\client.py:929: in execute_command
+    conn = self.connection or await pool.get_connection()
+                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\utils.py:249: in async_wrapper
+    return await func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2824: in get_connection
+    await self.ensure_connection(connection)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:2865: in ensure_connection
+    await connection.connect()
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:819: in connect
+    await self.retry.call_with_retry(
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:81: in call_with_retry
+    raise error
+..\.venv\Lib\site-packages\redis\asyncio\retry.py:69: in call_with_retry
+    return await do()
+           ^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:883: in connect_check_health
+    await self.on_connect_check_health(check_health=check_health)
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1003: in on_connect_check_health
+    response = await self.read_response()
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1286: in read_response
+    response = await self._read_response_from_parser(
+..\.venv\Lib\site-packages\redis\asyncio\connection.py:1335: in _read_response_from_parser
+    return await self._parser.read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:185: in read_response
+    response = await self._read_response(
+..\.venv\Lib\site-packages\redis\_parsers\resp3.py:197: in _read_response
+    raw = await self._readline()
+          ^^^^^^^^^^^^^^^^^^^^^^
+..\.venv\Lib\site-packages\redis\_parsers\base.py:589: in _readline
+    raise ConnectionError(SERVER_CLOSED_CONNECTION_ERROR)
+E   redis.exceptions.ConnectionError: Connection closed by server.
+=========================== short test summary info ===========================
+ERROR tests/test_agent_task_dispatch.py::test_http_submission_is_atomic_idempotent_and_does_not_execute
+ERROR tests/test_agent_task_dispatch.py::test_legacy_pending_input_handoff_recovers_after_committed_submit_loses_ack
+ERROR tests/test_agent_task_dispatch.py::test_http_resume_is_atomic_idempotent_and_runs_only_in_worker
+ERROR tests/test_agent_task_dispatch.py::test_resume_checkpoint_change_fails_without_replaying_runtime
+ERROR tests/test_agent_task_dispatch.py::test_duplicate_running_resume_cannot_fail_the_active_owner
+ERROR tests/test_agent_task_dispatch.py::test_http_approval_resolution_is_atomic_idempotent_and_worker_owned
+ERROR tests/test_agent_task_dispatch.py::test_headless_http_submission_creates_session_task_and_outbox_atomically
+ERROR tests/test_agent_task_dispatch.py::test_headless_transaction_failure_rolls_back_new_session
+ERROR tests/test_agent_task_dispatch.py::test_submission_failure_rolls_back_input_event_and_outbox
+ERROR tests/test_agent_task_dispatch.py::test_finalizing_old_session_snapshot_does_not_rewind_renewed_lease
+ERROR tests/test_agent_task_dispatch.py::test_worker_commits_result_before_ack_and_ignores_duplicate_delivery
+ERROR tests/test_agent_task_dispatch.py::test_admission_wait_creates_new_attempt_and_fifo_excludes_future_input
+ERROR tests/test_agent_task_dispatch.py::test_expired_owner_retries_only_before_runtime_started[False]
+ERROR tests/test_agent_task_dispatch.py::test_expired_owner_retries_only_before_runtime_started[True]
+ERROR tests/test_agent_task_dispatch.py::test_other_api_instance_can_interrupt_worker_and_cancel_queued_input
+ERROR tests/test_agent_task_dispatch.py::test_separate_worker_process_executes_persisted_api_input
+ERROR tests/test_agent_task_dispatch.py::test_separate_worker_process_executes_persisted_resume
+ERROR tests/test_agent_task_dispatch.py::test_separate_worker_process_executes_persisted_approval
+ERROR tests/test_agent_task_dispatch.py::test_killed_worker_pending_is_reclaimed_without_replaying_started_agent
+ERROR tests/test_coordinator_durable_children.py::test_coordinator_child_submission_is_durable_and_idempotent
+ERROR tests/test_coordinator_durable_children.py::test_coordinator_child_delivers_through_redis_stream
+ERROR tests/test_coordinator_durable_children.py::test_duplicate_child_completion_does_not_requeue_parent_resume
+ERROR tests/test_coordinator_durable_children.py::test_terminal_child_projection_can_resume_after_submit_failure
+ERROR tests/test_coordinator_durable_children.py::test_settled_child_recovery_scan_requeues_missing_parent_resume
+ERROR tests/test_coordinator_durable_children.py::test_timed_out_child_recovery_uses_durable_result_after_notify_failure
+ERROR tests/test_coordinator_durable_children.py::test_two_coordinators_do_not_project_the_same_child_twice
+ERROR tests/test_coordinator_durable_children.py::test_child_execution_failure_still_notifies_parent
+ERROR tests/test_coordinator_durable_children.py::test_child_depth_and_count_guard
+ERROR tests/test_coordinator_durable_children.py::test_two_coordinators_claim_one_followup_batch_without_duplicate_workers
+ERROR tests/test_coordinator_durable_children.py::test_two_coordinators_claim_initial_overflow_once
+ERROR tests/test_coordinator_durable_children.py::test_postgres_duplicate_dispatch_returns_original_worker_receipt
+ERROR tests/test_coordinator_durable_children.py::test_child_parent_cycle_and_missing_parent_guard
+ERROR tests/test_coordinator_durable_children.py::test_cancel_parent_children_only_cancels_unstarted_rows
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_preserves_queue_wait_and_live_execution_lease[queued]
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_preserves_queue_wait_and_live_execution_lease[waiting_resource]
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_preserves_queue_wait_and_live_execution_lease[claimed]
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_preserves_queue_wait_and_live_execution_lease[running]
+ERROR tests/test_coordinator_durable_children.py::test_reap_expired_children_fails_and_notifies[False]
+ERROR tests/test_coordinator_durable_children.py::test_reap_expired_children_fails_and_notifies[True]
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_grants_timeout_from_recent_activity_not_creation[progress]
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_grants_timeout_from_recent_activity_not_creation[lease]
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_skips_locked_session_and_preserves_concurrent_renewal
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_does_not_clear_another_turns_lease
+ERROR tests/test_coordinator_durable_children.py::test_child_reaper_loop_starts_and_stops
+ERROR tests/test_coordinator_durable_children.py::test_start_child_reaper_stays_off_without_the_flag
+ERROR tests/test_coordinator_durable_children.py::test_coordinator_launch_prefers_durable_child_task
+ERROR tests/test_coordinator_durable_children.py::test_coordinator_launch_keeps_in_process_path_when_flag_off
+14 passed, 1 skipped, 47 errors in 15.08s
