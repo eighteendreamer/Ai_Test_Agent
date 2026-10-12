@@ -5472,3 +5472,11 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 `ApiTaskPool`现在用标准库`TopologicalSorter`在构造和每次协调时拒绝重复任务、缺失/自引用、重复依赖和循环；`ready_tasks()`重新依据前置状态协调，恢复或外部修改的ready标签不能绕过未完成前置。路径绑定只解析URL path，避免把`:8000`误当参数；本地协调器和Worker派发前都检查剩余占位符，缺失时失败并记录具体参数，不发HTTP、不派发Worker。Campaign同时保存`PreconditionAnalysis.to_dict()`，使人工数据缺口和来源可查。无新增表、配置、依赖、模型协议或权限。
 
 证据：首次复现9项失败；修复后`p3-api-dependency-final.xml` **11通过**，含真实本地HTTP创建→实际`id=0`→查询、未解析路径零HTTP/零Worker派发和终态零额外请求。相关回归`p3-api-dependency-verified4.xml` **70通过、3跳过**；加入 Campaign 前置摘要后的完整回归`p3-api-dependency-regression2.xml` **101通过、5跳过**，覆盖文档解析依赖、创建/查询HTTP、重试、未知写入、结果回读、工具等待、项目范围和模式隔离。跳过项是既有真实存储门控。外部AI调用0；配置仍MySQL、业务仍PostgreSQL、原件仍RustFS。完整P0—P5及默认AI质量继续保持未完成。
+
+## 2026-10-12 Git 文档来源当前实现复核
+
+基线4874360c。重新核对 `GitDocumentService`、受限 Git 子进程、项目级 MySQL 配置、文档版本服务和独立产品测试，确认 Git 来源已经实现；普通上传不调用 Git，Git 只在用户选择登记仓库和固定 commit/blob 后读取，不写仓库、不 clone、不 checkout、不提交，也不自动并入上传文档。
+
+实际证据：`p3-git-current.xml` **24通过、4跳过**（SHA-1/SHA-256、bare/full object、路径和特殊模式、缺 blob、超时/取消、幂等、并发、项目隔离、父版本冲突和本地路由）；启用 `RUN_LIVE_CASE_PLANNING_TESTS=1` 的 `p3-git-live2.xml` **26通过**（隔离 MySQL/PostgreSQL/RustFS）；启用 `RUN_LIVE_DOCUMENT_GIT_PRODUCTION=1` 的 `p3-git-production-current.xml` **2通过**、132.11秒（独立 API/Redis Worker/MySQL/PG/RustFS/Chromium，Markdown 和 DOCX 固定来源导入、丢回执恢复、解析、比较、重启及普通上传独立）。审计见 `P3_GIT_SOURCE_CURRENT_RESEARCH.md` 和 `p3-git-current-validation.json`。
+
+本轮没有新增 Git 代码或数据库结构；默认 AI 影响判断、用户业务评审、生产部署适用性、历史迁移、扫描 PDF OCR 和 Docling 容器仍未完成，完整 P0—P5 保持 active。
