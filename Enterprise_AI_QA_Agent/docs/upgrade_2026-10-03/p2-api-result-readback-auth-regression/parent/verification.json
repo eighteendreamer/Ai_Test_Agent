@@ -1,0 +1,388 @@
+{
+  "scope": "full parent ToolRuntime, controlled child launch, actual PG inline report and fresh-service read; no external AI",
+  "project_id": "5132d6a0-a953-43f8-95bf-15f6a646e766",
+  "parent_job_id": "bdbfefac-18ea-43fb-a250-5fb1389647f4",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": true,
+      "current_credential": false
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": false,
+      "current_credential": true
+    }
+  ],
+  "report": {
+    "tasks": [
+      {
+        "name": "POST /login",
+        "path": "/login",
+        "error": null,
+        "checks": [
+          {
+            "kind": "status_code_range",
+            "name": "status_in_[200, 201, 204]",
+            "actual": 200,
+            "passed": true,
+            "expected": [
+              200,
+              201,
+              204
+            ],
+            "description": "Expect success status for POST /login"
+          }
+        ],
+        "method": "POST",
+        "status": "completed",
+        "task_id": "task_000_login",
+        "full_url": "http://127.0.0.1:52527/login",
+        "capability": "login",
+        "check_count": 1,
+        "duration_ms": 12.47,
+        "checks_failed": 0,
+        "checks_passed": 1,
+        "request_outcome": "completed",
+        "response_status": 200,
+        "http_observation_v1": {
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "host": "127.0.0.1",
+                "path": "/login",
+                "port": 52527,
+                "scheme": "http",
+                "query_omitted": false,
+                "fragment_omitted": false,
+                "userinfo_omitted": false
+              },
+              "status_code": 200
+            }
+          ],
+          "acquisition": "network",
+          "observed_at": "2026-10-12T06:21:09.381658Z",
+          "implementation_version": "api-http-observation-v1"
+        },
+        "reconciliation_required": false
+      },
+      {
+        "name": "POST /auth/refresh",
+        "path": "/auth/refresh",
+        "error": null,
+        "checks": [
+          {
+            "kind": "status_code_range",
+            "name": "status_in_[200, 201, 204]",
+            "actual": 200,
+            "passed": true,
+            "expected": [
+              200,
+              201,
+              204
+            ],
+            "description": "Expect success status for POST /auth/refresh"
+          }
+        ],
+        "method": "POST",
+        "status": "completed",
+        "task_id": "task_001_refresh",
+        "full_url": "http://127.0.0.1:52527/auth/refresh",
+        "capability": "refresh_token",
+        "check_count": 1,
+        "duration_ms": 12.73,
+        "checks_failed": 0,
+        "checks_passed": 1,
+        "request_outcome": "completed",
+        "response_status": 200,
+        "http_observation_v1": {
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "host": "127.0.0.1",
+                "path": "/auth/refresh",
+                "port": 52527,
+                "scheme": "http",
+                "query_omitted": false,
+                "fragment_omitted": false,
+                "userinfo_omitted": false
+              },
+              "status_code": 200
+            }
+          ],
+          "acquisition": "network",
+          "observed_at": "2026-10-12T06:21:09.539847Z",
+          "implementation_version": "api-http-observation-v1"
+        },
+        "reconciliation_required": false
+      },
+      {
+        "name": "GET /profile",
+        "path": "/profile",
+        "error": null,
+        "checks": [
+          {
+            "kind": "status_code_range",
+            "name": "status_in_[200, 201, 204]",
+            "actual": 200,
+            "passed": true,
+            "expected": [
+              200,
+              201,
+              204
+            ],
+            "description": "Expect success status for GET /profile"
+          }
+        ],
+        "method": "GET",
+        "status": "completed",
+        "task_id": "task_002_profile",
+        "full_url": "http://127.0.0.1:52527/profile",
+        "capability": "list",
+        "check_count": 1,
+        "duration_ms": 15.85,
+        "checks_failed": 0,
+        "checks_passed": 1,
+        "request_outcome": "completed",
+        "response_status": 200,
+        "http_observation_v1": {
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "host": "127.0.0.1",
+                "path": "/profile",
+                "port": 52527,
+                "scheme": "http",
+                "query_omitted": false,
+                "fragment_omitted": false,
+                "userinfo_omitted": false
+              },
+              "status_code": 200
+            }
+          ],
+          "acquisition": "network",
+          "observed_at": "2026-10-12T06:21:09.696411Z",
+          "implementation_version": "api-http-observation-v1"
+        },
+        "reconciliation_required": false
+      }
+    ],
+    "failed": 0,
+    "skipped": 0,
+    "summary": "✅ Campaign 'ca16c6c3-389d-4c59-b411-683853e901c9' completed: 3/3 tasks passed, 0 failed, 0 skipped. Checks: 3 passed, 0 failed. Total time: 41ms.",
+    "findings": [],
+    "artifacts": [
+      {
+        "type": "api_test_report_json",
+        "label": "API 测试报告 (JSON)",
+        "content": "{\n  \"campaign_id\": \"ca16c6c3-389d-4c59-b411-683853e901c9\",\n  \"project_name\": \"Parent campaign fixture\",\n  \"summary\": \"✅ Campaign 'ca16c6c3-389d-4c59-b411-683853e901c9' completed: 3/3 tasks passed, 0 failed, 0 skipped. Checks: 3 passed, 0 failed. Total time: 41ms.\",\n  \"total_tasks\": 3,\n  \"completed\": 3,\n  \"failed\": 0,\n  \"skipped\": 0,\n  \"passed_checks\": 3,\n  \"failed_checks\": 0,\n  \"duration_ms\": 41.05,\n  \"tasks\": [\n    {\n      \"task_id\": \"task_000_login\",\n      \"name\": \"POST /login\",\n      \"method\": \"POST\",\n      \"path\": \"/login\",\n      \"full_url\": \"http://127.0.0.1:52527/login\",\n      \"capability\": \"login\",\n      \"status\": \"completed\",\n      \"response_status\": 200,\n      \"duration_ms\": 12.47,\n      \"check_count\": 1,\n      \"checks_passed\": 1,\n      \"checks_failed\": 0,\n      \"request_outcome\": \"completed\",\n      \"reconciliation_required\": false,\n      \"error\": null,\n      \"checks\": [\n        {\n          \"kind\": \"status_code_range\",\n          \"name\": \"status_in_[200, 201, 204]\",\n          \"actual\": 200,\n          \"passed\": true,\n          \"expected\": [\n            200,\n            201,\n            204\n          ],\n          \"description\": \"Expect success status for POST /login\"\n        }\n      ],\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"POST\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/login\",\n              \"port\": 52527,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-12T06:21:09.381658Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    },\n    {\n      \"task_id\": \"task_001_refresh\",\n      \"name\": \"POST /auth/refresh\",\n      \"method\": \"POST\",\n      \"path\": \"/auth/refresh\",\n      \"full_url\": \"http://127.0.0.1:52527/auth/refresh\",\n      \"capability\": \"refresh_token\",\n      \"status\": \"completed\",\n      \"response_status\": 200,\n      \"duration_ms\": 12.73,\n      \"check_count\": 1,\n      \"checks_passed\": 1,\n      \"checks_failed\": 0,\n      \"request_outcome\": \"completed\",\n      \"reconciliation_required\": false,\n      \"error\": null,\n      \"checks\": [\n        {\n          \"kind\": \"status_code_range\",\n          \"name\": \"status_in_[200, 201, 204]\",\n          \"actual\": 200,\n          \"passed\": true,\n          \"expected\": [\n            200,\n            201,\n            204\n          ],\n          \"description\": \"Expect success status for POST /auth/refresh\"\n        }\n      ],\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"POST\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/auth/refresh\",\n              \"port\": 52527,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-12T06:21:09.539847Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    },\n    {\n      \"task_id\": \"task_002_profile\",\n      \"name\": \"GET /profile\",\n      \"method\": \"GET\",\n      \"path\": \"/profile\",\n      \"full_url\": \"http://127.0.0.1:52527/profile\",\n      \"capability\": \"list\",\n      \"status\": \"completed\",\n      \"response_status\": 200,\n      \"duration_ms\": 15.85,\n      \"check_count\": 1,\n      \"checks_passed\": 1,\n      \"checks_failed\": 0,\n      \"request_outcome\": \"completed\",\n      \"reconciliation_required\": false,\n      \"error\": null,\n      \"checks\": [\n        {\n          \"kind\": \"status_code_range\",\n          \"name\": \"status_in_[200, 201, 204]\",\n          \"actual\": 200,\n          \"passed\": true,\n          \"expected\": [\n            200,\n            201,\n            204\n          ],\n          \"description\": \"Expect success status for GET /profile\"\n        }\n      ],\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"GET\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/profile\",\n              \"port\": 52527,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-12T06:21:09.696411Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    }\n  ],\n  \"findings\": [],\n  \"artifacts\": [],\n  \"verification_result\": {},\n  \"evaluation_result\": {},\n  \"generated_at\": \"2026-10-12T06:21:09.777740+00:00\"\n}",
+        "filename": "api_test_report_ca16c6c3.json",
+        "content_type": "application/json"
+      },
+      {
+        "type": "api_test_report_md",
+        "label": "API 测试报告 (Markdown)",
+        "content": "# API 测试报告\n\n**项目**: Parent campaign fixture\n**目标**: 接口验证\n**生成时间**: 2026-10-12T06:21:09.777740+00:00\n**Campaign ID**: `ca16c6c3-389d-4c59-b411-683853e901c9`\n\n## 📊 执行摘要\n\n| 指标 | 值 |\n|------|-----|\n| 总任务数 | 3 |\n| 通过 | 3 |\n| 失败 | 0 |\n| 跳过 | 0 |\n| 断言通过 | 3 |\n| 断言失败 | 0 |\n| 总耗时 | 41ms |\n\n## 📋 任务详情\n\n### ✅ POST /login\n\n- **状态**: completed\n- **响应码**: 200\n- **耗时**: 12ms\n- **断言**: 1 通过 / 0 失败\n\n### ✅ POST /auth/refresh\n\n- **状态**: completed\n- **响应码**: 200\n- **耗时**: 13ms\n- **断言**: 1 通过 / 0 失败\n\n### ✅ GET /profile\n\n- **状态**: completed\n- **响应码**: 200\n- **耗时**: 16ms\n- **断言**: 1 通过 / 0 失败\n",
+        "filename": "api_test_report_ca16c6c3.md",
+        "content_type": "text/markdown"
+      }
+    ],
+    "completed": 3,
+    "campaign_id": "ca16c6c3-389d-4c59-b411-683853e901c9",
+    "duration_ms": 41.05,
+    "total_tasks": 3,
+    "generated_at": "2026-10-12T06:21:09.777740+00:00",
+    "project_name": "Parent campaign fixture",
+    "failed_checks": 0,
+    "passed_checks": 3,
+    "evaluation_result": {
+      "summary": "质量评分: 100/100 (等级 A) | 覆盖率: 100% | 严重问题: 0 个 | 高优问题: 0 个",
+      "coverage": {
+        "coverage_rate": 1.0,
+        "tested_endpoints": 3,
+        "tested_capabilities": [
+          "login",
+          "refresh_token",
+          "list"
+        ],
+        "untested_capabilities": [],
+        "total_available_endpoints": 3
+      },
+      "campaign_id": "ca16c6c3-389d-4c59-b411-683853e901c9",
+      "quality_score": {
+        "grade": "A",
+        "overall": 100.0,
+        "coverage": 20.0,
+        "performance": 20.0,
+        "reliability": 40.0,
+        "severity_penalty": 0.0
+      },
+      "recommendations": [
+        "✅ 所有检查通过，无需额外操作。"
+      ],
+      "verification_verdict": {
+        "rules": [
+          {
+            "name": "Task Pass Rate",
+            "actual": 1.0,
+            "passed": true,
+            "rule_id": "pass_rate",
+            "expected": 0.8,
+            "severity": "error",
+            "description": "3/3 tasks passed (100%). Threshold: 80%.",
+            "affected_tasks": []
+          },
+          {
+            "name": "Critical Endpoints",
+            "actual": "2/2 passed",
+            "passed": true,
+            "rule_id": "critical_endpoints",
+            "expected": "all critical endpoints pass",
+            "severity": "error",
+            "description": "All 2 critical endpoints passed.",
+            "affected_tasks": []
+          },
+          {
+            "name": "Response Time SLA",
+            "actual": "max=16ms, avg=14ms",
+            "passed": true,
+            "rule_id": "response_time_sla",
+            "expected": "<= 5000.0ms",
+            "severity": "warning",
+            "description": "All endpoints within 5000.0ms SLA (max=16ms).",
+            "affected_tasks": []
+          },
+          {
+            "name": "No Auth Failures",
+            "actual": "0 auth failures",
+            "passed": true,
+            "rule_id": "no_auth_failures",
+            "expected": "no 401/403 responses",
+            "severity": "info",
+            "description": "No authentication failures detected.",
+            "affected_tasks": []
+          },
+          {
+            "name": "No Environment Errors",
+            "actual": "0 environment errors",
+            "passed": true,
+            "rule_id": "no_environment_errors",
+            "expected": "no timeout/connection/5xx errors",
+            "severity": "warning",
+            "description": "No environment-related failures detected.",
+            "affected_tasks": []
+          }
+        ],
+        "passed": true,
+        "summary": "✅ Campaign APPROVED: 5/5 verification rules passed across 3 tasks.",
+        "verdict": "approved",
+        "pass_rate": 1.0,
+        "sla_passed": true,
+        "total_rules": 5,
+        "failed_rules": 0,
+        "critical_passed": true
+      },
+      "failure_classifications": []
+    },
+    "verification_result": {
+      "rules": [
+        {
+          "name": "Task Pass Rate",
+          "actual": 1.0,
+          "passed": true,
+          "rule_id": "pass_rate",
+          "expected": 0.8,
+          "severity": "error",
+          "description": "3/3 tasks passed (100%). Threshold: 80%.",
+          "affected_tasks": []
+        },
+        {
+          "name": "Critical Endpoints",
+          "actual": "2/2 passed",
+          "passed": true,
+          "rule_id": "critical_endpoints",
+          "expected": "all critical endpoints pass",
+          "severity": "error",
+          "description": "All 2 critical endpoints passed.",
+          "affected_tasks": []
+        },
+        {
+          "name": "Response Time SLA",
+          "actual": "max=16ms, avg=14ms",
+          "passed": true,
+          "rule_id": "response_time_sla",
+          "expected": "<= 5000.0ms",
+          "severity": "warning",
+          "description": "All endpoints within 5000.0ms SLA (max=16ms).",
+          "affected_tasks": []
+        },
+        {
+          "name": "No Auth Failures",
+          "actual": "0 auth failures",
+          "passed": true,
+          "rule_id": "no_auth_failures",
+          "expected": "no 401/403 responses",
+          "severity": "info",
+          "description": "No authentication failures detected.",
+          "affected_tasks": []
+        },
+        {
+          "name": "No Environment Errors",
+          "actual": "0 environment errors",
+          "passed": true,
+          "rule_id": "no_environment_errors",
+          "expected": "no timeout/connection/5xx errors",
+          "severity": "warning",
+          "description": "No environment-related failures detected.",
+          "affected_tasks": []
+        }
+      ],
+      "passed": true,
+      "summary": "✅ Campaign APPROVED: 5/5 verification rules passed across 3 tasks.",
+      "verdict": "approved",
+      "pass_rate": 1.0,
+      "sla_passed": true,
+      "total_rules": 5,
+      "failed_rules": 0,
+      "critical_passed": true
+    }
+  },
+  "artifacts": [
+    {
+      "id": "3024c941-402b-4a8a-85bc-97924b6008fb",
+      "uri": "inline://artifact",
+      "type": "api_test_report_json",
+      "sha256": "7740d0197551bb7cf1db8ad373249efa5288f3d1c0f5df1407cff27243550ae4",
+      "size_bytes": 4788,
+      "saved_filename": "report.json"
+    },
+    {
+      "id": "826e0fcc-15e1-4f39-a707-370f85fa8620",
+      "uri": "inline://artifact",
+      "type": "api_test_report_md",
+      "sha256": "d9365dae2dbbfb8598c6080f5e9a95848af0cb9220eb2b940fe86e381fbdf830",
+      "size_bytes": 762,
+      "saved_filename": "report.md"
+    }
+  ],
+  "public_state_uses_credential_ref": true,
+  "terminal_replay_new_http": 0,
+  "full_goal_complete": false
+}

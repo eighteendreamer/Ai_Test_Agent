@@ -2813,6 +2813,7 @@ class ToolRuntimeService:
             coordinator_runtime_service=self._coordinator_runtime_service,
             session_store=self._session_store,
             credential_reference_service=self._api_credential_references,
+            tool_job_service=self._tool_job_service,
         )
         return await runtime.handle(arguments, context)
 

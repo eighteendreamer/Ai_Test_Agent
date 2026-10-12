@@ -5404,3 +5404,11 @@ layer1/2/3局部生产实验2失败2排除142.66/54.17/49.78秒，同进程业�
 ## 2026-10-12 模板与导入当前代码复验
 
 基线05688163。Agent_Server执行`..\.venv\Scripts\python.exe -m pytest`：RUN_LIVE_CASE_IMPORT_TESTS=1，test_case_import_service.py -k True -q，6通过8排除10.70秒；RUN_LIVE_CASE_IMPORT_BROWSER=1，test_case_import_browser.py -q，3通过12.74秒；RUN_LIVE_CASE_IMPORT_FULL_PRODUCT=1，QA_CASE_IMPORT_FULL_PRODUCT_DIR指定本轮current2目录，test_case_import_full_product.py -q，1通过66.89秒。真实文件、MySQL/PG/RustFS/Redis、Chromium及完整App/独立API重启已验。没有修改生产代码或调用外部AI，属于既有6.87/7.05能力复验。原pytest结果来自工具终态输出，无独立原日志/XML；21份产品工件和输入hash由p1-current2-audit.py实际核对，validation明确范围。完整升级未完成。
+
+## 2026-10-12 原 API 子 ToolJob 回读
+
+基线cdf51dea。新增worker_result_reader、两测试；修改ToolRuntime/模式Runtime透传既有ToolJobService及协调器原结果读取/已完成依赖输出重建/共享读取截止时间。无数据库schema、配置、依赖、前端或模型协议改动。依据与剩余持久等待架构见P2_API_RESULT_READBACK_RESEARCH.md和PLAN 7.45。
+
+实际Agent_Server命令`..\.venv\Scripts\python.exe -m pytest`，RUN_LIVE_API_WORKER_RESULT_RECOVERY=1、QA_API_WORKER_RESULT_RECOVERY_DIR每批owned目录：reproduction 1失败9.45秒；public-final 1通过10.07秒（真实存储/HTTP，受控子启动）；deadline-final五模块39通过1跳过14.43秒。RUN_LIVE_API_WORKER_AUTH_STORAGE=1、RUN_LIVE_UPGRADE_STORAGE_TESTS=1的12模块regression 86通过3门控跳过48.98秒。RUN_LIVE_API_AGENT_WORKER=1的独立main/CLI Agent 2通过2失败57.04秒，两路径仅login200；完整API仍失败，重启/终态断言未执行到。各原日志/XML和公开PG/目标观测完整保留；证据夹具导出失败也保留。compileall真实退出0，不替代功能验收。
+
+全3子任务无聊天仍能回读原Job/加密auth_ref；重建任务后额外HTTP0，跨父拒绝。checkpoint仍未持久化，父审批挂起和snapshot/outbox自动续跑仍需补实现，不宣称本批完成完整API。外部AI0，完整P0—P5保持active，仅白名单提交，不推送/PR。

@@ -1,0 +1,9 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent _____
+tests\test_api_worker_result_recovery_live.py:146: in test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent
+    facts["missing_transcripts"] = all((await reader.get_session(task.worker_session_id)).messages == []
+E   TypeError: 'async_generator' object is not iterable
+=========================== short test summary info ===========================
+FAILED tests/test_api_worker_result_recovery_live.py::test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent
+1 failed in 8.00s

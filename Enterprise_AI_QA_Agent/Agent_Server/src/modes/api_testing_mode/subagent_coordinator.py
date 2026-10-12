@@ -22,6 +22,7 @@ from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.input_binding import bind_path_parameters, substitute_path_parameter
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
+from src.modes.api_testing_mode.worker_result_reader import ApiWorkerResultReader
 from src.runtime.store import SessionStore
 from src.runtime.postgres_api_credential_store import ApiCredentialReferenceError
 from src.schemas.session import MessageRole, SessionStatus
@@ -48,6 +49,7 @@ class ApiSubagentCoordinator:
         poll_interval_seconds: float = 0.25,
         checkpoint_callback: CheckpointCallback | None = None,
         credential_reference_service: Any = None,
+        tool_job_service: Any = None,
     ) -> None:
         self._pool = pool
         self._policy = policy
@@ -56,6 +58,7 @@ class ApiSubagentCoordinator:
         self._parent_context = parent_context
         self._credential_manager = credential_manager
         self._credential_references = credential_reference_service
+        self._tool_jobs = tool_job_service
         self._dispatch_refs: dict[str, str] = {}
         self._auth_token_field = auth_token_field
         self._worker_agent_key = worker_agent_key
@@ -64,7 +67,9 @@ class ApiSubagentCoordinator:
         self._checkpoint_callback = checkpoint_callback
         self._active_resource_locks: set[str] = set()
         self._write_running: bool = False
-        self._task_outputs: dict[str, Any] = {}
+        self._task_outputs: dict[str, Any] = {
+            task.task_id: task.response_body for task in pool.all_tasks if task.status == TASK_COMPLETED
+        }
         self._unsettled_child_session_ids: set[str] = set()
         self._unsettled_task_ids: set[str] = set()
 
@@ -74,6 +79,30 @@ class ApiSubagentCoordinator:
 
     async def run_all(self) -> list[ApiTestTask]:
         restored_running = self._pool.running_tasks()
+        if restored_running and self._tool_jobs is not None:
+            deadline = asyncio.get_running_loop().time() + max(
+                self._poll_interval_seconds, self._policy.request_timeout_seconds * 2)
+            for task in restored_running:
+                remaining = deadline - asyncio.get_running_loop().time()
+                if remaining <= 0:
+                    continue
+                try:
+                    settled = await asyncio.wait_for(self._restore_settled_worker(task), timeout=remaining)
+                    if settled is False:
+                        self._unsettled_task_ids.add(task.task_id)
+                except ApiCredentialReferenceError as exc:
+                    logger.warning("api_worker_result_recovery_rejected", extra={
+                        "parent_session_id": self._parent_context.get("session_id"),
+                        "task_id": task.task_id, "child_session_id": task.worker_session_id, "reason": str(exc)})
+                    self._fail_task(task, str(exc))
+                    self._unsettled_task_ids.add(task.task_id)
+                except TimeoutError:
+                    logger.warning("api_worker_result_read_timed_out", extra={
+                        "parent_session_id": self._parent_context.get("session_id"),
+                        "task_id": task.task_id, "child_session_id": task.worker_session_id})
+            restored_running = self._pool.running_tasks()
+            if self.has_unsettled_workers:
+                return self._pool.all_tasks
         if restored_running:
             logger.warning(
                 "api_restored_workers_unsettled",
@@ -256,6 +285,13 @@ class ApiSubagentCoordinator:
                     and str(record.get("error") or "")
                 )
             ]
+            # Capture dispatch identity before waiting. A recreated coordinator
+            # reads this same child rather than launching another HTTP request.
+            for task in launched_tasks:
+                record = worker_records.get(dispatch_task_ids[task.task_id])
+                if record and record.get("child_session_id"):
+                    task.worker_session_id = str(record["child_session_id"])
+                    self._emit_checkpoint("task_dispatched", task)
             settled_sessions, timed_out_ids = await self._wait_for_sessions(child_session_ids)
             self._unsettled_child_session_ids.update(timed_out_ids)
             settled_map = {session.id: session for session in settled_sessions}
@@ -287,19 +323,7 @@ class ApiSubagentCoordinator:
                 if session is None:
                     self._fail_task(task, "worker_session_not_found")
                     continue
-                task.worker_status = session.status.value
-                task.worker_summary = self._extract_assistant_summary(session.messages)
-                tool_output = self._extract_api_test_runner_output(session.messages)
-                if not tool_output:
-                    self._fail_task(task, task.worker_summary or f"Worker finished without api-test-runner output ({session.status.value}).")
-                    continue
-                if self._credential_references is not None:
-                    result_payload = tool_output.get("task_result") or {}
-                    if isinstance(result_payload, dict) and result_payload.get("auth_ref"):
-                        restored = await self._credential_references.load_parent_credential(
-                            result_payload["auth_ref"], self._parent_context)
-                        self._credential_manager.restore_session(restored)
-                self._apply_worker_output(task, tool_output)
+                await self._merge_session_result(task, session)
         except ApiCredentialReferenceError as exc:
             logger.warning("api_worker_private_input_unavailable", extra={
                 "parent_session_id": str(self._parent_context.get("session_id") or ""), "reason": str(exc)})
@@ -312,6 +336,33 @@ class ApiSubagentCoordinator:
                     self._active_resource_locks.discard(lock)
                 if task.execution_mode == EXECUTION_MODE_WRITE:
                     self._write_running = False
+
+    async def _restore_settled_worker(self, task: ApiTestTask) -> bool | None:
+        session = await self._session_store.get_session(task.worker_session_id) if task.worker_session_id else None
+        if session is None or session.status not in {SessionStatus.completed, SessionStatus.failed, SessionStatus.interrupted}:
+            return None
+        return await self._merge_session_result(task, session)
+
+    async def _merge_session_result(self, task: ApiTestTask, session: Any) -> bool:
+        task.worker_status = session.status.value
+        task.worker_summary = self._extract_assistant_summary(session.messages)
+        if self._tool_jobs is not None:
+            tool_output = await ApiWorkerResultReader(tool_job_service=self._tool_jobs,
+                credential_reference_service=self._credential_references).read(
+                    session=session, task=task, parent_context=self._parent_context)
+        else:
+            tool_output = self._extract_api_test_runner_output(session.messages)
+        if not tool_output:
+            self._fail_task(task, task.worker_summary or f"Worker finished without api-test-runner output ({session.status.value}).")
+            return False
+        if self._credential_references is not None:
+            result_payload = tool_output.get("task_result") or {}
+            if isinstance(result_payload, dict) and result_payload.get("auth_ref"):
+                restored = await self._credential_references.load_parent_credential(
+                    result_payload["auth_ref"], self._parent_context)
+                self._credential_manager.restore_session(restored)
+        self._apply_worker_output(task, tool_output)
+        return True
 
     def _build_worker_spec(self, task: ApiTestTask) -> dict[str, Any]:
         current_credential = self._credential_manager.get(task.auth_ref) if task.auth_ref else None

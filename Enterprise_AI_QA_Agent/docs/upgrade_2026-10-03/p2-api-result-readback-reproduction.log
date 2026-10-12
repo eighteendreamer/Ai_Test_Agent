@@ -1,0 +1,13 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent _____
+tests\test_api_worker_result_recovery_live.py:106: in test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent
+    assert [t.response_status for t in results] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'independent_agent_worker': False, 'full_api_acceptance': False, 'full_goal_complete': False, ...}
+E   assert [None, None, None] == [200, 200, 200]
+E     
+E     At index 0 diff: None != 200
+E     Use -v to get more diff
+=========================== short test summary info ===========================
+FAILED tests/test_api_worker_result_recovery_live.py::test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent
+1 failed in 9.45s

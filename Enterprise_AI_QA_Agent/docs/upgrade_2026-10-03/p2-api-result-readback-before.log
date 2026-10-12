@@ -1,0 +1,12 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+____ test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent _____
+tests\test_api_worker_result_recovery_live.py:106: in test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent
+    assert all(t.status == "completed" for t in restored_results)
+E   assert False
+E    +  where False = all(<generator object test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent.<locals>.<genexpr> at 0x00000299CE1F1150>)
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.coordinator:subagent_coordinator.py:78 api_restored_workers_unsettled
+=========================== short test summary info ===========================
+FAILED tests/test_api_worker_result_recovery_live.py::test_pg_worker_result_survives_missing_transcript_and_rebuilt_parent
+1 failed in 13.23s

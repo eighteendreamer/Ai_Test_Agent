@@ -3704,3 +3704,13 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 基线05688163。重新阅读模板、导入服务、解析进程、路由和已有完整产品测试后，复验既有能力，不新增另一套实现。真实存储服务测试6通过8排除10.70秒；真实Chromium组件rows/split/json三布局3通过12.74秒；构建版完整App、独立main API和重启、隔离MySQL/PG/RustFS/Redis的完整产品1通过66.89秒。覆盖模板MySQL修订、真实Excel/JSON原件下载、预览错误行、冲突、提交重放、评审启用、V2草稿、模板修改后旧版本不变、跨项目隔离和重启读回。
 
 这是6.87/7.05既有验收的当前复验，不能称新增功能，也不替代普通文档生成或真实AI质量验收。普通文档受控模块/独立恢复已有6.97证据；默认模型质量、容量和更多故障仍待验。原件、页面、PG、网络和独立进程输出21份及哈希见p1-case-import-full-product-current2/、p1-current2-validation.json；pytest终态在本会话工具输出，本轮未另存原pytest日志/XML，不伪造。无生产代码/配置/表/依赖修改，无外部AI调用；完整P0—P5保持未完成，下一步转向7.43确认仍缺实现的API原工具等待/恢复。
+
+### 7.45 原 API 子 ToolJob 结果回读〔2026-10-12〕
+
+基线cdf51dea。依据P2_API_RESULT_READBACK_RESEARCH.md调研：子ToolJob已结算与聊天落库是不同动作，不能依赖聊天文本判断工具是否完成；恢复running原来直接失败，未读原子Job。本批新增worker_result_reader，沿既有加密派发/receipt身份核验读取结算Job，生产ToolRuntime透传原ToolJobService。恢复原完成结果和auth_ref、重建依赖输出，不重发已完成HTTP；派发先记录child ID。恢复读取受既有超时共享截止时间约束。没有新增表/配置/依赖或改变模型协议/权限，进程内checkpoint不称持久snapshot。
+
+实际复现reproduction 1失败9.45秒：真实ToolRuntime/隔离PG/MySQL/Redis/RustFS/本地HTTP，子聊天从未写入，原login200但父三结果None。修复后public-final 1通过10.07秒：login→refresh→profile200、三任务completed、三子聊天空，重建全部running任务恢复completed，额外HTTP0，跨父拒绝；原公共ToolJob及child身份投影落盘，随机凭据未导出。身份/请求/attempt/歧义/未结算/零值依赖和原恢复等deadline-final 39通过1门控跳过14.43秒，12模块regression 86通过3门控跳过48.98秒；重叠批次不累加。compileall退出0仅附加检查。
+
+**完整独立Agent仍未通过**：agent 2通过2失败57.04秒，同进程/持久子都仅login200，完整目标应为login/refresh/profile200；后续API重启/终态断言未到达。before、verified、evidence-final等夹具及证据导出失败全部保留，不用后续通过覆盖。外部AI0，受控子启动专项不代替独立Agent/默认模型验收。
+
+本批完成原结果回读基础，**仍需补实现**7.43父工具持久等待/原snapshot/outbox继续与自动合并；现有子waiting_approval终态及过早报告结算未修。其他默认AI多候选用例执行、准备/unknown/修订、复杂UI、容量/安全、业务评审/部署/历史迁移等完整P0—P5范围不缩减。三份方案同步，原件、历史/保护文件和敏感材料核对见p2-api-result-readback-audit.py/validation。仅提交本批白名单，无push/PR，完整目标保持active。

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="4" time="57.033" timestamp="2026-10-12T14:20:00.476053+08:00" hostname="EIghteen"><testcase classname="tests.test_api_agent_worker_live" name="test_api_dispatch_mode_and_original_approval_task_owner" time="0.077" /><testcase classname="tests.test_api_agent_worker_live" name="test_project_uuid_submission_and_resume_preserve_foreign_project_rejection" time="2.128" /><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[same-process-child]" time="23.002"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '5003497b-41bb-4701-9127-6ca62ea3bcf1', ...}&#10;assert [200] == [200, 200, 200]&#10;  &#10;  Right contains 2 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:371: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': False, 'project_id': '5003497b-41bb-4701-9127-6ca62ea3bcf1', ...}
+E   assert [200] == [200, 200, 200]
+E     
+E     Right contains 2 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase><testcase classname="tests.test_api_agent_worker_live" name="test_real_agent_worker_private_auth_and_terminal_redelivery[durable-child-process]" time="27.423"><failure message="AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': 'd099e66f-19d1-47b8-b50c-3e82e54b4e53', ...}&#10;assert [200] == [200, 200, 200]&#10;  &#10;  Right contains 2 more items, first extra item: 200&#10;  Use -v to get more diff">tests\test_api_agent_worker_live.py:371: in test_real_agent_worker_private_auth_and_terminal_redelivery
+    assert [e['status'] for e in events] == [200, 200, 200], facts
+E   AssertionError: {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': True, 'project_id': 'd099e66f-19d1-47b8-b50c-3e82e54b4e53', ...}
+E   assert [200] == [200, 200, 200]
+E     
+E     Right contains 2 more items, first extra item: 200
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

@@ -86,12 +86,14 @@ class ApiTestingModeRuntime:
         coordinator_runtime_service: Any = None,
         session_store: Any = None,
         credential_reference_service: Any = None,
+        tool_job_service: Any = None,
     ) -> None:
         self._api_docs_service = api_docs_service
         self._settings = settings
         self._coordinator_runtime_service = coordinator_runtime_service
         self._session_store = session_store
         self._credential_references = credential_reference_service
+        self._tool_jobs = tool_job_service
         self._project_locator = ApiProjectLocator(api_docs_service=api_docs_service)
         self._doc_parser = ApiDocParser(api_docs_service=api_docs_service)
         self._capability_mapper = CapabilityMapper()
@@ -466,6 +468,7 @@ class ApiTestingModeRuntime:
                 parent_context=self._build_dispatch_context(context),
                 credential_manager=self._credential_manager,
                 credential_reference_service=self._credential_references,
+                tool_job_service=self._tool_jobs,
                 auth_token_field=auth_token_field,
                 worker_model_key=getattr(context, "selected_model_key", "") or None,
                 checkpoint_callback=self._build_checkpoint_callback(state, context),
