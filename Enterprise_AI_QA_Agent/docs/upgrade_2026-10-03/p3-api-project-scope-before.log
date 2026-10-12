@@ -1,0 +1,27 @@
+FsFF                                                                     [100%]
+================================== FAILURES ===================================
+_________ test_uploaded_same_name_projects_and_restored_scope[False] __________
+tests\test_api_project_scope_live.py:81: in test_uploaded_same_name_projects_and_restored_scope
+    assert state.selected_documents[0].title == own_doc.title
+E   AssertionError: assert 'project_id:a...-b7805bf44be7' == 'one original'
+E     
+E     - one original
+E     + project_id:ab8bcbf3-d716-48c2-9964-b7805bf44be7
+__________ test_formal_id_cannot_be_donated_by_nested_model_request ___________
+tests\test_api_project_scope_live.py:149: in test_formal_id_cannot_be_donated_by_nested_model_request
+    assert runtime._build_request({'project_id': 'argument-project'}, context).project_id == ''
+E   AssertionError: assert 'model-supplied-project' == ''
+E     
+E     + model-supplied-project
+_______ test_project_document_selection_uses_exact_document_membership ________
+tests\test_api_project_scope_live.py:159: in test_project_document_selection_uses_exact_document_membership
+    assert [doc.doc_id for doc in selected.selected_documents] == ['selected']
+E   AssertionError: assert ['selected', 'not-selected'] == ['selected']
+E     
+E     Left contains one more item: 'not-selected'
+E     Use -v to get more diff
+=========================== short test summary info ===========================
+FAILED tests/test_api_project_scope_live.py::test_uploaded_same_name_projects_and_restored_scope[False]
+FAILED tests/test_api_project_scope_live.py::test_formal_id_cannot_be_donated_by_nested_model_request
+FAILED tests/test_api_project_scope_live.py::test_project_document_selection_uses_exact_document_membership
+3 failed, 1 skipped in 6.32s

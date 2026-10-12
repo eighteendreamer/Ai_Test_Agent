@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="3" skipped="1" tests="4" time="6.294" timestamp="2026-10-12T22:06:33.163164+08:00" hostname="EIghteen"><testcase classname="tests.test_api_project_scope_live" name="test_uploaded_same_name_projects_and_restored_scope[False]" time="0.132"><failure message="AssertionError: assert 'project_id:a...-b7805bf44be7' == 'one original'&#10;  &#10;  - one original&#10;  + project_id:ab8bcbf3-d716-48c2-9964-b7805bf44be7">tests\test_api_project_scope_live.py:81: in test_uploaded_same_name_projects_and_restored_scope
+    assert state.selected_documents[0].title == own_doc.title
+E   AssertionError: assert 'project_id:a...-b7805bf44be7' == 'one original'
+E     
+E     - one original
+E     + project_id:ab8bcbf3-d716-48c2-9964-b7805bf44be7</failure></testcase><testcase classname="tests.test_api_project_scope_live" name="test_uploaded_same_name_projects_and_restored_scope[True]" time="0.003"><skipped type="pytest.skip" message="owned isolated real PG/RustFS project catalogs">G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server\tests\test_api_project_scope_live.py:42: owned isolated real PG/RustFS project catalogs</skipped></testcase><testcase classname="tests.test_api_project_scope_live" name="test_formal_id_cannot_be_donated_by_nested_model_request" time="0.001"><failure message="AssertionError: assert 'model-supplied-project' == ''&#10;  &#10;  + model-supplied-project">tests\test_api_project_scope_live.py:149: in test_formal_id_cannot_be_donated_by_nested_model_request
+    assert runtime._build_request({'project_id': 'argument-project'}, context).project_id == ''
+E   AssertionError: assert 'model-supplied-project' == ''
+E     
+E     + model-supplied-project</failure></testcase><testcase classname="tests.test_api_project_scope_live" name="test_project_document_selection_uses_exact_document_membership" time="0.001"><failure message="AssertionError: assert ['selected', 'not-selected'] == ['selected']&#10;  &#10;  Left contains one more item: 'not-selected'&#10;  Use -v to get more diff">tests\test_api_project_scope_live.py:159: in test_project_document_selection_uses_exact_document_membership
+    assert [doc.doc_id for doc in selected.selected_documents] == ['selected']
+E   AssertionError: assert ['selected', 'not-selected'] == ['selected']
+E     
+E     Left contains one more item: 'not-selected'
+E     Use -v to get more diff</failure></testcase></testsuite></testsuites>

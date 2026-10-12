@@ -102,12 +102,14 @@ export interface ApiTestRunnerOutput {
   context_refs?: Array<Record<string, unknown>>;
   pending_selection?: ApiTestingPendingSelection;
   selected_project?: {
+    project_id?: string;
     project_name: string;
     project_url: string;
     doc_count: number;
     endpoint_count: number;
   };
   project_candidates?: Array<{
+    project_id?: string;
     project_name: string;
     project_url: string;
     doc_count: number;

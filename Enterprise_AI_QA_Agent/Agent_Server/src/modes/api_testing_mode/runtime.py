@@ -117,6 +117,7 @@ class ApiTestingModeRuntime:
             return await self._execute_dispatched_task(arguments, context)
 
         state = self._restore_state(context)
+        await self._validate_project_scope(state, context)
         if self._credential_references is not None and state.credential_session is None and state.execution_checkpoint.get("credential_ref"):
             restored = await self._credential_references.load_parent_credential(
                 state.execution_checkpoint["credential_ref"], self._build_dispatch_context(context))
@@ -146,6 +147,7 @@ class ApiTestingModeRuntime:
             )
             if selection.resolved:
                 state = await self._apply_selection(state, selection)
+                await self._validate_project_scope(state, context)
             else:
                 # User reply did not resolve the pending selection.
                 self._persist_state(state, context)
@@ -166,6 +168,7 @@ class ApiTestingModeRuntime:
 
     async def _advance(self, state: ApiTestingState, context: Any) -> ApiTestingState:
         """Advance the state machine as far as possible without user input."""
+        await self._validate_project_scope(state, context)
         # Guard: if already terminal, return.
         if state.phase in TERMINAL_PHASES:
             return state
@@ -177,6 +180,7 @@ class ApiTestingModeRuntime:
         # Phase: project_candidates_found -> auto-select or ask.
         if state.phase == PHASE_PROJECT_CANDIDATES_FOUND:
             state = self._resolve_project(state)
+            await self._validate_project_scope(state, context)
 
         # Phase: awaiting_project_selection -> stop (need user input).
         if state.phase == PHASE_AWAITING_PROJECT_SELECTION:
@@ -221,6 +225,7 @@ class ApiTestingModeRuntime:
             return state
 
         state.project_candidates = result.candidates
+        state.document_candidates = [doc for documents in result.documents_by_project.values() for doc in documents]
         state.record_phase_transition(PHASE_PROJECT_CANDIDATES_FOUND, "Projects discovered.")
         return state
 
@@ -276,7 +281,8 @@ class ApiTestingModeRuntime:
         state.selected_documents = [
             doc
             for doc in (state.document_candidates or [])
-            if ((project.project_id and doc.project_id == project.project_id)
+            if doc.doc_id in project.doc_ids
+            and ((project.project_id and doc.project_id == project.project_id)
                 or (not project.project_id and doc.project_name == project.project_name))
         ]
         # If we don't have document_candidates yet, build them from project.
@@ -422,7 +428,7 @@ class ApiTestingModeRuntime:
 
         campaign = ApiTestCampaign(
             campaign_id=str(uuid4()),
-            project_id=state.selected_project.project_id if state.selected_project else state.request.project_id,
+            project_id=(state.selected_project.project_id if state.selected_project else "") or state.request.project_id,
             project_name=state.selected_project.project_name if state.selected_project else "",
             project_url=base_url,
             objective=state.request.objective,
@@ -797,7 +803,7 @@ class ApiTestingModeRuntime:
 
         return ApiTestingRequestState(
             objective=objective,
-            project_id=str(bundle.get("project_id") or mode_request.get("project_id") or "").strip(),
+            project_id=str(bundle.get("project_id") or "").strip(),
             project_hint=str(arguments.get("project_hint") or mode_request.get("project_hint") or "").strip(),
             domain_hint=str(arguments.get("domain_hint") or mode_request.get("domain_hint") or "").strip(),
             endpoint_hint=str(arguments.get("endpoint") or mode_request.get("endpoint") or "").strip(),
@@ -819,6 +825,43 @@ class ApiTestingModeRuntime:
             getattr(context, "selected_agent_key", "") or state.selected_agent or "api-testing-agent"
         )
         state.selected_tools = list(API_TESTING_TOOL_KEYS)
+
+    async def _validate_project_scope(self, state: ApiTestingState, context: Any) -> None:
+        """Read catalog identities before reading or executing restored documents."""
+        bundle = getattr(context, "context_bundle", None) or {}
+        project_id = str(bundle.get("project_id") or "").strip()
+        if not project_id:
+            return  # Preserve the original projectless/legacy discovery contract.
+        scopes = [state.request.project_id,
+            state.selected_project.project_id if state.selected_project else "",
+            state.campaign.project_id if state.campaign else "",
+            *[doc.project_id for doc in state.selected_documents]]
+        conflict = next((value for value in scopes if value and value != project_id), None)
+        if conflict:
+            logger.warning("api_project_scope_rejected", extra={"session_id": getattr(context, "session_id", ""),
+                "project_id": project_id, "declared_project_id": conflict, "phase": state.phase,
+                "document_content_read": False})
+            raise ValueError("API project scope differs from the bound session project")
+        document_ids = list(dict.fromkeys([
+            *(state.selected_project.doc_ids if state.selected_project else []),
+            *[doc.doc_id for doc in state.selected_documents],
+            *(state.campaign.selected_document_ids if state.campaign else []),
+            *[endpoint.doc_id for endpoint in state.selected_endpoints if endpoint.doc_id],
+            *[endpoint.doc_id for endpoint in (state.campaign.selected_endpoints if state.campaign else [])
+                if endpoint.doc_id],
+        ]))
+        for document_id in document_ids:
+            record = await self._api_docs_service.get_document(document_id)
+            if record.project_id != project_id:
+                logger.warning("api_document_project_scope_rejected", extra={
+                    "session_id": getattr(context, "session_id", ""), "project_id": project_id,
+                    "document_id": document_id, "document_project_id": record.project_id,
+                    "phase": state.phase, "document_content_read": False})
+                raise ValueError("API document project scope differs from the bound session project")
+        if document_ids:
+            logger.info("api_document_project_scope_validated", extra={"project_id": project_id,
+                "session_id": getattr(context, "session_id", ""), "document_count": len(document_ids),
+                "phase": state.phase})
 
     def _build_checkpoint_callback(self, state: ApiTestingState, context: Any):
         def checkpoint(event_type: str, task: ApiTestTask, tasks: list[ApiTestTask]) -> None:

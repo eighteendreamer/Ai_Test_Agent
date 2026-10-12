@@ -103,7 +103,8 @@ class ApiProjectLocator:
         hint_tokens: list[str],
         request: ApiTestingRequestState,
     ) -> tuple[ProjectCandidate, list[DocumentCandidate]]:
-        project_name = (records[0].project_name or key).strip() or key
+        fallback_name = UNSET_PROJECT_LABEL if records[0].project_id else key
+        project_name = (records[0].project_name or fallback_name).strip() or fallback_name
         project_url = self._pick_project_url(records)
         doc_ids = [record.id for record in records]
         doc_candidates = [

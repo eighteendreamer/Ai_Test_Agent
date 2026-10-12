@@ -3762,3 +3762,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 基线74a283ac，依据P3_PROJECT_IDENTITY_RESEARCH.md。原项目候选按project_name分组，正式同名项目可能合并；本批让ApiDocRecord.project_id沿请求、ProjectCandidate、DocumentCandidate、ApiTestCampaign传递，绑定会话项目ID先过滤目录，再按ID分组，文档选择优先按ID。旧无ID文档保留兼容分组，但正式项目绑定不会读取无ID文档。没有新表、配置、依赖或模型协议。
 
 实际16通过、1跳过、2排除、7.36秒，覆盖同名不同ID不合并、绑定ID过滤、用例召回、会话隔离和非live Agent回归。默认AI项目理解与多候选排序质量仍未验收，完整P0—P5保持active。
+
+### 7.52 API项目身份从候选到恢复的实测〔2026-10-12〕
+
+基线b9d1ab60，依据P3_API_PROJECT_SCOPE_RESEARCH.md。实际上传核验发现发现结果未保存真实文档候选、选择会按名称扩大文档集合、恢复未在正文读取前核对项目/文档ID，嵌套api_testing_request还能伪造project_id。修复后正式身份唯一来自context_bundle.project_id；发现保存真实DocumentCandidate，选择只消费候选doc_ids；目录过滤、Campaign和恢复校验均使用正式ID，冲突在正文读取前拒绝并记录事件。旧无ID文档保留兼容，不替代正式绑定。
+
+内存与隔离PG/RustFS实际上传/解析/恢复共6通过4.28/9.09秒，跨项目伪造0正文读取；正式身份/召回回归16通过，前端npm run build成功7.56秒。业务HTTP和外部AI均0。默认AI候选排序质量、正式Run完整查证和完整产品流程仍未验收，完整P0—P5保持active。
