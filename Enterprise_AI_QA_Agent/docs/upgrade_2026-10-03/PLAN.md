@@ -3750,3 +3750,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 基线b2f234a5，依据P3_FORMAL_CASE_RECOVERY_RESEARCH.md。正式AgentCaseExecutionAdapter沿现有Run/RunItem/Attempt/turn固定身份先保存执行意图，缺快照直接要求RecoveryRequired，不重新发送；原ToolJob项目/Run/Item/Attempt/call/input必须匹配，逻辑操作与对象效果证据用于区分可靠回执、未知副作用、准备成功和目标通过。准备/清理范围依赖和回执纠正沿既有协议。
 
 相关正式用例研究回归22通过、34门控跳过、60.17秒；通过部分覆盖租约、恢复链、逻辑操作、共享效果/清理、回执处理。门控真实PG/RustFS/Redis与完整产品Run未启用，因此不宣称正式跨进程未知查证已完成。API未知写入真实HTTP已在7.48修复并验证；默认AI选取/排序/补全、查证工具选择和外部AI继续暂缓，完整P0—P5保持active。
+
+### 7.50 项目用例召回故障显式化〔2026-10-12〕
+
+基线2c0bc397，依据P3_CASE_RETRIEVAL_FAILURE_RESEARCH.md。调研确认项目用例召回已按project_id、active version、environment和mode_key过滤，但router捕获召回异常后仅记录日志并以空hits继续，可能把故障误判为无匹配。修复后在context_bundle标记`test_case_retrieval_status`和错误类型，写入`test_case_retrieval_failed`事件和明确提示；成功为completed，未请求为not_requested。不会切换自由测试、虚构用例或放宽项目隔离。
+
+实际三模块19通过3.21秒，包含召回故障模拟、项目范围、版本索引与embedding缓存。默认AI、正式Run和外部模型继续暂缓，完整P0—P5保持active。

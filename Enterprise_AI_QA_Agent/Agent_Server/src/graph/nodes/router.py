@@ -142,6 +142,8 @@ def build_router_node(
             state["memory_prompt_blocks"] = memory_result.prompt_blocks
         state["test_case_hits"] = []
         state["test_case_prompt_blocks"] = []
+        context_bundle["test_case_retrieval_status"] = "not_requested"
+        context_bundle.pop("test_case_retrieval_error_type", None)
         project_id = str(context_bundle.get("project_id") or "").strip()
         # Explicit free tests do not inject cases; frozen case tests already
         # carry their complete versions. Missing basis preserves old requests.
@@ -166,7 +168,25 @@ def build_router_node(
                     for hit in test_case_result.hits
                 ]
                 state["test_case_prompt_blocks"] = test_case_result.prompt_blocks
+                context_bundle["test_case_retrieval_status"] = "completed"
             except Exception as exc:
+                context_bundle["test_case_retrieval_status"] = "failed"
+                context_bundle["test_case_retrieval_error_type"] = type(exc).__name__
+                # Keep the runtime usable, but make the retrieval fault an
+                # explicit input to the model and persisted event stream;
+                # an empty hit list must never masquerade as no matching case.
+                state["test_case_prompt_blocks"] = [
+                    "Test case retrieval failed for the bound project. Do not infer that no cases match; "
+                    "report the retrieval fault or ask for a retry before claiming case coverage."
+                ]
+                append_graph_event(
+                    state,
+                    "test_case_retrieval_failed",
+                    "router",
+                    "Project-scoped test case retrieval failed; empty results are not authoritative.",
+                    project_id=project_id,
+                    error_type=type(exc).__name__,
+                )
                 LOGGER.warning(
                     "test_case_retrieval_skipped",
                     extra={

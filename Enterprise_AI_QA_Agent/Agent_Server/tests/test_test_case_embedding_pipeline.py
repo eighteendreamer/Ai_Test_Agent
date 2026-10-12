@@ -517,3 +517,39 @@ async def test_router_injects_project_scoped_test_cases_as_untrusted_context() -
         "environment": "qa",
         "mode_key": "api_testing",
     }
+
+
+@pytest.mark.asyncio
+async def test_router_exposes_case_retrieval_failure_in_context_and_events() -> None:
+    test_cases = SimpleNamespace(retrieve=AsyncMock(side_effect=ConnectionError("embedding unavailable")))
+
+    class Models:
+        def resolve_for_agent(self, requested_key, supported_model_keys):
+            return ModelDescriptor(key="fake-model", name="Fake", provider="fake", summary="Fake")
+
+    class Mcp:
+        def list_active_servers(self):
+            return []
+
+        def build_prompt_blocks(self, active_servers):
+            return []
+
+    skills = SkillRegistry()
+    router = build_router_node(AgentRegistry(), ToolRegistry(), Models(), skills,
+        SkillRuntimeService(skills), Mcp(), None, test_cases)
+    state = {
+        "session_id": "session-retrieval-failure", "turn_id": "turn-retrieval-failure",
+        "trace_id": "trace-retrieval-failure", "user_message": "run login tests",
+        "normalized_input": "run login tests", "mode_key": "api_testing", "preferred_model": "",
+        "selected_agent_key": "api-testing-agent", "selected_model_key": "",
+        "requested_skill_keys": [], "observation_prompt_blocks": [],
+        "context_bundle": {"project_id": "project-1", "environment": "qa", "selected_mode": {}},
+        "event_log": [],
+    }
+    routed = await router(state)
+    assert routed["test_case_hits"] == []
+    assert routed["context_bundle"]["test_case_retrieval_status"] == "failed"
+    assert routed["context_bundle"]["test_case_retrieval_error_type"] == "ConnectionError"
+    assert "retrieval failed" in routed["test_case_prompt_blocks"][0]
+    event = next(item for item in routed["event_log"] if item["type"] == "test_case_retrieval_failed")
+    assert event["payload"]["project_id"] == "project-1"

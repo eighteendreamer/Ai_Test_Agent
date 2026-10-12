@@ -5448,3 +5448,7 @@ RUN_LIVE_API_AGENT_WORKER=1、QA_API_AGENT_APPROVAL_HOLD_SECONDS=3、QA_API_AGEN
 基线b2f234a5。调研现有AgentCaseExecutionAdapter、TestRunExecutionService、case_operation、case_effect_evidence和preparation_scopes，确认正式Run已有固定项目/RunItem/Attempt/turn身份、执行意图先行、缺快照RecoveryRequired、原ToolJob身份核验、逻辑操作恢复和对象效果/清理范围协议。运行正式研究回归22通过34跳过60.17秒；门控项需要真实PG/RustFS/Redis，本轮只报告实现边界，不把内存结果扩大成产品验收。
 
 API未知写入单独由7.48处理，正式Run的只读查证工具选择、确认及跨进程恢复仍未完成；默认AI与外部模型按用户安排暂缓。
+
+## 2026-10-12 项目用例召回故障显式化
+
+基线2c0bc397。router召回异常不再静默形成空候选；上下文保存failed/error_type，系统提示告知模型空列表不代表无匹配，事件记录项目和错误类型。成功/未请求状态也显式记录。测试19通过3.21秒；没有新表、配置、依赖或模型协议变更。默认AI和正式Run继续待验收。
