@@ -28,6 +28,8 @@ class OutputSafetyPolicy:
         "cookie",
         "set_cookie",
         "credential_session",
+        "cookie_records",
+        "cookie_jar",
     }
     TEXT_PATTERNS = (
         re.compile(r"(?i)\b(authorization\s*:\s*bearer\s+)[A-Za-z0-9._~+/=-]+"),

@@ -1,0 +1,63 @@
+{
+  "scope": "actual target HTTP, both production coordinators, actual worker runner; controlled launch and in-memory sessions",
+  "backend": "direct",
+  "scenario": "refresh",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": true,
+      "current_credential": false
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": false,
+      "current_credential": true
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "task_000_login",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "2860b8fb-1e8d-4f8d-8191-8e203a3e65d6",
+      "depends_on": [],
+      "attempts": 1
+    },
+    {
+      "task_id": "task_001_refresh",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "a0c6ef1a-1f6f-48e6-9f63-a6927ee5c83c",
+      "depends_on": [
+        "task_000_login"
+      ],
+      "attempts": 1
+    },
+    {
+      "task_id": "task_002_profile",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "a0c6ef1a-1f6f-48e6-9f63-a6927ee5c83c",
+      "depends_on": [
+        "task_000_login",
+        "task_001_refresh"
+      ],
+      "attempts": 1
+    }
+  ],
+  "worker_dispatches": []
+}

@@ -68,6 +68,7 @@ class ApiTaskExecutor:
             async with httpx.AsyncClient(
                 timeout=task.timeout_seconds or self._timeout_seconds,
                 follow_redirects=True,
+                cookies=self._credential_manager.build_request_cookies(task.auth_ref),
             ) as client:
                 response = await client.request(
                     method=task.method.upper(),
@@ -138,8 +139,8 @@ class ApiTaskExecutor:
             task.last_error = f"Assertions failed: {', '.join(failed_names)}"
 
         # Dynamic login: if this is an auth task and succeeded, extract token.
-        if task.execution_mode == "auth" and task.status == TASK_COMPLETED:
-            self._handle_dynamic_login(task)
+        if task.execution_mode == "auth" and task.status == TASK_COMPLETED and 200 <= response.status_code < 300:
+            self._handle_dynamic_login(task, response=response, cookies=client.cookies)
 
         task.completed_at = datetime.now(timezone.utc).isoformat()
         return task
@@ -206,19 +207,27 @@ class ApiTaskExecutor:
     # Dynamic login
     # ------------------------------------------------------------------
 
-    def _handle_dynamic_login(self, task: ApiTestTask) -> None:
-        """After a successful auth task, extract token and register credentials."""
+    def _handle_dynamic_login(self, task: ApiTestTask, *, response: httpx.Response, cookies: httpx.Cookies) -> None:
+        """Keep token and scoped Cookie material after a successful auth response."""
         response_body = task.response_body
-        if not isinstance(response_body, dict):
+        cookie_received = any(hop.headers.get_list("set-cookie") for hop in [*response.history, response])
+        prior = self._credential_manager.get(task.auth_ref)
+        scoped = cookie_received or (prior is not None and prior.cookie_records is not None)
+        if not isinstance(response_body, dict) and not scoped:
             return
         session = self._credential_manager.create_from_login_response(
-            response_body=response_body,
+            response_body=response_body if isinstance(response_body, dict) else {},
             token_field=self._auth_token_field,
             login_endpoint=f"{task.method} {task.path}",
+            cookie_records=self._credential_manager.capture_cookie_records(cookies) if scoped else None,
+            prior_credential_session_id=task.auth_ref,
         )
         # Update the task's auth_ref so downstream tasks can reference it.
         if session.credential_session_id:
             task.auth_ref = session.credential_session_id
+            logger.info("api_auth_session_captured", extra={"task_id": task.task_id,
+                "credential_ref": session.credential_session_id, "auth_type": session.auth_type,
+                "cookie_count": len(session.cookie_records or []), "response_status": response.status_code})
 
     # ------------------------------------------------------------------
     # Headers

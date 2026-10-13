@@ -1,0 +1,80 @@
+........s...........F.....sss........................................... [ 94%]
+....                                                                     [100%]
+================================== FAILURES ===================================
+________ test_real_coordinator_refreshes_auth_before_protected_request ________
+
+    def test_real_coordinator_refreshes_auth_before_protected_request():
+        """A refresh endpoint must replace the credential used by later tasks."""
+    
+        requests: list[dict[str, str]] = []
+    
+        class Handler(BaseHTTPRequestHandler):
+            def do_POST(self) -> None:  # noqa: N802
+                path = urlsplit(self.path).path
+                authorization = self.headers.get("Authorization", "")
+                requests.append({"path": path, "authorization": authorization})
+                if path == "/login":
+                    self._reply(200, {"access_token": "token-1"})
+                    return
+                if path == "/auth/refresh" and authorization == "Bearer token-1":
+                    self._reply(200, {"access_token": "token-2"})
+                    return
+                self._reply(401, {"ok": False})
+    
+            def do_GET(self) -> None:  # noqa: N802
+                authorization = self.headers.get("Authorization", "")
+                requests.append({"path": urlsplit(self.path).path, "authorization": authorization})
+                self._reply(200 if authorization == "Bearer token-2" else 401,
+                            {"ok": authorization == "Bearer token-2"})
+    
+            def _reply(self, status: int, body: dict) -> None:
+                raw = json.dumps(body).encode("utf-8")
+                self.send_response(status)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(raw)))
+                self.end_headers()
+                self.wfile.write(raw)
+    
+            def log_message(self, *_args) -> None:
+                return
+    
+        server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base_url = f"http://127.0.0.1:{server.server_port}"
+            endpoints = [
+                EndpointCandidate(endpoint_id="login", method="POST", path="/login", full_url=base_url + "/login"),
+                EndpointCandidate(endpoint_id="refresh", method="POST", path="/auth/refresh", full_url=base_url + "/auth/refresh"),
+                EndpointCandidate(endpoint_id="profile", method="GET", path="/profile", full_url=base_url + "/profile"),
+            ]
+            mapped = CapabilityMapper().map_many(endpoints)
+            graph = DependencyPlanner().plan(
+                mapped_endpoints=mapped,
+                preconditions=PreconditionAnalysis(),
+                base_url=base_url,
+            )
+            assert [task.execution_mode for task in graph.tasks] == ["auth", "auth", "read"]
+            graph.tasks[0].request_body = {"username": "fixture"}
+            credentials = CredentialManager()
+            executor = ApiTaskExecutor(credential_manager=credentials)
+            results = asyncio.run(ApiTestCoordinator(
+                pool=ApiTaskPool(graph.tasks),
+                policy=ExecutionPolicy(max_workers=2),
+                executor_fn=executor.execute,
+            ).run_all())
+>           assert [task.status for task in results] == ["completed", "completed", "completed"], (
+                [task.model_dump(mode="json") for task in results], requests
+            )
+E           AssertionError: ([{'task_id': 'task_000_login', 'name': 'POST /login', 'method': 'POST', 'path': '/login', ...}, {'task_id': 'task_001...rofile', 'name': 'GET /profile', 'method': 'GET', 'path': '/profile', ...}], [{'path': '/login', 'authorization': ''}])
+E           assert ['failed', 's...d', 'skipped'] == ['completed',..., 'completed']
+E             
+E             At index 0 diff: 'failed' != 'completed'
+E             Use -v to get more diff
+
+tests\test_api_authentication_live.py:176: AssertionError
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.executor:executor.py:162 api_task_request_outcome_unknown
+=========================== short test summary info ===========================
+FAILED tests/test_api_authentication_live.py::test_real_coordinator_refreshes_auth_before_protected_request
+1 failed, 71 passed, 4 skipped in 20.77s

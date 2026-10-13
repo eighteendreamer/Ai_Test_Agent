@@ -1,0 +1,84 @@
+{
+  "scope": "actual target HTTP, both production coordinators, actual worker runner; controlled launch and in-memory sessions",
+  "backend": "worker",
+  "scenario": "no-broadcast",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": true,
+      "current_credential": false
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": false,
+      "current_credential": true
+    },
+    {
+      "method": "GET",
+      "path": "/public",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "task_000_login",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "0d84dddf-b07b-4201-b863-503c356b4cdb",
+      "depends_on": [],
+      "attempts": 1
+    },
+    {
+      "task_id": "task_001_refresh",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "6f8fad11-35b2-4f04-abcc-23196bdfe6ec",
+      "depends_on": [
+        "task_000_login"
+      ],
+      "attempts": 1
+    },
+    {
+      "task_id": "task_002_profile",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "6f8fad11-35b2-4f04-abcc-23196bdfe6ec",
+      "depends_on": [
+        "task_000_login",
+        "task_001_refresh"
+      ],
+      "attempts": 1
+    },
+    {
+      "task_id": "public",
+      "status": "completed",
+      "response_status": 200,
+      "auth_ref": "",
+      "depends_on": [],
+      "attempts": 1
+    }
+  ],
+  "worker_dispatches": [
+    "task_000_login",
+    "task_001_refresh",
+    "task_002_profile",
+    "public"
+  ]
+}

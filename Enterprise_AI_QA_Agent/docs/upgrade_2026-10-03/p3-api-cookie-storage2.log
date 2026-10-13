@@ -1,0 +1,28 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+________ test_cookie_attributes_private_storage_worker_read_and_replay ________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1676/test_cookie_attributes_private0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_API_COOKIE_STORAGE") != "1", reason="isolated real PG/ToolJob/RustFS credential flow")
+    async def test_cookie_attributes_private_storage_worker_read_and_replay(tmp_path):
+        from test_execution_worker_cli import isolated_runtime
+        from src.application.projects.project_store import PostgresProjectStore
+        from src.application.runtime.tool_job_service import ToolJobService
+        from src.application.runtime.tool_runtime_service import ToolRuntimeService
+        from src.domain.models import SessionRecord
+        from src.infrastructure.postgres_runtime import postgres_connect
+        from src.modes.api_testing_mode.credential_reference_service import ApiCredentialReferenceService
+        from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
+        from src.runtime.postgres_session_store import PostgresSessionStore
+        from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+        from src.schemas.project import ProjectRecord
+        from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
+>       from src.tools.registry import ToolRegistry
+E       ModuleNotFoundError: No module named 'src.tools'
+
+tests\test_api_cookie_session_http.py:216: ModuleNotFoundError
+=========================== short test summary info ===========================
+FAILED tests/test_api_cookie_session_http.py::test_cookie_attributes_private_storage_worker_read_and_replay
+1 failed, 8 deselected in 5.35s

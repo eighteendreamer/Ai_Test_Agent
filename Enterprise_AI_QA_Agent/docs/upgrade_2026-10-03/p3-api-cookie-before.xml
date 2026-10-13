@@ -1,0 +1,137 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="5" time="6.816" timestamp="2026-10-13T14:59:09.941918+08:00" hostname="EIghteen"><testcase classname="tests.test_api_cookie_session_http" name="test_cookie_only_login_rotation_scope_and_terminal_replay[False-False]" time="0.596"><failure message="AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'POST', '...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 82ms.&quot;, 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}&#10;assert False&#10; +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173BE636B0&gt;)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1673/test_cookie_only_login_rotatio0')
+worker = False, redirect = False
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("redirect", [False, True])
+    def test_cookie_only_login_rotation_scope_and_terminal_replay(tmp_path, worker, redirect):
+        with cookie_target(redirect) as (url, events, values):
+            credentials, tasks, policy = CredentialManager(), campaign_tasks(url), ExecutionPolicy(max_workers=3, max_retries=0)
+            if worker:
+                store = InMemorySessionStore()
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    coordinator_runtime_service=ControlledWorkerLauncher(store), session_store=store,
+                    parent_context={"session_id": "parent", "turn_id": "turn"}, credential_manager=credentials)
+            else:
+                coordinator = ApiTestCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+            result = asyncio.run(coordinator.run_all())
+            before = [task.model_dump(mode="json") for task in result]
+            count = len(events)
+            asyncio.run(coordinator.run_all())
+            assert before == [task.model_dump(mode="json") for task in result] and len(events) == count
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="cookie", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "report": report.model_dump(mode="json"),
+                     "external_ai_calls": 0, "terminal_extra_http": len(events)-count}
+            directory = Path(os.getenv("QA_API_COOKIE_DIR", str(tmp_path)))
+            directory.mkdir(parents=True, exist_ok=True)
+            raw = json.dumps(facts, ensure_ascii=False, indent=2)
+            assert all(value not in raw for value in values.values())
+            (directory/f"{'worker' if worker else 'inline'}-{'redirect' if redirect else 'direct'}.json").write_text(raw, encoding="utf8")
+&gt;           assert all(t.status == "completed" for t in result), facts
+E           AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'POST', '...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 82ms.", 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}
+E           assert False
+E            +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173BE636B0&gt;)
+
+tests\test_api_cookie_session_http.py:131: AssertionError</failure></testcase><testcase classname="tests.test_api_cookie_session_http" name="test_cookie_only_login_rotation_scope_and_terminal_replay[False-True]" time="0.533"><failure message="AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'POST', '...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 26ms.&quot;, 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}&#10;assert False&#10; +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173D4397D0&gt;)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1673/test_cookie_only_login_rotatio1')
+worker = True, redirect = False
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("redirect", [False, True])
+    def test_cookie_only_login_rotation_scope_and_terminal_replay(tmp_path, worker, redirect):
+        with cookie_target(redirect) as (url, events, values):
+            credentials, tasks, policy = CredentialManager(), campaign_tasks(url), ExecutionPolicy(max_workers=3, max_retries=0)
+            if worker:
+                store = InMemorySessionStore()
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    coordinator_runtime_service=ControlledWorkerLauncher(store), session_store=store,
+                    parent_context={"session_id": "parent", "turn_id": "turn"}, credential_manager=credentials)
+            else:
+                coordinator = ApiTestCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+            result = asyncio.run(coordinator.run_all())
+            before = [task.model_dump(mode="json") for task in result]
+            count = len(events)
+            asyncio.run(coordinator.run_all())
+            assert before == [task.model_dump(mode="json") for task in result] and len(events) == count
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="cookie", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "report": report.model_dump(mode="json"),
+                     "external_ai_calls": 0, "terminal_extra_http": len(events)-count}
+            directory = Path(os.getenv("QA_API_COOKIE_DIR", str(tmp_path)))
+            directory.mkdir(parents=True, exist_ok=True)
+            raw = json.dumps(facts, ensure_ascii=False, indent=2)
+            assert all(value not in raw for value in values.values())
+            (directory/f"{'worker' if worker else 'inline'}-{'redirect' if redirect else 'direct'}.json").write_text(raw, encoding="utf8")
+&gt;           assert all(t.status == "completed" for t in result), facts
+E           AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'POST', '...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 26ms.", 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}
+E           assert False
+E            +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173D4397D0&gt;)
+
+tests\test_api_cookie_session_http.py:131: AssertionError</failure></testcase><testcase classname="tests.test_api_cookie_session_http" name="test_cookie_only_login_rotation_scope_and_terminal_replay[True-False]" time="0.540"><failure message="AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'GET', 'p...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 27ms.&quot;, 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}&#10;assert False&#10; +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173D4A2330&gt;)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1673/test_cookie_only_login_rotatio2')
+worker = False, redirect = True
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("redirect", [False, True])
+    def test_cookie_only_login_rotation_scope_and_terminal_replay(tmp_path, worker, redirect):
+        with cookie_target(redirect) as (url, events, values):
+            credentials, tasks, policy = CredentialManager(), campaign_tasks(url), ExecutionPolicy(max_workers=3, max_retries=0)
+            if worker:
+                store = InMemorySessionStore()
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    coordinator_runtime_service=ControlledWorkerLauncher(store), session_store=store,
+                    parent_context={"session_id": "parent", "turn_id": "turn"}, credential_manager=credentials)
+            else:
+                coordinator = ApiTestCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+            result = asyncio.run(coordinator.run_all())
+            before = [task.model_dump(mode="json") for task in result]
+            count = len(events)
+            asyncio.run(coordinator.run_all())
+            assert before == [task.model_dump(mode="json") for task in result] and len(events) == count
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="cookie", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "report": report.model_dump(mode="json"),
+                     "external_ai_calls": 0, "terminal_extra_http": len(events)-count}
+            directory = Path(os.getenv("QA_API_COOKIE_DIR", str(tmp_path)))
+            directory.mkdir(parents=True, exist_ok=True)
+            raw = json.dumps(facts, ensure_ascii=False, indent=2)
+            assert all(value not in raw for value in values.values())
+            (directory/f"{'worker' if worker else 'inline'}-{'redirect' if redirect else 'direct'}.json").write_text(raw, encoding="utf8")
+&gt;           assert all(t.status == "completed" for t in result), facts
+E           AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'GET', 'p...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 27ms.", 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}
+E           assert False
+E            +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173D4A2330&gt;)
+
+tests\test_api_cookie_session_http.py:131: AssertionError</failure></testcase><testcase classname="tests.test_api_cookie_session_http" name="test_cookie_only_login_rotation_scope_and_terminal_replay[True-True]" time="0.537"><failure message="AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'GET', 'p...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 30ms.&quot;, 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}&#10;assert False&#10; +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173D4B1150&gt;)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1673/test_cookie_only_login_rotatio3')
+worker = True, redirect = True
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("redirect", [False, True])
+    def test_cookie_only_login_rotation_scope_and_terminal_replay(tmp_path, worker, redirect):
+        with cookie_target(redirect) as (url, events, values):
+            credentials, tasks, policy = CredentialManager(), campaign_tasks(url), ExecutionPolicy(max_workers=3, max_retries=0)
+            if worker:
+                store = InMemorySessionStore()
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    coordinator_runtime_service=ControlledWorkerLauncher(store), session_store=store,
+                    parent_context={"session_id": "parent", "turn_id": "turn"}, credential_manager=credentials)
+            else:
+                coordinator = ApiTestCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+            result = asyncio.run(coordinator.run_all())
+            before = [task.model_dump(mode="json") for task in result]
+            count = len(events)
+            asyncio.run(coordinator.run_all())
+            assert before == [task.model_dump(mode="json") for task in result] and len(events) == count
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="cookie", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "report": report.model_dump(mode="json"),
+                     "external_ai_calls": 0, "terminal_extra_http": len(events)-count}
+            directory = Path(os.getenv("QA_API_COOKIE_DIR", str(tmp_path)))
+            directory.mkdir(parents=True, exist_ok=True)
+            raw = json.dumps(facts, ensure_ascii=False, indent=2)
+            assert all(value not in raw for value in values.values())
+            (directory/f"{'worker' if worker else 'inline'}-{'redirect' if redirect else 'direct'}.json").write_text(raw, encoding="utf8")
+&gt;           assert all(t.status == "completed" for t in result), facts
+E           AssertionError: {'events': [{'method': 'POST', 'path': '/api/login', 'cookie_names': [], 'sid_source': 'absent'}, {'method': 'GET', 'p...failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 30ms.", 'total_tasks': 6, ...}, 'external_ai_calls': 0, ...}
+E           assert False
+E            +  where False = all(&lt;generator object test_cookie_only_login_rotation_scope_and_terminal_replay.&lt;locals&gt;.&lt;genexpr&gt; at 0x000002173D4B1150&gt;)
+
+tests\test_api_cookie_session_http.py:131: AssertionError</failure></testcase><testcase classname="tests.test_api_cookie_session_http" name="test_legacy_cookie_serialization_stays_byte_equivalent" time="0.001" /></testsuite></testsuites>

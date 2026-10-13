@@ -125,7 +125,7 @@ class ApiTestingModeRuntime:
             state.credential_session = restored
         if self._credential_references is not None and state.credential_session is not None:
             existing = state.credential_session
-            if existing.credential_session_id and not (existing.token or existing.headers or existing.cookie_jar):
+            if existing.credential_session_id and not (existing.token or existing.headers or existing.cookie_jar or existing.cookie_records):
                 restored = await self._credential_references.load_parent_credential(
                     existing.credential_session_id, self._build_dispatch_context(context))
                 self._credential_manager.restore_session(restored)
@@ -1133,7 +1133,8 @@ class ApiTestingModeRuntime:
             # Concrete credential values can also occur under a custom response field.
             # Redact the known values, without globally treating generic 'token' as secret.
             sessions = [s for s in (credential, latest_credential) if s is not None]
-            private_values = {v for s in sessions for v in [s.token, *s.headers.values(), *s.cookie_jar.values()] if v}
+            private_values = {v for s in sessions for v in [s.token, *s.headers.values(), *s.cookie_jar.values(),
+                *(record.value for record in s.cookie_records or [])] if v}
             def public(value):
                 if isinstance(value, dict):
                     return {k: public(v) for k, v in value.items()}

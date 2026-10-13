@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 # ---------------------------------------------------------------------------
@@ -102,6 +102,28 @@ class PendingSelection(BaseModel):
 # ---------------------------------------------------------------------------
 
 
+class ApiCookieRecord(BaseModel):
+    """Private, serializable standard-library Cookie constructor attributes."""
+
+    version: int = 0
+    name: str
+    value: str | None = None
+    port: str | None = None
+    port_specified: bool = False
+    domain: str
+    domain_specified: bool = False
+    domain_initial_dot: bool = False
+    path: str = "/"
+    path_specified: bool = True
+    secure: bool = False
+    expires: int | None = None
+    discard: bool = True
+    comment: str | None = None
+    comment_url: str | None = None
+    rest: dict[str, str | None] = Field(default_factory=dict)
+    rfc2109: bool = False
+
+
 class CredentialSession(BaseModel):
     """Resolved credentials or login state for the current campaign."""
 
@@ -109,11 +131,20 @@ class CredentialSession(BaseModel):
     auth_type: str = "none"
     token: str = ""  # bearer/API-key value (plain for this first version)
     cookie_jar: dict[str, str] = Field(default_factory=dict)
+    # None preserves legacy explicit Cookie headers; [] is a scoped empty jar.
+    cookie_records: list[ApiCookieRecord] | None = None
     headers: dict[str, str] = Field(default_factory=dict)
     expires_at: str = ""
     source: str = ""  # user_input / project_test_profile / dynamic_login
     login_endpoint: str = ""
     notes: str = ""
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_credential(self, handler):
+        data = handler(self)
+        if data.get("cookie_records") is None:
+            data.pop("cookie_records", None)
+        return data
 
 
 # ---------------------------------------------------------------------------
@@ -337,6 +368,7 @@ __all__ = [
     "DocumentCandidate",
     "EndpointCandidate",
     "PendingSelection",
+    "ApiCookieRecord",
     "CredentialSession",
     "AssertionSpec",
     "InputBinding",

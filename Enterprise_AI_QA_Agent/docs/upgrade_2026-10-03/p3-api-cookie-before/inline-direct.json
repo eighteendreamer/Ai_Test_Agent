@@ -1,0 +1,218 @@
+{
+  "events": [
+    {
+      "method": "POST",
+      "path": "/api/login",
+      "cookie_names": [],
+      "sid_source": "absent"
+    },
+    {
+      "method": "POST",
+      "path": "/api/refresh",
+      "cookie_names": [],
+      "sid_source": "absent"
+    }
+  ],
+  "statuses": [
+    "completed",
+    "failed",
+    "skipped",
+    "skipped",
+    "skipped",
+    "skipped"
+  ],
+  "report": {
+    "campaign_id": "cookie",
+    "project_name": "",
+    "summary": "⚠️ Campaign 'cookie' completed: 1/6 tasks passed, 1 failed, 4 skipped. Checks: 1 passed, 1 failed. Total time: 82ms.",
+    "total_tasks": 6,
+    "completed": 1,
+    "failed": 1,
+    "skipped": 4,
+    "passed_checks": 1,
+    "failed_checks": 1,
+    "duration_ms": 81.8,
+    "tasks": [
+      {
+        "task_id": "login",
+        "name": "",
+        "method": "POST",
+        "path": "/api/login",
+        "full_url": "http://127.0.0.1:51997/api/login",
+        "capability": "login",
+        "status": "completed",
+        "response_status": 204,
+        "duration_ms": 70.26,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 204,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:59:14.236275Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51997,
+                "path": "/api/login",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 204
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "refresh",
+        "name": "",
+        "method": "POST",
+        "path": "/api/refresh",
+        "full_url": "http://127.0.0.1:51997/api/refresh",
+        "capability": "refresh_token",
+        "status": "failed",
+        "response_status": 401,
+        "duration_ms": 11.54,
+        "check_count": 1,
+        "checks_passed": 0,
+        "checks_failed": 1,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": "Assertions failed: default_status_check",
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": false,
+            "expected": "2xx",
+            "actual": 401,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:59:14.248359Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51997,
+                "path": "/api/refresh",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 401
+            }
+          ]
+        },
+        "evidence": "{\n  \"response_status\": 401,\n  \"response_body_preview\": \"{\\\"ok\\\": false}\",\n  \"error\": \"Assertions failed: default_status_check\",\n  \"failed_assertions\": [\n    {\n      \"name\": \"default_status_check\",\n      \"kind\": \"status_code_range\",\n      \"passed\": false,\n      \"expected\": \"2xx\",\n      \"actual\": 401,\n      \"description\": \"Default: expect 2xx response status.\"\n    }\n  ]\n}"
+      },
+      {
+        "task_id": "profile",
+        "name": "",
+        "method": "GET",
+        "path": "/api/profile",
+        "full_url": "http://127.0.0.1:51997/api/profile",
+        "capability": "detail",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency refresh failed.",
+        "checks": []
+      },
+      {
+        "task_id": "outside",
+        "name": "",
+        "method": "GET",
+        "path": "/outside",
+        "full_url": "http://127.0.0.1:51997/outside",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency refresh failed.",
+        "checks": []
+      },
+      {
+        "task_id": "other-host",
+        "name": "",
+        "method": "GET",
+        "path": "/api/check",
+        "full_url": "http://localhost:51997/api/check",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency refresh failed.",
+        "checks": []
+      },
+      {
+        "task_id": "secure",
+        "name": "",
+        "method": "GET",
+        "path": "/api/secure",
+        "full_url": "http://127.0.0.1:51997/api/secure",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency refresh failed.",
+        "checks": []
+      }
+    ],
+    "findings": [
+      "❌ POST /api/refresh: Default: expect 2xx response status.",
+      "⏭️ GET /api/profile: skipped (Skipped because dependency refresh failed.)",
+      "⏭️ GET /outside: skipped (Skipped because dependency refresh failed.)",
+      "⏭️ GET /api/check: skipped (Skipped because dependency refresh failed.)",
+      "⏭️ GET /api/secure: skipped (Skipped because dependency refresh failed.)"
+    ],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-13T06:59:14.249944+00:00"
+  },
+  "external_ai_calls": 0,
+  "terminal_extra_http": 0
+}

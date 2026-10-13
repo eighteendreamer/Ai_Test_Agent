@@ -1,0 +1,37 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+________ test_cookie_attributes_private_storage_worker_read_and_replay ________
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1675/test_cookie_attributes_private0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_API_COOKIE_STORAGE") != "1", reason="isolated real PG/ToolJob/RustFS credential flow")
+    async def test_cookie_attributes_private_storage_worker_read_and_replay(tmp_path):
+        from test_execution_worker_cli import isolated_runtime
+        from src.application.projects.project_store import PostgresProjectStore
+        from src.application.runtime.tool_job_service import ToolJobService
+        from src.application.runtime.tool_runtime_service import ToolRuntimeService
+        from src.domain.models import SessionRecord
+        from src.infrastructure.postgres_runtime import postgres_connect
+        from src.modes.api_testing_mode.credential_reference_service import ApiCredentialReferenceService
+        from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
+        from src.runtime.postgres_session_store import PostgresSessionStore
+        from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+        from src.schemas.project import ProjectRecord
+    
+        with cookie_target(True) as (url, events, values):
+            async with isolated_runtime(tmp_path) as (settings, _, _, objects, owned):
+                projects, sessions = PostgresProjectStore(settings), PostgresSessionStore(settings)
+                await projects.initialize()
+                await sessions.initialize()
+                now = datetime.now(UTC)
+                project = await projects.create(ProjectRecord(id=str(uuid4()), project_key="cookie-private", name="Cookie fixture",
+                    created_at=now, updated_at=now))
+>               parent = SessionRecord(id=str(uuid4()), title="Cookie parent", project_id=project.id, created_at=now, updated_at=now)
+                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E               TypeError: SessionRecord.__init__() missing 4 required positional arguments: 'status', 'session_mode', 'runtime_mode', and 'mode_key'
+
+tests\test_api_cookie_session_http.py:224: TypeError
+=========================== short test summary info ===========================
+FAILED tests/test_api_cookie_session_http.py::test_cookie_attributes_private_storage_worker_read_and_replay
+1 failed, 8 deselected in 9.06s

@@ -7,11 +7,14 @@ login flow executed by the executor.
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from http.cookiejar import Cookie, CookieJar
 from http.cookies import SimpleCookie
 from typing import Any
 from uuid import uuid4
 
-from src.modes.api_testing_mode.campaign_state import CredentialSession
+import httpx
+
+from src.modes.api_testing_mode.campaign_state import ApiCookieRecord, CredentialSession
 from src.modes.api_testing_mode.contracts import (
     AUTH_BEARER,
     AUTH_BASIC,
@@ -136,6 +139,8 @@ class CredentialManager:
         response_body: dict[str, Any],
         token_field: str = "access_token",
         login_endpoint: str = "",
+        cookie_records: list[ApiCookieRecord] | None = None,
+        prior_credential_session_id: str = "",
     ) -> CredentialSession:
         token = str(response_body.get(token_field) or response_body.get("token") or "")
         if not token:
@@ -145,15 +150,22 @@ class CredentialManager:
                     token_field = key
                     break
 
-        headers: dict[str, str] = {}
+        prior = self.get(prior_credential_session_id)
+        headers = dict(prior.headers) if prior is not None else {}
         if token:
             headers["Authorization"] = f"Bearer {token}"
+        elif prior is not None:
+            token = prior.token
+        if cookie_records is not None:
+            # Scoped cookies are emitted by the HTTP client, never a flat header.
+            headers = {name: value for name, value in headers.items() if name.casefold() != "cookie"}
 
         session = CredentialSession(
             credential_session_id=str(uuid4()),
-            auth_type=AUTH_BEARER,
+            auth_type=AUTH_BEARER if token else (AUTH_COOKIE if cookie_records is not None else AUTH_BEARER),
             token=token,
             headers=headers,
+            cookie_records=cookie_records,
             expires_at="",
             source="dynamic_login",
             login_endpoint=login_endpoint,
@@ -174,7 +186,10 @@ class CredentialManager:
 
     def has_valid_session(self) -> bool:
         for session in self._sessions.values():
-            if session.token or session.headers or session.cookie_jar:
+            if session.token or session.headers or (session.cookie_jar and session.cookie_records is None):
+                return True
+            if any(record.expires is None or record.expires > datetime.now(timezone.utc).timestamp()
+                   for record in session.cookie_records or []):
                 return True
         return False
 
@@ -188,10 +203,29 @@ class CredentialManager:
         if session is None:
             return {}
         headers = dict(session.headers)
-        if session.cookie_jar:
+        if session.cookie_jar and session.cookie_records is None:
             cookie_str = "; ".join(f"{k}={v}" for k, v in session.cookie_jar.items())
             headers["Cookie"] = cookie_str
         return headers
+
+    def build_request_cookies(self, credential_session_id: str) -> httpx.Cookies:
+        """Restore the private scoped jar; HTTPX applies it to each request."""
+        jar = CookieJar()
+        session = self.get(credential_session_id)
+        records = session.cookie_records if session is not None else None
+        for record in records or []:
+            jar.set_cookie(Cookie(**record.model_dump()))
+        return httpx.Cookies(jar)
+
+    @staticmethod
+    def capture_cookie_records(cookies: httpx.Cookies) -> list[ApiCookieRecord]:
+        records = []
+        for cookie in cookies.jar:
+            attributes = {name: getattr(cookie, name) for name in ApiCookieRecord.model_fields if name != "rest"}
+            attributes["rest"] = {name: cookie.get_nonstandard_attr(name) for name in ("HttpOnly", "SameSite")
+                if cookie.has_nonstandard_attr(name)}
+            records.append(ApiCookieRecord(**attributes))
+        return records
 
     def clear(self) -> None:
         self._sessions.clear()

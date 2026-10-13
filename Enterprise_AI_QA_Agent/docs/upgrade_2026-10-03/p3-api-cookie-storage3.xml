@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="9.007" timestamp="2026-10-13T15:08:59.918923+08:00" hostname="EIghteen"><testcase classname="tests.test_api_cookie_session_http" name="test_cookie_attributes_private_storage_worker_read_and_replay" time="5.419"><failure message="AssertionError: assert '1cce71fe-108...-5855eb346ecc' == 'b8c0bd62-cd4...-e7e0adad7b6f'&#10;  &#10;  - b8c0bd62-cd43-4d77-ac4d-e7e0adad7b6f&#10;  + 1cce71fe-1089-4ead-a7d8-5855eb346ecc">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1677/test_cookie_attributes_private0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_API_COOKIE_STORAGE") != "1", reason="isolated real PG/ToolJob/RustFS credential flow")
+    async def test_cookie_attributes_private_storage_worker_read_and_replay(tmp_path):
+        from test_execution_worker_cli import isolated_runtime
+        from src.application.projects.project_store import PostgresProjectStore
+        from src.application.runtime.tool_job_service import ToolJobService
+        from src.application.runtime.tool_runtime_service import ToolRuntimeService
+        from src.domain.models import SessionRecord
+        from src.infrastructure.postgres_runtime import postgres_connect
+        from src.modes.api_testing_mode.credential_reference_service import ApiCredentialReferenceService
+        from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
+        from src.runtime.postgres_session_store import PostgresSessionStore
+        from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+        from src.schemas.project import ProjectRecord
+        from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
+        from src.registry.tools import ToolRegistry
+    
+        with cookie_target(True) as (url, events, values):
+            async with isolated_runtime(tmp_path) as (settings, _, _, objects, owned):
+                projects, sessions = PostgresProjectStore(settings), PostgresSessionStore(settings)
+                await projects.initialize()
+                await sessions.initialize()
+                now = datetime.now(UTC)
+                project = await projects.create(ProjectRecord(id=str(uuid4()), project_key="cookie-private", name="Cookie fixture",
+                    created_at=now, updated_at=now))
+                parent = SessionRecord(id=str(uuid4()), title="Cookie parent", project_id=project.id, created_at=now, updated_at=now,
+                    status=SessionStatus.running, session_mode=SessionMode.background_task,
+                    runtime_mode=RuntimeMode.background, mode_key="api_testing")
+                await sessions.save_session(parent)
+                context = {"session_id": parent.id, "turn_id": str(uuid4())}
+                jobs = ToolJobService(PostgresToolJobStore(settings))
+                await jobs.initialize()
+                private = PostgresApiCredentialStore(settings)
+                references = ApiCredentialReferenceService(store=private, session_store=sessions)
+                await references.initialize()
+                runtime = ToolRuntimeService(tool_job_service=jobs, artifact_storage_service=objects, settings=settings,
+                    session_store=sessions, api_credential_reference_service=references)
+                launcher, credentials = ControlledWorkerLauncher(sessions, runtime), CredentialManager()
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(campaign_tasks(url)[:3]), policy=ExecutionPolicy(max_retries=0),
+                    coordinator_runtime_service=launcher, session_store=sessions, parent_context=context,
+                    credential_manager=credentials, credential_reference_service=references)
+                result = await coordinator.run_all()
+                assert all(t.status == "completed" for t in result)
+                assert [t.response_status for t in result] == [204, 204, 200]
+                reader = ApiCredentialReferenceService(store=PostgresApiCredentialStore(settings), session_store=PostgresSessionStore(settings))
+                restored = await reader.load_parent_credential(result[-1].auth_ref, context)
+                assert restored.model_dump(mode="json") == credentials.get(result[-1].auth_ref).model_dump(mode="json")
+                fresh = CredentialManager()
+                fresh.restore_session(restored)
+                read = await ApiTaskExecutor(credential_manager=fresh).execute(
+                    ApiTestTask(task_id="fresh-read", method="GET", path=url+"/api/profile", auth_ref=restored.credential_session_id))
+                assert read.response_status == 200 and read.status == "completed"
+                public_jobs = []
+                for call, worker_context, outcome in launcher.runs:
+                    job = await jobs.get_job(outcome.job_id)
+                    public_jobs.append(job.output_payload)
+                    assert all(value not in json.dumps(job.output_payload) for value in values.values())
+                    if job.output_payload["task_result"]["task_id"] == "profile":
+                        assert job.output_payload["task_result"]["response_body"]["opaque_echo"] == "[REDACTED]"
+                assert all(value not in prompt for value in values.values() for prompt in launcher.prompts)
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    ciphertexts = []
+                    for table in private.tables:
+                        cur.execute(f"SELECT ciphertext FROM {table}")
+                        ciphertexts.extend(row["ciphertext"] for row in cur.fetchall())
+                    assert all(value not in text for value in values.values() for text in ciphertexts)
+                # Existing immutable rows without the new field keep the same digest.
+                old = CredentialManager().create_from_user_input(extracted={"auth_type": "cookie", "cookie": "sid=fixture"})
+                original = old.model_dump(mode="json")
+                await private.save_credential(original, owner_session_id=parent.id, project_id=parent.project_id)
+                await private.save_credential(CredentialSession.model_validate(original).model_dump(mode="json"),
+                    owner_session_id=parent.id, project_id=parent.project_id)
+                before = len(events)
+                for call, worker_context, outcome in launcher.runs:
+                    replay = await runtime.execute(ToolRegistry().get(call.name), call, worker_context)
+&gt;                   assert replay.job_id == outcome.job_id
+E                   AssertionError: assert '1cce71fe-108...-5855eb346ecc' == 'b8c0bd62-cd4...-e7e0adad7b6f'
+E                     
+E                     - b8c0bd62-cd43-4d77-ac4d-e7e0adad7b6f
+E                     + 1cce71fe-1089-4ead-a7d8-5855eb346ecc
+
+tests\test_api_cookie_session_http.py:276: AssertionError</failure></testcase></testsuite></testsuites>
