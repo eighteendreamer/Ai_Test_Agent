@@ -10,6 +10,7 @@ Rules:
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import logging
 from typing import Any
 
 from src.modes.api_testing_mode.campaign_state import ApiTestTask, EndpointCandidate
@@ -27,6 +28,9 @@ from src.modes.api_testing_mode.contracts import (
     TASK_READY,
 )
 from src.modes.api_testing_mode.precondition_resolver import PreconditionAnalysis
+from src.modes.api_testing_mode.auth_propagation import refresh_login_candidates
+
+logger = logging.getLogger("uvicorn.error.api_testing_mode.dependency_planner")
 
 
 @dataclass
@@ -87,6 +91,23 @@ class DependencyPlanner:
 
             graph.tasks.append(task)
             tasks_by_endpoint[endpoint.endpoint_id] = task
+
+        # The existing single-account flow needs an explicit login source for
+        # refresh, rather than inheriting whichever auth task ran most recently.
+        for task in graph.tasks:
+            if task.capability != CAP_REFRESH_TOKEN:
+                continue
+            candidates = refresh_login_candidates(task, graph.tasks)
+            if len(candidates) == 1:
+                task.depends_on.append(candidates[0].task_id)
+                task.status = TASK_BLOCKED
+                logger.info("api_refresh_login_source_bound", extra={
+                    "task_id": task.task_id, "login_task_id": candidates[0].task_id,
+                })
+            elif len(candidates) > 1:
+                logger.warning("api_refresh_login_source_ambiguous", extra={
+                    "task_id": task.task_id, "candidate_task_ids": [candidate.task_id for candidate in candidates],
+                })
 
         # Resolve dependencies:
         # 1. All non-auth tasks depend on auth tasks.

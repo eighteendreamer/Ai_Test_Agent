@@ -1,0 +1,143 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="4" skipped="0" tests="4" time="6.162" timestamp="2026-10-13T14:32:04.346341+08:00" hostname="EIghteen"><testcase classname="tests.test_api_auth_lineage_http" name="test_two_account_refresh_chains_and_deliberate_unauthenticated_request[False]" time="0.611"><failure message="AssertionError: {'requests': [{'path': '/a/login', 'method': 'POST', 'credential_source': 'absent'}, {'path': '/a/refresh', 'method': ...ailed, 2 skipped. Checks: 4 passed, 1 failed. Total time: 105ms.&quot;, 'total_tasks': 7, ...}, 'external_ai_calls': 0, ...}&#10;assert False&#10; +  where False = all(&lt;generator object test_two_account_refresh_chains_and_deliberate_unauthenticated_request.&lt;locals&gt;.&lt;genexpr&gt; at 0x0000027B10EBC6C0&gt;)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1669/test_two_account_refresh_chain0')
+worker = False
+
+    @pytest.mark.parametrize("worker", [False, True])
+    def test_two_account_refresh_chains_and_deliberate_unauthenticated_request(tmp_path, worker):
+        with accounts() as (url, requests, tokens):
+            tasks = []
+            for account in ("a", "b"):
+                for operation, dependencies in [("login", []), ("refresh", [account+"-login"]),
+                                                ("profile", [account+"-login", account+"-refresh"])]:
+                    path = "/"+account+"/"+operation
+                    tasks.append(ApiTestTask(task_id=account+"-"+operation, method="GET" if operation == "profile" else "POST",
+                        path=path, full_url=url+path, execution_mode="read" if operation == "profile" else "auth",
+                        depends_on=dependencies, status="blocked" if dependencies else "ready"))
+            tasks.append(ApiTestTask(task_id="negative", method="GET", path="/a/profile", full_url=url+"/a/profile",
+                status="ready", assertions=[AssertionSpec(kind="status_code", expected=401)]))
+            credentials, policy = CredentialManager(), ExecutionPolicy(max_workers=3, max_retries=2)
+            if worker:
+                store = InMemorySessionStore()
+                launcher = ControlledWorkerLauncher(store)
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    coordinator_runtime_service=launcher, session_store=store,
+                    parent_context={"session_id": "parent", "turn_id": "turn"}, credential_manager=credentials)
+            else:
+                coordinator = ApiTestCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+            result = asyncio.run(coordinator.run_all())
+            count = len(requests)
+            before = [task.model_dump(mode="json") for task in result]
+            asyncio.run(coordinator.run_all())
+            assert before == [task.model_dump(mode="json") for task in result] and len(requests) == count
+            campaign = ApiTestCampaign(campaign_id=str(uuid4()), project_id=str(uuid4()), tasks=result)
+            report = ReportBuilder().build(campaign=campaign)
+            facts = {"requests": requests, "tasks": [{"task_id": t.task_id, "status": t.status,
+                "response_status": t.response_status, "attempts": t.attempts} for t in result],
+                "report": report.model_dump(mode="json"), "external_ai_calls": 0,
+                "terminal_extra_http": len(requests)-count, "worker": worker}
+            directory = Path(os.getenv("QA_API_AUTH_LINEAGE_DIR", str(tmp_path)))
+            directory.mkdir(parents=True, exist_ok=True)
+            raw = json.dumps(facts, ensure_ascii=False, indent=2)
+            assert all(value not in raw for value in tokens.values())
+            (directory/("worker.json" if worker else "inline.json")).write_text(raw, encoding="utf8")
+&gt;           assert all(t.status == "completed" for t in result), facts
+E           AssertionError: {'requests': [{'path': '/a/login', 'method': 'POST', 'credential_source': 'absent'}, {'path': '/a/refresh', 'method': ...ailed, 2 skipped. Checks: 4 passed, 1 failed. Total time: 105ms.", 'total_tasks': 7, ...}, 'external_ai_calls': 0, ...}
+E           assert False
+E            +  where False = all(&lt;generator object test_two_account_refresh_chains_and_deliberate_unauthenticated_request.&lt;locals&gt;.&lt;genexpr&gt; at 0x0000027B10EBC6C0&gt;)
+
+tests\test_api_auth_lineage_http.py:113: AssertionError</failure></testcase><testcase classname="tests.test_api_auth_lineage_http" name="test_two_account_refresh_chains_and_deliberate_unauthenticated_request[True]" time="0.571"><failure message="AssertionError: {'requests': [{'path': '/a/login', 'method': 'POST', 'credential_source': 'absent'}, {'path': '/a/refresh', 'method': ...failed, 2 skipped. Checks: 4 passed, 1 failed. Total time: 61ms.&quot;, 'total_tasks': 7, ...}, 'external_ai_calls': 0, ...}&#10;assert False&#10; +  where False = all(&lt;generator object test_two_account_refresh_chains_and_deliberate_unauthenticated_request.&lt;locals&gt;.&lt;genexpr&gt; at 0x0000027B12470930&gt;)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1669/test_two_account_refresh_chain1')
+worker = True
+
+    @pytest.mark.parametrize("worker", [False, True])
+    def test_two_account_refresh_chains_and_deliberate_unauthenticated_request(tmp_path, worker):
+        with accounts() as (url, requests, tokens):
+            tasks = []
+            for account in ("a", "b"):
+                for operation, dependencies in [("login", []), ("refresh", [account+"-login"]),
+                                                ("profile", [account+"-login", account+"-refresh"])]:
+                    path = "/"+account+"/"+operation
+                    tasks.append(ApiTestTask(task_id=account+"-"+operation, method="GET" if operation == "profile" else "POST",
+                        path=path, full_url=url+path, execution_mode="read" if operation == "profile" else "auth",
+                        depends_on=dependencies, status="blocked" if dependencies else "ready"))
+            tasks.append(ApiTestTask(task_id="negative", method="GET", path="/a/profile", full_url=url+"/a/profile",
+                status="ready", assertions=[AssertionSpec(kind="status_code", expected=401)]))
+            credentials, policy = CredentialManager(), ExecutionPolicy(max_workers=3, max_retries=2)
+            if worker:
+                store = InMemorySessionStore()
+                launcher = ControlledWorkerLauncher(store)
+                coordinator = ApiSubagentCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    coordinator_runtime_service=launcher, session_store=store,
+                    parent_context={"session_id": "parent", "turn_id": "turn"}, credential_manager=credentials)
+            else:
+                coordinator = ApiTestCoordinator(pool=ApiTaskPool(tasks), policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+            result = asyncio.run(coordinator.run_all())
+            count = len(requests)
+            before = [task.model_dump(mode="json") for task in result]
+            asyncio.run(coordinator.run_all())
+            assert before == [task.model_dump(mode="json") for task in result] and len(requests) == count
+            campaign = ApiTestCampaign(campaign_id=str(uuid4()), project_id=str(uuid4()), tasks=result)
+            report = ReportBuilder().build(campaign=campaign)
+            facts = {"requests": requests, "tasks": [{"task_id": t.task_id, "status": t.status,
+                "response_status": t.response_status, "attempts": t.attempts} for t in result],
+                "report": report.model_dump(mode="json"), "external_ai_calls": 0,
+                "terminal_extra_http": len(requests)-count, "worker": worker}
+            directory = Path(os.getenv("QA_API_AUTH_LINEAGE_DIR", str(tmp_path)))
+            directory.mkdir(parents=True, exist_ok=True)
+            raw = json.dumps(facts, ensure_ascii=False, indent=2)
+            assert all(value not in raw for value in tokens.values())
+            (directory/("worker.json" if worker else "inline.json")).write_text(raw, encoding="utf8")
+&gt;           assert all(t.status == "completed" for t in result), facts
+E           AssertionError: {'requests': [{'path': '/a/login', 'method': 'POST', 'credential_source': 'absent'}, {'path': '/a/refresh', 'method': ...failed, 2 skipped. Checks: 4 passed, 1 failed. Total time: 61ms.", 'total_tasks': 7, ...}, 'external_ai_calls': 0, ...}
+E           assert False
+E            +  where False = all(&lt;generator object test_two_account_refresh_chains_and_deliberate_unauthenticated_request.&lt;locals&gt;.&lt;genexpr&gt; at 0x0000027B12470930&gt;)
+
+tests\test_api_auth_lineage_http.py:113: AssertionError</failure></testcase><testcase classname="tests.test_api_auth_lineage_http" name="test_ambiguous_and_independent_auth_keep_configured_credential[ApiTestCoordinator]" time="0.001"><failure message="AssertionError: assert {'a': {'task_...rofile', ...}} == {'a': {'task_...rofile', ...}}&#10;  &#10;  Omitting 1 identical items, use -vv to show&#10;  Differing items:&#10;  {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}}&#10;  {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}}&#10;  {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}} != {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}}&#10;  Use -v to get more diff">coordinator_type = &lt;class 'src.modes.api_testing_mode.coordinator.ApiTestCoordinator'&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x0000027B10E9E490&gt;
+
+    @pytest.mark.parametrize("coordinator_type", [ApiTestCoordinator, ApiSubagentCoordinator])
+    def test_ambiguous_and_independent_auth_keep_configured_credential(coordinator_type, caplog):
+        a = ApiTestTask(task_id="a", method="POST", path="/a/login", execution_mode="auth", status="completed", auth_ref="a-ref")
+        b = ApiTestTask(task_id="b", method="POST", path="/b/login", execution_mode="auth", status="ready", auth_ref="b-ref")
+        target = ApiTestTask(task_id="target", method="GET", path="/profile", depends_on=["a", "b"], auth_ref="chosen-ref")
+        running = ApiTestTask(task_id="running", method="GET", path="/profile", status="running", depends_on=["a"], auth_ref="original-ref")
+        pool = ApiTaskPool([a, b, target, running])
+        coordinator = object.__new__(coordinator_type)
+        coordinator._pool = pool
+        before = {t.task_id: t.model_dump(mode="json") for t in pool.all_tasks}
+        coordinator._propagate_auth_ref("a-ref", source_task_id="a")
+&gt;       assert {t.task_id: t.model_dump(mode="json") for t in pool.all_tasks} == before
+E       AssertionError: assert {'a': {'task_...rofile', ...}} == {'a': {'task_...rofile', ...}}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}}
+E         {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}}
+E         {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}} != {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}}
+E         Use -v to get more diff
+
+tests\test_api_auth_lineage_http.py:137: AssertionError</failure></testcase><testcase classname="tests.test_api_auth_lineage_http" name="test_ambiguous_and_independent_auth_keep_configured_credential[ApiSubagentCoordinator]" time="0.001"><failure message="AssertionError: assert {'a': {'task_...rofile', ...}} == {'a': {'task_...rofile', ...}}&#10;  &#10;  Omitting 1 identical items, use -vv to show&#10;  Differing items:&#10;  {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}}&#10;  {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}}&#10;  {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}} != {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}}&#10;  Use -v to get more diff">coordinator_type = &lt;class 'src.modes.api_testing_mode.subagent_coordinator.ApiSubagentCoordinator'&gt;
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x0000027B124634D0&gt;
+
+    @pytest.mark.parametrize("coordinator_type", [ApiTestCoordinator, ApiSubagentCoordinator])
+    def test_ambiguous_and_independent_auth_keep_configured_credential(coordinator_type, caplog):
+        a = ApiTestTask(task_id="a", method="POST", path="/a/login", execution_mode="auth", status="completed", auth_ref="a-ref")
+        b = ApiTestTask(task_id="b", method="POST", path="/b/login", execution_mode="auth", status="ready", auth_ref="b-ref")
+        target = ApiTestTask(task_id="target", method="GET", path="/profile", depends_on=["a", "b"], auth_ref="chosen-ref")
+        running = ApiTestTask(task_id="running", method="GET", path="/profile", status="running", depends_on=["a"], auth_ref="original-ref")
+        pool = ApiTaskPool([a, b, target, running])
+        coordinator = object.__new__(coordinator_type)
+        coordinator._pool = pool
+        before = {t.task_id: t.model_dump(mode="json") for t in pool.all_tasks}
+        coordinator._propagate_auth_ref("a-ref", source_task_id="a")
+&gt;       assert {t.task_id: t.model_dump(mode="json") for t in pool.all_tasks} == before
+E       AssertionError: assert {'a': {'task_...rofile', ...}} == {'a': {'task_...rofile', ...}}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'target': {'task_id': 'target', 'name': '', 'method': 'GET', 'path': '/profile', ...}}
+E         {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}} != {'running': {'task_id': 'running', 'name': '', 'method': 'GET', 'path': '/profile', ...}}
+E         {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}} != {'b': {'task_id': 'b', 'name': '', 'method': 'POST', 'path': '/b/login', ...}}
+E         Use -v to get more diff
+
+tests\test_api_auth_lineage_http.py:137: AssertionError</failure></testcase></testsuite></testsuites>

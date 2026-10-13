@@ -1,0 +1,371 @@
+{
+  "requests": [
+    {
+      "path": "/a/login",
+      "method": "POST",
+      "credential_source": "absent"
+    },
+    {
+      "path": "/a/refresh",
+      "method": "POST",
+      "credential_source": "a-login"
+    },
+    {
+      "path": "/b/login",
+      "method": "POST",
+      "credential_source": "a-refresh"
+    },
+    {
+      "path": "/a/profile",
+      "method": "GET",
+      "credential_source": "a-refresh"
+    },
+    {
+      "path": "/a/profile",
+      "method": "GET",
+      "credential_source": "absent"
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "a-login",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "a-refresh",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "a-profile",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "b-login",
+      "status": "failed",
+      "response_status": 401,
+      "attempts": 1
+    },
+    {
+      "task_id": "b-refresh",
+      "status": "skipped",
+      "response_status": null,
+      "attempts": 0
+    },
+    {
+      "task_id": "b-profile",
+      "status": "skipped",
+      "response_status": null,
+      "attempts": 0
+    },
+    {
+      "task_id": "negative",
+      "status": "completed",
+      "response_status": 401,
+      "attempts": 1
+    }
+  ],
+  "report": {
+    "campaign_id": "ed6b6f3c-77b6-450c-b6be-1f380901c2f3",
+    "project_name": "",
+    "summary": "⚠️ Campaign 'ed6b6f3c-77b6-450c-b6be-1f380901c2f3' completed: 4/7 tasks passed, 1 failed, 2 skipped. Checks: 4 passed, 1 failed. Total time: 105ms.",
+    "total_tasks": 7,
+    "completed": 4,
+    "failed": 1,
+    "skipped": 2,
+    "passed_checks": 4,
+    "failed_checks": 1,
+    "duration_ms": 105.12,
+    "tasks": [
+      {
+        "task_id": "a-login",
+        "name": "",
+        "method": "POST",
+        "path": "/a/login",
+        "full_url": "http://127.0.0.1:54676/a/login",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 39.09,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:32:09.000427Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 54676,
+                "path": "/a/login",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "a-refresh",
+        "name": "",
+        "method": "POST",
+        "path": "/a/refresh",
+        "full_url": "http://127.0.0.1:54676/a/refresh",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 13.09,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:32:09.013443Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 54676,
+                "path": "/a/refresh",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "a-profile",
+        "name": "",
+        "method": "GET",
+        "path": "/a/profile",
+        "full_url": "http://127.0.0.1:54676/a/profile",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 25.52,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:32:09.052396Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 54676,
+                "path": "/a/profile",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "b-login",
+        "name": "",
+        "method": "POST",
+        "path": "/b/login",
+        "full_url": "http://127.0.0.1:54676/b/login",
+        "capability": "",
+        "status": "failed",
+        "response_status": 401,
+        "duration_ms": 11.71,
+        "check_count": 1,
+        "checks_passed": 0,
+        "checks_failed": 1,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": "Assertions failed: default_status_check",
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": false,
+            "expected": "2xx",
+            "actual": 401,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:32:09.025875Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 54676,
+                "path": "/b/login",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 401
+            }
+          ]
+        },
+        "evidence": "{\n  \"response_status\": 401,\n  \"response_body_preview\": \"{\\\"ok\\\": false}\",\n  \"error\": \"Assertions failed: default_status_check\",\n  \"failed_assertions\": [\n    {\n      \"name\": \"default_status_check\",\n      \"kind\": \"status_code_range\",\n      \"passed\": false,\n      \"expected\": \"2xx\",\n      \"actual\": 401,\n      \"description\": \"Default: expect 2xx response status.\"\n    }\n  ]\n}"
+      },
+      {
+        "task_id": "b-refresh",
+        "name": "",
+        "method": "POST",
+        "path": "/b/refresh",
+        "full_url": "http://127.0.0.1:54676/b/refresh",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency b-login failed.",
+        "checks": []
+      },
+      {
+        "task_id": "b-profile",
+        "name": "",
+        "method": "GET",
+        "path": "/b/profile",
+        "full_url": "http://127.0.0.1:54676/b/profile",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency b-login failed.",
+        "checks": []
+      },
+      {
+        "task_id": "negative",
+        "name": "",
+        "method": "GET",
+        "path": "/a/profile",
+        "full_url": "http://127.0.0.1:54676/a/profile",
+        "capability": "",
+        "status": "completed",
+        "response_status": 401,
+        "duration_ms": 15.71,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "status_code=401",
+            "kind": "status_code",
+            "passed": true,
+            "expected": 401,
+            "actual": 401,
+            "description": "Expect status 401"
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:32:09.052933Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 54676,
+                "path": "/a/profile",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 401
+            }
+          ]
+        }
+      }
+    ],
+    "findings": [
+      "❌ POST /b/login: Default: expect 2xx response status.",
+      "⏭️ POST /b/refresh: skipped (Skipped because dependency b-login failed.)",
+      "⏭️ GET /b/profile: skipped (Skipped because dependency b-login failed.)"
+    ],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-13T06:32:09.054033+00:00"
+  },
+  "external_ai_calls": 0,
+  "terminal_extra_http": 0,
+  "worker": false
+}

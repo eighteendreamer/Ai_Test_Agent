@@ -1,0 +1,434 @@
+{
+  "requests": [
+    {
+      "path": "/a/login",
+      "method": "POST",
+      "credential_source": "absent"
+    },
+    {
+      "path": "/a/refresh",
+      "method": "POST",
+      "credential_source": "a-login"
+    },
+    {
+      "path": "/b/login",
+      "method": "POST",
+      "credential_source": "absent"
+    },
+    {
+      "path": "/b/refresh",
+      "method": "POST",
+      "credential_source": "b-login"
+    },
+    {
+      "path": "/a/profile",
+      "method": "GET",
+      "credential_source": "a-refresh"
+    },
+    {
+      "path": "/a/profile",
+      "method": "GET",
+      "credential_source": "absent"
+    },
+    {
+      "path": "/b/profile",
+      "method": "GET",
+      "credential_source": "b-refresh"
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "a-login",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "a-refresh",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "a-profile",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "b-login",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "b-refresh",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "b-profile",
+      "status": "completed",
+      "response_status": 200,
+      "attempts": 1
+    },
+    {
+      "task_id": "negative",
+      "status": "completed",
+      "response_status": 401,
+      "attempts": 1
+    }
+  ],
+  "report": {
+    "campaign_id": "c74ecddf-1893-40df-bf60-266606f79762",
+    "project_name": "",
+    "summary": "✅ Campaign 'c74ecddf-1893-40df-bf60-266606f79762' completed: 7/7 tasks passed, 0 failed, 0 skipped. Checks: 7 passed, 0 failed. Total time: 146ms.",
+    "total_tasks": 7,
+    "completed": 7,
+    "failed": 0,
+    "skipped": 0,
+    "passed_checks": 7,
+    "failed_checks": 0,
+    "duration_ms": 145.63,
+    "tasks": [
+      {
+        "task_id": "a-login",
+        "name": "",
+        "method": "POST",
+        "path": "/a/login",
+        "full_url": "http://127.0.0.1:58406/a/login",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 36.91,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.209004Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/a/login",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "a-refresh",
+        "name": "",
+        "method": "POST",
+        "path": "/a/refresh",
+        "full_url": "http://127.0.0.1:58406/a/refresh",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 12.45,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.221068Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/a/refresh",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "a-profile",
+        "name": "",
+        "method": "GET",
+        "path": "/a/profile",
+        "full_url": "http://127.0.0.1:58406/a/profile",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 33.72,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.279047Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/a/profile",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "b-login",
+        "name": "",
+        "method": "POST",
+        "path": "/b/login",
+        "full_url": "http://127.0.0.1:58406/b/login",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 11.51,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.233304Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/b/login",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "b-refresh",
+        "name": "",
+        "method": "POST",
+        "path": "/b/refresh",
+        "full_url": "http://127.0.0.1:58406/b/refresh",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 11.5,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.244818Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/b/refresh",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "b-profile",
+        "name": "",
+        "method": "GET",
+        "path": "/b/profile",
+        "full_url": "http://127.0.0.1:58406/b/profile",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 24.09,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.279047Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/b/profile",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "negative",
+        "name": "",
+        "method": "GET",
+        "path": "/a/profile",
+        "full_url": "http://127.0.0.1:58406/a/profile",
+        "capability": "",
+        "status": "completed",
+        "response_status": 401,
+        "duration_ms": 15.45,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "status_code=401",
+            "kind": "status_code",
+            "passed": true,
+            "expected": 401,
+            "actual": 401,
+            "description": "Expect status 401"
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:38:29.279047Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 58406,
+                "path": "/a/profile",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 401
+            }
+          ]
+        }
+      }
+    ],
+    "findings": [],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-13T06:38:29.281047+00:00"
+  },
+  "external_ai_calls": 0,
+  "terminal_extra_http": 0,
+  "worker": false
+}
