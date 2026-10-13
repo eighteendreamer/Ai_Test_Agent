@@ -1,0 +1,317 @@
+{
+  "campaign": {
+    "campaign_id": "restore-body-query",
+    "project_id": "",
+    "project_name": "",
+    "project_url": "",
+    "objective": "",
+    "verification_focus": "general",
+    "selected_document_ids": [],
+    "selected_endpoints": [],
+    "preconditions": [],
+    "credential_session_id": "",
+    "tasks": [
+      {
+        "task_id": "create",
+        "name": "",
+        "method": "POST",
+        "path": "/orders",
+        "full_url": "http://127.0.0.1:51955/orders",
+        "capability": "",
+        "execution_mode": "write",
+        "depends_on": [],
+        "auth_ref": "",
+        "request_headers": {},
+        "request_query": {},
+        "request_body": null,
+        "input_bindings": [],
+        "path_parameter_sources": {},
+        "assertions": [],
+        "resource_locks": [],
+        "timeout_seconds": 30.0,
+        "status": "completed",
+        "attempts": 1,
+        "last_error": "",
+        "dependency_skip_task_id": "",
+        "started_at": "2026-10-13T06:15:41.774709+00:00",
+        "completed_at": "2026-10-13T06:15:41.835936+00:00",
+        "response_status": 201,
+        "response_headers": {
+          "server": "BaseHTTP/0.6 Python/3.11.16",
+          "date": "Tue, 13 Oct 2026 06:15:41 GMT",
+          "content-type": "application/json",
+          "content-length": "65"
+        },
+        "response_body": {
+          "id": 0,
+          "data": {
+            "public_id": 0,
+            "enabled": false,
+            "count": 0
+          }
+        },
+        "check_results": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 201,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "request_outcome": "completed",
+        "duration_ms": 61.21,
+        "worker_session_id": "",
+        "worker_status": "",
+        "worker_summary": "",
+        "execution_checkpoint": {
+          "http_observation_v1": {
+            "implementation_version": "api-http-observation-v1",
+            "acquisition": "network",
+            "observed_at": "2026-10-13T06:15:41.835936Z",
+            "hops": [
+              {
+                "method": "POST",
+                "target": {
+                  "scheme": "http",
+                  "host": "127.0.0.1",
+                  "port": 51955,
+                  "path": "/orders",
+                  "query_omitted": false,
+                  "userinfo_omitted": false,
+                  "fragment_omitted": false
+                },
+                "status_code": 201
+              }
+            ]
+          }
+        }
+      },
+      {
+        "task_id": "read",
+        "name": "",
+        "method": "POST",
+        "path": "/confirm",
+        "full_url": "http://127.0.0.1:51955/confirm",
+        "capability": "",
+        "execution_mode": "write",
+        "depends_on": [
+          "create"
+        ],
+        "auth_ref": "",
+        "request_headers": {},
+        "request_query": {},
+        "request_body": null,
+        "input_bindings": [
+          {
+            "source_task_id": "create",
+            "source_path": "id",
+            "target_path": "query.id",
+            "literal_value": null
+          },
+          {
+            "source_task_id": "create",
+            "source_path": "data.enabled",
+            "target_path": "body.enabled",
+            "literal_value": null
+          },
+          {
+            "source_task_id": "create",
+            "source_path": "data.count",
+            "target_path": "body.context.count",
+            "literal_value": null
+          }
+        ],
+        "path_parameter_sources": {
+          "id": "create"
+        },
+        "assertions": [],
+        "resource_locks": [],
+        "timeout_seconds": 30.0,
+        "status": "failed",
+        "attempts": 1,
+        "last_error": "Assertions failed: default_status_check",
+        "dependency_skip_task_id": "",
+        "started_at": "2026-10-13T06:15:42.803494+00:00",
+        "completed_at": "2026-10-13T06:15:42.875728+00:00",
+        "response_status": 422,
+        "response_headers": {
+          "server": "BaseHTTP/0.6 Python/3.11.16",
+          "date": "Tue, 13 Oct 2026 06:15:42 GMT",
+          "content-type": "application/json",
+          "content-length": "13"
+        },
+        "response_body": {
+          "ok": false
+        },
+        "check_results": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": false,
+            "expected": "2xx",
+            "actual": 422,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "request_outcome": "completed",
+        "duration_ms": 72.05,
+        "worker_session_id": "",
+        "worker_status": "",
+        "worker_summary": "",
+        "execution_checkpoint": {
+          "http_observation_v1": {
+            "implementation_version": "api-http-observation-v1",
+            "acquisition": "network",
+            "observed_at": "2026-10-13T06:15:42.875728Z",
+            "hops": [
+              {
+                "method": "POST",
+                "target": {
+                  "scheme": "http",
+                  "host": "127.0.0.1",
+                  "port": 51955,
+                  "path": "/confirm",
+                  "query_omitted": false,
+                  "userinfo_omitted": false,
+                  "fragment_omitted": false
+                },
+                "status_code": 422
+              }
+            ]
+          }
+        }
+      }
+    ],
+    "execution_policy": {
+      "max_workers": 2,
+      "read_parallel": true,
+      "write_serial": true,
+      "serialize_by_auth": true,
+      "serialize_by_resource_lock": true,
+      "max_retries": 0,
+      "request_timeout_seconds": 30.0
+    },
+    "created_at": "",
+    "updated_at": ""
+  },
+  "report": {
+    "campaign_id": "restore-body-query",
+    "project_name": "",
+    "summary": "\u26a0\ufe0f Campaign 'restore-body-query' completed: 1/2 tasks passed, 1 failed, 0 skipped. Checks: 1 passed, 1 failed. Total time: 133ms.",
+    "total_tasks": 2,
+    "completed": 1,
+    "failed": 1,
+    "skipped": 0,
+    "passed_checks": 1,
+    "failed_checks": 1,
+    "duration_ms": 133.26,
+    "tasks": [
+      {
+        "task_id": "create",
+        "name": "",
+        "method": "POST",
+        "path": "/orders",
+        "full_url": "http://127.0.0.1:51955/orders",
+        "capability": "",
+        "status": "completed",
+        "response_status": 201,
+        "duration_ms": 61.21,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 201,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:15:41.835936Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51955,
+                "path": "/orders",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 201
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "read",
+        "name": "",
+        "method": "POST",
+        "path": "/confirm",
+        "full_url": "http://127.0.0.1:51955/confirm",
+        "capability": "",
+        "status": "failed",
+        "response_status": 422,
+        "duration_ms": 72.05,
+        "check_count": 1,
+        "checks_passed": 0,
+        "checks_failed": 1,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": "Assertions failed: default_status_check",
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": false,
+            "expected": "2xx",
+            "actual": 422,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-13T06:15:42.875728Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51955,
+                "path": "/confirm",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 422
+            }
+          ]
+        },
+        "evidence": "{\n  \"response_status\": 422,\n  \"response_body_preview\": \"{\\\"ok\\\": false}\",\n  \"error\": \"Assertions failed: default_status_check\",\n  \"failed_assertions\": [\n    {\n      \"name\": \"default_status_check\",\n      \"kind\": \"status_code_range\",\n      \"passed\": false,\n      \"expected\": \"2xx\",\n      \"actual\": 422,\n      \"description\": \"Default: expect 2xx response status.\"\n    }\n  ]\n}"
+      }
+    ],
+    "findings": [
+      "\u274c POST /confirm: Default: expect 2xx response status."
+    ],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-13T06:15:42.878240+00:00"
+  },
+  "pid": 6500,
+  "external_ai_calls": 0
+}

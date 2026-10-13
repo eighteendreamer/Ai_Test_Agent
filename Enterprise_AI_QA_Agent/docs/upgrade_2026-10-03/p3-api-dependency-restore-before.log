@@ -1,0 +1,354 @@
+FFFFFFF                                                                  [100%]
+================================== FAILURES ===================================
+_ test_new_process_restores_completed_producer_without_repeating_write[brace] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_new_process_restores_comp0')
+variant = 'brace'
+
+    @pytest.mark.parametrize("variant", ["brace", "colon", "explicit", "body-query", "effective-url"])
+    def test_new_process_restores_completed_producer_without_repeating_write(tmp_path, variant):
+        evidence = Path(os.getenv("QA_API_DEPENDENCY_RESTORE_DIR", str(tmp_path))) / variant
+        evidence.mkdir(parents=True, exist_ok=False)
+        snapshot, result_path = evidence / "checkpoint.json", evidence / "result.json"
+        with target() as (url, requests):
+            create = ApiTestTask(task_id="create", method="POST", path="/orders", full_url=url+"/orders",
+                execution_mode="write", status="ready")
+            path = "/orders/:id" if variant == "colon" else "/orders/{id}"
+            read = ApiTestTask(task_id="read", method="GET", path=path, full_url=url+path,
+                status="blocked", depends_on=["create"], path_parameter_sources={"id": "create"})
+            if variant == "explicit":
+                read.input_bindings = [InputBinding(source_task_id="create", source_path="data.public_id", target_path="path.id")]
+            if variant == "effective-url":
+                read.path = "/orders"
+            if variant == "body-query":
+                read.method, read.path, read.full_url = "POST", "/confirm", url+"/confirm"
+                read.execution_mode = "write"
+                read.input_bindings = [InputBinding(source_task_id="create", source_path=source, target_path=dest)
+                    for source, dest in [("id", "query.id"), ("data.enabled", "body.enabled"),
+                                         ("data.count", "body.context.count")]]
+            campaign = ApiTestCampaign(campaign_id="restore-"+variant, tasks=[create, read],
+                execution_policy=ExecutionPolicy(max_retries=0))
+            snapshot.write_text(campaign.model_dump_json(indent=2), encoding="utf-8")
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+            command = [sys.executable, str(Path(__file__).resolve()), str(snapshot), str(result_path)]
+            first = subprocess.run(command+["interrupt"], env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"first.stdout").write_text(first.stdout, encoding="utf-8")
+            (evidence/"first.stderr").write_text(first.stderr, encoding="utf-8")
+            assert first.returncode == 73, first.stderr
+            saved = json.loads(snapshot.read_text(encoding="utf-8"))
+            assert saved["tasks"][0]["status"] == "completed"
+            assert saved["tasks"][0]["response_body"]["id"] == 0
+            assert len(requests) == 1
+            second = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"second.stdout").write_text(second.stdout, encoding="utf-8")
+            (evidence/"second.stderr").write_text(second.stderr, encoding="utf-8")
+            assert second.returncode == 0, second.stderr
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            (evidence/"http.json").write_text(json.dumps({"requests": requests,
+                "first_exit": first.returncode, "second_exit": second.returncode}, indent=2), encoding="utf-8")
+>           assert all(t["status"] == "completed" for t in result["campaign"]["tasks"]), result
+E           AssertionError: {'campaign': {'campaign_id': 'restore-brace', 'project_id': '', 'project_name': '', 'project_url': '', ...}, 'report':...skipped. Checks: 1 passed, 0 failed. Total time: 109ms.", 'total_tasks': 2, ...}, 'pid': 30020, 'external_ai_calls': 0}
+E           assert False
+E            +  where False = all(<generator object test_new_process_restores_completed_producer_without_repeating_write.<locals>.<genexpr> at 0x00000223FCBBA260>)
+
+tests\test_api_dependency_restore_http.py:135: AssertionError
+_ test_new_process_restores_completed_producer_without_repeating_write[colon] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_new_process_restores_comp1')
+variant = 'colon'
+
+    @pytest.mark.parametrize("variant", ["brace", "colon", "explicit", "body-query", "effective-url"])
+    def test_new_process_restores_completed_producer_without_repeating_write(tmp_path, variant):
+        evidence = Path(os.getenv("QA_API_DEPENDENCY_RESTORE_DIR", str(tmp_path))) / variant
+        evidence.mkdir(parents=True, exist_ok=False)
+        snapshot, result_path = evidence / "checkpoint.json", evidence / "result.json"
+        with target() as (url, requests):
+            create = ApiTestTask(task_id="create", method="POST", path="/orders", full_url=url+"/orders",
+                execution_mode="write", status="ready")
+            path = "/orders/:id" if variant == "colon" else "/orders/{id}"
+            read = ApiTestTask(task_id="read", method="GET", path=path, full_url=url+path,
+                status="blocked", depends_on=["create"], path_parameter_sources={"id": "create"})
+            if variant == "explicit":
+                read.input_bindings = [InputBinding(source_task_id="create", source_path="data.public_id", target_path="path.id")]
+            if variant == "effective-url":
+                read.path = "/orders"
+            if variant == "body-query":
+                read.method, read.path, read.full_url = "POST", "/confirm", url+"/confirm"
+                read.execution_mode = "write"
+                read.input_bindings = [InputBinding(source_task_id="create", source_path=source, target_path=dest)
+                    for source, dest in [("id", "query.id"), ("data.enabled", "body.enabled"),
+                                         ("data.count", "body.context.count")]]
+            campaign = ApiTestCampaign(campaign_id="restore-"+variant, tasks=[create, read],
+                execution_policy=ExecutionPolicy(max_retries=0))
+            snapshot.write_text(campaign.model_dump_json(indent=2), encoding="utf-8")
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+            command = [sys.executable, str(Path(__file__).resolve()), str(snapshot), str(result_path)]
+            first = subprocess.run(command+["interrupt"], env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"first.stdout").write_text(first.stdout, encoding="utf-8")
+            (evidence/"first.stderr").write_text(first.stderr, encoding="utf-8")
+            assert first.returncode == 73, first.stderr
+            saved = json.loads(snapshot.read_text(encoding="utf-8"))
+            assert saved["tasks"][0]["status"] == "completed"
+            assert saved["tasks"][0]["response_body"]["id"] == 0
+            assert len(requests) == 1
+            second = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"second.stdout").write_text(second.stdout, encoding="utf-8")
+            (evidence/"second.stderr").write_text(second.stderr, encoding="utf-8")
+            assert second.returncode == 0, second.stderr
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            (evidence/"http.json").write_text(json.dumps({"requests": requests,
+                "first_exit": first.returncode, "second_exit": second.returncode}, indent=2), encoding="utf-8")
+>           assert all(t["status"] == "completed" for t in result["campaign"]["tasks"]), result
+E           AssertionError: {'campaign': {'campaign_id': 'restore-colon', 'project_id': '', 'project_name': '', 'project_url': '', ...}, 'report':... skipped. Checks: 1 passed, 0 failed. Total time: 55ms.", 'total_tasks': 2, ...}, 'pid': 15916, 'external_ai_calls': 0}
+E           assert False
+E            +  where False = all(<generator object test_new_process_restores_completed_producer_without_repeating_write.<locals>.<genexpr> at 0x00000223FCC7D560>)
+
+tests\test_api_dependency_restore_http.py:135: AssertionError
+_ test_new_process_restores_completed_producer_without_repeating_write[explicit] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_new_process_restores_comp2')
+variant = 'explicit'
+
+    @pytest.mark.parametrize("variant", ["brace", "colon", "explicit", "body-query", "effective-url"])
+    def test_new_process_restores_completed_producer_without_repeating_write(tmp_path, variant):
+        evidence = Path(os.getenv("QA_API_DEPENDENCY_RESTORE_DIR", str(tmp_path))) / variant
+        evidence.mkdir(parents=True, exist_ok=False)
+        snapshot, result_path = evidence / "checkpoint.json", evidence / "result.json"
+        with target() as (url, requests):
+            create = ApiTestTask(task_id="create", method="POST", path="/orders", full_url=url+"/orders",
+                execution_mode="write", status="ready")
+            path = "/orders/:id" if variant == "colon" else "/orders/{id}"
+            read = ApiTestTask(task_id="read", method="GET", path=path, full_url=url+path,
+                status="blocked", depends_on=["create"], path_parameter_sources={"id": "create"})
+            if variant == "explicit":
+                read.input_bindings = [InputBinding(source_task_id="create", source_path="data.public_id", target_path="path.id")]
+            if variant == "effective-url":
+                read.path = "/orders"
+            if variant == "body-query":
+                read.method, read.path, read.full_url = "POST", "/confirm", url+"/confirm"
+                read.execution_mode = "write"
+                read.input_bindings = [InputBinding(source_task_id="create", source_path=source, target_path=dest)
+                    for source, dest in [("id", "query.id"), ("data.enabled", "body.enabled"),
+                                         ("data.count", "body.context.count")]]
+            campaign = ApiTestCampaign(campaign_id="restore-"+variant, tasks=[create, read],
+                execution_policy=ExecutionPolicy(max_retries=0))
+            snapshot.write_text(campaign.model_dump_json(indent=2), encoding="utf-8")
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+            command = [sys.executable, str(Path(__file__).resolve()), str(snapshot), str(result_path)]
+            first = subprocess.run(command+["interrupt"], env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"first.stdout").write_text(first.stdout, encoding="utf-8")
+            (evidence/"first.stderr").write_text(first.stderr, encoding="utf-8")
+            assert first.returncode == 73, first.stderr
+            saved = json.loads(snapshot.read_text(encoding="utf-8"))
+            assert saved["tasks"][0]["status"] == "completed"
+            assert saved["tasks"][0]["response_body"]["id"] == 0
+            assert len(requests) == 1
+            second = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"second.stdout").write_text(second.stdout, encoding="utf-8")
+            (evidence/"second.stderr").write_text(second.stderr, encoding="utf-8")
+            assert second.returncode == 0, second.stderr
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            (evidence/"http.json").write_text(json.dumps({"requests": requests,
+                "first_exit": first.returncode, "second_exit": second.returncode}, indent=2), encoding="utf-8")
+>           assert all(t["status"] == "completed" for t in result["campaign"]["tasks"]), result
+E           AssertionError: {'campaign': {'campaign_id': 'restore-explicit', 'project_id': '', 'project_name': '', 'project_url': '', ...}, 'repor... skipped. Checks: 1 passed, 0 failed. Total time: 57ms.", 'total_tasks': 2, ...}, 'pid': 33816, 'external_ai_calls': 0}
+E           assert False
+E            +  where False = all(<generator object test_new_process_restores_completed_producer_without_repeating_write.<locals>.<genexpr> at 0x00000223FCC7E670>)
+
+tests\test_api_dependency_restore_http.py:135: AssertionError
+_ test_new_process_restores_completed_producer_without_repeating_write[body-query] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_new_process_restores_comp3')
+variant = 'body-query'
+
+    @pytest.mark.parametrize("variant", ["brace", "colon", "explicit", "body-query", "effective-url"])
+    def test_new_process_restores_completed_producer_without_repeating_write(tmp_path, variant):
+        evidence = Path(os.getenv("QA_API_DEPENDENCY_RESTORE_DIR", str(tmp_path))) / variant
+        evidence.mkdir(parents=True, exist_ok=False)
+        snapshot, result_path = evidence / "checkpoint.json", evidence / "result.json"
+        with target() as (url, requests):
+            create = ApiTestTask(task_id="create", method="POST", path="/orders", full_url=url+"/orders",
+                execution_mode="write", status="ready")
+            path = "/orders/:id" if variant == "colon" else "/orders/{id}"
+            read = ApiTestTask(task_id="read", method="GET", path=path, full_url=url+path,
+                status="blocked", depends_on=["create"], path_parameter_sources={"id": "create"})
+            if variant == "explicit":
+                read.input_bindings = [InputBinding(source_task_id="create", source_path="data.public_id", target_path="path.id")]
+            if variant == "effective-url":
+                read.path = "/orders"
+            if variant == "body-query":
+                read.method, read.path, read.full_url = "POST", "/confirm", url+"/confirm"
+                read.execution_mode = "write"
+                read.input_bindings = [InputBinding(source_task_id="create", source_path=source, target_path=dest)
+                    for source, dest in [("id", "query.id"), ("data.enabled", "body.enabled"),
+                                         ("data.count", "body.context.count")]]
+            campaign = ApiTestCampaign(campaign_id="restore-"+variant, tasks=[create, read],
+                execution_policy=ExecutionPolicy(max_retries=0))
+            snapshot.write_text(campaign.model_dump_json(indent=2), encoding="utf-8")
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+            command = [sys.executable, str(Path(__file__).resolve()), str(snapshot), str(result_path)]
+            first = subprocess.run(command+["interrupt"], env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"first.stdout").write_text(first.stdout, encoding="utf-8")
+            (evidence/"first.stderr").write_text(first.stderr, encoding="utf-8")
+            assert first.returncode == 73, first.stderr
+            saved = json.loads(snapshot.read_text(encoding="utf-8"))
+            assert saved["tasks"][0]["status"] == "completed"
+            assert saved["tasks"][0]["response_body"]["id"] == 0
+            assert len(requests) == 1
+            second = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"second.stdout").write_text(second.stdout, encoding="utf-8")
+            (evidence/"second.stderr").write_text(second.stderr, encoding="utf-8")
+            assert second.returncode == 0, second.stderr
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            (evidence/"http.json").write_text(json.dumps({"requests": requests,
+                "first_exit": first.returncode, "second_exit": second.returncode}, indent=2), encoding="utf-8")
+>           assert all(t["status"] == "completed" for t in result["campaign"]["tasks"]), result
+E           AssertionError: {'campaign': {'campaign_id': 'restore-body-query', 'project_id': '', 'project_name': '', 'project_url': '', ...}, 'rep... skipped. Checks: 1 passed, 1 failed. Total time: 133ms.", 'total_tasks': 2, ...}, 'pid': 6500, 'external_ai_calls': 0}
+E           assert False
+E            +  where False = all(<generator object test_new_process_restores_completed_producer_without_repeating_write.<locals>.<genexpr> at 0x00000223FCC7FE00>)
+
+tests\test_api_dependency_restore_http.py:135: AssertionError
+_ test_new_process_restores_completed_producer_without_repeating_write[effective-url] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_new_process_restores_comp4')
+variant = 'effective-url'
+
+    @pytest.mark.parametrize("variant", ["brace", "colon", "explicit", "body-query", "effective-url"])
+    def test_new_process_restores_completed_producer_without_repeating_write(tmp_path, variant):
+        evidence = Path(os.getenv("QA_API_DEPENDENCY_RESTORE_DIR", str(tmp_path))) / variant
+        evidence.mkdir(parents=True, exist_ok=False)
+        snapshot, result_path = evidence / "checkpoint.json", evidence / "result.json"
+        with target() as (url, requests):
+            create = ApiTestTask(task_id="create", method="POST", path="/orders", full_url=url+"/orders",
+                execution_mode="write", status="ready")
+            path = "/orders/:id" if variant == "colon" else "/orders/{id}"
+            read = ApiTestTask(task_id="read", method="GET", path=path, full_url=url+path,
+                status="blocked", depends_on=["create"], path_parameter_sources={"id": "create"})
+            if variant == "explicit":
+                read.input_bindings = [InputBinding(source_task_id="create", source_path="data.public_id", target_path="path.id")]
+            if variant == "effective-url":
+                read.path = "/orders"
+            if variant == "body-query":
+                read.method, read.path, read.full_url = "POST", "/confirm", url+"/confirm"
+                read.execution_mode = "write"
+                read.input_bindings = [InputBinding(source_task_id="create", source_path=source, target_path=dest)
+                    for source, dest in [("id", "query.id"), ("data.enabled", "body.enabled"),
+                                         ("data.count", "body.context.count")]]
+            campaign = ApiTestCampaign(campaign_id="restore-"+variant, tasks=[create, read],
+                execution_policy=ExecutionPolicy(max_retries=0))
+            snapshot.write_text(campaign.model_dump_json(indent=2), encoding="utf-8")
+            env = {**os.environ, "PYTHONPATH": str(Path(__file__).resolve().parents[1])}
+            command = [sys.executable, str(Path(__file__).resolve()), str(snapshot), str(result_path)]
+            first = subprocess.run(command+["interrupt"], env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"first.stdout").write_text(first.stdout, encoding="utf-8")
+            (evidence/"first.stderr").write_text(first.stderr, encoding="utf-8")
+            assert first.returncode == 73, first.stderr
+            saved = json.loads(snapshot.read_text(encoding="utf-8"))
+            assert saved["tasks"][0]["status"] == "completed"
+            assert saved["tasks"][0]["response_body"]["id"] == 0
+            assert len(requests) == 1
+            second = subprocess.run(command, env=env, capture_output=True, text=True, timeout=30)
+            (evidence/"second.stdout").write_text(second.stdout, encoding="utf-8")
+            (evidence/"second.stderr").write_text(second.stderr, encoding="utf-8")
+            assert second.returncode == 0, second.stderr
+            result = json.loads(result_path.read_text(encoding="utf-8"))
+            (evidence/"http.json").write_text(json.dumps({"requests": requests,
+                "first_exit": first.returncode, "second_exit": second.returncode}, indent=2), encoding="utf-8")
+>           assert all(t["status"] == "completed" for t in result["campaign"]["tasks"]), result
+E           AssertionError: {'campaign': {'campaign_id': 'restore-effective-url', 'project_id': '', 'project_name': '', 'project_url': '', ...}, '...skipped. Checks: 1 passed, 1 failed. Total time: 111ms.", 'total_tasks': 2, ...}, 'pid': 31940, 'external_ai_calls': 0}
+E           assert False
+E            +  where False = all(<generator object test_new_process_restores_completed_producer_without_repeating_write.<locals>.<genexpr> at 0x00000223FCC7E330>)
+
+tests\test_api_dependency_restore_http.py:135: AssertionError
+_ test_effective_url_missing_parameter_does_not_send_or_dispatch[ApiTestCoordinator] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_effective_url_missing_par0')
+coordinator_type = <class 'src.modes.api_testing_mode.coordinator.ApiTestCoordinator'>
+
+    @pytest.mark.parametrize("coordinator_type", [ApiTestCoordinator, ApiSubagentCoordinator])
+    def test_effective_url_missing_parameter_does_not_send_or_dispatch(tmp_path, coordinator_type):
+        with target() as (url, requests):
+            item = ApiTestTask(task_id="read", method="GET", path="/orders", full_url=url+"/orders/{id}", status="ready")
+            pool, policy = ApiTaskPool([item]), ExecutionPolicy(max_retries=0)
+            dispatched = []
+    
+            class Dispatcher:
+                async def dispatch(self, **kwargs):
+                    dispatched.append(kwargs)
+                    raise AssertionError("missing input must not dispatch")
+    
+            if coordinator_type == ApiTestCoordinator:
+                coordinator = coordinator_type(pool=pool, policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=CredentialManager()).execute)
+            else:
+                coordinator = coordinator_type(pool=pool, policy=policy, coordinator_runtime_service=Dispatcher(),
+                    session_store=None, parent_context={}, credential_manager=CredentialManager())
+            result = asyncio.run(coordinator.run_all())[0]
+>           assert result.status == "failed" and result.attempts == 0
+E           AssertionError: assert ('failed' == 'failed'
+E             
+E               failed and 1 == 0)
+E            +  where 1 = ApiTestTask(task_id='read', name='', method='GET', path='/orders', full_url='http://127.0.0.1:52001/orders/{id}', capa...rders/%7Bid%7D', 'query_omitted': False, 'userinfo_omitted': False, 'fragment_omitted': False}, 'status_code': 404}]}}).attempts
+
+tests\test_api_dependency_restore_http.py:161: AssertionError
+_ test_effective_url_missing_parameter_does_not_send_or_dispatch[ApiSubagentCoordinator] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1665/test_effective_url_missing_par1')
+coordinator_type = <class 'src.modes.api_testing_mode.subagent_coordinator.ApiSubagentCoordinator'>
+
+    @pytest.mark.parametrize("coordinator_type", [ApiTestCoordinator, ApiSubagentCoordinator])
+    def test_effective_url_missing_parameter_does_not_send_or_dispatch(tmp_path, coordinator_type):
+        with target() as (url, requests):
+            item = ApiTestTask(task_id="read", method="GET", path="/orders", full_url=url+"/orders/{id}", status="ready")
+            pool, policy = ApiTaskPool([item]), ExecutionPolicy(max_retries=0)
+            dispatched = []
+    
+            class Dispatcher:
+                async def dispatch(self, **kwargs):
+                    dispatched.append(kwargs)
+                    raise AssertionError("missing input must not dispatch")
+    
+            if coordinator_type == ApiTestCoordinator:
+                coordinator = coordinator_type(pool=pool, policy=policy,
+                    executor_fn=ApiTaskExecutor(credential_manager=CredentialManager()).execute)
+            else:
+                coordinator = coordinator_type(pool=pool, policy=policy, coordinator_runtime_service=Dispatcher(),
+                    session_store=None, parent_context={}, credential_manager=CredentialManager())
+>           result = asyncio.run(coordinator.run_all())[0]
+                     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+tests\test_api_dependency_restore_http.py:160: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:190: in run
+    return runner.run(main)
+           ^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\runners.py:118: in run
+    return self._loop.run_until_complete(task)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\asyncio\base_events.py:654: in run_until_complete
+    return future.result()
+           ^^^^^^^^^^^^^^^
+src\modes\api_testing_mode\subagent_coordinator.py:143: in run_all
+    await self._dispatch_batch(batch)
+src\modes\api_testing_mode\subagent_coordinator.py:280: in _dispatch_batch
+    dispatch_result = await self._coordinator_runtime_service.dispatch(
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = <test_api_dependency_restore_http.test_effective_url_missing_parameter_does_not_send_or_dispatch.<locals>.Dispatcher object at 0x00000223FE049E10>
+kwargs = {'payload': {'workers': [{'task_id': 'read', 'description': 'GET /orders', 'prompt': 'Execute the assigned API test ta...l finishes, reply with a single concise execution summary.', 'agent_key': 'api-executor-worker', ...}]}, 'context': {}}
+
+    async def dispatch(self, **kwargs):
+        dispatched.append(kwargs)
+>       raise AssertionError("missing input must not dispatch")
+E       AssertionError: missing input must not dispatch
+
+tests\test_api_dependency_restore_http.py:152: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_api_dependency_restore_http.py::test_new_process_restores_completed_producer_without_repeating_write[brace]
+FAILED tests/test_api_dependency_restore_http.py::test_new_process_restores_completed_producer_without_repeating_write[colon]
+FAILED tests/test_api_dependency_restore_http.py::test_new_process_restores_completed_producer_without_repeating_write[explicit]
+FAILED tests/test_api_dependency_restore_http.py::test_new_process_restores_completed_producer_without_repeating_write[body-query]
+FAILED tests/test_api_dependency_restore_http.py::test_new_process_restores_completed_producer_without_repeating_write[effective-url]
+FAILED tests/test_api_dependency_restore_http.py::test_effective_url_missing_parameter_does_not_send_or_dispatch[ApiTestCoordinator]
+FAILED tests/test_api_dependency_restore_http.py::test_effective_url_missing_parameter_does_not_send_or_dispatch[ApiSubagentCoordinator]
+7 failed in 15.33s

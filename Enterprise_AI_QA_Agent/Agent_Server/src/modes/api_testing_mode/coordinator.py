@@ -53,7 +53,16 @@ class ApiTestCoordinator:
         self._checkpoint_callback = checkpoint_callback
         self._active_resource_locks: set[str] = set()
         self._write_running: bool = False
-        self._task_outputs: dict[str, Any] = {}  # task_id -> response_body
+        # Rebuild from the campaign checkpoint, as the Worker coordinator does.
+        # A completed producer must not be sent again just to recover its output.
+        self._task_outputs: dict[str, Any] = {
+            task.task_id: task.response_body for task in pool.all_tasks if task.status == TASK_COMPLETED
+        }
+        if self._task_outputs:
+            logger.info("api_completed_task_outputs_restored", extra={
+                "task_count": len(self._task_outputs),
+                "task_ids": list(self._task_outputs),
+            })
 
     async def run_all(self) -> list[ApiTestTask]:
         """Execute all tasks in the pool respecting dependency and concurrency rules.

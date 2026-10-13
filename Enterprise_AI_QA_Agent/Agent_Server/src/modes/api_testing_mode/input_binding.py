@@ -52,8 +52,10 @@ def unresolved_path_parameters(task: ApiTestTask) -> list[str]:
 
 def _path_text(task: ApiTestTask) -> str:
     """Inspect only the URL path; ``:8000`` is a port, not a placeholder."""
-    raw = task.path or task.full_url or ""
-    return urlsplit(raw).path if "://" in raw else raw
+    # Match ApiTaskExecutor's effective request URL, including restored tasks
+    # whose display path differs from the address that will actually be sent.
+    raw = task.full_url or task.path or ""
+    return urlsplit(raw).path
 
 
 def _parameter_value(output: dict[str, Any], parameter: str) -> Any:

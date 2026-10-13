@@ -3789,4 +3789,16 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 
 实际验收：`p3-git-current.xml` **24通过、4跳过**；启用 `RUN_LIVE_CASE_PLANNING_TESTS=1` 的 `p3-git-live2.xml` **26通过**，实际隔离 MySQL/PostgreSQL/RustFS；启用 `RUN_LIVE_DOCUMENT_GIT_PRODUCTION=1` 的 `p3-git-production-current.xml` **2通过**、132.11秒，实际独立 API/Redis Worker/MySQL/PG/RustFS/Chromium，验证 Markdown 与 DOCX 固定 Git 来源、丢回执恢复、解析、比较、重启及普通上传独立。审计见 `P3_GIT_SOURCE_CURRENT_RESEARCH.md`、`p3-git-current-audit.py` 和 `p3-git-current-validation.json`。
 
-本项属于**已有实现且已完成当前范围验收**，不应再列为“待补 Git 入口”。默认 AI 影响判断、用户业务评审、部署适用性、生产历史迁移、扫描 PDF OCR 和 Docling 容器仍未完成；完整 P0—P5 保持 active。
+本项属于**已有实现且已完成当前范围验收**，不应再列为“待补 Git 入口”。默认 AI 影响判断、用户业务评审、部署适用性、生产历史迁移仍未完成。扫描 PDF OCR 属于首期范围外；Docling 保留扩展入口，按既定约定首期不部署容器。完整 P0—P5 保持 active。
+
+### 7.56 API 前置响应在进程恢复后传值与有效请求地址〔2026-10-13〕
+
+基线 b25d15cf，研究见 `P3_API_DEPENDENCY_RESTORE_RESEARCH.md`。先实测发现 Worker 已从完成任务恢复输出，本地协调器却置空；路径检查使用展示 path，与执行器优先发送 full_url 错位。修复前 7 项全部失败：真实创建后立即退出进程，恢复后丢失 id=0，body/query 丢失 False/0，有效 URL 含占位符时实际发出编码占位符或派发 Worker。失败原件完整保留。
+
+**本批补实现并已验收**：本地协调器按已有 Worker 做法读取同一 Campaign 中 TASK_COMPLETED 的响应，增加仅含任务身份和数量的恢复日志；路径绑定与缺口检查按照执行器实际 full_url 或 path 选取地址，仅检查 URL path。未新增配置、数据库表、依赖、模型协议或业务依赖规则。原七项 7 通过；新增已完成/failed/unknown 输出隔离、False/0 显式字段传值、展示地址与实际地址、query/fragment/端口边界后的五模块最终 68 通过、2 真实 PG/RustFS 门控跳过，19.95 秒；compileall 实际退出 0。
+
+**实际证据**：创建请求成功后检查点落盘，首进程立即退出 73，新进程恢复同一 Campaign，执行查询 /orders/0 或 POST /confirm?id=0，body 保留 enabled=False 与嵌套 count=0。每场景只有一次创建和一次依赖请求；原完成任务完整 JSON 不变；终态重投无新增 HTTP。首轮扩展回归因复用证据目录被原件保护拒绝，5 失败、63 通过、2 跳过日志保留，换独立 after2 目录后通过，未覆盖既有证据。
+
+**验收边界**：本批使用实际本地 HTTP、独立进程和 Campaign 文件检查点，不宣称验收完整生产 PostgreSQL/API/Redis 重启流程。任意缺失 body/query 输出处理、Cookie/自动续期与多认证隔离、未知副作用只读查证、执行中计划修订及默认 AI 完整项目选取/排序/补全质量仍待推进；其余完整 P0—P5 目标不缩减。外部 AI 验收按用户此前安排暂缓，Step 已认证，不再沿用旧 403 判断账号状态。
+
+**交付核对**：三份方案同步；`p3-api-dependency-restore-audit.py` 核对本批测试、真实 HTTP、检查点和原件 SHA，以及上次 Git 验收提交中的全部 48 份原产品工件逐字节不变。上次 Git 原件属性未处理 CRLF，且提交命令未严格阻断 diff 检查失败，现已修正对应原件 whitespace 属性并重新运行 `git diff --check b25d15cf^ b25d15cf` 通过。OCR/Docling 首期范围表述同步纠正。仅提交本批白名单，不推送、不建 PR，完整目标保持进行中。
