@@ -513,6 +513,7 @@ class ApiSubagentCoordinator:
 
         if task.status == TASK_COMPLETED:
             self._pool.mark_completed(task.task_id)
+            self._pool.record_reconciliation(task)
             self._emit_checkpoint("task_completed", task)
             self._task_outputs[task.task_id] = task.response_body
             if task.execution_mode == EXECUTION_MODE_AUTH and task.auth_ref:
@@ -520,12 +521,14 @@ class ApiSubagentCoordinator:
             return
 
         self._pool.mark_failed(task.task_id, task.last_error or str(tool_output.get("summary") or "execution_failed"))
+        self._pool.record_reconciliation(task)
         self._emit_checkpoint("task_failed", task)
 
     def _fail_task(self, task: ApiTestTask, error: str) -> None:
         task.status = TASK_FAILED
         task.last_error = str(error or "execution_failed")
         self._pool.mark_failed(task.task_id, task.last_error)
+        self._pool.record_reconciliation(task)
         self._emit_checkpoint("task_failed", task)
 
     def _emit_checkpoint(self, event_type: str, task: ApiTestTask) -> None:

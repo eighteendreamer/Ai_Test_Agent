@@ -197,6 +197,7 @@ class ApiTestCoordinator:
         binding_gaps = self._apply_input_bindings(task)
         if binding_gaps:
             self._pool.mark_failed(task.task_id, "Required input binding(s) unresolved: " + "; ".join(binding_gaps))
+            self._pool.record_reconciliation(task)
             self._emit_checkpoint("task_failed", task)
             return
         unresolved = unresolved_path_parameters(task)
@@ -219,6 +220,7 @@ class ApiTestCoordinator:
             result = await self._executor_fn(task)
             if result.status == TASK_COMPLETED:
                 self._pool.mark_completed(task.task_id)
+                self._pool.record_reconciliation(task)
                 self._emit_checkpoint("task_completed", task)
                 # Store output for downstream input bindings.
                 self._task_outputs[task.task_id] = result.response_body
@@ -227,9 +229,11 @@ class ApiTestCoordinator:
                     self._propagate_auth_ref(result.auth_ref, source_task_id=task.task_id)
             else:
                 self._pool.mark_failed(task.task_id, result.last_error or "execution_failed")
+                self._pool.record_reconciliation(task)
                 self._emit_checkpoint("task_failed", task)
         except Exception as exc:
             self._pool.mark_failed(task.task_id, str(exc))
+            self._pool.record_reconciliation(task)
             self._emit_checkpoint("task_failed", task)
         finally:
             for lock in task.resource_locks:

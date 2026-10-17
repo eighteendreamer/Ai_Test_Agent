@@ -1,0 +1,151 @@
+{
+  "campaign_id": "missing-after-interrupt",
+  "project_id": "",
+  "project_name": "",
+  "project_url": "",
+  "objective": "",
+  "verification_focus": "general",
+  "selected_document_ids": [],
+  "selected_endpoints": [],
+  "preconditions": [],
+  "credential_session_id": "",
+  "tasks": [
+    {
+      "task_id": "create",
+      "name": "",
+      "method": "GET",
+      "path": "http://127.0.0.1:56960/producer",
+      "full_url": "",
+      "capability": "",
+      "execution_mode": "read",
+      "depends_on": [],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": null,
+      "input_bindings": [],
+      "path_parameter_sources": {},
+      "assertions": [],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "completed",
+      "attempts": 1,
+      "last_error": "",
+      "dependency_skip_task_id": "",
+      "started_at": "2026-10-17T13:36:48.383973+00:00",
+      "completed_at": "2026-10-17T13:36:48.448072+00:00",
+      "response_status": 200,
+      "response_headers": {
+        "server": "BaseHTTP/0.6 Python/3.11.16",
+        "date": "Sat, 17 Oct 2026 13:36:48 GMT",
+        "content-type": "application/json",
+        "content-length": "22"
+      },
+      "response_body": {
+        "data": {
+          "count": 0
+        }
+      },
+      "check_results": [
+        {
+          "name": "default_status_check",
+          "kind": "status_code_range",
+          "passed": true,
+          "expected": "2xx",
+          "actual": 200,
+          "description": "Default: expect 2xx response status."
+        }
+      ],
+      "request_outcome": "completed",
+      "reconciliation_for": "",
+      "reconciliation_observation": "",
+      "reconciliation_status": "none",
+      "duration_ms": 63.89,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:36:48.448072Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 56960,
+                "path": "/producer",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      }
+    },
+    {
+      "task_id": "consume",
+      "name": "",
+      "method": "POST",
+      "path": "http://127.0.0.1:56960/consume",
+      "full_url": "",
+      "capability": "",
+      "execution_mode": "write",
+      "depends_on": [
+        "create"
+      ],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": {
+        "id": "stale-example"
+      },
+      "input_bindings": [
+        {
+          "source_task_id": "create",
+          "source_path": "data.id",
+          "target_path": "body.id",
+          "literal_value": null
+        }
+      ],
+      "path_parameter_sources": {},
+      "assertions": [],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "ready",
+      "attempts": 0,
+      "last_error": "",
+      "dependency_skip_task_id": "",
+      "started_at": "",
+      "completed_at": "",
+      "response_status": null,
+      "response_headers": {},
+      "response_body": null,
+      "check_results": [],
+      "request_outcome": "not_started",
+      "reconciliation_for": "",
+      "reconciliation_observation": "",
+      "reconciliation_status": "none",
+      "duration_ms": 0.0,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {}
+    }
+  ],
+  "execution_policy": {
+    "max_workers": 2,
+    "read_parallel": true,
+    "write_serial": true,
+    "serialize_by_auth": true,
+    "serialize_by_resource_lock": true,
+    "max_retries": 0,
+    "request_timeout_seconds": 30.0
+  },
+  "created_at": "",
+  "updated_at": ""
+}

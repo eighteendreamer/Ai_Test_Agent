@@ -203,7 +203,10 @@ class ReportBuilder:
             "checks_passed": sum(1 for c in task.check_results if c.get("passed")),
             "checks_failed": sum(1 for c in task.check_results if not c.get("passed")),
             "request_outcome": task.request_outcome,
-            "reconciliation_required": task.request_outcome == "unknown",
+            "reconciliation_for": task.reconciliation_for or None,
+            "reconciliation_status": task.reconciliation_status,
+            "reconciliation_observation": task.reconciliation_observation or None,
+            "reconciliation_required": task.request_outcome == "unknown" and task.reconciliation_status in {"none", "inconclusive"},
             "error": task.last_error or None,
             "checks": task.check_results,
         }
@@ -267,7 +270,10 @@ class ReportBuilder:
             "assertions": task.check_results,
             "error": task.last_error,
             "request_outcome": task.request_outcome,
-            "reconciliation_required": task.request_outcome == "unknown",
+            "reconciliation_for": task.reconciliation_for or None,
+            "reconciliation_status": task.reconciliation_status,
+            "reconciliation_observation": task.reconciliation_observation or None,
+            "reconciliation_required": task.request_outcome == "unknown" and task.reconciliation_status in {"none", "inconclusive"},
             "duration_ms": task.duration_ms,
             "attempts": task.attempts,
         }

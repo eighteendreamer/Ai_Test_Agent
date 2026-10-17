@@ -1,0 +1,33 @@
+.......................................F........................ss...... [ 43%]
+................s.................................................s..... [ 86%]
+............s.....sss..                                                  [100%]
+================================== FAILURES ===================================
+_ test_missing_binding_after_real_process_exit_uses_fixed_producer_without_resending _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1688/test_missing_binding_after_rea0')
+
+    def test_missing_binding_after_real_process_exit_uses_fixed_producer_without_resending(tmp_path):
+        import subprocess
+        import sys
+        import test_api_dependency_restore_http as recovery
+        directory = Path(os.getenv("QA_API_REQUIRED_BINDING_PROCESS_DIR", str(tmp_path)))
+>       directory.mkdir(parents=True, exist_ok=False)
+
+tests\test_api_required_binding_http.py:179: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+self = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1688/test_missing_binding_after_rea0')
+mode = 511, parents = True, exist_ok = False
+
+    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        """
+        Create a new directory at this given path.
+        """
+        try:
+>           os.mkdir(self, mode)
+E           FileExistsError: [WinError 183] ���ļ��Ѵ���ʱ���޷��������ļ���: 'C:\\Users\\32734\\AppData\\Local\\Temp\\pytest-of-32734\\pytest-1688\\test_missing_binding_after_rea0'
+
+E:\Python_UV\pythons\cpython-3.11-windows-x86_64-none\Lib\pathlib.py:1116: FileExistsError
+=========================== short test summary info ===========================
+FAILED tests/test_api_required_binding_http.py::test_missing_binding_after_real_process_exit_uses_fixed_producer_without_resending
+1 failed, 158 passed, 8 skipped in 58.98s

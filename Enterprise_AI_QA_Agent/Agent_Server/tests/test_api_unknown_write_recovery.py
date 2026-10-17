@@ -11,12 +11,54 @@ from pathlib import Path
 from threading import Thread
 from threading import Event
 
-from src.modes.api_testing_mode.campaign_state import ApiTestCampaign, ApiTestTask, ExecutionPolicy
+import pytest
+
+from src.modes.api_testing_mode.campaign_state import ApiTestCampaign, ApiTestTask, AssertionSpec, ExecutionPolicy
 from src.modes.api_testing_mode.coordinator import ApiTestCoordinator
 from src.modes.api_testing_mode.credential_manager import CredentialManager
 from src.modes.api_testing_mode.evaluation import ApiTestingEvaluationPolicy
 from src.modes.api_testing_mode.executor import ApiTaskExecutor
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
+from src.modes.api_testing_mode.report_builder import ReportBuilder
+from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
+from src.runtime.store import InMemorySessionStore
+from test_api_worker_auth_refresh_live import ControlledWorkerLauncher
+
+
+@contextmanager
+def reconciliation_target(*, effect_present: bool):
+    calls: list[dict] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def _reply(self, status: int, payload: dict) -> None:
+            raw = json.dumps(payload).encode()
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+        def do_POST(self):
+            calls.append({"method": self.command, "path": self.path})
+            self._reply(500, {"ok": False})
+
+        def do_GET(self):
+            calls.append({"method": self.command, "path": self.path})
+            self._reply(200 if effect_present else 404, {"exists": effect_present})
+
+        def log_message(self, *_args):
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", calls
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+        assert not thread.is_alive()
 
 
 @contextmanager
@@ -164,3 +206,61 @@ def test_unknown_write_evaluation_requires_read_only_reconciliation():
     )
     assert any("只读查证" in item and "禁止重试" in item for item in evaluation.recommendations)
     assert evaluation.failure_classifications[0].category == "unknown_side_effect"
+
+
+@pytest.mark.parametrize("worker", [False, True])
+@pytest.mark.parametrize("effect_present,observation", [(False, "effect_absent"), (True, "effect_present")])
+def test_explicit_read_only_reconciliation_runs_without_replaying_unknown_write(tmp_path, worker, effect_present, observation):
+    with reconciliation_target(effect_present=effect_present) as (base, calls):
+        unknown = ApiTestTask(task_id="create", method="POST", path=base+"/orders", full_url=base+"/orders",
+            execution_mode="write", status="ready", request_body={"key": "fixture"})
+        reconcile = ApiTestTask(task_id="check", method="GET", path=base+"/orders?key=fixture",
+            full_url=base+"/orders?key=fixture", execution_mode="read", status="blocked",
+            reconciliation_for="create", reconciliation_observation=observation,
+            assertions=[AssertionSpec(kind="status_code", expected=200 if effect_present else 404)])
+        dependent = ApiTestTask(task_id="after", method="GET", path=base+"/orders/details", full_url=base+"/orders/details",
+            status="blocked", depends_on=["create"])
+        campaign = ApiTestCampaign(campaign_id="explicit-reconciliation", tasks=[unknown, reconcile, dependent])
+        credentials = CredentialManager()
+        if worker:
+            store = InMemorySessionStore()
+            runner = ApiSubagentCoordinator(pool=ApiTaskPool(campaign.tasks), policy=ExecutionPolicy(max_retries=2),
+                credential_manager=credentials, coordinator_runtime_service=ControlledWorkerLauncher(store),
+                session_store=store, parent_context={"session_id": "owned-parent", "turn_id": "owned-turn"})
+        else:
+            runner = ApiTestCoordinator(pool=ApiTaskPool(campaign.tasks), policy=ExecutionPolicy(max_retries=2),
+                executor_fn=ApiTaskExecutor(credential_manager=credentials).execute)
+        result = asyncio.run(runner.run_all())
+        count = len(calls)
+        asyncio.run(runner.run_all())
+        report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id=campaign.campaign_id, tasks=result))
+        _record(f"explicit-reconciliation-{observation}", {"calls": calls, "tasks": [t.model_dump(mode="json") for t in result],
+            "report": report.model_dump(mode="json"), "terminal_extra_http": len(calls)-count, "external_ai_calls": 0})
+        assert [item.status for item in result] == ["failed", "completed", "skipped"]
+        assert result[0].request_outcome == "unknown" and result[0].reconciliation_status == observation
+        assert result[0].attempts == 1 and result[1].attempts == 1 and result[2].attempts == 0
+        assert [item["method"] for item in calls] == ["POST", "GET"] and len(calls) == count == 2
+        assert report.tasks[0]["reconciliation_status"] == observation
+        assert report.tasks[0]["reconciliation_required"] is False
+
+
+def test_explicit_reconciliation_without_observation_remains_inconclusive():
+    with reconciliation_target(effect_present=False) as (base, calls):
+        unknown = ApiTestTask(task_id="create", method="POST", path=base+"/orders", full_url=base+"/orders",
+            execution_mode="write", status="ready")
+        check = ApiTestTask(task_id="check", method="GET", path=base+"/orders", full_url=base+"/orders",
+            status="blocked", reconciliation_for="create",
+            assertions=[AssertionSpec(kind="status_code", expected=404)])
+        result = asyncio.run(ApiTestCoordinator(pool=ApiTaskPool([unknown, check]), policy=ExecutionPolicy(max_retries=0),
+            executor_fn=ApiTaskExecutor(credential_manager=CredentialManager()).execute).run_all())
+        assert result[0].request_outcome == "unknown" and result[0].reconciliation_status == "inconclusive"
+        assert result[1].status == "completed" and result[1].reconciliation_observation == ""
+        assert len(calls) == 2
+
+
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+def test_reconciliation_task_must_be_read_only_before_any_http(method):
+    unknown = ApiTestTask(task_id="write", method="POST", path="/write", status="ready")
+    check = ApiTestTask(task_id="check", method=method, path="/check", status="blocked", reconciliation_for="write")
+    with pytest.raises(ValueError, match="reconciliation_must_be_read_only"):
+        ApiTaskPool([unknown, check])

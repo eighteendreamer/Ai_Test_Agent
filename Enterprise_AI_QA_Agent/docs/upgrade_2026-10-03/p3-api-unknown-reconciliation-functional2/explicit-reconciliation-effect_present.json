@@ -1,0 +1,359 @@
+{
+  "calls": [
+    {
+      "method": "POST",
+      "path": "/orders"
+    },
+    {
+      "method": "GET",
+      "path": "/orders?key=fixture"
+    }
+  ],
+  "tasks": [
+    {
+      "task_id": "create",
+      "name": "",
+      "method": "POST",
+      "path": "http://127.0.0.1:51783/orders",
+      "full_url": "http://127.0.0.1:51783/orders",
+      "capability": "",
+      "execution_mode": "write",
+      "depends_on": [],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": {
+        "key": "fixture"
+      },
+      "input_bindings": [],
+      "path_parameter_sources": {},
+      "assertions": [],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "failed",
+      "attempts": 1,
+      "last_error": "Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.",
+      "dependency_skip_task_id": "",
+      "started_at": "2026-10-17T13:33:38.584475+00:00",
+      "completed_at": "2026-10-17T13:33:38.599337+00:00",
+      "response_status": 500,
+      "response_headers": {
+        "server": "BaseHTTP/0.6 Python/3.11.16",
+        "date": "Sat, 17 Oct 2026 13:33:38 GMT",
+        "content-type": "application/json",
+        "content-length": "13"
+      },
+      "response_body": {
+        "ok": false
+      },
+      "check_results": [
+        {
+          "name": "default_status_check",
+          "kind": "status_code_range",
+          "passed": false,
+          "expected": "2xx",
+          "actual": 500,
+          "description": "Default: expect 2xx response status."
+        }
+      ],
+      "request_outcome": "unknown",
+      "reconciliation_for": "",
+      "reconciliation_observation": "",
+      "reconciliation_status": "effect_present",
+      "duration_ms": 14.19,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:33:38.598338Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51783,
+                "path": "/orders",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 500
+            }
+          ]
+        }
+      }
+    },
+    {
+      "task_id": "check",
+      "name": "",
+      "method": "GET",
+      "path": "http://127.0.0.1:51783/orders?key=fixture",
+      "full_url": "http://127.0.0.1:51783/orders?key=fixture",
+      "capability": "",
+      "execution_mode": "read",
+      "depends_on": [],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": null,
+      "input_bindings": [],
+      "path_parameter_sources": {},
+      "assertions": [
+        {
+          "kind": "status_code",
+          "expected": 200,
+          "path": "",
+          "description": ""
+        }
+      ],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "completed",
+      "attempts": 1,
+      "last_error": "",
+      "dependency_skip_task_id": "",
+      "started_at": "2026-10-17T13:33:38.599337+00:00",
+      "completed_at": "2026-10-17T13:33:38.612822+00:00",
+      "response_status": 200,
+      "response_headers": {
+        "server": "BaseHTTP/0.6 Python/3.11.16",
+        "date": "Sat, 17 Oct 2026 13:33:38 GMT",
+        "content-type": "application/json",
+        "content-length": "16"
+      },
+      "response_body": {
+        "exists": true
+      },
+      "check_results": [
+        {
+          "name": "status_code=200",
+          "kind": "status_code",
+          "passed": true,
+          "expected": 200,
+          "actual": 200,
+          "description": "Expect status 200"
+        }
+      ],
+      "request_outcome": "completed",
+      "reconciliation_for": "create",
+      "reconciliation_observation": "effect_present",
+      "reconciliation_status": "none",
+      "duration_ms": 13.4,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:33:38.612822Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51783,
+                "path": "/orders",
+                "query_omitted": true,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      }
+    },
+    {
+      "task_id": "after",
+      "name": "",
+      "method": "GET",
+      "path": "http://127.0.0.1:51783/orders/details",
+      "full_url": "http://127.0.0.1:51783/orders/details",
+      "capability": "",
+      "execution_mode": "read",
+      "depends_on": [
+        "create"
+      ],
+      "auth_ref": "",
+      "request_headers": {},
+      "request_query": {},
+      "request_body": null,
+      "input_bindings": [],
+      "path_parameter_sources": {},
+      "assertions": [],
+      "resource_locks": [],
+      "timeout_seconds": 30.0,
+      "status": "skipped",
+      "attempts": 0,
+      "last_error": "Skipped because dependency create failed.",
+      "dependency_skip_task_id": "create",
+      "started_at": "",
+      "completed_at": "",
+      "response_status": null,
+      "response_headers": {},
+      "response_body": null,
+      "check_results": [],
+      "request_outcome": "not_started",
+      "reconciliation_for": "",
+      "reconciliation_observation": "",
+      "reconciliation_status": "none",
+      "duration_ms": 0.0,
+      "worker_session_id": "",
+      "worker_status": "",
+      "worker_summary": "",
+      "execution_checkpoint": {}
+    }
+  ],
+  "report": {
+    "campaign_id": "explicit-reconciliation",
+    "project_name": "",
+    "summary": "⚠️ Campaign 'explicit-reconciliation' completed: 1/3 tasks passed, 1 failed, 1 skipped. Checks: 1 passed, 1 failed. Total time: 28ms.",
+    "total_tasks": 3,
+    "completed": 1,
+    "failed": 1,
+    "skipped": 1,
+    "passed_checks": 1,
+    "failed_checks": 1,
+    "duration_ms": 27.59,
+    "tasks": [
+      {
+        "task_id": "create",
+        "name": "",
+        "method": "POST",
+        "path": "http://127.0.0.1:51783/orders",
+        "full_url": "http://127.0.0.1:51783/orders",
+        "capability": "",
+        "status": "failed",
+        "response_status": 500,
+        "duration_ms": 14.19,
+        "check_count": 1,
+        "checks_passed": 0,
+        "checks_failed": 1,
+        "request_outcome": "unknown",
+        "reconciliation_for": null,
+        "reconciliation_status": "effect_present",
+        "reconciliation_observation": null,
+        "reconciliation_required": false,
+        "error": "Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.",
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": false,
+            "expected": "2xx",
+            "actual": 500,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:33:38.598338Z",
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51783,
+                "path": "/orders",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 500
+            }
+          ]
+        },
+        "evidence": "{\n  \"response_status\": 500,\n  \"response_body_preview\": \"{\\\"ok\\\": false}\",\n  \"error\": \"Write request outcome is unknown; read-only reconciliation is required before dependent tasks or retry.\",\n  \"failed_assertions\": [\n    {\n      \"name\": \"default_status_check\",\n      \"kind\": \"status_code_range\",\n      \"passed\": false,\n      \"expected\": \"2xx\",\n      \"actual\": 500,\n      \"description\": \"Default: expect 2xx response status.\"\n    }\n  ]\n}"
+      },
+      {
+        "task_id": "check",
+        "name": "",
+        "method": "GET",
+        "path": "http://127.0.0.1:51783/orders?key=fixture",
+        "full_url": "http://127.0.0.1:51783/orders?key=fixture",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 13.4,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_for": "create",
+        "reconciliation_status": "none",
+        "reconciliation_observation": "effect_present",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "status_code=200",
+            "kind": "status_code",
+            "passed": true,
+            "expected": 200,
+            "actual": 200,
+            "description": "Expect status 200"
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:33:38.612822Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51783,
+                "path": "/orders",
+                "query_omitted": true,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "after",
+        "name": "",
+        "method": "GET",
+        "path": "http://127.0.0.1:51783/orders/details",
+        "full_url": "http://127.0.0.1:51783/orders/details",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_for": null,
+        "reconciliation_status": "none",
+        "reconciliation_observation": null,
+        "reconciliation_required": false,
+        "error": "Skipped because dependency create failed.",
+        "checks": []
+      }
+    ],
+    "findings": [
+      "❌ POST http://127.0.0.1:51783/orders: Default: expect 2xx response status.",
+      "⏭️ GET http://127.0.0.1:51783/orders/details: skipped (Skipped because dependency create failed.)"
+    ],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-17T13:33:38.614042+00:00"
+  },
+  "terminal_extra_http": 0,
+  "external_ai_calls": 0
+}

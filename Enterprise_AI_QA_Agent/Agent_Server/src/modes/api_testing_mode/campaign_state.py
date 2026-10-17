@@ -218,6 +218,10 @@ class ApiTestTask(BaseModel):
     # retry policy and reports cannot mistake an unknown outcome for a normal
     # transient failure.
     request_outcome: str = "not_started"  # not_started / completed / known_failed / unknown
+    # Explicit read-only reconciliation contract for an unknown write.
+    reconciliation_for: str = ""
+    reconciliation_observation: Literal["", "effect_present", "effect_absent", "inconclusive"] = ""
+    reconciliation_status: Literal["none", "effect_present", "effect_absent", "inconclusive"] = "none"
     duration_ms: float = 0.0
     worker_session_id: str = ""
     worker_status: str = ""

@@ -3846,3 +3846,14 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **实际结果**：核心修复10通过10.65秒；扩展16个真实HTTP事实文件覆盖本地/Worker、缺失body/query/header、别名、literal、null、非法目标/类型。最终受影响回归`p3-api-required-binding-final.xml` **150通过、8门控跳过、64.24秒**，含已有依赖/恢复、请求体、Worker结果、Cookie/Token、多账户及模式隔离。独立进程真实验证：首进程上游请求后退出73，新进程读取检查点，已完成上游不重发，缺失消费者失败且0次请求。compileall与审计通过，外部AI0；存储门控跳过不计通过。
 
 **仍需继续**：默认AI项目选取→排序→补全质量、完整正式用例Run、准备生命周期/unknown只读查证/运行中修订、自动401续期/安全重放、复杂UI及失败定位、持续性能与其他安全工具、需求业务评审/部署/历史迁移和全阶段HTTP追踪。Step已认证，外部AI按此前安排暂缓。完整P0—P5保持进行中。
+
+
+### 7.61 API 未知写入的显式只读查证〔2026-10-17〕
+
+基线0f492ff9，依据P3_API_UNKNOWN_RECONCILIATION_RESEARCH.md。复核现有Executor、TaskPool、两协调器和Evaluation：未知写入已禁止重试并归类unknown_side_effect，但没有合法的显式只读查证入口；按HTTP方法猜查询会误查资源，因此本批不做自动发现。
+
+**本批补实现并已验收**：ApiTestTask增加`reconciliation_for`、`reconciliation_observation`和`reconciliation_status`。查证任务必须指向unknown写任务、使用GET/HEAD/OPTIONS，并可保留普通认证前置；未知写失败后由TaskPool单独放行，非法方法在任务池初始化时拒绝。查证成功只记录effect_present/effect_absent，未声明或失败记录inconclusive；原写任务始终保持unknown，不自动重试、不把原业务依赖变成可执行。报告显示查证目标/状态及是否仍需处理。没有新表、配置、依赖、模型协议或前端契约。
+
+**实际结果**：`p3-api-unknown-reconciliation-functional3.xml` **13通过**，本地和Worker真实HTTP均只发送POST一次和明确GET一次；effect_absent/effect_present、无观察值、非法写方法和原unknown阻断均通过。受影响回归`p3-api-unknown-reconciliation-final.xml` **159通过、8门控跳过、61.49秒**（XML总167，跳过不计通过），含绑定/恢复、Cookie/Token、多账户、请求体、Worker及模式隔离；40项烟测全部通过。compileall与审计通过，外部AI0。没有启用真实PG/RustFS存储门控；该项未实现自动查询发现或安全重放。
+
+**仍需继续**：正式用例/默认AI自主选择查证工具、对象效果证据与跨进程生产恢复；准备生命周期、运行中修订、自动401续期/安全重放、复杂UI、持续性能/安全、需求业务评审/历史迁移和其余完整P0—P5。Step已认证，外部AI按此前安排暂缓。

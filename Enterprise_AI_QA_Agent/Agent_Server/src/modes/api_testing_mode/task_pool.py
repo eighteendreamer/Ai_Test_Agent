@@ -133,6 +133,12 @@ class ApiTaskPool:
                 self._reject_graph("duplicate_dependency", identity)
             if any(parent not in self._tasks or parent == identity for parent in task.depends_on):
                 self._reject_graph("missing_or_self_dependency", identity)
+            if task.reconciliation_for:
+                target = self._tasks.get(task.reconciliation_for)
+                if target is None or task.reconciliation_for == identity:
+                    self._reject_graph("missing_or_self_reconciliation", identity)
+                if task.method.upper() not in {"GET", "HEAD", "OPTIONS"}:
+                    self._reject_graph("reconciliation_must_be_read_only", identity)
             graph[identity] = task.depends_on
         try:
             tuple(TopologicalSorter(graph).static_order())
@@ -151,6 +157,36 @@ class ApiTaskPool:
                 if task.status == TASK_SKIPPED and not self._dependency_skip_source(task):
                     continue
                 dependencies = [self._tasks[dep_id] for dep_id in task.depends_on]
+                if task.reconciliation_for:
+                    target = self._tasks[task.reconciliation_for]
+                    if target.request_outcome == "unknown" and target.status == TASK_FAILED:
+                        if any(dep.status in {TASK_FAILED, TASK_SKIPPED} for dep in dependencies):
+                            status, skip_source, error = TASK_SKIPPED, next(
+                                dep.task_id for dep in dependencies if dep.status in {TASK_FAILED, TASK_SKIPPED}
+                            ), "Reconciliation prerequisite failed."
+                        elif all(dep.status == TASK_COMPLETED for dep in dependencies):
+                            status, skip_source, error = TASK_READY, "", ""
+                        else:
+                            status, skip_source, error = TASK_BLOCKED, "", ""
+                    else:
+                        status, skip_source, error = TASK_BLOCKED, "", ""
+                        if target.status in {TASK_COMPLETED, TASK_SKIPPED} or (
+                            target.status == TASK_FAILED and target.request_outcome != "unknown"
+                        ):
+                            status, skip_source, error = TASK_SKIPPED, target.task_id, (
+                                f"Skipped because reconciliation target {target.task_id} is not unknown."
+                            )
+                    if (task.status, task.dependency_skip_task_id, task.last_error) == (status, skip_source, error):
+                        continue
+                    if status == TASK_READY:
+                        promoted += 1
+                    logger.info("api_reconciliation_task_status_changed", extra={
+                        "task_id": task.task_id, "target_task_id": target.task_id,
+                        "previous_status": task.status, "status": status,
+                    })
+                    task.status, task.dependency_skip_task_id, task.last_error = status, skip_source, error
+                    changed = True
+                    continue
                 failed = next(
                     (dep for dep in dependencies if dep.status in {TASK_FAILED, TASK_SKIPPED}),
                     None,
@@ -183,6 +219,24 @@ class ApiTaskPool:
                 task.last_error = error
                 changed = True
         return promoted
+
+    def record_reconciliation(self, task: ApiTestTask) -> None:
+        """Record an explicit read-only observation without resolving the write."""
+        if not task.reconciliation_for:
+            return
+        target = self._tasks.get(task.reconciliation_for)
+        if target is None:
+            return
+        if task.status == TASK_COMPLETED and task.reconciliation_observation in {"effect_present", "effect_absent"}:
+            target.reconciliation_status = task.reconciliation_observation
+        else:
+            target.reconciliation_status = "inconclusive"
+        logger.info("api_reconciliation_observation_recorded", extra={
+            "task_id": task.task_id, "target_task_id": target.task_id,
+            "target_request_outcome": target.request_outcome,
+            "observation": task.reconciliation_observation or "inconclusive",
+            "target_remains_unknown": target.request_outcome == "unknown",
+        })
 
     @staticmethod
     def _dependency_skip_source(task: ApiTestTask) -> str:
