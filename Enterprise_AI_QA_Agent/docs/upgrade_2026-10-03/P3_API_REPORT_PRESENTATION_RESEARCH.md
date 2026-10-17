@@ -21,7 +21,9 @@
 - 前端 `reportPresentation` 测试：**8通过**；覆盖 API 报告状态、通过/失败等级和 Markdown 工件选择。
 - 前端 `npm run build`：typecheck 和 Vite production build **通过**，ReportsView 产物生成成功。
 - 初次前端构建发现模板 class 表达式引号解析错误，保留首次失败命令输出；修正后重新构建通过，没有放宽类型检查。
+- 按既有安全/性能报告产品测试的同一夹具，补做真实产品验收：隔离 MySQL/PG/RustFS/Redis、生产 FastAPI、新服务回读 ToolJob、Vite preview 和 Chromium。`p3-api-report-product-final2.xml/log` **1通过、0失败、0跳过，49.46秒**；报告列表绑定当前 API ToolJob，页面显示 3 个 API 任务卡片、总任务数 3、通过 3、等级“良好”，页面错误 0。原始页面文本、ARIA、截图、网络和报告 JSON 保存在 `p3-api-report-product-evidence2/`。
+- 首次产品断言将 Markdown 表格的原始 `|` 当作浏览器文本，真实页面已正确渲染为带制表符的表格文本；首次失败 `p3-api-report-product-final.xml/log` 原样保留，修正断言后第二次真实产品运行通过。这是测试断言修正，不是放宽产品验证。
 
 ## 边界
 
-本批未调用外部 AI，未新增 MySQL/PG/RustFS schema；报告服务的存储读取沿现有服务。尚未进行独立生产 PG/RustFS 报告页浏览器验收，需在完整产品验收批次中补做。默认 AI API 全流程、自动续期、准备生命周期、复杂 UI 知识和其余 P0—P5 仍未完成。
+本批未调用外部 AI，未新增 MySQL/PG/RustFS schema；报告服务的存储读取沿现有服务。该项的独立 PG/RustFS 报告页浏览器验收已完成，但它使用固定受控 API campaign，不等于默认 AI 全流程。默认 AI API 全流程、自动续期、准备生命周期、复杂 UI 知识和其余 P0—P5 仍未完成。

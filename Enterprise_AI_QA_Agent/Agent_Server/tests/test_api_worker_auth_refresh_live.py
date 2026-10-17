@@ -4,6 +4,7 @@ from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
 import hashlib
+import httpx
 import os
 from pathlib import Path
 from threading import Thread
@@ -37,6 +38,8 @@ from src.registry.tools import ToolRegistry
 from src.schemas.tool_runtime import ModelToolCall
 from src.schemas.session import ChatMessage, MessageRole, RuntimeMode, SessionMode, SessionStatus
 from src.modes.api_testing_mode.campaign_state import AssertionSpec
+from test_document_full_product import product_browser
+from test_execution_worker_cli import free_port, wait_api
 
 
 @contextmanager
@@ -420,7 +423,7 @@ async def test_parent_campaign_private_state_report_and_original_job_recovery(tm
     output = Path(os.environ["QA_API_WORKER_AUTH_STORAGE_DIR"]) / "parent"
     output.mkdir(parents=True, exist_ok=False)
     with auth_target() as (base, events):
-        async with isolated_runtime(tmp_path) as (settings, _, _, objects, owned):
+        async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
             projects = PostgresProjectStore(settings)
             await projects.initialize()
             sessions = PostgresSessionStore(settings)
@@ -488,6 +491,46 @@ async def test_parent_campaign_private_state_report_and_original_job_recovery(tm
             replayed = await restored.execute(ToolRegistry().get(call.name), call, replace(context, tool_job_id=job.id))
             assert replayed.job_id == job.id and replayed.output["report"] == result.output["report"]
             assert len(events) == 3 and len(launcher.runs) == 3
+            if os.getenv("RUN_LIVE_API_REPORT_PRODUCT") == "1":
+                # The report page must consume the durable API report produced above,
+                # through the production API and the built App, after a fresh service.
+                evidence = Path(os.getenv("QA_API_REPORT_PRODUCT_EVIDENCE_DIR", str(tmp_path / "api-report-product-evidence")))
+                evidence.mkdir(parents=True, exist_ok=False)
+                api_port = free_port()
+                api = processes.start("api-report-product", "-m", "uvicorn", "src.main:app",
+                    "--host", "127.0.0.1", "--port", str(api_port))
+                async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{api_port}/api/v1", timeout=50) as client:
+                    await wait_api(client, api)
+                    listing_response = await client.get("/reports?limit=100")
+                    listing_response.raise_for_status()
+                    listing = listing_response.json()
+                    entry = next(item for item in listing["items"] if item["session"]["id"] == parent.id)
+                    assert entry["report_meta"]["ready"] is True
+                    assert entry["report_meta"]["tool_job_id"] == job.id
+                    assert entry["report_meta"]["total_tasks"] == 3
+                    assert entry["report_meta"]["completed_tasks"] == 3
+                    (evidence / "reports.json").write_text(json.dumps(listing, ensure_ascii=False, indent=2), encoding="utf8")
+                    async with product_browser(tmp_path, api_port, evidence) as (page, errors, network):
+                        await page.locator('.left-nav a[href="/reports"]').click()
+                        batch = page.locator(".batch-item").filter(has_text=parent.id[:8])
+                        await batch.wait_for(state="visible")
+                        await batch.click()
+                        await page.locator(".report-detail").evaluate("element => { element.scrollTop = 0; }")
+                        await page.locator(".report-detail .grade-box").wait_for(state="visible")
+                        body = await page.locator(".report-detail .summary-body").first.inner_text()
+                        task_cards = page.locator(".api-task-report-card")
+                        assert await task_cards.count() == 3
+                        assert "总任务数\t3" in body
+                        assert "通过\t3" in body
+                        assert await page.locator(".report-detail .grade-box").inner_text() == "良好"
+                        assert not errors, errors
+                        (evidence / "browser-observation.json").write_text(json.dumps({
+                            "job_id": job.id, "grade": await page.locator(".report-detail .grade-box").inner_text(),
+                            "summary": body, "task_cards": await task_cards.count(),
+                            "page_errors": errors, "network": network,
+                            "scope": "actual PG/RustFS API report, production API, built App and Chromium; no external AI",
+                            "full_goal_complete": False,
+                        }, ensure_ascii=False, indent=2), encoding="utf8")
             (output / "verification.json").write_text(json.dumps({"scope": "full parent ToolRuntime, controlled child launch, actual PG inline report and fresh-service read; no external AI",
                 "project_id": project.id, "parent_job_id": job.id, "events": events,
                 "report": result.output["report"], "artifacts": artifacts,

@@ -1,0 +1,121 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____ test_parent_campaign_private_state_report_and_original_job_recovery _____
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1695/test_parent_campaign_private_s0')
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_API_WORKER_AUTH_STORAGE") != "1",
+        reason="full parent ToolRuntime and encrypted Worker inputs require isolated real stores")
+    async def test_parent_campaign_private_state_report_and_original_job_recovery(tmp_path):
+        from test_execution_worker_cli import isolated_runtime
+        from src.modes.api_testing_mode.campaign_state import ApiTestingState, ApiTestCampaign
+        from src.modes.api_testing_mode.contracts import STATE_METADATA_KEY, PHASE_CAMPAIGN_READY
+        from dataclasses import replace
+        output = Path(os.environ["QA_API_WORKER_AUTH_STORAGE_DIR"]) / "parent"
+        output.mkdir(parents=True, exist_ok=False)
+        with auth_target() as (base, events):
+            async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
+                projects = PostgresProjectStore(settings)
+                await projects.initialize()
+                sessions = PostgresSessionStore(settings)
+                await sessions.initialize()
+                now = datetime.now(UTC)
+                project = await projects.create(ProjectRecord(id=str(uuid4()), project_key="parent-reference",
+                    name="Parent campaign fixture", created_at=now, updated_at=now))
+                parent = SessionRecord(id=str(uuid4()), title="Parent API campaign", status=SessionStatus.running,
+                    session_mode=SessionMode.background_task, runtime_mode=RuntimeMode.background,
+                    mode_key="api_testing", project_id=project.id, created_at=now, updated_at=now)
+                await sessions.save_session(parent)
+                jobs = ToolJobService(PostgresToolJobStore(settings))
+                await jobs.initialize()
+                references = ApiCredentialReferenceService(store=PostgresApiCredentialStore(settings), session_store=sessions)
+                await references.initialize()
+                runtime = ToolRuntimeService(tool_job_service=jobs, artifact_storage_service=objects, settings=settings,
+                    session_store=sessions, api_credential_reference_service=references)
+                launcher = ControlledWorkerLauncher(sessions, runtime)
+                runtime.set_coordinator_runtime_service(launcher)
+                graph = DependencyPlanner().plan(mapped_endpoints=CapabilityMapper().map_many([
+                    EndpointCandidate(endpoint_id=key, method=method, path=path, full_url=base+path)
+                    for key, method, path in [("login", "POST", "/login"), ("refresh", "POST", "/auth/refresh"),
+                        ("profile", "GET", "/profile")]]), preconditions=PreconditionAnalysis())
+                state = ApiTestingState(phase=PHASE_CAMPAIGN_READY,
+                    campaign=ApiTestCampaign(campaign_id=str(uuid4()), project_name=project.name, tasks=graph.tasks,
+                        execution_policy=ExecutionPolicy(max_retries=0)))
+                context = ToolExecutionContext(session_id=parent.id, turn_id=str(uuid4()), trace_id=str(uuid4()),
+                    user_message="", normalized_input="", context_bundle={STATE_METADATA_KEY: state.model_dump(mode="json")})
+                call = ModelToolCall(id=str(uuid4()), name="api-test-runner", arguments={})
+                result = await runtime.execute(ToolRegistry().get(call.name), call, context)
+                job = await jobs.get_job_detail(result.job_id)
+                for artifact in job.artifacts:
+                    if artifact.path.startswith("rustfs://"):
+                        owned.append(artifact.path)
+                assert result.status == "completed" and result.output["report"]["completed"] == 3
+                assert result.output["report"]["failed"] == 0 and len(events) == 3
+                projected_state = result.output[STATE_METADATA_KEY]
+                assert "credential_session" not in projected_state
+                ref = projected_state["execution_checkpoint"]["credential_ref"]
+                current = await references.load_parent_credential(ref, {"session_id": parent.id})
+                assert current.token not in json.dumps(result.output) + json.dumps(context.context_bundle)
+                assert current.token not in json.dumps(job.output_payload)
+                artifacts = []
+                for artifact in job.artifacts:
+                    if artifact.path.startswith("rustfs://"):
+                        raw = (await objects.read_object_uri(artifact.path))["content"]
+                    else:
+                        assert artifact.path == "inline://artifact" and artifact.metadata["__storage_mode"] == "inline_text"
+                        raw = artifact.metadata["__content_text"].encode("utf8")
+                    assert current.token.encode() not in raw
+                    if artifact.artifact_type == "api_test_report_json":
+                        report_content = json.loads(raw)
+                        assert report_content["completed"] == 3 and report_content["failed"] == 0
+                    saved_filename = "report.json" if artifact.artifact_type == "api_test_report_json" else "report.md"
+                    (output / saved_filename).write_bytes(raw)
+                    artifacts.append({"id": artifact.id, "uri": artifact.path, "type": artifact.artifact_type,
+                        "sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw), "saved_filename": saved_filename})
+                assert {a["type"] for a in artifacts} == {"api_test_report_json", "api_test_report_md"}
+                reread = await ToolJobService(PostgresToolJobStore(settings)).get_job_detail(job.id)
+                assert reread.artifacts == job.artifacts
+                restored = ToolRuntimeService(tool_job_service=ToolJobService(PostgresToolJobStore(settings)),
+                    settings=settings, session_store=PostgresSessionStore(settings), artifact_storage_service=objects,
+                    api_credential_reference_service=ApiCredentialReferenceService(store=PostgresApiCredentialStore(settings),
+                        session_store=PostgresSessionStore(settings)))
+                replayed = await restored.execute(ToolRegistry().get(call.name), call, replace(context, tool_job_id=job.id))
+                assert replayed.job_id == job.id and replayed.output["report"] == result.output["report"]
+                assert len(events) == 3 and len(launcher.runs) == 3
+                if os.getenv("RUN_LIVE_API_REPORT_PRODUCT") == "1":
+                    # The report page must consume the durable API report produced above,
+                    # through the production API and the built App, after a fresh service.
+                    evidence = Path(os.getenv("QA_API_REPORT_PRODUCT_EVIDENCE_DIR", str(tmp_path / "api-report-product-evidence")))
+                    evidence.mkdir(parents=True, exist_ok=False)
+                    api_port = free_port()
+                    api = processes.start("api-report-product", "-m", "uvicorn", "src.main:app",
+                        "--host", "127.0.0.1", "--port", str(api_port))
+                    async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{api_port}/api/v1", timeout=50) as client:
+                        await wait_api(client, api)
+                        listing_response = await client.get("/reports?limit=100")
+                        listing_response.raise_for_status()
+                        listing = listing_response.json()
+                        entry = next(item for item in listing["items"] if item["session"]["id"] == parent.id)
+                        assert entry["report_meta"]["ready"] is True
+                        assert entry["report_meta"]["tool_job_id"] == job.id
+                        assert entry["report_meta"]["total_tasks"] == 3
+                        assert entry["report_meta"]["completed_tasks"] == 3
+                        (evidence / "reports.json").write_text(json.dumps(listing, ensure_ascii=False, indent=2), encoding="utf8")
+                        async with product_browser(tmp_path, api_port, evidence) as (page, errors, network):
+                            await page.locator('.left-nav a[href="/reports"]').click()
+                            batch = page.locator(".batch-item").filter(has_text=parent.id[:8])
+                            await batch.wait_for(state="visible")
+                            await batch.click()
+                            await page.locator(".report-detail").evaluate("element => { element.scrollTop = 0; }")
+                            await page.locator(".report-detail .grade-box").wait_for(state="visible")
+                            body = await page.locator(".report-detail .summary-body").first.inner_text()
+                            task_cards = page.locator(".api-task-report-card")
+                            assert await task_cards.count() == 3
+>                           assert "��������" in body and "| 3 |" in body
+E                           AssertionError: assert ('\u603b\u4efb\u52a1\u6570' in 'API \u6d4b\u8bd5\u62a5\u544a\\n\\n\u9879\u76ee: Parent campaign fixture \u76ee\u6807: \u63a5\u53e3\u9a8c\u8bc1 \u751f\u6210\u65f6\u95f4: 2026-10-17T13:55:39.367039+00:00 Campaign ID: 4fba61eb-34c4-45...\u72b6\u6001: completed\\n\u54cd\u5e94\u7801: 200\\n\u8017\u65f6: 24ms\\n\u65ad\u8a00: 1 \u901a\u8fc7 / 0 \u5931\u8d25\\n\u2705 GET /profile\\n\u72b6\u6001: completed\\n\u54cd\u5e94\u7801: 200\\n\u8017\u65f6: 27ms\\n\u65ad\u8a00: 1 \u901a\u8fc7 / 0 \u5931\u8d25' and '| 3 |' in 'API \u6d4b\u8bd5\u62a5\u544a\\n\\n\u9879\u76ee: Parent campaign fixture \u76ee\u6807: \u63a5\u53e3\u9a8c\u8bc1 \u751f\u6210\u65f6\u95f4: 2026-10-17T13:55:39.367039+00:00 Campaign ID: 4fba61eb-34c4-45...\u72b6\u6001: completed\\n\u54cd\u5e94\u7801: 200\\n\u8017\u65f6: 24ms\\n\u65ad\u8a00: 1 \u901a\u8fc7 / 0 \u5931\u8d25\\n\u2705 GET /profile\\n\u72b6\u6001: completed\\n\u54cd\u5e94\u7801: 200\\n\u8017\u65f6: 27ms\\n\u65ad\u8a00: 1 \u901a\u8fc7 / 0 \u5931\u8d25')
+
+tests\test_api_worker_auth_refresh_live.py:523: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_api_worker_auth_refresh_live.py::test_parent_campaign_private_state_report_and_original_job_recovery
+1 failed in 58.52s

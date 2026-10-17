@@ -3868,3 +3868,11 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **实际结果**：后端报告投影/列表/脱敏回归23通过；前端reportPresentation测试8通过；前端typecheck和Vite production build通过。首次构建的模板引号语法错误已保留原日志，修复后重新构建通过。外部AI0；三份方案同步。尚未进行独立生产PG/RustFS报告页浏览器验收，仍需在完整产品批次补做。
 
 **仍需继续**：默认AI完整项目选取→排序→补全→执行、默认Agent结果质量、自动401续期、准备生命周期/运行中修订、复杂UI知识与失败定位、持续性能/安全、需求业务评审/部署/历史迁移和完整P0—P5。Step已认证，外部AI按此前安排暂缓。
+
+### 7.63 Agent API 报告页真实产品验收〔2026-10-17〕
+
+基线`e4ed0282`，依据`P3_API_REPORT_PRESENTATION_RESEARCH.md`和既有性能/安全报告产品夹具。先确认报告页必须走生产`/reports`、真实PG/RustFS工件、构建版App和Chromium，不能用报告服务单测替代；API父ToolJob沿现有受控本地HTTP campaign产生，未调用外部AI。
+
+**本批已验收**：在隔离MySQL/PG/RustFS/Redis中执行真实`ToolRuntime`并由新生产API进程回读，`/reports`将当前`api_test_report_json`绑定到父ToolJob；Vite preview加载构建版App，Chromium打开报告页，显示3个API任务卡片、总任务数3、通过3、等级“良好”，页面错误数0，网络请求成功。`p3-api-report-product-final2.xml/log`为1通过、0失败、0跳过、49.46秒；页面文本、ARIA、截图、网络、报告列表和浏览器观察保存在`p3-api-report-product-evidence2/`。首次断言误把Markdown表格分隔符当作浏览器文本，`p3-api-report-product-final.xml/log`原样保留；按真实渲染语义修正后第二次完整产品运行通过。
+
+该批只关闭“API报告结果呈现”的独立PG/RustFS/浏览器验收，不扩大为默认AI项目选取→排序→补全→执行或完整Agent质量通过；无新表、配置、依赖或模型协议变更。自动401续期/安全重放、准备生命周期、运行中修订、复杂UI知识/失败定位、持续性能/安全、需求业务评审/部署/历史迁移及其他P0—P5仍未完成。Step已认证，外部AI按此前安排暂缓。

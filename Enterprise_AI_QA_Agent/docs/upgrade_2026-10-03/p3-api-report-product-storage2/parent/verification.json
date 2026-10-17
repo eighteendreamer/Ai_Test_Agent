@@ -1,0 +1,458 @@
+{
+  "scope": "full parent ToolRuntime, controlled child launch, actual PG inline report and fresh-service read; no external AI",
+  "project_id": "cdcf29f6-199e-4bba-98cb-ef535623116c",
+  "parent_job_id": "224db37d-f732-4f4c-8888-e2434b729ea7",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false,
+      "old_credential": false,
+      "current_credential": false
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": true,
+      "current_credential": false
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential": false,
+      "current_credential": true
+    }
+  ],
+  "report": {
+    "tasks": [
+      {
+        "name": "POST /login",
+        "path": "/login",
+        "error": null,
+        "checks": [
+          {
+            "kind": "status_code_range",
+            "name": "status_in_[200, 201, 204]",
+            "actual": 200,
+            "passed": true,
+            "expected": [
+              200,
+              201,
+              204
+            ],
+            "description": "Expect success status for POST /login"
+          }
+        ],
+        "method": "POST",
+        "status": "completed",
+        "request": {
+          "body": null,
+          "query": {},
+          "headers": {}
+        },
+        "task_id": "task_000_login",
+        "full_url": "http://127.0.0.1:50530/login",
+        "response": {
+          "body": {
+            "access_token": "[REDACTED]"
+          },
+          "status": 200,
+          "headers": {
+            "date": "Sat, 17 Oct 2026 13:57:29 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json",
+            "content-length": "52"
+          },
+          "_security": {
+            "untrusted_content": true,
+            "redacted_field_count": 1,
+            "indirect_injection_signals": []
+          }
+        },
+        "capability": "login",
+        "check_count": 1,
+        "duration_ms": 107.67,
+        "checks_failed": 0,
+        "checks_passed": 1,
+        "request_outcome": "completed",
+        "response_status": 200,
+        "reconciliation_for": null,
+        "http_observation_v1": {
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "host": "127.0.0.1",
+                "path": "/login",
+                "port": 50530,
+                "scheme": "http",
+                "query_omitted": false,
+                "fragment_omitted": false,
+                "userinfo_omitted": false
+              },
+              "status_code": 200
+            }
+          ],
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:57:29.663029Z",
+          "implementation_version": "api-http-observation-v1"
+        },
+        "reconciliation_status": "none",
+        "reconciliation_required": false,
+        "reconciliation_observation": null
+      },
+      {
+        "name": "POST /auth/refresh",
+        "path": "/auth/refresh",
+        "error": null,
+        "checks": [
+          {
+            "kind": "status_code_range",
+            "name": "status_in_[200, 201, 204]",
+            "actual": 200,
+            "passed": true,
+            "expected": [
+              200,
+              201,
+              204
+            ],
+            "description": "Expect success status for POST /auth/refresh"
+          }
+        ],
+        "method": "POST",
+        "status": "completed",
+        "request": {
+          "body": null,
+          "query": {},
+          "headers": {}
+        },
+        "task_id": "task_001_refresh",
+        "full_url": "http://127.0.0.1:50530/auth/refresh",
+        "response": {
+          "body": {
+            "access_token": "[REDACTED]"
+          },
+          "status": 200,
+          "headers": {
+            "date": "Sat, 17 Oct 2026 13:57:29 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json",
+            "content-length": "52"
+          },
+          "_security": {
+            "untrusted_content": true,
+            "redacted_field_count": 1,
+            "indirect_injection_signals": []
+          }
+        },
+        "capability": "refresh_token",
+        "check_count": 1,
+        "duration_ms": 25.08,
+        "checks_failed": 0,
+        "checks_passed": 1,
+        "request_outcome": "completed",
+        "response_status": 200,
+        "reconciliation_for": null,
+        "http_observation_v1": {
+          "hops": [
+            {
+              "method": "POST",
+              "target": {
+                "host": "127.0.0.1",
+                "path": "/auth/refresh",
+                "port": 50530,
+                "scheme": "http",
+                "query_omitted": false,
+                "fragment_omitted": false,
+                "userinfo_omitted": false
+              },
+              "status_code": 200
+            }
+          ],
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:57:29.864338Z",
+          "implementation_version": "api-http-observation-v1"
+        },
+        "reconciliation_status": "none",
+        "reconciliation_required": false,
+        "reconciliation_observation": null
+      },
+      {
+        "name": "GET /profile",
+        "path": "/profile",
+        "error": null,
+        "checks": [
+          {
+            "kind": "status_code_range",
+            "name": "status_in_[200, 201, 204]",
+            "actual": 200,
+            "passed": true,
+            "expected": [
+              200,
+              201,
+              204
+            ],
+            "description": "Expect success status for GET /profile"
+          }
+        ],
+        "method": "GET",
+        "status": "completed",
+        "request": {
+          "body": null,
+          "query": {},
+          "headers": {}
+        },
+        "task_id": "task_002_profile",
+        "full_url": "http://127.0.0.1:50530/profile",
+        "response": {
+          "body": {
+            "accepted": true
+          },
+          "status": 200,
+          "headers": {
+            "date": "Sat, 17 Oct 2026 13:57:30 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json",
+            "content-length": "18"
+          }
+        },
+        "capability": "list",
+        "check_count": 1,
+        "duration_ms": 23.71,
+        "checks_failed": 0,
+        "checks_passed": 1,
+        "request_outcome": "completed",
+        "response_status": 200,
+        "reconciliation_for": null,
+        "http_observation_v1": {
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "host": "127.0.0.1",
+                "path": "/profile",
+                "port": 50530,
+                "scheme": "http",
+                "query_omitted": false,
+                "fragment_omitted": false,
+                "userinfo_omitted": false
+              },
+              "status_code": 200
+            }
+          ],
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:57:30.062262Z",
+          "implementation_version": "api-http-observation-v1"
+        },
+        "reconciliation_status": "none",
+        "reconciliation_required": false,
+        "reconciliation_observation": null
+      }
+    ],
+    "failed": 0,
+    "skipped": 0,
+    "summary": "✅ Campaign 'd52a351b-a238-498d-bf46-36265f272ab1' completed: 3/3 tasks passed, 0 failed, 0 skipped. Checks: 3 passed, 0 failed. Total time: 156ms.",
+    "findings": [],
+    "artifacts": [
+      {
+        "type": "api_test_report_json",
+        "label": "API 测试报告 (JSON)",
+        "content": "{\n  \"campaign_id\": \"d52a351b-a238-498d-bf46-36265f272ab1\",\n  \"project_name\": \"Parent campaign fixture\",\n  \"summary\": \"✅ Campaign 'd52a351b-a238-498d-bf46-36265f272ab1' completed: 3/3 tasks passed, 0 failed, 0 skipped. Checks: 3 passed, 0 failed. Total time: 156ms.\",\n  \"total_tasks\": 3,\n  \"completed\": 3,\n  \"failed\": 0,\n  \"skipped\": 0,\n  \"passed_checks\": 3,\n  \"failed_checks\": 0,\n  \"duration_ms\": 156.46,\n  \"tasks\": [\n    {\n      \"task_id\": \"task_000_login\",\n      \"name\": \"POST /login\",\n      \"method\": \"POST\",\n      \"path\": \"/login\",\n      \"full_url\": \"http://127.0.0.1:50530/login\",\n      \"capability\": \"login\",\n      \"status\": \"completed\",\n      \"response_status\": 200,\n      \"duration_ms\": 107.67,\n      \"check_count\": 1,\n      \"checks_passed\": 1,\n      \"checks_failed\": 0,\n      \"request_outcome\": \"completed\",\n      \"reconciliation_for\": null,\n      \"reconciliation_status\": \"none\",\n      \"reconciliation_observation\": null,\n      \"reconciliation_required\": false,\n      \"error\": null,\n      \"checks\": [\n        {\n          \"kind\": \"status_code_range\",\n          \"name\": \"status_in_[200, 201, 204]\",\n          \"actual\": 200,\n          \"passed\": true,\n          \"expected\": [\n            200,\n            201,\n            204\n          ],\n          \"description\": \"Expect success status for POST /login\"\n        }\n      ],\n      \"request\": {\n        \"headers\": {},\n        \"query\": {},\n        \"body\": null\n      },\n      \"response\": {\n        \"status\": 200,\n        \"headers\": {\n          \"date\": \"Sat, 17 Oct 2026 13:57:29 GMT\",\n          \"server\": \"BaseHTTP/0.6 Python/3.11.16\",\n          \"content-type\": \"application/json\",\n          \"content-length\": \"52\"\n        },\n        \"body\": {\n          \"access_token\": \"[REDACTED]\"\n        },\n        \"_security\": {\n          \"untrusted_content\": true,\n          \"indirect_injection_signals\": [],\n          \"redacted_field_count\": 1\n        }\n      },\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"POST\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/login\",\n              \"port\": 50530,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-17T13:57:29.663029Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    },\n    {\n      \"task_id\": \"task_001_refresh\",\n      \"name\": \"POST /auth/refresh\",\n      \"method\": \"POST\",\n      \"path\": \"/auth/refresh\",\n      \"full_url\": \"http://127.0.0.1:50530/auth/refresh\",\n      \"capability\": \"refresh_token\",\n      \"status\": \"completed\",\n      \"response_status\": 200,\n      \"duration_ms\": 25.08,\n      \"check_count\": 1,\n      \"checks_passed\": 1,\n      \"checks_failed\": 0,\n      \"request_outcome\": \"completed\",\n      \"reconciliation_for\": null,\n      \"reconciliation_status\": \"none\",\n      \"reconciliation_observation\": null,\n      \"reconciliation_required\": false,\n      \"error\": null,\n      \"checks\": [\n        {\n          \"kind\": \"status_code_range\",\n          \"name\": \"status_in_[200, 201, 204]\",\n          \"actual\": 200,\n          \"passed\": true,\n          \"expected\": [\n            200,\n            201,\n            204\n          ],\n          \"description\": \"Expect success status for POST /auth/refresh\"\n        }\n      ],\n      \"request\": {\n        \"headers\": {},\n        \"query\": {},\n        \"body\": null\n      },\n      \"response\": {\n        \"status\": 200,\n        \"headers\": {\n          \"date\": \"Sat, 17 Oct 2026 13:57:29 GMT\",\n          \"server\": \"BaseHTTP/0.6 Python/3.11.16\",\n          \"content-type\": \"application/json\",\n          \"content-length\": \"52\"\n        },\n        \"body\": {\n          \"access_token\": \"[REDACTED]\"\n        },\n        \"_security\": {\n          \"untrusted_content\": true,\n          \"indirect_injection_signals\": [],\n          \"redacted_field_count\": 1\n        }\n      },\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"POST\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/auth/refresh\",\n              \"port\": 50530,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-17T13:57:29.864338Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    },\n    {\n      \"task_id\": \"task_002_profile\",\n      \"name\": \"GET /profile\",\n      \"method\": \"GET\",\n      \"path\": \"/profile\",\n      \"full_url\": \"http://127.0.0.1:50530/profile\",\n      \"capability\": \"list\",\n      \"status\": \"completed\",\n      \"response_status\": 200,\n      \"duration_ms\": 23.71,\n      \"check_count\": 1,\n      \"checks_passed\": 1,\n      \"checks_failed\": 0,\n      \"request_outcome\": \"completed\",\n      \"reconciliation_for\": null,\n      \"reconciliation_status\": \"none\",\n      \"reconciliation_observation\": null,\n      \"reconciliation_required\": false,\n      \"error\": null,\n      \"checks\": [\n        {\n          \"kind\": \"status_code_range\",\n          \"name\": \"status_in_[200, 201, 204]\",\n          \"actual\": 200,\n          \"passed\": true,\n          \"expected\": [\n            200,\n            201,\n            204\n          ],\n          \"description\": \"Expect success status for GET /profile\"\n        }\n      ],\n      \"request\": {\n        \"headers\": {},\n        \"query\": {},\n        \"body\": null\n      },\n      \"response\": {\n        \"status\": 200,\n        \"headers\": {\n          \"date\": \"Sat, 17 Oct 2026 13:57:30 GMT\",\n          \"server\": \"BaseHTTP/0.6 Python/3.11.16\",\n          \"content-type\": \"application/json\",\n          \"content-length\": \"18\"\n        },\n        \"body\": {\n          \"accepted\": true\n        }\n      },\n      \"http_observation_v1\": {\n        \"hops\": [\n          {\n            \"method\": \"GET\",\n            \"target\": {\n              \"host\": \"127.0.0.1\",\n              \"path\": \"/profile\",\n              \"port\": 50530,\n              \"scheme\": \"http\",\n              \"query_omitted\": false,\n              \"fragment_omitted\": false,\n              \"userinfo_omitted\": false\n            },\n            \"status_code\": 200\n          }\n        ],\n        \"acquisition\": \"network\",\n        \"observed_at\": \"2026-10-17T13:57:30.062262Z\",\n        \"implementation_version\": \"api-http-observation-v1\"\n      }\n    }\n  ],\n  \"findings\": [],\n  \"artifacts\": [],\n  \"verification_result\": {},\n  \"evaluation_result\": {},\n  \"generated_at\": \"2026-10-17T13:57:30.144732+00:00\"\n}",
+        "filename": "api_test_report_d52a351b.json",
+        "content_type": "application/json"
+      },
+      {
+        "type": "api_test_report_md",
+        "label": "API 测试报告 (Markdown)",
+        "content": "# API 测试报告\n\n**项目**: Parent campaign fixture\n**目标**: 接口验证\n**生成时间**: 2026-10-17T13:57:30.144732+00:00\n**Campaign ID**: `d52a351b-a238-498d-bf46-36265f272ab1`\n\n## 📊 执行摘要\n\n| 指标 | 值 |\n|------|-----|\n| 总任务数 | 3 |\n| 通过 | 3 |\n| 失败 | 0 |\n| 跳过 | 0 |\n| 断言通过 | 3 |\n| 断言失败 | 0 |\n| 总耗时 | 156ms |\n\n## 📋 任务详情\n\n### ✅ POST /login\n\n- **状态**: completed\n- **响应码**: 200\n- **耗时**: 108ms\n- **断言**: 1 通过 / 0 失败\n\n### ✅ POST /auth/refresh\n\n- **状态**: completed\n- **响应码**: 200\n- **耗时**: 25ms\n- **断言**: 1 通过 / 0 失败\n\n### ✅ GET /profile\n\n- **状态**: completed\n- **响应码**: 200\n- **耗时**: 24ms\n- **断言**: 1 通过 / 0 失败\n",
+        "filename": "api_test_report_d52a351b.md",
+        "content_type": "text/markdown"
+      }
+    ],
+    "completed": 3,
+    "campaign_id": "d52a351b-a238-498d-bf46-36265f272ab1",
+    "duration_ms": 156.46,
+    "total_tasks": 3,
+    "generated_at": "2026-10-17T13:57:30.144732+00:00",
+    "project_name": "Parent campaign fixture",
+    "failed_checks": 0,
+    "passed_checks": 3,
+    "evaluation_result": {
+      "summary": "质量评分: 100/100 (等级 A) | 覆盖率: 100% | 严重问题: 0 个 | 高优问题: 0 个",
+      "coverage": {
+        "coverage_rate": 1.0,
+        "tested_endpoints": 3,
+        "tested_capabilities": [
+          "refresh_token",
+          "list",
+          "login"
+        ],
+        "untested_capabilities": [],
+        "total_available_endpoints": 3
+      },
+      "campaign_id": "d52a351b-a238-498d-bf46-36265f272ab1",
+      "quality_score": {
+        "grade": "A",
+        "overall": 100.0,
+        "coverage": 20.0,
+        "performance": 20.0,
+        "reliability": 40.0,
+        "severity_penalty": 0.0
+      },
+      "recommendations": [
+        "✅ 所有检查通过，无需额外操作。"
+      ],
+      "verification_verdict": {
+        "rules": [
+          {
+            "name": "Task Pass Rate",
+            "actual": 1.0,
+            "passed": true,
+            "rule_id": "pass_rate",
+            "expected": 0.8,
+            "severity": "error",
+            "description": "3/3 tasks passed (100%). Threshold: 80%.",
+            "affected_tasks": []
+          },
+          {
+            "name": "Critical Endpoints",
+            "actual": "2/2 passed",
+            "passed": true,
+            "rule_id": "critical_endpoints",
+            "expected": "all critical endpoints pass",
+            "severity": "error",
+            "description": "All 2 critical endpoints passed.",
+            "affected_tasks": []
+          },
+          {
+            "name": "Response Time SLA",
+            "actual": "max=108ms, avg=52ms",
+            "passed": true,
+            "rule_id": "response_time_sla",
+            "expected": "<= 5000.0ms",
+            "severity": "warning",
+            "description": "All endpoints within 5000.0ms SLA (max=108ms).",
+            "affected_tasks": []
+          },
+          {
+            "name": "No Auth Failures",
+            "actual": "0 auth failures",
+            "passed": true,
+            "rule_id": "no_auth_failures",
+            "expected": "no 401/403 responses",
+            "severity": "info",
+            "description": "No authentication failures detected.",
+            "affected_tasks": []
+          },
+          {
+            "name": "No Environment Errors",
+            "actual": "0 environment errors",
+            "passed": true,
+            "rule_id": "no_environment_errors",
+            "expected": "no timeout/connection/5xx errors",
+            "severity": "warning",
+            "description": "No environment-related failures detected.",
+            "affected_tasks": []
+          }
+        ],
+        "passed": true,
+        "summary": "✅ Campaign APPROVED: 5/5 verification rules passed across 3 tasks.",
+        "verdict": "approved",
+        "pass_rate": 1.0,
+        "sla_passed": true,
+        "total_rules": 5,
+        "failed_rules": 0,
+        "critical_passed": true
+      },
+      "failure_classifications": []
+    },
+    "verification_result": {
+      "rules": [
+        {
+          "name": "Task Pass Rate",
+          "actual": 1.0,
+          "passed": true,
+          "rule_id": "pass_rate",
+          "expected": 0.8,
+          "severity": "error",
+          "description": "3/3 tasks passed (100%). Threshold: 80%.",
+          "affected_tasks": []
+        },
+        {
+          "name": "Critical Endpoints",
+          "actual": "2/2 passed",
+          "passed": true,
+          "rule_id": "critical_endpoints",
+          "expected": "all critical endpoints pass",
+          "severity": "error",
+          "description": "All 2 critical endpoints passed.",
+          "affected_tasks": []
+        },
+        {
+          "name": "Response Time SLA",
+          "actual": "max=108ms, avg=52ms",
+          "passed": true,
+          "rule_id": "response_time_sla",
+          "expected": "<= 5000.0ms",
+          "severity": "warning",
+          "description": "All endpoints within 5000.0ms SLA (max=108ms).",
+          "affected_tasks": []
+        },
+        {
+          "name": "No Auth Failures",
+          "actual": "0 auth failures",
+          "passed": true,
+          "rule_id": "no_auth_failures",
+          "expected": "no 401/403 responses",
+          "severity": "info",
+          "description": "No authentication failures detected.",
+          "affected_tasks": []
+        },
+        {
+          "name": "No Environment Errors",
+          "actual": "0 environment errors",
+          "passed": true,
+          "rule_id": "no_environment_errors",
+          "expected": "no timeout/connection/5xx errors",
+          "severity": "warning",
+          "description": "No environment-related failures detected.",
+          "affected_tasks": []
+        }
+      ],
+      "passed": true,
+      "summary": "✅ Campaign APPROVED: 5/5 verification rules passed across 3 tasks.",
+      "verdict": "approved",
+      "pass_rate": 1.0,
+      "sla_passed": true,
+      "total_rules": 5,
+      "failed_rules": 0,
+      "critical_passed": true
+    }
+  },
+  "artifacts": [
+    {
+      "id": "37250f8e-2934-40b1-a61e-8b4445c16a39",
+      "uri": "inline://artifact",
+      "type": "api_test_report_json",
+      "sha256": "e9ed074f89aafb1818caabc7d269be8f3fd7bfde750e405067f770d0ca34f030",
+      "size_bytes": 6701,
+      "saved_filename": "report.json"
+    },
+    {
+      "id": "4e937ef5-3fc8-4bfc-bb01-d24707f14c22",
+      "uri": "inline://artifact",
+      "type": "api_test_report_md",
+      "sha256": "317345760be1cdd9b5a8469611c53dbb56dbc295f892e6f0379e98fce041c85f",
+      "size_bytes": 764,
+      "saved_filename": "report.md"
+    }
+  ],
+  "public_state_uses_credential_ref": true,
+  "terminal_replay_new_http": 0,
+  "full_goal_complete": false
+}
