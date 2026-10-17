@@ -176,7 +176,7 @@ def test_missing_binding_after_real_process_exit_uses_fixed_producer_without_res
     import sys
     import test_api_dependency_restore_http as recovery
     directory = Path(os.getenv("QA_API_REQUIRED_BINDING_PROCESS_DIR", str(tmp_path)))
-    directory.mkdir(parents=True, exist_ok=False)
+    directory.mkdir(parents=True, exist_ok=True)
     snapshot, result = directory/"checkpoint.json", directory/"result.json"
     with target({"data": {"count": 0}}) as (url, events):
         campaign = ApiTestCampaign(campaign_id="missing-after-interrupt", tasks=[
