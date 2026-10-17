@@ -79,6 +79,24 @@ const selectedReportBodyHtml = computed(() => {
   return renderMarkdown(body);
 });
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function apiTasksFor(entry: ReportEntry | null): Record<string, unknown>[] {
+  if (!entry || entry.session.mode_key !== "api_testing") return [];
+  const tasks = entry.reportMeta.api_tasks;
+  return Array.isArray(tasks) ? tasks.filter(isRecord) : [];
+}
+
+const selectedApiTasks = computed(() => apiTasksFor(selectedReport.value));
+const selectedIsApiReport = computed(() => selectedReport.value?.session.mode_key === "api_testing");
+
+function formatApiPayload(value: unknown): string {
+  if (value === undefined || value === null || value === "") return "—";
+  try { return JSON.stringify(value, null, 2); } catch { return String(value); }
+}
+
 const selectedWorkerSummary = computed(() => {
   const report = selectedReport.value;
   if (!report) {
@@ -435,6 +453,42 @@ onMounted(() => {
             </div>
           </section>
 
+          <section v-if="selectedIsApiReport" class="content-section">
+            <div class="section-header">
+              <h4>API 任务结果</h4>
+              <span class="subtitle mono">请求、响应、断言与查证状态</span>
+            </div>
+            <div class="api-task-report-list">
+              <article v-for="(task, index) in selectedApiTasks" :key="String(task.task_id || index)" class="api-task-report-card">
+                <div class="api-task-report-head">
+                  <strong>{{ String(task.method || "") }} {{ String(task.path || task.full_url || "") }}</strong>
+                  <span class="worker-status" :class="`worker-status-${String(task.status || '')}`">
+                    {{ String(task.status || "") }}
+                  </span>
+                </div>
+                <p class="worker-meta mono">
+                  HTTP {{ task.response_status ?? "—" }} · {{ String(task.request_outcome || "") }} ·
+                  断言 {{ task.checks_passed ?? 0 }}/{{ task.checks_failed ?? 0 }}
+                </p>
+                <p v-if="task.reconciliation_for" class="worker-meta">
+                  查证 {{ String(task.reconciliation_for) }} · {{ String(task.reconciliation_status || "none") }}
+                </p>
+                <details>
+                  <summary>请求</summary>
+                  <pre class="api-payload-preview">{{ formatApiPayload(task.request) }}</pre>
+                </details>
+                <details>
+                  <summary>响应</summary>
+                  <pre class="api-payload-preview">{{ formatApiPayload(task.response) }}</pre>
+                </details>
+                <details>
+                  <summary>断言</summary>
+                  <pre class="api-payload-preview">{{ formatApiPayload(task.checks) }}</pre>
+                </details>
+              </article>
+            </div>
+          </section>
+
           <section class="content-section">
             <div class="section-header">
               <h4>{{ t("reports.section_review_tasks") }}</h4>
@@ -533,6 +587,40 @@ onMounted(() => {
   height: 100%;
   padding: 16px;
   background: var(--bg);
+}
+
+.api-task-report-list {
+  display: grid;
+  gap: 12px;
+}
+
+.api-task-report-card {
+  padding: 14px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+}
+
+.api-task-report-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.api-task-report-card details {
+  margin-top: 8px;
+}
+
+.api-payload-preview {
+  max-height: 260px;
+  overflow: auto;
+  margin: 8px 0 0;
+  padding: 10px;
+  border-radius: 8px;
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .page-head {

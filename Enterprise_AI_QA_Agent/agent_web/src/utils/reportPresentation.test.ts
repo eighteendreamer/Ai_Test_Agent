@@ -6,6 +6,7 @@ import { primaryReportArtifact, reportExecutionStatus, reportGrade } from "./rep
 
 const security = { mode_key: "security_testing", status: "completed" } as SessionSummary;
 const perf = { mode_key: "performance_testing", status: "completed" } as SessionSummary;
+const api = { mode_key: "api_testing", status: "completed" } as SessionSummary;
 
 describe("reports backed by actual persisted security evidence", () => {
   it("keeps the real partial campaign with four findings as attention", () => {
@@ -21,6 +22,13 @@ describe("reports backed by actual persisted security evidence", () => {
     expect(reportGrade(perf, { ready: true, verdict: "fail" }, [])).toBe("poor");
     expect(reportGrade(perf, { ready: true, verdict: "inconclusive" }, [])).toBe("attention");
     expect(reportGrade(perf, { ready: true, verdict: "pass", metrics_persistence: { status: "failed" } }, [])).toBe("attention");
+  });
+  it("projects API report readiness, grade and Markdown artifact", () => {
+    expect(reportExecutionStatus(api, { ready: true, job_status: "completed" })).toBe("completed");
+    expect(reportGrade(api, { ready: true, failed_tasks: 0, skipped_tasks: 0 }, [])).toBe("good");
+    expect(reportGrade(api, { ready: true, failed_tasks: 1, skipped_tasks: 0 }, [])).toBe("poor");
+    const artifact = { artifact_type: "api_test_report_md", tool_job_id: "api-job" } as ToolArtifactRecord;
+    expect(primaryReportArtifact([artifact], { kind: "api_testing", ready: true, tool_job_id: "api-job" })).toBe(artifact);
   });
   it("preserves code review verification grades", () => {
     const review = { mode_key: "code_review", status: "completed" } as SessionSummary;

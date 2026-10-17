@@ -1,0 +1,42 @@
+F......................                                                  [100%]
+================================== FAILURES ===================================
+____ test_report_page_uses_lightweight_session_data_and_batches_artifacts _____
+
+    def test_report_page_uses_lightweight_session_data_and_batches_artifacts():
+        primary = _session(
+            "primary",
+            {
+                "code_review_report": {
+                    "summary": "Ready",
+                    "report_session_id": "report-child",
+                },
+                "worker_dispatches": [{"task_id": "review", "status": "completed"}],
+                "verification_results": [{"status": "passed", "summary": "ok"}],
+            },
+        )
+        extra = _session("extra", {})
+        store = _Store([primary, extra])
+        tool_jobs = _ToolJobs(
+            [
+                _artifact("primary-artifact", "primary"),
+                _artifact("report-artifact", "report-child"),
+            ]
+        )
+        service = ReportService(  # type: ignore[arg-type]
+            store=store,
+            tool_job_service=tool_jobs,
+        )
+    
+        page = asyncio.run(service.list_reports_page(limit=1, offset=0))
+    
+        assert page.has_more is True
+>       assert store.calls == [{"limit": 2, "offset": 0, "mode_keys": ["code_review", "security_testing", "performance_testing"]}]
+E       AssertionError: assert [{'limit': 2,...pi_testing']}] == [{'limit': 2,...ce_testing']}]
+E         
+E         At index 0 diff: {'limit': 2, 'offset': 0, 'mode_keys': ['code_review', 'security_testing', 'performance_testing', 'api_testing']} != {'limit': 2, 'offset': 0, 'mode_keys': ['code_review', 'security_testing', 'performance_testing']}
+E         Use -v to get more diff
+
+tests\test_report_service.py:93: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_report_service.py::test_report_page_uses_lightweight_session_data_and_batches_artifacts
+1 failed, 22 passed in 9.46s

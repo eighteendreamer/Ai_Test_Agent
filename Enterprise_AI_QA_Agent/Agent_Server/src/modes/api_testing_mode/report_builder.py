@@ -19,6 +19,7 @@ from src.modes.api_testing_mode.campaign_state import (
 )
 from src.modes.api_testing_mode.contracts import TASK_COMPLETED, TASK_FAILED, TASK_SKIPPED
 from src.modes.api_testing_mode.http_observation import HTTP_OBSERVATION_KEY
+from src.application.security.output_safety_policy import OutputSafetyPolicy
 
 
 class ReportBuilder:
@@ -189,6 +190,16 @@ class ReportBuilder:
     # ------------------------------------------------------------------
 
     def _task_summary(self, task: ApiTestTask) -> dict[str, Any]:
+        public_request, _, _ = OutputSafetyPolicy().sanitize_tool_output({
+            "headers": task.request_headers,
+            "query": task.request_query,
+            "body": task.request_body,
+        })
+        public_response, _, _ = OutputSafetyPolicy().sanitize_tool_output({
+            "status": task.response_status,
+            "headers": dict(task.response_headers),
+            "body": self._truncate_body(task.response_body, max_chars=4000),
+        })
         summary: dict[str, Any] = {
             "task_id": task.task_id,
             "name": task.name,
@@ -209,6 +220,8 @@ class ReportBuilder:
             "reconciliation_required": task.request_outcome == "unknown" and task.reconciliation_status in {"none", "inconclusive"},
             "error": task.last_error or None,
             "checks": task.check_results,
+            "request": public_request,
+            "response": public_response,
         }
 
         if HTTP_OBSERVATION_KEY in task.execution_checkpoint:

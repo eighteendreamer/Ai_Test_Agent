@@ -264,3 +264,18 @@ def test_reconciliation_task_must_be_read_only_before_any_http(method):
     check = ApiTestTask(task_id="check", method=method, path="/check", status="blocked", reconciliation_for="write")
     with pytest.raises(ValueError, match="reconciliation_must_be_read_only"):
         ApiTaskPool([unknown, check])
+
+
+def test_api_report_contains_redacted_request_and_response_details():
+    task = ApiTestTask(task_id="reported", method="POST", path="/login", status="completed",
+        request_headers={"Authorization": "Bearer secret-value"},
+        request_body={"password": "secret-password", "enabled": False},
+        response_status=200, response_headers={"Set-Cookie": "sid=secret-cookie"},
+        response_body={"access_token": "secret-token", "ok": True})
+    report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="api-report", tasks=[task]))
+    payload = report.tasks[0]
+    encoded = json.dumps(payload, ensure_ascii=False)
+    assert "secret-value" not in encoded and "secret-password" not in encoded
+    assert "secret-cookie" not in encoded and "secret-token" not in encoded
+    assert payload["request"]["body"]["enabled"] is False
+    assert payload["response"]["status"] == 200

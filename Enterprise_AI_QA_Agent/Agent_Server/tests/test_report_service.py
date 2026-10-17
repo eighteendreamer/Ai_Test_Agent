@@ -29,6 +29,9 @@ class _ToolJobs:
         requested = set(session_ids)
         return [item for item in self.artifacts if item.session_id in requested]
 
+    async def list_latest_jobs_for_sessions(self, session_ids: list[str], tool_keys: list[str]):
+        return []
+
 
 def _session(session_id: str, metadata: dict) -> SessionRecord:
     now = datetime.utcnow()
@@ -87,7 +90,7 @@ def test_report_page_uses_lightweight_session_data_and_batches_artifacts():
     page = asyncio.run(service.list_reports_page(limit=1, offset=0))
 
     assert page.has_more is True
-    assert store.calls == [{"limit": 2, "offset": 0, "mode_keys": ["code_review", "security_testing", "performance_testing"]}]
+    assert store.calls == [{"limit": 2, "offset": 0, "mode_keys": ["code_review", "security_testing", "performance_testing", "api_testing"]}]
     assert tool_jobs.requested_session_ids == ["primary", "report-child"]
     assert page.items[0].session.id == "primary"
     assert page.items[0].report_session_id == "report-child"
@@ -111,6 +114,47 @@ def test_real_security_report_projection_keeps_counts_and_failed_activity():
     assert meta["failed_tasks"] == 1 and meta["completed_tasks"] == 2
     assert [w["status"] for w in workers] == ["completed", "completed", "failed"]
     assert meta["settlement"] == {} and verifications == []
+
+
+def test_api_report_projection_exposes_task_request_response_and_reconciliation():
+    import json
+    session = _session("actual-api-report", {})
+    session.mode_key = "api_testing"
+    artifact = _artifact("api-report", session.id)
+    artifact.tool_key = "api-test-runner"
+    artifact.artifact_type = "api_test_report_json"
+    artifact.metadata = {"__content_text": json.dumps({
+        "summary": "API finished",
+        "total_tasks": 2,
+        "completed": 1,
+        "failed": 1,
+        "skipped": 0,
+        "tasks": [{"task_id": "task-1", "method": "GET", "path": "/profile",
+                    "request": {"query": {"id": ["0"]}}, "response": {"status": 200},
+                    "checks": [{"passed": True}], "status": "completed"}],
+        "findings": ["one finding"],
+    })}
+    meta, workers, verifications = ReportService._prepare_test_report(session, [artifact])
+    assert meta["ready"] and meta["total_tasks"] == 2 and meta["completed_tasks"] == 1
+    assert meta["failed_tasks"] == 1 and meta["api_tasks"][0]["response"]["status"] == 200
+    assert meta["findings"] == ["one finding"] and workers == verifications == []
+
+
+def test_api_reports_are_included_in_reports_page_projection():
+    import json
+    session = _session("api-page", {})
+    session.mode_key = "api_testing"
+    artifact = _artifact("api-page-artifact", session.id)
+    artifact.tool_key = "api-test-runner"
+    artifact.artifact_type = "api_test_report_json"
+    artifact.metadata = {"__content_text": json.dumps({"summary": "done", "total_tasks": 1,
+        "completed": 1, "failed": 0, "skipped": 0, "tasks": []})}
+    store = _Store([session])
+    service = ReportService(store=store, tool_job_service=_ToolJobs([artifact]))  # type: ignore[arg-type]
+    page = asyncio.run(service.list_reports_page())
+    assert page.items[0].session.mode_key == "api_testing"
+    assert page.items[0].report_meta["ready"] is True
+    assert page.items[0].report_meta["completed_tasks"] == 1
 
 
 def test_malformed_newest_report_does_not_fall_back_to_old_success():

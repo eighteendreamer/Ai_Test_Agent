@@ -3857,3 +3857,14 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **实际结果**：`p3-api-unknown-reconciliation-functional3.xml` **13通过**，本地和Worker真实HTTP均只发送POST一次和明确GET一次；effect_absent/effect_present、无观察值、非法写方法和原unknown阻断均通过。受影响回归`p3-api-unknown-reconciliation-final.xml` **159通过、8门控跳过、61.49秒**（XML总167，跳过不计通过），含绑定/恢复、Cookie/Token、多账户、请求体、Worker及模式隔离；40项烟测全部通过。compileall与审计通过，外部AI0。没有启用真实PG/RustFS存储门控；该项未实现自动查询发现或安全重放。
 
 **仍需继续**：正式用例/默认AI自主选择查证工具、对象效果证据与跨进程生产恢复；准备生命周期、运行中修订、自动401续期/安全重放、复杂UI、持续性能/安全、需求业务评审/历史迁移和其余完整P0—P5。Step已认证，外部AI按此前安排暂缓。
+
+
+### 7.62 Agent API 报告页结果呈现与脱敏〔2026-10-17〕
+
+基线537a4aba，依据P3_API_REPORT_PRESENTATION_RESEARCH.md。复核发现Reports服务只筛选code_review/security_testing/performance_testing，api_testing会话不会进入历史报告页；API任务报告成功项也只有状态/断言，缺少可审阅请求与响应投影。
+
+**本批补实现并已验收**：报告服务加入api_testing与api-test-runner映射，按当前ToolJob读取api_test_report_json，不回退旧执行；投影任务统计、summary、findings、evaluation/verification和api_tasks。ReportBuilder给每个任务提供脱敏request/response、HTTP状态、断言与reconciliation字段；Authorization、Cookie、password、access_token和Set-Cookie等沿OutputSafetyPolicy处理。前端ReportsView增加API任务卡片，可展开请求、响应、断言和查证状态，保留Markdown/JSON工件下载。无新表、配置、依赖或模型协议。
+
+**实际结果**：后端报告投影/列表/脱敏回归23通过；前端reportPresentation测试8通过；前端typecheck和Vite production build通过。首次构建的模板引号语法错误已保留原日志，修复后重新构建通过。外部AI0；三份方案同步。尚未进行独立生产PG/RustFS报告页浏览器验收，仍需在完整产品批次补做。
+
+**仍需继续**：默认AI完整项目选取→排序→补全→执行、默认Agent结果质量、自动401续期、准备生命周期/运行中修订、复杂UI知识与失败定位、持续性能/安全、需求业务评审/部署/历史迁移和完整P0—P5。Step已认证，外部AI按此前安排暂缓。

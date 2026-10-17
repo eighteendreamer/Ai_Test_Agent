@@ -13,8 +13,12 @@ from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatu
 
 logger = logging.getLogger(__name__)
 
-REPORT_MODES = ["code_review", "security_testing", "performance_testing"]
-REPORT_TOOLS = {"security_testing": "security-scan-runner", "performance_testing": "performance-test-runner"}
+REPORT_MODES = ["code_review", "security_testing", "performance_testing", "api_testing"]
+REPORT_TOOLS = {
+    "security_testing": "security-scan-runner",
+    "performance_testing": "performance-test-runner",
+    "api_testing": "api-test-runner",
+}
 
 
 class ReportService:
@@ -88,7 +92,11 @@ class ReportService:
     @staticmethod
     def _prepare_test_report(session: SessionRecord, artifacts: list[ToolArtifactRecord], job: ToolJobRecord | None = None):
         """Bind reports to the newest execution, including attempts with no report."""
-        expected = "report_json" if session.mode_key == "security_testing" else "performance_metrics_json"
+        expected = {
+            "security_testing": "report_json",
+            "performance_testing": "performance_metrics_json",
+            "api_testing": "api_test_report_json",
+        }.get(session.mode_key, "report_json")
         meta = {"kind": session.mode_key, "ready": False}
         if job is not None:
             meta.update(tool_job_id=job.id, job_status=job.status.value, summary=job.summary)
@@ -112,13 +120,26 @@ class ReportService:
             logger.warning("report_projection_unavailable", extra={"session_id": session.id,
                 "artifact_id": artifact.id, "artifact_type": expected})
             return meta, [], []
-        for field in ("total_tasks", "completed_tasks", "failed_tasks", "total_findings",
-            "settlement", "verdict", "metrics_persistence"):
+        for field in ("total_tasks", "completed_tasks", "failed_tasks", "skipped_tasks", "total_findings",
+            "settlement", "verdict", "metrics_persistence", "passed_checks", "failed_checks"):
             if field in payload:
                 meta[field] = payload[field]
         meta.update(kind=session.mode_key, ready=True, tool_job_id=artifact.tool_job_id)
         if session.mode_key == "performance_testing":
             meta["summary"] = str(payload.get("verdict") or "inconclusive")
+            return meta, [], []
+        if session.mode_key == "api_testing":
+            meta["total_tasks"] = payload.get("total_tasks", 0)
+            meta["completed_tasks"] = payload.get("completed", 0)
+            meta["failed_tasks"] = payload.get("failed", 0)
+            meta["skipped_tasks"] = payload.get("skipped", 0)
+            meta["summary"] = str(payload.get("summary") or "")
+            meta["api_tasks"] = [item for item in payload.get("tasks", []) if isinstance(item, dict)]
+            meta["findings"] = [item for item in payload.get("findings", []) if isinstance(item, str)]
+            if isinstance(payload.get("evaluation_result"), dict):
+                meta["evaluation_result"] = payload["evaluation_result"]
+            if isinstance(payload.get("verification_result"), dict):
+                meta["verification_result"] = payload["verification_result"]
             return meta, [], []
         meta["summary"] = str(payload.get("executive_summary") or "")
         workers = [{"task_id": str(item.get("task_id") or item.get("activity_id") or ""),
