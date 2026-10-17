@@ -3884,3 +3884,11 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **实际结果**：隔离 MySQL、PostgreSQL、RustFS 与实际 PostgreSQL 规划任务表中，`none`、`bindings-ack`、`produced-ack`、`cleanup-response-ack`、`budget`、`unknown-reference`、`produced-query` 七项 **7通过、0失败、0跳过、18.65秒**。验证已接受回执不能被后续策略或文档改写，提交回执后丢确认可以从 PG 检查点恢复，错误引用被拒绝，产生阶段查询继续沿原预算，终态重投不新增模型请求。所有验证记录保存于`p4-effect-task-live-current/`，审计为`p4-effect-task-live-current-audit.py`，业务 HTTP 明确为0，模型为受控测试模型。
 
 这只补齐“分任务规划回执与恢复”的实际存储证据，不等于正式 Run/Agent 业务执行、共享对象消费完成、未知副作用只读查证、运行中计划修订或默认 AI 多用例闭环通过；完整准备生命周期及其余P0—P5继续保持未完成。无生产代码、表、配置、依赖或模型协议修改，Step已认证，外部AI按此前安排暂缓。
+
+### 7.65 API 401 续期与安全重放边界复现〔2026-10-17〕
+
+基线`75efee85`。先查`ApiTaskExecutor`、`CredentialManager`、认证依赖传播、两个 Coordinator、Token/Cookie有效期及已有负向401测试，确认当前系统能保存刷新凭据，但没有“401后选择哪个刷新任务并安全重放”的任务关系或持久检查点；不能仅按状态码猜`/refresh`，否则会破坏预期未授权用例和写请求未知副作用语义。
+
+新增最小真实本地HTTP复现，不改生产代码：旧Token访问只读`/profile`得到401时，实际只发送一次且不猜refresh；显式执行已有刷新任务取得新Token后再显式访问得到200；写请求预期401只发送一次。`p3-api-401-refresh-gap.xml/log` **1通过、0失败、1.91秒**，事实见`p3-api-401-refresh-gap/verification.json`，研究见`P3_API_401_REFRESH_RESEARCH.md`。
+
+本批确定后续实现契约：必须显式绑定同项目认证来源的refresh task；仅允许明确标记的只读任务最多重放一次；预期401/403、写请求、超时、连接异常和unknown outcome不自动重放；PG检查点保存原401、刷新Job/credential ref、重放Job、次数和最终结果；本地/Worker两条路径共用同一状态协议。当前自动401续期和安全重放仍是**需补实现**，没有新增表、配置、模型协议或外部AI调用。
