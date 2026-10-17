@@ -6,9 +6,10 @@ login flow executed by the executor.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from http.cookiejar import Cookie, CookieJar
 from http.cookies import SimpleCookie
+import logging
 from typing import Any
 from uuid import uuid4
 
@@ -22,6 +23,8 @@ from src.modes.api_testing_mode.contracts import (
     AUTH_CUSTOM,
     AUTH_NONE,
 )
+
+logger = logging.getLogger("uvicorn.error.api_testing_mode.credentials")
 
 
 class CredentialManager:
@@ -69,12 +72,49 @@ class CredentialManager:
             token=token,
             cookie_jar=cookie_jar,
             headers=headers,
-            expires_at="",
+            expires_at=str(extracted.get("expires_at") or ""),
             source=source,
             notes=f"Created from {source} at {datetime.now(timezone.utc).isoformat()}",
         )
         self._sessions[session.credential_session_id] = session
         return session
+
+    @staticmethod
+    def _response_expiry(response_body: dict[str, Any]) -> str:
+        """Record explicit OAuth expires_in seconds once; missing means unknown."""
+        if "expires_in" not in response_body:
+            return ""
+        raw = response_body["expires_in"]
+        if isinstance(raw, str) and raw.isascii() and raw.isdecimal():
+            try:
+                raw = int(raw)
+            except ValueError:
+                raw = None
+        if type(raw) is int and raw >= 0:
+            try:
+                return (datetime.now(timezone.utc) + timedelta(seconds=raw)).isoformat()
+            except OverflowError:
+                pass
+        logger.warning("api_credential_expiry_invalid", extra={
+            "source": "login_response", "field": "expires_in", "value_type": type(raw).__name__,
+        })
+        return ""
+
+    @staticmethod
+    def _absolute_expiry(session: CredentialSession) -> datetime | None:
+        if not session.expires_at:
+            return None
+        try:
+            expiry = datetime.fromisoformat(session.expires_at.replace("Z", "+00:00"))
+            if expiry.tzinfo is not None:
+                return expiry
+        except ValueError:
+            pass
+        # No seconds/milliseconds or local-time-zone guesses for old snapshots.
+        logger.warning("api_credential_expiry_invalid", extra={
+            "credential_ref": session.credential_session_id, "field": "expires_at",
+        })
+        return None
 
     @staticmethod
     def _safe_header_name(value: Any) -> str:
@@ -152,6 +192,8 @@ class CredentialManager:
 
         prior = self.get(prior_credential_session_id)
         headers = dict(prior.headers) if prior is not None else {}
+        token_from_response = bool(token)
+        expires_at = self._response_expiry(response_body) if token_from_response else (prior.expires_at if prior is not None else "")
         if token:
             headers["Authorization"] = f"Bearer {token}"
         elif prior is not None:
@@ -166,12 +208,16 @@ class CredentialManager:
             token=token,
             headers=headers,
             cookie_records=cookie_records,
-            expires_at="",
+            expires_at=expires_at,
             source="dynamic_login",
             login_endpoint=login_endpoint,
             notes=f"Obtained via {login_endpoint} field={token_field}",
         )
         self._sessions[session.credential_session_id] = session
+        logger.info("api_credential_lifetime_recorded", extra={
+            "credential_ref": session.credential_session_id, "expiry_known": bool(expires_at),
+            "token_from_response": token_from_response,
+        })
         return session
 
     def get(self, credential_session_id: str) -> CredentialSession | None:
@@ -185,7 +231,14 @@ class CredentialManager:
         return restored
 
     def has_valid_session(self) -> bool:
+        now = datetime.now(timezone.utc)
         for session in self._sessions.values():
+            expiry = self._absolute_expiry(session)
+            if expiry is not None and expiry <= now:
+                logger.info("api_credential_expired_for_precondition", extra={
+                    "credential_ref": session.credential_session_id,
+                })
+                continue
             if session.token or session.headers or (session.cookie_jar and session.cookie_records is None):
                 return True
             if any(record.expires is None or record.expires > datetime.now(timezone.utc).timestamp()

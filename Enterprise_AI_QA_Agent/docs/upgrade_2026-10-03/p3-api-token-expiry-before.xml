@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="11" skipped="0" tests="11" time="2.764" timestamp="2026-10-14T09:28:05.662639+08:00" hostname="EIghteen"><testcase classname="tests.test_api_token_expiry_http" name="test_login_expiry_is_saved_and_negative_test_sends_expired_token_once" time="0.637"><failure message="AssertionError: assert (CredentialSession(credential_session_id='839abaac-87a3-4bd2-95c5-f559c6ad7e54', auth_type='bearer', token='issued-toke...pires_at='', source='dynamic_login', login_endpoint='POST /login', notes='Obtained via POST /login field=access_token') is not None and '')&#10; +  where '' = CredentialSession(credential_session_id='839abaac-87a3-4bd2-95c5-f559c6ad7e54', auth_type='bearer', token='issued-toke...pires_at='', source='dynamic_login', login_endpoint='POST /login', notes='Obtained via POST /login field=access_token').expires_at">def test_login_expiry_is_saved_and_negative_test_sends_expired_token_once():
+        with token_target() as (base_url, requests):
+            credentials = CredentialManager()
+            executor = ApiTaskExecutor(credential_manager=credentials)
+            login = ApiTestTask(task_id="login", method="POST", path="/login", full_url=base_url + "/login",
+                                execution_mode="auth", request_body={"user": "fixture"},
+                                assertions=[AssertionSpec(kind="status_code", expected=200)])
+            login_result = asyncio.run(executor.execute(login))
+            assert login_result.status == "completed"
+            session = credentials.get(login_result.auth_ref)
+&gt;           assert session is not None and session.expires_at and not credentials.has_valid_session()
+E           AssertionError: assert (CredentialSession(credential_session_id='839abaac-87a3-4bd2-95c5-f559c6ad7e54', auth_type='bearer', token='issued-toke...pires_at='', source='dynamic_login', login_endpoint='POST /login', notes='Obtained via POST /login field=access_token') is not None and '')
+E            +  where '' = CredentialSession(credential_session_id='839abaac-87a3-4bd2-95c5-f559c6ad7e54', auth_type='bearer', token='issued-toke...pires_at='', source='dynamic_login', login_endpoint='POST /login', notes='Obtained via POST /login field=access_token').expires_at
+
+tests\test_api_token_expiry_http.py:72: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_explicit_future_expiry_remains_usable_and_past_user_input_is_rejected" time="0.522"><failure message="assert not True&#10; +  where True = has_valid_session()&#10; +    where has_valid_session = &lt;src.modes.api_testing_mode.credential_manager.CredentialManager object at 0x000001A4463DB790&gt;.has_valid_session">def test_explicit_future_expiry_remains_usable_and_past_user_input_is_rejected():
+        with token_target(expired=False) as (base_url, requests):
+            credentials = CredentialManager()
+            session = credentials.create_from_login_response(
+                response_body={"access_token": "issued-token", "expires_in": 3600},
+                login_endpoint="POST /login",
+            )
+            assert credentials.has_valid_session()
+            result = asyncio.run(ApiTaskExecutor(credential_manager=credentials).execute(
+                ApiTestTask(task_id="protected", method="GET", path="/protected", full_url=base_url + "/protected",
+                            auth_ref=session.credential_session_id)))
+            assert result.status == "completed" and requests[-1]["authorization"] == "Bearer issued-token"
+    
+            past = CredentialManager().create_from_user_input(
+                extracted={"auth_type": "bearer", "token": "old-token", "expires_at": "1970-01-01T00:00:00Z"}
+            )
+            expired_manager = CredentialManager()
+            expired_manager.restore_session(past)
+&gt;           assert not expired_manager.has_valid_session()
+E           assert not True
+E            +  where True = has_valid_session()
+E            +    where has_valid_session = &lt;src.modes.api_testing_mode.credential_manager.CredentialManager object at 0x000001A4463DB790&gt;.has_valid_session
+
+tests\test_api_token_expiry_http.py:105: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[True]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A4463FBE10&gt;.text">ttl = True
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A4463FBE10&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A4463FBE10&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[-1]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44680F9D0&gt;.text">ttl = -1
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44680F9D0&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44680F9D0&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[0.5]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446814A10&gt;.text">ttl = 0.5
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446814A10&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446814A10&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[bad]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446350750&gt;.text">ttl = 'bad'
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446350750&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446350750&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[inf]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446820B50&gt;.text">ttl = inf
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446820B50&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A446820B50&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[nan]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44680F110&gt;.text">ttl = nan
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44680F110&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44680F110&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[10000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A4463F8E10&gt;.text">ttl = 100000000000000000...0000000000000000000
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A4463F8E10&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A4463F8E10&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_invalid_ttl_is_unknown_and_log_has_no_credential_value[ttl7]" time="0.001"><failure message="AssertionError: assert ('api_credential_expiry_invalid' in '')&#10; +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44632D610&gt;.text">ttl = {}
+caplog = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44632D610&gt;
+
+    @pytest.mark.parametrize("ttl", [True, -1, 0.5, "bad", float("inf"), float("nan"), 10**100, {}])
+    def test_invalid_ttl_is_unknown_and_log_has_no_credential_value(ttl, caplog):
+        from uuid import uuid4
+        value = uuid4().hex
+        credentials = CredentialManager()
+        session = credentials.create_from_login_response(response_body={"access_token": value, "expires_in": ttl})
+        assert session.expires_at == "" and credentials.has_valid_session()
+&gt;       assert "api_credential_expiry_invalid" in caplog.text and value not in caplog.text
+E       AssertionError: assert ('api_credential_expiry_invalid' in '')
+E        +  where '' = &lt;_pytest.logging.LogCaptureFixture object at 0x000001A44632D610&gt;.text
+
+tests\test_api_token_expiry_http.py:116: AssertionError</failure></testcase><testcase classname="tests.test_api_token_expiry_http" name="test_cookie_only_rotation_keeps_old_token_expiry_and_new_token_lifetime_is_independent" time="0.001"><failure message="AssertionError: assert ('')&#10; +  where '' = CredentialSession(credential_session_id='d195a302-b2cb-436f-beae-014c42b7652f', auth_type='bearer', token='fixture-old...arer fixture-old'}, expires_at='', source='dynamic_login', login_endpoint='', notes='Obtained via  field=access_token').expires_at">def test_cookie_only_rotation_keeps_old_token_expiry_and_new_token_lifetime_is_independent():
+        from src.modes.api_testing_mode.campaign_state import ApiCookieRecord
+        credentials = CredentialManager()
+        old = credentials.create_from_login_response(response_body={"access_token": "fixture-old", "expires_in": 0})
+        original = old.model_dump(mode="json")
+&gt;       assert old.expires_at and not credentials.has_valid_session()
+E       AssertionError: assert ('')
+E        +  where '' = CredentialSession(credential_session_id='d195a302-b2cb-436f-beae-014c42b7652f', auth_type='bearer', token='fixture-old...arer fixture-old'}, expires_at='', source='dynamic_login', login_endpoint='', notes='Obtained via  field=access_token').expires_at
+
+tests\test_api_token_expiry_http.py:124: AssertionError</failure></testcase></testsuite></testsuites>
