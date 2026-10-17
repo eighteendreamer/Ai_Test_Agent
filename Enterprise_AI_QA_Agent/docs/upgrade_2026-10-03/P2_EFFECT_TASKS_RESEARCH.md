@@ -42,3 +42,11 @@
 ## 下一步
 
 先核查真实产生任务的完整工具模型、包装路径及文档预期是否存在歧义，再审查“执行前推导所有技术路径”与Agent按完整用例实际执行的职责边界。不能继续相同请求盲试、扩大预算、强迫拆分完整正式用例或伪造清理/回执通过。多候选项目选择、实际准备/未知副作用/修订、默认UI知识、其他模式/App、普通文档模块生成及剩余完整P0—P5要求仍保持。
+
+## 扩展现场复核（2026-10-17）
+
+为确认旧研究中未覆盖的分任务分支，运行现有 `test_planning_effect_tasks_live.py::test_actual_separate_receipts_restore_without_resending_completed_tasks`，没有改生产代码或改变模型协议。环境使用隔离 MySQL、PostgreSQL、RustFS 和实际 PostgreSQL 规划任务表；模型是测试用受控模型，业务 HTTP 明确为 0。
+
+`p4-effect-task-live-current.xml/log` **7通过、0失败、0跳过、18.65秒**，覆盖 `none`、`bindings-ack`、`produced-ack`、`cleanup-response-ack`、`budget`、`unknown-reference`、`produced-query`。每种变体均保存 `verification.json`，验证已接受的分任务回执不会被后续策略/文档改写，回执提交后丢确认可从 PG 检查点恢复，坏引用被拒绝，产生阶段查询仍沿原预算继续，终态重投不新增模型请求；`business_HTTP=0`，因此不把它扩大为业务执行或默认 AI 质量通过。审计见 `p4-effect-task-live-current-audit.py` 和 `p4-effect-task-live-current-validation.json`。
+
+这批把“分任务规划回执与恢复”从旧的五变体受控证据扩展到七变体实际存储验收，但没有关闭共享对象实际消费完成、未知副作用只读查证、运行中计划修订、正式 Run/Agent 执行或默认 AI 多用例闭环。

@@ -3876,3 +3876,11 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 **本批已验收**：在隔离MySQL/PG/RustFS/Redis中执行真实`ToolRuntime`并由新生产API进程回读，`/reports`将当前`api_test_report_json`绑定到父ToolJob；Vite preview加载构建版App，Chromium打开报告页，显示3个API任务卡片、总任务数3、通过3、等级“良好”，页面错误数0，网络请求成功。`p3-api-report-product-final2.xml/log`为1通过、0失败、0跳过、49.46秒；页面文本、ARIA、截图、网络、报告列表和浏览器观察保存在`p3-api-report-product-evidence2/`。首次断言误把Markdown表格分隔符当作浏览器文本，`p3-api-report-product-final.xml/log`原样保留；按真实渲染语义修正后第二次完整产品运行通过。
 
 该批只关闭“API报告结果呈现”的独立PG/RustFS/浏览器验收，不扩大为默认AI项目选取→排序→补全→执行或完整Agent质量通过；无新表、配置、依赖或模型协议变更。自动401续期/安全重放、准备生命周期、运行中修订、复杂UI知识/失败定位、持续性能/安全、需求业务评审/部署/历史迁移及其他P0—P5仍未完成。Step已认证，外部AI按此前安排暂缓。
+
+### 7.64 分任务证据规划七变体真实存储复核〔2026-10-17〕
+
+基线`ba7676ce`，依据`P2_EFFECT_TASKS_RESEARCH.md`、`P4_EFFECT_LIFECYCLE_RESEARCH.md`和现有`test_planning_effect_tasks_live.py`。先对比旧现场：旧批次只覆盖五个变体；本批没有重写准备范围或新增执行器，而是补跑未覆盖的查询/坏引用/预算组合。
+
+**实际结果**：隔离 MySQL、PostgreSQL、RustFS 与实际 PostgreSQL 规划任务表中，`none`、`bindings-ack`、`produced-ack`、`cleanup-response-ack`、`budget`、`unknown-reference`、`produced-query` 七项 **7通过、0失败、0跳过、18.65秒**。验证已接受回执不能被后续策略或文档改写，提交回执后丢确认可以从 PG 检查点恢复，错误引用被拒绝，产生阶段查询继续沿原预算，终态重投不新增模型请求。所有验证记录保存于`p4-effect-task-live-current/`，审计为`p4-effect-task-live-current-audit.py`，业务 HTTP 明确为0，模型为受控测试模型。
+
+这只补齐“分任务规划回执与恢复”的实际存储证据，不等于正式 Run/Agent 业务执行、共享对象消费完成、未知副作用只读查证、运行中计划修订或默认 AI 多用例闭环通过；完整准备生命周期及其余P0—P5继续保持未完成。无生产代码、表、配置、依赖或模型协议修改，Step已认证，外部AI按此前安排暂缓。
