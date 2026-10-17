@@ -174,7 +174,7 @@ class InputBinding(BaseModel):
     """Describes how runtime input values are bound for a task."""
 
     source_task_id: str = ""
-    source_path: str = ""  # e.g. response.body.id
+    source_path: str = ""  # Relative to response_body, e.g. data.items[0].id.
     target_path: str = ""  # e.g. url.path.order_id
     literal_value: Any = None
 

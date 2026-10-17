@@ -1,0 +1,190 @@
+{
+  "events": [
+    {
+      "method": "GET",
+      "path": "/producer",
+      "query": {},
+      "body": null,
+      "correlation": null
+    },
+    {
+      "method": "GET",
+      "path": "/independent",
+      "query": {},
+      "body": null,
+      "correlation": null
+    }
+  ],
+  "statuses": [
+    "completed",
+    "failed",
+    "skipped",
+    "completed"
+  ],
+  "attempts": [
+    1,
+    0,
+    0,
+    1
+  ],
+  "error": "Required input binding(s) unresolved: produce:data.id -> request_headers.X-Correlation (source_output_missing)",
+  "report": {
+    "campaign_id": "binding",
+    "project_name": "",
+    "summary": "⚠️ Campaign 'binding' completed: 2/4 tasks passed, 1 failed, 1 skipped. Checks: 2 passed, 0 failed. Total time: 47ms.",
+    "total_tasks": 4,
+    "completed": 2,
+    "failed": 1,
+    "skipped": 1,
+    "passed_checks": 2,
+    "failed_checks": 0,
+    "duration_ms": 47.13,
+    "tasks": [
+      {
+        "task_id": "produce",
+        "name": "",
+        "method": "GET",
+        "path": "http://127.0.0.1:51744/producer",
+        "full_url": "",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 27.62,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:22:57.787560Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51744,
+                "path": "/producer",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      },
+      {
+        "task_id": "consume",
+        "name": "",
+        "method": "POST",
+        "path": "http://127.0.0.1:51744/consume",
+        "full_url": "",
+        "capability": "",
+        "status": "failed",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Required input binding(s) unresolved: produce:data.id -> request_headers.X-Correlation (source_output_missing)",
+        "checks": [],
+        "evidence": "{\n  \"error\": \"Required input binding(s) unresolved: produce:data.id -> request_headers.X-Correlation (source_output_missing)\"\n}"
+      },
+      {
+        "task_id": "child",
+        "name": "",
+        "method": "GET",
+        "path": "http://127.0.0.1:51744/child",
+        "full_url": "",
+        "capability": "",
+        "status": "skipped",
+        "response_status": null,
+        "duration_ms": 0.0,
+        "check_count": 0,
+        "checks_passed": 0,
+        "checks_failed": 0,
+        "request_outcome": "not_started",
+        "reconciliation_required": false,
+        "error": "Skipped because dependency consume failed.",
+        "checks": []
+      },
+      {
+        "task_id": "independent",
+        "name": "",
+        "method": "GET",
+        "path": "http://127.0.0.1:51744/independent",
+        "full_url": "",
+        "capability": "",
+        "status": "completed",
+        "response_status": 200,
+        "duration_ms": 19.51,
+        "check_count": 1,
+        "checks_passed": 1,
+        "checks_failed": 0,
+        "request_outcome": "completed",
+        "reconciliation_required": false,
+        "error": null,
+        "checks": [
+          {
+            "name": "default_status_check",
+            "kind": "status_code_range",
+            "passed": true,
+            "expected": "2xx",
+            "actual": 200,
+            "description": "Default: expect 2xx response status."
+          }
+        ],
+        "http_observation_v1": {
+          "implementation_version": "api-http-observation-v1",
+          "acquisition": "network",
+          "observed_at": "2026-10-17T13:22:57.808008Z",
+          "hops": [
+            {
+              "method": "GET",
+              "target": {
+                "scheme": "http",
+                "host": "127.0.0.1",
+                "port": 51744,
+                "path": "/independent",
+                "query_omitted": false,
+                "userinfo_omitted": false,
+                "fragment_omitted": false
+              },
+              "status_code": 200
+            }
+          ]
+        }
+      }
+    ],
+    "findings": [
+      "❌ POST http://127.0.0.1:51744/consume: Required input binding(s) unresolved: produce:data.id -> request_headers.X-Correlation (source_output_missing)",
+      "⏭️ GET http://127.0.0.1:51744/child: skipped (Skipped because dependency consume failed.)"
+    ],
+    "artifacts": [],
+    "verification_result": {},
+    "evaluation_result": {},
+    "generated_at": "2026-10-17T13:22:57.811079+00:00"
+  },
+  "worker_dispatches": [
+    "produce",
+    "independent"
+  ],
+  "terminal_extra_http": 0,
+  "external_ai_calls": 0
+}

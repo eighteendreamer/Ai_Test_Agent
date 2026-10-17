@@ -23,8 +23,8 @@ from src.modes.api_testing_mode.contracts import (
 )
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.input_binding import (
-    bind_path_parameters,
-    substitute_path_parameter,
+    apply_input_bindings,
+    inject_binding_value,
     unresolved_path_parameters,
 )
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
@@ -121,6 +121,8 @@ class ApiTestCoordinator:
 
     def _is_retryable(self, task: ApiTestTask) -> bool:
         """Determine if a failed task should be retried."""
+        if (task.last_error or "").startswith("Required input binding(s) unresolved:"):
+            return False
         if task.request_outcome == "unknown":
             return False
         error = (task.last_error or "").lower()
@@ -192,7 +194,11 @@ class ApiTestCoordinator:
     async def _execute_one(self, task: ApiTestTask) -> None:
         # Bind before claiming the task as running. An unresolved placeholder
         # is a planning gap, not an HTTP result and must not hit the target.
-        self._apply_input_bindings(task)
+        binding_gaps = self._apply_input_bindings(task)
+        if binding_gaps:
+            self._pool.mark_failed(task.task_id, "Required input binding(s) unresolved: " + "; ".join(binding_gaps))
+            self._emit_checkpoint("task_failed", task)
+            return
         unresolved = unresolved_path_parameters(task)
         if unresolved:
             self._pool.mark_failed(
@@ -249,80 +255,11 @@ class ApiTestCoordinator:
         """
         propagate_auth_ref(self._pool.all_tasks, auth_ref, source_task_id=source_task_id)
 
-    def _apply_input_bindings(self, task: ApiTestTask) -> None:
-        """Resolve input bindings: substitute path parameters and request body from prior task outputs."""
-        if not task.input_bindings and not task.depends_on:
-            return
+    def _apply_input_bindings(self, task: ApiTestTask) -> list[str]:
+        return apply_input_bindings(task, self._task_outputs)
 
-        # Explicit input bindings.
-        for binding in task.input_bindings:
-            if not binding.source_task_id:
-                continue
-            source_output = self._task_outputs.get(binding.source_task_id)
-            if source_output is None:
-                continue
-            value = self._extract_path_value(source_output, binding.source_path)
-            if value is None and binding.literal_value is not None:
-                value = binding.literal_value
-            if value is None:
-                continue
-            self._inject_binding_value(task, binding.target_path, value)
-
-        # Explicit field mappings take precedence. Infer only placeholders
-        # that remain after those mappings have been applied.
-        bind_path_parameters(task, self._task_outputs)
-
-    def _extract_path_value(self, obj, path: str):
-        """Extract a value from a nested dict using dot-path notation."""
-        if not path:
-            return obj
-        parts = path.replace("[", ".").replace("]", "").split(".")
-        current = obj
-        for part in parts:
-            if not part:
-                continue
-            if isinstance(current, dict):
-                if part in current:
-                    current = current[part]
-                else:
-                    return None
-            elif isinstance(current, (list, tuple)):
-                try:
-                    current = current[int(part)]
-                except (IndexError, ValueError):
-                    return None
-            else:
-                return None
-        return current
-
-    def _inject_binding_value(self, task: ApiTestTask, target_path: str, value) -> None:
-        """Inject a value into the task's URL path or request body."""
-        if not target_path:
-            return
-        if target_path.startswith("url.path.") or target_path.startswith("path."):
-            param_name = target_path.split(".")[-1]
-            substitute_path_parameter(task, param_name, value)
-        elif target_path.startswith("body.") or target_path.startswith("request_body."):
-            parts = target_path.split(".", 1)
-            field_path = parts[1] if len(parts) > 1 else ""
-            if field_path:
-                if task.request_body is None:
-                    task.request_body = {}
-                self._set_nested(task.request_body, field_path, value)
-        elif target_path.startswith("query."):
-            param_name = target_path.split(".", 1)[-1]
-            if not task.request_query:
-                task.request_query = {}
-            task.request_query[param_name] = value
-
-    def _set_nested(self, obj: dict, path: str, value) -> None:
-        parts = path.split(".")
-        current = obj
-        for part in parts[:-1]:
-            if part not in current or not isinstance(current[part], dict):
-                current[part] = {}
-            current = current[part]
-        current[parts[-1]] = value
-
+    def _inject_binding_value(self, task: ApiTestTask, target_path: str, value: Any) -> None:
+        # Retained for existing direct callers; execution uses the atomic binder.
+        inject_binding_value(task, target_path, value)
 
 __all__ = ["ApiTestCoordinator", "TaskExecutorFn", "CheckpointCallback"]

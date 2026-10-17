@@ -1,0 +1,348 @@
+FFFFFFFFFF                                                               [100%]
+================================== FAILURES ===================================
+_ test_missing_actual_output_blocks_only_its_consumers_before_send[body.order_id-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_missing_actual_output_blo0')
+worker = False, destination = 'body.order_id'
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("destination", ["body.order_id", "query.order_id", "request_headers.X-Correlation"])
+    def test_missing_actual_output_blocks_only_its_consumers_before_send(tmp_path, worker, destination):
+        with target({"data": {"count": 0}}) as (url, events):
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", execution_mode="write",
+                    depends_on=["produce"], request_body={"order_id": "stale-example"}, request_query={"order_id": "stale-example"},
+                    request_headers={"X-Correlation": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path="data.id", target_path=destination)]),
+                ApiTestTask(task_id="child", method="GET", path=url+"/child", status="blocked", depends_on=["consume"]),
+                ApiTestTask(task_id="independent", method="GET", path=url+"/independent", status="ready")]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            count = len(events)
+            asyncio.run(runner.run_all())
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="binding", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "attempts": [t.attempts for t in result],
+                "error": result[1].last_error, "report": report.model_dump(mode="json"),
+                "worker_dispatches": launcher.task_ids if launcher else [], "terminal_extra_http": len(events)-count, "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-missing-{destination.split('.')[0]}", facts)
+>           assert facts["statuses"] == ["completed", "failed", "skipped", "completed"], facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'GET', 'path': '/indepe...e, ...}], 'statuses': ['completed', 'completed', 'completed', 'completed'], 'attempts': [1, 1, 1, 1], 'error': '', ...}
+E           assert ['completed',..., 'completed'] == ['completed',..., 'completed']
+E             
+E             At index 1 diff: 'completed' != 'failed'
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:97: AssertionError
+_ test_missing_actual_output_blocks_only_its_consumers_before_send[body.order_id-True] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_missing_actual_output_blo1')
+worker = True, destination = 'body.order_id'
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("destination", ["body.order_id", "query.order_id", "request_headers.X-Correlation"])
+    def test_missing_actual_output_blocks_only_its_consumers_before_send(tmp_path, worker, destination):
+        with target({"data": {"count": 0}}) as (url, events):
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", execution_mode="write",
+                    depends_on=["produce"], request_body={"order_id": "stale-example"}, request_query={"order_id": "stale-example"},
+                    request_headers={"X-Correlation": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path="data.id", target_path=destination)]),
+                ApiTestTask(task_id="child", method="GET", path=url+"/child", status="blocked", depends_on=["consume"]),
+                ApiTestTask(task_id="independent", method="GET", path=url+"/independent", status="ready")]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            count = len(events)
+            asyncio.run(runner.run_all())
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="binding", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "attempts": [t.attempts for t in result],
+                "error": result[1].last_error, "report": report.model_dump(mode="json"),
+                "worker_dispatches": launcher.task_ids if launcher else [], "terminal_extra_http": len(events)-count, "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-missing-{destination.split('.')[0]}", facts)
+>           assert facts["statuses"] == ["completed", "failed", "skipped", "completed"], facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'GET', 'path': '/indepe...e, ...}], 'statuses': ['completed', 'completed', 'completed', 'completed'], 'attempts': [1, 1, 1, 1], 'error': '', ...}
+E           assert ['completed',..., 'completed'] == ['completed',..., 'completed']
+E             
+E             At index 1 diff: 'completed' != 'failed'
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:97: AssertionError
+_ test_missing_actual_output_blocks_only_its_consumers_before_send[query.order_id-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_missing_actual_output_blo2')
+worker = False, destination = 'query.order_id'
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("destination", ["body.order_id", "query.order_id", "request_headers.X-Correlation"])
+    def test_missing_actual_output_blocks_only_its_consumers_before_send(tmp_path, worker, destination):
+        with target({"data": {"count": 0}}) as (url, events):
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", execution_mode="write",
+                    depends_on=["produce"], request_body={"order_id": "stale-example"}, request_query={"order_id": "stale-example"},
+                    request_headers={"X-Correlation": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path="data.id", target_path=destination)]),
+                ApiTestTask(task_id="child", method="GET", path=url+"/child", status="blocked", depends_on=["consume"]),
+                ApiTestTask(task_id="independent", method="GET", path=url+"/independent", status="ready")]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            count = len(events)
+            asyncio.run(runner.run_all())
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="binding", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "attempts": [t.attempts for t in result],
+                "error": result[1].last_error, "report": report.model_dump(mode="json"),
+                "worker_dispatches": launcher.task_ids if launcher else [], "terminal_extra_http": len(events)-count, "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-missing-{destination.split('.')[0]}", facts)
+>           assert facts["statuses"] == ["completed", "failed", "skipped", "completed"], facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'GET', 'path': '/indepe...e, ...}], 'statuses': ['completed', 'completed', 'completed', 'completed'], 'attempts': [1, 1, 1, 1], 'error': '', ...}
+E           assert ['completed',..., 'completed'] == ['completed',..., 'completed']
+E             
+E             At index 1 diff: 'completed' != 'failed'
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:97: AssertionError
+_ test_missing_actual_output_blocks_only_its_consumers_before_send[query.order_id-True] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_missing_actual_output_blo3')
+worker = True, destination = 'query.order_id'
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("destination", ["body.order_id", "query.order_id", "request_headers.X-Correlation"])
+    def test_missing_actual_output_blocks_only_its_consumers_before_send(tmp_path, worker, destination):
+        with target({"data": {"count": 0}}) as (url, events):
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", execution_mode="write",
+                    depends_on=["produce"], request_body={"order_id": "stale-example"}, request_query={"order_id": "stale-example"},
+                    request_headers={"X-Correlation": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path="data.id", target_path=destination)]),
+                ApiTestTask(task_id="child", method="GET", path=url+"/child", status="blocked", depends_on=["consume"]),
+                ApiTestTask(task_id="independent", method="GET", path=url+"/independent", status="ready")]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            count = len(events)
+            asyncio.run(runner.run_all())
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="binding", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "attempts": [t.attempts for t in result],
+                "error": result[1].last_error, "report": report.model_dump(mode="json"),
+                "worker_dispatches": launcher.task_ids if launcher else [], "terminal_extra_http": len(events)-count, "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-missing-{destination.split('.')[0]}", facts)
+>           assert facts["statuses"] == ["completed", "failed", "skipped", "completed"], facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'GET', 'path': '/indepe...e, ...}], 'statuses': ['completed', 'completed', 'completed', 'completed'], 'attempts': [1, 1, 1, 1], 'error': '', ...}
+E           assert ['completed',..., 'completed'] == ['completed',..., 'completed']
+E             
+E             At index 1 diff: 'completed' != 'failed'
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:97: AssertionError
+_ test_missing_actual_output_blocks_only_its_consumers_before_send[request_headers.X-Correlation-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_missing_actual_output_blo4')
+worker = False, destination = 'request_headers.X-Correlation'
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("destination", ["body.order_id", "query.order_id", "request_headers.X-Correlation"])
+    def test_missing_actual_output_blocks_only_its_consumers_before_send(tmp_path, worker, destination):
+        with target({"data": {"count": 0}}) as (url, events):
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", execution_mode="write",
+                    depends_on=["produce"], request_body={"order_id": "stale-example"}, request_query={"order_id": "stale-example"},
+                    request_headers={"X-Correlation": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path="data.id", target_path=destination)]),
+                ApiTestTask(task_id="child", method="GET", path=url+"/child", status="blocked", depends_on=["consume"]),
+                ApiTestTask(task_id="independent", method="GET", path=url+"/independent", status="ready")]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            count = len(events)
+            asyncio.run(runner.run_all())
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="binding", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "attempts": [t.attempts for t in result],
+                "error": result[1].last_error, "report": report.model_dump(mode="json"),
+                "worker_dispatches": launcher.task_ids if launcher else [], "terminal_extra_http": len(events)-count, "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-missing-{destination.split('.')[0]}", facts)
+>           assert facts["statuses"] == ["completed", "failed", "skipped", "completed"], facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'GET', 'path': '/indepe...e, ...}], 'statuses': ['completed', 'completed', 'completed', 'completed'], 'attempts': [1, 1, 1, 1], 'error': '', ...}
+E           assert ['completed',..., 'completed'] == ['completed',..., 'completed']
+E             
+E             At index 1 diff: 'completed' != 'failed'
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:97: AssertionError
+_ test_missing_actual_output_blocks_only_its_consumers_before_send[request_headers.X-Correlation-True] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_missing_actual_output_blo5')
+worker = True, destination = 'request_headers.X-Correlation'
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("destination", ["body.order_id", "query.order_id", "request_headers.X-Correlation"])
+    def test_missing_actual_output_blocks_only_its_consumers_before_send(tmp_path, worker, destination):
+        with target({"data": {"count": 0}}) as (url, events):
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", execution_mode="write",
+                    depends_on=["produce"], request_body={"order_id": "stale-example"}, request_query={"order_id": "stale-example"},
+                    request_headers={"X-Correlation": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path="data.id", target_path=destination)]),
+                ApiTestTask(task_id="child", method="GET", path=url+"/child", status="blocked", depends_on=["consume"]),
+                ApiTestTask(task_id="independent", method="GET", path=url+"/independent", status="ready")]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            count = len(events)
+            asyncio.run(runner.run_all())
+            report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="binding", tasks=result))
+            facts = {"events": events, "statuses": [t.status for t in result], "attempts": [t.attempts for t in result],
+                "error": result[1].last_error, "report": report.model_dump(mode="json"),
+                "worker_dispatches": launcher.task_ids if launcher else [], "terminal_extra_http": len(events)-count, "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-missing-{destination.split('.')[0]}", facts)
+>           assert facts["statuses"] == ["completed", "failed", "skipped", "completed"], facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'GET', 'path': '/indepe...e, ...}], 'statuses': ['completed', 'completed', 'completed', 'completed'], 'attempts': [1, 1, 1, 1], 'error': '', ...}
+E           assert ['completed',..., 'completed'] == ['completed',..., 'completed']
+E             
+E             At index 1 diff: 'completed' != 'failed'
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:97: AssertionError
+_ test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[False-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_false_zero_null_array_ext0')
+worker = False, aliases = False
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("aliases", [False, True])
+    def test_false_zero_null_array_extraction_and_header_binding_reach_actual_request(tmp_path, worker, aliases):
+        with target({"data": {"items": [{"id": 0, "enabled": False, "note": None}], "correlation": "observed-value"}}) as (url, events):
+            body = "request_body" if aliases else "body"
+            query = "request_query" if aliases else "query"
+            mappings = [("data.items[0].id", f"{body}.context.id"), ("data.items[0].enabled", f"{body}.enabled"),
+                        ("data.items[0].note", f"{body}.note"), ("data.items[0].id", f"{query}.id"),
+                        ("data.correlation", "request_headers.X-Correlation")]
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", depends_on=["produce"],
+                    execution_mode="write", request_body={"note": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path=s, target_path=t) for s, t in mappings])]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            facts = {"events": events, "statuses": [t.status for t in result], "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-values-{int(aliases)}", facts)
+            assert facts["statuses"] == ["completed"]*2, facts
+            sent = next(e for e in events if e["path"] == "/consume")
+>           assert sent["body"] == {"context": {"id": 0}, "enabled": False, "note": None}, facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'POST', 'path': '/consu...ample', 'context': {'id': 0}, 'enabled': False}, ...}], 'statuses': ['completed', 'completed'], 'external_ai_calls': 0}
+E           assert {'note': 'sta...abled': False} == {'context': {... 'note': None}
+E             
+E             Omitting 2 identical items, use -vv to show
+E             Differing items:
+E             {'note': 'stale-example'} != {'note': None}
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:125: AssertionError
+_ test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[False-True] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_false_zero_null_array_ext1')
+worker = True, aliases = False
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("aliases", [False, True])
+    def test_false_zero_null_array_extraction_and_header_binding_reach_actual_request(tmp_path, worker, aliases):
+        with target({"data": {"items": [{"id": 0, "enabled": False, "note": None}], "correlation": "observed-value"}}) as (url, events):
+            body = "request_body" if aliases else "body"
+            query = "request_query" if aliases else "query"
+            mappings = [("data.items[0].id", f"{body}.context.id"), ("data.items[0].enabled", f"{body}.enabled"),
+                        ("data.items[0].note", f"{body}.note"), ("data.items[0].id", f"{query}.id"),
+                        ("data.correlation", "request_headers.X-Correlation")]
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", depends_on=["produce"],
+                    execution_mode="write", request_body={"note": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path=s, target_path=t) for s, t in mappings])]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            facts = {"events": events, "statuses": [t.status for t in result], "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-values-{int(aliases)}", facts)
+            assert facts["statuses"] == ["completed"]*2, facts
+            sent = next(e for e in events if e["path"] == "/consume")
+>           assert sent["body"] == {"context": {"id": 0}, "enabled": False, "note": None}, facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'POST', 'path': '/consu...ample', 'context': {'id': 0}, 'enabled': False}, ...}], 'statuses': ['completed', 'completed'], 'external_ai_calls': 0}
+E           assert {'note': 'sta...abled': False} == {'context': {... 'note': None}
+E             
+E             Omitting 2 identical items, use -vv to show
+E             Differing items:
+E             {'note': 'stale-example'} != {'note': None}
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:125: AssertionError
+_ test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[True-False] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_false_zero_null_array_ext2')
+worker = False, aliases = True
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("aliases", [False, True])
+    def test_false_zero_null_array_extraction_and_header_binding_reach_actual_request(tmp_path, worker, aliases):
+        with target({"data": {"items": [{"id": 0, "enabled": False, "note": None}], "correlation": "observed-value"}}) as (url, events):
+            body = "request_body" if aliases else "body"
+            query = "request_query" if aliases else "query"
+            mappings = [("data.items[0].id", f"{body}.context.id"), ("data.items[0].enabled", f"{body}.enabled"),
+                        ("data.items[0].note", f"{body}.note"), ("data.items[0].id", f"{query}.id"),
+                        ("data.correlation", "request_headers.X-Correlation")]
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", depends_on=["produce"],
+                    execution_mode="write", request_body={"note": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path=s, target_path=t) for s, t in mappings])]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            facts = {"events": events, "statuses": [t.status for t in result], "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-values-{int(aliases)}", facts)
+            assert facts["statuses"] == ["completed"]*2, facts
+            sent = next(e for e in events if e["path"] == "/consume")
+>           assert sent["body"] == {"context": {"id": 0}, "enabled": False, "note": None}, facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'POST', 'path': '/consu...ample', 'context': {'id': 0}, 'enabled': False}, ...}], 'statuses': ['completed', 'completed'], 'external_ai_calls': 0}
+E           assert {'note': 'sta...abled': False} == {'context': {... 'note': None}
+E             
+E             Omitting 2 identical items, use -vv to show
+E             Differing items:
+E             {'note': 'stale-example'} != {'note': None}
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:125: AssertionError
+_ test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[True-True] _
+
+tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1682/test_false_zero_null_array_ext3')
+worker = True, aliases = True
+
+    @pytest.mark.parametrize("worker", [False, True])
+    @pytest.mark.parametrize("aliases", [False, True])
+    def test_false_zero_null_array_extraction_and_header_binding_reach_actual_request(tmp_path, worker, aliases):
+        with target({"data": {"items": [{"id": 0, "enabled": False, "note": None}], "correlation": "observed-value"}}) as (url, events):
+            body = "request_body" if aliases else "body"
+            query = "request_query" if aliases else "query"
+            mappings = [("data.items[0].id", f"{body}.context.id"), ("data.items[0].enabled", f"{body}.enabled"),
+                        ("data.items[0].note", f"{body}.note"), ("data.items[0].id", f"{query}.id"),
+                        ("data.correlation", "request_headers.X-Correlation")]
+            tasks = [ApiTestTask(task_id="produce", method="GET", path=url+"/producer", status="ready"),
+                ApiTestTask(task_id="consume", method="POST", path=url+"/consume", status="blocked", depends_on=["produce"],
+                    execution_mode="write", request_body={"note": "stale-example"},
+                    input_bindings=[InputBinding(source_task_id="produce", source_path=s, target_path=t) for s, t in mappings])]
+            runner, launcher = coordinator(worker, tasks)
+            result = asyncio.run(runner.run_all())
+            facts = {"events": events, "statuses": [t.status for t in result], "external_ai_calls": 0}
+            evidence(tmp_path, f"{'worker' if worker else 'inline'}-values-{int(aliases)}", facts)
+            assert facts["statuses"] == ["completed"]*2, facts
+            sent = next(e for e in events if e["path"] == "/consume")
+>           assert sent["body"] == {"context": {"id": 0}, "enabled": False, "note": None}, facts
+E           AssertionError: {'events': [{'method': 'GET', 'path': '/producer', 'query': {}, 'body': None, ...}, {'method': 'POST', 'path': '/consu...ample', 'context': {'id': 0}, 'enabled': False}, ...}], 'statuses': ['completed', 'completed'], 'external_ai_calls': 0}
+E           assert {'note': 'sta...abled': False} == {'context': {... 'note': None}
+E             
+E             Omitting 2 identical items, use -vv to show
+E             Differing items:
+E             {'note': 'stale-example'} != {'note': None}
+E             Use -v to get more diff
+
+tests\test_api_required_binding_http.py:125: AssertionError
+=========================== short test summary info ===========================
+FAILED tests/test_api_required_binding_http.py::test_missing_actual_output_blocks_only_its_consumers_before_send[body.order_id-False]
+FAILED tests/test_api_required_binding_http.py::test_missing_actual_output_blocks_only_its_consumers_before_send[body.order_id-True]
+FAILED tests/test_api_required_binding_http.py::test_missing_actual_output_blocks_only_its_consumers_before_send[query.order_id-False]
+FAILED tests/test_api_required_binding_http.py::test_missing_actual_output_blocks_only_its_consumers_before_send[query.order_id-True]
+FAILED tests/test_api_required_binding_http.py::test_missing_actual_output_blocks_only_its_consumers_before_send[request_headers.X-Correlation-False]
+FAILED tests/test_api_required_binding_http.py::test_missing_actual_output_blocks_only_its_consumers_before_send[request_headers.X-Correlation-True]
+FAILED tests/test_api_required_binding_http.py::test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[False-False]
+FAILED tests/test_api_required_binding_http.py::test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[False-True]
+FAILED tests/test_api_required_binding_http.py::test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[True-False]
+FAILED tests/test_api_required_binding_http.py::test_false_zero_null_array_extraction_and_header_binding_reach_actual_request[True-True]
+10 failed in 11.15s
