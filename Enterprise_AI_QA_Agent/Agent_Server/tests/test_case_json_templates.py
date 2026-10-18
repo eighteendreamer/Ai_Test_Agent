@@ -262,7 +262,7 @@ async def test_actual_document_model_skill_template_generation_is_frozen_in_post
                 assert item.case.lifecycle_status == "draft"
                 assert item.version.content_json
                 assert item.version.execution_notes
-                assert item.version.prompt_version == "test-case-generation-json-v2"
+                assert item.version.prompt_version == "test-case-generation-json-v3"
                 assert item.version.source_refs[0].source_id == document.id
                 assert item.version.generation_metadata["template"]["content_hash"] == template.content_hash
                 loaded = await PostgresTestCaseStore(settings).get_version(item.version.id)

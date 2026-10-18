@@ -16,7 +16,8 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.generation_runtime import GENERATION_STREAM
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
-from src.schemas.model_config import model_invocation_parameters
+from src.schemas.model_config import ModelConfigRecord, model_invocation_parameters
+from src.schemas.model_request_options import ModelRequestProfile
 from src.schemas.settings import ModelConfigUpdateRequest
 from test_execution_worker_cli import child_environment, free_port, isolated_runtime, wait_api
 
@@ -30,8 +31,15 @@ async def test_default_model_ordinary_modules_and_independent_configuration_reco
     original = MySQLModelConfigStore(get_settings()).get_default_active()
     assert original is not None and original.transport == "openai_chat_completions", "SDK probe scope is OpenAI-compatible"
     parameters = model_invocation_parameters(original)
+    invocation = original.model_copy(deep=True)
+    profile_path = os.getenv("QA_DEFAULT_DOCUMENT_REQUEST_PROFILE")
+    if profile_path:
+        invocation.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
+        invocation = ModelConfigRecord.model_validate(invocation.model_dump())
+    invocation_parameters = model_invocation_parameters(invocation)
     report = {"scope": "real default model; ordinary Markdown; independent workers; no business execution",
         "full_goal_complete": False, "model_parameters": parameters, "controlled_model": False,
+        "isolated_invocation_parameters": invocation_parameters, "isolated_profile_override": bool(profile_path),
         "module_generation_complete": False, "independent_recovery_complete": False}
 
     def save(name, value):
@@ -53,14 +61,14 @@ async def test_default_model_ordinary_modules_and_independent_configuration_reco
             models = MySQLModelConfigStore(settings)
             models.initialize()
             clone = ModelConfigUpdateRequest(model_name=original.model_id, provider=original.provider,
-                transport=original.transport, request_profile=original.request_profile,
+                transport=original.transport, request_profile=invocation.request_profile,
                 base_url=original.api_base_url, api_key=original.api_key,
                 auth_type=original.auth_type, oauth_provider=original.oauth_provider,
                 oauth_refresh_token=original.oauth_refresh_token, applications=original.applications,
                 is_active=True, use_provider_defaults=False, capability_overrides=original.capability_overrides,
                 context_window=original.context_window, max_output_tokens=original.max_output_tokens)
             models.upsert(clone)
-            assert model_invocation_parameters(models.get_default_active()) == parameters
+            assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
             processes.env = child_environment(settings)
             processes.env["QA_DEFAULT_PROBE_DIR"] = str(evidence / "physical")
             port = free_port()
@@ -108,7 +116,7 @@ async def test_default_model_ordinary_modules_and_independent_configuration_reco
                     group = await call("POST", base + "/document-case-generations", request, 202)
                     scope = await call("GET", base + f"/case-generations/{group['id']}/scope")
                     save("scope.json", scope)
-                    assert scope["authoring"]["model_parameters"] == parameters
+                    assert scope["authoring"]["model_parameters"] == invocation_parameters
                     assert all(m["generation"].get("response_transport_protocol") == "case-generation-stream-response-v1" for m in scope["modules"])
                     assert [s["title"] for s in scope["segments"]] == ["注册", "任务创建", "任务查询"]
                     assert "".join(scope["text"][s["start_char"]:s["end_char"]] for s in scope["segments"]) == snapshot["result"]["text"]
@@ -127,7 +135,7 @@ async def test_default_model_ordinary_modules_and_independent_configuration_reco
                     assert [m["status"] for m in failed["modules"]] == ["completed", "failed", "queued"]
                     assert failed["modules"][1]["error_code"] == "input_budget_or_configuration_rejected" and sdk_calls() == 1
                     models.upsert(clone)
-                    assert model_invocation_parameters(models.get_default_active()) == parameters
+                    assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
                     await processes.stop(api)
                     api = processes.start("generation-default-api-restart", *args)
                     await wait_api(client, api)
@@ -153,7 +161,7 @@ async def test_default_model_ordinary_modules_and_independent_configuration_reco
                             values = await call("GET", f"/test-cases/{ref['case_id']}/versions")
                             version = next(v for v in values if v["id"] == ref["version_id"])
                             bundle = await call("GET", f"/test-cases/{ref['case_id']}")
-                            assert bundle["case"]["lifecycle_status"] == "draft" and bundle["case"]["active_version_id"] is None
+                            assert bundle["lifecycle_status"] == "draft" and bundle["active_version_id"] is None
                             assert version["content_json"] and version["source_refs"][0]["source_id"] == parsed["snapshot_id"]
                             provenance = version["generation_metadata"]["document_generation"]
                             assert provenance["scope_sha256"] == scope["sha256"] and provenance["segment"]["module_id"] == task["module_id"]

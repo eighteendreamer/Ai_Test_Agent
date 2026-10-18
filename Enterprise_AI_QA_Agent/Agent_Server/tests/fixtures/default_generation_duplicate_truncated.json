@@ -1,0 +1,68 @@
+{
+  "source": "docs/upgrade_2026-10-03/p1-generation-default-profile-current/original-1.json",
+  "source_sha256": "454984fd88a8dab3b406940689d5454328d01b9259e711274d779f62f1d3ce3c",
+  "public_text_sha256": "718ecc5c2ba3c89921e879fa00a050484e0906f7d8c51c62fd8db4c936a151dc",
+  "response": {
+    "text": "{\"cases\":[{\"case_key\":\"registration_unique_email_first_success\",\"title\":\"首次使用唯一邮箱注册成功且账号可登录\",\"case_type\":\"api_testing\",\"priority\":\"P0\",\"preconditions\":[\"目标邮箱在系统中不存在\",\"注册功能可用\"],\"steps\":[{\"order\":1,\"action\":\"使用未被注册过的有效邮箱提交注册请求\",\"expected\":\"注册成功，系统创建对应账号记录\"}],\"assertions\":[{\"kind\":\"response\",\"target\":\"registration_result\",\"operator\":\"equals\",\"expected\":\"success\",\"description\":\"首次注册成功\"},{\"kind\":\"data\",\"target\":\"account.email\",\"operator\":\"equals\",\"expected\":\"first_register_user@example.com\",\"description\":\"账号邮箱与提交一致\"},{\"kind\":\"behavior\",\"target\":\"login_after_registration\",\"operator\":\"allowed\",\"expected\":true,\"description\":\"注册成功后允许登录\"}],\"test_data\":{\"email\":\"first_register_user@example.com\"},\"cleanup\":[\"清理本次注册产生的测试账号\"],\"execution_notes\":\"阅读完整用例内容，按目标、操作与预期执行并保存证据；步骤所需前置由项目依据确认，保留负向条件。未指定接口路径、状态码或页面元素，执行时需依据实际环境补充，不得编造。\",\"content_json\":{\"objective\":\"验证首次使用未注册过的邮箱提交注册时，注册成功并创建账号，且注册成功后可以登录\",\"preconditions\":[\"目标邮箱在系统中不存在\",\"注册功能可用且未提供具体接口路径、状态码或页面元素\"],\"steps\":[{\"order\":1,\"action\":\"使用未被注册过的有效邮箱提交注册请求\",\"expected\":\"注册成功，系统创建对应账号记录\"}],\"checkpoints\":[{\"description\":\"注册结果为成功\",\"evidence\":\"注册响应显示成功\"},{\"description\":\"账号邮箱与提交邮箱一致\",\"evidence\":\"账号记录中邮箱字段匹配\"},{\"description\":\"注册成功后允许登录\",\"evidence\":\"使用该账号可以成功登录\"}],\"test_data\":{\"email\":\"first_register_user@example.com\"},\"cleanup\":[\"清理本次注册产生的测试账号\"]},\"generation_metadata\":{\"source_ref\":\"53d46ef3-90c5-464c-b5b9-bf89145dad15\",\"section_id\":\"section-2\",\"module_title\":\"注册\"}},{\"case_key\":\"registration_duplicate_email_rejected\",\"title\":\"重复邮箱注册被拒绝且已有账号保持不变\",\"case_type\":\"api_testing\",\"priority\":\"P0\",\"preconditions\":[\"系统中已存在使用指定邮箱的账号\"],\"steps\":[{\"order\":1,\"action\":\"使用已存在的邮箱再次提交注册请求\",\"expected\":\"注册请求被拒绝，不创建新账号，已有账号信息不变\"}],\"assertions\":[{\"kind\":\"response\",\"target\":\"registration_result\",\"operator\":\"equals\",\"expected\":\"rejected\",\"description\":\"重复邮箱注册必须拒绝\"},{\"kind\":\"data\",\"target\":\"existing_account\",\"operator\":\"unchanged\",\"expected\":true,\"description\":\"已有账号保持不变\"}],\"test_data\":{\"email\":\"existing_user@example.com\"},\"cleanup\":[\"如产生脏数据则清理\"],\"execution_notes\":\"阅读完整用例内容，按目标、操作与预期执行并保存证据；步骤所需前置由项目依据确认，保留负向条件。未指定接口",
+    "response_summary": {
+      "mode": "incomplete_response",
+      "provider": "openai",
+      "provider_profile": "openai",
+      "transport": "openai_chat_completions",
+      "response_id": "12d5a1b92785606844422f841875178f.493204384d5619ceb21e9f6856d25db1",
+      "finish_reason": "length",
+      "stop_reason": null,
+      "completion_status": "truncated",
+      "stream_terminal_received": true,
+      "usage": {
+        "completion_tokens": 8192,
+        "prompt_tokens": 4134,
+        "total_tokens": 12326,
+        "completion_tokens_details": {
+          "accepted_prediction_tokens": null,
+          "audio_tokens": null,
+          "reasoning_tokens": 0,
+          "rejected_prediction_tokens": null,
+          "text_tokens": null
+        },
+        "prompt_tokens_details": {
+          "audio_tokens": null,
+          "cache_write_tokens": null,
+          "cached_tokens": 0,
+          "image_tokens": null,
+          "text_tokens": null
+        }
+      },
+      "tool_call_count": 0,
+      "tool_call_names": [],
+      "content_preview": "{\"cases\":[{\"case_key\":\"registration_unique_email_first_success\",\"title\":\"首次使用唯一邮箱注册成功且账号可登录\",\"case_type\":\"api_testing\",\"priority\":\"P0\",\"preconditions\":[\"目标邮箱在系统中不存在\",\"注册功能可用\"],\"...",
+      "tool_fallback": "",
+      "request_mapping": {
+        "version": "model-request-v1",
+        "decisions": [
+          {
+            "option": "output_format",
+            "action": "json_object_fallback",
+            "reason": "schema_not_declared"
+          },
+          {
+            "option": "output_format",
+            "action": "mapped",
+            "format": "json_object"
+          },
+          {
+            "option": "reasoning",
+            "action": "mapped",
+            "style": "effort"
+          },
+          {
+            "option": "token_parameter",
+            "action": "mapped",
+            "field": "max_tokens"
+          }
+        ]
+      }
+    },
+    "tool_calls": []
+  }
+}

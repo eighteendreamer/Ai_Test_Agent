@@ -148,7 +148,7 @@ async def test_actual_confirmed_scope_fixed_sources_and_saved_request_http(tmp_p
                     reloaded_response = ModelInvocationResult.model_validate_json((await env.objects.read_object_uri(response_uri))["content"])
                     batch = sources.parse_module_response(module, reloaded_response)
                     saved_files[f"candidates-{index}.json"] = batch.model_dump_json().encode("utf-8")
-                    assert batch.prompt_version == "test-case-generation-incremental-v1"
+                    assert batch.prompt_version == "test-case-generation-incremental-v2"
                     assert batch.skill_versions == {skill.key: f"sha256:{skill.sha256}" for skill in recovered.authoring.skills}
                     assert batch.cases[0].content_json["确认验证点"] == basis.model_dump(mode="json")["points"]
                     assert sends[index]["messages"][0]["content"] == module.generation.invocation.system_prompt

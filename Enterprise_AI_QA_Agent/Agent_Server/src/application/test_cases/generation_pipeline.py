@@ -40,6 +40,28 @@ class _ModelGeneratedPayload(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+def _requires_content_json(context):
+    return any(isinstance(context.get(key), dict) for key in ("generation_template", "incremental_generation"))
+
+
+def _generation_output_schema(*, requires_content_json):
+    schema = _ModelGeneratedPayload.model_json_schema()
+    if requires_content_json:
+        # _CaseBusinessContent.business_content() reads JSON preferentially;
+        # template_service already requires business fields inside that JSON.
+        # Project only new authoring requests, leaving legacy DTOs/hashes intact.
+        draft = schema["$defs"]["GeneratedTestCaseDraft"]
+        for key in ("preconditions", "steps", "assertions", "test_data", "cleanup"):
+            draft["properties"].pop(key)
+        content = draft["properties"]["content_json"]
+        draft["properties"]["content_json"] = next(
+            option for option in content["anyOf"] if option.get("type") == "object")
+        draft["required"].append("content_json")
+        for key in ("TestCaseStep", "TestCaseAssertion"):
+            schema["$defs"].pop(key)
+    return schema
+
+
 class ProjectTestCaseContextProvider:
     """Collect bounded, project-isolated evidence for generation."""
 
@@ -232,21 +254,23 @@ class ModelTestCaseGenerator:
         model_request = self._build_request(request, context, skill_blocks)
         result = await self._models.invoke(model_key, model_request)
         payload = self._parse_payload(str(result.text or ""))
-        template = context.get("generation_template")
-        if isinstance(template, dict) and any(case.content_json is None for case in payload.cases):
-            raise ValueError("Model did not return content_json required by the project generation template")
+        requires_json = _requires_content_json(context)
+        if requires_json and any(case.content_json is None for case in payload.cases):
+            raise ValueError("Model did not return content_json required by the generation request")
         skill_hash = hashlib.sha256("\n\n".join(skill_blocks).encode("utf-8")).hexdigest()[:16]
         return GeneratedTestCaseBatch(model_key=model_key,
-            prompt_version="test-case-generation-json-v2" if isinstance(template, dict) else PROMPT_VERSION,
+            prompt_version="test-case-generation-json-v3" if requires_json else PROMPT_VERSION,
             skill_versions={GENERATION_SKILL_KEY: f"sha256:{skill_hash}"}, cases=payload.cases[:request.max_cases], warnings=payload.warnings)
 
     @staticmethod
     def _build_request(request, context, skill_blocks):
         skill_content = "\n\n".join(skill_blocks)
-        output_schema = json.dumps(
-            _ModelGeneratedPayload.model_json_schema(),
-            ensure_ascii=False,
-        )
+        requires_json = _requires_content_json(context)
+        schema = _generation_output_schema(requires_content_json=requires_json)
+        output_schema = json.dumps(schema, ensure_ascii=False)
+        logger.info("case_generation_output_schema_selected", extra={
+            "content_format": "json-v1" if requires_json else "legacy-compatible",
+            "output_schema_sha256": hashlib.sha256(output_schema.encode("utf-8")).hexdigest()})
         system_prompt = (
             f"{skill_content}\n\n"
             "You generate reviewable test case drafts only; never execute tests and never claim pass/fail. "
@@ -262,7 +286,10 @@ class ModelTestCaseGenerator:
             system_prompt += (
                 "\nProject generation template (authoring only): "
                 + json.dumps(template["payload"], ensure_ascii=False)
-                + "\nPut every complete case's business content in content_json. Preserve custom nested fields. "
+            )
+        if requires_json:
+            system_prompt += (
+                "\nPut every complete case's business content in content_json. Preserve custom nested fields. "
                   "Keep case_key/title/case_type/priority in the outer governance envelope. "
                   "Include execution_notes that make the case understandable independently of the template."
             )
@@ -284,7 +311,7 @@ class ModelTestCaseGenerator:
         return ModelInvocationRequest(
             system_prompt=system_prompt,
             output_format=ModelOutputFormat(kind="json_schema", schema_name="test_case_drafts",
-                schema_definition=_ModelGeneratedPayload.model_json_schema(), required=False),
+                schema_definition=schema, required=False),
             messages=[
                 {
                     "role": "user",
@@ -324,12 +351,13 @@ class ModelTestCaseGenerator:
         invocation = self._build_request(request, context, [skill.prompt_block for skill in fixed.skills])
         incremental = isinstance(context.get("incremental_generation"), dict)
         document = isinstance(context.get("document_generation"), dict)
+        requires_json = _requires_content_json(context)
+        kind = "incremental" if incremental else "document" if document else "frozen"
         prepared = fixed_generation_snapshot(PreparedCaseGeneration, authoring=fixed, request=request,
-            invocation=invocation, prompt_version="test-case-generation-incremental-v1" if incremental else
-                "test-case-generation-document-v1" if document else "test-case-generation-frozen-v1",
+            invocation=invocation, prompt_version=f"test-case-generation-{kind}-v{2 if requires_json else 1}",
             response_transport_protocol="case-generation-stream-response-v1" if document
                 and fixed.model_parameters.get("capabilities", {}).get("streaming") else None,
-            requires_content_json=incremental or isinstance(context.get("generation_template"), dict))
+            requires_content_json=requires_json)
         logger.info("case_generation_request_prepared", extra={"model_key": fixed.model_key,
             "request_sha256": prepared.sha256, "max_cases": request.max_cases})
         return prepared
