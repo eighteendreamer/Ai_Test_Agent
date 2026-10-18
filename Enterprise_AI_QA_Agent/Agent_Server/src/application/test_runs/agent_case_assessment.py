@@ -75,6 +75,8 @@ class AgentCaseAssessmentService:
                     if context.action_admission_protocol is not None and "case_action_admission" in job.metadata else {})
                 | ({"case_operation":deepcopy(job.metadata["case_operation"])}
                     if context.operation_protocol is not None and "case_operation" in job.metadata else {})
+                 | ({"case_operation_verification":deepcopy(job.metadata["case_operation_verification"])}
+                    if "case_operation_verification" in job.metadata else {})
                 for key, job in jobs.items()]
 
     async def build_assessment_request(self, *, context: AgentCaseExecutionContext,
@@ -235,19 +237,24 @@ class AgentCaseAssessmentService:
         evidence_refs = [RunEvidenceRef(evidence_type="tool_job", evidence_id=job.id, label=job.tool_name,
             metadata={"call_id": job.call_id, "tool_key": job.tool_key}
                 | ({"case_operation":deepcopy(job.metadata["case_operation"])}
-                    if context.operation_protocol is not None and "case_operation" in job.metadata else {}))
+                    if context.operation_protocol is not None and "case_operation" in job.metadata else {})
+                | ({"case_operation_verification":deepcopy(job.metadata["case_operation_verification"])}
+                    if "case_operation_verification" in job.metadata else {}))
             for job in used.values()]
         artifacts = {artifact.id: artifact for job in used.values() for artifact in job.artifacts}
         evidence_refs.extend(RunEvidenceRef(evidence_type="artifact", evidence_id=a.id, label=a.label or a.artifact_type,
             uri=a.path, metadata={"tool_job_id": a.tool_job_id}) for a in artifacts.values())
         evidence_refs.extend(RunEvidenceRef(evidence_type="verification", evidence_id=v.id, label=v.verifier,
             metadata={"status": v.status.value, "plan_item_key": v.metadata["plan_item_key"]}) for v in verifications)
+        operation_verifications = [deepcopy(job.metadata["case_operation_verification"])
+            for job in used.values() if "case_operation_verification" in job.metadata]
         completion = RunItemCompleteRequest(lease_token=lease_token, status=status, summary=summary,
             actual={"case_output": target["output"], "case_status": target["status"],
                 "preparations": {key: value for key, value in results.items() if key != context.target_key},
                 **({"environment_admission":context.environment_admission.model_dump(mode="json")}
                     if context.environment_admission is not None else {}),
-                "receipt": receipt.model_dump(mode="json"), "verification_results": [v.model_dump(mode="json") for v in verifications]},
+                "receipt": receipt.model_dump(mode="json"), "verification_results": [v.model_dump(mode="json") for v in verifications],
+                "case_operation_verifications": operation_verifications},
             evidence_refs=evidence_refs, artifact_ids=list(artifacts), verification_ids=[v.id for v in verifications],
             tool_job_id=next(reversed(used), None), error_message=summary if status != "passed" else None)
         if coverage is not None:

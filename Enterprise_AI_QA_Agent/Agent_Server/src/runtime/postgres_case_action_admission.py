@@ -12,7 +12,8 @@ from src.application.runtime.case_action_binding import (
 )
 from src.application.runtime.case_operation import (
     CaseOperationRecoveryRequired, operation_identity, operation_receipt, replay_output,
-    RECEIPT_KEY as OPERATION_RECEIPT_KEY,
+    declared_operation_verification, operation_verification_receipt,
+    RECEIPT_KEY as OPERATION_RECEIPT_KEY, VERIFICATION_KEY,
 )
 from src.runtime.postgres_case_operations import PostgresCaseOperations
 from src.runtime.postgres_case_consumption import PostgresCaseConsumption
@@ -150,7 +151,36 @@ class PostgresCaseActionAdmission:
             receipt["sha256"] = environment_digest(receipt)
             identity = operation_identity(job,binding) if context.operation_protocol == OPERATION_PROTOCOL else None
             operation = None
+            verification = None
+            verification_origin = None
             if identity is not None:
+                verification = declared_operation_verification(
+                    context,
+                    item_key=binding.item_key,
+                    tool_key=job.tool_key,
+                    operation_key=identity["scope"]["operation_key"],
+                    input_payload=job.input_payload,
+                )
+                if verification is not None:
+                    verification_origin = self.operations.find_by_scope_and_operation_key(
+                        cur, identity["scope"], verification.origin_operation_key)
+                    if verification_origin is None:
+                        raise ValueError("固定查证操作缺少已登记的原逻辑操作")
+                    origin_job = self._read_job(cur, verification_origin["origin_job_id"], lock=True)
+                    verification_origin = self.operations.validate_origin(verification_origin, origin_job)
+                    if origin_job.status.value in {"running", "resume_requested"}:
+                        if origin_job.metadata.get("tool_output_observation"):
+                            return CaseOperationRecoveryRequired(origin_job.id)
+                        # Keep the origin unknown. The new read operation is
+                        # registered below with an explicit relation to it.
+                        verification_origin = {
+                            **verification_origin,
+                            "origin_job_id": origin_job.id,
+                        }
+                    else:
+                        # A read declaration is useful only while the origin is
+                        # unknown. A known origin remains an ordinary read.
+                        verification = None
                 operation = self.operations.read(cur,identity["operation_id"])
                 if operation is not None:
                     origin = self._read_job(cur,operation["origin_job_id"],lock=True)
@@ -187,6 +217,14 @@ class PostgresCaseActionAdmission:
                     self.operations.register(cur,identity,job)
                     metadata[OPERATION_RECEIPT_KEY] = operation_receipt(identity,origin_job_id=job.id,
                         decision="dispatched",action_sent=None)
+                    if verification is not None and verification_origin is not None:
+                        metadata[VERIFICATION_KEY] = operation_verification_receipt(
+                            declaration=verification,
+                            origin=verification_origin,
+                            read_identity=identity,
+                            read_job_id=job.id,
+                            action_sent=None,
+                        )
                 saved = self._jobs.claim_job_execution_in_transaction(cur, job.id, metadata=metadata)
                 if consumption is not None:
                     if saved is None:

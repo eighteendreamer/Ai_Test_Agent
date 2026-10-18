@@ -14,7 +14,11 @@ from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation
 from src.infrastructure.storage_utils import make_json_safe
 from src.application.runtime.case_action_binding import action_admission_enabled, CaseActionClaimUnavailable
-from src.application.runtime.case_operation import CaseOperationRecoveryRequired
+from src.application.runtime.case_operation import (
+    CaseOperationRecoveryRequired,
+    VERIFICATION_KEY,
+    save_operation_verification_observation,
+)
 
 logger = logging.getLogger(__name__)
 OUTPUT_OBSERVATION_KEY = "tool_output_observation"
@@ -167,9 +171,22 @@ class ToolJobService:
     async def observe_output(self, job_id: str, *, status: str, output_payload: dict) -> ToolJobRecord:
         payload = deepcopy(make_json_safe(output_payload))
         observation = ToolOutputObservation(status=status, output_hash=self._output_hash(payload), observed_at=datetime.utcnow())
+        verification_metadata = None
+        current = await self._store.get_job(job_id)
+        if current is not None and isinstance(current.metadata.get(VERIFICATION_KEY), dict):
+            verification_metadata = {
+                VERIFICATION_KEY: save_operation_verification_observation(
+                    current.metadata[VERIFICATION_KEY], payload, job_status=status,
+                )
+            }
+        observe_kwargs = {
+            "output_payload": payload,
+            "observation": observation.model_dump(mode="json"),
+        }
+        if verification_metadata is not None:
+            observe_kwargs["metadata"] = verification_metadata
         try:
-            saved = await self._store.observe_job_output(job_id, output_payload=payload,
-                observation=observation.model_dump(mode="json"))
+            saved = await self._store.observe_job_output(job_id, **observe_kwargs)
         except Exception as exc:
             # A lost commit acknowledgement is uncertain; query this identity
             # rather than replace its output or call the tool again.

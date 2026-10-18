@@ -15,7 +15,8 @@ class ToolJobStore(Protocol):
     async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
     async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None: ...
     async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None: ...
-    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None: ...
+    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
+                                 metadata: dict | None = None) -> ToolJobRecord | None: ...
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
                                output_payload: dict, status: ToolJobStatus, summary: str,
                                error_message: str | None, artifact_count: int) -> ToolJobRecord | None: ...
@@ -81,13 +82,16 @@ class InMemoryToolJobStore:
                 return job.model_copy(deep=True)
             return None
 
-    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None:
+    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
+                                 metadata: dict | None = None) -> ToolJobRecord | None:
         async with self._lock:
             job = self._jobs.get(job_id)
             if job is None or job.status != ToolJobStatus.running or "tool_output_observation" in job.metadata:
                 return None
             job.output_payload = output_payload
             job.metadata["tool_output_observation"] = observation
+            if metadata:
+                job.metadata.update(metadata)
             job.updated_at = datetime.utcnow()
             return job.model_copy(deep=True)
 

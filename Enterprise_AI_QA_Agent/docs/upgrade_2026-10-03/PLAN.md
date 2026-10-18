@@ -4209,3 +4209,11 @@ cd Agent_Server
 依据是 `planning_operation_prefetch.py`、`PlanningOperationSelection`、`CasePlanningWorkflow` 及 `test_planning_operation_prefetch.py`。非实时回归为 **6 passed、10 skipped**；在当前配置下运行两个隔离实时场景（`False-none`、`False-unknown-operation`）均为 **1 passed**。实时用例使用真实 MySQL 配置读取项目策略、真实 PostgreSQL 临时任务表和 RustFS 原件保存；未知操作场景只追加明确的 `api-test-runner.execute_task` 契约读取，没有业务 HTTP 请求。另运行 `test_case_operations.py -k test_actual_completed_read_replay_and_deliberate_refresh_are_distinct` 的真实隔离场景为 **1 passed**：`case-operation-v1` 对同一 GET 回放不发 HTTP，更换 `operation_key` 才发送一次新的 GET；该证据保存在 `Agent_Server/docs/upgrade_2026-10-03/p4-explicit-read-live-current/read-refresh/verification.json`，但它仍是底层运行时测试，不是正式 Run 查证闭环。
 
 因此当前分类为：**规划阶段显式操作契约预读已有实现并通过真实隔离验收；正式 Run 的未知副作用只读查证仍未实现/验收**。后者不能直接复用规划查询结果：查证必须是冻结用例或项目契约明确声明的合法只读业务操作，创建新的 read operation/evidence，关联原 `project_id`、`run_id`、`run_item_id`、原逻辑操作身份及证据；不能改写原未知 ToolJob、重用原 operation identity、释放依赖或自动猜 URL、主键和幂等键。下一步应先为一个固定用例显式声明“原操作未知后的只读查证操作”，再验证正式 Run 的领取、HTTP、PG/RustFS 证据和后续状态转换；在该链路未验证前，不新增通用自动推导器。
+
+### 7.93 正式 Run 查证回执原子保存与证据投影〔2026-10-19〕
+
+根据 7.90—7.92 的职责边界，先补了正式 Run 已声明查证操作的持久化缺口。`CaseOperationVerificationDeclaration` 现在显式保存存在/不存在状态码集合；重复、重叠、越界状态码拒绝，旧声明的空集合保持兼容但结果为 `inconclusive`。查证请求仍只允许固定声明的工具、操作键、HTTP 方法和路径模板，未新增 URL、主键或幂等键推导。
+
+工具返回经过现有输出清洗后，`ToolJobStore.observe_job_output` 在内存和 PostgreSQL 实现中同时保存工具输出、`tool_output_observation` 和查证回执的分类观察；分类只读取持久化 `task_result.response_status`，工具失败、响应缺失或未声明状态均为 `inconclusive`，不改写原未知写操作。`ToolRuntimeService` 使用最新保存的 Job 投影回执；正式 Run 的 `evidence_manifest`、工具证据引用和完成回执实际带出查证关系、SHA 和分类结果。
+
+本次代码级功能测试：`tests/test_case_operation_verification.py` **9 passed**；受影响回归 `tests/test_case_operations.py tests/test_case_effect_evidence.py tests/test_tool_operation_observation.py tests/test_agent_case_assessment.py` **59 passed、31 skipped**；`compileall` 通过。跳过项由真实服务门控，尚未证明真实 PostgreSQL/HTTP 查证闭环、默认 AI 自动选取查证、查证后计划修订或依赖释放；这些继续归为**已有实现但尚未真实验收/仍需补跨边界实现**。Step 模型仍已认证，Anthropic 继续 Messages API，OpenAI Responses 仍保持独立适配器。

@@ -57,10 +57,13 @@ class PostgresToolJobStore:
             row = cur.fetchone()
             return _job_from_row(row) if row else None
 
-    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict) -> ToolJobRecord | None:
-        return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation)
+    async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
+                                 metadata: dict | None = None) -> ToolJobRecord | None:
+        if metadata is None:
+            return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation)
+        return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation, metadata)
 
-    def _observe_job_output_sync(self, job_id, output_payload, observation):
+    def _observe_job_output_sync(self, job_id, output_payload, observation, metadata=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
@@ -68,7 +71,8 @@ class PostgresToolJobStore:
                 WHERE id=%s AND status='running' AND NOT (metadata ? 'tool_output_observation')
                 RETURNING *
             """, (json.dumps(make_json_safe(output_payload), ensure_ascii=False),
-                  json.dumps({"tool_output_observation": observation}, ensure_ascii=False), job_id))
+                  json.dumps({"tool_output_observation": observation, **make_json_safe(metadata or {})}, ensure_ascii=False),
+                  job_id))
             row = cur.fetchone()
             if row is not None:
                 self.effect_evidence.capture(cur, _job_from_row(row), output_payload, observation)

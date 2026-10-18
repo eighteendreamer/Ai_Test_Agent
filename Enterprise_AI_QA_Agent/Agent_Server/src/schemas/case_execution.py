@@ -31,6 +31,42 @@ class CaseExecutionStep(PlanningModel):
     source_refs: list[dict[str, Any]] = Field(default_factory=list)
 
 
+class CaseOperationVerificationDeclaration(PlanningModel):
+    """A frozen, read-only operation that may inspect an unknown operation.
+
+    The declaration is carried inside the frozen case JSON. It is deliberately
+    narrower than a general recovery rule: the runtime still requires the
+    operation key, tool operation, method, and path template to match the
+    declaration before sending a new request.
+    """
+
+    declaration_id: str = Field(min_length=1, max_length=160)
+    origin_operation_key: str = Field(min_length=1, max_length=160)
+    read_operation_key: str = Field(min_length=1, max_length=160)
+    tool_key: str = Field(min_length=1, max_length=160)
+    operation: str = Field(min_length=1, max_length=160)
+    method: Literal["GET", "HEAD", "OPTIONS"]
+    path_template: str = Field(min_length=1, max_length=4000)
+    # A frozen declaration must state how an observed response is interpreted.
+    # Empty lists are allowed for legacy declarations and deliberately produce
+    # an inconclusive observation rather than an inferred business result.
+    effect_present_statuses: list[int] = Field(default_factory=list, max_length=50)
+    effect_absent_statuses: list[int] = Field(default_factory=list, max_length=50)
+
+    @model_validator(mode="after")
+    def validate_effect_statuses(self):
+        present = list(self.effect_present_statuses)
+        absent = list(self.effect_absent_statuses)
+        statuses = present + absent
+        if any(isinstance(value, bool) or value < 100 or value > 599 for value in statuses):
+            raise ValueError("查证效果状态码必须是100到599之间的HTTP状态码")
+        if len(set(present)) != len(present) or len(set(absent)) != len(absent):
+            raise ValueError("查证效果状态码不能重复")
+        if set(present) & set(absent):
+            raise ValueError("查证效果存在与不存在状态码不能重叠")
+        return self
+
+
 class AgentCaseExecutionContext(PlanningModel):
     schema_version: Literal[1] = 1
     project_id: str

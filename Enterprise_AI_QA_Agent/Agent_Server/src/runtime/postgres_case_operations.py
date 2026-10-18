@@ -9,7 +9,7 @@ import re
 from src.application.runtime.case_action_binding import (
     CaseActionBinding, OPERATION_PROTOCOL, _digest,
 )
-from src.application.runtime.case_operation import RECEIPT_KEY, operation_identity
+from src.application.runtime.case_operation import RECEIPT_KEY, VERIFICATION_KEY, operation_identity
 from src.infrastructure.postgres_runtime import postgres_connect
 
 
@@ -37,6 +37,28 @@ class PostgresCaseOperations:
         cur.execute(f"SELECT record FROM {self.table} WHERE operation_id=%s", (operation_id,))
         row = cur.fetchone()
         return row["record"] if row else None
+
+    def find_by_scope_and_operation_key(self, cur, scope, operation_key):
+        """Find an operation only inside the exact frozen execution scope."""
+        cur.execute(
+            f"""SELECT record FROM {self.table}
+                WHERE record->'scope'->>'protocol'=%s
+                  AND record->'scope'->>'project_id'=%s
+                  AND record->'scope'->>'run_id'=%s
+                  AND record->'scope'->>'run_item_id'=%s
+                  AND record->'scope'->>'plan_id'=%s
+                  AND record->'scope'->>'attempt_id'=%s
+                  AND record->'scope'->>'item_key'=%s
+                  AND record->'scope'->>'context_sha256'=%s
+                  AND record->'scope'->>'operation_key'=%s
+                LIMIT 2""",
+            (OPERATION_PROTOCOL, scope["project_id"], scope["run_id"], scope["run_item_id"],
+             scope["plan_id"], scope["attempt_id"], scope["item_key"], scope["context_sha256"], operation_key),
+        )
+        rows = cur.fetchall()
+        if len(rows) > 1:
+            raise ValueError("固定执行范围内的查证来源操作不唯一")
+        return rows[0]["record"] if rows else None
 
     def register(self, cur, identity, origin):
         # No upstream counterpart (checked: generation creation_key transaction,
@@ -103,4 +125,19 @@ class PostgresCaseOperations:
             if source != {"origin_job_id":origin.id,
                 "origin_output_sha256":receipt["origin_output_sha256"],"action_sent":False}:
                 raise ValueError("复用逻辑操作输出与原来源不同")
+        verification = job.metadata.get(VERIFICATION_KEY)
+        if verification is not None:
+            if (not isinstance(verification, dict)
+                or verification.get("version") != "case-operation-verification-v1"
+                or verification.get("sha256") != _digest({k: v for k, v in verification.items() if k != "sha256"})
+                or verification.get("read_job_id") != job.id
+                or verification.get("read_operation_id") != identity["operation_id"]
+                or verification.get("read_operation_key") != identity["scope"]["operation_key"]
+                or verification.get("action_sent") is not None):
+                raise ValueError("查证操作回执版本、身份或发送状态不同")
+            origin_record = self.read(cur, verification.get("origin_operation_id"))
+            if (not origin_record
+                or origin_record.get("origin_job_id") != verification.get("origin_job_id")
+                or origin_record.get("scope", {}).get("operation_key") != verification.get("origin_operation_key")):
+                raise ValueError("查证操作来源索引不存在或身份不同")
         return receipt

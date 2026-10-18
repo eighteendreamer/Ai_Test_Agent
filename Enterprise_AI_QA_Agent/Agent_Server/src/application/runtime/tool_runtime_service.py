@@ -688,7 +688,9 @@ class ToolRuntimeService:
             result, _, _ = self._output_safety_policy.sanitize_tool_output(result)
             resolved_status = self._resolve_result_status(result)
             if job is not None and resolved_status in {"completed", "partial", "failed"}:
-                await self._tool_job_service.observe_output(job.id, status=resolved_status, output_payload=result)
+                job = await self._tool_job_service.observe_output(
+                    job.id, status=resolved_status, output_payload=result,
+                )
                 observed_output = True
             if self._artifact_storage_service is not None:
                 result = await self._artifact_storage_service.store_output_artifacts(
@@ -769,6 +771,10 @@ class ToolRuntimeService:
             )
             if job is not None and "case_operation" in job.metadata:
                 record_output["case_operation"] = deepcopy(job.metadata["case_operation"])
+            if job is not None and "case_operation_verification" in job.metadata:
+                record_output["case_operation_verification"] = deepcopy(
+                    job.metadata["case_operation_verification"]
+                )
             return ToolExecutionRecord(
                 call_id=call.id,
                 tool_key=tool.key,
@@ -868,6 +874,10 @@ class ToolRuntimeService:
         if "case_operation" in job.metadata:
             await self._tool_job_service.validate_case_operation(job)
             record_output["case_operation"] = deepcopy(job.metadata["case_operation"])
+        if "case_operation_verification" in job.metadata:
+            record_output["case_operation_verification"] = deepcopy(
+                job.metadata["case_operation_verification"]
+            )
         return ToolExecutionRecord(
             call_id=job.call_id,
             tool_key=job.tool_key,
