@@ -41,6 +41,38 @@ def save(directory, name, value):
     (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
+def copy_diagnostic_artifacts(tmp_path: Path, output: Path) -> list[dict[str, str]]:
+    """Copy best-effort diagnostics without turning a primary failure into a copy error."""
+    failures: list[dict[str, str]] = []
+    try:
+        entries = list(tmp_path.iterdir())
+    except OSError as exc:
+        failures.append({"path": str(tmp_path), "error_type": type(exc).__name__, "message": str(exc)})
+        entries = []
+    for path in entries:
+        if path.suffix not in {".stdout", ".stderr"} and path.name != "docker.json":
+            continue
+        try:
+            if path.exists():
+                shutil.copyfile(path, output / path.name)
+        except OSError as exc:
+            failures.append({"path": str(path), "error_type": type(exc).__name__, "message": str(exc)})
+    artifacts = tmp_path / "artifacts"
+    try:
+        if artifacts.exists():
+            shutil.copytree(artifacts, output / "artifacts", dirs_exist_ok=True)
+    except OSError as exc:
+        failures.append({"path": str(artifacts), "error_type": type(exc).__name__, "message": str(exc)})
+    if failures:
+        # This file is deliberately separate from failure.json: it must never
+        # replace the exception raised by the actual test or worker.
+        try:
+            save(output, "diagnostic-copy-failures.json", {"failures": failures})
+        except OSError:
+            pass
+    return failures
+
+
 def verify_owned_approval(approval, *, project_id, run_id, item_id, origin):
     assert approval["tool_key"] in AgentRegistry().get("ui-automation-agent").supported_tools
     metadata = approval["metadata"]
@@ -379,8 +411,7 @@ async def test_default_model_uses_actual_recording_in_formal_ui_execution(tmp_pa
                 assert cleanup["status"] == "success", cleanup
             finally:
                 await graphs.close()
-        for path in tmp_path.iterdir():
-            if path.suffix in {".stdout", ".stderr"} or path.name == "docker.json":
-                shutil.copyfile(path, output / path.name)
-        if (tmp_path / "artifacts").exists():
-            shutil.copytree(tmp_path / "artifacts", output / "artifacts", dirs_exist_ok=True)
+        # Diagnostic collection is deliberately best-effort. A worker or
+        # browser cleanup can remove a temporary artifact during copying; the
+        # actual run result must remain authoritative in that case.
+        copy_diagnostic_artifacts(tmp_path, output)
