@@ -195,6 +195,15 @@ async def test_duplicate_notification_uses_same_original_snapshot_idempotency_ke
 
 
 @pytest.mark.asyncio
+async def test_proxy_approval_running_parent_can_resume_original_child_wait():
+    service, parent, _, _, dispatcher = wait_recovery_environment()
+    parent.status = SessionStatus.running
+    parent.metadata.pop('turn_lease_token', None)
+    assert await service._maybe_resume_waiting_tool(parent)
+    dispatcher.submit_resume.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_one_failed_recovery_does_not_block_other_parent_waits(caplog):
     service, parent, _, _, dispatcher = wait_recovery_environment()
     broken = SimpleNamespace(id='broken', status=SessionStatus.interrupted, project_id='project',

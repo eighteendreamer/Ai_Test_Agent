@@ -1624,6 +1624,66 @@ async def test_coordinator_watcher_stops_when_parent_is_terminal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_coordinator_running_child_watcher_persists_status_then_delivers_completion() -> None:
+    # Captured by p3-api-agent-worker-current/durable: the running branch lost
+    # its watcher with _mark_worker_status(... missing 'worker').
+    from src.application.orchestration.coordinator_runtime_service import WorkerDispatchSpec
+
+    store = InMemorySessionStore()
+    parent = _session()
+    parent.id = "running-watch-parent"
+    child = _session("api_testing")
+    child.id = "running-watch-child"
+    child.status = SessionStatus.running
+    worker = WorkerDispatchSpec(
+        task_id="running-watch-task", agent_key="api-testing-agent",
+        description="Run the fixed authentication chain", prompt="Execute the API task",
+        model_key=None, skill_keys=[], context={"dispatch_role": "api_execution_worker"},
+    )
+    parent.metadata["worker_dispatches"] = [{
+        "task_id": worker.task_id, "child_session_id": child.id,
+        "parent_turn_id": "turn-1", "status": "pending",
+    }]
+    await store.save_session(parent)
+    await store.save_session(child)
+    service = CoordinatorRuntimeService(
+        Settings(), store, SimpleNamespace(get_session=store.get_session), AgentRegistry()
+    )
+    service._deliver_notification = AsyncMock()
+    watch_task = asyncio.create_task(service._watch_child_session_until_settled(
+        parent_session_id=parent.id, parent_turn_id="turn-1", parent_trace_id="trace-1",
+        child_session_id=child.id, worker=worker,
+    ))
+    try:
+        async def wait_for_running() -> None:
+            while True:
+                if watch_task.done():
+                    await watch_task
+                    pytest.fail("Watcher exited before the running child completed")
+                saved = await store.get_session(parent.id)
+                if saved.metadata["worker_dispatches"][0]["status"] == "running":
+                    return
+                await asyncio.sleep(.01)
+
+        await asyncio.wait_for(wait_for_running(), timeout=3)
+        service._deliver_notification.assert_not_awaited()
+        child.status = SessionStatus.completed
+        await store.save_session(child)
+        await asyncio.wait_for(watch_task, timeout=3)
+    finally:
+        if not watch_task.done():
+            watch_task.cancel()
+            await asyncio.gather(watch_task, return_exceptions=True)
+
+    service._deliver_notification.assert_awaited_once()
+    notification = service._deliver_notification.await_args.kwargs
+    assert notification["worker"] is worker
+    assert notification["child_session_id"] == child.id
+    assert notification["parent_turn_id"] == "turn-1"
+    assert notification["status"] == "completed"
+
+
+@pytest.mark.asyncio
 async def test_coordinator_shutdown_stops_registered_child_watchers() -> None:
     store = InMemorySessionStore()
     parent = _session()

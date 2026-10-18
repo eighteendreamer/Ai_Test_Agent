@@ -173,7 +173,13 @@ class CoordinatorRuntimeService:
     async def _maybe_resume_waiting_tool(self, parent) -> bool:
         pending = parent.metadata.get("pending_turn") or {}
         wait = pending.get("waiting_tool") or {}
-        if parent.status != SessionStatus.interrupted or not wait or parent.metadata.get("turn_lease_token"):
+        # Proxy approval forwarding moves the parent back to ``running`` before
+        # the original tool's child-wait checkpoint is resumed.  In that state
+        # there is deliberately no turn lease: the approval continuation has
+        # committed the decision, while the original turn is still waiting for
+        # its children.  Treat that persisted boundary the same as an
+        # interrupted parent.  A live turn lease remains the owner guard.
+        if parent.status not in {SessionStatus.interrupted, SessionStatus.running} or not wait or parent.metadata.get("turn_lease_token"):
             return False
         waits = waiting_tool_checkpoints(pending)
         child_ids = list(dict.fromkeys(identity for item in waits for identity in item.get("child_session_ids", [])))
@@ -2111,6 +2117,7 @@ class CoordinatorRuntimeService:
                         task_id=worker.task_id,
                         status=status,
                         child_session_id=child_session_id,
+                        worker=worker,
                         parent_turn_id=parent_turn_id,
                     )
                     running_marked = True
