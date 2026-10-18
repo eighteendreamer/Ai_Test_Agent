@@ -8,7 +8,7 @@
 
 提交 `f35765a5`（`【fix】修复用例执行字段解析与回执提取`）只包含两个生产修复和对应回归：字典中存在完整字面键时优先读取，缺失时保留原嵌套路径行为；回执解析仅接受唯一一个通过现有schema的完整JSON对象，多份或不完整候选仍拒绝。确定性验证 `tests/test_api_task_executor_recovery.py tests/test_agent_case_assessment.py` 为 **62 passed、2 skipped，20.71秒**；skip为原门控场景，不计通过。
 
-随后运行真实默认模型、真实API/规划与执行Worker、隔离MySQL/PostgreSQL/Redis/RustFS及本机受控浏览器页面的正向 UI 场景：
+随后运行真实默认模型、真实API/规划与执行Worker、隔离MySQL/PostgreSQL/Redis/RustFS及本机受控浏览器页面的正负向 UI 场景：
 
 ```text
 cd Agent_Server
@@ -17,7 +17,9 @@ $env:QA_DEFAULT_UI_SCENE_DIR='.../p5-default-ui-certified-positive-20261019'
 ..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_default_ui_scene_live.py::test_default_ui_reads_fixed_scene_and_verifies_actual_page[positive]' -q --tb=short -s
 ```
 
-结果 **1 passed，116.65秒**。证据 `p5-default-ui-certified-positive-20261019/positive/verification.json` 标明 `controlled_model=false`、`default_planning=true`、`default_execution=true`、最终状态 `passed`。模型读取了此前录制的知识，并在本次新页面点击按钮；页面端记录录制页和新执行页各一次 POST，结果观察关联到新页面。测试将同一终态任务重新投递后，新增业务请求 **0**、新增模型请求 **0**。这是正向受控页面和终态不重投的真实验收，不覆盖负向 UI、正式用户授权流程、DeepSeek人工录制或P2 API项目选取/排序/补全闭环。
+正向结果 **1 passed，116.65秒**。证据 `p5-default-ui-certified-positive-20261019/positive/verification.json` 标明 `controlled_model=false`、`default_planning=true`、`default_execution=true`、最终状态 `passed`。模型读取了此前录制的知识，并在本次新页面点击按钮；页面端记录录制页和新执行页各一次 POST，结果观察关联到新页面。重投同一终态任务后，新增业务请求 **0**、新增模型请求 **0**。
+
+负向结果 **1 passed，157.96秒**。证据 `p5-default-ui-certified-negative-20261019/negative/verification.json` 标明 `controlled_model=false`、`default_planning=true`、`default_execution=true`、期望计数为2、最终状态 `failed`。实际页面仅执行一次点击；系统按固定预期保留失败结果。重投同一终态任务后，新增业务请求 **0**、新增模型请求 **0**。这两项验证受控页面场景下默认模型知识读取、真实执行、正负结果判定及终态不重放；仍不覆盖正式用户授权流程、DeepSeek人工录制或P2 API项目选取/排序/补全闭环。
 
 P2 最新 API 默认模型证据仍显示 `produced` 阶段 reasoning-only 流在原180秒总期限内被取消，未返回可校验回执，Run和业务HTTP均为0；不能把 UI 通过外推为 API 规划通过。下一步沿既有 PostgreSQL 原领取事务验证“提交成功但客户端丢失回执”后的真实Worker恢复、并发和终态重投，再继续P2阶段职责与预算根因设计。没有根据多次提示/Schema对照擅自增加预算或放松canonical校验。
 
