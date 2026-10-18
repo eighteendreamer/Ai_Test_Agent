@@ -121,3 +121,5 @@ live17 之后继续沿 `planning_workflow.py`、`planning_effect_tasks.py`、`ca
 该用例 **1失败，104.42 秒**，失败点是测试等待“回执纠正请求”的屏障时一直没有出现纠正 marker。执行日志显示首个回执已通过完整性/结构检查并进入 `waiting_approval`，审批后没有触发 `AgentCaseReceiptService.correct`，因此没有可杀 API 的 `invoking` 边界。失败原因是验收夹具假定默认模型必然产生无效回执，不是恢复代码或模型协议错误；不能把本次结果计为纠正恢复通过，也不能通过延长轮询或重发审批掩盖分支未被触发。
 
 受控 HTTP 的 `test_receipt_process_recovery_live.py` 仍负责确定性制造无效初始回执，并已覆盖真实生产 Worker 在 `invoking`/`response` 两个持久化边界杀 API、自然租约过期、恢复重放和终态重投不新增业务/模型请求。默认模型本次只证明正常回执路径，真实默认纠正边界仍未验收；若要验收该边界，需要在不改生产逻辑的测试夹具中明确制造可验证的结构错误，再单独保留真实模型正常路径证据。
+
+随后在同一当前源码和隔离依赖下重跑受控生产流程：`RUN_LIVE_EXECUTION_CLI_TESTS=1 pytest tests/test_receipt_process_recovery_live.py -q`，结果为 **2 passed、0 failed、0 skipped，692.82 秒**。`invoking` 和 `response` 两个场景均实际杀死独立 API，等待 Run/资源租约自然过期，由生产恢复 Worker 重新领取；原始业务请求与工具副作用没有重复，纠正请求/响应对象按哈希从 RustFS 读回，终态重投不新增模型或业务请求。证据目录为 `p2-receipt-process-recovery-current3`，XML 原件保留。该结果确认受控纠正恢复闭环可用，仍不改变默认 Step 未触发纠正分支的结论。
