@@ -417,6 +417,8 @@ class ApiTaskExecutor:
     def _lookup_path(self, obj: Any, path: str) -> tuple[Any, bool]:
         if not path or obj is None:
             return obj, obj is not None
+        if isinstance(obj, dict) and path in obj:
+            return obj[path], True
         parts = path.replace("[", ".").replace("]", "").split(".")
         current = obj
         for part in parts:

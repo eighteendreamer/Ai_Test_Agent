@@ -156,11 +156,29 @@ class AgentCaseAssessmentService:
             logger.info("case_receipt_fenced_payload_decoded", extra={"fence_count": 1})
         elif raw.startswith("```") and raw.endswith("```") and "\n" in raw:
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        receipt_model = case_receipt_type(scene_receipt_protocol)
         try:
             candidate = json.loads(raw)
         except json.JSONDecodeError as exc:
-            raise ValueError(f"执行回执 JSON 不完整或格式错误: line={exc.lineno}, column={exc.colno}") from exc
-        return case_receipt_type(scene_receipt_protocol).model_validate(candidate)
+            if raw.startswith("{"):
+                raise ValueError(f"执行回执 JSON 不完整或格式错误: line={exc.lineno}, column={exc.colno}") from exc
+            decoder = json.JSONDecoder()
+            valid_candidates = []
+            for index, character in enumerate(raw):
+                if character != "{":
+                    continue
+                try:
+                    parsed, _ = decoder.raw_decode(raw[index:])
+                    if not isinstance(parsed, dict):
+                        continue
+                    valid_candidates.append(receipt_model.model_validate(parsed))
+                except (json.JSONDecodeError, TypeError, ValueError):
+                    continue
+            if len(valid_candidates) != 1:
+                raise ValueError("执行回执必须包含唯一一个完整且符合结构的 JSON 对象") from exc
+            logger.info("case_receipt_embedded_payload_decoded", extra={"candidate_count": 1})
+            return valid_candidates[0]
+        return receipt_model.model_validate(candidate)
 
     async def _load_evidence(self, context, records, session_id, turn_id, attempt_id, *, allow_pending=False) -> dict[str, ToolJobDetail]:
         if not session_id or not turn_id or not attempt_id:

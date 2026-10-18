@@ -487,6 +487,22 @@ def test_response_parser_preserves_complete_json_and_rejects_assessment_tool_cal
         AgentCaseAssessmentService.parse_response(response)
 
 
+def test_response_parser_extracts_one_complete_receipt_after_actual_style_prose():
+    from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService
+    from src.schemas.model_config import ModelInvocationResult
+
+    receipt_text = json.dumps(receipt(), ensure_ascii=False)
+    response = ModelInvocationResult(
+        text="两个操作均已实际执行完成。以下为证据回执：\n\n" + receipt_text,
+        response_summary={"mode": "ok", "finish_reason": "stop"},
+    )
+    assert AgentCaseAssessmentService.parse_response(response).steps[1].item_key == "target"
+
+    response.text += "\n\n" + receipt_text
+    with pytest.raises(ValueError, match="唯一一个"):
+        AgentCaseAssessmentService.parse_response(response)
+
+
 def captured_wrapped_ui_response():
     from src.schemas.model_config import ModelInvocationResult
     path = Path(__file__).resolve().parents[2] / 'docs/upgrade_2026-10-03/p5-default-ui-live2/positive/postgres-public.json'

@@ -21,6 +21,23 @@ from src.runtime.store import InMemorySessionStore
 from src.schemas.session import ChatMessage, MessageRole, RuntimeMode, SessionMode, SessionStatus
 
 
+def test_json_assertion_prefers_existing_literal_key_before_nested_path():
+    executor = ApiTaskExecutor(credential_manager=CredentialManager())
+    task = ApiTestTask(task_id="literal-dot", method="POST", path="/orders")
+    task.response_body = {"order.id": "actual-id", "order": {"id": "nested-id"}}
+
+    literal = executor._check_assertion(
+        kind="json_field_present", expected=None, path="order.id", description="", task=task)
+    assert literal["passed"] is True
+    assert literal["actual"] == "actual-id"
+
+    task.response_body = {"order": {"id": "nested-id"}}
+    nested = executor._check_assertion(
+        kind="json_field_present", expected=None, path="order.id", description="", task=task)
+    assert nested["passed"] is True
+    assert nested["actual"] == "nested-id"
+
+
 def test_executor_reuses_only_complete_matching_checkpoint():
     task = ApiTestTask(task_id="task-1", method="GET", path="/health")
     task.execution_checkpoint = {
