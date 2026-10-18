@@ -66,6 +66,8 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                 )
                 try:
                     page = await browser.new_page(viewport={"width": 1440, "height": 900})
+                    page_responses = []
+                    page.on("response", lambda response: page_responses.append(response))
                     created = await client.post(
                         "/recordings",
                         json={
@@ -88,11 +90,8 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                             await asyncio.sleep(0.1)
                     (await client.post(f"/recordings/{recording_id}/control", json={"action": "start"})).raise_for_status()
 
-                    response = await page.goto(
-                        "https://www.deepseek.com/",
-                        wait_until="domcontentloaded",
-                        timeout=90_000,
-                    )
+                    response = next((item for item in page_responses
+                        if item.url == "https://www.deepseek.com/"), None)
                     await page.wait_for_timeout(4000)
                     thought = page.get_by_role("button", name="深度思考", exact=True)
                     search = page.get_by_role("button", name="智能搜索", exact=True)

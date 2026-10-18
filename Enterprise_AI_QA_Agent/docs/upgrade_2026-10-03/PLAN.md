@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-19；本次代码基线 `f35765a5`。Step 已认证。P1 普通 Markdown 三模块生成、持久化及独立恢复已实际验收；模板/Excel/JSON项目页面已有专项产品验收。P2 的默认 Step 完整项目规划仍在 `produced` 阶段超时，未创建 Run。另修复真实执行中 JSON 字面键 `order.id` 被当作嵌套路径、回执不能解析“说明文字 + 唯一 JSON”两项缺陷；默认模型真实 UI 正向场景现已通过，Run 为 passed，终态重投未新增业务或模型请求。API模式完整闭环、UI负向/DeepSeek人工录制、回执丢响应的真实恢复及其他剩余范围仍未全部验收；配置仍在 MySQL、业务和运行数据在 PostgreSQL，多 Provider 保持原生协议。完整P0—P5继续进行中。
+修订日期：2026-10-19；代码基线 `f35765a5`、文档追加至 `01e414ab`。Step 已认证。P1 普通 Markdown 三模块生成、持久化及独立恢复已实际验收；模板/Excel/JSON项目页面已有专项产品验收。P2 的默认 Step 完整项目规划仍在 `produced` 阶段超时，未创建 Run。另修复 JSON 字面键 `order.id` 读取和“说明文字 + 唯一 JSON”回执解析，真实默认模型 UI 正负向及终态不重放均已通过；DeepSeek 公共页面录制也已通过真实 API/CDP/隔离存储的 Playwright 集成验收，但人手操作和录制知识回流给默认 AI 仍未验收。回执真实进程恢复、API模式完整闭环和其余范围仍未全部验收；配置仍在 MySQL、业务和运行数据在 PostgreSQL，多 Provider 保持原生协议。完整P0—P5继续进行中。
 
 ### 7.89 用例执行字段与回执修复、默认模型 UI 正向验收〔2026-10-19〕
 
@@ -22,6 +22,16 @@ $env:QA_DEFAULT_UI_SCENE_DIR='.../p5-default-ui-certified-positive-20261019'
 负向结果 **1 passed，157.96秒**。证据 `p5-default-ui-certified-negative-20261019/negative/verification.json` 标明 `controlled_model=false`、`default_planning=true`、`default_execution=true`、期望计数为2、最终状态 `failed`。实际页面仅执行一次点击；系统按固定预期保留失败结果。重投同一终态任务后，新增业务请求 **0**、新增模型请求 **0**。这两项验证受控页面场景下默认模型知识读取、真实执行、正负结果判定及终态不重放；仍不覆盖正式用户授权流程、DeepSeek人工录制或P2 API项目选取/排序/补全闭环。
 
 P2 最新 API 默认模型证据仍显示 `produced` 阶段 reasoning-only 流在原180秒总期限内被取消，未返回可校验回执，Run和业务HTTP均为0；不能把 UI 通过外推为 API 规划通过。下一步沿既有 PostgreSQL 原领取事务验证“提交成功但客户端丢失回执”后的真实Worker恢复、并发和终态重投，再继续P2阶段职责与预算根因设计。没有根据多次提示/Schema对照擅自增加预算或放松canonical校验。
+
+### 7.90 DeepSeek 公共页面录制交付与遗漏质量验收〔2026-10-19〕
+
+先按真实失败证据调查遗漏：首次测试失败不是操作事件丢失或清洗删除。PG 已保存9条完整连续事件；首个零业务事件文档 scope 在测试再次导航时未能确认，finish receipt 如实报告 `frames_unconfirmed=1`，质量状态为 `missing`。生产驱动在录制会话创建时已打开入口页，测试又对同一页执行第二次 `goto`。`_verify_capture_receipt` 对未确认文档拒绝完成是必要的数据完整性约束，不能放宽为通过。
+
+只修正测试启动顺序：驱动打开页面前订阅浏览器主文档 response，移除重复导航，并在 recorder 已启用的当前页面点击两次“深度思考”、一次“智能搜索”并滚动。该测试使用正式录制 API、CDP attach 生产驱动、PostgreSQL 事件表、隔离服务及图投影；没有登录 DeepSeek、提交提示或使用账号数据。真实重跑 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` **1 passed，22.20秒**。录制 `completed`，PG 与图投影均为8条事件，无序号缺口、无降级；finish receipt 的每个 scope 均确认并 `pg_verified=true`，`frames_unconfirmed=0`；质量 `omission.status=verified`。两次相同点击被记录为重复候选，但原始动作均保留；页面扫描与响应留为证据，不作为可回放步骤；Authorization/Cookie 脱敏断言通过。
+
+受影响确定性回归 `tests/test_recording_document_scopes.py tests/test_recording_quality.py tests/test_recording_graph_store.py tests/test_recording_finish_protocol.py` 为 **33 passed、2 skipped**。失败现场与成功现场分别保留在 `p0-deepseek-recording-certified-20261019/` 和 `p0-deepseek-recording-certified-fixed-20261019/`，两处均为本地原始验收证据，不随提交。
+
+本项证明了真实 DeepSeek 页面上的浏览器输入事件、响应/页面快照关联、PG持久化、清洗候选和遗漏回执；交互由 Playwright 发起，不是人手操作。它也没有证明该份 DeepSeek 录制知识已被默认模型检索并用于验证同站页面，因此“人工录制→清洗→入库→AI使用”仍未完整闭环。未改生产 recorder 逻辑或放宽丢失判定。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
