@@ -1,4 +1,7 @@
 import pytest
+import httpx
+
+pytest_plugins = ("test_agent_case_assessment",)
 
 from src.application.runtime.case_operation import (
     VERIFICATION_KEY,
@@ -9,6 +12,11 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.runtime.tool_job_store import InMemoryToolJobStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.case_execution import CaseOperationVerificationDeclaration
+from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
+from src.schemas.tool_runtime import ModelToolCall
+from src.registry.tools import ToolRegistry
+from test_agent_case_assessment import execution
+from test_case_plan_run_creation import LIVE
 
 
 def _receipt(*, present=None, absent=None):
@@ -125,3 +133,63 @@ async def test_observe_output_persists_output_and_verification_observation_toget
     assert verification["observation"]["response_status"] == 201
     assert len(verification["sha256"]) == 64
     assert persisted.metadata["tool_output_observation"]["output_hash"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [LIVE])
+async def test_live_http_and_postgres_job_persist_verification_observation(
+    tmp_path, business_http, live
+):
+    async with execution(tmp_path, business_http, live=live, perform_tools=False) as env:
+        context, jobs, _, session_id, turn_id, attempt_id, *_ = env
+        async with httpx.AsyncClient() as client:
+            created = await client.post(business_http[0] + "/orders")
+        assert created.status_code == 201
+        order_id = created.json()["order.id"]
+        url = business_http[0] + "/orders/" + order_id
+        tool = ToolRegistry().get("api-test-runner")
+        call = ModelToolCall(
+            id="verification-read",
+            name=tool.key,
+            arguments={
+                "worker_action": "execute_task",
+                "task": {
+                    "task_id": "verification-read",
+                    "method": "GET",
+                    "path": url,
+                    "full_url": url,
+                    "timeout_seconds": 5,
+                },
+            },
+        )
+        job = await jobs.create_job(
+            tool=tool,
+            call_id=call.id,
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id="verification-trace",
+            input_payload=call.arguments,
+            metadata={VERIFICATION_KEY: _receipt(present=[200], absent=[404])},
+        )
+        runtime = ToolRuntimeService(tool_job_service=jobs)
+        execution_context = ToolExecutionContext(
+            session_id=session_id,
+            turn_id=turn_id,
+            trace_id="verification-trace",
+            user_message="verify the created order",
+            normalized_input="verify the created order",
+            context_bundle={**context.runtime_context(), "attempt_id": attempt_id},
+            tool_job_id=job.id,
+            tool_key=tool.key,
+            call_id=call.id,
+        )
+
+        record = await runtime.execute(tool, call, execution_context)
+        persisted = await jobs.get_job_detail(job.id)
+
+        assert record.status == "completed"
+        assert [method for method, _ in business_http[1]] == ["POST", "GET"]
+        assert persisted is not None
+        assert persisted.metadata[VERIFICATION_KEY]["observation"]["status"] == "effect_present"
+        assert persisted.metadata[VERIFICATION_KEY]["observation"]["response_status"] == 200
+        assert persisted.output_payload["task_result"]["response_status"] == 200

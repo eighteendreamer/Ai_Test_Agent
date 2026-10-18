@@ -4217,3 +4217,5 @@ cd Agent_Server
 工具返回经过现有输出清洗后，`ToolJobStore.observe_job_output` 在内存和 PostgreSQL 实现中同时保存工具输出、`tool_output_observation` 和查证回执的分类观察；分类只读取持久化 `task_result.response_status`，工具失败、响应缺失或未声明状态均为 `inconclusive`，不改写原未知写操作。`ToolRuntimeService` 使用最新保存的 Job 投影回执；正式 Run 的 `evidence_manifest`、工具证据引用和完成回执实际带出查证关系、SHA 和分类结果。
 
 本次代码级功能测试：`tests/test_case_operation_verification.py` **9 passed**；受影响回归 `tests/test_case_operations.py tests/test_case_effect_evidence.py tests/test_tool_operation_observation.py tests/test_agent_case_assessment.py` **59 passed、31 skipped**；`compileall` 通过。跳过项由真实服务门控，尚未证明真实 PostgreSQL/HTTP 查证闭环、默认 AI 自动选取查证、查证后计划修订或依赖释放；这些继续归为**已有实现但尚未真实验收/仍需补跨边界实现**。Step 模型仍已认证，Anthropic 继续 Messages API，OpenAI Responses 仍保持独立适配器。
+
+随后开启现有真实隔离服务门控，执行 `tests/test_case_operation_verification.py::test_live_http_and_postgres_job_persist_verification_observation`，结果 **1 passed，5.84 秒**。场景通过实际本地 HTTP 服务先 POST 创建对象，再由正式 `ToolRuntimeService` 发出一次 GET；临时 PostgreSQL ToolJob 表读回 `response_status=200`、`effect_present`、查证 SHA 和工具输出，HTTP 序列为一次 POST 加一次 GET。该证据确认新增原子保存路径可用，但场景预置了合法读操作，没有模拟未知 POST 返回丢失，也没有证明默认 AI 会自动选取查证或查证后释放依赖；正式 Run 的未知写入自动查证、计划修订和真实进程中断恢复仍未验收。
