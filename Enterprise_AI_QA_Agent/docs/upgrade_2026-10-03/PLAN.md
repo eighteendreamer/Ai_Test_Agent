@@ -4066,3 +4066,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 继续按“逻辑调用 → SDK attempt/response → 结果”的链路审计，确认 `ModelRuntimeService.invoke` 在模型不存在、请求参数不支持、认证异常、缺少密钥以及运行参数漂移等发送前出口会提前返回或抛错。此前成功和 HTTP 失败结果已有 `logical_call_id`，但部分发送前结果与日志没有该字段，无法和规划、生成或影响任务已保存的逻辑调用对账。
 
 本轮只补齐统一调用关联：发送前失败结果的 `response_summary` 及对应结构化日志都带原请求的 `logical_call_id`；没有改变 provider 协议、请求映射、重试、认证或任务恢复策略。为真实失败分支增加回归断言，覆盖五种失败模式。`tests/test_model_failure_lifecycle.py tests/test_model_request_profile.py tests/test_model_clients.py` **67通过**；`compileall` 和 `git diff --check` 通过。该修复只解决结果/日志关联缺口，不代表 Worker retry/recovery 的全阶段调用轨迹或远端实际接收已经完成；后者仍需持久任务与真实 MySQL/PG/RustFS 流程验收。
+
+### 7.81 规划响应提交丢回执的真实 Worker 恢复验收〔2026-10-18〕
+
+在实际 MySQL、PostgreSQL、RustFS 和本地 HTTP provider 上执行规划任务响应提交丢回执场景，覆盖原生非流式、流式截断和流式缺少终态三种输入。每个任务先完成查询回合，再发送第二个逻辑规划调用；第二回合响应已写入 PostgreSQL 后故意丢失确认，Worker 接管从已保存响应继续校验，不重新调用模型。
+
+三种场景均实际通过：每个 `verification.json` 中有两个不同且持久的 `logical_call_id`，实际 HTTP 请求数为2，恢复阶段没有新增模型调用，终态再次投递也没有新增调用；原始响应、用量、截止时间和失败判定均从保存的检查点恢复。重新执行时测试先因缺少 `QA_PLANNING_COMPLETION_DIR` 在证据导出处失败，补齐专用证据目录后 `tests/test_planning_response_completion.py` **10通过**；需求影响持久调用回归 `tests/test_document_impact_calls.py` **19通过**。这证明规划响应提交丢回执的 Worker 恢复和调用身份链路已通过受控真实存储验收，不等同默认 AI 按用例执行闭环完成，也不覆盖纠正请求发送后或供应商响应持久化后的进程中断。

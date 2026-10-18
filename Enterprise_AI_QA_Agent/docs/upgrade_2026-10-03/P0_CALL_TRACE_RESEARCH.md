@@ -56,3 +56,9 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 `ModelRuntimeService.invoke` 的模型缺失、参数不支持、认证失败、密钥缺失和运行参数漂移出口会在 provider SDK 之前结束。它们没有 SDK attempt，仍必须保留应用层 `logical_call_id`，否则规划、生成或影响任务的持久调用意图无法与最终失败结果对账。本轮补齐这些结果摘要和结构化日志字段；不把“没有 HTTP attempt”误报为 HTTP 失败，也不改变各 provider 的原生协议。
 
 回归结果：`tests/test_model_clients.py tests/test_model_completion_http.py tests/test_model_sdk_fault_http.py tests/test_sdk_midstream_retry_boundary.py` **102通过**；发送前失败、请求映射和客户端回归 `tests/test_model_failure_lifecycle.py tests/test_model_request_profile.py tests/test_model_clients.py` **67通过**。持久需求影响、回执纠正和规划的真实存储测试在未设置对应 `RUN_LIVE_*` 门控时仍跳过，不能据此声称全阶段 retry/recovery 已验收。
+
+## 持久规划 Worker 的实际恢复核验
+
+启用隔离 MySQL/PostgreSQL/RustFS 和本地 HTTP provider 后，运行 `tests/test_planning_response_completion.py` 的三个真实场景：非流式截断、流式截断、流式缺少终态。每个场景的 PostgreSQL 计划保存两个不同的 `logical_call_id`，第二个响应已持久化但确认回执丢失；新 Worker 从 `phase=response` 读取原响应，模型调用数和 HTTP 请求数均不增加，终态重投也不增加调用。三场景实际测试通过；证据目录为 `p0-planning-completion-current/{native,stream,missing-terminal}`。同轮 `tests/test_document_impact_calls.py` 的 19 个真实存储/本地 HTTP 场景也通过。
+
+这一步确认的是“已持久响应的规划恢复”调用身份和不重发边界。仍未证明：调用意图已保存但响应未持久化时的所有业务入口都能安全恢复、回执纠正请求发送后进程中断、供应商响应持久化后进程中断，以及默认模型按用例执行的完整闭环。默认 AI 真实质量失败仍停在 `produced` 规划阶段，不能用本轮受控 provider 结果替代。
