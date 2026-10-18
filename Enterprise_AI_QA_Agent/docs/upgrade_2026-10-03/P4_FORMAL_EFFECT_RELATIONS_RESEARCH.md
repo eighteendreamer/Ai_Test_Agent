@@ -40,3 +40,42 @@
 实际默认任务logic 15.647/106.085秒后正确冻结prepare创建、target清理；effects 56.697秒读取原生execute_task，随后0.984秒总deadline取消。四逻辑/SDK/物理请求，215.55秒严格测试失败，未创建Run/业务HTTP。原默认候选自引用缺口得到新表达，技术绑定与完整自主业务仍未通过；不继续原样重跑。尚需研究完整固定预期如何引用文档原文依据及阶段耗时；当前声明只读自身content或prepare.instructions，新受控手工用例有明确字段，不能据此保证所有原用例均适用。共享消费完成仍false，多清理通道组合/其他模式/完整App另验。
 
 具体命令和原失败保留在IMPLEMENTATION最新条目，源文件/字节/默认消息/三份方案核对见p4-formal-effects-validation.json。
+
+## 7.86 效果证据与最终业务回执的职责边界核查〔2026-10-19〕
+
+本轮沿 ToolJob 原始返回、效果证据捕获、PG 持久化、恢复和 Agent 最终回执逐段核对，并运行：
+
+```text
+cd Agent_Server
+..\.venv\Scripts\python.exe -m pytest tests/test_case_effect_evidence.py tests/test_case_cleanup_coverage.py tests/test_case_effect_relations.py -q
+```
+
+结果为 **20 passed、40 skipped，6.70 秒**。跳过项均为显式 `LIVE` 的 MySQL/PostgreSQL/RustFS/native HTTP 场景；本轮没有将跳过项计作通过。
+
+已从代码确认的职责边界：
+
+- `PostgresToolJobStore._observe_job_output_sync` 在一个 PostgreSQL 事务中更新原始 `ToolJob.output_payload` 与 `tool_output_observation`，随后调用 `PostgresCaseEffectEvidence.capture` 写紧凑效果投影；任一写入失败会使事务整体回滚。投影以 `origin_job_id` 为主键，并引用原 ToolJob。
+- `capture_returned_evidence` / `capture_relation_return` 从同一可靠返回派生对象清单、声明检查、操作选择及哈希，并校验固定执行绑定和原始输出哈希。查询时再次校验原 Job、逻辑操作、观察、意图与证据投影一致。
+- 有可靠返回但后续结果交付中断时，`recover_observed_output` 使用已保存的 ToolJob 输出结算，不重复调用工具；没有可靠返回时保留未知状态。对象投影用于恢复后的效果清单/清理覆盖，不由 Agent 自由文本回执代替。
+- Agent 最终回执负责完整用例的业务断言；效果证据负责从原始工具输出中归档可追溯的副作用对象并计算清理覆盖。两者的部分字段语义重叠，但证据来源、恢复边界及运行级覆盖职责不同。
+
+据此，不能以“最终回执已包含业务断言”为理由删除效果声明或其 PG 投影。当前可考虑的优化只限于确认同一断言是否被重复存储，以及是否能减少不丢失来源、哈希、对象清单、未知状态和清理覆盖的字段；这不是已确认的生产缺陷，本轮不改代码。
+
+本轮检查覆盖了源码、确定性测试和当前协议的投影/恢复逻辑，未重跑真实数据库/native HTTP 场景，也未证明运行级共享对象消费完成、所有工具 handler 都经过相同观察事务，或旧/新协议在完整 App 和默认自主 Agent 中均可用。下一步应先核对 `observe_output` 的全部调用入口、ToolJob 状态迁移及共享消费者终态证据，再决定是否有可安全消除的重复字段或缺失边界；不得据本轮结果把 P2 默认 Step `produced` 超时视为已解决。
+
+## 7.87 清理前消费关闭与覆盖报告状态核查〔2026-10-19〕
+
+继续核对 `observe_output` 的调用集合、原子动作领取和共享消费关闭实现。生产代码唯一调用点是 `ToolRuntimeService.execute` 在 handler 返回、结果归一化和输出安全清洗后，对 `completed/partial/failed` 结果调用 `ToolJobService.observe_output`；另一个直接调用点只在测试辅助代码。对普通无 ToolJob 或未获得可靠返回的分支，不会伪造输出观察。
+
+读取 `PostgresCaseConsumption` 与 `PostgresCaseActionAdmission` 后确认：当固定 plan 启用 `case-consumption-phase-v1` 时，清理动作领取前需提交当前正式目标的消费关闭回执；服务端在原清理动作领取事务内重验目标业务断言、原普通动作的项目/运行/计划/条目身份、终态及可靠返回观察，并核对共享消费者已有终态 RunItem、对应 Result 和全部已启动 ToolJob。缺少或无效关闭证据时动作以 denied 终止，不发送清理工具；关闭记录和清理领取同事务保存。该门禁证明的是显式消费阶段结束，不把 RunItem 标成完成。
+
+清理覆盖投影 `relation_cleanup_coverage` 仍对每项及总结果恒定输出 `consumption_completion_verified=false`，并不查询上述关闭记录。结果有意区分“对象逐个有清理证据”和“报告可证明消费阶段完成”；但当前覆盖报告不能呈现已通过的关闭回执，产生潜在的报告/状态语义缺口。Plan 的 `case-cleanup-waits-v1` 依赖映射、动作门禁和报告字段是否应该共享同一受信证明，还需核对 Result/前端消费方与运行终态定义后才能决定契约，不能简单把布尔值改为 true。
+
+相关确定性回归运行结果：
+
+```text
+cd Agent_Server
+..\.venv\Scripts\python.exe -m pytest tests/test_case_consumption_phase.py tests/test_case_consumption_external.py -q
+```
+
+**5 passed、23 skipped，4.15 秒**；跳过项依赖隔离 MySQL/PostgreSQL/RustFS/HTTP，不计作通过。下一步应沿消费关闭记录的生产读入口、case Run Result/报告 DTO、前端覆盖展示以及 plan dependency closure 回读核对事务之后的持久状态；使用原完整 live 场景证明共享消费者完成、部分/全部清理、关闭回执丢失及终态重投。确认数据契约后再决定是否把关闭证明加入覆盖报告。P2 默认 Step 的 produced 超时与本边界独立，仍未解决。

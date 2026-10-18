@@ -4113,3 +4113,19 @@ Step 账号已认证后，重新执行普通需求文档的真实默认模型专
 请求实际收到 HTTP 200，SDK 流持续 82.762 秒、2,375 个片段，content 正文为0，reasoning/reasoning_content 各记录27,578字符，未正常结束且无 `finish_reason`；在原阶段窗口被取消。故这是同类“推理流有内容但没有结构化正文”的失败，不是 HTTP 建连失败，也不是 canonical 拒绝。模型未返回可校验回执，Run/业务 HTTP 均为0。不能据此声称原生 Schema 无普遍价值、不能增加生产预算，也不能把reasoning字段当可解释推理文本。
 
 **当前做到的步骤**：P1 普通 Markdown 三模块默认 Step 生成、PG/RustFS 持久化、独立模块恢复及终态不重投已实际验收；按用例执行仍停在 P2 `produced`，未创建 Run。默认模板/Excel/JSON 页面、Agent API 401自动续期和Worker恢复、Docker/k6指标缺失与报告已有对应专项验收；复杂UI默认负向回执、其他模式/App、持续容量及全部安全组合仍未闭环。现有模型适配已具备统一内部请求/结果契约和 provider-specific 字段映射；Anthropic 继续 `client.messages.create` `/v1/messages`，不需要为当前 Step produced 失败新增“Responses统一适配层”。下一步沿完整原用例和实际 Agent 工具执行器核对执行前效果声明是否有可安全确定性推导的重复职责，再决定是否存在可实施的根因修复；原预算、来源与 canonical 校验不变。完整 P0—P5 继续未完成。
+
+### 7.86 效果证据与最终业务回执的职责边界核查〔2026-10-19〕
+
+依据最新完整用例与实际执行器调用链，检查 ToolJob 原始输出观察、效果声明编译/捕获、PostgreSQL 持久化、结果恢复及最终 Agent 回执，并运行 `cd Agent_Server; ..\.venv\Scripts\python.exe -m pytest tests/test_case_effect_evidence.py tests/test_case_cleanup_coverage.py tests/test_case_effect_relations.py -q`：**20 passed、40 skipped，6.70秒**。跳过项是显式门控的真实 MySQL/PostgreSQL/RustFS/native HTTP 场景，不作为通过证据。
+
+确认 `_observe_job_output_sync` 在同一 PG 事务内保存可靠 ToolJob 输出/观察和效果证据投影，效果投影按原 `origin_job_id` 关联，读回时验证原输出哈希、固定绑定、意图和逻辑操作；结果交付中断时可从原可靠输出恢复，不重新调用工具。最终 Agent 回执判定完整用例业务断言；效果投影支撑副作用对象清单、未知状态和整个运行的清理覆盖。存在部分断言字段重叠，但删除声明/投影会丢失回执本身不提供的原始来源、恢复及运行覆盖职责。因此本轮没有生产代码改动，也没有根据重叠猜测精简结构。
+
+这次只证明源码边界及非 live 回归，不证明所有工具出口均遵守同一观察事务、共享消费者完成证据已实现，或真实默认 Agent 规划失败已解决。后续先核查 `observe_output` 的完整调用集合、ToolJob 状态迁移及共享消费者终态证据，再评估是否存在可安全消除的重复字段/真实缺口；P2 默认 Step 仍停在 `produced` 阶段且尚未创建 Run。完整 P0—P5 继续未完成。
+
+### 7.87 清理前消费关闭与覆盖报告状态核查〔2026-10-19〕
+
+继续核对后确认 `ToolRuntimeService.execute` 是生产侧唯一 `observe_output` 调用入口；只有工具返回且归一化/清洗后状态为 `completed/partial/failed` 才生成观察。另查清共享消费门禁：启用 `case-consumption-phase-v1` 时，清理动作领取事务核验目标完整业务断言、消费者终态 Result、所有已启动 ToolJob 的固定身份与可靠返回观察；关闭回执和清理领取同事务落库，缺证据则拒绝发送。其证明表示消费阶段关闭，不表示 RunItem 已完成。
+
+覆盖投影仍将 `consumption_completion_verified` 固定为 false，且当前不读取关闭记录；门禁可以阻止过早清理，但 Result/覆盖报告没有呈现此关闭证明。运行 `tests/test_case_consumption_phase.py tests/test_case_consumption_external.py` 得 **5通过、23门控跳过，4.15秒**；跳过的隔离真实服务场景不计作通过。由此确认了运行门禁已实现、覆盖报告证据仍未贯通，不把两者混称为“共享消费完整验收”。
+
+下一步先核对消费记录的读入口、Result/报告 DTO、前端覆盖面板及依赖闭包恢复，再设计真实 PG/RustFS/live 场景验证部分/全部清理、共享消费者、确认丢失和终态重投；只有明确状态契约后才决定是否向覆盖报告投影关闭证明。P2 默认 Step 的真实 `produced` 规划未返回可校验正文、Run 未创建，仍是独立未解决问题。完整 P0—P5 继续未完成。
