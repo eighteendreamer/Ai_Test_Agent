@@ -4095,3 +4095,11 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 - 两场景的目标 HTTP 都只有一次 `GET /health`；资源租约自然过期，清理后 Redis 活跃资源为空。
 
 这一步关闭了默认 Step 回执纠正的两个进程中断边界，但不代表默认 Step 已完成“项目选取→排序→补全→执行”闭环；该闭环仍停在 `produced` 规划阶段，后续仍需处理默认模型规划质量、准备状态、未知副作用查证和运行中计划修订。测试探针和结果已提交，运行原始快照仍留在工作区但不提交包含租约令牌的原始文件。
+
+### 7.84 默认 Step 普通文档全量模块生成与独立恢复复验〔2026-10-19〕
+
+Step 账号已认证后，重新执行普通需求文档的真实默认模型专项 `tests/test_document_generation_default.py`。本次先复核测试源码和生成/解析/Worker/存储职责，再使用独立 MySQL、PostgreSQL、Redis、RustFS、API 和 CLI 进程；没有替换模型、修改全局默认配置或使用受控响应。实际模型为 `step-5-preview`，传输为现有 OpenAI Chat Completions，流式能力来自 MySQL 模型配置；配置仍不改变 Anthropic Messages、OpenAI Responses、Gemini 等其他适配器。
+
+结果 **1通过、0失败、0跳过，285.94秒**，证据目录为 `p1-generation-default-current-20261019/`。真实流程覆盖 Markdown 原件、解析快照、完整文本/章节范围冻结、注册/任务创建/任务查询三个模块、配置漂移发送前拒绝、API 重启、单模块 `frozen_request` 独立新任务恢复、PG 版本和来源读取、RustFS 原响应读取以及终态重投。实际得到9份草稿版本，SDK调用3次，终态重投无新增调用；物理请求均为200，流式迭代以`stop`终止，配置恢复后全局默认模型指纹未变。
+
+逐份读取生成结果确认本样本文档的唯一邮箱注册、重复注册拒绝、未登录写入拒绝、`done=false`/`retry_count=0`/`deleted_at=null`、空标题拒绝、本人任务隔离、每页20条上限和空结果合法性均进入结构化`content_json`，每份都有执行说明、解析快照来源以及模型/Prompt/Skill元数据。该证据把“普通 Markdown 默认 Step 三模块生成、进度和独立恢复”标记为**已实际验收**；长文档、更多格式、跨模块业务充分性、用户评审、完整项目页面和其他供应商仍是“已有实现、尚未验收”，不把本批扩大为P1或完整P0—P5完成。
