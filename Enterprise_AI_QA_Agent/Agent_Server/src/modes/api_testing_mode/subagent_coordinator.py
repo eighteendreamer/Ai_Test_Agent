@@ -26,6 +26,17 @@ from src.modes.api_testing_mode.input_binding import (
     unresolved_path_parameters,
 )
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
+from src.modes.api_testing_mode.auth_refresh import (
+    checkpoint as auth_refresh_checkpoint,
+    mark_refresh_completed,
+    mark_refresh_started,
+    mark_replay_finished,
+    mark_replay_started,
+    prepare_auth_refresh_tasks,
+    record_401_pending,
+    refresh_is_eligible,
+    refresh_targets,
+)
 from src.modes.api_testing_mode.worker_result_reader import ApiWorkerResultReader
 from src.runtime.store import SessionStore
 from src.runtime.postgres_api_credential_store import ApiCredentialReferenceError
@@ -71,6 +82,14 @@ class ApiSubagentCoordinator:
         self._checkpoint_callback = checkpoint_callback
         self._active_resource_locks: set[str] = set()
         self._write_running: bool = False
+        prepare_auth_refresh_tasks(pool.all_tasks)
+        self._auth_refresh_targets = refresh_targets(pool.all_tasks)
+        self._pending_auth_refresh: list[str] = [
+            task.task_id for task in pool.all_tasks
+            if auth_refresh_checkpoint(task).get("state") in {
+                "pending", "refresh_running", "refresh_completed", "replay_running"
+            }
+        ]
         self._task_outputs: dict[str, Any] = {
             task.task_id: task.response_body for task in pool.all_tasks if task.status == TASK_COMPLETED
         }
@@ -135,14 +154,28 @@ class ApiSubagentCoordinator:
                 )
             return self._pool.all_tasks
         while not self._pool.is_complete:
+            # A persisted 401 recovery checkpoint owns the target task until
+            # refresh/replay is settled; recover it before dependency
+            # resolution can expose the target as an ordinary task.
+            if self._pending_auth_refresh:
+                await self._recover_pending_auth_refresh()
+                if self.has_unsettled_workers or self.waiting_child_session_ids:
+                    break
+                continue
             self._pool.resolve_blocked()
             batch = self._select_batch()
             if not batch:
                 if self._pool.has_running:
                     await asyncio.sleep(self._poll_interval_seconds)
                     continue
+                if self._pending_auth_refresh:
+                    await self._recover_pending_auth_refresh()
+                    continue
+                self._skip_unused_refresh_tasks()
                 break
             await self._dispatch_batch(batch)
+            if self._pending_auth_refresh:
+                await self._recover_pending_auth_refresh()
             if self.has_unsettled_workers or self.waiting_child_session_ids:
                 break
             self._pool.resolve_blocked()
@@ -217,6 +250,8 @@ class ApiSubagentCoordinator:
                         continue
                     break
                 await self._dispatch_batch(batch)
+                if self._pending_auth_refresh:
+                    await self._recover_pending_auth_refresh()
                 if self.has_unsettled_workers or self.waiting_child_session_ids:
                     return
                 self._pool.resolve_blocked()
@@ -439,7 +474,16 @@ class ApiSubagentCoordinator:
                 restored = await self._credential_references.load_parent_credential(
                     result_payload["auth_ref"], self._parent_context)
                 self._credential_manager.restore_session(restored)
-        self._apply_worker_output(task, tool_output)
+        result_payload = tool_output.get("task_result") or {}
+        result_task = ApiTestTask.model_validate(result_payload) if isinstance(result_payload, dict) else None
+        if result_task is not None and result_task.status == TASK_FAILED and self._queue_401_recovery(task, result_task):
+            self._copy_worker_result(task, result_task, tool_output)
+            record_401_pending(task)
+            task.status = "pending"
+            task.last_error = ""
+            self._emit_checkpoint("task_auth_refresh_pending", task)
+        else:
+            self._apply_worker_output(task, tool_output)
         return True
 
     def _build_worker_spec(self, task: ApiTestTask) -> dict[str, Any]:
@@ -536,23 +580,7 @@ class ApiSubagentCoordinator:
             return
 
         result_task = ApiTestTask.model_validate(task_payload)
-        merged_worker_session_id = task.worker_session_id
-        merged_worker_status = task.worker_status
-        merged_worker_summary = task.worker_summary or str(tool_output.get("summary") or "")
-        for field_name in result_task.model_dump(mode="python"):
-            # Keep validated nested models; serializing their values here turns
-            # AssertionSpec into dicts and breaks the parent state contract.
-            setattr(task, field_name, getattr(result_task, field_name))
-        task.worker_session_id = merged_worker_session_id
-        task.worker_status = merged_worker_status
-        task.worker_summary = merged_worker_summary
-
-        credential_payload = tool_output.get("credential_session")
-        if isinstance(credential_payload, dict):
-            restored = self._credential_manager.restore_session(
-                CredentialSession.model_validate(credential_payload)
-            )
-            task.auth_ref = restored.credential_session_id
+        self._copy_worker_result(task, result_task, tool_output)
 
         if task.status == TASK_COMPLETED:
             self._pool.mark_completed(task.task_id)
@@ -566,6 +594,115 @@ class ApiSubagentCoordinator:
         self._pool.mark_failed(task.task_id, task.last_error or str(tool_output.get("summary") or "execution_failed"))
         self._pool.record_reconciliation(task)
         self._emit_checkpoint("task_failed", task)
+
+    def _copy_worker_result(self, task: ApiTestTask, result_task: ApiTestTask, tool_output: dict[str, Any]) -> None:
+        merged_worker_session_id = task.worker_session_id
+        merged_worker_status = task.worker_status
+        merged_worker_summary = task.worker_summary or str(tool_output.get("summary") or "")
+        for field_name in result_task.model_dump(mode="python"):
+            # Keep validated nested models; serializing their values here turns
+            # AssertionSpec into dicts and breaks the parent state contract.
+            setattr(task, field_name, getattr(result_task, field_name))
+        task.worker_session_id = merged_worker_session_id
+        task.worker_status = merged_worker_status
+        task.worker_summary = merged_worker_summary
+        credential_payload = tool_output.get("credential_session")
+        if isinstance(credential_payload, dict):
+            restored = self._credential_manager.restore_session(
+                CredentialSession.model_validate(credential_payload)
+            )
+            task.auth_ref = restored.credential_session_id
+
+    def _queue_401_recovery(self, task: ApiTestTask, result_task: ApiTestTask) -> bool:
+        if task.task_id not in self._auth_refresh_targets or not refresh_is_eligible(result_task):
+            return False
+        if task.task_id not in self._pending_auth_refresh:
+            self._pending_auth_refresh.append(task.task_id)
+        logger.info("api_auth_refresh_pending", extra={"task_id": task.task_id,
+            "refresh_task_id": task.auth_refresh_task_id, "original_status": 401})
+        return True
+
+    async def _recover_pending_auth_refresh(self) -> None:
+        pending = list(self._pending_auth_refresh)
+        self._pending_auth_refresh.clear()
+        for target_id in pending:
+            target = self._pool.get(target_id)
+            refresh = self._pool.get(target.auth_refresh_task_id) if target else None
+            if target is None or refresh is None:
+                continue
+            state = auth_refresh_checkpoint(target)
+            if state.get("state") in {"replay_completed", "replay_failed", "replay_unsettled"}:
+                continue
+            if state.get("state") == "replay_running":
+                if target.status == TASK_COMPLETED:
+                    mark_replay_finished(target)
+                    self._emit_checkpoint("task_auth_refresh_replayed", target)
+                    continue
+                if target.status == TASK_RUNNING:
+                    self._unsettled_task_ids.add(target.task_id)
+                    self._fail_task(target, "auth_refresh_recovery_unsettled")
+                    state["state"] = "replay_unsettled"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    continue
+            # Reuse a refresh with a durable completed Worker result. A
+            # restarted coordinator must never send the same refresh twice.
+            if refresh.status == TASK_COMPLETED:
+                if not refresh.auth_ref:
+                    self._fail_task(target, "auth_refresh_credential_missing")
+                    state["state"] = "refresh_failed"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    continue
+                target.auth_ref = refresh.auth_ref
+                if state.get("state") != "refresh_completed":
+                    mark_refresh_completed(target, refresh)
+                    self._emit_checkpoint("task_auth_refresh_completed", target)
+            elif state.get("state") == "pending" and refresh.status in {"deferred", "ready"}:
+                if any((self._pool.get(dep) is None or self._pool.get(dep).status != "completed")
+                       for dep in refresh.depends_on):
+                    self._fail_task(target, "auth_refresh_prerequisite_unavailable")
+                    state["state"] = "refresh_prerequisite_failed"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    continue
+                self._pool.mark_ready(refresh.task_id)
+                mark_refresh_started(target)
+                await self._dispatch_batch([refresh])
+                if refresh.status == TASK_COMPLETED and refresh.auth_ref:
+                    target.auth_ref = refresh.auth_ref
+                    mark_refresh_completed(target, refresh)
+                    self._emit_checkpoint("task_auth_refresh_completed", target)
+                else:
+                    self._fail_task(target, "auth_refresh_failed")
+                    state = auth_refresh_checkpoint(target)
+                    state["state"] = "refresh_failed"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    continue
+            elif refresh.status == TASK_FAILED:
+                self._fail_task(target, "auth_refresh_failed")
+                state["state"] = "refresh_failed"
+                target.execution_checkpoint["auth_refresh"] = state
+                continue
+            else:
+                # A refresh already marked running but lacking a settled
+                # Worker result has unknown outcome and cannot be resent.
+                self._fail_task(target, "auth_refresh_recovery_unsettled")
+                state["state"] = "refresh_unsettled"
+                target.execution_checkpoint["auth_refresh"] = state
+                continue
+
+            self._pool.mark_ready(target.task_id)
+            mark_replay_started(target)
+            self._emit_checkpoint("task_auth_refresh_replay_started", target)
+            await self._dispatch_batch([target])
+            mark_replay_finished(target)
+            if auth_refresh_checkpoint(target).get("state") == "replay_failed":
+                self._pool.mark_failed(target.task_id, target.last_error or "401 replay failed")
+            self._emit_checkpoint("task_auth_refresh_replayed", target)
+
+    def _skip_unused_refresh_tasks(self) -> None:
+        for task in self._pool.all_tasks:
+            if task.status == "deferred":
+                self._pool.mark_skipped(task.task_id, "Auth refresh was not needed.")
+                self._emit_checkpoint("task_skipped", task)
 
     def _fail_task(self, task: ApiTestTask, error: str) -> None:
         task.status = TASK_FAILED

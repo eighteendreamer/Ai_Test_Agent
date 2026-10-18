@@ -28,6 +28,18 @@ from src.modes.api_testing_mode.input_binding import (
     unresolved_path_parameters,
 )
 from src.modes.api_testing_mode.auth_propagation import propagate_auth_ref
+from src.modes.api_testing_mode.auth_refresh import (
+    AuthRefreshContractError,
+    checkpoint as auth_refresh_checkpoint,
+    mark_refresh_completed,
+    mark_refresh_started,
+    mark_replay_finished,
+    mark_replay_started,
+    prepare_auth_refresh_tasks,
+    record_401_pending,
+    refresh_is_eligible,
+    refresh_targets,
+)
 
 
 # Type alias for the executor callback.
@@ -53,6 +65,14 @@ class ApiTestCoordinator:
         self._checkpoint_callback = checkpoint_callback
         self._active_resource_locks: set[str] = set()
         self._write_running: bool = False
+        prepare_auth_refresh_tasks(pool.all_tasks)
+        self._auth_refresh_targets = refresh_targets(pool.all_tasks)
+        self._pending_auth_refresh: list[str] = [
+            task.task_id for task in pool.all_tasks
+            if auth_refresh_checkpoint(task).get("state") in {
+                "pending", "refresh_running", "refresh_completed", "replay_running"
+            }
+        ]
         # Rebuild from the campaign checkpoint, as the Worker coordinator does.
         # A completed producer must not be sent again just to recover its output.
         self._task_outputs: dict[str, Any] = {
@@ -70,12 +90,22 @@ class ApiTestCoordinator:
         Returns the final task list with statuses and results populated.
         """
         while not self._pool.is_complete:
+            # A persisted 401 recovery checkpoint owns the target task until
+            # refresh/replay is settled. Recover it before the normal
+            # dependency pass can expose the target as an ordinary task.
+            if self._pending_auth_refresh:
+                await self._recover_pending_auth_refresh()
+                continue
             self._pool.resolve_blocked()
             batch = self._select_batch()
             if not batch:
                 if self._pool.has_running:
                     await asyncio.sleep(0.05)
                     continue
+                if self._pending_auth_refresh:
+                    await self._recover_pending_auth_refresh()
+                    continue
+                self._skip_unused_refresh_tasks()
                 break
 
             if len(batch) == 1:
@@ -84,6 +114,8 @@ class ApiTestCoordinator:
                 await asyncio.gather(*(self._execute_one(task) for task in batch))
 
             self._pool.resolve_blocked()
+            if self._pending_auth_refresh:
+                await self._recover_pending_auth_refresh()
 
         # Retry failed tasks if policy allows.
         if self._policy.max_retries > 0:
@@ -118,6 +150,8 @@ class ApiTestCoordinator:
                 else:
                     await asyncio.gather(*(self._execute_one(task) for task in batch))
                 self._pool.resolve_blocked()
+                if self._pending_auth_refresh:
+                    await self._recover_pending_auth_refresh()
 
     def _is_retryable(self, task: ApiTestTask) -> bool:
         """Determine if a failed task should be retried."""
@@ -228,9 +262,12 @@ class ApiTestCoordinator:
                 if result.execution_mode == EXECUTION_MODE_AUTH and result.auth_ref:
                     self._propagate_auth_ref(result.auth_ref, source_task_id=task.task_id)
             else:
-                self._pool.mark_failed(task.task_id, result.last_error or "execution_failed")
-                self._pool.record_reconciliation(task)
-                self._emit_checkpoint("task_failed", task)
+                if self._queue_401_recovery(task):
+                    self._emit_checkpoint("task_auth_refresh_pending", task)
+                else:
+                    self._pool.mark_failed(task.task_id, result.last_error or "execution_failed")
+                    self._pool.record_reconciliation(task)
+                    self._emit_checkpoint("task_failed", task)
         except Exception as exc:
             self._pool.mark_failed(task.task_id, str(exc))
             self._pool.record_reconciliation(task)
@@ -258,6 +295,106 @@ class ApiTestCoordinator:
         authentication flow.
         """
         propagate_auth_ref(self._pool.all_tasks, auth_ref, source_task_id=source_task_id)
+
+    def _queue_401_recovery(self, task: ApiTestTask) -> bool:
+        if task.task_id not in self._auth_refresh_targets or not refresh_is_eligible(task):
+            return False
+        record_401_pending(task)
+        task.status = "pending"
+        task.last_error = ""
+        if task.task_id not in self._pending_auth_refresh:
+            self._pending_auth_refresh.append(task.task_id)
+        logger.info("api_auth_refresh_pending", extra={"task_id": task.task_id,
+            "refresh_task_id": task.auth_refresh_task_id, "original_status": 401})
+        return True
+
+    async def _recover_pending_auth_refresh(self) -> None:
+        pending = list(self._pending_auth_refresh)
+        self._pending_auth_refresh.clear()
+        for target_id in pending:
+            target = self._pool.get(target_id)
+            refresh_id = target.auth_refresh_task_id if target else ""
+            refresh = self._pool.get(refresh_id) if refresh_id else None
+            if target is None or refresh is None:
+                continue
+            state = auth_refresh_checkpoint(target)
+            if state.get("state") in {"replay_completed", "replay_failed"}:
+                continue
+            if state.get("state") == "replay_running":
+                if target.status == TASK_COMPLETED:
+                    mark_replay_finished(target)
+                    self._emit_checkpoint("task_auth_refresh_replayed", target)
+                    continue
+                self._pool.mark_failed(target.task_id, "auth_refresh_recovery_unsettled")
+                state["state"] = "replay_unsettled"
+                target.execution_checkpoint["auth_refresh"] = state
+                self._emit_checkpoint("task_failed", target)
+                continue
+
+            # A completed refresh is durable evidence. Reuse it instead of
+            # sending the refresh request again after a process restart.
+            if refresh.status == TASK_COMPLETED:
+                if not refresh.auth_ref:
+                    self._pool.mark_failed(target.task_id, "auth_refresh_credential_missing")
+                    state["state"] = "refresh_failed"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    self._emit_checkpoint("task_failed", target)
+                    continue
+                target.auth_ref = refresh.auth_ref
+                if state.get("state") != "refresh_completed":
+                    mark_refresh_completed(target, refresh)
+                    self._emit_checkpoint("task_auth_refresh_completed", target)
+            elif state.get("state") == "pending" and refresh.status in {"deferred", "ready"}:
+                if any((self._pool.get(dep) is None or self._pool.get(dep).status != "completed")
+                       for dep in refresh.depends_on):
+                    self._pool.mark_failed(target.task_id, "auth_refresh_prerequisite_unavailable")
+                    state["state"] = "refresh_prerequisite_failed"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    self._emit_checkpoint("task_failed", target)
+                    continue
+                self._pool.mark_ready(refresh.task_id)
+                mark_refresh_started(target)
+                await self._execute_one(refresh)
+                if refresh.status == TASK_COMPLETED and refresh.auth_ref:
+                    target.auth_ref = refresh.auth_ref
+                    mark_refresh_completed(target, refresh)
+                    self._emit_checkpoint("task_auth_refresh_completed", target)
+                else:
+                    self._pool.mark_failed(target.task_id, "auth_refresh_failed")
+                    state = auth_refresh_checkpoint(target)
+                    state["state"] = "refresh_failed"
+                    target.execution_checkpoint["auth_refresh"] = state
+                    self._emit_checkpoint("task_failed", target)
+                    continue
+            elif refresh.status == TASK_FAILED:
+                self._pool.mark_failed(target.task_id, "auth_refresh_failed")
+                state["state"] = "refresh_failed"
+                target.execution_checkpoint["auth_refresh"] = state
+                self._emit_checkpoint("task_failed", target)
+                continue
+            else:
+                # A refresh already marked running but lacking a settled
+                # result has unknown outcome and cannot be resent safely.
+                self._pool.mark_failed(target.task_id, "auth_refresh_recovery_unsettled")
+                state["state"] = "refresh_unsettled"
+                target.execution_checkpoint["auth_refresh"] = state
+                self._emit_checkpoint("task_failed", target)
+                continue
+
+            self._pool.mark_ready(target.task_id)
+            mark_replay_started(target)
+            self._emit_checkpoint("task_auth_refresh_replay_started", target)
+            await self._execute_one(target)
+            mark_replay_finished(target)
+            if auth_refresh_checkpoint(target).get("state") == "replay_failed":
+                self._pool.mark_failed(target.task_id, target.last_error or "401 replay failed")
+            self._emit_checkpoint("task_auth_refresh_replayed", target)
+
+    def _skip_unused_refresh_tasks(self) -> None:
+        for task in self._pool.all_tasks:
+            if task.status == "deferred":
+                self._pool.mark_skipped(task.task_id, "Auth refresh was not needed.")
+                self._emit_checkpoint("task_skipped", task)
 
     def _apply_input_bindings(self, task: ApiTestTask) -> list[str]:
         return apply_input_bindings(task, self._task_outputs)

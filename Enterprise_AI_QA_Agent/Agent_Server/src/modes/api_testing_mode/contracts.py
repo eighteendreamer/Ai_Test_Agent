@@ -96,9 +96,10 @@ TASK_RUNNING = "running"
 TASK_COMPLETED = "completed"
 TASK_FAILED = "failed"
 TASK_SKIPPED = "skipped"
+TASK_DEFERRED = "deferred"
 
 TaskStatus = Literal[
-    "pending", "blocked", "ready", "running", "completed", "failed", "skipped"
+    "pending", "blocked", "ready", "running", "completed", "failed", "skipped", "deferred"
 ]
 
 

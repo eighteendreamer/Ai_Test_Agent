@@ -12,6 +12,7 @@ from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.modes.api_testing_mode.contracts import (
     TASK_BLOCKED,
     TASK_COMPLETED,
+    TASK_DEFERRED,
     TASK_FAILED,
     TASK_PENDING,
     TASK_READY,
@@ -93,6 +94,18 @@ class ApiTaskPool:
             task.dependency_skip_task_id = ""
             self._reconcile_dependencies()
 
+    def mark_deferred(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if task is not None:
+            task.status = TASK_DEFERRED
+
+    def mark_ready(self, task_id: str) -> None:
+        task = self._tasks.get(task_id)
+        if task is not None:
+            task.status = TASK_READY
+            task.dependency_skip_task_id = ""
+            task.last_error = ""
+
     def resolve_blocked(self) -> int:
         """Promote blocked tasks to ready if all their dependencies are satisfied."""
         return self._reconcile_dependencies()
@@ -106,6 +119,7 @@ class ApiTaskPool:
             TASK_COMPLETED: 0,
             TASK_FAILED: 0,
             TASK_SKIPPED: 0,
+            TASK_DEFERRED: 0,
         }
         for task in self._tasks.values():
             counts[task.status] = counts.get(task.status, 0) + 1

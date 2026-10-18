@@ -196,6 +196,10 @@ class ApiTestTask(BaseModel):
     # None means no JSON body; an explicit {} is still a JSON request payload.
     request_body: dict[str, Any] | None = None
     input_bindings: list[InputBinding] = Field(default_factory=list)
+    # Optional, explicit recovery relation. The refresh task is released only
+    # after this read-only task observes an unexpected 401.
+    auth_refresh_task_id: str = ""
+    allow_401_replay: bool = False
     # Runtime task IDs, keyed by the path parameter they actually provide.
     path_parameter_sources: dict[str, str] = Field(default_factory=dict)
     assertions: list[AssertionSpec] = Field(default_factory=list)
