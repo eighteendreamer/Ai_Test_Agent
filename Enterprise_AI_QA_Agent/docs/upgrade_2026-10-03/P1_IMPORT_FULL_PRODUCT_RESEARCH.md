@@ -17,3 +17,16 @@
 第六轮业务/跨项目/重启全部断言已通过，最后“所有API响应无错误”误包含主动停API期间的健康/会话/资源轮询500。实际Vite stderr为ECONNREFUSED/ECONNRESET；沿test_document_full_product已有重启窗口划分保存原失败和计划停机响应，恢复后错误仍必须为0。不把这些500当作导入失败，也不抹除网络原件。
 
 最终delivery：1通过/0跳过，54.82秒。实际构建App、Chromium、独立API及其重启，隔离MySQL/PG/RustFS和Redis容器；模板/原件/预览/提交/重放/错误行/冲突/评审/启用/新版本/跨项目及重启读回均通过。PG最终3条用例4份不可变版本；原JSON未知字段及false/0/null保持。未执行AI生成或真实模型，不改生产代码，不代表P1文档生成或全部升级完成。
+
+## 2026-10-19 当前工作区复验
+
+在当前源码和当前隔离依赖下重新执行：
+
+```text
+$env:RUN_LIVE_CASE_IMPORT_FULL_PRODUCT='1'
+\.venv\Scripts\python.exe -m pytest tests/test_case_import_full_product.py -q
+```
+
+结果为 **1通过、0失败、0跳过，79.35秒**。新证据目录为 `p1-import-full-product-current`，包含实际构建输出、Chromium 网络/页面记录、RustFS 原件、MySQL 配置快照、PostgreSQL 最终记录及 API 重启日志。复验仍未调用模型；重启窗口内的计划停机请求失败被单独记录，恢复后非计划 API 错误和页面错误均为零。该结果再次证明模板与 Excel/JSON 完整项目页面可用，但不能替代普通需求文档生成质量和真实模型闭环验收。
+
+同日再次以隔离输出目录复跑相同产品测试，结果为 **1通过、0失败、0跳过，63.14秒**。证据目录为 `p1-import-full-product-current-rerun`，包含实际构建输出、Chromium 网络与页面记录、RustFS 原件、MySQL 配置快照、PostgreSQL 最终记录及 API 重启日志；`facts.json` 标记未请求模型执行，`page-errors.json` 为空。此次只复验默认模板及 Excel/JSON 导入、页面与持久化流程，不代表需求文档 AI 生成或模型质量已验收。
