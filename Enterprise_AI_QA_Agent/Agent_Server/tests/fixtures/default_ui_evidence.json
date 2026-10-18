@@ -1,0 +1,1222 @@
+{
+  "samples": [
+    {
+      "directory": "p5-default-ui-scene-live-current",
+      "scenario": "positive",
+      "detail": {
+        "results": [
+          {
+            "run_id": "9b7662eb-be59-58e3-bc20-cf415404137c",
+            "run_item_id": "2b13338f-72dd-5248-94c9-a32f14788336",
+            "status": "passed",
+            "actual": {
+              "receipt": {
+                "steps": [
+                  {
+                    "checks": [
+                      {
+                        "name": "点击前初始计数为 0",
+                        "reason": "点击前只读 eval 读取 #count 文本为 \"0\"，与固定初始计数 \"0\" 一致。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-bf765876cc432ad2",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "initial_count"
+                        ]
+                      },
+                      {
+                        "name": "真实点击一次后当前计数为 1",
+                        "reason": "在同一共享会话中真实执行 click #increment 一次（未重复点击、未改动 DOM 或赋值），点击后只读读取 #count 文本为 \"1\"，与预期计数 \"1\" 一致。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-b785dad271df27e4",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "expected_count"
+                        ]
+                      }
+                    ],
+                    "status": "passed",
+                    "outputs": {},
+                    "summary": "已按冻结用例执行：先读取固定场景知识（别名：计数按钮=#increment「增加一次」，读取目标#count），再在同一 browser-control 共享会话中打开 http://127.0.0.1:62692，只读读取初始计数为 0，随后真实点击 #increment 一次，最后在同一会话中只读读取当前计数为 1，与 expected_count 一致。",
+                    "item_key": "target_count_one",
+                    "output_source": null,
+                    "output_structure": {
+                      "kind": "object",
+                      "fields": {
+                        "page_id": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-b785dad271df27e4",
+                            "output_path_tokens": [
+                              "result",
+                              "pageId"
+                            ]
+                          }
+                        },
+                        "page_url": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-b785dad271df27e4",
+                            "output_path_tokens": [
+                              "result",
+                              "url"
+                            ]
+                          }
+                        },
+                        "page_title": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-b785dad271df27e4",
+                            "output_path_tokens": [
+                              "result",
+                              "title"
+                            ]
+                          }
+                        },
+                        "current_count": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-b785dad271df27e4",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        },
+                        "initial_count": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-bf765876cc432ad2",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "schema_version": 1
+              }
+            },
+            "evidence_refs": [
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "1431e6f7-b62d-4b11-a53e-e5a6de2e9a8d",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-bf765876cc432ad2",
+                  "tool_key": "browser-control"
+                }
+              },
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "ce5e8066-92f4-4fff-8d5d-0298a92a0876",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-b785dad271df27e4",
+                  "tool_key": "browser-control"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "id": "d7b6337a-7238-4e5c-abc5-eeb1e07156c1",
+          "call_id": "chatcmpl-tool-99718a10832454f1",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "9b7662eb-be59-58e3-bc20-cf415404137c",
+            "run_item_id": "2b13338f-72dd-5248-94c9-a32f14788336"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "1431e6f7-b62d-4b11-a53e-e5a6de2e9a8d",
+          "call_id": "chatcmpl-tool-bf765876cc432ad2",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "9b7662eb-be59-58e3-bc20-cf415404137c",
+            "run_item_id": "2b13338f-72dd-5248-94c9-a32f14788336"
+          },
+          "output_payload": {
+            "result": {
+              "url": "http://127.0.0.1:62692/",
+              "count": "0",
+              "title": "场景计数验收",
+              "pageId": "aa983ac683884051a0089509539628bb"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "e3ab28d6-2460-4a1f-b587-e766c2e8db93",
+          "call_id": "chatcmpl-tool-bc3ab28830d7cc40",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "9b7662eb-be59-58e3-bc20-cf415404137c",
+            "run_item_id": "2b13338f-72dd-5248-94c9-a32f14788336"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "ce5e8066-92f4-4fff-8d5d-0298a92a0876",
+          "call_id": "chatcmpl-tool-b785dad271df27e4",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "9b7662eb-be59-58e3-bc20-cf415404137c",
+            "run_item_id": "2b13338f-72dd-5248-94c9-a32f14788336"
+          },
+          "output_payload": {
+            "result": {
+              "url": "http://127.0.0.1:62692/",
+              "count": "1",
+              "title": "场景计数验收",
+              "pageId": "aa983ac683884051a0089509539628bb"
+            },
+            "status": "success"
+          }
+        }
+      ],
+      "events": [
+        {
+          "method": "GET",
+          "page_id": "d31dbff8824740a79bef6462f4a0385b"
+        },
+        {
+          "method": "POST",
+          "page_id": "d31dbff8824740a79bef6462f4a0385b",
+          "count": 1
+        },
+        {
+          "method": "GET",
+          "page_id": "aa983ac683884051a0089509539628bb"
+        },
+        {
+          "method": "POST",
+          "page_id": "aa983ac683884051a0089509539628bb",
+          "count": 1
+        }
+      ],
+      "source_hashes": {
+        "final-run.json": "5e88547242d034c0470fb3d82f14ec48784e276cf591e4d576c6405bca361df2",
+        "tool-jobs.json": "429f19f573ae93b5499f33f86e8f0c74d88c5cb5f386b5aeb3ad5471cb9af840",
+        "target-events-finally.json": "2584b083d976f051fc8b300f76ec13413ea7429287d139b2ab688ec8d1c77781"
+      }
+    },
+    {
+      "directory": "p5-default-ui-scene-live-current",
+      "scenario": "negative",
+      "detail": {
+        "results": [
+          {
+            "run_id": "ead55c66-3700-5239-8ac5-cfc8a5bba303",
+            "run_item_id": "be35b4a3-b057-53a4-8ba0-e00595d2ca64",
+            "status": "failed",
+            "actual": {
+              "receipt": {
+                "steps": [
+                  {
+                    "checks": [
+                      {
+                        "name": "初始计数固定为 0",
+                        "reason": "打开页面后未做任何操作前读取 #count，实际值为字符串 \"0\"，与固定 initial_count=0 一致。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-85c7586f0efc7825",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "initial_count"
+                        ]
+                      },
+                      {
+                        "name": "点击一次后当前计数等于 expected_count",
+                        "reason": "在初始计数 0 的同一会话中真实点击 #increment 一次后，只读读取 #count 实际值为 \"1\"，与固定用例 expected_count=\"2\" 不相等。未通过额外点击或修改 DOM 迎合预期。",
+                        "verdict": "failed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-842479fcea3fc42d",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "expected_count"
+                        ]
+                      }
+                    ],
+                    "status": "failed",
+                    "outputs": {
+                      "observed_count": {
+                        "call_id": "chatcmpl-tool-842479fcea3fc42d",
+                        "output_path_tokens": [
+                          "result",
+                          "count"
+                        ]
+                      }
+                    },
+                    "summary": "已按固定场景知识（别名「计数按钮」= #increment）打开 http://127.0.0.1:59413，确认初始计数为 0，真实点击「增加一次」一次，随后在同一共享会话中只读读取 #count。实际计数为 1，与固定用例 expected_count=2 不符；未重复点击、未改写 DOM，按协议正式判定 failed。",
+                    "item_key": "count-one-target",
+                    "output_source": null
+                  }
+                ],
+                "schema_version": 1
+              }
+            },
+            "evidence_refs": [
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "bc14006f-90e9-4072-857c-8d14b0bc51af",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-85c7586f0efc7825",
+                  "tool_key": "browser-control"
+                }
+              },
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "8bf4a515-8bff-4e06-8305-3a5053a71503",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-842479fcea3fc42d",
+                  "tool_key": "browser-control"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "id": "9cf914b7-3e46-4242-8d8c-c37ece428d59",
+          "call_id": "chatcmpl-tool-8b8ca8132380a2b0",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "ead55c66-3700-5239-8ac5-cfc8a5bba303",
+            "run_item_id": "be35b4a3-b057-53a4-8ba0-e00595d2ca64"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "f5f3fd60-7213-45bc-8f2f-c65d7e7f2a9a",
+          "call_id": "chatcmpl-tool-8d3eaa08bd693ee9",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "ead55c66-3700-5239-8ac5-cfc8a5bba303",
+            "run_item_id": "be35b4a3-b057-53a4-8ba0-e00595d2ca64"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "bc14006f-90e9-4072-857c-8d14b0bc51af",
+          "call_id": "chatcmpl-tool-85c7586f0efc7825",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "ead55c66-3700-5239-8ac5-cfc8a5bba303",
+            "run_item_id": "be35b4a3-b057-53a4-8ba0-e00595d2ca64"
+          },
+          "output_payload": {
+            "result": {
+              "count": "0",
+              "page_id": "8306d607578440c994fec9f8b31ae303"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "8bf4a515-8bff-4e06-8305-3a5053a71503",
+          "call_id": "chatcmpl-tool-842479fcea3fc42d",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "ead55c66-3700-5239-8ac5-cfc8a5bba303",
+            "run_item_id": "be35b4a3-b057-53a4-8ba0-e00595d2ca64"
+          },
+          "output_payload": {
+            "result": {
+              "count": "1",
+              "page_id": "8306d607578440c994fec9f8b31ae303"
+            },
+            "status": "success"
+          }
+        }
+      ],
+      "events": [
+        {
+          "method": "GET",
+          "page_id": "0d1e7f0ab16e4a16981962f470077404"
+        },
+        {
+          "method": "POST",
+          "page_id": "0d1e7f0ab16e4a16981962f470077404",
+          "count": 1
+        },
+        {
+          "method": "GET",
+          "page_id": "8306d607578440c994fec9f8b31ae303"
+        },
+        {
+          "method": "POST",
+          "page_id": "8306d607578440c994fec9f8b31ae303",
+          "count": 1
+        }
+      ],
+      "source_hashes": {
+        "final-run.json": "654cf70b1187fb9618e37b325dbc00b8ca4dfb9d778c82e677ec5694596ba69f",
+        "tool-jobs.json": "f6424611d66dcd139cb443b0a12d4dc94053cea39a01fd282f966346c73d7834",
+        "target-events-finally.json": "09dbfa07d32665a824378f7704eaa880b663d3dadb70fd4a1aa2581ad4b73e63"
+      }
+    },
+    {
+      "directory": "p5-default-ui-scene-live-current2",
+      "scenario": "positive",
+      "detail": {
+        "results": [
+          {
+            "run_id": "60ff9f7d-fbc4-5ce4-be7a-7a6a3f7f0cda",
+            "run_item_id": "fc7ca047-6689-52af-935e-60cc9458a128",
+            "status": "passed",
+            "actual": {
+              "receipt": {
+                "steps": [
+                  {
+                    "checks": [
+                      {
+                        "name": "初始计数固定为 0（未增加准备动作改变条件）",
+                        "reason": "打开页面后同一会话 eval 读取 #count 初始值为 \"0\"，与用例固定初始计数 0 一致。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-9894e854e291c0ff",
+                            "output_path_tokens": [
+                              "result",
+                              "initial_count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "initial_count"
+                        ]
+                      },
+                      {
+                        "name": "真实点击一次后当前计数等于预期计数 1",
+                        "reason": "对 #increment 执行一次真实 click 后，同会话 eval 读取 #count 当前值为 \"1\"，等于 expected_count \"1\"。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-9a24fe1db251544c",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "expected_count"
+                        ]
+                      },
+                      {
+                        "name": "步骤预期计数 1 与实际观测一致",
+                        "reason": "冻结用例步骤 expected 为 \"1\"，本次实际观测值为 \"1\"，一致。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-9a24fe1db251544c",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "steps",
+                          "0",
+                          "expected"
+                        ]
+                      }
+                    ],
+                    "status": "passed",
+                    "outputs": {
+                      "page_id": {
+                        "call_id": "chatcmpl-tool-9a24fe1db251544c",
+                        "output_path_tokens": [
+                          "result",
+                          "page_id"
+                        ]
+                      },
+                      "initial_count": {
+                        "call_id": "chatcmpl-tool-9894e854e291c0ff",
+                        "output_path_tokens": [
+                          "result",
+                          "initial_count"
+                        ]
+                      },
+                      "observed_count": {
+                        "call_id": "chatcmpl-tool-9a24fe1db251544c",
+                        "output_path_tokens": [
+                          "result",
+                          "count"
+                        ]
+                      }
+                    },
+                    "summary": "已读取固定场景知识，打开 http://127.0.0.1:62890 确认初始计数为 0，真实点击 #increment 计数按钮一次，同会话只读 eval 观测当前计数为 1，与预期一致。",
+                    "item_key": "count-one",
+                    "output_source": null
+                  }
+                ],
+                "schema_version": 1
+              }
+            },
+            "evidence_refs": [
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "90b2dc29-fb62-4cd7-a2de-46015e4f2f01",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-9894e854e291c0ff",
+                  "tool_key": "browser-control"
+                }
+              },
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "3e29ba55-84a4-4fad-bfe0-af57f960fb4e",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-9a24fe1db251544c",
+                  "tool_key": "browser-control"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "id": "2858a62a-30d1-4178-b514-864a794daa0b",
+          "call_id": "chatcmpl-tool-a600d270a957f2dc",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "60ff9f7d-fbc4-5ce4-be7a-7a6a3f7f0cda",
+            "run_item_id": "fc7ca047-6689-52af-935e-60cc9458a128"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "3e29ba55-84a4-4fad-bfe0-af57f960fb4e",
+          "call_id": "chatcmpl-tool-9a24fe1db251544c",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "60ff9f7d-fbc4-5ce4-be7a-7a6a3f7f0cda",
+            "run_item_id": "fc7ca047-6689-52af-935e-60cc9458a128"
+          },
+          "output_payload": {
+            "result": {
+              "count": "1",
+              "page_id": "08c1cf4dfd4145cea58eadad738d9335"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "90b2dc29-fb62-4cd7-a2de-46015e4f2f01",
+          "call_id": "chatcmpl-tool-9894e854e291c0ff",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "60ff9f7d-fbc4-5ce4-be7a-7a6a3f7f0cda",
+            "run_item_id": "fc7ca047-6689-52af-935e-60cc9458a128"
+          },
+          "output_payload": {
+            "result": {
+              "initial_count": "0"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "032126c9-5cab-4606-a4f1-c6c282053790",
+          "call_id": "chatcmpl-tool-ae62773e03de853c",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "60ff9f7d-fbc4-5ce4-be7a-7a6a3f7f0cda",
+            "run_item_id": "fc7ca047-6689-52af-935e-60cc9458a128"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        }
+      ],
+      "events": [
+        {
+          "method": "GET",
+          "page_id": "da407535faf14d95b2bcf10da1f65ebb"
+        },
+        {
+          "method": "POST",
+          "page_id": "da407535faf14d95b2bcf10da1f65ebb",
+          "count": 1
+        },
+        {
+          "method": "GET",
+          "page_id": "08c1cf4dfd4145cea58eadad738d9335"
+        },
+        {
+          "method": "POST",
+          "page_id": "08c1cf4dfd4145cea58eadad738d9335",
+          "count": 1
+        }
+      ],
+      "source_hashes": {
+        "final-run.json": "f52070433d85208df24b75f499bf596ed53d07287f76ce782c7b146ee4c4549f",
+        "tool-jobs.json": "d93a8919e9dfab79727893111b2510864790148cb590713f38b87bf4bbd15ca9",
+        "target-events-finally.json": "1a75ceaf6cc1d7d4fcbe71ee679f1cebd4af748341a0fdf2429f72a3b7bb764e"
+      }
+    },
+    {
+      "directory": "p5-default-ui-scene-live-current2",
+      "scenario": "negative",
+      "detail": {
+        "results": [
+          {
+            "run_id": "a49f876d-7ba1-5093-9422-684a4223345d",
+            "run_item_id": "a1930e28-54f4-5fb2-8740-23cb39882ffe",
+            "status": "failed",
+            "actual": {
+              "receipt": {
+                "steps": [
+                  {
+                    "checks": [
+                      {
+                        "name": "初始计数为固定值 0",
+                        "reason": "点击前在同一共享会话只读读取 #count 为 \"0\"，与用例固定初始计数一致，未通过准备动作改变该条件。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-949cbe34b7006d0a",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "initial_count"
+                        ]
+                      },
+                      {
+                        "name": "点击一次后当前计数等于预期计数",
+                        "reason": "真实点击一次后同会话只读读取 #count 为 \"1\"，与冻结用例 expected_count \"2\" 不符。",
+                        "verdict": "failed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "expected_count"
+                        ]
+                      },
+                      {
+                        "name": "步骤预期值（content_json.steps[0].expected）",
+                        "reason": "用例步骤预期为 \"2\"，点击后实测 #count 为 \"1\"，不一致。",
+                        "verdict": "failed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "steps",
+                          "0",
+                          "expected"
+                        ]
+                      },
+                      {
+                        "name": "点击动作真实执行且未篡改页面状态",
+                        "reason": "通过 browser-control command click #increment 真实触发一次按钮点击（工具返回 success），读取时未重新打开页面、未对 DOM 赋值、未增加点击次数。",
+                        "verdict": "passed",
+                        "operator": "semantic",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-99b4d560191a5202",
+                            "output_path_tokens": [
+                              "status"
+                            ]
+                          },
+                          {
+                            "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "steps",
+                          "0",
+                          "action"
+                        ]
+                      },
+                      {
+                        "name": "用户目标：实际点击一次并验证当前计数",
+                        "reason": "点击动作已真实执行并完成了当前计数的只读验证，但实测计数 \"1\" 与冻结预期 \"2\" 不一致，验证结论为不符，整体目标未达成。",
+                        "verdict": "failed",
+                        "operator": "semantic",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-949cbe34b7006d0a",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          },
+                          {
+                            "call_id": "chatcmpl-tool-99b4d560191a5202",
+                            "output_path_tokens": [
+                              "status"
+                            ]
+                          },
+                          {
+                            "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "objective"
+                        ]
+                      }
+                    ],
+                    "status": "failed",
+                    "outputs": {
+                      "page_id": {
+                        "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                        "output_path_tokens": [
+                          "result",
+                          "pageId"
+                        ]
+                      },
+                      "page_url": {
+                        "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                        "output_path_tokens": [
+                          "result",
+                          "url"
+                        ]
+                      },
+                      "final_count": {
+                        "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                        "output_path_tokens": [
+                          "result",
+                          "count"
+                        ]
+                      },
+                      "initial_count": {
+                        "call_id": "chatcmpl-tool-949cbe34b7006d0a",
+                        "output_path_tokens": [
+                          "result",
+                          "count"
+                        ]
+                      }
+                    },
+                    "summary": "已按冻结用例先读取固定场景知识，再在共享浏览器会话打开 http://127.0.0.1:64112（标题「场景计数验收」），只读确认初始计数为 \"0\"；随后对 #increment 真实点击一次，并在同一会话只读读取 #count 为 \"1\"。实测值与冻结用例预期 \"2\" 不符，步骤判定 failed；未重复点击或篡改 DOM 以迎合预期。",
+                    "item_key": "target_count_one",
+                    "output_source": null
+                  }
+                ],
+                "schema_version": 1
+              }
+            },
+            "evidence_refs": [
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "217e23f9-d7d6-43a1-af02-6d0ec2ce2fc6",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-949cbe34b7006d0a",
+                  "tool_key": "browser-control"
+                }
+              },
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "2850446c-16b7-4f2b-bb60-ca3010e8ac11",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+                  "tool_key": "browser-control"
+                }
+              },
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "84bb143d-15d0-4ffc-b154-35e4420a8382",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-99b4d560191a5202",
+                  "tool_key": "browser-control"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "id": "36748f2d-426b-4a81-a9ca-28f34cbf3823",
+          "call_id": "chatcmpl-tool-b92df51242e41bfc",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "a49f876d-7ba1-5093-9422-684a4223345d",
+            "run_item_id": "a1930e28-54f4-5fb2-8740-23cb39882ffe"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "217e23f9-d7d6-43a1-af02-6d0ec2ce2fc6",
+          "call_id": "chatcmpl-tool-949cbe34b7006d0a",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "a49f876d-7ba1-5093-9422-684a4223345d",
+            "run_item_id": "a1930e28-54f4-5fb2-8740-23cb39882ffe"
+          },
+          "output_payload": {
+            "result": {
+              "url": "http://127.0.0.1:64112/",
+              "count": "0",
+              "title": "场景计数验收",
+              "pageId": "b04310e40af64ed6956578c805ee2247"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "84bb143d-15d0-4ffc-b154-35e4420a8382",
+          "call_id": "chatcmpl-tool-99b4d560191a5202",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "a49f876d-7ba1-5093-9422-684a4223345d",
+            "run_item_id": "a1930e28-54f4-5fb2-8740-23cb39882ffe"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "2850446c-16b7-4f2b-bb60-ca3010e8ac11",
+          "call_id": "chatcmpl-tool-8d2290e3b0ca9760",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "a49f876d-7ba1-5093-9422-684a4223345d",
+            "run_item_id": "a1930e28-54f4-5fb2-8740-23cb39882ffe"
+          },
+          "output_payload": {
+            "result": {
+              "url": "http://127.0.0.1:64112/",
+              "count": "1",
+              "title": "场景计数验收",
+              "pageId": "b04310e40af64ed6956578c805ee2247"
+            },
+            "status": "success"
+          }
+        }
+      ],
+      "events": [
+        {
+          "method": "GET",
+          "page_id": "07a885db2dd94129aa8e683c5a0c2d4b"
+        },
+        {
+          "method": "POST",
+          "page_id": "07a885db2dd94129aa8e683c5a0c2d4b",
+          "count": 1
+        },
+        {
+          "method": "GET",
+          "page_id": "b04310e40af64ed6956578c805ee2247"
+        },
+        {
+          "method": "POST",
+          "page_id": "b04310e40af64ed6956578c805ee2247",
+          "count": 1
+        }
+      ],
+      "source_hashes": {
+        "final-run.json": "496b8ebfcb3f61f48fdfa6aabe4960283fb47d804e559b04beccb71a127818ca",
+        "tool-jobs.json": "5eb9fdba7f5cb0de3435cd1e33b52d074df89ce18ae5dad56c1e9e8e0c047026",
+        "target-events-finally.json": "50bb634756224ca97a1c32175ab143790aeadeb8cefcc30a17ff49a63720d609"
+      }
+    },
+    {
+      "directory": "p5-default-ui-scene-live-current3",
+      "scenario": "positive",
+      "detail": {
+        "results": [
+          {
+            "run_id": "167cafb0-6545-5ac9-af7c-17061cd6941a",
+            "run_item_id": "a89297bd-27c7-55cc-9255-be5f2499bf66",
+            "status": "passed",
+            "actual": {
+              "receipt": {
+                "steps": [
+                  {
+                    "checks": [
+                      {
+                        "name": "初始计数为 0",
+                        "reason": "打开页面后实际读取 #count 文本为 \"0\"，满足冻结用例自包含的初始条件。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-a5ae20158480be53",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "initial_count"
+                        ]
+                      },
+                      {
+                        "name": "真实点击一次后计数等于 1",
+                        "reason": "在同一持久会话中执行 click #increment 一次，随后只读 eval 取得 #count 实际值为 \"1\"，与 expected_count 一致。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-96e0895c3066c0c8",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "expected_count"
+                        ]
+                      },
+                      {
+                        "name": "用例步骤预期：计数变为 1",
+                        "reason": "content_json.steps[0].expected 为 \"1\"，点击后同一会话实际计数观测值为 \"1\"，判定通过。",
+                        "verdict": "passed",
+                        "operator": "equals",
+                        "observations": [
+                          {
+                            "call_id": "chatcmpl-tool-96e0895c3066c0c8",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        ],
+                        "expected_path_tokens": [
+                          "steps",
+                          "0",
+                          "expected"
+                        ]
+                      }
+                    ],
+                    "status": "passed",
+                    "outputs": {},
+                    "summary": "读取固定场景知识后，在同一浏览器会话打开项目页面并确认初始计数为 0，真实点击 #increment 一次，再以只读方式读取 #count 与 #page-id。实际计数为 1，与冻结预期一致；#page-id 为 f50af4589349476db95c74a3f7e1a188。",
+                    "item_key": "count-one",
+                    "output_source": null,
+                    "output_structure": {
+                      "kind": "object",
+                      "fields": {
+                        "page_id": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-96e0895c3066c0c8",
+                            "output_path_tokens": [
+                              "result",
+                              "pageId"
+                            ]
+                          }
+                        },
+                        "count_after_click": {
+                          "kind": "reference",
+                          "source": {
+                            "call_id": "chatcmpl-tool-96e0895c3066c0c8",
+                            "output_path_tokens": [
+                              "result",
+                              "count"
+                            ]
+                          }
+                        }
+                      }
+                    }
+                  }
+                ],
+                "schema_version": 1
+              }
+            },
+            "evidence_refs": [
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "740ba69b-ed8d-4146-abd0-55abbae02772",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-a5ae20158480be53",
+                  "tool_key": "browser-control"
+                }
+              },
+              {
+                "evidence_type": "tool_job",
+                "evidence_id": "dc9cf3e8-3057-4963-b7c5-20f70b72186a",
+                "label": "Browser Control",
+                "uri": null,
+                "metadata": {
+                  "call_id": "chatcmpl-tool-96e0895c3066c0c8",
+                  "tool_key": "browser-control"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "jobs": [
+        {
+          "id": "2c755c3b-a523-42aa-8882-67afa236197a",
+          "call_id": "chatcmpl-tool-bcad30c03ce6e33d",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "167cafb0-6545-5ac9-af7c-17061cd6941a",
+            "run_item_id": "a89297bd-27c7-55cc-9255-be5f2499bf66"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        },
+        {
+          "id": "dc9cf3e8-3057-4963-b7c5-20f70b72186a",
+          "call_id": "chatcmpl-tool-96e0895c3066c0c8",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "167cafb0-6545-5ac9-af7c-17061cd6941a",
+            "run_item_id": "a89297bd-27c7-55cc-9255-be5f2499bf66"
+          },
+          "output_payload": {
+            "result": {
+              "count": "1",
+              "pageId": "f50af4589349476db95c74a3f7e1a188"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "740ba69b-ed8d-4146-abd0-55abbae02772",
+          "call_id": "chatcmpl-tool-a5ae20158480be53",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "167cafb0-6545-5ac9-af7c-17061cd6941a",
+            "run_item_id": "a89297bd-27c7-55cc-9255-be5f2499bf66"
+          },
+          "output_payload": {
+            "result": {
+              "count": "0",
+              "pageId": "f50af4589349476db95c74a3f7e1a188"
+            },
+            "status": "success"
+          }
+        },
+        {
+          "id": "63962867-d7e1-45ca-af15-df5c9fdd77e4",
+          "call_id": "chatcmpl-tool-a6a725c0d0d97175",
+          "tool_key": "browser-control",
+          "metadata": {
+            "run_id": "167cafb0-6545-5ac9-af7c-17061cd6941a",
+            "run_item_id": "a89297bd-27c7-55cc-9255-be5f2499bf66"
+          },
+          "output_payload": {
+            "status": "success"
+          }
+        }
+      ],
+      "events": [
+        {
+          "method": "GET",
+          "page_id": "a5d61eef4bb742c38010feac4e1187d9"
+        },
+        {
+          "method": "POST",
+          "page_id": "a5d61eef4bb742c38010feac4e1187d9",
+          "count": 1
+        },
+        {
+          "method": "GET",
+          "page_id": "f50af4589349476db95c74a3f7e1a188"
+        },
+        {
+          "method": "POST",
+          "page_id": "f50af4589349476db95c74a3f7e1a188",
+          "count": 1
+        }
+      ],
+      "source_hashes": {
+        "final-run.json": "a6980fd7958800d335dbc4dba12d1083733f72c9e21da9977684288378cfbc70",
+        "tool-jobs.json": "54a49f8ac2b7a291950d23edf1a1a55a35d79c60def071e79f9892bbf5b9da42",
+        "target-events-finally.json": "95355407e2112af819e378ea0d6db6f009556bae4cf8340135854a4fc6538805"
+      }
+    }
+  ],
+  "incomplete_correction": {
+    "result_status": "error",
+    "error_message": "执行回执模型输出未完整结束: length",
+    "original_response": {
+      "model_response_text": "实际点击一次后当前计数为 \"1\"，与冻结用例的预期计数 \"2\" 不符。按照执行说明，不得通过增加点击次数或修改 DOM 来满足预期，因此正式判定为 failed。以下是证据回执：\n\n{\"schema_version\":1,\"steps\":[{\"item_key\":\"target-count-one\",\"status\":\"failed\",\"summary\":\"在共享浏览器会话打开 http://127.0.0.1:56972/（标题：场景计数验收），只读确认初始计数为 \\\"0\\\"，符合冻结初始条件；随后真实点击 #increment「增加一次」一次，同一会话只读读取 #count 实际值为 \\\"1\\\"，与冻结预期 \\\"2\\\" 不符。未重复点击或改 DOM 迎合预期。\",\"checks\":[{\"name\":\"初始计数为0\",\"expected_path_tokens\":[\"initial_count\"],\"observations\":[{\"call_id\":\"chatcmpl-tool-b13abe8cecd70ccf\",\"output_path_tokens\":[\"result\",\"count\"]}],\"operator\":\"equals\",\"verdict\":\"passed\",\"reason\":\"打开页面后只读读取 #count 初始值为 \\\"0\\\"，与冻结用例 initial_count \\\"0\\\" 一致。\"},{\"name\":\"点击一次后计数等于预期\",\"expected_path_tokens\":[\"expected_count\"],\"observations\":[{\"call_id\":\"chatcmpl-tool-8b15726e7165c744\",\"output_path_tokens\":[\"result\",\"count\"]}],\"operator\":\"equals\",\"verdict\":\"failed\",\"reason\":\"真实点击一次后 #count 实际值为 \\\"1\\\"，与冻结预期 expected_count \\\"2\\\" 不一致；未以增加点击次数或赋值 DOM 方式满足预期。\"},{\"name\":\"步骤预期结果比对\",\"expected_path_tokens\":[\"steps\",\"0\",\"expected\"],\"observations\":[{\"call_id\":\"chatcmpl-tool-8b15726e7165c744\",\"output_path_tokens\":[\"result\",\"count\"]}],\"operator\":\"equals\",\"verdict\":\"failed\",\"reason\":\"步骤 expected 为 \\\"2\\\"，本次执行实际观测为 \\\"1\\\"，页面真实点击一次后计数未达到冻结预期值。\"}],\"outputs\":{\"initial_count_observed\":{\"call_id\":\"chatcmpl-tool-b13abe8cecd70ccf\",\"output_path_tokens\":[\"result\",\"count\"]},\"final_count_observed\":{\"call_id\":\"chatcmpl-tool-8b15726e7165c744\",\"output_path_tokens\":[\"result\",\"count\"]},\"page_id\":{\"call_id\":\"chatcmpl-tool-8b15726e7165c744\",\"output_path_tokens\":[\"result\",\"pageId\"]}}}]}",
+      "model_response_summary": {
+        "mode": "ok",
+        "usage": {
+          "total_tokens": 25360,
+          "cached_tokens": 7680,
+          "prompt_tokens": 23145,
+          "completion_tokens": 2215,
+          "prompt_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "image_tokens": null,
+            "cached_tokens": 7680,
+            "cache_write_tokens": null
+          },
+          "completion_tokens_details": {
+            "text_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 0,
+            "accepted_prediction_tokens": null,
+            "rejected_prediction_tokens": null
+          }
+        },
+        "provider": "openai",
+        "transport": "openai_chat_completions",
+        "response_id": "cc2f0652384b374673a10790566d36a1.1670a2528186ea7778c90f76a7da15f0",
+        "stop_reason": null,
+        "finish_reason": "stop",
+        "tool_fallback": "",
+        "content_preview": "实际点击一次后当前计数为 \"1\"，与冻结用例的预期计数 \"2\" 不符。按照执行说明，不得通过增加点击次数或修改 DOM 来满足预期，因此正式判定为 failed。以下是证据回执： {\"schema_version\":1,\"steps\":[{\"item_key\":\"target-count-one\",\"status\":\"failed\",\"summary\"...",
+        "tool_call_count": 0,
+        "tool_call_names": [],
+        "provider_profile": "openai",
+        "completion_status": "complete",
+        "stream_terminal_received": true
+      }
+    },
+    "source_hashes": {
+      "final-run.json": "a29dbf9f1bc0567317b2914b8d3d633231e99e8c408bbe95c63739c023680f87",
+      "postgres-public.json": "dc84bdd4be2c5837c024bc604101404d3ad30f3bf9c6ef6dccd40b0889a53803",
+      "correction-response-public.json": "1a73efe9e438b71f49b93ee9cd5365e5a95a48a6dda2a18795c77cd895e14e14"
+    },
+    "correction_response": {
+      "text": "",
+      "tool_calls": [],
+      "response_summary": {
+        "completion_status": "truncated",
+        "content_preview": "",
+        "finish_reason": "length",
+        "mode": "incomplete_response",
+        "provider": "openai",
+        "provider_profile": "openai",
+        "request_mapping": {
+          "decisions": [
+            {
+              "action": "prompt_fallback",
+              "option": "output_format",
+              "reason": "format_not_declared"
+            }
+          ],
+          "version": "model-request-v1"
+        },
+        "response_id": "a0634610d9e4312e6ae647c4c15c7810.1532045c563bffa78e2ac3aaceb036c0",
+        "stop_reason": null,
+        "stream_terminal_received": true,
+        "tool_call_count": 0,
+        "tool_call_names": [],
+        "tool_fallback": "",
+        "transport": "openai_chat_completions",
+        "usage": {
+          "completion_tokens": 8192,
+          "completion_tokens_details": {
+            "accepted_prediction_tokens": null,
+            "audio_tokens": null,
+            "reasoning_tokens": 0,
+            "rejected_prediction_tokens": null,
+            "text_tokens": null
+          },
+          "prompt_tokens": 11213,
+          "prompt_tokens_details": {
+            "audio_tokens": null,
+            "cache_write_tokens": null,
+            "cached_tokens": 0,
+            "image_tokens": null,
+            "text_tokens": null
+          },
+          "total_tokens": 19405
+        }
+      }
+    }
+  }
+}

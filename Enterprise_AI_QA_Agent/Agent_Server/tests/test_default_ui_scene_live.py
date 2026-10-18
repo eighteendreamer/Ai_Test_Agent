@@ -28,13 +28,42 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
-from src.schemas.model_config import model_invocation_parameters
+from src.schemas.model_config import ModelConfigRecord, model_invocation_parameters
+from src.schemas.model_request_options import ModelRequestProfile
 from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
 from src.schemas.settings import ModelConfigUpdateRequest
 
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_DEFAULT_UI_SCENE") != "1",
     reason="real default provider, owned HTTP/Chromium and isolated MySQL/PG/Redis/RustFS")
+
+
+def verify_observation_page(detail, jobs, page_id, recording_page):
+    """Follow formal observations to persisted jobs, rather than projected outputs."""
+    from src.application.test_runs.literal_evidence import literal_value
+    result = detail["results"][0]
+    observations = [observation for step in result["actual"]["receipt"]["steps"]
+        for check in step.get("checks", []) for observation in check.get("observations", [])]
+    evidence_job_ids = {reference["evidence_id"] for reference in result.get("evidence_refs", [])
+        if reference.get("evidence_type") == "tool_job"}
+    browser_jobs_by_call = {job["call_id"]: job for job in jobs if job["tool_key"] == "browser-control"}
+    assert observations, "正式结果必须引用实际浏览器观察"
+    observed_page_ids = set()
+    for observation in observations:
+        job = browser_jobs_by_call[observation["call_id"]]
+        assert job["id"] in evidence_job_ids, "正式结果必须引用观察对应的ToolJob"
+        assert job["metadata"]["run_id"] == result["run_id"]
+        assert job["metadata"]["run_item_id"] == result["run_item_id"]
+        literal_value(job["output_payload"], observation["output_path_tokens"])
+        value = job["output_payload"].get("result")
+        if isinstance(value, dict):
+            # These are the two keys actually emitted by captured default-model
+            # eval expressions, not a production output normalization rule.
+            for key in ("page_id", "pageId"):
+                if key in value:
+                    observed_page_ids.add(value[key])
+    assert page_id != recording_page
+    assert observed_page_ids == {page_id}, "正式观察必须来自本次执行页面，不能复用录制页面"
 
 
 class CountPage:
@@ -100,6 +129,12 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
     origin = target.start()
     original = MySQLModelConfigStore(get_settings()).get_default_active()
     save("model-parameters.json", model_invocation_parameters(original))
+    invocation_model = original.model_copy(deep=True)
+    profile_path = os.getenv("QA_DEFAULT_UI_REQUEST_PROFILE")
+    if profile_path:
+        invocation_model.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
+        invocation_model = ModelConfigRecord.model_validate(invocation_model.model_dump())
+    save("isolated-model-parameters.json", model_invocation_parameters(invocation_model))
     api = cleanup = recording_id = project_id = None
     try:
         async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
@@ -107,13 +142,13 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
             settings.orchestration.redis_task_outbox_streams = settings.orchestration.case_planning_task_stream
             models = MySQLModelConfigStore(settings); models.initialize()
             model = models.upsert(ModelConfigUpdateRequest(model_name=original.model_id,
-                provider=original.provider, transport=original.transport, request_profile=original.request_profile,
+                provider=original.provider, transport=original.transport, request_profile=invocation_model.request_profile,
                 base_url=original.api_base_url, api_key=original.api_key, auth_type=original.auth_type,
                 oauth_provider=original.oauth_provider, oauth_refresh_token=original.oauth_refresh_token,
                 applications=original.applications, is_active=True, use_provider_defaults=False,
                 capability_overrides=original.capability_overrides, context_window=original.context_window,
                 max_output_tokens=original.max_output_tokens))
-            assert model_invocation_parameters(models.get_default_active()) == model_invocation_parameters(original)
+            assert model_invocation_parameters(models.get_default_active()) == model_invocation_parameters(invocation_model)
             processes.env = child_environment(settings)
             processes.env["QA_DEFAULT_PROBE_DIR"] = str(output / "physical")
             port = free_port()
@@ -229,6 +264,25 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
                         verify_owned_approval(approval, project_id=project_id, run_id=run_id, item_id=waiting["id"], origin=origin)
                         await post(f"/run-items/{waiting['id']}/approval", {"approval_id": waiting["approval_id"], "decision": "approved"})
                     detail = await get("/runs/" + run_id); save("final-run.json", detail)
+                    for result in detail.get("results", []):
+                        actual = result.get("actual", {})
+                        correction = actual.get("receipt_correction") or actual.get("execution_checkpoint", {}).get("receipt_correction")
+                        if not correction:
+                            continue
+                        correction_downloads = []
+                        for kind in ("request", "response"):
+                            reference = correction.get(kind)
+                            if not reference:
+                                continue
+                            raw = (await objects.read_object_uri(reference["uri"]))["content"]
+                            assert len(raw) == reference["size_bytes"] and hashlib.sha256(raw).hexdigest() == reference["sha256"]
+                            value = json.loads(raw)
+                            if kind == "response":
+                                value = {key: value[key] for key in ("text", "tool_calls", "response_summary") if key in value}
+                            save("correction-" + kind + "-public.json", value)
+                            correction_downloads.append({**reference, "kind": kind, "original_hash_verified": True,
+                                "public_projection_only": kind == "response"})
+                        save("correction-downloads.json", correction_downloads)
                     with postgres_connect(settings) as conn, conn.cursor() as cur:
                         cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table}")
                         jobs = [dict(r) for r in cur.fetchall()]
@@ -255,10 +309,11 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
                     assert knowledge_jobs and any(scene["version"]["content_hash"] in json.dumps(j, default=str) for j in knowledge_jobs)
                     assert any("计数按钮" in json.dumps(j, ensure_ascii=False, default=str) for j in knowledge_jobs)
                     effects = [e for e in target.events if e["method"] == "POST"]
+                    save("target-events.json", target.events)
                     assert len(effects) == 2 and effects[0]["page_id"] == recording_page
                     assert effects[1]["page_id"] != recording_page and effects[1]["count"] == 1, effects
                     assert len(detail["results"]) == 1 and detail["results"][0]["status"] == ("passed" if expected == "1" else "failed"), detail
-                    assert effects[1]["page_id"] in json.dumps(detail), "正式结果必须引用本次页面，不能复用录制结果"
+                    verify_observation_page(detail, jobs, effects[1]["page_id"], recording_page)
                     sends = len(list((output / "physical").glob("*.request.json")))
                     with postgres_connect(settings) as conn, conn.cursor() as cur:
                         cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table} WHERE payload->>'run_id'=%s", (run_id,))
@@ -270,6 +325,7 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
                     assert len([e for e in target.events if e["method"] == "POST"]) == 2
                     assert len(list((output / "physical").glob("*.request.json"))) == sends
                     save("verification.json", {"controlled_model": False, "default_planning": True,
+                        "isolated_request_profile_override": bool(profile_path),
                         "default_execution": True, "scene_expected_receipt_v2": False,
                         "authority": "server-owned controlled-page fixture, not public authorization workflow",
                         "status": detail["results"][0]["status"], "expected": expected, "events": target.events,
@@ -309,3 +365,4 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
             if p.is_file() and (p.suffix in {".stdout", ".stderr"} or p.name == "docker.json"):
                 shutil.copyfile(p, output / p.name)
         target.close()
+        assert model_invocation_parameters(MySQLModelConfigStore(get_settings()).get_default_active()) == model_invocation_parameters(original)

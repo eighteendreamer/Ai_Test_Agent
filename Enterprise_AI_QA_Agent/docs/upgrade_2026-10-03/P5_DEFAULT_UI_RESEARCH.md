@@ -1,5 +1,7 @@
 # 默认 UI 场景知识与正式用例执行调研
 
+当前状态更新（2026-10-18）：本文以下为初期失败现场，不能直接当作当前待实现清单。持续command eval结构化观察已实现；当前默认正向与终态重投通过，负向在隔离low/json_object profile下完整通过，但原默认配置仍出现纠正length失败。最新原件及严格范围见 [P5_UI_EVIDENCE_CURRENT_RESEARCH.md](P5_UI_EVIDENCE_CURRENT_RESEARCH.md)；不据此宣称完整P0—P5或纠正截断已修复。
+
 基线：41c24ed6。范围：现有 UI Agent 读取固定场景并真实操作、形成正式结果；不把受控模型的场景回执专项当默认模型通过。
 
 ## 依据与缺口
