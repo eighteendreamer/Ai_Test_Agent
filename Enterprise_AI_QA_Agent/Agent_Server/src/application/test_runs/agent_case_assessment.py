@@ -315,7 +315,8 @@ class AgentCaseAssessmentService:
                     try:
                         expected = literal_value(source, check.expected_path_tokens)
                     except ValueError:
-                        raise ValueError(f"执行项 {key} 的 expected_path_tokens 不存在于其固定 expected_source: "
+                        raise ValueError(f"执行项 {key} 的 expected_path_tokens 不存在于其固定 expected_source 根对象；"
+                            "正式用例路径相对 content_json 内容本身，不能包含 content_json 包装前缀: "
                             + json.dumps(check.expected_path_tokens, ensure_ascii=False)) from None
                 observed = [observe(ref) for ref in check.observations]
                 usable = all(job.status in {ToolJobStatus.completed, ToolJobStatus.partial} for job, _ in observed)

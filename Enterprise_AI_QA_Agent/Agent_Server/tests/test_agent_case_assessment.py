@@ -421,6 +421,8 @@ async def test_rejected_real_model_source_reference_is_visible_to_read_only_corr
         assert 'validation_feedback' in request.messages[0]['content']
         assert 'execution_items' in request.messages[0]['content']
         assert 'expected_source' in request.messages[0]['content']
+        assert 'content_json, execution_items, plan_item' in request.system_prompt
+        assert 'one receipt entry per requested execution item' in request.system_prompt
         assert request.trace_context['phase'] == 'case_assessment'
         assert len(business_http[1]) == 3
 
