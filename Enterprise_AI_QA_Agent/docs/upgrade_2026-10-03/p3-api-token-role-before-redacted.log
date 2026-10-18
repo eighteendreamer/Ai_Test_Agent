@@ -1,0 +1,176 @@
+FFFF..FF..FF....FFFFFFFFFFFFF.                                           [100%]
+================================== FAILURES ===================================
+_ test_actual_http_token_role_and_explicit_path_are_preserved[refresh-only-False] _
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'refresh-only', 'worker': False, 'token_field': 'access_token', 'events': [{'method': 'POST', 'path': '/lo...'credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'refresh'}], ...}
+E   assert 'refresh' == 'absent'
+E     
+E     - absent
+E     + refresh
+_ test_actual_http_token_role_and_explicit_path_are_preserved[refresh-only-True] _
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'refresh-only', 'worker': True, 'token_field': 'access_token', 'events': [{'method': 'POST', 'path': '/log...'credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'refresh'}], ...}
+E   assert 'refresh' == 'absent'
+E     
+E     - absent
+E     + refresh
+_ test_actual_http_token_role_and_explicit_path_are_preserved[id-only-False] __
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'id-only', 'worker': False, 'token_field': 'access_token', 'events': [{'method': 'POST', 'path': '/login',...credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'identity'}], ...}
+E   assert 'identity' == 'absent'
+E     
+E     - absent
+E     + identity
+__ test_actual_http_token_role_and_explicit_path_are_preserved[id-only-True] __
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'id-only', 'worker': True, 'token_field': 'access_token', 'events': [{'method': 'POST', 'path': '/login', ...credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'identity'}], ...}
+E   assert 'identity' == 'absent'
+E     
+E     - absent
+E     + identity
+__ test_actual_http_token_role_and_explicit_path_are_preserved[nested-False] __
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'nested', 'worker': False, 'token_field': 'data.sessions[0].credential', 'events': [{'method': 'POST', 'pa..., 'credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'decoy'}], ...}
+E   assert 'decoy' == 'access'
+E     
+E     - access
+E     + decoy
+__ test_actual_http_token_role_and_explicit_path_are_preserved[nested-True] ___
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'nested', 'worker': True, 'token_field': 'data.sessions[0].credential', 'events': [{'method': 'POST', 'pat..., 'credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'decoy'}], ...}
+E   assert 'decoy' == 'access'
+E     
+E     - access
+E     + decoy
+_ test_actual_http_token_role_and_explicit_path_are_preserved[custom-missing-False] _
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'custom-missing', 'worker': False, 'token_field': 'data.credential', 'events': [{'method': 'POST', 'path':..., 'credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'decoy'}], ...}
+E   assert 'decoy' == 'absent'
+E     
+E     - absent
+E     + decoy
+_ test_actual_http_token_role_and_explicit_path_are_preserved[custom-missing-True] _
+tests\test_api_token_role_http.py:110: in test_actual_http_token_role_and_explicit_path_are_preserved
+    assert events[-1]["credential_role"] == ("access" if available else "absent"), facts
+E   AssertionError: {'variant': 'custom-missing', 'worker': True, 'token_field': 'data.credential', 'events': [{'method': 'POST', 'path': ..., 'credential_role': 'absent'}, {'method': 'GET', 'path': '/profile', 'status': 401, 'credential_role': 'decoy'}], ...}
+E   assert 'decoy' == 'absent'
+E     
+E     - absent
+E     + decoy
+___ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[None] ___
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+__ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[False] ___
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+__ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[12345] ___
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+___ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[bad3] ___
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+___ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[bad4] ___
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+_____ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[] _____
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+_ test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[line\r\nbreak] _
+tests\test_api_token_role_http.py:122: in test_invalid_explicit_token_does_not_fall_back_to_unrelated_token
+    assert session.token == "" and not manager.has_valid_session()
+E   AssertionError: assert ('[REDACTED_TEMP_TEST_CREDENTIAL_PREVIEW]' == ''
+E     
+E     + [REDACTED_TEMP_TEST_CREDENTIAL])
+_ test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"refresh_token":"sample","access_token":"sample"}-access_token] _
+tests\test_api_token_role_http.py:138: in test_document_token_hint_respects_field_boundaries_and_access_role
+    assert hint.get("token_field") == expected, hint
+E   AssertionError: {'type': 'bearer', 'token_field': 'token'}
+E   assert 'token' == 'access_token'
+E     
+E     - access_token
+E     + token
+_ test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"id_token":"sample","accessToken":"sample"}-accessToken] _
+tests\test_api_token_role_http.py:138: in test_document_token_hint_respects_field_boundaries_and_access_role
+    assert hint.get("token_field") == expected, hint
+E   AssertionError: {'type': 'bearer', 'token_field': 'id_token'}
+E   assert 'id_token' == 'accessToken'
+E     
+E     - accessToken
+E     + id_token
+_ test_document_token_hint_respects_field_boundaries_and_access_role[Bearer token header. Response: {"access_token":"sample"}-access_token] _
+tests\test_api_token_role_http.py:138: in test_document_token_hint_respects_field_boundaries_and_access_role
+    assert hint.get("token_field") == expected, hint
+E   AssertionError: {'type': 'bearer', 'token_field': 'token'}
+E   assert 'token' == 'access_token'
+E     
+E     - access_token
+E     + token
+_ test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"refresh_token":"sample"}-None] _
+tests\test_api_token_role_http.py:138: in test_document_token_hint_respects_field_boundaries_and_access_role
+    assert hint.get("token_field") == expected, hint
+E   AssertionError: {'type': 'bearer', 'token_field': 'token'}
+E   assert 'token' == None
+E    +  where 'token' = <built-in method get of dict object at 0x0000012A58976200>('token_field')
+E    +    where <built-in method get of dict object at 0x0000012A58976200> = {'type': 'bearer', 'token_field': 'token'}.get
+_ test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"id_token":"sample"}-None] _
+tests\test_api_token_role_http.py:138: in test_document_token_hint_respects_field_boundaries_and_access_role
+    assert hint.get("token_field") == expected, hint
+E   AssertionError: {'type': 'bearer', 'token_field': 'id_token'}
+E   assert 'id_token' == None
+E    +  where 'id_token' = <built-in method get of dict object at 0x0000012A58978500>('token_field')
+E    +    where <built-in method get of dict object at 0x0000012A58978500> = {'type': 'bearer', 'token_field': 'id_token'}.get
+_ test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"my_token_count":20}-None] _
+tests\test_api_token_role_http.py:138: in test_document_token_hint_respects_field_boundaries_and_access_role
+    assert hint.get("token_field") == expected, hint
+E   AssertionError: {'type': 'bearer', 'token_field': 'token'}
+E   assert 'token' == None
+E    +  where 'token' = <built-in method get of dict object at 0x0000012A5891EC80>('token_field')
+E    +    where <built-in method get of dict object at 0x0000012A5891EC80> = {'type': 'bearer', 'token_field': 'token'}.get
+=========================== short test summary info ===========================
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[refresh-only-False]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[refresh-only-True]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[id-only-False]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[id-only-True]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[nested-False]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[nested-True]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[custom-missing-False]
+FAILED tests/test_api_token_role_http.py::test_actual_http_token_role_and_explicit_path_are_preserved[custom-missing-True]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[None]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[False]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[12345]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[bad3]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[bad4]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[]
+FAILED tests/test_api_token_role_http.py::test_invalid_explicit_token_does_not_fall_back_to_unrelated_token[line\r\nbreak]
+FAILED tests/test_api_token_role_http.py::test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"refresh_token":"sample","access_token":"sample"}-access_token]
+FAILED tests/test_api_token_role_http.py::test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"id_token":"sample","accessToken":"sample"}-accessToken]
+FAILED tests/test_api_token_role_http.py::test_document_token_hint_respects_field_boundaries_and_access_role[Bearer token header. Response: {"access_token":"sample"}-access_token]
+FAILED tests/test_api_token_role_http.py::test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"refresh_token":"sample"}-None]
+FAILED tests/test_api_token_role_http.py::test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"id_token":"sample"}-None]
+FAILED tests/test_api_token_role_http.py::test_document_token_hint_respects_field_boundaries_and_access_role[Bearer authentication: {"my_token_count":20}-None]
+21 failed, 9 passed in 15.35s

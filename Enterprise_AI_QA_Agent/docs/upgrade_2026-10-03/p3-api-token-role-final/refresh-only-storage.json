@@ -1,0 +1,40 @@
+{
+  "variant": "refresh-only",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "credential_role": "absent"
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 401,
+      "credential_role": "absent"
+    }
+  ],
+  "jobs": [
+    {
+      "job_id": "f84fea7a-5584-47de-bd3c-8c7109a52947",
+      "response_status": 200,
+      "frozen_field": "access_token",
+      "replay_same_job": true
+    },
+    {
+      "job_id": "fba200ec-9962-4d6b-b414-de74c5582f6a",
+      "response_status": 401,
+      "frozen_field": "access_token",
+      "replay_same_job": true
+    }
+  ],
+  "private_row_counts": {
+    "agent_sessions_api_dispatch_inputs": 2,
+    "agent_sessions_api_credentials": 1
+  },
+  "terminal_extra_http": 0,
+  "public_selected_credentials_redacted": true,
+  "encrypted_private_storage": true,
+  "external_ai_calls": 0,
+  "scope": "isolated real stores, production ToolRuntime/Worker runner, service recreation; no process kill"
+}

@@ -1,0 +1,26 @@
+{
+  "variant": "refresh-only",
+  "worker": true,
+  "token_field": "access_token",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "credential_role": "absent"
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 401,
+      "credential_role": "refresh"
+    }
+  ],
+  "valid_session": true,
+  "terminal_extra_http": 0,
+  "statuses": [
+    "completed",
+    "completed"
+  ],
+  "external_ai_calls": 0
+}

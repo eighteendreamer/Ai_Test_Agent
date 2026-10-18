@@ -75,7 +75,7 @@ class ApiDocParser:
     }
     LOGIN_PATH_HINT = re.compile(r"/(login|signin|sign_in|auth|oauth|token)", re.IGNORECASE)
     TOKEN_FIELD_PATTERN = re.compile(
-        r"(?i)(access_token|accessToken|id_token|token|apikey|api_key)"
+        r"(?i)(?<![a-z0-9_])(access_token|accessToken|token|apikey|api_key)(?![a-z0-9_])"
     )
     # Patterns for extracting request body fields from markdown sections.
     JSON_BLOCK_PATTERN = re.compile(r"```(?:json)?\s*\n(.*?)\n```", re.DOTALL)
@@ -336,9 +336,12 @@ class ApiDocParser:
 
         if any(keyword in lowered for keyword in self.AUTH_KEYWORDS):
             hint["type"] = AUTH_BEARER
-            token_match = self.TOKEN_FIELD_PATTERN.search(content or "")
-            if token_match:
-                hint["token_field"] = token_match.group(1)
+            token_fields = [match.group(1) for match in self.TOKEN_FIELD_PATTERN.finditer(content or "")]
+            if token_fields:
+                # A generic mention of token must not shadow an explicit access
+                # field. Refresh/identity names are not access-token hints.
+                priorities = {"access_token": 0, "accesstoken": 1, "token": 2, "apikey": 3, "api_key": 3}
+                hint["token_field"] = min(token_fields, key=lambda field: priorities[field.lower()])
 
         if "cookie" in lowered and hint["type"] == AUTH_NONE:
             hint["type"] = AUTH_COOKIE

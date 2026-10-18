@@ -16,6 +16,7 @@ from uuid import uuid4
 import httpx
 
 from src.modes.api_testing_mode.campaign_state import ApiCookieRecord, CredentialSession
+from src.modes.api_testing_mode.input_binding import extract_path_value
 from src.modes.api_testing_mode.contracts import (
     AUTH_BEARER,
     AUTH_BASIC,
@@ -182,13 +183,7 @@ class CredentialManager:
         cookie_records: list[ApiCookieRecord] | None = None,
         prior_credential_session_id: str = "",
     ) -> CredentialSession:
-        token = str(response_body.get(token_field) or response_body.get("token") or "")
-        if not token:
-            for key, value in response_body.items():
-                if "token" in key.lower() and isinstance(value, str) and len(value) > 10:
-                    token = value
-                    token_field = key
-                    break
+        token, token_field = self._login_token(response_body, token_field)
 
         prior = self.get(prior_credential_session_id)
         headers = dict(prior.headers) if prior is not None else {}
@@ -219,6 +214,22 @@ class CredentialManager:
             "token_from_response": token_from_response,
         })
         return session
+
+    @staticmethod
+    def _login_token(response_body: dict[str, Any], token_field: str) -> tuple[str, str]:
+        """Honor the declared field; never infer access from refresh/id tokens."""
+        # Existing default access_token/token compatibility, with accessToken
+        # already recognized by ApiDocParser. Explicit project paths are exact.
+        fields = ("access_token", "accessToken", "token") if token_field == "access_token" else (token_field,)
+        selected = next((field for field in fields if field in response_body), token_field)
+        value = response_body[selected] if selected in response_body else extract_path_value(response_body, selected)
+        if isinstance(value, str) and value.strip() and "\r" not in value and "\n" not in value:
+            return value, selected
+        logger.warning("api_login_token_unavailable", extra={
+            "source": "login_response", "field": selected,
+            "reason": "missing_or_invalid_string", "fallback_to_unrelated_field": False,
+        })
+        return "", selected
 
     def get(self, credential_session_id: str) -> CredentialSession | None:
         return self._sessions.get(credential_session_id)

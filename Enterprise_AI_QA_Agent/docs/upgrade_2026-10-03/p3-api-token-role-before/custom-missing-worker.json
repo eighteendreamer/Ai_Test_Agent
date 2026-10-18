@@ -1,0 +1,26 @@
+{
+  "variant": "custom-missing",
+  "worker": true,
+  "token_field": "data.credential",
+  "events": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "credential_role": "absent"
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 401,
+      "credential_role": "decoy"
+    }
+  ],
+  "valid_session": true,
+  "terminal_extra_http": 0,
+  "statuses": [
+    "completed",
+    "completed"
+  ],
+  "external_ai_calls": 0
+}

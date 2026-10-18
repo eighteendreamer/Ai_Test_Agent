@@ -3871,19 +3871,19 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 
 ### 7.63 Agent API 报告页真实产品验收〔2026-10-17〕
 
-基线`e4ed0282`，依据`P3_API_REPORT_PRESENTATION_RESEARCH.md`和既有性能/安全报告产品夹具。先确认报告页必须走生产`/reports`、真实PG/RustFS工件、构建版App和Chromium，不能用报告服务单测替代；API父ToolJob沿现有受控本地HTTP campaign产生，未调用外部AI。
+基线`e4ed0282`，依据`P3_API_REPORT_PRESENTATION_RESEARCH.md`和既有性能/安全报告产品夹具。报告页走生产`/reports`、PG回读、构建版App和Chromium，API父ToolJob沿现有受控本地HTTP campaign产生，未调用外部AI。该夹具虽含RustFS环境，但API报告实际沿用PG的`inline://artifact`/`__content_text`，不能据此声称报告原件已存入RustFS或验收下载链接。
 
 **本批已验收**：在隔离MySQL/PG/RustFS/Redis中执行真实`ToolRuntime`并由新生产API进程回读，`/reports`将当前`api_test_report_json`绑定到父ToolJob；Vite preview加载构建版App，Chromium打开报告页，显示3个API任务卡片、总任务数3、通过3、等级“良好”，页面错误数0，网络请求成功。`p3-api-report-product-final2.xml/log`为1通过、0失败、0跳过、49.46秒；页面文本、ARIA、截图、网络、报告列表和浏览器观察保存在`p3-api-report-product-evidence2/`。首次断言误把Markdown表格分隔符当作浏览器文本，`p3-api-report-product-final.xml/log`原样保留；按真实渲染语义修正后第二次完整产品运行通过。
 
-该批只关闭“API报告结果呈现”的独立PG/RustFS/浏览器验收，不扩大为默认AI项目选取→排序→补全→执行或完整Agent质量通过；无新表、配置、依赖或模型协议变更。自动401续期/安全重放、准备生命周期、运行中修订、复杂UI知识/失败定位、持续性能/安全、需求业务评审/部署/历史迁移及其他P0—P5仍未完成。Step已认证，外部AI按此前安排暂缓。
+该批关闭对应API报告列表和页面呈现范围的PG/浏览器验收；未覆盖RustFS报告原件下载、浏览器打开后的服务重启或任意动态凭据字段脱敏，不扩大为默认AI项目选取→排序→补全→执行或完整Agent质量通过。无新表、配置、依赖或模型协议变更。自动401续期/安全重放、准备生命周期、运行中修订、复杂UI知识/失败定位、持续性能/安全、需求业务评审/部署/历史迁移及其他P0—P5仍未完成。Step已认证，外部AI按此前安排暂缓。
 
 ### 7.64 分任务证据规划七变体真实存储复核〔2026-10-17〕
 
-基线`ba7676ce`，依据`P2_EFFECT_TASKS_RESEARCH.md`、`P4_EFFECT_LIFECYCLE_RESEARCH.md`和现有`test_planning_effect_tasks_live.py`。先对比旧现场：旧批次只覆盖五个变体；本批没有重写准备范围或新增执行器，而是补跑未覆盖的查询/坏引用/预算组合。
+基线`ba7676ce`，依据`P2_EFFECT_TASKS_RESEARCH.md`、`P4_EFFECT_LIFECYCLE_RESEARCH.md`和现有`test_planning_effect_tasks_live.py`。复核更正：旧`p2-effect-tasks-live-query-final.xml`及7.31已覆盖七个变体；本批是当前版本回归，不是新增查询/坏引用/预算覆盖，没有重写准备范围或新增执行器。
 
 **实际结果**：隔离 MySQL、PostgreSQL、RustFS 与实际 PostgreSQL 规划任务表中，`none`、`bindings-ack`、`produced-ack`、`cleanup-response-ack`、`budget`、`unknown-reference`、`produced-query` 七项 **7通过、0失败、0跳过、18.65秒**。验证已接受回执不能被后续策略或文档改写，提交回执后丢确认可以从 PG 检查点恢复，错误引用被拒绝，产生阶段查询继续沿原预算，终态重投不新增模型请求。所有验证记录保存于`p4-effect-task-live-current/`，审计为`p4-effect-task-live-current-audit.py`，业务 HTTP 明确为0，模型为受控测试模型。
 
-这只补齐“分任务规划回执与恢复”的实际存储证据，不等于正式 Run/Agent 业务执行、共享对象消费完成、未知副作用只读查证、运行中计划修订或默认 AI 多用例闭环通过；完整准备生命周期及其余P0—P5继续保持未完成。无生产代码、表、配置、依赖或模型协议修改，Step已认证，外部AI按此前安排暂缓。
+这是“分任务规划回执与恢复”的当前存储回归证据，不增加新功能完成范围，不等于正式 Run/Agent 业务执行、共享对象消费完成、未知副作用只读查证、运行中计划修订或默认 AI 多用例闭环通过；完整准备生命周期及其余P0—P5继续保持未完成。无生产代码、表、配置、依赖或模型协议修改，Step已认证，外部AI按此前安排暂缓。
 
 ### 7.65 API 401 续期与安全重放边界复现〔2026-10-17〕
 
@@ -3892,3 +3892,15 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 新增最小真实本地HTTP复现，不改生产代码：旧Token访问只读`/profile`得到401时，实际只发送一次且不猜refresh；显式执行已有刷新任务取得新Token后再显式访问得到200；写请求预期401只发送一次。`p3-api-401-refresh-gap.xml/log` **1通过、0失败、1.91秒**，事实见`p3-api-401-refresh-gap/verification.json`，研究见`P3_API_401_REFRESH_RESEARCH.md`。
 
 本批确定后续实现契约：必须显式绑定同项目认证来源的refresh task；仅允许明确标记的只读任务最多重放一次；预期401/403、写请求、超时、连接异常和unknown outcome不自动重放；PG检查点保存原401、刷新Job/credential ref、重放Job、次数和最终结果；本地/Worker两条路径共用同一状态协议。当前自动401续期和安全重放仍是**需补实现**，没有新增表、配置、模型协议或外部AI调用。
+
+### 7.66 API Token角色、显式字段路径与报告回归缺口〔2026-10-18〕
+
+基线`b3f02db8`，依据`P3_API_TOKEN_ROLE_RESEARCH.md`。续期基础调研确认登录响应会把任意含token的长字符串当Bearer，文档提示也会从refresh_token内部匹配token；显式嵌套字段失效后会静默取无关token。真实本地HTTP复现为21失败、9通过，失败包含业务请求、类型与文档提示，不能当成21个独立业务故障。
+
+**本批补实现并完成专项验证**：默认仅兼容access_token/accessToken/token，不自动使用refresh/id；显式auth_token_field先读精确键，再复用既有点/数组路径，缺失或非法不替换为无关字段。仅接受非空、无换行字符串；文档提示匹配完整字段、访问字段优先，缺失留安全日志。沿已有Runtime/Coordinator/私有dispatch/Worker参数传递，无新配置、表、依赖、公共API或模型协议。
+
+**实际结果**：修复后专项30通过13.72秒；真实隔离存储2通过30排除16.86秒，生产ToolRuntime、加密PG、冻结字段和新服务终态原Job回读通过，额外HTTP0。调整测试断言避免打印临时凭据后，最终交付测试版本启用存储重新执行为32通过、0失败、0跳过44.84秒，与前面批次重叠不累加；提交的原失败输出仅保存脱敏副本。没有跨进程kill或RustFS报告原件下载。compileall及生产diff检查通过。Anthropic既有实际HTTP故障专项复核13通过，路径仍为`/v1/messages`，包装函数`await_provider_io`只处理网络等待与错误，未切换Responses。
+
+**回归没有全绿**：16模块196通过、4失败、9门控跳过71.95秒，4项均为Cookie报告opaque_echo值脱敏断言；使用HEAD原凭据提取复核仍在同一断言失败，证据原样保留，列为已确认待修缺陷。不能用Token专项通过替代报告或完整鉴权验收。7.63已更正RustFS报告存储的过度表述，7.64已更正七变体当前复核并非新增覆盖。
+
+自动401续期/安全重放、任意项目字段映射的默认Agent质量与产品入口、Cookie动态值报告脱敏、默认AI项目选取→排序→补全→执行、完整准备生命周期/运行中修订、复杂UI、持续性能/安全、需求业务评审/部署/历史迁移及其余P0—P5仍未完成。Step已认证，外部AI沿用户此前安排暂缓，完整目标保持进行中。
