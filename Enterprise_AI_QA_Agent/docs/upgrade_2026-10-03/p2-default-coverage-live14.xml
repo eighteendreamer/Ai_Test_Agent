@@ -1,0 +1,204 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="1" time="203.750" timestamp="2026-10-18T15:23:28.223277+08:00" hostname="EIghteen"><testcase classname="tests.test_default_coverage_production" name="test_actual_default_model_plans_and_executes_complete_case" time="198.425"><failure message="AssertionError: {'id': '3141c676-bc7a-4ba2-9f2c-85a70b4c6799', 'project_id': 'd737f8a9-e335-4e8e-ab94-7a813e57349a', 'creation_key': 'default-complete-plan', 'status': 'failed', ...}&#10;assert (0 == 0 and 'failed' == 'completed'&#10;  &#10;  - completed&#10;  + failed)">tmp_path = WindowsPath('C:/Users/32734/AppData/Local/Temp/pytest-of-32734/pytest-1745/test_actual_default_model_plan0')
+regression_business_http = (('http://127.0.0.1:60138', [], None), {}, [])
+
+    @pytest.mark.asyncio
+    @pytest.mark.skipif(os.getenv("RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION") != "1", reason="actual current model and isolated main/API/CLIs/stores")
+    async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, regression_business_http):
+        global_settings = get_settings().model_copy(deep=True)
+        original_model = MySQLModelConfigStore(global_settings).get_default_active()
+        parameters = model_invocation_parameters(original_model)
+        invocation_model = original_model.model_copy(deep=True)
+        profile_path = os.getenv("QA_DEFAULT_REQUEST_PROFILE")
+        if profile_path:
+            invocation_model.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
+            invocation_model = ModelConfigRecord.model_validate(invocation_model.model_dump())
+        invocation_parameters = model_invocation_parameters(invocation_model)
+        assert original_model.transport == "openai_chat_completions", "Probe currently targets the actual OpenAI-compatible SDK"
+        endpoint, effects, _ = regression_business_http[0]
+        orders, created = regression_business_http[1:]
+        directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
+        directory.mkdir(parents=True, exist_ok=False)
+        report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
+            "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
+        report["isolated_invocation_parameters"] = invocation_parameters
+        report["isolated_profile_override"] = bool(profile_path)
+        executor_only = os.getenv("QA_RECEIPT_EXECUTOR_ONLY") == "1"
+        report["controlled_planning"] = executor_only
+        planning_providers = ExitStack()
+        if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+            report["baseline"] = "d81b25e8 plus formal effect relations v2"
+        def save(name, value):
+            (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+        async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+            settings.api_auth_token = SecretStr(uuid4().hex)
+            settings.orchestration.redis_task_outbox_streams = settings.orchestration.case_planning_task_stream
+            models = MySQLModelConfigStore(settings)
+            models.initialize()
+            execution_model = ModelConfigUpdateRequest(model_name=original_model.model_id, provider=original_model.provider,
+                transport=original_model.transport, request_profile=invocation_model.request_profile,
+                base_url=original_model.api_base_url, api_key=original_model.api_key,
+                auth_type=original_model.auth_type, oauth_provider=original_model.oauth_provider,
+                oauth_refresh_token=original_model.oauth_refresh_token, applications=original_model.applications, is_active=True,
+                use_provider_defaults=False, capability_overrides=original_model.capability_overrides,
+                context_window=original_model.context_window, max_output_tokens=original_model.max_output_tokens)
+            model = models.upsert(execution_model)
+            assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
+            processes.env = child_environment(settings)
+            processes.env["QA_DEFAULT_PROBE_DIR"] = str(directory / "physical")
+            port = free_port()
+            args = ("-m", "tests.default_model_probe", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+            api = processes.start("default-api", *args)
+            project = task = plan = detail = None
+            try:
+                async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=240,
+                    headers={"Authorization": "Bearer " + settings.api_auth_token.get_secret_value()}) as client:
+                    await wait_api(client, api)
+                    async def post(path, data, status=200):
+                        r = await client.post(path, json=data)
+                        assert r.status_code == status, (r.status_code, r.text)
+                        return r.json()
+                    async def get(path):
+                        r = await client.get(path)
+                        assert r.status_code == 200, (r.status_code, r.text)
+                        return r.json()
+                    project = await post("/projects", {"project_key": "default-" + uuid4().hex, "name": "默认Agent真实完整用例", "base_url": endpoint}, 201)
+                    root = "/projects/" + project["id"]
+                    source = directory / "requirements.md"
+                    source.write_text(f"# 实际查询及准备清理\nPOST {endpoint}/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n"
+                        "本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\n"
+                        f"GET {endpoint}/orders/{{id}} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n"
+                        "查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\n", encoding="utf-8")
+                    doc = await post("/registry/api-docs/upload", {"project_id": project["id"], "filename": source.name,
+                        "content_base64": base64.b64encode(source.read_bytes()).decode()})
+                    owned.append(doc["storage_uri"])
+                    assert (await objects.read_object_uri(doc["storage_uri"]))["content"] == source.read_bytes()
+                    save("document.json", doc)
+                    content = {"objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录", "requires": ["actual_order_id"],
+                        "期望": {"code": 200, "flag": False, "count": 1, "nullable": None},
+                        "steps": [{"order": i+1, "action": action} for i, action in enumerate([
+                            "读取项目需求和实际ID来源；没有ID需要先准备", "确认准备两条记录且记录两个实际ID", "GET第一条/orders/{id}",
+                            "核对状态码200", "核对flag为False", "核对count为1", "核对nullable为null并清理所有本次记录", "LAST-DEFAULT-COVERAGE-STEP"])],
+                        "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回",
+                        "operations": {"query": endpoint + "/orders/{id}"}}
+                    content["steps"][-1]["business"] = {"false": False, "zero": 0, "nullable": None}
+                    save("full-case.json", content)
+                    bundle = await post(root + "/test-cases", {"case_key": "default-query", "title": "完整八步已有订单查询",
+                        "mode_key": "api_testing", "case_type": "json", "content_json": content,
+                        "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。",
+                        "source_refs": [{"source_type": "api_doc", "source_id": doc["id"]}], "model_key": "manual", "prompt_version": "manual-v1",
+                        "skill_versions": {"manual": "v1"}, "generation_metadata": {"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}}, 201)
+                    save("case.json", bundle)
+                    cid = bundle["case"]["id"]
+                    await post(f"/test-cases/{cid}/submit-review", {})
+                    await post(f"/test-cases/{cid}/activate", {})
+                    policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1", "effect_coverage_max_bytes": 1024000})
+                    if os.getenv("QA_STAGED_PLANNING") == "1":
+                        policy = policy.model_copy(update={"planning_stage_protocol": STAGE_PROTOCOL})
+                    if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+                        from src.schemas.case_planning import CasePlanningPolicy
+                        policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                            "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                            "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2"})
+                    if os.getenv("QA_OPERATION_PREFETCH") == "1":
+                        from src.schemas.case_planning import CasePlanningPolicy
+                        policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                            "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                            "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                            "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                            "operation_prefetch_protocol": "case-planning-declared-operation-prefetch-v1"})
+                        report["baseline"] = "e4d268e8 plus declared operation prefetch v7"
+                    if os.getenv("QA_SOURCE_IDENTITY") == "1":
+                        from src.schemas.case_planning import CasePlanningPolicy
+                        policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                            "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                            "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                            "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                            "source_identity_protocol": "case-planning-source-full-hash-v1"})
+                        report["baseline"] = "5b5490ac plus source identity v8"
+                    if os.getenv("QA_ITEM_OPERATION_SELECTION") == "1":
+                        from src.schemas.case_planning import CasePlanningPolicy
+                        policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                            "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                            "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                            "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                            "source_identity_protocol": "case-planning-source-full-hash-v1",
+                            "operation_prefetch_protocol": "case-planning-item-operation-prefetch-v2"})
+                        report["baseline"] = "07275986 plus item operation selection v9"
+                    if os.getenv("QA_LINKED_SOURCES") == "1":
+                        policy.linked_source_protocol = "case-planning-linked-documents-v1"
+                        report["baseline"] = "af790e15 plus fixed linked sources v10"
+                    if os.getenv("QA_EVIDENCE_REFERENCES") == "1":
+                        policy.evidence_reference_protocol = "case-planning-evidence-references-v1"
+                        report["baseline"] = "43f1700b plus evidence references v11"
+                    if os.getenv("QA_EFFECT_TASKS") == "1":
+                        policy.planning_stage_protocol = "case-planning-staged-evidence-v3"
+                        report["baseline"] = "28fc566c plus separate evidence tasks"
+                    if os.getenv("QA_RECEIPT_CORRECTION") == "1":
+                        policy.receipt_correction_protocol = "case-receipt-correction-v1"
+                        report["isolated_receipt_correction_enabled"] = True
+                        transport = os.getenv("QA_RECEIPT_TRANSPORT_OPTIONS")
+                        if transport:
+                            policy.receipt_correction_transport_options = ModelTransportOptions.model_validate_json(transport)
+                    if executor_only:
+                        # Diagnose the existing execution adapter using a real HTTP
+                        # planning fixture, not a second external planning attempt.
+                        # This path is explicitly NOT a default-model planning pass.
+                        from test_case_planning import item as plan_item, finish as plan_finish
+                        policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1",
+                            "effect_coverage_max_bytes": 1024000,
+                            "receipt_correction_protocol": policy.receipt_correction_protocol,
+                            "receipt_correction_transport_options": policy.receipt_correction_transport_options})
+                        def receipt_diagnostic_plan(body):
+                            context = json.loads(body["messages"][-1]["content"])
+                            documents = [e for e in context["evidence"] if e["kind"] == "document"]
+                            if not documents:
+                                return json.dumps({"action": "query", "summary": "读取真实项目文档用于执行诊断",
+                                    "queries": [{"kind": "document", "source_id": doc["id"]}]}, ensure_ascii=False)
+                            target = plan_item(context, "default-query", key="target_order_query")
+                            target["evidence_ids"].extend(e["id"] for e in documents)
+                            return json.dumps(plan_finish(target), ensure_ascii=False)
+                        planning_endpoint, planning_calls, _, _ = planning_providers.enter_context(
+                            provider(responder=receipt_diagnostic_plan))
+                        planning_model = models.upsert(ModelConfigUpdateRequest(model_name="receipt-diagnostic-controlled-plan",
+                            provider="openai", transport="openai_chat_completions", base_url=planning_endpoint,
+                            api_key=uuid4().hex, is_active=True, use_provider_defaults=False,
+                            capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                            context_window=128000, max_output_tokens=4096))
+                        report["baseline"] = "ef28497f; controlled HTTP planning; real default Agent execution only"
+                    r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
+                    assert r.status_code == 200, r.text
+                    request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
+                    if executor_only:
+                        request["model_key"] = planning_model.key
+                    task = await post(root + "/case-planning-tasks", request, 202)
+                    save("submission.json", task)
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        cur.execute(f"SELECT seed FROM {settings.database.postgres_case_planning_task_table} WHERE id=%s", (task["id"],))
+                        frozen = cur.fetchone()["seed"]
+                    assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
+                    report["frozen_response_protocol"] = frozen["response_protocol"]
+                    report["frozen_linked_source_context_protocol"] = frozen.get("linked_source_context_protocol")
+                    if os.getenv("QA_STAGED_PLANNING") == "1" or os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1" or os.getenv("QA_OPERATION_PREFETCH") == "1" or os.getenv("QA_SOURCE_IDENTITY") == "1" or os.getenv("QA_ITEM_OPERATION_SELECTION") == "1":
+                        assert frozen["stage_prompts"]["protocol"] == policy.planning_stage_protocol
+                        report["frozen_stage_protocol"] = frozen["stage_prompts"]["protocol"]
+                    planning_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.case_planning_task_stream,
+                        group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
+                    await planning_queue.connect()
+                    try:
+                        assert await PostgresTaskOutbox(settings).relay_once(planning_queue, limit=1) == 1
+                        worker = processes.start("default-planning-worker", "-m", "tests.default_model_probe", "src.cli.run_case_planning_worker",
+                            "--once", "--worker-id", "default-plan")
+                        code = await processes.wait(worker, timeout=220)
+                    finally:
+                        await planning_queue.close()
+                    task = await get(root + "/case-planning-tasks/" + task["id"])
+                    save("planning-task.json", task)
+                    print("default_planning_terminal " + json.dumps({"status": task["status"], "worker_exit": code}), flush=True)
+&gt;                   assert code == 0 and task["status"] == "completed", task
+E                   AssertionError: {'id': '3141c676-bc7a-4ba2-9f2c-85a70b4c6799', 'project_id': 'd737f8a9-e335-4e8e-ab94-7a813e57349a', 'creation_key': 'default-complete-plan', 'status': 'failed', ...}
+E                   assert (0 == 0 and 'failed' == 'completed'
+E
+E                     - completed
+E                     + failed)
+
+tests\test_default_coverage_production.py:256: AssertionError</failure></testcase></testsuite></testsuites>

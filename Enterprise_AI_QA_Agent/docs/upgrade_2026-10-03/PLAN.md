@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-18；本批核对基线 `4f77be93`。当前推进 Agent API 鉴权与报告：已修复已知 Cookie/Token 值回显及报告截断泄漏，真实 HTTP 专项16通过1门控跳过，最终完整产品/下载/API重启1通过，受影响回归342通过8门控跳过，见7.67。API原工具等待/审批恢复已有7.45—7.47后续实现，7.43保留为历史失败。自动401续期/安全重放已补实现并完成本地HTTP、Worker及真实进程中断恢复验收，见7.69；默认AI完整项目选取→排序→补全→执行及其余未验范围继续保留。Step已认证，外部AI按用户此前安排暂缓；多模型继续使用各自原生协议，Anthropic仍Messages。完整P0—P5保持进行中。
+修订日期：2026-10-18；本批核对基线 `6c205ca4`。Agent API鉴权报告及自动401安全重放已按7.67—7.69完成对应专项和真实Worker恢复验收。默认 Step 已认证并继续做真实验收：live14确认执行项操作契约预读生效，但完整复杂用例仍在produced规划阶段耗尽180秒deadline，未创建Run或产生业务HTTP，见7.70。模板/导入、需求变更、UI知识、Docker性能/安全及其余未验范围继续按功能区分；多模型继续使用各自原生协议，Anthropic仍Messages。完整P0—P5保持进行中。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
@@ -3962,3 +3962,13 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 | 已有实现但更广范围尚未验收 | 默认AI项目选取→排序→补全→执行、完整准备生命周期/运行中计划修订、复杂UI知识与失败定位、持续性能/安全、需求业务评审/部署/历史迁移、全阶段逻辑/SDK/HTTP追踪及旧Worker原件 |
 
 本批没有新增数据库表、配置项、外部AI调用或模型协议；配置仍在MySQL，业务/凭据/Worker结果引用仍在PostgreSQL，大对象仍沿RustFS。Anthropic继续使用`AsyncAnthropic.client.messages.create`和`/v1/messages`，OpenAI Responses仅由OpenAI Responses适配器使用。Step已认证，外部AI继续按用户安排暂缓；完整P0—P5仍保持进行中。
+
+### 7.70 默认 Step 完整用例规划：执行项操作预读组合实测〔2026-10-18〕
+
+基线`6c205ca4`。依据本地默认模型实测和`P4_ITEM_OPERATION_SELECTION_RESEARCH.md`，先复核live13配置只启用了分任务回执，没有启用执行项操作预读；不能用那次超时判定预读协议失效。现有实现已由组合配置/Prompt运行时检查确认可同时启用分任务回执、完整来源身份、证据引用和执行项操作预读。组合专项回归`test_planning_item_operation_selection.py`、`test_planning_effect_tasks.py`、`test_planning_operation_prefetch.py`、`test_scene_query_contract.py`为**38通过、18门控跳过**；跳过不计通过。
+
+按同一真实默认Step、同一`low + json_object`调用配置及同一180秒规划截止，新增只读变量`QA_ITEM_OPERATION_SELECTION=1`运行真实隔离API/Worker/MySQL/PostgreSQL/Redis/RustFS、真实上传需求文档及正式八步用例。模型在逻辑阶段为正式目标固定`api-test-runner.execute_task`选择；系统随后按`case-planning-item-operation-prefetch-v2`只读取得命名操作契约，PG检查点记录`origin`、`logical_hash`、`contract_loaded=true`。故障阶段不再需要额外模型轮次寻找该接口，预读策略实际生效。
+
+**结果仍未通过**：真实默认规划3轮（logic 57.79秒、bindings 49.20秒、produced 72.75秒）。bindings回执成功固定；produced调用收到HTTP 200并持续收到SDK流，但截止时`CancelledError`，`sdk_iteration_finished=false`、`finish_reason=null`，正文0字符；截至取消累计completion 5658 tokens，其中reasoning字段5658。原规划deadline耗尽，任务`planning_failed`，没有创建Run，隔离目标业务HTTP为0。物理请求只保存请求身份/哈希、计数和模型流阶段计数，不保存私有reasoning或响应正文。配置预读解决的是重复查询轮次，不代表复杂产生效果声明已在预算内完成；不擅自延长生产deadline、扩大模型预算或改全局MySQL模型配置。
+
+原始文档、完整八步JSON、冻结请求、PG规划快照、三次HTTP/SDK计数、失败XML及请求profile位于`p2-default-coverage-live14/`和同名XML。受影响确定性回归命令为`..\\.venv\\Scripts\\python.exe -m pytest -q tests/test_planning_item_operation_selection.py tests/test_planning_effect_tasks.py tests/test_planning_operation_prefetch.py tests/test_scene_query_contract.py`，实际**38通过、18跳过**。真实模型命令及结果见`p2-default-coverage-live14.xml`；没有源码改动。下一步先对照live13/14已冻结produced请求、任务Schema和工具证据定位模型为何耗尽流式推理仍无正文，再决定是否存在可证据支持的规划输入/职责缺口；不以再跑同一请求或调高预算代替根因分析。完整P0—P5仍active。

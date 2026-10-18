@@ -5480,3 +5480,11 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 实际证据：`p3-git-current.xml` **24通过、4跳过**（SHA-1/SHA-256、bare/full object、路径和特殊模式、缺 blob、超时/取消、幂等、并发、项目隔离、父版本冲突和本地路由）；启用 `RUN_LIVE_CASE_PLANNING_TESTS=1` 的 `p3-git-live2.xml` **26通过**（隔离 MySQL/PostgreSQL/RustFS）；启用 `RUN_LIVE_DOCUMENT_GIT_PRODUCTION=1` 的 `p3-git-production-current.xml` **2通过**、132.11秒（独立 API/Redis Worker/MySQL/PG/RustFS/Chromium，Markdown 和 DOCX 固定来源导入、丢回执恢复、解析、比较、重启及普通上传独立）。审计见 `P3_GIT_SOURCE_CURRENT_RESEARCH.md` 和 `p3-git-current-validation.json`。
 
 本轮没有新增 Git 代码或数据库结构；默认 AI 影响判断、用户业务评审、生产部署适用性、历史迁移、扫描 PDF OCR 和 Docling 容器仍未完成，完整 P0—P5 保持 active。
+
+## 2026-10-18 默认 Step 执行项操作预读组合实测
+
+`test_planning_item_operation_selection.py`、`test_planning_effect_tasks.py`、`test_planning_operation_prefetch.py`、`test_scene_query_contract.py`：38通过、18门控跳过。真实默认模型使用同一`low + json_object` profile，打开已实现的执行项操作选择/预读并保留分任务回执、完整来源身份和证据引用；独立真实API/Worker及MySQL、PG、Redis、RustFS创建项目、上传需求、创建并启用正式用例。逻辑计划固定`api-test-runner.execute_task`，PG阶段检查点确认命名操作契约由系统预读，产物带原逻辑hash，无需另外消耗模型轮次查询接口。
+
+功能闭环未通过：180秒原规划deadline内3次模型调用耗时57.79/49.20/72.75秒。bindings已固定，produced调用一直发送reasoning delta；实际HTTP 200，但截止时SDK收到CancelledError、没有正文/终止事件，累计completion 5658 tokens，Run和业务HTTP均为0。不能将预读成功说成默认AI完整用例执行成功，也不直接改生产期限/模型预算。原文档、JSON、PG阶段快照、脱敏物理请求/SDK计数、失败XML和profile见`p2-default-coverage-live14/`与`p2-default-coverage-live14.xml`；物理采集不保存私有reasoning和响应正文。配置组合确定性检查：`..\.venv\Scripts\python.exe -m pytest -q tests/test_planning_item_operation_selection.py tests/test_planning_effect_tasks.py tests/test_planning_operation_prefetch.py tests/test_scene_query_contract.py`，38通过、18跳过。
+
+下一步基于live13与live14冻结请求和Schema深入查produced阶段为何在已有工具契约后持续推理而不输出，确认输入／职责／模型响应边界后再确定是否需要实现变更。默认AI项目选取→排序→补全→执行仍未验收；完整P0—P5保持active。
