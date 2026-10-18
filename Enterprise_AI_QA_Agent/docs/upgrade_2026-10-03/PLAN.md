@@ -4201,3 +4201,11 @@ cd Agent_Server
 这证明正式 Run 已有防重发和未知状态保留的实际实现，且不是仅 API Testing Mode 的行为；它也证明系统不会因为现场对象已被删除就擅自回写原 Job 为成功。现有非门控正式执行回归 `tests/test_agent_case_execution.py -k "unknown_tool_outcome or crash_after_intent or http_completed_but_approval_snapshot_stale"` 为 **3 passed、3 skipped，21.35秒**；跳过项是同一测试的真实服务参数，历史隔离工件承担真实业务 HTTP 证据。
 
 当前仍缺的是另一层能力：正式 Run 在未知状态下没有通用、自动推导的查询接口；只有当冻结用例、项目接口契约或 Agent 明确提供合法只读操作（例如带实际对象标识的 GET）时，才能追加查证。查证结果应作为新的有来源证据和计划修订输入，不能改写未知原操作或释放依赖而没有明确规则。因而该项重新分类为：**正式 Run 未知不重发与跨进程阻断已有实现并通过真实隔离验收；正式 Run 的只读查证任务接入、默认 AI 自主选择及查证后继续执行仍未验收，必要时需补跨边界接入**。下一步先用固定用例中已声明的读操作做一条真实 Run 查证链，验证查询的项目、运行、条目、操作身份和证据关联，再决定是否需要新增契约；不自动猜 URL、主键或幂等键。Step 已认证，P2 仍未完成，P0—P5 未完成。
+
+### 7.92 固定操作预读与正式 Run 查证边界〔2026-10-19〕
+
+继续核对 `case-planning-item-operation-prefetch-v2` 后确认：现有能力属于**规划阶段的只读工具契约读取**。模型在逻辑计划中声明 `item_key`、`tool_key`、可选 `operation` 和已读取的业务依据；服务端按声明读取冻结的完整工具或命名操作契约，保存查询来源、逻辑计划哈希和恢复检查点。未知操作不会根据 HTTP 方法、业务动词或标题猜测，也不会执行工具或改变授权。
+
+依据是 `planning_operation_prefetch.py`、`PlanningOperationSelection`、`CasePlanningWorkflow` 及 `test_planning_operation_prefetch.py`。非实时回归为 **6 passed、10 skipped**；在当前配置下运行两个隔离实时场景（`False-none`、`False-unknown-operation`）均为 **1 passed**。实时用例使用真实 MySQL 配置读取项目策略、真实 PostgreSQL 临时任务表和 RustFS 原件保存；未知操作场景只追加明确的 `api-test-runner.execute_task` 契约读取，没有业务 HTTP 请求。
+
+因此当前分类为：**规划阶段显式操作契约预读已有实现并通过真实隔离验收；正式 Run 的未知副作用只读查证仍未实现/验收**。后者不能直接复用规划查询结果：查证必须是冻结用例或项目契约明确声明的合法只读业务操作，创建新的 read operation/evidence，关联原 `project_id`、`run_id`、`run_item_id`、原逻辑操作身份及证据；不能改写原未知 ToolJob、重用原 operation identity、释放依赖或自动猜 URL、主键和幂等键。下一步应先为一个固定用例显式声明“原操作未知后的只读查证操作”，再验证正式 Run 的领取、HTTP、PG/RustFS 证据和后续状态转换；在该链路未验证前，不新增通用自动推导器。
