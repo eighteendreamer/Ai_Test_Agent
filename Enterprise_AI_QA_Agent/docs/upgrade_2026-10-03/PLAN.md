@@ -4185,3 +4185,11 @@ cd Agent_Server
 另核对 `p2-consumption-phase-final/rollback/verification.json`：在真实事务内消费关闭记录保存后注入失败，确认记录写入和领取同时回滚；随后正常清理各发送一次、两个对象均已清除。并发场景现有原始工件及测试覆盖四个相同逻辑清理调用只产生一次 DELETE。运行 `tests/test_case_consumption_phase.py tests/test_case_consumption_external.py tests/test_case_effect_relations.py` 得 **11 passed、41 skipped，6.41秒**；跳过均由真实 MySQL/PostgreSQL/RustFS/native HTTP 门控，历史实测工件单独核对，不把本次跳过计作通过。
 
 因此，事务回滚、提交后且业务分发前丢回执、同逻辑操作并发领取已有实际证据；7.88 所列的空白需要收窄为：提交后进入 handler、远端已执行但响应丢失或 API/Worker 进程中断时的原操作查证/恢复；关闭记录已提交后的覆盖报告读取、跨进程重建与终态重投；以及完整默认 AI 的 P2 规划与执行闭环。当前没有证据支持再改关闭事务或放宽 unknown 拦截。下一步按现有 API 工具操作回执恢复机制逐路径核实远端已执行但本地未收到结果的真实语义，优先确认是否存在可安全只读查证的既有操作；没有确定性查证能力时保持阻断并保留未知结果。Step 已认证，P2 默认 AI 仍停在 `produced` 规划阶段、未创建 Run；完整 P0—P5 未完成。
+
+### 7.90 API Testing Mode 未知写入查证能力与正式 Run 边界复核〔2026-10-19〕
+
+复核时发现 7.89 的下一步描述没有区分 API Testing Mode 和 P2 正式用例 Run。API Testing Mode 已有显式查证机制：`ApiTaskExecutor` 将写请求超时/传输错误及写请求 5xx 标记为 `request_outcome=unknown`；`ApiTestCoordinator._is_retryable` 对 unknown 返回 false；`ApiTaskPool` 只允许关联 unknown 写任务的 GET/HEAD/OPTIONS 查证任务，并在原写任务状态未知以外时跳过查证。查证只记录 `effect_present`、`effect_absent` 或 `inconclusive`，不会把原写任务改为成功，也不会释放依赖继续执行。`ReportBuilder` 输出查证状态和 `reconciliation_required`，前端报告页已有查证状态字段；以上由 7.61—7.63 的实现及报告产品验收记录支持。
+
+本轮实际复跑 `tests/test_api_unknown_write_recovery.py tests/test_api_task_executor_recovery.py tests/test_api_http_origin.py`，**36 passed、3 skipped，17.93秒**。其中本地 HTTP 服务实际观察写请求超时后仅收到一次 POST，再收到明确的只读 GET；有无副作用两种查证均不重放原 POST，重复 `run_all()` 没有额外 HTTP；写入 5xx 即使断言匹配仍为 unknown 且不重试。跳过项是显式真实 MySQL/PostgreSQL/RustFS 门控，不计作本轮通过。
+
+边界：这些证据证明 API Testing Mode 的协调器/Worker及报告机制，不证明模型会在生产默认 Agent 中正确生成查证任务；也不证明正式 TestRun 内的 `api-test-runner execute_task` 在业务请求已到远端但 ToolJob 返回观察未持久化时，可以直接复用同一 Campaign 查证关系。正式 Run 仍由完整固定用例、工具轨迹、对象证据和 canonical 回执约束，不能把 API Testing Mode 的 task 字段或查证状态自动移植成正式用例结果。因而“API unknown 只读查证底层能力”归类为**已有实现、专项 HTTP/报告验收通过**；“正式 Run/默认 AI 自主查证及跨进程恢复”仍属**尚未验收，可能需补跨边界接入**。下一步应从真实 Run 的 API ToolJob 故障检查点验证这一接口边界，再决定是否有必要补实现；不重做 API Testing Mode 查证机制，也不放宽未知状态阻断。Step 已认证，P2 仍未完成，P0—P5 未完成。
