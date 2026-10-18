@@ -70,3 +70,11 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 本轮只补齐该字段映射，不改变模型协议、重试、超时或数据库边界。新增测试用真实 `LangSmithObservabilityAdapter` 与记录客户端验证：从模型请求映射出的 `TraceContext` 进入 turn/node trace 后，节点元数据保留同一个 `logical_call_id`。`tests/test_model_completion_http.py tests/test_model_sdk_fault_http.py tests/test_observability_contracts.py` 实际 **110通过、105.66秒**；`compileall` 和 `git diff --check` 通过。
 
 当前仍只证明应用逻辑调用到 provider SDK attempt/response 及 LangSmith 节点元数据的关联；持久 Worker 所有入口、生产远端接收和默认 AI 按用例完整执行仍未完成。
+
+## 持久规划 Worker 的 trace/attempt 传播补齐（2026-10-19）
+
+继续审计 `PlanningTaskHandler` 的真实调用链：Worker 在 `bind_request_context()` 中已经有任务 `trace_id=task_id` 和租约 `attempt_id`，但 `CasePlanningWorkflow` 的持久分支此前只把 `logical_call_id` 放进 `ModelInvocationRequest.trace_context`。因此模型结果能保存逻辑调用身份，却不能把 HTTP observer 的请求尝试关联到具体规划任务和恢复尝试。
+
+本轮从现有请求上下文读取真实 `trace_id/attempt_id`，并将它们与规划轮次 `turn_id`、项目和 `logical_call_id` 一起传给模型请求；没有伪造用户 Session，也没有改变模型协议、重试、租约或数据库边界。真实隔离 PostgreSQL/MySQL/RustFS Worker 恢复场景 `test_worker_restarts_after_saved_response_without_repeating_model_or_changing_versions` **1通过、9.16秒**：首次调用与恢复后的第二次调用均保留同一任务 `trace_id`，各自保留对应 Worker attempt 和规划轮次的 `logical_call_id`；全规划测试 `20通过、15跳过、5.12秒`。
+
+这证明持久规划入口的任务/尝试/逻辑调用身份已贯通；仍不证明所有生成、影响分析、回执和默认按用例执行入口都具备同等传播，也不把客户端 attempt 当作远端实际接收证据。

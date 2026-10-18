@@ -35,6 +35,7 @@ from src.schemas.case_planning_effect_tasks import EFFECT_TASK_PROTOCOL, EffectT
 from src.schemas.case_planning_references import ReferencedEvidenceDecision
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
+from src.core.request_context import get_request_context
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL, planning_model_parameters
 from src.schemas.model_config import MODEL_FAILURE_MODES, ModelInvocationRequest
 from src.application.model_clients.completion import model_completion_status, is_model_response_incomplete, stream_completion_fields
@@ -263,10 +264,26 @@ class CasePlanningWorkflow:
                             "round": checkpoint.next_round, "attempt_id": attempt_id})
                         # Preserve existing synchronous tracing. Durable tasks
                         # use the Worker request context without a fake Session.
-                        trace = ({"project_id": record.project_id, "trace_id": record.id,
-                            "turn_id": f"{record.id}:{checkpoint.next_round}", "session_id": record.id,
-                            "agent_key": "case-planning", "logical_call_id": round_record["logical_call_id"]}
-                            if persist is None else {"logical_call_id": round_record["logical_call_id"]})
+                        if persist is None:
+                            trace = {"project_id": record.project_id, "trace_id": record.id,
+                                "turn_id": f"{record.id}:{checkpoint.next_round}", "session_id": record.id,
+                                "agent_key": "case-planning", "logical_call_id": round_record["logical_call_id"]}
+                        else:
+                            # Durable workers do not have a user Session, but
+                            # their request context has a stable task trace and
+                            # lease attempt. Keep those identifiers on the
+                            # model request so provider HTTP observations can
+                            # be joined across worker retries without inventing
+                            # a session identity.
+                            worker_context = get_request_context()
+                            trace = {
+                                "project_id": record.project_id,
+                                "trace_id": worker_context.trace_id if worker_context else record.id,
+                                "turn_id": f"{record.id}:{checkpoint.next_round}",
+                                "attempt_id": attempt_id or (worker_context.attempt_id if worker_context else ""),
+                                "agent_key": "case-planning",
+                                "logical_call_id": round_record["logical_call_id"],
+                            }
                         model_request = ModelInvocationRequest(system_prompt=prompt,
                             messages=[{"role": "user", "content": body}], tools=[], trace_context=trace,
                             output_format=ModelOutputFormat(kind="json_object", required=False))

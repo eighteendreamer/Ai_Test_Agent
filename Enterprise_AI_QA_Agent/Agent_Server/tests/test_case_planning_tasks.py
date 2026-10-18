@@ -325,6 +325,12 @@ async def test_worker_restarts_after_saved_response_without_repeating_model_or_c
         assert saved.deadline_at == first.deadline_at and len(env.model.requests) == 2
         assert plan.status == "planned" and plan.config_snapshot.policy.max_rounds == 5
         assert [entry.key for entry in plan.decision.items] == ["prepare", "query"]
+        assert env.model.requests[0].trace_context["trace_id"] == task.id
+        assert env.model.requests[0].trace_context["attempt_id"] == plan.rounds[0]["attempt_id"]
+        assert env.model.requests[0].trace_context["logical_call_id"] == plan.rounds[0]["logical_call_id"]
+        assert env.model.requests[1].trace_context["trace_id"] == task.id
+        assert env.model.requests[1].trace_context["attempt_id"] == plan.rounds[1]["attempt_id"]
+        assert env.model.requests[1].trace_context["logical_call_id"] == plan.rounds[1]["logical_call_id"]
         assert plan.decision.items[1].case_version_id == target.version.id
         assert plan.evidence[0].payload["content"]["last_step"] == "真实末尾😀"
         assert next(e for e in plan.evidence if e.kind == "document").payload["content"] == document.read_text(encoding="utf-8").rstrip("\n")
