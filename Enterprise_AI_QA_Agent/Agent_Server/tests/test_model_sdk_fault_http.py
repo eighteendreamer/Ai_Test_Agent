@@ -6,6 +6,7 @@ from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.metadata
 import json
+import logging
 import os
 from pathlib import Path
 from threading import Event, Thread
@@ -110,6 +111,8 @@ async def test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend(
     deltas, response, escaped = [], None, None
     first_delta = asyncio.Event()
     key = uuid4().hex
+    logical_call_id = f"fault:{transport}:{fault}:{streaming}"
+    caplog.set_level(logging.INFO)
     facts = {"transport": transport, "fault": fault, "streaming": streaming, "logical_runtime_invocations": 1,
         "external_ai_calls": 0, "full_P0_P5_complete": False,
         "dependency_versions": {name: importlib.metadata.version(name) for name in (
@@ -127,7 +130,8 @@ async def test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend(
             api_key=key, max_output_tokens=512)
         runtime = ModelRuntimeService(Registry(config), settings)
         request = ModelInvocationRequest(system_prompt="Return the supplied JSON.",
-            messages=[{"role": "user", "content": "Real HTTP fault acceptance"}])
+            messages=[{"role": "user", "content": "Real HTTP fault acceptance"}],
+            trace_context={"logical_call_id": logical_call_id, "trace_id": "fault-trace"})
         try:
             async with runtime.stream_handler(receive if streaming else None):
                 if fault == "cancel":
@@ -167,6 +171,20 @@ async def test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend(
 
         assert not fixture_errors
         assert escaped is None, facts
+        started = [record for record in caplog.records if record.message == "model_http_request_attempt_started"
+            and getattr(record, "logical_call_id", None) == logical_call_id]
+        completed = [record for record in caplog.records if record.message == "model_http_response_received"
+            and getattr(record, "logical_call_id", None) == logical_call_id]
+        assert [record.attempt_sequence for record in started] == list(range(1, len(sends) + 1)), {
+            "cause_error_type": response.response_summary.get("cause_error_type") if response else None,
+            "error": response.response_summary.get("error") if response else None,
+            "fixture_send_count": len(sends),
+            "observed_routes": [getattr(record, "http_route", "") for record in started],
+        }
+        assert [record.status_code for record in completed] == [item["status"] for item in replies], facts
+        assert response.response_summary["logical_call_id"] == logical_call_id if response else True
+        assert response.response_summary["http_request_attempt_count"] == len(sends) if response else True
+        assert all(key not in str(record.__dict__) for record in [*started, *completed])
         expected_path = (f"/v1beta/models/fixture-model:{'streamGenerateContent' if streaming else 'generateContent'}"
             if native.startswith("google") else {"anthropic_messages": "/v1/messages",
                 "openai_responses": "/v1/responses", "openai_chat_completions": "/v1/chat/completions"}[native])
@@ -228,3 +246,46 @@ async def test_consumer_network_failure_is_not_misclassified_as_provider_failure
                 await runtime.invoke("fixture", ModelInvocationRequest(system_prompt="Actual callback boundary.",
                     messages=[{"role": "user", "content": "Return a visible delta."}]))
         assert raised.value is failure and len(sends) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("transport", TRANSPORTS)
+async def test_concurrent_provider_calls_keep_logical_ids_isolated(transport, caplog):
+    native = "openai_chat_completions" if transport == "langchain_chat" else transport
+    settings = get_settings().model_copy(deep=True)
+    settings.model.langchain_model_adapter_enabled = transport == "langchain_chat"
+    ids = [f"concurrent:{transport}:first", f"concurrent:{transport}:second"]
+    secret = uuid4().hex
+    caplog.set_level(logging.INFO)
+
+    with fault_gateway(native, "success") as (url, sends, replies, fixture_errors):
+        config = ModelConfigRecord(key="fixture", name="Concurrent observer fixture", provider=(
+            "google" if native.startswith("google") else "anthropic" if native.startswith("anthropic") else "openai"),
+            transport=native, model_id="fixture-model", api_base_url=(
+                url.removesuffix("/v1") if native == "anthropic_messages" else url),
+            api_key=secret, max_output_tokens=512)
+        runtime = ModelRuntimeService(Registry(config), settings)
+
+        async def invoke(logical_call_id):
+            request = ModelInvocationRequest(system_prompt="Return the supplied text.",
+                messages=[{"role": "user", "content": f"Concurrent request {logical_call_id}"}],
+                trace_context={"logical_call_id": logical_call_id, "trace_id": "concurrent-trace"})
+            return await runtime.invoke("fixture", request)
+
+        results = await asyncio.gather(*(invoke(logical_call_id) for logical_call_id in ids))
+
+    assert not fixture_errors
+    assert len(sends) == len(replies) == 2
+    assert {result.response_summary["logical_call_id"] for result in results} == set(ids)
+    assert all(result.response_summary["http_request_attempt_count"] == 1 for result in results)
+    for logical_call_id in ids:
+        attempts = [record for record in caplog.records
+            if record.message == "model_http_request_attempt_started"
+            and getattr(record, "logical_call_id", None) == logical_call_id]
+        responses = [record for record in caplog.records
+            if record.message == "model_http_response_received"
+            and getattr(record, "logical_call_id", None) == logical_call_id]
+        assert [record.attempt_sequence for record in attempts] == [1]
+        assert [record.status_code for record in responses] == [200]
+    assert all(secret not in str(record.__dict__) for record in caplog.records
+        if getattr(record, "logical_call_id", None) in ids)

@@ -18,6 +18,7 @@ from src.application.model_clients.base import (
     provider_stream_events,
     response_to_dict,
 )
+from src.application.model_clients.http_observation import create_observed_http_client
 from src.core.request_context import new_id
 from src.schemas.model_config import ContentPart, ModelConfigRecord, ModelInvocationRequest, UnifiedMessage
 from src.schemas.tool_runtime import ModelToolCall
@@ -88,8 +89,10 @@ class GoogleGenAIClient:
         tool_name_map = build_tool_name_map(request.tools, allow_dash=False)
         contents = self._build_contents(request, tool_name_map)
         generate_config = self._build_generate_config(config, request, tool_name_map)
+        http_client = create_observed_http_client()
         try:
-            client = self._make_client(config, api_key)
+            client = (self._make_client(config, api_key) if http_client is None else
+                self._make_client(config, api_key, http_client=http_client))
             response = await await_provider_io(client.aio.models.generate_content(
                 model=config.model_id,
                 contents=contents,
@@ -97,6 +100,9 @@ class GoogleGenAIClient:
             ), transport=self.client_key)
         except genai_errors.APIError as exc:
             raise self._wrap_api_error(exc) from exc
+        finally:
+            if http_client is not None:
+                await http_client.aclose()
         parsed = self._parse_response(response)
         parsed["tool_calls"] = remap_tool_calls(parsed["tool_calls"], tool_name_map)
         return parsed
@@ -111,6 +117,7 @@ class GoogleGenAIClient:
         tool_name_map = build_tool_name_map(request.tools, allow_dash=False)
         contents = self._build_contents(request, tool_name_map)
         generate_config = self._build_generate_config(config, request, tool_name_map)
+        http_client = create_observed_http_client()
 
         response_id = ""
         finish_reason: str | None = None
@@ -119,7 +126,8 @@ class GoogleGenAIClient:
         tool_calls: list[ModelToolCall] = []
 
         try:
-            client = self._make_client(config, api_key)
+            client = (self._make_client(config, api_key) if http_client is None else
+                self._make_client(config, api_key, http_client=http_client))
             stream = await await_provider_io(client.aio.models.generate_content_stream(
                 model=config.model_id,
                 contents=contents,
@@ -155,6 +163,9 @@ class GoogleGenAIClient:
                         )
         except genai_errors.APIError as exc:
             raise self._wrap_api_error(exc) from exc
+        finally:
+            if http_client is not None:
+                await http_client.aclose()
 
         return {
             "text": "".join(text_parts).strip(),
@@ -173,19 +184,21 @@ class GoogleGenAIClient:
             },
         }
 
-    def _make_client(self, config: ModelConfigRecord, api_key: str) -> genai.Client:
+    def _make_client(self, config: ModelConfigRecord, api_key: str, *, http_client=None) -> genai.Client:
         headers: dict[str, str] = {**config.extra_headers}
         if config.auth_type == "oauth2":
             # The SDK still requires api_key for construction; the Bearer token
             # header takes precedence on Google's side for OAuth-based access.
             headers["Authorization"] = f"Bearer {api_key}"
+        options = genai_types.HttpOptions(
+            base_url=self._normalize_base_url(config.api_base_url),
+            headers=headers or None,
+            timeout=int(self._timeout_seconds * 1000),
+            httpx_async_client=http_client,
+        )
         return genai.Client(
             api_key=api_key,
-            http_options=genai_types.HttpOptions(
-                base_url=self._normalize_base_url(config.api_base_url),
-                headers=headers or None,
-                timeout=int(self._timeout_seconds * 1000),
-            ),
+            http_options=options,
         )
 
     @staticmethod

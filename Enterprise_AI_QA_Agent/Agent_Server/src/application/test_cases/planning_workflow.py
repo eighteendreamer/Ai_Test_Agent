@@ -265,7 +265,8 @@ class CasePlanningWorkflow:
                         # use the Worker request context without a fake Session.
                         trace = ({"project_id": record.project_id, "trace_id": record.id,
                             "turn_id": f"{record.id}:{checkpoint.next_round}", "session_id": record.id,
-                            "agent_key": "case-planning"} if persist is None else {})
+                            "agent_key": "case-planning", "logical_call_id": round_record["logical_call_id"]}
+                            if persist is None else {"logical_call_id": round_record["logical_call_id"]})
                         model_request = ModelInvocationRequest(system_prompt=prompt,
                             messages=[{"role": "user", "content": body}], tools=[], trace_context=trace,
                             output_format=ModelOutputFormat(kind="json_object", required=False))

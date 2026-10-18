@@ -23,6 +23,7 @@ class TraceContext(BaseModel):
     test_run_id: str = ""
     run_item_id: str = ""
     attempt_id: str = ""
+    logical_call_id: str = ""
     thread_id: str = ""
     environment: str = "development"
     runtime_version: str = "0.1.0"
@@ -47,6 +48,7 @@ class TraceContext(BaseModel):
         "test_run_id",
         "run_item_id",
         "attempt_id",
+        "logical_call_id",
         "thread_id",
         "environment",
         "runtime_version",
@@ -88,6 +90,7 @@ class TraceContext(BaseModel):
             test_run_id=context.get("test_run_id", ""),
             run_item_id=context.get("run_item_id", ""),
             attempt_id=context.get("attempt_id", ""),
+            logical_call_id=context.get("logical_call_id", ""),
             thread_id=context.get("thread_id", ""),
             environment=environment,
             runtime_version=runtime_version,

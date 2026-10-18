@@ -17,6 +17,7 @@ from src.application.model_clients.base import (
     response_to_dict,
     serialize_tool_result_text,
 )
+from src.application.model_clients.http_observation import create_observed_http_client
 from src.application.model_clients.provider_profiles import resolve_provider_profile
 from src.schemas.model_config import ContentPart, ModelConfigRecord, ModelInvocationRequest, UnifiedMessage
 from src.schemas.tool_runtime import ModelToolCall
@@ -136,15 +137,20 @@ class OpenAIChatClient:
         }
 
     def _make_client(self, config: ModelConfigRecord, api_key: str) -> AsyncOpenAI:
+        http_client = create_observed_http_client()
         default_headers = dict(config.extra_headers)
         if resolve_provider_profile(config.provider).provider == "github":
             default_headers.setdefault("Copilot-Integration-Id", "vscode-chat")
+        options: dict[str, Any] = {}
+        if http_client is not None:
+            options["http_client"] = http_client
         return AsyncOpenAI(
             api_key=api_key,
             base_url=config.api_base_url,
             default_headers=default_headers or None,
             timeout=self._timeout_seconds,
             max_retries=self._max_retries,
+            **options,
         )
 
     def _wrap_status_error(self, exc: openai.APIStatusError) -> ProviderClientError:

@@ -371,8 +371,10 @@ class DocumentImpactCallService:
             "attempt_id": claim.attempt_id, "request_sha256": record.request.sha256,
             "transport_policy": snapshot.config.payload.transport_policy, "logical_timeout_seconds": remaining})
         try:
+            invocation = payload.request.model_copy(update={"trace_context": {
+                **payload.request.trace_context, "logical_call_id": call_id}})
             async with asyncio.timeout(remaining):
-                result = await self._models.invoke(context.model.key, payload.request,
+                result = await self._models.invoke(context.model.key, invocation,
                     expected_parameters=context.model.model_dump(mode="json"),
                     expected_runtime_parameters=snapshot.runtime_parameters, **runtime_kwargs)
         except asyncio.CancelledError:

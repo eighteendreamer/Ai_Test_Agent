@@ -272,10 +272,12 @@ class GenerationTaskService:
                 if remaining <= 0: raise TimeoutError("原模块总期限已到")
                 await confirmed_generation_write(self._store.begin_invocation(claim, budget), stage="invocation", identity=current.id)
                 stage = "call_outcome_unknown"
+                logical_call_id = f"generation:{current.id}:{module.id}:{claim.attempt_id}"
                 logger.info("case_generation_invoking", extra={"task_id": current.id, "module_id": module.id,
-                    "attempt_id": claim.attempt_id, "request_sha256": module.generation.sha256, "budget": budget})
+                    "attempt_id": claim.attempt_id, "logical_call_id": logical_call_id,
+                    "request_sha256": module.generation.sha256, "budget": budget})
                 async with asyncio.timeout(min(remaining, policy.call_timeout_seconds)):
-                    result = await self._generator.invoke_frozen(module.generation)
+                    result = await self._generator.invoke_frozen(module.generation, logical_call_id=logical_call_id)
                 reference = await self._object(result, f"{current.project_id}/{current.id}/{claim.attempt_id}/responses", "response.json")
                 checkpoint = await confirmed_generation_write(self._store.save_response(claim, reference), stage="response", identity=current.id)
             stage = "response_validation_rejected"

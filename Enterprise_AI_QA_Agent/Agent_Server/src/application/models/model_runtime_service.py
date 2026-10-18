@@ -7,9 +7,14 @@ import logging
 import os
 from contextlib import asynccontextmanager, nullcontext
 from typing import Any, Awaitable, Callable
+from uuid import uuid4
 
 from src.application.model_clients import ProviderClient, ProviderClientError, resolve_client
 from src.application.model_clients.completion import model_completion_status, model_response_mode, stream_completion_fields
+from src.application.model_clients.http_observation import (
+    current_provider_request_attempt_count,
+    observe_provider_call,
+)
 from src.application.model_clients.request_mapping import map_model_request, UnsupportedModelRequest
 from src.application.model_adapters.langchain_model_adapter import LangChainModelAdapter
 from src.application.model_clients.provider_profiles import (
@@ -121,6 +126,10 @@ class ModelRuntimeService:
         expected_runtime_parameters: dict[str, Any] | None = None,
         transport_options: ModelTransportOptions | None = None,
     ) -> ModelInvocationResult:
+        trace_context = dict(request.trace_context)
+        logical_call_id = str(trace_context.get("logical_call_id") or trace_context.get("call_id") or uuid4())
+        trace_context["logical_call_id"] = logical_call_id
+        request = request.model_copy(update={"trace_context": trace_context})
         if (expected_runtime_parameters is not None and
             self.get_invocation_runtime_parameters(model_key, transport_options=transport_options) != expected_runtime_parameters):
             logger.warning("model_invocation_runtime_changed", extra={"model_key": model_key})
@@ -202,15 +211,22 @@ class ModelRuntimeService:
                 raw_response={"mode": "missing_api_key", "model_key": config.key},
             )
 
-        if self._uses_langchain(config):
-            result = await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)
-        else:
-            client = resolve_client(
-                config,
-                timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
-                **({"max_retries": transport_options.max_retries} if transport_options else {}),
-            )
-            result = await self._invoke_with_client(client, config, api_key, request)
+        with observe_provider_call(
+            logical_call_id,
+            self._resolved_transport(config),
+            trace_id=trace_context.get("trace_id", ""),
+        ) as observation:
+            if self._uses_langchain(config):
+                result = await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)
+            else:
+                client = resolve_client(
+                    config,
+                    timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
+                    **({"max_retries": transport_options.max_retries} if transport_options else {}),
+                )
+                result = await self._invoke_with_client(client, config, api_key, request)
+        result.response_summary["logical_call_id"] = logical_call_id
+        result.response_summary["http_request_attempt_count"] = observation.request_attempt_count
         if mapped.decisions:
             result.request_payload["request_mapping"] = {"version": "model-request-v1", "decisions": mapped.decisions}
             result.response_summary["request_mapping"] = result.request_payload["request_mapping"]
@@ -234,7 +250,8 @@ class ModelRuntimeService:
             stream_handler=self._emit_stream_chunk if _stream_handler_var.get() is not None else None,
         )
         trace_context = None
-        if self._observability_service is not None and request.trace_context:
+        if (self._observability_service is not None and
+            all(request.trace_context.get(key) for key in ("session_id", "turn_id", "trace_id"))):
             trace_context = self._observability_service.context_from_mapping(request.trace_context)
         trace_manager = (
             self._observability_service.trace_node(
@@ -337,7 +354,8 @@ class ModelRuntimeService:
         request: ModelInvocationRequest,
     ) -> dict[str, Any]:
         trace_context = None
-        if self._observability_service is not None and request.trace_context:
+        if (self._observability_service is not None and
+            all(request.trace_context.get(key) for key in ("session_id", "turn_id", "trace_id"))):
             trace_context = self._observability_service.context_from_mapping(request.trace_context)
         trace_manager = (
             self._observability_service.trace_node(
@@ -535,6 +553,8 @@ class ModelRuntimeService:
                 "error_type": type(exc).__name__,
                 "cause_error_type": cause_error_type,
                 "status_code": status_code,
+                "logical_call_id": request.trace_context.get("logical_call_id", ""),
+                "http_request_attempt_count": current_provider_request_attempt_count(),
             },
         )
         return ModelInvocationResult(
@@ -550,6 +570,8 @@ class ModelRuntimeService:
                 "status_code": status_code,
                 "error": truncate_text(str(exc), 180),
                 "response_body": response_body,
+                "logical_call_id": request.trace_context.get("logical_call_id", ""),
+                "http_request_attempt_count": current_provider_request_attempt_count(),
             },
             raw_response={
                 "mode": "http_error",

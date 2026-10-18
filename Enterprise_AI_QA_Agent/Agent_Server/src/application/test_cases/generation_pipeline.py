@@ -380,11 +380,15 @@ class ModelTestCaseGenerator:
             skill_versions={skill.key: f"sha256:{skill.sha256}" for skill in fixed.authoring.skills},
             cases=payload.cases, warnings=payload.warnings)
 
-    async def invoke_frozen(self, prepared):
+    async def invoke_frozen(self, prepared, *, logical_call_id: str | None = None):
         """Caller must persist invocation intent and returned response; never auto-retry here."""
         fixed = PreparedCaseGeneration.model_validate_json(prepared.model_dump_json())
+        invocation = fixed.invocation
+        if logical_call_id:
+            invocation = invocation.model_copy(update={"trace_context": {
+                **invocation.trace_context, "logical_call_id": logical_call_id}})
         async def invoke():
-            return await self._models.invoke(fixed.authoring.model_key, fixed.invocation,
+            return await self._models.invoke(fixed.authoring.model_key, invocation,
                 expected_parameters=fixed.authoring.model_parameters,
                 expected_runtime_parameters=fixed.authoring.runtime_parameters,
                 **({"transport_options": fixed.authoring.transport_options} if fixed.authoring.transport_options is not None else {}))

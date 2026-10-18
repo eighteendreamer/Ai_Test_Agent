@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-18；本批核对基线 `6c205ca4`。Agent API鉴权报告及自动401安全重放已按7.67—7.69完成对应专项和真实Worker恢复验收。默认 Step 已认证并继续做真实验收：live14确认执行项操作契约预读生效，但完整复杂用例仍在produced规划阶段耗尽180秒deadline，未创建Run或产生业务HTTP，见7.70。模板/导入、需求变更、UI知识、Docker性能/安全及其余未验范围继续按功能区分；多模型继续使用各自原生协议，Anthropic仍Messages。完整P0—P5保持进行中。
+修订日期：2026-10-18；本批核对基线 `6c205ca4`。Agent API鉴权报告及自动401安全重放已按7.67—7.69完成对应专项和真实Worker恢复验收。默认 Step 已认证并继续做真实验收：live16 的八步正式用例以 `finish_reason=length` 失败；live17 单创建/清理用例也在 produced 阶段耗尽180秒总期限，两次都未创建Run/产生目标业务HTTP，见7.70—7.72。模板/导入、需求变更、UI知识、Docker性能/安全及其余未验范围继续按功能区分；多模型继续使用各自原生协议，Anthropic仍Messages。完整P0—P5保持进行中。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
@@ -3974,3 +3974,89 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 与live13逐项对照：live13用了4次模型调用（17.07/44.08/37.95/79.85秒），最后produced请求为29,732字节、上下文含4项evidence和3条query_results；live14系统预取后减为3次调用，produced请求24,458字节、2项evidence和1条预取query_result。两次最终produced调用都收到了HTTP 200和持续流式reasoning、正文0字符后被180秒deadline取消，completion分别为5,178/5,658 tokens。因此已确认缺陷不是工具契约重复查询或仅由更大的live13上下文造成；成本集中在默认模型对produced结构化声明的长推理，现有日志尚不能判定应调整Schema/职责还是模型生成边界。预读已解决一轮冗余检索，但不代表复杂产生效果声明已完成；不擅自延长生产deadline、扩大模型预算或改全局MySQL模型配置。
 
 原始文档、完整八步JSON、冻结请求、PG规划快照、三次HTTP/SDK计数、失败XML及请求profile位于`p2-default-coverage-live14/`和同名XML。受影响确定性回归命令为`..\\.venv\\Scripts\\python.exe -m pytest -q tests/test_planning_item_operation_selection.py tests/test_planning_effect_tasks.py tests/test_planning_operation_prefetch.py tests/test_scene_query_contract.py`，实际**38通过、18跳过**。真实模型命令及结果见`p2-default-coverage-live14.xml`；没有源码改动。下一步先对照live13/14已冻结produced请求、任务Schema和工具证据定位模型为何耗尽流式推理仍无正文，再决定是否存在可证据支持的规划输入/职责缺口；不以再跑同一请求或调高预算代替根因分析。完整P0—P5仍active。
+
+### 7.71 Step 认证后默认完整用例失败现场与当前状态〔2026-10-18〕
+
+用户再次明确 Step 已认证并要求继续。按此当前指示恢复真实 Step 验收；7.70 以前“暂缓外部 AI”的记录只代表当时安排，不再作为当前门槛。
+
+复查 live16 原件后确认：logic 与绑定回执最终成功，第一轮 bindings 因模型使用完整来源 UUID 而不是规定的 `E1/E2` 短引用被正确拒绝，下一轮自行修正；最终 `produced` 调用使用 OpenAI-compatible Chat Completions `json_object`，HTTP 200，但达到隔离输出上限 16,384 tokens 后以 `finish_reason=length`、正文 0 结束。规划任务约 392 秒后失败，未到 600 秒策略期限；Run 和目标业务 HTTP 均为 0。证据见 `P2_EFFECT_TASKS_RESEARCH.md` 的“默认 Step produced 阶段现场根因复核”及 `p2-default-coverage-live16/`。
+
+**当前判定**：这不是认证错误、Anthropic SDK/Responses 协议切换、物理 HTTP 重复发送或已证实的操作契约重复查询。全局模型配置未改。当前存在按传输分开的模型字段适配（Chat Completions、OpenAI Responses、Anthropic Messages、Gemini）；尚无证据要求将其合并，也没有证据支持放宽 canonical 来源/对象关系校验。
+
+模板、Excel/JSON 页面已有真实项目流程验收；API 401续期和报告、录制网络事件及性能/安全报告等分别有专项真实验收，但均不代表完整 P0—P5。**按用例执行仍未完成**：默认 Step 的正式多操作用例未通过完整规划，尚未创建 Run；多候选排序/补全质量、准备状态与未知副作用查证、运行中计划修订、其他模式/App 和完整闭环仍待推进。
+
+下一步不重放同一八步请求或调大生产预算。先依据 live16 工具契约与执行器真实输出边界，设计并运行同一默认 Step、相同策略和生产预算下的单目标少操作文档/正式用例，记录实际 planning、ToolRuntime、业务 HTTP 和 PostgreSQL 证据，判断失败与声明规模及单角色 Schema 的关系；只有证据指向可安全确定性派生时才研究服务端预填候选，继续保留现有 canonical 校验。完整 P0—P5 仍 `active`。
+
+### 7.72 Step 单创建/清理真实规划复测〔2026-10-18〕
+
+依据7.71所列下一实验，先扩展真实隔离模型验收夹具的场景开关，再上传新 Markdown 需求并创建只含“POST 创建一个订单、用真实返回 ID 执行 DELETE”的项目正式 JSON 用例。生产 API、Worker、MySQL、PostgreSQL、Redis、RustFS 和本地目标 HTTP 均实际参与；模型为当前已认证的默认 Step。全局模型配置保持原样；隔离调用 profile 为 `low + json_object`、max output 8192，项目规划 deadline 180 秒，启用同一组合分任务/来源/操作预读策略。
+
+真实模型验收 **1失败、221.65秒**。logic 24.24秒和bindings 46.99秒完成，produced 使用最后108.02秒后被180秒规划 deadline取消；累计completion 6,964 tokens、reasoning流字段30,672字符、正文0，未收到 `finish_reason`，因此不是达到8,192 token上限。三次模型HTTP均200；项目正式文档原件已存并读回，但未创建Run，目标业务HTTP为0。证据及请求/流阶段计数见 `p2-default-coverage-live17/`、`p2-default-coverage-live17.xml`。真实测试因规划未达终态而失败，失败原件保留。
+
+两步输入的 produced user上下文17,103字符，和live16八步上下文17,692字符相近，操作减少未使其在默认总期限内完成。这表明不能把故障仅归因于八步业务内容；它仍不能证明是哪条提示/schema职责产生了长推理。**当前方案正确性尚待下一轮研究**：按提示构造链逐段核对原始案例/工具契约、`ProducedTaskDecision`输出Schema与canonical校验，确认是否有可由已冻结事实无歧义确定的重复内容；在确认数据来源和所有用例/工具适用范围前不改生产策略、不自动预填对象关系。P0—P5继续active。
+
+对`produced`请求继续沿代码追踪后，模型需为固定用例提供真实输入选择条件、响应对象路径、依据完整用例的断言检查及来源引用；服务端在实际原始ToolJob返回后核验身份/输入/哈希并保存证据。对象路径及写入语义取决于实际业务文档，不能仅凭通用`ApiTestTask`模型安全推导；删除或服务端自动接受声明会损害对未知结果和清理范围的校验。因此当前没有足够依据修改生产职责边界。对应的逐字段证据与候选研究边界见`P2_EFFECT_TASKS_RESEARCH.md`。下一步继续评估角色提示/Schema中哪些内容可从固定父回执、项目依据或冻结工具契约压缩，同时保证至少两类API、负向和重复调用情形仍经过原canonical校验；未完成前不宣称是代码缺陷已修复。
+
+### 7.73 Step 提示 Schema 注释缩减与真实复测〔2026-10-18〕
+
+检查确认规划回执仍通过原Pydantic模型和canonical校验；提示内嵌的JSON Schema是独立文本副本。对三个effect-task提示Schema递归移除非约束性的`title`注释，所有字段、必填、类型、枚举、引用、默认及边界约束保持一致；新增确定性结构测试。受影响回归 **39通过、25门控跳过**。produced Schema从6,050字符降至4,899字符。
+
+同live17的隔离真实Step、low/json_object profile、正式两步创建/清理用例和组合策略重测，实际模型三次SDK/HTTP调用；logic 62.97秒、bindings 40.93秒、produced 74.86秒后在180秒总deadline被取消，completion 4,703 tokens、正文0、无finish reason。**1失败，未创建Run，业务HTTP为0**。produced请求正文从29,331字节降至27,886字节；该压缩保持Schema语义，但未让真实规划跨过produced阶段，不构成超时根因修复。证据见`p2-default-coverage-live18d/`及XML；两次夹具启动失败（模型未调用）也按原样保留在live18/live18b/live18c证据中。
+
+当前：此步骤证明提示可去除冗余Schema注释，不能证明模型质量或端到端用例执行已改善；保留小幅prompt压缩，按用例执行仍未通过。真实运行使用OpenAI-compatible Chat Completions；Anthropic继续调用Messages API。按传输区分的适配映射无需因本次Step失败统一成Responses协议。三次夹具启动失败（profile层级、预建输出目录、误传timeout环境变量）均未调用模型，原件保留在live18/live18b/live18c。完整P0—P5继续active。
+
+### 7.74 默认 UI 真实验收与证据投影纠错〔2026-10-18〕
+
+先复核实际代码，确认持续command eval结构化result已实现，真实Chromium类型/同会话专项1通过，无须重复实现。新一批生产API、规划/执行/资源清理CLI、隔离MySQL/PG/Redis/RustFS及默认Step实测，三批完整正负场景分别1通过1失败、2失败、1通过1失败。前两批失败源于验收误将页面身份要求为Run投影内字符串，或要求每个观察都包含固定page_id键；原始正式结果分别为passed/failed且引用真实新页面ToolJob。修正为observation→Job引用→run/item归属→真实字面量路径→新执行页身份，支持实际eval表达式的page_id/pageId，保留无页面字段的合法动作/标量观察。新离线回放10通过；相关回归33通过3门控跳过。
+
+第三批正向完整通过且终态重投业务/模型请求增量均0。负向真实点击一次后计数1、预期2；模型原回执前附未加围栏说明，进入一次只读纠正后8,192 tokens/length/正文0，正式error；保持失败，不改判。纠正原件已从RustFS回读并核验checkpoint哈希，响应仅导出公开字段。
+
+进一步按单模型适配字段调研：原默认profile未声明结构化输出，纠正请求采用prompt fallback。沿已有low/json_object profile只写隔离MySQL副本，负向完整对照 **1通过，123.96秒**：默认Step知识读取/规划/实际点击/比较后正式failed，终态重投业务/模型请求增量0，原全局配置不变。本次未进入纠正阶段，不能证明解决纠正截断，也不等同原默认配置已稳定通过。当前模型协议和生产逻辑未改。
+
+最新依据见`P5_UI_EVIDENCE_CURRENT_RESEARCH.md`，所有失败XML保留。分类：已有实现为结构化观察/知识读取/正式回执/恢复基础设施；本批补验收为简单UI正向、候选单模型profile负向及终态幂等；仍待验收/调研为默认配置负向与纠正质量、复杂UI/完整App、完整项目选取排序补全、准备/未知结果/计划修订及其余P0—P5。完整目标继续active。
+
+### 7.75 普通文档 JSON 输出契约与默认 Step 真实模块验收〔2026-10-18〕
+
+先按真实失败样本和实际读写契约确认生成 Schema 根因：新模板说业务只写 `content_json`，执行的 `business_content()` 也优先读取它，但生成 Schema 仍让新模型同时产生外层 legacy 业务字段与完整JSON。保留统一Pydantic解析模型和旧字段，只为模板/增量的新JSON请求生成窄投影：删除外层重复字段，`content_json` 必填且非空，Prompt Schema 与 `ModelOutputFormat` 一致；历史 frozen invocation、版本、哈希与读取不改。JSON请求Prompt版本升为 json-v3/document-v2/incremental-v2/frozen-v2，旧格式与版本保留。无依赖/数据库/API或供应商协议变更。
+
+真实样本 `p1-generation-default-profile-current/original-1.json` 的首用例外层重复步骤/断言/前置/数据/清理，同时JSON已有完整内容；实际响应在8192 tokens截断。提取公开响应及来源SHA到回归fixture，不把完整坏响应接受或生产修补。首轮回归62通过3跳过；新/旧 frozen 均拒绝该截断响应，去掉重复键后业务含义、治理及说明逐字段相同，嵌套JSON语义保留。增量来源/生成任务/重试专项43通过0跳过（真实MySQL/PG/RustFS/Redis及受控HTTP）。compileall与git diff --check通过。
+
+默认Step真实三章节需求再次跑新隔离项目，全部使用真实解析/生成API及Worker/数据库/对象存储，仅隔离模型profile为low/json_object，8192输出token、120秒单调用/原600秒任务期限；全局模型没变，未执行生成测试用例的业务请求。首次跑完整业务/恢复后，测试因自身误解 `GET /test-cases/{id}` 的正式响应结构而失败；按路由 `response_model=TestCaseRecord` 修正断言后，完整重跑 **1通过、345.35秒**。3模块9草稿入库；模型参数漂移模块发送前失败、恢复参数并重启API后完成独立新任务重试，终态重复投递无额外SDK请求。逐条人工检查新增9份结构化内容、范围和警告：无外层业务重复、未编造原文缺少接口细节；注册权限冲突如实作为评审问题。原始响应、scope、PG和RustFS对象留存并验SHA。证据/边界见 `P1_JSON_GENERATION_CONTRACT_RESEARCH.md` 及 `p1-generation-json-contract-current2/`。
+
+**当前分类**：普通文档默认Step在隔离 low/json_object profile 下的三模块后端生成/恢复与新输出契约已经实际通过；原全局profile质量、完整项目页面流程、文档全量跨模块业务充分性和人工评审仍未通过验收。模板/JSON导入等以往项目页面专项不由此替代。模板以外的新 JSON 调用在请求结构上同样覆盖；前端及API DTO不变。完整P0—P5、按用例测试闭环及其他环境/模型仍未完成。
+
+### 7.76 Accepted bindings 证据继承对照失败及当前进度〔2026-10-18〕
+
+继续前先确认已认证默认 Step 可用，并复查 `p2-default-coverage-live18d` 原 frozen request/checkpoint 与 produced 声明 Schema。发现同一 `item_key` 的 `evidence_ids` 已由 accepted bindings 固定，可按 key 确定性继承；编写只读 wire projection 对照，成功保留 item 次序并拒绝缺失、重复、越界项的4个确定性用例。随后以 live18d 的真实 produced 输入执行**单次独立只读对照**：只移除模型需重复复制的 evidence_ids，accepted bindings 为唯一继承源；仍用隔离 MySQL、原 Step/`low + json_object`、8192 max tokens 和原约74.87秒阶段窗口，不恢复任务、不开放工具、不发业务HTTP。
+
+真实模型 **1失败、74.879秒**：一个 SDK调用、一个物理 HTTP，HTTP 200；流持续73.964秒后按原窗口取消，2,103 chunks、completion usage 4,532、正文0、无 `finish_reason`，未收到响应。reasoning 与 reasoning_content 各记录20,850字符，作为同一流内容的重复字段，不相加。canonical 未接受、Run未创建、业务HTTP为0，全局配置不变。原始证据见 `p2-produced-inherit-bound-evidence-current/` 和 XML。该实测排除“重复输出 evidence_ids 单独导致超时”的根因判断；不证明继承字段无用，因为没有拿到可校验的模型声明。该候选不做生产实现、不重放同一请求。
+
+当前进度：模板/导入已有实现及专项验收；API自动401续期、实际刷新传值和Worker跨进程恢复已专项通过；普通文档三模块生成在隔离 `low/json_object` profile 下已完成真实后端生成与恢复验收。按用例执行仍在 `produced` 规划阶段失败，未创建 Run；准备状态、未知副作用只读查证、计划修订和多候选排序补全尚未闭环。Schema标题缩减与 evidence 继承这两项输入简化都没有让默认 Step 在同等阶段窗口返回正文，现有证据不足以继续微缩提示或改变 canonical 职责。正式回执方面，默认 Step 实际只读纠正及“纠正意图已持久化、HTTP发送前杀API进程”恢复已有通过证据（`p2-default-minimal-case-live7.xml`、`p2-default-receipt-process-live6.xml`）；原始用例里这两项已不应再列未完成。纠正请求已发送后的断网/进程中断、供应商响应已持久化后中断仍未验。下一步先调研调用轨迹、重试/物理发送边界以及规划角色契约，再以至少两个不同 API 形状（含负向或重复调用）验证成功声明、canonical接受和恢复；不增预算、不放宽校验、不宣称完整 P0—P5 完成。
+
+另对照用户提出的模型适配疑问，核查现有 `resolve_client`、`map_model_request`、各 provider client 及本地 SDK HTTP 合同：系统已有统一内部 `ModelInvocationRequest`/统一结果结构，再按 `openai_chat_completions`、`openai_responses`、`anthropic_messages`、Gemini 原生 transport 做专属字段映射；Anthropic仍明确调用 `AsyncAnthropic.client.messages.create`，测试地址为 `/v1/messages`。`await_provider_io` 只等待原 SDK 调用并归一网络I/O异常，不改变消息协议。运行 `tests/test_model_clients.py tests/test_model_completion_http.py tests/test_model_sdk_fault_http.py`，**95通过，95.20秒**；这些用真实SDK连接本地HTTP夹具证明所测序列化、endpoint、流式和故障边界，不代表外网真实供应商全覆盖。结论是该适配边界需要保留且当前已经存在；没有依据新建“统一Responses协议”或统一供应商参数，其他模型仍可按自己的字段与能力配置。
+
+### 7.77 P0 逻辑调用与物理 HTTP 追踪边界调研〔2026-10-18〕
+
+继续核对主图、ModelRuntimeService、LangSmith TraceContext、规划、生成和需求影响调用。现有 `trace_id`/`turn_id`、规划 `logical_call_id`、Worker `attempt_id`、生成 `request_sha256` 及影响分析 `call_id` 各有局部用途，不能互相替代；`TraceContext` 当前拒绝未知字段，模型 Runtime 的 LangSmith span 不包含统一逻辑调用标识，Provider SDK 内部重发也没有生产级 HTTP send 事件。因此当前生产证据能覆盖部分业务/逻辑调用，不能对全路径断言 SDK retry 数或实际物理发送数。
+
+查阅锁定的 SDK 接口，OpenAI/Anthropic 均接受 `http_client`，Google GenAI `HttpOptions` 接受 `httpx_async_client`，LangChain OpenAI `ChatOpenAI` 接受 `http_async_client`。这些注入点说明保留各供应商原协议并接入统一观察接口存在可行入口；它们尚未验证自定义 client 的重试、超时、流式、资源关闭和并发语义，故没有改动生产发送路径。逐文件依据、版本和边界见 [P0_CALL_TRACE_RESEARCH.md](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/upgrade_2026-10-03/P0_CALL_TRACE_RESEARCH.md)。
+
+**当前做到的步骤**：Step 已认证；P2 已完成到普通文档三模块生成的隔离 profile 全流程验收，但按用例执行仍停在真实 `produced` 阶段，最近一次只读实测 74.879 秒后未返回可校验正文，未创建 Run 且业务 HTTP 为0。现在转入 P0 调用追踪的架构核验；本小步完成了源码与锁定 SDK 注入点调研，尚未实现或验收实际 HTTP send observer。下一步先验证所有 SDK 的注入生命周期和重试/流式/并发行为，再实现最小跨 provider 观察接口并用本地 HTTP 夹具实测；不统一协议，不把应用层调用数冒充 HTTP 发送数。完整 P0—P5 仍未完成。
+
+### 7.78 P0 Provider SDK 请求尝试观察首轮落地与异步 Hook 根因修复〔2026-10-18〕
+
+在复核 SDK 公开注入点后，沿既有 ModelRuntime 调用上下文增加统一逻辑调用观察，并将 httpx2 client 注入 OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 和 LangChain OpenAI-compatible client。请求摘要及安全日志只保留脱敏 route、method、请求尝试序号、HTTP 响应状态和耗时，不保留凭据、请求体或响应体；`logical_call_id` 可关联结果与日志。
+
+真实 SDK/TCP 故障验收首轮发现观察 hook 实现违反锁定 httpx2 的异步调用约定：SDK 对 request hook 执行 `await`，原同步函数返回 `None`。Google 暴露 `TypeError`；OpenAI 将其包装为 connection error 并重复重试，TCP fixture 实际收到0个请求。修复为 async hook 后，完整五传输故障矩阵 **59通过**；模型客户端/HTTP 合同/故障三模块回归 **95通过，100.21秒**。覆盖重试、403/429/503、连接中断、超时、流式/取消、真实 endpoint/协议体和并发关联。Anthropic仍为 `client.messages.create`，fixture 验证 `/v1/messages` 与 Messages body；不涉及模型协议切换。
+
+同时将 `http_send_count` 改名为 `http_request_attempt_count`。httpx2 request hook 位于 transport 发送之前，只能证明 SDK 已交给 HTTP client，不能独立证明网络字节或远端接收；response hook 可证明收到响应，本地 TCP fixture 的接收计数可证明本次测试实际到达。DNS/连接建立失败时，生产请求尝试数可能大于服务端接收数。当前完成的是**生产逻辑 ID → SDK HTTP 请求尝试/响应观察**，不是生产级精确物理发送计量。
+
+本步骤分类：观察层已有实现并通过锁定依赖下真实 SDK/TCP 测试；全阶段 ID 传播、更多任务恢复/网络故障组合仍待验收；生产端精确远端接收数必须依赖服务端/网关证据，客户端 attempt 不能替代。已查锁定 httpx2 源码：传入 transport 会改变环境代理映射；包装内部 transport 需访问私有成员，且 transport 调用仍不能证明 DNS/连接成功或远端接收，因此不实现这种有副作用且证据不足的方案。依据更新在 `P0_CALL_TRACE_RESEARCH.md`。下一步核验并发/取消及各逻辑入口的 `logical_call_id` 如何贯穿 Worker retry/recovery；测试端继续用本地 TCP 真实接收数与 SDK attempt/response 日志做对照。完整 P0—P5 继续 `active`。
+
+### 7.79 P0 全传输并发调用关联验收〔2026-10-18〕
+
+依据 7.78 的边界，补做真实并行调用而不是仅依赖串行故障矩阵。对 OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 和 LangChain 五条 transport 同时发起两个不同 `logical_call_id` 的请求，使用本地 TCP/HTTP fixture 记录服务端实际接收、SDK request attempt、response hook 和最终 `ModelInvocationResult`。
+
+五条 transport **5通过**：每次结果保留自己的逻辑 ID，每次 attempt 序号从1开始，收到各自200响应，服务端收到2个请求且没有跨调用串线；日志未出现测试 API key。此前模型客户端、HTTP合同、故障及并发回归合计 **100通过，101.48秒**。这证明当前 ContextVar 观察上下文在并发任务中隔离，不能扩展为已证明所有 Worker 恢复路径都正确。
+
+本步骤分类：跨 provider 的并发逻辑调用与 SDK attempt/response 关联已实际通过；普通 turn、持久 Worker retry/recovery、生成/规划/影响分析等入口的全阶段恢复核对仍待继续。生产端远端实际接收仍需服务端/网关证据。完整 P0—P5 继续 `active`。

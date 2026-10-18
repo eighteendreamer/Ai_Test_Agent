@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+from src.core.request_context import new_id
 from src.application.context.token_usage import TokenUsage, normalize_usage
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.graph.state import AgentGraphState
@@ -114,6 +115,7 @@ def build_model_invoker_node(
                 "attempt_id": str(
                     (state.get("context_bundle") or {}).get("attempt_id") or ""
                 ),
+                "logical_call_id": new_id("model_call"),
                 "thread_id": str(
                     (state.get("context_bundle") or {}).get("thread_id")
                     or state["session_id"]
@@ -150,6 +152,7 @@ def build_model_invoker_node(
             messages=summarize_messages(request_payload.messages),
             tool_candidates=",".join(model_visible_tool_keys) or "none",
             loop_iteration=state["loop_iteration"],
+            logical_call_id=request_payload.trace_context["logical_call_id"],
             model_call_count=count + 1 if count is not None else None,
             max_iterations=state.get("max_iterations"),
         )
@@ -186,6 +189,8 @@ def build_model_invoker_node(
                 completion_status=invocation_result.response_summary.get("completion_status", "unknown"),
                 error_type=invocation_result.response_summary.get("error_type", ""),
                 status_code=invocation_result.response_summary.get("status_code"),
+                logical_call_id=invocation_result.response_summary.get("logical_call_id", ""),
+                http_request_attempt_count=invocation_result.response_summary.get("http_request_attempt_count", 0),
                 loop_iteration=state["loop_iteration"],
             )
             return state
@@ -203,6 +208,8 @@ def build_model_invoker_node(
             finish_reason=invocation_result.response_summary.get("finish_reason", ""),
             tool_call_count=len(invocation_result.tool_calls),
             loop_iteration=state["loop_iteration"],
+            logical_call_id=invocation_result.response_summary.get("logical_call_id", ""),
+            http_request_attempt_count=invocation_result.response_summary.get("http_request_attempt_count", 0),
             prompt_tokens=latest_usage.prompt_tokens,
             completion_tokens=latest_usage.completion_tokens,
             turn_total_tokens=accumulated_usage.total_tokens,

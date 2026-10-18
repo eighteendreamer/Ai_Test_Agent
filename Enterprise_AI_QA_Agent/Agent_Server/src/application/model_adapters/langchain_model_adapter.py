@@ -11,6 +11,7 @@ from src.application.model_adapters.message_adapter import (
     to_langchain_tools,
 )
 from src.application.model_clients.base import ProviderClientError
+from src.application.model_clients.http_observation import create_observed_http_client
 from src.application.model_clients.request_mapping import map_model_request
 from src.application.model_clients.completion import model_completion_status, model_response_mode, stream_completion_fields
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult
@@ -54,8 +55,9 @@ class LangChainModelAdapter(ModelPort):
                 f"received transport={config.transport!r}."
             )
 
+        http_client = create_observed_http_client()
         try:
-            model = self._build_model(config, api_key)
+            model = self._build_model(config, api_key, http_async_client=http_client)
             if config.supports_tools and request.tools:
                 model = model.bind_tools(to_langchain_tools(request.tools), tool_choice="auto")
             mapped = map_model_request(config, request).parameters
@@ -81,6 +83,9 @@ class LangChainModelAdapter(ModelPort):
                 f"{truncate_text(str(exc), 240)}",
                 status_code=_exception_status_code(exc),
             ) from exc
+        finally:
+            if http_client is not None:
+                await http_client.aclose()
 
         return ModelInvocationResult(
             text=parsed["text"],
@@ -130,8 +135,9 @@ class LangChainModelAdapter(ModelPort):
                 "Structured LangChain output currently supports only "
                 f"openai_chat_completions; received transport={config.transport!r}."
             )
+        http_client = create_observed_http_client()
         try:
-            model = self._build_model(config, api_key)
+            model = self._build_model(config, api_key, http_async_client=http_client)
             structured_model = model.with_structured_output(schema, include_raw=True)
             payload = await structured_model.ainvoke(
                 to_langchain_messages(request.system_prompt, request)
@@ -144,6 +150,9 @@ class LangChainModelAdapter(ModelPort):
                 f"{truncate_text(str(exc), 240)}",
                 status_code=_exception_status_code(exc),
             ) from exc
+        finally:
+            if http_client is not None:
+                await http_client.aclose()
 
         if not isinstance(payload, dict):
             raise ProviderClientError(
@@ -162,7 +171,7 @@ class LangChainModelAdapter(ModelPort):
             )
         return parsed
 
-    def _build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
+    def _build_model(self, config: ModelConfigRecord, api_key: str, *, http_async_client: Any = None) -> Any:
         if config.request_profile and config.request_profile.chat_token_parameter == "max_tokens":
             raise ProviderClientError("Explicit max_tokens requires the native Chat client; LangChain renames this field.")
         kwargs: dict[str, Any] = {
@@ -177,6 +186,8 @@ class LangChainModelAdapter(ModelPort):
             kwargs["temperature"] = config.temperature
         if config.extra_headers:
             kwargs["default_headers"] = dict(config.extra_headers)
+        if http_async_client is not None:
+            kwargs["http_async_client"] = http_async_client
         return self._model_factory(**kwargs)
 
     def build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
