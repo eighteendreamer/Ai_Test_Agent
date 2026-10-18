@@ -87,7 +87,8 @@ async def _invoke_failure(mode: str, monkeypatch: pytest.MonkeyPatch):
     return await runtime.invoke(
         "test-model",
         ModelInvocationRequest(system_prompt="Test", messages=[{"role": "user", "content": "Run"}],
-            output_format=ModelOutputFormat(kind="json_object") if mode == "unsupported_request" else None),
+            output_format=ModelOutputFormat(kind="json_object") if mode == "unsupported_request" else None,
+            trace_context={"logical_call_id": f"failure:{mode}"}),
     )
 
 
@@ -98,6 +99,7 @@ async def test_model_failure_does_not_complete_assistant_turn(
 ) -> None:
     result = await _invoke_failure(mode, monkeypatch)
     assert result.response_summary["mode"] == mode
+    assert result.response_summary["logical_call_id"] == f"failure:{mode}"
     assert "PRIVATE_AUTH_ERROR" not in result.text
     assert "PRIVATE_PROVIDER_ERROR" not in result.text
     assert "PRIVATE_PROVIDER_BODY" not in result.text

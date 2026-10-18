@@ -4060,3 +4060,9 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 五条 transport **5通过**：每次结果保留自己的逻辑 ID，每次 attempt 序号从1开始，收到各自200响应，服务端收到2个请求且没有跨调用串线；日志未出现测试 API key。此前模型客户端、HTTP合同、故障及并发回归合计 **100通过，101.48秒**。这证明当前 ContextVar 观察上下文在并发任务中隔离，不能扩展为已证明所有 Worker 恢复路径都正确。
 
 本步骤分类：跨 provider 的并发逻辑调用与 SDK attempt/response 关联已实际通过；普通 turn、持久 Worker retry/recovery、生成/规划/影响分析等入口的全阶段恢复核对仍待继续。生产端远端实际接收仍需服务端/网关证据。完整 P0—P5 继续 `active`。
+
+### 7.80 P0 发送前失败出口的调用身份补齐〔2026-10-18〕
+
+继续按“逻辑调用 → SDK attempt/response → 结果”的链路审计，确认 `ModelRuntimeService.invoke` 在模型不存在、请求参数不支持、认证异常、缺少密钥以及运行参数漂移等发送前出口会提前返回或抛错。此前成功和 HTTP 失败结果已有 `logical_call_id`，但部分发送前结果与日志没有该字段，无法和规划、生成或影响任务已保存的逻辑调用对账。
+
+本轮只补齐统一调用关联：发送前失败结果的 `response_summary` 及对应结构化日志都带原请求的 `logical_call_id`；没有改变 provider 协议、请求映射、重试、认证或任务恢复策略。为真实失败分支增加回归断言，覆盖五种失败模式。`tests/test_model_failure_lifecycle.py tests/test_model_request_profile.py tests/test_model_clients.py` **67通过**；`compileall` 和 `git diff --check` 通过。该修复只解决结果/日志关联缺口，不代表 Worker retry/recovery 的全阶段调用轨迹或远端实际接收已经完成；后者仍需持久任务与真实 MySQL/PG/RustFS 流程验收。

@@ -50,3 +50,9 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 按 provider 保留原生协议；Anthropic 继续 `client.messages.create` 与 `/v1/messages`，OpenAI Responses 仍只属于独立 OpenAI adapter。统一适配层的必要范围是内部调用/结果契约及各 provider 的定制字段映射，不是统一成 Responses 协议。
 
 已完成逻辑调用 ID 到 SDK HTTP request attempt/response 的生产观察接入及本地真实 SDK/TCP 验收。全阶段覆盖仍未完成：普通 turn、持久 Worker、生成、规划、影响分析等 ID 传播要继续逐入口核对；生产日志无法单方面证明远端实际接收。真实发送端/远端接收需服务端或网关证据。本地 SDK/TCP 矩阵保留这种端到端对照。下一步核验并发/请求取消与日志投影中的 call ID 覆盖，再沿各业务逻辑入口检查持久调用标识是否稳定穿过 retry/recovery。
+
+## 发送前失败出口补核
+
+`ModelRuntimeService.invoke` 的模型缺失、参数不支持、认证失败、密钥缺失和运行参数漂移出口会在 provider SDK 之前结束。它们没有 SDK attempt，仍必须保留应用层 `logical_call_id`，否则规划、生成或影响任务的持久调用意图无法与最终失败结果对账。本轮补齐这些结果摘要和结构化日志字段；不把“没有 HTTP attempt”误报为 HTTP 失败，也不改变各 provider 的原生协议。
+
+回归结果：`tests/test_model_clients.py tests/test_model_completion_http.py tests/test_model_sdk_fault_http.py tests/test_sdk_midstream_retry_boundary.py` **102通过**；发送前失败、请求映射和客户端回归 `tests/test_model_failure_lifecycle.py tests/test_model_request_profile.py tests/test_model_clients.py` **67通过**。持久需求影响、回执纠正和规划的真实存储测试在未设置对应 `RUN_LIVE_*` 门控时仍跳过，不能据此声称全阶段 retry/recovery 已验收。

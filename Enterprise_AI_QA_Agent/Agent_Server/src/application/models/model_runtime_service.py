@@ -132,14 +132,16 @@ class ModelRuntimeService:
         request = request.model_copy(update={"trace_context": trace_context})
         if (expected_runtime_parameters is not None and
             self.get_invocation_runtime_parameters(model_key, transport_options=transport_options) != expected_runtime_parameters):
-            logger.warning("model_invocation_runtime_changed", extra={"model_key": model_key})
+            logger.warning("model_invocation_runtime_changed", extra={
+                "model_key": model_key, "logical_call_id": logical_call_id})
             raise ValueError("模型调用适配器、SDK或超时设置已变化，不能续写原任务")
         try:
             config = self._model_registry.get_runtime_config(model_key)
         except KeyError:
             logger.warning(
                 "model_invocation_failed",
-                extra={"model_key": model_key, "mode": "missing_active_model"},
+                extra={"model_key": model_key, "mode": "missing_active_model",
+                    "logical_call_id": logical_call_id},
             )
             return ModelInvocationResult(
                 text=(
@@ -150,12 +152,14 @@ class ModelRuntimeService:
                     "requested_model_key": model_key,
                     "messages": summarize_messages(request.messages),
                 },
-                response_summary={"mode": "missing_active_model", "model_key": model_key},
+                response_summary={"mode": "missing_active_model", "model_key": model_key,
+                    "logical_call_id": logical_call_id},
                 raw_response={"mode": "missing_active_model", "model_key": model_key},
             )
         if expected_parameters is not None:
             if model_invocation_parameters(config) != expected_parameters:
-                logger.warning("model_invocation_parameters_changed", extra={"model_key": model_key})
+                logger.warning("model_invocation_parameters_changed", extra={
+                    "model_key": model_key, "logical_call_id": logical_call_id})
                 raise ValueError("模型参数已变化，不能使用新配置续写原任务")
         if transport_options is not None:
             self.get_invocation_runtime_parameters(model_key, transport_options=transport_options)
@@ -165,10 +169,11 @@ class ModelRuntimeService:
             mapped = map_model_request(config, request)
         except UnsupportedModelRequest as exc:
             logger.warning("model_request_option_unsupported", extra={"model_key": config.key,
-                "option": exc.option, "reason": exc.reason, "transport": config.transport})
+                "option": exc.option, "reason": exc.reason, "transport": config.transport,
+                "logical_call_id": logical_call_id})
             return ModelInvocationResult(text=str(exc), request_payload=self._summarize_request(config, request),
                 response_summary={"mode": "unsupported_request", "model_key": config.key,
-                    "option": exc.option, "reason": exc.reason},
+                    "option": exc.option, "reason": exc.reason, "logical_call_id": logical_call_id},
                 raw_response={"mode": "unsupported_request", "option": exc.option, "reason": exc.reason})
         for decision in mapped.decisions:
             logger.info("model_request_option_decided", extra={"model_key": config.key,
@@ -182,6 +187,7 @@ class ModelRuntimeService:
                     "model_key": config.key,
                     "mode": "auth_error",
                     "error_type": type(exc).__name__,
+                    "logical_call_id": logical_call_id,
                 },
             )
             return ModelInvocationResult(
@@ -191,6 +197,7 @@ class ModelRuntimeService:
                     "mode": "auth_error",
                     "model_key": config.key,
                     "error_type": type(exc).__name__,
+                    "logical_call_id": logical_call_id,
                 },
                 raw_response={
                     "mode": "auth_error",
@@ -202,12 +209,14 @@ class ModelRuntimeService:
         if not api_key:
             logger.warning(
                 "model_invocation_failed",
-                extra={"model_key": config.key, "mode": "missing_api_key"},
+                extra={"model_key": config.key, "mode": "missing_api_key",
+                    "logical_call_id": logical_call_id},
             )
             return ModelInvocationResult(
                 text="The active model has no usable API key. Configure its credentials and retry.",
                 request_payload=self._summarize_request(config, request),
-                response_summary={"mode": "missing_api_key", "model_key": config.key},
+                response_summary={"mode": "missing_api_key", "model_key": config.key,
+                    "logical_call_id": logical_call_id},
                 raw_response={"mode": "missing_api_key", "model_key": config.key},
             )
 
