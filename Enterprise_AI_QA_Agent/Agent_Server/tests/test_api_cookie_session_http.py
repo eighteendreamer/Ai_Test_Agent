@@ -122,7 +122,7 @@ def test_cookie_only_login_rotation_scope_and_terminal_replay(tmp_path, worker, 
         count = len(events)
         asyncio.run(coordinator.run_all())
         assert before == [task.model_dump(mode="json") for task in result] and len(events) == count
-        report = ReportBuilder().build(campaign=ApiTestCampaign(campaign_id="cookie", tasks=result))
+        report = ReportBuilder(credential_manager=credentials).build(campaign=ApiTestCampaign(campaign_id="cookie", tasks=result))
         facts = {"events": events, "statuses": [t.status for t in result], "report": report.model_dump(mode="json"),
                  "external_ai_calls": 0, "terminal_extra_http": len(events)-count}
         directory = Path(os.getenv("QA_API_COOKIE_DIR", str(tmp_path)))

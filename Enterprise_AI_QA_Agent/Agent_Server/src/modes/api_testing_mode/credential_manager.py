@@ -234,6 +234,13 @@ class CredentialManager:
     def get(self, credential_session_id: str) -> CredentialSession | None:
         return self._sessions.get(credential_session_id)
 
+    def sensitive_values(self) -> frozenset[str]:
+        """In-memory redaction context, including credentials rotated this run."""
+        return frozenset(value for session in self._sessions.values() for value in (
+            session.token, *session.headers.values(), *session.cookie_jar.values(),
+            *(record.value for record in session.cookie_records or []),
+        ) if value)
+
     def restore_session(self, session: CredentialSession) -> CredentialSession:
         restored = session.model_copy(deep=True)
         if not restored.credential_session_id:

@@ -1,0 +1,51 @@
+{
+  "worker": true,
+  "failed_assertion": false,
+  "events": [
+    {
+      "method": "POST",
+      "path": "/api/login",
+      "cookie_names": [],
+      "sid_source": "absent"
+    },
+    {
+      "method": "GET",
+      "path": "/api/finish",
+      "cookie_names": [
+        "obsolete",
+        "sid"
+      ],
+      "sid_source": "login"
+    },
+    {
+      "method": "POST",
+      "path": "/api/refresh",
+      "cookie_names": [
+        "obsolete",
+        "sid"
+      ],
+      "sid_source": "login"
+    },
+    {
+      "method": "GET",
+      "path": "/api/profile",
+      "cookie_names": [
+        "sid"
+      ],
+      "sid_source": "refresh"
+    }
+  ],
+  "report_safe": true,
+  "artifacts_safe": true,
+  "markdown_safe": true,
+  "raw_execution_response_preserved": true,
+  "execution_objects_unchanged": true,
+  "report_extra_http": 0,
+  "passed_tasks": 3,
+  "failed_tasks": 0,
+  "artifact_types": [
+    "api_test_report_json",
+    "api_test_report_md"
+  ],
+  "external_ai_calls": 0
+}

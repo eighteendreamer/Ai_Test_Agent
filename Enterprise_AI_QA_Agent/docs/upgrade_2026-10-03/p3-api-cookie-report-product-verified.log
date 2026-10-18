@@ -1,0 +1,139 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+________ test_cookie_report_download_restart_and_original_job_recovery ________
+tests\test_api_report_credentials_product.py:128: in test_cookie_report_download_restart_and_original_job_recovery
+    await expect(page.locator(".report-detail .summary-body").first).to_contain_text("通过\t2")
+E   AssertionError: Locator expected to contain text '通过	2'
+E   Actual value: API 测试报告项目: Cookie report fixture 目标: 接口验证 生成时间: 2026-10-18T03:28:14.549126+00:00 Campaign ID: 98830d51-2218-4701-9ac4-b39a7ac2bfb1📊 执行摘要指标值总任务数3通过2失败1跳过0断言通过2断言失败1总耗时187ms🔍 发现问题❌ GET /api/profile: Expect status 201📋 任务详情✅ POST /api/login状态: completed响应码: 204耗时: 137ms断言: 1 通过 / 0 失败✅ POST /api/refresh状态: completed响应码: 204耗时: 26ms断言: 1 通过 / 0 失败❌ GET /api/profile状态: failed响应码: 200耗时: 24ms断言: 0 通过 / 1 失败错误: Assertions failed: status_code=201证据片段:{
+E     "response_status": 200,
+E     "response_body_preview": "{\"ok\": true, \"opaque_echo\": \"[REDACTED]\"}",
+E     "error": "Assertions failed: status_code=201",
+E     "failed_assertions": [
+E       {
+E         "kind": "status_code",
+E         "name": "status_code=201",
+E         "actual": 200,
+E         "passed": false,
+E         "expected": 201,
+E         "description": "Expect status 201"
+E       }
+E     ]
+E   } 
+E   Call log:
+E     - Expect "to_contain_text" with timeout 5000ms
+E     - waiting for locator(".report-detail .summary-body").first
+E       14 × locator resolved to <div data-v-12a65205="" class="summary-body conversation-entry-markdown">…</div>
+E          - unexpected value "API 测试报告项目: Cookie report fixture 目标: 接口验证 生成时间: 2026-10-18T03:28:14.549126+00:00 Campaign ID: 98830d51-2218-4701-9ac4-b39a7ac2bfb1📊 执行摘要指标值总任务数3通过2失败1跳过0断言通过2断言失败1总耗时187ms🔍 发现问题❌ GET /api/profile: Expect status 201📋 任务详情✅ POST /api/login状态: completed响应码: 204耗时: 137ms断言: 1 通过 / 0 失败✅ POST /api/refresh状态: completed响应码: 204耗时: 26ms断言: 1 通过 / 0 失败❌ GET /api/profile状态: failed响应码: 200耗时: 24ms断言: 0 通过 / 1 失败错误: Assertions failed: status_code=201证据片段:{
+E     "response_status": 200,
+E     "response_body_preview": "{\"ok\": true, \"opaque_echo\": \"[REDACTED]\"}",
+E     "error": "Assertions failed: status_code=201",
+E     "failed_assertions": [
+E       {
+E         "kind": "status_code",
+E         "name": "status_code=201",
+E         "actual": 200,
+E         "passed": false,
+E         "expected": 201,
+E         "description": "Expect status 201"
+E       }
+E     ]
+E   }"
+E   
+E   Aria snapshot:
+E   - heading "API 测试报告" [level=1]
+E   - paragraph:
+E     - strong: 项目
+E     - text: ": Cookie report fixture"
+E     - strong: 目标
+E     - text: ": 接口验证"
+E     - strong: 生成时间
+E     - text: ": 2026-10-18T03:28:14.549126+00:00"
+E     - strong: Campaign ID
+E     - text: ":"
+E     - code: 98830d51-2218-4701-9ac4-b39a7ac2bfb1
+E   - heading "📊 执行摘要" [level=2]
+E   - table:
+E     - rowgroup:
+E       - row "指标 值":
+E         - columnheader "指标"
+E         - columnheader "值"
+E     - rowgroup:
+E       - row "总任务数 3":
+E         - cell "总任务数"
+E         - cell "3"
+E       - row "通过 2":
+E         - cell "通过"
+E         - cell "2"
+E       - row "失败 1":
+E         - cell "失败"
+E         - cell "1"
+E       - row "跳过 0":
+E         - cell "跳过"
+E         - cell "0"
+E       - row "断言通过 2":
+E         - cell "断言通过"
+E         - cell "2"
+E       - row "断言失败 1":
+E         - cell "断言失败"
+E         - cell "1"
+E       - row "总耗时 187ms":
+E         - cell "总耗时"
+E         - cell "187ms"
+E   - heading "🔍 发现问题" [level=2]
+E   - list:
+E     - listitem: "❌ GET /api/profile: Expect status 201"
+E   - heading "📋 任务详情" [level=2]
+E   - heading "✅ POST /api/login" [level=3]
+E   - list:
+E     - listitem:
+E       - strong: 状态
+E       - text: ": completed"
+E     - listitem:
+E       - strong: 响应码
+E       - text: ": 204"
+E     - listitem:
+E       - strong: 耗时
+E       - text: ": 137ms"
+E     - listitem:
+E       - strong: 断言
+E       - text: ": 1 通过 / 0 失败"
+E   - heading "✅ POST /api/refresh" [level=3]
+E   - list:
+E     - listitem:
+E       - strong: 状态
+E       - text: ": completed"
+E     - listitem:
+E       - strong: 响应码
+E       - text: ": 204"
+E     - listitem:
+E       - strong: 耗时
+E       - text: ": 26ms"
+E     - listitem:
+E       - strong: 断言
+E       - text: ": 1 通过 / 0 失败"
+E   - heading "❌ GET /api/profile" [level=3]
+E   - list:
+E     - listitem:
+E       - strong: 状态
+E       - text: ": failed"
+E     - listitem:
+E       - strong: 响应码
+E       - text: ": 200"
+E     - listitem:
+E       - strong: 耗时
+E       - text: ": 24ms"
+E     - listitem:
+E       - strong: 断言
+E       - text: ": 0 通过 / 1 失败"
+E     - listitem:
+E       - strong: 错误
+E       - text: ": Assertions failed: status_code=201"
+E   - paragraph:
+E     - strong: "证据片段:"
+E   - code: "{ \"response_status\": 200, \"response_body_preview\": \"{\\\"ok\\\": true, \\\"opaque_echo\\\": \\\"[REDACTED]\\\"}\", \"error\": \"Assertions failed: status_code=201\", \"failed_assertions\": [ { \"kind\": \"status_code\", \"name\": \"status_code=201\", \"actual\": 200, \"passed\": false, \"expected\": 201, \"description\": \"Expect status 201\" } ] }"
+------------------------------ Captured log call ------------------------------
+WARNING  uvicorn.error.api_testing_mode.credentials:credential_manager.py:228 api_login_token_unavailable
+WARNING  uvicorn.error.api_testing_mode.credentials:credential_manager.py:228 api_login_token_unavailable
+=========================== short test summary info ===========================
+FAILED tests/test_api_report_credentials_product.py::test_cookie_report_download_restart_and_original_job_recovery
+1 failed in 91.33s (0:01:31)

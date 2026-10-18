@@ -9,6 +9,7 @@ Supports:
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -20,10 +21,24 @@ from src.modes.api_testing_mode.campaign_state import (
 from src.modes.api_testing_mode.contracts import TASK_COMPLETED, TASK_FAILED, TASK_SKIPPED
 from src.modes.api_testing_mode.http_observation import HTTP_OBSERVATION_KEY
 from src.application.security.output_safety_policy import OutputSafetyPolicy
+from src.modes.api_testing_mode.credential_manager import CredentialManager
+
+logger = logging.getLogger("uvicorn.error.api_testing_mode.report_builder")
 
 
 class ReportBuilder:
     """Aggregate campaign task results into structured and Markdown reports."""
+
+    def __init__(self, *, credential_manager: CredentialManager | None = None) -> None:
+        self._credential_manager = credential_manager
+
+    def _policy(self) -> OutputSafetyPolicy:
+        return OutputSafetyPolicy(known_sensitive_values=(
+            self._credential_manager.sensitive_values() if self._credential_manager is not None else ()
+        ))
+
+    def _public(self, value: Any) -> Any:
+        return self._policy().sanitize_for_audit(value)
 
     def build(self, *, campaign: ApiTestCampaign) -> CampaignReport:
         tasks = campaign.tasks
@@ -56,7 +71,7 @@ class ReportBuilder:
         else:
             summary = f"⚠️ {summary}"
 
-        return CampaignReport(
+        report = CampaignReport(
             campaign_id=campaign.campaign_id,
             project_name=campaign.project_name,
             summary=summary,
@@ -71,6 +86,12 @@ class ReportBuilder:
             findings=findings,
             generated_at=datetime.now(timezone.utc).isoformat(),
         )
+        public_report = CampaignReport.model_validate(self._public(report.model_dump(mode="json")))
+        logger.info("api_report_public_projection_built", extra={
+            "campaign_id": public_report.campaign_id, "task_count": len(tasks),
+            "failed_task_count": failed, "credential_context_available": self._credential_manager is not None,
+        })
+        return public_report
 
     def build_markdown(self, *, campaign: ApiTestCampaign, report: CampaignReport) -> str:
         """Generate a human-readable Markdown report."""
@@ -132,7 +153,7 @@ class ReportBuilder:
 
             lines.append("")
 
-        return "\n".join(lines)
+        return self._public("\n".join(lines))
 
     def build_artifacts(
         self,
@@ -149,7 +170,7 @@ class ReportBuilder:
         artifacts: list[dict[str, Any]] = []
 
         # 1. JSON report artifact.
-        json_content = json.dumps(report.model_dump(mode="json"), ensure_ascii=False, indent=2)
+        json_content = json.dumps(self._public(report.model_dump(mode="json")), ensure_ascii=False, indent=2)
         artifacts.append({
             "type": "api_test_report_json",
             "filename": f"api_test_report_{campaign.campaign_id[:8]}.json",
@@ -162,7 +183,7 @@ class ReportBuilder:
         artifacts.append({
             "type": "api_test_report_md",
             "filename": f"api_test_report_{campaign.campaign_id[:8]}.md",
-            "content": markdown_report.encode("utf-8"),
+            "content": self._public(markdown_report).encode("utf-8"),
             "content_type": "text/markdown",
             "label": "API 测试报告 (Markdown)",
         })
@@ -179,7 +200,7 @@ class ReportBuilder:
                     "filename": f"evidence_{task.task_id[:12]}.json",
                     "content": evidence_json.encode("utf-8"),
                     "content_type": "application/json",
-                    "label": f"证据: {task.method} {task.path}",
+                    "label": self._public(f"证据: {task.method} {task.path}"),
                     "task_id": task.task_id,
                 })
 
@@ -190,12 +211,12 @@ class ReportBuilder:
     # ------------------------------------------------------------------
 
     def _task_summary(self, task: ApiTestTask) -> dict[str, Any]:
-        public_request, _, _ = OutputSafetyPolicy().sanitize_tool_output({
+        public_request, _, _ = self._policy().sanitize_tool_output({
             "headers": task.request_headers,
             "query": task.request_query,
             "body": task.request_body,
         })
-        public_response, _, _ = OutputSafetyPolicy().sanitize_tool_output({
+        public_response, _, _ = self._policy().sanitize_tool_output({
             "status": task.response_status,
             "headers": dict(task.response_headers),
             "body": self._truncate_body(task.response_body, max_chars=4000),
@@ -232,7 +253,7 @@ class ReportBuilder:
             if evidence:
                 summary["evidence"] = evidence
 
-        return summary
+        return self._public(summary)
 
     def _build_evidence_snippet(self, task: ApiTestTask) -> str:
         """Build a compact evidence string for inclusion in Markdown."""
@@ -240,7 +261,7 @@ class ReportBuilder:
         if task.response_status:
             evidence["response_status"] = task.response_status
         if task.response_body:
-            body = task.response_body
+            body = self._public(task.response_body)
             if isinstance(body, dict):
                 # Truncate large response bodies.
                 body_str = json.dumps(body, ensure_ascii=False)
@@ -258,7 +279,7 @@ class ReportBuilder:
             evidence["failed_assertions"] = failed_checks[:3]
         if not evidence:
             return ""
-        return json.dumps(evidence, ensure_ascii=False, indent=2)
+        return json.dumps(self._public(evidence), ensure_ascii=False, indent=2)
 
     def _build_task_evidence(self, task: ApiTestTask) -> dict[str, Any] | None:
         """Build full evidence dict for artifact persistence."""
@@ -292,9 +313,10 @@ class ReportBuilder:
         }
         if HTTP_OBSERVATION_KEY in task.execution_checkpoint:
             evidence[HTTP_OBSERVATION_KEY] = task.execution_checkpoint[HTTP_OBSERVATION_KEY]
-        return evidence
+        return self._public(evidence)
 
     def _truncate_body(self, body: Any, max_chars: int = 2000) -> Any:
+        body = self._public(body)
         if body is None:
             return None
         if isinstance(body, dict):

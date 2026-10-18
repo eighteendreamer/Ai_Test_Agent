@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Iterable
 from typing import Any
 
 from src.application.security.prompt_injection_policy import PromptInjectionPolicy
@@ -39,8 +40,10 @@ class OutputSafetyPolicy:
         re.compile(r"\beyJ[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\.[A-Za-z0-9_-]{8,}\b"),
     )
 
-    def __init__(self, injection_policy: PromptInjectionPolicy | None = None) -> None:
+    def __init__(self, injection_policy: PromptInjectionPolicy | None = None, *, known_sensitive_values: Iterable[str] = ()) -> None:
         self._injection_policy = injection_policy or PromptInjectionPolicy()
+        values = sorted({value for value in known_sensitive_values if isinstance(value, str) and value}, key=len, reverse=True)
+        self._known_value_pattern = re.compile("|".join(re.escape(value) for value in values)) if values else None
 
     def sanitize_tool_output(self, output: dict[str, Any]) -> tuple[dict[str, Any], ContentSafetyAssessment, list[str]]:
         redacted_paths: list[str] = []
@@ -57,6 +60,10 @@ class OutputSafetyPolicy:
 
     def sanitize_text(self, text: str) -> tuple[str, bool]:
         sanitized = str(text or "")
+        if self._known_value_pattern is not None:
+            # Replace all known literals in one pass; masks are not reprocessed
+            # when credential values overlap or contain regex metacharacters.
+            sanitized = self._known_value_pattern.sub(lambda _match: self.REDACTED, sanitized)
         for pattern in self.TEXT_PATTERNS:
             if pattern.groups >= 2:
                 sanitized = pattern.sub(lambda match: f"{match.group(1)}={self.REDACTED}", sanitized)

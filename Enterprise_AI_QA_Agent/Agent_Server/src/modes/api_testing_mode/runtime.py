@@ -12,6 +12,7 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import ValidationError
+from src.application.security.output_safety_policy import OutputSafetyPolicy
 
 from src.application.documents.api_docs_service import ApiDocsService
 from src.modes.api_testing_mode.campaign_state import (
@@ -101,8 +102,8 @@ class ApiTestingModeRuntime:
         self._precondition_resolver = PreconditionResolver()
         self._dependency_planner = DependencyPlanner()
         self._selection_resolver = SelectionResolver()
-        self._report_builder = ReportBuilder()
         self._credential_manager = CredentialManager()
+        self._report_builder = ReportBuilder(credential_manager=self._credential_manager)
         self._verification_policy = ApiTestingVerificationPolicy()
         self._evaluation_policy = ApiTestingEvaluationPolicy()
 
@@ -568,19 +569,23 @@ class ApiTestingModeRuntime:
             total_available_endpoints=total_available,
             verification_verdict=verification_verdict,
         )
-        state.verification_result = verification_verdict.to_dict()
-        state.evaluation_result = evaluation_result.to_dict()
-        state.errors = self._build_error_records(evaluation_result.to_dict(), completed_tasks)
+        # These are public result projections, not inputs for task execution.
+        # Sanitize here too: they are attached after ReportBuilder.build().
+        public_policy = OutputSafetyPolicy(known_sensitive_values=self._credential_manager.sensitive_values())
+        state.verification_result = public_policy.sanitize_for_audit(verification_verdict.to_dict())
+        state.evaluation_result = public_policy.sanitize_for_audit(evaluation_result.to_dict())
+        state.errors = public_policy.sanitize_for_audit(
+            self._build_error_records(state.evaluation_result, completed_tasks))
         report.artifacts = list(state.artifacts)
         report.verification_result = dict(state.verification_result)
         report.evaluation_result = dict(state.evaluation_result)
         state.report = report
 
         # Attach to report notes.
-        state.notes.append(f"验证结论: {verification_verdict.summary}")
-        state.notes.append(f"质量评估: {evaluation_result.summary}")
-        if evaluation_result.recommendations:
-            for rec in evaluation_result.recommendations[:5]:
+        state.notes.append(f"验证结论: {state.verification_result['summary']}")
+        state.notes.append(f"质量评估: {state.evaluation_result['summary']}")
+        if state.evaluation_result["recommendations"]:
+            for rec in state.evaluation_result["recommendations"][:5]:
                 state.notes.append(rec)
 
         if not has_unsettled_workers:
@@ -1130,20 +1135,9 @@ class ApiTestingModeRuntime:
         if credential_owner is not None:
             output.pop("credential_session")
             output["credential_ref"] = latest_credential.credential_session_id if latest_credential else ""
-            # Concrete credential values can also occur under a custom response field.
-            # Redact the known values, without globally treating generic 'token' as secret.
-            sessions = [s for s in (credential, latest_credential) if s is not None]
-            private_values = {v for s in sessions for v in [s.token, *s.headers.values(), *s.cookie_jar.values(),
-                *(record.value for record in s.cookie_records or [])] if v}
-            def public(value):
-                if isinstance(value, dict):
-                    return {k: public(v) for k, v in value.items()}
-                if isinstance(value, list):
-                    return [public(v) for v in value]
-                if isinstance(value, str) and value in private_values:
-                    return "[REDACTED]"
-                return value
-            output["task_result"] = public(output["task_result"])
+            output["task_result"] = OutputSafetyPolicy(
+                known_sensitive_values=credential_manager.sensitive_values()
+            ).sanitize_for_audit(output["task_result"])
         return output
 
     def _can_use_subagent_execution(self, context: Any) -> bool:
