@@ -1,0 +1,239 @@
+{
+  "campaign_id": "cd66eb27-eed2-4f95-811e-a21251571d09",
+  "project_name": "Cookie report fixture",
+  "summary": "⚠️ Campaign 'cd66eb27-eed2-4f95-811e-a21251571d09' completed: 2/3 tasks passed, 1 failed, 0 skipped. Checks: 2 passed, 1 failed. Total time: 71ms.",
+  "total_tasks": 3,
+  "completed": 2,
+  "failed": 1,
+  "skipped": 0,
+  "passed_checks": 2,
+  "failed_checks": 1,
+  "duration_ms": 71.35,
+  "tasks": [
+    {
+      "task_id": "login",
+      "name": "",
+      "method": "POST",
+      "path": "/api/login",
+      "full_url": "http://127.0.0.1:60162/api/login",
+      "capability": "login",
+      "status": "completed",
+      "response_status": 204,
+      "duration_ms": 42.68,
+      "check_count": 1,
+      "checks_passed": 1,
+      "checks_failed": 0,
+      "request_outcome": "completed",
+      "reconciliation_for": null,
+      "reconciliation_status": "none",
+      "reconciliation_observation": null,
+      "reconciliation_required": false,
+      "error": null,
+      "checks": [
+        {
+          "actual": 204,
+          "description": "Default: expect 2xx response status.",
+          "expected": "2xx",
+          "kind": "status_code_range",
+          "name": "default_status_check",
+          "passed": true
+        }
+      ],
+      "request": {
+        "headers": {},
+        "query": {},
+        "body": null
+      },
+      "response": {
+        "status": 204,
+        "headers": {
+          "content-length": "0",
+          "content-type": "application/json",
+          "date": "Sun, 18 Oct 2026 04:01:23 GMT",
+          "server": "BaseHTTP/0.6 Python/3.11.16"
+        },
+        "body": ""
+      },
+      "http_observation_v1": {
+        "acquisition": "network",
+        "hops": [
+          {
+            "method": "POST",
+            "status_code": 303,
+            "target": {
+              "fragment_omitted": false,
+              "host": "127.0.0.1",
+              "path": "/api/login",
+              "port": 60162,
+              "query_omitted": false,
+              "scheme": "http",
+              "userinfo_omitted": false
+            }
+          },
+          {
+            "method": "GET",
+            "status_code": 204,
+            "target": {
+              "fragment_omitted": false,
+              "host": "127.0.0.1",
+              "path": "/api/finish",
+              "port": 60162,
+              "query_omitted": false,
+              "scheme": "http",
+              "userinfo_omitted": false
+            }
+          }
+        ],
+        "implementation_version": "api-http-observation-v1",
+        "observed_at": "2026-10-18T04:01:23.683439Z"
+      }
+    },
+    {
+      "task_id": "refresh",
+      "name": "",
+      "method": "POST",
+      "path": "/api/refresh",
+      "full_url": "http://127.0.0.1:60162/api/refresh",
+      "capability": "refresh_token",
+      "status": "completed",
+      "response_status": 204,
+      "duration_ms": 14.47,
+      "check_count": 1,
+      "checks_passed": 1,
+      "checks_failed": 0,
+      "request_outcome": "completed",
+      "reconciliation_for": null,
+      "reconciliation_status": "none",
+      "reconciliation_observation": null,
+      "reconciliation_required": false,
+      "error": null,
+      "checks": [
+        {
+          "actual": 204,
+          "description": "Default: expect 2xx response status.",
+          "expected": "2xx",
+          "kind": "status_code_range",
+          "name": "default_status_check",
+          "passed": true
+        }
+      ],
+      "request": {
+        "headers": {},
+        "query": {},
+        "body": null
+      },
+      "response": {
+        "status": 204,
+        "headers": {
+          "content-length": "0",
+          "content-type": "application/json",
+          "date": "Sun, 18 Oct 2026 04:01:23 GMT",
+          "server": "BaseHTTP/0.6 Python/3.11.16",
+          "set-cookie": "[REDACTED]"
+        },
+        "body": "",
+        "_security": {
+          "untrusted_content": true,
+          "indirect_injection_signals": [],
+          "redacted_field_count": 1
+        }
+      },
+      "http_observation_v1": {
+        "acquisition": "network",
+        "hops": [
+          {
+            "method": "POST",
+            "status_code": 204,
+            "target": {
+              "fragment_omitted": false,
+              "host": "127.0.0.1",
+              "path": "/api/refresh",
+              "port": 60162,
+              "query_omitted": false,
+              "scheme": "http",
+              "userinfo_omitted": false
+            }
+          }
+        ],
+        "implementation_version": "api-http-observation-v1",
+        "observed_at": "2026-10-18T04:01:23.888145Z"
+      }
+    },
+    {
+      "task_id": "profile",
+      "name": "",
+      "method": "GET",
+      "path": "/api/profile",
+      "full_url": "http://127.0.0.1:60162/api/profile",
+      "capability": "detail",
+      "status": "failed",
+      "response_status": 200,
+      "duration_ms": 14.2,
+      "check_count": 1,
+      "checks_passed": 0,
+      "checks_failed": 1,
+      "request_outcome": "completed",
+      "reconciliation_for": null,
+      "reconciliation_status": "none",
+      "reconciliation_observation": null,
+      "reconciliation_required": false,
+      "error": "Assertions failed: status_code=201",
+      "checks": [
+        {
+          "actual": 200,
+          "description": "Expect status 201",
+          "expected": 201,
+          "kind": "status_code",
+          "name": "status_code=201",
+          "passed": false
+        }
+      ],
+      "request": {
+        "headers": {},
+        "query": {},
+        "body": null
+      },
+      "response": {
+        "status": 200,
+        "headers": {
+          "content-length": "63",
+          "content-type": "application/json",
+          "date": "Sun, 18 Oct 2026 04:01:24 GMT",
+          "server": "BaseHTTP/0.6 Python/3.11.16"
+        },
+        "body": {
+          "ok": true,
+          "opaque_echo": "[REDACTED]"
+        }
+      },
+      "http_observation_v1": {
+        "acquisition": "network",
+        "hops": [
+          {
+            "method": "GET",
+            "status_code": 200,
+            "target": {
+              "fragment_omitted": false,
+              "host": "127.0.0.1",
+              "path": "/api/profile",
+              "port": 60162,
+              "query_omitted": false,
+              "scheme": "http",
+              "userinfo_omitted": false
+            }
+          }
+        ],
+        "implementation_version": "api-http-observation-v1",
+        "observed_at": "2026-10-18T04:01:24.096641Z"
+      },
+      "evidence": "{\n  \"response_status\": 200,\n  \"response_body_preview\": \"{\\\"ok\\\": true, \\\"opaque_echo\\\": \\\"[REDACTED]\\\"}\",\n  \"error\": \"Assertions failed: status_code=201\",\n  \"failed_assertions\": [\n    {\n      \"actual\": 200,\n      \"description\": \"Expect status 201\",\n      \"expected\": 201,\n      \"kind\": \"status_code\",\n      \"name\": \"status_code=201\",\n      \"passed\": false\n    }\n  ]\n}"
+    }
+  ],
+  "findings": [
+    "❌ GET /api/profile: Expect status 201"
+  ],
+  "artifacts": [],
+  "verification_result": {},
+  "evaluation_result": {},
+  "generated_at": "2026-10-18T04:01:24.222812+00:00"
+}

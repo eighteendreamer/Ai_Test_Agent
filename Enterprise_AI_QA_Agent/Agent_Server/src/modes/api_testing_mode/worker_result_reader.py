@@ -68,7 +68,23 @@ class ApiWorkerResultReader:
         if (any(result.get(key, "") != getattr(task, key) for key in ("task_id", "method", "path", "full_url"))
             or result.get("attempts") != task.attempts):
             raise ApiCredentialReferenceError("api_worker_result_identity_invalid")
+        output = deepcopy(job.output_payload)
+        if ref := output.get("private_result_ref"):
+            checkpoint_ref = task.execution_checkpoint.get("private_result_ref")
+            if checkpoint_ref and checkpoint_ref != ref:
+                raise ApiCredentialReferenceError("api_worker_result_reference_conflict")
+            if self._references is None or not job.input_payload.get("dispatch_ref"):
+                raise ApiCredentialReferenceError("api_worker_result_reference_service_missing")
+            original = await self._references.load_worker_result(ref,
+                dispatch_ref=job.input_payload["dispatch_ref"], job=job, session=session, parent_context=parent_context)
+            if (any(original.get(key, "") != getattr(task, key) for key in ("task_id", "method", "path", "full_url"))
+                or original.get("attempts") != task.attempts):
+                raise ApiCredentialReferenceError("api_worker_result_identity_invalid")
+            original.setdefault("execution_checkpoint", {})["private_result_ref"] = ref
+            output["task_result"] = original
+        elif result.get("execution_checkpoint", {}).get("private_result_ref"):
+            raise ApiCredentialReferenceError("api_worker_result_reference_missing")
         logger.info("api_worker_result_read_from_job", extra={
             "child_session_id": session.id, "tool_job_id": job.id, "task_id": task.task_id,
             "status": job.status.value})
-        return deepcopy(job.output_payload)
+        return output

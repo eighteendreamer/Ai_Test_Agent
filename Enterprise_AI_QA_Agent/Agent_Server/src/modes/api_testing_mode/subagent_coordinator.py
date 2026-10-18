@@ -87,6 +87,8 @@ class ApiSubagentCoordinator:
         return bool(self._unsettled_child_session_ids or self._unsettled_task_ids)
 
     async def run_all(self) -> list[ApiTestTask]:
+        if not await self._restore_completed_outputs():
+            return self._pool.all_tasks
         restored_running = self._pool.running_tasks()
         if restored_running and self._tool_jobs is not None:
             deadline = asyncio.get_running_loop().time() + max(
@@ -149,6 +151,47 @@ class ApiSubagentCoordinator:
             await self._retry_failed()
 
         return self._pool.all_tasks
+
+    async def _restore_completed_outputs(self) -> bool:
+        # Completed public checkpoints retain the original Job/ref, not usable
+        # response credentials. Rehydrate privately without resetting a verdict.
+        for task in self._pool.completed_tasks():
+            if not task.execution_checkpoint.get("private_result_ref"):
+                continue
+            try:
+                async def read():
+                    if self._tool_jobs is None:
+                        raise ApiCredentialReferenceError("api_worker_result_reference_service_missing")
+                    session = await self._session_store.get_session(task.worker_session_id)
+                    if session is None:
+                        raise ApiCredentialReferenceError("api_worker_result_session_missing")
+                    output = await ApiWorkerResultReader(tool_job_service=self._tool_jobs,
+                        credential_reference_service=self._credential_references).read(
+                            session=session, task=task, parent_context=self._parent_context)
+                    if not output or output["task_result"].get("status") != TASK_COMPLETED:
+                        raise ApiCredentialReferenceError("api_worker_result_not_completed")
+                    result = output["task_result"]
+                    if result.get("auth_ref"):
+                        credential = await self._credential_references.load_parent_credential(
+                            result["auth_ref"], self._parent_context)
+                        self._credential_manager.restore_session(credential)
+                    return result
+                result = await asyncio.wait_for(read(), timeout=max(
+                    self._poll_interval_seconds, self._policy.request_timeout_seconds * 2))
+                task.response_body = result.get("response_body")
+                self._task_outputs[task.task_id] = task.response_body
+                logger.info("api_completed_private_output_restored", extra={
+                    "parent_session_id": self._parent_context.get("session_id"), "task_id": task.task_id,
+                    "child_session_id": task.worker_session_id})
+            except (ApiCredentialReferenceError, TimeoutError) as exc:
+                # Preserve the terminal result; stop new sends until its original
+                # private evidence is readable rather than using [REDACTED].
+                self._unsettled_task_ids.add(task.task_id)
+                logger.warning("api_completed_private_output_unavailable", extra={
+                    "parent_session_id": self._parent_context.get("session_id"), "task_id": task.task_id,
+                    "reason": str(exc) if isinstance(exc, ApiCredentialReferenceError) else "read_timeout"})
+                return False
+        return True
 
     async def _retry_failed(self) -> None:
         max_retries = self._policy.max_retries

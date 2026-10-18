@@ -1,4 +1,4 @@
-"""Append-only encrypted API credentials and frozen Worker inputs."""
+"""Append-only encrypted API credentials, frozen inputs and original results."""
 from __future__ import annotations
 
 import asyncio
@@ -27,13 +27,14 @@ class PostgresApiCredentialStore:
             return candidate if len(candidate) <= 63 else "ac_" + hashlib.sha256(self._sessions.encode()).hexdigest()[:16] + "_" + suffix
         self._credentials = derived("api_credentials")
         self._dispatches = derived("api_dispatch_inputs")
+        self._results = derived("api_worker_results")
         for name in (self._sessions, self._projects, *self.tables):
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", name):
                 raise ValueError("Invalid API credential table identifier")
 
     @property
     def tables(self):
-        return [self._dispatches, self._credentials]
+        return [self._dispatches, self._credentials, self._results]
 
     async def initialize(self):
         await asyncio.to_thread(self._initialize_sync)
@@ -65,6 +66,15 @@ class PostgresApiCredentialStore:
 
     async def load_dispatch(self, ref, *, owner_session_id, project_id):
         return await self._get(self._dispatches, ref, owner_session_id, project_id)
+
+    async def save_worker_result(self, payload, *, owner_session_id, project_id):
+        ref = str(uuid5(NAMESPACE_URL, json.dumps(["api-worker-result-v1", owner_session_id,
+            payload["child_session_id"], payload["tool_job_id"]])))
+        await self._put(self._results, ref, payload, owner_session_id, project_id)
+        return ref
+
+    async def load_worker_result(self, ref, *, owner_session_id, project_id):
+        return await self._get(self._results, ref, owner_session_id, project_id)
 
     def _encode(self, payload):
         if not self._codec.available:

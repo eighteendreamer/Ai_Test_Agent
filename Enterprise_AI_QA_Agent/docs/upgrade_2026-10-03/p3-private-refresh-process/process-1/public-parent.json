@@ -1,0 +1,361 @@
+{
+  "api_testing_state": {
+    "notes": [],
+    "phase": "task_running",
+    "errors": [],
+    "report": null,
+    "history": [],
+    "request": {
+      "auth_hint": "",
+      "objective": "",
+      "project_id": "",
+      "domain_hint": "",
+      "method_hint": "",
+      "raw_message": "",
+      "project_hint": "",
+      "endpoint_hint": "",
+      "scope_preference": "",
+      "source_preferences": [],
+      "verification_focus": "general"
+    },
+    "campaign": {
+      "tasks": [
+        {
+          "name": "Login",
+          "path": "/login",
+          "method": "POST",
+          "status": "completed",
+          "task_id": "login",
+          "attempts": 1,
+          "auth_ref": "c1f6f5f9-1714-4cda-9c07-26a7a9ff7b25",
+          "full_url": "http://127.0.0.1:49935/login",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "path": "",
+              "expected": 200,
+              "description": ""
+            }
+          ],
+          "capability": "",
+          "depends_on": [],
+          "last_error": "",
+          "started_at": "2026-10-18T04:00:51.052703+00:00",
+          "duration_ms": 44.83,
+          "completed_at": "2026-10-18T04:00:51.097941+00:00",
+          "request_body": null,
+          "check_results": [
+            {
+              "kind": "status_code",
+              "name": "status_code=200",
+              "actual": 200,
+              "passed": true,
+              "expected": 200,
+              "description": "Expect status 200"
+            }
+          ],
+          "request_query": {},
+          "response_body": {
+            "access_token": "[REDACTED]",
+            "refresh_token": "[REDACTED]"
+          },
+          "worker_status": "completed",
+          "execution_mode": "auth",
+          "input_bindings": [],
+          "resource_locks": [],
+          "worker_summary": "Executed API task login with final status completed and HTTP 200.",
+          "request_headers": {},
+          "request_outcome": "completed",
+          "response_status": 200,
+          "timeout_seconds": 30.0,
+          "response_headers": {
+            "date": "Sun, 18 Oct 2026 04:00:51 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json",
+            "content-length": "105"
+          },
+          "worker_session_id": "2b4ada4b-22ba-47de-bfb1-650014bbcf13",
+          "reconciliation_for": "",
+          "execution_checkpoint": {
+            "private_result_ref": "4ec46c3b-ba8a-5056-9aa2-726869ff8fbd",
+            "http_observation_v1": {
+              "hops": [
+                {
+                  "method": "POST",
+                  "target": {
+                    "host": "127.0.0.1",
+                    "path": "/login",
+                    "port": 49935,
+                    "scheme": "http",
+                    "query_omitted": false,
+                    "fragment_omitted": false,
+                    "userinfo_omitted": false
+                  },
+                  "status_code": 200
+                }
+              ],
+              "acquisition": "network",
+              "observed_at": "2026-10-18T04:00:51.097941Z",
+              "implementation_version": "api-http-observation-v1"
+            }
+          },
+          "reconciliation_status": "none",
+          "path_parameter_sources": {},
+          "dependency_skip_task_id": "",
+          "reconciliation_observation": ""
+        },
+        {
+          "name": "Refresh",
+          "path": "/auth/refresh",
+          "method": "POST",
+          "status": "completed",
+          "task_id": "refresh",
+          "attempts": 1,
+          "auth_ref": "dda4a53e-5f70-4b6d-a72b-efcfb5e940db",
+          "full_url": "http://127.0.0.1:49935/auth/refresh",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "path": "",
+              "expected": 200,
+              "description": ""
+            }
+          ],
+          "capability": "",
+          "depends_on": [
+            "login"
+          ],
+          "last_error": "",
+          "started_at": "2026-10-18T04:00:57.473438+00:00",
+          "duration_ms": 58.41,
+          "completed_at": "2026-10-18T04:00:57.531988+00:00",
+          "request_body": {
+            "refresh_token": "[REDACTED]"
+          },
+          "check_results": [
+            {
+              "kind": "status_code",
+              "name": "status_code=200",
+              "actual": 200,
+              "passed": true,
+              "expected": 200,
+              "description": "Expect status 200"
+            }
+          ],
+          "request_query": {},
+          "response_body": {
+            "access_token": "[REDACTED]"
+          },
+          "worker_status": "completed",
+          "execution_mode": "auth",
+          "input_bindings": [
+            {
+              "source_path": "refresh_token",
+              "target_path": "body.refresh_token",
+              "literal_value": null,
+              "source_task_id": "login"
+            }
+          ],
+          "resource_locks": [],
+          "worker_summary": "Executed API task refresh with final status completed and HTTP 200.",
+          "request_headers": {},
+          "request_outcome": "completed",
+          "response_status": 200,
+          "timeout_seconds": 30.0,
+          "response_headers": {
+            "date": "Sun, 18 Oct 2026 04:00:57 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json",
+            "content-length": "52"
+          },
+          "worker_session_id": "3d7ffea7-fa29-45c9-995c-03185da3be8c",
+          "reconciliation_for": "",
+          "execution_checkpoint": {
+            "private_result_ref": "0dd5fb5a-c2b2-59f5-b873-d019c365a8ce",
+            "http_observation_v1": {
+              "hops": [
+                {
+                  "method": "POST",
+                  "target": {
+                    "host": "127.0.0.1",
+                    "path": "/auth/refresh",
+                    "port": 49935,
+                    "scheme": "http",
+                    "query_omitted": false,
+                    "fragment_omitted": false,
+                    "userinfo_omitted": false
+                  },
+                  "status_code": 200
+                }
+              ],
+              "acquisition": "network",
+              "observed_at": "2026-10-18T04:00:57.531988Z",
+              "implementation_version": "api-http-observation-v1"
+            }
+          },
+          "reconciliation_status": "none",
+          "path_parameter_sources": {},
+          "dependency_skip_task_id": "",
+          "reconciliation_observation": ""
+        },
+        {
+          "name": "Profile",
+          "path": "/profile",
+          "method": "GET",
+          "status": "completed",
+          "task_id": "profile",
+          "attempts": 1,
+          "auth_ref": "dda4a53e-5f70-4b6d-a72b-efcfb5e940db",
+          "full_url": "http://127.0.0.1:49935/profile",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "path": "",
+              "expected": 200,
+              "description": ""
+            }
+          ],
+          "capability": "",
+          "depends_on": [
+            "refresh"
+          ],
+          "last_error": "",
+          "started_at": "2026-10-18T04:00:57.789542+00:00",
+          "duration_ms": 15.15,
+          "completed_at": "2026-10-18T04:00:57.804385+00:00",
+          "request_body": null,
+          "check_results": [
+            {
+              "kind": "status_code",
+              "name": "status_code=200",
+              "actual": 200,
+              "passed": true,
+              "expected": 200,
+              "description": "Expect status 200"
+            }
+          ],
+          "request_query": {},
+          "response_body": {
+            "accepted": true
+          },
+          "worker_status": "completed",
+          "execution_mode": "read",
+          "input_bindings": [],
+          "resource_locks": [],
+          "worker_summary": "Executed API task profile with final status completed and HTTP 200.",
+          "request_headers": {},
+          "request_outcome": "completed",
+          "response_status": 200,
+          "timeout_seconds": 30.0,
+          "response_headers": {
+            "date": "Sun, 18 Oct 2026 04:00:57 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json",
+            "content-length": "18"
+          },
+          "worker_session_id": "0db9d713-5c78-49bf-8095-d15a49ec925c",
+          "reconciliation_for": "",
+          "execution_checkpoint": {
+            "private_result_ref": "b487add1-6d99-5172-b32b-79667a53c91a",
+            "http_observation_v1": {
+              "hops": [
+                {
+                  "method": "GET",
+                  "target": {
+                    "host": "127.0.0.1",
+                    "path": "/profile",
+                    "port": 49935,
+                    "scheme": "http",
+                    "query_omitted": false,
+                    "fragment_omitted": false,
+                    "userinfo_omitted": false
+                  },
+                  "status_code": 200
+                }
+              ],
+              "acquisition": "network",
+              "observed_at": "2026-10-18T04:00:57.804385Z",
+              "implementation_version": "api-http-observation-v1"
+            }
+          },
+          "reconciliation_status": "none",
+          "path_parameter_sources": {},
+          "dependency_skip_task_id": "",
+          "reconciliation_observation": ""
+        }
+      ],
+      "objective": "",
+      "created_at": "",
+      "project_id": "fc085c6c-4e8c-4310-9767-9afa27b3eddc",
+      "updated_at": "",
+      "campaign_id": "e3e2e1b9-d8a2-4ff9-a0c3-913fb948c9ad",
+      "project_url": "",
+      "project_name": "",
+      "preconditions": [],
+      "execution_policy": {
+        "max_retries": 0,
+        "max_workers": 2,
+        "write_serial": true,
+        "read_parallel": true,
+        "serialize_by_auth": true,
+        "request_timeout_seconds": 30.0,
+        "serialize_by_resource_lock": true
+      },
+      "selected_endpoints": [],
+      "verification_focus": "general",
+      "credential_session_id": "",
+      "selected_document_ids": []
+    },
+    "trace_id": "",
+    "artifacts": [],
+    "auth_hint": {},
+    "session_id": "",
+    "task_events": [],
+    "context_refs": [],
+    "previous_phase": "",
+    "selected_agent": "",
+    "selected_scope": "",
+    "selected_tools": [],
+    "last_updated_at": "",
+    "selected_project": null,
+    "evaluation_result": {},
+    "pending_selection": null,
+    "project_candidates": [],
+    "selected_documents": [],
+    "selected_endpoints": [],
+    "document_candidates": [],
+    "endpoint_candidates": [],
+    "verification_result": {},
+    "execution_checkpoint": {
+      "credential_ref": "dda4a53e-5f70-4b6d-a72b-efcfb5e940db"
+    }
+  },
+  "worker_dispatches": [
+    {
+      "task_id": "login",
+      "dispatch_role": "api_execution_worker",
+      "parent_turn_id": "7d7a1bd0-8491-40bd-ac3b-1e01431153d3",
+      "child_session_id": "2b4ada4b-22ba-47de-bfb1-650014bbcf13",
+      "parent_session_id": "8616afd1-9658-4eb2-bbc6-a183e8f956ae"
+    },
+    {
+      "task_id": "refresh",
+      "dispatch_role": "api_execution_worker",
+      "parent_turn_id": "7d7a1bd0-8491-40bd-ac3b-1e01431153d3",
+      "child_session_id": "3d7ffea7-fa29-45c9-995c-03185da3be8c",
+      "parent_session_id": "8616afd1-9658-4eb2-bbc6-a183e8f956ae"
+    },
+    {
+      "task_id": "profile",
+      "dispatch_role": "api_execution_worker",
+      "parent_turn_id": "7d7a1bd0-8491-40bd-ac3b-1e01431153d3",
+      "child_session_id": "0db9d713-5c78-49bf-8095-d15a49ec925c",
+      "parent_session_id": "8616afd1-9658-4eb2-bbc6-a183e8f956ae"
+    }
+  ],
+  "private_result_probe": {
+    "pid": 44656,
+    "parked": false,
+    "completed": 3
+  }
+}

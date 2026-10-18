@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+from types import SimpleNamespace
 
 from src.modes.api_testing_mode.campaign_state import CredentialSession
 from src.runtime.postgres_api_credential_store import ApiCredentialReferenceError
@@ -82,3 +83,28 @@ class ApiCredentialReferenceService:
         parent = await self._parent(parent_context["session_id"])
         return CredentialSession.model_validate(await self._store.load_credential(ref,
             owner_session_id=parent.id, project_id=parent.project_id))
+
+    async def save_worker_result(self, *, dispatch_ref, context, result):
+        _, _, parent = await self.resolve_dispatch(dispatch_ref, context)
+        job_id = str(getattr(context, "tool_job_id", "") or "")
+        if not job_id:
+            raise ApiCredentialReferenceError("api_worker_result_job_identity_missing")
+        ref = await self._store.save_worker_result({"dispatch_ref": dispatch_ref,
+            "child_session_id": context.session_id, "tool_job_id": job_id, "task_result": result},
+            owner_session_id=parent.id, project_id=parent.project_id)
+        logger.info("api_worker_original_result_saved", extra={"parent_session_id": parent.id,
+            "child_session_id": context.session_id, "tool_job_id": job_id, "private_result_ref": ref})
+        return ref
+
+    async def load_worker_result(self, ref, *, dispatch_ref, job, session, parent_context):
+        frozen, _, parent = await self.resolve_dispatch(dispatch_ref, SimpleNamespace(session_id=session.id))
+        if (parent.id != parent_context.get("session_id") or session.project_id != parent.project_id
+            or frozen["parent_turn_id"] != parent_context.get("turn_id") or job.session_id != session.id):
+            raise ApiCredentialReferenceError("api_worker_result_scope_invalid")
+        payload = await self._store.load_worker_result(ref, owner_session_id=parent.id, project_id=parent.project_id)
+        if (payload.get("dispatch_ref") != dispatch_ref or payload.get("child_session_id") != session.id
+            or payload.get("tool_job_id") != job.id):
+            raise ApiCredentialReferenceError("api_worker_result_binding_invalid")
+        logger.info("api_worker_original_result_resolved", extra={"parent_session_id": parent.id,
+            "child_session_id": session.id, "tool_job_id": job.id, "private_result_ref": ref})
+        return payload["task_result"]

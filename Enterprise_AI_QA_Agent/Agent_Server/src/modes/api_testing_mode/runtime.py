@@ -690,6 +690,8 @@ class ApiTestingModeRuntime:
             payload.pop("credential_session")
             if state.credential_session is not None:
                 payload["execution_checkpoint"]["credential_ref"] = state.credential_session.credential_session_id
+            payload = OutputSafetyPolicy(known_sensitive_values=
+                self._credential_manager.sensitive_values()).sanitize_for_audit(payload)
         return payload
 
     # ==================================================================
@@ -765,6 +767,9 @@ class ApiTestingModeRuntime:
             output["waiting_child_session_ids"] = state.execution_checkpoint["waiting_child_session_ids"]
             output["summary"] = "API campaign is waiting for its original child tasks."
         output[STATE_METADATA_KEY] = self._state_payload(state)
+        if self._credential_references is not None:
+            output = OutputSafetyPolicy(known_sensitive_values=
+                self._credential_manager.sensitive_values()).sanitize_for_audit(output)
         return output
 
     def _build_summary(self, state: ApiTestingState, note: str = "") -> str:
@@ -1064,6 +1069,8 @@ class ApiTestingModeRuntime:
                 if any(key in arguments for key in ("task", "credential_session", "execution_checkpoint", "auth_token_field")):
                     raise ApiCredentialReferenceError("api_worker_frozen_input_override")
                 frozen, credential, credential_owner = await self._credential_references.resolve_dispatch(dispatch_ref, context)
+                if not getattr(context, "tool_job_id", ""):
+                    raise ApiCredentialReferenceError("api_worker_result_job_identity_missing")
                 arguments = {"worker_action": "execute_task", "task": frozen["task"],
                     "auth_token_field": frozen["auth_token_field"]}
             except ApiCredentialReferenceError as exc:
@@ -1135,6 +1142,10 @@ class ApiTestingModeRuntime:
         if credential_owner is not None:
             output.pop("credential_session")
             output["credential_ref"] = latest_credential.credential_session_id if latest_credential else ""
+            private_ref = await self._credential_references.save_worker_result(
+                dispatch_ref=dispatch_ref, context=context, result=output["task_result"])
+            output["private_result_ref"] = private_ref
+            output["task_result"]["execution_checkpoint"]["private_result_ref"] = private_ref
             output["task_result"] = OutputSafetyPolicy(
                 known_sensitive_values=credential_manager.sensitive_values()
             ).sanitize_for_audit(output["task_result"])

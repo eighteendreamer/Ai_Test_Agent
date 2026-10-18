@@ -3925,3 +3925,20 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 | 已有实现但更广范围尚未验收 | 默认AI自主规划/工具调用质量、完整准备生命周期/计划修订、复杂UI和失败定位、更广持续性能/安全、需求业务评审/部署/历史迁移、全阶段调用追踪及旧Worker原件 |
 
 历史报告未批量重写，本批不声称清除未知或编码后的所有凭据。模板/Excel/JSON项目页面、独立Git来源等已有对应验收，不因本批没有重跑而列为缺实现。Step已认证，外部AI沿用户此前安排暂缓；完整默认AI项目选取→排序→补全→执行及完整P0—P5仍未完成。三份方案同步，限定相关文件中文commit，不推送/不建PR。
+
+### 7.68 Worker 原始结果私有回读与刷新凭据传值〔2026-10-18〕
+
+基线`2f8e371c`，调研见`P3_API_PRIVATE_RESULT_RESEARCH.md`。复核发现 Worker 公开 Job 必须脱敏`refresh_token`，但父协调器此前把公开`task_result`直接用于后续`InputBinding`；真实 HTTP 复现中登录返回独立刷新凭据，刷新接口只接受请求体中的真实值，直接路径3次请求全为200，而旧 Worker 路径发送`[REDACTED]`，得到401并跳过profile。该失败证据保留在`p3-private-refresh-reproduction/`，不能把旧的 Access Token 头部刷新测试当作覆盖。
+
+**本批补实现并已验收**：沿现有加密 PostgreSQL 业务存储增加不可变 Worker 原结果表，引用按父会话、子会话和原 ToolJob 稳定生成；保存前校验冻结派发关系和真实 Job 身份。Worker 在公开投影前保存原始`task_result`，公开 Job/提示/父快照仍只保留脱敏结果和不透明`private_result_ref`。`ApiWorkerResultReader`先完成原 Job、项目、父 turn、派发和请求身份核验，再受限回读原始结果；缺少、冲突、篡改或错误密钥不会回退使用`[REDACTED]`。
+
+完成结果：真实本地 HTTP 的login→refresh(body)→profile路径3次均200；公开 Job、父结果、快照、进程输出及加密存储明文检查均不含临时凭据。登录完成后和刷新完成后两个PG快照暂停点，重建服务继续均无重复HTTP；实际子进程强制终止后新进程恢复3项任务，原Job保持终态，终态重投新增HTTP为0。错Job/父会话/turn/项目、随机引用、检查点引用冲突、缺Job身份、缺密钥和不可变内容冲突均在业务请求前拒绝。`p3-private-refresh-process.xml`为2通过，`p3-private-refresh-report-product.xml`为1通过，新增边界专项`p3-private-refresh-final.xml`为6通过；受影响API回归`p3-private-refresh-delivery.xml`为355测试、349通过、6门控跳过、0失败。完整结果和范围见证据目录；无外部AI调用。
+
+| 分类 | 当前状态 |
+|---|---|
+| 已有实现 | 原凭据加密引用、冻结派发、公开输出脱敏、Job终态恢复和统一输入绑定 |
+| 本批补实现且功能验收 | Worker原始响应私有保存/受控回读、刷新请求体传值、跨进程恢复、引用隔离和终态不重投 |
+| 仍需补实现 | 自动401续期/安全重放的显式任务关系、只读/幂等策略和持久检查点；本批只修复其前置传值缺口，不把显式refresh顺序称为自动续期 |
+| 已有实现但更广范围尚未验收 | 默认AI自主项目选取→排序→补全→执行、完整准备生命周期/运行中修订、复杂UI、持续性能/安全、需求业务评审/部署/历史迁移及全阶段调用追踪 |
+
+配置仍保存于MySQL，业务/凭据/Worker原结果引用保存于PostgreSQL，大结果沿现有工件机制；无新模型协议或统一化模型适配改动。Anthropic仍使用原生`client.messages.create`和`/v1/messages`，`await_provider_io`只负责网络I/O错误边界。Step已认证，外部AI按此前安排暂缓，完整P0—P5仍未完成。
