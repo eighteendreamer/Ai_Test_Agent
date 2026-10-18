@@ -1,6 +1,25 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-18；本批核对基线 `6c205ca4`。Agent API鉴权报告及自动401安全重放已按7.67—7.69完成对应专项和真实Worker恢复验收。默认 Step 已认证并继续做真实验收：live16 的八步正式用例以 `finish_reason=length` 失败；live17 单创建/清理用例也在 produced 阶段耗尽180秒总期限，两次都未创建Run/产生目标业务HTTP，见7.70—7.72。模板/导入、需求变更、UI知识、Docker性能/安全及其余未验范围继续按功能区分；多模型继续使用各自原生协议，Anthropic仍Messages。完整P0—P5保持进行中。
+修订日期：2026-10-19；本次代码基线 `f35765a5`。Step 已认证。P1 普通 Markdown 三模块生成、持久化及独立恢复已实际验收；模板/Excel/JSON项目页面已有专项产品验收。P2 的默认 Step 完整项目规划仍在 `produced` 阶段超时，未创建 Run。另修复真实执行中 JSON 字面键 `order.id` 被当作嵌套路径、回执不能解析“说明文字 + 唯一 JSON”两项缺陷；默认模型真实 UI 正向场景现已通过，Run 为 passed，终态重投未新增业务或模型请求。API模式完整闭环、UI负向/DeepSeek人工录制、回执丢响应的真实恢复及其他剩余范围仍未全部验收；配置仍在 MySQL、业务和运行数据在 PostgreSQL，多 Provider 保持原生协议。完整P0—P5继续进行中。
+
+### 7.89 用例执行字段与回执修复、默认模型 UI 正向验收〔2026-10-19〕
+
+依据最新P2 API失败现场确认：服务端实际 POST 已创建记录并返回完整字面键 `order.id`，但执行器优先按点号拆分路径而未取完整字面键；同一真实模型回执在工具操作完成后附带说明文字和一份完整JSON，旧解析器只接受整体JSON，因此把已有成功证据判为格式错误。没有改模型协议、配置或用例参数。
+
+提交 `f35765a5`（`【fix】修复用例执行字段解析与回执提取`）只包含两个生产修复和对应回归：字典中存在完整字面键时优先读取，缺失时保留原嵌套路径行为；回执解析仅接受唯一一个通过现有schema的完整JSON对象，多份或不完整候选仍拒绝。确定性验证 `tests/test_api_task_executor_recovery.py tests/test_agent_case_assessment.py` 为 **62 passed、2 skipped，20.71秒**；skip为原门控场景，不计通过。
+
+随后运行真实默认模型、真实API/规划与执行Worker、隔离MySQL/PostgreSQL/Redis/RustFS及本机受控浏览器页面的正向 UI 场景：
+
+```text
+cd Agent_Server
+$env:RUN_LIVE_DEFAULT_UI_SCENE='1'
+$env:QA_DEFAULT_UI_SCENE_DIR='.../p5-default-ui-certified-positive-20261019'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest 'tests/test_default_ui_scene_live.py::test_default_ui_reads_fixed_scene_and_verifies_actual_page[positive]' -q --tb=short -s
+```
+
+结果 **1 passed，116.65秒**。证据 `p5-default-ui-certified-positive-20261019/positive/verification.json` 标明 `controlled_model=false`、`default_planning=true`、`default_execution=true`、最终状态 `passed`。模型读取了此前录制的知识，并在本次新页面点击按钮；页面端记录录制页和新执行页各一次 POST，结果观察关联到新页面。测试将同一终态任务重新投递后，新增业务请求 **0**、新增模型请求 **0**。这是正向受控页面和终态不重投的真实验收，不覆盖负向 UI、正式用户授权流程、DeepSeek人工录制或P2 API项目选取/排序/补全闭环。
+
+P2 最新 API 默认模型证据仍显示 `produced` 阶段 reasoning-only 流在原180秒总期限内被取消，未返回可校验回执，Run和业务HTTP均为0；不能把 UI 通过外推为 API 规划通过。下一步沿既有 PostgreSQL 原领取事务验证“提交成功但客户端丢失回执”后的真实Worker恢复、并发和终态重投，再继续P2阶段职责与预算根因设计。没有根据多次提示/Schema对照擅自增加预算或放松canonical校验。
 
 **本次直接更新这份方案，并同步所贴附件和原选中的 PLAN.md。** 正文采用以下约定：模板只生成用例；执行由 AI 理解需求，在当前项目选取完整用例、初排、检查条件来源、补全必要前置、最终排序和冻结。上传文件由系统独立保存原件与版本，比较所选解析快照；Git 是另一个可选来源。第 2.3 节说明缺口如何检测，第 3.1 节说明上传变更如何实现，第 3.2 节单列 Git。
 
