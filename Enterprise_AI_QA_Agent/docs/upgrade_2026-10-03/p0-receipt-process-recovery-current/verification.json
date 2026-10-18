@@ -1,0 +1,35 @@
+{
+  "scope": "controlled provider; isolated MySQL/PostgreSQL/Redis/RustFS; owned API process; production recovery workers",
+  "command": "..\\.venv\\Scripts\\python.exe -m pytest -q tests/test_receipt_process_recovery_live.py --junitxml=docs/upgrade_2026-10-03/p0-receipt-process-recovery-current.xml",
+  "junit": {
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 690.50,
+    "timestamp": "2026-10-18T20:01:16+08:00"
+  },
+  "invariants": {
+    "business_effects_per_boundary": ["POST /orders", "GET /orders/{actual_id}", "DELETE /orders/{actual_id}"],
+    "terminal_replay_extra_business_requests": 0,
+    "terminal_replay_extra_model_requests": 0,
+    "resources_after_cleanup": "empty",
+    "cleanup_receipt_status": "skipped"
+  },
+  "boundaries": {
+    "invoking": {
+      "correction_checkpoint_phase": "invoking",
+      "response_persisted": false,
+      "formal_result": "error",
+      "recovery_action": "preserve unknown and do not resend correction"
+    },
+    "response": {
+      "correction_checkpoint_phase": "response",
+      "response_persisted": true,
+      "request_and_response_hashes_verified": true,
+      "formal_result": "passed",
+      "recovery_action": "reuse persisted response"
+    }
+  },
+  "raw_evidence": "p0-receipt-process-recovery-current/{invoking,response}/"
+}

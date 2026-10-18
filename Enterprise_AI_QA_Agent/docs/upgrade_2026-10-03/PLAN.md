@@ -4072,3 +4072,14 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 在实际 MySQL、PostgreSQL、RustFS 和本地 HTTP provider 上执行规划任务响应提交丢回执场景，覆盖原生非流式、流式截断和流式缺少终态三种输入。每个任务先完成查询回合，再发送第二个逻辑规划调用；第二回合响应已写入 PostgreSQL 后故意丢失确认，Worker 接管从已保存响应继续校验，不重新调用模型。
 
 三种场景均实际通过：每个 `verification.json` 中有两个不同且持久的 `logical_call_id`，实际 HTTP 请求数为2，恢复阶段没有新增模型调用，终态再次投递也没有新增调用；原始响应、用量、截止时间和失败判定均从保存的检查点恢复。重新执行时测试先因缺少 `QA_PLANNING_COMPLETION_DIR` 在证据导出处失败，补齐专用证据目录后 `tests/test_planning_response_completion.py` **10通过**；需求影响持久调用回归 `tests/test_document_impact_calls.py` **19通过**。这证明规划响应提交丢回执的 Worker 恢复和调用身份链路已通过受控真实存储验收，不等同默认 AI 按用例执行闭环完成，也不覆盖纠正请求发送后或供应商响应持久化后的进程中断。
+
+### 7.82 正式回执纠正两阶段 API 进程中断验收〔2026-10-18〕
+
+先复核当前源码和上一份失败原件：旧测试读取已经不存在的 `lease_expire_at`，失败并不代表回执恢复逻辑失败；当前测试依据真实 Redis 返回的 `lease_expire_at_ms`，没有修改生产协议或租约实现。随后用当前测试源码启动隔离 PostgreSQL、MySQL、Redis、RustFS、真实 API 进程、Worker 和本地受控 HTTP provider，分别在回执纠正的 `invoking` 与 `response` 边界杀掉所属 API 进程，再等待原运行租约和资源租约自然过期，由生产恢复 Worker 接管。
+
+`tests/test_receipt_process_recovery_live.py` 当前实测 **2通过、0失败、0跳过（690.50秒）**，新 XML 为 `p0-receipt-process-recovery-current.xml`，脱敏断言摘要为 `p0-receipt-process-recovery-current/verification.json`。两场景均记录原始计划、用例版本、模型调用、回执请求对象和数据库恢复状态；业务 HTTP 始终只有创建、查询、清理各一次，终态重投没有新增业务请求或模型请求，资源租约自然到期后清理回执为 `skipped` 且 Redis 活跃资源为零。
+
+- `invoking`：纠正请求原件已保存，API 在等待供应商响应时被杀，恢复读取 `phase=invoking` 且无响应的固定检查点，保持正式结果 `error`/未知；不重发纠正请求，也不重复业务操作。
+- `response`：供应商响应原件已保存并通过大小/哈希校验，API 在结果提交被 PostgreSQL 锁阻塞时被杀；恢复读取同一响应，最终结果为 `passed`，请求和响应对象均保持原哈希，终态重投增加的模型调用和业务请求均为零。
+
+这一步关闭了**受控模型**下“纠正请求发送后”和“供应商响应已持久化后”的真实 API 进程中断缺口；它不等同默认 Step 的响应阶段验收，也不等同完整按用例执行闭环。默认 Step 目前已有“纠正意图持久化、发送前杀 API”通过证据，默认 Step 的响应已持久化后中断仍需单独设计可复现的探针和真实验收。原始快照目录保留在工作区，但包含租约令牌等运行字段，不作为提交内容；提交只包含脱敏摘要和 JUnit 结果。
