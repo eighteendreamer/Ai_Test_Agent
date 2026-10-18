@@ -1,0 +1,42 @@
+{
+  "scope": "authenticated step-5-preview; isolated MySQL/PostgreSQL/Redis/RustFS; owned API and production workers",
+  "command": "..\\.venv\\Scripts\\python.exe -m pytest -q tests/test_default_receipt_process_recovery_live.py --junitxml=docs/upgrade_2026-10-03/p2-default-receipt-process-response-current.xml",
+  "junit": {
+    "tests": 2,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "duration_seconds": 826.10,
+    "timestamp": "2026-10-18T20:21:29+08:00"
+  },
+  "model": {
+    "key": "step-5-preview",
+    "provider": "openai",
+    "transport": "openai_chat_completions",
+    "streaming": true,
+    "global_configuration_changed": false
+  },
+  "invariants": {
+    "target_requests_per_boundary": ["GET /health"],
+    "target_request_count_per_boundary": 1,
+    "recovery_and_terminal_extra_model_requests": 0,
+    "terminal_replay_extra_business_requests": 0,
+    "resources_after_cleanup": "empty"
+  },
+  "boundaries": {
+    "invoking": {
+      "marker_phase": "invoking",
+      "response_persisted": false,
+      "formal_result": "error",
+      "recovery_action": "preserve unknown and do not resend correction"
+    },
+    "response": {
+      "marker_phase": "response",
+      "response_persisted": true,
+      "request_and_response_hashes_verified": true,
+      "formal_result": "passed",
+      "recovery_action": "reuse persisted response"
+    }
+  },
+  "raw_evidence": "p2-default-receipt-process-response-current/{invoking,response}/"
+}

@@ -12,6 +12,7 @@ from uuid import uuid4
 
 from src.application.model_clients.openai_client import OpenAIChatClient
 from src.application.model_clients.base import response_to_dict
+from src.application.test_runs.agent_case_receipt import AgentCaseReceiptService
 
 _sdk_call = ContextVar('qa_default_sdk_call', default=None)
 
@@ -74,6 +75,35 @@ def install(directory):
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
     original = OpenAIChatClient._make_client
+
+    # Test-only barrier: the production receipt service has already written the
+    # response object and lease-fenced phase=response checkpoint when correct()
+    # returns.  Blocking here allows the live process test to kill the API at
+    # that exact durable boundary without changing production behavior.
+    original_correct = AgentCaseReceiptService.correct
+    after_response_marker = os.getenv("QA_DEFAULT_PROBE_BLOCK_AFTER_CORRECTION_MARKER")
+    after_response_release = os.getenv("QA_DEFAULT_PROBE_BLOCK_AFTER_CORRECTION_RELEASE")
+    if after_response_marker and after_response_release:
+        async def observed_receipt_correct(self, *args, **kwargs):
+            result = await original_correct(self, *args, **kwargs)
+            checkpoint = result[1] if isinstance(result, tuple) and len(result) > 1 else None
+            correction = getattr(checkpoint, "receipt_correction", None)
+            if correction is None or correction.phase != "response":
+                return result
+            Path(after_response_marker).write_text(json.dumps({
+                "phase": correction.phase,
+                "call_id": correction.call_id,
+                "response_uri": correction.response.uri if correction.response else None,
+                "response_sha256": correction.response.sha256 if correction.response else None,
+            }, ensure_ascii=False, indent=2), encoding="utf-8")
+            deadline = perf_counter() + 180
+            while not Path(after_response_release).exists():
+                if perf_counter() >= deadline:
+                    raise TimeoutError("test-only persisted receipt response barrier was not released")
+                await asyncio.sleep(0.1)
+            return result
+
+        AgentCaseReceiptService.correct = observed_receipt_correct
 
     def make_client(self, config, api_key):
         client = original(self, config, api_key)

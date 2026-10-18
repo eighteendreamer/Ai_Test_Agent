@@ -4083,3 +4083,15 @@ before、observed、delay-final、delay-final2、resume-final完整现场均2失
 - `response`：供应商响应原件已保存并通过大小/哈希校验，API 在结果提交被 PostgreSQL 锁阻塞时被杀；恢复读取同一响应，最终结果为 `passed`，请求和响应对象均保持原哈希，终态重投增加的模型调用和业务请求均为零。
 
 这一步关闭了**受控模型**下“纠正请求发送后”和“供应商响应已持久化后”的真实 API 进程中断缺口；它不等同默认 Step 的响应阶段验收，也不等同完整按用例执行闭环。默认 Step 目前已有“纠正意图持久化、发送前杀 API”通过证据，默认 Step 的响应已持久化后中断仍需单独设计可复现的探针和真实验收。原始快照目录保留在工作区，但包含租约令牌等运行字段，不作为提交内容；提交只包含脱敏摘要和 JUnit 结果。
+
+### 7.83 默认 Step 回执纠正两阶段进程恢复验收〔2026-10-18〕
+
+根据 7.82 的源码顺序调研，在测试探针中增加了仅由环境变量开启的 barrier：`AgentCaseReceiptService.correct()` 返回前，生产代码已经完成 RustFS `response.json` 写入和 PostgreSQL `phase=response` 检查点保存；探针在这个返回点写入无凭据 marker 后等待杀进程。原 `invoking` barrier 保持不变。生产 API、回执服务、模型协议和全局 MySQL 配置没有改动。
+
+使用当前已认证 `step-5-preview`、真实隔离 MySQL/PostgreSQL/Redis/RustFS、默认流式 Chat Completions、真实 API/Worker 进程和本地健康检查目标，`tests/test_default_receipt_process_recovery_live.py` 两个边界实际 **2通过、0失败、0跳过（826.10秒）**；JUnit 为 `p2-default-receipt-process-response-current.xml`，脱敏汇总为 `p2-default-receipt-process-response-current/verification.json`。受影响确定性回归 `tests/test_agent_case_receipt_correction.py tests/test_default_receipt_process_recovery_live.py` 实际 **14通过、17门控跳过**；跳过项不计为通过。
+
+- `invoking`：纠正请求对象已保存但没有响应，API 被杀后恢复保持 `error`/未知；不重发纠正，不重复 `/health`，终态重投新增模型请求为 0。
+- `response`：marker 明确记录 `phase=response`，response 对象 URI、大小和 SHA-256 在杀进程前从 RustFS 回读校验；恢复最终为 `passed`，复用相同 response 哈希，不新增模型请求或 `/health` 请求。
+- 两场景的目标 HTTP 都只有一次 `GET /health`；资源租约自然过期，清理后 Redis 活跃资源为空。
+
+这一步关闭了默认 Step 回执纠正的两个进程中断边界，但不代表默认 Step 已完成“项目选取→排序→补全→执行”闭环；该闭环仍停在 `produced` 规划阶段，后续仍需处理默认模型规划质量、准备状态、未知副作用查证和运行中计划修订。测试探针和结果已提交，运行原始快照仍留在工作区但不提交包含租约令牌的原始文件。

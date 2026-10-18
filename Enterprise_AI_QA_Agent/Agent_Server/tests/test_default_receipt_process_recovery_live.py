@@ -42,10 +42,12 @@ def _kill_owned_process_tree(pid: int) -> dict:
 
 
 @pytest.mark.asyncio
-async def test_default_model_receipt_correction_api_kill_recovers_without_repeat(tmp_path):
+@pytest.mark.parametrize("boundary", ["invoking", "response"])
+async def test_default_model_receipt_correction_api_kill_recovers_without_repeat(tmp_path, boundary):
     target = HealthTarget()
     target_port = target.start()
-    evidence = Path(os.getenv("QA_DEFAULT_RECEIPT_RECOVERY_DIR", str(tmp_path / "evidence")))
+    evidence_root = Path(os.getenv("QA_DEFAULT_RECEIPT_RECOVERY_DIR", str(tmp_path / "evidence")))
+    evidence = evidence_root / boundary
     evidence.mkdir(parents=True, exist_ok=False)
     marker = evidence / "correction-requested.json"
     release = evidence / "release-correction.json"
@@ -70,8 +72,12 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
             ))
             processes.env = child_environment(settings)
             processes.env["QA_DEFAULT_PROBE_DIR"] = str(evidence / "physical")
-            processes.env["QA_DEFAULT_PROBE_BLOCK_CORRECTION_MARKER"] = str(marker)
-            processes.env["QA_DEFAULT_PROBE_BLOCK_CORRECTION_RELEASE"] = str(release)
+            if boundary == "invoking":
+                processes.env["QA_DEFAULT_PROBE_BLOCK_CORRECTION_MARKER"] = str(marker)
+                processes.env["QA_DEFAULT_PROBE_BLOCK_CORRECTION_RELEASE"] = str(release)
+            else:
+                processes.env["QA_DEFAULT_PROBE_BLOCK_AFTER_CORRECTION_MARKER"] = str(marker)
+                processes.env["QA_DEFAULT_PROBE_BLOCK_AFTER_CORRECTION_RELEASE"] = str(release)
             api_port = free_port()
             api_args = ("-m", "tests.default_model_probe", "uvicorn", "src.main:app",
                         "--host", "127.0.0.1", "--port", str(api_port))
@@ -181,13 +187,20 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
                 assert marker_data is not None, detail
                 before_kill = await asyncio.to_thread(read_state, settings, item_id)
                 correction = before_kill["attempts"][-1]["checkpoint_payload"].get("receipt_correction")
-                assert correction and correction["phase"] == "invoking", before_kill
+                assert correction and correction["phase"] == boundary, before_kill
                 assert len(target.requests) == 1, target.requests
                 reference = correction["request"]
                 owned_objects.append(reference["uri"])
                 raw = (await objects.read_object_uri(reference["uri"]))["content"]
                 assert len(raw) == reference["size_bytes"] and hashlib.sha256(raw).hexdigest() == reference["sha256"]
                 evidence.joinpath("receipt-request-original.json").write_bytes(raw)
+                if boundary == "response":
+                    response_reference = correction["response"]
+                    owned_objects.append(response_reference["uri"])
+                    response_raw = (await objects.read_object_uri(response_reference["uri"]))["content"]
+                    assert (len(response_raw) == response_reference["size_bytes"]
+                            and hashlib.sha256(response_raw).hexdigest() == response_reference["sha256"])
+                    evidence.joinpath("receipt-response-original.json").write_bytes(response_raw)
                 evidence.joinpath("before-kill.json").write_text(json.dumps(before_kill["attempts"],
                     ensure_ascii=False, default=str, indent=2), encoding="utf-8")
                 physical_before = sorted(path.name for path in (evidence / "physical").glob("*.request.json"))
@@ -205,6 +218,8 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
                 # checkpoint, not a fresh model call, drives recovery.
                 processes.env.pop("QA_DEFAULT_PROBE_BLOCK_CORRECTION_MARKER", None)
                 processes.env.pop("QA_DEFAULT_PROBE_BLOCK_CORRECTION_RELEASE", None)
+                processes.env.pop("QA_DEFAULT_PROBE_BLOCK_AFTER_CORRECTION_MARKER", None)
+                processes.env.pop("QA_DEFAULT_PROBE_BLOCK_AFTER_CORRECTION_RELEASE", None)
                 api = processes.start("default-recovery-api-after-kill", *api_args)
                 await wait_api(client, api)
                 immediate = await post(f"/runs/{run_id}/recover-expired")
@@ -243,9 +258,13 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
                 completed = await get("/runs/" + run_id)
                 last_detail = completed
                 result = completed["results"][0]
-                assert result["status"] == "error", completed
-                assert result["actual"]["execution_recovery_required"] is True, result
-                assert result["actual"]["execution_checkpoint"]["receipt_correction"] == correction, result
+                if boundary == "invoking":
+                    assert result["status"] == "error", completed
+                    assert result["actual"]["execution_recovery_required"] is True, result
+                    assert result["actual"]["execution_checkpoint"]["receipt_correction"] == correction, result
+                else:
+                    assert result["status"] == "passed", completed
+                    assert result["actual"]["receipt_correction"] == correction, result
                 assert len(target.requests) == 1, target.requests
                 final = await asyncio.to_thread(read_state, settings, item_id)
                 assert len(final["attempts"]) == 2 and final["attempts"][0]["status"] == "expired", final
@@ -259,7 +278,7 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
                 physical_after = sorted(path.name for path in (evidence / "physical").glob("*.request.json"))
                 assert physical_after == physical_before, (physical_before, physical_after)
                 evidence.joinpath("summary.json").write_text(json.dumps({
-                    "scope": "real authenticated default Step; owned API kill after durable correction intent, before HTTP network send; natural run/resource expiry; production recovery workers",
+                    "scope": f"real authenticated default Step; owned API kill at durable correction {boundary} boundary; natural run/resource expiry; production recovery workers",
                     "model_key": model.key, "run_id": run_id, "item_id": item_id,
                     "marker": marker_data, "correction": correction,
                     "killed_api_pid": killed_pid, "killed_api_exit_code": killed_exit,
@@ -267,6 +286,7 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
                     "result_status": result["status"], "target_requests": target.requests,
                     "terminal_replay_extra_requests": 0,
                     "recovery_and_terminal_extra_model_requests": 0,
+                    "boundary": boundary,
                 }, ensure_ascii=False, indent=2), encoding="utf-8")
                 await asyncio.to_thread(_kill_owned_process_tree, api.pid)
                 await processes.wait(api, timeout=15)
