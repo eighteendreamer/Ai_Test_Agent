@@ -74,7 +74,7 @@ def business_http():
 
 @asynccontextmanager
 async def execution(tmp_path, business_http, live=False, perform_tools=True, with_business_instructions=False,
-    services=None, start_item=True, planning_policy=None):
+    services=None, start_item=True, planning_policy=None, operation_verifications=None):
     async with planned(tmp_path, live) as (env, store, suites, creator, old, now, table):
         project = await env.projects.get(old.project_id)
         if planning_policy is not None:
@@ -82,6 +82,8 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
         content = {'objective': '完整用例检查', '期望': {'code': 200, 'flag': False, 'count': 0,
                    'nullable': None, 'semantic': '订单仍待支付且未出库'},
                    'steps': [{'action': '核对完整实际响应'}]}
+        if operation_verifications is not None:
+            content['operation_verifications'] = deepcopy(operation_verifications)
         if with_business_instructions:
             content['steps'][0].update(method='GET', url=business_http[0]+'/orders/{id}')
         source = tmp_path / 'assessment-case.json'

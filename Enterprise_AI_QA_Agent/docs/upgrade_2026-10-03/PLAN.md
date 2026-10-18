@@ -4219,3 +4219,11 @@ cd Agent_Server
 本次代码级功能测试：`tests/test_case_operation_verification.py` **9 passed**；受影响回归 `tests/test_case_operations.py tests/test_case_effect_evidence.py tests/test_tool_operation_observation.py tests/test_agent_case_assessment.py` **59 passed、31 skipped**；`compileall` 通过。跳过项由真实服务门控，尚未证明真实 PostgreSQL/HTTP 查证闭环、默认 AI 自动选取查证、查证后计划修订或依赖释放；这些继续归为**已有实现但尚未真实验收/仍需补跨边界实现**。Step 模型仍已认证，Anthropic 继续 Messages API，OpenAI Responses 仍保持独立适配器。
 
 随后开启现有真实隔离服务门控，执行 `tests/test_case_operation_verification.py::test_live_http_and_postgres_job_persist_verification_observation`，结果 **1 passed，5.84 秒**。场景通过实际本地 HTTP 服务先 POST 创建对象，再由正式 `ToolRuntimeService` 发出一次 GET；临时 PostgreSQL ToolJob 表读回 `response_status=200`、`effect_present`、查证 SHA 和工具输出，HTTP 序列为一次 POST 加一次 GET。该证据确认新增原子保存路径可用，但场景预置了合法读操作，没有模拟未知 POST 返回丢失，也没有证明默认 AI 会自动选取查证或查证后释放依赖；正式 Run 的未知写入自动查证、计划修订和真实进程中断恢复仍未验收。
+
+### 7.94 正式 Run 声明查证未知写入的真实闭环〔2026-10-19〕
+
+针对 7.93 仍缺的正式 Run 边界，先沿 `AgentCaseExecutionAdapter` 建立真实执行检查点，再在同一冻结 `item_key` 内声明 `target.create → target.verify` 的查证关系。声明固定工具、`execute_task`、GET、路径模板及 200/404 解释；没有新增 URL、主键或幂等键推导，也没有把 API Testing Mode 的 task/campaign 字段移植到正式 Run。
+
+真实隔离场景 `tests/test_case_operation_verification.py::test_live_formal_run_verifies_unknown_write_with_declared_read` 使用现有正式 Run、PostgreSQL ToolJob/operation index、MySQL 冻结策略和本地业务 HTTP。先让 POST 已在服务端创建对象，再在可靠输出保存前抛出连接错误；原 ToolJob 保持 `running` 且没有输出。随后只执行冻结声明允许的 GET，HTTP 序列严格为一次 POST 加一次 GET；GET ToolJob 读回 `effect_present`、HTTP 200、来源 operation、查证 operation 及 SHA，原 POST 没有被改写或重发。PostgreSQL 原始 operation index 同时读回 `target.create` 和 `target.verify` 两条独立逻辑操作。该测试通过 **1 passed，7.91 秒**；查证文件全量回归为 **11 passed**，受影响操作/证据/观察/评估回归在设置其约定证据目录后为 **89 passed、1 skipped，117.19 秒**。首次回归的 23 个失败均为未设置 `QA_STATEFUL_RESEARCH_EVIDENCE_DIR` / `QA_EFFECT_EVIDENCE_DIR` 的证据落盘门控，重跑已通过。
+
+本场景响应是小型 JSON，沿现有内联 ToolJob 输出保存，没有生成 RustFS 工件；因此本次证明的是 PostgreSQL 运行/操作/查证回执关联和真实 HTTP 效果，不宣称 RustFS 大工件路径已由该场景覆盖。当前分类调整为：**正式 Run 在冻结用例明确声明合法只读操作时，未知写入的只读查证、PG 回执和不重发边界已有真实验收**；**默认 AI 是否能正确选择并生成查证声明、查证结果是否能自动修订后续计划或释放依赖、查证阶段进程中断恢复、带 RustFS 大工件的证据关联仍未验收**。原未知操作继续保持未知，查证结果是新增证据，不能把原操作回写为成功。
