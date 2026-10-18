@@ -19,7 +19,7 @@ describe("actual original object coverage", () => {
     expect(wrapper.text()).toContain("已知对象 2 · 已覆盖 1");
     expect(wrapper.text()).toContain("覆盖范围未确认");
     expect(wrapper.text()).toContain(samples["one-of-two"].actual_formal_result.actual.effect_cleanup_coverage.cleanups.cleanup.uncovered[0].value);
-    expect(wrapper.text()).toContain("共享消费完成尚未验证");
+    expect(wrapper.text()).toContain("当前覆盖结果没有完整的消费阶段关闭证明");
     wrapper.unmount();
   });
   it("renders failed GET evidence and budget gaps without a false zero", () => {
@@ -49,6 +49,13 @@ describe("actual original object coverage", () => {
       if (scenario === "coverage-budget") expect(wrapper.text()).toContain("不能按零对象处理");
       wrapper.unmount();
     }
+  });
+  it("distinguishes a verified consumption closure from RunItem completion", () => {
+    const coverage = { version: "case-effect-coverage-v2", consumption_completion_verified: true, cleanups: {} };
+    const wrapper = mount(CaseEffectCoveragePanel, { props: { coverage, resultLabel: "关闭证明" } });
+    expect(wrapper.text()).toContain("固定消费阶段关闭回执已核验");
+    expect(wrapper.text()).toContain("这不代表 RunItem 已完成");
+    wrapper.unmount();
   });
 
 });

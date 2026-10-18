@@ -4129,3 +4129,18 @@ Step 账号已认证后，重新执行普通需求文档的真实默认模型专
 覆盖投影仍将 `consumption_completion_verified` 固定为 false，且当前不读取关闭记录；门禁可以阻止过早清理，但 Result/覆盖报告没有呈现此关闭证明。运行 `tests/test_case_consumption_phase.py tests/test_case_consumption_external.py` 得 **5通过、23门控跳过，4.15秒**；跳过的隔离真实服务场景不计作通过。由此确认了运行门禁已实现、覆盖报告证据仍未贯通，不把两者混称为“共享消费完整验收”。
 
 下一步先核对消费记录的读入口、Result/报告 DTO、前端覆盖面板及依赖闭包恢复，再设计真实 PG/RustFS/live 场景验证部分/全部清理、共享消费者、确认丢失和终态重投；只有明确状态契约后才决定是否向覆盖报告投影关闭证明。P2 默认 Step 的真实 `produced` 规划未返回可校验正文、Run 未创建，仍是独立未解决问题。完整 P0—P5 继续未完成。
+
+### 7.88 消费关闭证明投影到运行覆盖结果〔2026-10-19〕
+
+沿 7.87 确认的证据链实施只读投影：`ToolJobService.list_case_effect_evidence` 从已验证的 `case_action_admission.consumption` 读取关闭证明，并按 `closure_sha256` 去重；`case_relation_coverage` 仅在协议、固定清理来源、完整消费者集合、运行拥有者及外部消费者终态 Result 证明匹配时，才将对应清理项与运行级 `consumption_completion_verified` 标记为真，并附上已核验关闭证明。该值只表示消费阶段关闭已验证，不改变 RunItem 状态。前端覆盖面板据此区分“关闭回执已核验”和“RunItem 已完成”。
+
+逻辑回归实际运行：
+
+```text
+cd Agent_Server
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_consumption_phase.py tests/test_case_effect_relations.py -q --tb=short
+```
+
+结果 **7 passed、32 skipped，8.37秒**；跳过项是隔离真实服务门控场景，不计通过。前端 `npm.cmd test -- --run src/features/projects/CaseEffectCoveragePanel.test.ts` **5 passed**，`npm.cmd run typecheck` 退出码 **0**。已有隔离 MySQL/PostgreSQL/RustFS/native HTTP 真实验收工件覆盖直连工具适配器及 Agent 图的通过/失败结果，断言关闭证明只入覆盖证据、不提前完成 RunItem，失败业务结果仍为失败；原始工件含完整运行提示和身份字段，仅保留在本地验证目录，不纳入提交。
+
+这一步补齐了已存消费关闭证明到运行覆盖结果/前端的展示，未证明关闭事务丢回执恢复、共享消费者并发、终态重投及覆盖预算边界。下一步按真实事务与恢复调用链分别验证上述边界；Step 已认证，P2 默认 AI 的“项目选取→排序→补全→执行”可继续真实验收，但截至本条仍停在 `produced`、未创建 Run。P0–P5 整体仍未完成。

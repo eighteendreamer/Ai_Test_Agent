@@ -12,6 +12,7 @@ const data = computed(() => {
 });
 const rows = computed(() => Object.entries(record(data.value?.cleanups) || {})
   .map(([key, value]) => ({ key, value: record(value) || {} })));
+const consumptionVerified = computed(() => data.value?.consumption_completion_verified === true);
 const statusLabels: Record<string, string> = { passed: "声明对象覆盖已核对", failed: "清理证据未满足", blocked: "覆盖范围未确认" };
 function count(value: unknown) { return typeof value === "number" ? value : "未取得"; }
 </script>
@@ -19,7 +20,7 @@ function count(value: unknown) { return typeof value === "number" ? value : "未
 <template>
   <section v-if="data" class="effect-coverage" aria-label="原对象清理覆盖">
     <h3>原对象清理覆盖 · {{ resultLabel }}</h3>
-    <p>范围为固定声明及原工具证据；共享消费完成尚未验证。</p>
+    <p>{{ consumptionVerified ? "固定消费阶段关闭回执已核验；这不代表 RunItem 已完成。" : "当前覆盖结果没有完整的消费阶段关闭证明。" }}</p>
     <p v-if="data.complete_inventory_available === false" role="status">完整清单未取得（证据预算不足），不能按零对象处理。</p>
     <p v-if="!rows.length">本条目没有所属的清理范围。</p>
     <div v-for="row in rows" :key="row.key">

@@ -79,3 +79,18 @@ cd Agent_Server
 ```
 
 **5 passed、23 skipped，4.15 秒**；跳过项依赖隔离 MySQL/PostgreSQL/RustFS/HTTP，不计作通过。下一步应沿消费关闭记录的生产读入口、case Run Result/报告 DTO、前端覆盖展示以及 plan dependency closure 回读核对事务之后的持久状态；使用原完整 live 场景证明共享消费者完成、部分/全部清理、关闭回执丢失及终态重投。确认数据契约后再决定是否把关闭证明加入覆盖报告。P2 默认 Step 的 produced 超时与本边界独立，仍未解决。
+
+## 7.88 消费关闭证明投影到运行覆盖结果〔2026-10-19〕
+
+按 7.87 的源码消费路径实现只读投影。`ToolJobService.list_case_effect_evidence` 读取 admission 已验证并持久化于 `case_action_admission.consumption` 的证明，以 `closure_sha256` 去重，避免同一关闭证明随清理 ToolJob 重复出现。覆盖计算对照固定 `preparation_scopes` 中的来源及消费者集合，验证证明协议/范围、消费者 RunItem 拥有者、当前目标的关闭摘要，以及其他消费者终态、Result 身份和摘要；只有完整匹配才输出消费阶段关闭已验证。运行级字段要求所有有清理范围的目标项均有关闭证明。前端文案明确该证明不等于 RunItem 完成。
+
+回归命令与结果：
+
+```text
+cd Agent_Server
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_consumption_phase.py tests/test_case_effect_relations.py -q --tb=short
+```
+
+**7 passed、32 skipped，8.37秒**；跳过项依赖隔离服务。`agent_web` 下 `npm.cmd test -- --run src/features/projects/CaseEffectCoveragePanel.test.ts` 为 **5 passed**，`npm.cmd run typecheck` 退出码 **0**。已有真实隔离服务工件包含直连适配器和 Agent 图的成功与失败业务回执；其验证断言消费关闭证明投影、RunItem 未被提前完成、失败回执仍为 failed。原始运行文件含提示和运行身份数据，不提交。
+
+证据边界：本次真实场景不是默认 Step 自主 Agent；本次逻辑回归有 32 个 live 门控项被跳过；没有证明共享消费者并发、关闭写入确认丢失恢复、终态重投不重操作或覆盖预算耗尽时的拒绝行为。接下来应针对这些恢复边界分别复现和验收。Step 认证后，P2 默认 Agent 完整用例执行仍是高优先级未完成项，目前停留在 `produced`、Run 未创建；本次报告投影变更不代表其已解决。

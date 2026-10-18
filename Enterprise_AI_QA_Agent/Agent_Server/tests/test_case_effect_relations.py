@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 
 import pytest
+from types import SimpleNamespace
 
 from test_agent_case_execution import adapter_environment, regression_business_http
 from test_case_operations import POLICY
@@ -24,6 +25,7 @@ from src.schemas.run_management import RunClaimRequest, RunItemLeaseRequest
 from src.schemas.tool_runtime import ModelToolCall
 from src.schemas.tool_job import ToolJobRecord
 from src.application.runtime.case_effect_evidence import capture_returned_evidence
+from src.application.test_runs.case_relation_coverage import _consumption_closure_proofs
 from src.schemas.api_docs import ApiDocVersionUploadRequest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -77,6 +79,27 @@ def test_original_default_failure_stays_illegal_but_v2_represents_the_intended_f
     assert all(entry.key not in entry.depends_on for entry in decision.items)
     with pytest.raises(ValueError, match="一致"):
         CasePlanningPolicy.model_validate({**policy().model_dump(mode="json"), "effect_evidence_protocol": "case-effect-evidence-v1"})
+
+
+def test_consumption_closure_projection_requires_exact_frozen_scope_and_terminal_consumers():
+    context = SimpleNamespace(consumption_protocol="case-consumption-phase-v1",
+        preparation_scopes={"seed": SimpleNamespace(source_key="seed", cleanup_keys=["target"],
+            consumer_keys=["target", "other"])},
+        effect_owner_item_ids={"target": "owner-target", "other": "owner-other"}, target_key="target")
+    item = SimpleNamespace(key="target")
+    proof = {"version": "case-consumption-phase-v1", "scope": "explicit_completed_consumption_phase",
+        "run_item_completed": False, "source_keys": ["seed"], "closure_sha256": "a" * 64,
+        "consumers": [{"item_key": "target", "run_item_id": "owner-target", "closure_sha256": "b" * 64},
+            {"item_key": "other", "run_item_id": "owner-other", "status": "failed", "result_id": "result-other",
+                "result_sha256": "c" * 64, "started_actions": []}]}
+    rows = [{"binding": {"item_key": "target"}, "consumption_closure": proof}]
+    assert _consumption_closure_proofs(context, item, rows) == [proof]
+
+    invalid = deepcopy(proof)
+    invalid["consumers"].pop()
+    with pytest.raises(ValueError, match="固定消费者集合"):
+        _consumption_closure_proofs(context, item,
+            [{"binding": {"item_key": "target"}, "consumption_closure": invalid}])
 
 
 @pytest.mark.asyncio

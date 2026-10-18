@@ -20,6 +20,46 @@ def _declaration(row, declaration_id):
     return entries[0] if entries else None
 
 
+def _consumption_closure_proofs(context, item, rows):
+    if context.consumption_protocol != "case-consumption-phase-v1":
+        return []
+    scopes = [scope for scope in (context.preparation_scopes or {}).values()
+        if item.key in scope.cleanup_keys]
+    expected_sources = {scope.source_key for scope in scopes}
+    expected_consumers = {key for scope in scopes for key in scope.consumer_keys}
+    proofs = {}
+    for row in rows:
+        if row["binding"].get("item_key") != item.key:
+            continue
+        proof = row.get("consumption_closure")
+        if proof is None:
+            continue
+        consumers = proof.get("consumers")
+        if (proof.get("version") != "case-consumption-phase-v1"
+            or proof.get("scope") != "explicit_completed_consumption_phase"
+            or proof.get("run_item_completed") is not False
+            or set(proof.get("source_keys", [])) != expected_sources
+            or not isinstance(consumers, list)):
+            raise ValueError("消费关闭证明与固定清理范围不同")
+        consumer_keys = {entry.get("item_key") for entry in consumers if isinstance(entry, dict)}
+        if consumer_keys != expected_consumers:
+            raise ValueError("消费关闭证明没有覆盖固定消费者集合")
+        for entry in consumers:
+            if entry.get("run_item_id") != context.effect_owner_item_ids.get(entry["item_key"]):
+                raise ValueError("消费关闭证明的消费者拥有者与固定运行不同")
+            if entry["item_key"] == context.target_key:
+                if not isinstance(entry.get("closure_sha256"), str):
+                    raise ValueError("当前目标的消费关闭证明缺少关闭摘要")
+            elif (entry.get("status") not in {"passed", "failed", "error", "blocked", "skipped", "cancelled"}
+                or not entry.get("result_id") or not entry.get("result_sha256")):
+                raise ValueError("共享消费者的终态结果证明不完整")
+        closure_sha256 = proof.get("closure_sha256")
+        if not isinstance(closure_sha256, str) or len(closure_sha256) != 64:
+            raise ValueError("消费关闭证明缺少有效关闭摘要")
+        proofs[closure_sha256] = deepcopy(proof)
+    return list(proofs.values())
+
+
 def relation_cleanup_coverage(context, inventory):
     if context.effect_coverage_protocol != PROTOCOL:
         raise ValueError("多效果覆盖缺少固定协议")
@@ -88,13 +128,17 @@ def relation_cleanup_coverage(context, inventory):
                 for value in entry["objects"] if value["value_sha256"] == obj["value_sha256"]]
             (covered if matches else uncovered).append({**obj, "cleanup_evidence": matches})
         status = "failed" if failed else "blocked" if unknown or uncovered else "passed"
+        consumption_closures = _consumption_closure_proofs(context, item, inventory)
         cleanups[item.key] = {"status": status, "source_keys": list(item.cleanup_sources or []),
             "covered": covered, "uncovered": uncovered, "unknown": unknown, "excluded_operations": excluded,
             "failed_cleanup_checks": failed, "known_object_count": len(objects), "covered_object_count": len(covered),
-            "scope": "declared_original_object_evidence", "consumption_completion_verified": False}
+            "scope": "declared_original_object_evidence", "consumption_completion_verified": bool(consumption_closures),
+            "consumption_closures": consumption_closures}
     result = {"version": PROTOCOL, "project_id": context.project_id, "run_id": context.run_id, "plan_id": context.plan_id,
         "inventory_sha256": _digest(inventory), "original_operation_count": len(inventory), "cleanups": cleanups,
-        "consumption_completion_verified": False, "complete_inventory_available": True}
+        "consumption_completion_verified": bool(cleanups) and all(
+            value["consumption_completion_verified"] for value in cleanups.values()),
+        "complete_inventory_available": True}
     size = len(json.dumps({"inventory": inventory, "coverage": result}, ensure_ascii=False,
         sort_keys=True, allow_nan=False, separators=(",", ":")).encode())
     if size > context.effect_coverage_max_bytes:

@@ -116,6 +116,11 @@ async def original_graph_phase(values, detail, plan, document, original, busines
         closure = env[1]._case_action_admission.consumption.read(cur,claim.item.id)
     assert closure and not closure['run_item_completed']
     assert closure['verification']['status'] == ('failed' if scenario == 'graph-failed' else 'passed')
+    coverage = final.results[0].actual['effect_cleanup_coverage']
+    assert coverage['consumption_completion_verified'] is True
+    assert coverage['cleanups']['target']['consumption_completion_verified'] is True
+    assert coverage['cleanups']['target']['consumption_closures'][0]['closure_sha256'] == closure['sha256']
+    assert sum('consumption_closure' in row for row in final.results[0].actual['effect_inventory']) == 1
     folder = Path(os.environ['QA_CONSUMPTION_PHASE_DIR'])/scenario
     folder.mkdir(parents=True,exist_ok=False)
     folder.joinpath(original.name).write_bytes(original.read_bytes())
