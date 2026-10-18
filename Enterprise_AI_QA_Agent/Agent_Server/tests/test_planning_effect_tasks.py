@@ -7,7 +7,8 @@ import pytest
 from test_planning_evidence_references import actual, reference_wire
 from src.application.test_cases.planning_stages import seal_logical_decision, build_stage_prompts, stage_prompt_version
 from src.application.test_cases.planning_effect_tasks import (
-    DECISIONS, accept_task_decision, aggregate_task_receipts, next_effect_task, check_task_progress,
+    DECISIONS, _prompt_schema, accept_task_decision, aggregate_task_receipts, effect_task_prompts,
+    next_effect_task, check_task_progress,
 )
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.schemas.case_planning import PlanningDecisionV3, CasePlanningPolicy
@@ -16,6 +17,16 @@ from src.schemas.case_planning_effect_tasks import EffectTaskCheckpoint
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
 
 ROOT = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"
+
+
+def test_prompt_schemas_omit_only_non_validation_title_annotations():
+    prompts = effect_task_prompts()
+    for task, model in DECISIONS.items():
+        original = model.model_json_schema()
+        prompt_schema = json.loads(prompts[task].split("\nJSON Schema: ", 1)[1])
+        assert prompt_schema == _prompt_schema(original)
+        assert "title" in original
+        assert _prompt_schema(prompt_schema) == prompt_schema
 
 
 def captured_tasks():

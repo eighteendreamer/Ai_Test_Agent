@@ -13,6 +13,15 @@ from src.schemas.case_planning_effect_tasks import (
 DECISIONS = dict(zip(TASKS, (BindingTaskDecision, ProducedTaskDecision, CleanupTaskDecision)))
 
 
+def _prompt_schema(schema):
+    """Drop redundant JSON Schema titles from prompt text, not runtime schemas."""
+    if isinstance(schema, dict):
+        return {key: _prompt_schema(value) for key, value in schema.items() if key != "title"}
+    if isinstance(schema, list):
+        return [_prompt_schema(value) for value in schema]
+    return schema
+
+
 def task_roles(stages, state):
     items = {i.key: i for i in stages.logical_decision.items}
     roles = {key: set() for key in items}
@@ -130,4 +139,5 @@ def effect_task_prompts():
         "produced": "当前只声明scope内产生效果，不声明清理或修改传值。每个item_key出现一次，可含多个declaration_id；role=produced、sources为空。select_when匹配真实工具输入；checks对照固定预期，object_path_tokens指向该工具真实输出。重复实际调用会分别保存对象。",
         "cleanup": "当前只声明scope内清理效果，不修改产生声明或传值。每个item_key出现一次，可含多个declaration_id；role=cleanup，sources引用completed_tasks已保存的produced item_key/declaration_id，与固定cleanup_sources一致。select_when匹配真实输入，checks与object_path_tokens指向真实清理返回，不把原创建对象当删除证明。",
     }
-    return {name: common + details[name] + "\nJSON Schema: " + json_text(model.model_json_schema()) for name, model in DECISIONS.items()}
+    return {name: common + details[name] + "\nJSON Schema: " + json_text(_prompt_schema(model.model_json_schema()))
+        for name, model in DECISIONS.items()}
