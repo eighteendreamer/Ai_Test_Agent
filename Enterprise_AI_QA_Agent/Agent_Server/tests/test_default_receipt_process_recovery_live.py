@@ -167,7 +167,18 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
                 approval_task = None
                 marker_data = None
                 for _ in range(12):
-                    waiting = next((item for item in detail["items"] if item["status"] == "waiting_approval"), None)
+                    # Worker process exit can precede the API transaction that
+                    # projects waiting_approval. Poll the persisted Run instead
+                    # of asserting against that transiently stale read.
+                    waiting = None
+                    wait_deadline = monotonic() + 30
+                    while monotonic() < wait_deadline:
+                        waiting = next((item for item in detail["items"]
+                            if item["status"] == "waiting_approval"), None)
+                        if waiting is not None:
+                            break
+                        await asyncio.sleep(.2)
+                        detail = await get("/runs/" + run_id)
                     assert waiting is not None, detail
                     approval_task = asyncio.create_task(client.post("/run-items/" + item_id + "/approval",
                         json={"approval_id": waiting["approval_id"], "decision": "approved"}))
