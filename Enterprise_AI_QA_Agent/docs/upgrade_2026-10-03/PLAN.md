@@ -4103,3 +4103,13 @@ Step 账号已认证后，重新执行普通需求文档的真实默认模型专
 结果 **1通过、0失败、0跳过，285.94秒**，证据目录为 `p1-generation-default-current-20261019/`。真实流程覆盖 Markdown 原件、解析快照、完整文本/章节范围冻结、注册/任务创建/任务查询三个模块、配置漂移发送前拒绝、API 重启、单模块 `frozen_request` 独立新任务恢复、PG 版本和来源读取、RustFS 原响应读取以及终态重投。实际得到9份草稿版本，SDK调用3次，终态重投无新增调用；物理请求均为200，流式迭代以`stop`终止，配置恢复后全局默认模型指纹未变。
 
 逐份读取生成结果确认本样本文档的唯一邮箱注册、重复注册拒绝、未登录写入拒绝、`done=false`/`retry_count=0`/`deleted_at=null`、空标题拒绝、本人任务隔离、每页20条上限和空结果合法性均进入结构化`content_json`，每份都有执行说明、解析快照来源以及模型/Prompt/Skill元数据。该证据把“普通 Markdown 默认 Step 三模块生成、进度和独立恢复”标记为**已实际验收**；长文档、更多格式、跨模块业务充分性、用户评审、完整项目页面和其他供应商仍是“已有实现、尚未验收”，不把本批扩大为P1或完整P0—P5完成。
+
+### 7.85 默认 Step produced 原生 Schema 认证模型对照复验〔2026-10-19〕
+
+为推进 P2 规划失败根因调研，复核产生阶段提示/Schema、工具契约、canonical 接受器与最新认证模型证据，确认 `produced` 是只读规划回执：需要映射固定 item 的真实操作输入、工具响应对象路径、业务预期检查及来源引用；其声明之后仍须进入原关系校验，不能以规划声明充当执行证据。SDK 适配保持现有 Chat Completions，不涉及 Anthropic 或 Responses。
+
+使用 `tests/test_planning_request_contrast_live.py::test_captured_produced_request_contrast` 对已认证 Step 运行一次独立隔离的原生 Schema 对照。固定旧 produced 请求、原 83.915 秒剩余窗口、low、8192 和完整输入，只启用已有 `json_schema` 输出格式；MySQL profile 存在隔离数据库，实际源任务未恢复、工具未开放，PostgreSQL/RustFS 证据保持独立，全局默认模型参数复核一致。结果 **1失败，95.964秒含夹具**；证据见 `p2-produced-native-schema-certified-20261019.xml` 和同名目录。
+
+请求实际收到 HTTP 200，SDK 流持续 82.762 秒、2,375 个片段，content 正文为0，reasoning/reasoning_content 各记录27,578字符，未正常结束且无 `finish_reason`；在原阶段窗口被取消。故这是同类“推理流有内容但没有结构化正文”的失败，不是 HTTP 建连失败，也不是 canonical 拒绝。模型未返回可校验回执，Run/业务 HTTP 均为0。不能据此声称原生 Schema 无普遍价值、不能增加生产预算，也不能把reasoning字段当可解释推理文本。
+
+**当前做到的步骤**：P1 普通 Markdown 三模块默认 Step 生成、PG/RustFS 持久化、独立模块恢复及终态不重投已实际验收；按用例执行仍停在 P2 `produced`，未创建 Run。默认模板/Excel/JSON 页面、Agent API 401自动续期和Worker恢复、Docker/k6指标缺失与报告已有对应专项验收；复杂UI默认负向回执、其他模式/App、持续容量及全部安全组合仍未闭环。现有模型适配已具备统一内部请求/结果契约和 provider-specific 字段映射；Anthropic 继续 `client.messages.create` `/v1/messages`，不需要为当前 Step produced 失败新增“Responses统一适配层”。下一步沿完整原用例和实际 Agent 工具执行器核对执行前效果声明是否有可安全确定性推导的重复职责，再决定是否存在可实施的根因修复；原预算、来源与 canonical 校验不变。完整 P0—P5 继续未完成。
