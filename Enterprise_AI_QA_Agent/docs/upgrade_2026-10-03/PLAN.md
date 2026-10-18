@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-修订日期：2026-10-19；代码基线 `f35765a5`、文档追加至 `01e414ab`。Step 已认证。P1 普通 Markdown 三模块生成、持久化及独立恢复已实际验收；模板/Excel/JSON项目页面已有专项产品验收。P2 的默认 Step 完整项目规划仍在 `produced` 阶段超时，未创建 Run。另修复 JSON 字面键 `order.id` 读取和“说明文字 + 唯一 JSON”回执解析，真实默认模型 UI 正负向及终态不重放均已通过；DeepSeek 公共页面录制也已通过真实 API/CDP/隔离存储的 Playwright 集成验收，但人手操作和录制知识回流给默认 AI 仍未验收。回执真实进程恢复、API模式完整闭环和其余范围仍未全部验收；配置仍在 MySQL、业务和运行数据在 PostgreSQL，多 Provider 保持原生协议。完整P0—P5继续进行中。
+修订日期：2026-10-19；代码基线 `f35765a5`、文档追加至 `01e414ab`。Step 已认证。P1 普通 Markdown 三模块生成、持久化及独立恢复已实际验收；模板/Excel/JSON项目页面已有专项产品验收。P2 的默认 Step 完整项目规划仍在 `produced` 阶段超时，未创建 Run。另修复 JSON 字面键 `order.id` 读取和“说明文字 + 唯一 JSON”回执解析，真实默认模型 UI 正负向及终态不重放均已通过；DeepSeek 公共页面录制已通过真实 API/CDP/隔离存储的 Playwright 集成验收，默认模型也已在隔离 UI 正负向正式 Run 中读取固定场景并验证实际页面，终态重投无新增业务或模型请求。但默认模型尚未在 DeepSeek 页面上消费该录制知识，人手操作链路也未验收。回执真实进程恢复、API模式完整闭环和其余范围仍未全部验收；配置仍在 MySQL、业务和运行数据在 PostgreSQL，多 Provider 保持原生协议。完整P0—P5继续进行中。
 
 ### 7.89 用例执行字段与回执修复、默认模型 UI 正向验收〔2026-10-19〕
 
@@ -4227,3 +4227,13 @@ cd Agent_Server
 真实隔离场景 `tests/test_case_operation_verification.py::test_live_formal_run_verifies_unknown_write_with_declared_read` 使用现有正式 Run、PostgreSQL ToolJob/operation index、MySQL 冻结策略和本地业务 HTTP。先让 POST 已在服务端创建对象，再在可靠输出保存前抛出连接错误；原 ToolJob 保持 `running` 且没有输出。随后只执行冻结声明允许的 GET，HTTP 序列严格为一次 POST 加一次 GET；GET ToolJob 读回 `effect_present`、HTTP 200、来源 operation、查证 operation 及 SHA，原 POST 没有被改写或重发。PostgreSQL 原始 operation index 同时读回 `target.create` 和 `target.verify` 两条独立逻辑操作。该测试通过 **1 passed，7.91 秒**；查证文件全量回归为 **11 passed**，受影响操作/证据/观察/评估回归在设置其约定证据目录后为 **89 passed、1 skipped，117.19 秒**。首次回归的 23 个失败均为未设置 `QA_STATEFUL_RESEARCH_EVIDENCE_DIR` / `QA_EFFECT_EVIDENCE_DIR` 的证据落盘门控，重跑已通过。
 
 本场景响应是小型 JSON，沿现有内联 ToolJob 输出保存，没有生成 RustFS 工件；因此本次证明的是 PostgreSQL 运行/操作/查证回执关联和真实 HTTP 效果，不宣称 RustFS 大工件路径已由该场景覆盖。当前分类调整为：**正式 Run 在冻结用例明确声明合法只读操作时，未知写入的只读查证、PG 回执和不重发边界已有真实验收**；**默认 AI 是否能正确选择并生成查证声明、查证结果是否能自动修订后续计划或释放依赖、查证阶段进程中断恢复、带 RustFS 大工件的证据关联仍未验收**。原未知操作继续保持未知，查证结果是新增证据，不能把原操作回写为成功。
+
+### 7.95 固定录制场景读取契约与默认模型 UI 断言〔2026-10-19〕
+
+调研当前知识工具契约、冻结用例来源和真实 UI 工具输出后，确认两个确定性问题：固定 `scene_read` 已由 `scene_id`、`version_id`、`content_hash` 唯一定位，工具 Schema 却仍强制要求只用于文本检索的 `query`；执行提示也没有区分场景版本来源与原始 `recording_id`，并将 `browser-control` 的 eval `result` 路径语义容易泛化到非 eval 命令。修改范围沿用现有知识工具、提示契约和输出 Schema，没有添加新协议、数据库字段或通用工具。
+
+`tests/test_scene_knowledge_live.py` 的真实隔离验收实际创建录制、整理场景版本并写入 PG/MySQL，再通过生产 `knowledge-rag` 工具在不传 `query` 的情况下读取相同完整知识；跨项目读取被拒绝。运行 `tests/test_ui_case_knowledge_contract.py tests/test_scene_knowledge_contract.py tests/test_scene_expectation_contract.py tests/test_recording_quality.py tests/test_recording_document_scopes.py` 得 **48 passed，5.34秒**。
+
+随后以当前 MySQL 默认 Step 配置、默认请求参数、隔离 MySQL/PostgreSQL/Redis/RustFS/API/Worker 和正式 Run，对冻结场景知识执行正负向真实页面测试。`tests/test_default_ui_scene_live.py` 得 **2 passed，273.39秒**：默认模型通过精确场景 ID/版本/哈希读取录制知识，在新的页面实例只点击一次并以实际页面值判断；正向计数 1 与预期相符，正式结果 `passed`；负向期望 2、实际值为 1，正式结果正确保留 `failed`。两例的页面 POST 序列均各含录制页和新执行页的一次操作；终态任务重投后新增业务请求、模型请求均为 0。场景对象、ToolJob、原始浏览器 transcript、PG Run/Result 及物理模型请求响应保存在本地证据目录 `p5-default-ui-scene-contract-current-20261019/`。
+
+本次仅证明固定场景读取契约、默认模型在受控页面使用录制知识、真实点击/断言、正负结果及终态不重放。页面由隔离业务夹具提供，不是 DeepSeek；因此默认 AI 读取 DeepSeek 实际录制知识、人工浏览器录制、正式用户授权界面和完整产品流程仍未验收。当前工作树的 UI 提示、工具 Schema 与回归测试已通过上述验证，其他并存改动未纳入本项提交。

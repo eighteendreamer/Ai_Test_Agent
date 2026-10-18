@@ -6,7 +6,10 @@ from src.registry.agents import AgentRegistry
 from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
-from src.modes.ui_automation_mode.prompt_contract import UI_AUTOMATION_PROMPT_CONTRACT
+from src.modes.ui_automation_mode.prompt_contract import (
+    UI_AUTOMATION_PROMPT_CONTRACT,
+    UI_CASE_EXECUTION_PROMPT_CONTRACT,
+)
 
 
 def test_ui_scene_reader_survives_actual_mode_and_agent_exposure():
@@ -47,7 +50,16 @@ def test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract():
     assert "Always call `ui-automation-runner` first" not in contract
     assert "knowledge-rag" in contract
     assert "actual" in contract and "receipt" in contract
+    assert "`ui_recording_scene`" in contract
+    assert "never pass a recording_id" in contract
 
 
 def test_free_ui_keeps_original_entry_contract():
     assert ui_contract("free") == UI_AUTOMATION_PROMPT_CONTRACT
+
+
+def test_frozen_ui_contract_distinguishes_eval_value_from_cli_stdout():
+    assert "This `result` path applies only to command=eval" in UI_CASE_EXECUTION_PROMPT_CONTRACT
+    assert "network, snapshot, open, click and screenshot" in UI_CASE_EXECUTION_PROMPT_CONTRACT
+    assert "Never use [\"result\"] for a non-eval command" in UI_CASE_EXECUTION_PROMPT_CONTRACT
+    assert "Other command verbs expose textual output under stdout" in ToolRegistry().get("browser-control").output_schema["result"]

@@ -96,13 +96,17 @@ async def test_new_scene_is_read_by_the_actual_knowledge_tool(tmp_path):
                     if step["data"]["seq"] == alias["source_seq"])
                 assert alias["target"] == original["data"]["event"]["target"]
                 assert alias["page"] == original["data"]["event"]["page"]
+            no_query = await tools.execute(tool, ModelToolCall(id=str(uuid4()), name=tool.key,
+                arguments={"operation":"scene_read", "scene_id":version["scene_id"],
+                    "version_id":version["version"]["id"], "content_hash":version["version"]["content_hash"]}), context)
+            assert no_query.status == "completed" and no_query.output["scene_knowledge"] == knowledge
             bad = await tools.execute(tool, ModelToolCall(id=str(uuid4()), name=tool.key, arguments={"query":"", "operation":"scene_read",
                 "scene_id":version["scene_id"], "version_id":version["version"]["id"], "content_hash":"0" * 64}), context)
             assert bad.status == "failed" and bad.output.get("error") == "scene_knowledge_rejected"
             jobs_after = await jobs.list_jobs(session_id=state["session"]["id"])
             save("scene-knowledge-tool-jobs.json", [job.model_dump(mode="json") for job in jobs_after])
-            assert len(jobs_after) == 3
-            assert sum(job.status.value == "completed" for job in jobs_after) == 2
+            assert len(jobs_after) == 4
+            assert sum(job.status.value == "completed" for job in jobs_after) == 3
             assert all(job.output_payload.get("protocol") == "recording-scene-knowledge-v1"
                 for job in jobs_after if job.status.value == "completed")
             state.update(call=call, context=context, record=record)

@@ -236,6 +236,8 @@ class ToolRegistry:
                     description=("Retrieve test rules, page knowledge, and historical defects. "
                         "scene_search lists scenes in the session-bound project; scene_read requires the exact scene_id, "
                         "version_id and content_hash from that catalog to read full recorded steps, responses and aliases. "
+                        "For scene_search and scene_read, query is optional and must not be used to identify the fixed scene; "
+                        "ordinary text retrieval uses query or the current session input. "
                         "Catalogs and organized scenes do not prove execution or test success."),
                     category="knowledge",
                     permission_level="safe",
@@ -251,7 +253,6 @@ class ToolRegistry:
                             "limit": {"type":"integer", "minimum":1, "maximum":50, "default":20},
                             "offset": {"type":"integer", "minimum":0, "maximum":100000, "default":0},
                         },
-                        "required": ["query"],
                     },
                     supports_streaming=True,
                     output_schema={"chunks": "array", "scene_catalog":"object", "scene_knowledge":"object", "verification_status":"string"},
@@ -636,7 +637,7 @@ class ToolRegistry:
                     },
                     supports_streaming=True,
                     output_schema={"artifacts": "array", "steps": "array", "stdout": "string",
-                        "stderr": "string", "result": "Evaluation value; command eval preserves its original type, including null. Return an object directly to reference its fields; JSON.stringify returns a string."},
+                        "stderr": "string", "result": "Only command=eval/evaluate_js. The typed evaluation value, including null; return an object directly to reference its fields. Other command verbs expose textual output under stdout and do not provide result."},
                     tags=["ui", "browser", "automation"],
                 ),
                 handler_key="browser-control",
