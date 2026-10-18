@@ -4175,3 +4175,13 @@ cd Agent_Server
 结果 **7 passed、32 skipped，8.37秒**；跳过项是隔离真实服务门控场景，不计通过。前端 `npm.cmd test -- --run src/features/projects/CaseEffectCoveragePanel.test.ts` **5 passed**，`npm.cmd run typecheck` 退出码 **0**。已有隔离 MySQL/PostgreSQL/RustFS/native HTTP 真实验收工件覆盖直连工具适配器及 Agent 图的通过/失败结果，断言关闭证明只入覆盖证据、不提前完成 RunItem，失败业务结果仍为失败；原始工件含完整运行提示和身份字段，仅保留在本地验证目录，不纳入提交。
 
 这一步补齐了已存消费关闭证明到运行覆盖结果/前端的展示，未证明关闭事务丢回执恢复、共享消费者并发、终态重投及覆盖预算边界。下一步按真实事务与恢复调用链分别验证上述边界；Step 已认证，P2 默认 AI 的“项目选取→排序→补全→执行”可继续真实验收，但截至本条仍停在 `produced`、未创建 Run。P0–P5 整体仍未完成。
+
+### 7.89 消费关闭事务丢回执边界复核〔2026-10-19〕
+
+依据 7.87—7.88 的调用链，复核 `PostgresCaseActionAdmission._claim` 与 `PostgresCaseConsumption.save`：关闭记录写入和原 ToolJob 从待执行状态领取为 `running` 在同一 PostgreSQL 事务提交；业务 handler 只会在 `_claim` 返回后运行。若提交已成功但客户端未收到确认，调用包装会返回 `CaseActionClaimUnavailable`，原 Job 与关闭记录不能被当作可安全重发的空状态。
+
+核对已有真实隔离服务原始工件 `p2-consumption-phase-final/lost-claim/verification.json`：测试在真实 `_claim` 提交后模拟回执丢失、但在业务分发前抛出连接错误。原清理 Job 保持 `running`，同一操作别名被拒绝为 `case_operation_outcome_unknown`，再次执行原 Job 仍未获可靠确认；HTTP 序列只有两次创建和一次查询，没有清理 DELETE，两个对象均保留。该证据证明“提交回执丢失时不重复发送”的保守行为，不证明生产环境中网络中断发生在业务请求发送之后时能够自动判断远端是否已执行。
+
+另核对 `p2-consumption-phase-final/rollback/verification.json`：在真实事务内消费关闭记录保存后注入失败，确认记录写入和领取同时回滚；随后正常清理各发送一次、两个对象均已清除。并发场景现有原始工件及测试覆盖四个相同逻辑清理调用只产生一次 DELETE。运行 `tests/test_case_consumption_phase.py tests/test_case_consumption_external.py tests/test_case_effect_relations.py` 得 **11 passed、41 skipped，6.41秒**；跳过均由真实 MySQL/PostgreSQL/RustFS/native HTTP 门控，历史实测工件单独核对，不把本次跳过计作通过。
+
+因此，事务回滚、提交后且业务分发前丢回执、同逻辑操作并发领取已有实际证据；7.88 所列的空白需要收窄为：提交后进入 handler、远端已执行但响应丢失或 API/Worker 进程中断时的原操作查证/恢复；关闭记录已提交后的覆盖报告读取、跨进程重建与终态重投；以及完整默认 AI 的 P2 规划与执行闭环。当前没有证据支持再改关闭事务或放宽 unknown 拦截。下一步按现有 API 工具操作回执恢复机制逐路径核实远端已执行但本地未收到结果的真实语义，优先确认是否存在可安全只读查证的既有操作；没有确定性查证能力时保持阻断并保留未知结果。Step 已认证，P2 默认 AI 仍停在 `produced` 规划阶段、未创建 Run；完整 P0—P5 未完成。
