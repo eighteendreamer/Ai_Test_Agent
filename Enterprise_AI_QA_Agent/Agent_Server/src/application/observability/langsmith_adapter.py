@@ -284,6 +284,7 @@ class LangSmithObservabilityAdapter:
             test_run_id=value.get("test_run_id", ""),
             run_item_id=value.get("run_item_id", ""),
             attempt_id=value.get("attempt_id", ""),
+            logical_call_id=value.get("logical_call_id", ""),
             thread_id=value.get("thread_id", ""),
             environment=self._environment,
         )

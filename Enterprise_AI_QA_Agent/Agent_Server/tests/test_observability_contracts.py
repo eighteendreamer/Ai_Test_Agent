@@ -118,6 +118,31 @@ def test_trace_context_deduplicates_tags_without_reordering() -> None:
     assert context.tags == ["runtime", "code_review"]
 
 
+def test_langsmith_context_mapping_preserves_logical_model_call_id() -> None:
+    client = _RecordingLangSmithClient()
+    adapter = LangSmithObservabilityAdapter(
+        LangSmithConfig(enabled=True, tracing_mode="full"),
+        client=client,
+    )
+
+    context = adapter.context_from_mapping(
+        {
+            "session_id": "session-1",
+            "turn_id": "turn-1",
+            "trace_id": "trace-1",
+            "logical_call_id": "model-call-1",
+        }
+    )
+
+    assert context.logical_call_id == "model-call-1"
+    assert context.metadata()["logical_call_id"] == "model-call-1"
+    with adapter.trace_turn(context):
+        with adapter.trace_node(context, node_name="model_call"):
+            pass
+
+    assert client.created[1]["extra"]["metadata"]["logical_call_id"] == "model-call-1"
+
+
 def _context() -> TraceContext:
     return TraceContext(session_id="session-1", turn_id="turn-1", trace_id="trace-1")
 

@@ -62,3 +62,11 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 启用隔离 MySQL/PostgreSQL/RustFS 和本地 HTTP provider 后，运行 `tests/test_planning_response_completion.py` 的三个真实场景：非流式截断、流式截断、流式缺少终态。每个场景的 PostgreSQL 计划保存两个不同的 `logical_call_id`，第二个响应已持久化但确认回执丢失；新 Worker 从 `phase=response` 读取原响应，模型调用数和 HTTP 请求数均不增加，终态重投也不增加调用。三场景实际测试通过；证据目录为 `p0-planning-completion-current/{native,stream,missing-terminal}`。同轮 `tests/test_document_impact_calls.py` 的 19 个真实存储/本地 HTTP 场景也通过。
 
 这一步确认的是“已持久响应的规划恢复”调用身份和不重发边界。仍未证明：调用意图已保存但响应未持久化时的所有业务入口都能安全恢复、回执纠正请求发送后进程中断、供应商响应持久化后进程中断，以及默认模型按用例执行的完整闭环。默认 AI 真实质量失败仍停在 `produced` 规划阶段，不能用本轮受控 provider 结果替代。
+
+## LangSmith 节点关联字段补齐（2026-10-19）
+
+继续沿 `ModelRuntimeService.invoke → _send_with_client → LangSmithObservabilityAdapter.context_from_mapping` 核对持久调用身份。发现 `TraceContext` 已定义 `logical_call_id`，请求和 HTTP observer 也已携带该字段，但 `context_from_mapping()` 漏掉了映射；因此启用 LangSmith 时，模型节点 span 的业务元数据无法和同一调用的 SDK attempt、响应及结果回执关联。
+
+本轮只补齐该字段映射，不改变模型协议、重试、超时或数据库边界。新增测试用真实 `LangSmithObservabilityAdapter` 与记录客户端验证：从模型请求映射出的 `TraceContext` 进入 turn/node trace 后，节点元数据保留同一个 `logical_call_id`。`tests/test_model_completion_http.py tests/test_model_sdk_fault_http.py tests/test_observability_contracts.py` 实际 **110通过、105.66秒**；`compileall` 和 `git diff --check` 通过。
+
+当前仍只证明应用逻辑调用到 provider SDK attempt/response 及 LangSmith 节点元数据的关联；持久 Worker 所有入口、生产远端接收和默认 AI 按用例完整执行仍未完成。
