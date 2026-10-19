@@ -5488,3 +5488,19 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 功能闭环未通过：180秒原规划deadline内3次模型调用耗时56.97/49.20/72.75秒。bindings已固定，produced调用一直发送reasoning delta；实际HTTP 200，但截止时SDK收到CancelledError、没有正文/终止事件，累计completion 5658 tokens，Run和业务HTTP均为0。与live13比较，最后produced请求由29,732字节/4项evidence/3条query_results缩至24,458字节/2项evidence/1条预读结果；两次都在约73—80秒持续流式推理、产生5,178/5,658 completion tokens、没有正文后被同一个180秒deadline取消。因此查询重复和live13较大的请求上下文不是充分根因，当前证据指向默认模型对produced结构化声明的推理成本，但尚不能确定应调整Schema/职责还是模型生成边界。不能将预读成功说成默认AI完整用例执行成功，也不直接改生产期限/模型预算。原文档、JSON、PG阶段快照、脱敏物理请求/SDK计数、失败XML和profile见`p2-default-coverage-live14/`与`p2-default-coverage-live14.xml`；物理采集不保存私有reasoning和响应正文。配置组合确定性检查：`..\.venv\Scripts\python.exe -m pytest -q tests/test_planning_item_operation_selection.py tests/test_planning_effect_tasks.py tests/test_planning_operation_prefetch.py tests/test_scene_query_contract.py`，38通过、18跳过。
 
 下一步基于live13与live14冻结请求和Schema深入查produced阶段为何在已有工具契约后持续推理而不输出，确认输入／职责／模型响应边界后再确定是否需要实现变更。默认AI项目选取→排序→补全→执行仍未验收；完整P0—P5保持active。
+
+## 2026-10-19 模型适配层复核与默认 API Worker 状态
+
+重新读取用户原始方案及当前供应商客户端、请求 Schema、配置存储、设置页面和 SDK HTTP 测试。确认现有架构已采用“统一内部契约 + 按 transport 分派原生客户端”：OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini generateContent 分别序列化和解析；OpenAI 兼容供应商使用 Chat Completions。Anthropic 仍调用官方 SDK `client.messages.create`，`await_provider_io` 只规范化传输错误，不转换协议。配置和模型请求 profile 存 MySQL；消息、回执与业务运行数据按既有边界存 PostgreSQL。
+
+`map_model_request` 在发送前按 transport 与模型显式声明映射 JSON 输出格式、reasoning effort/budget 和 token 参数；必需但未声明的能力在零 HTTP 发送时拒绝，可选能力按已声明规则降级并记录决策。各客户端保留自己的输入、工具、流事件、终态和 usage 映射。设置页允许明确选择 transport。此次判断为：适配层已存在且承担必要的协议与字段映射职责；目前没有依据另建统一外部协议层，也不应把供应商调用并到同一 SDK 路径。新增供应商须明确使用已支持 transport，或补充独立客户端、字段/响应映射与对应 HTTP 契约测试；OpenAI 兼容路径不等于原生协议自动兼容。
+
+实际运行：`..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_model_clients.py tests/test_model_sdk_fault_http.py tests/test_model_request_profile.py -q --tb=short -rs --junitxml=../docs/upgrade_2026-10-03/p0-model-adapter-audit-20261019.xml`，**120通过，113.79秒**。这些测试使用官方 SDK 向本地 HTTP fixture 发请求，覆盖各原生端点、实际请求字段、流/非流响应、错误边界、映射声明和 HTTP 400 不改参数重发；它们不替代每个供应商模型的外网认证与真实模型质量验收。Step 默认模型已按用户确认认证，不在本轮重复认证。
+
+默认 API Agent Worker 真实验收记录见`P3_API_AGENT_DEFAULT_MODEL_LIVE_RESEARCH_20261019.md`：同进程模式出现两次不同调用身份但参数相同的 `/profile`；此前 durable 模式一次失败，增加只读诊断后两次成功，三步 HTTP 均为200，父子任务终态收敛，终态重投没有新增请求。结论仍为故障未稳定复现、根因未定；不能标记默认 Agent API 全流程通过，也没有据此修改生产逻辑。
+
+本轮只改调研记录，没有改供应商代码、请求协议、数据库全局配置或迁移。P2 隔离 16K 实验完整记录于 `P2_DEFAULT_CURRENT_RESEARCH.md`：8192 的生成截断现象被隔离上限试验避开，但整体任务仍因流式 `APIConnectionError` 失败；下一步查 SDK/物理 HTTP attempt/Worker/checkpoint 的因果对应与恢复边界，不继续加预算、不重放旧失败任务。完整 P0—P5 仍 active，UI 正式默认 Agent 测试、P2 规划/执行闭环及其他未验收项继续保留。
+
+## 2026-10-19 P2 默认模型单用例端到端复验
+
+随后新增全新隔离项目与任务完成默认Step模型实测：`test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case` **1通过，343.03秒**；同轮SDK流观测回归 **9通过，11.33秒**。模型完成规划并创建正式Run，RunItem及正式结果通过；本地业务服务实际完成POST及基于响应ID的DELETE，最终无残留；completed Run终态重投新增模型物理请求0。该结果仅将“单个自包含创建/清理用例闭环”标为一次通过，不涵盖项目多候选选取、跨用例补全、准备步骤或其他模式。此前隔离16K失败样本中的`APIConnectionError`本次未复现，异常链探针没有获取根因，仍需如实保留为未定。配置继续在MySQL，业务结果与运行数据在PostgreSQL，对象工件使用RustFS；仅更新测试观测和调研记录，没有变更生产供应商协议或全局模型配置。P0—P5整体仍未完成。

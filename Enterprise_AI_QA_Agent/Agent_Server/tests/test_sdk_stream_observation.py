@@ -123,6 +123,11 @@ async def test_actual_stream_observation_never_saves_private_fields_or_changes_e
                 assert observation['finish_reason']=='tool_calls'
             else:
                 assert observation['error_type'] in {'CancelledError','APIConnectionError'}
+                assert observation['error_chain_types'][0] == observation['error_type']
+                if mode == 'midstream':
+                    assert len(observation['error_chain_types']) >= 2
+                assert all(isinstance(name, str) and name.isidentifier()
+                    for name in observation['error_chain_types'])
             if os.getenv('QA_SDK_OBSERVATION_DIR'):
                 directory=Path(os.environ['QA_SDK_OBSERVATION_DIR'])/mode
                 directory.mkdir(parents=True,exist_ok=False)

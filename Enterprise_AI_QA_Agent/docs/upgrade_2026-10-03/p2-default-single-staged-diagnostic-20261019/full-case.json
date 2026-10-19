@@ -1,0 +1,27 @@
+{
+  "objective": "依据项目文档创建一条订单，使用真实返回的 order.id 清理该订单",
+  "requires": [
+    "本次 POST 实际返回的 order.id"
+  ],
+  "期望": {
+    "create_code": 201,
+    "cleanup_code": 200
+  },
+  "steps": [
+    {
+      "order": 1,
+      "action": "POST /orders 创建一条订单，读取实际返回的 order.id"
+    },
+    {
+      "order": 2,
+      "action": "DELETE /orders/{id}，id 必须使用本次 POST 实际返回值，并核对删除成功"
+    }
+  ],
+  "cleanup": [
+    "删除本次 POST 创建的订单"
+  ],
+  "operations": {
+    "create": "http://127.0.0.1:49723/orders",
+    "cleanup": "http://127.0.0.1:49723/orders/{id}"
+  }
+}

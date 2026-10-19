@@ -17,6 +17,24 @@ from src.application.test_runs.agent_case_receipt import AgentCaseReceiptService
 _sdk_call = ContextVar('qa_default_sdk_call', default=None)
 
 
+def exception_type_chain(error):
+    """Return exception class names without persisting messages or payloads."""
+    chain = []
+    pending = [error]
+    seen = set()
+    while pending:
+        current = pending.pop(0)
+        if id(current) in seen:
+            continue
+        seen.add(id(current))
+        chain.append(type(current).__name__)
+        if current.__cause__ is not None:
+            pending.append(current.__cause__)
+        elif current.__context__ is not None:
+            pending.append(current.__context__)
+    return chain
+
+
 async def observe_stream(stream, root, identity, state):
     """Forward actual SDK objects; save counts, never private field contents."""
     started = state['started']
@@ -65,6 +83,7 @@ async def observe_stream(stream, root, identity, state):
         observation['sdk_iteration_finished'] = True
     except BaseException as exc:
         observation['error_type'] = type(exc).__name__
+        observation['error_chain_types'] = exception_type_chain(exc)
         raise
     finally:
         observation['elapsed_seconds'] = round(perf_counter()-started, 3)
@@ -187,6 +206,7 @@ def install(directory):
                 return result
             except BaseException as exc:
                 record['error_type'] = type(exc).__name__
+                record['error_chain_types'] = exception_type_chain(exc)
                 raise
             finally:
                 record['elapsed_seconds'] = round(perf_counter()-state['started'], 3)

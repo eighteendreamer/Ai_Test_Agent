@@ -45,4 +45,26 @@ p2-default-current-profile **1失败183.42秒**。两次HTTP200。逻辑38.567�
 
 pytest **1失败195.08秒**。隔离任务经过3轮并收到3个HTTP 200；第一轮流式调用耗时94.73秒，`finish_reason=length`，`completion_tokens=8192`，SDK观测到31,076个非空reasoning字符、正文0字符。后两轮分别为 `stop`，产生375及1,236个正文字符，但最终任务状态仍为 `failed`，消息为“模型规划输出达到生成上限，响应不完整；已保留响应，不自动重发；未创建测试运行”。总期限尚未耗尽。Run未创建，目标服务HTTP请求数为0，未验证真实执行、清理和结果入库。
 
-这再次把当前失败收窄为阶段输出达到模型生成上限；`reasoning_style=none` 的隔离profile没有阻止首轮返回大量reasoning，也没有让本例完成。现有证据不支持扩大期限、切换Provider协议或自动重发请求，也不能单独证明某个提示词/输入投影是根因。需继续按已有架构复核规划阶段的输入与输出契约，保留未完成响应及失败任务，不覆盖历史结果。该实验不验证多候选排序、依赖用例补全、运行内准备步骤或其他测试模式。
+这次失败可确定为首阶段触及本地生成上限，但不能据此断定默认调用已发送“关闭推理”。代码契约中 `reasoning_style="none"` 表示不映射统一推理选项；实际HTTP请求键为 `messages/model/max_tokens/response_format/stream/stream_options`，没有 `reasoning_effort`。这意味着服务端按自身默认推理行为运行，而不是收到关闭指令。Step 官方文档当前列出 `low/medium/high` 三档，没有文档化关闭档位；Chat Completions 使用 `reasoning_effort`。模型指南注明 Step 5 Preview 最大输出64K，Chat API `max_tokens` 是生成上限且未传时默认由模型决定。来源：<https://platform.stepfun.ai/docs/en/guides/models/step-5-preview>、<https://platform.stepfun.ai/docs/en/guides/developer/reasoning>、<https://platform.stepfun.ai/docs/en/api-reference/chat/chat-completion-create>。
+
+此前显式 `reasoning_effort=low` 的隔离profile也在8192上限耗尽；因此单改reasoning档位没有消除截断。当前还没有证据判断一次16K隔离上限是否足以让v3 produced阶段完成。本轮不改全局预算、Provider协议或重发策略；下一步只在隔离MySQL模型副本把输出上限从8192改为16384，重复同一真实用例和阶段组合，检查首阶段能否产出完整结构化回执及后续Run/业务HTTP/清理证据。若仍失败，按真实终态和阶段回执继续查，不继续盲目加预算。该实验不验证多候选排序、依赖用例补全、运行内准备步骤或其他测试模式。
+
+## 隔离 16K 输出上限复验
+
+先按相同测试入口运行，但初次策略环境变量组合遗漏 `QA_EVIDENCE_REFERENCES=1`、`QA_ITEM_OPERATION_SELECTION=1` 和固定的关联协议。`CasePlanningPolicy` 在创建规划任务前拒绝 `case-planning-staged-evidence-v3`，测试 **1失败，17.71秒**；证据目录 `p2-default-single-staged-16k-20261019/physical/` 为空，没有模型或业务 HTTP 请求。这是夹具配置失败，不计为模型样本。
+
+修正组合后使用正式 API、规划 Worker、隔离 MySQL/PostgreSQL/Redis/RustFS，以及新的单订单创建/清理业务目标复跑。只在隔离模型记录把 `max_output_tokens` 从8192改为16384；全局默认配置不变，`reasoning_style=none`、JSON模式、600秒诊断期限、`case-planning-staged-evidence-v3`、执行项操作选择、关联来源和证据引用保持固定。证据位于 `p2-default-single-staged-16k-corrected-20261019/`。
+
+pytest **1失败，233.72秒**。规划任务运行3轮，SDK物理请求均携带 `max_tokens=16384`。脱敏流观测显示两次调用完整返回 `finish_reason=stop`（分别约94.66秒/5,979 completion tokens/351正文字符，以及25.92秒/2,295 tokens/1,042正文字符）；另一次流式调用在约90.12秒以 `APIConnectionError` 结束，已观察到5,742 completion tokens及reasoning delta，但没有完成事件或正文。最终阶段状态为 `effects`、响应 `http_error`，任务失败，未创建Run，业务HTTP为0；原件已保存，未自动重发。测试未保存私有正文或response body。
+
+因此16K实验证明此前8192首轮 `length` 截断可被更高的隔离输出上限避开，但未完成规划闭环；本次终态的直接阻塞是另一次流式连接中断，不能把它归因于模型结构化输出错误或继续加大预算。也不能把“两个stop”说成合法规划成功，因整体任务仍失败且缺少完整终态计划。下一步应把该SDK调用、物理HTTP attempt、Worker错误和checkpoint阶段身份对齐，查连接中断来自服务端关闭、网络传输还是进程/租约边界；然后用受控失败回归验证任务恢复是否保留固定输入且不重复业务副作用。不要重放该已失败任务，也不修改全局预算、协议或重试策略。该用例仅测单用例创建/清理，不证明项目多候选选择、排序、依赖补全或完整按用例执行。
+
+## 2026-10-19 新任务诊断探针与默认模型完整单用例复验
+
+为定位前次流中断，在仅供测试的 `default_model_probe` 增加异常因果链**类名**采集；不保存异常消息、HTTP响应正文、凭据或模型内容，不改生产SDK、重试和超时策略。受控真实HTTP SDK测试覆盖Content-Length中途截断与取消，`test_sdk_stream_observation.py` **9通过，11.33秒**，验证异常链与原发送/响应语义保持。
+
+未恢复旧失败任务。使用新的项目、新的需求文件、新的正式用例和新 planning task，在隔离MySQL/PostgreSQL/Redis/RustFS、正式API/Worker及本地受控订单服务中，以实际Step默认模型重新验收；隔离模型记录使用 `max_output_tokens=16384`、`json_object`、`reasoning_style=none` 和600秒诊断期限，全局配置未改。策略冻结为分阶段证据任务v3、操作预读、条目操作选择、来源身份、关联文档及证据引用。证据目录 `p2-default-single-staged-diagnostic-20261019/`，pytest XML `p2-default-single-staged-diagnostic-20261019.xml`。
+
+专项**1通过，343.03秒**。8次SDK流调用全部收到HTTP 200并以 `finish_reason=stop` 正常结束；无异常链产生，因此这次没有复现APIConnectionError，原故障根因仍未确定。默认模型规划完成，建立正式Run；Run、唯一RunItem和正式结果均为 `passed`。工具任务实际POST创建一条订单，随后DELETE使用POST实际返回的 `order.id`；两个工具任务状态均为completed，剩余订单为0。终态Outbox重投后新增物理模型请求为0、业务副作用未重复。保存了请求/响应安全投影、SDK流计数、PG规划和工具任务、正式Run、退出码及XML。
+
+该实测把“默认AI单个完整用例从规划到执行的一次闭环”从未验收更新为**已验收一次**，但不证明多候选项目检索、用例排序、跨正式用例补全、运行内准备步骤、负向用例和其他测试模式。单次成功也不消除此前真实流故障证据；后续应通过持续运行积累失败链样本，或在新故障发生时用新增探针取证，不为追求复现而盲目重发旧任务。

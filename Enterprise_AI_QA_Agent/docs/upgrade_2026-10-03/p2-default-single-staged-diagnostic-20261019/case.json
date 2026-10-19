@@ -1,0 +1,88 @@
+{
+  "case": {
+    "id": "fb15aa05-5dfe-48e4-8b48-68ce6d5e54ee",
+    "project_id": "a1f20a03-3295-43ef-b62a-c7c08df46b20",
+    "case_key": "default-query",
+    "title": "单订单创建清理",
+    "mode_key": "api_testing",
+    "case_type": "json",
+    "priority": "P1",
+    "lifecycle_status": "draft",
+    "active_version_id": null,
+    "latest_version": 1,
+    "created_by": null,
+    "created_at": "2026-10-19T04:21:46.476834Z",
+    "updated_at": "2026-10-19T04:21:46.476834Z",
+    "archived_at": null,
+    "version_reviews": {
+      "9eea094b-0bc2-4235-9cfd-f17874c43290": {
+        "version_id": "9eea094b-0bc2-4235-9cfd-f17874c43290",
+        "version": 1,
+        "status": "draft",
+        "origin": "native",
+        "events": []
+      }
+    }
+  },
+  "version": {
+    "content_json": {
+      "objective": "依据项目文档创建一条订单，使用真实返回的 order.id 清理该订单",
+      "requires": [
+        "本次 POST 实际返回的 order.id"
+      ],
+      "期望": {
+        "create_code": 201,
+        "cleanup_code": 200
+      },
+      "steps": [
+        {
+          "order": 1,
+          "action": "POST /orders 创建一条订单，读取实际返回的 order.id"
+        },
+        {
+          "order": 2,
+          "action": "DELETE /orders/{id}，id 必须使用本次 POST 实际返回值，并核对删除成功"
+        }
+      ],
+      "cleanup": [
+        "删除本次 POST 创建的订单"
+      ],
+      "operations": {
+        "create": "http://127.0.0.1:49723/orders",
+        "cleanup": "http://127.0.0.1:49723/orders/{id}"
+      }
+    },
+    "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。",
+    "generation_metadata": {
+      "template": {
+        "writing_guidance": "DO-NOT-INJECT-TEMPLATE"
+      }
+    },
+    "preconditions": [],
+    "steps": [],
+    "assertions": [],
+    "test_data": {},
+    "cleanup": [],
+    "content_format": "json-v1",
+    "id": "9eea094b-0bc2-4235-9cfd-f17874c43290",
+    "case_id": "fb15aa05-5dfe-48e4-8b48-68ce6d5e54ee",
+    "version": 1,
+    "content_hash": "0985491a0172dd649305e60dcab6f1cb3fe03a17c4b8f744c45d25b560026d60",
+    "source_refs": [
+      {
+        "source_type": "api_doc",
+        "source_id": "35d07563-07ae-53c7-93de-8eb2a909abe5",
+        "version": null,
+        "label": "",
+        "uri": null,
+        "metadata": {}
+      }
+    ],
+    "model_key": "manual",
+    "prompt_version": "manual-v1",
+    "skill_versions": {
+      "manual": "v1"
+    },
+    "created_at": "2026-10-19T04:21:46.476834Z"
+  }
+}
