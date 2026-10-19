@@ -31,3 +31,12 @@
 4. 在归因后先运行针对同一真实失败现场的确定性回归，再重复默认模型两变体；只有两个模式都完成 campaign、准确报告三项任务、秘密不泄漏、终态重投零新增请求，才把默认 API Worker 流程记为通过。
 
 本批没有修改生产代码、MySQL 默认配置或业务规则。未创建新的业务数据表；实际 target 是本地受控服务。
+
+## 补充复核：重复调用与持久等待的边界
+
+2026-10-19 对原始 `postgres-finally.json` 中的 ToolJob、approval 与 session snapshot 做了只读结构复核；仅输出身份、状态、工具名、参数长度及 SHA-256，不输出工具参数正文、模型正文或凭据。
+
+- 同进程模式的两次 `/profile` 分别对应两个不同的 `call_id`、ToolJob ID 和 approval ID，且都在同一 child session/turn 中完成。该 child 的最终 snapshot 顺序为：assistant 调用 → tool 结果 → assistant 再次调用 → tool 结果；两次 `api-test-runner` 参数长度均为 80，SHA-256 相同。因此已排除“同一 ToolJob 被原样重投”，证据更符合模型收到第一次结果后生成了新的、参数完全相同的调用。尚未证明模型为何选择重复调用，也未证明所有重复都属于此模式。
+- 持久模式的 parent ToolJob 最终仍是 `waiting_children`；可见的 login child ToolJob 已 `completed`，parent 和 child 各只有初始等待及终态 snapshot。目标仅收到 login，refresh/profile child 尚未出现。该快照可以确认停留边界，但原产物没有保存相应 child-completion notification/outbox 消费前后的时序，因此不能进一步归因于通知丢失、投影未更新或 wait 协调器逻辑。
+
+这项证据把原来的两类故障分开：同进程多余调用首先应调查 Agent 在工具结果后的下一轮决策及防止同轮无进展重复的确定性边界；持久模式首先应在断言前保存父 ToolJob、child completion、outbox/消费状态的关联快照，再判断是否需要生产修复。当前仍不改生产行为，也不将一次 live 观察泛化为所有重复调用的根因。
