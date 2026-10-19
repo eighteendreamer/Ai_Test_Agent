@@ -4368,3 +4368,17 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 消费方进一步在 `RUN_LIVE_PLAN_RUN_CREATION=1` 下运行 `tests/test_case_operation_verification.py tests/test_agent_case_execution.py`，**38 passed、1 skipped，152.25秒**；包含真实业务 HTTP、正式 Agent Run 恢复、未知写入的已声明只读查证及数据库回执，JUnit 为 `p2-run-detail-consumers-final.xml`。唯一跳过为未启用的独立公开 Worker 场景；本轮没有重新调用默认 AI。两组最终结果合计 **87 passed、2 skipped**，`compileall` 与本轮文件 `git diff --check` 均成功。没有前端或类型契约变更，本轮未重跑前端构建。
 
 分类：详情读取一致性从“已定位待修复”变为**已有实现、真实 PostgreSQL 并发功能验收通过**。正式 Run 的 revision 历史、修订 API、queued 项投影原子更新、claim 与修订协调仍**需要补实现和验收**，本修复不等于 §7.103 的共享头行锁候选已验证，也不使整个动作准入事务的其他独立读取自动拥有同一快照。复杂默认 Step 项目选取→排序→补全→正式执行仍未闭环；自动 embedding 召回此前 402 余额不足也仍未解除。本轮没有修改 MySQL 配置、数据库结构、Provider 协议或前端契约；配置继续 MySQL、业务继续 PostgreSQL、原件继续 RustFS。完整 P0—P5 继续未完成。
+
+### 7.107 执行中修订与真实领取的事务协调实验〔2026-10-19〕
+
+继续 §7.103/7.106，先验证候选机制而未直接开放修订入口。读取 `plan_mapping.py`、`plan_run_service.py`、`run_store.py`、`agent_case_context.py`、`agent_case_execution.py`、`postgres_case_action_admission.py` 和固定快照 Schema：创建时 `validate_plan_bundle` 重建并校验全部套件/运行投影；执行适配器 `_load` 比较完整 `plan_snapshot`，再按执行上下文哈希和原 Attempt 检查点恢复。因此领取协调与执行依据固定是两个不同问题，只做数据库互斥不能得到正确的运行中修订功能。
+
+依据 PostgreSQL [行锁兼容矩阵](https://www.postgresql.org/docs/17/explicit-locking.html)，新增 `tests/test_run_revision_coordination_research.py`。实验复用真实项目/正式用例/RunStore，创建随机命名、仅归本测试所有的 PostgreSQL head/history 表：领取仍执行原 `_claim_items_sync` 全部 SQL，仅在首个 `_read_run` 之前以测试包装注入 head 的 `FOR SHARE`；候选写事务使用同一 head 的 `FOR UPDATE`，检查 expected revision 和 item 是否仍 queued/无执行历史，然后原子保存依赖、历史及 revision。测试不复制领取算法，不模拟 SQL 返回值；`pg_backend_pid` 与 `pg_blocking_pids` 实际观察等待关系，不按时间猜是否发生阻塞。临时表最终清理；没有向生产库安装该机制。
+
+真实隔离验收 **6 passed、7.52秒**，包括：修订先写入且尚未提交时，领取被数据库阻塞，提交后按新依赖保留被依赖项 queued；领取先写入时，修订等待其提交后拒绝已经 claimed 的项，head/history/依赖均不改；两个独立 claimant 同时持有共享 head 锁且各自写入不同项，之后统计为两项 claimed/三项 queued；三处写入后故障会全部回滚；陈旧 expected revision 拒绝且不改已接受投影。
+
+第六个场景验证了仍未解决的执行边界：通过真实正式计划和 Run，领取并启动 `independent`，只在本测试独占数据中改 queued 的 `left.reason`；`build_agent_case_context` 对 independent 构建出的完整 `execution_json` 前后完全相同，但以原 Run 进入 `_load` 仍因全局快照不同被拒绝，未创建执行检查点。这个通过项证明的是**现有拒绝边界**，不是修订成功；生产保护保持原样，不据此删除整份快照比较或哈希校验。
+
+随后启用 `RUN_LIVE_RUN_DEPENDENCIES=1`、`RUN_LIVE_PLAN_RUN_CREATION=1`，运行 `tests/test_run_revision_coordination_research.py tests/test_run_item_dependencies.py`，最终 **23 passed、无跳过，12.40秒**；编译检查通过。独立专项和组合 JUnit 分别为 `p2-run-revision-coordination-final.xml`、`p2-run-revision-coordination-regression.xml`。规划夹具使用受控 `SequenceModel`，本轮没有真实 Step 调用、业务 HTTP 或生产修订 API 验收。
+
+当前分类更新：**共享 head 的领取协调候选已在本组真实事务竞争下验证，仍未接入生产；固定修订身份/不可变历史、套件版本语义、已领取条目的依据固定、Agent 恢复与动作准入、公开 API/页面和完整流程仍需实现/验收**。下一步应先落实“当前执行投影”与“条目已领取的固定修订”之间的读取契约，并明确新增/移除用例如何保留原套件、原条目及结果；只有历史检索、上下文、环境/消费范围和动作准入都能读回同一依据，才接入协调机制。该实验不证明环境限制、取消/租约恢复、所有锁顺序或未来完整修订事务无死锁，也不证明这是唯一可行的协调设计。不新增 MySQL 配置、不改 Provider 原生协议；P2 默认 Step 复杂规划与完整 P0—P5 继续未完成。

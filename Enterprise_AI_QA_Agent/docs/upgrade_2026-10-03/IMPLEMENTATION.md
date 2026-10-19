@@ -5522,3 +5522,11 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 首次组合 **48 passed、1 failed、1 skipped，27.18秒**，唯一失败为新增测试把“取消未领取条目”的零 Attempt 错写成五个，修正测试后未改取消行为。开启 `RUN_LIVE_RUN_DEPENDENCIES=1` 与 `RUN_LIVE_PLAN_RUN_CREATION=1`，`tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_agent_case_context.py` 最终 **49 passed、1 skipped，26.04秒**；再以 live 存储运行 `tests/test_case_operation_verification.py tests/test_agent_case_execution.py` 为 **38 passed、1 skipped，152.25秒**。后一组实际覆盖 HTTP 工具、正式 Run 恢复、已声明只读查证及 PG 回执；两组共 **87 passed、2 skipped**，跳过分别为未启用的真实模型专项和独立公开 Worker。原始失败和最终 JUnit 保存在 `p2-run-detail-snapshot-before.xml`、`p2-run-detail-snapshot-after.xml`、`p2-run-detail-snapshot-final.xml`、`p2-run-detail-consumers-final.xml`；编译与本轮 diff 检查成功，无前端改动故未重跑前端构建。
 
 这一步只关闭正式详情读取的混合快照缺陷；执行中修订的不可变历史、公开契约、queued 投影更新与领取协调仍未实现/验收。默认 Step 复杂选取/排序/补全/执行及真实 embedding 召回继续未验收，embedding 余额不足的历史 402 未解除。配置保持 MySQL，业务保持 PostgreSQL，原件保持 RustFS。没有用受控模型测试冒充本轮默认 AI 验收，P0—P5 全部目标仍未完成。
+
+## 2026-10-19 执行中修订的真实 PostgreSQL 协调实验
+
+继续 PLAN §7.103，新增 `test_run_revision_coordination_research.py` 验证候选 head 共享/排他锁与现有 RunStore 领取事务的组合。仅在测试中给原领取首个读取之前注入共享锁；候选修订事务原子写依赖、历史和 revision，使用真实 PostgreSQL PID/阻塞查询验证竞争，保留原 `FOR UPDATE SKIP LOCKED`、条目更新、Attempt 插入和运行统计。随机 head/history 表归夹具独占并清理，未新增生产表、配置或 API。
+
+专项 **6 passed、7.52秒**，覆盖修订先提交、领取先提交、两个独立 claimant 并行、写入后回滚、陈旧版本拒绝，以及“仅 queued 兄弟项改变但运行适配器仍拒绝整份快照变化”的当前边界。最后一项中，正在运行项的完整上下文前后相同，仍未越过现有保护创建检查点；它揭示必须补固定修订读取契约，不表示运行中修订已经实现。再以真实依赖门控执行 `tests/test_run_revision_coordination_research.py tests/test_run_item_dependencies.py`，**23 passed、无跳过，12.40秒**，JUnit 为 `p2-run-revision-coordination-regression.xml`，编译与本轮 diff 检查通过。
+
+本轮只有实验测试与记录；共享 head 的候选在这些竞争场景下已验证，生产领取协调、不可变修订历史、已领取条目的依据固定、套件版本和新增/移除语义、Agent/动作准入/环境消费读取与完整 API/UI 仍待实现/验收。不把该实验替代默认 Step 复杂选取/排序/补全/执行，亦不宣称所有锁顺序和故障组合安全。MySQL 配置、PostgreSQL 业务边界及 Anthropic Messages 等原生 Provider 协议保持。完整 P0—P5 仍未完成。
