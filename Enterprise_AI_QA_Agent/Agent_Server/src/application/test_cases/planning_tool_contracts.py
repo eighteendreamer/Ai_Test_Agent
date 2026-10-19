@@ -60,13 +60,13 @@ def capture_tool_operations(contracts):
             "credential_session": deepcopy(properties["credential_session"]),
             "auth_token_field": deepcopy(properties["auth_token_field"]),
             "execution_checkpoint": {"type": "object", "description": "Optional original task execution checkpoint."}}},
-        "output": {"returned": {"status": "completed", "ok": "task_result.status == completed",
+        "output": {"status": "completed", "ok": "task_result.status == completed",
             "worker_kind": "api_test_task_execution", "task_result": {"model_ref": "ApiTestTask"},
             "idempotency_key": "string", "summary": "string", "credential_session": "object or null",
             **({"credential_ref": "opaque reference (registered Worker)"} if "dispatch_ref" in properties else {})},
-            "known_validation_failure": {"status": "failed", "ok": False,
-                "errors": ["missing_task_payload", "invalid_task_payload"],
-                "task_result_present": False, "HTTP_sent": False}},
+        "known_validation_failure": {"status": "failed", "ok": False,
+            "errors": ["missing_task_payload", "invalid_task_payload"],
+            "task_result_present": False, "HTTP_sent": False},
         "coverage": "execute_task only; Campaign interface remains available through full tool query"}
     return {contract["key"]: {"execute_task": operation}}
 

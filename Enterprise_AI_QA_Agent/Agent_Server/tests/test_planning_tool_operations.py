@@ -48,8 +48,10 @@ def test_actual_failed_contract_keeps_complete_native_model_and_explicit_scope()
     assert evidence.source_id != full[0].source_id and evidence.id != full[0].id
     assert evidence.content_hash == _digest(evidence.payload)
     assert evidence.payload['input']['properties']['task']['model_ref'] == 'ApiTestTask'
-    assert evidence.payload['output']['returned']['task_result']['model_ref'] == 'ApiTestTask'
-    assert evidence.payload['output']['known_validation_failure']['task_result_present'] is False
+    assert evidence.payload['output']['task_result']['model_ref'] == 'ApiTestTask'
+    assert evidence.payload['output']['status'] == 'completed'
+    assert evidence.payload['output']['ok'] == 'task_result.status == completed'
+    assert evidence.payload['known_validation_failure']['task_result_present'] is False
     model=evidence.payload['models']['ApiTestTask']
     assert model['properties']['request_body']['default'] is None
     assert 'execution_checkpoint' in evidence.payload['input']['properties']
