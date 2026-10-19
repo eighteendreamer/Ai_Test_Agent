@@ -30,7 +30,11 @@ def case_result_contract(protocol=None) -> str:
             + case_result_contract().replace(json.dumps(AgentCaseExecutionReceipt.model_json_schema(),ensure_ascii=False),
                 json.dumps(case_receipt_type(protocol).model_json_schema(),ensure_ascii=False)))
     return (
-        "Return only compact JSON matching the following schema. The top-level steps array is "
+        "Return the receipt as compact JSON in your final assistant message content, matching the "
+        "following schema. The receipt is consumed from that message, not from tool-call arguments. "
+        "Once the required operations and observations are complete, finish with this message; "
+        "do not call a business tool merely to submit or finalize the receipt. "
+        "The top-level steps array is "
         "one receipt entry per requested execution item, keyed by that item's exact item_key "
         "(all owned items unless requested_item_keys explicitly limits this read-only assessment). "
         "Never create one receipt entry for each content_json.steps business step, and never "

@@ -3,7 +3,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import CasePlanDialog from "./CasePlanDialog.vue";
 import { HttpError } from "../../services/http";
-import type { ModeDescriptor } from "../../types";
+import type { CasePlanningPolicy, ModeDescriptor } from "../../types";
 import documentExpected from "../../../tests/fixtures/case-document-expected.actual.json";
 import itemOperationActual from "../../../tests/fixtures/case-item-operation.actual.json";
 import linkedSourceActual from "../../../tests/fixtures/case-linked-source.actual.json";
@@ -461,6 +461,25 @@ describe("case planning", () => {
     await wrapper.get(`[data-testid="${name}"]`).setValue(false);
     await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].planning_stage_protocol).not.toBe("case-planning-staged-evidence-v3");
+    wrapper.unmount();
+  });
+  it("preserves the configured v2 references when saving and enabling separate tasks", async () => {
+    const policy: CasePlanningPolicy = { ...config().policy,
+      action_binding_protocol: "case-action-binding-v1", action_admission_protocol: "case-action-admission-v1",
+      operation_protocol: "case-operation-v1", preparation_scope_protocol: "preparation-scope-v2",
+      effect_evidence_protocol: "case-effect-evidence-v2", effect_coverage_protocol: "case-effect-coverage-v2",
+      planning_stage_protocol: "case-planning-staged-evidence-v2", effect_expected_source_protocol: "case-effect-document-expected-v1",
+      source_identity_protocol: "case-planning-source-full-hash-v1", evidence_reference_protocol: "case-planning-evidence-references-v2" };
+    api.getCasePlanningPolicy.mockResolvedValue({ ...config(), policy });
+    api.saveCasePlanningPolicy.mockImplementation(async (projectId, saved) => ({ scope_key: projectId, revision: 2, policy: { ...saved } }));
+    const wrapper = setup(); await flushPromises();
+    expect((wrapper.get('[data-testid="evidence-references"]').element as HTMLInputElement).checked).toBe(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[0][1].evidence_reference_protocol).toBe("case-planning-evidence-references-v2");
+    await wrapper.get('[data-testid="effect-tasks"]').setValue(true);
+    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    expect(api.saveCasePlanningPolicy.mock.calls[1][1]).toMatchObject({
+      evidence_reference_protocol: "case-planning-evidence-references-v2", planning_stage_protocol: "case-planning-staged-evidence-v3" });
     wrapper.unmount();
   });
   it("keeps the actual old document policy until the user enables scene reads", async () => {

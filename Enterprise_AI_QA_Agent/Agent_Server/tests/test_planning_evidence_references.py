@@ -10,13 +10,13 @@ from src.application.test_cases.planning_evidence_references import evidence_ref
 from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision, build_stage_prompts
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.schemas.case_planning import CasePlanRecord
-from src.schemas.case_planning_references import ReferencedEvidenceDecision, REFERENCE_PROTOCOL
+from src.schemas.case_planning_references import ReferencedEvidenceDecision, REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
 
 ROOT = Path(__file__).resolve().parents[2]
 
 
-def reference_wire(value, catalog):
+def reference_wire(value, catalog, reference_protocol=REFERENCE_PROTOCOL):
     """Test fixture adapter; production never chooses the model's assertions."""
     value = deepcopy(value)
     ids = {entry["evidence_id"]: ref for ref, entry in catalog["evidence"].items()}
@@ -33,6 +33,10 @@ def reference_wire(value, catalog):
                 check["expected_source"] = ({"text_ref": text_ref, "literal": source["literal"], "encoding": source["encoding"]}
                     if text_ref else {"evidence_ref": ref, **{key: source[key] for key in
                         ("payload_path_tokens", "excerpt", "literal", "encoding") if source.get(key) is not None}})
+                if reference_protocol == REFERENCE_PROTOCOL_V2:
+                    reference = check["expected_source"]
+                    alias = reference.pop("text_ref", None) or reference.pop("evidence_ref")
+                    check["expected_source"] = {"reference": alias, **reference}
     return value
 
 

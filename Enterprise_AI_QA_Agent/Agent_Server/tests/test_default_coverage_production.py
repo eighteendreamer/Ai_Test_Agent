@@ -29,6 +29,7 @@ from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelCapabilitiesOverride, ModelTransportOptions, model_invocation_parameters
 from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL
 from src.schemas.case_planning_stages import STAGE_PROTOCOL
+from src.schemas.case_planning import CasePlanningPolicy
 from src.schemas.settings import ModelConfigUpdateRequest
 from src.schemas.model_request_options import ModelRequestProfile
 
@@ -71,16 +72,26 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     if profile_path:
         invocation_model.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
         invocation_model = ModelConfigRecord.model_validate(invocation_model.model_dump())
+    output_token_override = os.getenv("QA_DEFAULT_MAX_OUTPUT_TOKENS")
+    if output_token_override:
+        invocation_model = ModelConfigRecord.model_validate({
+            **invocation_model.model_dump(),
+            "max_output_tokens": int(output_token_override),
+        })
     invocation_parameters = model_invocation_parameters(invocation_model)
     assert original_model.transport == "openai_chat_completions", "Probe currently targets the actual OpenAI-compatible SDK"
+    case_shape = os.getenv("QA_DEFAULT_CASE_SHAPE", "full")
+    assert case_shape in {"full", "single-create-cleanup"}
     endpoint, effects, _ = regression_business_http[0]
     orders, created = regression_business_http[1:]
     directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
     report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
+    report["case_shape"] = case_shape
     report["isolated_invocation_parameters"] = invocation_parameters
     report["isolated_profile_override"] = bool(profile_path)
+    report["isolated_max_output_tokens_override"] = bool(output_token_override)
     executor_only = os.getenv("QA_RECEIPT_EXECUTOR_ONLY") == "1"
     report["controlled_planning"] = executor_only
     planning_providers = ExitStack()
@@ -99,7 +110,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
             auth_type=original_model.auth_type, oauth_provider=original_model.oauth_provider,
             oauth_refresh_token=original_model.oauth_refresh_token, applications=original_model.applications, is_active=True,
             use_provider_defaults=False, capability_overrides=original_model.capability_overrides,
-            context_window=original_model.context_window, max_output_tokens=original_model.max_output_tokens)
+            context_window=original_model.context_window, max_output_tokens=invocation_model.max_output_tokens)
         model = models.upsert(execution_model)
         assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
         processes.env = child_environment(settings)
@@ -123,25 +134,39 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 project = await post("/projects", {"project_key": "default-" + uuid4().hex, "name": "默认Agent真实完整用例", "base_url": endpoint}, 201)
                 root = "/projects/" + project["id"]
                 source = directory / "requirements.md"
-                source.write_text(f"# 实际查询及准备清理\nPOST {endpoint}/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n"
-                    "本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\n"
-                    f"GET {endpoint}/orders/{{id}} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n"
-                    "查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\n", encoding="utf-8")
+                if case_shape == "single-create-cleanup":
+                    document = (f"# 单订单创建与清理\nPOST {endpoint}/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n"
+                        f"DELETE {endpoint}/orders/{{id}} 返回200及刚删除的订单JSON。必须用POST实际返回的order.id删除本次创建的记录，不得猜测ID。\n"
+                        "原生工具api-test-runner的execute_task可调用这些接口。\n")
+                    content = {"objective": "依据项目文档创建一条订单，使用真实返回的 order.id 清理该订单",
+                        "requires": ["本次 POST 实际返回的 order.id"],
+                        "期望": {"create_code": 201, "cleanup_code": 200},
+                        "steps": [{"order": 1, "action": "POST /orders 创建一条订单，读取实际返回的 order.id"},
+                            {"order": 2, "action": "DELETE /orders/{id}，id 必须使用本次 POST 实际返回值，并核对删除成功"}],
+                        "cleanup": ["删除本次 POST 创建的订单"],
+                        "operations": {"create": endpoint + "/orders", "cleanup": endpoint + "/orders/{id}"}}
+                else:
+                    document = (f"# 实际查询及准备清理\nPOST {endpoint}/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n"
+                        "本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\n"
+                        f"GET {endpoint}/orders/{{id}} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n"
+                        "查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\n")
+                    content = {"objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录", "requires": ["actual_order_id"],
+                        "期望": {"code": 200, "flag": False, "count": 1, "nullable": None},
+                        "steps": [{"order": i+1, "action": action} for i, action in enumerate([
+                            "读取项目需求和实际ID来源；没有ID需要先准备", "确认准备两条记录且记录两个实际ID", "GET第一条/orders/{id}",
+                            "核对状态码200", "核对flag为False", "核对count为1", "核对nullable为null并清理所有本次记录", "LAST-DEFAULT-COVERAGE-STEP"])],
+                        "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回",
+                        "operations": {"query": endpoint + "/orders/{id}"}}
+                    content["steps"][-1]["business"] = {"false": False, "zero": 0, "nullable": None}
+                source.write_text(document, encoding="utf-8")
                 doc = await post("/registry/api-docs/upload", {"project_id": project["id"], "filename": source.name,
                     "content_base64": base64.b64encode(source.read_bytes()).decode()})
                 owned.append(doc["storage_uri"])
                 assert (await objects.read_object_uri(doc["storage_uri"]))["content"] == source.read_bytes()
                 save("document.json", doc)
-                content = {"objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录", "requires": ["actual_order_id"],
-                    "期望": {"code": 200, "flag": False, "count": 1, "nullable": None},
-                    "steps": [{"order": i+1, "action": action} for i, action in enumerate([
-                        "读取项目需求和实际ID来源；没有ID需要先准备", "确认准备两条记录且记录两个实际ID", "GET第一条/orders/{id}",
-                        "核对状态码200", "核对flag为False", "核对count为1", "核对nullable为null并清理所有本次记录", "LAST-DEFAULT-COVERAGE-STEP"])],
-                    "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回",
-                    "operations": {"query": endpoint + "/orders/{id}"}}
-                content["steps"][-1]["business"] = {"false": False, "zero": 0, "nullable": None}
                 save("full-case.json", content)
-                bundle = await post(root + "/test-cases", {"case_key": "default-query", "title": "完整八步已有订单查询",
+                case_title = "单订单创建清理" if case_shape == "single-create-cleanup" else "完整八步已有订单查询"
+                bundle = await post(root + "/test-cases", {"case_key": "default-query", "title": case_title,
                     "mode_key": "api_testing", "case_type": "json", "content_json": content,
                     "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。",
                     "source_refs": [{"source_type": "api_doc", "source_id": doc["id"]}], "model_key": "manual", "prompt_version": "manual-v1",
@@ -154,12 +179,10 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 if os.getenv("QA_STAGED_PLANNING") == "1":
                     policy = policy.model_copy(update={"planning_stage_protocol": STAGE_PROTOCOL})
                 if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
-                    from src.schemas.case_planning import CasePlanningPolicy
                     policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
                         "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
                         "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2"})
                 if os.getenv("QA_OPERATION_PREFETCH") == "1":
-                    from src.schemas.case_planning import CasePlanningPolicy
                     policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
                         "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
                         "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
@@ -167,7 +190,6 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         "operation_prefetch_protocol": "case-planning-declared-operation-prefetch-v1"})
                     report["baseline"] = "e4d268e8 plus declared operation prefetch v7"
                 if os.getenv("QA_SOURCE_IDENTITY") == "1":
-                    from src.schemas.case_planning import CasePlanningPolicy
                     policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
                         "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
                         "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
@@ -175,7 +197,6 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         "source_identity_protocol": "case-planning-source-full-hash-v1"})
                     report["baseline"] = "5b5490ac plus source identity v8"
                 if os.getenv("QA_ITEM_OPERATION_SELECTION") == "1":
-                    from src.schemas.case_planning import CasePlanningPolicy
                     policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
                         "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
                         "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
@@ -187,8 +208,11 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     policy.linked_source_protocol = "case-planning-linked-documents-v1"
                     report["baseline"] = "af790e15 plus fixed linked sources v10"
                 if os.getenv("QA_EVIDENCE_REFERENCES") == "1":
-                    policy.evidence_reference_protocol = "case-planning-evidence-references-v1"
-                    report["baseline"] = "43f1700b plus evidence references v11"
+                    reference_protocol = os.getenv("QA_EVIDENCE_REFERENCE_PROTOCOL", "case-planning-evidence-references-v1")
+                    policy.evidence_reference_protocol = reference_protocol
+                    report["evidence_reference_protocol"] = reference_protocol
+                    report["baseline"] = ("case-planning-evidence-references-v12" if reference_protocol.endswith("-v2")
+                        else "43f1700b plus evidence references v11")
                 if os.getenv("QA_EFFECT_TASKS") == "1":
                     policy.planning_stage_protocol = "case-planning-staged-evidence-v3"
                     report["baseline"] = "28fc566c plus separate evidence tasks"
@@ -224,6 +248,13 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         capability_overrides=ModelCapabilitiesOverride(streaming=False),
                         context_window=128000, max_output_tokens=4096))
                     report["baseline"] = "ef28497f; controlled HTTP planning; real default Agent execution only"
+                planning_timeout = os.getenv("QA_DEFAULT_PLANNING_TIMEOUT_SECONDS")
+                if planning_timeout:
+                    policy = CasePlanningPolicy.model_validate({
+                        **policy.model_dump(mode="json"),
+                        "timeout_seconds": float(planning_timeout),
+                    })
+                    report["isolated_planning_timeout_seconds"] = policy.timeout_seconds
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 request = {"creation_key": "default-complete-plan", "objective": content["objective"], "model_key": model.key, "candidate_case_ids": [cid]}
@@ -247,7 +278,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     assert await PostgresTaskOutbox(settings).relay_once(planning_queue, limit=1) == 1
                     worker = processes.start("default-planning-worker", "-m", "tests.default_model_probe", "src.cli.run_case_planning_worker",
                         "--once", "--worker-id", "default-plan")
-                    code = await processes.wait(worker, timeout=220)
+                    code = await processes.wait(worker, timeout=max(220, policy.timeout_seconds + 60))
                 finally:
                     await planning_queue.close()
                 task = await get(root + "/case-planning-tasks/" + task["id"])
@@ -282,11 +313,12 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     cur.execute(f"SELECT id,tool_key,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (rid,))
                     jobs = [dict(row) for row in cur.fetchall()]
                 save("PG-tool-jobs.json", jobs)
-                if executor_only:
+                if executor_only or all(i["status"] == "passed" for i in detail["items"]):
                     # Redeliver the actual owned terminal dispatch. Never reset
                     # a RunItem or infer a new task payload.
                     assert all(i["status"] in {"passed", "failed", "error", "blocked", "skipped"} for i in detail["items"])
                     sends_before = len(list((directory / "physical").glob("*.send.json")))
+                    effects_before = deepcopy(effects)
                     with postgres_connect(settings) as conn, conn.cursor() as cur:
                         cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table} WHERE payload->>'run_id'=%s", (rid,))
                         dispatches = [row["payload"] for row in cur.fetchall()]
@@ -296,19 +328,22 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         "src.cli.run_redis_worker", "--once", "--worker-id", "default-terminal")
                     assert await processes.wait(worker, timeout=60) == 0
                     assert len(list((directory / "physical").glob("*.send.json"))) == sends_before
+                    assert effects == effects_before
                     assert await get("/runs/" + rid) == detail
                     report["terminal_replay_extra_physical_requests"] = 0
                 assert all(i["status"] == "passed" for i in detail["items"]), detail
-                assert len(created) == 2 and not orders, (effects, orders)
-                assert [method for method, _ in effects].count("POST") == 2
-                assert [method for method, _ in effects].count("GET") >= 1
-                assert [method for method, _ in effects].count("DELETE") == 2
+                expected_creates = 1 if case_shape == "single-create-cleanup" else 2
+                expected_queries = 0 if case_shape == "single-create-cleanup" else 1
+                assert len(created) == expected_creates and not orders, (effects, orders)
+                assert [method for method, _ in effects].count("POST") == expected_creates
+                assert [method for method, _ in effects].count("GET") >= expected_queries
+                assert [method for method, _ in effects].count("DELETE") == expected_creates
                 target = next(r for r in detail["results"] if r["case_id"] == cid)
                 assert target["actual"]["case_status"] == "passed"
                 coverages = [c for r in detail["results"] for c in r["actual"].get("effect_cleanup_coverage", {}).get("cleanups", {}).values()]
                 if any(i.get("cleanup_sources") for i in plan["decision"]["items"]):
                     assert coverages and all(c["status"] == "passed" for c in coverages)
-                    assert sum(c["known_object_count"] for c in coverages) >= 2
+                    assert sum(c["known_object_count"] for c in coverages) >= len(created)
                 # A complete formal case can do its own preparation and cleanup.
                 # Prove every actual object against reliable PG task returns even
                 # when there is no separate prepare item or coverage declaration.
@@ -319,7 +354,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     for j in native if j["input_payload"].get("task", {}).get("method") == "POST"]
                 removed = [j["output_payload"]["task_result"]["response_body"]["order.id"]
                     for j in native if j["input_payload"].get("task", {}).get("method") == "DELETE"]
-                assert set(produced) == set(removed) == set(created) and len(produced) == len(removed) == 2
+                assert set(produced) == set(removed) == set(created) and len(produced) == len(removed) == expected_creates
                 assert all(j["status"] == "completed" for j in native)
                 report.update(declared_cleanup_scope=bool(coverages), actual_PG_object_cleanup_verified=True,
                     case_internal_cleanup_server_coverage_verified=bool(coverages))

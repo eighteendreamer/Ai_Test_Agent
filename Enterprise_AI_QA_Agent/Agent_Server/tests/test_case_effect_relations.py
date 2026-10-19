@@ -212,7 +212,10 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        assert plan.prompt_version == ("case-planning-evidence-references-v11" if references else "case-planning-linked-documents-v10" if linked else "case-planning-item-operation-prefetch-v9" if item_selection else "case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        expected_prompt_version = ("case-planning-evidence-references-v11" if references else "case-planning-linked-documents-v10" if linked else "case-planning-item-operation-prefetch-v9" if item_selection else "case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        if linked:
+            expected_prompt_version += "+linked-navigation-v1"
+        assert plan.prompt_version == expected_prompt_version
         assert len(plan.rounds) == (2 if linked else 3 if prefetch else 4)
         later_document = None
         if document_expected:

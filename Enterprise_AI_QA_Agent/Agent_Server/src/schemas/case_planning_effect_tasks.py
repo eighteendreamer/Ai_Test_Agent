@@ -1,19 +1,20 @@
 """Frozen evidence-task receipts; canonical execution contracts stay unchanged."""
-from typing import Literal
+from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
 from src.schemas.case_planning import PlanningModel, PlanningGap, PlanInputBinding
 from src.schemas.case_effect_sources import SourceEffectRelationDeclaration
-from src.schemas.case_planning_references import ReferencedEffectDeclaration
+from src.schemas.case_planning_references import ReferencedEffectDeclaration, ReferencedEffectDeclarationV2
 from src.schemas.case_planning_scenes import ScenePlanningQuery
 
 EFFECT_TASK_PROTOCOL = "case-planning-staged-evidence-v3"
 TASKS = ("bindings", "produced", "cleanup")
+EvidenceReference = Annotated[str, Field(pattern=r"^E[1-9][0-9]*$")]
 
 
 class TaskBinding(PlanningModel):
     item_key: str = Field(min_length=1, max_length=80)
-    evidence_ids: list[str] = Field(min_length=1, max_length=50)
+    evidence_ids: list[EvidenceReference] = Field(min_length=1, max_length=50)
     input_bindings: dict[str, PlanInputBinding] = Field(default_factory=dict)
     declaration_roles: list[Literal["produced", "cleanup"]] = Field(default_factory=list, max_length=2)
 
@@ -26,8 +27,14 @@ class TaskBinding(PlanningModel):
 
 class TaskDeclarations(PlanningModel):
     item_key: str = Field(min_length=1, max_length=80)
-    evidence_ids: list[str] = Field(min_length=1, max_length=50)
+    evidence_ids: list[EvidenceReference] = Field(min_length=1, max_length=50)
     effect_declarations: list[ReferencedEffectDeclaration] = Field(min_length=1, max_length=200)
+
+
+class TaskDeclarationsV2(PlanningModel):
+    item_key: str = Field(min_length=1, max_length=80)
+    evidence_ids: list[EvidenceReference] = Field(min_length=1, max_length=50)
+    effect_declarations: list[ReferencedEffectDeclarationV2] = Field(min_length=1, max_length=200)
 
 
 class EffectTaskDecision(PlanningModel):
@@ -58,6 +65,16 @@ class ProducedTaskDecision(EffectTaskDecision):
 class CleanupTaskDecision(EffectTaskDecision):
     task: Literal["cleanup"]
     bindings: list[TaskDeclarations] = Field(default_factory=list, max_length=200)
+
+
+class ProducedTaskDecisionV2(EffectTaskDecision):
+    task: Literal["produced"]
+    bindings: list[TaskDeclarationsV2] = Field(default_factory=list, max_length=200)
+
+
+class CleanupTaskDecisionV2(EffectTaskDecision):
+    task: Literal["cleanup"]
+    bindings: list[TaskDeclarationsV2] = Field(default_factory=list, max_length=200)
 
 
 class CanonicalTaskBinding(PlanningModel):

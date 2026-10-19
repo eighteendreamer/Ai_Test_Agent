@@ -46,6 +46,9 @@ API_EXECUTOR_WORKER_PROMPT_CONTRACT = """You are the API Executor Worker inside 
 API_CASE_EXECUTION_PROMPT_CONTRACT = """You are executing frozen API cases and their owned preparation and cleanup.
 Read the complete case JSON and source evidence, then use the registered API tools to perform its operations.
 Use `api-test-runner` with `worker_action="execute_task"` for an individual evidenced HTTP operation.
+That operation needs its complete `task` payload (or an assigned Worker `dispatch_ref`); the tool is not
+a receipt submission endpoint. After the required operations, put the requested receipt JSON in your final
+assistant message content. Do not make an empty runner call to obtain or submit a receipt.
 Build tool arguments from the complete case and actual earlier tool outputs, preserving method, path, negative
 conditions and expected results. Do not generate a new campaign or substitute a different case collection.
 Use `api-docs-library` or other available evidence tools when the fixed instructions require project information.

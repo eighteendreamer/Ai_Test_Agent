@@ -8,6 +8,8 @@ from datetime import datetime, timedelta, timezone
 from graphlib import CycleError, TopologicalSorter
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.projects.project_service import ProjectService
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
@@ -301,6 +303,7 @@ class CasePlanningService:
         candidates = [text.strip()]
         candidates.extend(match.group(1).strip() for match in re.finditer(r"```(?:json)?\s*([\s\S]*?)```", text, re.I))
         decoder = json.JSONDecoder()
+        validation_feedback = []
         for candidate in candidates:
             try:
                 parsed = json.loads(candidate)
@@ -321,9 +324,16 @@ class CasePlanningService:
                 continue
             try:
                 return decision_type.model_validate(parsed)
+            except ValidationError as exc:
+                for error in exc.errors()[:8]:
+                    location = ".".join(str(part) for part in error.get("loc", ())) or "response"
+                    validation_feedback.append(
+                        f"{location[:160]}: {str(error.get('msg') or error.get('type') or 'invalid')[:180]}"
+                    )
             except (ValueError, TypeError):
                 continue
-        raise ValueError("模型没有返回有效的结构化计划；未创建测试运行")
+        detail = "；校验反馈：" + "；".join(validation_feedback[:8]) if validation_feedback else ""
+        raise ValueError("模型没有返回有效的结构化计划；未创建测试运行" + detail)
 
     @staticmethod
     def _system_prompt(*, environment=False, preparation_scopes=False, effect_evidence=False, effect_coverage=False, tool_operations=False) -> str:

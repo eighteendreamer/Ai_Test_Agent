@@ -16,7 +16,10 @@ from src.application.test_cases.planning_operation_prefetch import (
 
 from src.schemas.case_planning_sources import (LINKED_SOURCE_PROTOCOL, LINKED_SOURCE_PROMPT_VERSION,
     SCENE_LINKED_SOURCE_PROTOCOL, SCENE_LINKED_SOURCE_PROMPT_VERSION)
-from src.schemas.case_planning_references import REFERENCE_PROMPT_VERSION, ReferencedEvidenceDecision
+from src.schemas.case_planning_references import (
+    REFERENCE_PROMPT_VERSION, REFERENCE_PROMPT_VERSION_V2,
+    REFERENCE_PROTOCOL_V2, ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+)
 from src.application.test_cases.planning_evidence_references import reference_effects_prompt
 from src.schemas.case_planning_scenes import SCENE_QUERY_PROMPT_VERSION, scene_decision_types
 
@@ -25,13 +28,14 @@ SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
 
 def stage_prompt_version(policy, stages):
     if stages.protocol == "case-planning-staged-evidence-v3":
-        return stage_prompt_version(policy, stages.model_copy(update={"protocol": RELATION_STAGE_PROTOCOL})) + "+effect-tasks-v1"
+        task_version = "v2" if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else "v1"
+        return stage_prompt_version(policy, stages.model_copy(update={"protocol": RELATION_STAGE_PROTOCOL})) + f"+effect-tasks-{task_version}"
     if policy.scene_query_protocol:
         return SCENE_QUERY_PROMPT_VERSION
     if policy.linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
         return SCENE_LINKED_SOURCE_PROMPT_VERSION
     if policy.evidence_reference_protocol:
-        return REFERENCE_PROMPT_VERSION
+        return REFERENCE_PROMPT_VERSION_V2 if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else REFERENCE_PROMPT_VERSION
     if policy.linked_source_protocol:
         return LINKED_SOURCE_PROMPT_VERSION
     if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
@@ -50,7 +54,7 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
         from src.application.test_cases.planning_effect_tasks import effect_task_prompts
         base = build_stage_prompts(RELATION_STAGE_PROTOCOL, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol, scene_query_protocol)
-        prompts = effect_task_prompts()
+        prompts = effect_task_prompts(evidence_reference_protocol)
         logic = ("本版本必须区分外部依赖与内部清理：正式用例在自身步骤创建并清理数据时，"
             "cleanup_sources明确引用自身item_key，不因depends_on为空或没有prepare就省略。"
             "不清理的项保留空关系，不能根据HTTP方法猜业务；依据完整操作与原文判断。") + base.logic
@@ -59,7 +63,8 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol)
         logic_type = LogicalPlanningDecisionV4 if operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL else LogicalPlanningDecisionV3
-        effects_type = ReferencedEvidenceDecision if evidence_reference_protocol else EvidencePlanningDecisionV3
+        effects_type = (ReferencedEvidenceDecisionV2 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
+            ReferencedEvidenceDecision if evidence_reference_protocol else EvidencePlanningDecisionV3)
         new_logic, new_effects = scene_decision_types(operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL, evidence_reference_protocol)
         instruction = ("可以按业务缺口查询当前项目的未关联场景。scenes使用query/offset搜索，目录仅导航；"
             "scene使用source_id、version_id和完整content_hash读取固定正文。不得省略版本或读取当前头替代。"
@@ -87,7 +92,9 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
         return original
     if evidence_reference_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol, linked_source_protocol)
-        original.effects = reference_effects_prompt(ReferencedEvidenceDecision.model_json_schema())
+        reference_model = (ReferencedEvidenceDecisionV2 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2
+            else ReferencedEvidenceDecision)
+        original.effects = reference_effects_prompt(reference_model.model_json_schema(), version=evidence_reference_protocol)
         return original
     if linked_source_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol)

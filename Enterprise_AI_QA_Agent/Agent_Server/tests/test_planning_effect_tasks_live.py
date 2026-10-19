@@ -13,6 +13,7 @@ from src.application.test_cases.planning_workflow import PlanningCheckpointUnava
 from src.schemas.project import ProjectCreateRequest
 from src.schemas.case_planning import CasePlanningPolicy
 from src.schemas.case_planning_task import CasePlanningTaskRequest, PlanningTaskCheckpoint
+from src.schemas.case_planning_references import REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2
 from src.schemas.api_docs import ApiDocVersionUploadRequest
 from src.runtime.planning_task_handler import PlanningTaskHandler
 from src.runtime.postgres_planning_task_store import PostgresPlanningTaskStore
@@ -23,15 +24,16 @@ ROOT = Path(__file__).resolve().parents[2]
 
 @pytest.mark.asyncio
 @live
+@pytest.mark.parametrize("reference_protocol", [REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2])
 @pytest.mark.parametrize("fault", ["none", "bindings-ack", "produced-ack", "cleanup-response-ack", "budget", "unknown-reference", "produced-query"])
-async def test_actual_separate_receipts_restore_without_resending_completed_tasks(tmp_path, monkeypatch, fault):
+async def test_actual_separate_receipts_restore_without_resending_completed_tasks(tmp_path, monkeypatch, fault, reference_protocol):
     async with tasks_environment(tmp_path) as env:
         project = await env.projects.create(ProjectCreateRequest(project_key="tasks-"+fault, name="分任务证据"))
         raw = (ROOT / "docs/upgrade_2026-10-03/p4-linked-source-default-fixed/requirements.md").read_bytes()
         document = await env.docs.upload_document(project_id=project.id, filename="requirements.md", content_base64=base64.b64encode(raw).decode())
         case, content = await linked_case(env, project, [{"source_type": "api_doc", "source_id": document.id}])
         policy = CasePlanningPolicy.model_validate({**linked_policy().model_dump(mode="json"),
-            "evidence_reference_protocol": "case-planning-evidence-references-v1", "planning_stage_protocol": "case-planning-staged-evidence-v3",
+            "evidence_reference_protocol": reference_protocol, "planning_stage_protocol": "case-planning-staged-evidence-v3",
             "max_rounds": 3 if fault == "budget" else 5})
         await env.service.save_policy(project.id, policy)
         task = await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key="original", objective=content["objective"], candidate_case_ids=[case.case.id]))
@@ -57,7 +59,7 @@ async def test_actual_separate_receipts_restore_without_resending_completed_task
             tool = next(e for e in context["evidence"] if e["kind"] == "tool")
             binding = {"item_key": "target", "evidence_ids": [tool["id"], doc["id"]], "effect_declarations": None}
             if task_name != "bindings": binding["effect_declarations"] = [document_declaration(task_name, "target", doc)]
-            value = reference_wire({"action": "finish", "summary": "固定"+task_name+"回执", "bindings": [binding]}, context["evidence_reference_catalog"])
+            value = reference_wire({"action": "finish", "summary": "固定"+task_name+"回执", "bindings": [binding]}, context["evidence_reference_catalog"], reference_protocol)
             if task_name == "bindings":
                 value["bindings"][0].pop("effect_declarations")
                 value["bindings"][0]["declaration_roles"] = []
@@ -110,7 +112,7 @@ async def test_actual_separate_receipts_restore_without_resending_completed_task
         assert final["seed"]["plan"]["config_snapshot"]["policy"]["planning_stage_protocol"] == "case-planning-staged-evidence-v3"
         assert len(final["checkpoint"]["effect_tasks"]["completed"]) == (2 if fault == "budget" else 3)
         if os.getenv("QA_EFFECT_TASK_DIR"):
-            out = Path(os.environ["QA_EFFECT_TASK_DIR"]) / fault; out.mkdir(parents=True, exist_ok=False)
+            out = Path(os.environ["QA_EFFECT_TASK_DIR"]) / reference_protocol / fault; out.mkdir(parents=True, exist_ok=False)
             (out / "requirements.md").write_bytes(raw)
             (out / "verification.json").write_text(json.dumps({"actual_PG": final, "actual_requests": [r.model_dump(mode="json") for r in env.model.requests],
                 "actual_current_MySQL": (await env.service.get_policy(project.id)).model_dump(mode="json"), "actual_SQL_rejections": rejections,

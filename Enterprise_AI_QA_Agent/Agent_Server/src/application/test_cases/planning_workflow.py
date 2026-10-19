@@ -29,10 +29,12 @@ from src.application.test_cases.planning_linked_sources import (
 from src.application.test_cases.planning_required_sources import REQUIRED_SOURCE_PROMPT_VERSION, required_source_prompt_version, validate_required_sources
 from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
 from src.application.test_cases.planning_effect_tasks import (
-    DECISIONS, next_effect_task, task_roles, accept_task_decision,
+    decisions_for_protocol, next_effect_task, task_roles, accept_task_decision, effect_task_output_format,
 )
 from src.schemas.case_planning_effect_tasks import EFFECT_TASK_PROTOCOL, EffectTaskDecision, EffectTaskCheckpoint
-from src.schemas.case_planning_references import ReferencedEvidenceDecision
+from src.schemas.case_planning_references import (
+    REFERENCE_PROTOCOL_V2, ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+)
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
 from src.core.request_context import get_request_context
@@ -284,9 +286,13 @@ class CasePlanningWorkflow:
                                 "agent_key": "case-planning",
                                 "logical_call_id": round_record["logical_call_id"],
                             }
+                        output_format = ModelOutputFormat(kind="json_object", required=False)
+                        if stage == "effects" and seed.stage_prompts.protocol == EFFECT_TASK_PROTOCOL:
+                            output_format = effect_task_output_format(context["evidence_task"]["task"],
+                                policy.evidence_reference_protocol)
                         model_request = ModelInvocationRequest(system_prompt=prompt,
                             messages=[{"role": "user", "content": body}], tools=[], trace_context=trace,
-                            output_format=ModelOutputFormat(kind="json_object", required=False))
+                            output_format=output_format)
                         started = perf_counter()
                         async def observe_delta(delta):
                             if "first_text_seconds" not in round_record:
@@ -356,12 +362,15 @@ class CasePlanningWorkflow:
                             if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
                                 logic_type = LogicalPlanningDecisionV4
                             if stage == "effects" and policy.evidence_reference_protocol:
-                                effects_type = ReferencedEvidenceDecision
+                                effects_type = (ReferencedEvidenceDecisionV2 if
+                                    policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
+                                    ReferencedEvidenceDecision)
                             if policy.scene_query_protocol:
                                 logic_type, effects_type = scene_decision_types(
                                     policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL, policy.evidence_reference_protocol)
                             if stage == "effects" and seed.stage_prompts.protocol == EFFECT_TASK_PROTOCOL:
-                                effects_type = DECISIONS[next_effect_task(checkpoint.stages, checkpoint.effect_tasks)]
+                                effects_type = decisions_for_protocol(policy.evidence_reference_protocol)[
+                                    next_effect_task(checkpoint.stages, checkpoint.effect_tasks)]
                             decision = (self._planner._parse(checkpoint.response_text or "", decision_type=(
                                 logic_type if stage == "logic" else effects_type))
                                 if stage is not None else self._planner._parse(checkpoint.response_text or ""))
@@ -374,7 +383,8 @@ class CasePlanningWorkflow:
                                     decision = query_type.model_validate(decision.model_dump(mode="json", exclude={"task"}))
                                 else:
                                     task_candidate, decision = accept_task_decision(checkpoint.stages, checkpoint.effect_tasks,
-                                        decision, round_record["evidence_reference_catalog"], record.evidence)
+                                        decision, round_record["evidence_reference_catalog"], record.evidence,
+                                        policy.evidence_reference_protocol)
                                     if next_effect_task(checkpoint.stages, task_candidate) is not None:
                                         await validate_plan(decision, validate_effects=False)
                                         checkpoint.effect_tasks = task_candidate
@@ -388,7 +398,7 @@ class CasePlanningWorkflow:
                                             "completed_tasks": len(task_candidate.completed)})
                                         await save("声明任务回执已保存，继续原剩余预算")
                                         continue
-                            if isinstance(decision, ReferencedEvidenceDecision):
+                            if isinstance(decision, (ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2)):
                                 reference_options = {"query_decision_type":SceneEvidencePlanningDecision} if policy.scene_query_protocol else {}
                                 decision = bind_evidence_references(decision,
                                     round_record.get("evidence_reference_catalog"), record.evidence, **reference_options)

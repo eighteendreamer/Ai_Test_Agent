@@ -1,7 +1,7 @@
 """Bind only actual delivered evidence; keep business selection with the model."""
 from src.application.runtime.case_action_binding import _digest
 from src.schemas.case_planning_stages import EvidencePlanningDecisionV3
-from src.schemas.case_planning_references import REFERENCE_PROTOCOL
+from src.schemas.case_planning_references import REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2
 
 
 def evidence_reference_catalog(evidence):
@@ -58,15 +58,20 @@ def bind_evidence_references(decision, catalog, evidence, *, query_decision_type
                 reference = check.get("expected_source")
                 if reference is None:
                     continue
-                if reference.get("text_ref"):
-                    anchor = catalog["texts"].get(reference["text_ref"])
+                reference_id = reference.get("reference")
+                text_reference = (reference_id.startswith("T") if isinstance(reference_id, str)
+                    else bool(reference.get("text_ref")))
+                if text_reference:
+                    text_id = reference_id if isinstance(reference_id, str) else reference["text_ref"]
+                    anchor = catalog["texts"].get(text_id)
                     if anchor is None:
-                        raise ValueError(f"未登记的原文短引用：{reference['text_ref']}")
+                        raise ValueError(f"未登记的原文短引用：{text_id}")
                     source = entry(anchor["evidence_ref"])
                     normalized = {"payload_path_tokens": anchor["payload_path_tokens"], "excerpt": anchor["text"],
                         "literal": reference["literal"], "encoding": reference["encoding"]}
                 else:
-                    source = entry(reference["evidence_ref"])
+                    evidence_id = reference_id if isinstance(reference_id, str) else reference["evidence_ref"]
+                    source = entry(evidence_id)
                     normalized = {key: reference[key] for key in
                         ("payload_path_tokens", "excerpt", "literal", "encoding") if reference.get(key) is not None}
                 if source["kind"] != "document":
@@ -77,7 +82,7 @@ def bind_evidence_references(decision, catalog, evidence, *, query_decision_type
     return model.model_validate(value)
 
 
-def reference_effects_prompt(schema):
+def reference_effects_prompt(schema, *, version=REFERENCE_PROTOCOL):
     from src.application.test_cases.planning_sources import json_text
     return (
         "只读规划当前项目的执行证据，不执行业务、不报告通过。完整用例/说明/原文和工具契约已经提供；"
@@ -85,7 +90,9 @@ def reference_effects_prompt(schema):
         "bindings只追加现有item_key的evidence_ids、input_bindings、effect_declarations及具体缺口。"
         "本阶段evidence_ids使用evidence_reference_catalog中的E短引用，正式ID和hash由系统还原。"
         "预期二选一：expected_path_tokens相对正式完整content或prepare.instructions；"
-        "expected_source引用文档E及payload_path_tokens，或T原文引用加literal和encoding。"
+        + ("expected_source使用单一reference字段，值为E短引用并提供payload_path_tokens，或T短引用并提供literal和encoding。"
+            if version == REFERENCE_PROTOCOL_V2 else
+            "expected_source引用文档E及payload_path_tokens，或T原文引用加literal和encoding。") +
         "T已提供确切原文，不复制ID/hash/excerpt；literal必须唯一存在，json仅解码标量，text保留字符。"
         "重复原文有歧义时用E+唯一excerpt/literal/encoding或说明缺口，不能猜测。"
         "文档来源的E必须加入该项evidence_ids；不用目录冒充正文。"

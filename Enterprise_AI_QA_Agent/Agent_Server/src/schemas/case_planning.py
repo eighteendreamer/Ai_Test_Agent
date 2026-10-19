@@ -34,7 +34,7 @@ class CasePlanningPolicy(PlanningModel):
     operation_prefetch_protocol: Literal["case-planning-declared-operation-prefetch-v1", "case-planning-item-operation-prefetch-v2"] | None = None
     source_identity_protocol: Literal["case-planning-source-full-hash-v1"] | None = None
     linked_source_protocol: Literal["case-planning-linked-documents-v1", "case-planning-linked-sources-v2"] | None = None
-    evidence_reference_protocol: Literal["case-planning-evidence-references-v1"] | None = None
+    evidence_reference_protocol: Literal["case-planning-evidence-references-v1", "case-planning-evidence-references-v2"] | None = None
     scene_query_protocol: Literal["case-planning-scene-query-v1"] | None = None
     scene_receipt_protocol: Literal["case-scene-receipt-v1"] | None = None
     consumption_protocol: Literal["case-consumption-phase-v1"] | None = None

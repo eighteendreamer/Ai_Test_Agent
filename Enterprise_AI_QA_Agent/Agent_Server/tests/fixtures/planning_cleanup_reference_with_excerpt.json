@@ -1,0 +1,91 @@
+{
+  "action": "finish",
+  "task": "cleanup",
+  "summary": "default-query 仅声明 DELETE /orders/{id} 清理效果；引用已接受的 create_order 产出，按用例期望校验删除返回 200，并核对响应包含 order.id。",
+  "bindings": [
+    {
+      "item_key": "default-query",
+      "evidence_ids": [
+        "E1",
+        "E2",
+        "E3"
+      ],
+      "effect_declarations": [
+        {
+          "role": "cleanup",
+          "object_path_tokens": [
+            "task_result",
+            "response_body"
+          ],
+          "checks": [
+            {
+              "output_path_tokens": [
+                "task_result",
+                "response_status"
+              ],
+              "operator": "equals",
+              "expected_path_tokens": [
+                "期望",
+                "cleanup_code"
+              ],
+              "expected_source": null
+            },
+            {
+              "output_path_tokens": [
+                "task_result",
+                "response_body"
+              ],
+              "operator": "contains",
+              "expected_path_tokens": null,
+              "expected_source": {
+                "reference": "T4",
+                "payload_path_tokens": null,
+                "excerpt": "DELETE http://127.0.0.1:54603/orders/{id} 返回200及刚删除的订单JSON。必须用POST实际返回的order.id删除本次创建的记录，不得猜测ID。",
+                "literal": "order.id",
+                "encoding": "text"
+              }
+            }
+          ],
+          "collection": false,
+          "declaration_id": "delete_order",
+          "select_when": [
+            {
+              "input_path_tokens": [
+                "worker_action"
+              ],
+              "expected_path_tokens": null,
+              "expected_source": {
+                "reference": "T5",
+                "payload_path_tokens": null,
+                "excerpt": null,
+                "literal": "execute_task",
+                "encoding": "text"
+              }
+            },
+            {
+              "input_path_tokens": [
+                "task",
+                "method"
+              ],
+              "expected_path_tokens": null,
+              "expected_source": {
+                "reference": "T4",
+                "payload_path_tokens": null,
+                "excerpt": null,
+                "literal": "DELETE",
+                "encoding": "text"
+              }
+            }
+          ],
+          "sources": [
+            {
+              "item_key": "default-query",
+              "declaration_id": "create_order"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "unresolved": []
+}

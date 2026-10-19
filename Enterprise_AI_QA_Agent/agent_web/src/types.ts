@@ -2024,7 +2024,7 @@ export interface CasePlanningPolicy {
   operation_prefetch_protocol?: "case-planning-declared-operation-prefetch-v1" | "case-planning-item-operation-prefetch-v2" | null;
   source_identity_protocol?: "case-planning-source-full-hash-v1" | null;
   linked_source_protocol?: "case-planning-linked-documents-v1" | "case-planning-linked-sources-v2" | null;
-  evidence_reference_protocol?: "case-planning-evidence-references-v1" | null;
+  evidence_reference_protocol?: "case-planning-evidence-references-v1" | "case-planning-evidence-references-v2" | null;
   scene_query_protocol?: "case-planning-scene-query-v1" | null;
   scene_receipt_protocol?: "case-scene-receipt-v1" | null;
   consumption_protocol?: "case-consumption-phase-v1" | null;

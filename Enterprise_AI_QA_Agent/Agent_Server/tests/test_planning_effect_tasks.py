@@ -4,16 +4,18 @@ import json
 from pathlib import Path
 
 import pytest
+from pydantic import TypeAdapter
 from test_planning_evidence_references import actual, reference_wire
 from src.application.test_cases.planning_stages import seal_logical_decision, build_stage_prompts, stage_prompt_version
 from src.application.test_cases.planning_effect_tasks import (
     DECISIONS, _prompt_schema, accept_task_decision, aggregate_task_receipts, effect_task_prompts,
-    next_effect_task, check_task_progress,
+    DECISIONS_V2, next_effect_task, check_task_progress, effect_task_output_format, effect_task_schema,
 )
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.schemas.case_planning import PlanningDecisionV3, CasePlanningPolicy
 from src.schemas.case_planning_stages import PlanningOperationSelection
-from src.schemas.case_planning_effect_tasks import EffectTaskCheckpoint
+from src.schemas.case_planning_effect_tasks import BindingTaskDecision, ProducedTaskDecision, EffectTaskCheckpoint
+from src.schemas.case_planning_references import REFERENCE_PROTOCOL_V2, ReferencedDocumentExpectedV2
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
 
 ROOT = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"
@@ -22,11 +24,85 @@ ROOT = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"
 def test_prompt_schemas_omit_only_non_validation_title_annotations():
     prompts = effect_task_prompts()
     for task, model in DECISIONS.items():
-        original = model.model_json_schema()
+        original = effect_task_schema(task)
         prompt_schema = json.loads(prompts[task].split("\nJSON Schema: ", 1)[1])
         assert prompt_schema == _prompt_schema(original)
         assert "title" in original
         assert _prompt_schema(prompt_schema) == prompt_schema
+
+
+def test_each_effect_task_uses_its_typed_optional_json_schema():
+    for task, model in DECISIONS.items():
+        output_format = effect_task_output_format(task)
+        assert output_format.kind == "json_schema"
+        assert output_format.schema_name == f"case_planning_{task}"
+        assert output_format.schema_definition == effect_task_schema(task)
+        assert output_format.strict is True
+        assert output_format.required is False
+    with pytest.raises(ValueError, match="未知的规划声明任务"):
+        effect_task_output_format("unknown")
+
+
+def test_v2_effect_schema_uses_single_document_reference_alias():
+    schema = effect_task_schema("produced", REFERENCE_PROTOCOL_V2)
+    for name in ("ReferencedDocumentValueV2", "ReferencedDocumentTextV2", "ReferencedTextExpectedV2"):
+        expected = schema["$defs"][name]
+        assert set(expected["required"]) == set(expected["properties"])
+        assert "reference" in expected["properties"]
+        assert not {"evidence_ref", "text_ref"} & set(expected["properties"])
+    for name in ("ReferencedEffectCheckV2", "ReferencedOperationSelectorV2"):
+        definition = schema["$defs"][name]
+        assert {"expected_path_tokens", "expected_source"} <= set(definition["required"])
+    prompt_schema = json.loads(effect_task_prompts(REFERENCE_PROTOCOL_V2)["produced"].split("\nJSON Schema: ", 1)[1])
+    assert prompt_schema == _prompt_schema(schema)
+    assert 'expected_source={reference:"T3"' in effect_task_prompts(REFERENCE_PROTOCOL_V2)["produced"]
+
+
+def test_v2_effect_wire_rejects_v1_dual_reference_fields():
+    with pytest.raises(ValueError):
+        TypeAdapter(ReferencedDocumentExpectedV2).validate_python({
+            "reference": "E1", "evidence_ref": "E1", "text_ref": "T1", "payload_path_tokens": [],
+        })
+
+
+def test_strict_effect_schema_requires_both_nullable_expected_source_fields():
+    schema = effect_task_schema("produced")
+    for name in ("ReferencedEffectCheck", "ReferencedOperationSelector"):
+        definition = schema["$defs"][name]
+        assert {"expected_path_tokens", "expected_source"} <= set(definition["required"])
+    expected = schema["$defs"]["ReferencedDocumentExpected"]
+    assert set(expected["properties"]) <= set(expected["required"])
+    assert "expected_path_tokens" in effect_task_prompts()["produced"]
+    assert "未使用的一项写null" in effect_task_prompts()["produced"]
+
+
+def test_effect_task_prompt_disambiguates_case_paths_document_refs_and_roles():
+    prompts = effect_task_prompts()
+    common = prompts["produced"]
+    assert 'expected_path_tokens=["期望","create_code"]' in common
+    assert "路径相对content_json对象本身" in common
+    assert 'text_ref:"T3"' in common
+    assert "E和T是二选一的文档短引用" in common
+    assert "用例E证据的预期只能走expected_path_tokens" in common
+    assert "条件全部同时匹配" in common
+    assert "不得把模板当作实际path预期" in common
+    assert "validation_feedback中的case:/document:等ID仅用于定位" in common
+    assert "不能在produced任务里添加role=cleanup" in prompts["produced"]
+    assert "只返回role=cleanup" in prompts["cleanup"]
+
+
+def test_effect_task_wire_schema_rejects_canonical_ids_instead_of_short_refs():
+    for task, binding_name in (("bindings", "TaskBinding"), ("produced", "TaskDeclarations")):
+        schema = effect_task_schema(task)
+        reference_schema = schema["$defs"][binding_name]["properties"]["evidence_ids"]["items"]
+        assert reference_schema["pattern"] == r"^E[1-9][0-9]*$"
+    with pytest.raises(ValueError, match="String should match pattern"):
+        BindingTaskDecision.model_validate({"task": "bindings", "action": "finish", "summary": "test",
+            "bindings": [{"item_key": "target", "evidence_ids": ["case:version-id"]}]})
+    with pytest.raises(ValueError, match="String should match pattern"):
+        ProducedTaskDecision.model_validate({"task": "produced", "action": "finish", "summary": "test",
+            "bindings": [{"item_key": "target", "evidence_ids": ["document:version:hash"],
+                "effect_declarations": []}]})
 
 
 def captured_tasks():
@@ -64,6 +140,31 @@ def test_split_captured_business_declarations_preserves_original_execution():
     validate_effect_declarations(merged, "case-effect-evidence-v2", plan.evidence, "case-effect-coverage-v2", "case-effect-document-expected-v1")
     assert fixed.model_dump(mode="json") == before
     assert aggregate_task_receipts(state).bindings[0].effect_declarations
+
+
+def test_v2_task_receipts_bind_e_and_t_aliases_to_canonical_evidence():
+    plan, fixed, catalog, tasks = captured_tasks()
+    state = EffectTaskCheckpoint()
+    merged = None
+    for name, source in tasks.items():
+        value = deepcopy(source)
+        if name != "bindings":
+            for binding in value["bindings"]:
+                for declaration in binding["effect_declarations"]:
+                    for item in declaration["checks"] + declaration["select_when"]:
+                        reference = item.get("expected_source")
+                        item.setdefault("expected_path_tokens", None)
+                        if reference is None:
+                            item["expected_source"] = None
+                        else:
+                            alias = reference.get("text_ref") or reference.get("evidence_ref")
+                            item["expected_source"] = {"reference": alias,
+                                **{key: part for key, part in reference.items()
+                                    if key not in {"text_ref", "evidence_ref"}}}
+        wire = DECISIONS_V2[name].model_validate(value)
+        state, merged = accept_task_decision(fixed, state, wire, catalog, plan.evidence, REFERENCE_PROTOCOL_V2)
+    assert next_effect_task(fixed, state) is None
+    assert merged == plan.decision
 
 
 @pytest.mark.parametrize("fault", ["foreign-item", "missing-item", "unknown-e", "role", "wrong-path", "duplicate-id"])

@@ -8,6 +8,8 @@ from src.schemas.case_effect_sources import SourceEffectCheck, SourceOperationSe
 
 REFERENCE_PROTOCOL = "case-planning-evidence-references-v1"
 REFERENCE_PROMPT_VERSION = "case-planning-evidence-references-v11"
+REFERENCE_PROTOCOL_V2 = "case-planning-evidence-references-v2"
+REFERENCE_PROMPT_VERSION_V2 = "case-planning-evidence-references-v12"
 
 
 class ReferencedDocumentExpected(PlanningModel):
@@ -49,3 +51,53 @@ class ReferencedItemBinding(EvidenceItemBindingV3):
 
 class ReferencedEvidenceDecision(EvidencePlanningDecisionV3):
     bindings: list[ReferencedItemBinding] = Field(default_factory=list, max_length=200)
+
+
+class ReferencedDocumentValueV2(PlanningModel):
+    reference: str = Field(pattern=r"^E[1-9][0-9]*$")
+    payload_path_tokens: list[Annotated[str, Field(max_length=256)]] = Field(max_length=32)
+    excerpt: None = None
+    literal: None = None
+    encoding: None = None
+
+
+class ReferencedDocumentTextV2(PlanningModel):
+    reference: str = Field(pattern=r"^E[1-9][0-9]*$")
+    payload_path_tokens: list[Annotated[str, Field(max_length=256)]] = Field(max_length=32)
+    excerpt: str = Field(min_length=1, max_length=8000)
+    literal: str = Field(min_length=1, max_length=8000)
+    encoding: Literal["text", "json"]
+
+
+class ReferencedTextExpectedV2(PlanningModel):
+    reference: str = Field(pattern=r"^T[1-9][0-9]*$")
+    payload_path_tokens: None = None
+    excerpt: None = None
+    literal: str = Field(min_length=1, max_length=8000)
+    encoding: Literal["text", "json"]
+
+
+# Match the existing canonical document/text forms in the delivered JSON Schema,
+# rather than imposing cross-field restrictions only after the model responds.
+ReferencedDocumentExpectedV2 = ReferencedDocumentValueV2 | ReferencedDocumentTextV2 | ReferencedTextExpectedV2
+
+
+class ReferencedEffectCheckV2(SourceEffectCheck):
+    expected_source: ReferencedDocumentExpectedV2 | None = None
+
+
+class ReferencedOperationSelectorV2(SourceOperationSelector):
+    expected_source: ReferencedDocumentExpectedV2 | None = None
+
+
+class ReferencedEffectDeclarationV2(SourceEffectRelationDeclaration):
+    checks: list[ReferencedEffectCheckV2] = Field(min_length=1, max_length=200)
+    select_when: list[ReferencedOperationSelectorV2] = Field(min_length=1, max_length=20)
+
+
+class ReferencedItemBindingV2(EvidenceItemBindingV3):
+    effect_declarations: list[ReferencedEffectDeclarationV2] | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ReferencedEvidenceDecisionV2(EvidencePlanningDecisionV3):
+    bindings: list[ReferencedItemBindingV2] = Field(default_factory=list, max_length=200)

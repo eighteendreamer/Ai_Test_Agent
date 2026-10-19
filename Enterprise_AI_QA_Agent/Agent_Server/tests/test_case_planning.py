@@ -27,6 +27,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.registry.models import ModelRegistry
 from src.schemas.case_management import TestCaseDraftCreateRequest as DraftRequest
 from src.schemas.case_planning import CasePlanningPolicy, CasePlanningRequest, PlanningQuery
+from src.schemas.case_planning_effect_tasks import ProducedTaskDecision
 from src.schemas.model_config import ModelInvocationResult
 from src.schemas.project import ProjectCreateRequest
 
@@ -410,6 +411,35 @@ def test_actual_model_json_with_trailing_text_keeps_preparation_and_fixed_refere
     first["items"][1]["instructions"] = {"rewrite": "forbidden"}
     with pytest.raises(ValueError, match="结构化计划"):
         CasePlanningService._parse(json.dumps(first) + "\ntrailing fixture text")
+
+
+def test_actual_effect_receipt_validation_feedback_names_missing_expected_source_fields():
+    candidate = {
+        "action": "finish",
+        "summary": "创建订单并声明实际返回对象",
+        "task": "produced",
+        "bindings": [{
+            "item_key": "default-query",
+            "evidence_ids": ["E1", "E2", "E3"],
+            "effect_declarations": [{
+                "role": "produced",
+                "declaration_id": "default-query-order-created",
+                "object_path_tokens": ["task_result", "response_body", "order.id"],
+                "checks": [
+                    {"output_path_tokens": ["task_result", "response_status"], "operator": "equals"},
+                    {"output_path_tokens": ["status"], "operator": "equals"},
+                ],
+                "select_when": [{"input_path_tokens": ["task", "method"]}],
+                "sources": [],
+            }],
+        }],
+    }
+    with pytest.raises(ValueError) as exc:
+        CasePlanningService._parse(json.dumps(candidate), decision_type=ProducedTaskDecision)
+    message = str(exc.value)
+    assert "bindings.0.effect_declarations.0.checks.0" in message
+    assert "预期必须引用自身路径或固定文档之一" in message
+    assert "task_result" not in message
 
 
 @pytest.mark.asyncio

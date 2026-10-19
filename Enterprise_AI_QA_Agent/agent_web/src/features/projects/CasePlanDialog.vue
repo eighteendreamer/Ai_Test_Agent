@@ -350,7 +350,7 @@ function chooseEvidenceReferences(event: Event) {
   if (!config.value) return;
   if (!(event.target as HTMLInputElement).checked) { downgradeEffectTasks(); delete config.value.policy.evidence_reference_protocol; return; }
   chooseSourceIdentity(event);
-  config.value.policy.evidence_reference_protocol = "case-planning-evidence-references-v1";
+  config.value.policy.evidence_reference_protocol = config.value.policy.evidence_reference_protocol ?? "case-planning-evidence-references-v1";
 }
 function downgradeEffectTasks() {
   if (config.value?.policy.planning_stage_protocol === "case-planning-staged-evidence-v3") config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
