@@ -4340,3 +4340,17 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 本轮结论：目前没有足够证据证明可通过删除重复上下文解决输出截断；单纯缩小输入也没有因果证据。可信的后续设计方向是研究把“效果声明的业务语义”与可从固定逻辑、已读工具契约/文档机械导出的字段分开，并保持 canonical 接受器仍负责验证，不把模型声明当执行证据。须先用真实失败用例精确列出 `produced` 最小必要字段、各字段唯一来源及可确定性推导规则，再以同一真实默认模型、同一正式用例和冻结预算做 A/B：结果须能通过当前 canonical 接受器、创建正式 Run 并完成真实工具执行/证据断言，负向/清理/终态重投也不回归，方可接受该设计。若无可靠推导或模型仍输出截断，应明确保留缺口，不换模型、不改全局预算、不通过自由模式绕过。
 
 本轮只追加调研记录；无生产代码、MySQL 配置或 PostgreSQL 业务数据变更。已核对 `verification.json`、`PG-planning.json`、三份实际 SDK request/stream 记录、失败用例与关联文档，以及 `planning_workflow.py`、`planning_effect_tasks.py` 和对应 Schema。P2 仍未完成默认 AI 项目选取→排序→逻辑补全→正式执行；正式 Run 执行中计划修订也仍处于设计调研，完整 P0—P5 继续未完成。
+
+### 7.105 `produced/cleanup` 可推导字段边界〔2026-10-19〕
+
+针对 7.104 的字段最小化候选，沿正式逻辑封存、`task_roles`、任务回执接收器、引用绑定器及运行时 `compile_relations` 检查字段来源，并以 `planning_cleanup_ambiguous_text.json` 的真实项目形状（一个正式用例、通用 `api-test-runner/execute_task`、项目文档描述 POST/GET/DELETE 和 `order.id`）复核。
+
+系统已确定性计算本轮 `produced`/`cleanup` scope：固定逻辑中的 `cleanup_sources` 建立角色，`task_roles` 推导来源和消费者；`accept_task_decision` 强制模型回复 scope 集合完全一致，并拒绝跨角色声明；合并后 `validate_relations` 再要求实际清理来源与固定逻辑完全一致。因此计划项、角色、scope 和清理来源无需第二次由模型重新决定。相反，`select_when` 的输入字段路径及固定值、原始工具输出中的稳定对象身份路径、业务预期检查和声明间身份关系不能由当前通用 `execute_task` 工具契约推出：该工具内部执行用户项目 API，path、请求、返回 JSON 与断言依据分别来自冻结项目文档和用例。把 `order.id`、`task.method`、`response_body` 等例子推广为全局映射会臆造业务字段；应继续由模型引用固定依据，并由短引用解析、canonical 编译及真实执行回执验证。
+
+一个低风险协议候选是后续效果任务默认继承 `bindings` 回执已绑定的 item evidence IDs，仅允许模型补充 bindings 之后新查询得到的引用。现有每个效果 task 都重复要求输出 `evidence_ids`，而回执聚合会将它们追加到同一 item。交叉核对既有实测后确认这不是当前默认模型失败的根因：7.76 已用 live18d 原始请求/回执及同窗口认证 Step 做了 inheritance 对照，约 74.879 秒后 HTTP 200、4,532 completion tokens，仍无正文或 finish_reason；因此排除“重复复制 evidence IDs 单独导致超时”。该投影虽可省少量 JSON，但没有证据值得增加生产协议和恢复兼容复杂度，当前不实施。
+
+原生结构化输出也已有真实对照，不再列作待调研：7.85 使用认证 Step 对冻结 produced 输入启用严格 JSON Schema，在隔离 MySQL profile 中实际映射并发送 schema；HTTP 200、流运行约 82.762 秒、正文 0 且无 finish_reason，仍未获得可校验响应。因此 `request_profile=null` 导致默认请求回退为提示 Schema 是事实，但不是空正文的唯一根因；能力映射保持按模型显式声明，不能据此修改全局 MySQL profile、假定所有 OpenAI-compatible 服务端都支持严格 Schema或切换 Responses transport。
+
+本轮没有找到安全地由通用代码自动填充业务路径/身份/预期的依据，故不添加 heuristic，也不改 schema。已有默认 Step 证据同时否定了两个容易误判的简单修复：减少重复 evidence IDs、单独启用原生 Schema 都未让模型产生回执。继续缩短 prompt 或重复预算/协议单变量试验没有新因果依据。后续应转向阶段角色契约与调用轨迹：重建逻辑选取结果、bindings 回执、produced 输入/响应及被接受/拒绝位置，检查 `produced` 是否被要求重新推理已在固定 plan、binding receipt 或工具查询结果中确定的信息，以及 Agent planning 回执与正式执行契约是否存在职责重叠。任何可删除/自动派生字段都必须保持 canonical 结果逐字段一致，并先用本地真实 HTTP 对照，再跑默认 Step 的完整“选取→排序→补全→正式 Run→实际工具执行”验收。
+
+依据：`planning_effect_tasks.py` 的 `task_roles/accept_task_decision/aggregate_task_receipts`、`case_effect_relations.py` 的 `compile_relations/validate_relations`、`case_effect_sources.py`、`planning_cleanup_ambiguous_text.json`，以及 PLAN §7.76 的证据继承 live 对照、§7.85 的原生 JSON Schema live 对照。本轮为代码与固定样本调研，没有修改生产代码、MySQL 配置或 PostgreSQL 业务数据，也未将控制模型 fixture 结果当默认 AI 验收。P2 默认 Step 正式 Run 闭环仍未完成；完整 P0—P5 继续未完成。
