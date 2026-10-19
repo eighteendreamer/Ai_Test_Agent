@@ -68,3 +68,13 @@ pytest **1失败，233.72秒**。规划任务运行3轮，SDK物理请求均携�
 专项**1通过，343.03秒**。8次SDK流调用全部收到HTTP 200并以 `finish_reason=stop` 正常结束；无异常链产生，因此这次没有复现APIConnectionError，原故障根因仍未确定。默认模型规划完成，建立正式Run；Run、唯一RunItem和正式结果均为 `passed`。工具任务实际POST创建一条订单，随后DELETE使用POST实际返回的 `order.id`；两个工具任务状态均为completed，剩余订单为0。终态Outbox重投后新增物理模型请求为0、业务副作用未重复。保存了请求/响应安全投影、SDK流计数、PG规划和工具任务、正式Run、退出码及XML。
 
 该实测把“默认AI单个完整用例从规划到执行的一次闭环”从未验收更新为**已验收一次**，但不证明多候选项目检索、用例排序、跨正式用例补全、运行内准备步骤、负向用例和其他测试模式。单次成功也不消除此前真实流故障证据；后续应通过持续运行积累失败链样本，或在新故障发生时用新增探针取证，不为追求复现而盲目重发旧任务。
+
+## 2026-10-19 多候选自动召回路径复核
+
+继续检查项目页面、规划提交契约、召回服务、规划 Worker 和计划转正式 Run 的实际代码。项目页面把当前勾选的启用用例 ID 作为 `candidate_case_ids` 传入；勾选项是 AI 候选池，不会被强制全选为目标。没有勾选时提交空列表，后端 `_recall` 调用项目范围向量召回；召回不足或没有命中时再从同一项目的启用用例目录补候选，随后仍由 AI 阅读完整固定版本决定目标和前置。历史 `mode_key` 不作为硬过滤。向量服务失败与没有匹配分别保存为检索失败和无候选/目录回退状态。候选与计划通过 project_id 校验；正式 Run 冻结计划中的用例版本，并继续使用现有 suite、RunItem、Outbox 和 Worker 执行链路。
+
+当前线上 MySQL 配置存在 `embedding_retrieval` 模型记录（OpenAI Chat Completions transport，Qwen3-VL-Embedding-8B）；此次只读检查未调用它，也未证明新激活用例已被真实 embedding Worker 建索引。已有真实默认模型多目标规划专项明确提供了三个目标用例 ID，因此它验收了 AI 依赖发现、排序、输出绑定、已有数据和负向条件，但没有验收自动候选召回或规划后执行。产品页面规划弹窗与任务面板回归 **92 项通过**；后端 `test_case_planning.py`、`test_case_planning_tasks.py` 和 `test_case_plan_run_creation.py` 为 **31 项通过、28 项因隔离数据库/对象存储/真实模型条件而跳过**。这些结果证明代码逻辑与页面契约回归，不是实际默认 AI 的自动召回或多用例执行证据。
+
+补充空候选前端契约后，`CasePlanDialog.test.ts` **85 项通过**，确认页面把空 `candidate_case_ids` 原样提交给服务端。`RUN_LIVE_TEST_CASE_EMBEDDING_TESTS=1 ..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests/test_live_test_case_embedding_pipeline.py -q --tb=short -rs` 在真实 PostgreSQL/Redis 上 **1 项通过**，验证项目范围、pgvector 索引、Redis 投影及检索返回；该专项以固定向量和模拟 embedding runtime 作为输入，未调用 MySQL 中配置的真实 embedding 模型，也未覆盖激活 Outbox 到 Worker 的实测。
+
+本轮未发现需要先行补写新的候选选择算法；自动召回、项目隔离、空召回目录回退及 AI 目标/前置区分均已有实现。当前缺口明确为端到端验收：在隔离项目创建多个正式启用用例及区分性干扰用例，完成真实 embedding 索引并核验 PostgreSQL/Redis 投影；提交不指定 `candidate_case_ids` 的新规划任务，核验召回候选确属当前项目、模型选择正确目标并读取遗漏的必要前置；再冻结计划、创建正式 Run，由 Worker 执行并核验实际输出绑定、每条结果和重投无重复副作用。不得把固定候选的规划测试或单个自包含用例成功扩大为该闭环通过。当前无生产实现修改。

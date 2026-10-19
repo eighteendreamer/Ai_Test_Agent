@@ -82,6 +82,17 @@ describe("case planning", () => {
     wrapper.unmount();
   });
 
+  it("keeps an empty candidate list so the server performs project-scoped automatic recall", async () => {
+    const wrapper = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: [], modes } });
+    await flushPromises();
+    await wrapper.findAll("textarea")[0].setValue("验证订单详情");
+    await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
+    expect(api.submitCasePlanningTask).toHaveBeenCalledWith("project", expect.objectContaining({
+      objective: "验证订单详情", candidate_case_ids: [], runtime_context: {},
+    }));
+    wrapper.unmount();
+  });
+
   it("rejects an array as run input and shows request errors", async () => {
     const wrapper = setup(); await flushPromises();
     await wrapper.findAll("textarea")[0].setValue("验证");
