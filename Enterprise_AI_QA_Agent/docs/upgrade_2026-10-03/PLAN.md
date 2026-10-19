@@ -4278,3 +4278,11 @@ cd Agent_Server
 因此本次失败没有证据指向本地漏拼正文、错误解析或错误使用 reasoning 字段。拒绝截断响应是正确的数据完整性行为；放宽 canonical/schema 校验会让不完整计划进入正式 Run，不能作为修复。该核查不证明模型阶段设计与输入投影合理，也不代表 P2 通过。此前 16K 对照已失败，不再重复只增加上限、改变 Provider 协议或将推理文本当作计划正文的单变量尝试。后续需研究 `produced` 阶段职责与输入投影，保持用例、引用、效果/清理关系及全局预算契约。
 
 研究详情与对应代码/实时证据见 [P2 produced 响应分类调研](P2_PRODUCED_RESPONSE_CLASSIFICATION_RESEARCH_20261019.md)。当前状态：Step 已认证；P1 模板/导入及普通 Markdown 模块生成有专项验收；P2 默认 AI 仍未完成真实项目选取→排序→补全→执行闭环。其他 P0—P5 按本方案进度表继续区分已有实现、未验收和待补实现。
+
+### 7.99 默认 Step 驱动 Agent API Worker 实测〔2026-10-19，未通过〕
+
+使用已认证的 MySQL 默认 Step 配置，通过隔离 API、PG/Redis/RustFS、生产 Agent CLI Worker 和本地受控认证接口，运行固定 `login → refresh → profile` campaign。真实实测为 **2 failed、4 deselected，391.59秒**：同进程子 Worker 三项均成功，但 `/profile` 实际发送两次，违反唯一任务期望；持久子 Worker 的 login 子任务完成，但父 turn 保持 `running`，没有进入 refresh/profile。两种模式均无目标 HTTP 错误或凭据校验失败；公开结果的秘密扫描通过。由于失败发生在最终断言前，终态重投零新增请求未运行，不能记为通过。
+
+当前证据确认“默认 Agent API 完整流程仍未验收”，但尚不能判定 `/profile` 重复源自模型产生第二个合法工具调用，还是同一工具调用在 resume/dispatch 检查点重放；durable parent 未收敛也需从 child completion 通知、Outbox、ToolJob 和 snapshot 还原。现有夹具在最终断言前没有保存完整 PG 工件，证据缺口已列入专项研究。先补诊断并按真实现场定位，再决定是否修生产代码，不以 GET 幂等掩盖重复，也不臆测编排根因。
+
+详见 [P3 Agent API 默认模型实测调研](P3_API_AGENT_DEFAULT_MODEL_LIVE_RESEARCH_20261019.md)。本次无生产代码、全局 MySQL 默认配置或业务规则变更。Step 已认证；P2 正式用例闭环仍未完成，完整 P0—P5 继续未完成。
