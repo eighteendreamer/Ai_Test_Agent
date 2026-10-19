@@ -8,9 +8,9 @@
 |---|---|---|---|
 | 模板、生成、导入 | 默认/项目模板、JSON渲染、Excel/JSON产品专项；普通Markdown模块生成及恢复专项 | 更广业务文档和用户生产流程 | 依据新失败再确定缺口，不能把已有专项重列为未实现 |
 | 按用例执行 | 项目隔离、完整版本读取、规划/依赖映射、原子领取和正式Agent链路 | 默认模型多候选选取→排序→必要前置/运行内准备→执行；其他模式 | 执行中计划修订缺完整实现；未知副作用自动选取查证及完整准备状态须继续查证 |
-| 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复 | 默认API正式通过；更多真实中断组合；live7未到执行；原live5 blocked保留 | 产生声明重复出现length/空正文，须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
+| 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复；Agent API正向认证链路双Worker通过 | 更多真实中断组合；P2 live7未到执行；原live5 blocked保留 | 产生声明重复出现length/空正文，须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
 | UI录制与知识 | DeepSeek真实页面API/CDP/PG自动化录制；受控页面默认AI使用知识 | 人手DeepSeek录制、默认AI消费该站知识、完整产品流程 | 不能用已有读取专项替代场景/步骤/别名/失败定位完整验收 |
-| Agent API | 响应提取、依赖、鉴权与报告已有专项 | 默认Agent完整鉴权/续期/超时/幂等及报告流程 | 依据真实调用缺口补实现，保持Agent方式 |
+| Agent API | 响应提取、依赖、鉴权与报告已有专项；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
 | Docker性能、安全 | 实际Docker工具、原输出/指标/发现及报告专项 | 默认Agent自主调用、容量/流式阶段指标及完整产品验收 | 流式与容量链路是否缺实现另行查证；不以启动容器代替结果 |
 | 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
 | 重复请求与交付 | 逻辑调用/SDK/HTTP观测和多SDK故障专项 | 更多跨阶段断网/进程恢复、历史迁移/投影和旧汇总原件追踪 | 已有模型适配层继续补Profile与原生协议契约，不另建单一协议栈 |
@@ -4294,3 +4294,11 @@ cd Agent_Server
 双后端合同 `test_atomic_metadata_update_uses_current_status` **4通过**；等待/子通知合同 **22通过、4跳过**，启用真实 PostgreSQL 的等待场景 **3通过**，真实子等待领取/取消 **1通过**。SessionStore 值契约与子等待组合回归有 **81通过**；另一个 opt-in PostgreSQL 测试首次因漏传 `QA_TOOL_CHILD_WAIT_STORE_DIR` 在夹具读取阶段失败，补上独立证据目录后同一测试 **1通过**。使用已认证默认 Step、隔离 API/Worker/PG/Redis/RustFS 及本地认证 target，同进程与 durable child 均通过：**2 passed、4 deselected，268.24秒**。两场景各自三项 HTTP 均成功、父报告 3/3、9 次模型 HTTP 可对账，API 重启后终态重投新增业务/模型请求为 0，凭据扫描通过。证据位于 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-atomic-metadata-20261019/`，专项记录已更新。
 
 本次只关闭已定位的陈旧审批投影故障及这组 API Worker 复验，不代表鉴权负向、更多续期/依赖传值、超时异常和完整 API 产品报告流程均已验收。模型适配层继续采用统一内部请求/结果契约与 provider-specific 原生客户端；P0 最新 SDK/HTTP 矩阵 **120通过**，Anthropic 仍走 Messages。P2 有单个自包含用例真实执行通过，但多候选项目选取、排序、逻辑补全、准备生命周期和其他测试模式仍未闭环；DeepSeek 人工 UI 录制、Docker 性能/安全工具到报告的完整证据链及需求变更业务评审也仍未全部完成。完整 P0—P5 继续进行。
+
+### 7.101 默认 Step Agent API 正向认证链路双 Worker 复验〔2026-10-19〕
+
+为接续 7.100 并确认当前工作区中的默认模型验收扩展，先运行 `tests/test_model_tool_visibility.py`，结果 **4 passed**；随后使用隔离 MySQL 配置表、PostgreSQL、Redis、RustFS、独立生产 API/Agent CLI Worker，以及本地受控认证目标，执行 `tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery` 的 `default-model` 两种子 Worker 变体。真实默认模型为 MySQL 已认证配置 `step-5-preview` / `openai_chat_completions`；没有改全局模型配置。pytest 结果 **2 passed、2 deselected，235.45秒**，未选中的两项是受控模型变体。
+
+同进程与持久子 Worker 两个隔离运行均实际只收到 `POST /login`、`POST /auth/refresh`、`GET /profile`，全部 HTTP 200；refresh 使用登录返回的旧凭据，profile 使用 refresh 返回的新凭据。父会话完成，报告均为 3 completed / 0 failed / 0 skipped，创建三个真实子会话；实际模型 HTTP attempt 分别为 8 与 10。重启 API 后任务历史保持，终态 Outbox 重投的新增目标 HTTP 与模型 HTTP 都为 0。测试断言公开报告及日志不含生成凭据，`verification.json` 的 credential scan 和 public-output scan 均为真。证据目录为 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
+
+因此，默认 Agent API 的正向认证/续期/依赖传值链路在此固定场景及两种 Worker 生命周期下已有真实通过证据；这不覆盖错误凭据、刷新失败、超时/断网恢复或其他 endpoint 依赖结构，也不代表 P3 API 全面验收。完整 P0—P5 和 P2 用例选择/排序/补全/正式 Run 闭环仍未完成。

@@ -79,3 +79,11 @@
 - 两个场景的 `verification.json`、PostgreSQL 任务/Outbox/Session/snapshot 诊断和 target 事件保存在 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-atomic-metadata-20261019/`。
 
 这关闭了已复现的父审批投影覆盖等待 checkpoint 故障，并通过了这组默认模型 Worker 场景。Agent API 的其他鉴权负向、更多续期/依赖组合、超时异常以及完整产品报告流程仍需按总方案继续验收；P3/API 方向不因这两项 live 通过而整体宣告完成。
+
+## 原子投影修复后默认模型当前工作区复验（2026-10-19）
+
+接续上节的父审批投影修复，针对当前工作区中的默认模型参数化验收运行 `tests/test_model_tool_visibility.py`（**4 passed**）及 live Worker 测试的两个 `default-model` 变体（**2 passed、2 deselected，235.45秒**）。使用隔离 MySQL 配置表、PostgreSQL、Redis、RustFS、生产 API/Agent CLI Worker、MySQL 已认证 Step 默认模型 `step-5-preview` / `openai_chat_completions` 和本地受控认证 target；没有修改全局模型配置。新证据位于 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
+
+同进程与持久子 Worker 均完成 `POST /login → POST /auth/refresh → GET /profile`，三个目标请求各一次且均 HTTP 200；profile 使用刷新后的实际凭据。父任务最终 `completed`，报告 3/3 completed、0 failed、0 skipped；分别观察到 8 和 10 次模型 HTTP attempt。API 重启后重新投递已终结任务没有增加模型或目标 HTTP 请求。两份验证记录均确认生成凭据未出现在公开输出，credential scan 与 public-output scan 通过；持久模式另外保存父子 Session、Agent task、Outbox、审批及 snapshot 诊断。
+
+本次结果是对固定正向认证链路的当前工作区复验，不覆盖鉴权失败、刷新失败、timeout/断网恢复、更多依赖关系或全部 API 产品流程；旧失败样本仍保留，不能据此声称所有重复调用或恢复故障已根除。没有生产代码或 MySQL 默认配置变更。
