@@ -5504,3 +5504,11 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 ## 2026-10-19 P2 默认模型单用例端到端复验
 
 随后新增全新隔离项目与任务完成默认Step模型实测：`test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case` **1通过，343.03秒**；同轮SDK流观测回归 **9通过，11.33秒**。模型完成规划并创建正式Run，RunItem及正式结果通过；本地业务服务实际完成POST及基于响应ID的DELETE，最终无残留；completed Run终态重投新增模型物理请求0。该结果仅将“单个自包含创建/清理用例闭环”标为一次通过，不涵盖项目多候选选取、跨用例补全、准备步骤或其他模式。此前隔离16K失败样本中的`APIConnectionError`本次未复现，异常链探针没有获取根因，仍需如实保留为未定。配置继续在MySQL，业务结果与运行数据在PostgreSQL，对象工件使用RustFS；仅更新测试观测和调研记录，没有变更生产供应商协议或全局模型配置。P0—P5整体仍未完成。
+
+## 2026-10-19 默认 Agent API 父等待恢复修复与复验
+
+继续 P3 真实 Worker 失败调查，在隔离 PostgreSQL 的父 Session/snapshot 时间线中确认代理审批投影使用陈旧 SessionRecord 整体保存，覆盖较新的 `interrupted + waiting_tool` checkpoint。修复沿现有 SessionStore 增加原子状态与 metadata 更新；PostgreSQL 在行锁内基于当前状态修改，内存实现保持相同契约；只在当前仍为 `waiting_approval` 时把状态/control 转到 `running`。原单参数 `mutate_metadata(metadata)` 契约保持兼容。
+
+验证：双后端当前状态合同 **4通过**；等待/子通知合同 **22通过、4跳过**，真实 PG 等待场景 **3通过**；真实 PG 子等待领取/取消 **1通过**。SessionStore 值契约与子等待组合回归有 **81通过**；另一个 opt-in PG 测试首次因漏传 `QA_TOOL_CHILD_WAIT_STORE_DIR` 在夹具读取阶段失败，补上独立证据目录后该测试 **1通过**。真实默认 Step 模型、隔离生产 API/Worker/PG/Redis/RustFS 和本地认证 target 的同进程及 durable child 场景 **2通过、4未选取，268.24秒**。两场景各自按顺序调用 login、refresh、profile，均 HTTP 200；父报告均 3/3 完成，9 次模型 HTTP attempt 可对账，API 重启后的终态重投无新增业务/模型请求，公开凭据扫描通过。生产修复与双后端测试已提交 `9182196e`；详细诊断见 `P3_API_AGENT_DEFAULT_MODEL_LIVE_RESEARCH_20261019.md` 和 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-atomic-metadata-20261019/`。
+
+这项修复关闭已定位的父审批投影覆盖故障，但不等于 Agent API 的鉴权负向、更多续期/依赖组合、超时故障或完整产品报告流程全部验收。模型适配层采用统一内部请求/结果契约和 provider-specific 原生协议客户端，P0 当前 SDK/HTTP 矩阵 **120通过**；Anthropic 仍使用 Messages，OpenAI Responses 是独立 transport。P2 单个自包含用例已由默认 Step 实际执行通过，多候选项目级选取、跨用例排序/补全和准备生命周期仍未闭环。DeepSeek 人工 UI 录制、Docker 性能/安全证据到报告的完整闭环、需求变更业务评审和历史迁移仍需继续验证。完整 P0—P5 未完成。

@@ -4286,3 +4286,11 @@ cd Agent_Server
 当前证据确认“默认 Agent API 完整流程仍未验收”，但尚不能判定 `/profile` 重复源自模型产生第二个合法工具调用，还是同一工具调用在 resume/dispatch 检查点重放；durable parent 未收敛也需从 child completion 通知、Outbox、ToolJob 和 snapshot 还原。现有夹具在最终断言前没有保存完整 PG 工件，证据缺口已列入专项研究。先补诊断并按真实现场定位，再决定是否修生产代码，不以 GET 幂等掩盖重复，也不臆测编排根因。
 
 详见 [P3 Agent API 默认模型实测调研](P3_API_AGENT_DEFAULT_MODEL_LIVE_RESEARCH_20261019.md)。本次无生产代码、全局 MySQL 默认配置或业务规则变更。Step 已认证；P2 正式用例闭环仍未完成，完整 P0—P5 继续未完成。
+
+### 7.100 默认 Agent API 父等待恢复修复与复验〔2026-10-19〕
+
+继续 7.99 的真实失败调查，在隔离 PostgreSQL 的 parent Session 与 snapshot 时间线中确认：代理审批投影持有旧 SessionRecord 并整对象保存，会覆盖较新的 `interrupted + waiting_tool` checkpoint。修复沿现有 SessionStore 增加原子状态与 metadata 更新；PostgreSQL 行锁内使用当前持久状态，内存实现保持相同契约，只有当前仍为 `waiting_approval` 才转换到 `running`。原有 `mutate_metadata(metadata)` 单参数接口保持兼容。
+
+双后端合同 `test_atomic_metadata_update_uses_current_status` **4通过**；等待/子通知合同 **22通过、4跳过**，启用真实 PostgreSQL 的等待场景 **3通过**，真实子等待领取/取消 **1通过**。SessionStore 值契约与子等待组合回归有 **81通过**；另一个 opt-in PostgreSQL 测试首次因漏传 `QA_TOOL_CHILD_WAIT_STORE_DIR` 在夹具读取阶段失败，补上独立证据目录后同一测试 **1通过**。使用已认证默认 Step、隔离 API/Worker/PG/Redis/RustFS 及本地认证 target，同进程与 durable child 均通过：**2 passed、4 deselected，268.24秒**。两场景各自三项 HTTP 均成功、父报告 3/3、9 次模型 HTTP 可对账，API 重启后终态重投新增业务/模型请求为 0，凭据扫描通过。证据位于 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-atomic-metadata-20261019/`，专项记录已更新。
+
+本次只关闭已定位的陈旧审批投影故障及这组 API Worker 复验，不代表鉴权负向、更多续期/依赖传值、超时异常和完整 API 产品报告流程均已验收。模型适配层继续采用统一内部请求/结果契约与 provider-specific 原生客户端；P0 最新 SDK/HTTP 矩阵 **120通过**，Anthropic 仍走 Messages。P2 有单个自包含用例真实执行通过，但多候选项目选取、排序、逻辑补全、准备生命周期和其他测试模式仍未闭环；DeepSeek 人工 UI 录制、Docker 性能/安全工具到报告的完整证据链及需求变更业务评审也仍未全部完成。完整 P0—P5 继续进行。
