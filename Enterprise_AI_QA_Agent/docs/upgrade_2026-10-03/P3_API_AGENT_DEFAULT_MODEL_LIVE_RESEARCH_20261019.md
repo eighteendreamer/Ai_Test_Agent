@@ -82,8 +82,10 @@
 
 ## 原子投影修复后默认模型当前工作区复验（2026-10-19）
 
-接续上节的父审批投影修复，针对当前工作区中的默认模型参数化验收运行 `tests/test_model_tool_visibility.py`（**4 passed**）及 live Worker 测试的两个 `default-model` 变体（**2 passed、2 deselected，235.45秒**）。使用隔离 MySQL 配置表、PostgreSQL、Redis、RustFS、生产 API/Agent CLI Worker、MySQL 已认证 Step 默认模型 `step-5-preview` / `openai_chat_completions` 和本地受控认证 target；没有修改全局模型配置。新证据位于 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
+接续上节的父审批投影修复，先根据 Registry 中 `api-test-runner` 的合并Schema及 API 编排Agent/子Worker不同职责，确认编排Agent不应拿到 `worker_action`、`task`、凭据容器或 dispatch 引用等内部参数；生产模型调用边界现在只为 `api-testing-agent` 且非正式用例执行场景投影精简Schema，Worker和正式用例执行保留原完整Schema。`tests/test_model_tool_visibility.py`、API派发契约、用例执行与Session回归 **27 passed、17 skipped，63.05秒**；跳过项是显式隔离服务门控测试。
+
+随后运行 live Worker 测试的两个 `default-model` 变体（**2 passed、2 deselected，235.45秒**）。使用隔离 MySQL 配置表、PostgreSQL、Redis、RustFS、生产 API/Agent CLI Worker、MySQL 已认证 Step 默认模型 `step-5-preview` / `openai_chat_completions` 和本地受控认证 target；没有修改全局模型配置。新证据位于 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
 
 同进程与持久子 Worker 均完成 `POST /login → POST /auth/refresh → GET /profile`，三个目标请求各一次且均 HTTP 200；profile 使用刷新后的实际凭据。父任务最终 `completed`，报告 3/3 completed、0 failed、0 skipped；分别观察到 8 和 10 次模型 HTTP attempt。API 重启后重新投递已终结任务没有增加模型或目标 HTTP 请求。两份验证记录均确认生成凭据未出现在公开输出，credential scan 与 public-output scan 通过；持久模式另外保存父子 Session、Agent task、Outbox、审批及 snapshot 诊断。
 
-本次结果是对固定正向认证链路的当前工作区复验，不覆盖鉴权失败、刷新失败、timeout/断网恢复、更多依赖关系或全部 API 产品流程；旧失败样本仍保留，不能据此声称所有重复调用或恢复故障已根除。没有生产代码或 MySQL 默认配置变更。
+另从当前 MySQL 只读读取默认模型密钥，在 33 个验收工件中进行精确字节扫描，没有发现密钥泄漏。本次结果是对固定正向认证链路的当前工作区复验，不覆盖鉴权失败、刷新失败、timeout/断网恢复、更多依赖关系或全部 API 产品流程；旧失败样本仍保留，不能据此声称所有重复调用或恢复故障已根除。全局 MySQL 默认配置未改变。

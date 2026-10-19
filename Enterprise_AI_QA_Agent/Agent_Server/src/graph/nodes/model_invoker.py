@@ -1,14 +1,45 @@
 ﻿from __future__ import annotations
 
-from src.core.request_context import new_id
+from copy import deepcopy
+
 from src.application.context.token_usage import TokenUsage, normalize_usage
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.runtime.case_action_binding import action_input_schema
+from src.core.request_context import new_id
 from src.graph.state import AgentGraphState
 from src.registry.tools import ToolRegistry
-from src.runtime.execution_logging import append_graph_event, summarize_messages, truncate_text
+from src.runtime.execution_logging import (
+    append_graph_event,
+    summarize_messages,
+    truncate_text,
+)
 from src.schemas.model_config import ModelInvocationRequest, is_model_failure_summary
 from src.schemas.prompting import PromptSection
-from src.application.runtime.case_action_binding import action_input_schema
+
+
+_API_WORKER_ONLY_ARGUMENTS = {
+    "worker_action",
+    "task",
+    "credential_session",
+    "dispatch_ref",
+    "auth_token_field",
+}
+
+
+def _model_tool_input_schema(tool: dict, state: AgentGraphState) -> dict:
+    bundle = state.get("context_bundle") or {}
+    schema = action_input_schema(tool["input_schema"], bundle)
+    if (tool.get("name") == "api-test-runner"
+        and state.get("selected_agent_key") == "api-testing-agent"
+        and bundle.get("execution_basis") != "cases"):
+        schema = deepcopy(schema)
+        properties = schema.get("properties") or {}
+        for key in _API_WORKER_ONLY_ARGUMENTS:
+            properties.pop(key, None)
+        if "required" in schema:
+            schema["required"] = [key for key in schema["required"]
+                if key not in _API_WORKER_ONLY_ARGUMENTS]
+    return schema
 
 
 def build_model_invoker_node(
@@ -93,7 +124,7 @@ def build_model_invoker_node(
         request_payload = ModelInvocationRequest(
             system_prompt=state["system_prompt"],
             messages=state["runtime_messages"],
-            tools=[{**tool, "input_schema": action_input_schema(tool["input_schema"], state.get("context_bundle") or {})}
+            tools=[{**tool, "input_schema": _model_tool_input_schema(tool, state)}
                 for tool in tool_registry.build_model_tools(model_visible_tool_keys)],
             system_prompt_sections=system_sections,
             runtime_message_sections=runtime_message_sections,

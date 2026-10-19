@@ -4297,8 +4297,10 @@ cd Agent_Server
 
 ### 7.101 默认 Step Agent API 正向认证链路双 Worker 复验〔2026-10-19〕
 
-为接续 7.100 并确认当前工作区中的默认模型验收扩展，先运行 `tests/test_model_tool_visibility.py`，结果 **4 passed**；随后使用隔离 MySQL 配置表、PostgreSQL、Redis、RustFS、独立生产 API/Agent CLI Worker，以及本地受控认证目标，执行 `tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery` 的 `default-model` 两种子 Worker 变体。真实默认模型为 MySQL 已认证配置 `step-5-preview` / `openai_chat_completions`；没有改全局模型配置。pytest 结果 **2 passed、2 deselected，235.45秒**，未选中的两项是受控模型变体。
+为接续 7.100 并确认当前工作区中的默认模型验收扩展，先检查 Registry 暴露的 `api-test-runner` 合并参数Schema及提示词对编排Agent/子Worker的角色区分；`api-testing-agent` 在非用例执行时不应直接构造 Worker 内部的 `worker_action`、`task`、凭据容器和 dispatch 引用。因此在模型调用边界按 Agent 身份投影Schema，保留 `api-executor-worker` 和正式用例执行的完整Schema。`tests/test_model_tool_visibility.py`、API派发契约、用例执行与Session回归结果为 **27 passed、17 skipped，63.05秒**；跳过项为显式隔离服务门控测试。
 
-同进程与持久子 Worker 两个隔离运行均实际只收到 `POST /login`、`POST /auth/refresh`、`GET /profile`，全部 HTTP 200；refresh 使用登录返回的旧凭据，profile 使用 refresh 返回的新凭据。父会话完成，报告均为 3 completed / 0 failed / 0 skipped，创建三个真实子会话；实际模型 HTTP attempt 分别为 8 与 10。重启 API 后任务历史保持，终态 Outbox 重投的新增目标 HTTP 与模型 HTTP 都为 0。测试断言公开报告及日志不含生成凭据，`verification.json` 的 credential scan 和 public-output scan 均为真。证据目录为 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
+随后使用隔离 MySQL 配置表、PostgreSQL、Redis、RustFS、独立生产 API/Agent CLI Worker，以及本地受控认证目标，执行 `tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery` 的 `default-model` 两种子 Worker 变体。真实默认模型为 MySQL 已认证配置 `step-5-preview` / `openai_chat_completions`；没有改全局模型配置。pytest 结果 **2 passed、2 deselected，235.45秒**，未选中的两项是受控模型变体。
+
+同进程与持久子 Worker 两个隔离运行均实际只收到 `POST /login`、`POST /auth/refresh`、`GET /profile`，全部 HTTP 200；refresh 使用登录返回的旧凭据，profile 使用 refresh 返回的新凭据。父会话完成，报告均为 3 completed / 0 failed / 0 skipped，创建三个真实子会话；实际模型 HTTP attempt 分别为 8 与 10。重启 API 后任务历史保持，终态 Outbox 重投的新增目标 HTTP 与模型 HTTP 都为 0。测试断言公开报告及日志不含生成凭据，`verification.json` 的 credential scan 和 public-output scan 均为真；另以当前 MySQL 默认模型密钥扫描33个验收文件，未发现密钥字节。证据目录为 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
 
 因此，默认 Agent API 的正向认证/续期/依赖传值链路在此固定场景及两种 Worker 生命周期下已有真实通过证据；这不覆盖错误凭据、刷新失败、超时/断网恢复或其他 endpoint 依赖结构，也不代表 P3 API 全面验收。完整 P0—P5 和 P2 用例选择/排序/补全/正式 Run 闭环仍未完成。

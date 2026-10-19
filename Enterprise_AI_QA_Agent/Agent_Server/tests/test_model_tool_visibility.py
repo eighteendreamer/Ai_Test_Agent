@@ -32,6 +32,11 @@ def _state(available_tool_keys: list[str]) -> dict:
         "selected_model_name": "Fake Model",
         "selected_model_provider": "fake",
         "available_tool_keys": available_tool_keys,
+        "allowed_tool_keys": available_tool_keys,
+        "approval_required_tool_keys": [],
+        "denied_tool_keys": [],
+        "hidden_tool_keys": [],
+        "model_visible_tool_keys": available_tool_keys,
         "context_bundle": {},
         "event_log": [],
         "loop_iteration": 0,
@@ -68,3 +73,34 @@ async def test_permission_gate_only_sends_visible_tools_to_model():
     await build_model_invoker_node(model_runtime, registry)(state)
 
     assert [tool["name"] for tool in model_runtime.request.tools] == ["api-docs-library"]
+
+
+@pytest.mark.asyncio
+async def test_api_orchestrator_schema_hides_worker_only_arguments():
+    registry = ToolRegistry()
+    model_runtime = RecordingModelRuntime()
+    state = _state(["api-test-runner"])
+    await build_model_invoker_node(model_runtime, registry)(state)
+
+    properties = model_runtime.request.tools[0]["input_schema"]["properties"]
+    assert {"objective", "endpoint", "scope_preference"} <= properties.keys()
+    assert not {"worker_action", "task", "credential_session", "dispatch_ref", "auth_token_field"} & properties.keys()
+
+
+@pytest.mark.asyncio
+async def test_api_worker_and_case_execution_keep_worker_arguments():
+    registry = ToolRegistry()
+
+    worker_runtime = RecordingModelRuntime()
+    worker_state = _state(["api-test-runner"])
+    worker_state["selected_agent_key"] = "api-executor-worker"
+    await build_model_invoker_node(worker_runtime, registry)(worker_state)
+    worker_properties = worker_runtime.request.tools[0]["input_schema"]["properties"]
+    assert {"worker_action", "task", "credential_session", "dispatch_ref", "auth_token_field"} <= worker_properties.keys()
+
+    case_runtime = RecordingModelRuntime()
+    case_state = _state(["api-test-runner"])
+    case_state["context_bundle"] = {"execution_basis": "cases"}
+    await build_model_invoker_node(case_runtime, registry)(case_state)
+    case_properties = case_runtime.request.tools[0]["input_schema"]["properties"]
+    assert {"worker_action", "task", "credential_session", "dispatch_ref", "auth_token_field"} <= case_properties.keys()

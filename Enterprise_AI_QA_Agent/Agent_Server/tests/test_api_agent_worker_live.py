@@ -1,24 +1,25 @@
 """Real Agent Worker CLI; only the local model HTTP response is controlled."""
-from contextlib import contextmanager
-from datetime import UTC, datetime
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import asyncio
 import json
 import os
-from pathlib import Path
 import re
 import shutil
+from contextlib import contextmanager, nullcontext
+from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from threading import Thread
 from time import monotonic
-from uuid import uuid4
 from types import SimpleNamespace
+from uuid import uuid4
 
 import httpx
 import pytest
 from pydantic import SecretStr
-
 from test_api_worker_auth_refresh_live import auth_target
 from test_execution_worker_cli import child_environment, free_port, isolated_runtime, wait_api
+
+from src.core.config import get_settings
 from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -30,7 +31,7 @@ from src.modes.api_testing_mode.precondition_resolver import PreconditionAnalysi
 from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_session_store import PostgresSessionStore
-from src.schemas.model_config import ModelCapabilitiesOverride
+from src.schemas.model_config import ModelCapabilitiesOverride, model_invocation_parameters
 from src.schemas.settings import ModelConfigUpdateRequest
 
 
@@ -206,14 +207,21 @@ def worker_model():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('durable', [False, True], ids=['same-process-child', 'durable-child-process'])
+@pytest.mark.parametrize('model_source', ['controlled', 'configured-default'], ids=['controlled-model', 'default-model'])
 @pytest.mark.skipif(os.getenv('RUN_LIVE_API_AGENT_WORKER') != '1',
     reason='independent production API and Agent CLI; real isolated MySQL/PG/Redis/RustFS')
-async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, durable):
-    output = Path(os.environ['QA_API_AGENT_WORKER_DIR']) / ('durable' if durable else 'in-process')
+async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, durable, model_source):
+    if model_source == 'configured-default' and os.getenv('RUN_LIVE_API_AGENT_WORKER_DEFAULT') != '1':
+        pytest.skip('configured-default model acceptance is independently gated')
+    variant = model_source + ('-durable' if durable else '-in-process')
+    output = Path(os.environ['QA_API_AGENT_WORKER_DIR']) / variant
     output.mkdir(parents=True, exist_ok=False)
-    facts = {'external_ai_calls': 0, 'full_goal_complete': False, 'durable_children': durable}
+    facts = {'external_ai_calls': 0 if model_source == 'controlled' else None,
+        'full_goal_complete': False, 'durable_children': durable,
+        'model_source': model_source}
     secret_values = []
-    with auth_target() as (business, events), worker_model() as (model_url, requests, failures):
+    model_context = worker_model() if model_source == 'controlled' else nullcontext((None, [], []))
+    with auth_target() as (business, events), model_context as (model_url, requests, failures):
         try:
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
                 settings.api_auth_token = SecretStr(uuid4().hex)
@@ -221,10 +229,24 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                 settings.orchestration.redis_task_outbox_streams = settings.orchestration.agent_task_stream
                 models = MySQLModelConfigStore(settings)
                 models.initialize()
-                model = models.upsert(ModelConfigUpdateRequest(model_name='local-api-worker', provider='openai',
-                    transport='openai_chat_completions', base_url=model_url, api_key=uuid4().hex, is_active=True,
-                    use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False),
-                    context_window=128000, max_output_tokens=1024))
+                if model_source == 'controlled':
+                    model = models.upsert(ModelConfigUpdateRequest(model_name='local-api-worker', provider='openai',
+                        transport='openai_chat_completions', base_url=model_url, api_key=uuid4().hex, is_active=True,
+                        use_provider_defaults=False, capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                        context_window=128000, max_output_tokens=1024))
+                else:
+                    configured = MySQLModelConfigStore(get_settings()).get_default_active()
+                    model = models.upsert(ModelConfigUpdateRequest(model_name=configured.model_id,
+                        provider=configured.provider, transport=configured.transport,
+                        request_profile=configured.request_profile, base_url=configured.api_base_url,
+                        api_key=configured.api_key, auth_type=configured.auth_type,
+                        oauth_provider=configured.oauth_provider, oauth_refresh_token=configured.oauth_refresh_token,
+                        applications=configured.applications, is_active=True, use_provider_defaults=False,
+                        capability_overrides=configured.capability_overrides,
+                        context_window=configured.context_window, max_output_tokens=configured.max_output_tokens))
+                    assert model_invocation_parameters(models.get_default_active()) == model_invocation_parameters(configured)
+                    facts['configured_transport'] = configured.transport
+                    facts['configured_model_id'] = configured.model_id
                 processes.env = child_environment(settings)
                 api_port = free_port()
                 api_args = ('-m', 'uvicorn', 'src.main:app', '--host', '127.0.0.1', '--port', str(api_port))
@@ -269,18 +291,72 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                         facts.update(project_id=project['id'], parent_session_id=parent['id'], parent_task_id=task_id)
                         workers = [processes.start('agent-worker-' + str(i), '-m', 'src.cli.run_agent_worker',
                             '--worker-id', 'api-auth-' + str(i)) for i in range(2 if durable else 1)]
-                        deadline = monotonic() + 100
+                        deadline = monotonic() + float(os.getenv('QA_API_AGENT_OBSERVATION_SECONDS', '180'))
                         tasks, session = [], None
                         approvals = []
                         held_child_approvals = {}
                         approval_hold_seconds = float(os.getenv('QA_API_AGENT_APPROVAL_HOLD_SECONDS', '0'))
                         approval_wait_observations = []
+                        parent_checkpoint_timeline = []
+                        last_checkpoint_signature = None
                         restart_child_wait = os.getenv('QA_API_AGENT_RESTART_WHILE_CHILD_WAIT') == '1'
                         restarted_child_wait = False
                         while monotonic() < deadline:
                             await PostgresTaskOutbox(settings).relay_once(queue, limit=10)
                             tasks = await get(f"/sessions/{parent['id']}/tasks")
                             session = await get(f"/sessions/{parent['id']}")
+                            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                cur.execute(
+                                    f"SELECT s.status AS parent_status, s.snapshot_count, "
+                                    f"s.metadata->'pending_turn' AS parent_pending_turn, "
+                                    f"snap.id AS snapshot_id, snap.version AS snapshot_version, "
+                                    f"snap.stage AS snapshot_stage, "
+                                    f"snap.graph_state->'pending_turn' AS snapshot_pending_turn "
+                                    f"FROM {settings.database.postgres_session_table} AS s "
+                                    f"LEFT JOIN LATERAL (SELECT id, version, stage, graph_state "
+                                    f"FROM {settings.database.postgres_snapshot_table} "
+                                    f"WHERE session_id = s.id ORDER BY version DESC LIMIT 1) AS snap ON TRUE "
+                                    "WHERE s.id = %s",
+                                    (parent['id'],),
+                                )
+                                parent_checkpoint_row = cur.fetchone()
+
+                            def checkpoint_projection(pending):
+                                pending = pending if isinstance(pending, dict) else {}
+                                waits = pending.get('waiting_tools') or (
+                                    [pending['waiting_tool']] if pending.get('waiting_tool') else [])
+                                return {
+                                    'turn_id': pending.get('turn_id'),
+                                    'waiting_tools': [{key: item.get(key) for key in (
+                                        'job_id', 'call_id', 'tool_key', 'child_session_ids')}
+                                        for item in waits if isinstance(item, dict)],
+                                    'pending_approval_ids': list(pending.get('pending_approval_ids') or []),
+                                }
+
+                            if parent_checkpoint_row:
+                                parent_pending = checkpoint_projection(parent_checkpoint_row['parent_pending_turn'])
+                                snapshot_pending = checkpoint_projection(parent_checkpoint_row['snapshot_pending_turn'])
+                                checkpoint_sample = {
+                                    'parent_status': parent_checkpoint_row['parent_status'],
+                                    'snapshot_count': parent_checkpoint_row['snapshot_count'],
+                                    'parent_pending_turn': parent_pending,
+                                    'snapshot_id': parent_checkpoint_row['snapshot_id'],
+                                    'snapshot_version': parent_checkpoint_row['snapshot_version'],
+                                    'snapshot_stage': parent_checkpoint_row['snapshot_stage'],
+                                    'snapshot_pending_turn': snapshot_pending,
+                                }
+                                checkpoint_signature = json.dumps(checkpoint_sample, sort_keys=True, default=str)
+                                if checkpoint_signature != last_checkpoint_signature:
+                                    parent_checkpoint_timeline.append({
+                                        'elapsed_seconds': round(float(os.getenv(
+                                            'QA_API_AGENT_OBSERVATION_SECONDS', '180')) - max(
+                                                0.0, deadline - monotonic()), 3),
+                                        **checkpoint_sample,
+                                    })
+                                    last_checkpoint_signature = checkpoint_signature
+                            dispatches = session['metadata'].get('worker_dispatches', [])
+                            child_sessions = [await get('/sessions/' + item['child_session_id'])
+                                for item in dispatches]
                             wait = (session['metadata'].get('pending_turn') or {}).get('waiting_tool')
                             if restart_child_wait and wait and not restarted_child_wait:
                                 snapshot = await PostgresSessionStore(settings).get_latest_snapshot(parent['id'])
@@ -364,16 +440,20 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                             original = next(t for t in tasks if t['id'] == task_id)
                             if (not (session['metadata'].get('pending_turn') or {}).get('waiting_tool')
                                 and original['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'}
-                                and session['status'] != 'waiting_approval'
-                                and all(t['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'} for t in tasks)):
+                                and session['status'] in {'completed', 'failed', 'cancelled', 'interrupted'}
+                                and all(t['status'] in {'completed', 'failed', 'cancelled', 'interrupted', 'recovery_required'} for t in tasks)
+                                and all(child['status'] in {'completed', 'failed', 'cancelled', 'interrupted'}
+                                    for child in child_sessions)):
                                 break
                             assert all(w.poll() is None for w in workers), 'Agent CLI exited before terminal state'
                             await asyncio.sleep(.25)
                         facts.update(parent_tasks=tasks, parent_status=session['status'], events=events,
                             approval_wait_observations=approval_wait_observations,
-                            physical_model_http=len(requests), fixture_errors=failures,
+                            physical_model_http=(len(requests) if model_source == 'controlled' else None), fixture_errors=failures,
                             tool_messages=[m for m in session['messages'] if m['role'] == 'tool'],
-                            approved_parent_calls=len(approvals), worker_dispatches=session['metadata'].get('worker_dispatches', []))
+                            approved_parent_calls=len(approvals), worker_dispatches=session['metadata'].get('worker_dispatches', []),
+                            parent_has_turn_lease=bool(session['metadata'].get('turn_lease_token')),
+                            parent_has_waiting_tool=bool((session['metadata'].get('pending_turn') or {}).get('waiting_tool')))
                         children_observed = []
                         for dispatch in facts['worker_dispatches']:
                             child = await get('/sessions/' + dispatch['child_session_id'])
@@ -381,6 +461,9 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                                 'status': child['status'], 'pending_approvals': len(child['pending_approvals']),
                                 'messages': [m for m in child['messages'] if m['role'] == 'tool']})
                         facts['children_observed'] = children_observed
+                        facts['waiting_children_count'] = sum(
+                            child['status'] in {'running', 'waiting_approval', 'idle'}
+                            for child in children_observed)
                         internal = PostgresApiCredentialStore(settings)
                         with postgres_connect(settings) as conn, conn.cursor() as cur:
                             cur.execute(f'SELECT * FROM {internal.tables[1]}')
@@ -391,6 +474,84 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                         assert all(value not in safe_public for value in secret_values), 'Generated credentials in public evidence'
                         facts['observed_public_credential_scan_passed'] = True
                         (output / 'observed.json').write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding='utf8')
+                        if model_source == 'configured-default' and durable:
+                            session_ids = [parent['id'], *[
+                                item['child_session_id'] for item in facts['worker_dispatches']
+                                if item.get('child_session_id')]]
+                            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                                cur.execute(
+                                    f"SELECT id,status,metadata,snapshot_count FROM {settings.database.postgres_session_table} "
+                                    "WHERE id::text = ANY(%s)", (session_ids,))
+                                session_rows = [dict(row) for row in cur.fetchall()]
+                                cur.execute(
+                                    f"SELECT id,session_id,operation,turn_id,parent_task_id,reference_id,status,"
+                                    f"result_status,error_code,attempt_id,attempt_no,updated_at "
+                                    f"FROM {settings.database.postgres_agent_task_table} WHERE session_id::text = ANY(%s) "
+                                    "ORDER BY created_at", (session_ids,))
+                                task_rows = [dict(row) for row in cur.fetchall()]
+                                task_ids = [row['id'] for row in task_rows]
+                                if task_ids:
+                                    cur.execute(
+                                        f"SELECT id,event_key,stream,attempts,published_at,created_at,payload "
+                                        f"FROM {settings.database.postgres_task_outbox_table} "
+                                        "WHERE payload->>'task_id' = ANY(%s) ORDER BY created_at", (task_ids,))
+                                    outbox_rows = [dict(row) for row in cur.fetchall()]
+                                else:
+                                    outbox_rows = []
+                                cur.execute(
+                                    f"SELECT id,session_id,tool_key,status,created_at,resolved_at,metadata "
+                                    f"FROM {settings.database.postgres_approval_table} WHERE session_id::text = ANY(%s) "
+                                    "ORDER BY created_at", (session_ids,))
+                                approval_rows = [dict(row) for row in cur.fetchall()]
+                                cur.execute(
+                                    f"SELECT session_id,version,stage,created_at FROM {settings.database.postgres_snapshot_table} "
+                                    "WHERE session_id::text = ANY(%s) ORDER BY created_at", (session_ids,))
+                                snapshot_rows = [dict(row) for row in cur.fetchall()]
+
+                            safe_sessions = []
+                            for row in session_rows:
+                                metadata = row.get('metadata') or {}
+                                pending = metadata.get('pending_turn') or {}
+                                waits = pending.get('waiting_tools') or ([pending['waiting_tool']]
+                                    if pending.get('waiting_tool') else [])
+                                safe_sessions.append({
+                                    'id': row['id'], 'status': row['status'],
+                                    'snapshot_count': row['snapshot_count'],
+                                    'metadata_keys': sorted(metadata),
+                                    'control_state': (metadata.get('control') or {}).get('control_state'),
+                                    'has_turn_lease': bool(metadata.get('turn_lease_token')),
+                                    'pending_turn_keys': sorted(pending),
+                                    'waiting_tool_checkpoints': [{key: item.get(key) for key in (
+                                        'job_id', 'call_id', 'tool_key', 'child_session_ids')}
+                                        for item in waits],
+                                    'pending_approval_ids': list(pending.get('pending_approval_ids') or []),
+                                })
+                            safe_outbox = []
+                            for row in outbox_rows:
+                                payload = row.get('payload') or {}
+                                safe_outbox.append({
+                                    key: row.get(key) for key in (
+                                        'id', 'event_key', 'stream', 'attempts', 'published_at', 'created_at')
+                                } | {'payload': {key: payload.get(key) for key in (
+                                    'task_id', 'parent_task_id', 'session_id', 'operation', 'reference_id',
+                                    'parent_turn_id', 'child_task_id', 'child_session_id', 'status', 'result_status')
+                                    if key in payload}})
+                            diagnostic = {
+                                'parent_session_id': parent['id'],
+                                'parent_task_id': task_id,
+                                'sessions': safe_sessions,
+                                'tasks': task_rows,
+                                'outbox': safe_outbox,
+                                'approvals': [{
+                                    'id': row['id'], 'session_id': row['session_id'], 'tool_key': row['tool_key'],
+                                    'status': row['status'], 'created_at': row['created_at'],
+                                    'resolved_at': row['resolved_at'],
+                                    'metadata_keys': sorted(row.get('metadata') or {}),
+                                } for row in approval_rows],
+                                'snapshots': snapshot_rows,
+                            }
+                            (output / 'recovery-diagnostics.json').write_text(
+                                json.dumps(diagnostic, ensure_ascii=False, indent=2, default=str), encoding='utf8')
                         if not events:
                             # No target response means this fixture has not generated any credentials.
                             (output / 'model-request-diagnostics.json').write_text(
@@ -430,27 +591,46 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                             parent_job_id=reports[0]['id'], generated_credentials_absent_from_public_output=True)
                         for worker in workers:
                             await processes.stop(worker)
+                        def observed_model_http_count():
+                            if model_source == 'controlled':
+                                return len(requests)
+                            return sum(path.read_text(encoding='utf-8', errors='replace').count(
+                                'model_http_request_attempt_started') for path in tmp_path.glob('agent-worker-*.stderr'))
+                        before_terminal_model_http = observed_model_http_count()
+                        if model_source == 'configured-default':
+                            facts['external_ai_calls'] = before_terminal_model_http
+                            assert before_terminal_model_http > 0, 'Default model made no observed HTTP attempts'
                         await processes.stop(api)
                         api = processes.start('agent-api-restarted', *api_args)
                         await wait_api(client, api)
                         assert (await get(f"/sessions/{parent['id']}/tasks")) == tasks
                         await queue.enqueue(replay_command)
-                        before = len(requests), len(events)
+                        before = observed_model_http_count(), len(events)
                         replay = processes.start('agent-worker-terminal', '-m', 'src.cli.run_agent_worker', '--once',
                             '--worker-id', 'api-auth-terminal')
                         assert await processes.wait(replay, timeout=30) == 0
-                        assert (len(requests), len(events)) == before
+                        assert (observed_model_http_count(), len(events)) == before
                         facts.update(api_restart_history_preserved=True, terminal_redelivery_new_http=0,
-                            terminal_redelivery_new_model_http=0)
+                            terminal_redelivery_new_model_http=0,
+                            observed_model_http_before_terminal_redelivery=before_terminal_model_http,
+                            physical_model_http=before_terminal_model_http)
                         (output / 'verification.json').write_text(json.dumps(facts, ensure_ascii=False, indent=2), encoding='utf8')
                         (output / 'public-records.json').write_text(public, encoding='utf8')
                 finally:
                     await queue.close()
         finally:
+            model_http_attempts = len(requests) if model_source == 'controlled' else sum(
+                path.read_text(encoding='utf-8', errors='replace').count(
+                    'model_http_request_attempt_started')
+                for path in tmp_path.glob('agent-worker-*.stderr'))
             for path in tmp_path.iterdir():
                 if path.suffix in {'.stdout', '.stderr'} or path.name in {'docker.json', 'postgres-finally.json'}:
                     assert all(value.encode() not in path.read_bytes() for value in secret_values), 'Generated credentials in preserved logs'
                     shutil.copyfile(path, output / path.name)
             (output / 'target-events-at-cleanup.json').write_text(json.dumps({'events': events,
-                'physical_model_http': len(requests), 'fixture_errors': failures,
-                'external_ai_calls': 0, 'public_credential_scan_passed': True}, indent=2), encoding='utf8')
+                'physical_model_http': model_http_attempts, 'fixture_errors': failures,
+                'external_ai_calls': model_http_attempts if model_source == 'configured-default' else 0,
+                'public_credential_scan_passed': bool(facts.get('observed_public_credential_scan_passed'))},
+                indent=2), encoding='utf8')
+            (output / 'parent-checkpoint-timeline.json').write_text(json.dumps(
+                parent_checkpoint_timeline, ensure_ascii=False, indent=2, default=str), encoding='utf8')
