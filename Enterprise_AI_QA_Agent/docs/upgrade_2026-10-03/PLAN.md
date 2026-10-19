@@ -4260,3 +4260,13 @@ cd Agent_Server
 实际运行 `Agent_Server` 下 `..\\.venv\\Scripts\\python.exe -Xutf8 -m pytest tests/test_model_request_profile.py tests/test_model_request_profile_product.py tests/test_model_clients.py -q --tb=short`，结果 **56 passed、1 skipped，27.28秒**。定向 HTTP 测试检查 Anthropic JSON Schema 映射到 `output_config.format.schema`，OpenAI Responses 映射到 `text.format.schema`；各自保留不同端点及请求体。由此确认适配层并非缺失，不应再添加单体“统一协议”或把 provider 特有字段硬塞进共享 SDK 调用。
 
 分类：统一内部契约、显式 transport 分派和字段映射为**已有实现并通过本轮定向回归**；所有 provider/profile/SDK 版本/真实账号组合仍**未全部验收**。以后新增字段能力时仍需分别验证目标 SDK 的真实请求和返回语义，并保留未声明能力拒绝路径。此项没有生产代码、配置、数据库或协议改动，也未触碰工作区其他未提交改动。P2 默认 Step 完整用例执行仍未完成，最近完整记录停在 `produced` 规划回执阶段，完整 P0—P5 继续未完成。
+
+### 7.97 P2 默认模型输出上限对照及结构化规划失败复核〔2026-10-19〕
+
+复查工作区中晚于 7.96 的原始实测后，纠正“下一步尚未做 16K 输出上限对照”的过期记录。隔离默认 Step 用例 `p2-default-single-staged-low-16384-20261019/verification.json` 使用 16,384 `max_output_tokens`、600 秒规划期限及同一正式用例/阶段协议；真实 SDK 流记录到 5 次逻辑调用，任务最终失败，消息为“模型没有返回有效的结构化计划”，实际 Run 与业务 HTTP 均为 0。提高单次输出上限本身没有完成规划，不应重复该单变量实验，也不能据此推断只需继续加大上限。
+
+较新的完整目标试验 `p2-default-full-reference-feedback-8192-live7-20261019/verification.json` 使用认证 Step、完整正式用例和来源引用反馈，但实际隔离 profile 为 8,192 输出上限。根据 PG 阶段回执及 SDK 调用 ID→物理请求 ID→响应 ID 的关联，真实顺序为 `logic → bindings → produced`，不能按请求文件名排序推断调用顺序。第三轮 `produced` 流返回 `finish_reason=length`、`completion_tokens=8192`、正文 0 字符；前两轮均以 `stop` 结束并分别保存逻辑选择与 `bindings` 回执。任务仍以“模型规划输出达到生成上限，响应不完整”失败；未创建 Run、无业务 HTTP。此试验的有效 `request_profile` 为 `null`，请求映射按未声明能力回退到提示 Schema，所以物理 Chat Completions 请求不含 `response_format`，不是适配器漏发已配置字段。原始请求文件分别为 19,946、27,952、32,775 字节，system/user正文长度分别为 7,096/8,208、4,653/16,967、8,278/17,577 字符。
+
+结论：这是**模型输出预算/推理成本与 `produced` 结构化回执完成能力尚未解决**，而非 HTTP 传输、协议选择或 SDK 重复发送问题。认证模型证据显示首个正文可能延迟至约 76 秒；`produced` 输出仍可能在 reasoning 后耗尽，简单扩大规划期限或改变 provider 协议没有依据。隔离 profile 的 16K 对照已实际启用 JSON 输出声明但仍未产出有效计划，因此单独增加 JSON 格式映射也不是充分修复。下一步需沿该次 `produced` 输入、固定 scope、阶段Schema、保存响应/解析状态和 canonical validator 还原精确失败边界，优先确认模型是否曾返回可解析正文、是否被本地结构校验拒绝及拒绝反馈具体字段；不得把 reasoning 内容作为可见推理依据、不得重发终态任务，也不得在该边界查清前放宽引用、效果/清理契约或调整生产全局预算。
+
+本项仅更新调研记录，未修改生产代码、MySQL 配置或 PostgreSQL 业务数据。P2 默认 Step 项目选取→排序→补全→执行仍未验收，完整 P0—P5 继续未完成。
