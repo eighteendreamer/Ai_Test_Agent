@@ -4252,3 +4252,11 @@ cd Agent_Server
 随后以当前 MySQL 默认 Step 配置、默认请求参数、隔离 MySQL/PostgreSQL/Redis/RustFS/API/Worker 和正式 Run，对冻结场景知识执行正负向真实页面测试。`tests/test_default_ui_scene_live.py` 得 **2 passed，273.39秒**：默认模型通过精确场景 ID/版本/哈希读取录制知识，在新的页面实例只点击一次并以实际页面值判断；正向计数 1 与预期相符，正式结果 `passed`；负向期望 2、实际值为 1，正式结果正确保留 `failed`。两例的页面 POST 序列均各含录制页和新执行页的一次操作；终态任务重投后新增业务请求、模型请求均为 0。场景对象、ToolJob、原始浏览器 transcript、PG Run/Result 及物理模型请求响应保存在本地证据目录 `p5-default-ui-scene-contract-current-20261019/`。
 
 本次仅证明固定场景读取契约、默认模型在受控页面使用录制知识、真实点击/断言、正负结果及终态不重放。页面由隔离业务夹具提供，不是 DeepSeek；因此默认 AI 读取 DeepSeek 实际录制知识、人工浏览器录制、正式用户授权界面和完整产品流程仍未验收。当前工作树的 UI 提示、工具 Schema 与回归测试已通过上述验证，其他并存改动未纳入本项提交。
+
+### 7.96 多模型适配层现状与协议隔离回归〔2026-10-19〕
+
+按用户提出的跨模型适配疑问，重新检查 `model_clients/registry.py`、四个原生 provider client、`request_mapping.py`、模型配置档案及调用结果契约。系统已有适配层：上层使用统一 `ModelInvocationRequest`/`ProviderClient`/结果字典；Registry 按显式 `transport` 选择 Chat Completions、OpenAI Responses、Anthropic Messages 或 Gemini；消息、工具调用、响应及流事件由各 provider client 原生转换。`map_model_request` 只统一内部选项，按 transport 映射 JSON 输出、推理字段和 token 字段，并对未声明能力作拒绝或记录 fallback。没有发现把 Anthropic 改成 Responses 的实现：Anthropic 仍调用 `client.messages.create`，OpenAI Responses 仅由单独的 `OpenAIResponsesClient` 调用。
+
+实际运行 `Agent_Server` 下 `..\\.venv\\Scripts\\python.exe -Xutf8 -m pytest tests/test_model_request_profile.py tests/test_model_request_profile_product.py tests/test_model_clients.py -q --tb=short`，结果 **56 passed、1 skipped，27.28秒**。定向 HTTP 测试检查 Anthropic JSON Schema 映射到 `output_config.format.schema`，OpenAI Responses 映射到 `text.format.schema`；各自保留不同端点及请求体。由此确认适配层并非缺失，不应再添加单体“统一协议”或把 provider 特有字段硬塞进共享 SDK 调用。
+
+分类：统一内部契约、显式 transport 分派和字段映射为**已有实现并通过本轮定向回归**；所有 provider/profile/SDK 版本/真实账号组合仍**未全部验收**。以后新增字段能力时仍需分别验证目标 SDK 的真实请求和返回语义，并保留未声明能力拒绝路径。此项没有生产代码、配置、数据库或协议改动，也未触碰工作区其他未提交改动。P2 默认 Step 完整用例执行仍未完成，最近完整记录停在 `produced` 规划回执阶段，完整 P0—P5 继续未完成。
