@@ -465,9 +465,91 @@ def replace_owned_run(env, store, run, live):
         store._runs[run.id] = run.model_copy(deep=True)
 
 
+def replace_owned_archive(env, store, run_id, sha, value, live, *, remove=False):
+    # Only mutate this fixture's original archive to exercise corruption/missing
+    # evidence. Production state writers have no archive-replacement operation.
+    import json
+    if live:
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            if remove:
+                cur.execute(f"UPDATE {store._run_table} SET plan_snapshots=plan_snapshots-%s WHERE id=%s",
+                    (sha, run_id))
+            else:
+                cur.execute(f"UPDATE {store._run_table} SET plan_snapshots=jsonb_set(plan_snapshots, %s, %s::jsonb) WHERE id=%s",
+                    ([sha], json.dumps(value), run_id))
+    elif remove:
+        store._plan_snapshots[run_id].pop(sha, None)
+    else:
+        store._plan_snapshots[run_id][sha] = value
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("live", [False, LIVE])
-async def test_claimed_plan_change_is_rejected_before_start_and_without_checkpoint(tmp_path, live):
+@pytest.mark.parametrize("fault", ["missing", "changed", "null"])
+async def test_claimed_archive_corruption_never_falls_back_but_missing_current_can_match(tmp_path, live, fault):
+    async with planned(tmp_path, live) as (env, store, _, service, plan, now, _):
+        detail = await service.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="archive-corruption", mode_key="api_testing"))
+        item, attempt = (await store.claim_items(run_id=detail.run.id, worker_id="original",
+            limit=1, lease_seconds=60, now=now))[0]
+        raw = detail.run.plan_snapshot.model_dump(mode="json")
+        raw["plan"]["request"]["runtime_context"]["corrupt"] = "not original"
+        replace_owned_archive(env, store, detail.run.id, attempt.plan_snapshot_identity.sha256,
+            None if fault == "null" else raw, live, remove=fault == "missing")
+        if fault == "missing":
+            # Compatible old row: current still has the exact claim-time digest.
+            assert (await store.get_execution_detail(detail.run.id, item.id, attempt.id)).run.plan_snapshot == detail.run.plan_snapshot
+            changed = detail.run.model_copy(deep=True)
+            changed.plan_snapshot.plan.request.runtime_context["later"] = "different revision"
+            replace_owned_run(env, store, changed, live)
+        with pytest.raises(ValueError, match="领取时固定的计划"):
+            await store.start_item(item.id, attempt.lease_token, now)
+        with pytest.raises(ValueError, match="领取时固定的计划"):
+            await store.get_execution_detail(detail.run.id, item.id, attempt.id)
+        assert (await store.get_latest_attempt(item.id)).status == "claimed"
+        assert (await store.get_latest_attempt(item.id)).checkpoint_version == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1", reason="requires actual committed records")
+async def test_start_rechecks_claim_identity_after_environment_read_before_attempt_lock(tmp_path, monkeypatch):
+    async with planned(tmp_path, True) as (env, store, _, service, plan, now, _):
+        detail = await service.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="archive-selection-race", mode_key="api_testing"))
+        item, attempt = (await store.claim_items(run_id=detail.run.id, worker_id="original",
+            limit=1, lease_seconds=60, now=now))[0]
+
+        def change_attempt_in_independent_transaction(cur, selected_run):
+            assert selected_run.plan_snapshot == detail.run.plan_snapshot
+            with postgres_connect(env.settings) as connection, connection.cursor() as cursor:
+                store._write_attempt(cursor, attempt.model_copy(update={"plan_snapshot_identity": None}))
+            return None
+
+        monkeypatch.setattr(store, "_current_environment_reviews", change_attempt_in_independent_transaction)
+        with pytest.raises(ValueError, match="身份在环境确认期间变化"):
+            await store.start_item(item.id, attempt.lease_token, now)
+        assert (await store.get_item(item.id)).status == "claimed"
+        assert (await store.get_latest_attempt(item.id)).started_at is None
+
+
+@pytest.mark.asyncio
+async def test_execution_detail_returns_independent_nested_archive_content(tmp_path):
+    async with planned(tmp_path, False) as (_, store, _, service, plan, now, _):
+        detail = await service.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="archive-copy", mode_key="api_testing"))
+        item, attempt = (await store.claim_items(run_id=detail.run.id, worker_id="original",
+            limit=1, lease_seconds=60, now=now))[0]
+        fixed = await store.get_execution_detail(detail.run.id, item.id, attempt.id)
+        evidence = next(entry for entry in fixed.run.plan_snapshot.plan.evidence
+            if isinstance(entry.payload.get("content"), dict))
+        evidence.payload["content"]["returned_copy_mutation"] = True
+        reread = await store.get_execution_detail(detail.run.id, item.id, attempt.id)
+        assert reread.run.plan_snapshot == detail.run.plan_snapshot
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_claimed_plan_change_starts_from_original_archive_without_checkpoint(tmp_path, live):
     async with planned(tmp_path, live) as (env, store, _, service, plan, now, _):
         detail = await service.create(plan.project_id, plan.id,
             CasePlanRunRequest(creation_key="claim-snapshot-change", mode_key="api_testing"))
@@ -475,13 +557,17 @@ async def test_claimed_plan_change_is_rejected_before_start_and_without_checkpoi
             limit=1, lease_seconds=60, now=now))[0]
         changed = (await store.get_run(detail.run.id)).run.model_copy(deep=True)
         changed.plan_snapshot.plan.request.runtime_context["later_input"] = "not present when claimed"
+        changed.plan_snapshot.plan.id = str(uuid4())
         replace_owned_run(env, store, changed, live)
-        with pytest.raises(ValueError, match="领取时固定的计划"):
-            await store.start_item(claimed.id, attempt.lease_token, now)
+        started = await store.start_item(claimed.id, attempt.lease_token, now)
+        assert started.status == "running"
+        fixed = await store.get_execution_detail(detail.run.id, claimed.id, attempt.id)
+        assert fixed.run.plan_snapshot == detail.run.plan_snapshot
         after = await store.get_run(detail.run.id)
-        assert next(item for item in after.items if item.id == claimed.id).status == "claimed"
+        assert next(item for item in after.items if item.id == claimed.id).status == "running"
+        assert after.run.plan_snapshot == changed.plan_snapshot
         saved = await store.get_latest_attempt(claimed.id)
-        assert saved.status == "claimed" and saved.checkpoint_version == 0
+        assert saved.status == "running" and saved.checkpoint_version == 0
 
 
 @pytest.mark.asyncio
@@ -514,8 +600,9 @@ async def test_claim_pins_complete_snapshot_and_recovery_inherits_original_ident
         fresh = PostgresTestRunStore(env.settings) if live else store
         assert (await fresh.get_latest_attempt(item.id)).plan_snapshot_identity == attempt.plan_snapshot_identity
         assert successor.plan_snapshot_identity.sha256 != json_digest(changed.plan_snapshot.model_dump(mode="json"))
-        with pytest.raises(ValueError, match="领取时固定的计划"):
-            await fresh.start_item(item.id, successor.lease_token, now + timedelta(seconds=62))
+        await fresh.start_item(item.id, successor.lease_token, now + timedelta(seconds=62))
+        fixed = await fresh.get_execution_detail(detail.run.id, item.id, successor.id)
+        assert fixed.run.plan_snapshot == detail.run.plan_snapshot
 
 
 @pytest.mark.asyncio

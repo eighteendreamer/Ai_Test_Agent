@@ -349,6 +349,10 @@ class TestRunService:
             raise KeyError(f"Test run not found: {run_id}")
         return detail
 
+    async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
+        *, supplied_run: TestRunRecord | None = None) -> TestRunDetail:
+        return await self._store.get_execution_detail(run_id, item_id, attempt_id, supplied_run=supplied_run)
+
     async def create_regression(
         self,
         parent_run_id: str,

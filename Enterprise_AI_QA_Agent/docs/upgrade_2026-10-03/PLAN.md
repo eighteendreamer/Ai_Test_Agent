@@ -4406,3 +4406,40 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 当前分类：**领取时固定完整快照身份、恢复继承和执行前一致性校验已有实现并通过上述功能验收；按该身份读取不可变历史快照、完整修订历史/提交 API、queued 项原子改动及生产领取协调、运行中条目继续使用原依据、环境/共享消费/回归/报告跨修订语义仍需补实现与验收。** 本次不开放修订写入口，也不把拒绝变更误报为支持执行中修订。下一步须保存并读取完整 revision envelope（除原计划外还包括 Run 映射与消费范围），才能让未执行项采用新修订、已领取项继续解析原修订；新增/移除正式用例及套件冻结语义仍需一并落实。
 
 新字段存于已有 PostgreSQL Attempt JSONB，配置仍在 MySQL、原件仍在 RustFS；旧记录不回填。部署新增 pin 后须同步升级读写这些 Attempt 的 Worker：旧版 Schema 可能在重写 JSON 时丢弃未知字段，混跑兼容性尚未验收。Step 已认证；默认 Step 多候选选取→排序→补全→完整执行、DeepSeek 人工录制及其余 P0—P5 未闭环事项继续保留。Provider 仍走各自原生协议，Anthropic 保持 Messages。
+
+### 7.109 领取时完整快照归档与执行读取（2026-10-19）
+
+重新读取原附件后继续 §7.108，目标是让已领取条目沿用原完整依据，而不是仅拒绝当前计划变化。现有不可变 CasePlanStore 只有计划本身，缺少 Run 的条目映射、owner、准备阶段、消费范围、回归来源及映射版本，不能用重建计划代替原快照。依据 `run_store._insert_run_and_items` 的同事务创建、`_write_run` 的独立投影更新、已有 JSONB 路径读取与增量 `ADD COLUMN IF NOT EXISTS` 做法，在已有 Run 表新增独立 `plan_snapshots JSONB`，以完整快照 SHA 为键保存原 envelope；内存存储保持同契约。初始归档与 Run、Item、套件及 outbox 的原创建事务一起保存，不在每个 Attempt 重复复制。此次没有修订写入口，归档只有创建时写入；将来修订必须在原子提交中追加完整归档，不得覆盖旧键。
+
+先升级真实功能断言：创建计划→领取→改变当前计划输入→开始执行，旧实现双后端实际 **2 failed、27 deselected，7.30秒**，均报“当前执行依据与领取时固定的计划快照不同”；保存于 `p2-history-snapshot-before.xml`。这是已有拒绝边界不能满足原依据继续执行的复现，不是用户能通过生产入口修订计划的证明。
+
+读取契约：
+
+- `get_execution_detail(run_id,item_id,attempt_id,supplied_run=...)` 基于同一份聚合详情选最新 Attempt，再按 pin 查询对应归档。不再独立读 Run、Item、最新 Attempt 拼接执行上下文。
+- 归档先验证原始 JSON 的完整 SHA，再按既有 Schema 读取，校验 plan/project/run 身份及序列化后的 SHA。存在但损坏、被改或 JSON null 的归档直接报错，不能退回当前计划。
+- 旧行没有归档时，仅在当前完整快照与原 pin 完全相同时兼容读取并记录 fallback；不同则明确缺失。无 pin 的历史 Attempt 不补绑今天的计划，原全快照比较仍有效。
+- 调用方传入的 Run 快照必须等于当前投影或 pin 指向的完整原快照；任意拼装的第三份快照继续拒绝。Agent 实际上下文始终来自服务器选定的归档，保留 checkpoint context hash、恢复祖先、租约、正式版本和依赖结果校验。
+- 启动及 PG 动作准入在 project/item 锁前只读原 Attempt 与归档，保持 project→item→attempt→Job 的已有锁顺序；锁定后再次核对 pin。开始回执重放使用原归档与原 admission，不用今天的评审替换历史回执。动作消费读取的 detail 也使用选定归档。
+- 普通 Run 查询仍显示当前投影；运行状态更新不重写归档。配置继续在 MySQL；本字段属于 PostgreSQL 运行证据；原件仍在 RustFS。模型客户端及协议不变。
+
+迁移 `20261019_0004` 与运行存储初始化均增量加列。空库 Run 表尚不存在时 Alembic 允许跳过，由已有初始化路径创建；已有行默认空归档，不凭当前内容伪造历史，不重写 record。禁止破坏性 downgrade。新旧 Worker 混跑、生产历史缺失归档的恢复与部署迁移仍需专项验收，未操作生产迁移。
+
+实际验证（JUnit 均在本目录）：
+
+| 范围与实际开关 | 结果 | 工件 |
+|---|---|---|
+| `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_RUN_DEPENDENCIES=1`，规划创建、依赖、协调、上下文及存储合同五文件 | **84 passed、1 skipped，36.39秒** | `p2-history-snapshot-regression-final.xml` |
+| `RUN_LIVE_PLAN_RUN_CREATION=1`，Agent 执行及操作查证两文件 | **44 passed、1 skipped，165.29秒** | `p2-history-snapshot-agent-regression-final.xml` |
+| `RUN_LIVE_DOCUMENT_IMPACT_TASKS=1`，开始回执随计划/评审变化及过期恢复、篡改/外来祖先两项 | **2 passed、6 deselected，21.57秒** | `p2-history-snapshot-environment-final.xml` |
+| `RUN_LIVE_POSTGRES_TESTS=1`，新增归档迁移（离线、已有/缺失 Run 表、普通/大小写/带点引号名、重入及拒绝降级） | **7 passed、24 deselected，1.36秒** | `p2-history-snapshot-migration-final.xml` |
+| 最后补明确缺失错误后的归档、原身份恢复及实际动作专项 | **18 passed、34 deselected，16.20秒**，已被上述范围覆盖，不重复累计 | `p2-history-snapshot-final-functional.xml` |
+
+前四组共有 **137 passed、2 skipped**，两个跳过仍是未启用的真实默认模型专项及独立公开 Worker；受控 Agent 不能替代默认模型质量验收。正向场景覆盖首次 Agent 检查点前改投影、审批中连续变化、原固定 plan ID 与当前不同、工具已完成但未提交结果后的改计划及重领：正式结果仍用原上下文，HTTP 不重复。无效归档的 PG 动作保留 queued Job、无 started_at、业务 HTTP 为零；伪造第三份 Run 继续拒绝。真实独立 PG 事务在预读后改变 pin，锁定后被拒，条目未开始。针对内存嵌套 JSON 引用另实测发现修改返回内容可连带破坏归档（**1 failed**），沿原深拷贝约定修复后纳入84项；持久归档内容不再暴露给返回对象修改。
+
+过程失败均如实保留：首次新增 DDL 的 Python f-string 空括号导致收集失败，已转义后完成真实 PG 验证；存储合同初跑14通过1失败，为既有审批恢复 mock 未覆盖新增只读 Attempt 查询，仅同步 mock 后最终组合通过。迁移初跑因虚拟环境缺 `alembic.config` 无法收集；按已有 pyproject/根锁文件安装 `alembic==1.20.0`（只补本地开发依赖，没有改依赖声明）后，新增迁移验收通过。
+
+完整迁移文件扩大运行时为 **22 passed、5 failed，5.93秒**，失败均为既有 ToolJob 的 schema 限定表名在 `PostgresCaseOperations.__init__` 被拒，报 `ValueError: Invalid original ToolJob table identifier`。将 HEAD 原测试复制到独占临时文件复验，完全相同5项失败（**5 failed、19 deselected，1.62秒**），临时文件已删除。原完整输出与基线分别见 `p2-history-snapshot-migration-regression.xml`、`p2-history-snapshot-migration-baseline.xml`；不能称整体迁移回归全绿。此缺陷需独立追根修复，不在快照读取变更内临时绕过。
+
+Python compileall 和本轮 diff 检查通过；此次没有前端契约或页面改动，未重复前端构建。新增字段只在隔离业务 PG 验收，没有运行生产迁移，没有真实 Step 调用。同步升级 Worker 的部署约束保留。
+
+当前分类：**原完整快照归档、按领取身份读取、Agent/启动/动作/环境回执消费及上述恢复功能已有实现并通过对应验收。** 生产修订提交与原子追加、queued 项与领取协调、新增/删除正式条目及套件冻结、共享消费/清理/回归/报告的完整跨修订语义仍需补实现与验收。此次保存的是创建时归档，不能将模拟投影变化的测试说成生产修订已实现；多修订体量、归档增长和读取性能也未验收。默认 Step 多候选选取→排序→必要补全→执行、其他模式、人工 DeepSeek 录制及其余 P0—P5 未闭环项继续保留，整体未完成。

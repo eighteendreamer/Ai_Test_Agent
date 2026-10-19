@@ -12,7 +12,6 @@ import json
 import os
 from threading import Event, Lock, local
 from time import monotonic
-from types import SimpleNamespace
 from uuid import uuid4
 
 import pytest
@@ -20,7 +19,6 @@ import pytest
 from test_run_item_dependencies import setup
 from test_case_plan_run_creation import planned
 from src.application.test_runs.agent_case_context import build_agent_case_context
-from src.application.test_runs.agent_case_execution import AgentCaseExecutionAdapter
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.case_planning import CasePlanRunRequest
 from src.schemas.run_management import RunItemDependency
@@ -240,8 +238,8 @@ async def test_candidate_head_history_and_dependencies_are_atomic(tmp_path, monk
 
 
 @pytest.mark.asyncio
-async def test_changed_queued_sibling_still_invalidates_running_adapter_global_snapshot(tmp_path):
-    """Demonstrate the remaining boundary; do not weaken the adapter's guard."""
+async def test_changed_queued_sibling_keeps_running_context_on_original_archive(tmp_path):
+    """Resolve the full archived envelope while preserving all context checks."""
     async with planned(tmp_path, True) as (env, store, _, service, plan, now, _):
         detail = await service.create(plan.project_id, plan.id,
             CasePlanRunRequest(creation_key="revision-context-boundary", mode_key="api_testing"))
@@ -267,12 +265,8 @@ async def test_changed_queued_sibling_still_invalidates_running_adapter_global_s
         assert context.execution_json() == build_agent_case_context(historical, item, version).execution_json()
         with pytest.raises(ValueError, match="领取时固定的计划"):
             build_agent_case_context(after, item, version)
-        adapter = AgentCaseExecutionAdapter(run_service=SimpleNamespace(get=store.get_run,
-            get_item=store.get_item, get_latest_attempt=store.get_latest_attempt), session_service=None,
-            session_store=None, tool_job_service=None)
-        with pytest.raises(ValueError, match="租约不一致"):
-            await adapter._load(run=before.run, item=item, version=version, attempt_id=attempt.id)
-        # Supplying the latest Run no longer bypasses the claim-time identity.
-        with pytest.raises(ValueError, match="领取时固定的计划"):
-            await adapter._load(run=after.run, item=item, version=version, attempt_id=attempt.id)
+        for supplied in (before.run, after.run):
+            fixed = await store.get_execution_detail(item.run_id, item.id, attempt.id, supplied_run=supplied)
+            assert fixed.run.plan_snapshot == before.run.plan_snapshot
+            assert context.execution_json() == build_agent_case_context(fixed, item, version).execution_json()
         assert (await store.get_latest_attempt(item.id)).checkpoint_version == 0

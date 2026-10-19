@@ -15,7 +15,9 @@ from src.application.test_runs.dependencies import (dependencies_ready, validate
     dependency_failures, blocked_dependency_records)
 from src.application.test_runs.environment_restrictions import restriction_reviews, blocked_environment_records
 from src.application.test_runs.environment_admission import create_environment_admission, fixed_environment_admission
-from src.application.test_runs.plan_snapshot_identity import claim_plan_snapshot_identity, validate_claimed_plan_snapshot
+from src.application.test_runs.plan_snapshot_identity import (claim_plan_snapshot_identity,
+    validate_claimed_plan_snapshot, initial_plan_snapshots, run_with_claimed_snapshot, execution_attempt,
+    validate_supplied_snapshot)
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
@@ -72,6 +74,8 @@ class TestRunStore(Protocol):
         payload: dict[str, object],
     ) -> TestRunDetail: ...
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
+    async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
+        *, supplied_run: TestRunRecord | None = None) -> TestRunDetail: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
     async def get_item(self, item_id: str) -> TestRunItemRecord | None: ...
@@ -197,6 +201,7 @@ class TestRunStore(Protocol):
 class InMemoryTestRunStore:
     def __init__(self) -> None:
         self._runs: dict[str, TestRunRecord] = {}
+        self._plan_snapshots: dict[str, dict] = {}
         self._items: dict[str, TestRunItemRecord] = {}
         self._item_ids_by_run: dict[str, list[str]] = {}
         self._attempts: dict[str, TestRunAttemptRecord] = {}
@@ -233,6 +238,7 @@ class InMemoryTestRunStore:
             stored_run = run.model_copy(deep=True)
             stored_items = [item.model_copy(deep=True) for item in items]
             self._runs[run.id] = stored_run
+            self._plan_snapshots[run.id] = initial_plan_snapshots(run)
             self._item_ids_by_run[run.id] = [item.id for item in stored_items]
             self._attempt_ids_by_run[run.id] = []
             self._result_ids_by_run[run.id] = []
@@ -264,6 +270,7 @@ class InMemoryTestRunStore:
             suite_store._suites[suite.suite.id] = suite.suite.model_copy(deep=True)
             suite_store._items_by_suite[suite.suite.id] = [i.model_copy(deep=True) for i in suite.items]
             self._runs[run.id] = run.model_copy(deep=True)
+            self._plan_snapshots[run.id] = initial_plan_snapshots(run)
             self._item_ids_by_run[run.id] = [i.id for i in items]
             self._attempt_ids_by_run[run.id], self._result_ids_by_run[run.id] = [], []
             self._items.update({i.id: i.model_copy(deep=True) for i in items})
@@ -292,6 +299,23 @@ class InMemoryTestRunStore:
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         run = self._runs.get(run_id)
         return run.model_copy(deep=True) if run else None
+
+    async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
+        *, supplied_run: TestRunRecord | None = None) -> TestRunDetail:
+        async with self._lock:
+            detail = self._detail(run_id)
+            attempt = execution_attempt(detail, item_id, attempt_id)
+            fixed = self._run_for_attempt(detail.run, attempt)
+            validate_supplied_snapshot(supplied_run, detail.run, fixed)
+            detail.run = fixed
+            return detail
+
+    def _run_for_attempt(self, run, attempt):
+        identity = attempt.plan_snapshot_identity
+        archives = self._plan_snapshots.get(run.id, {})
+        archive = archives.get(identity.sha256) if identity else None
+        return run_with_claimed_snapshot(run, attempt, archive,
+            archive_present=identity is not None and identity.sha256 in archives)
 
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None:
         result = self._results.get(result_id)
@@ -632,7 +656,7 @@ class InMemoryTestRunStore:
             if not dependencies_ready(item, self._items, self._results):
                 raise ValueError("运行条目的必要前置或输出尚未满足")
             attempt = self._active_attempt(item_id, lease_token)
-            validate_claimed_plan_snapshot(self._require_run(item.run_id), attempt)
+            self._run_for_attempt(self._require_run(item.run_id), attempt)
             updated = item.model_copy(
                 deep=True,
                 update={
@@ -1416,6 +1440,10 @@ class PostgresTestRunStore:
     async def get_run(self, run_id: str) -> TestRunDetail | None:
         return await asyncio.to_thread(self._get_run_sync, run_id)
 
+    async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
+        *, supplied_run: TestRunRecord | None = None) -> TestRunDetail:
+        return await asyncio.to_thread(self._get_execution_detail_sync, run_id, item_id, attempt_id, supplied_run)
+
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         return await asyncio.to_thread(self._get_run_record_sync, run_id)
 
@@ -1689,10 +1717,13 @@ class PostgresTestRunStore:
                         parent_run_id UUID NULL,
                         created_at TIMESTAMPTZ NOT NULL,
                         updated_at TIMESTAMPTZ NOT NULL,
-                        record JSONB NOT NULL
+                        record JSONB NOT NULL,
+                        plan_snapshots JSONB NOT NULL DEFAULT '{{}}'::jsonb
                     )
                     """
                 )
+                cur.execute(f"ALTER TABLE {self._run_table} ADD COLUMN IF NOT EXISTS "
+                    "plan_snapshots JSONB NOT NULL DEFAULT '{}'::jsonb")
                 cur.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._item_table} (
@@ -1938,8 +1969,8 @@ class PostgresTestRunStore:
         cur.execute(
             f"INSERT INTO {self._run_table} "
             "(id, project_id, suite_id, status, mode_key, session_id, parent_run_id, "
-            "created_at, updated_at, record) "
-            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)",
+            "created_at, updated_at, record, plan_snapshots) "
+            "VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb)",
             (
                 run.id,
                 run.project_id,
@@ -1951,6 +1982,7 @@ class PostgresTestRunStore:
                 run.created_at,
                 run.updated_at,
                 self._json(run),
+                json.dumps(initial_plan_snapshots(run), ensure_ascii=False),
             ),
         )
         if not items:
@@ -1993,6 +2025,36 @@ class PostgresTestRunStore:
                 )
                 row = cur.fetchone()
         return self._run_from_value(row["record"]) if row else None
+
+    def _get_execution_detail_sync(self, run_id, item_id, attempt_id, supplied_run):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            detail = self._detail_from_cursor(cur, run_id)
+            if detail is None:
+                raise KeyError(f"Test run not found: {run_id}")
+            attempt = execution_attempt(detail, item_id, attempt_id)
+            fixed = self._run_for_attempt_in_cursor(cur, detail.run, attempt)
+            validate_supplied_snapshot(supplied_run, detail.run, fixed)
+            detail.run = fixed
+            return detail
+
+    def _run_for_attempt_in_cursor(self, cur, run, attempt):
+        identity = attempt.plan_snapshot_identity
+        if identity is None:
+            return run
+        cur.execute(f"SELECT plan_snapshots ? %s AS archived, plan_snapshots->%s AS snapshot "
+            f"FROM {self._run_table} WHERE id=%s", (identity.sha256, identity.sha256, run.id))
+        row = cur.fetchone()
+        if row is None:
+            raise KeyError(f"Test run not found: {run.id}")
+        return run_with_claimed_snapshot(run, attempt, row["snapshot"], archive_present=row["archived"])
+
+    def _read_attempt(self, cur, item_id, lease_token):
+        cur.execute(f"SELECT record FROM {self._attempt_table} WHERE run_item_id=%s AND lease_token=%s",
+            (item_id, lease_token))
+        row = cur.fetchone()
+        if row is None:
+            raise ValueError("运行条目缺少当前租约的 Attempt")
+        return self._attempt_from_value(row["record"])
 
     def _get_result_sync(self, result_id: str) -> TestCaseResultRecord | None:
         with postgres_connect(self._settings) as conn:
@@ -2459,6 +2521,10 @@ class PostgresTestRunStore:
                         return item
                     self._validate_lease(item,lease_token,now,{"claimed"})
                 run = self._read_run(cur, original.run_id)
+                # Read immutable evidence before project/item locks. Recheck the
+                # locked attempt below; preserve project -> item -> attempt order.
+                selected_attempt = self._read_attempt(cur, item_id, lease_token)
+                run = self._run_for_attempt_in_cursor(cur, run, selected_attempt)
                 reviews = self._current_environment_reviews(cur, run)
                 item = self._lock_item(cur, item_id)
                 if self._environment_block_replayed(cur, item, lease_token):
@@ -2472,6 +2538,10 @@ class PostgresTestRunStore:
                     if cur.fetchone() is None:
                         raise ValueError("运行条目的必要前置或输出尚未满足")
                 attempt = self._lock_attempt(cur, item_id, lease_token)
+                if attempt.plan_snapshot_identity != selected_attempt.plan_snapshot_identity:
+                    logger.warning("test_run_claimed_snapshot_selection_changed", extra={"run_id": run.id,
+                        "run_item_id": item.id, "attempt_id": attempt.id})
+                    raise ValueError("领取计划身份在环境确认期间变化，不能使用陈旧依据开始执行")
                 validate_claimed_plan_snapshot(run, attempt)
                 restricted = restriction_reviews(run.plan_snapshot.plan, item, reviews) if reviews else []
                 if restricted and not self._prior_business_started(cur, item):
@@ -3619,7 +3689,7 @@ class PostgresTestRunStore:
             return False
         self._validate_lease(item,lease_token,now,{"running"})
         detail = self._detail_from_cursor(cur,item.run_id)
-        validate_claimed_plan_snapshot(detail.run, attempt)
+        detail.run = self._run_for_attempt_in_cursor(cur, detail.run, attempt)
         fixed_environment_admission(detail.run,item,attempt,detail.attempts)
         logger.info("test_run_environment_start_receipt_replayed",extra={"run_id":item.run_id,
             "run_item_id":item.id,"attempt_id":attempt.id,"admission_sha256":attempt.environment_admission.sha256})

@@ -94,6 +94,13 @@ class PostgresCaseActionAdmission:
                 # Historical terminal/unknown evidence takes priority; do not re-evaluate it.
                 return None
             run = runs._read_run(cur, binding.run_id)
+            cur.execute(f"SELECT record FROM {runs._item_table} WHERE id=%s", (binding.run_item_id,))
+            row = cur.fetchone()
+            if row is None:
+                raise KeyError("动作确认缺少原运行条目")
+            observed_item = runs._item_from_value(row["record"])
+            selected_attempt = runs._read_attempt(cur, observed_item.id, observed_item.lease_token)
+            run = runs._run_for_attempt_in_cursor(cur, run, selected_attempt)
             if (run.project_id != binding.project_id or run.execution_strategy != "agent" or
                 run.plan_snapshot is None or run.plan_snapshot.plan.id != binding.plan_id or
                 run.plan_snapshot.plan.config_snapshot.policy.action_admission_protocol != ADMISSION_PROTOCOL):
@@ -113,6 +120,8 @@ class PostgresCaseActionAdmission:
             attempt = runs._lock_attempt(cur, item.id, item.lease_token)
             if attempt.status != "running" or attempt.run_id != run.id:
                 raise ValueError("动作确认与当前运行Attempt不一致")
+            if attempt.plan_snapshot_identity != selected_attempt.plan_snapshot_identity:
+                raise ValueError("领取计划身份在动作确认期间变化，不能使用陈旧依据发送")
             validate_claimed_plan_snapshot(run, attempt)
             if attempt.checkpoint_key != "agent_case_execution":
                 raise ValueError("动作确认缺少原Agent执行检查点")
@@ -123,6 +132,7 @@ class PostgresCaseActionAdmission:
                 binding.attempt_id, binding.session_id, binding.turn_id, binding.context_sha256):
                 raise ValueError("动作确认与原Agent检查点身份或完整上下文不同")
             detail = runs._detail_from_cursor(cur, run.id)
+            detail.run = run
             lineage = {entry.id:entry for entry in detail.attempts if entry.run_item_id == item.id}
             ancestor, visited = attempt, set()
             while ancestor.id != binding.attempt_id:

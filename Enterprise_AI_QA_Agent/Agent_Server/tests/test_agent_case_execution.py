@@ -21,7 +21,7 @@ from test_agent_case_session import (
     ToolRuntimeService, build_agent_graph, SkillRuntimeService, PermissionService,
     PromptAssemblyService, RuntimeService, SessionService, InputOrchestratorService, ModeRegistry,
 )
-from test_case_plan_run_creation import LIVE
+from test_case_plan_run_creation import LIVE, replace_owned_run
 from src.application.test_runs.agent_case_execution import (
     AgentCaseExecutionAdapter, AgentCaseApprovalWait, AgentCaseRecoveryRequired, CHECKPOINT_KEY,
 )
@@ -312,9 +312,15 @@ async def approval_continuation(runs, reader, adapter, args, pending):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('live', [False, LIVE])
-async def test_durable_admission_owned_approvals_actual_outputs_and_terminal_result(tmp_path, business_http, live):
+@pytest.mark.parametrize('change_plan', [False, True])
+async def test_durable_admission_owned_approvals_actual_outputs_and_terminal_result(tmp_path, business_http, live, change_plan):
     async with adapter_environment(tmp_path, business_http, live) as values:
-        env, writer, reader, sessions, runs, agent, adapter, args, _, _ = values
+        env, writer, reader, sessions, runs, agent, adapter, args, _, services = values
+        original = await args()
+        if change_plan:
+            changed = original['run'].model_copy(deep=True)
+            changed.plan_snapshot.plan.request.runtime_context['later_input'] = 'before Agent checkpoint'
+            replace_owned_run(services['environment'], env[7], changed, live)
         pending = await adapter().execute(**await args())
         assert isinstance(pending, AgentCaseApprovalWait) and not business_http[1]
         first_attempt = await runs.get_latest_attempt(env[0].run_item_id)
@@ -330,6 +336,9 @@ async def test_durable_admission_owned_approvals_actual_outputs_and_terminal_res
             await sessions.resolve_approval(pending.session_id, pending.approval_id,
                 ApprovalDecisionRequest(decision=ToolApprovalStatus.approved))
         for count in range(3):
+            if change_plan:
+                changed.plan_snapshot.plan.request.runtime_context['later_input'] = f'approval {count}'
+                replace_owned_run(services['environment'], env[7], changed, live)
             previous = pending
             pending = await approval_continuation(runs, reader, adapter, args, pending)
             assert len(business_http[1]) == count + 1
@@ -349,6 +358,10 @@ async def test_durable_admission_owned_approvals_actual_outputs_and_terminal_res
         result = await runs.complete_item(env[0].run_item_id, outcome.completion)
         assert (await runs.get_result(result.id)).actual == actual
         assert len(agent.requests) == 4
+        if change_plan:
+            selected = await runs.get_execution_detail(original['run'].id, original['item'].id, first_attempt.id)
+            assert selected.run.plan_snapshot == original['run'].plan_snapshot
+            assert (await runs.get(original['run'].id)).run.plan_snapshot == changed.plan_snapshot
         assert not await env[7].claim_items(run_id=env[0].run_id, worker_id='terminal',
             limit=1, lease_seconds=60, now=env[8])
 
@@ -357,11 +370,14 @@ async def test_durable_admission_owned_approvals_actual_outputs_and_terminal_res
 @pytest.mark.parametrize('live', [False, LIVE])
 async def test_saved_terminal_snapshot_survives_lost_completion_and_new_attempt_without_http_replay(tmp_path, business_http, live):
     async with adapter_environment(tmp_path, business_http, live) as values:
-        env, _, reader, _, runs, agent, adapter, args, clock, _ = values
+        env, _, reader, _, runs, agent, adapter, args, clock, services = values
         pending = await adapter().execute(**await args())
         for _ in range(3):
             pending = await approval_continuation(runs, reader, adapter, args, pending)
         original = await runs.get_latest_attempt(env[0].run_item_id)
+        changed = (await args())['run'].model_copy(deep=True)
+        changed.plan_snapshot.plan.request.runtime_context['later_input'] = 'after all business HTTP'
+        replace_owned_run(services['environment'], env[7], changed, live)
         clock[0] += timedelta(seconds=91)
         assert (await runs.recover_expired(env[0].run_id)).recovered_count == 1
         claim = (await env[7].claim_items(run_id=env[0].run_id, worker_id='recovered',

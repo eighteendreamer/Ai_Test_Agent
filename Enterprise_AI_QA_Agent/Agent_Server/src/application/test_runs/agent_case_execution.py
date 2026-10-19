@@ -55,12 +55,12 @@ class AgentCaseExecutionAdapter:
             objects=artifact_storage_service, assessment=self._assessment)
 
     async def _load(self, *, run, item, version, attempt_id):
-        detail = await self._runs.get(run.id)
-        current = await self._runs.get_item(item.id)
-        attempt = await self._runs.get_latest_attempt(item.id)
+        detail = await self._runs.get_execution_detail(run.id, item.id, attempt_id, supplied_run=run)
+        current = next((entry for entry in detail.items if entry.id == item.id), None)
+        attempt = next((entry for entry in detail.attempts if entry.id == attempt_id), None)
         if (any(getattr(detail.run, key) != getattr(run, key)
-                for key in ("project_id", "mode_key", "execution_strategy", "plan_snapshot"))
-            or current.run_id != run.id or current.lease_token != item.lease_token
+                for key in ("project_id", "mode_key", "execution_strategy"))
+            or current is None or current.run_id != run.id or current.lease_token != item.lease_token
             or current.case_id != item.case_id or current.case_version_id != item.case_version_id
             or current.status != "running" or attempt is None or attempt.id != attempt_id
             or attempt.lease_token != item.lease_token or attempt.status != "running"):

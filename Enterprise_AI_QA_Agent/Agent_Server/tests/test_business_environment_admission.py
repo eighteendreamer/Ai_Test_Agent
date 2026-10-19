@@ -26,6 +26,7 @@ from src.schemas.model_config import ModelInvocationResult
 from src.schemas.tool_runtime import ModelToolCall
 from src.schemas.run_management import RunItemApprovalWaitRequest,RunItemLeaseRequest
 from src.schemas.session import ApprovalDecisionRequest,ToolApprovalStatus
+from test_case_plan_run_creation import replace_owned_run
 
 
 @pytest.mark.asyncio
@@ -117,12 +118,18 @@ async def test_started_admission_context_and_checkpoint_survive_later_review_and
         original = await f.runs.get_latest_attempt(entry.id)
         invalid = await f.decision_client.post(f.decision_routes[1],json=decision_request(f,1,status="effective",case_status="invalid"))
         assert invalid.status_code == 201
+        changed = detail.run.model_copy(deep=True)
+        changed.plan_snapshot.plan.request.runtime_context['later_input'] = 'new current projection'
+        replace_owned_run(f.env, f.runs, changed, True)
+        replayed = await f.runs.start_item(entry.id, attempt.lease_token, now)
+        assert replayed.status == 'running'
+        assert (await f.runs.get_latest_attempt(entry.id)).environment_admission == original.environment_admission
         later = now+timedelta(seconds=91)
         assert await f.runs.recover_expired(detail.run.id,later) == 1
         recovered,new_attempt = (await f.runs.claim_items(run_id=detail.run.id,worker_id="recover",limit=1,lease_seconds=60,now=later))[0]
         assert recovered.id == entry.id and new_attempt.environment_admission == original.environment_admission
         restarted = await f.runs.start_item(entry.id,new_attempt.lease_token,later)
-        saved = await f.runs.get_run(detail.run.id)
+        saved = await f.runs.get_execution_detail(detail.run.id,entry.id,new_attempt.id)
         recovered_context = build_agent_case_context(saved,restarted,version)
         assert recovered_context.execution_json() == context.execution_json()
         assert next(row for row in saved.attempts if row.id == original.id).checkpoint_payload == checkpoint

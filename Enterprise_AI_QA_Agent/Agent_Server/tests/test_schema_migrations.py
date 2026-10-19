@@ -27,6 +27,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REVISION = "20261002_0001"
 TOOL_REVISION = "20261002_0002"
 COMPACTION_REVISION = "20261002_0003"
+PLAN_REVISION = "20261019_0004"
 
 
 def configuration(settings=None, *, output=None):
@@ -63,6 +64,7 @@ def live_schema():
     settings.database.postgres_tool_artifact_table = f"{schema}.tool_artifacts"
     settings.database.postgres_compaction_table = f"{schema}.compaction_records"
     settings.database.postgres_event_table = f"{schema}.events"
+    settings.database.postgres_test_run_table = f"{schema}.test_runs"
     try:
         yield settings, engine, schema
     finally:
@@ -77,6 +79,37 @@ def migrate(connection, settings, schema, revision=REVISION):
     config.attributes["connection"] = connection
     command.upgrade(config, revision)
     return config
+
+
+def test_plan_archive_offline_upgrade_preserves_record_and_handles_absent_table():
+    output = io.StringIO()
+    command.upgrade(configuration(output=output), PLAN_REVISION, sql=True)
+    sql = output.getvalue()
+    assert "ALTER TABLE IF EXISTS agent_test_runs ADD COLUMN IF NOT EXISTS plan_snapshots" in sql
+    assert "UPDATE agent_test_runs" not in sql
+    assert PLAN_REVISION in sql
+
+
+@pytest.mark.parametrize("existing", [False, True])
+@pytest.mark.parametrize("table_name", ["test_runs", "TEST_RUNS", '"Test.Runs"'])
+def test_plan_archive_migration_keeps_original_records_without_fabricating_history(live_schema, existing, table_name):
+    settings, engine, schema = live_schema
+    settings.database.postgres_test_run_table = table = f"{schema}.{table_name}"
+    with engine.begin() as connection:
+        if existing:
+            connection.exec_driver_sql(f"CREATE TABLE {table} (id integer, record jsonb)")
+            connection.exec_driver_sql(f"INSERT INTO {table} VALUES (1, '{{\"old\":true}}'::jsonb)")
+        config = migrate(connection, settings, schema, PLAN_REVISION)
+        command.upgrade(config, PLAN_REVISION)
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == PLAN_REVISION
+        if existing:
+            row = connection.exec_driver_sql(f"SELECT record, plan_snapshots FROM {table}").one()
+            assert row.record == {"old": True} and row.plan_snapshots == {}
+        else:
+            assert not inspect(connection).has_table(table_name.strip('"') if table_name.startswith('"') else table_name.lower(), schema=schema)
+        with pytest.raises(RuntimeError, match="cannot be destructively downgraded"):
+            command.downgrade(config, COMPACTION_REVISION)
+        assert connection.exec_driver_sql("SELECT version_num FROM alembic_version").scalar_one() == PLAN_REVISION
 
 
 def test_current_command_uses_the_real_configured_credentials(live_schema):

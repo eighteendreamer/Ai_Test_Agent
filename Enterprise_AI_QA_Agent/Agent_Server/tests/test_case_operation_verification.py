@@ -1,4 +1,5 @@
 from copy import deepcopy
+from uuid import uuid4
 
 import pytest
 import httpx
@@ -22,7 +23,7 @@ from src.schemas.tool_runtime import ModelToolCall
 from src.registry.tools import ToolRegistry
 from test_agent_case_assessment import execution
 from test_agent_case_execution import adapter_environment
-from test_case_plan_run_creation import LIVE, replace_owned_run
+from test_case_plan_run_creation import LIVE, replace_owned_run, replace_owned_archive
 
 
 OPERATION_POLICY = CasePlanningPolicy(
@@ -34,7 +35,8 @@ OPERATION_POLICY = CasePlanningPolicy(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("live", [LIVE])
-async def test_claim_snapshot_change_rejects_original_pending_action_without_http(tmp_path, business_http, live):
+@pytest.mark.parametrize("archive", ["valid", "missing", "changed", "null"])
+async def test_claim_snapshot_change_uses_original_archive_for_agent_and_actual_http(tmp_path, business_http, live, archive):
     async with adapter_environment(tmp_path, business_http, live=live,
         planning_policy=OPERATION_POLICY) as values:
         env, _, _, _, runs, _, adapter, args, _, services = values
@@ -45,10 +47,27 @@ async def test_claim_snapshot_change_rejects_original_pending_action_without_htt
             "attempt_id": checkpoint.execution_attempt_id}
         changed = current["run"].model_copy(deep=True)
         changed.plan_snapshot.plan.request.runtime_context["later_input"] = "not part of original execution"
+        changed.plan_snapshot.plan.id = str(uuid4())
         replace_owned_run(services["environment"], env[7], changed, live)
-        with pytest.raises(ValueError, match="领取时固定的计划"):
-            await adapter()._load(run=changed, item=current["item"], version=current["version"],
-                attempt_id=current["attempt_id"])
+        if archive != "valid":
+            replace_owned_archive(services["environment"], env[7], changed.id,
+                attempt.plan_snapshot_identity.sha256,
+                None if archive == "null" else changed.plan_snapshot.model_dump(mode="json"),
+                live, remove=archive == "missing")
+            with pytest.raises(ValueError, match="领取时固定的计划"):
+                await adapter()._load(run=changed, item=current["item"], version=current["version"],
+                    attempt_id=current["attempt_id"])
+        else:
+            for supplied in (current["run"], changed):
+                fixed, saved, _ = await adapter()._load(run=supplied, item=current["item"],
+                    version=current["version"], attempt_id=current["attempt_id"])
+                assert fixed.execution_json() == context.execution_json()
+                assert saved == checkpoint
+            fabricated = changed.model_copy(deep=True)
+            fabricated.plan_snapshot.plan.request.runtime_context["untrusted"] = True
+            with pytest.raises(ValueError, match="传入计划"):
+                await adapter()._load(run=fabricated, item=current["item"], version=current["version"],
+                    attempt_id=current["attempt_id"])
         tool = ToolRegistry().get("api-test-runner")
         call = ModelToolCall(id="claim-snapshot-write", name=tool.key, arguments={
             ARGUMENT: {"item_key": "target", "operation_key": "target.create"},
@@ -57,13 +76,21 @@ async def test_claim_snapshot_change_rejects_original_pending_action_without_htt
         tool_context = ToolExecutionContext(session_id=checkpoint.session_id, turn_id=checkpoint.turn_id,
             trace_id="claim-snapshot-change", user_message=context.objective,
             normalized_input=context.objective, context_bundle=bundle)
-        with pytest.raises(CaseActionClaimUnavailable) as rejected:
-            await services["tool_runtime"].execute(tool, call, tool_context)
-        assert "领取时固定的计划" in str(rejected.value.__cause__)
+        if archive == "valid":
+            result = await services["tool_runtime"].execute(tool, call, tool_context)
+            assert result.status == "completed"
+            assert len(business_http[1]) == 1
+        else:
+            with pytest.raises(CaseActionClaimUnavailable) as rejected:
+                await services["tool_runtime"].execute(tool, call, tool_context)
+            assert "领取时固定的计划" in str(rejected.value.__cause__)
+            assert business_http[1] == []
         jobs = await env[1].list_jobs(session_id=checkpoint.session_id)
         pending = next(job for job in jobs if job.call_id == call.id)
-        assert pending.started_at is None and pending.status.value == "queued"
-        assert business_http[1] == []
+        if archive != "valid":
+            assert pending.started_at is None and pending.status.value == "queued"
+        else:
+            assert pending.started_at is not None and pending.status.value == "completed"
         assert (await runs.get_latest_attempt(current["item"].id)).checkpoint_payload == attempt.checkpoint_payload
 
 

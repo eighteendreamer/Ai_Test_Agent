@@ -1277,6 +1277,7 @@ def test_postgres_waiting_approval_resume_reuses_attempt_and_first_start(monkeyp
     store = store_module.PostgresTestRunStore(Settings())
     monkeypatch.setattr(store, "_lock_item", lambda cur, item_id: state["item"])
     monkeypatch.setattr(store, "_read_run", lambda cur, run_id: run)
+    monkeypatch.setattr(store, "_read_attempt", lambda cur, item_id, lease_token: state["attempt"])
     monkeypatch.setattr(
         store,
         "_lock_attempt",

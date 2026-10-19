@@ -5540,3 +5540,33 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 新增双后端功能验收 **6通过**；新增 PG/HTTP 动作拒绝验收 **1通过**，确认最新 Run 不能绕过原领取身份、原检查点不变、待发 Job 无 started_at、业务 HTTP 为零。最终组合为规划/依赖/协调/上下文 **61通过、1跳过**，Agent/操作查证 **39通过、1跳过**，真实环境开始回执 **2通过**，存储合同 **15通过**，合计 **117通过、2跳过**；前两项专项已包含在组合计数中，不重复累计。存储合同初跑 **14通过、1失败**，原因是此前单 SELECT 详情修复后取消锁顺序夹具未同步聚合返回；仅修正夹具后15项全通过。两个跳过分别为未启用的真实模型专项和公开 Worker 专项。Python 编译、前端 `npm run build`（含 vue-tsc）及 diff 检查通过。失败与最终 JUnit 均保留在 `p2-claim-snapshot-*.xml`。
 
 当前只完成领取身份和一致性边界；原 CasePlanStore 可复用不可变计划，但完整 Run 映射/owner/phase/消费范围仍需保存 revision envelope。历史快照解析、修订提交/追加历史、排队项与领取原子协调，以及跨修订的运行中执行、环境、共享消费、回归和报告仍未完成，不把“拒绝变化”当作支持修订。旧数据库记录保持原语义，新字段存 PostgreSQL JSONB；新增 pin 后混跑旧 Worker 丢失未知字段的兼容性未验收，部署须同步升级相关 Worker。Step 已认证，本轮没有默认 Step 复杂规划验收；Provider 原生协议不变。整体 P0—P5 继续未完成。
+
+## 2026-10-19 P2 原完整计划归档与按领取身份读取
+
+继续重读原附件并按 PLAN §7.109 推进。先在内存和真实隔离 PostgreSQL 验证当前计划变化后继续原执行的预期，旧实现两项均失败。新增独立 `Run.plan_snapshots JSONB` 归档列与 `20261019_0004` 增量迁移，创建 Run 时在原事务保存按完整 SHA 索引的执行 envelope（计划、Run 映射、owner、阶段、消费范围、回归及映射版本），普通状态/投影更新不重写归档。内存实现同契约，并对读取返回的嵌套任意 JSON 深拷贝。
+
+Store/Service 增加内部 `get_execution_detail`：同一聚合详情选当前 Attempt，再按 pin 获取原快照。原始 JSON SHA、Schema/project/plan/run 身份及读取后 SHA 均校验；缺失且当前快照不同、损坏或 JSON null 时拒绝，不能静默采用当前计划。无 pin 历史语义保留；无归档但当前完整 SHA 相同才记录兼容读取。传入 Run 仅允许当前投影或原完整快照，第三份拼装快照仍拒。Agent `_load` 使用服务器选定详情，保留租约、context_hash 和恢复祖先。启动、环境 admission 重放、PG 动作及消费读取同步使用原归档，维持 project→item→attempt→Job 锁序并在锁定后复核所选 pin。
+
+最终实际验证：
+
+```powershell
+# 在 Agent_Server 中执行，各组独立设置所需开关
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_plan_run_creation.py tests/test_run_item_dependencies.py tests/test_run_revision_coordination_research.py tests/test_agent_case_context.py tests/test_test_run_postgres_claim.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-history-snapshot-regression-final.xml
+# 84 passed、1 skipped，36.39秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_agent_case_execution.py tests/test_case_operation_verification.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-history-snapshot-agent-regression-final.xml
+# 44 passed、1 skipped，165.29秒
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_admission.py -k 'started_admission_context_and_checkpoint_survive or actual_admission_tamper_and_foreign_ancestor' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-history-snapshot-environment-final.xml
+# 2 passed、6 deselected，21.57秒
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_schema_migrations.py -k plan_archive -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-history-snapshot-migration-final.xml
+# 7 passed、24 deselected，1.36秒
+```
+
+四组共137通过、2跳过，跳过项为未启用的真实默认模型和独立公开 Worker，未将受控 Agent 当作默认 Step 验收。最后明确归档缺失错误后的专项18通过、34未选取，已在上述范围内，不重复累计。真正执行本地业务 HTTP、PG 正式结果、工具完成后的过期重领及终态重投；修改当前输入或 plan ID 后仍沿用原依据，审批续跑与终态恢复没有额外业务请求。归档损坏/缺失的动作拒绝后原 Job 未开始、HTTP为零。独立事务在预读后改变 pin，启动未放行；首次读取返回的嵌套证据被修改后重读仍为原归档。
+
+过程中的收集错误、mock 同步及基线故障见 PLAN §7.109。当前环境原先缺 Alembic，已按根锁文件安装本地已有声明的1.20.0，无 pyproject/lock 改动。完整迁移回归实际22通过5失败；5项均报既有 `Invalid original ToolJob table identifier`，HEAD原测试独立复制复验也相同5失败，失败JUnit及基线均保留，临时文件已移除。新增归档迁移7项通过，不能替代完整迁移回归。Python编译和本轮diff检查通过；无前端变更，未重复构建。未执行生产迁移、未调用真实Step、未修改供应商协议。
+
+本轮完成原快照存取及执行消费前提，生产修订 API/追加历史、queued 与领取原子协调、新增/移除及套件、共享清理/回归/报告的完整跨修订语义仍未完成，多修订体量与混跑旧Worker尚未验收。配置仍MySQL、业务证据PostgreSQL、原件RustFS。Step已认证，默认复杂规划及完整P0—P5目标继续未完成。
