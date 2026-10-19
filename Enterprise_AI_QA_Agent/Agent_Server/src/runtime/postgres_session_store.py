@@ -381,6 +381,51 @@ class PostgresSessionStore:
         cannot overwrite each other's whole-document metadata."""
         return await asyncio.to_thread(self._mutate_metadata_sync, session_id, mutate)
 
+    async def update_status_and_mutate_metadata(
+        self,
+        session_id: str,
+        *,
+        status: SessionStatus | None,
+        mutate,
+        allowed_current_statuses: set[SessionStatus] | None = None,
+    ) -> bool:
+        return await asyncio.to_thread(
+            self._update_status_and_mutate_metadata_sync,
+            session_id,
+            status,
+            mutate,
+            allowed_current_statuses,
+        )
+
+    def _update_status_and_mutate_metadata_sync(
+        self,
+        session_id: str,
+        status: SessionStatus | None,
+        mutate,
+        allowed_current_statuses: set[SessionStatus] | None = None,
+    ) -> bool:
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT status, metadata FROM {self._settings.database.postgres_session_table} "
+                    "WHERE id = %s FOR UPDATE",
+                    (session_id,),
+                )
+                row = cur.fetchone()
+                if row is None:
+                    return False
+                stored = row["metadata"]
+                metadata = dict(json.loads(stored) if isinstance(stored, str) else stored or {})
+                current_status = SessionStatus(row["status"])
+                mutate(metadata, current_status)
+                next_status = status if current_status in (allowed_current_statuses or set()) and status is not None else current_status
+                cur.execute(
+                    f"UPDATE {self._settings.database.postgres_session_table} "
+                    "SET status = %s, metadata = %s::jsonb, updated_at = now() WHERE id = %s",
+                    (next_status.value, json.dumps(make_json_safe(metadata), ensure_ascii=False), session_id),
+                )
+                return True
+
     async def update_metadata_and_append_event(
         self,
         session_id: str,

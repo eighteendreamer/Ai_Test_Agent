@@ -102,6 +102,14 @@ class SessionStore(Protocol):
     async def mutate_metadata(
         self, session_id: str, mutate: Callable[[dict], None]
     ) -> bool: ...
+    async def update_status_and_mutate_metadata(
+        self,
+        session_id: str,
+        *,
+        status: SessionStatus | None,
+        mutate: Callable[[dict, SessionStatus], None],
+        allowed_current_statuses: set[SessionStatus] | None = None,
+    ) -> bool: ...
     async def list_sessions(
         self,
         limit: int | None = None,
@@ -406,6 +414,27 @@ class InMemorySessionStore:
             metadata = deepcopy(session.metadata)
             mutate(metadata)
             session.metadata = deepcopy(metadata)
+            session.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            return True
+
+    async def update_status_and_mutate_metadata(
+        self,
+        session_id: str,
+        *,
+        status: SessionStatus | None,
+        mutate: Callable[[dict, SessionStatus], None],
+        allowed_current_statuses: set[SessionStatus] | None = None,
+    ) -> bool:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            metadata = deepcopy(session.metadata)
+            current_status = session.status
+            mutate(metadata, current_status)
+            session.metadata = deepcopy(metadata)
+            if status is not None and current_status in (allowed_current_statuses or set()):
+                session.status = status
             session.updated_at = datetime.now(UTC).replace(tzinfo=None)
             return True
 

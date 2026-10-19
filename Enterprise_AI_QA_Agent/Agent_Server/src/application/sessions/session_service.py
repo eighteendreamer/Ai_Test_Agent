@@ -2621,60 +2621,67 @@ class SessionService:
         parent_turn_id = str(metadata.get("proxy_parent_turn_id") or "").strip()
         is_approved = approval.status == ToolApprovalStatus.approved
 
-        changed = False
-        worker_dispatches: list[dict] = []
-        for record in session.metadata.get("worker_dispatches", []):
-            if not isinstance(record, dict):
-                continue
-            record_task_id = str(record.get("task_id") or "").strip()
-            record_child_session_id = str(record.get("child_session_id") or "").strip()
-            if (task_id and record_task_id == task_id) or (child_session_id and record_child_session_id == child_session_id):
-                next_record = {
-                    **record,
-                    "status": execution_status,
-                    "child_session_id": child_session_id or record_child_session_id,
-                    "updated_at": datetime.utcnow().isoformat(),
-                }
-                worker_dispatches.append(next_record)
-                changed = True
-            else:
-                worker_dispatches.append(record)
-
-        if not changed and task_id:
-            worker_dispatches.append(
-                {
+        pending_approvals = [
+            item for item in await self._store.list_approvals(session.id)
+            if item.status == ToolApprovalStatus.pending
+        ]
+        def apply_proxy_projection(current_metadata: dict, current_status: SessionStatus) -> None:
+            worker_dispatches = current_metadata.get("worker_dispatches", [])
+            if not isinstance(worker_dispatches, list):
+                worker_dispatches = []
+            projected_dispatches = []
+            changed = False
+            for record in worker_dispatches:
+                if not isinstance(record, dict):
+                    continue
+                record_task_id = str(record.get("task_id") or "").strip()
+                record_child_session_id = str(record.get("child_session_id") or "").strip()
+                if ((task_id and record_task_id == task_id)
+                    or (child_session_id and record_child_session_id == child_session_id)):
+                    projected_dispatches.append({
+                        **record,
+                        "status": execution_status,
+                        "child_session_id": child_session_id or record_child_session_id,
+                        "updated_at": datetime.utcnow().isoformat(),
+                    })
+                    changed = True
+                else:
+                    projected_dispatches.append(record)
+            if not changed and task_id:
+                projected_dispatches.append({
                     "task_id": task_id,
                     "child_session_id": child_session_id,
                     "agent_key": worker_agent_key,
                     "description": str(metadata.get("tool_name") or metadata.get("tool_key") or "Worker"),
                     "status": execution_status,
                     "updated_at": datetime.utcnow().isoformat(),
-                }
-            )
-            changed = True
+                })
+                changed = True
+            if changed:
+                current_metadata["worker_dispatches"] = projected_dispatches
 
-        if changed:
-            session.metadata["worker_dispatches"] = worker_dispatches
-
-        pending_approvals = [
-            item for item in await self._store.list_approvals(session.id)
-            if item.status == ToolApprovalStatus.pending
-        ]
-        if not pending_approvals and session.status == SessionStatus.waiting_approval:
-            session.status = SessionStatus.running
-            control = self._ensure_control_metadata(session)
-            control.update(
-                {
+            control = current_metadata.get("control")
+            if (
+                current_status == SessionStatus.waiting_approval
+                and not pending_approvals
+                and isinstance(control, dict)
+                and control.get("control_state") == "waiting_approval"
+            ):
+                current_metadata["control"] = {
+                    **control,
                     "control_state": "running",
                     "is_interrupted": False,
                     "is_resumable": False,
                     "last_approval_id": approval.id,
                 }
-            )
-            session.metadata["control"] = control
 
-        session.updated_at = datetime.utcnow()
-        await self._store.save_session(session)
+        status = SessionStatus.running if not pending_approvals else None
+        await self._store.update_status_and_mutate_metadata(
+            session.id,
+            status=status,
+            allowed_current_statuses={SessionStatus.waiting_approval},
+            mutate=apply_proxy_projection,
+        )
         await self._store.append_event(
             session.id,
             self._make_event(

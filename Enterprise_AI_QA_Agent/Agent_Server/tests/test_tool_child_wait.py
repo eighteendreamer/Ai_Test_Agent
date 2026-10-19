@@ -14,6 +14,7 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.projects.project_store import PostgresProjectStore
 from src.application.orchestration.coordinator_runtime_service import CoordinatorRuntimeService
+from src.application.sessions.session_service import SessionService
 from src.core.config import get_settings
 from src.modes.api_testing_mode.campaign_state import ExecutionPolicy
 from src.modes.api_testing_mode.credential_manager import CredentialManager
@@ -25,11 +26,51 @@ from src.domain.models import SessionRecord
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
 from src.runtime.tool_job_store import InMemoryToolJobStore
-from src.schemas.session import RuntimeMode, SessionMode, SessionStatus
+from src.schemas.session import RuntimeMode, SessionMode, SessionStatus, ToolApprovalRequest, ToolApprovalStatus
 from src.schemas.tool_runtime import ModelToolCall
+from src.runtime.store import InMemorySessionStore
 from test_tool_runtime_heartbeat import _tool
 from test_api_worker_result_reader import environment
 from test_execution_worker_cli import isolated_runtime
+
+
+@pytest.mark.asyncio
+async def test_proxy_approval_projection_preserves_new_parent_wait_checkpoint():
+    store = InMemorySessionStore()
+    now = datetime.now(UTC).replace(tzinfo=None)
+    parent = SessionRecord(id='proxy-parent', title='Proxy parent', status=SessionStatus.waiting_approval,
+        session_mode=SessionMode.normal, runtime_mode=RuntimeMode.interactive, mode_key='api_testing',
+        created_at=now, updated_at=now, metadata={
+            'control': {'control_state': 'waiting_approval'},
+            'pending_turn': {'turn_id': 'parent-turn', 'pending_approval_ids': ['old-approval']},
+            'worker_dispatches': [{'task_id': 'child-task', 'child_session_id': 'child-session', 'status': 'running'}],
+        })
+    await store.save_session(parent)
+    stale = await store.get_session(parent.id)
+    latest = await store.get_session(parent.id)
+    latest.status = SessionStatus.interrupted
+    latest.metadata['control'] = {'control_state': 'interrupted', 'is_resumable': True}
+    latest.metadata['pending_turn'] = {
+        'turn_id': 'parent-turn',
+        'waiting_tool': {'job_id': 'waiting-job', 'child_session_ids': ['child-session']},
+        'waiting_tools': [{'job_id': 'waiting-job', 'child_session_ids': ['child-session']}],
+        'pending_approval_ids': [],
+    }
+    await store.save_session(latest)
+
+    approval = ToolApprovalRequest(id='proxy-approval', session_id=parent.id, tool_key='api-test-runner',
+        tool_name='API Test Runner', reason='Approve the child API task', status=ToolApprovalStatus.approved,
+        created_at=now, resolved_at=now, metadata={'proxy_task_id': 'child-task', 'proxy_worker_agent_key': 'api-executor-worker'})
+    service = object.__new__(SessionService)
+    service._store = store
+    await service._mark_proxy_worker_decision_applied(
+        session=stale, approval=approval, child_session_id='child-session', execution_status='running')
+
+    actual = await store.get_session(parent.id)
+    assert actual.status == SessionStatus.interrupted
+    assert actual.metadata['pending_turn']['waiting_tools'][0]['job_id'] == 'waiting-job'
+    assert actual.metadata['pending_turn']['pending_approval_ids'] == []
+    assert actual.metadata['worker_dispatches'][0]['status'] == 'running'
 
 
 @pytest.mark.asyncio

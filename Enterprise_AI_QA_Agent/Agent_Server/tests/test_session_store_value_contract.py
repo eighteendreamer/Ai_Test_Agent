@@ -206,6 +206,43 @@ async def test_metadata_update_does_not_retain_caller_payload(stores, projection
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "initial_status,expected_status",
+    [
+        (SessionStatus.waiting_approval, SessionStatus.running),
+        (SessionStatus.interrupted, SessionStatus.interrupted),
+    ],
+)
+async def test_atomic_metadata_update_uses_current_status(stores, initial_status, expected_status):
+    writer, reader, session_id, _ = stores
+    session = await reader.get_session(session_id)
+    session.status = initial_status
+    session.metadata = {"control": {"control_state": "waiting_approval"}}
+    await writer.save_session(session)
+
+    observed_status = []
+
+    def mutate(metadata, current_status):
+        observed_status.append(current_status)
+        if current_status == SessionStatus.waiting_approval:
+            metadata["control"]["control_state"] = "running"
+
+    assert await writer.update_status_and_mutate_metadata(
+        session_id,
+        status=SessionStatus.running,
+        allowed_current_statuses={SessionStatus.waiting_approval},
+        mutate=mutate,
+    )
+
+    actual = await reader.get_session(session_id)
+    assert observed_status == [initial_status]
+    assert actual.status == expected_status
+    assert actual.metadata["control"]["control_state"] == (
+        "running" if initial_status == SessionStatus.waiting_approval else "waiting_approval"
+    )
+
+
+@pytest.mark.asyncio
 async def test_export_and_task_pool_views_are_detached(stores):
     writer, reader, session_id, _ = stores
     session = await reader.get_session(session_id)
