@@ -4304,3 +4304,25 @@ cd Agent_Server
 同进程与持久子 Worker 两个隔离运行均实际只收到 `POST /login`、`POST /auth/refresh`、`GET /profile`，全部 HTTP 200；refresh 使用登录返回的旧凭据，profile 使用 refresh 返回的新凭据。父会话完成，报告均为 3 completed / 0 failed / 0 skipped，创建三个真实子会话；实际模型 HTTP attempt 分别为 8 与 10。重启 API 后任务历史保持，终态 Outbox 重投的新增目标 HTTP 与模型 HTTP 都为 0。测试断言公开报告及日志不含生成凭据，`verification.json` 的 credential scan 和 public-output scan 均为真；另以当前 MySQL 默认模型密钥扫描33个验收文件，未发现密钥字节。证据目录为 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-default-current-20261019/`。
 
 因此，默认 Agent API 的正向认证/续期/依赖传值链路在此固定场景及两种 Worker 生命周期下已有真实通过证据；这不覆盖错误凭据、刷新失败、超时/断网恢复或其他 endpoint 依赖结构，也不代表 P3 API 全面验收。完整 P0—P5 和 P2 用例选择/排序/补全/正式 Run 闭环仍未完成。
+
+### 7.102 正式 Run 执行中计划修订的存储与领取边界调研〔2026-10-19〕
+
+为推进 P2“新缺口可修订尚未执行部分”，检查 `CasePlanRunService`、`plan_mapping`、`run_store`、`build_agent_case_context`、正式 Run 的业务动作准入/准备消费，以及 Smoke 模式的 `_revise_plan`。当前正式计划运行创建时，把计划、RunItem 映射、准备项 owner/phase 和依赖一起冻结；`validate_plan_bundle` 用该快照重新构造 Suite/Run/RunItem 并要求完全相等。Agent 上下文、依赖领取、业务动作绑定、环境准入和准备消费分别读取这些固定结构。当前没有正式 Run revision API 或 revision history。Smoke 的已有版本修订发生在执行前并要求重新确认，不覆盖正式 Run 执行中修订需求。
+
+PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再对 queued RunItem 使用 `FOR UPDATE SKIP LOCKED` 领取；并发领取依赖 RunItem 行锁。只改 Run 的 `plan_snapshot` 会绕过/破坏 bundle 一致性，并让上下文、claim 依赖、动作准入和准备消费可能读取不一致依据。简单给整个 Run 加排他锁则会改变现有并行领取特性，未经实测不能采用。
+
+执行上下文的 `context_hash` 被 Agent 执行检查点及动作准入绑定；动作准入还校验固定 plan ID、节点 owner 与 phase。故修订不得改变已领取或运行中条目的步骤、绑定、owner、phase 或环境依据，否则会使原检查点和业务操作回执失去可验证上下文。`RunItem` 与 SuiteItem 均有唯一位置约束；排序投影必须与依赖和快照在同一事务更新，并避免位置交换时触发中间唯一冲突。Suite/RunItem 还唯一约束同一用例版本，修订不能假设可以重复插入同一版本。
+
+读取侧也要纳入一致性：`_detail_from_cursor` 分多条 SQL 读取 Run、RunItem、Attempt 和 Result；PostgreSQL raw connection 当前使用数据库默认隔离，没有在详情查询前设置 repeatable-read。即使修订的多表写入原子提交，详情读取的多条 statement 仍可能跨越该提交，拼出前后不同修订投影。实现必须让正式详情/API 与 Agent 上下文读取能检测并重读同一 revision，或在不影响现有写事务的条件下采用一致快照；需要并发读写测试覆盖这个窗口。
+
+本次基线按 README 记录的 `uv run --locked python -m pytest` 方式执行 `tests/test_case_plan_run_creation.py tests/test_agent_case_context.py tests/test_run_item_dependencies.py`，结果 **25 passed、22 skipped，9.19秒**。这些测试证明现有固定计划映射、上下文和依赖行为的回归基线；22 个需要隔离 PostgreSQL/MySQL/RustFS 的门控项未运行，不能证明跨进程领取与修订竞态。
+
+结论与实施门槛：正式 Run 修订是跨存储投影的架构能力，不能直接复用 Smoke 方案，也不能原地覆盖唯一历史快照。当前倾向在 PostgreSQL 内追加不可变 revision 历史，并在同一事务更新经验证的“当前执行投影”；原始计划与运行/结果历史必须仍可按版本读取。实施前还要明确新增正式用例如何分配稳定 plan key、SuiteItem/RunItem ID 与来源证据，移除目标如何保留审计和结果语义；不得用伪造用例或静默删除代替定义。修订提交须通过乐观版本号拒绝陈旧修订。修订只允许影响 queued 且未领取的项，已领取/运行/终态项及其上下文哈希、证据不可改写。领取与修订必须有数据库内一致的序列化点，并通过真实 PostgreSQL 双事务竞争证明：修订先提交时 claim 读取新依赖；claim 先成功时修订冲突且不写入；多个互不相关的 RunItem 仍可并发领取。还需逐一适配上下文、准备步骤、业务动作准入、环境约束、回归来源、幂等重放及历史报告读取，再运行真实端到端场景。实现方案尚未定稿，本项没有修改生产代码、MySQL 配置或 PostgreSQL 业务数据，也没有宣称正式 Run 计划修订已通过。
+
+来源：`Agent_Server/src/application/test_runs/plan_run_service.py`、`plan_mapping.py`、`run_store.py`、`agent_case_context.py`、`Agent_Server/src/runtime/postgres_case_consumption.py`、`postgres_case_action_admission.py`、`Agent_Server/src/modes/smoke_testing_mode/runtime.py`；PostgreSQL 行锁兼容矩阵见[官方显式锁文档](https://www.postgresql.org/docs/17/explicit-locking.html)。Step 已认证；P2 正式 Run 选择/排序/补全/执行及执行中计划修订仍未闭环，P0—P5 继续未完成。
+
+### 7.103 正式 Run PostgreSQL 隔离验收前提复核〔2026-10-19〕
+
+按 `test_case_plan_run_creation.py` 的 live fixture 启用 `RUN_LIVE_PLAN_RUN_CREATION=1`，实际执行 `test_archival_between_service_read_and_commit_is_rechecked_in_transaction`，结果 **1 passed，6.34秒**。夹具使用随机命名的 PostgreSQL Run/Suite/Item 表、MySQL 配置临时表和临时项目/用例；测试退出时删除其拥有的表，模型为本地 `SequenceModel`，没有调用默认 AI，也没有接触正式业务记录。该证据确认当前隔离 PostgreSQL 与相关 fixture 可用，并证明计划创建时会在事务内重查归档状态；它不覆盖执行中修订、详情跨提交读取或领取竞争。
+
+下一步可验证的协调候选是增加 PostgreSQL 每 Run 的修订头行：`claim_items` 在事务内先对该行获取兼容的共享锁，之后仍以 RunItem `FOR UPDATE SKIP LOCKED` 原子领取；修订事务对同一头行获取排他锁，检查 expected revision 并原子保存历史与投影。官方行锁兼容矩阵说明多个 `FOR SHARE` 可以并存，而 `FOR UPDATE` 与它冲突；这在锁模型上允许并行 claim 与单写修订并存。此机制尚未实现或在本系统事务中实测，且需继续验证锁顺序、Run 刷新、过期租约恢复、详情读取一致性及修订写事务，不能据文档说明直接认定竞态已解决。
