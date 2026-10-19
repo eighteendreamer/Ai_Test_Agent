@@ -1147,7 +1147,10 @@ def test_postgres_cancel_uses_the_same_item_then_run_lock_order(monkeypatch):
         def execute(self, statement, parameters=None):
             normalized = " ".join(statement.split())
             self.calls.append(normalized)
-            if "FROM agent_test_runs" in normalized:
+            if normalized.startswith("SELECT saved.record,"):
+                self.rows = [{"record": run.model_dump(mode="json"),
+                    "items": [], "attempts": [], "results": []}]
+            elif "FROM agent_test_runs" in normalized:
                 self.rows = [{"record": run.model_dump(mode="json")}]
             elif "GROUP BY status" in normalized:
                 self.rows = [{"status": "cancelled", "total": 1}]
