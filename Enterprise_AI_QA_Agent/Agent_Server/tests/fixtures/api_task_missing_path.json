@@ -1,0 +1,880 @@
+{
+  "input": {
+    "task": {
+      "name": "POST /orders 创建订单",
+      "method": "POST",
+      "task_id": "order_create",
+      "full_url": "http://127.0.0.1:60834/orders",
+      "assertions": [
+        {
+          "kind": "status_code",
+          "expected": 201,
+          "description": "创建订单应返回201"
+        },
+        {
+          "kind": "json_field_present",
+          "path": "order.id",
+          "description": "响应应包含完整键 order.id"
+        }
+      ],
+      "request_body": null,
+      "execution_mode": "write"
+    },
+    "worker_action": "execute_task"
+  },
+  "output": {
+    "ok": false,
+    "error": "invalid_task_payload",
+    "status": "failed",
+    "metrics": {},
+    "summary": "API task payload validation failed before any HTTP request.",
+    "trace_id": "9b93e930-24d3-450a-876d-62d9f791b2f1",
+    "artifacts": [],
+    "http_request_sent": false,
+    "validation_errors": [
+      {
+        "type": "missing",
+        "location": [
+          "path"
+        ]
+      }
+    ]
+  },
+  "original_jobs": [
+    {
+      "id": "5d0c69b5-76f2-4d17-855c-c628340ee173",
+      "tool_key": "api-test-runner",
+      "status": "failed",
+      "input_payload": {
+        "task": {
+          "name": "POST /orders 创建订单",
+          "method": "POST",
+          "task_id": "order_create",
+          "full_url": "http://127.0.0.1:60834/orders",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "expected": 201,
+              "description": "创建订单应返回201"
+            },
+            {
+              "kind": "json_field_present",
+              "path": "order.id",
+              "description": "响应应包含完整键 order.id"
+            }
+          ],
+          "request_body": null,
+          "execution_mode": "write"
+        },
+        "_case_action": {
+          "item_key": "order_create_cleanup",
+          "operation_key": "create_order"
+        },
+        "worker_action": "execute_task"
+      },
+      "output_payload": {
+        "ok": false,
+        "error": "invalid_task_payload",
+        "status": "failed",
+        "metrics": {},
+        "summary": "API task payload validation failed before any HTTP request.",
+        "trace_id": "9b93e930-24d3-450a-876d-62d9f791b2f1",
+        "artifacts": [],
+        "http_request_sent": false,
+        "validation_errors": [
+          {
+            "type": "missing",
+            "location": [
+              "path"
+            ]
+          }
+        ]
+      },
+      "metadata": {
+        "case_action_binding": {
+          "phase": "case",
+          "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+          "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+          "turn_id": "6fe9dbaa-d706-549c-907a-d811afde0a69",
+          "item_key": "order_create_cleanup",
+          "protocol": "case-action-binding-v1",
+          "attempt_id": "e953a4a0-d616-4998-9bea-fff81c8c7109",
+          "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+          "session_id": "d39f897f-4a13-4761-beb6-cd84aeb0441f",
+          "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+          "context_sha256": "8c0c7e2c8c8220eaf4f1c8bc97308eba3fdfa7ba1bf326191664b74d91666b03",
+          "wire_arguments_sha256": "f40001cb23233be7c7fa2edf74a926d513b3d1bdcb225ab7538098675f80a114"
+        },
+        "case_effect_evidence_intent": {
+          "sha256": "add55ac286bee3eedff43a7a5a49548d92afc0ed7f946e250f31fa0275db25a7",
+          "version": "case-effect-evidence-v2",
+          "max_evidence_bytes": 512000,
+          "expected_source_protocol": "case-effect-document-expected-v1"
+        },
+        "case_operation": {
+          "scope": {
+            "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+            "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+            "item_key": "order_create_cleanup",
+            "protocol": "case-operation-v1",
+            "attempt_id": "e953a4a0-d616-4998-9bea-fff81c8c7109",
+            "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+            "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+            "operation_key": "create_order",
+            "context_sha256": "8c0c7e2c8c8220eaf4f1c8bc97308eba3fdfa7ba1bf326191664b74d91666b03"
+          },
+          "sha256": "6562537fdb793b8339dfd6b88a2cd79e4055ac6658433a12c1a126abf9037d4f",
+          "version": "case-operation-v1",
+          "decision": "dispatched",
+          "action_sent": null,
+          "operation_id": "6011f84e1d26f7366c778e802088b3b004e59b2f8bb323dd2f040350df987b2b",
+          "origin_job_id": "5d0c69b5-76f2-4d17-855c-c628340ee173",
+          "request_sha256": "673cf4c84734af1bed3e4fdff0affbfb193f3f609496705118e8bacd26789ba3",
+          "execution_claimed": true
+        },
+        "tool_output_observation": {
+          "status": "failed",
+          "observed_at": "2026-10-19T00:33:29.448787",
+          "output_hash": "ee7550cf369ff8c20a16d4ad10bb640d948ec625b443c30e49a9336168dbe8ef",
+          "schema_version": 1
+        }
+      }
+    },
+    {
+      "id": "14e60876-ded3-4611-9139-718ebe32ade4",
+      "tool_key": "api-test-runner",
+      "status": "completed",
+      "input_payload": {
+        "task": {
+          "name": "POST /orders 创建订单",
+          "path": "/orders",
+          "method": "POST",
+          "task_id": "order_create",
+          "full_url": "http://127.0.0.1:60834/orders",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "expected": 201,
+              "description": "创建订单应返回201"
+            },
+            {
+              "kind": "json_field_present",
+              "path": "order.id",
+              "description": "响应应包含完整键 order.id"
+            }
+          ],
+          "request_body": null,
+          "execution_mode": "write"
+        },
+        "_case_action": {
+          "item_key": "order_create_cleanup",
+          "operation_key": "create_order_v2"
+        },
+        "worker_action": "execute_task"
+      },
+      "output_payload": {
+        "ok": true,
+        "status": "completed",
+        "metrics": {},
+        "summary": "Executed API task order_create with final status completed and HTTP 201.",
+        "trace_id": "9b93e930-24d3-450a-876d-62d9f791b2f1",
+        "_security": {
+          "untrusted_content": true,
+          "redacted_field_count": 1,
+          "indirect_injection_signals": []
+        },
+        "artifacts": [],
+        "task_result": {
+          "name": "POST /orders 创建订单",
+          "path": "/orders",
+          "method": "POST",
+          "status": "completed",
+          "task_id": "order_create",
+          "attempts": 1,
+          "auth_ref": "",
+          "full_url": "http://127.0.0.1:60834/orders",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "path": "",
+              "expected": 201,
+              "description": "创建订单应返回201"
+            },
+            {
+              "kind": "json_field_present",
+              "path": "order.id",
+              "expected": null,
+              "description": "响应应包含完整键 order.id"
+            }
+          ],
+          "capability": "",
+          "depends_on": [],
+          "last_error": "",
+          "started_at": "2026-10-19T00:34:20.053992+00:00",
+          "duration_ms": 65.31,
+          "completed_at": "2026-10-19T00:34:20.119704+00:00",
+          "request_body": null,
+          "check_results": [
+            {
+              "kind": "status_code",
+              "name": "status_code=201",
+              "actual": 201,
+              "passed": true,
+              "expected": 201,
+              "description": "创建订单应返回201"
+            },
+            {
+              "kind": "json_field_present",
+              "name": "field_present:order.id",
+              "actual": "regression-87ad3cea85b34e168a85a4724f6a4136",
+              "passed": true,
+              "expected": "present",
+              "description": "响应应包含完整键 order.id"
+            }
+          ],
+          "request_query": {},
+          "response_body": {
+            "flag": false,
+            "count": 1,
+            "message": "订单处于待支付状态，尚未进入出库流程",
+            "nullable": null,
+            "order.id": "regression-87ad3cea85b34e168a85a4724f6a4136"
+          },
+          "worker_status": "",
+          "execution_mode": "write",
+          "input_bindings": [],
+          "resource_locks": [],
+          "worker_summary": "",
+          "request_headers": {},
+          "request_outcome": "completed",
+          "response_status": 201,
+          "timeout_seconds": 30.0,
+          "allow_401_replay": false,
+          "response_headers": {
+            "date": "Mon, 19 Oct 2026 00:34:20 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json; charset=utf-8",
+            "content-length": "173"
+          },
+          "worker_session_id": "",
+          "reconciliation_for": "",
+          "auth_refresh_task_id": "",
+          "execution_checkpoint": {
+            "http_observation_v1": {
+              "hops": [
+                {
+                  "method": "POST",
+                  "target": {
+                    "host": "127.0.0.1",
+                    "path": "/orders",
+                    "port": 60834,
+                    "scheme": "http",
+                    "query_omitted": false,
+                    "fragment_omitted": false,
+                    "userinfo_omitted": false
+                  },
+                  "status_code": 201
+                }
+              ],
+              "acquisition": "network",
+              "observed_at": "2026-10-19T00:34:20.119704Z",
+              "implementation_version": "api-http-observation-v1"
+            }
+          },
+          "reconciliation_status": "none",
+          "path_parameter_sources": {},
+          "dependency_skip_task_id": "",
+          "reconciliation_observation": ""
+        },
+        "worker_kind": "api_test_task_execution",
+        "idempotency_key": "api-task:order_create:POST:http://127.0.0.1:60834/orders",
+        "credential_session": "[REDACTED]"
+      },
+      "metadata": {
+        "case_action_binding": {
+          "phase": "case",
+          "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+          "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+          "turn_id": "6fe9dbaa-d706-549c-907a-d811afde0a69",
+          "item_key": "order_create_cleanup",
+          "protocol": "case-action-binding-v1",
+          "attempt_id": "e953a4a0-d616-4998-9bea-fff81c8c7109",
+          "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+          "session_id": "d39f897f-4a13-4761-beb6-cd84aeb0441f",
+          "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+          "context_sha256": "8c0c7e2c8c8220eaf4f1c8bc97308eba3fdfa7ba1bf326191664b74d91666b03",
+          "wire_arguments_sha256": "fc3f5e01d74f81e9cfc99943e01e2f79f21fe8a5ebf2fb7eb25d98473ad0b112"
+        },
+        "case_effect_evidence_intent": {
+          "sha256": "b0bfc786607f9d6ebfdff5b812882f4814cde93929d64de02ee77218f7867418",
+          "version": "case-effect-evidence-v2",
+          "max_evidence_bytes": 512000,
+          "expected_source_protocol": "case-effect-document-expected-v1"
+        },
+        "case_operation": {
+          "scope": {
+            "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+            "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+            "item_key": "order_create_cleanup",
+            "protocol": "case-operation-v1",
+            "attempt_id": "e953a4a0-d616-4998-9bea-fff81c8c7109",
+            "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+            "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+            "operation_key": "create_order_v2",
+            "context_sha256": "8c0c7e2c8c8220eaf4f1c8bc97308eba3fdfa7ba1bf326191664b74d91666b03"
+          },
+          "sha256": "a2eab8b3e1fadbd00668daaebd9afcc81ed8144285bda318bc6e0376c60057fb",
+          "version": "case-operation-v1",
+          "decision": "dispatched",
+          "action_sent": null,
+          "operation_id": "8a390ea4ebfe8998ead24161636fc428ef43b794afc1b9c7d8e88ad8ef09aed2",
+          "origin_job_id": "14e60876-ded3-4611-9139-718ebe32ade4",
+          "request_sha256": "e9c364ab06183e9aa03b164e58d5a73459aeaf3fbd3e1238a9ded243e80e6a0a",
+          "execution_claimed": true
+        },
+        "tool_output_observation": {
+          "status": "completed",
+          "observed_at": "2026-10-19T00:34:20.121210",
+          "output_hash": "8b94be68747eaf4d981e930fb159abdfe9e0dbebbb2b54f3a6698692cd14588c",
+          "schema_version": 1
+        }
+      }
+    },
+    {
+      "id": "74ac83dd-b214-41ab-b7b5-bc63024f2759",
+      "tool_key": "api-test-runner",
+      "status": "completed",
+      "input_payload": {
+        "task": {
+          "name": "DELETE /orders/{id} 清理订单",
+          "path": "/orders/regression-87ad3cea85b34e168a85a4724f6a4136",
+          "method": "DELETE",
+          "task_id": "order_cleanup",
+          "full_url": "http://127.0.0.1:60834/orders/regression-87ad3cea85b34e168a85a4724f6a4136",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "expected": 200,
+              "description": "删除订单应返回200"
+            }
+          ],
+          "request_body": null,
+          "execution_mode": "write"
+        },
+        "_case_action": {
+          "item_key": "order_create_cleanup",
+          "operation_key": "delete_order"
+        },
+        "worker_action": "execute_task"
+      },
+      "output_payload": {
+        "ok": true,
+        "status": "completed",
+        "metrics": {},
+        "summary": "Executed API task order_cleanup with final status completed and HTTP 200.",
+        "trace_id": "9b93e930-24d3-450a-876d-62d9f791b2f1",
+        "_security": {
+          "untrusted_content": true,
+          "redacted_field_count": 1,
+          "indirect_injection_signals": []
+        },
+        "artifacts": [],
+        "task_result": {
+          "name": "DELETE /orders/{id} 清理订单",
+          "path": "/orders/regression-87ad3cea85b34e168a85a4724f6a4136",
+          "method": "DELETE",
+          "status": "completed",
+          "task_id": "order_cleanup",
+          "attempts": 1,
+          "auth_ref": "",
+          "full_url": "http://127.0.0.1:60834/orders/regression-87ad3cea85b34e168a85a4724f6a4136",
+          "assertions": [
+            {
+              "kind": "status_code",
+              "path": "",
+              "expected": 200,
+              "description": "删除订单应返回200"
+            }
+          ],
+          "capability": "",
+          "depends_on": [],
+          "last_error": "",
+          "started_at": "2026-10-19T00:34:26.069928+00:00",
+          "duration_ms": 26.26,
+          "completed_at": "2026-10-19T00:34:26.096813+00:00",
+          "request_body": null,
+          "check_results": [
+            {
+              "kind": "status_code",
+              "name": "status_code=200",
+              "actual": 200,
+              "passed": true,
+              "expected": 200,
+              "description": "删除订单应返回200"
+            }
+          ],
+          "request_query": {},
+          "response_body": {
+            "flag": false,
+            "count": 1,
+            "message": "订单处于待支付状态，尚未进入出库流程",
+            "nullable": null,
+            "order.id": "regression-87ad3cea85b34e168a85a4724f6a4136"
+          },
+          "worker_status": "",
+          "execution_mode": "write",
+          "input_bindings": [],
+          "resource_locks": [],
+          "worker_summary": "",
+          "request_headers": {},
+          "request_outcome": "completed",
+          "response_status": 200,
+          "timeout_seconds": 30.0,
+          "allow_401_replay": false,
+          "response_headers": {
+            "date": "Mon, 19 Oct 2026 00:34:26 GMT",
+            "server": "BaseHTTP/0.6 Python/3.11.16",
+            "content-type": "application/json; charset=utf-8",
+            "content-length": "173"
+          },
+          "worker_session_id": "",
+          "reconciliation_for": "",
+          "auth_refresh_task_id": "",
+          "execution_checkpoint": {
+            "http_observation_v1": {
+              "hops": [
+                {
+                  "method": "DELETE",
+                  "target": {
+                    "host": "127.0.0.1",
+                    "path": "/orders/regression-87ad3cea85b34e168a85a4724f6a4136",
+                    "port": 60834,
+                    "scheme": "http",
+                    "query_omitted": false,
+                    "fragment_omitted": false,
+                    "userinfo_omitted": false
+                  },
+                  "status_code": 200
+                }
+              ],
+              "acquisition": "network",
+              "observed_at": "2026-10-19T00:34:26.096813Z",
+              "implementation_version": "api-http-observation-v1"
+            }
+          },
+          "reconciliation_status": "none",
+          "path_parameter_sources": {},
+          "dependency_skip_task_id": "",
+          "reconciliation_observation": ""
+        },
+        "worker_kind": "api_test_task_execution",
+        "idempotency_key": "api-task:order_cleanup:DELETE:http://127.0.0.1:60834/orders/regression-87ad3cea85b34e168a85a4724f6a4136",
+        "credential_session": "[REDACTED]"
+      },
+      "metadata": {
+        "case_action_binding": {
+          "phase": "case",
+          "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+          "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+          "turn_id": "6fe9dbaa-d706-549c-907a-d811afde0a69",
+          "item_key": "order_create_cleanup",
+          "protocol": "case-action-binding-v1",
+          "attempt_id": "e953a4a0-d616-4998-9bea-fff81c8c7109",
+          "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+          "session_id": "d39f897f-4a13-4761-beb6-cd84aeb0441f",
+          "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+          "context_sha256": "8c0c7e2c8c8220eaf4f1c8bc97308eba3fdfa7ba1bf326191664b74d91666b03",
+          "wire_arguments_sha256": "b51d41e6c1db098f104f1dc05813c8d1cdf9e94d756e4d400742e4707fe97d0f"
+        },
+        "case_effect_evidence_intent": {
+          "sha256": "01c46317de00c35b402753027ea745c369c84227168f26ea6a5bb0b977171477",
+          "version": "case-effect-evidence-v2",
+          "max_evidence_bytes": 512000,
+          "expected_source_protocol": "case-effect-document-expected-v1"
+        },
+        "case_operation": {
+          "scope": {
+            "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+            "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+            "item_key": "order_create_cleanup",
+            "protocol": "case-operation-v1",
+            "attempt_id": "e953a4a0-d616-4998-9bea-fff81c8c7109",
+            "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+            "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+            "operation_key": "delete_order",
+            "context_sha256": "8c0c7e2c8c8220eaf4f1c8bc97308eba3fdfa7ba1bf326191664b74d91666b03"
+          },
+          "sha256": "4f5ea51bd9835757c7fb55c445928d5fbf2a0e835f163cfc419f71df07ffe334",
+          "version": "case-operation-v1",
+          "decision": "dispatched",
+          "action_sent": null,
+          "operation_id": "d1c62a30270640a6fa74396cc73fd6d9570a3359f6d4762890bfb2a40667765b",
+          "origin_job_id": "74ac83dd-b214-41ab-b7b5-bc63024f2759",
+          "request_sha256": "9f64b5289c34f05bcc8fa314b83491333e5c15e6c8606ad82bb42791165d2c5d",
+          "execution_claimed": true
+        },
+        "tool_output_observation": {
+          "status": "completed",
+          "observed_at": "2026-10-19T00:34:26.097846",
+          "output_hash": "e2cf713f3c472582facdd20d7d0dba9636ef2ecfd62704232db9e542f4b8da45",
+          "schema_version": 1
+        }
+      }
+    }
+  ],
+  "coverage_context": {
+    "project_id": "289f6140-0d44-43c6-8625-d0767037a212",
+    "run_id": "1e6e3187-cc43-50e6-b714-5cc0601d8c6a",
+    "plan_id": "1b945522-e558-4582-b094-d06b61c2f681",
+    "run_item_id": "b3051ab9-bdf5-5d7c-892b-292236610e33",
+    "effect_owner_item_ids": {
+      "order_create_cleanup": "b3051ab9-bdf5-5d7c-892b-292236610e33"
+    },
+    "preparation_scopes": {
+      "order_create_cleanup": {
+        "source_key": "order_create_cleanup",
+        "source_owner_key": "order_create_cleanup",
+        "consumer_keys": [
+          "order_create_cleanup"
+        ],
+        "cleanup_keys": [
+          "order_create_cleanup"
+        ]
+      }
+    },
+    "decision": {
+      "action": "finish",
+      "summary": "项目目标为依据文档创建订单并使用真实返回的order.id清理。现有正式用例“单订单创建清理”完整覆盖该目标：先通过POST /orders创建订单并读取实际返回的order.id，再通过DELETE /orders/{id}清理。该用例自行创建和清理数据，无外部依赖，也无需额外准备。计划通过api-test-runner的execute_task执行。",
+      "queries": [],
+      "items": [
+        {
+          "key": "order_create_cleanup",
+          "reason": "正式用例“单订单创建清理”与项目目标完全匹配：先POST创建订单获取实际order.id，再DELETE清理，自身闭环无外部依赖。",
+          "evidence_ids": [
+            "case:7bfeb0a5-522b-4339-bb0a-b02980cff9af",
+            "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "tool-operation:api-test-runner:execute_task:a987d034e77e0de489c7919d345a40bc2126e48a6f0258f7802a35f75fd9ad42"
+          ],
+          "depends_on": [],
+          "input_bindings": {},
+          "kind": "target",
+          "case_id": "e58dee56-4f99-42ed-80bd-96d56184eee8",
+          "case_version_id": "7bfeb0a5-522b-4339-bb0a-b02980cff9af",
+          "effect_schema": 3,
+          "cleanup_sources": [
+            "order_create_cleanup"
+          ],
+          "effect_declarations": [
+            {
+              "role": "produced",
+              "object_path_tokens": [],
+              "collection": false,
+              "checks": [
+                {
+                  "expected_path_tokens": [
+                    "期望",
+                    "create_code"
+                  ],
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_status"
+                  ],
+                  "operator": "equals"
+                }
+              ],
+              "select_when": [
+                {
+                  "expected_source": {
+                    "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "payload_path_tokens": [
+                      "content"
+                    ],
+                    "excerpt": "原生工具api-test-runner的execute_task可调用这些接口。",
+                    "literal": "execute_task",
+                    "encoding": "text"
+                  },
+                  "input_path_tokens": [
+                    "worker_action"
+                  ]
+                },
+                {
+                  "expected_source": {
+                    "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "payload_path_tokens": [
+                      "content"
+                    ],
+                    "excerpt": "POST http://127.0.0.1:60834/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。",
+                    "literal": "POST",
+                    "encoding": "text"
+                  },
+                  "input_path_tokens": [
+                    "task",
+                    "method"
+                  ]
+                }
+              ],
+              "declaration_id": "order_create_cleanup_produced",
+              "sources": []
+            },
+            {
+              "role": "cleanup",
+              "object_path_tokens": [],
+              "collection": false,
+              "checks": [
+                {
+                  "expected_path_tokens": [
+                    "期望",
+                    "cleanup_code"
+                  ],
+                  "output_path_tokens": [
+                    "task_result",
+                    "response_status"
+                  ],
+                  "operator": "equals"
+                }
+              ],
+              "select_when": [
+                {
+                  "expected_source": {
+                    "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "payload_path_tokens": [
+                      "content"
+                    ],
+                    "excerpt": "原生工具api-test-runner的execute_task可调用这些接口。",
+                    "literal": "execute_task",
+                    "encoding": "text"
+                  },
+                  "input_path_tokens": [
+                    "worker_action"
+                  ]
+                },
+                {
+                  "expected_source": {
+                    "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+                    "payload_path_tokens": [
+                      "content"
+                    ],
+                    "excerpt": "DELETE http://127.0.0.1:60834/orders/{id} 返回200及刚删除的订单JSON。必须用POST实际返回的order.id删除本次创建的记录，不得猜测ID。",
+                    "literal": "DELETE",
+                    "encoding": "text"
+                  },
+                  "input_path_tokens": [
+                    "task",
+                    "method"
+                  ]
+                }
+              ],
+              "declaration_id": "order_create_cleanup_cleanup",
+              "sources": [
+                {
+                  "item_key": "order_create_cleanup",
+                  "declaration_id": "order_create_cleanup_produced"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "unresolved": []
+    }
+  },
+  "shared_definitions": [
+    {
+      "role": "produced",
+      "checks": [
+        {
+          "expected": 201,
+          "operator": "equals",
+          "output_path_tokens": [
+            "task_result",
+            "response_status"
+          ],
+          "expected_path_tokens": [
+            "期望",
+            "create_code"
+          ]
+        }
+      ],
+      "sources": [],
+      "collection": false,
+      "select_when": [
+        {
+          "expected": "execute_task",
+          "expected_source": {
+            "excerpt": "原生工具api-test-runner的execute_task可调用这些接口。",
+            "literal": "execute_task",
+            "encoding": "text",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "payload_path_tokens": [
+              "content"
+            ]
+          },
+          "input_path_tokens": [
+            "worker_action"
+          ],
+          "expected_source_proof": {
+            "line": 4,
+            "excerpt": "原生工具api-test-runner的execute_task可调用这些接口。",
+            "literal": "execute_task",
+            "version": "534c2377-a964-4b84-bc47-66d0737a20da",
+            "char_end": 224,
+            "encoding": "text",
+            "source_id": "ec33b0c5-429c-55c8-823a-764cc0df795d",
+            "char_start": 212,
+            "source_uri": "rustfs://upload-safe/api-docs/ec33b0c5-429c-55c8-823a-764cc0df795d/534c2377-a964-4b84-bc47-66d0737a20da/original/safe/requirements.md",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "parse_snapshot": null,
+            "expected_sha256": "f741fc5362da5177249c50287ba87c2be8480a03479513249037b6d3faf3c315",
+            "content_asset_id": "4c3f225d-583e-4eb2-8fe5-cb3cc9b2e2c2",
+            "payload_path_tokens": [
+              "content"
+            ]
+          }
+        },
+        {
+          "expected": "POST",
+          "expected_source": {
+            "excerpt": "POST http://127.0.0.1:60834/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。",
+            "literal": "POST",
+            "encoding": "text",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "payload_path_tokens": [
+              "content"
+            ]
+          },
+          "input_path_tokens": [
+            "task",
+            "method"
+          ],
+          "expected_source_proof": {
+            "line": 2,
+            "excerpt": "POST http://127.0.0.1:60834/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。",
+            "literal": "POST",
+            "version": "534c2377-a964-4b84-bc47-66d0737a20da",
+            "char_end": 15,
+            "encoding": "text",
+            "source_id": "ec33b0c5-429c-55c8-823a-764cc0df795d",
+            "char_start": 11,
+            "source_uri": "rustfs://upload-safe/api-docs/ec33b0c5-429c-55c8-823a-764cc0df795d/534c2377-a964-4b84-bc47-66d0737a20da/original/safe/requirements.md",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "parse_snapshot": null,
+            "expected_sha256": "e46d3ae943664116b752137af856edb5f377c6d8012a39e3ef7f39f80a802cac",
+            "content_asset_id": "4c3f225d-583e-4eb2-8fe5-cb3cc9b2e2c2",
+            "payload_path_tokens": [
+              "content"
+            ]
+          }
+        }
+      ],
+      "declaration_id": "order_create_cleanup_produced",
+      "object_path_tokens": []
+    },
+    {
+      "role": "cleanup",
+      "checks": [
+        {
+          "expected": 200,
+          "operator": "equals",
+          "output_path_tokens": [
+            "task_result",
+            "response_status"
+          ],
+          "expected_path_tokens": [
+            "期望",
+            "cleanup_code"
+          ]
+        }
+      ],
+      "sources": [
+        {
+          "item_key": "order_create_cleanup",
+          "declaration_id": "order_create_cleanup_produced"
+        }
+      ],
+      "collection": false,
+      "select_when": [
+        {
+          "expected": "execute_task",
+          "expected_source": {
+            "excerpt": "原生工具api-test-runner的execute_task可调用这些接口。",
+            "literal": "execute_task",
+            "encoding": "text",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "payload_path_tokens": [
+              "content"
+            ]
+          },
+          "input_path_tokens": [
+            "worker_action"
+          ],
+          "expected_source_proof": {
+            "line": 4,
+            "excerpt": "原生工具api-test-runner的execute_task可调用这些接口。",
+            "literal": "execute_task",
+            "version": "534c2377-a964-4b84-bc47-66d0737a20da",
+            "char_end": 224,
+            "encoding": "text",
+            "source_id": "ec33b0c5-429c-55c8-823a-764cc0df795d",
+            "char_start": 212,
+            "source_uri": "rustfs://upload-safe/api-docs/ec33b0c5-429c-55c8-823a-764cc0df795d/534c2377-a964-4b84-bc47-66d0737a20da/original/safe/requirements.md",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "parse_snapshot": null,
+            "expected_sha256": "f741fc5362da5177249c50287ba87c2be8480a03479513249037b6d3faf3c315",
+            "content_asset_id": "4c3f225d-583e-4eb2-8fe5-cb3cc9b2e2c2",
+            "payload_path_tokens": [
+              "content"
+            ]
+          }
+        },
+        {
+          "expected": "DELETE",
+          "expected_source": {
+            "excerpt": "DELETE http://127.0.0.1:60834/orders/{id} 返回200及刚删除的订单JSON。必须用POST实际返回的order.id删除本次创建的记录，不得猜测ID。",
+            "literal": "DELETE",
+            "encoding": "text",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "payload_path_tokens": [
+              "content"
+            ]
+          },
+          "input_path_tokens": [
+            "task",
+            "method"
+          ],
+          "expected_source_proof": {
+            "line": 3,
+            "excerpt": "DELETE http://127.0.0.1:60834/orders/{id} 返回200及刚删除的订单JSON。必须用POST实际返回的order.id删除本次创建的记录，不得猜测ID。",
+            "literal": "DELETE",
+            "version": "534c2377-a964-4b84-bc47-66d0737a20da",
+            "char_end": 101,
+            "encoding": "text",
+            "source_id": "ec33b0c5-429c-55c8-823a-764cc0df795d",
+            "char_start": 95,
+            "source_uri": "rustfs://upload-safe/api-docs/ec33b0c5-429c-55c8-823a-764cc0df795d/534c2377-a964-4b84-bc47-66d0737a20da/original/safe/requirements.md",
+            "evidence_id": "document:ec33b0c5-429c-55c8-823a-764cc0df795d:3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "content_hash": "3654b04d2a422f2099e792b9d9b1acc2bbf7ae8764ccc5c10d8cf8945b21e02b",
+            "parse_snapshot": null,
+            "expected_sha256": "a5655ec6126f28a76720a61f3e0a6eff066cff954c4003c3dc6def846451db76",
+            "content_asset_id": "4c3f225d-583e-4eb2-8fe5-cb3cc9b2e2c2",
+            "payload_path_tokens": [
+              "content"
+            ]
+          }
+        }
+      ],
+      "declaration_id": "order_create_cleanup_cleanup",
+      "object_path_tokens": []
+    }
+  ]
+}

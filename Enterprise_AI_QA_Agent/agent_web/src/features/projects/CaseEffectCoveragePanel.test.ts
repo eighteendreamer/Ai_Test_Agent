@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import samples from "../../../tests/fixtures/case-effect-coverage.actual.json";
 import relations from "../../../tests/fixtures/case-effect-relations.actual.json";
+import nonExecution from "../../../tests/fixtures/case-non-execution.actual.json";
 import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import CaseEffectCoveragePanel from "./CaseEffectCoveragePanel.vue";
@@ -13,6 +14,18 @@ function actual(scenario: keyof typeof samples) {
 }
 
 describe("actual original object coverage", () => {
+  it("keeps known non-execution reasons visible without counting a fabricated object", () => {
+    expect(nonExecution.RustFS_original_verified).toBe(true);
+    expect(nonExecution.actual_remaining_orders).toEqual({});
+    const wrapper = mount(CaseEffectCoveragePanel, {
+      props: { coverage: nonExecution.coverage, resultLabel: "原生参数失败后完成创建与清理" },
+    });
+    expect(wrapper.text()).toContain("已知对象 2 · 已覆盖 2");
+    expect(wrapper.text()).toContain("not_executed");
+    expect(wrapper.text()).toContain("invalid_task_payload");
+    expect(wrapper.text()).toContain("input_validation");
+    wrapper.unmount();
+  });
   it("shows the real unreferenced object rather than the final output only", () => {
     const coverage = actual("one-of-two");
     const wrapper = mount(CaseEffectCoveragePanel, { props: { coverage, resultLabel: "实际失败结果" } });

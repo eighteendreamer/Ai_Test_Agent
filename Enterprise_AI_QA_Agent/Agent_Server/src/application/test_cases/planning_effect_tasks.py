@@ -33,6 +33,15 @@ def effect_task_schema(task, reference_protocol=REFERENCE_PROTOCOL):
         raise ValueError("未知的规划声明任务")
     schema = decision.model_json_schema()
     definitions = schema.get("$defs", {})
+    for definition in definitions.values():
+        identity = definition.get("properties", {}).get("object_path_tokens")
+        if identity is not None:
+            identity["description"] = (
+                "Literal path from original tool output to a stable business-object identity. "
+                "Produced and cleanup values match by exact typed JSON equality. Select the same "
+                "business identity in both operations, excluding changing request/result metadata. "
+                "[] selects the entire output; use only when the root itself is the shared identity. "
+                "Determine the path from project evidence and the native tool output contract.")
     definition_names = (("ReferencedEffectCheckV2", "ReferencedOperationSelectorV2")
         if reference_protocol == REFERENCE_PROTOCOL_V2 else
         ("ReferencedEffectCheck", "ReferencedOperationSelector"))
@@ -187,6 +196,9 @@ def effect_task_prompts(reference_protocol=REFERENCE_PROTOCOL):
         "完整用例、原文及工具契约保留，目录不是正文，has_more应补读；缺可靠结构先query，不猜路径。"
         "input_path_tokens相对实际工具输入根；object_path_tokens与checks.output_path_tokens相对持久化的原始工具输出根，"
         "逐字段按已读operation契约和实际输出模型定位，不添加returned、output等未出现在实际JSON中的包装字段。"
+        "object_path_tokens提取产生和清理之间可精确匹配的同一业务对象身份，系统按类型和值完全相等匹配。"
+        "应从项目依据与实际工具返回契约定位稳定标识，不把含不同method/path/status等运行元数据的整个返回当身份。"
+        "[]表示整个工具输出，只有根值本身就是两次操作共有的业务身份时才适用；不猜通用ID字段。"
         "evidence_ids使用本次E短引用。预期引用自身expected_path_tokens，或文档E/T；"
         "每个check和select_when都必须提供expected_path_tokens与expected_source两个字段，未使用的一项写null，且只能一项非null。"
         + ("expected_source使用单一reference字段：E短引用配payload_path_tokens，或T短引用配literal/encoding；不得添加第二个引用字段。"

@@ -6,6 +6,7 @@ import json
 from src.application.runtime.case_action_binding import _digest, fixed_action_context
 from src.application.test_runs.literal_evidence import literal_value
 from src.application.testing.verification_service import VerificationService
+from src.schemas.tool_job import ToolOutputObservation
 
 PROTOCOL = "case-effect-evidence-v1"
 INTENT_KEY = "case_effect_evidence_intent"
@@ -95,6 +96,7 @@ def capture_returned_evidence(job, output, observation):
     intent = job.metadata.get(INTENT_KEY)
     if intent is None:
         return None
+    returned = ToolOutputObservation.model_validate(observation)
     if intent.get("version") == "case-effect-evidence-v2":
         from src.application.runtime.case_effect_relations import capture_relation_return
         return capture_relation_return(job, output, observation)
@@ -144,6 +146,8 @@ def capture_returned_evidence(job, output, observation):
         resolution = "object_path_missing"
     if selection in {"not_applicable", "selection_unknown"}:
         objects, checks, resolution = [], [], selection
+    if returned.non_execution is not None:
+        objects, checks, resolution = [], [], "not_executed"
     value = {"version": PROTOCOL, "origin_job_id": job.id, "operation_id": operation["operation_id"],
         "binding": deepcopy(intent["binding"]), "intent_sha256": intent["sha256"],
         "role": definition["role"], "source_keys": definition["source_keys"],

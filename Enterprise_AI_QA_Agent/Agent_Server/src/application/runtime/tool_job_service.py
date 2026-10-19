@@ -11,7 +11,7 @@ from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.runtime.tool_job_store import ToolJobStore
 from src.schemas.agent import ToolDescriptor
-from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation
+from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation, ToolNonExecutionEvidence
 from src.infrastructure.storage_utils import make_json_safe
 from src.application.runtime.case_action_binding import action_admission_enabled, CaseActionClaimUnavailable
 from src.application.runtime.case_operation import (
@@ -168,9 +168,11 @@ class ToolJobService:
             raise ValueError(f"ToolJob {job.id} output no longer matches its returned-output checkpoint")
         return observation
 
-    async def observe_output(self, job_id: str, *, status: str, output_payload: dict) -> ToolJobRecord:
+    async def observe_output(self, job_id: str, *, status: str, output_payload: dict,
+                             non_execution: ToolNonExecutionEvidence | None = None) -> ToolJobRecord:
         payload = deepcopy(make_json_safe(output_payload))
-        observation = ToolOutputObservation(status=status, output_hash=self._output_hash(payload), observed_at=datetime.utcnow())
+        observation = ToolOutputObservation(status=status, output_hash=self._output_hash(payload),
+            observed_at=datetime.utcnow(), non_execution=non_execution)
         verification_metadata = None
         current = await self._store.get_job(job_id)
         if current is not None and isinstance(current.metadata.get(VERIFICATION_KEY), dict):
@@ -196,7 +198,8 @@ class ToolJobService:
         if saved is None:
             saved = await self._store.get_job(job_id)
             if (saved is None or OUTPUT_OBSERVATION_KEY not in saved.metadata
-                or self._output_observation(saved).output_hash != observation.output_hash):
+                or self._output_observation(saved).output_hash != observation.output_hash
+                or self._output_observation(saved).non_execution != observation.non_execution):
                 raise RuntimeError(f"ToolJob {job_id} returned output could not be confirmed in storage")
         logger.info("tool_output_observation_saved", extra={"tool_job_id": job_id,
             "tool_key": saved.tool_key, "run_item_id": saved.metadata.get("run_item_id"),

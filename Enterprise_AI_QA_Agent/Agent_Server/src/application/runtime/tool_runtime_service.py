@@ -73,7 +73,7 @@ from src.modes.security_testing_mode.runtime import SecurityTestingModeRuntime
 from src.runtime.store import SessionStore
 from src.schemas.agent import ToolDescriptor
 from src.schemas.model_config import ModelConfigRecord
-from src.schemas.tool_job import ToolJobRecord, ToolJobStatus
+from src.schemas.tool_job import ToolJobRecord, ToolJobStatus, ToolNonExecutionEvidence
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord, is_reserved_tool_argument
 from src.schemas.session_resource import SessionResourceKind
 
@@ -165,6 +165,15 @@ class ToolExecutionContext:
     trusted_case_run_item_id: str = ""
     case_action_binding: CaseActionBinding | None = None
     claimed_job: ToolJobRecord | None = None
+    non_execution: ToolNonExecutionEvidence | None = None
+
+    def record_non_execution(self, *, stage: str, reason: str) -> None:
+        # No upstream counterpart (checked: output observation, native API
+        # validation and live5 PG failure): carry the handler's dispatch fact
+        # through server context, separate from untrusted public output.
+        self.non_execution = ToolNonExecutionEvidence(stage=stage, reason=reason)
+        logger.info("tool_business_operation_not_started", extra={"tool_job_id": self.tool_job_id,
+            "tool_key": self.tool_key, "stage": stage, "reason": reason})
 
     def bind_call(self, call: ModelToolCall) -> ToolExecutionContext:
         return replace(self, case_action_binding=bind_case_action(bundle=self.context_bundle,
@@ -549,7 +558,7 @@ class ToolRuntimeService:
             )
 
         try:
-            job_context = context
+            job_context = replace(context, non_execution=None)
             if not job_context.tool_key or not job_context.call_id:
                 job_context = ToolExecutionContext(
                     session_id=context.session_id,
@@ -690,6 +699,7 @@ class ToolRuntimeService:
             if job is not None and resolved_status in {"completed", "partial", "failed"}:
                 job = await self._tool_job_service.observe_output(
                     job.id, status=resolved_status, output_payload=result,
+                    **({"non_execution": job_context.non_execution} if job_context.non_execution is not None else {}),
                 )
                 observed_output = True
             if self._artifact_storage_service is not None:

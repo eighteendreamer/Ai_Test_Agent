@@ -87,8 +87,9 @@ def relation_cleanup_coverage(context, inventory):
                     raise ValueError("多效果产生证据与固定拥有者不同")
                 entry = _declaration(row, source["declaration_id"])
                 ref = {"source": deepcopy(source), "origin_job_id": row["origin_job_id"]}
-                if entry is not None and entry["resolution"] == "not_applicable":
-                    excluded.append(ref)
+                if entry is not None and entry["resolution"] in {"not_applicable", "not_executed"}:
+                    excluded.append(ref if entry["resolution"] == "not_applicable" else {**ref,
+                        "reason": "not_executed", "non_execution": deepcopy(row["returned_evidence"]["observation"]["non_execution"])})
                     continue
                 applicable = True
                 if (entry is None or entry["resolution"] != "captured" or not entry["checks_passed"]
@@ -108,8 +109,9 @@ def relation_cleanup_coverage(context, inventory):
                     raise ValueError("多效果清理证据与当前拥有者不同")
                 entry = _declaration(row, declaration.declaration_id)
                 ref = {"origin_job_id": row["origin_job_id"], "cleanup_declaration_id": declaration.declaration_id}
-                if entry is not None and entry["resolution"] == "not_applicable":
-                    excluded.append(ref)
+                if entry is not None and entry["resolution"] in {"not_applicable", "not_executed"}:
+                    excluded.append(ref if entry["resolution"] == "not_applicable" else {**ref,
+                        "reason": "not_executed", "non_execution": deepcopy(row["returned_evidence"]["observation"]["non_execution"])})
                 elif entry is None or entry["resolution"] != "captured":
                     unknown.append({**ref, "reason": "cleanup_without_reliable_objects"})
                 elif entry["role"] != "cleanup" or entry["sources"] != declared_sources:

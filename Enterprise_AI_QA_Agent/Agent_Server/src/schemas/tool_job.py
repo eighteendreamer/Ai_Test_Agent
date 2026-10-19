@@ -4,7 +4,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 
 class ToolJobStatus(str, Enum):
@@ -22,6 +22,14 @@ class ToolJobStatus(str, Enum):
     cancelled = "cancelled"
 
 
+class ToolNonExecutionEvidence(BaseModel):
+    """A native handler's pre-dispatch fact, never inferred from model arguments."""
+    model_config = ConfigDict(extra="forbid")
+
+    stage: Literal["input_validation", "private_input_resolution"]
+    reason: str = Field(min_length=1, max_length=120)
+
+
 class ToolOutputObservation(BaseModel):
     """A returned, sanitized tool output; business assertions are still separate."""
     model_config = ConfigDict(extra="forbid")
@@ -30,6 +38,20 @@ class ToolOutputObservation(BaseModel):
     status: Literal["completed", "partial", "failed"]
     output_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
     observed_at: datetime
+    non_execution: ToolNonExecutionEvidence | None = None
+
+    @model_validator(mode="after")
+    def non_execution_requires_failed_return(self):
+        if self.non_execution is not None and self.status != "failed":
+            raise ValueError("Non-execution evidence requires a failed native return")
+        return self
+
+    @model_serializer(mode="wrap")
+    def preserve_original_observation(self, handler):
+        data = handler(self)
+        if self.non_execution is None:
+            data.pop("non_execution", None)
+        return data
 
 
 class ToolArtifactRecord(BaseModel):

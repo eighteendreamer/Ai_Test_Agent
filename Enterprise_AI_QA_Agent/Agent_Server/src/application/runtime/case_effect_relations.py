@@ -8,6 +8,7 @@ from src.application.test_runs.literal_evidence import literal_value
 from src.application.testing.verification_service import VerificationService
 from src.application.runtime.case_effect_expected_sources import document_expected_value
 from src.schemas.case_effect_sources import SOURCE_PROTOCOL
+from src.schemas.tool_job import ToolOutputObservation
 
 PROTOCOL = "case-effect-evidence-v2"
 logger = logging.getLogger(__name__)
@@ -87,10 +88,12 @@ def definition_selection(definition, inputs):
     return "not_applicable" if "different" in statuses else "selection_unknown" if "missing" in statuses else "matched"
 
 
-def _observe_definition(definition, job, output):
+def _observe_definition(definition, job, output, non_execution=None):
     selection = definition_selection(definition, job.input_payload)
     objects, checks, resolution = [], [], selection
-    if selection == "matched":
+    if non_execution is not None:
+        resolution = "not_executed"
+    elif selection == "matched":
         resolution = "captured"
         for check in definition["checks"]:
             try:
@@ -132,7 +135,8 @@ def capture_relation_return(job, output, observation):
         raise ValueError("多效果证据只能来自原已领取操作")
     if observation.get("output_hash") != _digest(output):
         raise ValueError("多效果原返回SHA与可靠观察不同")
-    entries = [_observe_definition(definition, job, output) for definition in intent["definitions"]]
+    returned = ToolOutputObservation.model_validate(observation)
+    entries = [_observe_definition(definition, job, output, returned.non_execution) for definition in intent["definitions"]]
     # No upstream counterpart (checked: v1 observation, native tool contract and
     # captured mixed formal-case gap): never classify one literal value as two
     # opposite roles without separate returned fields. Keep observed facts.

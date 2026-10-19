@@ -13,7 +13,7 @@ from src.application.test_cases.planning_effect_tasks import (
 )
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.schemas.case_planning import PlanningDecisionV3, CasePlanningPolicy
-from src.schemas.case_planning_stages import PlanningOperationSelection
+from src.schemas.case_planning_stages import PlanningOperationSelection, PlanningStagePrompts
 from src.schemas.case_planning_effect_tasks import BindingTaskDecision, ProducedTaskDecision, EffectTaskCheckpoint
 from src.schemas.case_planning_references import REFERENCE_PROTOCOL_V2, ReferencedDocumentExpectedV2
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
@@ -209,7 +209,13 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     prompts = build_stage_prompts(policy.planning_stage_protocol, policy.effect_expected_source_protocol,
         policy.operation_prefetch_protocol, policy.source_identity_protocol, policy.linked_source_protocol, policy.evidence_reference_protocol)
     assert set(prompts.effect_tasks) == set(DECISIONS)
-    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1")
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r2")
+    assert prompts.task_prompt_revision == 2
+    legacy = prompts.model_dump(mode="json")
+    legacy.pop("task_prompt_revision")
+    restored = PlanningStagePrompts.model_validate(legacy)
+    assert restored.model_dump(mode="json") == legacy
+    assert stage_prompt_version(policy, restored).endswith("+effect-tasks-v1")
     assert policy.max_rounds == plan.config_snapshot.policy.max_rounds
     assert policy.timeout_seconds == plan.config_snapshot.policy.timeout_seconds
     config["evidence_reference_protocol"] = None

@@ -40,8 +40,9 @@ def cleanup_coverage(context, inventory):
                     raise ValueError("原对象来源与固定拥有者不同")
                 event = row["returned_evidence"]
                 ref = {"source_key": source, "origin_job_id": row["origin_job_id"]}
-                if event is not None and event["resolution"] == "not_applicable":
-                    excluded.append(ref)
+                if event is not None and event["resolution"] in {"not_applicable", "not_executed"}:
+                    excluded.append(ref if event["resolution"] == "not_applicable" else {
+                        **ref, "reason": "not_executed", "non_execution": deepcopy(event["observation"]["non_execution"])})
                     continue
                 applicable = True
                 if (event is None or event["resolution"] != "captured" or not event["checks_passed"]
@@ -61,8 +62,9 @@ def cleanup_coverage(context, inventory):
                 raise ValueError("清理证据与当前拥有者不同")
             event = row["returned_evidence"]
             ref = {"origin_job_id": row["origin_job_id"]}
-            if event is not None and event["resolution"] == "not_applicable":
-                excluded.append(ref)
+            if event is not None and event["resolution"] in {"not_applicable", "not_executed"}:
+                excluded.append(ref if event["resolution"] == "not_applicable" else {
+                    **ref, "reason": "not_executed", "non_execution": deepcopy(event["observation"]["non_execution"])})
             elif event is None or event["resolution"] != "captured":
                 unknown.append({**ref, "reason": "cleanup_without_reliable_objects"})
             elif event["role"] != "cleanup" or event["source_keys"] != list(sources):

@@ -1059,6 +1059,12 @@ class ApiTestingModeRuntime:
         except ValueError:
             return None
 
+    @staticmethod
+    def _record_non_execution(context: Any, *, stage: str, reason: str) -> None:
+        record = getattr(context, "record_non_execution", None)
+        if callable(record):
+            record(stage=stage, reason=reason)
+
     async def _execute_dispatched_task(self, arguments: dict[str, Any], context: Any = None) -> dict[str, Any]:
         dispatch_ref = str(arguments.get("dispatch_ref") or "")
         credential, credential_owner = None, None
@@ -1074,22 +1080,28 @@ class ApiTestingModeRuntime:
                 arguments = {"worker_action": "execute_task", "task": frozen["task"],
                     "auth_token_field": frozen["auth_token_field"]}
             except ApiCredentialReferenceError as exc:
+                self._record_non_execution(context, stage="private_input_resolution", reason=str(exc))
                 logger.warning("api_worker_private_input_rejected", extra={"dispatch_ref": dispatch_ref,
                     "reason": str(exc), "http_request_sent": False})
                 return {"status": "failed", "ok": False, "error": str(exc),
                     "summary": "API Worker private input could not be resolved before HTTP.", "http_request_sent": False}
         raw_task = arguments.get("task")
         if not isinstance(raw_task, dict):
+            self._record_non_execution(context, stage="input_validation", reason="missing_task_payload")
+            logger.warning("api_task_payload_rejected", extra={"reason": "missing_task_payload",
+                "worker_action": "execute_task", "http_request_sent": False})
             return {
                 "status": "failed",
                 "ok": False,
                 "summary": "Worker task execution requires a serialized `task` payload.",
                 "error": "missing_task_payload",
+                "http_request_sent": False,
             }
 
         try:
             task = ApiTestTask.model_validate(raw_task)
         except ValidationError as exc:
+            self._record_non_execution(context, stage="input_validation", reason="invalid_task_payload")
             # This validation precedes executor creation and every business request.
             # Return a reliable failure so the original Job can checkpoint it.
             errors = [{"location": list(error["loc"]), "type": error["type"]}

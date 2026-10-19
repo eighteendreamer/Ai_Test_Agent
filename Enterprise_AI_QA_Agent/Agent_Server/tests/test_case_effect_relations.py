@@ -104,7 +104,7 @@ def test_consumption_closure_projection_requires_exact_frozen_scope_and_terminal
 
 @pytest.mark.asyncio
 @LIVE
-@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all", "selection-identity-prefetch-document-internal-all", "selection-identity-prefetch-document-external-all", "linked-selection-identity-prefetch-document-internal-all", "linked-selection-identity-prefetch-document-external-all", "reference-linked-selection-identity-prefetch-document-internal-all", "reference-linked-selection-identity-prefetch-document-external-all"])
+@pytest.mark.parametrize("scenario", ["internal-all", "internal-partial", "external-all", "known-validation", "unknown-create", "unknown-delete", "coverage-budget", "document-internal-all", "document-internal-partial", "prefetch-document-external-all", "identity-prefetch-document-external-all", "selection-identity-prefetch-document-internal-all", "selection-identity-prefetch-document-external-all", "linked-selection-identity-prefetch-document-internal-all", "linked-selection-identity-prefetch-document-external-all", "reference-linked-selection-identity-prefetch-document-internal-all", "reference-linked-selection-identity-prefetch-document-external-all"])
 async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, regression_business_http, monkeypatch, scenario):
     scenario_key = scenario
     references = scenario.startswith("reference-")
@@ -248,7 +248,14 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             return await runtime.execute(tool, ModelToolCall(id=call_id, name=tool.key, arguments=arguments), execution)
 
         denied_retries = []
-        records = [await action("create-first", producer_key, "POST", business[0][0]+"/orders")]
+        records = []
+        if scenario == "known-validation":
+            captured = json.loads((Path(__file__).parent / "fixtures/api_task_missing_path.json").read_bytes())
+            arguments = {**captured["input"], ARGUMENT: {"item_key": producer_key, "operation_key": "invalid-create"}}
+            invalid = await runtime.execute(tool, ModelToolCall(id="invalid-create", name=tool.key, arguments=arguments), execution)
+            assert invalid.status == "failed" and not business[0][1]
+            records.append(invalid)
+        records.append(await action("create-first", producer_key, "POST", business[0][0]+"/orders"))
         first = business[2][0]
         records.append(await action("create-second", producer_key, "POST", business[0][0]+"/orders"))
         second = business[2][1]
@@ -317,10 +324,13 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
             model_key="controlled-evidence-receipt", lease_token=claim.lease_token)
         result = await runs.complete_item(running.id, outcome.completion)
         assert len(business[0][1]) == before
-        expected = "passed" if scenario in {"internal-all", "external-all"} else "blocked"
+        expected = "passed" if scenario in {"internal-all", "external-all", "known-validation"} else "blocked"
         coverage = result.actual["effect_cleanup_coverage"]["cleanups"]["target"]
         assert result.status == coverage["status"] == expected
         assert coverage["known_object_count"] == 2
+        if scenario == "known-validation":
+            assert not coverage["unknown"] and coverage["covered_object_count"] == 2
+            assert any(row.get("reason") == "not_executed" for row in coverage["excluded_operations"])
         if scenario == "internal-partial":
             assert coverage["covered_object_count"] == 1 and len(business[1]) == 1
         if scenario in {"internal-all", "external-all", "unknown-delete", "coverage-budget"}:

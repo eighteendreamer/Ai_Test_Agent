@@ -141,12 +141,15 @@ class PlanningStagePrompts(PlanningModel):
     logic: str
     effects: str
     effect_tasks: dict[Literal["bindings", "produced", "cleanup"], str] | None = None
+    task_prompt_revision: Literal[1, 2] = 1
 
     @model_serializer(mode="wrap")
     def preserve_original_prompts(self, handler):
         data = handler(self)
         if self.effect_tasks is None:
             data.pop("effect_tasks", None)
+        if self.task_prompt_revision == 1:
+            data.pop("task_prompt_revision", None)
         return data
 
     @model_validator(mode="after")
@@ -154,7 +157,7 @@ class PlanningStagePrompts(PlanningModel):
         if self.protocol == "case-planning-staged-evidence-v3":
             if not self.effect_tasks or set(self.effect_tasks) != {"bindings", "produced", "cleanup"} or self.effects != self.effect_tasks["bindings"]:
                 raise ValueError("分任务协议需要一致的完整固定Prompt")
-        elif self.effect_tasks is not None:
+        elif self.effect_tasks is not None or self.task_prompt_revision != 1:
             raise ValueError("旧阶段协议不能新增声明任务Prompt")
         return self
 
