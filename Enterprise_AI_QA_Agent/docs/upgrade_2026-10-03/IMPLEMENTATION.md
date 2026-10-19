@@ -5530,3 +5530,13 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 专项 **6 passed、7.52秒**，覆盖修订先提交、领取先提交、两个独立 claimant 并行、写入后回滚、陈旧版本拒绝，以及“仅 queued 兄弟项改变但运行适配器仍拒绝整份快照变化”的当前边界。最后一项中，正在运行项的完整上下文前后相同，仍未越过现有保护创建检查点；它揭示必须补固定修订读取契约，不表示运行中修订已经实现。再以真实依赖门控执行 `tests/test_run_revision_coordination_research.py tests/test_run_item_dependencies.py`，**23 passed、无跳过，12.40秒**，JUnit 为 `p2-run-revision-coordination-regression.xml`，编译与本轮 diff 检查通过。
 
 本轮只有实验测试与记录；共享 head 的候选在这些竞争场景下已验证，生产领取协调、不可变修订历史、已领取条目的依据固定、套件版本和新增/移除语义、Agent/动作准入/环境消费读取与完整 API/UI 仍待实现/验收。不把该实验替代默认 Step 复杂选取/排序/补全/执行，亦不宣称所有锁顺序和故障组合安全。MySQL 配置、PostgreSQL 业务边界及 Anthropic Messages 等原生 Provider 协议保持。完整 P0—P5 仍未完成。
+
+## 2026-10-19 领取时固定计划身份与恢复继承
+
+继续 PLAN §7.107，重新读取原附件并核对不可变 CasePlanStore、完整快照映射、首次领取及 Agent/PG 动作链路。先在内存和真实隔离 PostgreSQL 复现：领取后改变当前快照的运行输入，原实现仍允许开始，**2 failed、27 deselected**。这确认首次领取至 Agent 检查点之前没有固定完整快照身份；不是生产修订 API 已实现。详见 PLAN §7.108。
+
+为 Attempt 增加可选 `plan_snapshot_identity={plan_id,sha256}`，复用 canonical JSON/SHA256 和原 expired Attempt 继承链。首次 Agent 领取随原事务写入；恢复继承原值，无身份的历史 Attempt 不补写，legacy 不创建该字段。开始执行、上下文构造、环境开始回执重放及 PG 动作准入共同校验。整份快照比较、原 context hash 与恢复祖先保护保留，不把身份注入 AI 业务上下文。前端 Attempt 类型同步；没有新增表、DDL、配置、依赖或外部模型调用。
+
+新增双后端功能验收 **6通过**；新增 PG/HTTP 动作拒绝验收 **1通过**，确认最新 Run 不能绕过原领取身份、原检查点不变、待发 Job 无 started_at、业务 HTTP 为零。最终组合为规划/依赖/协调/上下文 **61通过、1跳过**，Agent/操作查证 **39通过、1跳过**，真实环境开始回执 **2通过**，存储合同 **15通过**，合计 **117通过、2跳过**；前两项专项已包含在组合计数中，不重复累计。存储合同初跑 **14通过、1失败**，原因是此前单 SELECT 详情修复后取消锁顺序夹具未同步聚合返回；仅修正夹具后15项全通过。两个跳过分别为未启用的真实模型专项和公开 Worker 专项。Python 编译、前端 `npm run build`（含 vue-tsc）及 diff 检查通过。失败与最终 JUnit 均保留在 `p2-claim-snapshot-*.xml`。
+
+当前只完成领取身份和一致性边界；原 CasePlanStore 可复用不可变计划，但完整 Run 映射/owner/phase/消费范围仍需保存 revision envelope。历史快照解析、修订提交/追加历史、排队项与领取原子协调，以及跨修订的运行中执行、环境、共享消费、回归和报告仍未完成，不把“拒绝变化”当作支持修订。旧数据库记录保持原语义，新字段存 PostgreSQL JSONB；新增 pin 后混跑旧 Worker 丢失未知字段的兼容性未验收，部署须同步升级相关 Worker。Step 已认证，本轮没有默认 Step 复杂规划验收；Provider 原生协议不变。整体 P0—P5 继续未完成。

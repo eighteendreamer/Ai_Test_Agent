@@ -8,6 +8,7 @@ import logging
 from src.application.test_runs.dependencies import dependencies_ready, output_at_path
 from src.application.test_runs.environment_admission import fixed_environment_admission
 from src.application.test_runs.plan_mapping import source_output_path
+from src.application.test_runs.plan_snapshot_identity import validate_claimed_plan_snapshot
 from src.application.test_runs.preparation_scopes import frozen_preparation_scopes
 from src.runtime.postgres_business_planning import fixed_planning_environment
 from src.schemas.case_execution import AgentCaseExecutionContext, BoundCaseInput, CaseExecutionStep
@@ -99,6 +100,8 @@ def build_agent_case_context(
         raise ValueError("Agent所选环境缺少固定规划依据")
     attempt = next((entry for entry in detail.attempts if entry.run_item_id == item.id
         and entry.attempt_no == item.attempt_no and entry.lease_token == item.lease_token),None)
+    if attempt is not None:
+        validate_claimed_plan_snapshot(run, attempt)
     admission = fixed_environment_admission(run,item,attempt,detail.attempts) if attempt else None
     context = AgentCaseExecutionContext(project_id=run.project_id, run_id=run.id, run_item_id=item.id,
         plan_id=plan.id, objective=plan.request.objective, target_key=target.key, steps=steps,

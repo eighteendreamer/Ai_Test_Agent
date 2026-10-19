@@ -2355,7 +2355,10 @@ export interface RunItemApprovalPending {
 export interface TestRunDetail {
   run: TestRunRecord;
   items: TestRunItemRecord[];
-  attempts: Array<Record<string, unknown> & { environment_admission?: BusinessExecutionAdmission | null }>;
+  attempts: Array<Record<string, unknown> & {
+    environment_admission?: BusinessExecutionAdmission | null;
+    plan_snapshot_identity?: { plan_id: string; sha256: string } | null;
+  }>;
   results: TestCaseResultRecord[];
 }
 

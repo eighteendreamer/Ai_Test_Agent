@@ -260,10 +260,19 @@ async def test_changed_queued_sibling_still_invalidates_running_adapter_global_s
         with postgres_connect(env.settings) as conn, conn.cursor() as cursor:
             store._write_run(cursor, changed)
         after = await store.get_run(detail.run.id)
-        assert context.execution_json() == build_agent_case_context(after, item, version).execution_json()
+        # Keep the old observation reproducible for historical, unpinned data.
+        historical = after.model_copy(deep=True)
+        for entry in historical.attempts:
+            entry.plan_snapshot_identity = None
+        assert context.execution_json() == build_agent_case_context(historical, item, version).execution_json()
+        with pytest.raises(ValueError, match="领取时固定的计划"):
+            build_agent_case_context(after, item, version)
         adapter = AgentCaseExecutionAdapter(run_service=SimpleNamespace(get=store.get_run,
             get_item=store.get_item, get_latest_attempt=store.get_latest_attempt), session_service=None,
             session_store=None, tool_job_service=None)
         with pytest.raises(ValueError, match="租约不一致"):
             await adapter._load(run=before.run, item=item, version=version, attempt_id=attempt.id)
+        # Supplying the latest Run no longer bypasses the claim-time identity.
+        with pytest.raises(ValueError, match="领取时固定的计划"):
+            await adapter._load(run=after.run, item=item, version=version, attempt_id=attempt.id)
         assert (await store.get_latest_attempt(item.id)).checkpoint_version == 0

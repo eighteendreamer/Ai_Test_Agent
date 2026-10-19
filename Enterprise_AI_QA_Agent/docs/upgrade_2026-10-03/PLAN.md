@@ -4382,3 +4382,27 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 随后启用 `RUN_LIVE_RUN_DEPENDENCIES=1`、`RUN_LIVE_PLAN_RUN_CREATION=1`，运行 `tests/test_run_revision_coordination_research.py tests/test_run_item_dependencies.py`，最终 **23 passed、无跳过，12.40秒**；编译检查通过。独立专项和组合 JUnit 分别为 `p2-run-revision-coordination-final.xml`、`p2-run-revision-coordination-regression.xml`。规划夹具使用受控 `SequenceModel`，本轮没有真实 Step 调用、业务 HTTP 或生产修订 API 验收。
 
 当前分类更新：**共享 head 的领取协调候选已在本组真实事务竞争下验证，仍未接入生产；固定修订身份/不可变历史、套件版本语义、已领取条目的依据固定、Agent 恢复与动作准入、公开 API/页面和完整流程仍需实现/验收**。下一步应先落实“当前执行投影”与“条目已领取的固定修订”之间的读取契约，并明确新增/移除用例如何保留原套件、原条目及结果；只有历史检索、上下文、环境/消费范围和动作准入都能读回同一依据，才接入协调机制。该实验不证明环境限制、取消/租约恢复、所有锁顺序或未来完整修订事务无死锁，也不证明这是唯一可行的协调设计。不新增 MySQL 配置、不改 Provider 原生协议；P2 默认 Step 复杂规划与完整 P0—P5 继续未完成。
+
+### 7.108 首次领取固定计划身份与恢复继承〔2026-10-19〕
+
+重新读取原附件，沿 §7.107 检查 `CasePlanStore`、`build_plan_run`、两种 RunStore 的领取/开始/恢复、`AgentCaseExecutionAdapter._load`、上下文与 PG 动作准入。`CasePlanStore.save` 已以 ID 首次保存为准，PG 使用 `ON CONFLICT(id) DO NOTHING`，可复用其不可变计划记录；但计划记录不包含 Run 特有的 item 映射、owner、phase、消费范围和依赖映射版本，不能仅凭原 plan ID 宣称已实现完整历史快照读取。运行适配器的全快照比较发生在领取之后；旧实现首次领取没有保存计划身份，Agent 检查点也可能尚未创建。
+
+先复现：在夹具独占项目创建真实正式计划/Run，领取后仅改变当前 Run 快照的 `request.runtime_context`，再启动原条目。内存与隔离 PostgreSQL 均实际启动成功，针对固定依据要求的回归测试均报 `DID NOT RAISE ValueError`，**2 failed、27 deselected，8.53秒**。这不是线上已经开放了修订 API，而是拟接入修订前明确暴露的执行依据缺口；原始输出见 `p2-claim-snapshot-before.xml`。
+
+采用现有 `plan_mapping.json_digest` 的 canonical JSON/SHA256 与 expired Attempt 继承方式，在 Attempt 增加可选 `plan_snapshot_identity = {plan_id, sha256}`。首次 Agent 领取在原领取事务中随 Attempt 保存完整快照的哈希；快照包含完整计划以及 Run 映射、准备范围、回归和依赖映射版本。恢复复制原身份，不按当前快照重新计算；旧 Attempt 没有身份时保持缺失，序列化也不补新字段。legacy 执行不创建该身份。没有复制整份计划到每个 Attempt，没有引入新表、DDL、配置、依赖或模型调用。
+
+`plan_snapshot_identity.py` 集中执行身份校验；开始执行、Agent 上下文构造、已有环境开始回执重放和 PG 动作准入均接入。计划不一致时保留原 Attempt/检查点并明确报错，不能把“调用方传入最新 Run”视为重新绑定执行依据的授权。现有 `_load` 整份快照比较和完整上下文 hash/祖先检查均保留；新身份不进入 Agent 业务 JSON，前端 Attempt 类型同步可选字段。日志记录选取来源（首次领取或原 expired Attempt）及不一致身份，不记录业务正文或凭据；选取日志不声称数据库已提交。
+
+新增功能验收 **6 passed、23 deselected，6.22秒**：内存与真实 PG 分别证明领取后变化不能开始、失败后条目仍 claimed 且零检查点；开始/检查点/过期/重领后保持原 hash 和原 checkpoint，独立 PG Store 重新读取仍一致；历史无身份 Attempt 不被补写新 hash，继续按旧语义恢复。额外真实 PG/HTTP 专项 **1 passed、11 deselected，7.89秒**：先保存原 Agent 检查点，改变当前快照后，以最新 Run 调用 `_load` 被拒；原业务动作到 PG 准入时也被拒，Job 仍 queued/没有 `started_at`，业务 HTTP 为零，原检查点未改写。该样本没有使用外部 AI，也不是修订成功验收。
+
+最终组合验证：
+
+- `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_RUN_DEPENDENCIES=1`，`test_case_plan_run_creation.py test_run_item_dependencies.py test_run_revision_coordination_research.py test_agent_case_context.py`：**61 passed、1 skipped，37.85秒**。原第六个协调实验保留历史无 pin 的上下文相同证明，同时验证新 pin 会拒绝改后快照；没有放松旧适配器保护。
+- `RUN_LIVE_PLAN_RUN_CREATION=1`，`test_agent_case_execution.py test_case_operation_verification.py`：**39 passed、1 skipped，157.79秒**，包含真实本地业务 HTTP、PG 正式结果、恢复、只读查证、动作准入及新增拒绝样本。
+- `RUN_LIVE_DOCUMENT_IMPACT_TASKS=1`，环境开始回执的后续评审/过期恢复及篡改/外来祖先两项：**2 passed、6 deselected，25.77秒**。
+- `test_test_run_postgres_claim.py` 初次 **14 passed、1 failed**，失败为此前详情改成单 SELECT 后，取消锁顺序测试的假 cursor 仍只返回旧 `record`，触发 `KeyError: 'items'`；HEAD 生产查询已是聚合形态。仅同步该夹具的 `items/attempts/results` 空数组，保留锁顺序断言，复跑 **15 passed，5.00秒**。
+- 上述最终四组共 **117 passed、2 skipped**；两个跳过分别为未启用的独立真实模型专项和公开 Worker 专项，不能视为已验收。`npm run build` 的 `vue-tsc` 和 Vite 构建成功；Python 编译和本轮 diff 检查通过。JUnit 为 `p2-claim-snapshot-{regression,agent-regression,environment-regression,store-contract-final}.xml`，初次夹具失败保留在 `p2-claim-snapshot-store-contract.xml`。
+
+当前分类：**领取时固定完整快照身份、恢复继承和执行前一致性校验已有实现并通过上述功能验收；按该身份读取不可变历史快照、完整修订历史/提交 API、queued 项原子改动及生产领取协调、运行中条目继续使用原依据、环境/共享消费/回归/报告跨修订语义仍需补实现与验收。** 本次不开放修订写入口，也不把拒绝变更误报为支持执行中修订。下一步须保存并读取完整 revision envelope（除原计划外还包括 Run 映射与消费范围），才能让未执行项采用新修订、已领取项继续解析原修订；新增/移除正式用例及套件冻结语义仍需一并落实。
+
+新字段存于已有 PostgreSQL Attempt JSONB，配置仍在 MySQL、原件仍在 RustFS；旧记录不回填。部署新增 pin 后须同步升级读写这些 Attempt 的 Worker：旧版 Schema 可能在重写 JSON 时丢弃未知字段，混跑兼容性尚未验收。Step 已认证；默认 Step 多候选选取→排序→补全→完整执行、DeepSeek 人工录制及其余 P0—P5 未闭环事项继续保留。Provider 仍走各自原生协议，Anthropic 保持 Messages。

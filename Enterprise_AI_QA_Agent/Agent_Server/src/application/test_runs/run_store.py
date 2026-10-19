@@ -15,6 +15,7 @@ from src.application.test_runs.dependencies import (dependencies_ready, validate
     dependency_failures, blocked_dependency_records)
 from src.application.test_runs.environment_restrictions import restriction_reviews, blocked_environment_records
 from src.application.test_runs.environment_admission import create_environment_admission, fixed_environment_admission
+from src.application.test_runs.plan_snapshot_identity import claim_plan_snapshot_identity, validate_claimed_plan_snapshot
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
@@ -599,6 +600,7 @@ class InMemoryTestRunStore:
                     checkpoint_at=prior.checkpoint_at if prior else None,
                     recovered_from_attempt_id=prior.id if prior else None,
                     environment_admission=prior.environment_admission if prior else None,
+                    plan_snapshot_identity=claim_plan_snapshot_identity(run, prior),
                 )
                 stored_item = item.model_copy(
                     deep=True,
@@ -629,6 +631,8 @@ class InMemoryTestRunStore:
             item = self._require_active_lease(item_id, lease_token, now, {"claimed"})
             if not dependencies_ready(item, self._items, self._results):
                 raise ValueError("运行条目的必要前置或输出尚未满足")
+            attempt = self._active_attempt(item_id, lease_token)
+            validate_claimed_plan_snapshot(self._require_run(item.run_id), attempt)
             updated = item.model_copy(
                 deep=True,
                 update={
@@ -639,7 +643,6 @@ class InMemoryTestRunStore:
                 },
             )
             self._items[item_id] = updated
-            attempt = self._active_attempt(item_id, lease_token)
             self._attempts[attempt.id] = attempt.model_copy(
                 deep=True,
                 update={
@@ -2368,6 +2371,7 @@ class PostgresTestRunStore:
                         checkpoint_at=prior.checkpoint_at if prior else None,
                         recovered_from_attempt_id=prior.id if prior else None,
                         environment_admission=prior.environment_admission if prior else None,
+                        plan_snapshot_identity=claim_plan_snapshot_identity(run, prior),
                     )
                     updated = item.model_copy(
                         update={
@@ -2468,6 +2472,7 @@ class PostgresTestRunStore:
                     if cur.fetchone() is None:
                         raise ValueError("运行条目的必要前置或输出尚未满足")
                 attempt = self._lock_attempt(cur, item_id, lease_token)
+                validate_claimed_plan_snapshot(run, attempt)
                 restricted = restriction_reviews(run.plan_snapshot.plan, item, reviews) if reviews else []
                 if restricted and not self._prior_business_started(cur, item):
                     updated, ended, result = blocked_environment_records(run, item, restricted, now, "start",
@@ -3614,6 +3619,7 @@ class PostgresTestRunStore:
             return False
         self._validate_lease(item,lease_token,now,{"running"})
         detail = self._detail_from_cursor(cur,item.run_id)
+        validate_claimed_plan_snapshot(detail.run, attempt)
         fixed_environment_admission(detail.run,item,attempt,detail.attempts)
         logger.info("test_run_environment_start_receipt_replayed",extra={"run_id":item.run_id,
             "run_item_id":item.id,"attempt_id":attempt.id,"admission_sha256":attempt.environment_admission.sha256})

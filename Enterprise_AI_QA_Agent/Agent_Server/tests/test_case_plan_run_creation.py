@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import os
 from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 from types import SimpleNamespace
 
@@ -453,3 +453,91 @@ async def test_lost_response_after_commit_replays_the_same_run_without_dispatchi
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT count(*) AS n FROM {table}")
             assert cur.fetchone()["n"] == 1
+
+
+def replace_owned_run(env, store, run, live):
+    # Owned fixture data only: simulate the projection change that a future
+    # revision writer must coordinate. This is not a production revision API.
+    if live:
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            store._write_run(cur, run)
+    else:
+        store._runs[run.id] = run.model_copy(deep=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_claimed_plan_change_is_rejected_before_start_and_without_checkpoint(tmp_path, live):
+    async with planned(tmp_path, live) as (env, store, _, service, plan, now, _):
+        detail = await service.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="claim-snapshot-change", mode_key="api_testing"))
+        claimed, attempt = (await store.claim_items(run_id=detail.run.id, worker_id="original",
+            limit=1, lease_seconds=60, now=now))[0]
+        changed = (await store.get_run(detail.run.id)).run.model_copy(deep=True)
+        changed.plan_snapshot.plan.request.runtime_context["later_input"] = "not present when claimed"
+        replace_owned_run(env, store, changed, live)
+        with pytest.raises(ValueError, match="领取时固定的计划"):
+            await store.start_item(claimed.id, attempt.lease_token, now)
+        after = await store.get_run(detail.run.id)
+        assert next(item for item in after.items if item.id == claimed.id).status == "claimed"
+        saved = await store.get_latest_attempt(claimed.id)
+        assert saved.status == "claimed" and saved.checkpoint_version == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_claim_pins_complete_snapshot_and_recovery_inherits_original_identity(tmp_path, live):
+    from src.application.test_runs.plan_mapping import json_digest
+    from src.application.test_runs.run_store import PostgresTestRunStore
+
+    async with planned(tmp_path, live) as (env, store, _, service, plan, now, _):
+        detail = await service.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="claim-snapshot-recovery", mode_key="api_testing"))
+        claimed, attempt = (await store.claim_items(run_id=detail.run.id, worker_id="original",
+            limit=1, lease_seconds=60, now=now))[0]
+        expected = {"plan_id": plan.id,
+            "sha256": json_digest(detail.run.plan_snapshot.model_dump(mode="json"))}
+        assert attempt.plan_snapshot_identity.model_dump(mode="json") == expected
+        await store.start_item(claimed.id, attempt.lease_token, now)
+        await store.save_checkpoint(claimed.id, attempt.lease_token, "owned-snapshot-test",
+            {"sent": "retain the original checkpoint"}, 1, now)
+        await store.recover_expired(detail.run.id, now + timedelta(seconds=61))
+        changed = (await store.get_run(detail.run.id)).run.model_copy(deep=True)
+        changed.plan_snapshot.plan.request.runtime_context["later_input"] = "different revision"
+        replace_owned_run(env, store, changed, live)
+        recovered = await store.claim_items(run_id=detail.run.id, worker_id="recovery",
+            limit=5, lease_seconds=60, now=now + timedelta(seconds=62))
+        item, successor = next(value for value in recovered if value[0].id == claimed.id)
+        assert successor.recovered_from_attempt_id == attempt.id
+        assert successor.plan_snapshot_identity == attempt.plan_snapshot_identity
+        assert successor.checkpoint_payload == {"sent": "retain the original checkpoint"}
+        fresh = PostgresTestRunStore(env.settings) if live else store
+        assert (await fresh.get_latest_attempt(item.id)).plan_snapshot_identity == attempt.plan_snapshot_identity
+        assert successor.plan_snapshot_identity.sha256 != json_digest(changed.plan_snapshot.model_dump(mode="json"))
+        with pytest.raises(ValueError, match="领取时固定的计划"):
+            await fresh.start_item(item.id, successor.lease_token, now + timedelta(seconds=62))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_original_attempt_without_snapshot_identity_is_not_retroactively_repinned(tmp_path, live):
+    async with planned(tmp_path, live) as (env, store, _, service, plan, now, _):
+        detail = await service.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="old-claim-snapshot", mode_key="api_testing"))
+        claimed, attempt = (await store.claim_items(run_id=detail.run.id, worker_id="old",
+            limit=1, lease_seconds=60, now=now))[0]
+        raw = attempt.model_dump(mode="json")
+        raw.pop("plan_snapshot_identity", None)
+        old = type(attempt).model_validate(raw)
+        if live:
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                store._write_attempt(cur, old)
+        else:
+            store._attempts[old.id] = old
+        await store.recover_expired(detail.run.id, now + timedelta(seconds=61))
+        recovered = await store.claim_items(run_id=detail.run.id, worker_id="new",
+            limit=5, lease_seconds=60, now=now + timedelta(seconds=62))
+        item, successor = next(value for value in recovered if value[0].id == claimed.id)
+        assert successor.plan_snapshot_identity is None
+        assert "plan_snapshot_identity" not in successor.model_dump(mode="json")
+        await store.start_item(item.id, successor.lease_token, now + timedelta(seconds=62))

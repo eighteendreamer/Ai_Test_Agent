@@ -136,6 +136,13 @@ class TestRunItemRecord(BaseModel):
     wall_clock_duration_ms: int = Field(default=0, ge=0)
 
 
+class RunPlanSnapshotIdentity(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    plan_id: str = Field(min_length=1)
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class TestRunAttemptRecord(BaseModel):
     id: str
     run_id: str
@@ -162,6 +169,7 @@ class TestRunAttemptRecord(BaseModel):
     checkpoint_at: datetime | None = None
     recovered_from_attempt_id: str | None = None
     environment_admission: BusinessExecutionAdmission | None = None
+    plan_snapshot_identity: RunPlanSnapshotIdentity | None = None
 
     @model_serializer(mode="wrap")
     def original_attempt_wire(self, handler):
@@ -169,6 +177,8 @@ class TestRunAttemptRecord(BaseModel):
         value = handler(self)
         if self.environment_admission is None:
             value.pop("environment_admission", None)
+        if self.plan_snapshot_identity is None:
+            value.pop("plan_snapshot_identity", None)
         return value
 
 

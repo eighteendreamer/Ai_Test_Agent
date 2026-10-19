@@ -19,6 +19,7 @@ from src.runtime.postgres_case_operations import PostgresCaseOperations
 from src.runtime.postgres_case_consumption import PostgresCaseConsumption
 from src.application.runtime.case_effect_evidence import effect_intent, INTENT_KEY
 from src.application.test_runs.environment_restrictions import restriction_reviews
+from src.application.test_runs.plan_snapshot_identity import validate_claimed_plan_snapshot
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_business_environment_store import environment_digest
 from src.runtime.postgres_tool_job_store import _job_from_row
@@ -112,6 +113,7 @@ class PostgresCaseActionAdmission:
             attempt = runs._lock_attempt(cur, item.id, item.lease_token)
             if attempt.status != "running" or attempt.run_id != run.id:
                 raise ValueError("动作确认与当前运行Attempt不一致")
+            validate_claimed_plan_snapshot(run, attempt)
             if attempt.checkpoint_key != "agent_case_execution":
                 raise ValueError("动作确认缺少原Agent执行检查点")
             checkpoint = AgentCaseExecutionCheckpoint.model_validate(attempt.checkpoint_payload)
