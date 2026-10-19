@@ -1,6 +1,6 @@
 """Live transaction experiments for PLAN 7.103, not a production revision API.
 
-Use the real RunStore claimant with a test-only shared revision-head lock. The
+Use the real RunStore claimant and production advisory coordination. The
 candidate writer only revises dependencies; plans/suites are deliberately not
 rewritten by this experiment. This cannot establish full revision support.
 """
@@ -59,11 +59,13 @@ class CandidateCoordination:
     async def blocked_by(self, actor, owner):
         def observe():
             with postgres_connect(self.settings) as conn, conn.cursor() as cursor:
-                cursor.execute("SELECT pg_blocking_pids(%s) AS blockers", (self.pids[actor],))
-                return cursor.fetchone()["blockers"]
+                cursor.execute("SELECT pg_blocking_pids(pid) AS blockers, wait_event FROM pg_stat_activity WHERE pid=%s",
+                    (self.pids[actor],))
+                return cursor.fetchone()
         deadline = monotonic() + 10
         while monotonic() < deadline:
-            if self.pids[owner] in await asyncio.to_thread(observe):
+            state = await asyncio.to_thread(observe)
+            if state and self.pids[owner] in state["blockers"] and state["wait_event"] == "advisory":
                 return
             await asyncio.sleep(0.02)
         pytest.fail(f"PostgreSQL did not observe {actor} blocked by {owner}")
@@ -72,6 +74,7 @@ class CandidateCoordination:
         with postgres_connect(self.settings) as conn, conn.cursor() as cursor:
             self.register(cursor, "revision")
             self.event("revision-attempted").set()
+            self.store._lock_plan_projection(cursor, self.run.id, exclusive=True)
             cursor.execute(f"SELECT revision FROM {self.head} WHERE run_id=%s FOR UPDATE", (self.run.id,))
             if cursor.fetchone()["revision"] != expected:
                 raise RevisionConflict("stale expected revision")
@@ -114,7 +117,7 @@ async def experiment(tmp_path, monkeypatch):
                 "record JSONB NOT NULL, PRIMARY KEY(run_id,revision))")
             cursor.execute(f"INSERT INTO {head} VALUES (%s,0)", (run.id,))
         control = CandidateCoordination(env.settings, store, run, items, head, history)
-        original_claim, original_read, original_refresh = store._claim_items_sync, store._read_run, store._refresh_run_in_cursor
+        original_claim, original_lock, original_refresh = store._claim_items_sync, store._lock_plan_projection, store._refresh_run_in_cursor
 
         def coordinated_claim(*args, **kwargs):
             control.thread.actor = "claim:" + (args[1] if len(args) > 1 else kwargs["worker_id"])
@@ -124,16 +127,16 @@ async def experiment(tmp_path, monkeypatch):
             finally:
                 control.thread.actor = None
 
-        def shared_before_read(cursor, run_id):
+        def observed_projection_lock(cursor, run_id, *, exclusive=False):
             actor = getattr(control.thread, "actor", None)
             if actor and not control.thread.locked:
                 control.register(cursor, actor)
                 control.event(actor + ":attempted").set()
-                cursor.execute(f"SELECT revision FROM {head} WHERE run_id=%s FOR SHARE", (run_id,))
-                assert cursor.fetchone() is not None
+                original_lock(cursor, run_id, exclusive=exclusive)
                 control.thread.locked = True
                 control.event(actor + ":locked").set()
-            return original_read(cursor, run_id)
+                return
+            return original_lock(cursor, run_id, exclusive=exclusive)
 
         def pause_before_totals(cursor, *args, **kwargs):
             actor = getattr(control.thread, "actor", None)
@@ -143,7 +146,7 @@ async def experiment(tmp_path, monkeypatch):
             return original_refresh(cursor, *args, **kwargs)
 
         monkeypatch.setattr(store, "_claim_items_sync", coordinated_claim)
-        monkeypatch.setattr(store, "_read_run", shared_before_read)
+        monkeypatch.setattr(store, "_lock_plan_projection", observed_projection_lock)
         monkeypatch.setattr(store, "_refresh_run_in_cursor", pause_before_totals)
         try:
             yield control, store, run, items, now
@@ -200,7 +203,7 @@ async def test_claim_first_revision_waits_then_rejects_without_writing(tmp_path,
 
 
 @pytest.mark.asyncio
-async def test_shared_head_keeps_independent_claimants_concurrent(tmp_path, monkeypatch):
+async def test_shared_projection_resource_keeps_independent_claimants_concurrent(tmp_path, monkeypatch):
     async with experiment(tmp_path, monkeypatch) as (control, store, run, items, now):
         control.pause_claims = True
         tasks = [asyncio.create_task(store.claim_items(run_id=run.id, worker_id=worker, limit=1, lease_seconds=60, now=now))

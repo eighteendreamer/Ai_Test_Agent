@@ -7,7 +7,7 @@
 | 方向 | 已有实现/专项证据 | 尚未验收 | 仍需补实现或查证 |
 |---|---|---|---|
 | 模板、生成、导入 | 默认/项目模板、JSON渲染、Excel/JSON产品专项；普通Markdown模块生成及恢复专项 | 更广业务文档和用户生产流程 | 依据新失败再确定缺口，不能把已有专项重列为未实现 |
-| 按用例执行 | 项目隔离、完整版本读取、规划/依赖映射、原子领取和正式Agent链路 | 默认模型多候选选取→排序→必要前置/运行内准备→执行；其他模式 | 执行中计划修订缺完整实现；未知副作用自动选取查证及完整准备状态须继续查证 |
+| 按用例执行 | 项目隔离、完整版本读取、规划/依赖映射、原子领取和正式Agent链路；领取快照归档/恢复；生产领取与修订事务协调专项（§7.110） | 默认模型多候选选取→排序→必要前置/运行内准备→执行；其他模式 | 执行中修订提交、历史追加、条目增删/套件及跨修订回归仍缺完整实现；未知副作用自动选取查证及完整准备状态须继续查证 |
 | 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复；Agent API正向认证链路双Worker通过 | 更多真实中断组合；P2 live7未到执行；原live5 blocked保留 | 产生声明重复出现length/空正文，须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
 | UI录制与知识 | DeepSeek真实页面API/CDP/PG自动化录制；受控页面默认AI使用知识 | 人手DeepSeek录制、默认AI消费该站知识、完整产品流程 | 不能用已有读取专项替代场景/步骤/别名/失败定位完整验收 |
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
@@ -4443,3 +4443,24 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 Python compileall 和本轮 diff 检查通过；此次没有前端契约或页面改动，未重复前端构建。新增字段只在隔离业务 PG 验收，没有运行生产迁移，没有真实 Step 调用。同步升级 Worker 的部署约束保留。
 
 当前分类：**原完整快照归档、按领取身份读取、Agent/启动/动作/环境回执消费及上述恢复功能已有实现并通过对应验收。** 生产修订提交与原子追加、queued 项与领取协调、新增/删除正式条目及套件冻结、共享消费/清理/回归/报告的完整跨修订语义仍需补实现与验收。此次保存的是创建时归档，不能将模拟投影变化的测试说成生产修订已实现；多修订体量、归档增长和读取性能也未验收。默认 Step 多候选选取→排序→必要补全→执行、其他模式、人工 DeepSeek 录制及其余 P0—P5 未闭环项继续保留，整体未完成。
+
+### 7.110 生产领取与计划修订的 PostgreSQL 事务协调（2026-10-19）
+
+继续重读原附件并核对 §7.103 的修订头行候选。代码库 `alembic/env.py` 已有事务级 advisory lock；[PostgreSQL 官方锁函数](https://www.postgresql.org/docs/17/functions-admin.html#FUNCTIONS-ADVISORY-LOCKS)及[显式锁说明](https://www.postgresql.org/docs/17/explicit-locking.html#ADVISORY-LOCKS)确认共享锁之间兼容、排他锁与共享锁冲突、事务提交/回滚/连接结束释放。采用现有机制替代另建协调头表：Run 统计刷新会写 Run 行，不以 Run 行共享锁引入升级争用；Item 继续使用原 `FOR UPDATE SKIP LOCKED`。乐观修订号和历史追加仍由未来正式修订写事务承担，advisory lock 不代替它们。
+
+先让真实生产 `claim_items` 与独立排他事务竞争，接入前 **2 failed**，均为 `claim completed while an exclusive plan revision transaction still held the resource`（`p2-plan-coordination-before.xml`）。根因是领取只锁条目，没有修订与领取共同遵守的协调资源。现已在原领取事务首次读取 Run 之前取得共享事务锁；未来修订写事务须先取得同一资源排他锁，再按既有 project→item→attempt→Job/Run 的适用锁序校验、更新。AI、查询外部服务和网络规划必须在锁外完成，不能持锁等待模型。仅在测试中存在的 head/history 表用于检查 CAS/回滚，已经不承担协调职责，没有新增生产头表。
+
+资源由实际 Run 表的 relation OID、规范化 UUID 和固定 namespace 计算为有符号 64 位键。先由参数化 regclass 查询解析物理表，避免 schema/引号别名或 UUID 大小写产生不同锁；不同物理表或不同 Run 使用不同资源。哈希碰撞只会额外等待，不会混同业务记录。此锁不是权限或隔离检查，原项目、租约、依赖和回执校验保留。新增 requested/locked 结构化日志记录运行及锁模式，不输出凭据。
+
+实际功能验收：独立 PG writer 先持锁时 claim 在 `pg_stat_activity/pg_blocking_pids` 中明确等待 advisory 锁，无提前 Attempt；提交和回滚均释放。修订先行后领取读取新依赖；领取先行后候选 writer 等待、随后拒绝已领取项且无历史写入。两个 claimant 都能在刷新统计之前完成各自不同条目的写入，证明未串行化独立领取。显式 schema/引号别名和大写 UUID 与原资源仍互斥；其他 Run/物理表资源不阻塞。真实独立 Python 进程持锁后被终止，stdout/stderr/退出码均检查，等待领取继续且仅产生一次 Attempt。该进程只通过 argv 接收独占表/Run 身份，连接凭据仍由现有配置加载。
+
+| 实际命令范围（Agent_Server 内） | 结果 | 工件 |
+|---|---|---|
+| `RUN_LIVE_RUN_DEPENDENCIES=1`；`test_run_plan_projection_lock.py test_run_revision_coordination_research.py test_test_run_postgres_claim.py` | **28 passed，14.54秒** | `p2-plan-coordination-final.xml` |
+| `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_RUN_DEPENDENCIES=1`；`test_case_plan_run_creation.py test_run_item_dependencies.py test_agent_case_context.py` | **63 passed、1 skipped，32.09秒** | `p2-plan-coordination-regression.xml` |
+| 同上开关；`test_agent_case_execution.py test_case_operation_verification.py` | **44 passed、1 skipped，161.92秒** | `p2-plan-coordination-agent-regression.xml` |
+| `RUN_LIVE_DOCUMENT_IMPACT_TASKS=1`；原开始回执/计划变化/过期恢复及篡改/外来祖先两项 | **2 passed、6 deselected，24.74秒** | `p2-plan-coordination-environment.xml` |
+
+四组 **137 passed、2 skipped**；两项跳过仍为真实默认模型和独立公开 Worker，不能计为默认 Step 验收。最后为子进程补 Windows 隐藏窗口参数后，锁专项另 **7 passed，8.59秒**（`p2-plan-coordination-lock-final.xml`），已在范围内不重复累计。Python compileall 和 diff 检查通过；没有前端/API/schema 契约改动，未重复构建、未执行生产迁移、没有真实模型调用或 Provider 协议修改。此前完整迁移回归5项既有 ToolJob 表名失败仍未在本步骤解决。
+
+当前分类：**生产领取共享协调、可供正式写事务调用的排他协调及上述真实并发/进程终止行为已有实现并验收。** 排他调用目前只由测试候选 writer 使用；生产修订提交 API、expected revision/幂等、原子追加完整归档、queued 投影和新增/移除正式条目、套件冻结、跨修订清理/回归/报告仍需实现。不能将锁基础报告为完整执行中修订。此机制要求所有领取与修订 Worker 使用同版实现，旧 Worker 不遵守该锁，混跑未验收。配置继续 MySQL、业务 PostgreSQL、原件 RustFS；Step 已认证，整体 P0—P5 目标继续未完成。

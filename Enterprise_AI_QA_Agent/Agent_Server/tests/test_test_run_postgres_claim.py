@@ -919,7 +919,9 @@ def test_postgres_claim_uses_skip_locked_and_one_transaction_connection(monkeypa
         def execute(self, statement, parameters=None):
             normalized = " ".join(statement.split())
             self.execute_calls.append((normalized, parameters))
-            if "FOR UPDATE SKIP LOCKED" in normalized:
+            if normalized == "SELECT %s::regclass::oid AS table_oid":
+                self._rows = [{"table_oid": 12345}]
+            elif "FOR UPDATE SKIP LOCKED" in normalized:
                 self._rows = [
                     {"record": item.model_dump(mode="json")} for item in items
                 ]
@@ -989,6 +991,9 @@ def test_postgres_claim_uses_skip_locked_and_one_transaction_connection(monkeypa
     )
 
     assert context.enter_count == 1
+    assert cursor.execute_calls[0] == ("SELECT %s::regclass::oid AS table_oid", (store._run_table,))
+    assert cursor.execute_calls[1][0] == "SELECT pg_catalog.pg_advisory_xact_lock_shared(%s::bigint)"
+    assert len(cursor.execute_calls[1][1]) == 1
     skip_locked_index = next(
         index
         for index, call in enumerate(cursor.execute_calls)

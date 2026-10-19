@@ -18,6 +18,7 @@ from src.application.test_runs.environment_admission import create_environment_a
 from src.application.test_runs.plan_snapshot_identity import (claim_plan_snapshot_identity,
     validate_claimed_plan_snapshot, initial_plan_snapshots, run_with_claimed_snapshot, execution_attempt,
     validate_supplied_snapshot)
+from src.application.test_runs.plan_revision_lock import lock_plan_projection
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
@@ -2026,6 +2027,9 @@ class PostgresTestRunStore:
                 row = cur.fetchone()
         return self._run_from_value(row["record"]) if row else None
 
+    def _lock_plan_projection(self, cur, run_id: str, *, exclusive: bool = False) -> None:
+        lock_plan_projection(cur, run_table=self._run_table, run_id=run_id, exclusive=exclusive)
+
     def _get_execution_detail_sync(self, run_id, item_id, attempt_id, supplied_run):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             detail = self._detail_from_cursor(cur, run_id)
@@ -2385,6 +2389,7 @@ class PostgresTestRunStore:
     ) -> list[tuple[TestRunItemRecord, TestRunAttemptRecord]]:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                self._lock_plan_projection(cur, run_id)
                 run = self._read_run(cur, run_id)
                 if run.status in {"completed", "cancelled"}:
                     return []

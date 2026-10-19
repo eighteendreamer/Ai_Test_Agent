@@ -5570,3 +5570,29 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 过程中的收集错误、mock 同步及基线故障见 PLAN §7.109。当前环境原先缺 Alembic，已按根锁文件安装本地已有声明的1.20.0，无 pyproject/lock 改动。完整迁移回归实际22通过5失败；5项均报既有 `Invalid original ToolJob table identifier`，HEAD原测试独立复制复验也相同5失败，失败JUnit及基线均保留，临时文件已移除。新增归档迁移7项通过，不能替代完整迁移回归。Python编译和本轮diff检查通过；无前端变更，未重复构建。未执行生产迁移、未调用真实Step、未修改供应商协议。
 
 本轮完成原快照存取及执行消费前提，生产修订 API/追加历史、queued 与领取原子协调、新增/移除及套件、共享清理/回归/报告的完整跨修订语义仍未完成，多修订体量与混跑旧Worker尚未验收。配置仍MySQL、业务证据PostgreSQL、原件RustFS。Step已认证，默认复杂规划及完整P0—P5目标继续未完成。
+
+## 2026-10-19 P2 领取与修订的生产事务协调
+
+按 PLAN §7.110 复查修订头表候选，改用项目 Alembic 已采用、PostgreSQL 官方确认的事务 advisory shared/exclusive lock，不增加生产协调表。新增 `plan_revision_lock.py`，按实际 Run relation OID、规范 UUID 与 namespace 计算资源。原 `claim_items` 在首次读取 Run 前、同一事务取得共享锁；Item 的 `FOR UPDATE SKIP LOCKED` 与统计更新方式保留。未来正式修订 writer 应先取得该资源排他锁，AI/外部调用放锁外。测试候选 head/history 仅用于 CAS 和回滚，不是生产修订 schema。
+
+接入前真实竞争2失败，生产领取会绕过排他资源；失败现场保留 `p2-plan-coordination-before.xml`。接入后验证修订先行/领取先行、两个 claimant 并行、回滚/陈旧修订无脏历史、同表别名和大小写 UUID 锁一致、不同资源隔离、真实持锁子进程被终止后单次领取继续，均检查实际 PG 等待与记录。不是仅验证 SQL 字符串或编译。
+
+实际命令在 `Agent_Server` 运行：
+
+```powershell
+$env:RUN_LIVE_RUN_DEPENDENCIES='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_run_plan_projection_lock.py tests/test_run_revision_coordination_research.py tests/test_test_run_postgres_claim.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-plan-coordination-final.xml
+# 28 passed，14.54秒
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_plan_run_creation.py tests/test_run_item_dependencies.py tests/test_agent_case_context.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-plan-coordination-regression.xml
+# 63 passed、1 skipped，32.09秒
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_agent_case_execution.py tests/test_case_operation_verification.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-plan-coordination-agent-regression.xml
+# 44 passed、1 skipped，161.92秒
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_business_environment_admission.py -k 'started_admission_context_and_checkpoint_survive or actual_admission_tamper_and_foreign_ancestor' -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p2-plan-coordination-environment.xml
+# 2 passed、6 deselected，24.74秒
+```
+
+共137通过、2跳过；跳过为未启用真实默认模型/公开 Worker。子进程补 Windows 隐藏窗口后锁专项7通过已被该范围覆盖，不重复计数。compileall、diff检查通过；无前端或外部契约改动，不重复构建。未运行生产迁移、未真实Step调用。ToolJob schema表名导致的既有5项迁移失败仍在，不能称迁移全绿。
+
+本步骤只交付领取与修订的数据库协调资源；排他端仍为测试候选，生产修订API/expected revision/幂等、历史归档追加、queued投影、条目增删/套件及跨修订回归/报告仍需实现与验收。混跑旧Worker不保证遵守锁，部署必须同步升级相关执行Worker。配置仍MySQL、业务PG、原件RustFS，Provider原生协议不变。整体P0—P5继续未完成。
