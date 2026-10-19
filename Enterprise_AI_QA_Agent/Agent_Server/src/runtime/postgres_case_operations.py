@@ -2,24 +2,20 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import json
-import re
 
 from src.application.runtime.case_action_binding import (
     CaseActionBinding, OPERATION_PROTOCOL, _digest,
 )
 from src.application.runtime.case_operation import RECEIPT_KEY, VERIFICATION_KEY, operation_identity
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import derived_tool_table, postgres_index_name
 
 
 class PostgresCaseOperations:
     def __init__(self, settings):
         self._settings = settings
-        jobs = settings.database.postgres_tool_job_table
-        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}",jobs):
-            raise ValueError("Invalid original ToolJob table identifier")
-        self.table = jobs[:25] + "_case_ops_" + hashlib.sha256(jobs.encode()).hexdigest()[:16]
+        self.table = derived_tool_table(settings.database.postgres_tool_job_table, "case_ops")
 
     async def initialize(self):
         def create():
@@ -29,7 +25,7 @@ class PostgresCaseOperations:
                     origin_job_id TEXT UNIQUE NOT NULL REFERENCES {self._settings.database.postgres_tool_job_table}(id),
                     record JSONB NOT NULL,
                     created_at TIMESTAMPTZ NOT NULL DEFAULT now())""")
-                cur.execute(f"""CREATE INDEX IF NOT EXISTS idx_{self.table}_run ON {self.table}
+                cur.execute(f"""CREATE INDEX IF NOT EXISTS {postgres_index_name(self.table, 'run')} ON {self.table}
                     ((record->'scope'->>'project_id'),(record->'scope'->>'run_id'),(record->'scope'->>'plan_id'))""")
         await asyncio.to_thread(create)
 

@@ -1,7 +1,6 @@
 """Close a declared business phase in the original action-claim transaction."""
 import asyncio
 from copy import deepcopy
-import hashlib
 import json
 import logging
 
@@ -9,6 +8,7 @@ from src.application.runtime.case_action_binding import CONSUMPTION_PROTOCOL, Ca
 from src.application.runtime.case_effect_relations import compile_relations, definition_selection
 from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService, SETTLED_EVIDENCE_STATUSES
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import derived_tool_table
 from src.runtime.postgres_tool_job_store import _job_from_row
 from src.schemas.scene_receipt import consumption_closure_type
 from src.schemas.tool_job import ToolOutputObservation
@@ -28,8 +28,7 @@ class PostgresCaseConsumption:
     def __init__(self, admission):
         self._admission = admission
         self._settings = admission._settings
-        jobs = admission._table
-        self.table = jobs[:25] + '_case_end_' + hashlib.sha256(jobs.encode()).hexdigest()[:16]
+        self.table = derived_tool_table(admission._table, "case_end")
 
     async def initialize(self):
         def create():

@@ -1,11 +1,11 @@
 """Immutable compact values from each original reliable tool return."""
 import asyncio
-import hashlib
 import json
 
 from src.application.runtime.case_action_binding import _digest, CaseActionBinding, validate_action_admission_receipt
 from src.application.runtime.case_effect_evidence import capture_returned_evidence, INTENT_KEY
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import derived_tool_table
 from src.runtime.postgres_case_operations import PostgresCaseOperations
 
 
@@ -13,8 +13,7 @@ class PostgresCaseEffectEvidence:
     def __init__(self, settings):
         self._settings = settings
         self._operations = PostgresCaseOperations(settings)
-        jobs = settings.database.postgres_tool_job_table
-        self.table = jobs[:25] + "_case_eff_" + hashlib.sha256(jobs.encode()).hexdigest()[:16]
+        self.table = derived_tool_table(settings.database.postgres_tool_job_table, "case_eff")
 
     async def initialize(self):
         def create():

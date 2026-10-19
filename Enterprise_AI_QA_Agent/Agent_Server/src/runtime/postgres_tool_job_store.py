@@ -6,6 +6,7 @@ from datetime import datetime
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import postgres_index_name, postgres_relation_parts
 from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
 
@@ -13,6 +14,8 @@ from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatu
 class PostgresToolJobStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
+        postgres_relation_parts(settings.database.postgres_tool_job_table)
+        postgres_relation_parts(settings.database.postgres_tool_artifact_table)
         from src.runtime.postgres_case_effect_evidence import PostgresCaseEffectEvidence
         self.effect_evidence = PostgresCaseEffectEvidence(settings)
 
@@ -250,19 +253,19 @@ class PostgresToolJobStore:
                     """
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_job_table}_session_created "
+                    f"CREATE INDEX IF NOT EXISTS {postgres_index_name(self._settings.database.postgres_tool_job_table, 'session_created')} "
                     f"ON {self._settings.database.postgres_tool_job_table} (session_id, created_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_job_table}_status_updated "
+                    f"CREATE INDEX IF NOT EXISTS {postgres_index_name(self._settings.database.postgres_tool_job_table, 'status_updated')} "
                     f"ON {self._settings.database.postgres_tool_job_table} (status, updated_at DESC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_artifact_table}_job_created "
+                    f"CREATE INDEX IF NOT EXISTS {postgres_index_name(self._settings.database.postgres_tool_artifact_table, 'job_created')} "
                     f"ON {self._settings.database.postgres_tool_artifact_table} (tool_job_id, created_at ASC)"
                 )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._settings.database.postgres_tool_artifact_table}_session_created "
+                    f"CREATE INDEX IF NOT EXISTS {postgres_index_name(self._settings.database.postgres_tool_artifact_table, 'session_created')} "
                     f"ON {self._settings.database.postgres_tool_artifact_table} (session_id, created_at ASC)"
                 )
 

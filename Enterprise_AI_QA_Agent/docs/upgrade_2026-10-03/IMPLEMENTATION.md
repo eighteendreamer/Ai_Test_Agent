@@ -5596,3 +5596,30 @@ $env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
 共137通过、2跳过；跳过为未启用真实默认模型/公开 Worker。子进程补 Windows 隐藏窗口后锁专项7通过已被该范围覆盖，不重复计数。compileall、diff检查通过；无前端或外部契约改动，不重复构建。未运行生产迁移、未真实Step调用。ToolJob schema表名导致的既有5项迁移失败仍在，不能称迁移全绿。
 
 本步骤只交付领取与修订的数据库协调资源；排他端仍为测试候选，生产修订API/expected revision/幂等、历史归档追加、queued投影、条目增删/套件及跨修订回归/报告仍需实现与验收。混跑旧Worker不保证遵守锁，部署必须同步升级相关执行Worker。配置仍MySQL、业务PG、原件RustFS，Provider原生协议不变。整体P0—P5继续未完成。
+
+## 2026-10-19 ToolJob 迁移与辅助证据表命名修复
+
+按 PLAN §7.111 独立处理此前5项迁移失败。完整迁移文件重现26通过5失败，均为运行时拒绝schema限定ToolJob名。追查到操作、原返回证据、消费结束三处重复截取完整配置拼辅助表名，及ToolJob初始化把限定名当索引名的问题。采用现有迁移的SQLAlchemy标识符做法与PostgreSQL官方命名规则，抽出内部 `postgres_identifiers.py`，三个Store共同派生同schema辅助表，索引使用迁移既有名称；旧简单未限定名严格保留原前缀和哈希，不改历史表、不改迁移脚本。
+
+在独占真实schema中执行Alembic、初始化四种表名、重放原捕获Job及可靠返回，实际保存/读取不可变操作与对象证据、校验外键和索引，并重复初始化/重启读取。完整迁移与新增专项60通过（12.76秒）；最后补错误输入上下文后新增专项29通过（5.67秒），已含于60项，不重复累计。JUnit为 `p0-tool-table-migration-{before,functional}.xml`、`p0-tool-table-names-final.xml`。
+
+```powershell
+# 在 Agent_Server 中执行
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_schema_migrations.py tests/test_postgres_tool_table_names.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-tool-table-migration-functional.xml
+# 60 passed
+$toolTableEvidence=Join-Path (Get-Location).Path '..\docs\upgrade_2026-10-03\p0-tool-table-action-final'
+$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'
+$env:RUN_LIVE_PLAN_RUN_CREATION='1'
+$env:QA_STATEFUL_RESEARCH_EVIDENCE_DIR=Join-Path $toolTableEvidence 'stateful'
+$env:QA_EFFECT_EVIDENCE_DIR=Join-Path $toolTableEvidence 'effects'
+$env:QA_SHARED_EFFECT_EVIDENCE_DIR=Join-Path $toolTableEvidence 'shared'
+$env:QA_CONSUMPTION_PHASE_DIR=Join-Path $toolTableEvidence 'phase'
+$env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_case_operations.py tests/test_case_effect_evidence.py tests/test_case_consumption_phase.py tests/test_case_consumption_external.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p0-tool-table-action-final.xml
+# 59 passed，156.67秒；复验须使用新证据目录，不能覆盖原工件
+```
+
+共119通过，无跳过。第一次扩大回归漏配证据目录导致46失败13通过；已对全部失败XML分组确认仅四类目录KeyError，单独复跑首项也相同。补齐独占目录后完整59项通过，未添加生产绕过。失败输出与正式业务HTTP/PG/MySQL/RustFS工件均保留。compileall、diff检查通过；无前端改动未重复构建，未执行生产迁移、未真实模型调用，未更改供应商协议。
+
+当前仅证明命名修复及对应迁移/操作/消费行为，不代表所有Store或完整schema化Agent产品流程均验收。生产历史迁移/投影、两份旧Worker原件、P2生产修订API与新增/删除/套件/跨修订回归、默认Step多用例闭环及其余P0—P5未闭环项继续保留。

@@ -13,7 +13,7 @@
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
 | Docker性能、安全 | 实际Docker工具、原输出/指标/发现及报告专项 | 默认Agent自主调用、容量/流式阶段指标及完整产品验收 | 流式与容量链路是否缺实现另行查证；不以启动容器代替结果 |
 | 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
-| 重复请求与交付 | 逻辑调用/SDK/HTTP观测和多SDK故障专项 | 更多跨阶段断网/进程恢复、历史迁移/投影和旧汇总原件追踪 | 已有模型适配层继续补Profile与原生协议契约，不另建单一协议栈 |
+| 重复请求与交付 | 逻辑调用/SDK/HTTP观测和多SDK故障专项；ToolJob命名契约修复后完整迁移文件31项通过（§7.111） | 更多跨阶段断网/进程恢复、生产历史迁移/投影和旧汇总原件追踪 | 已有模型适配层继续补Profile与原生协议契约，不另建单一协议栈 |
 
 单用例通过不代表P2整体通过；受控模型、真实默认模型和人手操作分别记账。在途计划修订当前不能由“失败后新建回归运行”替代：`CasePlanRunService.create` / `build_plan_run` 仍固定原计划和RunItem，该缺口需要单独设计、实现与恢复验收。
 
@@ -4464,3 +4464,23 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 四组 **137 passed、2 skipped**；两项跳过仍为真实默认模型和独立公开 Worker，不能计为默认 Step 验收。最后为子进程补 Windows 隐藏窗口参数后，锁专项另 **7 passed，8.59秒**（`p2-plan-coordination-lock-final.xml`），已在范围内不重复累计。Python compileall 和 diff 检查通过；没有前端/API/schema 契约改动，未重复构建、未执行生产迁移、没有真实模型调用或 Provider 协议修改。此前完整迁移回归5项既有 ToolJob 表名失败仍未在本步骤解决。
 
 当前分类：**生产领取共享协调、可供正式写事务调用的排他协调及上述真实并发/进程终止行为已有实现并验收。** 排他调用目前只由测试候选 writer 使用；生产修订提交 API、expected revision/幂等、原子追加完整归档、queued 投影和新增/移除正式条目、套件冻结、跨修订清理/回归/报告仍需实现。不能将锁基础报告为完整执行中修订。此机制要求所有领取与修订 Worker 使用同版实现，旧 Worker 不遵守该锁，混跑未验收。配置继续 MySQL、业务 PostgreSQL、原件 RustFS；Step 已认证，整体 P0—P5 目标继续未完成。
+
+### 7.111 ToolJob 迁移与运行时辅助表命名契约修复（2026-10-19）
+
+独立推进 §7.109 发现的迁移阻塞。重新运行完整 `test_schema_migrations.py`，实际 **26 passed、5 failed，6.12秒**（`p0-tool-table-migration-before.xml`），5项仍在 `PostgresCaseOperations.__init__` 报 `ValueError: Invalid original ToolJob table identifier`。迁移能创建 schema 限定、大小写和引号表，运行时却只接受未限定简单名称；放宽单处正则还不能解决问题，因为操作索引、原返回证据和消费结束三处均截取完整配置来派生表名，ToolJob 初始化也把限定表名直接拼进索引名。这属于同一命名契约缺失，不能各自加例外。
+
+依据现有 Alembic `0002._identifier` 的分段、大小写和 SQLAlchemy 引号做法，以及 PostgreSQL 官方[标识符规则](https://www.postgresql.org/docs/17/sql-syntax-lexical.html#SQL-SYNTAX-IDENTIFIERS)、[CREATE INDEX](https://www.postgresql.org/docs/17/sql-createindex.html)的同 schema 索引语义，新增内部 `postgres_identifiers.py`。完整验证配置的标识符语法，分开处理限定段、双引号、转义引号及未引用名称折叠；安全生成派生表和索引名。操作、证据、消费三处复用同一逻辑。新限定名称的辅助表放在主表对应 schema，派生关系名使用安全前缀与哈希；索引名不拼 schema，复用迁移已冻结的命名。表解析/派生留下结构化调试日志，非法配置明确携带输入报错。
+
+兼容约束：此前接受的简单未限定名称严格保留原前缀、原字符串 SHA 和物理表名，含大写配置及63字符名称，三类辅助表共9项合同验证；不重命名历史表、不搬移记录、不修改既有迁移脚本。未改变的名称继续读取原证据。没有为全系统其他 Store 声称 schema 支持，也没有执行生产数据库迁移。
+
+真实存储验收使用独占 `migration_test_*` schema：先执行正式 Alembic，再初始化 ToolJob 和三类辅助表，实际重放既有捕获的原 Job/绑定/可靠输出，通过生产 `register`、`validate_origin`、`capture`、`list_run_evidence` 保存并核验对象证据及检查结果；重复初始化、重建 Store 后证据完全不变。四组主表名称包括普通、未引用大写、引号内带点、中文及转义引号。实际检查辅助表所在 schema、外键目标、关系名 UTF-8 长度，以及初始化未重复创建迁移索引。消费结束在该专项检查真实 DDL/外键；实际业务消费与清理由后续四文件回归覆盖，未混称完整 schema 化 Agent 产品验收。
+
+| 范围 | 实际结果 | 工件 |
+|---|---|---|
+| `RUN_LIVE_POSTGRES_TESTS=1`，完整迁移文件与新增命名/真实证据专项 | **60 passed，12.76秒**，含完整迁移31项 | `p0-tool-table-migration-functional.xml` |
+| 逻辑操作、原始返回证据、阶段消费、跨条目消费四文件，真实业务 HTTP/PG/MySQL/RustFS | **59 passed，156.67秒** | `p0-tool-table-action-final.xml`及`p0-tool-table-action-final/` |
+| 最后补输入错误上下文后的新增命名专项复验 | **29 passed，5.67秒**，已在60项范围内，不重复累计 | `p0-tool-table-names-final.xml` |
+
+前两组 **119 passed，无跳过**。扩大回归首次因本次命令漏配证据目录为 **46 failed、13 passed，118.55秒**；读取全部 JUnit 失败类型，14项缺 `QA_STATEFUL_RESEARCH_EVIDENCE_DIR`、14项缺 `QA_CONSUMPTION_PHASE_DIR`、9项缺 `QA_EFFECT_EVIDENCE_DIR`、9项缺 `QA_CONSUMPTION_EXTERNAL_DIR`，无其他类型。首个失败单独复跑也证实该原因（1失败1通过）。未因此改生产逻辑或跳过测试；补齐5类独占证据目录后59项全通过。两次失败工件 `p0-tool-table-action-regression.xml`、`p0-tool-table-first-regression-failure.xml` 保留。编译与本轮 diff 检查通过，无依赖变更、前端/API契约变更，不重复前端构建。
+
+当前分类：**此前5项迁移兼容失败已修复并完成上述范围验收。** 这是隔离 schema 的实际迁移/运行存储证据，不能代替真实部署历史数据迁移与投影核对，也没有恢复两份旧 Worker 原件。P2 完整修订写入、默认 Step 多用例闭环、DeepSeek 人工录制、其他未验收产品场景仍未完成。配置 MySQL、业务 PostgreSQL、原件 RustFS 及 Provider 原生协议不变；Step 已认证。
