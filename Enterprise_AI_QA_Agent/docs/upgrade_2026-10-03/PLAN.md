@@ -4270,3 +4270,11 @@ cd Agent_Server
 结论：这是**模型输出预算/推理成本与 `produced` 结构化回执完成能力尚未解决**，而非 HTTP 传输、协议选择或 SDK 重复发送问题。认证模型证据显示首个正文可能延迟至约 76 秒；`produced` 输出仍可能在 reasoning 后耗尽，简单扩大规划期限或改变 provider 协议没有依据。隔离 profile 的 16K 对照已实际启用 JSON 输出声明但仍未产出有效计划，因此单独增加 JSON 格式映射也不是充分修复。下一步需沿该次 `produced` 输入、固定 scope、阶段Schema、保存响应/解析状态和 canonical validator 还原精确失败边界，优先确认模型是否曾返回可解析正文、是否被本地结构校验拒绝及拒绝反馈具体字段；不得把 reasoning 内容作为可见推理依据、不得重发终态任务，也不得在该边界查清前放宽引用、效果/清理契约或调整生产全局预算。
 
 本项仅更新调研记录，未修改生产代码、MySQL 配置或 PostgreSQL 业务数据。P2 默认 Step 项目选取→排序→补全→执行仍未验收，完整 P0—P5 继续未完成。
+
+### 7.98 `produced` 空正文的本地响应链复核〔2026-10-19〕
+
+按 7.97 的下一步检查 `planning_workflow`、Provider 流转换和 `completion.py`。Chat Completions 适配器只把 `delta.content` 拼入模型正文，推理字段独立保留在观测侧；规划 Worker 将正文与 `finish_reason` 一起持久化，恢复读取已保存响应。进入响应校验时先把 `length` 分类为 `truncated`，在 JSON Schema 解析之前拒绝，保存原响应和截断诊断，不自动重发。`live7` 的第三次调用记录为流正常结束、8192 completion tokens、`finish_reason=length`、模型正文0字符；与代码路径一致。
+
+因此本次失败没有证据指向本地漏拼正文、错误解析或错误使用 reasoning 字段。拒绝截断响应是正确的数据完整性行为；放宽 canonical/schema 校验会让不完整计划进入正式 Run，不能作为修复。该核查不证明模型阶段设计与输入投影合理，也不代表 P2 通过。此前 16K 对照已失败，不再重复只增加上限、改变 Provider 协议或将推理文本当作计划正文的单变量尝试。后续需研究 `produced` 阶段职责与输入投影，保持用例、引用、效果/清理关系及全局预算契约。
+
+研究详情与对应代码/实时证据见 [P2 produced 响应分类调研](P2_PRODUCED_RESPONSE_CLASSIFICATION_RESEARCH_20261019.md)。当前状态：Step 已认证；P1 模板/导入及普通 Markdown 模块生成有专项验收；P2 默认 AI 仍未完成真实项目选取→排序→补全→执行闭环。其他 P0—P5 按本方案进度表继续区分已有实现、未验收和待补实现。
