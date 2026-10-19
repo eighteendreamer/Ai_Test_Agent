@@ -3291,31 +3291,29 @@ class PostgresTestRunStore:
         return int(row.get("total") or 0)
 
     def _detail_from_cursor(self, cur, run_id: str) -> TestRunDetail | None:
-        cur.execute(f"SELECT record FROM {self._run_table} WHERE id = %s", (run_id,))
-        run_row = cur.fetchone()
-        if not run_row:
+        # READ COMMITTED takes a snapshot per statement. Keep all projections in
+        # one SELECT so a concurrent claim/completion cannot mix old run totals
+        # with new items or receipts. This also sees this transaction's writes.
+        # https://www.postgresql.org/docs/17/transaction-iso.html
+        cur.execute(
+            "SELECT saved.record, "
+            f"COALESCE((SELECT jsonb_agg(item.record ORDER BY item.position ASC) FROM {self._item_table} AS item "
+            "WHERE item.run_id = saved.id), '[]'::jsonb) AS items, "
+            f"COALESCE((SELECT jsonb_agg(attempt.record ORDER BY attempt.run_item_id, attempt.attempt_no ASC) "
+            f"FROM {self._attempt_table} AS attempt WHERE attempt.run_id = saved.id), '[]'::jsonb) AS attempts, "
+            f"COALESCE((SELECT jsonb_agg(result.record ORDER BY result.created_at ASC) FROM {self._result_table} AS result "
+            "WHERE result.run_id = saved.id), '[]'::jsonb) AS results "
+            f"FROM {self._run_table} AS saved WHERE saved.id = %s",
+            (run_id,),
+        )
+        row = cur.fetchone()
+        if not row:
             return None
-        cur.execute(
-            f"SELECT record FROM {self._item_table} WHERE run_id = %s ORDER BY position ASC",
-            (run_id,),
-        )
-        item_rows = cur.fetchall() or []
-        cur.execute(
-            f"SELECT record FROM {self._attempt_table} "
-            "WHERE run_id = %s ORDER BY run_item_id, attempt_no ASC",
-            (run_id,),
-        )
-        attempt_rows = cur.fetchall() or []
-        cur.execute(
-            f"SELECT record FROM {self._result_table} WHERE run_id = %s ORDER BY created_at ASC",
-            (run_id,),
-        )
-        result_rows = cur.fetchall() or []
         return TestRunDetail(
-            run=self._run_from_value(run_row["record"]),
-            items=[self._item_from_value(row["record"]) for row in item_rows],
-            attempts=[self._attempt_from_value(row["record"]) for row in attempt_rows],
-            results=[self._result_from_value(row["record"]) for row in result_rows],
+            run=self._run_from_value(row["record"]),
+            items=[self._item_from_value(value) for value in self._value(row["items"])],
+            attempts=[self._attempt_from_value(value) for value in self._value(row["attempts"])],
+            results=[self._result_from_value(value) for value in self._value(row["results"])],
         )
 
     def _lock_run(self, cur, run_id: str) -> TestRunRecord:

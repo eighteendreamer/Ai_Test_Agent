@@ -5,6 +5,7 @@ import json
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from threading import Event
 from uuid import uuid4
 
 import pytest
@@ -226,6 +227,82 @@ async def test_blocked_receipt_and_stats_rollback_together_after_insert_failure(
         record = await store.get_run(run.id)
         assert record.run.status == "completed" and record.run.stats.blocked == 1
         assert len(record.results) == len(record.attempts) == 5
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_RUN_DEPENDENCIES") != "1", reason="requires isolated real PostgreSQL/MySQL/RustFS")
+@pytest.mark.parametrize("transition", ["claim", "complete", "cancel"])
+async def test_run_detail_keeps_one_snapshot_across_concurrent_commit(tmp_path, monkeypatch, transition):
+    # Reproduce PLAN 7.102's read window with actual store transactions: pause
+    # after the reader's first SELECT, then commit a writer before it continues.
+    async with setup(tmp_path, True) as (_, store, run, items, now):
+        await store.create_run(run, items)
+        claims = []
+        if transition == "complete":
+            claims = await store.claim_items(run_id=run.id, worker_id="initial", limit=5, lease_seconds=60, now=now)
+            for item, attempt in claims:
+                await store.start_item(item.id, attempt.lease_token, now)
+        before = await store.get_run(run.id)
+        first_select, writer_done = Event(), Event()
+        detail = store._detail_from_cursor
+        intercepted = False
+
+        class PausedCursor:
+            def __init__(self, cursor):
+                self.cursor = cursor
+                self.paused = False
+
+            def execute(self, *args, **kwargs):
+                result = self.cursor.execute(*args, **kwargs)
+                if not self.paused:
+                    self.paused = True
+                    first_select.set()
+                    assert writer_done.wait(15), "concurrent store transaction did not commit while detail read was paused"
+                return result
+
+            def __getattr__(self, name):
+                return getattr(self.cursor, name)
+
+        def pause_once(cursor, run_id):
+            nonlocal intercepted
+            if intercepted:
+                return detail(cursor, run_id)
+            intercepted = True
+            return detail(PausedCursor(cursor), run_id)
+
+        monkeypatch.setattr(store, "_detail_from_cursor", pause_once)
+        reading = asyncio.create_task(store.get_run(run.id))
+        try:
+            assert await asyncio.to_thread(first_select.wait, 10), "detail reader did not reach first SELECT"
+            if transition == "claim":
+                claims = await asyncio.wait_for(store.claim_items(run_id=run.id, worker_id="concurrent", limit=5,
+                    lease_seconds=60, now=now), timeout=10)
+                assert len(claims) == 5
+            elif transition == "complete":
+                for item, attempt in claims:
+                    await asyncio.wait_for(store.complete_item(item.id, attempt.lease_token, RunItemCompletion(
+                        status="passed", summary="actual concurrent completion", actual={"ok": True}, payload_hash="b" * 64), now), timeout=10)
+            else:
+                await asyncio.wait_for(store.cancel_run(run.id, "actual concurrent cancellation", now), timeout=10)
+        finally:
+            writer_done.set()
+            frozen = await asyncio.wait_for(reading, timeout=10)
+        after = await store.get_run(run.id)
+        assert before != after
+        assert frozen == before, {
+            "transition": transition, "before": before.model_dump(mode="json"),
+            "mixed": frozen.model_dump(mode="json"), "after": after.model_dump(mode="json"),
+        }
+        assert [item.id for item in frozen.items] == [item.id for item in before.items]
+        assert len(after.attempts) == (0 if transition == "cancel" else 5)
+        if transition == "complete":
+            assert after.run.status == "completed" and after.run.stats.passed == 5
+            assert len(after.results) == 5
+        elif transition == "cancel":
+            assert after.run.status == "cancelled"
+            assert all(item.status == "cancelled" for item in after.items)
+        else:
+            assert all(item.status == "claimed" for item in after.items)
 
 
 @pytest.mark.skipif(os.getenv("RUN_LIVE_RUN_DEPENDENCIES") != "1", reason="requires PostgreSQL JSON operators")

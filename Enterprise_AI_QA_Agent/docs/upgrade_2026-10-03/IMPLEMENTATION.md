@@ -5512,3 +5512,13 @@ API未知写入单独由7.48处理，正式Run的只读查证工具选择、确�
 验证：双后端当前状态合同 **4通过**；等待/子通知合同 **22通过、4跳过**，真实 PG 等待场景 **3通过**；真实 PG 子等待领取/取消 **1通过**。SessionStore 值契约与子等待组合回归有 **81通过**；另一个 opt-in PG 测试首次因漏传 `QA_TOOL_CHILD_WAIT_STORE_DIR` 在夹具读取阶段失败，补上独立证据目录后该测试 **1通过**。真实默认 Step 模型、隔离生产 API/Worker/PG/Redis/RustFS 和本地认证 target 的同进程及 durable child 场景 **2通过、4未选取，268.24秒**。两场景各自按顺序调用 login、refresh、profile，均 HTTP 200；父报告均 3/3 完成，9 次模型 HTTP attempt 可对账，API 重启后的终态重投无新增业务/模型请求，公开凭据扫描通过。生产修复与双后端测试已提交 `9182196e`；详细诊断见 `P3_API_AGENT_DEFAULT_MODEL_LIVE_RESEARCH_20261019.md` 和 `Agent_Server/docs/upgrade_2026-10-03/p3-api-agent-worker-atomic-metadata-20261019/`。
 
 这项修复关闭已定位的父审批投影覆盖故障，但不等于 Agent API 的鉴权负向、更多续期/依赖组合、超时故障或完整产品报告流程全部验收。模型适配层采用统一内部请求/结果契约和 provider-specific 原生协议客户端，P0 当前 SDK/HTTP 矩阵 **120通过**；Anthropic 仍使用 Messages，OpenAI Responses 是独立 transport。P2 单个自包含用例已由默认 Step 实际执行通过，多候选项目级选取、跨用例排序/补全和准备生命周期仍未闭环。DeepSeek 人工 UI 录制、Docker 性能/安全证据到报告的完整闭环、需求变更业务评审和历史迁移仍需继续验证。完整 P0—P5 未完成。
+
+## 2026-10-19 正式 Run 详情并发快照修复
+
+继续读取原附件并复核实际成功/失败工件后确认，健康检查最小用例走旧单阶段规划，不能直接替代分阶段 produced 的修复依据。完整八步默认 Step 规划仍未闭环；不重复只增预算、改协议或减少 evidence IDs 的旧实验。P2 另一项已定位前提是正式 Run 详情四次 SQL 在默认 READ COMMITTED 下可能混合并发提交前后的 Run、Item、Attempt、Result，详见 PLAN §7.106。
+
+先通过真实隔离 PostgreSQL 暂停详情首条 SELECT，让独立事务领取五项后继续读取，旧实现实际 **1 failed、16 deselected，7.76秒**。沿既有 JSONB 聚合能力把 `_detail_from_cursor` 合并成一个 SELECT，并保留原顺序、空数组、不存在 Run 和同事务写入可见性。没有新增全局隔离级别、锁、重试、配置、DDL 或依赖；公开 API 和模型原生协议不变。新增三项并发功能测试分别验证领取、完成、取消；写事务在读暂停期间提交，读返回完整旧快照，下次返回完整新快照。
+
+首次组合 **48 passed、1 failed、1 skipped，27.18秒**，唯一失败为新增测试把“取消未领取条目”的零 Attempt 错写成五个，修正测试后未改取消行为。开启 `RUN_LIVE_RUN_DEPENDENCIES=1` 与 `RUN_LIVE_PLAN_RUN_CREATION=1`，`tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_agent_case_context.py` 最终 **49 passed、1 skipped，26.04秒**；再以 live 存储运行 `tests/test_case_operation_verification.py tests/test_agent_case_execution.py` 为 **38 passed、1 skipped，152.25秒**。后一组实际覆盖 HTTP 工具、正式 Run 恢复、已声明只读查证及 PG 回执；两组共 **87 passed、2 skipped**，跳过分别为未启用的真实模型专项和独立公开 Worker。原始失败和最终 JUnit 保存在 `p2-run-detail-snapshot-before.xml`、`p2-run-detail-snapshot-after.xml`、`p2-run-detail-snapshot-final.xml`、`p2-run-detail-consumers-final.xml`；编译与本轮 diff 检查成功，无前端改动故未重跑前端构建。
+
+这一步只关闭正式详情读取的混合快照缺陷；执行中修订的不可变历史、公开契约、queued 投影更新与领取协调仍未实现/验收。默认 Step 复杂选取/排序/补全/执行及真实 embedding 召回继续未验收，embedding 余额不足的历史 402 未解除。配置保持 MySQL，业务保持 PostgreSQL，原件保持 RustFS。没有用受控模型测试冒充本轮默认 AI 验收，P0—P5 全部目标仍未完成。

@@ -4354,3 +4354,17 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 本轮没有找到安全地由通用代码自动填充业务路径/身份/预期的依据，故不添加 heuristic，也不改 schema。已有默认 Step 证据同时否定了两个容易误判的简单修复：减少重复 evidence IDs、单独启用原生 Schema 都未让模型产生回执。继续缩短 prompt 或重复预算/协议单变量试验没有新因果依据。后续应转向阶段角色契约与调用轨迹：重建逻辑选取结果、bindings 回执、produced 输入/响应及被接受/拒绝位置，检查 `produced` 是否被要求重新推理已在固定 plan、binding receipt 或工具查询结果中确定的信息，以及 Agent planning 回执与正式执行契约是否存在职责重叠。任何可删除/自动派生字段都必须保持 canonical 结果逐字段一致，并先用本地真实 HTTP 对照，再跑默认 Step 的完整“选取→排序→补全→正式 Run→实际工具执行”验收。
 
 依据：`planning_effect_tasks.py` 的 `task_roles/accept_task_decision/aggregate_task_receipts`、`case_effect_relations.py` 的 `compile_relations/validate_relations`、`case_effect_sources.py`、`planning_cleanup_ambiguous_text.json`，以及 PLAN §7.76 的证据继承 live 对照、§7.85 的原生 JSON Schema live 对照。本轮为代码与固定样本调研，没有修改生产代码、MySQL 配置或 PostgreSQL 业务数据，也未将控制模型 fixture 结果当默认 AI 验收。P2 默认 Step 正式 Run 闭环仍未完成；完整 P0—P5 继续未完成。
+
+### 7.106 正式 Run 详情并发读取的快照一致性修复〔2026-10-19〕
+
+先复核 §7.105 的成功/失败对照：`p2-default-minimal-case-live7/plan.json` 是 `case-planning-v5` 的单轮规划，未经过 `produced/cleanup`；`p2-default-single-staged-diagnostic-20261019/PG-planning.json` 的创建/清理成功样本使用隔离 16K 和显式 JSON profile，经历 logic、bindings、一次 produced 拒绝、produced 修正和 cleanup；完整八步 live7 则使用默认 8192/profile=null，在 produced 截断。三者不是同输入、同预算、同阶段实验，不能由最小用例成功推出复杂阶段修复，亦不重复只调整预算/Schema的旧实验。复杂规划职责仍须继续研究。
+
+本轮推进 §7.102 已定位的正式运行一致性前提。旧 `PostgresTestRunStore._detail_from_cursor` 依次读取 Run、RunItem、Attempt、Result 四张表；默认 READ COMMITTED 每条 SQL 使用自己的快照，单个连接事务不能保证这四份投影属于同一时刻。沿 `_get_run_sync`、计划创建/幂等读取、取消、环境限制投影和 `PostgresCaseActionAdmission._claim` 检查消费方后，选择在现有方法内合并为一条 SELECT，用各子查询的 `jsonb_agg(... ORDER BY ...)` 保留集合与排序，空集合仍为 `[]`、不存在 Run 仍为 `None`。项目已有 PostgreSQL JSONB 聚合用法，官方依据为[事务隔离](https://www.postgresql.org/docs/17/transaction-iso.html)与[聚合函数](https://www.postgresql.org/docs/17/functions-aggregate.html)。此做法直接修复读取边界，不引入全局隔离级别、领取锁或重试机制；同事务已写入内容仍可见。
+
+新增真实隔离 PostgreSQL 测试先暂停详情读取的第一条 SELECT，再让独立存储事务完成领取、完成或取消，最后继续读取。测试不替换 SQL/数据库返回，只控制两个真实事务交错。旧实现的领取场景实际 **1 failed、16 deselected，7.76秒**，返回旧 Run 加新条目/Attempt，JUnit 为 `p2-run-detail-snapshot-before.xml`；因此不是仅凭隔离文档推断的故障。
+
+修复后第一次组合回归 **48 passed、1 failed、1 skipped，27.18秒**：取消场景的测试额外错误要求未领取条目也生成五个 Attempt，实际取消原有语义是零 Attempt，已修正测试断言，未改取消行为。最终开启 `RUN_LIVE_RUN_DEPENDENCIES=1` 与 `RUN_LIVE_PLAN_RUN_CREATION=1`，执行 `tests/test_run_item_dependencies.py tests/test_case_plan_run_creation.py tests/test_agent_case_context.py` 得 **49 passed、1 skipped，26.04秒**。三个并发场景均返回完整旧快照，随后重新读取完整新快照；写事务在读暂停期间正常提交，测试同时证明该读没有阻塞这些状态写入。唯一跳过项为未启用的真实模型完整读取专项，不能算作本轮默认 Step 验收。最终 JUnit 为 `p2-run-detail-snapshot-final.xml`。
+
+消费方进一步在 `RUN_LIVE_PLAN_RUN_CREATION=1` 下运行 `tests/test_case_operation_verification.py tests/test_agent_case_execution.py`，**38 passed、1 skipped，152.25秒**；包含真实业务 HTTP、正式 Agent Run 恢复、未知写入的已声明只读查证及数据库回执，JUnit 为 `p2-run-detail-consumers-final.xml`。唯一跳过为未启用的独立公开 Worker 场景；本轮没有重新调用默认 AI。两组最终结果合计 **87 passed、2 skipped**，`compileall` 与本轮文件 `git diff --check` 均成功。没有前端或类型契约变更，本轮未重跑前端构建。
+
+分类：详情读取一致性从“已定位待修复”变为**已有实现、真实 PostgreSQL 并发功能验收通过**。正式 Run 的 revision 历史、修订 API、queued 项投影原子更新、claim 与修订协调仍**需要补实现和验收**，本修复不等于 §7.103 的共享头行锁候选已验证，也不使整个动作准入事务的其他独立读取自动拥有同一快照。复杂默认 Step 项目选取→排序→补全→正式执行仍未闭环；自动 embedding 召回此前 402 余额不足也仍未解除。本轮没有修改 MySQL 配置、数据库结构、Provider 协议或前端契约；配置继续 MySQL、业务继续 PostgreSQL、原件继续 RustFS。完整 P0—P5 继续未完成。
