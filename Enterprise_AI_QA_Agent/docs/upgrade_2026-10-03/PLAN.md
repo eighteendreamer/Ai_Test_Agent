@@ -4328,3 +4328,15 @@ PostgreSQL `claim_items` 当前在单事务中读取 Run、处理阻塞项，再
 随后按 `RUN_LIVE_RUN_DEPENDENCIES=1` 执行 `tests/test_run_item_dependencies.py::test_atomic_claim_waits_for_predecessor_and_real_required_output`，结果 **2 passed**（内存与隔离 PostgreSQL 变体各一）。真实 PostgreSQL 变体同时调用两个 Worker 的 `claim_items`，验证实际 `FOR UPDATE SKIP LOCKED` 领取不重复、未满足依赖不提前领取，且前置输出可供后续消费者使用。计划创建并发重试 `tests/test_case_plan_run_creation.py::test_concurrent_retries_create_one_suite_run_and_dispatch_intent` 在 `RUN_LIVE_PLAN_RUN_CREATION=1` 下也为 **2 passed**（内存与 live 变体）；这项只证明创建/Outbox 幂等，不视为领取锁测试。
 
 下一步可验证的协调候选是增加 PostgreSQL 每 Run 的修订头行：`claim_items` 在事务内先对该行获取兼容的共享锁，之后仍以 RunItem `FOR UPDATE SKIP LOCKED` 原子领取；修订事务对同一头行获取排他锁，检查 expected revision 并原子保存历史与投影。官方行锁兼容矩阵说明多个 `FOR SHARE` 可以并存，而 `FOR UPDATE` 与它冲突；这在锁模型上允许并行 claim 与单写修订并存。现有 live claim 测试是该候选设计的基线，不是候选锁本身的验证。此机制尚未实现或在本系统事务中实测，且需继续验证锁顺序、Run 刷新、过期租约恢复、详情读取一致性及修订写事务，不能据文档说明直接认定竞态已解决。
+
+### 7.104 默认 Step `produced` 阶段失败请求与阶段职责复核〔2026-10-19〕
+
+继续 7.98，不按 SDK 工件文件名或目录顺序推断调用顺序。将 `PG-planning.json` 中每轮 `logical_call_id`、`planning_stage`、`evidence_task` 与 `physical/*.request.json` 的实际消息内容交叉核对后，顺序确定为 `logic → bindings → produced`：前两轮分别完整结束，第三轮 `produced` 为 `finish_reason=length`、`completion_tokens=8192`、正文 0 字符并被既有完整性检查拒绝。调用各只有一个物理 HTTP attempt；没有创建 Run，也没有业务 HTTP。
+
+第三轮有效配置仍为 MySQL 已冻结的 `step-5-preview` / `openai_chat_completions`，128,000 上下文窗口、8,192 最大输出、默认 `request_profile=null`。实际 request 的 prompt usage 为 8,431 tokens，未逼近上下文窗口；SDK 的可选 JSON Schema 因配置未声明格式而按 `format_not_declared` 回退到提示 Schema。此前单变量 16K 输出上限并启用 JSON 格式的隔离对照仍未形成有效计划，因此不能把协议切换、只增加输出预算或只启用 JSON mode 记作已验证修复，也不修改 MySQL 全局默认配置。
+
+按当前工作区 `planning_workflow.py` 构造逻辑，effects 请求除了固定 `logical_plan/hash`、单项 scope 和完整来源 evidence，还包含操作工具契约、引用目录、关联文档导航、查询回执及 `completed_tasks`。本样本均只有一个正式目标项；因此 `produced` 不是因 200 项上限或多目标集合而超长。8,431 prompt tokens 本身也未证实输入超窗；观测到的失败是输出侧用尽。`produced` Schema 要求模型同时给出业务输出身份路径、操作输入选择条件、业务预期检查及来源引用，系统再由短引用解析、固定计划和原始工具结果做确定性校验。删除这些字段或放宽校验会损害结果可验证性，不能为通过模型调用而简化。
+
+本轮结论：目前没有足够证据证明可通过删除重复上下文解决输出截断；单纯缩小输入也没有因果证据。可信的后续设计方向是研究把“效果声明的业务语义”与可从固定逻辑、已读工具契约/文档机械导出的字段分开，并保持 canonical 接受器仍负责验证，不把模型声明当执行证据。须先用真实失败用例精确列出 `produced` 最小必要字段、各字段唯一来源及可确定性推导规则，再以同一真实默认模型、同一正式用例和冻结预算做 A/B：结果须能通过当前 canonical 接受器、创建正式 Run 并完成真实工具执行/证据断言，负向/清理/终态重投也不回归，方可接受该设计。若无可靠推导或模型仍输出截断，应明确保留缺口，不换模型、不改全局预算、不通过自由模式绕过。
+
+本轮只追加调研记录；无生产代码、MySQL 配置或 PostgreSQL 业务数据变更。已核对 `verification.json`、`PG-planning.json`、三份实际 SDK request/stream 记录、失败用例与关联文档，以及 `planning_workflow.py`、`planning_effect_tasks.py` 和对应 Schema。P2 仍未完成默认 AI 项目选取→排序→逻辑补全→正式执行；正式 Run 执行中计划修订也仍处于设计调研，完整 P0—P5 继续未完成。
