@@ -14,8 +14,17 @@ def referenced_expected_value(reference, payload, proof, *, item_key, label):
     value = literal_value(payload, reference["payload_path_tokens"])
     if reference.get("excerpt") is not None:
         excerpt, literal = reference["excerpt"], reference["literal"]
-        if not isinstance(value, str) or value.count(excerpt) != 1 or excerpt.count(literal) != 1:
-            raise ValueError(f"执行项 {item_key} 的原文摘录或字面值不存在或有歧义")
+        excerpt_count = value.count(excerpt) if isinstance(value, str) else 0
+        literal_count = excerpt.count(literal)
+        if excerpt_count != 1 or literal_count != 1:
+            logger.warning("case_effect_text_reference_rejected", extra={"item_key": item_key,
+                "evidence_id": proof.get("evidence_id"), "payload_path_tokens": reference["payload_path_tokens"],
+                "payload_is_text": isinstance(value, str), "excerpt_occurrences": excerpt_count,
+                "literal_occurrences": literal_count})
+            raise ValueError(f"执行项 {item_key} 的原文摘录或字面值不存在或有歧义"
+                f"（payload_is_text={isinstance(value, str)}, "
+                f"payload_path_tokens={json.dumps(reference['payload_path_tokens'], ensure_ascii=True)}, "
+                f"excerpt_occurrences={excerpt_count}, literal_occurrences={literal_count}）")
         start = value.index(excerpt) + excerpt.index(literal)
         proof.update(excerpt=excerpt, literal=literal, encoding=reference["encoding"],
             char_start=start, char_end=start+len(literal))

@@ -26,9 +26,12 @@ def compile_relations(item, expected_source, evidence=(), expected_source_protoc
             raise ValueError("多效果声明缺少完整固定用例依据")
         definition = declaration.model_dump(mode="json")
         for field in ("checks", "select_when"):
-            for entry in definition[field]:
+            for index, entry in enumerate(definition[field]):
                 if entry.get("expected_source") is not None:
-                    entry["expected"], entry["expected_source_proof"] = document_expected_value(entry["expected_source"], item, evidence)
+                    try:
+                        entry["expected"], entry["expected_source_proof"] = document_expected_value(entry["expected_source"], item, evidence)
+                    except ValueError as exc:
+                        raise ValueError(f"声明 {declaration.declaration_id} 的 {field}[{index}]：{exc}") from exc
                     continue
                 try:
                     entry["expected"] = literal_value(source, entry["expected_path_tokens"])

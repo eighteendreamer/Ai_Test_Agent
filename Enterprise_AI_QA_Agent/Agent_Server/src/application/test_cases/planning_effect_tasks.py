@@ -1,5 +1,5 @@
 """Separate decisions; reuse canonical bindings and original execution validation."""
-from src.application.test_cases.planning_evidence_references import bind_evidence_references
+from src.application.test_cases.planning_evidence_references import bind_evidence_references, reference_expected_prompt
 from src.application.test_cases.planning_sources import json_text
 from src.application.test_cases.planning_stages import merge_evidence_decision
 from src.schemas.model_request_options import ModelOutputFormat
@@ -201,9 +201,7 @@ def effect_task_prompts(reference_protocol=REFERENCE_PROTOCOL):
         "[]表示整个工具输出，只有根值本身就是两次操作共有的业务身份时才适用；不猜通用ID字段。"
         "evidence_ids使用本次E短引用。预期引用自身expected_path_tokens，或文档E/T；"
         "每个check和select_when都必须提供expected_path_tokens与expected_source两个字段，未使用的一项写null，且只能一项非null。"
-        + ("expected_source使用单一reference字段：E短引用配payload_path_tokens，或T短引用配literal/encoding；不得添加第二个引用字段。"
-            if reference_protocol == REFERENCE_PROTOCOL_V2 else
-            "文档E引用填写evidence_ref和payload_path_tokens；T引用填写text_ref、literal和encoding；不适用字段写null。") +
+        + reference_expected_prompt(version=reference_protocol) +
         "文档E必须加入对应item证据。所有路径是字面量键/索引数组。"
         "字段示例：用例预期路径相对content_json对象本身，用expected_path_tokens=[\"期望\",\"create_code\"]、expected_source=null；"
         + (("文档原文条件用expected_path_tokens=null、expected_source={reference:\"T3\",payload_path_tokens:null,excerpt:null,literal:\"POST\",encoding:\"text\"}。"

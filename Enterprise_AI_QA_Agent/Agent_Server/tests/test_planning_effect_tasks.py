@@ -209,8 +209,8 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     prompts = build_stage_prompts(policy.planning_stage_protocol, policy.effect_expected_source_protocol,
         policy.operation_prefetch_protocol, policy.source_identity_protocol, policy.linked_source_protocol, policy.evidence_reference_protocol)
     assert set(prompts.effect_tasks) == set(DECISIONS)
-    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r2")
-    assert prompts.task_prompt_revision == 2
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r3")
+    assert prompts.task_prompt_revision == 3
     legacy = prompts.model_dump(mode="json")
     legacy.pop("task_prompt_revision")
     restored = PlanningStagePrompts.model_validate(legacy)

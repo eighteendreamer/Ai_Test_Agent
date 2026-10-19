@@ -25,11 +25,14 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.asyncio
 @live
 @pytest.mark.parametrize("reference_protocol", [REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2])
-@pytest.mark.parametrize("fault", ["none", "bindings-ack", "produced-ack", "cleanup-response-ack", "budget", "unknown-reference", "produced-query"])
+@pytest.mark.parametrize("fault", ["none", "bindings-ack", "produced-ack", "cleanup-response-ack", "budget", "unknown-reference", "produced-query", "ambiguous-text", "ambiguous-response-ack"])
 async def test_actual_separate_receipts_restore_without_resending_completed_tasks(tmp_path, monkeypatch, fault, reference_protocol):
     async with tasks_environment(tmp_path) as env:
         project = await env.projects.create(ProjectCreateRequest(project_key="tasks-"+fault, name="分任务证据"))
         raw = (ROOT / "docs/upgrade_2026-10-03/p4-linked-source-default-fixed/requirements.md").read_bytes()
+        if fault.startswith("ambiguous"):
+            from test_planning_reference_feedback import captured
+            raw = next(e["payload"]["content"] for e in captured()["evidence"] if e["kind"] == "document").encode("utf8")
         document = await env.docs.upload_document(project_id=project.id, filename="requirements.md", content_base64=base64.b64encode(raw).decode())
         case, content = await linked_case(env, project, [{"source_type": "api_doc", "source_id": document.id}])
         policy = CasePlanningPolicy.model_validate({**linked_policy().model_dump(mode="json"),
@@ -38,7 +41,7 @@ async def test_actual_separate_receipts_restore_without_resending_completed_task
         await env.service.save_policy(project.id, policy)
         task = await env.tasks.submit(project.id, CasePlanningTaskRequest(creation_key="original", objective=content["objective"], candidate_case_ids=[case.case.id]))
 
-        produced_reply = []
+        produced_reply, cleanup_replies = [], []
         def respond(context):
             assert next(e["payload"]["content"] for e in context["evidence"] if e["kind"] == "case") == content
             doc = next(e for e in context["evidence"] if e["kind"] == "document")
@@ -66,6 +69,19 @@ async def test_actual_separate_receipts_restore_without_resending_completed_task
             if fault == "unknown-reference" and task_name == "produced" and len(produced_reply) == 1:
                 produced_reply.append(True)
                 value["bindings"][0]["evidence_ids"] = ["E999"]
+            if task_name == "cleanup" and fault.startswith("ambiguous"):
+                if not cleanup_replies:
+                    catalog = context["evidence_reference_catalog"]
+                    alias = next(ref for ref, anchor in catalog["texts"].items()
+                        if anchor["text"].startswith("GET ") and anchor["text"].count("200") == 2)
+                    reference = {"literal": "200", "encoding": "json", "excerpt": None, "payload_path_tokens": None}
+                    reference.update({"reference": alias} if reference_protocol == REFERENCE_PROTOCOL_V2
+                        else {"text_ref": alias, "evidence_ref": None})
+                    value["bindings"][0]["effect_declarations"][0]["checks"][0]["expected_source"] = reference
+                else:
+                    error = context["validation_feedback"]["error"]
+                    assert "deleted" in error and "checks[0]" in error and "literal_occurrences=2" in error
+                cleanup_replies.append(value)
             return {**value, "task": task_name}
 
         env.model.replies = [respond] * 5
@@ -75,6 +91,8 @@ async def test_actual_separate_receipts_restore_without_resending_completed_task
             await original(claim, checkpoint, message=message)
             completed = checkpoint.effect_tasks.completed if checkpoint.effect_tasks else []
             matched = (fault == "cleanup-response-ack" and checkpoint.phase == "response" and checkpoint.plan.rounds[-1].get("evidence_task", {}).get("task") == "cleanup"
+                or fault == "ambiguous-response-ack" and checkpoint.phase == "response" and checkpoint.validation_feedback is not None
+                    and checkpoint.plan.rounds[-1].get("evidence_task", {}).get("task") == "cleanup"
                 or fault in {"bindings-ack", "produced-ack"} and checkpoint.phase == "ready" and completed and completed[-1].task+"-ack" == fault)
             if matched and not claims:
                 claims.append(claim); raise RuntimeError("Actual task receipt committed; acknowledgement lost")
@@ -101,8 +119,11 @@ async def test_actual_separate_receipts_restore_without_resending_completed_task
         plan = await env.service.get(project.id, terminal.plan_id)
         assert terminal.status == ("failed" if fault == "budget" else "completed"), terminal
         assert plan.status == ("planning_failed" if fault == "budget" else "planned"), plan.summary
-        calls = 3 if fault == "budget" else 5 if fault in {"unknown-reference", "produced-query"} else 4
+        calls = 3 if fault == "budget" else 5 if fault in {"unknown-reference", "produced-query"} or fault.startswith("ambiguous") else 4
         assert len(env.model.requests) == calls
+        if fault.startswith("ambiguous"):
+            assert len(cleanup_replies) == 2
+            assert sum(r["status"] == "validation_rejected" for r in plan.rounds) == 1
         if before: assert terminal.attempt_no == 2 and terminal.deadline_at == before.deadline_at
         await PlanningTaskHandler(env.service, restored, worker_id="terminal")(delivery(task))
         assert len(env.model.requests) == calls

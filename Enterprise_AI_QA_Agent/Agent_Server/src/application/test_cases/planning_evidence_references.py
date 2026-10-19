@@ -82,13 +82,9 @@ def bind_evidence_references(decision, catalog, evidence, *, query_decision_type
     return model.model_validate(value)
 
 
-def reference_effects_prompt(schema, *, version=REFERENCE_PROTOCOL):
-    from src.application.test_cases.planning_sources import json_text
+def reference_expected_prompt(*, version=REFERENCE_PROTOCOL):
+    """Keep supported citation forms identical across planning task prompts."""
     return (
-        "只读规划当前项目的执行证据，不执行业务、不报告通过。完整用例/说明/原文和工具契约已经提供；"
-        "logical_plan/hash及operation_selections固定，不改用例、项、instructions、依赖或清理关系。"
-        "bindings只追加现有item_key的evidence_ids、input_bindings、effect_declarations及具体缺口。"
-        "本阶段evidence_ids使用evidence_reference_catalog中的E短引用，正式ID和hash由系统还原。"
         "预期二选一：expected_path_tokens相对正式完整content或prepare.instructions；"
         + ("expected_source使用单一reference字段，值为E短引用并提供payload_path_tokens，或T短引用并提供literal和encoding。"
             if version == REFERENCE_PROTOCOL_V2 else
@@ -96,6 +92,17 @@ def reference_effects_prompt(schema, *, version=REFERENCE_PROTOCOL):
         "T已提供确切原文，不复制ID/hash/excerpt；literal必须唯一存在，json仅解码标量，text保留字符。"
         "重复原文有歧义时用E+唯一excerpt/literal/encoding或说明缺口，不能猜测。"
         "文档来源的E必须加入该项evidence_ids；不用目录冒充正文。"
+    )
+
+
+def reference_effects_prompt(schema, *, version=REFERENCE_PROTOCOL):
+    from src.application.test_cases.planning_sources import json_text
+    return (
+        "只读规划当前项目的执行证据，不执行业务、不报告通过。完整用例/说明/原文和工具契约已经提供；"
+        "logical_plan/hash及operation_selections固定，不改用例、项、instructions、依赖或清理关系。"
+        "bindings只追加现有item_key的evidence_ids、input_bindings、effect_declarations及具体缺口。"
+        "本阶段evidence_ids使用evidence_reference_catalog中的E短引用，正式ID和hash由系统还原。"
+        + reference_expected_prompt(version=version) +
         "input_bindings引用外部依赖实际输出或runtime_context顶层input_key。所有路径为字面量键/索引数组，含点号键不拆。"
         "产生项声明produced，清理项声明cleanup；每份有唯一declaration_id、操作输入select_when、object_path_tokens、collection和checks。"
         "select_when匹配真实工具输入，checks比较真实输出与固定预期；根据已读when/input/output及完整models确定包装路径，不能猜。"
