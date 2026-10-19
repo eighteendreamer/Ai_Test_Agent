@@ -5623,3 +5623,13 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
 共119通过，无跳过。第一次扩大回归漏配证据目录导致46失败13通过；已对全部失败XML分组确认仅四类目录KeyError，单独复跑首项也相同。补齐独占目录后完整59项通过，未添加生产绕过。失败输出与正式业务HTTP/PG/MySQL/RustFS工件均保留。compileall、diff检查通过；无前端改动未重复构建，未执行生产迁移、未真实模型调用，未更改供应商协议。
 
 当前仅证明命名修复及对应迁移/操作/消费行为，不代表所有Store或完整schema化Agent产品流程均验收。生产历史迁移/投影、两份旧Worker原件、P2生产修订API与新增/删除/套件/跨修订回归、默认Step多用例闭环及其余P0—P5未闭环项继续保留。
+
+## 2026-10-19 P2 默认 Step 多候选输出上限诊断
+
+在真实默认 Step 配置、全新隔离项目中重复三候选规划，仅把项目规划任务时限设为600秒；没有修改模型、Chat Completions transport、8192输出上限、profile、reasoning 参数或全局配置。结果 **1 failed、2 deselected，268.88秒**（`p2-default-multi-case-step-timeout600-20261019.xml`）。任务进入 `finished/failed`，原因是模型规划输出达到生成上限，保留原响应且不自动重发，没有创建测试运行。
+
+真实 SDK/HTTP 观测共两次调用、各一次物理请求：一次 `finish_reason=stop`、6625 completion tokens；下一次 `finish_reason=length`、8192/8192 completion tokens，8339 prompt tokens，流结束于136.513秒。截断响应记录中的请求映射为 `output_format: prompt_fallback`，原因是 `format_not_declared`；本次只把 JSON 回执要求放在提示中，没有请求供应商原生格式。当前默认配置声明 `json_mode=true`，但没有 `request_profile`；本地映射器按 profile 的 `output_formats` 决定具体请求格式，因此本次回退到提示。StepFun 官方 Step 5 结构化输出示例使用 Chat Completions JSON Schema，官方 JSON Mode 文档说明 `json_object`；但当前证据只保存了 `api_base_url_hash`，尚未确认本次配置的实际 host，不能假定这些能力适用于当前端点。检查点显示逻辑阶段选中订单创建正式依赖与订单详情目标、排除无关商品排序候选；后续 effects/bindings 未取得完整回执。因此本实验排除了600秒总期限是唯一原因，但没有让多候选完整规划通过。没有创建正式 Run、业务 HTTP为0，也没有产生创建/清理数据。
+
+这份失败样本把下一步范围缩小为后续绑定阶段的提示回退与生成量；具体导致8192 tokens耗尽的 prompt/模型生成因素仍未确认。StepFun 官方 Step 5 文档展示 Chat Completions JSON Schema 示例，但本次证据仅保存 API host 哈希，适用到当前配置仍未核实；不能据此直接改能力标志或全局配置。禁止把本实验结果当作增大生产输出预算的依据，也没有自动重发截断响应。继续先核实配置 host 与请求映射，再按默认配置验收完整规划、执行、结果与终态重投。
+
+本次协议核验：Anthropic 仍经官方 `client.messages.create` 调用；`await_provider_io` 只统一网络传输错误。OpenAI Responses 留在独立的 OpenAI Responses transport。默认 Step 使用既有 OpenAI Chat Completions transport，未改协议或模型客户端。完整 P0—P5 继续未完成。

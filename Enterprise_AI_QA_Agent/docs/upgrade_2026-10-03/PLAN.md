@@ -4484,3 +4484,13 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 前两组 **119 passed，无跳过**。扩大回归首次因本次命令漏配证据目录为 **46 failed、13 passed，118.55秒**；读取全部 JUnit 失败类型，14项缺 `QA_STATEFUL_RESEARCH_EVIDENCE_DIR`、14项缺 `QA_CONSUMPTION_PHASE_DIR`、9项缺 `QA_EFFECT_EVIDENCE_DIR`、9项缺 `QA_CONSUMPTION_EXTERNAL_DIR`，无其他类型。首个失败单独复跑也证实该原因（1失败1通过）。未因此改生产逻辑或跳过测试；补齐5类独占证据目录后59项全通过。两次失败工件 `p0-tool-table-action-regression.xml`、`p0-tool-table-first-regression-failure.xml` 保留。编译与本轮 diff 检查通过，无依赖变更、前端/API契约变更，不重复前端构建。
 
 当前分类：**此前5项迁移兼容失败已修复并完成上述范围验收。** 这是隔离 schema 的实际迁移/运行存储证据，不能代替真实部署历史数据迁移与投影核对，也没有恢复两份旧 Worker 原件。P2 完整修订写入、默认 Step 多用例闭环、DeepSeek 人工录制、其他未验收产品场景仍未完成。配置 MySQL、业务 PostgreSQL、原件 RustFS 及 Provider 原生协议不变；Step 已认证。
+
+### 7.112 默认 Step 多候选规划：600 秒诊断定位到输出截断（2026-10-19）
+
+继续默认模型多候选端到端验收。此前 180 秒任务总时限在第三阶段调用中取消，不能据此判断候选选择或后续绑定。为区分任务时限与其他故障，在全新隔离项目重复同一三候选场景，只把该项目规划任务期限设为 600 秒；模型、transport、8192 输出上限和全局配置保持默认，没有 profile/reasoning 覆盖或受控模型。测试工件：`p2-default-multi-case-step-timeout600-20261019.xml`、同名目录中的 `verification.json`、`planning-task.json` 与 `PG-planning.json`。
+
+本次实际 **1 failed、2 deselected，268.88秒**。任务已进入 `finished`，状态 `failed`；错误为模型规划输出达到生成上限，原响应已保留、未自动重发、未创建测试运行。SDK/物理 HTTP 观测共两次请求，各自仅一次物理发送：一次以 `stop` 正常结束、`completion_tokens=6625`；另一次以 `finish_reason=length` 结束，`completion_tokens=8192` 达到配置上限，输入为8339 tokens、耗时136.513秒。流终止事件已正常收到，所以这不是600秒总时限到期，也没有证据支持重复 HTTP 发送。
+
+保存的逻辑阶段检查点包含两个正式项：订单创建正式依赖 → 订单详情目标；无关的商品排序候选未入选。规划随后停在 effects/bindings 阶段，未得到完整绑定回执；没有创建正式 Run，业务 HTTP 为0，没有创建或清理订单。截断响应的映射记录显示 `output_format` 采取 `prompt_fallback`（`format_not_declared`），因此这次只通过提示要求符合回执 Schema 的 JSON 文本，没有请求供应商原生格式。默认模型配置声明 `json_mode=true`，但没有 `request_profile`；`map_model_request` 以 profile 中明确声明的 `output_formats` 决定是否映射具体格式，所以本次回退到提示。查阅[Step 5 Preview 官方结构化输出示例](https://platform.stepfun.com/cookbook/step-5-vision-structured)确认示例使用 Chat Completions `response_format` 的 JSON Schema；[官方 JSON Mode 文档](https://platform.stepfun.com/docs/guide/json_mode)也说明可用 `json_object`。当前验收证据只保留了 `api_base_url_hash`，没有确认本次账号实际连接的 host；官方能力是否适用于此配置仍需先核实，且 JSON Schema 是否能减少该阶段生成量尚无证据。直接失败原因是8192输出额度耗尽。候选选择、排序与依赖判定有阶段性证据，但整条用例规划和执行仍未通过。不能把截断归因于隐藏推理、协议转换或单纯任务超时。
+
+协议核验：Anthropic 客户端继续调用官方 SDK `client.messages.create`，`await_provider_io` 仅包装网络传输异常；OpenAI Responses 客户端是独立 transport。此次默认 Step 请求沿其既有 OpenAI Chat Completions transport，不切换到 Responses。不得为使该样本通过而扩大生产默认输出上限、替换 provider 协议、自动重发截断响应或以受控 profile 代替默认模型。下一步安全确认当前配置的实际 host；仅在其与官方文档适用端点一致、且能力声明依据清晰时，才评估显式 JSON Schema 映射。然后再分析阶段提示/上下文；每次改动仍使用全新隔离项目和默认 Step 配置验收，直到获得完整绑定、正式 Run、业务请求/证据、结果及终态重投的闭环。
