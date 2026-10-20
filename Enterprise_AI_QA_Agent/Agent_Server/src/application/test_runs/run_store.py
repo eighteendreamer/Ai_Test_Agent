@@ -3336,6 +3336,7 @@ class PostgresTestRunStore:
     ) -> TestRunDetail:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                self._lock_plan_projection(cur, run_id)
                 run = self._read_run(cur, run_id)
                 if run.status == "completed":
                     raise ValueError(f"Completed test run cannot be cancelled: {run_id}")

@@ -1,4 +1,4 @@
-"""Actual PostgreSQL claim transactions obey the production revision resource."""
+"""Actual PostgreSQL Run mutations obey the production revision resource."""
 from __future__ import annotations
 
 import asyncio
@@ -31,7 +31,7 @@ async def waiting_claimant(settings, owner_pid, task):
     while monotonic() < deadline:
         if rows := await asyncio.to_thread(inspect):
             return rows[0]["pid"]
-        assert not task.done(), "claim completed while an exclusive plan revision transaction still held the resource"
+        assert not task.done(), "operation completed while an exclusive plan revision transaction still held the resource"
         await asyncio.sleep(0.02)
     pytest.fail("PostgreSQL did not observe claimant waiting on the exclusive plan resource")
 
@@ -68,6 +68,31 @@ async def test_original_claim_waits_for_revision_resource_and_releases_with_tran
         assert len(claims) == 1
         saved = await store.get_run(run.id)
         assert len(saved.attempts) == 1 and saved.run.stats.claimed == 1
+
+
+@pytest.mark.asyncio
+async def test_cancellation_waits_for_exclusive_plan_revision_resource(tmp_path):
+    async with setup(tmp_path, True) as (env, store, run, items, now):
+        await store.create_run(run, items)
+        cancellation = None
+        detail = None
+        try:
+            with postgres_connect(env.settings) as writer, writer.cursor() as cursor:
+                cursor.execute("SET LOCAL statement_timeout='10s'")
+                cursor.execute("SELECT pg_backend_pid() AS pid")
+                owner = cursor.fetchone()["pid"]
+                lock_plan_projection(cursor, run_table=store._run_table, run_id=run.id, exclusive=True)
+                cancellation = asyncio.create_task(store.cancel_run(run.id, "operator cancelled", now))
+                assert await waiting_claimant(env.settings, owner, cancellation) != owner
+                assert (await store.get_run(run.id)).run.status == "queued"
+        finally:
+            if cancellation is not None:
+                detail = await asyncio.wait_for(cancellation, timeout=10)
+
+        assert detail is not None
+        assert detail.run.status == "cancelled"
+        assert all(item.status == "cancelled" for item in detail.items)
+        assert detail.attempts == []
 
 
 @pytest.mark.asyncio
