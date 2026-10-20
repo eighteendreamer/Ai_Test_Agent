@@ -4535,3 +4535,15 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 测试探针的安全错误元数据回归及 SDK 事件钩子专项 **11 passed，21.72秒**；真实默认多用例任务 **1 failed，46.33秒**，规划未完成、Run及业务HTTP均0。MySQL 全局模型记录没有修改；P2 当前准确状态是**Step 认证已确认，但 `step-5-preview` 在已配置 Step Plan 端点不可用，不能继续声称默认 Step 多用例规划已真实验收**。需先明确有效模型/端点组合，再在全新隔离项目完成选择、依赖补全、正式执行、结果及终态重投。完整 P0—P5 目标保持进行中。
 
 依据：`P2_DEFAULT_CURRENT_RESEARCH.md`、`p2-default-multi-case-safe-error-20261020/step-parameter-probe.json`、`step-model-catalog.json`、同名目录的 `verification.json`。没有生产代码、协议或 MySQL 默认配置变更。
+
+
+### 7.117 Step 两个 endpoint 的实时推理可用性（2026-10-20）
+
+为细化§7.116，仍使用当前 MySQL 默认模型凭据做极短对照，未保存错误响应正文或模型输出：
+
+- `api.stepfun.com/step_plan/v1`：官方 SDK `GET /models` 成功，但模型目录中 `step-3.5-flash-2603` 的最小 `model+messages` 推理请求仍返回400 `request_params_invalid`。追加 `stream`、`max_tokens=64`、`stream_options.include_usage` 的对照仍为400。
+- `api.stepfun.com/v1`：`GET /models` 成功，目录含 `step-5-preview`；对该模型发一条极短 `max_tokens=64` Chat Completions 请求返回402 `quota_exceeded`。
+
+故当前认证查询有效，但两条服务路径都没有成功推理：Step Plan 目录未列Step5且目录内模型的最小调用也失败；标准目录列出Step5，但当前推理额度不足。不能将问题归结为单纯模型名称或请求中的某一个可选参数，也不能判定应用 Provider SDK 是唯一根因。10月19日存在相同 endpoint hash 下的真实单用例成功记录；因凭据不保存，无法证明历史和当前密钥/额度状态相同。完整材料见 `P2_DEFAULT_CURRENT_RESEARCH.md` 与 `p2-default-multi-case-safe-error-20261020/step-*-probe.json`。
+
+当前 P2 默认 Step 多用例规划→执行仍未验收；用户已确认认证不代表当前账户有推理额度或 Step Plan 目录含目标模型。没有修改全局 MySQL 配置，也没有改 Provider 原生协议。后续在可用的 Step5 推理通道恢复后，以新隔离项目继续真实默认模型验收；完整 P0—P5 仍进行中。

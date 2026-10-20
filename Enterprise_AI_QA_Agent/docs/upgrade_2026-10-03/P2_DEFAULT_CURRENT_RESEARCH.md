@@ -96,3 +96,12 @@ pytest **1失败，233.72秒**。规划任务运行3轮，SDK物理请求均携�
 [Step 官方 Chat Completions API 文档](https://platform.stepfun.ai/docs/en/api-reference/chat/chat-completion-create)将 Step 5 Preview 列为支持模型，并说明标准端点为 `/v1/chat/completions`，`max_tokens`、`stream` 为请求参数；它没有提供证据证明 `step-5-preview` 在当前 `/step_plan/v1` 目录可用。结合真实目录不含该模型和小请求持续 400，当前根因最符合“Step Plan 凭据/端点正常，但模型 ID 属于另一服务目录或未开放给此订阅”的配置不匹配；这属于强证据推断，未证明 Step5 在其他端点对该凭据可用。不得通过生产代码改协议，也不得改写全局 MySQL 默认配置来绕开。
 
 测试探针新增只记录 SDK 的 `status_code/code/param/type` 安全字段，不记录错误消息/响应体；本地官方 SDK + 真实 HTTP 回归 `tests/test_sdk_stream_observation.py` 与 SDK 事件钩子专项 **11 passed，21.72 秒**。新多用例默认测试 **1 failed，46.33 秒**：规划未完成、Run 未创建、业务 HTTP 为0。P2 默认 Step 多用例仍未闭环。继续条件是确认要在 MySQL 中使用的实际模型/服务端点组合；此配置选择未确定前，不把目录中其他 Step 模型的隔离测试冒称为当前 `step-5-preview` 默认验收。自动 embedding 召回仍另受 HTTP 402 账户余额问题阻挡，与 Step 认证无关。
+
+
+## 2026-10-20 Step 两个 endpoint 的推理可用性补测
+
+为避免把模型目录差异过度解释成唯一根因，继续用当前 MySQL 中同一凭据做了只读目录与极短推理对照。Step Plan endpoint 的 `/models` 返回两个模型，但对目录内的 `step-3.5-flash-2603` 发送最小 `model+messages` 请求仍返回 HTTP 400 `request_params_invalid`；加入流式、`max_tokens=64` 或 `stream_options` 也没有改善。标准 `https://api.stepfun.com/v1` 的 `/models` 返回19个模型并包含 `step-5-preview`，但同一凭据对该模型发送极短 `max_tokens=64` 推理返回 HTTP 402 `quota_exceeded`。响应正文和生成文本均未保存。安全结果分别见 `step-listed-model-probe.json`、`step-listed-model-minimal-probe.json`、`step-standard-model-catalog-probe.json`、`step5-standard-endpoint-probe.json`。
+
+因此目前能确认的是：Step 认证对两个目录查询有效；当前 `step-5-preview` 在 Step Plan 目录不可见；标准目录可见 Step5 但推理额度不足；Step Plan 目录中的普通模型也尚未通过最小推理请求。不能再把当前阻塞简化成“只需换 endpoint”或“只需换模型”。10月19日同一序列化 endpoint hash 曾有 Step5 单用例通过，但调用凭据不落库/不计算哈希，无法证明历史和当前使用同一把密钥或配额状态；保留历史成功事实，但不外推为当前连接正常。
+
+当前 P2 阻塞是**没有可用的当前默认 Step5 推理通道**，不是应用 SDK 认证失败。后续先由账户/端点配置提供可成功生成的组合；收到该条件后再创建新隔离项目复验默认多用例规划和执行。不能为了得到绿测切换当前全局 MySQL 默认配置、降低验收模型、或把历史单用例通过扩大成当前多用例通过。无生产代码、MySQL 配置或业务数据更改。
