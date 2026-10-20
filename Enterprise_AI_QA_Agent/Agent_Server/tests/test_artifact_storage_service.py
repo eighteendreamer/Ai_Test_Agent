@@ -149,6 +149,38 @@ def test_rustfs_rewrites_file_artifact_and_rejects_minio_uri(tmp_path: Path) -> 
         asyncio.run(service.delete_object_uri("minio://qa-agent/result.json"))
 
 
+def test_rustfs_rewrites_inline_content_artifact_and_reuses_embedded_copy(tmp_path: Path) -> None:
+    client = _RustFSClient()
+    service = ArtifactStorageService(_settings(tmp_path))
+    service._rustfs_client = lambda: client
+    content = '{"summary":"订单报告","completed":1}'
+    artifact = {
+        "type": "api_test_report_json",
+        "filename": "api-report.json",
+        "content_type": "application/json",
+        "label": "API 报告",
+        "content": content,
+    }
+
+    output = asyncio.run(service.store_output_artifacts(
+        {"artifacts": [artifact], "report": {"artifacts": [dict(artifact)]}},
+        session_id="session-1",
+        turn_id="turn-1",
+        tool_key="api-test-runner",
+    ))
+
+    stored = output["artifacts"][0]
+    embedded = output["report"]["artifacts"][0]
+    assert stored["path"].startswith("rustfs://qa-agent/session-1/turn-1/api-test-runner/api-report-")
+    assert stored["path"].endswith(".json")
+    assert embedded["path"] == stored["path"]
+    assert stored["storage_backend"] == "rustfs"
+    assert stored["size_bytes"] == len(content.encode("utf8"))
+    assert "content" not in stored and "content" not in embedded
+    assert len(client.objects) == 1
+    assert next(iter(client.objects.values())) == (content.encode("utf8"), "application/json")
+
+
 def test_non_rustfs_backend_is_disabled(tmp_path: Path) -> None:
     service = ArtifactStorageService(_settings(tmp_path, backend="local"))
 

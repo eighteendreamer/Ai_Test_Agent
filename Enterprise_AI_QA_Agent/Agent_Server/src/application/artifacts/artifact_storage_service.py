@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import mimetypes
 from copy import deepcopy
@@ -173,6 +174,17 @@ class ArtifactStorageService:
         if not isinstance(value, dict):
             return value
 
+        inline_key = self._inline_artifact_cache_key(value, session_id=session_id,
+            turn_id=turn_id, tool_key=tool_key)
+        if inline_key is not None:
+            stored_inline = cache.get(inline_key)
+            if stored_inline is None:
+                stored_inline = self._store_inline_artifact(value, cache_key=inline_key,
+                    session_id=session_id, turn_id=turn_id, tool_key=tool_key)
+                cache[inline_key] = stored_inline
+            value.update(stored_inline)
+            value.pop("content", None)
+
         cached = self._cached_artifact(value, cache)
         if cached is not None:
             value.update(cached)
@@ -197,6 +209,75 @@ class ArtifactStorageService:
                 cache=cache,
             )
         return value
+
+    def _inline_artifact_cache_key(
+        self,
+        value: dict[str, Any],
+        *,
+        session_id: str,
+        turn_id: str,
+        tool_key: str,
+    ) -> str | None:
+        if "content" not in value or not value.get("filename") or not (value.get("type") or value.get("artifact_type")):
+            return None
+        existing_path = str(value.get("path") or "").strip()
+        if existing_path.startswith("rustfs://"):
+            return None
+        content = value.get("content")
+        if isinstance(content, str):
+            raw = content.encode("utf-8")
+        elif isinstance(content, (bytes, bytearray, memoryview)):
+            raw = bytes(content)
+        else:
+            return None
+        digest = hashlib.sha256(raw).hexdigest()
+        filename = Path(str(value["filename"])).name
+        content_type = str(value.get("content_type") or self._content_type(Path(filename)))
+        return ":".join((session_id, turn_id, tool_key, filename, content_type, digest))
+
+    def _store_inline_artifact(
+        self,
+        value: dict[str, Any],
+        *,
+        cache_key: str,
+        session_id: str,
+        turn_id: str,
+        tool_key: str,
+    ) -> dict[str, Any]:
+        content = value["content"]
+        raw = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+        digest = hashlib.sha256(raw).hexdigest()
+        original_filename = Path(str(value["filename"])).name or "artifact.bin"
+        source_path = Path(original_filename)
+        safe_stem = self._safe_segment(source_path.stem)[:80] or "artifact"
+        raw_suffix = source_path.suffix.lstrip(".")
+        safe_suffix = f".{self._safe_segment(raw_suffix)[:20]}" if raw_suffix else ""
+        safe_session = self._safe_segment(session_id or "session")
+        safe_turn = self._safe_segment(turn_id or "turn")
+        safe_tool = self._safe_segment(tool_key or "tool")
+        object_name = self._safe_object_name(
+            f"{safe_session}/{safe_turn}/{safe_tool}/{safe_stem}-{digest[:16]}{safe_suffix}"
+        )
+        content_type = str(value.get("content_type") or self._content_type(source_path))
+        bucket = self._settings.storage.rustfs_bucket
+        self._put_object(bucket_name=bucket, object_name=object_name,
+            content=raw, content_type=content_type)
+        logger.info("rustfs_inline_artifact_stored", extra={
+            "session_id": session_id, "turn_id": turn_id, "tool_key": tool_key,
+            "artifact_type": str(value.get("type") or value.get("artifact_type") or "file"),
+            "bucket": bucket, "object_name": object_name, "size_bytes": len(raw),
+        })
+        uri = f"rustfs://{bucket}/{object_name}"
+        return {
+            "path": uri,
+            "uri": uri,
+            "storage_backend": "rustfs",
+            "bucket": bucket,
+            "object_name": object_name,
+            "content_type": content_type,
+            "original_filename": original_filename,
+            "size_bytes": len(raw),
+        }
 
     def _cached_artifact(self, value: dict[str, Any], cache: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
         raw_path = str(value.get("path") or "").strip()

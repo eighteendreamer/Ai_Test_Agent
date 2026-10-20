@@ -112,14 +112,21 @@ class ReportService:
             return meta, [], []
         artifact = candidates[0]
         meta["tool_job_id"] = artifact.tool_job_id
-        try:
-            payload = json.loads(artifact.metadata.get("__content_text") or "")
-            if not isinstance(payload, dict):
-                raise ValueError("report JSON is not an object")
-        except (ValueError, TypeError):
-            logger.warning("report_projection_unavailable", extra={"session_id": session.id,
-                "artifact_id": artifact.id, "artifact_type": expected})
-            return meta, [], []
+        payload = None
+        if (session.mode_key == "api_testing" and job is not None and artifact.tool_job_id == job.id
+                and isinstance(job.output_payload, dict)):
+            current_report = job.output_payload.get("report")
+            if isinstance(current_report, dict):
+                payload = current_report
+        if payload is None:
+            try:
+                payload = json.loads(artifact.metadata.get("__content_text") or "")
+                if not isinstance(payload, dict):
+                    raise ValueError("report JSON is not an object")
+            except (ValueError, TypeError):
+                logger.warning("report_projection_unavailable", extra={"session_id": session.id,
+                    "artifact_id": artifact.id, "artifact_type": expected})
+                return meta, [], []
         for field in ("total_tasks", "completed_tasks", "failed_tasks", "skipped_tasks", "total_findings",
             "settlement", "verdict", "metrics_persistence", "passed_checks", "failed_checks"):
             if field in payload:

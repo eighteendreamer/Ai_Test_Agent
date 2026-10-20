@@ -78,6 +78,9 @@ async def test_cookie_report_download_restart_and_original_job_recovery(tmp_path
             assert public_safe, "Cookie value reached a durable public ToolJob."
             artifacts = []
             for artifact in job.artifacts:
+                assert artifact.path.startswith("rustfs://"), "API report artifact was not stored in RustFS."
+                assert artifact.metadata.get("__storage_mode") == "path_only"
+                assert "__content_text" not in artifact.metadata
                 if artifact.path.startswith("rustfs://"):
                     raw = (await objects.read_object_uri(artifact.path))["content"]
                 else:
@@ -90,6 +93,11 @@ async def test_cookie_report_download_restart_and_original_job_recovery(tmp_path
                     "sha256": hashlib.sha256(raw).hexdigest(), "size_bytes": len(raw), "saved_filename": filename})
             json_artifact = next(a for a in artifacts if a["type"] == "api_test_report_json")
             assert {a["type"] for a in artifacts} == {"api_test_report_json", "api_test_report_md", "api_test_task_evidence"}
+            for artifact_list in (result.output.get("artifacts"), result.output["report"].get("artifacts"),
+                    result.output["api_testing_state"].get("artifacts")):
+                assert isinstance(artifact_list, list)
+                assert all("content" not in item and str(item.get("path", "")).startswith("rustfs://")
+                    for item in artifact_list)
             restored_jobs = ToolJobService(PostgresToolJobStore(settings))
             reread = await restored_jobs.get_job_detail(job.id)
             assert reread.artifacts == job.artifacts and reread.output_payload == job.output_payload
@@ -125,10 +133,13 @@ async def test_cookie_report_download_restart_and_original_job_recovery(tmp_path
                     await expect(cards).to_have_count(3)
                     await page.locator(".api-task-report-card details").evaluate_all(
                         "elements => elements.forEach(element => { element.open = true; })")
-                    rows = page.locator(".report-detail .summary-body").first.get_by_role("row")
+                    rows = page.locator(".api-report-summary").get_by_role("row")
                     for label, count in (("总任务数", "3"), ("通过", "2"), ("失败", "1")):
-                        row = rows.filter(has=page.get_by_role("cell", name=label, exact=True))
-                        await expect(row.get_by_role("cell").nth(1)).to_have_text(count)
+                        row = rows.filter(has=page.get_by_role("rowheader", name=label, exact=True))
+                        await expect(row.get_by_role("cell")).to_have_text(count)
+                    task_kpi = page.locator(".kpi-card").first
+                    await expect(task_kpi.locator("strong")).to_have_text("3")
+                    await expect(task_kpi).to_contain_text("已完成 2 / 失败 1 / 跳过 0")
                     text = await page.locator(".report-detail").text_content()
                     assert all(value not in text for value in values.values()), "Cookie value reached rendered report."
                     assert "opaque_echo" in text and "[REDACTED]" in text
@@ -154,9 +165,13 @@ async def test_cookie_report_download_restart_and_original_job_recovery(tmp_path
                     await page.locator('.left-nav a[href="/reports"]').click()
                     await page.locator(".batch-item").filter(has_text=parent.id[:8]).click()
                     await expect(page.locator(".api-task-report-card")).to_have_count(3)
+                    rows = page.locator(".api-report-summary").get_by_role("row")
                     for label, count in (("总任务数", "3"), ("通过", "2"), ("失败", "1")):
-                        row = rows.filter(has=page.get_by_role("cell", name=label, exact=True))
-                        await expect(row.get_by_role("cell").nth(1)).to_have_text(count)
+                        row = rows.filter(has=page.get_by_role("rowheader", name=label, exact=True))
+                        await expect(row.get_by_role("cell")).to_have_text(count)
+                    task_kpi = page.locator(".kpi-card").first
+                    await expect(task_kpi.locator("strong")).to_have_text("3")
+                    await expect(task_kpi).to_contain_text("已完成 2 / 失败 1 / 跳过 0")
                     text = await page.locator(".report-detail").text_content()
                     assert all(value not in text for value in values.values())
                     unplanned = [request for index, request in enumerate(network)
@@ -169,6 +184,10 @@ async def test_cookie_report_download_restart_and_original_job_recovery(tmp_path
                         "project_id": project.id, "parent_job_id": job.id, "events": events, "artifacts": artifacts,
                         "report_counts": {"total": 3, "passed": 2, "failed": 1},
                         "public_job_and_artifacts_safe": public_safe, "download_matches_stored_bytes": True,
+                        "all_report_artifacts_in_rustfs": all(item["uri"].startswith("rustfs://") for item in artifacts),
+                        "postgres_artifact_metadata_has_no_inline_copy": all(
+                            artifact.metadata.get("__storage_mode") == "path_only"
+                            and "__content_text" not in artifact.metadata for artifact in job.artifacts),
                         "restart_report_entry_and_download_equal": True, "terminal_replay_extra_http": 0,
                         "planned_restart_network_range": [restart_start, restart_end],
                         "unplanned_api_failures": unplanned,

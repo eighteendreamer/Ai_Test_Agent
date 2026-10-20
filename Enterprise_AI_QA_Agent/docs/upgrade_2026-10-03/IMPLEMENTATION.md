@@ -5879,3 +5879,223 @@ Step 账号认证按用户确认记为完成，并保留成功模型目录查询
 真实验收 **1 passed，187.35秒**，使用真实 Agnes 模型、正式 API/Agent Worker、隔离 PostgreSQL/Redis/RustFS、现有 Docker runner 和本机隔离 HTTP 目标；whatweb 指纹、httpx 探测、HTTP 响应头三个任务均完成，最终报告核对到4项发现、12项证据。API 重启后可读取报告；终态重放新增模型 SDK 调用、物理模型 HTTP、目标请求和 ToolJob 均为0。一个无上传附件场景中的 `attachment-reader` 调用返回 `attachment_not_found`，不影响安全任务与报告，单独保留为非关键失败证据。原始验收文件位于 `Agent_Server/docs/upgrade_2026-10-03/p5-security-agent-agnes-recursion-fix-20261020-234023/`。
 
 此项证明当前已配置的 Agnes 模型下一个正式安全 Agent/Docker 场景通过；Step 默认模型仍受实际推理 entitlement 错误阻塞，未将其记为安全 Agent 验收通过。其他授权/目标类别、工具故障、安全报告组合、性能容量与 AI 流式指标仍待逐项验证。没有修改全局默认模型或数据库 schema。
+
+## 2026-10-21 P2 多用例真实规划对照
+
+Worker 环境重建修复对应的三个回归 **3 passed，6.56秒**；v2 关系策略的规划阶段回归 **32 passed、5 skipped，6.13秒**。Agnes 替代模型真实场景分别在验收夹具 v1 清理策略和隔离启用的 v2 正式关系策略下执行。v1 场景因 `FormalCasePlanItem` 不支持正式项 `cleanup_sources`，规划 Schema 拒绝嵌套字段；v2 场景的5轮模型输出仍不能形成有效逻辑计划（正式前置项被改成 prepare、绑定阶段错误、依赖/清理循环、prepare 字段错误）。两次共记录各5个 HTTP 200、完整结束的 SDK 流，均未创建 Run、未发送业务 HTTP。该结果是模型规划失败，不是 Worker 执行失败或 provider 协议切换。
+
+证据保留于 `docs/upgrade_2026-10-03/p2-alternate-model-live-20261021-01/`、`p2-alternate-model-live-20261021-01.xml`、`p2-alternate-model-live-20261021-02/` 和 `p2-alternate-model-live-20261021-02.xml`。P2 多用例 Agent 闭环仍未通过；后续先按已记录回执复核逻辑规划提示与正式前置项选择，再决定是否修改，不放宽 Schema 或增加轮数。全局 MySQL 默认模型未替换；Step 默认模型需在 entitlement 恢复后单独验收。
+
+## 2026-10-21 P2 当前工作树提示组合修复、Agnes 实测与原生协议核验
+
+先复现 planning Prompt 回归：上一轮为关系逻辑阶段删除了后续阶段字段并裁剪 `$defs`，但 `build_document_source_prompts()` 及场景/引用协议构造器还需要完整 V2 Schema 字符串来替换为各自 V3 Schema。将逻辑 Schema 投影移至 `build_stage_prompts()` 最外层，在所有组合器完成替换后执行；新增 V3 Schema 回归。旧 PG seed/checkpoint 继续使用保存的 Prompt，不从当前 builder 重建；Workflow 通过当前版本或根据固定历史协议计算出的精确 legacy version 接受冻结任务恢复。未改写旧 Prompt 或历史计划。
+
+按实际 Agnes PG 回执将关系 Prompt 升到 v7：明确先查到可提供前置条件的正式用例时，必须作为 `dependency`；`cleanup_sources` 只能引用计划项 `key/item_key`，不能引用 `case_key`、`case_id` 或版本 ID。效果证据 Prompt 升到 r6，按实际 v1 校验错误说明 E 结构引用和 T 原文引用不能同时填入同一对象；T 的底层文档身份由系统绑定。真实失败片段被缩减并嵌入测试，不依赖本机临时验收目录。
+
+四次使用隔离 MySQL/PG/Redis/RustFS、正式 API/规划 Worker、Agnes 替代模型运行同一个多用例场景，保持原5轮/原输出上限，未改全局默认模型：
+
+| 证据目录 | 实际结果 | 定位 |
+| --- | --- | --- |
+| `p2-alternate-model-live-20261021-05/` | 规划失败、3轮、Run 0、业务 HTTP 0 | 正式前置选择正确；`cleanup_sources` 错写 `case_key`，校验拒绝两轮，随后底层连接中断。 |
+| `p2-alternate-model-live-20261021-06/` | 规划失败、5轮、Run 0、业务 HTTP 0 | v7 后正式 dependency/target/排序正确；v1 `expected_source` 同时携带 E1 与 T1，Schema 拒绝。 |
+| `p2-alternate-model-live-20261021-07/` | 规划失败、5轮、Run 0、业务 HTTP 0 | 开启 `QA_LINKED_SOURCES=1` 后关联文档已固定读取；v1 文档预期短引用形状仍不合法。 |
+| `p2-alternate-model-live-20261021-08/` | 原时限内超时、5轮、Run 0、业务 HTTP 0 | 隔离启用证据短引用 v2 及效果任务 r6；逻辑和传值绑定成功，produced 首次回复混用完整ID/E引用且 `select_when` 附带额外 `operator` 被拒；之后实际查询工具契约，末轮因原截止中断。 |
+
+以上失败不等于服务端 Provider 协议错误；各次 physical/PG 检查点保留实际发送、回执和拒绝原因。Agnes 是替代模型，不代表 Step 默认模型质量。Step 账号认证已由用户确认；最新默认推理 entitlement 仍有 HTTP 400 记录，本轮没有重复发送默认探针。没有 Run 或业务 HTTP，不能记为业务功能验收通过。
+
+本轮回归命令及结果（`Agent_Server`）：
+
+```powershell
+$env:PYTHONPATH = (Get-Location).Path + ';' + (Join-Path (Get-Location).Path 'tests')
+uv run --frozen python -m pytest -q tests/test_planning_effect_tasks.py tests/test_case_planning_stages.py tests/test_case_effect_expected_sources.py tests/test_case_effect_relations.py tests/test_default_coverage_production.py tests/test_planning_evidence_references.py tests/test_planning_item_operation_selection.py tests/test_planning_linked_sources.py tests/test_planning_operation_prefetch.py tests/test_planning_source_identity.py tests/test_scene_knowledge_contract.py
+# 91 passed、66 skipped，7.74秒
+
+uv run --frozen python -m pytest -q tests/test_model_clients.py tests/test_model_completion_http.py tests/test_model_request_profile.py tests/test_langchain_model_adapter.py tests/test_model_sdk_fault_http.py tests/test_model_stream_terminal_http.py
+# 167 passed，129.05秒
+```
+
+模型协议代码核对：`AnthropicMessagesClient.invoke/stream` 仍将原 SDK `client.messages.create(**params)` 传入通用 `await_provider_io()`；该 helper 内部只 `await operation` 并包装 httpx 网络错误，不映射请求协议或端点。独立 `OpenAIResponsesClient` 才调用 `client.responses.create(**params)`。物理 HTTP 回归断言 Anthropic `/v1/messages`、OpenAI Responses `/v1/responses`，本轮未改动 Anthropic 适配器。
+
+## 当前边界
+
+P2 真实正式前置项的逻辑选择已在 Agnes 新样本中正确出现，提示字段身份和逻辑 Schema 组合缺陷已修正并通过离线回归；但四次真实多用例规划均未创建 Run，produced 声明及证据阶段在当前5轮/原时限内尚未完成。Step 默认推理 entitlement 恢复后需使用新任务另行验收；不要以账号认证完成或替代模型 HTTP 200 代替。完整 P0—P5 目标仍未完成。
+
+## 2026-10-21 P2 默认 Step 认证后复验与订阅边界
+
+用户确认 Step 账号认证已完成后，运行最新 P2 隔离多用例验收。配置只从 MySQL 读取并复制到独立测试 MySQL；项目、用例、计划任务和业务目标均为本次新建，默认配置身份没有改变。默认 `step-5-preview` / `openai_chat_completions` 的第一次计划调用收到了 HTTP 400（SDK 类型 `request_params_invalid`），Worker 退出码为0，但规划任务失败，未创建计划或 Run，业务 HTTP 0。该失败发生在首个供应商调用，不能当成规划质量或执行器失败。
+
+为区分请求字段与当前账号授权，再以现有配置做一次一次性最小非流式探测：仅发送 Chat Completions 的 messages/model/max_tokens 字段，关闭 streaming，移除 `stream_options`，最大输出 64。供应商返回 HTTP 400；只将状态码、错误类型和经过脱敏的错误消息输出，结果为 `you have no active step plan subscription`。没有保存密钥、请求头或原始错误正文。由此确认本次阻塞是 Step Plan 订阅 entitlement，而不是 `stream_options`、P2 Schema 或模型协议；此前账号认证完成的事实保持，但推理仍不可用。
+
+只读 MySQL 当前默认项确认其 provider=`openai`、transport=`openai_chat_completions`、model=`step-5-preview`、host=`api.stepfun.com`、base path=`/step_plan/v1`、max output=8192、无 request profile。官方 StepFun OpenAPI 快速开始和 Step 5 Cookbook使用 Chat Completions、`max_tokens`、`/v1`；Step Plan 页面说明其为按月订阅服务。由于用户配置 path 是 `/step_plan/v1` 且公开页面未说明该 path 的账户合同，本轮没有切换为 `/v1`、修改模型配置或重复发送相同请求。
+
+执行的隔离生产路径命令（`Agent_Server`）：
+
+```powershell
+$env:RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION='1'
+$env:QA_DEFAULT_CASE_SHAPE='multi-case-dependency'
+$env:QA_DEFAULT_COVERAGE_DIR='G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p2-default-multi-case-step-auth-current-20261021-01'
+$env:QA_FORMAL_EFFECT_RELATIONS='1'
+$env:QA_LINKED_SOURCES='1'
+$env:QA_EVIDENCE_REFERENCES='1'
+$env:QA_EVIDENCE_REFERENCE_PROTOCOL='case-planning-evidence-references-v2'
+$env:QA_EFFECT_TASKS='1'
+$env:QA_SOURCE_IDENTITY='1'
+uv run --locked python -m pytest tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case -q --tb=short -s
+# 1 failed，33.36秒：首个模型请求HTTP 400；无Run/业务HTTP
+```
+
+P2 本地规划回归随后重跑：`uv run --frozen python -m pytest -q tests/test_planning_effect_tasks.py tests/test_case_planning_stages.py tests/test_case_effect_expected_sources.py tests/test_case_effect_relations.py tests/test_default_coverage_production.py tests/test_planning_evidence_references.py tests/test_planning_item_operation_selection.py tests/test_planning_linked_sources.py tests/test_planning_operation_prefetch.py tests/test_planning_source_identity.py tests/test_scene_knowledge_contract.py`，**91 passed、66 skipped，7.93秒**。跳过项为受门控的真实存储/外部执行测试，不计为通过。物理失败证据保留在 `docs/upgrade_2026-10-03/p2-default-multi-case-step-auth-current-20261021-01/`。下一步按此前授权继续不依赖 Step 的其他模块；在 Step Plan entitlement 确认恢复前不做同一类默认推理重试。完整 P0—P5 继续进行中。
+
+## 2026-10-21 P1 设置页模型激活至运行时验证
+
+设置页 `ModelSettingsPlugin.vue` 使用现有激活 API。该 API 将活动模型写入 MySQL；`ModelRegistry.get_default_runtime_config()` 读取当前活动模型，本轮没有改动生产模型配置代码或协议实现。
+
+新增长链路验收测试 `tests/test_model_settings_activation_product.py`，使用与项目既有产品验收相同的隔离运行时：构建并实际加载前端 App、启动正式 API、以隔离 MySQL/PostgreSQL/Redis 保存测试状态，模型端点使用本地 HTTP fixture。本场景不访问 RustFS。浏览器先确认旧配置为当前模型，再从设置页激活 `activation-after`。API 返回200，页面 badge 和 MySQL 列表都显示新模型生效；生产 `ModelRuntimeService` 随后读取该配置，并将 `model=activation-after` 发至本地 `/v1/chat/completions`，结果 `mode=ok`。最终通过 **1 passed，38.48秒**，`py_compile` 通过；产品验收中执行的 `npm run build` 通过。
+
+执行命令（`Agent_Server`）：
+
+```powershell
+$env:RUN_LIVE_MODEL_SETTINGS_ACTIVATION='1'
+$env:QA_MODEL_SETTINGS_ACTIVATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p1-model-settings-runtime-switch-current-20261021-03'
+..\.venv\Scripts\python.exe -Xutf8 -m py_compile tests/test_model_settings_activation_product.py
+..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_model_settings_activation_product.py -q --tb=short
+# 1 passed，38.48秒
+```
+
+早期两次结果分别因测试自身的 JSON 字符串引号预期、证据读取了不存在的 DTO 顶层 `response_id` 而失败；实际 UI 激活和模型调用在这两次中也已到达本地 fixture。失败目录保留，不计为产品失败；最终 run 原始 JSON、网络事件、截图和进程输出位于 `docs/upgrade_2026-10-03/p1-model-settings-runtime-switch-current-20261021-03/`。浏览器加载 Font Awesome 时有两次静态 CDN 请求；模型与业务 API 均未访问外部服务。全局 MySQL 配置未变。
+
+结论范围仅为“设置页切换→数据库持久化→运行时采用新配置”的受控产品路径；多模块替代模型生成、真实远端模型可用性及生产部署环境仍未完成验收。
+
+## 2026-10-21 P1 模板迁移与文档用例生成质量复验
+
+当前工作树的 JSON/document Prompt 版本追溯错位已修正，并通过以下专项回归：
+
+```powershell
+# Agent_Server 目录
+$env:RUN_LIVE_CASE_JSON_TESTS='1'
+..\.venv\Scripts\python.exe -m pytest tests/test_case_json_templates.py tests/test_test_case_generation_pipeline.py tests/test_generation_json_output_contract.py tests/test_document_generation_sources.py tests/test_document_generation_stream.py tests/test_incremental_generation_sources.py -q --tb=short --junitxml=..\docs\upgrade_2026-10-03\p1-generation-contract-current-20261021.xml
+# 36 passed, 12 skipped, 7.02s；真实 MySQL 模板迁移/冲突与 PostgreSQL 记录兼容用例通过。
+
+$env:RUN_LIVE_ALTERNATE_DOCUMENT_GENERATION='1'
+$env:QA_ALTERNATE_DOCUMENT_GENERATION_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p1-alternate-document-generation-quality-current-20261021-03'
+$env:QA_ALTERNATE_DOCUMENT_GENERATION_MODEL_NAME='agnes-2.5-flash'
+..\.venv\Scripts\python.exe -m pytest tests/test_document_generation_alternate_live.py -q --tb=short --junitxml=..\docs\upgrade_2026-10-03\p1-alternate-document-generation-quality-current-20261021-03.xml
+# 1 passed, 70.15s；实际上传、解析、两模块模型生成、RustFS/PG 回执及无终态重投。
+```
+
+这项实测**技术链路通过、用例语义质量部分失败**。订单创建草稿覆盖要求并分开登录前置；订单查询草稿把“用户B无订单”当作“订单不存在并返回明确错误”，并把查询与数据库副作用检查写在同一步。前两轮输出还分别漏了成功路径、合并登录与业务操作。实现每模块只有一次模型生成调用，`parse_frozen` 不校验需求规则到步骤预期的语义映射；本轮停止继续累加 Prompt 特例。后续架构改造与最新验收见 `PLAN.md` §7.140。当前草稿没有启用，完整生成质量尚未通过。细节和真实原始回执见 `PLAN.md` §7.138 与证据目录 `p1-alternate-document-generation-quality-current-20261021-03/`。
+
+Step 账号认证按用户确认已完成；认证后真实默认模型请求仍收到 HTTP 400，脱敏诊断为 Step Plan 订阅无效，未创建计划或 Run。该状态不构成默认模型多用例闭环通过，也不应再发送相同失败探针。
+
+## 2026-10-21 P1 项目管理页面与 Excel/JSON 导入全流程
+
+使用 `tests/test_case_import_full_product.py` 对已构建项目 App 做实际浏览器操作，测试运行正式 API 和隔离 MySQL、PostgreSQL、RustFS、Redis。最终 **1 passed，64.92秒，0 failed，0 skipped**。项目模板弹窗能读取系统默认内容、保存项目写作指导和 JSON 示例；变更模板后历史用例内容、版本和启用指针保持原样。Excel 行式、Excel 分表式、JSON 实际导入为待评审草稿；原件可下载且字节一致；错误 Excel 阻止提交；重复导入幂等；重复编号显示冲突；JSON 内容可在用例页面原文查看、评审、启用及追加版本。两个项目隔离，API 重启后数据仍可读取。页面错误和非计划 API 错误均为0。
+
+运行与证据：`p1-import-full-product-current-20261021-01.xml` 和同名目录。该验收不调用 AI，因此不覆盖上文记录的生成语义覆盖缺陷。关闭范围仅为项目模板与导入页面流程；完整 P0—P5 和 P1 多模块生成质量仍未完成。
+
+### 2026-10-21 P1 文档生成覆盖映射 v2 与真实输出复核
+
+真实输出曾把人工步骤序号（例如 `steps[].order=3`）当成数组下标，服务端因而错误报告路径无效。现在生成 Prompt 升至 `test-case-generation-document-v7`，要求模型按 `case_key + step_order + expected_field` 返回建议；服务端按 JSON 中唯一匹配的 `steps[].order` 找步骤，核验对应字段是非空字符串后，才生成实际 JSON 数组路径。无效引用仍保留在回执并带具体校验问题，不会伪造路径。
+
+覆盖候选由已固定解析快照的文本块、原文字符范围和来源位置确定性生成，并绑定快照/文本范围哈希；每模块最多1000条，超过上限会显式标记清单不完整。未超上限只表示候选切分未截断，不证明语义上找全了全部需求。候选只是待评审的原文语句，不是已批准需求。服务端逐项检查候选 ID、原文范围是否仍吻合、AI 是否漏项/重复/返回未知 ID、步骤序号是否唯一存在及预期字段是否有效。回执使用 `document-generation-coverage-v2`，规范化后计算哈希，随生成任务结果收据持久化到 PostgreSQL。前端显示原文片段与位置、AI 的范围判断及理由、用例步骤和 `content_json` 路径、结构问题，并明确标注待人工评审。
+
+`mapping_state=complete` 只表示每个固定候选都有一条处理建议，且模型提交的步骤引用通过结构校验；`out_of_scope`、`uncertain` 可以没有预期路径。它不表示 AI 对模块范围判断正确、语义覆盖充分、需求已批准或测试执行通过。人工核对仍是必需步骤，这个边界写入 UI 和任务警告，避免把结构收据当成质量门。
+
+验证结果：覆盖回执/文档生成后端定向测试 **33 passed**，前端 API 与任务组件测试 **19 passed**，`npm run build` 通过。随后受控正式 API/Worker 和隔离 MySQL、PostgreSQL、Redis、RustFS 的 Markdown、流式及 DOCX/PDF 生成测试 **2 passed，264.68秒**。新目录 `p1-generation-review-controlled-steporder-current-20261021-01/`。
+
+再以隔离配置中的 `agnes-2.5-flash` 重跑两模块真实场景，`tests/test_document_generation_alternate_live.py` **1 passed，80.87秒**，实际 SDK 请求2次，终态重投没有额外模型调用，全局默认模型保持不变。新证据在 `p1-generation-review-agnes-current-20261021-02/`。查询模块2/2候选、创建模块3/3候选均为结构映射 `complete`；完整草稿分别保存，并未启用。人工抽查发现输出仍包含项目原文未指定的测试数据/接口文档前置；查询错误预期把 `404` 作为“例如”写出，而原文没有指定错误码，不能直接转成固定断言。这次只证明映射回执能追溯来源并解析到预期路径，不能将真实用例语义质量判为通过。
+
+本轮未修改 Anthropic/OpenAI 适配器。Anthropic 仍由 `AnthropicMessagesClient` 调用 `client.messages.create(...)`；`await_provider_io` 仅等待传入的 SDK 操作并统一网络 I/O 异常，当前代码没有 `await_provider_response`。OpenAI Responses 仍只在 `OpenAIResponsesClient` 调用 `client.responses.create(...)`。相关适配器文件本轮没有工作树 diff。
+
+## 2026-10-21 P0 DeepSeek 生产录制配置、响应采集与落库实测
+
+独立 CDP 探针未调用 `configure_capture(...)`，不能用它判断生产是否采集响应。检查 `RecordingCaptureConfigService`、`RecorderSessionService` 和 recorder script：生产会从 MySQL 冻结项目/全局采集配置、保留 scope/revision，将 payload 传给 driver；默认 `response_enabled=true`，只有该策略开启时脚本才发出 `page_response`。
+
+在真实 DeepSeek 首页运行 `tests/test_recording_deepseek_live.py`，通过正式录制 API、CDP driver 和隔离 MySQL/PostgreSQL/Memgraph 环境执行实际浏览器操作（两次深度思考按钮点击、一次智能搜索点击和滚动；未登录或提交对话）。`RUN_LIVE_DEEPSEEK_RECORDING=1 ..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_recording_deepseek_live.py -q --tb=short --junitxml=..\docs\upgrade_2026-10-03\p0-deepseek-recording-production-current-20261021-01.xml`：**1 passed，32.27秒**。返回录制为 `completed`；冻结配置为 global/revision 1/response enabled；PostgreSQL 读回6个连续事件，录制收尾 `pg_verified=true`，6个事件与6个步骤对账一致，无序号缺口或传输丢失。实际产生1个 `page_response`，quality report 建立1条动作/响应关联且 unresolved 为0。双击产生 duplicate candidate，但没有删除任一事件；page_scan/page_response 保留为观察证据，不作为可重放步骤。
+
+另运行 `tests/test_recording_quality.py tests/test_recording_capture_policy.py tests/test_recording_draft_evidence.py`：**22 passed、2 skipped**。跳过项分别需要真实隔离配置存储和完整浏览器/存储/图数据库环境，不能算通过。真实页面截图、数据库读回事件、质量结果与收尾回执保存在 `docs/upgrade_2026-10-03/p0-deepseek-recording-production-current-20261021-01/`。
+
+重复投递另以真实 PostgreSQL 回归验证：`RUN_LIVE_RECORDING_PG=1 ..\.venv\Scripts\python.exe -Xutf8 -m pytest tests/test_recording_store.py::test_live_append_events_batch_retry_is_idempotent -q --tb=short`：**1 passed，0.65秒**。测试先插入10个不同序号事件，再重放整批并附加一个同序号重复；PG 回执为0条新插入、11条重复，读取仍为10行、序号连续且 session `step_count=10`。实际连接是本机 development DB `127.0.0.1:5432/QA_Agent`；测试 `finally` 只清理由本次随机 UUID 创建的 session/events。它验证传输重试不重复入库，不能将两个不同序号的真实相同点击合并。
+
+此结果关闭“默认响应开关在生产录制链路可用并落库”的自动化浏览器实测。它未证明捕获到页面全部业务事件（`business_capture_complete=unknown`），也未完成用户亲自操作、AI 实际取用录制知识并通过断言、跨文档/iframe/Shadow DOM、场景/步骤编辑、元素别名、失败定位及报告。Step 账号认证状态按用户确认为已完成；其推理订阅 entitlement 仍需按供应商真实响应复核，最新已存实测是 HTTP 400（无有效 Step Plan subscription），未重复发送相同失败请求。P0—P5 继续未完成。
+
+
+## 2026-10-21 P3 API Agent 同进程与 durable Worker 当前工作树复验
+
+按本地 API 测试课程要求审查 HTTP 结果、认证凭据沿依赖传递、子任务生命周期和重投轨迹后，复核旧失败样本。发现同进程受控模型夹具在第一个工具结果后直接生成最终文本，导致审批恢复后的 `/auth/refresh` 与 `/profile` 不会继续调度；durable 样本继承通用隔离夹具的 1 秒 Redis 重领窗口并启动两个消费者，Worker 在首次模型 HTTP 前丢失 delivery owner，PG 最终记录 `execution_owner_expired`。该失败不能证明生产 API Agent 协调器有缺陷。
+
+只修正 `tests/test_api_agent_worker_live.py` 的验收夹具：父模型持续调用入口工具，直到本机业务目标观察到登录、旧凭据续期、新凭据访问资料均成功；durable 多 Worker 使用 120 秒生产默认重领窗口。没有生产代码或全局配置改动。
+
+执行（`Agent_Server`）：
+
+```powershell
+$env:RUN_LIVE_API_AGENT_WORKER='1'
+$env:QA_API_AGENT_WORKER_DIR='G:\\Code_Warehouse\\Ai_Test_Agent\\Enterprise_AI_QA_Agent\\docs\\upgrade_2026-10-03\\p3-api-agent-worker-live-fixed-20261021-01'
+$env:QA_API_AGENT_OBSERVATION_SECONDS='180'
+..\\.venv\\Scripts\\python.exe -Xutf8 -m pytest `
+  'tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[controlled-model-same-process-child]' `
+  'tests/test_api_agent_worker_live.py::test_real_agent_worker_private_auth_and_terminal_redelivery[controlled-model-durable-child-process]' `
+  -q --tb=short --junitxml=..\\docs\\upgrade_2026-10-03\\p3-api-agent-worker-live-fixed-20261021-01.xml
+# 2 passed，119.65s
+```
+
+正式 API、两个隔离 Agent Worker、隔离 MySQL/PostgreSQL/Redis 和本机 HTTP 目标均实际运行。两条生命周期各保存三个完成子会话；请求顺序为 `POST /login`（无凭据）→ `POST /auth/refresh`（旧凭据）→ `GET /profile`（新凭据），真实响应均为 200。报告各为 3/3 任务及 3/3 检查通过；处理审批 4 次，凭据未进入公开输出，API 重启后历史可读，终态重投新增业务 HTTP/模型 HTTP 均为 0。受控模型每场景 8 次本机 HTTP，外部 AI 调用数为 0。证据见 `p3-api-agent-worker-live-fixed-20261021-01.xml` 与同名目录。
+
+此项只关闭固定正向认证链路的受控验收。Step 默认模型、正式用例 Run、错误凭据/刷新失败、超时恢复、更多依赖结构、前端报告及 RustFS 报告原件仍未完成；账号认证完成与 Step 推理 entitlement 分别记录，后者最新证据仍为 HTTP 400（无有效 Step Plan 订阅）。
+
+## 2026-10-21 P3 API Agent 等待报告终态的受控复验
+
+根据 `ApiTestingModeRuntime._build_output()` 的现有契约，完成的 API 测试工具结果包含 `phase=report_ready`。更新后的测试父模型夹具据此持续调用入口工具，避免在第一个子任务工具结果后提前结束；durable 测试使用生产默认 120 秒 Redis reclaim idle window。只改验收测试夹具，没有改生产 Agent、Provider 协议、MySQL 配置或 schema。
+
+实际验证：`tests/test_api_agent_worker_live.py` 普通逻辑 **1 passed、5 skipped，7.10秒**；目标文件 `py_compile` 退出码0。随后正式 API、隔离 MySQL/PostgreSQL/Redis/RustFS、本机受控模型 HTTP 和本机认证目标执行同进程与 durable 两条路径，**2 passed，109.65秒**。两场景均按 `/login`（无凭据）→ `/auth/refresh`（旧凭据）→ `/profile`（新凭据）执行，真实响应全为200；API报告为3/3任务、3/3断言通过且5/5验证规则通过。每场景本机模型HTTP 8次，无外部AI请求。生成凭据未出现在公开输出；重启后历史保留；终态重投新增业务HTTP与模型HTTP均为0。JUnit：`p3-api-agent-worker-live-fixed-20261021-02.xml`；逐场景证据：`p3-api-agent-worker-live-fixed-20261021-02/`。
+
+**状态边界：**固定正向认证和父模型等到报告终态的受控链路已通过；默认 Step 模型驱动、负向鉴权、刷新失败、超时/断网恢复、更多依赖形态及面向用户的报告页面仍未完成。Step 账号认证按用户确认已完成，但存档的最新真实推理仍因无有效 Step Plan 订阅返回 HTTP 400；本轮使用受控本机模型，没有重发 Step 请求。完整 P0—P5 继续进行。
+
+## 2026-10-21 回执与 API Worker 当前状态核对
+
+为清除当前分类表中的过期状态，直接检查 `p2-default-receipt-process-response-current/verification.json`、两场景 `summary.json`、JUnit 以及 `test_default_receipt_process_recovery_live.py`。正式 Step `step-5-preview` 的实际 API/Worker 进程终止测试在 `invoking` 无响应和 `response` 已持久化两处均通过；总计2 passed、0 failed、0 skipped、826.10秒。前者恢复为正式 `error`/未知且不重发纠正，后者复用同一响应并通过；每个场景只有一次 `GET /health`，恢复和终态重投没有额外模型/业务请求，资源清理后为空。该能力已由历史提交包含，不是工作树里尚未提交的实现。
+
+同时复核 2026-10-21 的 `p2-default-multi-case-step-auth-current-20261021-01/verification.json`：默认模型仍为已认证的 `step-5-preview`，但这次不同的多用例规划在首个请求失败，未生成计划。账号认证、已通过的回执恢复测试和当前规划请求的 Step Plan entitlement 失败是三个独立事实；没有重复发送该规划请求。P3 API Agent 的当前工作树受控正向认证链路结果以 §7.143 的 **2 passed** 为准，旧表格里“只完成 `/login`、当前双Worker未通过”的状态已移除。 默认 Step UI 的正向场景与终态重投通过；原默认 profile 负向仍失败且不应被 `low/json_object` profile 的独立通过结果替代（§7.74）。
+
+本次只更新当前状态分类，没有修改生产代码、MySQL 默认配置或数据库结构。P2 默认多用例完整规划执行、更多错误/断网组合和用户可见的完整产品闭环仍需推进；不将专项回执恢复通过扩大为 P0—P5 全部完成。
+
+## 2026-10-21 P5 项目录制知识页面当前工作树复验
+
+先检查 `tests/test_recording_knowledge_product.py` 及其消费路径：测试使用本地 HTML 操作页，通过正式录制 API/CDP driver 采集事件，随后核对 PostgreSQL 事件、Memgraph 知识投影、`/knowledge/graph` API、构建版知识页和 API 重启后的恢复。两个参数组合分别测试正式项目 ID 和旧 `graph_scope_key` 绑定。测试没有模型调用，不访问 DeepSeek，不能作为默认 AI 知识使用的证据。
+
+第一次启动失败发生在 Chromium 尚未启动时。项目 Python Playwright 版本为 **1.62.0**，需要 revision **1234**；通用自举脚本使用全局 Playwright CLI 1.64.1 安装 revision 1248，同时删除了旧 revision，因而本地功能逻辑没有执行。保留失败回执 `p5-recording-knowledge-current-20261021-01.xml`。使用 Agent_Server 项目虚拟环境的 `python -m playwright install chromium` 恢复 revision 1234 后，以第二个全新目录完成验收：
+
+```powershell
+# Agent_Server 目录
+$env:PYTHONIOENCODING='utf-8'
+$env:RUN_LIVE_RECORDING_KNOWLEDGE_PRODUCT='1'
+$env:RECORDING_KNOWLEDGE_PRODUCT_EVIDENCE='..\docs\upgrade_2026-10-03\p5-recording-knowledge-current-20261021-02'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_recording_knowledge_product.py -q --tb=short --junitxml=..\docs\upgrade_2026-10-03\p5-recording-knowledge-current-20261021-02.xml
+# 2 passed，112.63 秒，0 skipped
+```
+
+两种项目作用域各记录8个事件；新录制节点全部进入项目知识投影，无缺失节点或悬空关系；页面能展示录制与动作详情。API 重启后知识查询相等且 PostgreSQL 事件未变化；跨项目查询返回404，浏览器错误和非计划 API 错误均为0。测试期间有计划停机窗口，每个场景2个 `/sessions/{id}` 请求返回500，已由证据标记为计划重启请求。JUnit 与逐场景回执、PG行、图谱响应、浏览器网络及截图位于 `p5-recording-knowledge-current-20261021-02/`。
+
+该结果只关闭本地 HTML fixture 下项目知识页面的采集读取、项目隔离及重启恢复验证。真实 DeepSeek 行为到正式录制持久化、默认 AI 引用该录制并完成断言的组合路径，及业务遗漏完整性、复杂跨文档/iframe/Shadow DOM 采集仍未通过；没有因为本次知识页面可读而扩大完成范围。本轮没有修改生产代码、数据库结构或模型配置。准确分类和后续边界见 `PLAN.md` §7.144。
+
+## 2026-10-21 P3 Worker 自动401刷新失败及正式报告验收
+
+依据本地接口测试课程和 `auth_refresh.py`、两个协调器、`ApiTestingModeRuntime._execute_campaign()`、`ReportBuilder` 的现有调用链复核后，结论是刷新失败的状态转换与报告生成已有实现；此前缺少的是从真实本机 HTTP 401、Worker 刷新失败到 Runtime 报告的组合验收。没有发现需要改生产逻辑的证据。
+
+新增 `test_worker_refresh_failure_is_reported_without_replaying_target`，使用隔离 PostgreSQL、实际 `ToolRuntimeService` 与 API Worker runner、本机受控 HTTP 目标，执行正式 Runtime 的报告构建。正向对照和负向场景共同运行 **2 passed，12.46秒**：成功路径实际观察到 profile 初始401、刷新200、profile重放200；失败路径观察到 `/login 200 → /profile 401 → /auth/refresh 401`，目标尝试次数为1，profile 与 refresh 都进入失败报告，报告终态为 `report_ready`、计数为1完成/2失败/0跳过，JSON和Markdown均展示401。生成凭据不进入公开报告或证据，受控模型没有外部AI请求。JUnit 为 `p3-api-401-refresh-report-current-20261021-06.xml`，脱敏证据在同名目录。
+
+首次实际运行只在验收夹具保存 Worker 子会话时触发 PostgreSQL `state_revision` 冲突；已检查 `SessionRecord` 是 dataclass，夹具现从 PostgreSQL 读取最新会话后深拷贝并追加工具消息，保留乐观锁版本。另发现旧正向验收 JSON 把随机本机凭据写入 `verification.json`；测试代码已改为写入前脱敏，并对既有临时证据做了原地脱敏和无残留扫描。上述为测试夹具和证据修正，没有生产 API、Provider、MySQL 配置或业务 schema 变更。
+
+`test_api_401_refresh_automatic_live.py`、`test_api_worker_auth_refresh_live.py`、`test_api_agent_worker_live.py`、`test_api_report_credentials_http.py` 普通回归随后执行 **21 passed、13 skipped**；门控跳过不算通过。完整 API Agent 的默认 Step 模型流程、超时/断网恢复、更多依赖形态、真实前端报告页及 RustFS 报告对象仍未验收。
+
+## 2026-10-21 Step 认证后的默认模型复验
+
+用户确认 Step 账号认证完成后，用全新隔离项目重新执行 `test_actual_default_model_plans_and_executes_complete_case`。运行状态为 **1 failed，26.93秒**：MySQL 中默认配置仍是 `step-5-preview` / `openai_chat_completions` / `api.stepfun.com/step_plan/v1`，已配置 key；没有输出凭据，也没有修改配置。模型首个 HTTP 请求返回400、SDK调用没有返回、没有流数据，CasePlan 任务失败，未创建 Run 或发送业务 HTTP。Junit 和 `verification.json` 位于 `p2-default-multi-case-step-auth-current-20261021-02`。该轮没有读取供应商响应正文；此前独立最小请求已有脱敏的“无有效 Step Plan 订阅”响应。认证完成事实按用户说明保留，默认推理/执行目前仍未通过；本轮不再重复该输入。
+
+## 2026-10-21 P3 API 报告 RustFS 原件与构建版页面闭环
+
+实施依据包括本地《接口测试-通用篇》步骤8与报告模板、《接口测试-实战篇》第7章和第9章，要求报告展示覆盖范围、总量/通过/失败、风险结果及证据。复核确认 API Runtime 在内存中生成的 JSON、Markdown 和任务证据没有本地文件路径，旧存储入口因此将正文保留在 PostgreSQL `__content_text`；报告列表投影也依赖该正文。扩展既有 `ArtifactStorageService` 将内存工件保存到 RustFS，并让 API 报告投影从同一 `ToolJob.output_payload.report` 使用结构化统计。前端增加 API 专用 KPI 和统计表，继续提供工件原件下载。
+
+存储、报告、API 报告、性能报告及 XLSX 下载回归共 **31 passed，10.98秒**。构建版 App 和 Chromium 真实产品链路最终 **1 passed，62.43秒**：三个报告工件实际位于 RustFS，PostgreSQL 元数据为 path-only 且无正文副本；页面展示 3 项任务、2 完成、1 失败及摘要表；JSON 下载 SHA-256 与 RustFS 内容一致；API 重启后列表统计和下载字节一致；终态重投新增业务 HTTP 为0，浏览器无错误。最终 JUnit：`p3-api-report-rustfs-product-current-20261021-05.xml`；脱敏验收记录：`p3-api-report-rustfs-product-current-20261021-04/verification.json`。
+
+两次初始产品失败均由测试选择器违反实际表格语义造成：ARIA 中标签为 `rowheader`，每行仅一个数据 `cell`。根据实际浏览器快照改正后通过，没有把夹具失败误判为产品故障。该验收使用隔离存储、本机受控 API 目标，不访问外部 AI；没有 schema 或配置迁移。它关闭受控 API 报告保存和页面功能范围，不代表默认 Step Agent 流程、错误凭据、断网恢复或更多报告组合完成。

@@ -409,9 +409,14 @@ onMounted(() => {
 
         <div class="report-kpis">
           <article class="kpi-card">
-            <span class="kpi-label">{{ t("reports.kpi_review_tasks") }}</span>
-            <strong>{{ selectedWorkerSummary.total }}</strong>
-            <p>
+            <span class="kpi-label">{{ selectedIsApiReport ? "API 测试任务" : t("reports.kpi_review_tasks") }}</span>
+            <strong>{{ selectedIsApiReport ? selectedApiTasks.length : selectedWorkerSummary.total }}</strong>
+            <p v-if="selectedIsApiReport">
+              已完成 {{ Number(selectedReport.reportMeta.completed_tasks || 0) }} /
+              失败 {{ Number(selectedReport.reportMeta.failed_tasks || 0) }} /
+              跳过 {{ Number(selectedReport.reportMeta.skipped_tasks || 0) }}
+            </p>
+            <p v-else>
               {{ t("taskpool.status_completed") }} {{ selectedWorkerSummary.completed }} /
               {{ t("taskpool.status_running") }} {{ selectedWorkerSummary.running }} /
               {{ t("taskpool.status_failed") }} {{ selectedWorkerSummary.failed }}
@@ -450,6 +455,16 @@ onMounted(() => {
               <p v-else class="summary-body muted">
                 {{ t("reports.no_report_body") }}
               </p>
+              <table v-if="selectedIsApiReport" class="api-report-summary" data-testid="api-report-summary">
+                <tbody>
+                  <tr><th>总任务数</th><td>{{ Number(selectedReport.reportMeta.total_tasks || 0) }}</td></tr>
+                  <tr><th>通过</th><td>{{ Number(selectedReport.reportMeta.completed_tasks || 0) }}</td></tr>
+                  <tr><th>失败</th><td>{{ Number(selectedReport.reportMeta.failed_tasks || 0) }}</td></tr>
+                  <tr><th>跳过</th><td>{{ Number(selectedReport.reportMeta.skipped_tasks || 0) }}</td></tr>
+                  <tr><th>断言通过</th><td>{{ Number(selectedReport.reportMeta.passed_checks || 0) }}</td></tr>
+                  <tr><th>断言失败</th><td>{{ Number(selectedReport.reportMeta.failed_checks || 0) }}</td></tr>
+                </tbody>
+              </table>
             </div>
           </section>
 
@@ -877,6 +892,26 @@ onMounted(() => {
 
 .summary-body {
   white-space: normal;
+}
+
+.api-report-summary {
+  width: 100%;
+  margin-top: 14px;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.api-report-summary th,
+.api-report-summary td {
+  padding: 7px 10px;
+  border-bottom: 1px solid var(--border-color, #e2e8f0);
+  text-align: left;
+}
+
+.api-report-summary th {
+  width: 45%;
+  color: var(--text-secondary, #64748b);
+  font-weight: 500;
 }
 
 .muted {

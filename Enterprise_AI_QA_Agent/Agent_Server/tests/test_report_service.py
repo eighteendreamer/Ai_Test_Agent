@@ -140,6 +140,43 @@ def test_api_report_projection_exposes_task_request_response_and_reconciliation(
     assert meta["findings"] == ["one finding"] and workers == verifications == []
 
 
+def test_api_report_projection_uses_current_job_when_report_artifact_is_rustfs():
+    from types import SimpleNamespace
+    from src.schemas.tool_job import ToolJobStatus
+
+    session = _session("api-rustfs-report", {})
+    session.mode_key = "api_testing"
+    artifact = _artifact("api-rustfs-report", session.id)
+    artifact.tool_key = "api-test-runner"
+    artifact.artifact_type = "api_test_report_json"
+    artifact.path = "rustfs://qa-agent/session/turn/report.json"
+    artifact.metadata = {"__storage_mode": "path_only"}
+    job = SimpleNamespace(
+        id=artifact.tool_job_id,
+        status=ToolJobStatus.completed,
+        summary="API report ready",
+        output_payload={"report": {
+            "summary": "API finished",
+            "total_tasks": 2,
+            "completed": 1,
+            "failed": 1,
+            "skipped": 0,
+            "tasks": [{"task_id": "task-1", "method": "GET", "path": "/profile",
+                        "response": {"status": 401}, "status": "failed"}],
+            "findings": ["expired credential"],
+        }},
+    )
+
+    meta, workers, verifications = ReportService._prepare_test_report(session, [artifact], job)
+
+    assert meta["ready"] is True
+    assert meta["tool_job_id"] == job.id
+    assert meta["completed_tasks"] == 1 and meta["failed_tasks"] == 1
+    assert meta["api_tasks"][0]["response"]["status"] == 401
+    assert meta["findings"] == ["expired credential"]
+    assert workers == verifications == []
+
+
 def test_api_reports_are_included_in_reports_page_projection():
     import json
     session = _session("api-page", {})
