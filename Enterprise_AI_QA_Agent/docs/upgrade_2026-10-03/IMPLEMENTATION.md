@@ -5671,3 +5671,29 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
 - Python `compileall` 与 `git diff --check` 均成功；未改前端、API/schema、表结构、依赖、MySQL配置或Provider协议。
 
 DeepSeek用例由 Playwright 驱动真实 Chromium，不是物理人工点击或完整 Vue 产品页验收。关联反映现有脚本定义的同文档时间观察窗口，不能证明业务因果。网络覆盖仍不含 beacon、WebSocket、Service Worker 内部请求、导航与 closed Shadow DOM；默认 AI 实际消费 DeepSeek 录制知识、selector 修复评审、失败定位/报告仍未验收。完整 P0—P5 保持未完成。Anthropic 客户端仍调用 `client.messages.create`，公共 `await_provider_io` 只归一网络异常；本步骤没有切换或统一 Provider 协议。
+
+## 2026-10-20 Step 订阅状态、P5 安全报告与 P3 解析产品复验
+
+本轮先核对原方案、现有实现、旧验收证据和当前隔离测试；没有因局部通过推断整个 P0—P5 已完成，也没有更改模型配置、数据库结构、Provider 协议或全局默认模型。
+
+### Step 默认模型状态
+
+MySQL 当前默认记录为 `step-5-preview`，`provider=openai`、`transport=openai_chat_completions`；未配置统一替代协议或请求 profile。对标准 Step 模型目录的真实 GET 返回 19 个模型，证明当前凭据可通过目录认证。10 月 20 日较早的默认性能 Agent 实测曾通过该默认模型产生 4 次模型 HTTP 调用并完成报告；稍后的单请求、SDK 重试设为 0 的真实生成探针返回 HTTP 400，服务端消息为 `you have no active step plan subscription`。同日标准端点探针另有 HTTP 402 quota 错误。没有请求被自动重发，未输出 API Key，也未修改 MySQL 配置。当前 P2 真实默认模型验收的阻塞点是 Step 推理订阅/额度状态；不能把认证通过等同于生成可用，也不能把这次供应商账户错误当作模型适配协议缺陷。证据见 `p2-step-current-diagnostic-probe-20261020.json` 与 `p2-default-multi-case-safe-error-20261020/step-standard-model-catalog-probe.json`。
+
+模型适配判断维持原设计：系统已有统一内部请求/响应契约和按 transport 分派的客户端，同时保留 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google GenAI 等独立实现；OpenAI 兼容厂商继续用其兼容传输及每模型请求能力配置。Anthropic 当前仍调用 `client.messages.create`。真实 Step 账户无活动订阅时，增加协议转换或把所有模型改成单一协议不能解决该错误；恢复可推理额度后，还需以默认模型重新做 P2 真实闭环。
+
+### P5 Docker 安全工具与产品报告
+
+- `tests/test_security_evidence_live.py::test_actual_header_findings_and_originals`：本轮真实运行 **1 passed，39.29 秒**。使用现有 Docker 安全运行器，对隔离的本机 HTTP 服务验证缺失响应头、完整响应头及不可达目标。观察到 4 个缺失项、0 个缺失项和 1 个明确失败；重启 API 后下载原始证据并校验大小/哈希，终态重放未重复请求，跨会话下载返回 404，临时容器均已清理。此项覆盖工具执行、输出解析、证据持久化与权限，不包含 Agent 选工具或模型推理。
+- `tests/test_security_report_product.py::test_real_security_report_artifact_and_built_app`：本轮真实运行 **1 passed，90.63 秒**。复用以上实际工具结果，生产报告汇总为 3 个任务、2 完成、1 失败、4 个发现；JSON/HTML/Markdown 报告原件可下载，浏览器 JSON 与最终报告一致，报告列表过滤/分页与“进行中”空报告状态正确，API 重启后已完成报告保持一致，页面无非预期错误。重启窗口内两次 session 请求 500 属于测试明确记录的计划重启期间请求；除此之外没有失败请求。该路径从已形成的安全活动进入报告恢复边界，不代表默认 Agent 从用户消息开始完成安全测试。
+- 产品截图：`p5-security-report-product-current-20261020/security-report.png`；结构化事实：同目录 `report-product-facts.json`；测试结果：同目录 `pytest.xml`。
+
+### P3 文档解析产品复验
+
+`tests/test_document_full_product.py::test_built_product_project_upload_parse_versions_navigation_and_restart` 本轮真实运行 **1 passed，80.62 秒**。实际构建的 Vue 应用中创建项目、上传含表格的 DOCX V1 并提交解析；再上传表格值从“7 天”改为“9 天”的 V2，分别通过独立解析 Worker 生成快照。项目解析设置实际保存到 MySQL，业务版本/快照在隔离 PostgreSQL，原件和解析结果在 RustFS。API 重启后浏览器仍能读取 V1/V2 各自快照，旧版 JSON 下载与服务端对象逐字节/结构相同；模型调用为 0，页面无非预期 API/浏览器错误。这是当前工作树的解析页面、V1/V2 快照和恢复实测，不覆盖历史数据生产迁移、Git 来源、所有文件格式组合或 P4 影响评审。
+
+复验汇总见 `p3-document-full-product-current-20261020/summary.json` 和 `pytest.xml`。本轮源码没有 P3 文件改动，以上为新增当前工作树验收，不代表解析子系统其余未完成事项已关闭。
+
+### 当前未完成边界
+
+P5 Docker 安全直接工具链与报告产品页、P3 DOCX 版本解析产品链已有当前工作树实测，但默认 Agent 安全模式从用户目标到工具调用仍待验收。Step 真实生成目前被无活动订阅/额度状态阻断，P2 项目内多用例选择、排序、补全和执行的真实默认模型闭环仍失败/未完成。其余 P0—P5 项（包括模块化生成与导入全流程、正式回执真实中断恢复、人工 UI 录制与默认 AI 消费知识、API 测试完整 Agent 流程、需求追踪广业务验收、生产历史数据迁移/投影和旧 Worker 原件恢复）继续逐项保留；**整体升级目标未完成**。
