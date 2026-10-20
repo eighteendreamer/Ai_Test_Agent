@@ -5720,3 +5720,13 @@ P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、�
 两种边界均实际通过：`invoking` 保留未知副作用，不重发只读纠正，恢复结果为 `error`；`response` 从已核验的原存储响应恢复并通过。两个场景均验证业务 POST/GET/DELETE 各一次、原尝试过期后创建一个恢复 attempt、终态队列重投不新增模型或业务请求、清理后的业务记录为零。结论限于受控 HTTP 模型，不能替代默认 Step 提供商上的纠正质量/网络中断验证，也不能替代 P2 多候选规划和执行验收。
 
 证据：`p0-receipt-process-recovery-current/verification.json` 与 `p0-receipt-process-recovery-current.xml`（2 passed、0 failed、0 skipped，690.50 秒）；分边界进程、请求、检查点、执行结果和清理原件位于同名目录的 `invoking/`、`response/`。测试代码见 `Agent_Server/tests/test_receipt_process_recovery_live.py`。此复核没有修改生产代码、Provider 协议、数据库结构或全局配置。
+
+## 2026-10-20 并发首轮语义判定重复调用修复
+
+调研实际 `SessionService.send_message` 调用链后，在两条并发输入的首轮窗口复现重复调用：第一条持有会话锁并停在语义模型调用、持久状态仍为 `idle` 时，第二条先在锁外做了一次完整 `orchestrate_async`；忙态判定因 `idle` 返回无响应，第二条等到锁后又完整编排，因此同一条第二输入的语义模型调用发生两次。修复前新增回归实际失败，模型运行时接收序列为 `first request → second request → second request`。
+
+修复让锁外预判只在持久状态已经是 `running`、`waiting_approval` 或 `interrupted` 时运行。其他状态记录 `session_input_waiting_for_lock`，等待锁后基于最新 Session 只做一次编排；忙态集合在预判与 `_handle_busy_submission` 共用，保留原排队及拒绝语义。
+
+本轮最终回归：`tests/test_busy_session_queue_concurrency.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py` **31 passed、27 skipped，13.37 秒**。新增并发用例通过真实 OpenAI SDK 到本地 HTTP server，先暂停首条意图模型响应，再提交第二条；修复后服务端收到两条各一次、总共两次 HTTP 发送。27 个跳过由 PostgreSQL opt-in 存储 fixture 导致，不能计为 PostgreSQL 并发验证。把同一最终 SDK/HTTP 回归临时对照旧分支时实际 **1 failed、1 skipped、17 deselected**，本地服务端请求体依次为 first/second/second，证明旧分支对第二条输入确实发送了两次 HTTP 请求。Anthropic 仍为 Messages，Provider 协议、请求映射和历史用户消息均未更改。
+
+尚未完成的关联范围：语义 intent 调用未在此入口获得后续 Agent turn 的稳定关联字段；需要继续验证从 intent、Agent 推理、工具结果后的再推理到 SDK/HTTP attempt 的全链路 trace。当前修复只关闭已复现的并发重复分类，不宣称其他阶段不存在重复发送。

@@ -97,3 +97,13 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 结论：**模型适配层是必要的，但当前系统已经具备正确的分层形态；本次没有发现值得再造一层或切换统一协议的代码缺口。** 应保留统一内部 DTO、按 provider/transport 的原生客户端及逐模型显式 profile 映射。后来新增的供应商字段仍需有明确内部语义、profile 能力约束和对应 wire/结果契约测试；不得把未知字段透传到所有模型，也不得把 Anthropic Messages 改为 OpenAI Responses。
 
 验证边界：这些功能验收使用锁定版本的官方 SDK 和本地受控 HTTP fixture，可证明 SDK 序列化、路由、解析及我们设置的错误边界；没有对所有线上供应商/模型账号逐一发送真实业务调用，不能据此宣称外部供应商兼容矩阵全部通过，也不替代 Step 默认模型完整按用例执行验收。
+
+## 2026-10-20 并发首轮语义调用重复的真实 HTTP 复核
+
+继续按上节计划沿入口查证，实际追踪 `SessionService.send_message → InputOrchestratorService.orchestrate_async → SemanticIntentService.enrich → ModelRuntimeService.invoke → SDK HTTP`。发现会话锁已经被另一条首轮占用，但持久 Session 状态尚未切到 `running` 时，第二条输入先执行锁外完整编排；该状态下 `_handle_busy_submission` 返回 `None`，之后取锁又从头编排。修复前确定性回归实际观察到第二条输入的模型运行时调用两次，属于应用重复调用，不是 SDK 对同一调用的重试。
+
+生产修复将锁外预判限制为持久状态已是 `running`、`waiting_approval` 或 `interrupted` 的场景。状态非忙但锁已占用时只记录安全状态日志并等待，取锁后按最新 Session 编排一次。保留真实忙状态的原排队/拒绝策略。
+
+修复回归在并发第二条抵达时暂停第一条语义调用，使用锁定的官方 OpenAI SDK 和本地 HTTP 服务端；修复后服务端核对两条不同输入各接收一次。把同一回归临时对照旧分支，实际 **1 failed、1 skipped、17 deselected**，本地服务端请求体依次为 first/second/second，确认旧分支对第二条输入实际多发了一次本地 HTTP 请求。恢复修复后组合回归 **31 passed、27 skipped，13.37秒**；跳过来自没有启用的 PostgreSQL fixture。此证据闭合一个已确认的应用级重复请求根因；它证明的是本地 HTTP fixture 收到的请求，不扩展为远端生产服务接收证据，也不把该错误误判成 SDK 重试。
+
+新剩余项：SemanticIntentService 在 `InputOrchestratorService.orchestrate_async` 中先于 `ExecutionRequest.turn_id` 生成执行，因此该调用的 provider observation 没有稳定 `turn_id/trace_id` 与后续 Agent turn 汇合。需先设计不改变执行顺序与授权语义的关联字段，再覆盖意图识别、主图每轮模型调用、工具观察后的再推理、provider attempt/response 和 durable-worker 恢复。客户端 attempt 仍不等于远端已接收；本地 HTTP server 的计数只证明夹具实际收到。

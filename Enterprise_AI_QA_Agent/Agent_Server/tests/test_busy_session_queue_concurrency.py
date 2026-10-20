@@ -2,7 +2,11 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from contextlib import contextmanager
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import json
+import threading
 from types import SimpleNamespace
 
 import pytest
@@ -10,8 +14,13 @@ import pytest
 from src.application.orchestration.input_orchestrator_service import (
     InputOrchestratorService,
 )
+from src.application.intent.semantic_intent_service import SemanticIntentService
+from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.sessions.session_service import SessionService
+from src.core.config import get_settings
 from src.registry.modes import ModeRegistry
+from src.schemas.intent import IntentDecision
+from src.schemas.model_config import ModelConfigRecord
 from src.schemas.session import (
     PendingInputQueueEntry,
     SendMessageRequest,
@@ -19,6 +28,41 @@ from src.schemas.session import (
 )
 
 pytest_plugins = ["tests.test_session_event_delivery"]
+
+
+@contextmanager
+def intent_http_provider():
+    sends = []
+
+    class Provider(BaseHTTPRequestHandler):
+        def log_message(self, *args):
+            pass
+
+        def do_POST(self):
+            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            sends.append({"path": self.path, "body": body})
+            content = json.dumps({"target_kind": "general", "confidence": 0.9})
+            response = {"id": "chatcmpl-intent", "object": "chat.completion", "created": 1,
+                "model": "fixture-model", "choices": [{"index": 0,
+                    "message": {"role": "assistant", "content": content}, "finish_reason": "stop"}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 2, "total_tokens": 5}}
+            raw = json.dumps(response).encode()
+            self.send_response(200)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(raw)))
+            self.end_headers()
+            self.wfile.write(raw)
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Provider)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1", sends
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+        assert not thread.is_alive()
 
 
 @pytest.mark.asyncio
@@ -153,6 +197,92 @@ async def test_busy_internal_submissions_keep_both_queued_inputs(stores, monkeyp
     payloads = persisted.metadata.get("pending_input_queue", [])
     assert {item["payload"]["content"] for item in payloads} == {"queued-a", "queued-b"}
     assert [event.type for event in await reader.list_events(session_id)] == ["input.queued", "input.queued"]
+
+
+@pytest.mark.asyncio
+async def test_concurrent_first_turn_does_not_classify_waiting_message_twice(stores, monkeypatch) -> None:
+    store, _, session_id, _ = stores
+    modes = ModeRegistry()
+    first_intent_started = asyncio.Event()
+    release_first_intent = asyncio.Event()
+    second_preflight_finished = asyncio.Event()
+    first_run_started = asyncio.Event()
+    release_first_run = asyncio.Event()
+    with intent_http_provider() as (url, sends):
+        settings = get_settings().model_copy(deep=True)
+        settings.model.langchain_model_adapter_enabled = False
+        config = ModelConfigRecord(key="intent-fixture", name="intent-fixture", provider="openai",
+            transport="openai_chat_completions", model_id="fixture-model", api_base_url=url,
+            api_key="local-fixture-marker", max_output_tokens=64)
+
+        class Registry:
+            def get_runtime_config(self, model_key):
+                assert model_key == config.key
+                return config
+
+        real_runtime = ModelRuntimeService(Registry(), settings)
+
+        class GatedIntentRuntime:
+            async def invoke(self, model_key, request):
+                content = json.loads(request.messages[0]["content"])["user_input"]
+                result = await real_runtime.invoke(model_key, request)
+                if content == "first request":
+                    first_intent_started.set()
+                    await release_first_intent.wait()
+                return result
+
+        intent = SemanticIntentService(GatedIntentRuntime())
+        orchestrator = InputOrchestratorService(modes, intent)
+        monkeypatch.setattr(orchestrator._intent_recognition_service, "recognize", lambda **_: IntentDecision(
+            candidate_mode_key=None, confidence=0.2))
+        service = SessionService(store, orchestrator, object(), modes)
+        original_require_session = service._require_session
+        require_calls = 0
+
+        async def observed_require_session(requested_session_id):
+            nonlocal require_calls
+            result = await original_require_session(requested_session_id)
+            require_calls += 1
+            if require_calls == 2:
+                second_preflight_finished.set()
+            return result
+
+        monkeypatch.setattr(service, "_require_session", observed_require_session)
+
+        async def fake_run_submission_locked(**kwargs):
+            if kwargs["payload"].content == "first request":
+                first_run_started.set()
+                await release_first_run.wait()
+            return SimpleNamespace(output=kwargs["payload"].content)
+
+        monkeypatch.setattr(service, "_run_submission_locked", fake_run_submission_locked)
+        first = asyncio.create_task(service.send_message(session_id, SendMessageRequest(
+            content="first request", model_key="intent-fixture")))
+        second = None
+        try:
+            await asyncio.wait_for(first_intent_started.wait(), timeout=5)
+            second = asyncio.create_task(service.send_message(session_id, SendMessageRequest(
+                content="second request", model_key="intent-fixture")))
+            await asyncio.wait_for(second_preflight_finished.wait(), timeout=5)
+            await asyncio.sleep(0)
+
+            release_first_intent.set()
+            await asyncio.wait_for(first_run_started.wait(), timeout=5)
+            release_first_run.set()
+            await asyncio.gather(first, second)
+
+            user_inputs = [json.loads(next(message["content"] for message in item["body"]["messages"]
+                if message["role"] == "user"))["user_input"] for item in sends]
+            assert user_inputs.count("first request") == 1
+            assert user_inputs.count("second request") == 1
+            assert len(sends) == 2
+        finally:
+            release_first_intent.set()
+            release_first_run.set()
+            for task in (first, second):
+                if task is not None and not task.done():
+                    task.cancel()
+            await asyncio.gather(*(task for task in (first, second) if task is not None), return_exceptions=True)
 
 
 @pytest.mark.asyncio

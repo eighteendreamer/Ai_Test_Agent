@@ -57,6 +57,11 @@ DEFAULT_REPLAY_EVENT_LIMIT = 500
 DEFAULT_SNAPSHOT_HISTORY_LIMIT = 10
 RECENT_CONVERSATION_EVENT_LIMIT = 10
 logger = logging.getLogger(__name__)
+BUSY_SUBMISSION_STATUSES = frozenset({
+    SessionStatus.running,
+    SessionStatus.waiting_approval,
+    SessionStatus.interrupted,
+})
 SERVER_MANAGED_SESSION_METADATA_KEYS = frozenset(
     {"environment", "resource_scope", "security_authorization"}
 )
@@ -1315,14 +1320,21 @@ class SessionService:
         session_lock = self._session_locks[session_id]
         if session_lock.locked():
             session = await self._require_session(session_id)
-            execution_request = await self._input_orchestrator_service.orchestrate_async(session, payload)
-            busy_response = await self._handle_busy_submission(
-                session=session,
-                payload=payload,
-                execution_request=execution_request,
-            )
-            if busy_response is not None:
-                return busy_response
+            if session.status in BUSY_SUBMISSION_STATUSES:
+                execution_request = await self._input_orchestrator_service.orchestrate_async(session, payload)
+                busy_response = await self._handle_busy_submission(
+                    session=session,
+                    payload=payload,
+                    execution_request=execution_request,
+                )
+                if busy_response is not None:
+                    return busy_response
+            else:
+                logger.info("session_input_waiting_for_lock", extra={
+                    "session_id": session_id,
+                    "session_status": session.status.value,
+                    "reason": "lock_held_before_busy_state",
+                })
 
         async with session_lock:
             session = await self._require_session(session_id)
@@ -1870,11 +1882,7 @@ class SessionService:
         execution_request,
     ) -> ConversationResponse | None:
         busy_status = session.status
-        if busy_status not in {
-            SessionStatus.running,
-            SessionStatus.waiting_approval,
-            SessionStatus.interrupted,
-        }:
+        if busy_status not in BUSY_SUBMISSION_STATUSES:
             return None
 
         routing = execution_request.routing_decision

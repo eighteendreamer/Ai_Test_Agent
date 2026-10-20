@@ -4,6 +4,8 @@
 
 模型适配层也已按当前源码和 SDK HTTP 请求重新核验：统一内部请求/结果契约与 OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 原生 transport 分层保留，LangChain 仅走 OpenAI-compatible Chat；本批 6 个相关测试文件共 **186 passed**，没有发现需要新增统一协议栈或更换 Anthropic Messages 的依据。该结果是锁定 SDK 对本地 HTTP fixture 的功能验收，不代表所有真实外部供应商都已在线验收。详见[模型适配层复核](P0_CALL_TRACE_RESEARCH.md#模型适配层当前源码与真实-sdk-http-复核2026-10-20)。
 
+P0 并发重复请求核验发现并修复：会话锁已占用但持久状态仍非忙时，同一输入会在锁外预编排后又在锁内重新编排，导致语义意图模型重复调用；真实 SDK/本地 HTTP 回归现为每条输入恰好一次发送。意图调用与后续 Agent turn 的完整 trace 关联仍未闭环，见 §7.120。
+
 以下2026-10-19摘要与分阶段原件作为历史保留；当前状态以2026-10-20调研和其后实际验收结果为准。
 
 修订日期：2026-10-20。Step 认证已通过，但当前推理 entitlement 不可用；完整 P0—P5 未完成。P1 普通 Markdown 三模块生成、持久化及独立恢复、模板/Excel/JSON 项目页面已有专项验收。P2 最新真实默认模型完整八步复验 `p2-default-full-reference-feedback-8192-live7-20261019/`：1失败、281.16秒。当前MySQL默认8192输出额度，隔离规划期限600秒；逻辑及bindings通过，produced以length/8192结束，正文为空。3次模型HTTP均200，无鉴权失败，未创建Run、业务HTTP为0；尚未到cleanup，不能宣布默认引用修复通过。此前live6的原文歧义和错误T结构保留；已复用现有引用指导并补声明/检查位置及计数诊断，真实存储/恢复64项通过，正式关系45项通过/3跳过，旧阶段与日志32项通过/22跳过；旧r2任务原样恢复，新任务r3。原生未执行证明和对象身份修复已提交7d8896dd。默认模型完整选取/补全/正式执行仍未验收，停止同方向提示微调，转查执行前声明职责与实际Agent/返回后核验的重复。真实默认 UI 正负向及终态重投已有受控页面专项；DeepSeek真实页面自动化录制已验，人手录制及默认模型消费该站知识仍未验。受控HTTP模型下正式回执 `invoking` / 已持久化 `response` 两个真实API进程中断点均已通过；默认Step提供商相同专项及P2完整执行仍未验。配置在MySQL，业务/运行在PG，原件在RustFS；Provider保留各自原生SDK协议。详见 [引用反馈调研](P2_REFERENCE_FEEDBACK_RESEARCH.md)、[未执行证据调研](P2_NON_EXECUTION_RESEARCH.md)、[规划对照研究](P2_PLANNING_CONTRAST_CURRENT_RESEARCH.md) 与 [本轮跨进程回执证据](p0-receipt-process-recovery-current/verification.json)。
@@ -19,7 +21,7 @@
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
 | Docker性能、安全 | 实际Docker工具/报告专项；默认Step在服务端可信目标前提下实际k6→PG/RustFS→报告页及终态重投通过（§7.114） | 默认安全Agent、性能故障/容量/流式指标与完整公开入口 | 普通性能会话的可信目标登记缺少公开接入；仅登记项目base_url不会赋予该范围；保留现有权限规则 |
 | 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
-| 重复请求与交付 | 逻辑调用/SDK/HTTP观测和多SDK故障专项；ToolJob命名契约修复后完整迁移文件31项通过（§7.111） | 更多跨阶段断网/进程恢复、生产历史迁移/投影和旧汇总原件追踪 | 已有模型适配层继续补Profile与原生协议契约，不另建单一协议栈 |
+| 重复请求与交付 | 逻辑调用/SDK/HTTP观测和多SDK故障专项；ToolJob命名契约修复后完整迁移文件31项通过（§7.111）；并发首轮窗口的重复语义模型调用已修复，真实SDK/HTTP每条输入各一次（§7.120） | 意图判定到Agent turn/工具后推理的全入口身份贯通；更多跨阶段断网/进程恢复、生产历史迁移/投影和旧汇总原件追踪 | 继续按Profile和原生协议契约补适配，不另建单一协议栈 |
 
 单用例通过不代表P2整体通过；受控模型、真实默认模型和人手操作分别记账。在途计划修订当前不能由“失败后新建回归运行”替代：`CasePlanRunService.create` / `build_plan_run` 仍固定原计划和RunItem，该缺口需要单独设计、实现与恢复验收。
 
@@ -4572,3 +4574,13 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 两种边界均通过：`invoking` 恢复后不重发纠正请求，保留未知副作用并以 `error` 结束；保存响应后恢复读取和核验原对象，正式结果为 `passed`。两场景各有 POST/GET/DELETE 三次业务效果，恢复创建第二个 attempt，终态队列重投新增模型/业务请求为零，清理后没有残余业务记录。测试运行结果为 **2 passed、0 failed、0 skipped，690.50秒**，见 `p0-receipt-process-recovery-current/verification.json`、`p0-receipt-process-recovery-current.xml` 及该目录的 `invoking/`、`response/` 原始证据。
 
 边界：这里的模型服务是受控 HTTP fixture，不代表默认 Step 提供商的纠正语义/网络故障验收；Step 当前 entitlement 不可用，P2 多候选规划没有进入完整执行。该结果只关闭这两个受控提供商的真实 API 进程中断组合，其他中断、生产部署和历史数据恢复仍需单独验证。没有改生产代码、模型协议、全局配置或数据库结构；完整 P0—P5 仍未完成。
+
+### 7.120 并发首轮下的重复语义模型调用复现与修复（2026-10-20）
+
+先在真实 `SessionService.send_message`、`InputOrchestratorService` 和 `SemanticIntentService` 调用链中建立锁持有/状态仍为 `idle` 的并发窗口。修复前回归失败：第二条输入被调用两次，模型运行时记录为 `first request → second request → second request`。根因是 `send_message` 只要发现锁已占用就先完整语义编排；若持久会话状态尚未转为忙态，忙处理返回 `None`，取得锁后又完整编排同一输入。
+
+修复后仅当持久状态为 `running`、`waiting_approval` 或 `interrupted` 时执行忙态预判并保留现有即时排队/拒绝行为。锁已占用但持久状态尚非忙时，记录 `session_input_waiting_for_lock` 并等待该锁，取得后只编排一次；忙状态集合提取为共享常量，避免预判与忙处理的状态定义分叉。
+
+回归使用真实 `SemanticIntentService` 和官方 OpenAI SDK 发往本地 TCP/HTTP fixture。人为暂停第一条输入的意图模型调用，使第二条在首条尚未提交忙状态时到达；修复后fixture收到两条各一次、共两次请求。将同一最终HTTP回归临时对照旧分支，实际 **1 failed、1 skipped、17 deselected**；服务端请求体序列 first/second/second，第二条被真实SDK重复发送。恢复修复后组合运行 `tests/test_busy_session_queue_concurrency.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py`：**31 passed、27 skipped，13.37秒**；跳过项为未启用的 PostgreSQL 存储门控。证据证明本地fixture接收次数，不外推到生产远端接收。未修改 Provider 协议、提示/参数映射、数据库结构或用户消息内容。
+
+限制：修复关闭的是已确认的并发语义分类重复调用；仍需验证意图识别逻辑调用如何与其后生成的 `turn_id/trace_id` 及 Agent/工具后推理串联。provider HTTP attempt 计数与本地服务端接收数的边界也保持区分。该修复不代表全系统重复发送已排除，P0—P5 仍未完成。
