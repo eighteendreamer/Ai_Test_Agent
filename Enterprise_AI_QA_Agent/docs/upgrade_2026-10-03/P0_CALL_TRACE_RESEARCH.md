@@ -148,3 +148,11 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 用户确认 Step 账号已认证后，重新执行 opt-in `tests/test_live_model_tool_stream.py::test_current_model_executes_read_only_tool_and_stream_matches_final_transcript`。本轮从 MySQL 读取当前默认模型 `step-5-preview`，用合成只读提示创建隔离内存会话并经真实 SDK 发起一次请求。结果为 **1 failed，13.20s**：收到一个 HTTP 400；Session 终态为 `interrupted`，事件只有一个 `model.request_prepared` 和一个 `model.invocation_failed`，没有模型响应、工具调用、工具执行或 post-tool reasoning。供应商错误正文未保存在脱敏 acceptance 文件中，因此仅凭本轮证据不能断言 400 的具体原因；旧的 14:30 记录有订阅/计划 entitlement 分类，但本轮只确认相同状态码仍出现。
 
 脱敏轨迹：`p0-live-model-tool-auth-followup-20261020/acceptance.json`；JUnit：`p0-live-model-tool-auth-followup-20261020.xml`。该测试的入口是 `SessionService` compatibility 路径，Session storage 为隔离内存；不覆盖 durable dispatcher、浏览器产品流程或默认模型成功调用。当前状态应分别记录为：**账号认证由用户确认；本轮模型请求确实发出并收到 400；真实默认模型工具闭环尚未通过。** 同一请求未重复重跑。
+
+## Step账号认证确认后的复验与400根因（2026-10-20）
+
+用户确认 Step 账号已完成认证后，重新执行同一隔离默认模型工具/SSE验收：`p0-live-step-post-auth-20261020-151801/acceptance.json`，JUnit 为同名 XML。仍是一次逻辑调用、一次 HTTP attempt，HTTP 400，Session `interrupted`；没有响应、工具调用或 SSE 最终回答。此证据不表示认证失败，也不证明工具链执行失败，模型尚未返回到工具阶段。
+
+为避免仅凭状态码推断，随后用 `ModelRuntimeService.invoke` 对 MySQL 中当前默认配置做一次无工具、单条短消息、`max_retries=0` 的诊断调用，并只持久化脱敏错误字段。记录在 `p0-step-postauth-probe-20261020-152146/diagnostic.json`：`step-5-preview` 使用 `provider=openai`、`transport=openai_chat_completions`，请求发往 `api.stepfun.com`；MySQL 中有凭据配置，当前实际选择 native OpenAI SDK（LangChain 适配开关关闭），未配置 `request_profile`。SDK收到一次 HTTP 400，供应商 JSON 错误 `type=request_params_invalid`，错误消息为 `you have no active step plan subscription`。诊断未保存 API key、请求头、原始错误正文或模型回复。
+
+官方 Step 5 文档的快速开始使用 `https://api.stepfun.com/v1` 和 `client.chat.completions.create`；Step 5 工具调用 Cookbook 也给出 `tools`、`tool_choice` 和 `max_tokens` 的 Chat Completions 流程（https://platform.stepfun.com/cookbook/step-5-tool-calling）。因此现有 Step transport 与官方公开协议形态一致；当前明确失败原因为供应商报告没有 active Step Plan subscription。**不改全局模型配置、不把 Step 转为 Responses，也不把认证失败写入产品错误分类。** Step 的真实默认 Agent/SSE和P2闭环需在 API 套餐状态恢复后重测；此前已完成的确定性、隔离存储和本地 HTTP 测试仍按各自范围记账。
