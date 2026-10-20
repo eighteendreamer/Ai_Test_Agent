@@ -1,0 +1,63 @@
+{
+  "acceptance": "p4-requirement-execution-full-product",
+  "test": "tests/test_requirement_execution_full_product.py::test_execution_app_actual_checks_lost_reply_history_conflict_and_archive",
+  "junit": {
+    "path": "p4-requirement-execution-product-current-20261020.xml",
+    "tests": 1,
+    "failures": 0,
+    "errors": 0,
+    "skipped": 0,
+    "sha256": "973b63eaa15380790915966a86956945a03249a58a16cfcba4252fdff080c90c"
+  },
+  "input": {
+    "format": "DOCX",
+    "versions": 2,
+    "changed_rule": "retention 7 days to 9 days",
+    "verification_points": 2
+  },
+  "execution": {
+    "result_statuses": [
+      "failed",
+      "failed"
+    ],
+    "run_lifecycle_statuses": [
+      "completed",
+      "completed"
+    ],
+    "regression_selected_check_statuses": [
+      "passed",
+      "passed",
+      "passed",
+      "passed"
+    ],
+    "matrix_points": [
+      {
+        "design_status": "design_covered",
+        "execution_status": "passed"
+      },
+      {
+        "design_status": "uncovered",
+        "execution_status": "not_assessed"
+      }
+    ]
+  },
+  "persistence_and_recovery": {
+    "browser_submissions": 5,
+    "postgres_execution_records": 5,
+    "lost_reply_committed_once": true,
+    "api_restart_history_read": true,
+    "archived_write_rejected": true,
+    "replay_added_model_calls": 0,
+    "actual_model_http_calls_during_assessment": 0,
+    "user_business_review": false
+  },
+  "deployment": {
+    "built_web_app": true,
+    "playwright_browser": true,
+    "independent_api_and_worker": true,
+    "isolated_mysql_postgres_redis_rustfs": true,
+    "controlled_local_business_http_calls": 6,
+    "default_external_model_used": false
+  },
+  "raw_evidence_directory": "p4-requirement-execution-product-current-20261020"
+}

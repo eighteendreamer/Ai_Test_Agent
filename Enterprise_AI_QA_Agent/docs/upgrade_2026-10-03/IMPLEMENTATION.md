@@ -5824,3 +5824,25 @@ Run 新增 `plan_revision`，并新增 `RunPlanRevisionRequest`/`TestRunPlanRevi
 `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_POSTGRES_TESTS=1 uv run --locked python -m pytest tests/test_case_plan_run_creation.py -q --tb=short`：**47 passed，0 skipped，73.25 秒**。其中新增前/后提交边界各通过一次；该模块也覆盖既有真实数据库 Run 创建、修订、领取和 Redis defer/`XAUTOCLAIM` 续接。另以 `RUN_LIVE_PLAN_RUN_CREATION=1 uv run --locked python -m pytest tests/test_case_plan_run_creation.py::test_run_plan_revision_rolls_back_items_archive_and_history_together -q --tb=short -s` 验证既有写入中途异常回滚：**1 passed，7.00 秒**。受控模型/测试数据用于计划 fixture；没有调用 Step、没有创建业务 Attempt/Result，也没有修改生产 Provider、模型配置或数据库 schema。
 
 **当前状态：** Run revision 数据/API 与人工评审页面已有实现；PG writer 事务提交前回滚、提交后幂等重放和整个受影响 Run 创建/修订模块已过真实测试。生产 Uvicorn 进程 kill/restart、浏览器到真实 API E2E、Agent 自动发现缺口并提交 revision 仍未验收或实现。Step 账号认证按用户确认为完成；最新真实模型探测返回的是 `subscription_or_plan_entitlement`，不能误报成认证未完成，也不能据认证通过宣称默认 AI 流程通过。
+
+## 2026-10-20 P4 需求追踪执行核验产品复验与模型适配层当前回归
+
+先检查需求执行完整产品测试的真实入口和固定结果存储，确认它使用正式 API/Worker、构建版 App、隔离存储和本机受控业务 HTTP，不会调用默认 Step 或把设计覆盖冒充执行通过。该路径适合验证需求版本/验证点/用例版本与固定 Run/Result 检查证据在需求矩阵中的实际呈现；不能证明默认模型的业务判断或用户对部署规则的批准。
+
+以包含表格的 DOCX 作为真实输入，页面保存“保留 7 天”到“保留 9 天”的文档差异及两个验证点，仅将一个点关联到项目用例。正式执行服务产生首个失败 Result 和新的回归 Run；回归目标断言通过，但清理断言失败，因此回归 Result 的业务状态仍为 `failed`，Run 本身则正常进入 `completed` 终态。矩阵只显示被选择检查的部分通过，另一个点仍未覆盖，页面明确指出部分检查通过不代表需求整体通过。产品场景还对浏览器已发送但客户端丢失响应、并发评审 CAS 冲突、确认历史追加、服务重启后的历史读取、文档归档后的新写拒绝以及终态重放次数进行检查。
+
+执行 `RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT=1` 下的 `tests/test_requirement_execution_full_product.py`：**1 passed、0 failed、0 skipped，229.52秒**。测试使用 Chromium、正式构建版 Vue App、独立 API/Worker、隔离 MySQL/PostgreSQL/Redis/RustFS 和本机受控业务 HTTP。浏览器提交 5 次与 PostgreSQL 的 5 条执行确认记录一致；丢回执请求只有一条业务写入；API 重启及归档后读取/拒绝符合固定历史；恢复期间新增模型 HTTP 和业务 HTTP 均为 0。JUnit：`p4-requirement-execution-product-current-20261020.xml`；脱敏验收汇总：`p4-requirement-execution-product-current-20261020/acceptance-summary.json`；原件、截图、HTTP 轨迹、PostgreSQL/RustFS 核对位于同名证据目录。该测试的浏览器操作由 Playwright 脚本执行，不记为人工业务人员验收。
+
+针对用户提出的模型协议疑问，当前工作树实际重跑：
+
+```powershell
+# Agent_Server
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_model_clients.py tests/test_model_request_profile.py tests/test_langchain_model_adapter.py -q --tb=short
+# 67 passed，27.05秒。
+```
+
+测试覆盖 provider client 分派、Anthropic Messages 请求/响应、OpenAI Responses 独立端点、按 transport 映射请求字段、OpenAI-compatible LangChain 限制和错误行为。结论仍是统一内部 DTO/结果契约加 provider-specific 原生协议客户端；Anthropic 行继续调用 `client.messages.create(**params)`，`await_provider_io` 只归一化网络 I/O 异常，并不改变端点、请求体或协议；`client.responses.create` 仅属于 `OpenAIResponsesClient`。因此本轮没有将 Anthropic 或其他模型迁移到 Responses，也没有新增统一协议适配代码。
+
+Step 账号认证按用户确认为完成，且已有模型目录请求成功证据；同日默认推理请求仍保存为 `subscription_or_plan_entitlement` 类 HTTP 400，未产生模型响应。故本轮继续区分“认证完成”和“默认模型推理通道可用”：多用例 P2 默认 Agent 链路仍未验收，不重复同一失败探针。
+
+本轮没有生产代码、模型配置、数据库 schema 或依赖改动。需求追踪真实用户业务评审、部署/环境适用性、更多业务样本的默认模型影响判断及 P4 增量草稿完整业务闭环仍待完成；完整 P0—P5 目标继续进行。

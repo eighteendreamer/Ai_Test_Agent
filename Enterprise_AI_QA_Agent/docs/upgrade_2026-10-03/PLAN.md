@@ -14,6 +14,10 @@ P0 并发重复请求核验发现并修复：会话锁已占用但持久状态�
 
 P2 Run 修订进展补记（2026-10-20）：Run 修订后端/API 和人工评审页面已实现。新增真实 PostgreSQL 事务写入进程在提交前/后中断专项，通过同一幂等键从 Run 修订 API 重放，**2 passed**；整个 Run 创建/修订测试模块在真实 PostgreSQL/MySQL 及 Redis 场景下 **47 passed**。该专项通过 ASGI 路由与独立 writer 子进程验收，不等同于终止生产 Uvicorn API 进程或浏览器连接实际服务的 E2E；Agent 自动发现缺口并提交修订仍未实现。详见 [P2 Run 修订调研与验收](P2_RUN_REVISION_DESIGN_VALIDATION_20261020.md#事务进程故障与幂等恢复复核)。
 
+P4 需求追踪的当前构建版产品流程补验（2026-10-20）：实际 DOCX 需求经构建版 App 评审，再把受控正式 Run 的失败/回归结果按选中检查点关联到需求矩阵；浏览器丢失回执、并发版本冲突、API 重启、归档后的历史只读均通过。该受控场景没有调用默认模型，也不等于业务负责人评审或部署环境适用性确认，详见 §7.131。
+
+模型适配层在当前工作树重新运行 `test_model_clients.py`、`test_model_request_profile.py`、`test_langchain_model_adapter.py`，**67 passed，27.05秒**。结论不变：统一内部请求/结果契约与 provider-specific 原生协议客户端是当前代码结构；Anthropic 用 Messages，OpenAI Responses 独立分派，LangChain 仅接受 OpenAI-compatible Chat。本批本地 HTTP fixture 与 SDK 测试没有发现需要将供应商改成单一 wire protocol 的根因或失败证据；这不证明每个远程供应商都可用。
+
 ### 当前未完成项的分类〔2026-10-20〕
 
 | 方向 | 已有实现/专项证据 | 尚未验收 | 仍需补实现或查证 |
@@ -24,11 +28,11 @@ P2 Run 修订进展补记（2026-10-20）：Run 修订后端/API 和人工评审
 | UI录制与知识 | DeepSeek真实 Chromium/API/CDP/PG录制，确定性质量投影及响应观察窗口到本地动作关联；固定场景知识读取及受控页面默认AI使用 | 真实用户界面操作路径、默认AI消费DeepSeek录制知识、完整产品链路 | 当前关联只表示同文档时间窗口；服务端业务因果、closed Shadow DOM、selector修复评审及失败定位报告仍待推进 |
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程此前专项通过 | 当前同进程/持久子Worker完整回归未通过：受控模式仅完成`/login`；最新检查点与会话行不一致；Step 首次推理请求仍400 | 先按[Session并发设计](SESSION_STORE_CONCURRENCY_DESIGN_20261020.md)确认并修复全量旧快照覆盖；持久Worker改用生产回收时限复验；真实缺口继续保持Agent方式补齐 |
 | Docker性能、安全 | 实际Docker工具/报告专项；默认Step在服务端可信目标前提下实际k6→PG/RustFS→报告页及终态重投通过（§7.114） | 默认安全Agent、性能故障/容量/流式指标与完整公开入口 | 普通性能会话的可信目标登记缺少公开接入；仅登记项目base_url不会赋予该范围；保留现有权限规则 |
-| 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
+| 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项；构建版 App 的 DOCX 需求矩阵、固定结果核验、丢回执/冲突/重启/归档恢复（§7.131） | 更广默认模型判断、真实用户业务评审、部署环境适用性闭环；当前产品测试使用受控业务目标与脚本化浏览器操作 | 其他格式/故障组合按范围继续核验，不部署Docling |
 | 重复请求与交付 | 多SDK逻辑调用/HTTP attempt观测；并发首轮重复分类已修复；turn/trace 已从语义判定传到Agent、工具后推理和挂起队列；模型响应事件含可对账的工具调用ID；确定性与本地SDK/HTTP回归154通过（§7.122） | 默认 Step 实际 Agent 工具/SSE测试首个推理调用返回400，未执行工具或后续推理；其他持久任务入口、跨阶段断网/进程恢复、生产历史迁移/投影和旧Worker汇总原件追踪 | 按逐入口调查补齐持久身份和失败/恢复证据；继续按Profile与原生协议契约适配，不另建单一协议栈 |
 | Session/Worker并发写入 | 通知后重读父会话；事件型通知不再全量保存；自动停止状态/消息/事件原子写入；内存与真实PG原子写测试通过 | detached旧快照覆盖风险已由交错回归复现并修复；revision/CAS、其他`save_session`调用点审计、生产时限跨进程恢复尚未完成 | 保持这项修复局部且可验证；架构级并发治理按[Session并发设计](SESSION_STORE_CONCURRENCY_DESIGN_20261020.md)继续评估与实施 |
 
-单用例通过不代表P2整体通过；受控模型、真实默认模型和人手操作分别记账。在途计划修订当前不能由“失败后新建回归运行”替代：`CasePlanRunService.create` / `build_plan_run` 仍固定原计划和RunItem，该缺口需要单独设计、实现与恢复验收。
+单用例通过不代表P2整体通过；受控模型、真实默认模型和人手操作分别记账。在途计划修订不能由“失败后新建回归运行”替代：Run 修订后端/API、人工评审页面、PG/Redis 执行续接及事务进程边界已有实现和专项验收；Agent 自动发现缺口并生成/提交修订、生产 Uvicorn 重启和浏览器到实际服务的 E2E 仍需推进。
 
 ### 7.89 用例执行字段与回执修复、默认模型 UI 正向验收〔2026-10-19〕
 
@@ -4725,3 +4729,44 @@ pytest tests/test_run_plan_projection_lock.py \
 功能验证：`RunPlanRevisionPanel.test.ts`、`CasePlanDialog.test.ts` 和 `projects.plan-revisions.api.test.ts` 联合回归 **94 passed**，覆盖历史与条目变化、修订 CAS/资格、幂等重试、同项目候选选择、跨项目候选拒绝，以及候选模式不启动新 Run；`npm run build` 的 Vue 类型检查和 Vite 生产构建成功。既有后端 45 项隔离 MySQL/PostgreSQL/Redis/RustFS Run 创建/修订验收仍作为后端证据，不视为本轮 UI 对生产 API 的端到端验收。配置仍在 MySQL，Run/修订仍在 PostgreSQL。
 
 Step 认证状态按用户确认记为通过；最新 MySQL 默认配置只读调用仍得到 Step provider HTTP 400，脱敏诊断正文为 `you have no active step plan subscription`，一次 SDK HTTP attempt、无模型响应。它说明当前 Step 推理订阅/计划授权尚未可用，不能归因 Anthropic/Responses 协议或通过改写适配层解决，也没有再次对相同输入重发。P2 默认 AI 的完整“项目选取→排序→补全→执行”继续是尚未验收，而非已通过。人工 Run 修订入口已实现；Agent 自动修订、revision 提交前/后进程恢复和生产页面/API 联调仍待做。完整 P0—P5 仍未完成。
+
+### 7.131 P4 需求追踪矩阵与实际执行核验的构建版产品复验（2026-10-20）
+
+#### 调研结论
+
+复核 `test_requirement_execution_full_product.py`、`requirement_execution_product_scenario.py`、`test_document_impact_full_product.py`、`requirement_execution.py` 和需求执行 PostgreSQL Store 后，确认已有真实产品验收入口没有调用默认 AI：它使用正式执行服务创建 Run/Result/ToolJob，把受控业务 HTTP 的实际响应绑定到固定结果；内置构建版 App 和生产 API/独立 Worker 使用隔离存储。这个入口可验证“需求版本→验证点→固定用例版本→实际 Run/Result→人工选择的检查证据→需求追踪矩阵”产品链路，不应误写成默认模型自主测试或用户业务批准。
+
+测试在实际页面创建含表格的 DOCX 版本差异（保留期限从 7 天改为 9 天），评审并建立两个验证点，只将其中一个关联到用例版本。随后针对被选用例执行固定正式 Run：初次 Result 失败；新回归 Run 的目标检查通过，但清理检查失败，因此回归 Result 仍为 `failed`，Run 生命周期本身正常进入 `completed` 终态。产品矩阵只显示被选验证点的部分检查通过，并明确“部分检查通过不能证明整个需求通过”；第二个验证点仍未覆盖。测试还验证原页面提交已落库但响应丢失后不重发、实际 API 并发修订返回冲突而不自动重定父版本、执行确认历史修订追加保存、API 重启后历史完整读取、归档后禁止新确认、终态重放不增加模型或业务请求。
+
+#### 实际功能验证
+
+执行：
+
+```powershell
+# Agent_Server
+$env:RUN_LIVE_DOCUMENT_IMPACT_FULL_PRODUCT='1'
+$env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\docs\upgrade_2026-10-03\p4-requirement-execution-product-current-20261020'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_requirement_execution_full_product.py -q --tb=short --junitxml=../docs/upgrade_2026-10-03/p4-requirement-execution-product-current-20261020.xml
+# 1 passed、0 failed、0 skipped，229.52秒。
+```
+
+验证使用真实构建版 Vue App、Chromium、独立 API/Worker、隔离 PostgreSQL/MySQL/Redis/RustFS 和本机受控 HTTP 业务目标。工件显示浏览器实际提交数与五条 PostgreSQL 执行确认历史一致；丢回执时仅一个请求已提交且仅有一个记录；确认记录可重读；回归中四条被选断言均通过，但 Result 仍为 `failed`、Run 进入 `completed`；重启后的历史读取和归档拒绝通过，恢复期间新增模型/业务 HTTP 调用数均为 0。生产验收 XML 为 `p4-requirement-execution-product-current-20261020.xml`，浏览器截图、HTTP、DOCX、PG 和 RustFS 工件位于同名目录。
+
+本轮同时对模型适配层做当前代码回归：
+
+```powershell
+# Agent_Server
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_model_clients.py tests/test_model_request_profile.py tests/test_langchain_model_adapter.py -q --tb=short
+# 67 passed，27.05秒。
+```
+
+上述模型测试经本地 HTTP fixture 核实 SDK 实际传输与 provider-specific 参数映射；不能代替真实远程模型逐家认证。Anthropic 仍由 `AnthropicMessagesClient` 调用 `client.messages.create`；OpenAI Responses 使用单独 `OpenAIResponsesClient`；两者共享内部调用 DTO 和结果解析契约。当前证据支持保留这种分层适配，不支持统一改成 Responses。测试没有修改模型配置或业务代码。
+
+#### 状态边界
+
+- **已有实现且本轮验收：** DOCX 需求版本、设计覆盖矩阵、固定执行结果读取、选中断言的人工核验记录、丢回执幂等、并发冲突拒绝、历史版本和归档恢复。
+- **尚未验收：** 业务负责人对实际部署规则的批准；不同产品、接口、数据和多环境组合下默认 AI 影响质量；默认模型从差异分析到增量生成并在实际环境回归的完整业务闭环。
+- **仍需补查/实现：** 按失败样本扩展格式和故障组合；只有证据表明现有需求/追踪模型缺字段或行为时才补实现。当前本批没有发现需要增加需求追踪 API/schema 的缺口。
+- **模型状态：** Step 账号认证按用户确认及先前成功模型目录请求记为完成；当前默认推理探测已有 HTTP 400 entitlement 证据，P2 默认多用例 Agent 链路因此仍未验收。不要把认证完成写成推理可用，也不要重复发送同一个失败探针。
+
+本轮仅增加方案/实施记录和实际验收证据；未更改生产模型适配器、MySQL 模型配置、PostgreSQL 业务 schema 或用例执行逻辑。完整 P0—P5 目标继续进行。
