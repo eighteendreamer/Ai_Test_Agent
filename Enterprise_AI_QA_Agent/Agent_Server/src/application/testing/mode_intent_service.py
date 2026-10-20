@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 import re
 from typing import Any
 
+from src.application.intent.url_text import HTTP_URL_PATTERN
 from src.schemas.mode import ModeDescriptor
 
 
@@ -173,7 +174,7 @@ class TestModeIntentService:
         "兼容": "draft_plan",
     }
     HTTP_METHOD_PATTERN = re.compile(r"\b(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD)\b", flags=re.IGNORECASE)
-    URL_PATTERN = re.compile(r"https?://[^\s]+", flags=re.IGNORECASE)
+    URL_PATTERN = HTTP_URL_PATTERN
     API_PATH_PATTERN = re.compile(r"(/[A-Za-z0-9._~:/?#\[\]@!$&'()*+,;=%-]+)")
 
     def classify(

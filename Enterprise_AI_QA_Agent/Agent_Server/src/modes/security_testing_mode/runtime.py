@@ -941,7 +941,7 @@ class SecurityTestingModeRuntime:
             return ""
         logger.info(
             "security_scenario_worker_requested %s",
-            self._log_payload(context=context, task_id=task_id, agent_key=agent_key),
+            self._log_payload(context=context, task_id=task_id, agent_key=agent_key, mode_key="default"),
         )
         result = await self._coordinator_runtime_service.dispatch(
             payload={
@@ -954,7 +954,7 @@ class SecurityTestingModeRuntime:
                         "model_key": str(getattr(context, "selected_model_key", "") or "") or None,
                         "context": {
                             "dispatch_role": "security_scenario_analysis",
-                            "mode_key": "security_testing",
+                            "mode_key": "default",
                             "security_memory_scope": "session_only",
                         },
                     }
@@ -2928,7 +2928,7 @@ class SecurityTestingModeRuntime:
                     "model_key": str(getattr(context, "selected_model_key", "") or "") or None,
                     "context": {
                         "dispatch_role": "security_failure_analysis",
-                        "mode_key": "security_testing",
+                        "mode_key": "default",
                         "security_task_id": task.task_id,
                         "surface_type": task.surface_type,
                         "tool_family": task.tool_family,
@@ -2940,6 +2940,10 @@ class SecurityTestingModeRuntime:
                 }
             )
 
+        logger.info(
+            "security_failure_analysis_workers_dispatching %s",
+            self._log_payload(context=context, task_count=len(workers), mode_key="default"),
+        )
         dispatch_result = await self._coordinator_runtime_service.dispatch(
             payload={"workers": workers},
             context=self._build_failure_analysis_dispatch_context(context),
@@ -3715,7 +3719,7 @@ class SecurityTestingModeRuntime:
         if not isinstance(parent_bundle, dict):
             parent_bundle = {}
         scoped_bundle: dict[str, Any] = {
-            "mode_key": "security_testing",
+            "mode_key": "default",
             "security_memory_scope": "session_only",
             "dispatch_role": "security_failure_analysis",
         }
@@ -3740,7 +3744,7 @@ class SecurityTestingModeRuntime:
         if not isinstance(parent_bundle, dict):
             parent_bundle = {}
         scoped_bundle: dict[str, Any] = {
-            "mode_key": "security_testing",
+            "mode_key": "default",
             "security_memory_scope": "session_only",
             "dispatch_role": "security_scenario_analysis",
         }

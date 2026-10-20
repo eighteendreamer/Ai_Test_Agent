@@ -410,6 +410,30 @@ def test_security_mode_with_server_grant_uses_verified_grant_reason():
     assert runtime._should_use_dedicated_security_runtime(request) is True
 
 
+def test_server_grant_matches_url_before_chinese_sentence_clause():
+    target = "http://127.0.0.1:65127"
+    message = (
+        f"请对这个授权测试目标做一轮安全扫描和 HTTP 安全检查：{target}。"
+        "范围仅限该服务，只检查响应头并生成报告。"
+    )
+    session = _session()
+    session.metadata["security_authorization"] = {
+        "status": "verified",
+        "targets": [target],
+        "expires_at": "2099-01-01T00:00:00Z",
+    }
+
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(
+        session,
+        SendMessageRequest(content=message, mode_key="security_testing"),
+    )
+
+    assert IntentRecognitionService().recognize(message).parameters["target_url"] == target
+    assert request.context["security_testing_request"]["target_url"] == target
+    assert request.context["safety_assessment"]["authorization_status"] == "verified"
+    assert request.context["trusted_security_runtime_direct_execution"] is True
+
+
 def test_server_grant_dispatches_security_scan_for_matching_target():
     session = _session()
     session.metadata["security_authorization"] = {
@@ -463,6 +487,110 @@ def test_authorized_security_worker_keeps_assigned_runtime_arguments():
     assert request.context["security_runtime_arguments"] == assigned
     assert len(tool_runtime.calls) == 1
     assert tool_runtime.calls[0].arguments == assigned
+
+
+def test_security_scenario_analysis_worker_does_not_reenter_security_runtime():
+    runtime = object.__new__(SecurityTestingModeRuntime)
+    dispatch = AsyncMock(return_value={"workers": []})
+    runtime._coordinator_runtime_service = SimpleNamespace(dispatch=dispatch)
+    runtime._session_store = object()
+    context = SimpleNamespace(
+        context_bundle={
+            "campaign_id": "campaign-1",
+            "target_fingerprint": "target-1",
+            "security_authorization": {"status": "verified"},
+        },
+        session_id="session-1",
+        turn_id="turn-1",
+        trace_id="trace-1",
+        selected_agent_key="security-testing-agent",
+        selected_model_key="model-1",
+    )
+
+    asyncio.run(runtime._dispatch_analysis_worker(
+        agent_key="security-doc-analyst",
+        task_id="scenario_analysis_campaign-1",
+        prompt="Analyze the authorized scenario without executing tools.",
+        context=context,
+    ))
+
+    call = dispatch.await_args.kwargs
+    worker = call["payload"]["workers"][0]
+    assert worker["context"]["dispatch_role"] == "security_scenario_analysis"
+    assert worker["context"]["mode_key"] == "default"
+    assert call["context"]["context_bundle"]["mode_key"] == "default"
+    assert "security_authorization" not in call["context"]["context_bundle"]
+
+
+def test_security_failure_analysis_worker_does_not_reenter_security_runtime():
+    runtime = object.__new__(SecurityTestingModeRuntime)
+    dispatch = AsyncMock(return_value={"workers": []})
+    runtime._coordinator_runtime_service = SimpleNamespace(dispatch=dispatch)
+    runtime._session_store = object()
+    runtime._checkpoint_execution_state = lambda **_kwargs: None
+    runtime._apply_local_failure_analysis = lambda **_kwargs: None
+    context = SimpleNamespace(
+        context_bundle={
+            "campaign_id": "campaign-1",
+            "target_fingerprint": "target-1",
+            "security_authorization": {"status": "verified"},
+        },
+        session_id="session-1",
+        turn_id="turn-1",
+        trace_id="trace-1",
+        selected_agent_key="security-testing-agent",
+        selected_model_key="model-1",
+    )
+    task = SecurityTask(
+        task_id="task-1",
+        name="HTTP probe",
+        surface_type="web",
+        tool_family="web_scan",
+        command_profile="httpx_probe",
+        target="http://127.0.0.1:8000",
+        status="failed",
+        last_error="resource unavailable",
+    )
+    state = SecurityTestingState(
+        request=SecurityTestingRequestState(target_fingerprint="target-1"),
+        campaign=SecurityCampaign(campaign_id="campaign-1", tasks=[task]),
+    )
+
+    asyncio.run(runtime._dispatch_failure_analysis_subagents(state, context, [task]))
+
+    call = dispatch.await_args.kwargs
+    worker = call["payload"]["workers"][0]
+    assert worker["context"]["dispatch_role"] == "security_failure_analysis"
+    assert worker["context"]["mode_key"] == "default"
+    assert call["context"]["context_bundle"]["mode_key"] == "default"
+    assert "security_authorization" not in call["context"]["context_bundle"]
+
+
+def test_security_execution_worker_retains_assigned_security_runtime_arguments():
+    task = SecurityTask(
+        task_id="task-1",
+        name="HTTP response header check",
+        surface_type="web",
+        tool_family="web_scan",
+        command_profile="http_headers_probe",
+        target="http://127.0.0.1:8000",
+    )
+    coordinator = SecuritySubagentCoordinator(
+        pool=SecurityTaskPool([task]),
+        coordinator_runtime_service=None,
+        session_store=None,
+        parent_context={"context_bundle": {}},
+        runner_lookup=lambda _family: "web-scan-runner",
+    )
+
+    worker = coordinator._build_worker_spec(task)
+
+    assert worker["context"]["dispatch_role"] == "security_testing_worker"
+    assert worker["context"]["mode_key"] == "security_testing"
+    assert worker["context"]["requested_tool_keys"] == ["web-scan-runner"]
+    assert worker["context"]["security_runtime_arguments"]["task"]["command_profile"] == (
+        "http_headers_probe"
+    )
 
 
 @pytest.mark.parametrize(

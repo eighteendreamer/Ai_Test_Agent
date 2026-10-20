@@ -5168,7 +5168,7 @@ Worker专项是正式启动函数在测试进程的真实存储读取，不是�
 | 按用例执行 | 真实AI项目选取、排序、补全、工具执行、断言、回执与结果完整闭环 | 完整准备状态、未知副作用只读查证、执行中计划修订及其他模式仍需逐项核验补齐 |
 | UI录制与知识 | 场景编辑/步骤/别名/查询、固定规划与独立CLI恢复已有专项；人工DeepSeek和默认AI业务使用仍待验 | 清洗干扰及遗漏诊断、复杂网络/跨文档/Shadow DOM关联、场景预期技术效果声明、selector修复评审和失败定位报告 |
 | Agent API | 依赖来源、响应提取、参数传值等专项已有；完整默认Agent与异常/并发/幂等组合待验 | 鉴权续期、未覆盖故障和结果呈现按实际缺口补齐 |
-| 性能、安全 | Docker原输出、工件、解析及报告已有专项；完整Agent闭环、其他工具和故障待验 | 逐级容量、负载/环境可比性、AI流式阶段指标及其他安全发现证据仍需推进 |
+| 性能、安全 | Docker原输出、工件、解析及报告已有专项；真实Agnes安全Agent经正式API/Worker调用Docker runner，对本机隔离目标完成3个任务并保存报告（PLAN §7.133） | Step默认模型安全Agent链路、更多目标/故障组合；逐级容量、负载/环境可比性、AI流式阶段指标 |
 | 模型适配、重复请求与交付 | 现有多传输/profile及终态映射已有专项，外部多供应商/推理/媒体质量待验 | 全阶段逻辑调用/SDK重试/物理HTTP故障追踪、生产历史迁移与投影核对、旧Worker汇总原件追踪 |
 
 外部AI按用户决定暂缓；旧Step200/403均为历史，不推断当前账号状态。完整P0—P5目标继续active。
@@ -5864,3 +5864,18 @@ Step 账号认证按用户确认为完成，且已有模型目录请求成功证
 验收摘要为 `p3-api-agent-worker-controlled-durable-diagnostic-current-20261020/controlled-durable/acceptance-summary.json`；完整脱敏观测、stdout/stderr、数据库清理记录和 XML 位于同名目录。该专项未执行 RustFS 对象读写，也不是默认模型质量、完整 API 错误矩阵或全系统完成验收。第一次 50 秒 API 启动等待超时在重跑中未复现，具体原因仍未知；当前证据不支持宣称存在持久 Worker 产品缺陷。测试修复仅涉及验收变量的初始化时机，没有生产 API/Worker 代码、数据库结构、模型配置或 Provider 改动。
 
 Step 账号认证按用户确认记为完成，并保留成功模型目录查询证据；当前默认推理请求另有 `subscription_or_plan_entitlement` HTTP 400 证据。两者是不同状态，本轮未重复探测，也未把认证通过写成默认 AI 端到端通过。P2 默认多用例模型规划仍待推理 entitlement 恢复后验收。
+
+## 2026-10-20 P5 安全 Agent 递归派发修复与真实 Agnes 验收
+
+真实 Agent 验收定位到分析 worker 的路由配置错误：场景分析与失败分析子会话都携带 `security_testing` 模式和父会话授权，导致只读分析重新进入安全执行路径并递归派发。现将这两种分析角色路由到 `default`，并从分析上下文清除安全执行授权；安全执行 worker 继续使用原 `security_testing` 模式、指定任务参数和 runner。入口复验另发现中文句子提取 URL 时会带上句末标点，使授权目标比较失败；共享 URL 提取逻辑已修正并加入回归。
+
+代码回归在 `Agent_Server` 下实际运行：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_intent_safety_routing.py tests/test_model_trace_project_binding.py tests/test_runtime_interrupt_tool_calls.py tests/test_semantic_intent_trace_http.py tests/test_semantic_intent_failure_visibility.py tests/test_busy_session_queue_concurrency.py tests/test_session_execution_ownership.py tests/test_agent_task_dispatch.py tests/test_scene_knowledge_contract.py tests/test_live_model_tool_stream.py -q --tb=short
+# 161 passed、47 skipped，24.58秒；跳过项不计为通过。
+```
+
+真实验收 **1 passed，187.35秒**，使用真实 Agnes 模型、正式 API/Agent Worker、隔离 PostgreSQL/Redis/RustFS、现有 Docker runner 和本机隔离 HTTP 目标；whatweb 指纹、httpx 探测、HTTP 响应头三个任务均完成，最终报告核对到4项发现、12项证据。API 重启后可读取报告；终态重放新增模型 SDK 调用、物理模型 HTTP、目标请求和 ToolJob 均为0。一个无上传附件场景中的 `attachment-reader` 调用返回 `attachment_not_found`，不影响安全任务与报告，单独保留为非关键失败证据。原始验收文件位于 `Agent_Server/docs/upgrade_2026-10-03/p5-security-agent-agnes-recursion-fix-20261020-234023/`。
+
+此项证明当前已配置的 Agnes 模型下一个正式安全 Agent/Docker 场景通过；Step 默认模型仍受实际推理 entitlement 错误阻塞，未将其记为安全 Agent 验收通过。其他授权/目标类别、工具故障、安全报告组合、性能容量与 AI 流式指标仍待逐项验证。没有修改全局默认模型或数据库 schema。

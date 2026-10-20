@@ -3,13 +3,14 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from src.application.intent.url_text import HTTP_URL_PATTERN
 from src.schemas.intent import IntentDecision
 
 
 class IntentRecognitionService:
     """Extract a stable task frame without granting execution authority."""
 
-    URL_PATTERN = re.compile(r"https?://[^\s<>'\"]+", re.IGNORECASE)
+    URL_PATTERN = HTTP_URL_PATTERN
 
     MODE_TOKENS: dict[str, set[str]] = {
         "security_testing": {"security", "安全", "漏洞", "渗透", "越权", "xss", "csrf", "sql注入", "扫描"},
