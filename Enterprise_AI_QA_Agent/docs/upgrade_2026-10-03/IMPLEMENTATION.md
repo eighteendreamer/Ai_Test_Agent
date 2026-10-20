@@ -5791,7 +5791,7 @@ Run 新增 `plan_revision`，并新增 `RunPlanRevisionRequest`/`TestRunPlanRevi
 
 ### 尚欠验收
 
-没有 revision 事务提交前/后的真实进程终止恢复测试；目前没有 Agent 自动规划修订闭环，也没有前端页面连接生产 API 的 E2E 验收。默认 Step 凭据认证成功，但当前 Step Plan 模型目录/额度的推理错误仍阻止真实默认 AI 多用例规划和执行；认证成功不能计为模型运行验收。P0—P5 其他未闭环范围不变。
+本节首次记录时还没有 revision 事务进程中断测试；后续边界专项见本文末尾。仍没有 Agent 自动规划修订闭环，也没有终止生产 Uvicorn API 后由新 API/Worker 恢复、或浏览器连接实际服务的 E2E 验收。默认 Step 凭据认证成功，但当前 Step Plan 模型目录/额度的推理错误仍阻止真实默认 AI 多用例规划和执行；认证成功不能计为模型运行验收。P0—P5 其他未闭环范围不变。
 
 配置继续留在 MySQL；Run、RunItem、Attempt、快照与修订历史在 PostgreSQL；未变更模型 Provider 协议和配置。P2 的设计过程、测试门控及其余未验收边界见 [P2 Run 修订调研与验收](P2_RUN_REVISION_DESIGN_VALIDATION_20261020.md)。
 
@@ -5804,8 +5804,23 @@ Run 新增 `plan_revision`，并新增 `RunPlanRevisionRequest`/`TestRunPlanRevi
 ### 状态区分
 
 - **已有实现：** Run 修订后端/API、前端修订与历史页面、MySQL 配置和 PostgreSQL 运行事实分离、provider-specific 模型适配器及原生协议。
-- **尚未验收：** 本轮页面连接真实运行服务的用户路径、revision 提交前/后进程中断、Agent 自动发现缺口并生成/提交候选；默认 Step 完整项目选取到 Run 执行。
+- **尚未验收：** 页面连接实际服务的用户路径、生产 Uvicorn API 进程中断恢复、Agent 自动发现缺口并生成/提交候选；默认 Step 完整项目选取到 Run 执行。revision writer 的真实 PG 提交边界故障与幂等重放专项已在本文末尾通过。
 - **Step 当前情况：** 用户确认账号认证已完成；最新默认配置请求实测仍返回 HTTP 400，脱敏 provider 消息为 `you have no active step plan subscription`，因此这是订阅/推理授权状态，不是认证没做或协议统一问题。
 - **仍需补实现：** Agent 运行图接入候选计划生成、审查与 `reviseTestRunPlan` 提交，并保留人工评审和后端幂等、revision CAS 约束。
 
 以上只更新 P2 Run 修订的当前边界，不代表完整 P0—P5 完成。
+
+## 2026-10-20 P2 Run 修订事务进程故障与幂等恢复复核
+
+沿 `CasePlanRunService.revise → PostgresTestRunStore.revise_plan → _revise_plan_sync` 核验写路径：RunItem 排序投影、Run 当前快照与 `plan_snapshots`、统计刷新、revision 记录均在同一个 `postgres_connect` 事务内提交；提交前异常由连接上下文回滚。此前的 `test_killing_revision_process_releases_resource_without_partial_attempt` 只证明 advisory lock 持有者退出后 claim 可继续，不执行 revision 写事务；既有回滚测试用异常注入检查事务原子性，也不证明进程中断恢复。
+
+新增 `test_run_plan_revision_process_loss_is_atomic_and_idempotent` 两个真实 PostgreSQL 情景：
+
+- **提交前中断：** 用真实 revision 表上的共享锁将 writer 子进程阻挡在最后的 history `INSERT`，确认 RunItem 和 Run 的中间写尚未对其他连接可见。终止该子进程及 PostgreSQL 中精确观测到的自有 backend 后，旧 revision、原计划、原 RunItem 和单份快照仍完整；随后通过 Run 修订 ASGI 路由以原幂等键重试，只生成 revision 1、一个新增 RunItem、一个 history 行及第二份快照。
+- **提交后丢回执：** writer 子进程返回自 PostgreSQL revision 事务后发出 `COMMITTED` 标记并等待，测试在它发送结果前终止进程。真实存储保留 revision；通过同一 ASGI 路由重放原幂等键，读回 revision 1，不重复新增条目、历史或快照。
+
+该机器是 Windows；首次只终止客户端子进程时，PostgreSQL 仍保留被重量级 relation lock 阻塞的 backend。因此测试在确认阻塞 SQL 和精确 backend PID 后，显式终止该隔离测试连接，保证提交前事务确实回滚。这不是对“杀掉客户端必定立即断开 PostgreSQL backend”的假设。该专项测试的是实际 PostgreSQL writer 事务与 ASGI 路由幂等重放，不等同于杀掉生产 Uvicorn API 进程、重启完整应用/Worker 后恢复，也不证明浏览器到生产服务的 E2E。
+
+`RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_POSTGRES_TESTS=1 uv run --locked python -m pytest tests/test_case_plan_run_creation.py -q --tb=short`：**47 passed，0 skipped，73.25 秒**。其中新增前/后提交边界各通过一次；该模块也覆盖既有真实数据库 Run 创建、修订、领取和 Redis defer/`XAUTOCLAIM` 续接。另以 `RUN_LIVE_PLAN_RUN_CREATION=1 uv run --locked python -m pytest tests/test_case_plan_run_creation.py::test_run_plan_revision_rolls_back_items_archive_and_history_together -q --tb=short -s` 验证既有写入中途异常回滚：**1 passed，7.00 秒**。受控模型/测试数据用于计划 fixture；没有调用 Step、没有创建业务 Attempt/Result，也没有修改生产 Provider、模型配置或数据库 schema。
+
+**当前状态：** Run revision 数据/API 与人工评审页面已有实现；PG writer 事务提交前回滚、提交后幂等重放和整个受影响 Run 创建/修订模块已过真实测试。生产 Uvicorn 进程 kill/restart、浏览器到真实 API E2E、Agent 自动发现缺口并提交 revision 仍未验收或实现。Step 账号认证按用户确认为完成；最新真实模型探测返回的是 `subscription_or_plan_entitlement`，不能误报成认证未完成，也不能据认证通过宣称默认 AI 流程通过。

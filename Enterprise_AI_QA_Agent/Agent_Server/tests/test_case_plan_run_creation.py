@@ -1,9 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import os
+import subprocess
+import sys
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from threading import Event, Lock
 from time import monotonic
 from uuid import uuid4
@@ -16,7 +20,7 @@ from fastapi import FastAPI
 from test_case_planning import SequenceModel, finish, item
 from test_run_item_dependencies import setup, finish as complete
 from src.application.orchestration.redis_execution_dispatcher import RedisExecutionDispatcher
-from src.application.test_runs.plan_mapping import build_plan_run
+from src.application.test_runs.plan_mapping import build_plan_run, json_digest
 from src.application.test_runs.plan_run_service import CasePlanRunService
 from src.application.test_suites.suite_store import InMemoryTestSuiteStore, PostgresTestSuiteStore
 from src.core.config import get_settings
@@ -24,7 +28,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.redis_task_worker import RedisTaskWorker
-from src.schemas.case_planning import CasePlanningRequest, CasePlanRunRequest
+from src.schemas.case_planning import CasePlanningRequest, CasePlanRunRequest, case_plan_json
 from src.schemas.case_management import TestCaseVersionCreateRequest as VersionRequest
 from src.application.test_runs.run_service import TestRunService as RunService
 from src.schemas.run_management import (RegressionRunCreateRequest, RunPlanRevisionRequest,
@@ -489,6 +493,214 @@ async def test_run_plan_revision_rolls_back_items_archive_and_history_together(t
         with postgres_connect(env.settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT plan_snapshots FROM {store._run_table} WHERE id=%s", (started.run.id,))
             assert len(cur.fetchone()["plan_snapshots"]) == 1
+
+
+REVISION_WRITER_CODE = r'''
+import asyncio
+import json
+import sys
+from datetime import datetime
+from src.application.test_runs.run_store import PostgresTestRunStore
+from src.core.config import get_settings
+from src.schemas.run_management import RunPlanRevisionRequest, TestRunItemRecord, TestRunRecord
+
+async def main():
+    with open(sys.argv[1], encoding="utf-8") as source:
+        payload = json.load(source)
+    store = PostgresTestRunStore(get_settings())
+    await store.revise_plan(
+        run_id=payload["run_id"],
+        request=RunPlanRevisionRequest.model_validate(payload["request"]),
+        request_sha256=payload["request_sha256"],
+        candidate_run=TestRunRecord.model_validate(payload["candidate_run"]),
+        candidate_items=[TestRunItemRecord.model_validate(item) for item in payload["candidate_items"]],
+        now=datetime.fromisoformat(payload["now"]),
+    )
+    if payload["hold_after_commit"]:
+        print("COMMITTED", flush=True)
+        sys.stdin.readline()
+
+asyncio.run(main())
+'''
+
+
+def _start_revision_writer(tmp_path, settings, payload):
+    # This existing helper's module imports test_agent_case_assessment, which
+    # imports this test module; defer it until test execution to avoid a cycle.
+    from test_execution_worker_cli import child_environment
+
+    payload_path = tmp_path / "revision-process-payload.json"
+    payload_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    return subprocess.Popen(
+        [sys.executable, "-X", "utf8", "-u", "-c", REVISION_WRITER_CODE, str(payload_path)],
+        cwd=Path(__file__).resolve().parents[1], env=child_environment(settings),
+        stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        text=True, encoding="utf-8",
+        creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0,
+    )
+
+
+async def _wait_for_blocked_revision_insert(settings, blocker_pid, revision_table, process):
+    def blocked_processes():
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT pid, query FROM pg_stat_activity WHERE datname=current_database() "
+                "AND pid <> pg_backend_pid() AND %s=ANY(pg_blocking_pids(pid)) AND state='active'",
+                (blocker_pid,))
+            return [dict(row) for row in cur.fetchall() or []]
+
+    needle = f"insert into {revision_table}".replace('"', "").lower()
+    deadline = monotonic() + 20
+    while monotonic() < deadline:
+        if process.poll() is not None:
+            raise AssertionError("revision writer exited before reaching the transaction commit boundary")
+        rows = await asyncio.to_thread(blocked_processes)
+        for row in rows:
+            if needle in str(row["query"]).replace('"', "").lower():
+                return int(row["pid"])
+        await asyncio.sleep(0.05)
+    raise AssertionError("PostgreSQL did not observe revision INSERT blocked before commit")
+
+
+async def _wait_for_postgres_backend_exit(settings, backend_pid):
+    def backend_alive():
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT 1 FROM pg_stat_activity WHERE pid=%s", (backend_pid,))
+            return cur.fetchone() is not None
+
+    deadline = monotonic() + 20
+    while monotonic() < deadline:
+        if not await asyncio.to_thread(backend_alive):
+            return
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"PostgreSQL backend {backend_pid} remained after its owning process was killed")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["before_commit", "after_commit"])
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
+    reason="requires isolated real PostgreSQL/MySQL/RustFS and an owned subprocess")
+async def test_run_plan_revision_process_loss_is_atomic_and_idempotent(tmp_path, boundary):
+    async with planned(tmp_path, True) as (env, store, suites, creator, plan, _, _):
+        started = await creator.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key=f"revision-process-{boundary}", mode_key="api_testing"))
+        candidate = await make_revision_candidate(env, plan.project_id)
+        run = (await store.get_run(started.run.id)).run
+        candidate_plan = await env.store.get(plan.project_id, candidate.id)
+        assert candidate_plan is not None
+        request = RunPlanRevisionRequest(expected_revision=0,
+            idempotency_key=f"process-loss-{boundary}", plan_id=candidate.id,
+            reason="验证计划修订提交边界的进程恢复")
+        now = datetime.now(timezone.utc)
+        _, candidate_run, candidate_items = build_plan_run(
+            candidate_plan,
+            CasePlanRunRequest(creation_key=run.creation_key, mode_key=run.mode_key, session_id=run.session_id),
+            now=now, created_by=run.created_by, regression=run.plan_snapshot.regression,
+            dependency_mapping_version=run.plan_snapshot.dependency_mapping_version,
+        )
+        request_sha256 = json_digest({
+            "run_id": started.run.id,
+            "expected_revision": request.expected_revision,
+            "candidate_plan_id": candidate_plan.id,
+            "candidate_plan_sha256": json_digest(case_plan_json(candidate_plan)),
+            "reason": request.reason,
+        })
+        payload = {
+            "run_id": started.run.id,
+            "request": request.model_dump(mode="json"),
+            "request_sha256": request_sha256,
+            "candidate_run": candidate_run.model_dump(mode="json"),
+            "candidate_items": [item.model_dump(mode="json") for item in candidate_items],
+            "now": now.isoformat(),
+            "hold_after_commit": boundary == "after_commit",
+        }
+        process = None
+        frozen_suite = await suites.get(started.run.suite_id)
+        try:
+            if boundary == "before_commit":
+                revision_table = store._plan_revision_table
+                with postgres_connect(env.settings) as blocker, blocker.cursor() as cur:
+                    cur.execute(f"LOCK TABLE {revision_table} IN SHARE MODE")
+                    cur.execute("SELECT pg_backend_pid() AS pid")
+                    blocker_pid = int(cur.fetchone()["pid"])
+                    process = _start_revision_writer(tmp_path, env.settings, payload)
+                    backend_pid = await _wait_for_blocked_revision_insert(
+                        env.settings, blocker_pid, revision_table, process)
+
+                    # The writer has updated RunItem/Run rows inside its open
+                    # transaction, but another connection must still see V0.
+                    visible = await store.get_run(started.run.id)
+                    assert visible.run.plan_revision == 0
+                    assert visible.run.plan_snapshot.plan.id == plan.id
+                    assert len(visible.items) == 4
+                    assert await store.list_plan_revisions(started.run.id) == []
+
+                    process.kill()
+                    stdout, stderr = await asyncio.to_thread(process.communicate, timeout=10)
+                    assert process.returncode != 0 and stdout == "" and stderr == "", (process.returncode, stdout, stderr)
+                    # On the Windows test host, terminating a TCP client does
+                    # not promptly wake a PostgreSQL backend blocked on a
+                    # heavyweight relation lock. Terminate the exact observed
+                    # owned backend so PostgreSQL aborts its open transaction.
+                    with postgres_connect(env.settings) as terminator, terminator.cursor() as terminate_cur:
+                        terminate_cur.execute("SELECT pg_terminate_backend(%s) AS terminated", (backend_pid,))
+                        assert terminate_cur.fetchone()["terminated"] is True
+                    await _wait_for_postgres_backend_exit(env.settings, backend_pid)
+            else:
+                process = _start_revision_writer(tmp_path, env.settings, payload)
+                marker = await asyncio.wait_for(asyncio.to_thread(process.stdout.readline), timeout=20)
+                assert marker.strip() == "COMMITTED", marker
+                committed = await store.get_run(started.run.id)
+                assert committed.run.plan_revision == 1
+                assert committed.run.plan_snapshot.plan.id == candidate.id
+                assert len(await store.list_plan_revisions(started.run.id)) == 1
+                process.kill()
+                stdout, stderr = await asyncio.to_thread(process.communicate, timeout=10)
+                assert process.returncode != 0 and stdout == "" and stderr == "", (process.returncode, stdout, stderr)
+        finally:
+            if process is not None and process.poll() is None:
+                process.kill()
+                await asyncio.to_thread(process.communicate, timeout=10)
+
+        after_loss = await store.get_run(started.run.id)
+        if boundary == "before_commit":
+            assert after_loss.run.plan_revision == 0
+            assert after_loss.run.plan_snapshot.plan.id == plan.id
+            assert len(after_loss.items) == 4
+            assert await store.list_plan_revisions(started.run.id) == []
+        else:
+            assert after_loss.run.plan_revision == 1
+            assert after_loss.run.plan_snapshot.plan.id == candidate.id
+            assert len(after_loss.items) == 5
+            assert len(await store.list_plan_revisions(started.run.id)) == 1
+        assert after_loss.attempts == [] and after_loss.results == []
+
+        # Replay through the public endpoint: pre-commit loss creates one
+        # revision; post-commit loss returns the committed one by idempotency key.
+        app = FastAPI()
+        app.state.case_plan_run_service = creator
+        app.include_router(run_router, prefix="/api/v1")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://runs") as client:
+            path = f"/api/v1/projects/{plan.project_id}/runs/{started.run.id}/plan-revisions"
+            replay = await client.post(path, json=request.model_dump(mode="json"))
+            assert replay.status_code == 200, replay.text
+            assert replay.json()["revision"] == 1
+            assert replay.json()["idempotency_key"] == request.idempotency_key
+            history = await client.get(path)
+            assert history.status_code == 200 and len(history.json()) == 1
+
+        final = await store.get_run(started.run.id)
+        assert final.run.plan_revision == 1 and len(final.items) == 5
+        assert len({item.id for item in final.items}) == 5
+        assert len(final.attempts) == len(final.results) == 0
+        assert await suites.get(started.run.suite_id) == frozen_suite
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT plan_snapshots FROM {store._run_table} WHERE id=%s", (started.run.id,))
+            assert len(cur.fetchone()["plan_snapshots"]) == 2
+            cur.execute(f"SELECT count(*) AS count FROM {store._item_table} WHERE run_id=%s", (started.run.id,))
+            assert cur.fetchone()["count"] == 5
+            cur.execute(f"SELECT count(*) AS count FROM {store._plan_revision_table} WHERE run_id=%s",
+                (started.run.id,))
+            assert cur.fetchone()["count"] == 1
 
 
 async def wait_for_postgres_advisory_blocker(settings, waiting_pid, blocking_pid):

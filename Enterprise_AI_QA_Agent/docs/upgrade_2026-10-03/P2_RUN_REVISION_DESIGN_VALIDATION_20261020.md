@@ -76,7 +76,7 @@
 ### 仍未完成或未验收
 
 - Agent 尚未在执行中自主识别新缺口、生成候选 CasePlan 并调用修订 API；默认 Step 模型尚未通过实际推理，因此默认模型“项目内选取→排序→补全→执行”仍未验收。
-- 尚无真实进程在 revision 事务提交前/后被终止的专项验收；上述 Redis 验收用受控执行回执，不覆盖 Agent 工具副作用恢复。
+- 写入本节时尚无 revision 事务提交前/后的进程故障专项；后续新增结果见文末“事务进程故障与幂等恢复复核”。上述 Redis 验收仍使用受控执行回执，不覆盖 Agent 工具副作用恢复。
 - 人工修订入口及历史/条目变化展示已有实现；真实浏览器到生产 API 用户路径仍未验收，Agent 自动候选规划与修订也尚未实现。
 - 本轮验证保留 8 个受门控跳过项；它们不计入通过。完整 P0—P5、历史数据投影核对及两份旧 Worker 汇总原件恢复仍未完成。
 
@@ -87,3 +87,26 @@
 Run 详情现提供人工候选计划修订和追加历史面板，并复用现有 CasePlanDialog 生成、审阅候选而不另启动 Run。实现依据是上方已验收的 POST/GET 契约与 `CasePlanRunService.revise` 的项目、运行状态、已保存 CasePlan、revision CAS 和幂等限制。页面展示条目变化；结果不明时重用原幂等键；接收成功后重新查询 Run。`RunPlanRevisionPanel.test.ts`、`CasePlanDialog.test.ts` 与 API 测试联合 **94 passed**，production build 通过。组件/API 使用 mock，因此没有证明生产 API 的浏览器端到端连接；这不替代 revision 进程中断恢复或默认 Step 自动规划验收。
 
 Agent 仍未在运行图自主发现缺口、生成候选 CasePlan 并调用修订 API；人工页面可打开现有 CasePlanDialog 生成、审阅并选择同项目候选，也允许输入已保存计划编号。Step 账号认证按用户确认为通过，但最新隔离的默认调用仍返回 HTTP 400，脱敏 provider 消息为 `you have no active step plan subscription`。当前推理授权问题使默认模型闭环处于未验收状态，不构成切换所有模型协议的理由。
+
+## 事务进程故障与幂等恢复复核（2026-10-20）
+
+源码链路 `CasePlanRunService.revise → PostgresTestRunStore.revise_plan → _revise_plan_sync` 确认 RunItem 行、Run 计划快照与快照归档、统计刷新和 revision history 写入共用同一 PostgreSQL 事务。已有 `test_killing_revision_process_releases_resource_without_partial_attempt` 只覆盖 advisory lock 进程持有者退出；已有回滚测试通过注入 Python 异常验证 rollback。两者均不能单独证明进程失联时 writer 事务的提交前/后语义。
+
+新增 `tests/test_case_plan_run_creation.py::test_run_plan_revision_process_loss_is_atomic_and_idempotent`，针对两处边界运行真实 `PostgresTestRunStore` writer 子进程并使用真实 PG 表：
+
+1. **提交前：** 对本测试独占的 revision history 表加 SHARE lock，确认 writer 已将 RunItem 与 Run 投影写入未提交事务，并实际阻塞在最后的 history `INSERT`。第二连接仍只能读取 revision 0、旧计划和原条目；终止 writer 后，精确终止仍被锁等待的 PostgreSQL backend 以确定事务中止。相同幂等请求随后经 Run 修订 ASGI 路由提交 revision 1，最终只有一份历史、一份新条目和新增的一份快照。
+2. **提交后、回执前：** writer 子进程收到生产存储事务已返回的状态，输出 `COMMITTED` 标记后暂停；测试在返回修订结果前杀掉子进程。读回已提交 revision，再经相同 ASGI 路由重放同一幂等键，只返回原 revision，不增加 RunItem、revision history 或快照。
+
+Windows 测试宿主上，单独结束 TCP 客户端并不会立即唤醒正等待 heavyweight relation lock 的 PostgreSQL backend。因此测试基于 `pg_stat_activity` 和 `pg_blocking_pids` 先确定具体 SQL 与自有 backend PID，结束客户端后显式终止这个隔离后端，再检查事务回滚。这项事实已纳入测试设计，不把客户端进程退出误当作数据库事务已回滚。该验证覆盖实际存储 writer 和 ASGI 路由重放；不等同于终止并重启完整生产 Uvicorn API/Worker，也不覆盖浏览器连接实际服务。
+
+验收命令与结果：
+
+```powershell
+$env:RUN_LIVE_PLAN_RUN_CREATION = '1'
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+uv run --locked python -m pytest tests/test_case_plan_run_creation.py -q --tb=short
+```
+
+整模块 **47 passed、0 skipped，73.25 秒**。两个进程边界场景单独运行 **2 passed，18.42 秒**；真实事务内异常回滚测试 **1 passed，7.00 秒**。本项不调用 Step 或业务 HTTP，不创建 Attempt/Result，不改生产代码、模型配置、数据库 schema 或 Provider 协议。模型配置仍在 MySQL，Run、快照和 revision history 仍在 PostgreSQL。
+
+**当前结论：** Run revision 后端/API、人工评审页面和 PG revision writer 提交前/后中断后的幂等恢复已有实现与专项证据。生产 Uvicorn API 进程杀停/重启、浏览器到真实 API 的端到端验收、Agent 自动发现缺口并创建/提交候选计划仍未完成。Step 账号认证按用户确认为通过；最近推理请求的 400 属于 `subscription_or_plan_entitlement`，P2 默认 AI 多候选规划与 Run 执行仍不可验收。
