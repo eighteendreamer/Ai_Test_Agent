@@ -1,6 +1,6 @@
 # P2 正式 Run 计划修订边界与验收设计
 
-日期：2026-10-20。此文档是实现前的源码核对结果，不代表正式 Run 已支持计划修订。
+日期：2026-10-20。本文前半部分记录实现前的源码核对与方案，历史判断予以保留；正式 Run 当前状态和后续验收以文末“实现后的验收与状态”为准。
 
 ## 源码确认
 
@@ -52,3 +52,38 @@
 功能验收：修复后的取消竞争测试 **1 passed，6.61 秒**。最终运行 `test_run_plan_projection_lock.py`、`test_run_revision_coordination_research.py`、`test_run_item_dependencies.py`、`test_test_run_duration_transitions.py`、`test_cancelled_run_missing_approval_recovery.py`，结果 **37 passed、8 skipped，27.42 秒**。开启的是 `RUN_LIVE_RUN_DEPENDENCIES=1`；8 个跳过项明确要求另设 `RUN_LIVE_POSTGRES_TESTS=1`。这验证了当前锁入口、候选协调实验及所选取消/依赖/恢复路径，不等于正式 Run 修订 API、revision history、增删条目、Redis defer/reclaim 或默认 Step 自主修订已实现/通过。
 
 本次只修正 Run 取消加入现有共享投影锁；未创建 migration、未增 revision API/历史表、未修改模型配置，也没有改写用户 Run 数据。完整修订语义仍须按本设计的功能验收逐项实现。
+
+## 实现后的验收与状态（2026-10-20）
+
+本节覆盖上方“尚无 revision table/API”的实现前状态，保留前文作为设计决策和调研记录。
+
+### 已实现
+
+- `CasePlanRunService.revise` 读取同项目已保存的新 CasePlan，复用既有冻结用例校验和 `build_plan_run`；不创建或覆盖首次 Suite，不在数据库锁内调用模型。
+- Run 增加 `plan_revision`，请求包含 `expected_revision`、`idempotency_key`、候选 `plan_id` 和原因。共享纯逻辑把候选计划映射回既有 RunItem；新增项用确定身份加入当前 Run，符合条件的移除项转为取消历史，已领取/有 Attempt/已有结果的项不被重置。
+- PostgreSQL 增加从 Run 表名派生的 revision 历史表；应用启动时初始化。排他计划投影 advisory lock、Run/RunItem 行锁、revision CAS、快照归档、RunItem 投影、统计刷新和历史记录写入在同一事务中完成。相同幂等请求返回原修订；同 key 异请求、过期 revision 被拒绝。内存 Store 复用同一合并逻辑。
+- 提供 Run 计划修订 POST 与历史 GET；前端已增加契约类型/API 方法，并在本次实现后增加人工评审页面；Agent 自动修订与真实浏览器到生产 API 联调仍未验收。
+- 首轮真实 PostgreSQL 测试暴露位置投影缺陷：修订过程虽更新 JSON 记录，却未更新 RunItem 表的独立 `position` 列；详情聚合和 Worker claim 都按该列排序。修复 `_write_item` 将 position 与 record 同步写入。该缺陷在修复前由真实 PG 测试复现，修复后以详情顺序、列/JSON 一致性和实际 claim 顺序验证。
+
+### 实际验证
+
+在 `Agent_Server` 目录启用 `RUN_LIVE_PLAN_RUN_CREATION=1`、`RUN_LIVE_RUN_DEPENDENCIES=1`，运行计划创建/修订、RunItem 依赖、计划投影锁、候选修订协调、耗时状态、取消恢复及场景工具合同七个测试文件：**84 passed、8 skipped，61.95 秒**。该组合使用隔离 PostgreSQL/MySQL/RustFS 夹具和本地 `SequenceModel`；不调用默认 Step。新增 position 验收在修复前为 **1 failed（真实 PostgreSQL）、1 passed（内存）**，修复后为 **2 passed**。修订 API 前端单测 **1 passed**；`npm run build` 的 Vue 类型检查与 Vite 生产构建成功。
+
+再启用 `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_POSTGRES_TESTS=1`，运行 `test_revised_run_item_is_consumed_after_real_redis_defer_and_xautoclaim`：**1 passed、44 deselected，11.35 秒**。测试在随机 Redis stream/group 与隔离 PostgreSQL/MySQL/RustFS 中，经真实 PostgreSQL Outbox relay 发布首次 Run dispatch；生产 Dispatcher/Worker 因在途前置产生 defer，再由另一个 Worker 实际 `XAUTOCLAIM` 接管消息，领取、执行新加入的 RunItem 后再次 defer；释放前置后第三个 Worker 再次 `XAUTOCLAIM`，完成剩余 RunItem 并 ACK。用受控 RunItem 回执执行器，不调用默认 AI 或真实业务 HTTP；因此证明的是 Outbox/Redis/Persistent Run 调度续接，不是 Agent 工具执行质量。
+
+随后对 `tests/test_case_plan_run_creation.py` 整个模块开启 `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_POSTGRES_TESTS=1`：**45 passed、0 skipped，29.88 秒**。覆盖完整创建/修订模块的内存及实际隔离数据库路径，含上面的 Redis续接场景；这不是默认模型或真实业务工具测试。
+
+### 仍未完成或未验收
+
+- Agent 尚未在执行中自主识别新缺口、生成候选 CasePlan 并调用修订 API；默认 Step 模型尚未通过实际推理，因此默认模型“项目内选取→排序→补全→执行”仍未验收。
+- 尚无真实进程在 revision 事务提交前/后被终止的专项验收；上述 Redis 验收用受控执行回执，不覆盖 Agent 工具副作用恢复。
+- 人工修订入口及历史/条目变化展示已有实现；真实浏览器到生产 API 用户路径仍未验收，Agent 自动候选规划与修订也尚未实现。
+- 本轮验证保留 8 个受门控跳过项；它们不计入通过。完整 P0—P5、历史数据投影核对及两份旧 Worker 汇总原件恢复仍未完成。
+
+模型配置仍在 MySQL，Run、RunItem、快照与 revision 历史在 PostgreSQL；未变更 Provider 协议或模型适配层。Step 认证已确认，但现有默认配置近期实测仍因 Step Plan 模型目录/推理额度问题返回供应商错误，不能把认证通过写成默认 AI 验收通过。
+
+## 人工修订页面复核（2026-10-20）
+
+Run 详情现提供人工候选计划修订和追加历史面板，并复用现有 CasePlanDialog 生成、审阅候选而不另启动 Run。实现依据是上方已验收的 POST/GET 契约与 `CasePlanRunService.revise` 的项目、运行状态、已保存 CasePlan、revision CAS 和幂等限制。页面展示条目变化；结果不明时重用原幂等键；接收成功后重新查询 Run。`RunPlanRevisionPanel.test.ts`、`CasePlanDialog.test.ts` 与 API 测试联合 **94 passed**，production build 通过。组件/API 使用 mock，因此没有证明生产 API 的浏览器端到端连接；这不替代 revision 进程中断恢复或默认 Step 自动规划验收。
+
+Agent 仍未在运行图自主发现缺口、生成候选 CasePlan 并调用修订 API；人工页面可打开现有 CasePlanDialog 生成、审阅并选择同项目候选，也允许输入已保存计划编号。Step 账号认证按用户确认为通过，但最新隔离的默认调用仍返回 HTTP 400，脱敏 provider 消息为 `you have no active step plan subscription`。当前推理授权问题使默认模型闭环处于未验收状态，不构成切换所有模型协议的理由。

@@ -4701,3 +4701,25 @@ pytest tests/test_run_plan_projection_lock.py \
 ```
 
 8个跳过项明确要求另设 `RUN_LIVE_POSTGRES_TESTS=1`。该结果证明所选真实领取/候选协调/取消/依赖/恢复行为通过；**完整计划修订 API、revision history、条目增删、Redis defer/reclaim 和默认 Step 自主修订仍未实现/验收**。此次仍未修改 MySQL 模型配置、既有用户 Run 数据或模型协议。详细边界与证据见 [P2 Run 修订设计复核](P2_RUN_REVISION_DESIGN_VALIDATION_20261020.md#取消协调边界的真实复核与修正)。
+
+### 7.129 P2 执行中 Run 计划修订后端/API 与 PostgreSQL 顺序缺陷修复（2026-10-20）
+
+实现前先依据 §7.127/§7.128 和 `P2_RUN_REVISION_DESIGN_VALIDATION_20261020.md` 核对 CasePlan、Run、RunItem、SuiteItem、Attempt 快照、PostgreSQL advisory lock 与 Worker claim 路径；并按本地《Agent 轨迹与协议鲁棒性》关于重复执行、幂等、半成功及恢复轨迹的要求验收。方案限定为：复用现有 CasePlan 规划/校验，更新当前 Run 的可执行投影，不覆盖初始 Suite，不改模型协议或 MySQL 模型配置。
+
+新增 `plan_revision` 合并逻辑、内存/PG Store、PG revision 历史、预期 revision 与幂等键校验，以及项目级 POST 修订和 GET 历史 API。Run 快照以原有 SHA archive 方式保留；成功写入在同一 PostgreSQL 事务中完成，修订用现有计划投影排他 advisory lock，与 claim/cancel 共享锁协调。未领取且从未尝试的 queued 项可按候选重映射；新增目标成为新 RunItem；可安全移除项成为 cancelled 历史。已领取/有 Attempt/结果的项不重置。Suite 保持初始冻结内容。前端仅补 API 类型及调用方法，没有修订界面。
+
+新功能验收发现一个 PostgreSQL 独有的根因缺陷：`_revise_plan_sync` 先将 position 列移到负值以避免唯一约束冲突，但 `_write_item` 只更新 JSON `record`，遗漏独立的数据库 position 列。故详情查询和 claim 仍按旧列排序。先加内存/真实 PG 测试，修复前结果 **1 failed（PG）、1 passed（内存）**；将 `_write_item` 改为同时写入 `position` 后，详情顺序、列与 JSON 一致性及真实 claim 顺序 **2 passed**。
+
+最终所选后端回归：`RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_RUN_DEPENDENCIES=1`，运行计划创建/修订、RunItem 依赖、投影锁、候选修订协调、运行耗时、取消恢复和场景工具合同七个测试文件，**84 passed、8 skipped，61.95秒**。其中隔离 PostgreSQL 验收覆盖新增/取消、旧 Attempt 快照与检查点、并发幂等重放、claim/cancel 锁竞争、事务失败回滚及修订后实际 claim；测试使用本地受控模型，不调用 Step。前端修订 API 测试 **1 passed**；`npm run build`（`vue-tsc` + Vite）成功。
+
+再以 `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_POSTGRES_TESTS=1` 对整个 `tests/test_case_plan_run_creation.py` 实测：**45 passed、0 skipped，29.88秒**。其中真实 Outbox/Redis/生产 Dispatcher/Worker 的 defer→`XAUTOCLAIM` 场景验证新增 RunItem 在同一 Run 后续被领取一次、前置完成后终态并 ACK；业务执行器是受控回执，不代表 Agent 工具或默认模型验收。
+
+**当前边界：** Run 修订后端和 REST/API 契约已实现并通过受控真实存储验收；新增 RunItem 也已通过真实 Outbox→Redis→Dispatcher/Worker defer→`XAUTOCLAIM` 实际消费测试（受控执行器，不代表 Agent 工具验收）。尚无 revision 事务提交前/后真实进程终止恢复验收。Agent 还没有自主生成候选计划并提交修订，前端尚无修订/历史页面。默认 Step 已认证，但现有 `step-5-preview`/Step Plan 组合目录或额度近期仍导致实际推理失败，P2 默认“项目选取→排序→补全→Run 执行”仍未闭环。8 个门控跳过不计为通过，完整 P0—P5 继续进行中。详见 [实现后修订边界与验收](P2_RUN_REVISION_DESIGN_VALIDATION_20261020.md#实现后的验收与状态2026-10-20)。
+
+### 7.130 Run 计划修订的人工评审页面与 Step 认证后状态复核（2026-10-20）
+
+先按真实契约核对 `CasePlanRunService.revise`、`RunPlanRevisionRequest`、项目级 POST/历史 GET、`CasePlanDialog` 和 `ProjectsView` Run 详情：修订只允许当前项目的进行中原生 Agent Run；候选必须是已保存的同项目 CasePlan；需要 `expected_revision`、幂等键及原因；已领取/执行条目不可重置。于是新增 Run 详情修订面板，支持从现有 `CasePlanDialog` 生成并审阅候选（仅选择为候选，不会另启动 Run），也可粘贴已有计划编号；选择后核对项目身份。面板读取追加历史、展示每条新增/更新/取消记录；冲突版本禁用提交，结果不明时浏览器保存原请求并以同一幂等键重试或从历史核对。成功后重新读取正式 Run 详情与项目运行列表。此页面是人工审查/提交入口，没有接入 Agent 自主产生候选或调用修订 API，也不绕过现有项目计划生成和评审。
+
+功能验证：`RunPlanRevisionPanel.test.ts`、`CasePlanDialog.test.ts` 和 `projects.plan-revisions.api.test.ts` 联合回归 **94 passed**，覆盖历史与条目变化、修订 CAS/资格、幂等重试、同项目候选选择、跨项目候选拒绝，以及候选模式不启动新 Run；`npm run build` 的 Vue 类型检查和 Vite 生产构建成功。既有后端 45 项隔离 MySQL/PostgreSQL/Redis/RustFS Run 创建/修订验收仍作为后端证据，不视为本轮 UI 对生产 API 的端到端验收。配置仍在 MySQL，Run/修订仍在 PostgreSQL。
+
+Step 认证状态按用户确认记为通过；最新 MySQL 默认配置只读调用仍得到 Step provider HTTP 400，脱敏诊断正文为 `you have no active step plan subscription`，一次 SDK HTTP attempt、无模型响应。它说明当前 Step 推理订阅/计划授权尚未可用，不能归因 Anthropic/Responses 协议或通过改写适配层解决，也没有再次对相同输入重发。P2 默认 AI 的完整“项目选取→排序→补全→执行”继续是尚未验收，而非已通过。人工 Run 修订入口已实现；Agent 自动修订、revision 提交前/后进程恢复和生产页面/API 联调仍待做。完整 P0—P5 仍未完成。

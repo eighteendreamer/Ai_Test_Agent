@@ -4,9 +4,11 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
-from src.application.test_runs.plan_mapping import build_plan_run, plan_run_identity, validate_frozen_cases, regression_source_for_plan
+from src.application.test_runs.plan_mapping import (build_plan_run, json_digest, plan_run_identity,
+    validate_frozen_cases, regression_source_for_plan)
 from src.core.request_context import get_request_context, new_id
-from src.schemas.case_planning import CasePlanRunRequest, RegressionPlanSource
+from src.schemas.case_planning import CasePlanRunRequest, RegressionPlanSource, case_plan_json
+from src.schemas.run_management import RunPlanRevisionRequest, TestRunPlanRevisionRecord
 from src.schemas.run_dispatch import RunDispatchTask
 
 logger = logging.getLogger(__name__)
@@ -76,3 +78,54 @@ class CasePlanRunService:
         logger.info("case_plan_run_created", extra={"project_id": project_id, "plan_id": plan_id,
             "run_id": stored.run.id, "item_count": len(stored.items), "dispatch_recorded": bool(self._stream)})
         return stored
+
+    async def revise(self, project_id: str, run_id: str,
+                     request: RunPlanRevisionRequest) -> TestRunPlanRevisionRecord:
+        detail = await self._runs.get_run(run_id)
+        if detail is None:
+            raise KeyError("测试运行不存在")
+        run = detail.run
+        if run.project_id != project_id:
+            raise KeyError("测试运行不属于当前项目")
+        if (run.origin != "native" or run.execution_strategy != "agent"
+            or run.plan_snapshot is None or run.creation_key is None):
+            raise ValueError("只有基于固定用例计划创建的原生 Agent 运行可以修订")
+        await self._projects.require_active(project_id)
+        plan = await self._plans.get(project_id, request.plan_id)
+        if plan is None:
+            raise KeyError("当前项目没有该候选用例计划")
+        formal = [node for node in (plan.decision.items if plan.decision else []) if node.kind != "prepare"]
+        cases = await self._cases.get_cases([node.case_id for node in formal])
+        versions = await self._cases.get_versions([node.case_version_id for node in formal])
+        validate_frozen_cases(plan, cases, versions)
+        run_request = CasePlanRunRequest(creation_key=run.creation_key, mode_key=run.mode_key,
+            session_id=run.session_id)
+        now = datetime.now(timezone.utc)
+        _candidate_suite, candidate_run, candidate_items = build_plan_run(
+            plan, run_request, now=now, created_by=run.created_by,
+            regression=run.plan_snapshot.regression,
+            dependency_mapping_version=run.plan_snapshot.dependency_mapping_version,
+        )
+        # Suite identity is only needed by the shared plan-to-Run mapper. The
+        # original frozen Suite is deliberately not rewritten by a Run revision.
+        request_hash = json_digest({
+            "run_id": run_id,
+            "expected_revision": request.expected_revision,
+            "candidate_plan_id": plan.id,
+            "candidate_plan_sha256": json_digest(case_plan_json(plan)),
+            "reason": request.reason,
+        })
+        record = await self._runs.revise_plan(run_id=run_id, request=request,
+            request_sha256=request_hash, candidate_run=candidate_run,
+            candidate_items=candidate_items, now=now)
+        logger.info("case_plan_run_revision_submitted", extra={"project_id": project_id,
+            "run_id": run_id, "plan_id": plan.id, "revision": record.revision,
+            "added_item_count": len(record.added_item_ids),
+            "cancelled_item_count": len(record.cancelled_item_ids)})
+        return record
+
+    async def list_revisions(self, project_id: str, run_id: str) -> list[TestRunPlanRevisionRecord]:
+        detail = await self._runs.get_run(run_id)
+        if detail is None or detail.run.project_id != project_id:
+            raise KeyError("测试运行不存在或不属于当前项目")
+        return await self._runs.list_plan_revisions(run_id)

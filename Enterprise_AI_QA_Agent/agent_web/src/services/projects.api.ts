@@ -31,6 +31,8 @@ import type {
   TestSuitePage,
   TestSuiteBundle,
   TestRunDetail,
+  RunPlanRevisionRequest,
+  TestRunPlanRevisionRecord,
   TestRunPage,
   TestRunStatus,
   TestCaseResultRecord,
@@ -341,6 +343,24 @@ export function listTestRuns(
 
 export function getTestRun(runId: string): Promise<TestRunDetail> {
   return request(`/api/v1/runs/${encodeURIComponent(runId)}`);
+}
+
+export function reviseTestRunPlan(
+  projectId: string,
+  runId: string,
+  payload: RunPlanRevisionRequest,
+): Promise<TestRunPlanRevisionRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/plan-revisions`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
+}
+
+export function listTestRunPlanRevisions(
+  projectId: string,
+  runId: string,
+): Promise<TestRunPlanRevisionRecord[]> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/plan-revisions`);
 }
 
 export function cancelTestRun(runId: string, reason = "Cancelled by operator"): Promise<TestRunDetail> {

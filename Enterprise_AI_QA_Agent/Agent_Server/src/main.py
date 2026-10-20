@@ -556,6 +556,7 @@ async def _initialize_lifespan_resources(
     # Tool consumption references run items; create their schema after cases
     # and suites, before tool admission and the run service's recovery work.
     await test_run_store.initialize()
+    await test_run_store.initialize_plan_revision_storage()
     logger.info("lifespan_run_schema_initialized")
     await tool_job_service.initialize()
     logger.info("lifespan_tool_jobs_initialized")

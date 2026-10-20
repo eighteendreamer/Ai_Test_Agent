@@ -5765,3 +5765,47 @@ P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、�
 **当前状态：** Semantic intent 至 Agent turn 的 turn/trace 关联、每次 logical call 隔离、响应到 tool-call ID 的关联和本地 SDK/HTTP 发送已验证。默认 Step 未走到工具阶段；持久业务入口全覆盖、真实 post-tool 推理、更多供应商故障/进程恢复与远端服务接收证据仍未完成。P1普通文档默认模型全量生成、P2多候选完整 Run、API测试更广Agent场景、安全默认Agent、人工DeepSeek录制和生产历史迁移/旧Worker原件等未闭环范围保持原计划。完整 P0—P5 目标仍未完成。
 
 审批恢复补充：普通工具审批恢复与 Deep Agent HITL 审批恢复重建 `ExecutionRequest` 时，现从保存的 graph state 带回同一个 `trace_id`。这修补请求字段与实际恢复状态之间的身份缺口；没有改变审批决策、工具执行或 provider 协议。新增两个不依赖外部模型的恢复路径单测，和既有安全审批回归一起 **3 passed**；Deep Agent 端到端参数化测试因可选 `deepagents` 依赖未安装而 **4 skipped**。P0 十文件回归现为 **156 passed、47 skipped，26.42秒**；skipped 项未计为通过。
+
+## 2026-10-20 P2 执行中 Run 计划修订后端与实测缺陷修复
+
+### 实现
+
+Run 新增 `plan_revision`，并新增 `RunPlanRevisionRequest`/`TestRunPlanRevisionRecord`。`CasePlanRunService.revise` 只接受当前项目已保存的候选 CasePlan；使用既有冻结用例校验与 Run 构造映射，不重新创建 Suite，也不在 PostgreSQL 事务里请求模型。共享 `build_run_plan_revision` 将同一用例版本映射到已有 RunItem、为新候选创建稳定身份、将可安全移出的 queued 项标为 cancelled 历史项，并保留有 Attempt/领取/结果的现有项。迁移完成后 PostgreSQL revision 表由运行表名派生，在应用启动时增量初始化；revision 记录、快照归档、RunItem 投影和统计刷新在一个事务中提交。Run 修订持有现有计划投影排他 advisory lock，claim 与 cancel 使用共享锁。相同 key/请求重放返回既有 revision；不同 hash、陈旧 revision 和项目范围错误均拒绝。
+
+增加 `POST /api/v1/projects/{project_id}/runs/{run_id}/plan-revisions`、历史查询 `GET`，并同步前端 TypeScript 契约及 API client。尚未制作用户页面，也未把 Agent 发现缺口→生成候选 CasePlan→提交 revision 接入运行图。
+
+### 根因复现与修复
+
+真实 PostgreSQL 功能测试证明 `_revise_plan_sync` 移动 position 列以避开 `(run_id, position)` 唯一约束冲突后，公共 `_write_item` 更新了 JSON record 却遗漏关系列 `position`。Run 详情和 claim 查询按关系列排序，因此数据库执行次序与候选计划不一致。新增行为测试在修复前得到 **PG 1 failed、内存 1 passed**。修复 `_write_item` 同步写入关系列和 JSON 后，真实 PG 测试核对详情顺序、关系列/JSON 一致性以及实际 claim 次序，结果 **2 passed**。
+
+### 功能验证
+
+| 验证 | 实际结果 |
+|---|---|
+| `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_RUN_DEPENDENCIES=1`；计划创建/修订、RunItem 依赖、计划投影锁、协调、耗时转换、取消恢复和场景工具合同七个测试文件 | **84 passed、8 skipped，61.95秒**。使用隔离 PostgreSQL/MySQL/RustFS 测试夹具和本地 `SequenceModel`；无真实 Step 调用。跳过项由测试自己的门控产生，未计为通过。 |
+| 修订后顺序回归（内存 + 真实 PG） | 修复前 **1 failed / 1 passed**；修复后 **2 passed**。 |
+| 真实 Outbox→Redis→Dispatcher/Worker defer/`XAUTOCLAIM` 新 RunItem 延续 | **1 passed、44 deselected，11.35秒**。随机 stream/group、隔离 PG/MySQL/RustFS；不同 Worker 消费者实际接管同一挂起消息，新加入条目只执行一次，前置完成后 Run 终态并 ACK。执行器为受控回执，不调用默认 AI 或业务 HTTP。 |
+| 整个 `tests/test_case_plan_run_creation.py`，启用 `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_POSTGRES_TESTS=1` | **45 passed、0 skipped，29.88秒**。覆盖该模块完整创建/修订、隔离 PG/MySQL/RustFS 和真实 Redis 测试路径。 |
+| `npm run test -- src/services/projects.plan-revisions.api.test.ts` | **1 passed**。 |
+| `npm run build` | Vue 类型检查和 Vite 生产构建成功。 |
+
+### 尚欠验收
+
+没有 revision 事务提交前/后的真实进程终止恢复测试；目前没有 Agent 自动规划修订闭环，也没有前端页面连接生产 API 的 E2E 验收。默认 Step 凭据认证成功，但当前 Step Plan 模型目录/额度的推理错误仍阻止真实默认 AI 多用例规划和执行；认证成功不能计为模型运行验收。P0—P5 其他未闭环范围不变。
+
+配置继续留在 MySQL；Run、RunItem、Attempt、快照与修订历史在 PostgreSQL；未变更模型 Provider 协议和配置。P2 的设计过程、测试门控及其余未验收边界见 [P2 Run 修订调研与验收](P2_RUN_REVISION_DESIGN_VALIDATION_20261020.md)。
+
+## 2026-10-20 Run 计划修订人工评审页面
+
+按后端真实约束复核后，在项目 Run 详情中增加计划修订面板：用户可在面板中打开现有 `CasePlanDialog` 生成并审阅候选计划，候选模式只允许选用计划，不启动新 Run；也可粘贴已保存计划编号。面板验证候选项目身份，提交原因与当前 revision，读取追加历史并显示新增/更新/取消的 RunItem；过期 revision 禁止提交；网络结果不明时保留请求并复用幂等键，或先通过历史确认结果。成功后刷新正式 Run 详情。页面没有接入 Agent 自动候选生成，也没有绕过既有 CasePlan 生成/评审流程。
+
+`npm test -- src/features/projects/RunPlanRevisionPanel.test.ts src/features/projects/CasePlanDialog.test.ts src/services/projects.plan-revisions.api.test.ts`：**94 passed**。覆盖正常提交、未知结果幂等重试、历史识别已提交请求、过期修订冲突、无资格运行、历史条目展示、同项目候选计划选择、跨项目拒绝，以及候选模式不启动新 Run。`npm run build`：Vue 类型检查及 Vite 生产构建成功。后端真实 PG/Redis 修订功能测试仍见上文 **45 passed、0 skipped**；本轮前端组件/API 测试使用隔离 mock，没有伪称为生产 UI/API E2E。
+
+### 状态区分
+
+- **已有实现：** Run 修订后端/API、前端修订与历史页面、MySQL 配置和 PostgreSQL 运行事实分离、provider-specific 模型适配器及原生协议。
+- **尚未验收：** 本轮页面连接真实运行服务的用户路径、revision 提交前/后进程中断、Agent 自动发现缺口并生成/提交候选；默认 Step 完整项目选取到 Run 执行。
+- **Step 当前情况：** 用户确认账号认证已完成；最新默认配置请求实测仍返回 HTTP 400，脱敏 provider 消息为 `you have no active step plan subscription`，因此这是订阅/推理授权状态，不是认证没做或协议统一问题。
+- **仍需补实现：** Agent 运行图接入候选计划生成、审查与 `reviseTestRunPlan` 提交，并保留人工评审和后端幂等、revision CAS 约束。
+
+以上只更新 P2 Run 修订的当前边界，不代表完整 P0—P5 完成。

@@ -35,17 +35,30 @@ def postgres_index_name(table: str, suffix: str) -> str:
     return _preparer.quote(f"idx_{postgres_relation_parts(table)[-1]}_{suffix}")
 
 
-def derived_tool_table(jobs: str, suffix: str) -> str:
-    parts = postgres_relation_parts(jobs)
-    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", jobs):
+def _derived_table_name(source_relation: str, suffix: str) -> str:
+    parts = postgres_relation_parts(source_relation)
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", source_relation):
         # Preserve the exact original names, including hashes of uppercase
         # configuration spellings. Existing immutable evidence must stay found.
-        table = jobs[:25] + f"_{suffix}_" + hashlib.sha256(jobs.encode()).hexdigest()[:16]
+        table = source_relation[:25] + f"_{suffix}_" + hashlib.sha256(source_relation.encode()).hexdigest()[:16]
     else:
         canonical = postgres_relation_sql(parts)
         prefix = re.sub(r"[^a-z0-9_]", "_", parts[-1].lower())[:25]
         name = prefix + f"_{suffix}_" + hashlib.sha256(canonical.encode()).hexdigest()[:16]
         table = postgres_relation_sql((*parts[:-1], name))
+    return table
+
+
+def derived_postgres_table(source_relation: str, suffix: str) -> str:
+    """Return a stable, schema-aware relation name derived from another relation."""
+    table = _derived_table_name(source_relation, suffix)
+    logger.debug("postgres_derived_table_resolved", extra={"source_relation": source_relation,
+        "derived_relation": table, "table_role": suffix})
+    return table
+
+
+def derived_tool_table(jobs: str, suffix: str) -> str:
+    table = _derived_table_name(jobs, suffix)
     logger.debug("postgres_tool_evidence_table_resolved", extra={"source_table": jobs,
         "derived_table": table, "table_role": suffix})
     return table

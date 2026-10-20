@@ -6,8 +6,8 @@ import type { CasePlanItem, CasePlanRecord, CasePlanRunRequest, CasePlanningConf
 import JsonContentTree from "./JsonContentTree.vue";
 import CasePlanningTaskPanel from "./CasePlanningTaskPanel.vue";
 
-const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[]; initialTaskId?: string; regression?: RegressionPlanningSelection }>(), { modes: () => [] });
-const emit = defineEmits<{ close: []; started: [detail: TestRunDetail] }>();
+const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[]; initialTaskId?: string; regression?: RegressionPlanningSelection; candidateOnly?: boolean }>(), { modes: () => [], candidateOnly: false });
+const emit = defineEmits<{ close: []; started: [detail: TestRunDetail]; candidate: [plan: CasePlanRecord] }>();
 const objective = ref("");
 const runtimeJson = ref("{}");
 const config = ref<CasePlanningConfig | null>(null);
@@ -488,7 +488,7 @@ onMounted(loadPolicy);
       <template v-if="plan">
         <h3>{{ statusLabels[plan.status] }}</h3><p>{{ plan.summary }}</p>
         <p v-if="plan.regression">回归来源：{{ plan.regression.parent_run_id }} · {{ Object.keys(plan.regression.source_results_by_case).length }} 条固定失败项。新运行结果关联原失败，准备成功不计为目标通过。</p>
-        <section v-if="canLaunch" class="launch-controls" aria-label="启动已保存计划">
+        <section v-if="canLaunch && !candidateOnly" class="launch-controls" aria-label="启动已保存计划">
           <p>启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。</p>
           <label>执行测试模式<select v-model="modeKey" :disabled="busy || !!pendingRequest || !!plan.regression">
             <option v-if="(pendingRequest || plan.regression) && !testModes.some(mode => mode.key === modeKey)" :value="modeKey">{{ modeKey }}（已保存的选项）</option>
@@ -499,6 +499,11 @@ onMounted(loadPolicy);
           <p v-if="storageWarning" role="status">{{ storageWarning }}</p>
           <template v-if="knownRunId"><p>已保存运行：{{ knownRunId }}</p><button :disabled="busy" @click="viewRun">查看运行</button><button :disabled="busy" @click="newRun">另建一次运行</button></template>
           <button v-else :disabled="busy || (!pendingRequest && !modeKey)" @click="launch">{{ pendingRequest ? '重试启动请求' : '启动测试运行' }}</button>
+        </section>
+        <section v-if="canLaunch && candidateOnly" class="launch-controls" aria-label="选择 Run 修订候选计划">
+          <p>候选计划已固定到项目和用例版本。请检查上方执行项、依赖和缺口，再选择是否用于当前 Run 修订。</p>
+          <p>候选计划编号：{{ plan.id }}</p>
+          <button type="button" :disabled="busy" @click="emit('candidate', plan!)">将此计划用于当前 Run 修订</button>
         </section>
         <ul v-if="plan.warnings.length"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
         <details v-if="operationSelections.length"><summary>逻辑阶段选定的工具接口</summary><JsonContentTree :value="operationSelections" /></details>

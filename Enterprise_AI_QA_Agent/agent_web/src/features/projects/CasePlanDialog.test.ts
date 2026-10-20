@@ -20,7 +20,7 @@ function plan(status = "planned") {
 const modes: ModeDescriptor[] = ["api_testing", "code_review", "default"].map(key => ({ key, name: key,
   summary: "", description: "", category: "test", is_test_mode: key !== "default", case_driven_policy: key === "code_review" ? "exempt" : "required",
   default_agent_key: "", allowed_agent_keys: [], default_skill_keys: [], registered_tool_keys: [], harness_key: "", placeholder: false, tags: [] }));
-function setup(projectId = "project") { return mount(CasePlanDialog, { props: { projectId, candidateCaseIds: ["case"], modes } }); }
+function setup(projectId = "project", candidateOnly = false) { return mount(CasePlanDialog, { props: { projectId, candidateCaseIds: ["case"], modes, candidateOnly } }); }
 function button(wrapper: ReturnType<typeof setup>, text: string) { return wrapper.findAll("button").find(b => b.text() === text)!; }
 async function generate(wrapper: ReturnType<typeof setup>) {
   await flushPromises(); await wrapper.findAll("textarea")[0].setValue("验证");
@@ -91,6 +91,20 @@ describe("case planning", () => {
       objective: "验证订单详情", candidate_case_ids: [], runtime_context: {},
     }));
     wrapper.unmount();
+  });
+
+  it("lets the operator review and select a candidate plan without launching another Run", async () => {
+    const wrapper = setup("project", true);
+    await generate(wrapper);
+
+    expect(wrapper.text()).toContain("候选计划编号：plan");
+    expect(wrapper.text()).toContain("完整固定用例");
+    expect(wrapper.text()).not.toContain("启动测试运行");
+    await button(wrapper, "将此计划用于当前 Run 修订").trigger("click");
+    await flushPromises();
+
+    expect(wrapper.emitted("candidate")?.[0]?.[0]).toMatchObject({ id: "plan", project_id: "project" });
+    expect(api.launchCasePlan).not.toHaveBeenCalled();
   });
 
   it("rejects an array as run input and shows request errors", async () => {

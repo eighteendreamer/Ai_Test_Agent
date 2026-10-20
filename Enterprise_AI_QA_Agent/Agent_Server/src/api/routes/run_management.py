@@ -22,10 +22,12 @@ from src.schemas.run_management import (
     RunItemHeartbeatRequest,
     RunItemCheckpointRequest,
     RunItemLeaseRequest,
+    RunPlanRevisionRequest,
     TestCaseResultRecord,
     TestRunCreateRequest,
     TestRunDetail,
     TestRunItemRecord,
+    TestRunPlanRevisionRecord,
     TestRunAttemptRecord,
     TestRunPage,
     TestRunStatus,
@@ -164,6 +166,31 @@ async def get_test_run(run_id: str, request: Request):
     try:
         return await request.app.state.test_run_service.get(run_id)
     except KeyError as exc:
+        raise _http_error(exc) from exc
+
+
+@router.post("/projects/{project_id}/runs/{run_id}/plan-revisions",
+             response_model=TestRunPlanRevisionRecord)
+async def revise_test_run_plan(project_id: str, run_id: str,
+                               payload: RunPlanRevisionRequest, request: Request):
+    service = getattr(request.app.state, "case_plan_run_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="用例计划修订服务未启用")
+    try:
+        return await service.revise(project_id, run_id, payload)
+    except (KeyError, ValueError, RuntimeError) as exc:
+        raise _http_error(exc) from exc
+
+
+@router.get("/projects/{project_id}/runs/{run_id}/plan-revisions",
+            response_model=list[TestRunPlanRevisionRecord])
+async def list_test_run_plan_revisions(project_id: str, run_id: str, request: Request):
+    service = getattr(request.app.state, "case_plan_run_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="用例计划修订服务未启用")
+    try:
+        return await service.list_revisions(project_id, run_id)
+    except (KeyError, ValueError, RuntimeError) as exc:
         raise _http_error(exc) from exc
 
 

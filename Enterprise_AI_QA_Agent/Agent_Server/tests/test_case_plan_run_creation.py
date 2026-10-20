@@ -4,6 +4,8 @@ import asyncio
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
+from threading import Event, Lock
+from time import monotonic
 from uuid import uuid4
 from types import SimpleNamespace
 
@@ -13,19 +15,26 @@ from fastapi import FastAPI
 
 from test_case_planning import SequenceModel, finish, item
 from test_run_item_dependencies import setup, finish as complete
+from src.application.orchestration.redis_execution_dispatcher import RedisExecutionDispatcher
 from src.application.test_runs.plan_mapping import build_plan_run
 from src.application.test_runs.plan_run_service import CasePlanRunService
 from src.application.test_suites.suite_store import InMemoryTestSuiteStore, PostgresTestSuiteStore
+from src.core.config import get_settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.runtime.redis_task_worker import RedisTaskWorker
 from src.schemas.case_planning import CasePlanningRequest, CasePlanRunRequest
 from src.schemas.case_management import TestCaseVersionCreateRequest as VersionRequest
 from src.application.test_runs.run_service import TestRunService as RunService
-from src.schemas.run_management import RegressionRunCreateRequest
+from src.schemas.run_management import (RegressionRunCreateRequest, RunPlanRevisionRequest,
+    RunItemCompleteRequest, RunItemLeaseRequest)
 from src.application.test_runs.agent_regression_service import AgentRegressionService
 from src.application.test_runs.agent_case_context import build_agent_case_context
 from src.api.routes.case_plans import router as plan_router
+from src.api.routes.run_management import router as run_router
 from src.registry.modes import ModeRegistry
+from tests.live_postgres_config import LivePostgresTestConfig
 
 
 LIVE = pytest.param(True, marks=pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
@@ -227,6 +236,7 @@ async def planned(tmp_path, live=False):
         assert plan.status == "planned", plan.summary
         suite_store = PostgresTestSuiteStore(env.settings) if live else InMemoryTestSuiteStore()
         table = None
+        revision_table = None
         if live:
             table = "up_pr_ob_" + uuid4().hex[:12]
             env.settings.database.postgres_task_outbox_table = table
@@ -234,15 +244,363 @@ async def planned(tmp_path, live=False):
                 cur.execute("SELECT to_regclass(%s) AS existing", (table,))
                 assert cur.fetchone()["existing"] is None
             await PostgresTaskOutbox(env.settings).initialize()
+            await store.initialize_plan_revision_storage()
+            revision_table = store._plan_revision_table
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute("SELECT to_regclass(%s) AS existing", (revision_table,))
+                assert cur.fetchone()["existing"] is not None
         service = CasePlanRunService(run_store=store, suite_store=suite_store, plan_store=env.store,
             case_service=env.cases, project_service=env.projects,
             outbox_table=table, dispatch_stream="isolated:plan-runs" if table else None)
         try:
             yield env, store, suite_store, service, plan, now, table
         finally:
-            if table:
+            if table or revision_table:
                 with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-                    cur.execute(f'DROP TABLE "{table}"')
+                    if revision_table:
+                        cur.execute(f"DROP TABLE {revision_table}")
+                    if table:
+                        cur.execute(f'DROP TABLE "{table}"')
+
+
+async def make_revision_candidate(env, project_id):
+    def revised_candidate(context):
+        return finish(
+            item(context, "item-0", key="create", kind="dependency"),
+            item(context, "item-1", key="left", depends_on=["create"]),
+            item(context, "item-3", key="independent"),
+            item(context, "item-4", key="extra"),
+        )
+
+    env.service._models = SequenceModel(revised_candidate)
+    return await env.service.create(project_id,
+        CasePlanningRequest(objective="补入必要独立检查并移除过时目标"))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_run_plan_revision_rebases_unclaimed_items_and_preserves_attempts(tmp_path, live):
+    async with planned(tmp_path, live) as (env, store, suites, creator, plan, now, _):
+        started = await creator.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="revision-execution", mode_key="api_testing"))
+        claims = await store.claim_items(run_id=started.run.id, worker_id="before-revision",
+            limit=2, lease_seconds=60, now=now)
+        claimed_by_key = {item.plan_item_key: (item, attempt) for item, attempt in claims}
+        assert set(claimed_by_key) == {"create", "independent"}
+        create_item, create_attempt = claimed_by_key["create"]
+        await store.start_item(create_item.id, create_attempt.lease_token, now)
+        await store.save_checkpoint(create_item.id, create_attempt.lease_token, "before-plan-revision",
+            {"progress": "already-started"}, 1, now)
+
+        candidate = await make_revision_candidate(env, plan.project_id)
+        assert candidate.status == "planned", candidate.summary
+        payload = RunPlanRevisionRequest(expected_revision=0, idempotency_key="revise-001",
+            plan_id=candidate.id, reason="根据本轮目标调整未领取项")
+        frozen_suite = await suites.get(started.run.suite_id)
+        revision = await creator.revise(plan.project_id, started.run.id, payload)
+        detail = await store.get_run(started.run.id)
+        assert detail.run.plan_revision == revision.revision == 1
+        assert detail.run.plan_snapshot.plan.id == candidate.id
+        assert revision.added_item_ids and len(revision.added_item_ids) == 1
+        old_right = next(entry for entry in detail.items if entry.plan_item_key == "right")
+        assert old_right.status == "cancelled" and old_right.result_id is None
+        assert detail.run.stats.total == 5 and detail.run.stats.cancelled == 1
+        assert {node.key for node in detail.run.plan_snapshot.plan.decision.items
+            if node.kind != "prepare"} == {"create", "left", "independent", "extra"}
+        assert await suites.get(started.run.suite_id) == frozen_suite
+
+        latest_attempt = await store.get_latest_attempt(create_item.id)
+        assert latest_attempt.checkpoint_payload == {"progress": "already-started"}
+        fixed = await store.get_execution_detail(started.run.id, create_item.id, create_attempt.id)
+        assert fixed.run.plan_snapshot.plan.id == plan.id
+        version = await env.cases.get_version(create_item.case_version_id)
+        assert build_agent_case_context(fixed, create_item, version).plan_id == plan.id
+
+        next_claims = await store.claim_items(run_id=started.run.id, worker_id="after-revision",
+            limit=10, lease_seconds=60, now=now)
+        assert [entry.plan_item_key for entry, _ in next_claims] == ["extra"]
+        replays = await asyncio.gather(*[
+            creator.revise(plan.project_id, started.run.id, payload) for _ in range(2)
+        ])
+        assert replays == [revision, revision]
+        assert await store.list_plan_revisions(started.run.id) == [revision]
+        with pytest.raises(ValueError, match="幂等键"):
+            await creator.revise(plan.project_id, started.run.id,
+                payload.model_copy(update={"reason": "不同的修订请求"}))
+        with pytest.raises(ValueError, match="版本已变化"):
+            await creator.revise(plan.project_id, started.run.id,
+                payload.model_copy(update={"expected_revision": 0, "idempotency_key": "revise-stale"}))
+
+        app = FastAPI()
+        app.state.case_plan_run_service = creator
+        app.include_router(run_router, prefix="/api/v1")
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://runs") as client:
+            history = await client.get(f"/api/v1/projects/{plan.project_id}/runs/{started.run.id}/plan-revisions")
+            assert history.status_code == 200 and history.json()[0]["revision"] == 1
+            replay = await client.post(f"/api/v1/projects/{plan.project_id}/runs/{started.run.id}/plan-revisions",
+                json=payload.model_dump(mode="json"))
+            assert replay.status_code == 200 and replay.json()["revision"] == 1
+            foreign = await client.get(f"/api/v1/projects/{uuid4()}/runs/{started.run.id}/plan-revisions")
+            assert foreign.status_code == 404
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("live", [False, LIVE])
+async def test_plan_revision_persists_queue_order_for_run_detail_and_claim(tmp_path, live):
+    async with planned(tmp_path, live) as (env, store, _, creator, plan, now, _):
+        started = await creator.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="revision-queue-order", mode_key="api_testing"))
+        candidate = await make_revision_candidate(env, plan.project_id)
+        _, _, candidate_items = build_plan_run(candidate,
+            CasePlanRunRequest(creation_key=started.run.creation_key, mode_key=started.run.mode_key,
+                session_id=started.run.session_id), now=now, created_by=started.run.created_by,
+            regression=started.run.plan_snapshot.regression,
+            dependency_mapping_version=started.run.plan_snapshot.dependency_mapping_version)
+        revision = await creator.revise(plan.project_id, started.run.id,
+            RunPlanRevisionRequest(expected_revision=0, idempotency_key="queue-order-revision",
+                plan_id=candidate.id, reason="确保持久队列顺序与候选计划一致"))
+        assert revision.revision == 1
+
+        detail = await store.get_run(started.run.id)
+        if live:
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT count(*) AS mismatches FROM {store._item_table} "
+                    "WHERE run_id=%s AND position <> (record->>'position')::integer", (started.run.id,))
+                assert cur.fetchone()["mismatches"] == 0
+        assert [item.plan_item_key for item in detail.items] == [
+            item.plan_item_key for item in candidate_items
+        ] + ["right"]
+        claimed = await store.claim_items(run_id=started.run.id, worker_id="after-order-revision",
+            limit=10, lease_seconds=60, now=now)
+        assert [item.plan_item_key for item, _ in claimed] == [
+            item.plan_item_key for item in candidate_items if not item.dependencies
+        ]
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1"
+    or not LivePostgresTestConfig().run_live_postgres_tests,
+    reason="requires isolated real PostgreSQL/MySQL/RustFS and Redis")
+async def test_revised_run_item_is_consumed_after_real_redis_defer_and_xautoclaim(tmp_path):
+    async with planned(tmp_path, True) as (env, store, suites, creator, plan, now, _):
+        suffix = uuid4().hex
+        stream = f"qa:test:plan-revision:{suffix}"
+        queue = RedisTaskQueue(get_settings().database.redis_url, stream=stream,
+            group=f"plan-revision-{suffix}")
+        try:
+            await queue.connect()
+            creator._stream = stream
+            runs = RunService(store=store, project_service=env.projects, suite_service=suites,
+                test_case_service=env.cases)
+            started = await creator.create(plan.project_id, plan.id,
+                CasePlanRunRequest(creation_key="revision-redis-continuation", mode_key="api_testing"))
+            [(blocked_item, blocked_attempt)] = await store.claim_items(run_id=started.run.id,
+                worker_id="held-prerequisite", limit=1, lease_seconds=600, now=now)
+            assert blocked_item.plan_item_key == "create"
+
+            class ControlledExecution:
+                def __init__(self):
+                    self.item_ids = []
+
+                async def execute_item(self, run_item_id, request):
+                    await runs.start_item(run_item_id,
+                        RunItemLeaseRequest(lease_token=request.lease_token))
+                    await runs.complete_item(run_item_id, RunItemCompleteRequest(
+                        lease_token=request.lease_token, status="passed",
+                        summary="受控 Worker 完成 RunItem", actual={"worker_result": "passed"}))
+                    self.item_ids.append(run_item_id)
+
+            execution = ControlledExecution()
+            dispatcher = RedisExecutionDispatcher(queue=queue, test_run_service=runs,
+                execution_service=execution)
+            outbox = PostgresTaskOutbox(env.settings)
+            assert await outbox.relay_once(queue) == 1
+
+            async def handle(task, *, worker_id):
+                await dispatcher.handle(task, worker_id=worker_id)
+
+            first_worker = RedisTaskWorker(queue, consumer="run-worker-first", handler=lambda task:
+                handle(task, worker_id="run-worker-first"), block_ms=0, reclaim_idle_ms=50,
+                retry_base_ms=25, retry_max_ms=100)
+            assert await first_worker.run_once() == 0
+            pending = await queue.pending()
+            assert len(pending) == 1 and pending[0]["consumer"] == "run-worker-first"
+            assert len(execution.item_ids) == 1
+
+            candidate = await make_revision_candidate(env, plan.project_id)
+            revision = await creator.revise(plan.project_id, started.run.id,
+                RunPlanRevisionRequest(expected_revision=0, idempotency_key="redis-revision-1",
+                    plan_id=candidate.id, reason="验证新 RunItem 可由原派发继续执行"))
+            extra_id = revision.added_item_ids[0]
+            await asyncio.sleep(0.09)
+            second_worker = RedisTaskWorker(queue, consumer="run-worker-after-revision", handler=lambda task:
+                handle(task, worker_id="run-worker-after-revision"), block_ms=0, reclaim_idle_ms=50,
+                retry_base_ms=25, retry_max_ms=100)
+            assert await second_worker.run_once() == 0
+            pending = await queue.pending()
+            assert len(pending) == 1 and pending[0]["consumer"] == "run-worker-after-revision"
+            assert execution.item_ids.count(extra_id) == 1
+
+            await runs.start_item(blocked_item.id,
+                RunItemLeaseRequest(lease_token=blocked_attempt.lease_token))
+            await runs.complete_item(blocked_item.id, RunItemCompleteRequest(
+                lease_token=blocked_attempt.lease_token, status="passed",
+                summary="解除受控前置", actual={"worker_result": "passed"}))
+            await asyncio.sleep(0.09)
+            final_worker = RedisTaskWorker(queue, consumer="run-worker-final", handler=lambda task:
+                handle(task, worker_id="run-worker-final"), block_ms=0, reclaim_idle_ms=50,
+                retry_base_ms=25, retry_max_ms=100)
+            assert await final_worker.run_once() == 1
+            assert not await queue.pending()
+
+            final = await store.get_run(started.run.id)
+            assert final.run.status == "completed"
+            assert final.run.stats.passed == 4 and final.run.stats.cancelled == 1
+            assert len(execution.item_ids) == 3 and execution.item_ids.count(extra_id) == 1
+            assert len(final.results) == 4
+        finally:
+            await queue._client.delete(stream, f"{stream}:dead_letter")
+            await queue.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
+    reason="requires isolated real PostgreSQL/MySQL/RustFS")
+async def test_run_plan_revision_rolls_back_items_archive_and_history_together(tmp_path, monkeypatch):
+    async with planned(tmp_path, True) as (env, store, _, creator, plan, now, _):
+        started = await creator.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="revision-rollback", mode_key="api_testing"))
+        candidate = await make_revision_candidate(env, plan.project_id)
+        before = await store.get_run(started.run.id)
+        payload = RunPlanRevisionRequest(expected_revision=0, idempotency_key="rollback-revision",
+            plan_id=candidate.id, reason="原子回滚测试")
+        original_write_run = store._write_run
+
+        def fail_after_item_projection(cur, run):
+            raise RuntimeError("controlled failure after RunItem writes")
+
+        monkeypatch.setattr(store, "_write_run", fail_after_item_projection)
+        with pytest.raises(RuntimeError, match="controlled failure"):
+            await creator.revise(plan.project_id, started.run.id, payload)
+        monkeypatch.setattr(store, "_write_run", original_write_run)
+        after = await store.get_run(started.run.id)
+        assert after == before
+        assert await store.list_plan_revisions(started.run.id) == []
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT plan_snapshots FROM {store._run_table} WHERE id=%s", (started.run.id,))
+            assert len(cur.fetchone()["plan_snapshots"]) == 1
+
+
+async def wait_for_postgres_advisory_blocker(settings, waiting_pid, blocking_pid):
+    deadline = monotonic() + 10
+    while monotonic() < deadline:
+        def observe():
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute("SELECT pg_blocking_pids(pid) AS blockers, wait_event "
+                    "FROM pg_stat_activity WHERE pid=%s", (waiting_pid,))
+                return cur.fetchone()
+        state = await asyncio.to_thread(observe)
+        if state and blocking_pid in state["blockers"] and state["wait_event"] == "advisory":
+            return
+        await asyncio.sleep(0.02)
+    raise AssertionError(f"PostgreSQL did not observe pid {waiting_pid} blocked by {blocking_pid}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
+    reason="requires isolated real PostgreSQL/MySQL/RustFS")
+async def test_real_revision_lock_serializes_claim_against_new_projection(tmp_path, monkeypatch):
+    async with planned(tmp_path, True) as (env, store, _, creator, plan, now, _):
+        started = await creator.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="revision-claim-race", mode_key="api_testing"))
+        candidate = await make_revision_candidate(env, plan.project_id)
+        payload = RunPlanRevisionRequest(expected_revision=0, idempotency_key="claim-race-revision",
+            plan_id=candidate.id, reason="固定锁顺序验收")
+        revision_locked, release_revision, claim_started = Event(), Event(), Event()
+        actor_lock, actor_pids = Lock(), {}
+        original_lock = store._lock_plan_projection
+
+        def observed_lock(cur, run_id, *, exclusive=False):
+            cur.execute("SELECT pg_backend_pid() AS pid")
+            pid = int(cur.fetchone()["pid"])
+            actor = "revision" if exclusive else "claim"
+            with actor_lock:
+                actor_pids[actor] = pid
+            if exclusive:
+                original_lock(cur, run_id, exclusive=True)
+                revision_locked.set()
+                if not release_revision.wait(10):
+                    raise TimeoutError("revision lock test was not released")
+            else:
+                claim_started.set()
+                original_lock(cur, run_id, exclusive=False)
+
+        monkeypatch.setattr(store, "_lock_plan_projection", observed_lock)
+        revision_task = asyncio.create_task(creator.revise(plan.project_id, started.run.id, payload))
+        claim_task = None
+        try:
+            assert await asyncio.to_thread(revision_locked.wait, 10)
+            claim_task = asyncio.create_task(store.claim_items(run_id=started.run.id,
+                worker_id="after-revision", limit=10, lease_seconds=60, now=now))
+            assert await asyncio.to_thread(claim_started.wait, 10)
+            await wait_for_postgres_advisory_blocker(env.settings,
+                actor_pids["claim"], actor_pids["revision"])
+        finally:
+            release_revision.set()
+        revision = await revision_task
+        claimed = await claim_task if claim_task else []
+        assert revision.revision == 1
+        assert {item.plan_item_key for item, _ in claimed} == {"create", "independent", "extra"}
+        assert next(item for item in (await store.get_run(started.run.id)).items
+            if item.plan_item_key == "left").status == "queued"
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_PLAN_RUN_CREATION") != "1",
+    reason="requires isolated real PostgreSQL/MySQL/RustFS")
+async def test_real_revision_lock_serializes_run_cancellation(tmp_path, monkeypatch):
+    async with planned(tmp_path, True) as (env, store, _, creator, plan, now, _):
+        started = await creator.create(plan.project_id, plan.id,
+            CasePlanRunRequest(creation_key="revision-cancel-race", mode_key="api_testing"))
+        candidate = await make_revision_candidate(env, plan.project_id)
+        payload = RunPlanRevisionRequest(expected_revision=0, idempotency_key="cancel-race-revision",
+            plan_id=candidate.id, reason="取消协调验收")
+        revision_locked, release_revision, cancel_started = Event(), Event(), Event()
+        actor_lock, actor_pids = Lock(), {}
+        original_lock = store._lock_plan_projection
+
+        def observed_lock(cur, run_id, *, exclusive=False):
+            cur.execute("SELECT pg_backend_pid() AS pid")
+            pid = int(cur.fetchone()["pid"])
+            actor = "revision" if exclusive else "cancel"
+            with actor_lock:
+                actor_pids[actor] = pid
+            if exclusive:
+                original_lock(cur, run_id, exclusive=True)
+                revision_locked.set()
+                if not release_revision.wait(10):
+                    raise TimeoutError("revision lock test was not released")
+            else:
+                cancel_started.set()
+                original_lock(cur, run_id, exclusive=False)
+
+        monkeypatch.setattr(store, "_lock_plan_projection", observed_lock)
+        revision_task = asyncio.create_task(creator.revise(plan.project_id, started.run.id, payload))
+        cancel_task = None
+        try:
+            assert await asyncio.to_thread(revision_locked.wait, 10)
+            cancel_task = asyncio.create_task(store.cancel_run(started.run.id, "controlled race", now))
+            assert await asyncio.to_thread(cancel_started.wait, 10)
+            await wait_for_postgres_advisory_blocker(env.settings,
+                actor_pids["cancel"], actor_pids["revision"])
+        finally:
+            release_revision.set()
+        revision = await revision_task
+        cancelled = await cancel_task if cancel_task else None
+        assert revision.revision == 1
+        assert cancelled is not None and cancelled.run.status == "cancelled"
+        assert cancelled.run.plan_revision == 1
+        assert all(item.status == "cancelled" for item in cancelled.items)
 
 
 @pytest.mark.asyncio

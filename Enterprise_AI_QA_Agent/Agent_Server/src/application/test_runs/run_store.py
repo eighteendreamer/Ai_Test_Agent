@@ -19,8 +19,10 @@ from src.application.test_runs.plan_snapshot_identity import (claim_plan_snapsho
     validate_claimed_plan_snapshot, initial_plan_snapshots, run_with_claimed_snapshot, execution_attempt,
     ResultExecutionContext, result_execution_contexts,
     validate_supplied_snapshot)
+from src.application.test_runs.plan_revision import build_run_plan_revision
 from src.application.test_runs.plan_revision_lock import lock_plan_projection
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import derived_postgres_table
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
 from src.schemas.suite_management import TestSuiteBundle
@@ -32,10 +34,12 @@ from src.schemas.run_management import (
     RegressionFailureStatus,
     RegressionSourceRecord,
     RunItemCompletion,
+    RunPlanRevisionRequest,
     TestCaseResultRecord,
     TestRunAttemptRecord,
     TestRunDetail,
     TestRunItemRecord,
+    TestRunPlanRevisionRecord,
     TestRunRecord,
     TestRunStats,
     TestRunStatus,
@@ -56,6 +60,7 @@ ACTIVE_ITEM_STATUSES = {"claimed", "running"}
 
 class TestRunStore(Protocol):
     async def initialize(self) -> None: ...
+    async def initialize_plan_revision_storage(self) -> None: ...
     async def project_execution_counts(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]: ...
     async def create_run(
         self,
@@ -76,6 +81,10 @@ class TestRunStore(Protocol):
         payload: dict[str, object],
     ) -> TestRunDetail: ...
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
+    async def revise_plan(self, *, run_id: str, request: RunPlanRevisionRequest,
+        request_sha256: str, candidate_run: TestRunRecord, candidate_items: list[TestRunItemRecord],
+        now: datetime) -> TestRunPlanRevisionRecord: ...
+    async def list_plan_revisions(self, run_id: str) -> list[TestRunPlanRevisionRecord]: ...
     async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
         *, supplied_run: TestRunRecord | None = None) -> TestRunDetail: ...
     async def get_result_execution_detail(self, run_id: str, result_id: str) -> TestRunDetail: ...
@@ -213,9 +222,13 @@ class InMemoryTestRunStore:
         self._attempt_ids_by_run: dict[str, list[str]] = {}
         self._results: dict[str, TestCaseResultRecord] = {}
         self._result_ids_by_run: dict[str, list[str]] = {}
+        self._plan_revisions_by_run: dict[str, list[TestRunPlanRevisionRecord]] = {}
         self._lock = asyncio.Lock()
 
     async def initialize(self) -> None:
+        return None
+
+    async def initialize_plan_revision_storage(self) -> None:
         return None
 
     async def project_execution_counts(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]:
@@ -247,6 +260,7 @@ class InMemoryTestRunStore:
             self._item_ids_by_run[run.id] = [item.id for item in stored_items]
             self._attempt_ids_by_run[run.id] = []
             self._result_ids_by_run[run.id] = []
+            self._plan_revisions_by_run[run.id] = []
             for item in stored_items:
                 self._items[item.id] = item
             self._refresh_run(run.id, run.created_at)
@@ -290,6 +304,7 @@ class InMemoryTestRunStore:
             self._plan_snapshots[run.id] = initial_plan_snapshots(run)
             self._item_ids_by_run[run.id] = [i.id for i in items]
             self._attempt_ids_by_run[run.id], self._result_ids_by_run[run.id] = [], []
+            self._plan_revisions_by_run[run.id] = []
             self._items.update({i.id: i.model_copy(deep=True) for i in items})
             return self._detail(run.id)
 
@@ -312,6 +327,53 @@ class InMemoryTestRunStore:
         if run_id not in self._runs:
             return None
         return self._detail(run_id)
+
+    async def revise_plan(self, *, run_id: str, request: RunPlanRevisionRequest,
+        request_sha256: str, candidate_run: TestRunRecord, candidate_items: list[TestRunItemRecord],
+        now: datetime) -> TestRunPlanRevisionRecord:
+        async with self._lock:
+            current_run = self._runs.get(run_id)
+            if current_run is None:
+                raise KeyError(f"Test run not found: {run_id}")
+            history = self._plan_revisions_by_run.setdefault(run_id, [])
+            existing = next((record for record in history if record.idempotency_key == request.idempotency_key), None)
+            if existing is not None:
+                if existing.request_sha256 != request_sha256:
+                    raise ValueError("相同计划修订幂等键已用于不同请求")
+                return existing.model_copy(deep=True)
+            prior_ids = set(self._item_ids_by_run.get(run_id, []))
+            current_items = [self._items[item_id] for item_id in self._item_ids_by_run.get(run_id, [])]
+            attempted_ids = {attempt.run_item_id for attempt in self._attempts.values() if attempt.run_id == run_id}
+            updated_run, updated_items, revision = build_run_plan_revision(
+                current_run=current_run,
+                current_items=current_items,
+                attempted_item_ids=attempted_ids,
+                candidate_run=candidate_run,
+                candidate_items=candidate_items,
+                request=request,
+                request_sha256=request_sha256,
+                now=now,
+            )
+            updated_ids = [item.id for item in updated_items]
+            if len(updated_ids) != len(set(updated_ids)) or not prior_ids.issubset(set(updated_ids)):
+                raise RuntimeError("计划修订意外丢失或重复了历史 RunItem")
+            self._runs[run_id] = updated_run
+            self._item_ids_by_run[run_id] = updated_ids
+            self._items.update({item.id: item for item in updated_items})
+            self._plan_snapshots.setdefault(run_id, {}).update(initial_plan_snapshots(updated_run))
+            self._refresh_run(run_id, now)
+            history.append(revision)
+            logger.info("test_run_plan_revision_committed", extra={"run_id": run_id,
+                "revision": revision.revision, "added_item_count": len(revision.added_item_ids),
+                "updated_item_count": len(revision.updated_item_ids),
+                "cancelled_item_count": len(revision.cancelled_item_ids)})
+            return revision.model_copy(deep=True)
+
+    async def list_plan_revisions(self, run_id: str) -> list[TestRunPlanRevisionRecord]:
+        async with self._lock:
+            if run_id not in self._runs:
+                raise KeyError(f"Test run not found: {run_id}")
+            return [record.model_copy(deep=True) for record in self._plan_revisions_by_run.get(run_id, [])]
 
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         run = self._runs.get(run_id)
@@ -1407,8 +1469,28 @@ class PostgresTestRunStore:
     def _result_table(self) -> str:
         return self._settings.database.postgres_test_case_result_table
 
+    @property
+    def _plan_revision_table(self) -> str:
+        return derived_postgres_table(self._run_table, "planrev")
+
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
+
+    async def initialize_plan_revision_storage(self) -> None:
+        await asyncio.to_thread(self._initialize_plan_revision_storage_sync)
+
+    def _initialize_plan_revision_storage_sync(self) -> None:
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"""CREATE TABLE IF NOT EXISTS {self._plan_revision_table} (
+                run_id UUID NOT NULL REFERENCES {self._run_table}(id) ON DELETE CASCADE,
+                revision BIGINT NOT NULL CHECK (revision > 0),
+                idempotency_key TEXT NOT NULL,
+                request_sha256 TEXT NOT NULL CHECK (request_sha256 ~ '^[0-9a-f]{{64}}$'),
+                created_at TIMESTAMPTZ NOT NULL,
+                record JSONB NOT NULL,
+                PRIMARY KEY (run_id, revision),
+                UNIQUE (run_id, idempotency_key)
+            )""")
 
     async def project_execution_counts(self, project_id: str) -> tuple[TestRunStats, dict[str, int]]:
         return await asyncio.to_thread(self._project_execution_counts_sync, project_id)
@@ -1471,6 +1553,86 @@ class PostgresTestRunStore:
 
     async def get_run(self, run_id: str) -> TestRunDetail | None:
         return await asyncio.to_thread(self._get_run_sync, run_id)
+
+    async def revise_plan(self, *, run_id: str, request: RunPlanRevisionRequest,
+        request_sha256: str, candidate_run: TestRunRecord, candidate_items: list[TestRunItemRecord],
+        now: datetime) -> TestRunPlanRevisionRecord:
+        return await asyncio.to_thread(self._revise_plan_sync, run_id, request, request_sha256,
+            candidate_run, candidate_items, now)
+
+    def _revise_plan_sync(self, run_id: str, request: RunPlanRevisionRequest, request_sha256: str,
+        candidate_run: TestRunRecord, candidate_items: list[TestRunItemRecord], now: datetime
+        ) -> TestRunPlanRevisionRecord:
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            self._lock_plan_projection(cur, run_id, exclusive=True)
+            cur.execute(f"SELECT record FROM {self._plan_revision_table} "
+                "WHERE run_id=%s AND idempotency_key=%s", (run_id, request.idempotency_key))
+            prior_row = cur.fetchone()
+            if prior_row is not None:
+                prior = TestRunPlanRevisionRecord.model_validate(self._value(prior_row["record"]))
+                if prior.request_sha256 != request_sha256:
+                    raise ValueError("相同计划修订幂等键已用于不同请求")
+                return prior
+
+            cur.execute(f"SELECT record FROM {self._item_table} WHERE run_id=%s "
+                "ORDER BY position,id FOR UPDATE", (run_id,))
+            current_items = [self._item_from_value(row["record"]) for row in cur.fetchall() or []]
+            cur.execute(f"SELECT DISTINCT run_item_id FROM {self._attempt_table} WHERE run_id=%s", (run_id,))
+            attempted_ids = {str(row["run_item_id"]) for row in cur.fetchall() or []}
+            current_run = self._lock_run(cur, run_id)
+            revised_run, revised_items, revision = build_run_plan_revision(
+                current_run=current_run,
+                current_items=current_items,
+                attempted_item_ids=attempted_ids,
+                candidate_run=candidate_run,
+                candidate_items=candidate_items,
+                request=request,
+                request_sha256=request_sha256,
+                now=now,
+            )
+            prior_ids = {item.id for item in current_items}
+            revised_ids = {item.id for item in revised_items}
+            if not prior_ids.issubset(revised_ids) or len(revised_ids) != len(revised_items):
+                raise RuntimeError("计划修订意外丢失或重复了历史 RunItem")
+
+            # All positions are reassigned as one frozen projection. Move existing
+            # unique values out of the positive range before writing final values.
+            cur.execute(f"UPDATE {self._item_table} SET position=-position WHERE run_id=%s", (run_id,))
+            for item in revised_items:
+                if item.id in prior_ids:
+                    self._write_item(cur, item)
+                else:
+                    cur.execute(f"INSERT INTO {self._item_table} "
+                        "(id,run_id,case_id,case_version_id,position,status,attempt_no,lease_owner,lease_token,"
+                        "lease_expires_at,result_id,regression_source_result_id,updated_at,record) "
+                        "VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb)",
+                        (item.id, item.run_id, item.case_id, item.case_version_id, item.position, item.status,
+                         item.attempt_no, item.lease_owner, item.lease_token, item.lease_expires_at,
+                         item.result_id, item.regression_source_result_id, item.updated_at, self._json(item)))
+            self._write_run(cur, revised_run)
+            self._refresh_run_in_cursor(cur, run_id, now)
+            cur.execute(f"INSERT INTO {self._plan_revision_table} "
+                "(run_id,revision,idempotency_key,request_sha256,created_at,record) "
+                "VALUES (%s,%s,%s,%s,%s,%s::jsonb)",
+                (revision.run_id, revision.revision, revision.idempotency_key, revision.request_sha256,
+                 revision.created_at, self._json(revision)))
+            logger.info("test_run_plan_revision_committed", extra={"run_id": run_id,
+                "revision": revision.revision, "added_item_count": len(revision.added_item_ids),
+                "updated_item_count": len(revision.updated_item_ids),
+                "cancelled_item_count": len(revision.cancelled_item_ids)})
+            return revision
+
+    async def list_plan_revisions(self, run_id: str) -> list[TestRunPlanRevisionRecord]:
+        return await asyncio.to_thread(self._list_plan_revisions_sync, run_id)
+
+    def _list_plan_revisions_sync(self, run_id: str) -> list[TestRunPlanRevisionRecord]:
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT 1 FROM {self._run_table} WHERE id=%s", (run_id,))
+            if cur.fetchone() is None:
+                raise KeyError(f"Test run not found: {run_id}")
+            cur.execute(f"SELECT record FROM {self._plan_revision_table} WHERE run_id=%s ORDER BY revision", (run_id,))
+            return [TestRunPlanRevisionRecord.model_validate(self._value(row["record"]))
+                for row in cur.fetchall() or []]
 
     async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
         *, supplied_run: TestRunRecord | None = None) -> TestRunDetail:
@@ -3866,23 +4028,25 @@ class PostgresTestRunStore:
     def _write_run(self, cur, run: TestRunRecord) -> None:
         cur.execute(
             f"UPDATE {self._run_table} SET status = %s, parent_run_id = %s, "
-            "updated_at = %s, record = %s::jsonb WHERE id = %s",
+            "updated_at = %s, record = %s::jsonb, plan_snapshots = plan_snapshots || %s::jsonb WHERE id = %s",
             (
                 run.status,
                 run.parent_run_id,
                 run.updated_at,
                 self._json(run),
+                json.dumps(initial_plan_snapshots(run), ensure_ascii=False, separators=(",", ":")),
                 run.id,
             ),
         )
 
     def _write_item(self, cur, item: TestRunItemRecord) -> None:
         cur.execute(
-            f"UPDATE {self._item_table} SET status = %s, attempt_no = %s, "
+            f"UPDATE {self._item_table} SET position = %s, status = %s, attempt_no = %s, "
             "lease_owner = %s, lease_token = %s, lease_expires_at = %s, "
             "result_id = %s, regression_source_result_id = %s, updated_at = %s, "
             "record = %s::jsonb WHERE id = %s",
             (
+                item.position,
                 item.status,
                 item.attempt_no,
                 item.lease_owner,

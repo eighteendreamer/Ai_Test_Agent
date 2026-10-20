@@ -2249,6 +2249,7 @@ export interface TestRunRecord {
   run_kind: "normal" | "regression";
   mode_key: string;
   execution_strategy?: "legacy" | "agent";
+  plan_revision?: number;
   plan_snapshot?: { plan: CasePlanRecord; run_item_ids: Record<string, string>; owners: Record<string, string>; preparation_phases: Record<string, "before" | "after">;
     dependency_mapping_version?: "case-cleanup-waits-v1" | null;
     preparation_scopes?: Record<string, { source_key: string; source_owner_key: string; consumer_keys: string[]; cleanup_keys: string[] }> | null;
@@ -2291,6 +2292,36 @@ export interface TestRunItemRecord {
   started_at?: string | null;
   completed_at?: string | null;
   resource_cleanup_completed_at?: string | null;
+}
+
+export interface RunPlanRevisionRequest {
+  expected_revision: number;
+  idempotency_key: string;
+  plan_id: string;
+  reason: string;
+}
+
+export interface RunPlanRevisionItemChange {
+  change: "added" | "updated" | "cancelled";
+  run_item_id: string;
+  before?: TestRunItemRecord | null;
+  after: TestRunItemRecord;
+}
+
+export interface TestRunPlanRevisionRecord {
+  run_id: string;
+  revision: number;
+  idempotency_key: string;
+  request_sha256: string;
+  candidate_plan_id: string;
+  reason: string;
+  before_snapshot_sha256: string;
+  after_snapshot_sha256: string;
+  added_item_ids: string[];
+  updated_item_ids: string[];
+  cancelled_item_ids: string[];
+  item_changes: RunPlanRevisionItemChange[];
+  created_at: string;
 }
 
 export type ResourceQuotaType = "agent" | "browser" | "docker" | "test_account" | "environment";

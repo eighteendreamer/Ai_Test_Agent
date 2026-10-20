@@ -10,6 +10,7 @@ import TestCaseTemplateEditor from "../features/projects/TestCaseTemplateEditor.
 import TestCaseContentDialog from "../features/projects/TestCaseContentDialog.vue";
 import CaseImportDialog from "../features/projects/CaseImportDialog.vue";
 import CasePlanDialog from "../features/projects/CasePlanDialog.vue";
+import RunPlanRevisionPanel from "../features/projects/RunPlanRevisionPanel.vue";
 import { waitingReasonLabel } from "../features/projects/executionLabels";
 import { formatServerDateTime } from "../utils/datetime";
 import type {
@@ -28,6 +29,7 @@ import type {
   TestSuiteBundle,
   TestRunRecord,
   TestRunDetail,
+  TestRunPlanRevisionRecord,
   TestRunStatus,
 } from "../types";
 
@@ -690,6 +692,17 @@ async function decideRunItemApproval(item: TestRunDetail["items"][number], decis
   }
 }
 
+async function refreshRunAfterRevision(record: TestRunPlanRevisionRecord) {
+  if (!runDetail.value || runDetail.value.run.id !== record.run_id) return;
+  try {
+    runDetail.value = await api.getTestRun(record.run_id);
+    await loadTestRuns();
+    toast.success(`运行计划已修订到第 ${record.revision} 版`);
+  } catch (err) {
+    toast.error(err instanceof Error ? err.message : "修订已提交，但运行详情刷新失败");
+  }
+}
+
 async function reconcileRunResources() {
   if (!runDetail.value) return;
   try {
@@ -1276,6 +1289,12 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
         <div v-if="runDetailLoading" class="empty">正在加载运行条目…</div>
         <template v-else-if="runDetail">
           <div class="selection-summary"><strong>进度 {{ runDetail.run.stats.passed + runDetail.run.stats.failed + runDetail.run.stats.error + runDetail.run.stats.blocked + runDetail.run.stats.skipped + runDetail.run.stats.cancelled }} / {{ runDetail.run.stats.total }}</strong><small>通过 {{ runDetail.run.stats.passed }} · 失败 {{ runDetail.run.stats.failed }} · 错误 {{ runDetail.run.stats.error }} · 等待资源 {{ runDetail.run.stats.waiting_resource }} · 阻塞 {{ runDetail.run.stats.blocked }} · 取消 {{ runDetail.run.stats.cancelled }}</small></div>
+          <RunPlanRevisionPanel v-if="runDetail.run.execution_strategy === 'agent' && runDetail.run.plan_snapshot"
+            :key="`${runDetail.run.id}:${runDetail.run.plan_revision || 0}`" :project-id="runDetail.run.project_id"
+            :run-id="runDetail.run.id" :expected-revision="runDetail.run.plan_revision || 0"
+            :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes"
+            :can-revise="runDetail.run.status === 'queued' || runDetail.run.status === 'running'"
+            @revised="refreshRunAfterRevision" />
           <div class="table-wrap run-items-table">
             <table><thead><tr><th>位置</th><th>状态</th><th>租约</th><th>审批</th><th>补偿</th><th>结果</th><th>操作</th></tr></thead><tbody>
               <tr v-for="item in runDetail.items" :key="item.id">

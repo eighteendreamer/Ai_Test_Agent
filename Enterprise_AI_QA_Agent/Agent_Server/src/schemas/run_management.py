@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_serializer
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_serializer
 
 from src.schemas.case_management import TestCaseRecord, TestCaseVersionRecord
 from src.schemas.case_planning import CasePlanExecutionSnapshot
@@ -67,6 +67,7 @@ class TestRunRecord(BaseModel):
     mode_key: str
     execution_strategy: Literal["legacy", "agent"] = "legacy"
     plan_snapshot: CasePlanExecutionSnapshot | None = None
+    plan_revision: int = Field(default=0, ge=0)
     creation_key: str | None = None
     creation_hash: str | None = None
     session_id: str | None = None
@@ -134,6 +135,50 @@ class TestRunItemRecord(BaseModel):
     waiting_duration_ms: int = Field(default=0, ge=0)
     paused_duration_ms: int = Field(default=0, ge=0)
     wall_clock_duration_ms: int = Field(default=0, ge=0)
+
+
+class RunPlanRevisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_revision: int = Field(ge=0)
+    idempotency_key: str = Field(min_length=1, max_length=160)
+    plan_id: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("reason")
+    @classmethod
+    def normalize_reason(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("计划修订原因不能为空")
+        return normalized
+
+
+class RunPlanRevisionItemChange(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    change: Literal["added", "updated", "cancelled"]
+    run_item_id: str
+    before: TestRunItemRecord | None = None
+    after: TestRunItemRecord
+
+
+class TestRunPlanRevisionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    revision: int = Field(ge=1)
+    idempotency_key: str = Field(min_length=1, max_length=160)
+    request_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    candidate_plan_id: str = Field(min_length=1, max_length=160)
+    reason: str = Field(min_length=1, max_length=2000)
+    before_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    after_snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    added_item_ids: list[str] = Field(default_factory=list, max_length=200)
+    updated_item_ids: list[str] = Field(default_factory=list, max_length=200)
+    cancelled_item_ids: list[str] = Field(default_factory=list, max_length=200)
+    item_changes: list[RunPlanRevisionItemChange] = Field(default_factory=list, max_length=600)
+    created_at: datetime
 
 
 class RunPlanSnapshotIdentity(BaseModel):
