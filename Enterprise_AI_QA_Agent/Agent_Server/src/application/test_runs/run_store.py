@@ -17,6 +17,7 @@ from src.application.test_runs.environment_restrictions import restriction_revie
 from src.application.test_runs.environment_admission import create_environment_admission, fixed_environment_admission
 from src.application.test_runs.plan_snapshot_identity import (claim_plan_snapshot_identity,
     validate_claimed_plan_snapshot, initial_plan_snapshots, run_with_claimed_snapshot, execution_attempt,
+    ResultExecutionContext, result_execution_contexts,
     validate_supplied_snapshot)
 from src.application.test_runs.plan_revision_lock import lock_plan_projection
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -77,6 +78,9 @@ class TestRunStore(Protocol):
     async def get_run(self, run_id: str) -> TestRunDetail | None: ...
     async def get_execution_detail(self, run_id: str, item_id: str, attempt_id: str,
         *, supplied_run: TestRunRecord | None = None) -> TestRunDetail: ...
+    async def get_result_execution_detail(self, run_id: str, result_id: str) -> TestRunDetail: ...
+    async def get_result_execution_contexts(self, run_id: str, result_ids: list[str]
+        ) -> dict[str, ResultExecutionContext]: ...
     async def get_run_record(self, run_id: str) -> TestRunRecord | None: ...
     async def get_result(self, result_id: str) -> TestCaseResultRecord | None: ...
     async def get_item(self, item_id: str) -> TestRunItemRecord | None: ...
@@ -266,8 +270,20 @@ class InMemoryTestRunStore:
                 raise ValueError("固定套件身份已被其他记录使用")
             if run.plan_snapshot.regression:
                 source = run.plan_snapshot.regression
-                validate_regression_parent(run, self._runs.get(source.parent_run_id),
-                    {key: self._results[key] for key in source.source_results.values() if key in self._results})
+                parent = self._runs.get(source.parent_run_id)
+                source_results = {key: self._results[key] for key in source.source_results.values() if key in self._results}
+                historical_parent = None
+                if parent is not None:
+                    parent_detail = self._detail(source.parent_run_id)
+                    contexts = result_execution_contexts(parent_detail,
+                        self._plan_snapshots.get(source.parent_run_id, {}), list(source.source_results.values()))
+                    for context in contexts.values():
+                        fixed_parent = context.run
+                        if (historical_parent is not None
+                            and historical_parent.plan_snapshot != fixed_parent.plan_snapshot):
+                            raise ValueError("一个回归运行不能混合引用不同计划快照的结果")
+                        historical_parent = fixed_parent
+                validate_regression_parent(run, historical_parent or parent, source_results)
             suite_store._suites[suite.suite.id] = suite.suite.model_copy(deep=True)
             suite_store._items_by_suite[suite.suite.id] = [i.model_copy(deep=True) for i in suite.items]
             self._runs[run.id] = run.model_copy(deep=True)
@@ -310,6 +326,19 @@ class InMemoryTestRunStore:
             validate_supplied_snapshot(supplied_run, detail.run, fixed)
             detail.run = fixed
             return detail
+
+    async def get_result_execution_detail(self, run_id: str, result_id: str) -> TestRunDetail:
+        async with self._lock:
+            detail = self._detail(run_id)
+            contexts = result_execution_contexts(detail, self._plan_snapshots.get(run_id, {}), [result_id])
+            detail.run = contexts[result_id].run
+            return detail
+
+    async def get_result_execution_contexts(self, run_id: str, result_ids: list[str]
+        ) -> dict[str, ResultExecutionContext]:
+        async with self._lock:
+            detail = self._detail(run_id)
+            return result_execution_contexts(detail, self._plan_snapshots.get(run_id, {}), result_ids)
 
     def _run_for_attempt(self, run, attempt):
         identity = attempt.plan_snapshot_identity
@@ -577,6 +606,8 @@ class InMemoryTestRunStore:
                     if not failures:
                         continue
                     updated, attempt, result = blocked_dependency_records(item, failures, now)
+                    attempt = attempt.model_copy(update={"plan_snapshot_identity":
+                        claim_plan_snapshot_identity(run, source="synthetic_blocked_receipt")})
                     self._items[item_id] = updated
                     self._attempts[attempt.id] = attempt
                     self._attempt_ids_by_run[run_id].append(attempt.id)
@@ -1445,6 +1476,13 @@ class PostgresTestRunStore:
         *, supplied_run: TestRunRecord | None = None) -> TestRunDetail:
         return await asyncio.to_thread(self._get_execution_detail_sync, run_id, item_id, attempt_id, supplied_run)
 
+    async def get_result_execution_detail(self, run_id: str, result_id: str) -> TestRunDetail:
+        return await asyncio.to_thread(self._get_result_execution_detail_sync, run_id, result_id)
+
+    async def get_result_execution_contexts(self, run_id: str, result_ids: list[str]
+        ) -> dict[str, ResultExecutionContext]:
+        return await asyncio.to_thread(self._get_result_execution_contexts_sync, run_id, result_ids)
+
     async def get_run_record(self, run_id: str) -> TestRunRecord | None:
         return await asyncio.to_thread(self._get_run_record_sync, run_id)
 
@@ -1905,7 +1943,16 @@ class PostgresTestRunStore:
                 cur.execute(f"SELECT record FROM {self._result_table} WHERE id=ANY(%s::uuid[])",
                     (list(source.source_results.values()),))
                 source_results = {r.id: r for r in [self._result_from_value(row["record"]) for row in cur.fetchall()]}
-                validate_regression_parent(run, self._run_from_value(parent_row["record"]) if parent_row else None, source_results)
+                contexts = self._result_execution_contexts_in_cursor(cur, source.parent_run_id,
+                    list(source.source_results.values()))
+                historical_parent = None
+                for context in contexts.values():
+                    if historical_parent is not None and historical_parent.plan_snapshot != context.run.plan_snapshot:
+                        raise ValueError("一个回归运行不能混合引用不同计划快照的结果")
+                    historical_parent = context.run
+                if historical_parent is None and parent_row:
+                    historical_parent = self._run_from_value(parent_row["record"])
+                validate_regression_parent(run, historical_parent, source_results)
             case_ids = sorted({i.case_id for i in items})
             cur.execute(f"SELECT record FROM {self._settings.database.postgres_test_case_table} WHERE id=ANY(%s::uuid[]) ORDER BY id FOR SHARE", (case_ids,))
             cases = {c.id: c for c in [TestCaseRecord.model_validate(r["record"]) for r in cur.fetchall()]}
@@ -1920,7 +1967,7 @@ class PostgresTestRunStore:
             self._insert_run_and_items(cur, run, items)
             reviews = self._current_environment_reviews(cur, run)
             restricted = self._block_environment_items_in_cursor(cur, run, reviews, run.created_at, "create")
-            dependent = self._block_failed_dependencies_in_cursor(cur, run.id, run.created_at) if restricted else 0
+            dependent = self._block_failed_dependencies_in_cursor(cur, run, run.created_at) if restricted else 0
             if restricted or dependent:
                 self._refresh_run_in_cursor(cur, run.id, run.created_at,
                     status_deltas=[("queued", "blocked")]*(restricted+dependent))
@@ -2040,6 +2087,30 @@ class PostgresTestRunStore:
             validate_supplied_snapshot(supplied_run, detail.run, fixed)
             detail.run = fixed
             return detail
+
+    def _get_result_execution_detail_sync(self, run_id, result_id):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            detail, contexts = self._result_execution_state_in_cursor(cur, run_id, [result_id])
+            detail.run = contexts[result_id].run
+            return detail
+
+    def _get_result_execution_contexts_sync(self, run_id, result_ids):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            _, contexts = self._result_execution_state_in_cursor(cur, run_id, result_ids)
+            return contexts
+
+    def _result_execution_contexts_in_cursor(self, cur, run_id, result_ids):
+        return self._result_execution_state_in_cursor(cur, run_id, result_ids)[1]
+
+    def _result_execution_state_in_cursor(self, cur, run_id, result_ids):
+        # Hold the current projection stable while its archived snapshots are resolved.
+        cur.execute(f"SELECT plan_snapshots FROM {self._run_table} WHERE id=%s FOR SHARE", (run_id,))
+        row = cur.fetchone()
+        if row is None:
+            raise KeyError(f"Test run not found: {run_id}")
+        detail = self._detail_from_cursor(cur, run_id)
+        archives = self._value(row["plan_snapshots"])
+        return detail, result_execution_contexts(detail, archives, result_ids)
 
     def _run_for_attempt_in_cursor(self, cur, run, attempt):
         identity = attempt.plan_snapshot_identity
@@ -2399,7 +2470,7 @@ class PostgresTestRunStore:
                     if run.status in {"completed", "cancelled"}:
                         return []
                 restricted_count = self._block_environment_items_in_cursor(cur, run, reviews, now, "claim")
-                blocked_count = restricted_count + self._block_failed_dependencies_in_cursor(cur, run_id, now)
+                blocked_count = restricted_count + self._block_failed_dependencies_in_cursor(cur, run, now)
                 cur.execute(
                     f"SELECT candidate.record FROM {self._item_table} AS candidate "
                     "WHERE candidate.run_id = %s AND candidate.status = 'queued' "
@@ -2553,7 +2624,7 @@ class PostgresTestRunStore:
                     updated, ended, result = blocked_environment_records(run, item, restricted, now, "start",
                         attempt=attempt, current_reviews=reviews)
                     self._save_unexecuted_in_cursor(cur, updated, ended, result, existing_attempt=True)
-                    dependent = self._block_failed_dependencies_in_cursor(cur, run.id, now)
+                    dependent = self._block_failed_dependencies_in_cursor(cur, run, now)
                     self._refresh_run_in_cursor(cur, run.id, now,
                         status_deltas=[("claimed", "blocked")]+[("queued", "blocked")]*dependent)
                     logger.info("test_run_environment_restricted", extra={"run_id": run.id,
@@ -3663,6 +3734,8 @@ class PostgresTestRunStore:
             if not restricted or self._prior_business_started(cur, item):
                 continue
             updated, attempt, result = blocked_environment_records(run, item, restricted, now, phase, current_reviews=reviews)
+            attempt = attempt.model_copy(update={"plan_snapshot_identity":
+                claim_plan_snapshot_identity(run, source="synthetic_blocked_receipt")})
             self._save_unexecuted_in_cursor(cur, updated, attempt, result)
             count += 1
             logger.info("test_run_environment_restricted", extra={"project_id": run.project_id,
@@ -3752,7 +3825,8 @@ class PostgresTestRunStore:
             f"({passed_required} AND parent.status IS DISTINCT FROM 'passed') OR "
             f"(NOT {passed_required} AND NOT ({terminal})) OR {unavailable})")
 
-    def _block_failed_dependencies_in_cursor(self, cur, run_id: str, now: datetime) -> int:
+    def _block_failed_dependencies_in_cursor(self, cur, run: TestRunRecord, now: datetime) -> int:
+        run_id = run.id
         blocked_count = 0
         while True:
             cur.execute(f"SELECT candidate.record FROM {self._item_table} AS candidate "
@@ -3776,6 +3850,8 @@ class PostgresTestRunStore:
                 if not failures:
                     continue
                 updated, attempt, result = blocked_dependency_records(item, failures, now)
+                attempt = attempt.model_copy(update={"plan_snapshot_identity":
+                    claim_plan_snapshot_identity(run, source="synthetic_blocked_receipt")})
                 self._save_unexecuted_in_cursor(cur, updated, attempt, result)
                 changed += 1
             if not changed:

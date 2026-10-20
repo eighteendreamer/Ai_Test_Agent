@@ -20,26 +20,26 @@ class AgentRegressionService:
         self._planning_tasks = planning_task_service
 
     async def create(self, parent, candidates, payload, *, session_id=None, created_by=None):
-        snapshot, selected, versions, context = await self._inputs(parent, candidates, payload)
+        source_parent, snapshot, selected, versions, context = await self._inputs(parent, candidates, payload)
         replanned = bool(payload.version_overrides)
         if replanned:
-            plan = await self._replan(parent, versions, context)
+            plan = await self._replan(source_parent, versions, context)
         else:
             plan = self._subset(snapshot, selected, context)
             if plan is None:
                 # Structural slicing cannot decide how to clean data produced by
                 # an omitted branch. Ask the existing planner with fixed targets.
-                plan = await self._replan(parent, versions, context)
+                plan = await self._replan(source_parent, versions, context)
                 replanned = True
             else:
                 plan = await self._plans.save(plan)
 
         targets = {node.case_id: node for node in plan.decision.items if node.kind == "target"}
         source_results = {targets[candidate.case_id].key: candidate.result_id for candidate in candidates}
-        source = RegressionPlanSource(parent_run_id=parent.id, source_plan_id=snapshot.plan.id,
+        source = RegressionPlanSource(parent_run_id=source_parent.id, source_plan_id=snapshot.plan.id,
             source_results=source_results, version_overrides=payload.version_overrides)
-        detail = await self._creator.create(parent.project_id, plan.id,
-            CasePlanRunRequest(creation_key=str(uuid4()), mode_key=parent.mode_key, session_id=session_id),
+        detail = await self._creator.create(source_parent.project_id, plan.id,
+            CasePlanRunRequest(creation_key=str(uuid4()), mode_key=source_parent.mode_key, session_id=session_id),
             created_by=created_by, regression=source)
         logger.info("agent_regression_plan_created", extra={"project_id": parent.project_id,
             "parent_run_id": parent.id, "run_id": detail.run.id, "plan_id": plan.id,
@@ -48,34 +48,53 @@ class AgentRegressionService:
         return detail
 
     async def _inputs(self, parent, candidates, payload):
-        snapshot = parent.plan_snapshot
-        if snapshot is None or snapshot.plan.project_id != parent.project_id:
-            raise ValueError("Agent 回归父运行缺少项目所属固定计划")
-        nodes = {entry.key: entry for entry in snapshot.plan.decision.items}
+        if not candidates:
+            raise ValueError("Agent 回归至少需要一个固定失败结果")
+        contexts = await self._runs.get_result_execution_contexts(parent.id,
+            [candidate.result_id for candidate in candidates])
+        source_parent = None
+        snapshot = None
         selected = {}
         versions = {}
+        failures = []
         for candidate in candidates:
-            key = next((key for key, item_id in snapshot.run_item_ids.items() if item_id == candidate.run_item_id), None)
+            source = contexts.get(candidate.result_id)
+            if source is None:
+                raise ValueError("回归来源失败结果已不可读取，未创建测试运行")
+            result, fixed_run = source.result, source.run
+            if (result.run_id != parent.id or result.run_item_id != candidate.run_item_id
+                or result.case_id != candidate.case_id or result.case_version_id != candidate.case_version_id
+                or result.status != candidate.status):
+                raise ValueError("回归候选与保存的原始结果身份不一致")
+            if fixed_run.plan_snapshot is None or fixed_run.plan_snapshot.plan.project_id != parent.project_id:
+                raise ValueError("Agent 回归来源 Attempt 缺少项目所属固定计划")
+            if source_parent is None:
+                source_parent = fixed_run
+                snapshot = fixed_run.plan_snapshot
+            elif fixed_run.plan_snapshot != snapshot:
+                raise ValueError("所选失败结果属于不同计划快照，请按计划版本分别创建回归")
+
+            nodes = {entry.key: entry for entry in snapshot.plan.decision.items}
+            key = next((key for key, item_id in snapshot.run_item_ids.items()
+                if item_id == candidate.run_item_id), None)
             node = nodes.get(key)
             if (node is None or node.kind == "prepare" or node.case_id != candidate.case_id
                 or node.case_version_id != candidate.case_version_id):
-                raise ValueError("回归结果与父运行固定用例不一致")
+                raise ValueError("回归结果与其 Attempt 固定的计划用例不一致")
             selected[key] = candidate.result_id
             versions[node.case_id] = payload.version_overrides.get(node.case_id, node.case_version_id)
-
-        context = {"parent_run_id": parent.id, "source_plan_id": snapshot.plan.id,
-                   "selected_result_ids": list(selected.values()),
-                   "previous_plan": snapshot.plan.decision.model_dump(mode="json")}
-        context["failures"] = []
-        for candidate in candidates:
-            result = await self._runs.get_result(candidate.result_id)
-            if result is None or result.run_id != parent.id:
-                raise ValueError("回归来源失败结果已不可读取，未创建测试运行")
-            context["failures"].append({"result_id": result.id, "case_id": result.case_id,
+            failures.append({"result_id": result.id, "case_id": result.case_id,
                 "case_version_id": result.case_version_id, "status": result.status,
                 "summary": result.summary, "error_message": result.error_message,
                 "verification_results": result.actual.get("verification_results", [])})
-        return snapshot, selected, versions, context
+
+        if source_parent is None or snapshot is None:
+            raise ValueError("Agent 回归没有可读取的固定来源计划")
+        context = {"parent_run_id": source_parent.id, "source_plan_id": snapshot.plan.id,
+                   "selected_result_ids": list(selected.values()),
+                   "previous_plan": snapshot.plan.decision.model_dump(mode="json")}
+        context["failures"] = failures
+        return source_parent, snapshot, selected, versions, context
 
     async def find_submission(self, parent, request):
         if self._planning_tasks is None:
@@ -83,11 +102,11 @@ class AgentRegressionService:
         return await self._planning_tasks.find_regression_submission(parent.project_id, parent.id, request)
 
     async def submit(self, parent, candidates, request, *, session_id=None):
-        snapshot, selected, versions, context = await self._inputs(parent, candidates, request)
-        source = RegressionPlanningInput(parent_run_id=parent.id, source_plan_id=snapshot.plan.id,
+        source_parent, snapshot, selected, versions, context = await self._inputs(parent, candidates, request)
+        source = RegressionPlanningInput(parent_run_id=source_parent.id, source_plan_id=snapshot.plan.id,
             source_results_by_case={candidate.case_id: candidate.result_id for candidate in candidates},
             required_case_versions=versions, version_overrides=dict(request.version_overrides),
-            mode_key=parent.mode_key, session_id=session_id,
+            mode_key=source_parent.mode_key, session_id=session_id,
             submission=request.model_dump(mode="json", exclude={"creation_key"}), context=context)
         fixed_plan = None if request.version_overrides else self._subset(snapshot, selected, context)
         planning_request = fixed_plan.request if fixed_plan is not None else CasePlanningRequest(objective=snapshot.plan.request.objective,

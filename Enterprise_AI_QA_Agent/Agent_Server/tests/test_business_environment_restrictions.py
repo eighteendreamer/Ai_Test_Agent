@@ -27,6 +27,7 @@ from src.schemas.run_management import RunItemExecuteRequest
 from src.schemas.tool_runtime import ModelToolCall
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.application.test_runs.environment_restrictions import restriction_reviews
+from src.application.test_runs.plan_mapping import json_digest
 from src.schemas.case_planning import CasePlanRecord
 from src.schemas.run_management import TestRunItemRecord as RunItemRecord
 from src.runtime.postgres_business_applicability_store import fixed_applicability
@@ -56,6 +57,17 @@ async def prepared(f, index=1):
 def runs_service(f):
     return RunService(store=f.runs, project_service=f.env.projects, suite_service=None,
         test_case_service=f.env.cases, tool_job_service=f.jobs)
+
+
+async def assert_snapshot_pins(f, run_id, snapshot):
+    detail = await f.runs.get_run(run_id)
+    expected_sha = json_digest(snapshot.model_dump(mode="json"))
+    for result in detail.results:
+        attempt = next(entry for entry in detail.attempts if entry.id == result.attempt_id)
+        assert attempt.plan_snapshot_identity.plan_id == snapshot.plan.id
+        assert attempt.plan_snapshot_identity.sha256 == expected_sha
+        context = (await f.runs.get_result_execution_contexts(run_id, [result.id]))[result.id]
+        assert context.run.plan_snapshot == snapshot
 
 
 async def execute_independent(f, claim, *, started=None):
@@ -111,6 +123,7 @@ async def test_current_invalid_blocks_exact_case_and_dependency_at_creation(tmp_
         assert result.actual["environment_restriction"]["phase"] == "create"
         assert result.actual["environment_restriction"]["reviews"] == [invalid.json()]
         assert detail.run.plan_snapshot.plan == plan
+        await assert_snapshot_pins(f, detail.run.id, detail.run.plan_snapshot)
         assert f.actual_target_calls == before
         claims = await f.runs.claim_items(run_id=detail.run.id,worker_id="independent",limit=1,
             lease_seconds=60,now=datetime.now(timezone.utc))
@@ -156,6 +169,7 @@ async def test_confirmation_after_create_is_checked_before_parallel_claim_limit(
         assert saved.run.status == "completed" and len(saved.results) == 3
         blocked = next(r for r in saved.results if r.actual.get("environment_restriction"))
         assert blocked.actual["environment_restriction"]["phase"] == "claim"
+        await assert_snapshot_pins(f, detail.run.id, detail.run.plan_snapshot)
         save_decision_evidence(f,"restriction-claim",run=saved.model_dump(mode="json"),independent_job=job,
             fixed_plan=plan.model_dump(mode="json"),claimed_count=len(selected),explicit_invalid=invalid.json())
 

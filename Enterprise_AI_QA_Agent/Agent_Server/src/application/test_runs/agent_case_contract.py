@@ -7,7 +7,7 @@ from src.schemas.case_execution import AgentCaseExecutionReceipt
 from src.schemas.scene_receipt import case_receipt_type, SCENE_RECEIPT_PROMPT_VERSION
 
 
-RECEIPT_PROMPT_VERSION = "case-execution-receipt-v6"
+RECEIPT_PROMPT_VERSION = "case-execution-receipt-v7"
 
 
 def receipt_prompt_version(protocol=None):
@@ -78,6 +78,13 @@ def case_result_contract(protocol=None) -> str:
         "value. The server resolves the leaves; declare structure that matches the fixed plan's "
         "consumer paths. Choose only one of outputs, output_source or output_structure. "
         "Use deterministic operators when the fixed expected value is directly comparable. "
+        "A prose sentence or business description is not a directly comparable scalar: use one "
+        "semantic check for that expectation. Do not reuse a prose expected_path_tokens value for "
+        "equals/contains checks against booleans, numbers, HTML, or unrelated substrings, and do "
+        "not derive typed expected values from the prose. For example, if the only case expectation "
+        "is 'the details panel is expanded and shows the server confirmation', do not compare that "
+        "same path to detailsHidden or detailsText with deterministic operators; assess the observed "
+        "DOM and response together with semantic. "
         "For every operator other than semantic, observations must contain exactly one reference "
         "to the actual value being compared. Do not append an action-success record or a second "
         "value to that scalar comparison; report other expectations as separate checks. "

@@ -56,11 +56,14 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
         base = build_stage_prompts(RELATION_STAGE_PROTOCOL, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol, scene_query_protocol)
         prompts = effect_task_prompts(evidence_reference_protocol)
-        logic = ("本版本必须区分外部依赖与内部清理：正式用例在自身步骤创建并清理数据时，"
-            "cleanup_sources明确引用自身item_key，不因depends_on为空或没有prepare就省略。"
-            "不清理的项保留空关系，不能根据HTTP方法猜业务；依据完整操作与原文判断。") + base.logic
+        logic = ("本版本必须区分清理执行者与被清理对象的产生者：cleanup_sources引用实际产生该业务对象的item_key，"
+            "不是执行DELETE/清理步骤的item_key。目标项仅查询或清理前置项产生的对象时，必须引用该前置产生项；"
+            "即使目标用例正文包含清理步骤、cleanup字段或清理操作，也不能因此自引用。"
+            "只有完整用例明确证明同一个item自己创建了正在清理的同一对象，cleanup_sources才可引用自身；"
+            "depends_on、用例类型、步骤顺序或HTTP方法本身都不能证明对象来源。来源不明确时写unresolved，不猜来源、不自引用。"
+            "不清理的项保留空关系，依据完整操作与原文判断。") + base.logic
         return PlanningStagePrompts(protocol=protocol, logic=logic, effects=prompts["bindings"],
-            effect_tasks=prompts, task_prompt_revision=4)
+            effect_tasks=prompts, task_prompt_revision=5)
     if scene_query_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol)

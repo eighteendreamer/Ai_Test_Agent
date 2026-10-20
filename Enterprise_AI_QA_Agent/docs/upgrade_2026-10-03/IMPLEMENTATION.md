@@ -5730,3 +5730,19 @@ P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、�
 本轮最终回归：`tests/test_busy_session_queue_concurrency.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py` **31 passed、27 skipped，13.37 秒**。新增并发用例通过真实 OpenAI SDK 到本地 HTTP server，先暂停首条意图模型响应，再提交第二条；修复后服务端收到两条各一次、总共两次 HTTP 发送。27 个跳过由 PostgreSQL opt-in 存储 fixture 导致，不能计为 PostgreSQL 并发验证。把同一最终 SDK/HTTP 回归临时对照旧分支时实际 **1 failed、1 skipped、17 deselected**，本地服务端请求体依次为 first/second/second，证明旧分支对第二条输入确实发送了两次 HTTP 请求。Anthropic 仍为 Messages，Provider 协议、请求映射和历史用户消息均未更改。
 
 尚未完成的关联范围：语义 intent 调用未在此入口获得后续 Agent turn 的稳定关联字段；需要继续验证从 intent、Agent 推理、工具结果后的再推理到 SDK/HTTP attempt 的全链路 trace。当前修复只关闭已复现的并发重复分类，不宣称其他阶段不存在重复发送。
+
+## 2026-10-20 P2 清理来源修正、回归快照读取与 Step 当前探测
+
+调研依据：`P2_CLEANUP_SOURCE_DIAGNOSTIC_20261020.md` 中的 `r4` 真实默认模型失败计划、同目录只读反事实实验、`planning_effect_tasks.task_roles`、回归 Result→Attempt/计划归档读取链及当前隔离运行测试。真实失败计划里，目标只查询/清理依赖项创建的订单，却把 `cleanup_sources` 指向自己；因此两个 item 都进入 `produced` scope。规划 r5 提示把“执行清理的 item”与“产生被清理对象的 item”分开，仍允许完整证据证明自创建/自清理的用例引用自身。没有按 `DELETE` 方法推断业务关系，也没有直接改历史冻结计划。
+
+回归创建现在从保存的 Result 找到准确 RunItem 和 Attempt，检查运行/用例/版本/状态身份，再由 Attempt 的 `plan_snapshot_identity` 与 PostgreSQL 归档恢复失败时固定的计划。PostgreSQL 读取通过一个只读事务锁住当前 Run 行，避免读取投影和归档时跨修订混读。由依赖阻断产生的合成 Attempt 现在也保存原计划 hash，使其结果可核对来源计划。原有未 pin Attempt 不会在恢复时补写 pin。执行回执 Prompt 升至 v7，只增加自然语言预期使用 semantic 检查的说明。
+
+执行验证：
+
+- `tests/test_planning_effect_tasks.py tests/test_scene_expectation_contract.py tests/test_scene_knowledge_contract.py tests/test_case_plan_run_creation.py tests/test_business_environment_restrictions.py tests/test_default_coverage_production.py`：**73 passed、32 skipped，17.52秒**。跳过由未启用真实存储门控产生。
+- 启用 `RUN_LIVE_PLAN_RUN_CREATION=1 RUN_LIVE_RUN_DEPENDENCIES=1 RUN_LIVE_DOCUMENT_IMPACT_TASKS=1`，对回归计划快照、依赖阻断结果及 Markdown/DOCX/PDF 环境场景执行真实隔离 MySQL/PostgreSQL/RustFS 验收：**14 passed、0 skipped，72.72秒**。JUnit：`p2-result-snapshot-20261020-134215.xml`；实际对象与 PG 验证原件保存在 `p2-result-snapshot-20261020-134215/`。
+- 受影响生产模块 `compileall` 成功；目标源码和测试 `git diff --check` 成功。无前端、公开 API 或数据库 schema 改动。
+
+用户重申 Step 已认证后，重新从 MySQL 读默认模型配置，并通过生产 `ModelRuntimeService` 作一次32-token测试上限、零SDK重试的真实最小调用。当前模型仍为 `step-5-preview` / `openai_chat_completions`，HTTP 请求一次，返回400；仅记录 `subscription_or_plan_entitlement` 分类和 endpoint SHA256，不保存错误正文、凭据或模型输出。详见 `p2-step-runtime-probe-current-20261020-1338.json`。MySQL 默认配置未变、没有创建业务 Run；该探测说明认证/目录查询成功与当前推理 entitlement 可用是两个不同状态。
+
+此步关闭了已确认的清理来源规划歧义和回归读取当前 Run 投影的风险；P2 默认 Step 规划因为当前推理请求被拒绝，仍未进入真实多用例规划或 Run 执行验收。自然语言 semantic 约束尚无 post-fix 默认模型验证，旧的无 pin 历史结果如何在生产计划修订后恢复也需单独处理。完整 P0—P5 继续未完成。

@@ -141,7 +141,7 @@ class PlanningStagePrompts(PlanningModel):
     logic: str
     effects: str
     effect_tasks: dict[Literal["bindings", "produced", "cleanup"], str] | None = None
-    task_prompt_revision: Literal[1, 2, 3, 4] = 1
+    task_prompt_revision: Literal[1, 2, 3, 4, 5] = 1
 
     @model_serializer(mode="wrap")
     def preserve_original_prompts(self, handler):

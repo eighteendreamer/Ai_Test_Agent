@@ -4584,3 +4584,15 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 回归使用真实 `SemanticIntentService` 和官方 OpenAI SDK 发往本地 TCP/HTTP fixture。人为暂停第一条输入的意图模型调用，使第二条在首条尚未提交忙状态时到达；修复后fixture收到两条各一次、共两次请求。将同一最终HTTP回归临时对照旧分支，实际 **1 failed、1 skipped、17 deselected**；服务端请求体序列 first/second/second，第二条被真实SDK重复发送。恢复修复后组合运行 `tests/test_busy_session_queue_concurrency.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py`：**31 passed、27 skipped，13.37秒**；跳过项为未启用的 PostgreSQL 存储门控。证据证明本地fixture接收次数，不外推到生产远端接收。未修改 Provider 协议、提示/参数映射、数据库结构或用户消息内容。
 
 限制：修复关闭的是已确认的并发语义分类重复调用；仍需验证意图识别逻辑调用如何与其后生成的 `turn_id/trace_id` 及 Agent/工具后推理串联。provider HTTP attempt 计数与本地服务端接收数的边界也保持区分。该修复不代表全系统重复发送已排除，P0—P5 仍未完成。
+
+### 7.121 P2 清理来源与回归结果快照身份复核（2026-10-20）
+
+根据 `P2_CLEANUP_SOURCE_DIAGNOSTIC_20261020.md` 中保存的默认 Step 失败计划，确认目标项只查询并删除前置项创建的订单，却将自身写为 `cleanup_sources`。规划执行器按该字段把来源加入 `produced` 声明范围，因此这个语义错误会让前置项和目标项都需要产生声明。修复规划提示版本为 r5：清理来源必须是实际产生被清理对象的 item；目标项自己的清理步骤不构成自引用依据。完整用例明确证明同一 item 创建并删除同一对象时仍允许自引用。没有按 HTTP 方法添加确定性推断规则。
+
+同时修复回归依据选择：候选结果先核对保存的 Result、RunItem 和 Attempt 身份，再从该 Attempt 的归档 SHA 读取其固定计划；不能使用已变化的当前 Run 投影替代失败结果的原计划。PostgreSQL 在同一只读事务中锁定 Run 投影并读取归档。由于自动阻断依赖也会产生正式结果，为这些合成 Attempt 保存创建时的计划身份；MySQL 配置、PostgreSQL 业务证据分层不变，无数据库迁移。
+
+执行回执提示版本 v7 另外明确：自然语言整句预期应使用 semantic 检查，不能从同一段描述推造布尔、数字或不相关字符串的确定性比较。它约束模型如何评估自然语言，不改变固定用例预期或检查器的比较语义。
+
+代码逻辑回归覆盖规划角色/Prompt 版本、真实失败结果与 Attempt 对应、当前 Run 投影变化后的原计划读取、合成阻断结果的计划 pin，以及旧 Attempt 不追溯补绑：六个相关测试模块 **73 passed、32 skipped**；跳过项是未启用的真实存储门控。之后启用隔离 MySQL/PostgreSQL/RustFS 并运行真实用例存储、回归、阻断结果和 Markdown/DOCX/PDF 环境限制测试：**14 passed、0 skipped**，JUnit 为 `p2-result-snapshot-20261020-134215.xml`，证据目录为 `p2-result-snapshot-20261020-134215/`。`compileall` 与定向 `git diff --check` 通过。
+
+按用户最新说明重新探测当前 MySQL 默认 Step 配置：凭据已配置，`step-5-preview` 仍使用 OpenAI-compatible Chat Completions。通过 `ModelRuntimeService` 发一次最小请求，测试副本仅将输出上限设为32、SDK重试设为0；真实 HTTP 一次返回400，安全分类为 `subscription_or_plan_entitlement`。没有保存供应商错误正文/模型输出，没有修改 MySQL，也没有创建业务 Run。安全摘要见 `p2-step-runtime-probe-current-20261020-1338.json`。因此认证状态已确认，但当前推理授权仍未恢复；本次真实模型调用没有进入规划阶段，不能据此宣称多用例选择、补全或执行通过。P2 尚欠默认模型完整闭环和更多计划修订/旧结果兼容验收，P0—P5 仍未完成。

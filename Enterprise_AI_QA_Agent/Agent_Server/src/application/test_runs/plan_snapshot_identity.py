@@ -2,13 +2,23 @@
 from __future__ import annotations
 
 import logging
+from dataclasses import dataclass
 
 from src.application.test_runs.plan_mapping import json_digest
 from src.schemas.case_planning import CasePlanExecutionSnapshot
-from src.schemas.run_management import RunPlanSnapshotIdentity, TestRunAttemptRecord, TestRunRecord, TestRunDetail
+from src.schemas.run_management import (RunPlanSnapshotIdentity, TestRunAttemptRecord, TestRunItemRecord,
+    TestCaseResultRecord, TestRunRecord, TestRunDetail)
 
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class ResultExecutionContext:
+    run: TestRunRecord
+    item: TestRunItemRecord
+    attempt: TestRunAttemptRecord
+    result: TestCaseResultRecord
 
 
 def initial_plan_snapshots(run: TestRunRecord) -> dict:
@@ -25,6 +35,51 @@ def execution_attempt(detail: TestRunDetail, item_id: str, attempt_id: str) -> T
     if latest is None or latest.id != attempt_id or latest.run_id != detail.run.id:
         raise ValueError("Agent 执行与当前运行条目或 attempt 租约不一致")
     return latest
+
+
+def result_attempt(detail: TestRunDetail, result_id: str) -> TestRunAttemptRecord:
+    """Resolve the immutable attempt named by a saved result, independent of the current lease."""
+    matches = [entry for entry in detail.results if entry.id == result_id]
+    if len(matches) != 1:
+        raise ValueError("测试结果在运行详情中不存在或身份重复")
+    result = matches[0]
+    if result.run_id != detail.run.id:
+        raise ValueError("测试结果与运行身份不一致")
+
+    items = [entry for entry in detail.items if entry.id == result.run_item_id]
+    if len(items) != 1:
+        raise ValueError("测试结果引用的运行条目不存在或身份重复")
+    item = items[0]
+    if (item.run_id != result.run_id or item.case_id != result.case_id
+        or item.case_version_id != result.case_version_id):
+        raise ValueError("测试结果与运行条目身份不一致")
+
+    attempts = [entry for entry in detail.attempts if entry.id == result.attempt_id]
+    if len(attempts) != 1:
+        raise ValueError("测试结果引用的 Attempt 不存在或身份重复")
+    attempt = attempts[0]
+    if (attempt.run_id != result.run_id or attempt.run_item_id != result.run_item_id
+        or attempt.attempt_no != result.attempt_no or attempt.status != result.status):
+        raise ValueError("测试结果与原始 Attempt 身份不一致")
+    return attempt
+
+
+def result_execution_contexts(detail: TestRunDetail, archives: dict[str, dict],
+    result_ids: list[str]) -> dict[str, ResultExecutionContext]:
+    if len(result_ids) != len(set(result_ids)):
+        raise ValueError("测试结果列表包含重复身份")
+    contexts = {}
+    for result_id in result_ids:
+        attempt = result_attempt(detail, result_id)
+        result = next(entry for entry in detail.results if entry.id == result_id)
+        item = next(entry for entry in detail.items if entry.id == result.run_item_id)
+        identity = attempt.plan_snapshot_identity
+        archive_present = identity is not None and identity.sha256 in archives
+        fixed_run = run_with_claimed_snapshot(detail.run, attempt,
+            archives.get(identity.sha256) if identity else None, archive_present=archive_present)
+        contexts[result_id] = ResultExecutionContext(run=fixed_run, item=item,
+            attempt=attempt, result=result)
+    return contexts
 
 
 def run_with_claimed_snapshot(run: TestRunRecord, attempt: TestRunAttemptRecord,
@@ -65,7 +120,8 @@ def validate_supplied_snapshot(supplied: TestRunRecord | None, current: TestRunR
         raise ValueError("Agent 执行与当前运行条目或 attempt 租约不一致：传入计划既非当前投影也非原快照")
 
 
-def claim_plan_snapshot_identity(run: TestRunRecord, prior: TestRunAttemptRecord | None = None) -> RunPlanSnapshotIdentity | None:
+def claim_plan_snapshot_identity(run: TestRunRecord, prior: TestRunAttemptRecord | None = None,
+    *, source: str = "initial_claim") -> RunPlanSnapshotIdentity | None:
     # Reuse canonical plan hashing and the existing expired-attempt inheritance.
     # Never attach today's plan to a historical execution that had no pin.
     if prior is not None:
@@ -83,7 +139,7 @@ def claim_plan_snapshot_identity(run: TestRunRecord, prior: TestRunAttemptRecord
         sha256=json_digest(run.plan_snapshot.model_dump(mode="json")))
     logger.info("test_run_claim_plan_selected", extra={"run_id": run.id,
         "project_id": run.project_id, "plan_id": value.plan_id, "snapshot_sha256": value.sha256,
-        "source": "initial_claim"})
+        "source": source})
     return value
 
 

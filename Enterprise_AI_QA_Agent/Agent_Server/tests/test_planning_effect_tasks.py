@@ -9,11 +9,11 @@ from test_planning_evidence_references import actual, reference_wire
 from src.application.test_cases.planning_stages import seal_logical_decision, build_stage_prompts, stage_prompt_version
 from src.application.test_cases.planning_effect_tasks import (
     DECISIONS, _prompt_schema, accept_task_decision, aggregate_task_receipts, effect_task_prompts,
-    DECISIONS_V2, next_effect_task, check_task_progress, effect_task_output_format, effect_task_schema,
+    DECISIONS_V2, next_effect_task, check_task_progress, effect_task_output_format, effect_task_schema, task_roles,
 )
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.schemas.case_planning import PlanningDecisionV3, CasePlanningPolicy
-from src.schemas.case_planning_stages import PlanningOperationSelection, PlanningStagePrompts
+from src.schemas.case_planning_stages import LogicalPlanningDecisionV3, PlanningOperationSelection, PlanningStagePrompts
 from src.schemas.case_planning_effect_tasks import BindingTaskDecision, ProducedTaskDecision, EffectTaskCheckpoint
 from src.schemas.case_planning_references import REFERENCE_PROTOCOL_V2, ReferencedDocumentExpectedV2
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
@@ -230,8 +230,13 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     prompts = build_stage_prompts(policy.planning_stage_protocol, policy.effect_expected_source_protocol,
         policy.operation_prefetch_protocol, policy.source_identity_protocol, policy.linked_source_protocol, policy.evidence_reference_protocol)
     assert set(prompts.effect_tasks) == set(DECISIONS)
-    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r4")
-    assert prompts.task_prompt_revision == 4
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r5")
+    assert prompts.task_prompt_revision == 5
+    assert "cleanup_sources引用实际产生该业务对象的item_key" in prompts.logic
+    assert "不是执行DELETE/清理步骤的item_key" in prompts.logic
+    assert "目标用例正文包含清理步骤、cleanup字段或清理操作，也不能因此自引用" in prompts.logic
+    assert "只有完整用例明确证明同一个item自己创建了正在清理的同一对象" in prompts.logic
+    assert "来源不明确时写unresolved" in prompts.logic
     legacy = prompts.model_dump(mode="json")
     legacy.pop("task_prompt_revision")
     restored = PlanningStagePrompts.model_validate(legacy)
@@ -241,3 +246,32 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     assert policy.timeout_seconds == plan.config_snapshot.policy.timeout_seconds
     config["evidence_reference_protocol"] = None
     with pytest.raises(ValueError): CasePlanningPolicy.model_validate(config)
+
+
+def test_cross_case_cleanup_scope_assigns_produced_role_to_creator():
+    creator = {
+        "key": "create-order", "kind": "dependency", "reason": "创建订单供目标查询",
+        "case_id": "case-create", "case_version_id": "version-create",
+        "evidence_ids": ["case:create"], "depends_on": [],
+    }
+    target = {
+        "key": "query-order", "kind": "target", "reason": "查询前置创建的订单并清理",
+        "case_id": "case-query", "case_version_id": "version-query",
+        "evidence_ids": ["case:query"], "depends_on": ["create-order"],
+        "cleanup_sources": ["create-order"],
+    }
+    stages = seal_logical_decision(LogicalPlanningDecisionV3(
+        action="finish", summary="前置创建、目标查询并清理同一订单", items=[creator, target]))
+
+    assert task_roles(stages, EffectTaskCheckpoint()) == {
+        "produced": ["create-order"], "cleanup": ["query-order"]
+    }
+
+    # A self-source is reserved for an item that itself creates the object;
+    # it also schedules a produced declaration for that same item.
+    target["cleanup_sources"] = ["query-order"]
+    self_cleanup = seal_logical_decision(LogicalPlanningDecisionV3(
+        action="finish", summary="目标项自行创建并清理同一订单", items=[creator, target]))
+    assert task_roles(self_cleanup, EffectTaskCheckpoint()) == {
+        "produced": ["query-order"], "cleanup": ["query-order"]
+    }

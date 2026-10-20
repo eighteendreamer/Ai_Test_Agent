@@ -1,5 +1,6 @@
 """Actual configured default model plans and executes full fixed JSON cases."""
 import base64
+import asyncio
 from contextlib import ExitStack
 from copy import deepcopy
 import hashlib
@@ -54,8 +55,9 @@ def multi_case_dependency_fixture(endpoint: str) -> tuple[str, str, list[dict]]:
             "objective": "创建一条临时订单，供需要订单数据的正式用例使用",
             "steps": [
                 {"order": 1, "action": "POST /orders 创建订单，检查实际响应状态为201"},
-                {"order": 2, "action": "记录本次响应中的 order.id，不得猜造或复用其他订单ID"},
+                {"order": 2, "action": "把响应中的字面量键 order.id 的实际值保存为正式用例输出字段 order_id；order.id 中的点是响应键的一部分，不是输出路径分隔符"},
             ],
+            "structured_outputs": {"order_id": "POST /orders 响应顶层字面量键 order.id 的实际值"},
             "expected": {"status_code": 201, "order_id_present": True},
             "operations": {"create": endpoint + "/orders"},
         },
@@ -65,9 +67,9 @@ def multi_case_dependency_fixture(endpoint: str) -> tuple[str, str, list[dict]]:
         "title": "查询订单详情并检查字段",
         "content": {
             "objective": "查询订单详情并验证响应字段",
-            "preconditions": ["需要有效订单ID，禁止凭空编造"],
+            "preconditions": ["需要有效输入 order_id，必须使用执行计划提供的前置用例实际输出，禁止凭空编造"],
             "steps": [
-                {"order": 1, "action": "使用前置创建用例实际返回的 order.id 调用 GET /orders/{id}"},
+                {"order": 1, "action": "使用前置执行项的正式输出 order_id 调用 GET /orders/{id}；该输入是前置用例输出字段，不是原始 HTTP 响应路径"},
                 {"order": 2, "action": "检查状态码200、flag=false、count=1、nullable=null"},
                 {"order": 3, "action": "按项目文档删除本次创建的订单并检查清理成功"},
             ],
@@ -399,6 +401,8 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     dependency_bindings = {name: binding for name, binding in target_node["input_bindings"].items()
                         if binding.get("source_item") == source_node["key"]}
                     assert dependency_bindings, target_node
+                    assert all(binding.get("output_path_tokens") == ["order_id"]
+                        for binding in dependency_bindings.values()), dependency_bindings
                     report["dependency_bindings"] = deepcopy(dependency_bindings)
                     report["selected_formal_case_ids"] = sorted(node["case_id"] for node in formal)
                     report["unrelated_candidate_excluded"] = True
@@ -425,16 +429,39 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                             for edge in target_item["dependencies"]), target_item
                 rid = detail["run"]["id"]
                 assert await PostgresTaskOutbox(settings).relay_once(queue, limit=1) == 1
+                # This test must keep a real Worker alive across approval waits.
+                # The dispatcher leaves its Redis delivery pending while any
+                # RunItem remains queued, then the worker reclaims it after the
+                # approval path settles the current item. Use a short isolated
+                # reclaim interval; the production setting remains unchanged.
+                settings.orchestration.redis_task_reclaim_idle_ms = 1000
+                settings.orchestration.redis_task_block_ms = 100
+                processes.env = child_environment(settings)
                 worker = processes.start("default-execution-worker", "-m", "tests.default_model_probe", "src.cli.run_redis_worker",
-                    "--once", "--worker-id", "default-execute")
-                assert await processes.wait(worker, timeout=420) == 0
-                for index in range(12):
-                    detail = await get("/runs/" + rid)
-                    save(f"run-{index}.json", detail)
-                    waiting = next((i for i in detail["items"] if i["status"] == "waiting_approval"), None)
-                    if waiting is None:
-                        break
-                    await post("/run-items/" + waiting["id"] + "/approval", {"approval_id": waiting["approval_id"], "decision": "approved"})
+                    "--worker-id", "default-execute")
+                loop = asyncio.get_running_loop()
+                execution_deadline = loop.time() + 600
+                approval_count = 0
+                try:
+                    while loop.time() < execution_deadline:
+                        detail = await get("/runs/" + rid)
+                        save(f"run-{approval_count}.json", detail)
+                        waiting = next((i for i in detail["items"] if i["status"] == "waiting_approval"), None)
+                        if waiting is not None:
+                            approval_count += 1
+                            if approval_count > 12:
+                                raise AssertionError("Default model execution exceeded the approval test bound")
+                            await post("/run-items/" + waiting["id"] + "/approval", {
+                                "approval_id": waiting["approval_id"], "decision": "approved"})
+                            continue
+                        if detail["run"]["status"] in {"completed", "cancelled"}:
+                            break
+                        await asyncio.sleep(0.25)
+                    else:
+                        item_states = [(item["plan_item_key"], item["status"]) for item in detail["items"]]
+                        raise AssertionError(f"Default model Run did not reach a terminal state: {item_states}")
+                finally:
+                    await processes.stop(worker)
                 detail = await get("/runs/" + rid)
                 save("final-run.json", detail)
                 with postgres_connect(settings) as conn, conn.cursor() as cur:

@@ -105,6 +105,12 @@ async def test_agent_regression_keeps_strategy_and_rebuilds_only_needed_executio
         right = (await store.claim_items(run_id=parent.run.id, worker_id="parent", limit=20, lease_seconds=60, now=now))[0]
         failed = await complete(store, right, now, {"case_output": {"verified": False}}, status="failed")
         original = await store.get_run(parent.run.id)
+        changed_projection = original.run.model_copy(deep=True)
+        changed_projection.plan_snapshot.plan.request.runtime_context["revision_probe"] = "new projection"
+        changed_projection.plan_snapshot.plan.id = str(uuid4())
+        replace_owned_run(env, store, changed_projection, live)
+        source_context = await store.get_result_execution_contexts(parent.run.id, [failed.id])
+        assert source_context[failed.id].run.plan_snapshot == original.run.plan_snapshot
         runs = RunService(store=store, project_service=env.projects, suite_service=None, test_case_service=env.cases)
         runs.set_agent_regression_service(AgentRegressionService(plan_store=env.store,
             plan_run_service=creator, planning_service=env.service, run_store=store))
@@ -120,7 +126,7 @@ async def test_agent_regression_keeps_strategy_and_rebuilds_only_needed_executio
         assert by_key["right"].dependencies[0].item_id == by_key["create"].id
         assert "old-parent-id" not in snapshot.model_dump_json()
         assert "old-shared-id" not in snapshot.model_dump_json()
-        assert await store.get_run(parent.run.id) == original
+        assert (await store.get_run(parent.run.id)).run == changed_projection
         claims = await store.claim_items(run_id=regression.run.id, worker_id="regression", limit=20, lease_seconds=60, now=now)
         assert [entry.plan_item_key for entry, _ in claims] == ["create"]
         await complete(store, claims[0], now, {"case_output": {"body": {"order.id": "new-run-id"}}})
@@ -364,6 +370,13 @@ async def test_formal_failure_does_not_invalidate_a_successful_shared_preparatio
             assert not second
             result = next(r for r in (await store.get_run(detail.run.id)).results if r.status == "blocked")
             assert any(f["reason"] == "preparation_unsuccessful" for f in result.actual["dependency_failures"])
+            from src.application.test_runs.plan_mapping import json_digest
+            saved = await store.get_run(detail.run.id)
+            attempt = next(entry for entry in saved.attempts if entry.id == result.attempt_id)
+            assert attempt.plan_snapshot_identity.plan_id == plan.id
+            assert attempt.plan_snapshot_identity.sha256 == json_digest(detail.run.plan_snapshot.model_dump(mode="json"))
+            context = (await store.get_result_execution_contexts(detail.run.id, [result.id]))[result.id]
+            assert context.run.plan_snapshot == detail.run.plan_snapshot
         saved = await store.get_run(detail.run.id)
         assert saved.run.stats.failed == 1 and saved.run.status == "completed"
         assert next(i for i in saved.items if i.plan_item_key == "independent").status == "passed"

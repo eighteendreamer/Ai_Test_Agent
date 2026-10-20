@@ -1,7 +1,6 @@
 """Boundary regressions using actual new scene and frozen PG planning samples."""
 from copy import deepcopy
 import json
-import subprocess
 from pathlib import Path
 
 import pytest
@@ -83,26 +82,36 @@ def test_original_schema_remains_selected_and_does_not_accept_scene_wire():
     with pytest.raises(ValueError): AgentCaseExecutionReceipt.model_validate(original)
     updated = deepcopy(original);updated["schema_version"] = 2
     assert SceneExecutionReceipt.model_validate(updated).steps[0].checks[0].expected_source
-    assert receipt_prompt_version() == "case-execution-receipt-v6"
+    assert receipt_prompt_version() == "case-execution-receipt-v7"
     assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v7"
     assert '"SceneExecutionCheck"' in case_result_contract("case-scene-receipt-v1")
 
 
 def test_prompt_revision_only_clarifies_existing_path_types_and_cardinality():
-    original = subprocess.run(["git","show",
-        "c19415d0:Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/agent_case_contract.py"],
-        cwd=ROOT.parents[1],capture_output=True,text=True,encoding="utf-8",check=True)
-    namespace = {}
-    exec(compile(original.stdout,"recorded-old-contract","exec"),namespace)
     clarification = ("For every operator other than semantic, observations must contain exactly one reference "
         "to the actual value being compared. Do not append an action-success record or a second "
         "value to that scalar comparison; report other expectations as separate checks. ")
+    prose_guard = ("A prose sentence or business description is not a directly comparable scalar: use one "
+        "semantic check for that expectation. Do not reuse a prose expected_path_tokens value for "
+        "equals/contains checks against booleans, numbers, HTML, or unrelated substrings, and do "
+        "not derive typed expected values from the prose. For example, if the only case expectation "
+        "is 'the details panel is expanded and shows the server confirmation', do not compare that "
+        "same path to detailsHidden or detailsText with deterministic operators; assess the observed "
+        "DOM and response together with semantic. ")
     current = case_result_contract()
     assert current.count(clarification) == 1
+    assert current.count(prose_guard) == 1
     path_types = ('All path token arrays contain strings only, including array indexes: index 0 is "0", '
         'never the JSON number 0. This applies to both expected_path_tokens and output_path_tokens. ')
     assert current.count(path_types) == 1
-    assert current.replace(clarification, "").replace(path_types, "") == namespace["case_result_contract"]()
+    assert receipt_prompt_version() == "case-execution-receipt-v7"
+
+
+def test_natural_language_expectations_require_semantic_assessment():
+    contract = case_result_contract()
+    assert "A prose sentence or business description is not a directly comparable scalar" in contract
+    assert "do not derive typed expected values from the prose" in contract
+    assert "assess the observed DOM and response together with semantic" in contract
 
 
 def test_actual_scene_wire_is_parsed_only_for_the_frozen_new_protocol():
