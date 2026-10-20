@@ -150,11 +150,27 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
             assert any(item["type"] in {"page_scan", "page_response"} for item in rows)
             assert quality["response_action_associations"]
             assert quality["unresolved_response_associations"] == []
-            action_sequences = {event["seq"] for event in rows if event["type"] in {
-                "click", "dblclick", "fill", "key", "submit", "scroll", "navigate", "file_change"}}
+            action_types = {"click", "dblclick", "fill", "key", "submit", "scroll", "navigate", "file_change"}
+            actions = [event for event in rows if event["type"] in action_types]
+            action_sequences = {event["seq"] for event in actions}
+            action_signature = []
+            for event in actions:
+                payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+                target = payload.get("target") if isinstance(payload.get("target"), dict) else {}
+                locators = target.get("locators") if isinstance(target.get("locators"), dict) else {}
+                role_name = locators.get("role_name") if isinstance(locators.get("role_name"), dict) else {}
+                action_signature.append((event["type"], role_name.get("name") or locators.get("text") or ""))
+            # Independent oracle: every scripted browser gesture must appear once,
+            # in order, in the persisted user-action stream.
+            assert action_signature == [
+                ("click", "深度思考"),
+                ("click", "深度思考"),
+                ("click", "智能搜索"),
+                ("scroll", ""),
+            ]
             linked_sequences = {seq for link in quality["response_action_associations"]
                 for seq in link["action_event_sequences"]}
-            assert linked_sequences and linked_sequences <= action_sequences
+            assert linked_sequences == action_sequences
             assert "Authorization" not in json.dumps(rows, ensure_ascii=False)
             assert "cookie" not in json.dumps(rows, ensure_ascii=False).lower()
 

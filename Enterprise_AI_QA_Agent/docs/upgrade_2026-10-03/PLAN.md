@@ -5000,3 +5000,11 @@ $env:QA_API_401_AUTO_WORKER_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 执行器/结果读取器定向回归 **37 passed**；覆盖 20 个 API 执行器或 Worker 协调器测试文件的回归为 **208 passed、29 skipped**，跳过项受各自隔离服务门控控制，不计作通过。先前报告 `response_status=None` 的写请求 HTTP 500 测试单独复跑 **1 passed**，原始失败未能重现，当前不据此声称已确认其原因。Anthropic 映射测试 **1 passed**，SDK 本地 HTTP fixture 中 `/v1/messages` 传输测试 **14 passed**。
 
 本步未改数据库结构，不调用外部模型。它关闭 Campaign 超时覆盖及只读超时重试的受控 Worker 链路，不代表默认 Step 模型 API 流程或完整 P0—P5 已验收；Step 默认推理仍受此前 HTTP 400 证据限制。
+
+### 7.149 P0 DeepSeek 录制的独立动作预期对账（2026-10-21）
+
+复核 7.141 的真实页面验收后，发现既有断言只确认“存在点击”和“存在重复候选”，没有把测试发出的具体浏览器动作逐项与 PostgreSQL 事件流核对。为避免仅凭录制器自己的序号收据推断业务动作完整，在 `test_recording_deepseek_live.py` 增加独立动作预期：在真实 `https://www.deepseek.com/` 页面对“深度思考”点击两次、对“智能搜索”点击一次并滚动一次，最终数据库动作类型、语义名称和顺序必须严格匹配；响应事件的关联序号必须覆盖全部四个动作。
+
+隔离验收 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` **1 passed，36.10秒**。目标页面 HTTP 200，两个按钮各唯一；PostgreSQL 原始事件为 6 条（4 条预期操作、1 条 page_scan、1 条 page_response），动作逐项对账通过，响应关联覆盖动作序号 `[1,2,3,4]`，发现 1 组重复候选但两次真实点击均保留，2 条观察事件保留为证据且没有删除事件；`integrity.degraded=false`。JUnit 为 `p0-deepseek-action-oracle-current-20261021-01.xml`，页面事实、截图、数据库事件及质量投影保存在 `p0-deepseek-action-oracle-current-20261021-01/`。
+
+准确边界：`omission.status=verified` 只表示已发布事件送达与 PostgreSQL 序号连续；`business_capture_complete` 仍为 `unknown`。本验收用 Playwright 驱动真实 Chromium 页面，不是物理人工操作；使用的是 `cdp-attach` 录制入口，没有验收 Electron 审批/工具栏入口、登录态、业务输入、所有潜在页面事件、跨文档/iframe/Shadow DOM，或默认 AI 消费录制知识。本轮只加强测试断言，没有修改生产录制代码、数据库结构或配置，也没有调用外部模型。
