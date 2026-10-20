@@ -25,9 +25,13 @@ def actual_provider(mode, private):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
             calls.append(body)
-            if mode == 'http-failure' or (mode == 'retry' and len(calls) < 3):
-                raw = json.dumps({'error':{'message':private if mode=='http-failure' else 'fixture retry','type':'server_error'}}).encode()
-                self.send_response(500); self.send_header('Content-Length',str(len(raw)))
+            if mode in {'http-failure', 'bad-request'} or (mode == 'retry' and len(calls) < 3):
+                error = {'message': private if mode in {'http-failure', 'bad-request'} else 'fixture retry',
+                    'type': 'invalid_request_error' if mode == 'bad-request' else 'server_error'}
+                if mode == 'bad-request':
+                    error.update(code='unsupported_parameter', param='max_tokens')
+                raw = json.dumps({'error': error}).encode()
+                self.send_response(400 if mode == 'bad-request' else 500); self.send_header('Content-Length',str(len(raw)))
                 self.end_headers(); self.wfile.write(raw); return
             def event(delta, reason=None):
                 data = {'id':'actual-sdk-observation','object':'chat.completion.chunk','created':1,
@@ -159,12 +163,41 @@ async def test_actual_http_failure_links_retries_without_saving_error_body(tmp_p
             record=json.loads(creates[0].read_bytes())
             assert not record['sdk_create_returned'] and len(record['physical_requests'])==3
             assert record['error_type']=='InternalServerError'
+            assert record['provider_error'] == {'status_code': 500, 'code': None,
+                'param': None, 'type': 'server_error'}
             for p in tmp_path.glob('*.json'):
                 assert private not in p.read_text(encoding='utf-8')
             if os.getenv('QA_SDK_OBSERVATION_DIR'):
                 directory=Path(os.environ['QA_SDK_OBSERVATION_DIR'])/'http-failure'
                 directory.mkdir(parents=True,exist_ok=False)
                 for p in tmp_path.glob('*.json'):(directory/p.name).write_bytes(p.read_bytes())
+    finally:
+        OpenAIChatClient._make_client=original
+
+
+@pytest.mark.asyncio
+async def test_bad_request_probe_keeps_only_safe_sdk_error_fields(tmp_path):
+    private='PRIVATE_BAD_REQUEST_SENTINEL_'+uuid4().hex
+    original=probe.install(tmp_path)
+    try:
+        with actual_provider('bad-request', private) as (url, calls):
+            config=ModelConfigRecord(key='fixture',name='fixture',provider='openai',transport='openai_chat_completions',
+                model_id='fixture',api_base_url=url,max_output_tokens=8192)
+            async def receive(_delta):
+                raise AssertionError('HTTP failure has no text delta')
+            with pytest.raises(ProviderClientError):
+                await OpenAIChatClient(timeout_seconds=5,max_retries=2).stream(config,'private-auth',
+                    ModelInvocationRequest(system_prompt='Observe only',messages=[{'role':'user','content':'Bad request fixture'}]),receive)
+            creates=list(tmp_path.glob('*.sdk-create.json'))
+            assert len(calls)==len(creates)==1
+            record=json.loads(creates[0].read_bytes())
+            assert not record['sdk_create_returned']
+            assert record['error_type']=='BadRequestError'
+            assert record['provider_error'] == {'status_code': 400, 'code': 'unsupported_parameter',
+                'param': 'max_tokens', 'type': 'invalid_request_error'}
+            for p in tmp_path.glob('*.json'):
+                contents=p.read_text(encoding='utf-8')
+                assert private not in contents
     finally:
         OpenAIChatClient._make_client=original
 

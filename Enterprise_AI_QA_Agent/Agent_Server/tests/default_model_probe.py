@@ -3,6 +3,7 @@ import asyncio
 import hashlib
 import json
 import os
+import re
 from contextvars import ContextVar
 from pathlib import Path
 import runpy
@@ -33,6 +34,24 @@ def exception_type_chain(error):
         elif current.__context__ is not None:
             pending.append(current.__context__)
     return chain
+
+
+_SAFE_PROVIDER_ERROR_TOKEN = re.compile(r"^[A-Za-z0-9_.:-]{1,96}$")
+
+
+def safe_provider_error_metadata(error):
+    """Keep only bounded SDK status fields; never persist provider error text/body."""
+    status_code = getattr(error, 'status_code', None)
+    metadata = {'status_code': status_code if type(status_code) is int else None}
+    for field in ('code', 'param', 'type'):
+        value = getattr(error, field, None)
+        if value is None:
+            metadata[field] = None
+        elif isinstance(value, str) and _SAFE_PROVIDER_ERROR_TOKEN.fullmatch(value):
+            metadata[field] = value
+        else:
+            metadata[field] = '[redacted]'
+    return metadata
 
 
 async def observe_stream(stream, root, identity, state):
@@ -207,6 +226,7 @@ def install(directory):
             except BaseException as exc:
                 record['error_type'] = type(exc).__name__
                 record['error_chain_types'] = exception_type_chain(exc)
+                record['provider_error'] = safe_provider_error_metadata(exc)
                 raise
             finally:
                 record['elapsed_seconds'] = round(perf_counter()-state['started'], 3)

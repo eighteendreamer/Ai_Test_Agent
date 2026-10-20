@@ -78,3 +78,21 @@ pytest **1失败，233.72秒**。规划任务运行3轮，SDK物理请求均携�
 补充空候选前端契约后，`CasePlanDialog.test.ts` **85 项通过**，确认页面把空 `candidate_case_ids` 原样提交给服务端。`RUN_LIVE_TEST_CASE_EMBEDDING_TESTS=1 ..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests/test_live_test_case_embedding_pipeline.py -q --tb=short -rs` 在真实 PostgreSQL/Redis 上 **1 项通过**，验证项目范围、pgvector 索引、Redis 投影及检索返回；该专项以固定向量和模拟 embedding runtime 作为输入，未调用 MySQL 中配置的真实 embedding 模型，也未覆盖激活 Outbox 到 Worker 的实测。
 
 本轮未发现需要先行补写新的候选选择算法；自动召回、项目隔离、空召回目录回退及 AI 目标/前置区分均已有实现。当前缺口明确为端到端验收：在隔离项目创建多个正式启用用例及区分性干扰用例，完成真实 embedding 索引并核验 PostgreSQL/Redis 投影；提交不指定 `candidate_case_ids` 的新规划任务，核验召回候选确属当前项目、模型选择正确目标并读取遗漏的必要前置；再冻结计划、创建正式 Run，由 Worker 执行并核验实际输出绑定、每条结果和重投无重复副作用。不得把固定候选的规划测试或单个自包含用例成功扩大为该闭环通过。当前无生产实现修改。
+
+## 2026-10-19 真实 embedding 服务连通性检查
+
+从当前 MySQL 只读解析 `embedding_retrieval` 激活记录，得到模型 `Qwen/Qwen3-VL-Embedding-8B`、`openai_chat_completions` transport 配置；未输出密钥或 endpoint。为绕过进程内及 Redis embedding cache，直接调用现有 `EmbeddingRuntimeService.embed_texts(..., use_cache=False)` 对一条短临时查询执行真实请求。供应商返回 HTTP 402，错误码 `30001`，提示账户余额不足。请求到达真实 embedding SDK/provider 错误响应路径；没有生成向量，也没有写 PostgreSQL/Redis 索引。
+
+因此目前不能完成“激活用例 → Outbox → 正式 embedding Worker → PostgreSQL/Redis → 空候选项目召回”的真实模型验收。没有更换全局 embedding 模型、修改 MySQL 配置或重试请求。继续条件是该 embedding 账户可用后，在新的隔离项目和新内容上重新开始完整链路验收；Step 默认模型已认证并不代表此独立 embedding provider 的账户可用。P2 自动召回产品实现仍待功能级验收，不能以这次 402 或既有固定向量专项标记通过。
+
+
+
+## 2026-10-20 Step 已认证，但当前默认模型与 Step Plan 目录不匹配
+
+按用户确认继续真实 Step 验收后，先只读 MySQL 默认模型配置，再用同一凭据访问其已配置的 `https://api.stepfun.com/step_plan/v1` 目录。`GET /models` 实际返回成功，目录包含 `step-3.5-flash` 与 `step-3.5-flash-2603`，但不包含配置中的 `step-5-preview`。使用 `model_invocation_parameters()` 的 JSON 序列化口径计算后，当前 MySQL `api_base_url_hash=eecc0149...b8db6ea` 与新隔离规划任务保存的 endpoint hash 完全相同，确认这不是跨时间配置变化造成的误判。凭据未保存或输出。当前观测证明认证和 Step Plan 路由可用，不支持再将失败归因于认证。
+
+在新隔离项目执行完整多用例测试，规划 Worker 只发出一次 SDK/HTTP 请求即收到 HTTP 400；探针仅保存安全元数据 `type=request_params_invalid`，没有保存响应正文。为区分参数问题，又用官方 OpenAI SDK 对同一 MySQL 默认端点执行三条极短只读模型请求：`step-5-preview` 分别搭配 `max_tokens=64`、`max_tokens=16384`，并对照 `stream_options.include_usage` 开/关；三次均为 HTTP 400、`request_params_invalid`，未保存响应文本。由此排除完整规划提示长度、16K预算及 `stream_options` 单独造成该错误的解释。安全结果见 `p2-default-multi-case-safe-error-20261020/step-parameter-probe.json` 与 `step-model-catalog.json`；完整新任务错误元数据见同目录 `physical/*.sdk-create.json`。
+
+[Step 官方 Chat Completions API 文档](https://platform.stepfun.ai/docs/en/api-reference/chat/chat-completion-create)将 Step 5 Preview 列为支持模型，并说明标准端点为 `/v1/chat/completions`，`max_tokens`、`stream` 为请求参数；它没有提供证据证明 `step-5-preview` 在当前 `/step_plan/v1` 目录可用。结合真实目录不含该模型和小请求持续 400，当前根因最符合“Step Plan 凭据/端点正常，但模型 ID 属于另一服务目录或未开放给此订阅”的配置不匹配；这属于强证据推断，未证明 Step5 在其他端点对该凭据可用。不得通过生产代码改协议，也不得改写全局 MySQL 默认配置来绕开。
+
+测试探针新增只记录 SDK 的 `status_code/code/param/type` 安全字段，不记录错误消息/响应体；本地官方 SDK + 真实 HTTP 回归 `tests/test_sdk_stream_observation.py` 与 SDK 事件钩子专项 **11 passed，21.72 秒**。新多用例默认测试 **1 failed，46.33 秒**：规划未完成、Run 未创建、业务 HTTP 为0。P2 默认 Step 多用例仍未闭环。继续条件是确认要在 MySQL 中使用的实际模型/服务端点组合；此配置选择未确定前，不把目录中其他 Step 模型的隔离测试冒称为当前 `step-5-preview` 默认验收。自动 embedding 召回仍另受 HTTP 402 账户余额问题阻挡，与 Step 认证无关。

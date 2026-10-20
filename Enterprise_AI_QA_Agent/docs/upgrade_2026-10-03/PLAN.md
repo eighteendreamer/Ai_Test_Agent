@@ -4524,3 +4524,14 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 修复仅把四字段纳入既有客户端清理循环，复用结构化日志；服务端会话范围和环境按原机制恢复，不新增授权入口或修改审批策略。四文件回归实际 **133 passed，无跳过，18.91秒**，其中真实浏览器验证四种客户端字段均denied且无HTTP，服务端范围在客户端冲突字段下仍有效，页面随机标识与已完成ToolJob快照相符。该专项ToolJob使用内存Store与本地导出，不代表PG/RustFS或公开Worker验收。Python编译通过，未改前端、API schema或生产数据库，不重复构建与迁移。调研、复现命令和限制见 [可信上下文来源调研](P0_INPUT_TARGET_AUTHORITY_RESEARCH_20261020.md)。
 
 当前只完成此输入边界缺陷修复。公开目标登记、P2默认模型多用例规划/执行及其他未闭环目标保持未完成；不从项目base_url或客户端字段推导新授权。Anthropic仍使用Messages，公共等待函数await_provider_io不转换协议；本批没有修改模型客户端或全局模型配置。
+
+
+### 7.116 Step 默认模型认证成功，但 Step Plan 模型目录不匹配（2026-10-20）
+
+按用户确认的 Step 认证继续默认多用例验收。只读 MySQL 得到当前 OpenAI-compatible 配置指向 `api.stepfun.com/step_plan/v1`，模型 ID 为 `step-5-preview`。同一凭据对该端点执行官方 SDK `GET /models` 成功，返回目录含 `step-3.5-flash`、`step-3.5-flash-2603`，不含 `step-5-preview`。当前 MySQL endpoint hash 按 `model_invocation_parameters()` 的 JSON 序列化口径与该新规划任务记录完全相同，确认目录查询对应本次测试所用端点。认证通过；该账号/端点未证明支持当前配置模型。
+
+用新隔离项目运行完整多用例任务，唯一规划 HTTP 返回400，安全错误类型为 `request_params_invalid`，未创建Run或业务请求。新增最小 SDK 对照：Step5 模型在 `max_tokens=64/16384`、`stream_options.include_usage` 开/关下均返回同一400；未记录响应正文。Step 官方 Chat Completions API 文档支持 Step5 并展示标准 `/v1/chat/completions`，但没有证据确认 Step5 可在当前 Step Plan 目录使用。结论为配置服务目录/模型 ID 不匹配的强证据推断，不是认证失败、提示长度或单独由 `stream_options` 导致。
+
+测试探针的安全错误元数据回归及 SDK 事件钩子专项 **11 passed，21.72秒**；真实默认多用例任务 **1 failed，46.33秒**，规划未完成、Run及业务HTTP均0。MySQL 全局模型记录没有修改；P2 当前准确状态是**Step 认证已确认，但 `step-5-preview` 在已配置 Step Plan 端点不可用，不能继续声称默认 Step 多用例规划已真实验收**。需先明确有效模型/端点组合，再在全新隔离项目完成选择、依赖补全、正式执行、结果及终态重投。完整 P0—P5 目标保持进行中。
+
+依据：`P2_DEFAULT_CURRENT_RESEARCH.md`、`p2-default-multi-case-safe-error-20261020/step-parameter-probe.json`、`step-model-catalog.json`、同名目录的 `verification.json`。没有生产代码、协议或 MySQL 默认配置变更。
