@@ -78,3 +78,22 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 本轮从现有请求上下文读取真实 `trace_id/attempt_id`，并将它们与规划轮次 `turn_id`、项目和 `logical_call_id` 一起传给模型请求；没有伪造用户 Session，也没有改变模型协议、重试、租约或数据库边界。真实隔离 PostgreSQL/MySQL/RustFS Worker 恢复场景 `test_worker_restarts_after_saved_response_without_repeating_model_or_changing_versions` **1通过、9.16秒**：首次调用与恢复后的第二次调用均保留同一任务 `trace_id`，各自保留对应 Worker attempt 和规划轮次的 `logical_call_id`；全规划测试 `20通过、15跳过、5.12秒`。
 
 这证明持久规划入口的任务/尝试/逻辑调用身份已贯通；仍不证明所有生成、影响分析、回执和默认按用例执行入口都具备同等传播，也不把客户端 attempt 当作远端实际接收证据。
+
+## 模型适配层当前源码与真实 SDK HTTP 复核（2026-10-20）
+
+针对“是否需要新增统一模型适配层”重新核对了当前实现，而不是依据 SDK 名称推断：
+
+- 统一内部契约是 `ModelInvocationRequest` / `UnifiedMessage` / `ModelInvocationResult`；`resolve_client` 按明确 `transport` 选择 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages 或 Gemini 原生客户端。OpenAI-compatible vendors 只在声明其 OpenAI-compatible transport 时使用 OpenAI SDK。
+- `map_model_request` 按每个 MySQL 模型配置中的 `request_profile` 映射 JSON 输出、推理方式及 Chat token 字段；profile 未声明的必需字段在发送前拒绝，可选字段记录 fallback 决策。各 provider client 仍分别序列化 system/messages/tools/token 字段并解析其原生响应/流事件，避免把不同 wire protocol 混成一个。
+- 另有可选 `LangChainModelAdapter`，运行时只在 `openai_chat_completions` transport 下启用；它复用同一 `map_model_request`，并有独立的 LangChain→OpenAI HTTP 夹具验证。Anthropic 两处仍使用 `client.messages.create`；Responses 只存在于 `OpenAIResponsesClient`。
+
+当前源码复验使用官方 SDK 发往本地真实 TCP/HTTP fixture，直接检查收到的 endpoint 和 JSON 请求体，不只是调用映射函数：
+
+| Agent_Server 命令 | 结果 | 实际覆盖 |
+|---|---|---|
+| `..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests/test_model_clients.py tests/test_model_completion_http.py tests/test_model_request_profile.py tests/test_model_sdk_fault_http.py -q --tb=short` | **141 passed，126.37s** | transport 分派、四原生协议及 LangChain 请求/解析、真实 `/v1/messages` 与 `/v1/responses` 等路由、profile 字段映射、结构化输出、推理/token映射、429/503重试、403、连接/流中断、超时/取消及请求/响应观察 |
+| `..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests/test_model_stream_terminal_http.py tests/test_model_completion_contract.py -q --tb=short` | **45 passed，14.68s** | 流终态缺失、截断状态和各传输统一完成结果契约 |
+
+结论：**模型适配层是必要的，但当前系统已经具备正确的分层形态；本次没有发现值得再造一层或切换统一协议的代码缺口。** 应保留统一内部 DTO、按 provider/transport 的原生客户端及逐模型显式 profile 映射。后来新增的供应商字段仍需有明确内部语义、profile 能力约束和对应 wire/结果契约测试；不得把未知字段透传到所有模型，也不得把 Anthropic Messages 改为 OpenAI Responses。
+
+验证边界：这些功能验收使用锁定版本的官方 SDK 和本地受控 HTTP fixture，可证明 SDK 序列化、路由、解析及我们设置的错误边界；没有对所有线上供应商/模型账号逐一发送真实业务调用，不能据此宣称外部供应商兼容矩阵全部通过，也不替代 Step 默认模型完整按用例执行验收。
