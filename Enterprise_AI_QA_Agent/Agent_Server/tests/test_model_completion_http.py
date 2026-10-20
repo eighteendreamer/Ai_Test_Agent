@@ -164,6 +164,10 @@ async def test_actual_sdk_fields_and_business_completion(tmp_path, transport, st
             'prompt_tokens': 7, 'completion_tokens': 3, 'total_tokens': 10}
         assert response.text == json.dumps(finish(), ensure_ascii=False)
         assert len(sends) == 1
+        if actual_transport == 'anthropic_messages':
+            assert sends[0]['path'] == '/v1/messages'
+        elif actual_transport == 'openai_responses':
+            assert sends[0]['path'] == '/v1/responses'
         body = sends[0]['body']
         expected_field = ('max_output_tokens' if actual_transport == 'openai_responses' else
             'max_completion_tokens' if transport == 'langchain_chat' else 'max_tokens')
