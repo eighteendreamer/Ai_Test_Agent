@@ -88,3 +88,102 @@ def test_absent_receipt_cannot_prove_delivery_and_payload_values_are_not_exposed
     assert result["omission"]["status"] == "unknown"
     assert "private-test-value" not in str(result)
 
+
+def _scope(event: RecorderEvent, *, local_seq: int, document_id: str = "doc-1") -> RecorderEvent:
+    event.page["recording_scope"] = {
+        "page_id": "page-1", "frame_id": "frame-1", "document_id": document_id,
+        "local_seq": local_seq,
+    }
+    return event
+
+
+def test_quality_projects_explicit_action_response_links_without_claiming_causality():
+    action = _scope(_event(4), local_seq=17)
+    response = _scope(_event(5, "page_response"), local_seq=18)
+    response.page_effect = {"response": {
+        "protocol": "recording-dom-response-v1",
+        "association": "temporal_after_actions",
+        "action_local_seqs": [17],
+        "network_correlation": "instrumented_fetch_xhr_completion",
+        "network_observation_status": "observed",
+        "network": [
+            {"outcome": "response", "pathname": "/api/ok"},
+            {"outcome": "aborted", "pathname": "/api/cancelled"},
+            {"outcome": "unexpected", "pathname": "/api/other"},
+        ],
+    }}
+
+    result = analyze_recording_quality([action, response])
+
+    assert result["response_action_associations"] == [{
+        "response_event_sequence": 5,
+        "action_event_sequences": [4],
+        "association": "temporal_after_actions",
+        "network_correlation": "instrumented_fetch_xhr_completion",
+        "network_observation_status": "observed",
+        "network_outcome_counts": {"aborted": 1, "other": 1, "response": 1},
+    }]
+    assert result["unresolved_response_associations"] == []
+    assert "/api/ok" not in str(result)
+
+
+def test_quality_does_not_link_response_across_document_scope_and_reports_reference_gap():
+    action = _scope(_event(4), local_seq=17, document_id="doc-1")
+    response = _scope(_event(5, "page_response"), local_seq=18, document_id="doc-2")
+    response.page_effect = {"response": {
+        "association": "temporal_after_actions", "action_local_seqs": [17],
+    }}
+
+    result = analyze_recording_quality([action, response])
+
+    assert result["response_action_associations"] == []
+    assert result["unresolved_response_associations"] == [{
+        "response_event_sequence": 5, "reason": "action_reference_not_found",
+    }]
+
+
+def test_quality_reports_duplicate_action_references():
+    action = _scope(_event(4), local_seq=17)
+    response = _scope(_event(5, "page_response"), local_seq=18)
+    response.page_effect = {"response": {
+        "association": "temporal_after_actions", "action_local_seqs": [17, 17],
+    }}
+
+    result = analyze_recording_quality([action, response])
+
+    assert result["response_action_associations"] == []
+    assert result["unresolved_response_associations"] == [{
+        "response_event_sequence": 5, "reason": "invalid_action_references",
+    }]
+
+
+def test_quality_does_not_choose_between_duplicate_actions_in_same_scope():
+    action_one = _scope(_event(4), local_seq=17)
+    action_two = _scope(_event(5), local_seq=17)
+    response = _scope(_event(6, "page_response"), local_seq=18)
+    response.page_effect = {"response": {
+        "association": "temporal_after_actions", "action_local_seqs": [17],
+    }}
+
+    result = analyze_recording_quality([action_one, action_two, response])
+
+    assert result["response_action_associations"] == []
+    assert result["unresolved_response_associations"] == [{
+        "response_event_sequence": 6, "reason": "action_reference_ambiguous",
+    }]
+
+
+def test_quality_requires_action_to_precede_its_response_window():
+    response = _scope(_event(4, "page_response"), local_seq=18)
+    action = _scope(_event(5), local_seq=17)
+    response.page_effect = {"response": {
+        "association": "temporal_after_actions", "action_local_seqs": [17],
+    }}
+
+    result = analyze_recording_quality([response, action])
+
+    assert result["response_action_associations"] == []
+    assert result["unresolved_response_associations"] == [{
+        "response_event_sequence": 4, "reason": "action_not_before_response",
+    }]
+

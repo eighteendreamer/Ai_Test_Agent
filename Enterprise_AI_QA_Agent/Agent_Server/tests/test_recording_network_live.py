@@ -116,7 +116,8 @@ async def test_network_responses_are_correlated_without_query_or_body_leaks(tmp_
                     await page.wait_for_timeout(700)
                     response = await client.post(f'/recordings/{recording_id}/control', json={'action': 'stop'})
                     response.raise_for_status()
-                    save('recording.json', response.json())
+                    recorded = response.json()
+                    save('recording.json', recorded)
                 finally:
                     await browser.close()
             with postgres_connect(settings) as connection, connection.cursor() as cursor:
@@ -137,3 +138,13 @@ async def test_network_responses_are_correlated_without_query_or_body_leaks(tmp_
             assert {(item['pathname'], item['status'], item['ok']) for item in network} == {
                 ('/api/data', 200, True), ('/api/missing', 404, False), ('/api/xhr', 201, True)}
             assert not facts['query_or_body_leaked']
+            quality = recorded['finalize_metrics']['recording_quality']
+            assert quality['response_action_associations'] == [{
+                'response_event_sequence': responses[-1]['seq'],
+                'action_event_sequences': [clicks[0]['seq']],
+                'association': 'temporal_after_actions',
+                'network_correlation': 'instrumented_fetch_xhr_completion',
+                'network_observation_status': 'observed',
+                'network_outcome_counts': {'response': 3},
+            }]
+            assert quality['unresolved_response_associations'] == []

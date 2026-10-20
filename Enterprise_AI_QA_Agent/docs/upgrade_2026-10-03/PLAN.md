@@ -15,7 +15,7 @@
 | 模板、生成、导入 | 默认/项目模板、JSON渲染、Excel/JSON产品专项；普通Markdown模块生成及恢复专项 | 更广业务文档和用户生产流程 | 依据新失败再确定缺口，不能把已有专项重列为未实现 |
 | 按用例执行 | 项目隔离、完整版本读取、规划/依赖映射、原子领取和正式Agent链路；领取快照归档/恢复；生产领取与修订事务协调专项（§7.110） | 默认模型多候选选取→排序→必要前置/运行内准备→执行；其他模式 | 执行中修订提交、历史追加、条目增删/套件及跨修订回归仍缺完整实现；未知副作用自动选取查证及完整准备状态须继续查证 |
 | 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复；Agent API正向认证链路双Worker通过 | 更多真实中断组合；P2 live7未到执行；原live5 blocked保留 | 产生声明重复出现length/空正文，须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
-| UI录制与知识 | DeepSeek真实页面API/CDP/PG自动化录制；受控页面默认AI使用知识 | 人手DeepSeek录制、默认AI消费该站知识、完整产品流程 | 不能用已有读取专项替代场景/步骤/别名/失败定位完整验收 |
+| UI录制与知识 | DeepSeek真实 Chromium/API/CDP/PG录制，确定性质量投影及响应观察窗口到本地动作关联；固定场景知识读取及受控页面默认AI使用 | 真实用户界面操作路径、默认AI消费DeepSeek录制知识、完整产品链路 | 当前关联只表示同文档时间窗口；服务端业务因果、closed Shadow DOM、selector修复评审及失败定位报告仍待推进 |
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
 | Docker性能、安全 | 实际Docker工具/报告专项；默认Step在服务端可信目标前提下实际k6→PG/RustFS→报告页及终态重投通过（§7.114） | 默认安全Agent、性能故障/容量/流式指标与完整公开入口 | 普通性能会话的可信目标登记缺少公开接入；仅登记项目base_url不会赋予该范围；保留现有权限规则 |
 | 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
@@ -4547,3 +4547,20 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 故当前认证查询有效，但两条服务路径都没有成功推理：Step Plan 目录未列Step5且目录内模型的最小调用也失败；标准目录列出Step5，但当前推理额度不足。不能将问题归结为单纯模型名称或请求中的某一个可选参数，也不能判定应用 Provider SDK 是唯一根因。10月19日存在相同 endpoint hash 下的真实单用例成功记录；因凭据不保存，无法证明历史和当前密钥/额度状态相同。完整材料见 `P2_DEFAULT_CURRENT_RESEARCH.md` 与 `p2-default-multi-case-safe-error-20261020/step-*-probe.json`。
 
 当前 P2 默认 Step 多用例规划→执行仍未验收；用户已确认认证不代表当前账户有推理额度或 Step Plan 目录含目标模型。没有修改全局 MySQL 配置，也没有改 Provider 原生协议。后续在可用的 Step5 推理通道恢复后，以新隔离项目继续真实默认模型验收；完整 P0—P5 仍进行中。
+
+### 7.118 UI录制响应观察窗口与动作序号投影（2026-10-20）
+
+依据现有 `recorder.js`、`recording_quality.py`、`assertion_suggester.py` 和 PostgreSQL 事件样本。录制脚本已经在 `page_response.response.action_local_seqs` 记录同一观察窗口内的动作局部序号，但质量投影此前只把 `page_response` 标成观察噪声，没有把它映射为可审阅的 PostgreSQL 动作事件序号；因此网络/DOM响应虽已采集，质量和草稿投影中仍看不清它对应哪些已录动作。
+
+在既有 `recording-quality-v1` JSON 投影增加 `response_action_associations` 与 `unresolved_response_associations`：只按相同 `page_id/frame_id/document_id` 和精确 `local_seq` 匹配，要求动作事件在响应事件之前；缺失、歧义、非法引用保留固定原因代码，不猜测修复。关联明确标为 `temporal_after_actions`，不声称业务因果。投影只摘要网络观测状态和 outcome 数量，不复制网络路径、查询串、请求/响应正文。原始 PG 事件保持追加写；噪声继续保留为证据且不进入可回放步骤，重复动作只标候选，不自动删除。现有草稿将同一质量对象带入 `test_data.recording_quality`，不改外部 UI/API Schema、数据库迁移、MySQL 配置或 Provider 协议。
+
+实际验证：
+
+| 范围 | 实测 | 工件 |
+|---|---|---|
+| 确定性投影与负向引用 | `test_recording_quality.py`：11 passed，0.17秒；跨文档错配不关联，重复/非法引用、同作用域歧义及动作晚于响应均产生诊断 | 无独立 JUnit |
+| 真实 Chromium fetch/XHR 与 PG 事件 | `RUN_LIVE_RECORDING_NETWORK=1`，1 passed，27.56秒；一次点击对应 fetch 200、fetch 404、XHR 201 三条完成响应；质量投影关联到同一动作 | `p5-recording-response-association-live-20261020/`、`.xml` |
+| 质量投影进入草稿及原事件不变 | `RUN_LIVE_RECORDING_QUALITY=1`，1 passed，22.07秒；真实 PG 事件重读一致，草稿 JSON 的质量投影相同 | `p5-recording-response-association-quality-live-20261020/`、`.xml` |
+| DeepSeek 公开首页真实 Chromium 录制 | `RUN_LIVE_DEEPSEEK_RECORDING=1`，更新后的回归1 passed，29.21秒；页面HTTP 200，6条原始事件，交付完整性 `verified`，1个响应窗口关联到4条此前动作，网络结果计数10，未解析引用0；无登录、聊天提交或模型调用 | `p5-recording-response-association-deepseek-live-20261020-rerun/`、`.xml` |
+
+`compileall` 与 `git diff --check` 通过。以上证明应用采集的 DOM/fetch/XHR 观察可确定性关联到同一浏览器文档中的动作，并从 DeepSeek 页面真实记录到该投影；不会证明物理用户通过完整 Vue 界面创建录制、服务端业务因果、响应正文完整性、closed Shadow DOM、beacon/WebSocket/Service Worker/导航请求，或默认 AI 实际消费该条 DeepSeek 知识。selector 修复评审、失败定位报告和完整 UI 产品流程仍未完成；Step 默认多用例验收继续等待可推理模型/额度。完整 P0—P5 保持进行中。

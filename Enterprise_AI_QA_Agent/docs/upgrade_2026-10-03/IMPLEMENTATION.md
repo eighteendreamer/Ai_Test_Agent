@@ -5657,3 +5657,17 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
 实际四文件回归 **133 passed、无跳过，18.91秒**，包括四类伪造字段拒绝且零HTTP、冲突客户端数据不能覆盖服务端范围/环境、真实页面和ToolJob快照一致。JUnit为`p0-input-target-authority-fixed-20261020.xml`；原件及安全摘要在同名目录，详情和命令见`P0_INPUT_TARGET_AUTHORITY_RESEARCH_20261020.md`。本专项Job使用内存Store，未替代PG/RustFS或公开API/Worker验收。两个Python文件compileall通过，无前端/schema/依赖或生产迁移变更。
 
 公开目标登记仍需补齐；P2默认多用例等其余目标继续未完成。Anthropic原生Messages及独立OpenAI Responses客户端保持，await_provider_io只归一网络异常，本批没有模型客户端改动或真实模型调用。
+
+## 2026-10-20 P5 UI录制响应动作关联投影
+
+`recorder.js` 已将 `page_response.response.action_local_seqs` 与 fetch/XHR 元数据写入录制事件，但 `recording_quality.py` 之前只把整个 `page_response` 归为观察噪声，缺少从局部序号映射到正式事件序号的审阅投影。新增严格按 page/frame/document 身份和局部序号建立的 `response_action_associations`；动作未早于响应、引用缺失/歧义或格式非法时不猜测，进入 `unresolved_response_associations`。只摘要网络观测状态和 outcome 计数，不复制路径或正文。结构标注为 `temporal_after_actions`，不当作服务端因果证明。录制原始事件、清洗策略和重复操作候选保持原语义；草稿沿现有 `test_data.recording_quality` 自动继承新字段。`recorder_session_service` 的既有结束日志增加两类关联计数。
+
+实际运行结果：
+
+- `tests/test_recording_quality.py`：11 passed，0.17秒；包含跨文档错配、非法引用、同作用域歧义、动作晚于响应和精确匹配。
+- `RUN_LIVE_RECORDING_NETWORK=1` 的 `tests/test_recording_network_live.py`：1 passed，27.56秒；本地 Chromium 页面触发真实 fetch 200/404 与 XHR 201，三条响应均映射回实际点击，且请求查询串/响应体不进入网络证据。
+- `RUN_LIVE_RECORDING_QUALITY=1` 的 `tests/test_recording_quality_live.py`：1 passed，22.07秒；投影进入 PostgreSQL 草稿数据，原始录制事件前后逐项一致。
+- `RUN_LIVE_DEEPSEEK_RECORDING=1` 的更新后 `tests/test_recording_deepseek_live.py`：1 passed，29.21秒；真实公开 DeepSeek 首页HTTP 200，6条PG事件；结束回执/PG对账 `verified`，一个响应窗口关联到四条同文档先前动作，网络 outcome 计数10、未解析引用0。没有登录、提交聊天或调用模型。
+- Python `compileall` 与 `git diff --check` 均成功；未改前端、API/schema、表结构、依赖、MySQL配置或Provider协议。
+
+DeepSeek用例由 Playwright 驱动真实 Chromium，不是物理人工点击或完整 Vue 产品页验收。关联反映现有脚本定义的同文档时间观察窗口，不能证明业务因果。网络覆盖仍不含 beacon、WebSocket、Service Worker 内部请求、导航与 closed Shadow DOM；默认 AI 实际消费 DeepSeek 录制知识、selector 修复评审、失败定位/报告仍未验收。完整 P0—P5 保持未完成。Anthropic 客户端仍调用 `client.messages.create`，公共 `await_provider_io` 只归一网络异常；本步骤没有切换或统一 Provider 协议。

@@ -148,6 +148,13 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
             assert quality["removed_event_sequences"] == []
             assert any(event["type"] == "click" for event in rows)
             assert any(item["type"] in {"page_scan", "page_response"} for item in rows)
+            assert quality["response_action_associations"]
+            assert quality["unresolved_response_associations"] == []
+            action_sequences = {event["seq"] for event in rows if event["type"] in {
+                "click", "dblclick", "fill", "key", "submit", "scroll", "navigate", "file_change"}}
+            linked_sequences = {seq for link in quality["response_action_associations"]
+                for seq in link["action_event_sequences"]}
+            assert linked_sequences and linked_sequences <= action_sequences
             assert "Authorization" not in json.dumps(rows, ensure_ascii=False)
             assert "cookie" not in json.dumps(rows, ensure_ascii=False).lower()
 

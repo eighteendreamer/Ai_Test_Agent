@@ -435,12 +435,14 @@ class RecorderSessionService:
             return await self._capture_failed(runtime, exc, finish, operation="stop")
 
         logger.info(
-            "recording finalized: recording_id=%s actions=%s step_count=%s integrity_degraded=%s quality_status=%s duplicate_candidates=%s noise_events=%s",
+            "recording finalized: recording_id=%s actions=%s step_count=%s integrity_degraded=%s quality_status=%s duplicate_candidates=%s noise_events=%s response_action_associations=%s unresolved_response_associations=%s",
             recording_id, metrics.get("finalize", {}).get("action_vertices"),
             runtime.session.step_count, metrics.get("integrity", {}).get("degraded"),
             metrics.get("recording_quality", {}).get("omission", {}).get("status"),
             len(metrics.get("recording_quality", {}).get("duplicate_candidates", [])),
             len(metrics.get("recording_quality", {}).get("noise", [])),
+            len(metrics.get("recording_quality", {}).get("response_action_associations", [])),
+            len(metrics.get("recording_quality", {}).get("unresolved_response_associations", [])),
         )
         completed = await self._update(
             runtime, RecordingStatus.completed, finalize_metrics=metrics
