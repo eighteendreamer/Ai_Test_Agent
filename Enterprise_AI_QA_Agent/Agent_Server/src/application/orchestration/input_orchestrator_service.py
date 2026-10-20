@@ -14,6 +14,7 @@ from src.application.security.authorization import verified_grant_matches_target
 from src.application.testing.direction_service import QATaskDirectionService
 from src.application.testing.mode_intent_service import TestModeIntentService
 from src.application.testing.router_service import QATaskRouterService
+from src.core.request_context import get_request_context
 from src.schemas.intent import IntentDecision
 from src.schemas.session import (
     ExecutionRequest,
@@ -51,7 +52,15 @@ class InputOrchestratorService:
         self,
         session: SessionRecord,
         payload: SendMessageRequest,
+        *,
+        turn_id: str | None = None,
+        trace_id: str | None = None,
     ) -> ExecutionRequest:
+        request_context = get_request_context()
+        resolved_turn_id = str(turn_id or uuid4())
+        resolved_trace_id = str(
+            trace_id or (request_context.trace_id if request_context else "") or uuid4()
+        )
         intent_override = None
         if self._semantic_intent_service is not None:
             normalized_input = " ".join(str(payload.content or "").split())
@@ -63,8 +72,37 @@ class InputOrchestratorService:
                 message=normalized_input,
                 baseline=baseline,
                 model_key=payload.model_key or session.preferred_model,
+                trace_context={
+                    "session_id": session.id,
+                    "turn_id": resolved_turn_id,
+                    "trace_id": resolved_trace_id,
+                    "project_id": session.project_id or "",
+                    "mode_key": payload.mode_key or session.mode_key,
+                    "thread_id": session.id,
+                    "agent_key": "semantic-intent-classifier",
+                },
             )
-        return self.orchestrate(session, payload, intent_override=intent_override)
+        execution = self.orchestrate(
+            session,
+            payload,
+            intent_override=intent_override,
+            turn_id=resolved_turn_id,
+            trace_id=resolved_trace_id,
+        )
+        intent = execution.context.get("intent_decision") or {}
+        evidence = intent.get("evidence") or []
+        logger.info("input_intent_classified", extra={
+            "session_id": session.id,
+            "project_id": session.project_id or "",
+            "turn_id": execution.turn_id,
+            "trace_id": execution.trace_id,
+            "candidate_mode_key": intent.get("candidate_mode_key") or "",
+            "resolved_mode_key": execution.mode_key,
+            "confidence": intent.get("confidence", 0.0),
+            "semantic_enriched": any(str(item).startswith("semantic_classifier:") for item in evidence),
+            "execution_lane": execution.routing_decision.execution_lane if execution.routing_decision else "",
+        })
+        return execution
 
     def orchestrate(
         self,
@@ -72,6 +110,8 @@ class InputOrchestratorService:
         payload: SendMessageRequest,
         *,
         intent_override: IntentDecision | None = None,
+        turn_id: str | None = None,
+        trace_id: str | None = None,
     ) -> ExecutionRequest:
         raw_content = payload.content or ""
         content = raw_content.strip()
@@ -348,8 +388,10 @@ class InputOrchestratorService:
             "safety_risk_level": safety_assessment.risk_level,
         }
 
+        request_context = get_request_context()
         return ExecutionRequest(
-            turn_id=str(uuid4()),
+            turn_id=str(turn_id or uuid4()),
+            trace_id=str(trace_id or (request_context.trace_id if request_context else "") or uuid4()),
             session_id=session.id,
             user_message=content,
             normalized_input=normalized_input,

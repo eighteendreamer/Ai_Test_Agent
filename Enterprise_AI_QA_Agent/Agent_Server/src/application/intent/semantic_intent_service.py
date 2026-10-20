@@ -5,6 +5,7 @@ import logging
 import re
 from typing import Any
 
+from src.core.request_context import new_id
 from src.schemas.intent import IntentDecision, SemanticIntentCandidate
 from src.schemas.model_config import ModelInvocationRequest
 
@@ -58,12 +59,17 @@ class SemanticIntentService:
         message: str,
         baseline: IntentDecision,
         model_key: str | None,
+        trace_context: dict[str, str] | None = None,
     ) -> IntentDecision:
         if not self._should_invoke(message, baseline):
             return baseline
         resolved_model_key = self._resolve_model_key(model_key)
         if not resolved_model_key:
             return baseline
+
+        call_context = dict(trace_context or {})
+        call_context.setdefault("agent_key", "semantic-intent-classifier")
+        call_context["logical_call_id"] = str(call_context.get("logical_call_id") or new_id("model_call"))
 
         request = ModelInvocationRequest(
             system_prompt=self._system_prompt(),
@@ -80,7 +86,15 @@ class SemanticIntentService:
                 }
             ],
             tools=[],
+            trace_context=call_context,
         )
+        logger.info("semantic_intent_enrichment_started", extra={
+            "model_key": resolved_model_key,
+            "logical_call_id": call_context["logical_call_id"],
+            "trace_id": call_context.get("trace_id", ""),
+            "turn_id": call_context.get("turn_id", ""),
+            "session_id": call_context.get("session_id", ""),
+        })
         try:
             result = await self._model_runtime_service.invoke(resolved_model_key, request)
             summary = getattr(result, "response_summary", {}) or {}
@@ -90,6 +104,9 @@ class SemanticIntentService:
                     "semantic_intent_enrichment_failed",
                     extra={
                         "model_key": resolved_model_key,
+                        "logical_call_id": call_context["logical_call_id"],
+                        "trace_id": call_context.get("trace_id", ""),
+                        "turn_id": call_context.get("turn_id", ""),
                         "error_type": response_mode,
                         "status_code": summary.get("status_code"),
                         "message_length": len(message),
@@ -102,6 +119,9 @@ class SemanticIntentService:
                 "semantic_intent_enrichment_failed",
                 extra={
                     "model_key": resolved_model_key,
+                    "logical_call_id": call_context["logical_call_id"],
+                    "trace_id": call_context.get("trace_id", ""),
+                    "turn_id": call_context.get("turn_id", ""),
                     "error_type": type(exc).__name__,
                     "status_code": getattr(exc, "status_code", None),
                     "message_length": len(message),
@@ -113,11 +133,23 @@ class SemanticIntentService:
                 "semantic_intent_response_invalid",
                 extra={
                     "model_key": resolved_model_key,
+                    "logical_call_id": call_context["logical_call_id"],
+                    "trace_id": call_context.get("trace_id", ""),
+                    "turn_id": call_context.get("turn_id", ""),
                     "error_type": "invalid_response",
                     "response_length": len(str(result.text or "")),
                 },
             )
             return baseline
+        logger.info("semantic_intent_enrichment_completed", extra={
+            "model_key": resolved_model_key,
+            "logical_call_id": call_context["logical_call_id"],
+            "trace_id": call_context.get("trace_id", ""),
+            "turn_id": call_context.get("turn_id", ""),
+            "session_id": call_context.get("session_id", ""),
+            "candidate_mode_key": candidate.candidate_mode_key or "",
+            "confidence": candidate.confidence,
+        })
         return self._merge(baseline, candidate, resolved_model_key)
 
     def _should_invoke(self, message: str, baseline: IntentDecision) -> bool:

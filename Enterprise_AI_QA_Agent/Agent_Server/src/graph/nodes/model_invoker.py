@@ -238,6 +238,7 @@ def build_model_invoker_node(
             response_preview=truncate_text(invocation_result.text, 180),
             finish_reason=invocation_result.response_summary.get("finish_reason", ""),
             tool_call_count=len(invocation_result.tool_calls),
+            tool_call_ids=[str(item.id) for item in invocation_result.tool_calls],
             loop_iteration=state["loop_iteration"],
             logical_call_id=invocation_result.response_summary.get("logical_call_id", ""),
             http_request_attempt_count=invocation_result.response_summary.get("http_request_attempt_count", 0),

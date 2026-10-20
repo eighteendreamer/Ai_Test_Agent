@@ -255,6 +255,7 @@ class InputRoutingDecision(BaseModel):
 
 class ExecutionRequest(BaseModel):
     turn_id: str
+    trace_id: str = ""
     session_id: str
     user_message: str
     normalized_input: str

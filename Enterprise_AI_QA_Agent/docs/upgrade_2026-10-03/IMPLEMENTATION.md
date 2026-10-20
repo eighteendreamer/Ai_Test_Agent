@@ -5746,3 +5746,22 @@ P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、�
 用户重申 Step 已认证后，重新从 MySQL 读默认模型配置，并通过生产 `ModelRuntimeService` 作一次32-token测试上限、零SDK重试的真实最小调用。当前模型仍为 `step-5-preview` / `openai_chat_completions`，HTTP 请求一次，返回400；仅记录 `subscription_or_plan_entitlement` 分类和 endpoint SHA256，不保存错误正文、凭据或模型输出。详见 `p2-step-runtime-probe-current-20261020-1338.json`。MySQL 默认配置未变、没有创建业务 Run；该探测说明认证/目录查询成功与当前推理 entitlement 可用是两个不同状态。
 
 此步关闭了已确认的清理来源规划歧义和回归读取当前 Run 投影的风险；P2 默认 Step 规划因为当前推理请求被拒绝，仍未进入真实多用例规划或 Run 执行验收。自然语言 semantic 约束尚无 post-fix 默认模型验证，旧的无 pin 历史结果如何在生产计划修订后恢复也需单独处理。完整 P0—P5 继续未完成。
+
+## 2026-10-20 P0 意图、Agent、工具调用与 HTTP 请求身份贯通
+
+本轮先沿 `SessionService.send_message → InputOrchestratorService.orchestrate_async → SemanticIntentService.enrich → AgentTaskDispatcher/RuntimeService → model_invoker → tool_executor → provider SDK` 核对入口。根因是语义分类在 `ExecutionRequest` 创建之前运行：原意图请求没有稳定 `turn_id/trace_id`，Runtime 随后又生成另一条 trace。
+
+在不重排分类、路由和权限流程的前提下，由输入编排在 semantic intent 调用前创建或继承 turn/trace，将 session、project、mode 和该次 `logical_call_id` 传入请求；返回的 ExecutionRequest 沿用同一身份。持久 Worker 复用其 task 身份，待处理输入把 turn/trace 保存在队列 metadata 并在排空/恢复时复用。Agent 图每次模型 admission 仍获得不同 `logical_call_id`，provider 层的 HTTP attempt 继续独立计数。工具执行已有 call ID；本轮发现响应事件没有暴露这些 ID，故 `model.response_received` 新增实际返回的 `tool_call_ids`，可对账后续工具事件及下一次推理中的 tool-result ID。没有更改统一模型协议、API schema、数据库或前端事件类型。
+
+代码和本地功能验证：
+
+- 新增 `tests/test_semantic_intent_trace_http.py`，运行真实 OpenAI SDK 对本地 TCP/HTTP fixture 发送一次 `/v1/chat/completions`。fixture 接收数为1；semantic intent 开始/完成、intent classified、HTTP attempt 和 ExecutionRequest 的 trace/turn/logical-call 身份一致。
+- `tests/test_model_trace_project_binding.py` 实际执行两次 graph model node：同 turn/trace、不同 logical-call ID；第一轮返回 tool-call ID 与第二轮 tool message 的 `tool_call_id` 一致，第二轮响应暴露自己的 ID。覆盖普通与恢复的初始状态。
+- `tests/test_runtime_interrupt_tool_calls.py` 继续核实图中工具执行收到相同 turn/trace，中断后未执行的调用 ID 与完整工具协议消息/快照一致。
+- Agent_Server 最终回归：10个相关测试文件 **154 passed、47 skipped，30.67秒**。跳过项包括未开启的 PostgreSQL 与真实模型门控，不能计为通过。相同定向回归的 Python 编译和 `git diff --check` 作为交付检查另行执行。
+
+本轮在认证处理后，另以隔离 Session 执行真实默认模型只读工具/SSE测试。`p0-live-model-trace-auth-current-20261020-143020/acceptance.json` 只保存事件类型、turn/trace/logical-call/tool-call ID、状态码和 attempt 数：默认 `step-5-preview` 首个逻辑请求只产生1次HTTP attempt，收到400后 turn 为 `interrupted`；没有模型响应、工具调用或工具后推理。此次未保存正文、凭据或模型输出。Step 认证由已成功的模型目录 GET 证明；此前同一默认配置的最小 Chat 请求由供应商错误分类为 `subscription_or_plan_entitlement`，所以当前真实模型端到端测试仍不可用。单个失败调用并不能验收工具/SSE闭环，也不表示 trace 测试失败。
+
+**当前状态：** Semantic intent 至 Agent turn 的 turn/trace 关联、每次 logical call 隔离、响应到 tool-call ID 的关联和本地 SDK/HTTP 发送已验证。默认 Step 未走到工具阶段；持久业务入口全覆盖、真实 post-tool 推理、更多供应商故障/进程恢复与远端服务接收证据仍未完成。P1普通文档默认模型全量生成、P2多候选完整 Run、API测试更广Agent场景、安全默认Agent、人工DeepSeek录制和生产历史迁移/旧Worker原件等未闭环范围保持原计划。完整 P0—P5 目标仍未完成。
+
+审批恢复补充：普通工具审批恢复与 Deep Agent HITL 审批恢复重建 `ExecutionRequest` 时，现从保存的 graph state 带回同一个 `trace_id`。这修补请求字段与实际恢复状态之间的身份缺口；没有改变审批决策、工具执行或 provider 协议。新增两个不依赖外部模型的恢复路径单测，和既有安全审批回归一起 **3 passed**；Deep Agent 端到端参数化测试因可选 `deepagents` 依赖未安装而 **4 skipped**。P0 十文件回归现为 **156 passed、47 skipped，26.42秒**；skipped 项未计为通过。

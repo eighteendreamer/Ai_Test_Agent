@@ -187,8 +187,9 @@ class SessionService:
                 request = await self._input_orchestrator_service.orchestrate_async(
                     session,
                     payload,
+                    turn_id=str(task.turn_id),
+                    trace_id=str(task.trace_id),
                 )
-                request.turn_id = task.turn_id
                 return await self._run_owned_submission_locked(
                     session,
                     payload,
@@ -1944,6 +1945,7 @@ class SessionService:
             payload=payload,
             metadata={
                 "turn_id": execution_request.turn_id,
+                "trace_id": execution_request.trace_id,
                 "message_kind": execution_request.message_kind.value,
                 "submit_mode": execution_request.submit_mode,
                 "command_name": execution_request.command_name,
@@ -2249,6 +2251,8 @@ class SessionService:
                             await self._input_orchestrator_service.orchestrate_async(
                                 session,
                                 next_entry.payload,
+                                turn_id=str(next_entry.metadata.get("turn_id") or "") or None,
+                                trace_id=str(next_entry.metadata.get("trace_id") or "") or None,
                             )
                         )
                         receipt = await self._submit_durable_pending_input(
@@ -2289,6 +2293,8 @@ class SessionService:
                         await self._input_orchestrator_service.orchestrate_async(
                             session,
                             next_entry.payload,
+                            turn_id=str(next_entry.metadata.get("turn_id") or "") or None,
+                            trace_id=str(next_entry.metadata.get("trace_id") or "") or None,
                         )
                     )
                 except Exception:

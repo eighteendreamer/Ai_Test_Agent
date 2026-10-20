@@ -13,6 +13,7 @@ from src.application.capabilities.tool_exposure_policy import ToolExposurePolicy
 from src.application.intent.intent_recognition_service import IntentRecognitionService
 from src.application.intent.safety_intent_service import SafetyIntentService
 from src.application.intent.semantic_intent_service import SemanticIntentService
+from src.core.request_context import reset_request_context, set_request_context
 from src.application.orchestration.coordinator_runtime_service import CoordinatorRuntimeService
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
@@ -180,6 +181,70 @@ def test_semantic_classifier_enriches_ambiguous_intent_without_tools():
         "semantic:multiple mobile environments",
     ]
     assert runtime.requests[0][1].tools == []
+
+
+@pytest.mark.asyncio
+async def test_semantic_intent_and_execution_request_share_turn_trace_context():
+    runtime = _FakeSemanticModelRuntime(
+        {
+            "target_kind": "ui",
+            "objectives": ["ui_automation"],
+            "requested_actions": ["read"],
+            "required_capabilities": ["ui.automation"],
+            "candidate_mode_key": "ui_automation",
+            "confidence": 0.91,
+            "needs_clarification": False,
+            "evidence": ["correlation fixture"],
+        }
+    )
+    orchestrator = InputOrchestratorService(ModeRegistry(), SemanticIntentService(runtime))
+    token = set_request_context(request_id="request-semantic-trace", trace_id="trace-semantic-trace")
+    try:
+        execution = await orchestrator.orchestrate_async(
+            _session(), SendMessageRequest(content="检查这个应用在不同手机环境中的表现")
+        )
+    finally:
+        reset_request_context(token)
+
+    semantic_request = runtime.requests[0][1]
+    semantic_context = semantic_request.trace_context
+    assert semantic_context["session_id"] == "session-1"
+    assert semantic_context["turn_id"] == execution.turn_id
+    assert semantic_context["trace_id"] == "trace-semantic-trace"
+    assert semantic_context["agent_key"] == "semantic-intent-classifier"
+    assert semantic_context["logical_call_id"]
+    assert execution.trace_id == semantic_context["trace_id"]
+
+
+@pytest.mark.asyncio
+async def test_semantic_intent_reuses_claimed_worker_turn_and_trace_ids():
+    runtime = _FakeSemanticModelRuntime(
+        {
+            "target_kind": "ui",
+            "objectives": ["ui_automation"],
+            "requested_actions": ["read"],
+            "required_capabilities": ["ui.automation"],
+            "candidate_mode_key": "ui_automation",
+            "confidence": 0.91,
+            "needs_clarification": False,
+            "evidence": ["claimed task fixture"],
+        }
+    )
+    orchestrator = InputOrchestratorService(ModeRegistry(), SemanticIntentService(runtime))
+    token = set_request_context(request_id="request-worker-context", trace_id="trace-worker-context")
+    try:
+        execution = await orchestrator.orchestrate_async(
+            _session(),
+            SendMessageRequest(content="检查这个应用在不同手机环境中的表现"),
+            turn_id="claimed-turn-id",
+            trace_id="claimed-trace-id",
+        )
+    finally:
+        reset_request_context(token)
+
+    semantic_context = runtime.requests[0][1].trace_context
+    assert execution.turn_id == semantic_context["turn_id"] == "claimed-turn-id"
+    assert execution.trace_id == semantic_context["trace_id"] == "claimed-trace-id"
 
 
 def test_semantic_classifier_cannot_override_protected_performance_intent():
@@ -1266,6 +1331,97 @@ def test_resume_after_approval_passes_trusted_context_before_tool_execution():
     assert tool_runtime.contexts[0].server_approval_granted is True
     assert "_server_approval_granted" not in tool_runtime.calls[0].arguments
     assert "_server_approval_granted" not in arguments
+
+
+@pytest.mark.asyncio
+async def test_resume_after_approval_rebuilds_execution_request_with_trace_id(monkeypatch):
+    tool_runtime = _CapturingToolRuntime()
+    runtime = _runtime_service(tool_runtime)
+    session = _session("security_testing")
+    request = ExecutionRequest(
+        turn_id="turn-approval-trace",
+        trace_id="trace-approval-resume",
+        session_id=session.id,
+        user_message="look up nginx exploit references",
+        normalized_input="look up nginx exploit references",
+        mode_key="security_testing",
+        context={"safety_assessment": {"decision": "allow"}},
+    )
+    state = runtime._build_initial_state(session, request)
+    approval_id = "approval-trace"
+    arguments = {"query": "nginx exploit references"}
+    state["pending_approvals"] = [{"id": approval_id}]
+    state["control_state"] = "waiting_approval"
+    state["termination_reason"] = "waiting_approval"
+    pending_turn = runtime._build_pending_turn(state, stage="waiting_approval")
+    pending_turn["pending_approval_ids"] = [approval_id]
+    session.metadata["pending_turn"] = pending_turn
+    approval_scope_hash = ApprovalScopeService().build_hash(
+        mode_key="security_testing",
+        tool_key="knowledge-rag",
+        arguments=arguments,
+        context=request.context,
+    )
+    captured_requests = []
+
+    async def capture_observed_request(_session, rebuilt_request, _state, _executor):
+        captured_requests.append(rebuilt_request)
+        return rebuilt_request
+
+    monkeypatch.setattr(runtime, "_execute_observed", capture_observed_request)
+
+    result = await runtime.resume_after_approval(
+        session,
+        {
+            "id": approval_id,
+            "status": "approved",
+            "tool_key": "knowledge-rag",
+            "tool_name": "Knowledge RAG",
+            "metadata": {
+                "call_id": "call-approval-trace",
+                "arguments": arguments,
+                "approval_scope_hash": approval_scope_hash,
+            },
+        },
+    )
+
+    assert result.trace_id == "trace-approval-resume"
+    assert captured_requests[0].trace_id == "trace-approval-resume"
+
+
+@pytest.mark.asyncio
+async def test_deep_agent_approval_resume_rebuilds_execution_request_with_trace_id(monkeypatch):
+    runtime = _runtime_service(_CapturingToolRuntime())
+    session = _session("code_review")
+    request = ExecutionRequest(
+        turn_id="turn-deep-approval-trace",
+        trace_id="trace-deep-approval-resume",
+        session_id=session.id,
+        user_message="Review the project.",
+        normalized_input="Review the project.",
+        mode_key="code_review",
+    )
+    state = runtime._build_initial_state(session, request)
+    approval = {
+        "id": "deep-approval-trace",
+        "status": "approved",
+        "metadata": {"deep_agent_interrupt_id": "deep-interrupt-trace"},
+    }
+    state["pending_approvals"] = [approval]
+    state["context_bundle"]["deep_agent_approval_batch"] = [approval]
+    pending_turn = runtime._build_pending_turn(state, stage="waiting_approval")
+    captured_requests = []
+
+    async def capture_observed_request(_session, rebuilt_request, _state, _executor):
+        captured_requests.append(rebuilt_request)
+        return SimpleNamespace(events=[])
+
+    monkeypatch.setattr(runtime, "_execute_observed", capture_observed_request)
+
+    result = await runtime._resume_deep_agent_after_approval(session, pending_turn, approval)
+
+    assert result is not None
+    assert captured_requests[0].trace_id == "trace-deep-approval-resume"
 
 
 def test_p4_approval_has_dedicated_scope_and_resume_injects_p4_marker():

@@ -107,3 +107,20 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 修复回归在并发第二条抵达时暂停第一条语义调用，使用锁定的官方 OpenAI SDK 和本地 HTTP 服务端；修复后服务端核对两条不同输入各接收一次。把同一回归临时对照旧分支，实际 **1 failed、1 skipped、17 deselected**，本地服务端请求体依次为 first/second/second，确认旧分支对第二条输入实际多发了一次本地 HTTP 请求。恢复修复后组合回归 **31 passed、27 skipped，13.37秒**；跳过来自没有启用的 PostgreSQL fixture。此证据闭合一个已确认的应用级重复请求根因；它证明的是本地 HTTP fixture 收到的请求，不扩展为远端生产服务接收证据，也不把该错误误判成 SDK 重试。
 
 新剩余项：SemanticIntentService 在 `InputOrchestratorService.orchestrate_async` 中先于 `ExecutionRequest.turn_id` 生成执行，因此该调用的 provider observation 没有稳定 `turn_id/trace_id` 与后续 Agent turn 汇合。需先设计不改变执行顺序与授权语义的关联字段，再覆盖意图识别、主图每轮模型调用、工具观察后的再推理、provider attempt/response 和 durable-worker 恢复。客户端 attempt 仍不等于远端已接收；本地 HTTP server 的计数只证明夹具实际收到。
+
+## 2026-10-20 意图判定与 Agent turn 身份贯通、工具调用关联补齐
+
+重新沿实际消费者核对上述缺口，采用“在意图判断之前创建 turn/trace，再把同一身份交给 Runtime”的方式，不重排意图判定/路由/权限流程。`InputOrchestratorService` 现在先生成或沿用 `turn_id/trace_id`，传入语义请求；`ExecutionRequest` 沿用相同身份；`SessionService` 的 durable task、待处理输入元数据、队列排空/恢复以及 `AgentTaskDispatcher` 保留该身份；`RuntimeService` 主图不再为同一请求另建 trace。每个 `model_invoker` admission 仍生成自己的 `logical_call_id`，provider observer 另计 SDK HTTP attempt。
+
+消费端检查确认 `append_graph_event` 本来就为图事件统一加 turn/trace；工具事件以 `call_id` 标记执行。缺少的是响应侧 `tool_call_ids`，不是新的 trace ID。现在 `model.response_received` 加入模型响应实际返回的工具 ID，保持 `model.tool_calls_received`、具体 tool execution 和后续 tool-result message 使用的 ID 可连接。事件 `payload` 在 `ExecutionEvent` 中是通用字典，当前浏览器状态页仍按已有工具事件显示，因此无需新建 UI 或 API schema。
+
+实际验证：
+
+- `tests/test_semantic_intent_trace_http.py` 使用真实 OpenAI SDK 和本地 TCP/HTTP fixture；fixture 收到恰好一个 `/v1/chat/completions` POST。semantic-intent 开始/完成、intent classified、物理 HTTP attempt 使用相同 trace/turn/logical-call ID。该测试证明本地服务端收到一次请求，不证明外部 Step 在线可用。
+- `tests/test_model_trace_project_binding.py` 运行两个模型节点调用：两个请求共享 trace/turn，有两个不同 logical-call ID；第一个响应公布 `trace-tool-call-1`，下一模型输入的 tool message 引用该 ID，第二响应公布自己的 ID。测试也覆盖恢复状态的初始 trace。
+- `tests/test_runtime_interrupt_tool_calls.py` 核对实际工具执行上下文收到稳定 trace/turn；事件原有 call IDs 在中断、补齐 tool protocol 和持久快照中保持一致。
+- 最终回归命令覆盖上述文件、意图安全、忙会话并发、会话执行所有权、Agent task dispatch、场景知识与 opt-in live-test 收集：**154 passed、47 skipped、30.67s**。跳过包含未开启的 PostgreSQL 与真实模型门控，按未执行记账。
+
+另在默认 Step 当前认证配置下，真实运行 opt-in `test_live_model_tool_stream.py::test_current_model_executes_read_only_tool_and_stream_matches_final_transcript`。由于该测试之前只在成功时保存摘要，本轮将其加强为无正文/无密钥的阶段轨迹证据：只保存事件类型、turn/trace/logical-call/tool-call IDs、HTTP attempt 数和状态码。最新隔离会话结果在 `p0-live-model-trace-auth-current-20261020-143020/acceptance.json`：`step-5-preview` 一次逻辑调用、一次 HTTP attempt，收到400后 `interrupted`；没有响应完成、工具调用或 post-tool reasoning。测试失败不是认证未通过：相同默认凭据的模型目录查询已经成功；此前最小 chat 请求的供应商错误分类为订阅/计划 entitlement。也不能因 API 调用了就说远端成功执行了模型内容，只有 HTTP 错误响应被实际收到。
+
+当前结论：SemanticIntent 至主 Agent turn 的 IDs 已贯通；模型响应到实际工具事件的 tool-call ID 可对账；本地 SDK/HTTP 与 deterministic test 支持这些实现。Step 当前状态应表述为“凭据认证已确认，生成 API 当前仍返回400 entitlement，真实 Agent loop未启动”。尚未证明默认 Step 正常返回工具调用后的完整链路；持久 Worker 的其他业务入口、生成/规划/影响调用各自的 attempt/recovery、断网和进程故障仍需单独验收。客户端 attempt 与远端收到的请求保持区分；生产端远端接收仍需网关或提供商证据。

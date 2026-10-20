@@ -649,7 +649,7 @@ def test_da_e4_latest_assistant_tool_call_ids_preserve_declared_order():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("decision", ["approved", "denied", "scope_changed", "batch_mixed"])
-async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
+async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision, monkeypatch):
     pytest.importorskip("deepagents")
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
     from langchain_core.messages import AIMessage
@@ -719,9 +719,18 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
         agent_registry=AgentRegistry(),
         tool_job_service=tool_jobs,
     )
+    observed_requests = []
+    execute_observed = runtime._execute_observed
+
+    async def capture_execution_request(observed_session, observed_request, state, executor):
+        observed_requests.append(observed_request)
+        return await execute_observed(observed_session, observed_request, state, executor)
+
+    monkeypatch.setattr(runtime, "_execute_observed", capture_execution_request)
     session = _runtime_session("session-e4-resume")
     request = ExecutionRequest(
         turn_id="turn-e4-resume",
+        trace_id="trace-e4-resume",
         session_id=session.id,
         user_message="Run the governed command.",
         normalized_input="Run the governed command.",
@@ -757,6 +766,7 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision):
     assert resumed is not None
     assert resumed.output_text == "DA_E4_RESUMED_OK"
     assert resumed.snapshot.stage == "completed"
+    assert observed_requests[-1].trace_id == pending.state["trace_id"] == "trace-e4-resume"
     if decision in {"approved", "batch_mixed"}:
         assert len(tool_runtime.calls) == 1
         assert tool_runtime.calls[0][0:2] == ("cli-executor", "approval-call")

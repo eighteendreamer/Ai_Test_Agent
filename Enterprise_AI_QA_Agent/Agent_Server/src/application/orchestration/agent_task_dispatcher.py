@@ -91,7 +91,7 @@ class AgentTaskDispatcher:
             turn_id=request.turn_id,
             project_id=session.project_id,
             request_id=context.request_id if context else new_id("req"),
-            trace_id=context.trace_id if context else new_id("trace"),
+            trace_id=getattr(request, "trace_id", "") or (context.trace_id if context else new_id("trace")),
             run_id=context.run_id if context else None,
             run_item_id=context.run_item_id if context else None,
         )

@@ -147,6 +147,37 @@ async def test_current_model_executes_read_only_tool_and_stream_matches_final_tr
             ))
             detail = result.session.model_dump(mode="json")
             events = await asyncio.wait_for(receiving, 180)
+            trace_event_types = {
+                "model.request_prepared", "model.response_received", "model.invocation_failed",
+                "tool.execution_started", "tool.execution_completed", "tool.execution_failed",
+                "tool.execution_denied", "tool.execution_blocked", "tool.execution_skipped",
+            }
+            trace_fields = (
+                "turn_id", "trace_id", "logical_call_id", "tool_call_ids", "call_id",
+                "tool_key", "tool_call_count", "http_request_attempt_count", "status_code",
+                "error_type", "cause_error_type", "completion_status",
+            )
+            model_trace = [
+                {"type": event.get("type"), "payload": {
+                    key: (event.get("payload") or {})[key]
+                    for key in trace_fields if key in (event.get("payload") or {})
+                }}
+                for event in events if event.get("type") in trace_event_types
+            ]
+            observations = {
+                "status": detail["status"], "model_key": model_key,
+                "session_storage": "isolated_memory", "execution_entry": "session_service_compatibility",
+                "durable_dispatcher_verified": False, "browser_verified": False, "release_ready": False,
+                "trace_events": model_trace,
+                "model_logical_call_count": sum(1 for event in model_trace if event["type"] == "model.request_prepared"),
+                "http_attempt_count": sum(int(event["payload"].get("http_request_attempt_count") or 0)
+                    for event in model_trace if event["type"] in {"model.response_received", "model.invocation_failed"}),
+            }
+            evidence_dir = Path(os.getenv("QA_TEST_GATE_OUTPUT_DIR") or tmp_path)
+            evidence_dir.mkdir(parents=True, exist_ok=True)
+            (evidence_dir / "acceptance.json").write_text(
+                json.dumps(observations, ensure_ascii=False, indent=2), encoding="utf-8",
+            )
             assert detail["status"] == "completed", "Actual model turn did not complete; inspect its event evidence."
             persisted_response = await client.get(f"/sessions/{session_id}")
             persisted_response.raise_for_status()
@@ -162,13 +193,21 @@ async def test_current_model_executes_read_only_tool_and_stream_matches_final_tr
                       if event["type"] == "assistant.stream.delta" and event["payload"].get("message_id") == final["id"]]
             assert deltas and "".join(deltas) == final["content"]
             assert any(event["type"] == "assistant.stream.completed" for event in events)
-            observations = {
-                "status": "passed", "model_key": model_key, "completed_tools": len(jobs),
-                "sse_events": len(events), "delta_count": len(deltas), "final_chars": len(final["content"]),
-                "session_storage": "isolated_memory", "execution_entry": "session_service_compatibility",
-                "durable_dispatcher_verified": False, "browser_verified": False, "release_ready": False,
+            response_call_ids = {
+                call_id for event in model_trace if event["type"] == "model.response_received"
+                for call_id in event["payload"].get("tool_call_ids", [])
             }
-            evidence_dir = Path(os.getenv("QA_TEST_GATE_OUTPUT_DIR") or tmp_path)
+            executed_call_ids = {
+                event["payload"].get("call_id") for event in model_trace
+                if event["type"].startswith("tool.execution_") and event["payload"].get("call_id")
+            }
+            assert response_call_ids == executed_call_ids, model_trace
+            observations.update({
+                "status": "passed", "completed_tools": len(jobs), "sse_events": len(events),
+                "delta_count": len(deltas), "final_chars": len(final["content"]),
+                "response_tool_call_ids": sorted(response_call_ids),
+                "executed_tool_call_ids": sorted(executed_call_ids),
+            })
             (evidence_dir / "acceptance.json").write_text(
                 json.dumps(observations, ensure_ascii=False, indent=2), encoding="utf-8",
             )

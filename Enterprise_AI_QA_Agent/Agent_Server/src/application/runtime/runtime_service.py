@@ -880,6 +880,7 @@ class RuntimeService:
         request = ExecutionRequest(
             session_id=session.id,
             turn_id=str(state["turn_id"]),
+            trace_id=str(state["trace_id"]),
             user_message=str(state.get("user_message") or ""),
             normalized_input=str(state.get("normalized_input") or ""),
             mode_key=str(state.get("mode_key") or session.mode_key),
@@ -1401,6 +1402,7 @@ class RuntimeService:
         state["control_state"] = "resuming"
         request = ExecutionRequest(
             turn_id=state["turn_id"], session_id=session.id,
+            trace_id=state["trace_id"],
             user_message=state["user_message"], normalized_input=state["normalized_input"],
             mode_key=state["mode_key"], agent_key=state["selected_agent_key"],
             model_key=state["selected_model_key"], skill_keys=state["requested_skill_keys"],
@@ -1456,7 +1458,7 @@ class RuntimeService:
         return {
             "session_id": session.id,
             "turn_id": request.turn_id,
-            "trace_id": str(uuid4()),
+            "trace_id": request.trace_id or str(uuid4()),
             "user_message": request.user_message,
             "normalized_input": request.normalized_input,
             "session_mode": session.session_mode.value,

@@ -40,9 +40,11 @@ class _BlockingFirstToolRuntime:
         self.first_started = asyncio.Event()
         self.release_first = asyncio.Event()
         self.call_ids = []
+        self.contexts = []
 
     async def execute(self, tool, call, context):
         self.call_ids.append(call.id)
+        self.contexts.append(context)
         if call.id == "call-1":
             self.first_started.set()
             await self.release_first.wait()
@@ -105,6 +107,7 @@ def _session(session_id: str) -> SessionRecord:
 def _request(session_id: str) -> ExecutionRequest:
     return ExecutionRequest(
         turn_id="turn-p0-23",
+        trace_id="trace-p0-23",
         session_id=session_id,
         user_message="Route two requests.",
         normalized_input="Route two requests.",
@@ -141,6 +144,8 @@ async def test_interrupt_between_tool_calls_skips_later_call_and_closes_model_pr
     result = await asyncio.wait_for(execution, timeout=1)
 
     assert tool_runtime.call_ids == ["call-1"]
+    assert tool_runtime.contexts[0].turn_id == "turn-p0-23"
+    assert tool_runtime.contexts[0].trace_id == "trace-p0-23"
     assert result.state["termination_reason"] == "interrupted"
     assert result.snapshot.stage == "interrupted"
     assert not any(event.type == "graph.execution_completed" for event in result.events)

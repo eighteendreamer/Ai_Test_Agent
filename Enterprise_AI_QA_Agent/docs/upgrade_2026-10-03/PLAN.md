@@ -4,7 +4,7 @@
 
 模型适配层也已按当前源码和 SDK HTTP 请求重新核验：统一内部请求/结果契约与 OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 原生 transport 分层保留，LangChain 仅走 OpenAI-compatible Chat；本批 6 个相关测试文件共 **186 passed**，没有发现需要新增统一协议栈或更换 Anthropic Messages 的依据。该结果是锁定 SDK 对本地 HTTP fixture 的功能验收，不代表所有真实外部供应商都已在线验收。详见[模型适配层复核](P0_CALL_TRACE_RESEARCH.md#模型适配层当前源码与真实-sdk-http-复核2026-10-20)。
 
-P0 并发重复请求核验发现并修复：会话锁已占用但持久状态仍非忙时，同一输入会在锁外预编排后又在锁内重新编排，导致语义意图模型重复调用；真实 SDK/本地 HTTP 回归现为每条输入恰好一次发送。意图调用与后续 Agent turn 的完整 trace 关联仍未闭环，见 §7.120。
+P0 并发重复请求核验发现并修复：会话锁已占用但持久状态仍非忙时，同一输入会在锁外预编排后又在锁内重新编排，导致语义意图模型重复调用；真实 SDK/本地 HTTP 回归现为每条输入恰好一次发送。另已把单次用户 turn/trace 贯通语义判定、Agent 调用、工具后推理和工具调用 ID，并用本地 HTTP/SDK 与确定性回归验证；默认 Step 只读工具/SSE 实测仍在首个模型请求收到 HTTP 400、1次 attempt 后中断，没有进入工具阶段。账号认证已通过不等于该推理端点当前可用，详见 §7.122。全业务持久任务、生产环境及其他失败/恢复组合仍需继续核验。
 
 以下2026-10-19摘要与分阶段原件作为历史保留；当前状态以2026-10-20调研和其后实际验收结果为准。
 
@@ -21,7 +21,7 @@ P0 并发重复请求核验发现并修复：会话锁已占用但持久状态�
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
 | Docker性能、安全 | 实际Docker工具/报告专项；默认Step在服务端可信目标前提下实际k6→PG/RustFS→报告页及终态重投通过（§7.114） | 默认安全Agent、性能故障/容量/流式指标与完整公开入口 | 普通性能会话的可信目标登记缺少公开接入；仅登记项目base_url不会赋予该范围；保留现有权限规则 |
 | 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
-| 重复请求与交付 | 逻辑调用/SDK/HTTP观测和多SDK故障专项；ToolJob命名契约修复后完整迁移文件31项通过（§7.111）；并发首轮窗口的重复语义模型调用已修复，真实SDK/HTTP每条输入各一次（§7.120） | 意图判定到Agent turn/工具后推理的全入口身份贯通；更多跨阶段断网/进程恢复、生产历史迁移/投影和旧汇总原件追踪 | 继续按Profile和原生协议契约补适配，不另建单一协议栈 |
+| 重复请求与交付 | 多SDK逻辑调用/HTTP attempt观测；并发首轮重复分类已修复；turn/trace 已从语义判定传到Agent、工具后推理和挂起队列；模型响应事件含可对账的工具调用ID；确定性与本地SDK/HTTP回归154通过（§7.122） | 默认 Step 实际 Agent 工具/SSE测试首个推理调用返回400，未执行工具或后续推理；其他持久任务入口、跨阶段断网/进程恢复、生产历史迁移/投影和旧Worker汇总原件追踪 | 按逐入口调查补齐持久身份和失败/恢复证据；继续按Profile与原生协议契约适配，不另建单一协议栈 |
 
 单用例通过不代表P2整体通过；受控模型、真实默认模型和人手操作分别记账。在途计划修订当前不能由“失败后新建回归运行”替代：`CasePlanRunService.create` / `build_plan_run` 仍固定原计划和RunItem，该缺口需要单独设计、实现与恢复验收。
 
@@ -4596,3 +4596,26 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 代码逻辑回归覆盖规划角色/Prompt 版本、真实失败结果与 Attempt 对应、当前 Run 投影变化后的原计划读取、合成阻断结果的计划 pin，以及旧 Attempt 不追溯补绑：六个相关测试模块 **73 passed、32 skipped**；跳过项是未启用的真实存储门控。之后启用隔离 MySQL/PostgreSQL/RustFS 并运行真实用例存储、回归、阻断结果和 Markdown/DOCX/PDF 环境限制测试：**14 passed、0 skipped**，JUnit 为 `p2-result-snapshot-20261020-134215.xml`，证据目录为 `p2-result-snapshot-20261020-134215/`。`compileall` 与定向 `git diff --check` 通过。
 
 按用户最新说明重新探测当前 MySQL 默认 Step 配置：凭据已配置，`step-5-preview` 仍使用 OpenAI-compatible Chat Completions。通过 `ModelRuntimeService` 发一次最小请求，测试副本仅将输出上限设为32、SDK重试设为0；真实 HTTP 一次返回400，安全分类为 `subscription_or_plan_entitlement`。没有保存供应商错误正文/模型输出，没有修改 MySQL，也没有创建业务 Run。安全摘要见 `p2-step-runtime-probe-current-20261020-1338.json`。因此认证状态已确认，但当前推理授权仍未恢复；本次真实模型调用没有进入规划阶段，不能据此宣称多用例选择、补全或执行通过。P2 尚欠默认模型完整闭环和更多计划修订/旧结果兼容验收，P0—P5 仍未完成。
+
+### 7.122 P0 意图、Agent、工具调用与 HTTP 请求追踪贯通（2026-10-20）
+
+沿 `SessionService.send_message → InputOrchestratorService.orchestrate_async → SemanticIntentService.enrich → AgentTaskDispatcher/RuntimeService → model_invoker → tool_executor → provider SDK` 逐段核对。缺口原因是语义模型在 `ExecutionRequest` 创建前运行：原先语义调用没有用户 turn/trace，而 Runtime 随后另建 trace，导致前置意图请求与 Agent/工具后的模型调用不能按同一用户请求还原。
+
+现在由输入编排在语义调用前生成或继承唯一 `turn_id/trace_id`，把 session、project、mode 和逻辑调用身份交给语义模型，并将同一身份写入后续 `ExecutionRequest`。持久任务使用领取时的身份；待处理队列在入队、排空和恢复时保存/复用身份。Runtime 主图沿用该 trace；每次模型推理仍有独立 `logical_call_id`，HTTP observer 单独记录 SDK attempt。`append_graph_event` 已为模型及工具事件加入 turn/trace 字段。
+
+代码审查另发现：`model.response_received` 只记录工具数量/名称，工具执行事件有 `call_id`，但二者不能直接按工具调用身份对账。响应事件现增加 provider 返回的 `tool_call_ids`。回归验证连续两次推理使用相同 turn/trace、不同逻辑调用 ID，下一条模型请求里的工具结果仍指向前一响应的 tool-call ID；工具执行事件以同一 ID 标识。此字段只补充现有通用事件 payload，不更改 provider 协议、API schema、数据库结构或前端展示契约。
+
+最终确定性回归（Agent_Server）：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_intent_safety_routing.py tests/test_model_trace_project_binding.py tests/test_runtime_interrupt_tool_calls.py tests/test_semantic_intent_trace_http.py tests/test_semantic_intent_failure_visibility.py tests/test_busy_session_queue_concurrency.py tests/test_session_execution_ownership.py tests/test_agent_task_dispatch.py tests/test_scene_knowledge_contract.py tests/test_live_model_tool_stream.py -q --tb=short
+# 154 passed、47 skipped，30.67秒。跳过包括未开启的 PostgreSQL/真实模型门控，不计通过。
+```
+
+`test_semantic_intent_trace_http` 使用官方 OpenAI SDK 向本地 TCP/HTTP 服务端发实际请求，核对单次 `/v1/chat/completions` 接收、semantic intent 与后续 ExecutionRequest 的 turn/trace 相同，以及 logical-call ID 与 HTTP attempt 日志一致。`test_model_trace_project_binding` 验证工具后第二次模型请求保留相同 trace/turn、获得新 logical-call ID，并携带前一次工具调用的 `tool_call_id`。`test_runtime_interrupt_tool_calls` 验证工具执行上下文也保留相同 trace/turn。Python 编译检查与 `git diff --check` 另行执行。
+
+默认模型端到端验收仍失败。以用户说明认证已处理后，使用当前 MySQL 活动默认 `step-5-preview`，启动隔离内存 Session 和真实 SSE API，发送只读 `session-history` 工具目标。测试两次各只发起一个新 turn；最新证据 `p0-live-model-trace-auth-current-20261020-143020/acceptance.json` 显示仅1个 `model.request_prepared`、1个 HTTP attempt、收到 HTTP 400，随后 `interrupted`；没有 `model.response_received`、tool-call ID、工具任务或工具后推理。此端到端尝试不把 Step 认证与推理 entitlement 混为一谈；之前同一默认配置的零重试最小调用已将供应商400分类为 `subscription_or_plan_entitlement`，并由模型目录 GET 证实凭据可认证。没有保存密钥、HTTP正文或模型输出，也没有更改 MySQL 默认配置。该失败不能作为追踪功能回归失败，也不能作为 Agent 工具闭环通过。
+
+当前完成的是入口身份生成/传递、图事件工具 ID 对账字段及本地 SDK/HTTP/确定性轨迹验证。真实默认 Step 请求仍无法进入工具阶段，因此默认 provider 的实际工具循环、SDK重试/服务端请求数及断网恢复尚未验收；其他规划、生成、影响分析、持久 Worker 入口也需逐一核对。没有证据要求统一模型协议或改写适配层；Anthropic Messages、OpenAI Responses、Gemini 原生协议保持独立。整体 P0—P5 继续未完成。
+
+补充核对发现，普通工具审批恢复和 Deep Agent HITL 审批恢复都会从持久状态重建 `ExecutionRequest`，但原来没有复制 `trace_id`。两条恢复分支现都从恢复状态传回 `trace_id`，避免请求身份字段留空。`test_intent_safety_routing.py` 对两条重建路径分别做了确定性断言；Deep Agent 可选依赖未安装，因此真实 Deep Agent agent-loop 参数化测试的4个场景仍为 skipped，不计通过。Anthropic 传输仍调用 Messages SDK；这项修复也没有改模型协议。
