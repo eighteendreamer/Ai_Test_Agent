@@ -5846,3 +5846,21 @@ Run 新增 `plan_revision`，并新增 `RunPlanRevisionRequest`/`TestRunPlanRevi
 Step 账号认证按用户确认为完成，且已有模型目录请求成功证据；同日默认推理请求仍保存为 `subscription_or_plan_entitlement` 类 HTTP 400，未产生模型响应。故本轮继续区分“认证完成”和“默认模型推理通道可用”：多用例 P2 默认 Agent 链路仍未验收，不重复同一失败探针。
 
 本轮没有生产代码、模型配置、数据库 schema 或依赖改动。需求追踪真实用户业务评审、部署/环境适用性、更多业务样本的默认模型影响判断及 P4 增量草稿完整业务闭环仍待完成；完整 P0—P5 目标继续进行。
+
+## 2026-10-20 P3 API Agent 持久子 Worker 当前工作树复验
+
+核对前次失败原件后发现，持久子 Worker 变体未能在 `wait_api` 的50秒窗口内得到 `/health/live`，但测试 `finally` 会立即写入只在 `wait_api` 成功后才初始化的 `parent_checkpoint_timeline`，产生 `UnboundLocalError` 并遮住原始超时。原 stderr 只保留到 Uvicorn 启动及 `sqlalchemy_engine_created`，不足以证明具体卡在哪个启动依赖；因此没有把它归因于产品 API 或 Worker。将该验收变量提前初始化，确保早期启动失败也能保留原始错误和清理证据。
+
+同一受控持久 Worker 变体随后重跑成功：
+
+```powershell
+# Agent_Server；RUN_LIVE_API_AGENT_WORKER=1
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_agent_worker_live.py -k 'controlled-model-durable-child-process' -q --tb=long --junitxml=..\docs\upgrade_2026-10-03\p3-api-agent-worker-controlled-durable-diagnostic-current-20261020.xml
+# 1 passed、0 failed、0 skipped，60.36秒；目标用例报告53.045秒。
+```
+
+正式 API 与两个独立 Agent Worker 使用隔离 MySQL 配置、PostgreSQL 任务/会话事实、独立 Redis 容器和本地受控模型/业务目标。实际业务序列为 `/login`（无 Authorization，200）→ `/auth/refresh`（带旧凭据，200）→ `/profile`（带刷新后凭据，200）；三个持久子会话生成的父报告为3/3任务通过。API 重启后历史一致；向队列重投原终态任务没有增加业务 HTTP 或模型 HTTP。共观测8次发往本机受控模型的 HTTP attempt，外部 AI 调用数为0，生成凭据未进入公开证据。
+
+验收摘要为 `p3-api-agent-worker-controlled-durable-diagnostic-current-20261020/controlled-durable/acceptance-summary.json`；完整脱敏观测、stdout/stderr、数据库清理记录和 XML 位于同名目录。该专项未执行 RustFS 对象读写，也不是默认模型质量、完整 API 错误矩阵或全系统完成验收。第一次 50 秒 API 启动等待超时在重跑中未复现，具体原因仍未知；当前证据不支持宣称存在持久 Worker 产品缺陷。测试修复仅涉及验收变量的初始化时机，没有生产 API/Worker 代码、数据库结构、模型配置或 Provider 改动。
+
+Step 账号认证按用户确认记为完成，并保留成功模型目录查询证据；当前默认推理请求另有 `subscription_or_plan_entitlement` HTTP 400 证据。两者是不同状态，本轮未重复探测，也未把认证通过写成默认 AI 端到端通过。P2 默认多用例模型规划仍待推理 entitlement 恢复后验收。

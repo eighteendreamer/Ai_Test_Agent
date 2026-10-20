@@ -4770,3 +4770,11 @@ $env:QA_DOCUMENT_IMPACT_FULL_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Age
 - **模型状态：** Step 账号认证按用户确认及先前成功模型目录请求记为完成；当前默认推理探测已有 HTTP 400 entitlement 证据，P2 默认多用例 Agent 链路因此仍未验收。不要把认证完成写成推理可用，也不要重复发送同一个失败探针。
 
 本轮仅增加方案/实施记录和实际验收证据；未更改生产模型适配器、MySQL 模型配置、PostgreSQL 业务 schema 或用例执行逻辑。完整 P0—P5 目标继续进行。
+
+### 7.132 P3 API Agent 持久子 Worker 受控链路当前复验（2026-10-20）
+
+前次独立 API 变体在 `wait_api` 的50秒内未就绪；旧验收 `finally` 又读取尚未初始化的时间线，导致 `UnboundLocalError` 覆盖启动超时。已将时间线容器初始化移到进程启动前。原 stderr 只有 Uvicorn 开始启动和 SQLAlchemy engine 创建记录，没有足够证据定位具体等待阶段；同一持久 Worker 变体修复验收夹具后重跑 **1 passed、0 failed、0 skipped，60.36秒**，所以不把一次未复现的启动超时归为已证实产品故障。
+
+当前已通过的范围：隔离正式 API + 两个独立 Worker、MySQL 配置和 PostgreSQL 任务状态，使用本地受控模型与真实本机 API 目标执行 `/login → /auth/refresh → /profile`，三次业务请求均为200；旧凭据刷新后，后续请求确实使用新凭据。三个持久子会话报告3/3通过，API 重启后历史可读，终态重投新增业务和模型 HTTP 均为0。该测试没有执行 RustFS 对象读写，受控模型不计为外部 AI。
+
+**尚未验收/实现：** 默认模型或其他已配置真实模型驱动的完整 API Agent 场景、更多鉴权失败/超时/依赖传值/幂等组合、RustFS 与结果前端展示的 API 测试闭环；首次启动超时的具体原因也尚未查明。Step 账号认证按用户确认为完成，模型目录查询有成功证据；默认推理 entitlement 的 HTTP400继续单独记录，P2 默认 AI 多用例闭环没有通过。本节只代表上述固定 API 受控场景验收，完整 P0—P5 仍未完成。

@@ -220,6 +220,7 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
         'full_goal_complete': False, 'durable_children': durable,
         'model_source': model_source}
     secret_values = []
+    parent_checkpoint_timeline = []
     model_context = worker_model() if model_source == 'controlled' else nullcontext((None, [], []))
     with auth_target() as (business, events), model_context as (model_url, requests, failures):
         try:
@@ -297,7 +298,6 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
                         held_child_approvals = {}
                         approval_hold_seconds = float(os.getenv('QA_API_AGENT_APPROVAL_HOLD_SECONDS', '0'))
                         approval_wait_observations = []
-                        parent_checkpoint_timeline = []
                         last_checkpoint_signature = None
                         restart_child_wait = os.getenv('QA_API_AGENT_RESTART_WHILE_CHILD_WAIT') == '1'
                         restarted_child_wait = False

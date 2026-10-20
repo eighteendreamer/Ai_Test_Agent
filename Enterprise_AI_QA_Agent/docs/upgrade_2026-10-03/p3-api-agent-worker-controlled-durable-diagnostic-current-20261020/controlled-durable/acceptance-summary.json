@@ -1,0 +1,55 @@
+{
+  "test": "test_real_agent_worker_private_auth_and_terminal_redelivery[controlled-model-durable-child-process]",
+  "result": {
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0,
+    "duration_seconds": 53.045
+  },
+  "environment": {
+    "isolated_mysql": true,
+    "isolated_postgresql": true,
+    "isolated_redis": true,
+    "rustfs_object_io_exercised": false,
+    "model_source": "controlled-local-http-model",
+    "external_ai_calls": 0,
+    "physical_model_http_attempts": 8
+  },
+  "business_http_chain": [
+    {
+      "method": "POST",
+      "path": "/login",
+      "status": 200,
+      "authorization_present": false
+    },
+    {
+      "method": "POST",
+      "path": "/auth/refresh",
+      "status": 200,
+      "authorization_present": true,
+      "old_credential_accepted": true
+    },
+    {
+      "method": "GET",
+      "path": "/profile",
+      "status": 200,
+      "authorization_present": true,
+      "refreshed_credential_accepted": true
+    }
+  ],
+  "agent_result": {
+    "durable_child_sessions": 3,
+    "report_tasks_completed": 3,
+    "report_tasks_failed": 0,
+    "credential_scan_passed": true
+  },
+  "recovery": {
+    "api_restart_history_preserved": true,
+    "terminal_redelivery_additional_business_http": 0,
+    "terminal_redelivery_additional_model_http": 0
+  },
+  "limitations": [
+    "This is a fixed API campaign using a controlled local model and local business target; it does not evaluate default-model quality or broad API scenarios.",
+    "The preceding run timed out waiting for API startup; its cleanup error is fixed, but the exact cause of that one startup delay is not established. The rerun completed successfully."
+  ]
+}
