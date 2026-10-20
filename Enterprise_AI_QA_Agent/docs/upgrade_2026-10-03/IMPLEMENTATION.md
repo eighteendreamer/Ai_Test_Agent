@@ -5696,7 +5696,7 @@ MySQL 当前默认记录为 `step-5-preview`，`provider=openai`、`transport=op
 
 ### 当前未完成边界
 
-P5 Docker 安全直接工具链与报告产品页、P3 DOCX 版本解析产品链已有当前工作树实测，但默认 Agent 安全模式从用户目标到工具调用仍待验收。Step 凭据认证已通过，但当前默认推理请求被供应商归类为订阅/计划 entitlement 不可用；P2 多用例完整规划、执行与报告仍未验收，待该 entitlement 恢复后重跑。其余 P0—P5 项（包括普通文档默认模型全量生成、正式回执真实中断恢复、人工 UI 录制与默认 AI 消费知识、API 测试完整 Agent 流程、需求追踪广业务验收、生产历史数据迁移/投影和旧 Worker 原件恢复）继续逐项保留；**整体升级目标未完成**。
+P5 Docker 安全直接工具链与报告产品页、P3 DOCX 版本解析产品链已有当前工作树实测，但默认 Agent 安全模式从用户目标到工具调用仍待验收。Step 凭据认证已通过，但当前默认推理请求被供应商归类为订阅/计划 entitlement 不可用；P2 多用例完整规划、执行与报告仍未验收，待该 entitlement 恢复后重跑。其余 P0—P5 项（包括普通文档默认模型全量生成、默认提供商回执纠正的真实中断恢复、人工 UI 录制与默认 AI 消费知识、API 测试完整 Agent 流程、需求追踪广业务验收、生产历史数据迁移/投影和旧 Worker 原件恢复）继续逐项保留；受控 HTTP 模型下的正式回执真实进程中断已单独验收，见本记录末尾及 `PLAN.md` §7.119；**整体升级目标未完成**。
 
 
 ## 2026-10-20 P1 导入页面复验与 P2 默认 Step 真实闭环重试
@@ -5712,3 +5712,11 @@ P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、�
 上次已确认本系统按统一内部请求/结果契约、`transport` 注册和每个 SDK 客户端执行映射，同时保留 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google GenAI 等原生协议；Anthropic 仍调用 `client.messages.create`。这次失败没有提供新证据支持更改这一架构，适配层仍按模型/传输能力映射请求字段，不把全系统收敛为单一 SDK 协议。
 
 当前状态：P1 模板与导入已有完整页面验收；P1 普通需求文档的真实默认模型全量生成/模块恢复仍未完成；P2 的选择、补入和计划在旧证据中已通过真实默认模型，但当前 entitlement 不可用使完整规划请求返回 HTTP 400，完整 Run/报告/终态重投未通过。P0—P5 其余未验收项与整体目标继续保持未完成。
+
+## 2026-10-20 受控模型正式回执真实进程中断复核
+
+复核已有独立进程验收，而非把同进程异常注入当作进程恢复证据。`tests/test_receipt_process_recovery_live.py` 确实启动隔离的生产 API/Worker 和 MySQL、PostgreSQL、Redis、RustFS；分别在回执调用意图已持久化但没有响应、以及响应原件和 `phase=response` 检查点已持久化的边界，终止拥有该请求的 API 进程，等待原租约自然过期，再启动新 API 与生产 Worker 恢复。没有重置 RunItem、租约或测试数据来制造恢复结果。
+
+两种边界均实际通过：`invoking` 保留未知副作用，不重发只读纠正，恢复结果为 `error`；`response` 从已核验的原存储响应恢复并通过。两个场景均验证业务 POST/GET/DELETE 各一次、原尝试过期后创建一个恢复 attempt、终态队列重投不新增模型或业务请求、清理后的业务记录为零。结论限于受控 HTTP 模型，不能替代默认 Step 提供商上的纠正质量/网络中断验证，也不能替代 P2 多候选规划和执行验收。
+
+证据：`p0-receipt-process-recovery-current/verification.json` 与 `p0-receipt-process-recovery-current.xml`（2 passed、0 failed、0 skipped，690.50 秒）；分边界进程、请求、检查点、执行结果和清理原件位于同名目录的 `invoking/`、`response/`。测试代码见 `Agent_Server/tests/test_receipt_process_recovery_live.py`。此复核没有修改生产代码、Provider 协议、数据库结构或全局配置。

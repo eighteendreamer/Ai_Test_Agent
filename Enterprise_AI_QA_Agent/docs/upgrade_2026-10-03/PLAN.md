@@ -6,15 +6,15 @@
 
 以下2026-10-19摘要与分阶段原件作为历史保留；当前状态以2026-10-20调研和其后实际验收结果为准。
 
-修订日期：2026-10-19。Step 已认证；完整 P0—P5 未完成。P1 普通 Markdown 三模块生成、持久化及独立恢复、模板/Excel/JSON 项目页面已有专项验收。P2 最新真实默认模型完整八步复验 `p2-default-full-reference-feedback-8192-live7-20261019/`：1失败、281.16秒。当前MySQL默认8192输出额度，隔离规划期限600秒；逻辑及bindings通过，produced以length/8192结束，正文为空。3次模型HTTP均200，无鉴权失败，未创建Run、业务HTTP为0；尚未到cleanup，不能宣布默认引用修复通过。此前live6的原文歧义和错误T结构保留；已复用现有引用指导并补声明/检查位置及计数诊断，真实存储/恢复64项通过，正式关系45项通过/3跳过，旧阶段与日志32项通过/22跳过；旧r2任务原样恢复，新任务r3。原生未执行证明和对象身份修复已提交7d8896dd。默认模型完整选取/补全/正式执行仍未验收，停止同方向提示微调，转查执行前声明职责与实际Agent/返回后核验的重复。真实默认 UI 正负向及终态重投已有受控页面专项；DeepSeek真实页面自动化录制已验，人手录制及默认模型消费该站知识仍未验。配置在MySQL，业务/运行在PG，原件在RustFS；Provider保留各自原生SDK协议。详见 [引用反馈调研](P2_REFERENCE_FEEDBACK_RESEARCH.md)、[未执行证据调研](P2_NON_EXECUTION_RESEARCH.md) 与 [规划对照研究](P2_PLANNING_CONTRAST_CURRENT_RESEARCH.md)。
+修订日期：2026-10-20。Step 认证已通过，但当前推理 entitlement 不可用；完整 P0—P5 未完成。P1 普通 Markdown 三模块生成、持久化及独立恢复、模板/Excel/JSON 项目页面已有专项验收。P2 最新真实默认模型完整八步复验 `p2-default-full-reference-feedback-8192-live7-20261019/`：1失败、281.16秒。当前MySQL默认8192输出额度，隔离规划期限600秒；逻辑及bindings通过，produced以length/8192结束，正文为空。3次模型HTTP均200，无鉴权失败，未创建Run、业务HTTP为0；尚未到cleanup，不能宣布默认引用修复通过。此前live6的原文歧义和错误T结构保留；已复用现有引用指导并补声明/检查位置及计数诊断，真实存储/恢复64项通过，正式关系45项通过/3跳过，旧阶段与日志32项通过/22跳过；旧r2任务原样恢复，新任务r3。原生未执行证明和对象身份修复已提交7d8896dd。默认模型完整选取/补全/正式执行仍未验收，停止同方向提示微调，转查执行前声明职责与实际Agent/返回后核验的重复。真实默认 UI 正负向及终态重投已有受控页面专项；DeepSeek真实页面自动化录制已验，人手录制及默认模型消费该站知识仍未验。受控HTTP模型下正式回执 `invoking` / 已持久化 `response` 两个真实API进程中断点均已通过；默认Step提供商相同专项及P2完整执行仍未验。配置在MySQL，业务/运行在PG，原件在RustFS；Provider保留各自原生SDK协议。详见 [引用反馈调研](P2_REFERENCE_FEEDBACK_RESEARCH.md)、[未执行证据调研](P2_NON_EXECUTION_RESEARCH.md)、[规划对照研究](P2_PLANNING_CONTRAST_CURRENT_RESEARCH.md) 与 [本轮跨进程回执证据](p0-receipt-process-recovery-current/verification.json)。
 
-### 当前未完成项的分类〔2026-10-19〕
+### 当前未完成项的分类〔2026-10-20〕
 
 | 方向 | 已有实现/专项证据 | 尚未验收 | 仍需补实现或查证 |
 |---|---|---|---|
 | 模板、生成、导入 | 默认/项目模板、JSON渲染、Excel/JSON产品专项；普通Markdown模块生成及恢复专项 | 更广业务文档和用户生产流程 | 依据新失败再确定缺口，不能把已有专项重列为未实现 |
 | 按用例执行 | 项目隔离、完整版本读取、规划/依赖映射、原子领取和正式Agent链路；领取快照归档/恢复；生产领取与修订事务协调专项（§7.110） | 默认模型多候选选取→排序→必要前置/运行内准备→执行；其他模式 | 执行中修订提交、历史追加、条目增删/套件及跨修订回归仍缺完整实现；未知副作用自动选取查证及完整准备状态须继续查证 |
-| 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复；Agent API正向认证链路双Worker通过 | 更多真实中断组合；P2 live7未到执行；原live5 blocked保留 | 产生声明重复出现length/空正文，须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
+| 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复；Agent API正向认证链路双Worker通过；受控HTTP生产API在 `invoking` 与已保存 `response` 两个边界真实 kill/重启通过（§7.119） | 默认Step提供商纠正中断、更多错误/断网组合；P2 entitlement恢复后的完整规划执行；原live5 blocked保留 | produced阶段重复生成/length空正文须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
 | UI录制与知识 | DeepSeek真实 Chromium/API/CDP/PG录制，确定性质量投影及响应观察窗口到本地动作关联；固定场景知识读取及受控页面默认AI使用 | 真实用户界面操作路径、默认AI消费DeepSeek录制知识、完整产品链路 | 当前关联只表示同文档时间窗口；服务端业务因果、closed Shadow DOM、selector修复评审及失败定位报告仍待推进 |
 | Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
 | Docker性能、安全 | 实际Docker工具/报告专项；默认Step在服务端可信目标前提下实际k6→PG/RustFS→报告页及终态重投通过（§7.114） | 默认安全Agent、性能故障/容量/流式指标与完整公开入口 | 普通性能会话的可信目标登记缺少公开接入；仅登记项目base_url不会赋予该范围；保留现有权限规则 |
@@ -4564,3 +4564,11 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 | DeepSeek 公开首页真实 Chromium 录制 | `RUN_LIVE_DEEPSEEK_RECORDING=1`，更新后的回归1 passed，29.21秒；页面HTTP 200，6条原始事件，交付完整性 `verified`，1个响应窗口关联到4条此前动作，网络结果计数10，未解析引用0；无登录、聊天提交或模型调用 | `p5-recording-response-association-deepseek-live-20261020-rerun/`、`.xml` |
 
 `compileall` 与 `git diff --check` 通过。以上证明应用采集的 DOM/fetch/XHR 观察可确定性关联到同一浏览器文档中的动作，并从 DeepSeek 页面真实记录到该投影；不会证明物理用户通过完整 Vue 界面创建录制、服务端业务因果、响应正文完整性、closed Shadow DOM、beacon/WebSocket/Service Worker/导航请求，或默认 AI 实际消费该条 DeepSeek 知识。selector 修复评审、失败定位报告和完整 UI 产品流程仍未完成；Step 默认多用例验收继续等待可推理模型/额度。完整 P0—P5 保持进行中。
+
+### 7.119 受控提供商正式回执的真实 API 进程中断恢复（2026-10-20）
+
+复核 `Agent_Server/tests/test_receipt_process_recovery_live.py` 与现有隔离工件。该测试在生产 API/Worker 和 MySQL、PostgreSQL、Redis、RustFS 隔离环境中，分别于纠正请求 `invoking` 检查点已持久化、以及响应对象和 `phase=response` 检查点已持久化后，杀死拥有该请求的 API 进程；等待原租约自然过期后，由新 API 和生产 Worker 继续恢复。不是同进程抛异常的模拟，也不重置 RunItem 或租约。
+
+两种边界均通过：`invoking` 恢复后不重发纠正请求，保留未知副作用并以 `error` 结束；保存响应后恢复读取和核验原对象，正式结果为 `passed`。两场景各有 POST/GET/DELETE 三次业务效果，恢复创建第二个 attempt，终态队列重投新增模型/业务请求为零，清理后没有残余业务记录。测试运行结果为 **2 passed、0 failed、0 skipped，690.50秒**，见 `p0-receipt-process-recovery-current/verification.json`、`p0-receipt-process-recovery-current.xml` 及该目录的 `invoking/`、`response/` 原始证据。
+
+边界：这里的模型服务是受控 HTTP fixture，不代表默认 Step 提供商的纠正语义/网络故障验收；Step 当前 entitlement 不可用，P2 多候选规划没有进入完整执行。该结果只关闭这两个受控提供商的真实 API 进程中断组合，其他中断、生产部署和历史数据恢复仍需单独验证。没有改生产代码、模型协议、全局配置或数据库结构；完整 P0—P5 仍未完成。
