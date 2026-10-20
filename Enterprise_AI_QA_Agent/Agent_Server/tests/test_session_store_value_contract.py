@@ -78,6 +78,50 @@ async def dated_stores(request):
 
 
 @pytest.mark.asyncio
+async def test_atomic_status_message_event_projection_preserves_checkpoint(dated_stores):
+    writer, reader, session_id = dated_stores
+    session = await writer.get_session(session_id)
+    assert session is not None
+    session.status = SessionStatus.running
+    session.metadata["pending_turn"] = {
+        "turn_id": "turn-current",
+        "waiting_tool": {"job_id": "job-current", "child_session_ids": ["child-current"]},
+    }
+    await writer.save_session(session)
+
+    now = datetime.now(UTC)
+    message = ChatMessage(
+        id="atomic-stop-" + uuid4().hex,
+        role=MessageRole.assistant,
+        content="Worker failures stopped this turn.",
+        created_at=now,
+        metadata={"message_kind": "automatic_stop", "turn_id": "turn-current"},
+    )
+    event = ExecutionEvent(
+        id="atomic-stop-event-" + uuid4().hex,
+        type="worker.auto_stopped",
+        session_id=session_id,
+        timestamp=now,
+        payload={"turn_id": "turn-current", "reason": message.content},
+    )
+    for _ in range(2):
+        assert await writer.update_status_and_append_messages_and_events(
+            session_id,
+            status=SessionStatus.failed,
+            messages=[message],
+            events=[event],
+        )
+
+    persisted = await reader.get_session(session_id)
+    assert persisted is not None
+    assert persisted.status == SessionStatus.failed
+    assert persisted.metadata["pending_turn"] == session.metadata["pending_turn"]
+    assert [item.id for item in persisted.messages].count(message.id) == 1
+    persisted_events = await reader.list_events(session_id)
+    assert [item.id for item in persisted_events].count(event.id) == 1
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("source", ["input", "saved", "get", "list", "queue", "claim"])
 async def test_session_edits_require_explicit_save(stores, source):
     writer, reader, session_id, _ = stores

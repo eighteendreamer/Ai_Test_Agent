@@ -18,10 +18,11 @@ P0 并发重复请求核验发现并修复：会话锁已占用但持久状态�
 | 按用例执行 | 项目隔离、完整版本读取、规划/依赖映射、原子领取和正式Agent链路；领取快照归档/恢复；生产领取与修订事务协调专项（§7.110） | 默认模型多候选选取→排序→必要前置/运行内准备→执行；其他模式 | 执行中修订提交、历史追加、条目增删/套件及跨修订回归仍缺完整实现；未知副作用自动选取查证及完整准备状态须继续查证 |
 | 正式回执与恢复 | 受控恢复及默认UI正负向/终态重投专项；live5真实只读纠正；原生未执行证明及v1/v2真实恢复；引用指导/定位及保存后恢复；Agent API正向认证链路双Worker通过；受控HTTP生产API在 `invoking` 与已保存 `response` 两个边界真实 kill/重启通过（§7.119） | 默认Step提供商纠正中断、更多错误/断网组合；P2 entitlement恢复后的完整规划执行；原live5 blocked保留 | produced阶段重复生成/length空正文须架构审查；在途计划修订仍缺实现，不放宽正式核验 |
 | UI录制与知识 | DeepSeek真实 Chromium/API/CDP/PG录制，确定性质量投影及响应观察窗口到本地动作关联；固定场景知识读取及受控页面默认AI使用 | 真实用户界面操作路径、默认AI消费DeepSeek录制知识、完整产品链路 | 当前关联只表示同文档时间窗口；服务端业务因果、closed Shadow DOM、selector修复评审及失败定位报告仍待推进 |
-| Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程在同进程及持久子Worker均通过 | 鉴权拒绝/过期失败、超时恢复、更多依赖形态、幂等边界及更完整产品流程 | 依据真实调用缺口补实现，保持Agent方式 |
+| Agent API | 响应提取、依赖、鉴权与报告已有专项；显式401自动续期/只读重放及三阶段进程恢复已通过；默认Step驱动的`login → refresh → profile`正向流程此前专项通过 | 当前同进程/持久子Worker完整回归未通过：受控模式仅完成`/login`；最新检查点与会话行不一致；Step 首次推理请求仍400 | 先按[Session并发设计](SESSION_STORE_CONCURRENCY_DESIGN_20261020.md)确认并修复全量旧快照覆盖；持久Worker改用生产回收时限复验；真实缺口继续保持Agent方式补齐 |
 | Docker性能、安全 | 实际Docker工具/报告专项；默认Step在服务端可信目标前提下实际k6→PG/RustFS→报告页及终态重投通过（§7.114） | 默认安全Agent、性能故障/容量/流式指标与完整公开入口 | 普通性能会话的可信目标登记缺少公开接入；仅登记项目base_url不会赋予该范围；保留现有权限规则 |
 | 需求变更与追踪 | 上传版本、MD/DOCX/PDF解析、差异、影响/评审、增量和追踪专项 | 更广默认模型判断、用户业务评审、部署环境适用性闭环 | 其他格式/故障组合按范围继续核验，不部署Docling |
 | 重复请求与交付 | 多SDK逻辑调用/HTTP attempt观测；并发首轮重复分类已修复；turn/trace 已从语义判定传到Agent、工具后推理和挂起队列；模型响应事件含可对账的工具调用ID；确定性与本地SDK/HTTP回归154通过（§7.122） | 默认 Step 实际 Agent 工具/SSE测试首个推理调用返回400，未执行工具或后续推理；其他持久任务入口、跨阶段断网/进程恢复、生产历史迁移/投影和旧Worker汇总原件追踪 | 按逐入口调查补齐持久身份和失败/恢复证据；继续按Profile与原生协议契约适配，不另建单一协议栈 |
+| Session/Worker并发写入 | 通知后重读父会话；事件型通知不再全量保存；自动停止状态/消息/事件原子写入；内存与真实PG原子写测试通过 | detached旧快照覆盖风险已由交错回归复现并修复；revision/CAS、其他`save_session`调用点审计、生产时限跨进程恢复尚未完成 | 保持这项修复局部且可验证；架构级并发治理按[Session并发设计](SESSION_STORE_CONCURRENCY_DESIGN_20261020.md)继续评估与实施 |
 
 单用例通过不代表P2整体通过；受控模型、真实默认模型和人手操作分别记账。在途计划修订当前不能由“失败后新建回归运行”替代：`CasePlanRunService.create` / `build_plan_run` 仍固定原计划和RunItem，该缺口需要单独设计、实现与恢复验收。
 
@@ -4619,3 +4620,11 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 当前完成的是入口身份生成/传递、图事件工具 ID 对账字段及本地 SDK/HTTP/确定性轨迹验证。真实默认 Step 请求仍无法进入工具阶段，因此默认 provider 的实际工具循环、SDK重试/服务端请求数及断网恢复尚未验收；其他规划、生成、影响分析、持久 Worker 入口也需逐一核对。没有证据要求统一模型协议或改写适配层；Anthropic Messages、OpenAI Responses、Gemini 原生协议保持独立。整体 P0—P5 继续未完成。
 
 补充核对发现，普通工具审批恢复和 Deep Agent HITL 审批恢复都会从持久状态重建 `ExecutionRequest`，但原来没有复制 `trace_id`。两条恢复分支现都从恢复状态传回 `trace_id`，避免请求身份字段留空。`test_intent_safety_routing.py` 对两条重建路径分别做了确定性断言；Deep Agent 可选依赖未安装，因此真实 Deep Agent agent-loop 参数化测试的4个场景仍为 skipped，不计通过。Anthropic 传输仍调用 Messages SDK；这项修复也没有改模型协议。
+
+### 7.123 Agent Worker 检查点分裂与 Session 全量写入并发设计（2026-10-20）
+
+新增[Session并发设计](SESSION_STORE_CONCURRENCY_DESIGN_20261020.md)，依据 `_deliver_notification`、`SessionStore` detached-value 契约、PostgreSQL全量metadata upsert、现有行锁metadata mutator、同类队列并发保护，以及真实受控Worker时间线制定。完整通知路径的确定性交错回归现已证明因果：通知投影返回后，运行方写入新的 `pending_turn`；通知继续使用旧副本判断分支，并对 `persist_transcript=False` 的事件消息执行全量保存，最终覆盖掉新检查点。
+
+短期修复已落地：通知投影后重新读取当前会话；事件型通知不再通过 detached `SessionRecord` 全量保存；自动停止的状态、消息和事件由内存/PostgreSQL SessionStore 原子提交。修复前新增回归以 `KeyError: pending_turn` 失败，修复后通过；`test_intent_safety_routing.py` 与 `test_coordinator_durable_children.py` 合计 106 passed、28 skipped；存储原子操作的内存与真实 PostgreSQL 隔离表测试 2 passed。并发重复通知幂等专项仍通过。
+
+本轮只完成通知写入的根因修复，尚未实施 session revision/CAS，也未完成所有 `save_session` 调用点审计和真实跨进程 Worker 恢复验收。独立Worker同进程受控测试批次此前为2失败、0跳过：受控模型只完成 `/login`，父会话仍有旧审批ID而最新 `interrupted` snapshot 已含等待工具项；跨进程测试使用1秒 reclaim 阈值，在模型请求前已出现 ownership uncertainty，不作为产品行为结论。默认Step UI场景正负向此前均在第一次推理请求收到400；保存的安全元数据为 `request_params_invalid`，没有 response body、code 或 param，不能据此改默认模型或协议。详细实施顺序、源码位置和验收边界见设计文档。

@@ -9,6 +9,7 @@ from typing import Callable, Protocol
 from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import (
+    ChatMessage,
     ExecutionEvent,
     SessionMode,
     SessionSnapshot,
@@ -109,6 +110,14 @@ class SessionStore(Protocol):
         status: SessionStatus | None,
         mutate: Callable[[dict, SessionStatus], None],
         allowed_current_statuses: set[SessionStatus] | None = None,
+    ) -> bool: ...
+    async def update_status_and_append_messages_and_events(
+        self,
+        session_id: str,
+        *,
+        status: SessionStatus | None,
+        messages: list[ChatMessage],
+        events: list[ExecutionEvent],
     ) -> bool: ...
     async def list_sessions(
         self,
@@ -436,6 +445,32 @@ class InMemorySessionStore:
             if status is not None and current_status in (allowed_current_statuses or set()):
                 session.status = status
             session.updated_at = datetime.now(UTC).replace(tzinfo=None)
+            return True
+
+    async def update_status_and_append_messages_and_events(
+        self,
+        session_id: str,
+        *,
+        status: SessionStatus | None,
+        messages: list[ChatMessage],
+        events: list[ExecutionEvent],
+    ) -> bool:
+        if any(event.session_id != session_id for event in events):
+            raise ValueError("Projection event session_id does not match the session.")
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                return False
+            if status is not None:
+                session.status = status
+            existing_message_ids = {item.id for item in session.messages}
+            for message in messages:
+                if bool(message.metadata.get("persist_transcript", True)) and message.id not in existing_message_ids:
+                    session.messages.append(deepcopy(message))
+                    existing_message_ids.add(message.id)
+            session.updated_at = datetime.utcnow()
+            for event in events:
+                self._append_event_locked(session_id, event)
             return True
 
     async def list_sessions(

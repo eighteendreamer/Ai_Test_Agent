@@ -1582,37 +1582,46 @@ class CoordinatorRuntimeService:
             "task_id": worker.task_id, "worker_status": status, "should_stop": should_stop})
 
         if should_stop:
-            parent_session.messages.append(
-                ChatMessage(
-                    id=str(uuid4()),
-                    role=MessageRole.assistant,
-                    content=stop_message,
-                    created_at=datetime.utcnow(),
-                    metadata={
-                        "message_kind": "automatic_stop",
-                        "turn_id": parent_turn_id,
-                        "worker_agent_key": worker.agent_key,
-                        "worker_status": status,
-                    },
-                )
+            stopped_at = datetime.utcnow()
+            stop_message_record = ChatMessage(
+                id=str(uuid4()),
+                role=MessageRole.assistant,
+                content=stop_message,
+                created_at=stopped_at,
+                metadata={
+                    "message_kind": "automatic_stop",
+                    "turn_id": parent_turn_id,
+                    "worker_agent_key": worker.agent_key,
+                    "worker_status": status,
+                },
             )
-            parent_session.status = SessionStatus.failed
-            parent_session.updated_at = datetime.utcnow()
-            await self._store.save_session(parent_session)
-            await self._store.append_event(
+            stop_event = ExecutionEvent(
+                type="worker.auto_stopped",
+                session_id=parent_session_id,
+                timestamp=stopped_at,
+                payload={
+                    "turn_id": parent_turn_id,
+                    "task_id": worker.task_id,
+                    "reason": stop_message,
+                    "worker_agent_key": worker.agent_key,
+                },
+            )
+            stopped = await self._store.update_status_and_append_messages_and_events(
                 parent_session_id,
-                ExecutionEvent(
-                    type="worker.auto_stopped",
-                    session_id=parent_session_id,
-                    timestamp=datetime.utcnow(),
-                    payload={
-                        "turn_id": parent_turn_id,
-                        "task_id": worker.task_id,
-                        "reason": stop_message,
-                        "worker_agent_key": worker.agent_key,
-                    },
-                ),
+                status=SessionStatus.failed,
+                messages=[stop_message_record],
+                events=[stop_event],
             )
+            if not stopped:
+                logger.warning("coordinator_notification_auto_stop_parent_missing", extra={
+                    "parent_session_id": parent_session_id,
+                    "parent_turn_id": parent_turn_id,
+                    "task_id": worker.task_id,
+                })
+                return None
+            parent_session.messages.append(stop_message_record)
+            parent_session.status = SessionStatus.failed
+            parent_session.updated_at = stopped_at
             return parent_session, True
         return parent_session, False
 
@@ -1640,6 +1649,13 @@ class CoordinatorRuntimeService:
                 return
             parent_session, should_stop = projected
             if should_stop:
+                return
+
+            # Worker projection and the live turn checkpoint are independent
+            # writers. Re-read after projection so decisions use the checkpoint
+            # that may have been committed while the notification was stored.
+            parent_session = await self._store.get_session(parent_session_id)
+            if parent_session is None:
                 return
 
             if (parent_session.metadata.get("pending_turn") or {}).get("waiting_tool"):
@@ -1707,25 +1723,10 @@ class CoordinatorRuntimeService:
                 )
                 return
 
-            notification_message = ChatMessage(
-                id=str(uuid4()),
-                role=MessageRole.user,
-                content=content,
-                created_at=datetime.utcnow(),
-                metadata={
-                    "message_kind": "task_notification",
-                    "task_id": worker.task_id,
-                    "child_session_id": child_session_id,
-                    "worker_agent_key": worker.agent_key,
-                    "worker_status": status,
-                    "persist_transcript": False,
-                    "context_eligible": False,
-                    "transcript_bucket": "event",
-                },
-            )
-            parent_session.messages.append(notification_message)
-            parent_session.updated_at = datetime.utcnow()
-            await self._store.save_session(parent_session)
+            # The notification event was persisted by the projection above.
+            # Do not save this event-only message through a whole-session
+            # snapshot: it is intentionally excluded from the transcript and
+            # that snapshot could rewind a concurrently written turn checkpoint.
 
     def _worker_from_dispatch(
         self,

@@ -2540,6 +2540,68 @@ async def test_coordinator_initial_overflow_is_retained_and_launched_after_slot_
 
 
 @pytest.mark.asyncio
+async def test_worker_notification_reloads_parent_checkpoint_without_stale_full_save(monkeypatch):
+    service, store, created = await _batch_capacity_coordinator()
+    worker_request = {"workers": [_batch_worker(0)]}
+    await service.dispatch(
+        worker_request,
+        {"session_id": "batch-parent", "turn_id": "turn-1", "trace_id": "trace-1"},
+    )
+    parent = await store.get_session("batch-parent")
+    assert parent is not None
+    parent.status = SessionStatus.running
+    await store.save_session(parent)
+
+    latest_pending_turn = {
+        "turn_id": "turn-1",
+        "waiting_tool": {
+            "job_id": "job-1",
+            "call_id": "call-1",
+            "tool_key": "api-test-runner",
+            "child_session_ids": [],
+        },
+        "pending_approval_ids": [],
+    }
+    original_save = store.save_session
+    original_project = service._project_worker_notification
+    extra_full_saves = []
+
+    async def project_then_commit_runtime_checkpoint(**kwargs):
+        projection = await original_project(**kwargs)
+        current = await store.get_session("batch-parent")
+        assert current is not None
+        current.status = SessionStatus.running
+        current.metadata["pending_turn"] = latest_pending_turn
+        await original_save(current)
+        return projection
+
+    async def track_full_save(session, **kwargs):
+        extra_full_saves.append(session)
+        return await original_save(session, **kwargs)
+
+    resume_wait = AsyncMock(return_value=False)
+    service.set_agent_task_dispatcher(object())
+    monkeypatch.setattr(service, "_project_worker_notification", project_then_commit_runtime_checkpoint)
+    monkeypatch.setattr(service, "_maybe_resume_waiting_tool", resume_wait)
+    monkeypatch.setattr(store, "save_session", track_full_save)
+
+    await service._deliver_notification(
+        parent_session_id="batch-parent",
+        parent_turn_id="turn-1",
+        child_session_id=created[0],
+        worker=service._worker_from_pending(worker_request["workers"][0]),
+        content="worker completed",
+        status="completed",
+    )
+
+    persisted = await store.get_session("batch-parent")
+    assert persisted is not None
+    assert persisted.metadata["pending_turn"] == latest_pending_turn
+    resume_wait.assert_awaited_once()
+    assert extra_full_saves == []
+
+
+@pytest.mark.asyncio
 async def test_coordinator_dispatch_receipt_includes_worker_started_after_immediate_failure():
     service, store, created = await _batch_capacity_coordinator()
     parent = await store.get_session("batch-parent")

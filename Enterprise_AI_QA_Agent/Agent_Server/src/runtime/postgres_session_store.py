@@ -397,6 +397,81 @@ class PostgresSessionStore:
             allowed_current_statuses,
         )
 
+    async def update_status_and_append_messages_and_events(
+        self,
+        session_id: str,
+        *,
+        status: SessionStatus | None,
+        messages: list[ChatMessage],
+        events: list[ExecutionEvent],
+    ) -> bool:
+        if any(event.session_id != session_id for event in events):
+            raise ValueError("Projection event session_id does not match the session.")
+        found, inserted_events = await asyncio.to_thread(
+            self._update_status_and_append_messages_and_events_sync,
+            session_id,
+            status,
+            messages,
+            events,
+        )
+        for event in inserted_events:
+            await self._publish_hot_event(session_id, event)
+        return found
+
+    def _update_status_and_append_messages_and_events_sync(
+        self,
+        session_id: str,
+        status: SessionStatus | None,
+        messages: list[ChatMessage],
+        events: list[ExecutionEvent],
+    ) -> tuple[bool, list[ExecutionEvent]]:
+        inserted_events: list[ExecutionEvent] = []
+        now = datetime.utcnow()
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT id FROM {self._settings.database.postgres_session_table} "
+                    "WHERE id = %s FOR UPDATE",
+                    (session_id,),
+                )
+                if cur.fetchone() is None:
+                    return False, inserted_events
+                if status is not None:
+                    cur.execute(
+                        f"UPDATE {self._settings.database.postgres_session_table} "
+                        "SET status = %s, updated_at = %s WHERE id = %s",
+                        (status.value, now, session_id),
+                    )
+                else:
+                    cur.execute(
+                        f"UPDATE {self._settings.database.postgres_session_table} "
+                        "SET updated_at = %s WHERE id = %s",
+                        (now, session_id),
+                    )
+                for message in messages:
+                    if not bool(message.metadata.get("persist_transcript", True)):
+                        continue
+                    cur.execute(
+                        f"""
+                        INSERT INTO {self._settings.database.postgres_message_table} (
+                            id, session_id, role, content, created_at, metadata
+                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                        ON CONFLICT (id) DO NOTHING
+                        """,
+                        (
+                            message.id,
+                            session_id,
+                            message.role.value,
+                            message.content,
+                            message.created_at,
+                            json.dumps(make_json_safe(message.metadata), ensure_ascii=False),
+                        ),
+                    )
+                for event in events:
+                    if self.append_event_in_transaction(cur, session_id, event):
+                        inserted_events.append(event)
+        return True, inserted_events
+
     def _update_status_and_mutate_metadata_sync(
         self,
         session_id: str,
