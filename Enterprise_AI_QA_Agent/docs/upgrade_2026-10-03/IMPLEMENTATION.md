@@ -5641,3 +5641,11 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
 重读原附件后，沿 r4 固定用例、cleanup_sources、bindings 和 produced scope 查证查询目标误引用自身。逻辑字段结构合法不能证明业务来源正确，前轮“逻辑阶段通过”已在 PLAN 收窄为选取/前置和 bindings 的阶段事实。四份历史多候选检查点中两份同样误引用自身、两份引用正确前置，不按 HTTP 动词补造服务端判定。
 
 只读脚本从原失败请求构建副本，仅纠正来源及派生哈希/范围；实际一次默认模型请求仍 length/8192、正文为空，退出1、120.752秒。未创建 Run、无业务 HTTP，原文件和全局配置未变；没有修复或恢复原冻结计划。原件与更完整限制见 `P2_CLEANUP_SOURCE_DIAGNOSTIC_20261020.md`。停止同类微调；继续研究 unresolved/完整声明契约和实际清理证据。Python编译通过仅作附加检查，本次模型功能验收失败如实保留，P2与整体P0—P5继续未完成。
+
+## 2026-10-20 默认 Step 性能消息到真实 k6 与报告页
+
+本次只新增 opt-in 真实默认模型验收测试与记录，没有改生产模式/工具/权限或供应商协议。先运行公开会话批次：未登记地址1失败78.16秒；项目base_url经PATCH登记后1失败54.46秒。两次都被untrusted_private_target拒绝，证明普通项目地址未接入服务端可信会话范围；第一批不存在指标表的测试后续错误不能当作生产持久化缺陷。失败源码和全部工件保留。
+
+采用已有默认UI专项的独占服务端目标夹具继续验证后续链路，实际1通过170.32秒：当前默认Step/8192，独立生产API/Agent Worker/PG/Redis/RustFS/MySQL，4次模型HTTP、3次审批、真实探针与k6冒烟/正式，13份性能原件/报告下载及哈希，PG指标、实际构建Vue报告页和JSON下载一致。API重启后的原终态任务重投无新增模型/工具任务/性能运行，默认配置未变；补充原生Docker CLI核对4个完整容器ID均已删除。新增Python测试/诊断脚本compileall与本轮diff检查通过，仅为附加检查。
+
+详情与可复验命令见 `P5_DEFAULT_PERFORMANCE_AGENT_RESEARCH_20261020.md`。普通性能会话的可信目标公开登记仍需查证产品语义并实现；此批不修改安全策略、不冒充授权入口已验收。本地1VU/2秒指标不是业务容量基线，默认安全Agent、性能故障/流式/容量和其余P0—P5仍未完成。配置MySQL、业务PostgreSQL、原件RustFS保持，未执行生产迁移。
