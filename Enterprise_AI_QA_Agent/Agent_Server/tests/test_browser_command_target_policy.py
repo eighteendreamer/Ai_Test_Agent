@@ -94,6 +94,27 @@ def test_complete_and_split_commands_have_same_navigation_target(arguments):
     assert browser_command_navigation_target({"action": "command", **arguments}) == "http://127.0.0.1:8080/"
 
 
+@pytest.mark.parametrize("context", [
+    {"trusted_resource_scope": {"project_url": "http://127.0.0.1:8080"}},
+    {"trusted_target_hosts": ["127.0.0.1"]},
+    {"resource_scope": {"project_url": "http://127.0.0.1:8080"}},
+    {"trusted_environment": "testing"},
+])
+def test_client_context_cannot_supply_server_target_authority(context):
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.schemas.session import SendMessageRequest
+    from test_intent_safety_routing import _session
+
+    request = InputOrchestratorService(ModeRegistry()).orchestrate(_session("ui_automation"),
+        SendMessageRequest(content="读取受控页面", context=context))
+    assert not set(context).intersection(request.context), "client authority survived input orchestration"
+    decision = ExecutionSafetyPolicy().evaluate_tool_call(tool=ToolRegistry().get("browser-control"),
+        arguments={"action": "command", "command": "open", "args": ["http://127.0.0.1:8080/"]},
+        active_mode_key="ui_automation", context=request.context)
+    assert decision.reason_code == "untrusted_private_target"
+
+
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv("RUN_LIVE_BROWSER_TESTS") != "1", reason="requires actual Chromium")
 async def test_actual_graph_admission_blocks_command_before_http_and_trusted_command_reaches_browser(tmp_path):
@@ -113,6 +134,10 @@ async def test_actual_graph_admission_blocks_command_before_http_and_trusted_com
     from src.runtime.tool_job_store import InMemoryToolJobStore
     from src.infrastructure.storage_utils import make_json_safe
     from src.schemas.tool_runtime import ModelToolCall
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from src.schemas.session import SendMessageRequest
+    from test_intent_safety_routing import _session
     from test_tool_executor_safety_gate import _state
 
     requests = []
@@ -157,7 +182,28 @@ async def test_actual_graph_admission_blocks_command_before_http_and_trusted_com
         assert blocked["tool_result"]["status"] == "denied" and not requests
         assert blocked["tool_result"]["output"]["permission_reason_code"] == "untrusted_private_target"
         assert json.loads(blocked["tool_message"]["content"])["output_reference"] is None
-        scope = {"trusted_resource_scope": {"project_url": origin}}
+        probes = []
+        probe_dir = Path(os.getenv("QA_BROWSER_COMMAND_EVIDENCE_DIR", str(tmp_path / "evidence")))
+        probe_dir.mkdir(parents=True, exist_ok=False)
+        orchestrator = InputOrchestratorService(ModeRegistry())
+        for key, value in {"trusted_resource_scope": {"project_url": origin},
+            "trusted_target_hosts": ["127.0.0.1"], "resource_scope": {"project_url": origin},
+            "trusted_environment": "testing"}.items():
+            request = orchestrator.orchestrate(_session("ui_automation"),
+                SendMessageRequest(content="读取受控页面", context={key: value}))
+            result = await resolve(ModelToolCall(id="client-" + key, name="browser-control", arguments=arguments),
+                request.context)
+            probes.append({"client_key": key, "result": result, "HTTP_requests": list(requests)})
+            (probe_dir / "input-context-probes.json").write_text(json.dumps(make_json_safe(probes),
+                ensure_ascii=False, indent=2), encoding="utf-8")
+            assert result["tool_result"]["status"] == "denied" and not requests, probes[-1]
+        session = _session("ui_automation")
+        session.metadata["resource_scope"] = {"project_url": origin}
+        session.metadata["environment"] = "testing"
+        scope = orchestrator.orchestrate(session, SendMessageRequest(content="读取受控页面",
+            context={"trusted_resource_scope": {"project_url": "http://10.20.30.40/"},
+                "trusted_target_hosts": ["10.20.30.40"], "trusted_environment": "production"})).context
+        assert scope["trusted_environment"] == "testing" and "trusted_target_hosts" not in scope
         admitted = await resolve(ModelToolCall(id="trusted-navigation", name="browser-control", arguments=arguments), scope)
         assert admitted["tool_result"]["status"] == "completed" and requests
         snapshot = await resolve(ModelToolCall(id="trusted-snapshot", name="browser-control",
@@ -169,7 +215,6 @@ async def test_actual_graph_admission_blocks_command_before_http_and_trusted_com
         output = os.getenv("QA_BROWSER_COMMAND_EVIDENCE_DIR")
         if output:
             evidence = Path(output)
-            evidence.mkdir(parents=True, exist_ok=False)
             (evidence / "page.html").write_bytes(raw)
             (evidence / "verification.json").write_text(json.dumps(make_json_safe({"target": origin, "requests": requests,
                 "blocked": blocked, "admitted": admitted, "snapshot": snapshot,

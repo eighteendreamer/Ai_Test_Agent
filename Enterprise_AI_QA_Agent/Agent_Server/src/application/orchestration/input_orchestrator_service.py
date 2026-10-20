@@ -275,6 +275,7 @@ class InputOrchestratorService:
         for key in (
             "trusted_security_authorization",
             "security_authorization",
+            "trusted_resource_scope", "resource_scope", "trusted_target_hosts", "trusted_environment",
             "run_id", "test_run_id", "run_item_id", "test_run_item_id", "attempt_id",
             "case_execution", "case_assessment_requested", "execution_checkpoint",
             "case_execution_managed",

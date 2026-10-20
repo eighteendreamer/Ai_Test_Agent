@@ -1,0 +1,80 @@
+{
+  "date": "2026-10-20",
+  "test_runs": [
+    {
+      "junit": "p0-input-target-authority-before-20261020.xml",
+      "tests": 4,
+      "errors": 0,
+      "failures": 4,
+      "skipped": 0,
+      "junit_seconds": 3.743
+    },
+    {
+      "junit": "p0-input-target-authority-live-before-20261020.xml",
+      "tests": 1,
+      "errors": 0,
+      "failures": 1,
+      "skipped": 0,
+      "junit_seconds": 6.242
+    },
+    {
+      "junit": "p0-input-target-authority-fixed-20261020.xml",
+      "tests": 133,
+      "errors": 0,
+      "failures": 0,
+      "skipped": 0,
+      "junit_seconds": 18.891
+    }
+  ],
+  "before": {
+    "forged_field": "trusted_resource_scope",
+    "tool_status": "completed",
+    "http_request_count": 1
+  },
+  "after": [
+    {
+      "field": "trusted_resource_scope",
+      "tool_status": "denied",
+      "http_request_count": 0
+    },
+    {
+      "field": "trusted_target_hosts",
+      "tool_status": "denied",
+      "http_request_count": 0
+    },
+    {
+      "field": "resource_scope",
+      "tool_status": "denied",
+      "http_request_count": 0
+    },
+    {
+      "field": "trusted_environment",
+      "tool_status": "denied",
+      "http_request_count": 0
+    }
+  ],
+  "server_metadata_positive": {
+    "navigation_status": "completed",
+    "snapshot_status": "completed",
+    "http_request_count": 1,
+    "snapshot_matches_page": true,
+    "saved_job_matches_page": true,
+    "runtime_backend": "playwright-cli:chromium",
+    "job_store": "InMemoryToolJobStore"
+  },
+  "scope": {
+    "production_input_orchestration": true,
+    "production_tool_graph_entry": true,
+    "actual_chromium": true,
+    "actual_owned_http_server": true,
+    "public_target_registration_verified": false,
+    "postgres_rustfs_verified_in_this_batch": false,
+    "real_ai_called": false,
+    "model_protocol_changed": false,
+    "full_P0_P5_complete": false
+  },
+  "source_sha256": {
+    "Agent_Server/src/application/orchestration/input_orchestrator_service.py": "0fea81942d5bdc5ecdcba10c462082877d8de08aef5ed536691c06f0cb800766",
+    "Agent_Server/tests/test_browser_command_target_policy.py": "b9917908113ba099fbddc4a37eefbd3acaeb28fcba4eb4b1bcee8c24786b5d44"
+  }
+}

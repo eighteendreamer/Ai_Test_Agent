@@ -5649,3 +5649,11 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
 采用已有默认UI专项的独占服务端目标夹具继续验证后续链路，实际1通过170.32秒：当前默认Step/8192，独立生产API/Agent Worker/PG/Redis/RustFS/MySQL，4次模型HTTP、3次审批、真实探针与k6冒烟/正式，13份性能原件/报告下载及哈希，PG指标、实际构建Vue报告页和JSON下载一致。API重启后的原终态任务重投无新增模型/工具任务/性能运行，默认配置未变；补充原生Docker CLI核对4个完整容器ID均已删除。新增Python测试/诊断脚本compileall与本轮diff检查通过，仅为附加检查。
 
 详情与可复验命令见 `P5_DEFAULT_PERFORMANCE_AGENT_RESEARCH_20261020.md`。普通性能会话的可信目标公开登记仍需查证产品语义并实现；此批不修改安全策略、不冒充授权入口已验收。本地1VU/2秒指标不是业务容量基线，默认安全Agent、性能故障/流式/容量和其余P0—P5仍未完成。配置MySQL、业务PostgreSQL、原件RustFS保持，未执行生产迁移。
+
+## 2026-10-20 执行目标可信上下文的入口修复
+
+发现消息context能绕过公开会话元数据限制，直接提供四类服务端可信字段。入口四参数实际4失败；真实本地HTTP/Chromium经生产输入编排及工具图调用时，伪造scope导致一次GET /和completed，实际1失败。根因是既有客户端字段清理集合遗漏，修复仅加入四字段并保留服务端会话恢复及现有日志。
+
+实际四文件回归 **133 passed、无跳过，18.91秒**，包括四类伪造字段拒绝且零HTTP、冲突客户端数据不能覆盖服务端范围/环境、真实页面和ToolJob快照一致。JUnit为`p0-input-target-authority-fixed-20261020.xml`；原件及安全摘要在同名目录，详情和命令见`P0_INPUT_TARGET_AUTHORITY_RESEARCH_20261020.md`。本专项Job使用内存Store，未替代PG/RustFS或公开API/Worker验收。两个Python文件compileall通过，无前端/schema/依赖或生产迁移变更。
+
+公开目标登记仍需补齐；P2默认多用例等其余目标继续未完成。Anthropic原生Messages及独立OpenAI Responses客户端保持，await_provider_io只归一网络异常，本批没有模型客户端改动或真实模型调用。

@@ -4514,3 +4514,11 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 沿现有默认UI专项的独占目标前提准备隔离服务端范围后，实际 **1 passed，170.32秒**。默认Step模型/8192参数原样使用，4次模型HTTP、3次现有审批，实际选择引擎、探针、performance-test-runner与report-writer；k6冒烟/正式各一次。1VU/2秒本地目标取得10600样本、错误率0、P50/P95/P99均有原值，PG指标与输出一致。13份性能工件真实下载及执行原件SHA核对通过，真实Vue构建/Chromium报告页与JSON下载通过；API重启后重投原终态任务，新增模型HTTP、ToolJob及性能运行均0，全局模型读回未变。4个完整受管容器ID的补充只读inspect确认均已不存在。详见 [实际调研与边界](P5_DEFAULT_PERFORMANCE_AGENT_RESEARCH_20261020.md)，JUnit与安全摘要保存于 `p5-default-performance-agent-owned-20261020.xml` 和同名目录。
 
 本批只将“已有服务端可信目标时，默认性能Agent到报告的正常路径”列为通过。普通会话公开目标登记尚未闭环，不把隔离服务端夹具当作用户授权入口；默认安全Agent、性能故障/容量/AI流式指标、P2多用例执行、人工DeepSeek录制及其他目标仍未完成。没有生产代码、模式/工具权限或Provider协议修改，没有生产迁移；配置MySQL、业务PG、原件RustFS边界保持。
+
+### 7.115 执行目标可信上下文的客户端来源隔离（2026-10-20）
+
+沿7.114目标依据问题继续核对生产入口，发现客户端消息context可残留`trusted_resource_scope`、`resource_scope`、`trusted_target_hosts`及`trusted_environment`。现有工具策略消费这些字段，公开会话元数据限制无法覆盖消息入口。先实际运行四参数入口回归：4失败；再经生产输入编排、工具图入口及原生Chromium复现：伪造scope使工具completed且本地HTTP收到GET /，实际1失败。失败发生在第一个字段，未将其他字段的入口残留混称网络放行证据。
+
+修复仅把四字段纳入既有客户端清理循环，复用结构化日志；服务端会话范围和环境按原机制恢复，不新增授权入口或修改审批策略。四文件回归实际 **133 passed，无跳过，18.91秒**，其中真实浏览器验证四种客户端字段均denied且无HTTP，服务端范围在客户端冲突字段下仍有效，页面随机标识与已完成ToolJob快照相符。该专项ToolJob使用内存Store与本地导出，不代表PG/RustFS或公开Worker验收。Python编译通过，未改前端、API schema或生产数据库，不重复构建与迁移。调研、复现命令和限制见 [可信上下文来源调研](P0_INPUT_TARGET_AUTHORITY_RESEARCH_20261020.md)。
+
+当前只完成此输入边界缺陷修复。公开目标登记、P2默认模型多用例规划/执行及其他未闭环目标保持未完成；不从项目base_url或客户端字段推导新授权。Anthropic仍使用Messages，公共等待函数await_provider_io不转换协议；本批没有修改模型客户端或全局模型配置。
