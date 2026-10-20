@@ -124,3 +124,27 @@ httpx2 request event hook 的执行位置在 transport 发送之前，因此 `mo
 另在默认 Step 当前认证配置下，真实运行 opt-in `test_live_model_tool_stream.py::test_current_model_executes_read_only_tool_and_stream_matches_final_transcript`。由于该测试之前只在成功时保存摘要，本轮将其加强为无正文/无密钥的阶段轨迹证据：只保存事件类型、turn/trace/logical-call/tool-call IDs、HTTP attempt 数和状态码。最新隔离会话结果在 `p0-live-model-trace-auth-current-20261020-143020/acceptance.json`：`step-5-preview` 一次逻辑调用、一次 HTTP attempt，收到400后 `interrupted`；没有响应完成、工具调用或 post-tool reasoning。测试失败不是认证未通过：相同默认凭据的模型目录查询已经成功；此前最小 chat 请求的供应商错误分类为订阅/计划 entitlement。也不能因 API 调用了就说远端成功执行了模型内容，只有 HTTP 错误响应被实际收到。
 
 当前结论：SemanticIntent 至主 Agent turn 的 IDs 已贯通；模型响应到实际工具事件的 tool-call ID 可对账；本地 SDK/HTTP 与 deterministic test 支持这些实现。Step 当前状态应表述为“凭据认证已确认，生成 API 当前仍返回400 entitlement，真实 Agent loop未启动”。尚未证明默认 Step 正常返回工具调用后的完整链路；持久 Worker 的其他业务入口、生成/规划/影响调用各自的 attempt/recovery、断网和进程故障仍需单独验收。客户端 attempt 与远端收到的请求保持区分；生产端远端接收仍需网关或提供商证据。
+
+## 2026-10-20 持久生成 Worker 的模型调用 trace/attempt 补齐
+
+按上一节的持久入口清单继续检查 `DocumentOperationTaskHandler → GenerationTaskService.execute → ModelTestCaseGenerator.invoke_frozen → ModelRuntimeService.invoke → provider HTTP client`。Worker 已绑定 `trace_id=task_id` 和真实租约 `attempt_id`；生成服务也已把任务、模块和 attempt 编入 `logical_call_id`。但 `invoke_frozen()` 原先只向冻结请求补 `logical_call_id`，因此 SDK HTTP 观察记录的 `trace_id` 为空，物理请求记录也没有显式 `attempt_id`。
+
+使用实际 Redis Worker、真实 MySQL/PostgreSQL/RustFS、Markdown 解析任务和本地 TCP provider 先复现：两模块都真实发送并提交草稿，但新增断言失败，HTTP request observer 的 `trace_id` 为空。修复只从持久生成任务已有身份传入 `trace_id=task_id`、`project_id` 和当前 claim 的 `attempt_id`；`invoke_frozen()` 在冻结请求副本上合并这组调用期元数据。Provider observer 将 `attempt_id` 与已有 trace、logical call、transport、attempt 序号同时写入 request-start/response 结构化日志。没有为后台生成捏造用户 session/turn，也没有改变请求字段、provider 协议、重试策略、生成检查点或数据库 schema。
+
+验证：
+
+| Agent_Server 命令 | 结果 | 证明范围 |
+|---|---|---|
+| `$env:RUN_LIVE_DOCUMENT_IMPACT_TASKS='1'; $env:PYTHONPATH='.'; uv run --project . python -m pytest -q tests/test_generation_tasks.py::test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts[md]` | 修复前新增断言复现 trace 丢失；修复后 **1 passed，21.73s** | 增量生成模块 Worker 的共享 `GenerationTaskService.execute → invoke_frozen` 路径：实际 Redis 领取两个模块，实际 MySQL 配置/PG 任务回执/RustFS 范围与响应对象、官方 OpenAI SDK 到本地 TCP provider 的两个请求；每条模型逻辑调用与 request/response HTTP observation 共享任务 trace 和 claim attempt。终态重投没有新增请求。单独的普通文档默认 Step 验收另行记录。 |
+| `$env:PYTHONPATH='.'; uv run --project . python -m pytest -q tests/test_model_sdk_fault_http.py -k "real_sdk_faults and unavailable"` | **10 passed，23.91s** | 五种 provider/adapter 路径的真实 SDK/TCP 503 场景；SDK 实际 retry 的路径中，同一逻辑调用下各物理 request 与 response 按 attempt 序号携带相同 trace/attempt。Google 的原生重试行为保持其既有测试预期。 |
+| `$env:PYTHONPATH='.'; uv run --project . python -m pytest -q tests/test_document_generation_stream.py tests/test_generation_json_output_contract.py tests/test_model_clients.py` | **27 passed，11.24s** | 冻结请求、流式及 JSON 生成契约、provider 客户端回归。 |
+
+`git diff --check` 通过。上述生成 Worker 测试使用受控本地 provider，不证明本轮默认 Step 的联网调用或生成质量；默认模型的上一次真实三模块验收见 `P1_DEFAULT_GENERATION_RESEARCH.md`，当前用户确认账号已认证后仍需独立重跑默认 Agent/API 场景。当前本地 TCP 服务端实际接收数量可核对 fixture 请求；生产 HTTP hook 仍只表示 SDK 请求尝试，不能代替供应商侧收到请求的证据。
+
+此处闭合的是持久生成 Worker 共用模型调用入口的 trace 传播，并用增量任务实际链路验收。普通文档默认模型完整生成、影响分析 Worker、回执纠正、其它生成恢复场景以及断网/进程中断仍需逐项审计；全阶段调用追踪和 P0—P5 仍未完成。
+
+## 2026-10-20 默认 Step 实时工具/SSE复验
+
+用户确认 Step 账号已认证后，重新执行 opt-in `tests/test_live_model_tool_stream.py::test_current_model_executes_read_only_tool_and_stream_matches_final_transcript`。本轮从 MySQL 读取当前默认模型 `step-5-preview`，用合成只读提示创建隔离内存会话并经真实 SDK 发起一次请求。结果为 **1 failed，13.20s**：收到一个 HTTP 400；Session 终态为 `interrupted`，事件只有一个 `model.request_prepared` 和一个 `model.invocation_failed`，没有模型响应、工具调用、工具执行或 post-tool reasoning。供应商错误正文未保存在脱敏 acceptance 文件中，因此仅凭本轮证据不能断言 400 的具体原因；旧的 14:30 记录有订阅/计划 entitlement 分类，但本轮只确认相同状态码仍出现。
+
+脱敏轨迹：`p0-live-model-tool-auth-followup-20261020/acceptance.json`；JUnit：`p0-live-model-tool-auth-followup-20261020.xml`。该测试的入口是 `SessionService` compatibility 路径，Session storage 为隔离内存；不覆盖 durable dispatcher、浏览器产品流程或默认模型成功调用。当前状态应分别记录为：**账号认证由用户确认；本轮模型请求确实发出并收到 400；真实默认模型工具闭环尚未通过。** 同一请求未重复重跑。

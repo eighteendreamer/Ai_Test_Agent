@@ -224,6 +224,7 @@ class ModelRuntimeService:
             logical_call_id,
             self._resolved_transport(config),
             trace_id=trace_context.get("trace_id", ""),
+            attempt_id=trace_context.get("attempt_id", ""),
         ) as observation:
             if self._uses_langchain(config):
                 result = await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)

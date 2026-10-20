@@ -112,6 +112,7 @@ async def test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend(
     first_delta = asyncio.Event()
     key = uuid4().hex
     logical_call_id = f"fault:{transport}:{fault}:{streaming}"
+    attempt_id = f"attempt:{uuid4().hex}"
     caplog.set_level(logging.INFO)
     facts = {"transport": transport, "fault": fault, "streaming": streaming, "logical_runtime_invocations": 1,
         "external_ai_calls": 0, "full_P0_P5_complete": False,
@@ -131,7 +132,8 @@ async def test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend(
         runtime = ModelRuntimeService(Registry(config), settings)
         request = ModelInvocationRequest(system_prompt="Return the supplied JSON.",
             messages=[{"role": "user", "content": "Real HTTP fault acceptance"}],
-            trace_context={"logical_call_id": logical_call_id, "trace_id": "fault-trace"})
+            trace_context={"logical_call_id": logical_call_id, "trace_id": "fault-trace",
+                "attempt_id": attempt_id})
         try:
             async with runtime.stream_handler(receive if streaming else None):
                 if fault == "cancel":
@@ -182,6 +184,8 @@ async def test_real_sdk_faults_have_one_logical_outcome_and_no_midstream_resend(
             "observed_routes": [getattr(record, "http_route", "") for record in started],
         }
         assert [record.status_code for record in completed] == [item["status"] for item in replies], facts
+        assert all(record.trace_id == "fault-trace" and record.attempt_id == attempt_id
+            for record in [*started, *completed])
         assert response.response_summary["logical_call_id"] == logical_call_id if response else True
         assert response.response_summary["http_request_attempt_count"] == len(sends) if response else True
         assert all(key not in str(record.__dict__) for record in [*started, *completed])

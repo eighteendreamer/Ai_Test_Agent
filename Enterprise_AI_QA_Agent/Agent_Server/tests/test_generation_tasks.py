@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from copy import deepcopy
 import hashlib
 import json
+import logging
 import os
 from pathlib import Path
 from uuid import uuid4
@@ -83,7 +84,8 @@ async def evidence(name, values, service, group, **extra):
 @pytest.mark.asyncio
 @LIVE
 @pytest.mark.parametrize("extension", ["md", "docx", "pdf"])
-async def test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts(tmp_path, extension):
+async def test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receipts(tmp_path, extension, caplog):
+    caplog.set_level(logging.INFO)
     async with generation_environment(tmp_path, extension) as (values, service, store, config):
         env, project, doc, paths, case, *_ = values
         review = await accepted(values)
@@ -105,6 +107,21 @@ async def test_actual_redis_worker_updates_and_creates_drafts_with_atomic_receip
                 group2, completed = await service.read_group(project.id, doc.id, group.id)
                 assert group2 == group and all(task.status == "completed" for task in completed), [task.model_dump() for task in completed]
                 assert len(sends) == 2
+                generation_calls = [record for record in caplog.records
+                    if record.message == "case_generation_invoking"]
+                assert len(generation_calls) == 2
+                for call in generation_calls:
+                    physical_requests = [record for record in caplog.records
+                        if record.message == "model_http_request_attempt_started"
+                        and record.logical_call_id == call.logical_call_id]
+                    physical_responses = [record for record in caplog.records
+                        if record.message == "model_http_response_received"
+                        and record.logical_call_id == call.logical_call_id]
+                    assert len(physical_requests) == len(physical_responses) == 1
+                    assert physical_requests[0].trace_id == call.task_id
+                    assert physical_responses[0].trace_id == call.task_id
+                    assert getattr(physical_requests[0], "attempt_id", "") == call.attempt_id
+                    assert getattr(physical_responses[0], "attempt_id", "") == call.attempt_id
                 update = completed[0].checkpoint.receipt["versions"][0]
                 created = completed[1].checkpoint.receipt["versions"][0]
                 assert update["case_id"] == case.case.id and update["version"] == 2

@@ -16,6 +16,7 @@ class ProviderCallObservation:
     logical_call_id: str
     transport: str
     trace_id: str = ""
+    attempt_id: str = ""
     _attempt_sequence: int = 0
     _token: Token[ProviderCallObservation | None] | None = field(default=None, repr=False)
 
@@ -26,6 +27,7 @@ class ProviderCallObservation:
             "logical_call_id": self.logical_call_id,
             "transport": self.transport,
             "trace_id": self.trace_id,
+            "attempt_id": self.attempt_id,
             "attempt_sequence": self._attempt_sequence,
             "started": started,
         }
@@ -33,6 +35,7 @@ class ProviderCallObservation:
             "logical_call_id": self.logical_call_id,
             "trace_id": self.trace_id,
             "transport": self.transport,
+            "attempt_id": self.attempt_id,
             "attempt_sequence": self._attempt_sequence,
             "http_method": str(request.method),
             "http_route": _safe_route(str(request.url.path)),
@@ -46,6 +49,7 @@ class ProviderCallObservation:
             "logical_call_id": self.logical_call_id,
             "trace_id": self.trace_id,
             "transport": self.transport,
+            "attempt_id": self.attempt_id,
             "attempt_sequence": details.get("attempt_sequence"),
             "http_method": str(response.request.method),
             "http_route": _safe_route(str(response.request.url.path)),
@@ -72,11 +76,13 @@ def observe_provider_call(
     transport: str,
     *,
     trace_id: str = "",
+    attempt_id: str = "",
 ) -> Iterator[ProviderCallObservation]:
     observation = ProviderCallObservation(
         logical_call_id=logical_call_id,
         transport=transport,
         trace_id=trace_id,
+        attempt_id=attempt_id,
     )
     token = _current_call.set(observation)
     try:

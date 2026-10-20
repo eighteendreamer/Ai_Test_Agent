@@ -277,7 +277,15 @@ class GenerationTaskService:
                     "attempt_id": claim.attempt_id, "logical_call_id": logical_call_id,
                     "request_sha256": module.generation.sha256, "budget": budget})
                 async with asyncio.timeout(min(remaining, policy.call_timeout_seconds)):
-                    result = await self._generator.invoke_frozen(module.generation, logical_call_id=logical_call_id)
+                    result = await self._generator.invoke_frozen(
+                        module.generation,
+                        logical_call_id=logical_call_id,
+                        trace_context={
+                            "trace_id": current.id,
+                            "project_id": current.project_id,
+                            "attempt_id": claim.attempt_id,
+                        },
+                    )
                 reference = await self._object(result, f"{current.project_id}/{current.id}/{claim.attempt_id}/responses", "response.json")
                 checkpoint = await confirmed_generation_write(self._store.save_response(claim, reference), stage="response", identity=current.id)
             stage = "response_validation_rejected"
