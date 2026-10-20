@@ -91,6 +91,19 @@ def test_effect_task_prompt_disambiguates_case_paths_document_refs_and_roles():
     assert "只返回role=cleanup" in prompts["cleanup"]
 
 
+def test_binding_task_uses_item_sources_without_native_effect_path_instructions():
+    prompts = effect_task_prompts(REFERENCE_PROTOCOL_V2)
+    binding_prompt = prompts["bindings"].split("\nJSON Schema: ", 1)[0]
+    assert "runtime_context为空时不能引用任何input_key" in binding_prompt
+    assert "前置执行项整理后的输出" in binding_prompt
+    assert "不能只修改summary" in binding_prompt
+    assert "checks.output_path_tokens" not in binding_prompt
+    assert "select_when" not in binding_prompt
+    assert "object_path_tokens" not in binding_prompt
+    for task in ("produced", "cleanup"):
+        assert "相对持久化的原始工具输出根" in prompts[task]
+
+
 def test_effect_task_wire_schema_rejects_canonical_ids_instead_of_short_refs():
     for task, binding_name in (("bindings", "TaskBinding"), ("produced", "TaskDeclarations")):
         schema = effect_task_schema(task)
@@ -200,6 +213,14 @@ def test_actual_old_failed_seed_stays_original_wire(folder):
     assert PlanningTaskCheckpoint.model_validate(raw["checkpoint"]).model_dump(mode="json") == raw["checkpoint"]
 
 
+def test_actual_rejected_r3_prompts_restore_without_rebuilding_as_r4():
+    raw = json.loads((ROOT / "p2-bindings-r3-prompts-20261020.json").read_bytes())["stage_prompts"]
+    restored = PlanningStagePrompts.model_validate(raw)
+    assert restored.task_prompt_revision == 3
+    assert restored.model_dump(mode="json") == raw
+    assert restored.effect_tasks["bindings"] != effect_task_prompts(REFERENCE_PROTOCOL_V2)["bindings"]
+
+
 def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     plan, _, _, _ = captured_tasks()
     config = plan.config_snapshot.policy.model_dump(mode="json")
@@ -209,8 +230,8 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     prompts = build_stage_prompts(policy.planning_stage_protocol, policy.effect_expected_source_protocol,
         policy.operation_prefetch_protocol, policy.source_identity_protocol, policy.linked_source_protocol, policy.evidence_reference_protocol)
     assert set(prompts.effect_tasks) == set(DECISIONS)
-    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r3")
-    assert prompts.task_prompt_revision == 3
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r4")
+    assert prompts.task_prompt_revision == 4
     legacy = prompts.model_dump(mode="json")
     legacy.pop("task_prompt_revision")
     restored = PlanningStagePrompts.model_validate(legacy)

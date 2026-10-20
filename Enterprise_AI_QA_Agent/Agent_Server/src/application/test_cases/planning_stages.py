@@ -60,7 +60,7 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
             "cleanup_sources明确引用自身item_key，不因depends_on为空或没有prepare就省略。"
             "不清理的项保留空关系，不能根据HTTP方法猜业务；依据完整操作与原文判断。") + base.logic
         return PlanningStagePrompts(protocol=protocol, logic=logic, effects=prompts["bindings"],
-            effect_tasks=prompts, task_prompt_revision=3)
+            effect_tasks=prompts, task_prompt_revision=4)
     if scene_query_protocol:
         original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol)
