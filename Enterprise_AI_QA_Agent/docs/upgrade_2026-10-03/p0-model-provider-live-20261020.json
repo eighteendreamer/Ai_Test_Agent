@@ -1,0 +1,68 @@
+{
+  "verified_at_utc": "2026-10-20 10:37 UTC",
+  "scope": "MySQL-backed non-default model configurations through ModelRuntimeService",
+  "global_model_configuration_changed": false,
+  "provider_retry_policy": {
+    "max_retries": 0,
+    "timeout_seconds": 30
+  },
+  "results": [
+    {
+      "model_key": "qwen3.8-max-0902",
+      "provider": "qwen",
+      "transport": "openai_chat_completions",
+      "active_in_mysql": false,
+      "credential_present": true,
+      "request_kind": "synthetic_function_call",
+      "output_token_cap": 128,
+      "sdk_http_attempts": 1,
+      "mode": "http_error",
+      "http_status": 401,
+      "tool_calls": [],
+      "interpretation": "No valid model response was received; request mapping and response parsing are not validated by this result."
+    },
+    {
+      "model_key": "agnes-2.5-flash",
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "active_in_mysql": false,
+      "credential_present": true,
+      "request_kind": "synthetic_function_call",
+      "output_token_cap": 128,
+      "sdk_http_attempts": 1,
+      "mode": "ok",
+      "completion_status": "tool_calls",
+      "tool_calls": [
+        {
+          "name": "record_test_step",
+          "arguments": {
+            "action": "search",
+            "target": "status_panel"
+          }
+        }
+      ]
+    },
+    {
+      "model_key": "agnes-2.5-flash",
+      "provider": "openai",
+      "transport": "openai_chat_completions",
+      "active_in_mysql": false,
+      "credential_present": true,
+      "request_kind": "synthetic_streaming_text",
+      "output_token_cap": 64,
+      "sdk_http_attempts": 1,
+      "mode": "ok",
+      "completion_status": "complete",
+      "stream_chunk_count": 2,
+      "stream_text": "\n\nREADY",
+      "final_text": "READY"
+    }
+  ],
+  "limitations": [
+    "The temporary runtime registry selected an inactive record without changing MySQL activation state.",
+    "These live calls do not verify settings-page model activation or full document/API-agent workflows.",
+    "The HTTP 401 does not identify a specific credential or provider-account cause.",
+    "Step authentication is treated as passed per user confirmation; prior current-config inference calls still failed with provider plan/quota or model-catalog errors."
+  ],
+  "secrets_or_raw_provider_bodies_saved": false
+}

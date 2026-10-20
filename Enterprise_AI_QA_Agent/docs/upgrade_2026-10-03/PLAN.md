@@ -4,6 +4,8 @@
 
 模型适配层也已按当前源码和 SDK HTTP 请求重新核验：统一内部请求/结果契约与 OpenAI Chat、OpenAI Responses、Anthropic Messages、Gemini 原生 transport 分层保留，LangChain 仅走 OpenAI-compatible Chat；本批 6 个相关测试文件共 **186 passed**，没有发现需要新增统一协议栈或更换 Anthropic Messages 的依据。该结果是锁定 SDK 对本地 HTTP fixture 的功能验收，不代表所有真实外部供应商都已在线验收。详见[模型适配层复核](P0_CALL_TRACE_RESEARCH.md#模型适配层当前源码与真实-sdk-http-复核2026-10-20)。
 
+另有非默认模型的真实运行时探测：从 MySQL 读取已配置但未激活的 Agnes 模型，经现有 OpenAI-compatible Chat 适配器实际完成工具调用和流式文本；Qwen 的单次调用收到 HTTP 401，不能算响应映射通过。该探测不改全局激活配置，且不等同于设置页切换模型或完整业务流程验收，详见 §7.124。Step 账号认证按用户确认视为已通过；当前默认推理可用性仍按已有真实 400/402 证据记录，不要求重复认证。
+
 P0 并发重复请求核验发现并修复：会话锁已占用但持久状态仍非忙时，同一输入会在锁外预编排后又在锁内重新编排，导致语义意图模型重复调用；真实 SDK/本地 HTTP 回归现为每条输入恰好一次发送。另已把单次用户 turn/trace 贯通语义判定、Agent 调用、工具后推理和工具调用 ID，并用本地 HTTP/SDK 与确定性回归验证；默认 Step 只读工具/SSE 实测仍在首个模型请求收到 HTTP 400、1次 attempt 后中断，没有进入工具阶段。账号认证已通过不等于该推理端点当前可用，详见 §7.122。全业务持久任务、生产环境及其他失败/恢复组合仍需继续核验。
 
 以下2026-10-19摘要与分阶段原件作为历史保留；当前状态以2026-10-20调研和其后实际验收结果为准。
@@ -4628,3 +4630,19 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 短期修复已落地：通知投影后重新读取当前会话；事件型通知不再通过 detached `SessionRecord` 全量保存；自动停止的状态、消息和事件由内存/PostgreSQL SessionStore 原子提交。修复前新增回归以 `KeyError: pending_turn` 失败，修复后通过；`test_intent_safety_routing.py` 与 `test_coordinator_durable_children.py` 合计 106 passed、28 skipped；存储原子操作的内存与真实 PostgreSQL 隔离表测试 2 passed。并发重复通知幂等专项仍通过。
 
 本轮只完成通知写入的根因修复，尚未实施 session revision/CAS，也未完成所有 `save_session` 调用点审计和真实跨进程 Worker 恢复验收。独立Worker同进程受控测试批次此前为2失败、0跳过：受控模型只完成 `/login`，父会话仍有旧审批ID而最新 `interrupted` snapshot 已含等待工具项；跨进程测试使用1秒 reclaim 阈值，在模型请求前已出现 ownership uncertainty，不作为产品行为结论。默认Step UI场景正负向此前均在第一次推理请求收到400；保存的安全元数据为 `request_params_invalid`，没有 response body、code 或 param，不能据此改默认模型或协议。详细实施顺序、源码位置和验收边界见设计文档。
+
+### 7.124 已配置替代模型的真实工具调用与流式响应复核（2026-10-20）
+
+针对“换用其他模型是否会让系统报错”，先读取当前 MySQL 模型配置的非敏感字段：默认激活模型仍为 `step-5-preview`；`qwen3.8-max-0902` 与 `agnes-2.5-flash` 均有凭据配置但未激活，二者使用 OpenAI-compatible Chat。没有修改激活状态或任何凭据。为避免改动用户默认配置，以只返回固定配置对象的临时 Runtime Registry 调用生产 `ModelRuntimeService.invoke`；真实配置仍由 MySQL 加载，调用统一内部 DTO、请求映射、官方 OpenAI SDK 及现有 HTTP observer。每次单独设置 SDK `max_retries=0`，输出上限为64或128 token，只发送合成工具/文本请求。
+
+| 配置 | 实际请求 | 真实结果 | 可证明范围 |
+|---|---|---|---|
+| `qwen3.8-max-0902`（Qwen provider / OpenAI-compatible Chat） | 一次合成工具调用，单个 SDK HTTP attempt | HTTP 401，`http_error`，未得到工具调用 | 当前凭据/服务访问未通过；因未收到有效模型响应，不能评价工具参数序列化或响应解析 |
+| `agnes-2.5-flash`（OpenAI-compatible Chat） | 要求调用 `record_test_step(action="search", target="status_panel")` | 一次 SDK HTTP attempt；`completion_status=tool_calls`；解析出的函数名和两个参数均与请求相符 | 该配置经生产 ModelRuntimeService、Chat 请求映射及 OpenAI SDK 实际完成了结构化工具调用 |
+| `agnes-2.5-flash`（同一调用路径） | 流式请求“只输出 READY” | 一次 SDK HTTP attempt；收到2个文本片段；流终态 `complete`；聚合文本为 `READY` | 该配置的实际流式分块、聚合及最终响应解析通过 |
+
+脱敏结果和输出边界见[替代模型实时验收记录](p0-model-provider-live-20261020.json)。这两项 Agnes 探测证明的是模型运行时/适配器层的真实外部调用，不是前端设置页激活路径、文档生成 Worker、按用例规划或 API Agent 的全链路。Qwen 的401也不能归因于协议或映射错误；不在没有成功响应的情况下臆测其具体凭据原因。
+
+Anthropic 客户端仍调用 `client.messages.create(...)`，OpenAI Responses 仍由独立的 `OpenAIResponsesClient` 调用；现有证据支持保留“统一内部契约 + provider 原生 wire protocol + 显式模型请求 profile”的适配层，不把所有模型强行变成一种协议。Step 的账号认证按用户确认记为通过，实际推理仍不可用：此前 MySQL 默认配置的真实模型请求返回供应商 entitlement/计划错误，其他 Step 端点还出现目录不含目标模型或 quota 错误，详见 §7.116—7.117、7.121—7.122。本轮不重复发送 Step 请求、不更换默认配置。
+
+本轮没有修改生产代码、模型配置、数据库结构或用户数据。后续仍需完成设置页模型选择到运行时的产品级切换验收、实际文档生成 Worker 的替代模型端到端验收、Qwen 凭据可用后的响应验证，以及 Step 推理通道恢复后的默认模型闭环；不能把本节两次成功调用写成 P0—P5 总体完成。
