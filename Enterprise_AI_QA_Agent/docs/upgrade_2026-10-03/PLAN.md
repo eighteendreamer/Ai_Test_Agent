@@ -1,6 +1,6 @@
 # 企业 AI 测试系统升级方案：用例理解、执行补全与需求变更闭环
 
-当前核验日期：2026-10-20。完整P0—P5目标继续进行。已补充[绑定阶段职责与原生Schema对照](P2_NATIVE_SCHEMA_DIAGNOSTIC_20261020.md)：原生Schema/low隔离对照仍失败；最小只读调用证明同一Schema能正确输出前置来源。r4将bindings的数据来源说明与原始工具效果路径说明分开，合同、真实存储恢复及依赖专项共84通过。真实默认Step/8192多候选复验1失败（369.48秒）：逻辑选择与前置绑定首次均通过，随后produced达到8192上限、正文为空；未创建Run、业务HTTP为0。完整P2仍未验收，下一步审查produced声明职责及工具实际取证边界。当前独立embedding服务仍返回402/30001，自动向量召回验收继续受阻。
+当前核验日期：2026-10-20。完整P0—P5目标继续进行。已补充[绑定阶段职责与原生Schema对照](P2_NATIVE_SCHEMA_DIAGNOSTIC_20261020.md)：原生Schema/low隔离对照仍失败；最小只读调用证明同一Schema能正确输出前置来源。r4将bindings的数据来源说明与原始工具效果路径说明分开，合同、真实存储恢复及依赖专项共84通过。真实默认Step/8192多候选复验1失败（369.48秒）：目标/前置选取和bindings有阶段证据，但补核发现清理来源误引用自身，不能称完整逻辑通过；produced达到8192上限、正文为空。只读副本纠正来源后仍length/8192、正文为空（120.752秒），见[清理来源诊断](P2_CLEANUP_SOURCE_DIAGNOSTIC_20261020.md)。未创建Run、业务HTTP为0，停止同类提示/参数重试，P2继续未验收。当前独立embedding服务仍返回402/30001，自动向量召回验收继续受阻。
 
 以下2026-10-19摘要与分阶段原件作为历史保留；当前状态以2026-10-20调研和其后实际验收结果为准。
 
@@ -4498,3 +4498,11 @@ Python compileall 和本轮 diff 检查通过；此次没有前端契约或页�
 保存的逻辑阶段检查点包含两个正式项：订单创建正式依赖 → 订单详情目标；无关的商品排序候选未入选。规划随后停在 effects/bindings 阶段，未得到完整绑定回执；没有创建正式 Run，业务 HTTP 为0，没有创建或清理订单。截断响应的映射记录显示 `output_format` 采取 `prompt_fallback`（`format_not_declared`），因此这次只通过提示要求符合回执 Schema 的 JSON 文本，没有请求供应商原生格式。默认模型配置声明 `json_mode=true`，但没有 `request_profile`；`map_model_request` 以 profile 中明确声明的 `output_formats` 决定是否映射具体格式，所以本次回退到提示。查阅[Step 5 Preview 官方结构化输出示例](https://platform.stepfun.com/cookbook/step-5-vision-structured)确认示例使用 Chat Completions `response_format` 的 JSON Schema；[官方 JSON Mode 文档](https://platform.stepfun.com/docs/guide/json_mode)也说明可用 `json_object`。当前验收证据只保留了 `api_base_url_hash`，没有确认本次账号实际连接的 host；官方能力是否适用于此配置仍需先核实，且 JSON Schema 是否能减少该阶段生成量尚无证据。直接失败原因是8192输出额度耗尽。候选选择、排序与依赖判定有阶段性证据，但整条用例规划和执行仍未通过。2026-10-20补核该样本的脱敏SDK流计数：正常轮reasoning字符14,808；截断轮reasoning字符30,526、最终正文33字符，reasoning与reasoning_content为同一内容的两种呈现，不相加。该证据表明输出耗尽时生成量主要发生在推理部分，但不能单独确定阶段职责、输入组织与模型行为的全部原因；没有发生协议转换，也不是600秒总时限到期。
 
 协议核验：Anthropic 客户端继续调用官方 SDK `client.messages.create`，`await_provider_io` 仅包装网络传输异常；OpenAI Responses 客户端是独立 transport。此次默认 Step 请求沿其既有 OpenAI Chat Completions transport，不切换到 Responses。不得为使该样本通过而扩大生产默认输出上限、替换 provider 协议、自动重发截断响应或以受控 profile 代替默认模型。下一步安全确认当前配置的实际 host；仅在其与官方文档适用端点一致、且能力声明依据清晰时，才评估显式 JSON Schema 映射。然后再分析阶段提示/上下文；每次改动仍使用全新隔离项目和默认 Step 配置验收，直到获得完整绑定、正式 Run、业务请求/证据、结果及终态重投的闭环。
+
+### 7.113 清理来源补核与停止同类 produced 重试（2026-10-20）
+
+依据原方案附件、r4 原请求和固定检查点补核：查询目标只查询并删除前置创建的订单，却把 `cleanup_sources` 指向自身。服务端根据该来源派生 produced 范围，使查询目标也被要求声明产生效果；bindings 正确不能修正已冻结的逻辑来源。自包含创建/清理用例合法使用自身来源，因此不能一律禁止自引用或用 HTTP 方法猜业务身份。此前“逻辑通过”收窄为目标/前置选取、排除干扰和 bindings 有阶段性证据。
+
+只读诊断副本仅纠正清理来源、派生逻辑哈希及 produced 范围，保持完整用例/工具/证据与当前默认配置；不恢复原任务、不创建 Run、不发送业务请求。实际退出1、120.752秒，一次 SDK/物理 HTTP200，length/8192、正文0，未取得正式声明；源文件与全局配置读回未改变。详见 [清理来源诊断](P2_CLEANUP_SOURCE_DIAGNOSTIC_20261020.md) 及本地 `p2-cleanup-source-probe-20261020/verification.json`。脚本依赖保留的失败批次原件，不能在缺少这些原件的新检出目录中独立复验；它显式关闭自身 SDK 重试，仅用于一次只读对照。
+
+纠正来源不足以解决 produced 输出耗尽，停止该方向同类参数/提示重试。后续独立研究 honest unresolved 与必填声明的契约冲突、普通无正文删除的真实取证依据，以及 AI 规划与执行后核验的职责边界。没有放宽正式关系核验、增加输出预算、修改历史或切换供应商协议；默认项目级选取→排序→补全→执行仍未验收。整体 P0—P5 未完成。

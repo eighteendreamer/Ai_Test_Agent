@@ -5635,3 +5635,9 @@ $env:QA_CONSUMPTION_EXTERNAL_DIR=Join-Path $toolTableEvidence 'external'
 这份失败样本把下一步范围缩小为后续绑定阶段的提示回退与生成量；具体导致8192 tokens耗尽的 prompt/模型生成因素仍未确认。StepFun 官方 Step 5 文档展示 Chat Completions JSON Schema 示例，但本次证据仅保存 API host 哈希，适用到当前配置仍未核实；不能据此直接改能力标志或全局配置。禁止把本实验结果当作增大生产输出预算的依据，也没有自动重发截断响应。继续先核实配置 host 与请求映射，再按默认配置验收完整规划、执行、结果与终态重投。
 
 本次协议核验：Anthropic 仍经官方 `client.messages.create` 调用；`await_provider_io` 只统一网络传输错误。OpenAI Responses 留在独立的 OpenAI Responses transport。默认 Step 使用既有 OpenAI Chat Completions transport，未改协议或模型客户端。完整 P0—P5 继续未完成。
+
+## 2026-10-20 P2 清理来源补核与一次只读对照
+
+重读原附件后，沿 r4 固定用例、cleanup_sources、bindings 和 produced scope 查证查询目标误引用自身。逻辑字段结构合法不能证明业务来源正确，前轮“逻辑阶段通过”已在 PLAN 收窄为选取/前置和 bindings 的阶段事实。四份历史多候选检查点中两份同样误引用自身、两份引用正确前置，不按 HTTP 动词补造服务端判定。
+
+只读脚本从原失败请求构建副本，仅纠正来源及派生哈希/范围；实际一次默认模型请求仍 length/8192、正文为空，退出1、120.752秒。未创建 Run、无业务 HTTP，原文件和全局配置未变；没有修复或恢复原冻结计划。原件与更完整限制见 `P2_CLEANUP_SOURCE_DIAGNOSTIC_20261020.md`。停止同类微调；继续研究 unresolved/完整声明契约和实际清理证据。Python编译通过仅作附加检查，本次模型功能验收失败如实保留，P2与整体P0—P5继续未完成。
