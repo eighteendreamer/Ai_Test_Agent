@@ -5678,9 +5678,9 @@ DeepSeek用例由 Playwright 驱动真实 Chromium，不是物理人工点击或
 
 ### Step 默认模型状态
 
-MySQL 当前默认记录为 `step-5-preview`，`provider=openai`、`transport=openai_chat_completions`；未配置统一替代协议或请求 profile。对标准 Step 模型目录的真实 GET 返回 19 个模型，证明该次目录请求认证通过。10 月 20 日较早的默认性能 Agent 实测曾通过该默认模型产生 4 次模型 HTTP 调用并完成报告；随后单请求、SDK 重试设为 0 的真实生成探针返回 HTTP 400，服务端消息为 `you have no active step plan subscription`，同日标准端点另有 HTTP 402 quota 错误。用户已确认 Step 账号认证已处理。本轮再次用当前默认模型运行 P2 真实规划时仍返回 HTTP 400，但脱敏探针只保存状态码，没有读取正文；因此当前失败原因尚未确认，不能沿用历史错误断定目前仍是订阅问题，也不能据此归因为适配协议缺陷。以上探针均未自动重发、未输出 API Key、未修改 MySQL 配置。证据见 `p2-step-current-diagnostic-probe-20261020.json`、`p2-default-multi-case-safe-error-20261020/step-standard-model-catalog-probe.json` 与本轮 `p2-default-multi-case-current-fixed-123741/`。
+MySQL 当前默认记录为 `step-5-preview`，`provider=openai`、`transport=openai_chat_completions`；未配置统一替代协议或请求 profile。对标准 Step 模型目录的真实 GET 返回 19 个模型，证明该次目录请求认证通过。10 月 20 日较早的默认性能 Agent 实测曾通过该默认模型产生 4 次模型 HTTP 调用并完成报告；随后单请求、SDK 重试设为 0 的真实生成探针返回 HTTP 400，服务端消息为 `you have no active step plan subscription`，同日标准端点另有 HTTP 402 quota 错误。用户已确认 Step 账号认证已处理。本轮当前默认多候选规划仍返回 HTTP 400；随后从 MySQL 读取同一默认配置，用原生 Chat Completions 发出一次最小、32-token、零 SDK 重试请求，得到相同状态码。探针只将错误归类为 `subscription_or_plan_entitlement`，没有保存错误正文、密钥或响应内容。当前证据因此区分出“凭据认证通过”和“推理计划/订阅 entitlement 不可用”，支持先恢复 Step 推理计划后重验 P2；它不支持修改 Provider 协议或请求适配。两次探针都没有自动重发、没有修改 MySQL 配置。证据见 `p2-step-current-diagnostic-probe-20261020.json`、`p2-default-multi-case-safe-error-20261020/step-standard-model-catalog-probe.json`、`p2-default-multi-case-current-fixed-123741/` 与 `p2-step-minimal-probe-current-20261020-125006/probe.json`。
 
-模型适配判断维持原设计：系统已有统一内部请求/响应契约和按 transport 分派的客户端，同时保留 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google GenAI 等独立实现；OpenAI 兼容厂商继续用其兼容传输及每模型请求能力配置。Anthropic 当前仍调用 `client.messages.create`。现有 HTTP 400/402 证据不能支持把所有模型改为单一协议，也不能区分当前失败由账户状态还是请求参数引起；取得安全保存的供应商错误类别或一次成功的默认模型调用后，再决定是否需要修改映射。本轮 P2 仍须完成真实默认模型端到端验收。
+模型适配判断维持原设计：系统已有统一内部请求/响应契约和按 transport 分派的客户端，同时保留 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google GenAI 等独立实现；OpenAI 兼容厂商继续用其兼容传输及每模型请求能力配置。Anthropic 当前仍调用 `client.messages.create`。本轮脱敏错误类别为订阅/计划 entitlement，不是请求字段映射错误。`tests/test_model_clients.py` 与 `tests/test_model_request_profile.py` 当前运行 **56 passed，28.94秒**，核对了原生客户端分派、Anthropic Messages/Responses 调用边界以及按 transport 的请求字段映射；该回归不替代真实 Step 端到端验收，但没有发现要求统一协议或改适配层的证据。JUnit 为 `p0-model-native-transport-current-20261020.xml`。P2 仍须在 Step 推理计划恢复后完成真实默认模型端到端验收。
 
 ### P5 Docker 安全工具与产品报告
 
@@ -5696,7 +5696,7 @@ MySQL 当前默认记录为 `step-5-preview`，`provider=openai`、`transport=op
 
 ### 当前未完成边界
 
-P5 Docker 安全直接工具链与报告产品页、P3 DOCX 版本解析产品链已有当前工作树实测，但默认 Agent 安全模式从用户目标到工具调用仍待验收。用户已确认 Step 账号认证完成；最新 P2 默认调用返回 HTTP 400，但本轮探针没有保存供应商错误正文，因此该请求失败原因未分类，P2 多用例完整规划与执行仍未验收。其余 P0—P5 项（包括普通文档默认模型全量生成、正式回执真实中断恢复、人工 UI 录制与默认 AI 消费知识、API 测试完整 Agent 流程、需求追踪广业务验收、生产历史数据迁移/投影和旧 Worker 原件恢复）继续逐项保留；**整体升级目标未完成**。
+P5 Docker 安全直接工具链与报告产品页、P3 DOCX 版本解析产品链已有当前工作树实测，但默认 Agent 安全模式从用户目标到工具调用仍待验收。Step 凭据认证已通过，但当前默认推理请求被供应商归类为订阅/计划 entitlement 不可用；P2 多用例完整规划、执行与报告仍未验收，待该 entitlement 恢复后重跑。其余 P0—P5 项（包括普通文档默认模型全量生成、正式回执真实中断恢复、人工 UI 录制与默认 AI 消费知识、API 测试完整 Agent 流程、需求追踪广业务验收、生产历史数据迁移/投影和旧 Worker 原件恢复）继续逐项保留；**整体升级目标未完成**。
 
 
 ## 2026-10-20 P1 导入页面复验与 P2 默认 Step 真实闭环重试
@@ -5707,8 +5707,8 @@ P1 在 `Agent_Server` 执行 `RUN_LIVE_CASE_IMPORT_FULL_PRODUCT=1` 的 `tests/te
 
 此 P1 结果关闭的是模板及 Excel/JSON 导入产品路径的本次复验，不代表普通需求文档 AI 全量生成通过。历史真实默认 Step 生成证据显示三个模块中两个保存草稿，一个模块返回内容验证拒绝后可独立恢复；全量生成目标仍未全部通过。另一个普通文档链路使用受控模型，仅证明真实文档解析、独立模块 Worker、重试与恢复管线，不能替代默认模型质量验收。
 
-P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、隔离项目及 MySQL/PostgreSQL/RustFS 重跑三候选“无关候选排除→必要正式依赖补入→排序/输出绑定→正式 Run→真实 API 创建/查询/清理→终态重投”测试。调研并修正验收开关时遵守 `CasePlanningPolicy` 对 `staged-evidence-v3`、固定来源身份、文档预期与证据引用的组合约束。完整真实请求执行后，Step 在首个逻辑规划调用返回 HTTP 400，任务以 `failed` 结束，未创建计划或 Run，因而这次不能验收执行闭环。该次脱敏 HTTP 探针只保存状态码且标记未读取响应正文；不能仅凭此探针判定是账户权限还是请求参数，也不能把失败归因于客户端适配器。没有自动重试，没有变更 MySQL 默认配置，也没有将模型切到其他协议。证据目录为 `p2-default-multi-case-current-fixed-123741/`，JUnit 为 `p2-default-multi-case-current-fixed-123741.xml`。
+P2 使用真实默认 `step-5-preview`、OpenAI-compatible Chat Completions、隔离项目及 MySQL/PostgreSQL/RustFS 重跑三候选“无关候选排除→必要正式依赖补入→排序/输出绑定→正式 Run→真实 API 创建/查询/清理→终态重投”测试。调研并修正验收开关时遵守 `CasePlanningPolicy` 对 `staged-evidence-v3`、固定来源身份、文档预期与证据引用的组合约束。真实规划请求在首个逻辑调用返回 HTTP 400，任务以 `failed` 结束，未创建计划或 Run，因而这次不能验收执行闭环。后续只读一次默认模型最小请求，并以零重试核对同一 Chat Completions 端点，供应商响应类别为 `subscription_or_plan_entitlement`；探针未保存正文、密钥或响应内容。当前证据指向推理计划/订阅 entitlement，而非模型字段映射；需待 entitlement 恢复后重跑完整闭环。没有自动重试，没有变更 MySQL 默认配置，也没有将模型切到其他协议。证据目录为 `p2-default-multi-case-current-fixed-123741/`、`p2-step-minimal-probe-current-20261020-125006/probe.json`，P2 JUnit 为 `p2-default-multi-case-current-fixed-123741.xml`。
 
 上次已确认本系统按统一内部请求/结果契约、`transport` 注册和每个 SDK 客户端执行映射，同时保留 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google GenAI 等原生协议；Anthropic 仍调用 `client.messages.create`。这次失败没有提供新证据支持更改这一架构，适配层仍按模型/传输能力映射请求字段，不把全系统收敛为单一 SDK 协议。
 
-当前状态：P1 模板与导入已有完整页面验收；P1 普通需求文档的真实默认模型全量生成/模块恢复仍未完成；P2 的选择、补入和计划在旧证据中已通过真实默认模型，但当前有效闭环重试被 HTTP 400 中断，完整 Run/报告/终态重投未通过。P0—P5 其余未验收项与整体目标继续保持未完成。
+当前状态：P1 模板与导入已有完整页面验收；P1 普通需求文档的真实默认模型全量生成/模块恢复仍未完成；P2 的选择、补入和计划在旧证据中已通过真实默认模型，但当前 entitlement 不可用使完整规划请求返回 HTTP 400，完整 Run/报告/终态重投未通过。P0—P5 其余未验收项与整体目标继续保持未完成。
