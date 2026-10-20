@@ -24,6 +24,10 @@ class ContinuationLeaseLostError(RuntimeError):
     """Raised when a continuation worker no longer owns its fencing lease."""
 
 
+class SessionWriteConflictError(RuntimeError):
+    """Raised when a detached session snapshot is older than stored state."""
+
+
 class EventCursorNotFoundError(ValueError):
     """The SSE cursor is absent from the requested session's durable history."""
 
@@ -72,6 +76,65 @@ def validate_session_import_bundle(bundle: SessionImportBundle) -> None:
             raise ValueError(f"Imported {field_name} must be a non-negative PostgreSQL integer.")
 
 
+_SESSION_REVISION_OWNED_METADATA_KEYS = frozenset({
+    "turn_lease_turn_id",
+    "turn_lease_owner",
+    "turn_lease_token",
+    "turn_lease_expires_at",
+    "coordinator_dispatch_claims",
+    "worker_dispatches",
+})
+
+
+def session_revision_metadata(metadata: dict) -> dict:
+    """Return only metadata fields replaced by a whole-session snapshot."""
+    return {
+        key: value
+        for key, value in metadata.items()
+        if key not in _SESSION_REVISION_OWNED_METADATA_KEYS
+    }
+
+
+def session_revision_metadata_changed(before: dict, after: dict) -> bool:
+    return session_revision_metadata(before) != session_revision_metadata(after)
+
+
+def session_snapshot_can_merge_append(snapshot: SessionRecord, current: SessionRecord) -> bool:
+    """Allow a stale snapshot to merge only new transcript rows.
+
+    All replaceable session fields must still match, and any persisted message
+    already present in the stale snapshot must be byte-for-byte equivalent to
+    the current row. This preserves append-only message concurrency without
+    permitting stale status, metadata, or delivery-state overwrites.
+    """
+    replaceable_fields = (
+        "title",
+        "status",
+        "session_mode",
+        "runtime_mode",
+        "mode_key",
+        "project_id",
+        "created_at",
+        "preferred_model",
+        "selected_agent",
+    )
+    if any(getattr(snapshot, name) != getattr(current, name) for name in replaceable_fields):
+        return False
+    if session_revision_metadata(snapshot.metadata) != session_revision_metadata(current.metadata):
+        return False
+
+    current_messages = {
+        message.id: message
+        for message in current.messages
+        if bool(message.metadata.get("persist_transcript", True))
+    }
+    return all(
+        current_messages.get(message.id) in (None, message)
+        for message in snapshot.messages
+        if bool(message.metadata.get("persist_transcript", True))
+    )
+
+
 class SessionStore(Protocol):
     """Records are detached values; changes require a store write operation.
 
@@ -110,6 +173,9 @@ class SessionStore(Protocol):
         status: SessionStatus | None,
         mutate: Callable[[dict, SessionStatus], None],
         allowed_current_statuses: set[SessionStatus] | None = None,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> bool: ...
     async def update_status_and_append_messages_and_events(
         self,
@@ -321,6 +387,7 @@ class InMemorySessionStore:
             # All validation and duplicate checks finish before any visible state changes.
             for bundle in staged:
                 session_id = bundle.session.id
+                bundle.session.state_revision = 1
                 self._sessions[session_id] = bundle.session
                 self._events[session_id] = list(bundle.events)
                 self._snapshots[session_id] = list(bundle.snapshots)
@@ -365,12 +432,13 @@ class InMemorySessionStore:
                 self._assert_turn_lease_locked(session.id, turn_lease_token)
             previous_session = deepcopy(self._sessions.get(session.id))
             previous_events = list(self._events[session.id])
+            candidate = deepcopy(session)
             try:
-                self._save_session_locked(session)
+                self._save_session_locked(candidate)
                 for event in events:
-                    if event.session_id != session.id:
+                    if event.session_id != candidate.id:
                         raise ValueError("Final event session_id does not match the session being saved.")
-                    self._append_event_locked(session.id, event)
+                    self._append_event_locked(candidate.id, event)
             except Exception:
                 if previous_session is None:
                     self._sessions.pop(session.id, None)
@@ -378,11 +446,22 @@ class InMemorySessionStore:
                     self._sessions[session.id] = previous_session
                 self._events[session.id] = previous_events
                 raise
+            session.event_count = candidate.event_count
+            session.snapshot_count = candidate.snapshot_count
+            session.metadata = deepcopy(candidate.metadata)
+            session.state_revision = candidate.state_revision
+            session.updated_at = candidate.updated_at
             return session
 
     def _save_session_locked(self, session: SessionRecord) -> SessionRecord:
         current = self._sessions.get(session.id)
         if current is not None:
+            if (session.state_revision != current.state_revision
+                    and not session_snapshot_can_merge_append(session, current)):
+                raise SessionWriteConflictError(
+                    f"Session {session.id} changed since revision {session.state_revision}; "
+                    "reload it and apply the intended update to current state."
+                )
             # Snapshot saves cannot replace lease ownership or SQL-style
             # coordinator claims advanced by another operation.
             for key in (
@@ -397,6 +476,13 @@ class InMemorySessionStore:
                 session.metadata["worker_dispatches"] = deepcopy(current.metadata["worker_dispatches"])
             session.event_count = max(current.event_count, session.event_count)
             session.snapshot_count = max(current.snapshot_count, session.snapshot_count)
+            session.state_revision = current.state_revision + 1
+        else:
+            if session.state_revision != 0:
+                raise SessionWriteConflictError(
+                    f"Session {session.id} no longer exists at revision {session.state_revision}."
+                )
+            session.state_revision = 1
         session.updated_at = datetime.utcnow()
         stored = deepcopy(session)
         # PostgreSQL upserts transcript rows by message ID; a stale document
@@ -422,7 +508,10 @@ class InMemorySessionStore:
                 return False
             metadata = deepcopy(session.metadata)
             mutate(metadata)
+            changed = session_revision_metadata_changed(session.metadata, metadata)
             session.metadata = deepcopy(metadata)
+            if changed:
+                session.state_revision += 1
             session.updated_at = datetime.now(UTC).replace(tzinfo=None)
             return True
 
@@ -433,17 +522,33 @@ class InMemorySessionStore:
         status: SessionStatus | None,
         mutate: Callable[[dict, SessionStatus], None],
         allowed_current_statuses: set[SessionStatus] | None = None,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> bool:
         async with self._lock:
+            if continuation_approval_id or continuation_lease_token:
+                self._assert_continuation_lease_locked(
+                    session_id, continuation_approval_id, continuation_lease_token
+                )
+            if turn_lease_token:
+                self._assert_turn_lease_locked(session_id, turn_lease_token)
             session = self._sessions.get(session_id)
             if session is None:
                 return False
             metadata = deepcopy(session.metadata)
             current_status = session.status
             mutate(metadata, current_status)
+            changed = (
+                session_revision_metadata_changed(session.metadata, metadata)
+                or (status is not None and current_status != status
+                    and current_status in (allowed_current_statuses or set()))
+            )
             session.metadata = deepcopy(metadata)
             if status is not None and current_status in (allowed_current_statuses or set()):
                 session.status = status
+            if changed:
+                session.state_revision += 1
             session.updated_at = datetime.now(UTC).replace(tzinfo=None)
             return True
 
@@ -461,13 +566,18 @@ class InMemorySessionStore:
             session = self._sessions.get(session_id)
             if session is None:
                 return False
+            old_status = session.status
             if status is not None:
                 session.status = status
             existing_message_ids = {item.id for item in session.messages}
+            messages_changed = False
             for message in messages:
                 if bool(message.metadata.get("persist_transcript", True)) and message.id not in existing_message_ids:
                     session.messages.append(deepcopy(message))
                     existing_message_ids.add(message.id)
+                    messages_changed = True
+            if (status is not None and status != old_status) or messages_changed:
+                session.state_revision += 1
             session.updated_at = datetime.utcnow()
             for event in events:
                 self._append_event_locked(session_id, event)
@@ -632,6 +742,8 @@ class InMemorySessionStore:
             previous_session = deepcopy(session)
             previous_events = list(self._events[session_id])
             try:
+                if session_revision_metadata_changed(session.metadata, metadata):
+                    session.state_revision += 1
                 session.metadata = deepcopy(metadata)
                 self._append_event_locked(session_id, event)
             except Exception:
@@ -817,6 +929,7 @@ class InMemorySessionStore:
                 ).isoformat(),
             })
             session.status = type(session.status).running
+            session.state_revision += 1
             session.updated_at = datetime.utcnow()
             return deepcopy(session)
 
@@ -857,6 +970,7 @@ class InMemorySessionStore:
                 "turn_lease_expires_at",
             ):
                 session.metadata.pop(key, None)
+            session.state_revision += 1
             session.updated_at = datetime.utcnow()
             return True
 
@@ -987,6 +1101,7 @@ class InMemorySessionStore:
                 )
                 session.metadata["control"] = control
                 session.status = type(session.status).interrupted
+                session.state_revision += 1
                 session.updated_at = now
                 recovered.append(session.id)
             return recovered

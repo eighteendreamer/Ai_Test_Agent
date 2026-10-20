@@ -22,7 +22,11 @@ from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
 from src.runtime.session_lock_map import SessionLockMap
-from src.runtime.store import ContinuationLeaseLostError, SessionStore
+from src.runtime.store import (
+    ContinuationLeaseLostError,
+    SessionStore,
+    SessionWriteConflictError,
+)
 from src.registry.modes import ModeRegistry
 from src.schemas.model_config import is_model_failure_summary
 from src.schemas.observation import SessionObservationResponse
@@ -590,24 +594,31 @@ class SessionService:
         session_id: str,
         payload: InterruptSessionRequest,
     ) -> SessionDetail:
-        session = await self._require_session(session_id)
-        if session.status != SessionStatus.running:
-            raise ValueError("Only running sessions can be interrupted.")
-
         reason = (payload.reason or "Interrupt requested from session control API.").strip()
+
+        def mark_interrupt_requested(metadata: dict, current_status: SessionStatus) -> None:
+            if current_status != SessionStatus.running:
+                raise ValueError("Only running sessions can be interrupted.")
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control.update(
+                {
+                    "control_state": "interrupt_requested",
+                    "is_interrupted": False,
+                    "is_resumable": False,
+                    "last_interrupt_reason": reason,
+                    "last_control_source": payload.source,
+                }
+            )
+            metadata["control"] = control
+
+        if not await self._store.update_status_and_mutate_metadata(
+            session_id,
+            status=None,
+            mutate=mark_interrupt_requested,
+        ):
+            raise KeyError(session_id)
         self._runtime_service.request_interrupt(session_id, reason)
-        control = self._ensure_control_metadata(session)
-        control.update(
-            {
-                "control_state": "interrupt_requested",
-                "is_interrupted": False,
-                "is_resumable": False,
-                "last_interrupt_reason": reason,
-                "last_control_source": payload.source,
-            }
-        )
-        session.metadata["control"] = control
-        await self._store.save_session(session)
         await self._store.append_event(
             session_id,
             self._make_event(
@@ -620,7 +631,7 @@ class SessionService:
                 },
             ),
         )
-        return await self._to_detail(session)
+        return await self.get_session(session_id)
 
     async def resume_session(
         self,
@@ -687,18 +698,30 @@ class SessionService:
     ) -> ConversationResponse:
         session_id = session.id
         turn_id = self._resume_turn_id(snapshot)
-        control = self._ensure_control_metadata(session)
-        control.update(
-            {
-                "control_state": "resuming",
-                "is_interrupted": False,
-                "is_resumable": False,
-                "last_resume_reason": (payload.reason or "Manual resume requested.").strip(),
-                "last_control_source": payload.source,
-            }
-        )
-        session.metadata["control"] = control
-        await self._store.save_session(session, turn_lease_token=turn_lease_token)
+
+        def mark_resuming(metadata: dict, current_status: SessionStatus) -> None:
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control.setdefault("control_state", current_status.value)
+            control.update(
+                {
+                    "control_state": "resuming",
+                    "is_interrupted": False,
+                    "is_resumable": False,
+                    "last_resume_reason": (payload.reason or "Manual resume requested.").strip(),
+                    "last_control_source": payload.source,
+                }
+            )
+            metadata["control"] = control
+
+        if not await self._store.update_status_and_mutate_metadata(
+            session_id,
+            status=None,
+            mutate=mark_resuming,
+            turn_lease_token=turn_lease_token,
+        ):
+            raise KeyError(session_id)
+        session = await self._require_session(session_id)
 
         assistant_message_id = str(uuid4())
         stream_chunk_handler = self._build_stream_chunk_handler(
@@ -749,18 +772,11 @@ class SessionService:
             raise
         except Exception as exc:
             settled = True
-            latest = await self._require_session(session_id)
-            latest.status = SessionStatus.interrupted
-            self._ensure_control_metadata(latest).update(
-                {
-                    "control_state": "interrupted",
-                    "is_interrupted": True,
-                    "is_resumable": True,
-                    "preserve_resources": True,
-                    "last_interrupt_reason": truncate_text(str(exc), 240),
-                }
+            await self._mark_interrupted_after_error(
+                session_id,
+                truncate_text(str(exc), 240),
+                turn_lease_token=turn_lease_token,
             )
-            await self._store.save_session(latest, turn_lease_token=turn_lease_token)
             await self._store.append_event(
                 session_id,
                 self._make_event(
@@ -799,17 +815,25 @@ class SessionService:
         session_id: str,
         limit: int | None = DEFAULT_REPLAY_EVENT_LIMIT,
     ) -> SessionReplayResponse:
-        session = await self._require_session(session_id)
         latest_snapshot = await self._store.get_latest_snapshot(session_id)
-        control = self._ensure_control_metadata(session)
-        replay_count = session.metadata.get("replay_requests", 0)
-        session.metadata["replay_requests"] = int(replay_count) + 1
-        session.metadata["control"] = {
-            **control,
-            "last_replay_requested_at": datetime.utcnow().isoformat(),
-            "replay_available": True,
-        }
-        await self._store.save_session(session)
+        replay_count = 0
+
+        def mark_replay_requested(metadata: dict) -> None:
+            nonlocal replay_count
+            replay_count = int(metadata.get("replay_requests", 0)) + 1
+            metadata["replay_requests"] = replay_count
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control.update(
+                {
+                    "last_replay_requested_at": datetime.utcnow().isoformat(),
+                    "replay_available": True,
+                }
+            )
+            metadata["control"] = control
+
+        if not await self._store.mutate_metadata(session_id, mark_replay_requested):
+            raise KeyError(session_id)
         await self._store.append_event(
             session_id,
             self._make_event(
@@ -817,11 +841,12 @@ class SessionService:
                 "session.replay_requested",
                 {
                     "message": "A read-only replay of the session history was requested.",
-                    "replay_count": session.metadata["replay_requests"],
+                    "replay_count": replay_count,
                 },
             ),
         )
         events = await self._store.list_events(session_id, limit=limit)
+        session = await self._require_session(session_id)
         detail = await self._to_detail(session)
         return SessionReplayResponse(
             session_id=session_id,
@@ -829,7 +854,7 @@ class SessionService:
             latest_snapshot=self._snapshot_for_detail(latest_snapshot),
             events=events,
             metadata={
-                "replay_count": session.metadata.get("replay_requests", 0),
+                "replay_count": replay_count,
                 "snapshot_stage": latest_snapshot.stage if latest_snapshot else "",
                 "transcript_summary": self._transcript_hygiene_service.summarize_messages(session.messages),
             },
@@ -972,18 +997,32 @@ class SessionService:
                 return approval
 
             await self._append_approval_resolved_event(session_id, approval)
-            session.status = SessionStatus.running
-            control = self._ensure_control_metadata(session)
-            control.update(
-                {
-                    "control_state": "resuming_after_approval",
-                    "is_interrupted": False,
-                    "is_resumable": False,
-                    "last_approval_id": approval.id,
-                }
-            )
-            session.metadata["control"] = control
-            await self._store.save_session(session)
+
+            def schedule_approval_continuation(
+                metadata: dict,
+                current_status: SessionStatus,
+            ) -> None:
+                if current_status not in {SessionStatus.waiting_approval, SessionStatus.running}:
+                    raise ValueError("Session is no longer waiting for this approval continuation.")
+                control = metadata.get("control")
+                control = dict(control) if isinstance(control, dict) else {}
+                control.update(
+                    {
+                        "control_state": "resuming_after_approval",
+                        "is_interrupted": False,
+                        "is_resumable": False,
+                        "last_approval_id": approval.id,
+                    }
+                )
+                metadata["control"] = control
+
+            if not await self._store.update_status_and_mutate_metadata(
+                session_id,
+                status=SessionStatus.running,
+                mutate=schedule_approval_continuation,
+                allowed_current_statuses={SessionStatus.waiting_approval},
+            ):
+                raise KeyError(session_id)
             await self._store.append_event(
                 session_id,
                 self._make_event(
@@ -1036,17 +1075,28 @@ class SessionService:
             assistant_message_id=assistant_message_id,
             turn_lease_token=turn_lease_token,
         )
-        control = self._ensure_control_metadata(session)
-        control.update(
-            {
-                "control_state": "resuming_after_approval",
-                "is_interrupted": False,
-                "is_resumable": False,
-                "last_approval_id": approval.id,
-            }
-        )
-        session.metadata["control"] = control
-        await self._store.save_session(session, turn_lease_token=turn_lease_token)
+        def mark_approval_resuming(metadata: dict, current_status: SessionStatus) -> None:
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control.setdefault("control_state", current_status.value)
+            control.update(
+                {
+                    "control_state": "resuming_after_approval",
+                    "is_interrupted": False,
+                    "is_resumable": False,
+                    "last_approval_id": approval.id,
+                }
+            )
+            metadata["control"] = control
+
+        if not await self._store.update_status_and_mutate_metadata(
+            session_id,
+            status=None,
+            mutate=mark_approval_resuming,
+            turn_lease_token=turn_lease_token,
+        ):
+            raise KeyError(session_id)
+        session = await self._require_session(session_id)
         settled = False
         try:
             continuation = await self._await_owned_execution(
@@ -1096,19 +1146,12 @@ class SessionService:
             raise
         except Exception as exc:
             settled = True
-            latest = await self._require_session(session_id)
-            latest.status = SessionStatus.interrupted
-            self._ensure_control_metadata(latest).update(
-                {
-                    "control_state": "interrupted",
-                    "is_interrupted": True,
-                    "is_resumable": True,
-                    "preserve_resources": True,
-                    "last_interrupt_reason": truncate_text(str(exc), 240),
-                    "last_approval_id": approval.id,
-                }
+            await self._mark_interrupted_after_error(
+                session_id,
+                truncate_text(str(exc), 240),
+                approval_id=approval.id,
+                turn_lease_token=turn_lease_token,
             )
-            await self._store.save_session(latest, turn_lease_token=turn_lease_token)
             await self._store.append_event(
                 session_id,
                 self._make_event(
@@ -1183,21 +1226,10 @@ class SessionService:
                     extra={"session_id": session_id, "approval_id": approval.id},
                 )
             except Exception as exc:
-                session.status = SessionStatus.interrupted
-                control = self._ensure_control_metadata(session)
-                control.update(
-                    {
-                        "control_state": "interrupted",
-                        "is_interrupted": True,
-                        "is_resumable": True,
-                        "preserve_resources": True,
-                        "last_interrupt_reason": truncate_text(str(exc), 240),
-                        "last_approval_id": approval.id,
-                    }
-                )
-                session.metadata["control"] = control
-                await self._store.save_session(
-                    session,
+                await self._mark_interrupted_after_error(
+                    session_id,
+                    truncate_text(str(exc), 240),
+                    approval_id=approval.id,
                     continuation_approval_id=approval.id,
                     continuation_lease_token=continuation_token,
                 )
@@ -1611,6 +1643,22 @@ class SessionService:
         session_id = session.id
         turn_fenced_write = {"turn_lease_token": turn_lease_token}
         superseded_turn_id = ""
+        worker_context_messages = list(session.messages) if user_message_id is not None else None
+
+        def restore_worker_context_messages(target: SessionRecord) -> None:
+            if worker_context_messages is None:
+                return
+            latest_messages = {message.id: message for message in target.messages}
+            target.messages = [
+                deepcopy(latest_messages.get(message.id, message))
+                for message in worker_context_messages
+            ]
+
+        await self._store.assert_turn_execution(session_id, turn_lease_token)
+        # claim_turn_execution returns a detached value; start from the newest
+        # row so concurrent queue/control projections are not copied backward.
+        session = await self._require_session(session_id)
+        restore_worker_context_messages(session)
 
         if session.status == SessionStatus.interrupted and allow_interrupted:
             superseded_turn_id = str((session.metadata.get("pending_turn") or {}).get("turn_id") or "")
@@ -1707,20 +1755,56 @@ class SessionService:
             created_at=datetime.utcnow(),
             metadata=user_message_metadata,
         )
-        existing_message = next(
-            (
-                index
-                for index, message in enumerate(session.messages)
-                if message.id == user_message.id
-            ),
-            None,
-        )
-        if existing_message is None:
-            session.messages.append(user_message)
-        else:
-            user_message.created_at = session.messages[existing_message].created_at
-            session.messages[existing_message] = user_message
-        await self._store.save_session(session, **turn_fenced_write)
+        target_mode_key = session.mode_key
+        target_selected_agent = session.selected_agent
+        target_preferred_model = session.preferred_model
+        for attempt in range(3):
+            candidate = await self._require_session(session_id)
+            restore_worker_context_messages(candidate)
+            await self._store.assert_turn_execution(session_id, turn_lease_token)
+            candidate.status = SessionStatus.running
+            candidate.mode_key = target_mode_key
+            candidate.selected_agent = target_selected_agent
+            candidate.preferred_model = target_preferred_model
+            candidate.metadata["pending_turn"] = {}
+            control = self._ensure_control_metadata(candidate)
+            queued_entries = self._get_pending_input_queue(candidate)
+            control.update(
+                {
+                    "control_state": "active_turn",
+                    "is_interrupted": False,
+                    "is_resumable": False,
+                    "last_turn_id": execution_request.turn_id,
+                    "queued_input_count": len(queued_entries),
+                    "last_superseded_turn_id": superseded_turn_id or str(
+                        control.get("last_superseded_turn_id") or ""
+                    ),
+                }
+            )
+            candidate.metadata["control"] = control
+            candidate.messages = list(candidate.messages)
+            existing_message = next(
+                (index for index, message in enumerate(candidate.messages)
+                 if message.id == user_message.id),
+                None,
+            )
+            if existing_message is None:
+                candidate.messages.append(user_message)
+            else:
+                user_message.created_at = candidate.messages[existing_message].created_at
+                candidate.messages[existing_message] = user_message
+            try:
+                await self._store.save_session(candidate, **turn_fenced_write)
+                session = candidate
+                break
+            except SessionWriteConflictError:
+                if attempt == 2:
+                    raise
+                logger.info(
+                    "session_input_commit_rebased_after_conflict",
+                    extra={"session_id": session_id, "turn_id": execution_request.turn_id,
+                           "attempt": attempt + 1},
+                )
         await self._store.append_event(
             session_id,
             self._make_event(
@@ -1840,24 +1924,18 @@ class SessionService:
             )
             raise
         except Exception as exc:
-            session = await self._require_session(session_id)
             latest_snapshot = await self._store.get_latest_snapshot(session_id)
             is_resumable = latest_snapshot is not None and latest_snapshot.stage in {
                 "waiting_approval",
                 "interrupted",
                 "resumable",
             }
-            session.status = SessionStatus.interrupted
-            self._ensure_control_metadata(session).update(
-                {
-                    "control_state": "interrupted",
-                    "is_interrupted": True,
-                    "is_resumable": is_resumable,
-                    "preserve_resources": True,
-                    "last_interrupt_reason": truncate_text(str(exc), 240),
-                }
+            await self._mark_interrupted_after_error(
+                session_id,
+                truncate_text(str(exc), 240),
+                is_resumable=is_resumable,
+                turn_lease_token=turn_lease_token,
             )
-            await self._store.save_session(session, **turn_fenced_write)
             await self._store.append_event(
                 session_id,
                 self._make_event(
@@ -2496,36 +2574,102 @@ class SessionService:
                 ),
             )
 
-        latest_session = await self._require_session(session_id)
-        latest_queue_entries = self._get_pending_input_queue(latest_session)
-        latest_control = self._ensure_control_metadata(latest_session)
-        session.metadata = {
-            **dict(latest_session.metadata),
-            **dict(session.metadata),
-        }
-        self._set_pending_input_queue(session, latest_queue_entries)
-        session.status = self._session_status_from_runtime_result(runtime_result)
-        control = self._ensure_control_metadata(session)
-        if latest_control.get("last_interrupt_reason") and not control.get("last_interrupt_reason"):
-            control["last_interrupt_reason"] = latest_control["last_interrupt_reason"]
-        if latest_control.get("last_control_source") and not control.get("last_control_source"):
-            control["last_control_source"] = latest_control["last_control_source"]
-        session.metadata["control"] = control
-        completion_events.append(
-            self._make_event(
-                session_id,
-                "turn.completed" if session.status != SessionStatus.interrupted else "turn.interrupted",
-                {
-                    "turn_id": runtime_result.state["turn_id"],
-                    "message": "User turn artifacts were persisted.",
-                    "session_status": session.status.value,
-                    "event_count": session.event_count,
-                    "snapshot_count": session.snapshot_count,
-                    "approval_count": len(runtime_result.approvals),
-                },
-            ),
+        completion_event = self._make_event(
+            session_id,
+            "turn.completed" if self._session_status_from_runtime_result(runtime_result) != SessionStatus.interrupted else "turn.interrupted",
+            {
+                "turn_id": runtime_result.state["turn_id"],
+                "message": "User turn artifacts were persisted.",
+                "session_status": self._session_status_from_runtime_result(runtime_result).value,
+                "event_count": session.event_count,
+                "snapshot_count": session.snapshot_count,
+                "approval_count": len(runtime_result.approvals),
+            },
         )
-        await self._store.save_session_with_events(session, completion_events, **fenced_write)
+        completion_events.append(completion_event)
+
+        for attempt in range(3):
+            latest_session = await self._require_session(session_id)
+            latest_queue_entries = self._get_pending_input_queue(latest_session)
+
+            # Re-apply only fields owned by this completed turn onto the latest
+            # detached record. This preserves concurrent preferences, queue
+            # updates, delivery metadata, and unrelated worker notifications.
+            session.title = latest_session.title
+            session.session_mode = latest_session.session_mode
+            session.runtime_mode = latest_session.runtime_mode
+            session.mode_key = latest_session.mode_key
+            session.project_id = latest_session.project_id
+            session.preferred_model = latest_session.preferred_model
+            session.selected_agent = latest_session.selected_agent
+            session.created_at = latest_session.created_at
+            session.event_count = latest_session.event_count
+            session.snapshot_count = latest_session.snapshot_count
+            session.state_revision = latest_session.state_revision
+
+            latest_messages = list(latest_session.messages)
+            latest_message_ids = {item.id for item in latest_messages}
+            for message in session.messages:
+                if message.id not in latest_message_ids:
+                    latest_messages.append(message)
+                    latest_message_ids.add(message.id)
+            session.messages = latest_messages
+
+            metadata = deepcopy(latest_session.metadata)
+            metadata["pending_turn"] = runtime_result.pending_turn
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control.update(
+                {
+                    "control_state": control_state,
+                    "is_interrupted": control_state == "interrupted",
+                    "is_resumable": is_resumable,
+                    "preserve_resources": control_state in {"waiting_approval", "interrupted", "resumable"},
+                    "replay_available": True,
+                    "last_snapshot_stage": runtime_result.snapshot.stage,
+                    "last_turn_id": runtime_result.state["turn_id"],
+                }
+            )
+            metadata["control"] = control
+            if int(turn_usage.get("prompt_tokens") or 0) > 0:
+                metadata["context_usage"] = {
+                    "prompt_tokens": int(turn_usage.get("prompt_tokens") or 0),
+                    "completion_tokens": int(turn_usage.get("completion_tokens") or 0),
+                    "total_tokens": int(turn_usage.get("total_tokens") or 0),
+                    "context_window": int(runtime_result.state.get("model_context_window") or 0),
+                    "turn_id": str(runtime_result.state.get("turn_id") or ""),
+                    "updated_at": datetime.utcnow().isoformat(),
+                }
+            if verification_results:
+                existing_results = metadata.get("verification_results", [])
+                if not isinstance(existing_results, list):
+                    existing_results = []
+                existing_by_id = {
+                    str(item.get("id")): item
+                    for item in existing_results
+                    if isinstance(item, dict) and item.get("id")
+                }
+                for result in verification_results:
+                    result_payload = result.model_dump(mode="python")
+                    existing_by_id[str(result_payload["id"])] = result_payload
+                metadata["verification_results"] = list(existing_by_id.values())
+            session.metadata = metadata
+            self._set_pending_input_queue(session, latest_queue_entries)
+            session.status = self._session_status_from_runtime_result(runtime_result)
+            completion_event.payload["event_count"] = session.event_count
+            completion_event.payload["snapshot_count"] = session.snapshot_count
+
+            try:
+                await self._store.save_session_with_events(session, completion_events, **fenced_write)
+                break
+            except SessionWriteConflictError:
+                if attempt == 2:
+                    raise
+                logger.info(
+                    "session_turn_commit_rebased_after_conflict",
+                    extra={"session_id": session_id, "turn_id": runtime_result.state["turn_id"],
+                           "attempt": attempt + 1},
+                )
         if runtime_result.output_text and response_mode == "ok":
             try:
                 await self._persist_turn_memory(
@@ -2740,6 +2884,58 @@ class SessionService:
         if session is None:
             raise KeyError(session_id)
         return session
+
+    async def _mark_interrupted_after_error(
+        self,
+        session_id: str,
+        reason: str,
+        *,
+        is_resumable: bool = True,
+        approval_id: str | None = None,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
+    ) -> None:
+        allowed_statuses = {
+            SessionStatus.running,
+            SessionStatus.waiting_approval,
+            SessionStatus.interrupted,
+        }
+
+        def mark_interrupted(metadata: dict, current_status: SessionStatus) -> None:
+            if current_status not in allowed_statuses:
+                return
+            control = metadata.get("control")
+            control = dict(control) if isinstance(control, dict) else {}
+            control.update(
+                {
+                    "control_state": "interrupted",
+                    "is_interrupted": True,
+                    "is_resumable": is_resumable,
+                    "preserve_resources": is_resumable,
+                    "last_interrupt_reason": reason,
+                }
+            )
+            if approval_id:
+                control["last_approval_id"] = approval_id
+            metadata["control"] = control
+
+        found = await self._store.update_status_and_mutate_metadata(
+            session_id,
+            status=SessionStatus.interrupted,
+            mutate=mark_interrupted,
+            allowed_current_statuses=allowed_statuses,
+            continuation_approval_id=continuation_approval_id,
+            continuation_lease_token=continuation_lease_token,
+            turn_lease_token=turn_lease_token,
+        )
+        if not found:
+            raise KeyError(session_id)
+        logger.warning(
+            "session_interrupted_after_owned_execution_error",
+            extra={"session_id": session_id, "approval_id": approval_id or "",
+                   "is_resumable": is_resumable},
+        )
 
     async def _require_active_project(self, project_id: str) -> None:
         if self._project_service is None:

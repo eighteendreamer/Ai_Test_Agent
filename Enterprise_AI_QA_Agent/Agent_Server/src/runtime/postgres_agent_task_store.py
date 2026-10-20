@@ -646,7 +646,7 @@ class PostgresAgentTaskStore:
                             'is_resumable',false,
                             'last_approval_id',%s::text
                         )
-                ), updated_at=NOW()
+                ), updated_at=NOW(), state_revision=state_revision+1
                 WHERE id=%s""",
                 (approval_id, command.session_id),
             )
@@ -869,6 +869,19 @@ class PostgresAgentTaskStore:
 
     def _cancel_unstarted_children_sync(self, parent_task_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            # Keep the session -> task lock order used by claim/transition and
+            # by message delivery-status projection below.
+            cur.execute(
+                f"""SELECT session.id FROM {self._session_table} AS session
+                WHERE EXISTS (
+                    SELECT 1 FROM {self._tasks} AS task
+                    WHERE task.session_id=session.id AND task.parent_task_id=%s
+                      AND task.status IN ('queued','waiting_resource')
+                      AND task.interrupt_requested=FALSE
+                )
+                ORDER BY session.id FOR UPDATE OF session""",
+                (parent_task_id,),
+            )
             cur.execute(
                 f"SELECT * FROM {self._tasks} WHERE parent_task_id=%s "
                 "AND status IN ('queued','waiting_resource') AND interrupt_requested=FALSE "
@@ -938,6 +951,12 @@ class PostgresAgentTaskStore:
                         WHERE id=%s""",
                         ("failed", row["user_message_id"]),
                     )
+                    if cur.rowcount > 0:
+                        cur.execute(
+                            f"UPDATE {self._session_table} "
+                            "SET state_revision=state_revision+1 WHERE id=%s",
+                            (row["session_id"],),
+                        )
                 self._event(
                     cur,
                     row,
@@ -1036,7 +1055,8 @@ class PostgresAgentTaskStore:
             )
             cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata || jsonb_build_object(
                 'turn_lease_turn_id',%s::text,'turn_lease_owner',%s::text,'turn_lease_token',%s::text,
-                'turn_lease_expires_at',to_jsonb(NOW() + %s * INTERVAL '1 second')) WHERE id=%s""",
+                'turn_lease_expires_at',to_jsonb(NOW() + %s * INTERVAL '1 second')),
+                state_revision=state_revision+1, updated_at=NOW() WHERE id=%s""",
                 (
                     row["turn_id"],
                     worker_id,
@@ -1077,7 +1097,11 @@ class PostgresAgentTaskStore:
                 row = cur.fetchone()
             self._update_status(cur, row, status, result_status, reason)
             if status == "running":
-                cur.execute(f"UPDATE {self._session_table} SET status='running' WHERE id=%s", (task.session_id,))
+                cur.execute(
+                    f"UPDATE {self._session_table} SET status='running', "
+                    "state_revision=state_revision+1, updated_at=NOW() WHERE id=%s",
+                    (task.session_id,),
+                )
             else:
                 if status in {"failed", "cancelled", "recovery_required"}:
                     self._interrupt_expired_session(cur, row)
@@ -1093,6 +1117,12 @@ class PostgresAgentTaskStore:
             cur.execute(f"""UPDATE {self._settings.database.postgres_message_table}
                 SET metadata=metadata || jsonb_build_object('delivery_status',%s::text) WHERE id=%s""",
                 (status, row["user_message_id"]))
+            if cur.rowcount > 0:
+                cur.execute(
+                    f"UPDATE {self._session_table} "
+                    "SET state_revision=state_revision+1 WHERE id=%s",
+                    (row["session_id"],),
+                )
         self._event(
             cur,
             row,
@@ -1116,14 +1146,16 @@ class PostgresAgentTaskStore:
     def _interrupt_expired_session(self, cur, row):
         cur.execute(f"""UPDATE {self._session_table} SET status='interrupted', metadata=jsonb_set(metadata,
             '{{control}}', COALESCE(metadata->'control','{{}}'::jsonb) ||
-            '{{"control_state":"interrupted","is_interrupted":true,"preserve_resources":true}}'::jsonb)
+            '{{"control_state":"interrupted","is_interrupted":true,"preserve_resources":true}}'::jsonb),
+            state_revision=state_revision+1, updated_at=NOW()
             WHERE id=%s AND (metadata->>'turn_lease_token'=%s OR NOT(metadata ? 'turn_lease_token'))""",
             (row["session_id"], row["lease_token"]))
         self._clear_lease(cur, row)
 
     def _clear_lease(self, cur, row):
         cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata - 'turn_lease_turn_id' -
-            'turn_lease_owner' - 'turn_lease_token' - 'turn_lease_expires_at'
+            'turn_lease_owner' - 'turn_lease_token' - 'turn_lease_expires_at',
+            state_revision=state_revision+1, updated_at=NOW()
             WHERE id=%s AND metadata->>'turn_lease_token'=%s""", (row["session_id"], row["lease_token"]))
 
     def _event(self, cur, row, event_type, payload):

@@ -12,17 +12,20 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 
+from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.projects.project_service import ProjectService
 from src.application.projects.project_store import (
     InMemoryProjectStore,
     PostgresProjectStore,
 )
+from src.application.sessions.session_service import SessionService
 from src.core.config import get_settings
 from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime
+from src.registry.modes import ModeRegistry
 from src.runtime.postgres_session_store import PostgresSessionStore
-from src.runtime.store import InMemorySessionStore
+from src.runtime.store import InMemorySessionStore, SessionWriteConflictError
 from src.schemas.project import ProjectCreateRequest
 from src.schemas.session import (
     ChatMessage,
@@ -204,6 +207,61 @@ async def test_stale_session_save_preserves_durable_counts_and_worker_dispatches
         assert record.event_count == 1
         assert record.snapshot_count == 1
         assert record.metadata["worker_dispatches"] == [{"task_id": "worker-task"}]
+
+
+@pytest.mark.asyncio
+async def test_stale_snapshot_conflicts_after_semantic_metadata_change(stores):
+    writer, reader, session_id, _ = stores
+    stale = deepcopy(await reader.get_session(session_id))
+    assert await writer.mutate_metadata(
+        session_id,
+        lambda metadata: metadata.update(
+            pending_turn={"turn_id": "newer-turn", "stage": "waiting_tools"}
+        ),
+    )
+    stale.title = "stale title"
+
+    with pytest.raises(SessionWriteConflictError, match="changed from revision|changed since revision"):
+        await writer.save_session(stale)
+
+    current = await reader.get_session(session_id)
+    assert current.title != "stale title"
+    assert current.metadata["pending_turn"]["turn_id"] == "newer-turn"
+
+
+@pytest.mark.asyncio
+async def test_turn_lease_heartbeat_does_not_advance_state_revision(stores):
+    writer, reader, session_id, _ = stores
+    claimed = await writer.claim_turn_execution(
+        session_id, "revision-turn", "revision-owner", "revision-token", 60
+    )
+    assert claimed is not None
+    claimed_revision = claimed.state_revision
+
+    assert await writer.renew_turn_execution(session_id, "revision-token", 60)
+    renewed = await reader.get_session(session_id)
+    assert renewed.state_revision == claimed_revision
+
+    assert await writer.complete_turn_execution(session_id, "revision-token")
+    completed = await reader.get_session(session_id)
+    assert completed.state_revision == claimed_revision + 1
+
+
+@pytest.mark.asyncio
+async def test_state_revision_stays_internal_to_session_api_and_backup(dated_stores):
+    writer, reader, session_id = dated_stores
+    stored = await reader.get_session(session_id)
+    assert stored is not None
+    assert stored.state_revision == 1
+
+    modes = ModeRegistry()
+    service = SessionService(writer, InputOrchestratorService(modes), object(), modes)
+    detail = await service.get_session(session_id)
+    assert "state_revision" not in detail.model_dump(mode="json")
+
+    exported = await writer.bulk_export()
+    exported_session = next(item for item in exported if item["id"] == session_id)
+    assert "state_revision" not in exported_session
 
 
 @pytest.mark.asyncio

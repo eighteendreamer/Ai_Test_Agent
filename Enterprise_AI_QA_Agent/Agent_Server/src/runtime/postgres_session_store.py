@@ -15,6 +15,9 @@ from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
 from src.runtime.store import (
     ContinuationLeaseLostError,
     EventCursorNotFoundError,
+    SessionWriteConflictError,
+    session_revision_metadata_changed,
+    session_snapshot_can_merge_append,
     validate_session_import_bundle,
 )
 from src.schemas.session import (
@@ -103,11 +106,11 @@ class PostgresSessionStore:
             INSERT INTO {self._settings.database.postgres_session_table} (
                 id, title, status, session_mode, runtime_mode, mode_key, project_id,
                 created_at, updated_at, preferred_model, selected_agent,
-                metadata, event_count, snapshot_count
+                metadata, event_count, snapshot_count, state_revision
             ) VALUES (
                 %s, %s, %s, %s, %s, %s, %s,
                 %s, %s, %s, %s,
-                %s::jsonb, %s, %s
+                %s::jsonb, %s, %s, 1
             )
             ON CONFLICT (id) DO NOTHING
             RETURNING id
@@ -129,7 +132,10 @@ class PostgresSessionStore:
                 int(session.snapshot_count),
             ),
         )
-        return cur.fetchone() is not None
+        inserted = cur.fetchone() is not None
+        if inserted:
+            session.state_revision = 1
+        return inserted
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return await asyncio.to_thread(self._get_session_sync, session_id, True)
@@ -388,6 +394,9 @@ class PostgresSessionStore:
         status: SessionStatus | None,
         mutate,
         allowed_current_statuses: set[SessionStatus] | None = None,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> bool:
         return await asyncio.to_thread(
             self._update_status_and_mutate_metadata_sync,
@@ -395,6 +404,9 @@ class PostgresSessionStore:
             status,
             mutate,
             allowed_current_statuses,
+            continuation_approval_id,
+            continuation_lease_token,
+            turn_lease_token,
         )
 
     async def update_status_and_append_messages_and_events(
@@ -430,24 +442,16 @@ class PostgresSessionStore:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 cur.execute(
-                    f"SELECT id FROM {self._settings.database.postgres_session_table} "
+                    f"SELECT status FROM {self._settings.database.postgres_session_table} "
                     "WHERE id = %s FOR UPDATE",
                     (session_id,),
                 )
-                if cur.fetchone() is None:
+                row = cur.fetchone()
+                if row is None:
                     return False, inserted_events
-                if status is not None:
-                    cur.execute(
-                        f"UPDATE {self._settings.database.postgres_session_table} "
-                        "SET status = %s, updated_at = %s WHERE id = %s",
-                        (status.value, now, session_id),
-                    )
-                else:
-                    cur.execute(
-                        f"UPDATE {self._settings.database.postgres_session_table} "
-                        "SET updated_at = %s WHERE id = %s",
-                        (now, session_id),
-                    )
+                current_status = SessionStatus(row["status"])
+                status_changed = status is not None and status != current_status
+                transcript_changed = False
                 for message in messages:
                     if not bool(message.metadata.get("persist_transcript", True)):
                         continue
@@ -467,9 +471,22 @@ class PostgresSessionStore:
                             json.dumps(make_json_safe(message.metadata), ensure_ascii=False),
                         ),
                     )
+                    transcript_changed = transcript_changed or cur.rowcount > 0
                 for event in events:
                     if self.append_event_in_transaction(cur, session_id, event):
                         inserted_events.append(event)
+                cur.execute(
+                    f"""UPDATE {self._settings.database.postgres_session_table}
+                    SET status = %s, updated_at = %s,
+                        state_revision = state_revision + %s
+                    WHERE id = %s""",
+                    (
+                        (status or current_status).value,
+                        now,
+                        int(status_changed or transcript_changed),
+                        session_id,
+                    ),
+                )
         return True, inserted_events
 
     def _update_status_and_mutate_metadata_sync(
@@ -478,6 +495,9 @@ class PostgresSessionStore:
         status: SessionStatus | None,
         mutate,
         allowed_current_statuses: set[SessionStatus] | None = None,
+        continuation_approval_id: str | None = None,
+        continuation_lease_token: str | None = None,
+        turn_lease_token: str | None = None,
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -489,15 +509,26 @@ class PostgresSessionStore:
                 row = cur.fetchone()
                 if row is None:
                     return False
+                self._assert_continuation_lease_sync(
+                    cur, session_id, continuation_approval_id, continuation_lease_token
+                )
+                self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
                 stored = row["metadata"]
                 metadata = dict(json.loads(stored) if isinstance(stored, str) else stored or {})
+                original_metadata = deepcopy(metadata)
                 current_status = SessionStatus(row["status"])
                 mutate(metadata, current_status)
                 next_status = status if current_status in (allowed_current_statuses or set()) and status is not None else current_status
+                changed = (
+                    session_revision_metadata_changed(original_metadata, metadata)
+                    or next_status != current_status
+                )
                 cur.execute(
                     f"UPDATE {self._settings.database.postgres_session_table} "
-                    "SET status = %s, metadata = %s::jsonb, updated_at = now() WHERE id = %s",
-                    (next_status.value, json.dumps(make_json_safe(metadata), ensure_ascii=False), session_id),
+                    "SET status = %s, metadata = %s::jsonb, updated_at = now(), "
+                    "state_revision = state_revision + %s WHERE id = %s",
+                    (next_status.value, json.dumps(make_json_safe(metadata), ensure_ascii=False),
+                     int(changed), session_id),
                 )
                 return True
 
@@ -534,12 +565,15 @@ class PostgresSessionStore:
                     return False
                 stored = row["metadata"]
                 metadata = dict(json.loads(stored) if isinstance(stored, str) else stored or {})
+                original_metadata = deepcopy(metadata)
                 if not update(metadata):
                     return False
+                changed = session_revision_metadata_changed(original_metadata, metadata)
                 cur.execute(
                     f"UPDATE {self._settings.database.postgres_session_table} "
-                    "SET metadata = %s::jsonb, updated_at = now() WHERE id = %s",
-                    (json.dumps(make_json_safe(metadata), ensure_ascii=False), session_id),
+                    "SET metadata = %s::jsonb, updated_at = now(), "
+                    "state_revision = state_revision + %s WHERE id = %s",
+                    (json.dumps(make_json_safe(metadata), ensure_ascii=False), int(changed), session_id),
                 )
                 if not self.append_event_in_transaction(cur, session_id, event):
                     raise ValueError("Projection event ID already exists.")
@@ -558,11 +592,14 @@ class PostgresSessionStore:
                     return False
                 stored = row["metadata"]
                 metadata = dict(json.loads(stored) if isinstance(stored, str) else stored or {})
+                original_metadata = deepcopy(metadata)
                 mutate(metadata)
+                changed = session_revision_metadata_changed(original_metadata, metadata)
                 cur.execute(
                     f"UPDATE {self._settings.database.postgres_session_table} "
-                    "SET metadata = %s::jsonb, updated_at = now() WHERE id = %s",
-                    (json.dumps(make_json_safe(metadata), ensure_ascii=False), session_id),
+                    "SET metadata = %s::jsonb, updated_at = now(), "
+                    "state_revision = state_revision + %s WHERE id = %s",
+                    (json.dumps(make_json_safe(metadata), ensure_ascii=False), int(changed), session_id),
                 )
                 return True
 
@@ -619,13 +656,18 @@ class PostgresSessionStore:
                         selected_agent TEXT NULL,
                         metadata JSONB NOT NULL DEFAULT '{{}}'::jsonb,
                         event_count INTEGER NOT NULL DEFAULT 0,
-                        snapshot_count INTEGER NOT NULL DEFAULT 0
+                        snapshot_count INTEGER NOT NULL DEFAULT 0,
+                        state_revision BIGINT NOT NULL DEFAULT 0
                     )
                     """
                 )
                 cur.execute(
                     f"ALTER TABLE {self._settings.database.postgres_session_table} "
                     f"ADD COLUMN IF NOT EXISTS project_id UUID NULL REFERENCES {self._settings.database.postgres_project_table}(id)"
+                )
+                cur.execute(
+                    f"ALTER TABLE {self._settings.database.postgres_session_table} "
+                    "ADD COLUMN IF NOT EXISTS state_revision BIGINT NOT NULL DEFAULT 0"
                 )
                 cur.execute(
                     f"""
@@ -913,6 +955,7 @@ class PostgresSessionStore:
         session.event_count = candidate.event_count + len(inserted)
         session.snapshot_count = candidate.snapshot_count
         session.metadata = candidate.metadata
+        session.state_revision = candidate.state_revision
         session.updated_at = candidate.updated_at
         return inserted
 
@@ -930,78 +973,153 @@ class PostgresSessionStore:
             cur, session.id, continuation_approval_id, continuation_lease_token
         )
         self._assert_turn_lease_sync(cur, session.id, turn_lease_token)
+        expected_revision = int(session.state_revision)
+        table = self._settings.database.postgres_session_table
         cur.execute(
-            f"""
-            INSERT INTO {self._settings.database.postgres_session_table} (
-                id, title, status, session_mode, runtime_mode, mode_key, project_id,
-                created_at, updated_at, preferred_model, selected_agent,
-                metadata, event_count, snapshot_count
-            ) VALUES (
-                %s, %s, %s, %s, %s, %s, %s,
-                %s, %s, %s, %s,
-                %s::jsonb, %s, %s
-            )
-            ON CONFLICT (id) DO UPDATE SET
-                title = EXCLUDED.title,
-                status = EXCLUDED.status,
-                session_mode = EXCLUDED.session_mode,
-                runtime_mode = EXCLUDED.runtime_mode,
-                mode_key = EXCLUDED.mode_key,
-                project_id = EXCLUDED.project_id,
-                updated_at = EXCLUDED.updated_at,
-                preferred_model = EXCLUDED.preferred_model,
-                selected_agent = EXCLUDED.selected_agent,
-                -- SQL-owned coordinator claims and row-locked worker dispatches
-                -- must survive a stale whole-document save.
-                metadata = (
-                    EXCLUDED.metadata
-                    - 'turn_lease_turn_id'
-                    - 'turn_lease_owner'
-                    - 'turn_lease_token'
-                    - 'turn_lease_expires_at'
-                    - 'coordinator_dispatch_claims'
-                ) || jsonb_strip_nulls(jsonb_build_object(
-                    'turn_lease_turn_id',
-                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_turn_id',
-                    'turn_lease_owner',
-                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_owner',
-                    'turn_lease_token',
-                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_token',
-                    'turn_lease_expires_at',
-                        {self._settings.database.postgres_session_table}.metadata->'turn_lease_expires_at',
-                    'worker_dispatches',
-                        {self._settings.database.postgres_session_table}.metadata->'worker_dispatches',
-                    'coordinator_dispatch_claims',
-                        {self._settings.database.postgres_session_table}.metadata->'coordinator_dispatch_claims'
-                )),
-                event_count = GREATEST({self._settings.database.postgres_session_table}.event_count, EXCLUDED.event_count),
-                snapshot_count = GREATEST({self._settings.database.postgres_session_table}.snapshot_count, EXCLUDED.snapshot_count)
-            RETURNING event_count, snapshot_count, metadata
-            """,
-            (
-                session.id,
-                session.title,
-                session.status.value,
-                session.session_mode.value,
-                session.runtime_mode.value,
-                session.mode_key,
-                session.project_id,
-                session.created_at,
-                now,
-                session.preferred_model,
-                session.selected_agent,
-                json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
-                int(session.event_count),
-                int(session.snapshot_count),
-            ),
+            f"SELECT state_revision FROM {table} WHERE id = %s FOR UPDATE",
+            (session.id,),
         )
-        counts = cur.fetchone()
-        if counts is None:
-            raise ContinuationLeaseLostError(
-                "Continuation lease is no longer active for session write."
+        current = cur.fetchone()
+        if current is None:
+            if expected_revision != 0:
+                LOGGER.warning(
+                    "session_state_write_conflict",
+                    extra={"session_id": session.id, "expected_revision": expected_revision,
+                           "actual_revision": None},
+                )
+                raise SessionWriteConflictError(
+                    f"Session {session.id} no longer exists at revision {expected_revision}."
+                )
+            cur.execute(
+                f"""
+                INSERT INTO {table} (
+                    id, title, status, session_mode, runtime_mode, mode_key, project_id,
+                    created_at, updated_at, preferred_model, selected_agent,
+                    metadata, event_count, snapshot_count, state_revision
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s,
+                    %s, %s, %s, %s,
+                    %s::jsonb, %s, %s, 1
+                )
+                ON CONFLICT (id) DO NOTHING
+                RETURNING event_count, snapshot_count, metadata, state_revision
+                """,
+                (
+                    session.id, session.title, session.status.value,
+                    session.session_mode.value, session.runtime_mode.value,
+                    session.mode_key, session.project_id, session.created_at, now,
+                    session.preferred_model, session.selected_agent,
+                    json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
+                    int(session.event_count), int(session.snapshot_count),
+                ),
             )
+            counts = cur.fetchone()
+            if counts is None:
+                cur.execute(f"SELECT state_revision FROM {table} WHERE id = %s", (session.id,))
+                raced = cur.fetchone()
+                LOGGER.warning(
+                    "session_state_write_conflict",
+                    extra={"session_id": session.id, "expected_revision": expected_revision,
+                           "actual_revision": int(raced["state_revision"]) if raced else None},
+                )
+                raise SessionWriteConflictError(
+                    f"Session {session.id} was created concurrently; reload it before saving."
+                )
+        else:
+            if turn_lease_token:
+                # Recheck after acquiring the row lock so an expired or
+                # reclaimed owner cannot commit its detached snapshot.
+                self._assert_turn_lease_sync(cur, session.id, turn_lease_token)
+            actual_revision = int(current["state_revision"])
+            write_revision = expected_revision
+            if actual_revision != expected_revision:
+                cur.execute(f"SELECT * FROM {table} WHERE id = %s", (session.id,))
+                current_row = cur.fetchone()
+                cur.execute(
+                    f"SELECT * FROM {self._settings.database.postgres_message_table} "
+                    "WHERE session_id = %s ORDER BY created_at ASC",
+                    (session.id,),
+                )
+                current_messages = [
+                    _message_from_row(row) for row in (cur.fetchall() or [])
+                ]
+                current_snapshot = (
+                    _session_from_row(current_row, current_messages)
+                    if current_row is not None
+                    else None
+                )
+                if current_snapshot is None or not session_snapshot_can_merge_append(
+                    session, current_snapshot
+                ):
+                    LOGGER.warning(
+                        "session_state_write_conflict",
+                        extra={"session_id": session.id, "expected_revision": expected_revision,
+                               "actual_revision": actual_revision},
+                    )
+                    raise SessionWriteConflictError(
+                        f"Session {session.id} changed from revision {expected_revision} "
+                        f"to {actual_revision}; reload it and apply the intended update to current state."
+                    )
+                write_revision = actual_revision
+                LOGGER.info(
+                    "session_stale_append_snapshot_merged",
+                    extra={"session_id": session.id, "expected_revision": expected_revision,
+                           "actual_revision": actual_revision},
+                )
+            # The row lock above protects SQL-owned lease/dispatch fields while
+            # the caller's detached snapshot replaces the rest of the metadata.
+            cur.execute(
+                f"""
+                UPDATE {table}
+                SET title = %s,
+                    status = %s,
+                    session_mode = %s,
+                    runtime_mode = %s,
+                    mode_key = %s,
+                    project_id = %s,
+                    updated_at = %s,
+                    preferred_model = %s,
+                    selected_agent = %s,
+                    metadata = (
+                        %s::jsonb
+                        - 'turn_lease_turn_id'
+                        - 'turn_lease_owner'
+                        - 'turn_lease_token'
+                        - 'turn_lease_expires_at'
+                        - 'coordinator_dispatch_claims'
+                    ) || jsonb_strip_nulls(jsonb_build_object(
+                        'turn_lease_turn_id', metadata->'turn_lease_turn_id',
+                        'turn_lease_owner', metadata->'turn_lease_owner',
+                        'turn_lease_token', metadata->'turn_lease_token',
+                        'turn_lease_expires_at', metadata->'turn_lease_expires_at',
+                        'worker_dispatches', metadata->'worker_dispatches',
+                        'coordinator_dispatch_claims', metadata->'coordinator_dispatch_claims'
+                    )),
+                    event_count = GREATEST(event_count, %s),
+                    snapshot_count = GREATEST(snapshot_count, %s),
+                    state_revision = state_revision + 1
+                WHERE id = %s AND state_revision = %s
+                RETURNING event_count, snapshot_count, metadata, state_revision
+                """,
+                (
+                    session.title, session.status.value, session.session_mode.value,
+                    session.runtime_mode.value, session.mode_key, session.project_id,
+                    now, session.preferred_model, session.selected_agent,
+                    json.dumps(make_json_safe(session.metadata), ensure_ascii=False),
+                    int(session.event_count), int(session.snapshot_count),
+                    session.id, write_revision,
+                ),
+            )
+            counts = cur.fetchone()
+            if counts is None:
+                # The prior SELECT FOR UPDATE makes this a defensive check for
+                # schema triggers or an unexpected concurrent writer.
+                raise SessionWriteConflictError(
+                    f"Session {session.id} changed while revision {expected_revision} was being saved."
+                )
         session.event_count = int(counts.get("event_count") or 0)
         session.snapshot_count = int(counts.get("snapshot_count") or 0)
+        session.state_revision = int(counts.get("state_revision") or 0)
         if counts.get("metadata") is not None:
             session.metadata = counts["metadata"]
         for item in session.messages:
@@ -1777,6 +1895,7 @@ class PostgresSessionStore:
                     UPDATE {self._settings.database.postgres_session_table}
                     SET status = 'running',
                         updated_at = now(),
+                        state_revision = state_revision + 1,
                         metadata = metadata || jsonb_build_object(
                             'turn_lease_turn_id', %s::text,
                             'turn_lease_owner', %s::text,
@@ -1853,7 +1972,8 @@ class PostgresSessionStore:
                         - 'turn_lease_owner'
                         - 'turn_lease_token'
                         - 'turn_lease_expires_at',
-                        updated_at = now()
+                        updated_at = now(),
+                        state_revision = state_revision + 1
                     WHERE id = %s
                       AND metadata->>'turn_lease_token' = %s
                       AND (metadata->>'turn_lease_expires_at')::timestamptz > now()
@@ -2015,6 +2135,7 @@ class PostgresSessionStore:
                     f"""
                     UPDATE {self._settings.database.postgres_session_table}
                     SET status = 'interrupted',
+                        state_revision = state_revision + 1,
                         metadata = jsonb_set(
                             (
                                 metadata
@@ -2412,6 +2533,7 @@ def _session_from_row(row: dict, messages: list[ChatMessage]) -> SessionRecord:
         messages=messages,
         event_count=int(row.get("event_count") or 0),
         snapshot_count=int(row.get("snapshot_count") or 0),
+        state_revision=int(row.get("state_revision") or 0),
     )
 
 

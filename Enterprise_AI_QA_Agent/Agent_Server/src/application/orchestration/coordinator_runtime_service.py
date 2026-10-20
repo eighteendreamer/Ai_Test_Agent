@@ -273,21 +273,37 @@ class CoordinatorRuntimeService:
                 SessionStatus.interrupted,
             }:
                 continue
-            session.status = SessionStatus.interrupted
-            session.updated_at = datetime.utcnow()
-            control = dict(session.metadata.get("control") or {})
-            control.update(
-                {
-                    "control_state": "interrupted",
-                    "is_interrupted": True,
-                    "is_resumable": False,
-                    "preserve_resources": False,
-                    "last_interrupt_reason": reason,
-                    "last_control_source": "security_coordinator",
-                }
+            def mark_child_interrupted(metadata: dict, current_status: SessionStatus) -> None:
+                if current_status not in {
+                    SessionStatus.idle,
+                    SessionStatus.running,
+                    SessionStatus.waiting_approval,
+                }:
+                    return
+                control = metadata.get("control")
+                control = dict(control) if isinstance(control, dict) else {}
+                control.update(
+                    {
+                        "control_state": "interrupted",
+                        "is_interrupted": True,
+                        "is_resumable": False,
+                        "preserve_resources": False,
+                        "last_interrupt_reason": reason,
+                        "last_control_source": "security_coordinator",
+                    }
+                )
+                metadata["control"] = control
+
+            await self._store.update_status_and_mutate_metadata(
+                child_session_id,
+                status=SessionStatus.interrupted,
+                mutate=mark_child_interrupted,
+                allowed_current_statuses={
+                    SessionStatus.idle,
+                    SessionStatus.running,
+                    SessionStatus.waiting_approval,
+                },
             )
-            session.metadata["control"] = control
-            await self._store.save_session(session)
             await self._store.append_event(
                 child_session_id,
                 ExecutionEvent(
@@ -2660,25 +2676,25 @@ class CoordinatorRuntimeService:
         parent_trace_id: str,
         workers: list[WorkerDispatchSpec],
     ) -> None:
-        parent_session = await self._store.get_session(parent_session_id)
-        if parent_session is None:
-            return
         total_round_count = 0
         if workers:
             total_round_count = int(workers[0].context.get("debate_total_round_count") or 0)
-        parent_session.metadata["pending_followup_workers"] = [
-            self._pending_worker_payload(worker) for worker in workers
-        ]
-        parent_session.metadata["followup_workers_parent_turn_id"] = parent_turn_id
-        parent_session.metadata["followup_workers_parent_trace_id"] = parent_trace_id
-        parent_session.metadata["followup_workers_dispatched"] = False
-        parent_session.metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
-            stage="independent_findings",
-            status="running",
-            current_round_index=1,
-            total_round_count=total_round_count,
-        )
-        await self._store.save_session(parent_session)
+
+        def register(metadata: dict) -> None:
+            metadata["pending_followup_workers"] = [
+                self._pending_worker_payload(worker) for worker in workers
+            ]
+            metadata["followup_workers_parent_turn_id"] = parent_turn_id
+            metadata["followup_workers_parent_trace_id"] = parent_trace_id
+            metadata["followup_workers_dispatched"] = False
+            metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
+                stage="independent_findings",
+                status="running",
+                current_round_index=1,
+                total_round_count=total_round_count,
+            )
+
+        await self._store.mutate_metadata(parent_session_id, register)
 
     async def _register_completion_worker(
         self,
@@ -2687,35 +2703,34 @@ class CoordinatorRuntimeService:
         parent_trace_id: str,
         worker: WorkerDispatchSpec,
     ) -> None:
-        parent_session = await self._store.get_session(parent_session_id)
-        if parent_session is None:
-            return
-        parent_session.metadata["pending_completion_worker"] = {
-            "task_id": worker.task_id,
-            "description": worker.description,
-            "prompt": worker.prompt,
-            "agent_key": worker.agent_key,
-            "model_key": worker.model_key,
-            "skill_keys": list(worker.skill_keys),
-            "context": dict(worker.context),
-            "parent_turn_id": parent_turn_id,
-            "parent_trace_id": parent_trace_id,
-        }
-        parent_session.metadata["completion_worker_dispatched"] = False
-        parent_session.metadata["code_review_report"] = {
-            "task_id": worker.task_id,
-            "agent_key": worker.agent_key,
-            "description": worker.description,
-            "status": "pending",
-            "updated_at": datetime.utcnow().isoformat(),
-        }
-        parent_session.metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
-            stage="independent_findings",
-            status="running",
-            current_round_index=1,
-            total_round_count=int(worker.context.get("debate_total_round_count") or 0),
-        )
-        await self._store.save_session(parent_session)
+        def register(metadata: dict) -> None:
+            metadata["pending_completion_worker"] = {
+                "task_id": worker.task_id,
+                "description": worker.description,
+                "prompt": worker.prompt,
+                "agent_key": worker.agent_key,
+                "model_key": worker.model_key,
+                "skill_keys": list(worker.skill_keys),
+                "context": dict(worker.context),
+                "parent_turn_id": parent_turn_id,
+                "parent_trace_id": parent_trace_id,
+            }
+            metadata["completion_worker_dispatched"] = False
+            metadata["code_review_report"] = {
+                "task_id": worker.task_id,
+                "agent_key": worker.agent_key,
+                "description": worker.description,
+                "status": "pending",
+                "updated_at": datetime.utcnow().isoformat(),
+            }
+            metadata["code_review_debate_progress"] = self._build_debate_progress_meta(
+                stage="independent_findings",
+                status="running",
+                current_round_index=1,
+                total_round_count=int(worker.context.get("debate_total_round_count") or 0),
+            )
+
+        await self._store.mutate_metadata(parent_session_id, register)
 
     def _apply_worker_status(
         self,

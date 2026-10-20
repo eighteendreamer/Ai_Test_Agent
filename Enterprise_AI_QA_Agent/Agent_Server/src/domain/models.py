@@ -32,6 +32,8 @@ class SessionRecord:
     messages: list[ChatMessage] = field(default_factory=list)
     event_count: int = 0
     snapshot_count: int = 0
+    # Internal optimistic-write token; deliberately omitted from API DTOs and exports.
+    state_revision: int = field(default=0, repr=False, compare=False)
 
 
 @dataclass
