@@ -77,7 +77,6 @@ class DependencyPlanner:
                 auth_ref=credential_session_id,
                 assertions=self._default_assertions(endpoint),
                 resource_locks=self._resource_locks(endpoint),
-                timeout_seconds=30.0,
                 status=TASK_PENDING,
             )
 

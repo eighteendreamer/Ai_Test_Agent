@@ -4988,3 +4988,15 @@ $env:QA_API_401_AUTO_WORKER_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 最终 JUnit 为 `p3-api-report-rustfs-product-current-20261021-05.xml`，逐请求与对象摘要、脱敏浏览器网络、计数及下载校验位于 `p3-api-report-rustfs-product-current-20261021-04/verification.json`，页面截图在同目录。本次没有修改数据库 schema 或 MySQL 配置，不调用外部模型。
 
 当前结论只覆盖受控 API 报告工件外置、报告页面统计、原件下载及 API 重启恢复；它不是默认 Step Agent API 完整流程验收。错误凭据、超时/断网、更多依赖拓扑和不同 API 报告组合仍待验收。Step 账号认证按用户确认为完成；默认模型多用例请求仍有历史 HTTP 400、未生成计划或 Run 的证据，不能将认证完成说成默认推理闭环通过。完整 P0—P5 继续进行。
+
+### 7.148 P3 API Campaign 超时继承与 Worker 重试结果隔离（2026-10-21）
+
+核对 `ApiTestTask`、`ApiTaskExecutor`、`ApiSubagentCoordinator` 和实际 Worker 派发参数后，确认固定的任务默认 30 秒会遮蔽 Campaign 的请求超时。现在任务超时是可选覆盖值：未指定时，直接执行和 Worker 都采用 Campaign 超时；Worker 等待期限也按本批任务的有效请求超时计算，并将有效值写入冻结派发参数。显式任务超时仍覆盖 Campaign 值。
+
+首次实际 Worker→ToolJob→正式报告验收又暴露重试缺陷：第一轮只读请求真实超时，第二轮真实收到 HTTP 200，但父协调器沿用第一轮的 `private_result_ref`，结果读取器因此拒绝不同轮次的引用，最终把成功重试报告为失败。修复在重试重新排队时解除父任务上的上一轮引用；旧轮次的 Worker 会话与 ToolJob 仍分别留存。新增结构化 `api_worker_retry_scheduled` 日志记录前后尝试号及旧引用是否解除。
+
+隔离真实 Worker 验收 `tests/test_api_401_refresh_automatic_live.py::test_worker_campaign_timeout_retries_read_and_reports_final_result` **1 passed**：0.5 秒 Campaign 超时下，两次请求都到达本机 HTTP 目标；第一轮没有响应交付并记录 `known_failed`，第二轮返回 HTTP 200，最终 Worker 结果为 1 完成、0 失败。不同轮次结果引用独立，最终父任务只绑定第二轮结果。JUnit 为 `p3-api-request-timeout-worker-current-20261021-03.xml`，脱敏验证数据在 `p3-api-request-timeout-worker-current-20261021-03/request-timeout-retry/verification.json`。
+
+执行器/结果读取器定向回归 **37 passed**；覆盖 20 个 API 执行器或 Worker 协调器测试文件的回归为 **208 passed、29 skipped**，跳过项受各自隔离服务门控控制，不计作通过。先前报告 `response_status=None` 的写请求 HTTP 500 测试单独复跑 **1 passed**，原始失败未能重现，当前不据此声称已确认其原因。Anthropic 映射测试 **1 passed**，SDK 本地 HTTP fixture 中 `/v1/messages` 传输测试 **14 passed**。
+
+本步未改数据库结构，不调用外部模型。它关闭 Campaign 超时覆盖及只读超时重试的受控 Worker 链路，不代表默认 Step 模型 API 流程或完整 P0—P5 已验收；Step 默认推理仍受此前 HTTP 400 证据限制。

@@ -47,6 +47,8 @@ class ApiTaskExecutor:
         task.duration_ms, task.last_error, task.completed_at = 0.0, "", ""
         task.started_at = datetime.now(timezone.utc).isoformat()
         task.attempts += 1
+        timeout_seconds = (task.timeout_seconds if task.timeout_seconds is not None
+                           else self._timeout_seconds)
 
         url = task.full_url or task.path
         if not url:
@@ -60,13 +62,14 @@ class ApiTaskExecutor:
         params = task.request_query or None
         logger.info(
             "api_task_request_started",
-            extra={"task_id": task.task_id, "method": task.method.upper(), "has_json_body": body is not None},
+            extra={"task_id": task.task_id, "method": task.method.upper(), "has_json_body": body is not None,
+                   "timeout_seconds": timeout_seconds, "attempt": task.attempts},
         )
 
         start_time = time.perf_counter()
         try:
             async with httpx.AsyncClient(
-                timeout=task.timeout_seconds or self._timeout_seconds,
+                timeout=timeout_seconds,
                 follow_redirects=True,
                 cookies=self._credential_manager.build_request_cookies(task.auth_ref),
             ) as client:
@@ -95,7 +98,7 @@ class ApiTaskExecutor:
         except httpx.TimeoutException:
             task.status = TASK_FAILED
             task.request_outcome = self._transport_outcome(task)
-            task.last_error = self._transport_error(task, f"Request timed out after {task.timeout_seconds}s")
+            task.last_error = self._transport_error(task, f"Request timed out after {timeout_seconds}s")
             task.duration_ms = (time.perf_counter() - start_time) * 1000.0
             task.completed_at = datetime.now(timezone.utc).isoformat()
             return task

@@ -5,11 +5,13 @@ from copy import deepcopy
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from threading import Thread
+import time
+from threading import Event, Thread
 from uuid import uuid4
 import os
 from pathlib import Path
 import sys
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,7 +24,8 @@ from src.modes.api_testing_mode.executor import ApiTaskExecutor
 from src.modes.api_testing_mode.task_pool import ApiTaskPool
 from src.modes.api_testing_mode.subagent_coordinator import ApiSubagentCoordinator
 from src.modes.api_testing_mode.campaign_state import ApiTestCampaign, ApiTestingState
-from src.modes.api_testing_mode.contracts import PHASE_TASK_RUNNING, STATE_METADATA_KEY
+from src.modes.api_testing_mode.contracts import PHASE_CAMPAIGN_READY, PHASE_TASK_RUNNING, STATE_METADATA_KEY
+from src.modes.api_testing_mode.runtime import ApiTestingModeRuntime
 from src.application.projects.project_store import PostgresProjectStore
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
@@ -49,20 +52,25 @@ def automatic_target(*, replay_succeeds=True, refresh_succeeds=True):
         def do_POST(self):
             raw = self.rfile.read(int(self.headers.get("Content-Length", "0"))) or b"{}"
             body = json.loads(raw)
-            requests.append({"method": "POST", "path": self.path, "authorization": self.headers.get("Authorization", ""), "body": body})
+            event = {"method": "POST", "path": self.path,
+                "authorization": self.headers.get("Authorization", ""), "body": body}
+            requests.append(event)
             if self.path == "/login":
-                self.reply(200, {"access_token": old, "refresh_token": refresh_value})
+                self.reply(200, {"access_token": old, "refresh_token": refresh_value}, event)
             elif self.path == "/auth/refresh" and refresh_succeeds and body.get("refresh_token") == refresh_value:
-                self.reply(200, {"access_token": current})
+                self.reply(200, {"access_token": current}, event)
             else:
-                self.reply(401, {"ok": False})
+                self.reply(401, {"ok": False}, event)
 
         def do_GET(self):
-            requests.append({"method": "GET", "path": self.path, "authorization": self.headers.get("Authorization", ""), "body": None})
+            event = {"method": "GET", "path": self.path,
+                "authorization": self.headers.get("Authorization", ""), "body": None}
+            requests.append(event)
             accepted = self.path == "/profile" and replay_succeeds and self.headers.get("Authorization") == "Bearer " + current
-            self.reply(200 if accepted else 401, {"ok": accepted})
+            self.reply(200 if accepted else 401, {"ok": accepted}, event)
 
-        def reply(self, status, body):
+        def reply(self, status, body, event):
+            event["status"] = status
             raw = json.dumps(body).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
@@ -80,6 +88,49 @@ def automatic_target(*, replay_succeeds=True, refresh_succeeds=True):
         server.server_close()
         thread.join(5)
         assert not thread.is_alive()
+
+
+@contextmanager
+def timeout_retry_target(*, first_delay: float):
+    requests = []
+    delivered_attempts = []
+    first_handler_finished = Event()
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            attempt = len(requests) + 1
+            requests.append({"attempt": attempt, "path": self.path})
+            try:
+                if attempt == 1:
+                    time.sleep(first_delay)
+                body = json.dumps({"attempt": attempt, "ok": True}).encode()
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                delivered_attempts.append(attempt)
+            except (BrokenPipeError, ConnectionResetError):
+                # The client should close the first slow read after its timeout.
+                pass
+            finally:
+                if attempt == 1:
+                    first_handler_finished.set()
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}", requests, delivered_attempts
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(5)
+        assert not thread.is_alive()
+        assert first_handler_finished.wait(5), "slow target handler did not settle after client timeout"
 
 
 def campaign_tasks(base):
@@ -252,8 +303,190 @@ async def test_worker_automatic_refresh_uses_same_contract_and_private_results(t
                 for _, _, record in launcher.runs], ensure_ascii=False)
             assert all(secret not in jobs_public for secret in secrets)
             (evidence / "verification.json").write_text(json.dumps({
-                "events": requests, "statuses": [task.status for task in results],
+                "events": redacted_events(requests, secrets), "statuses": [task.status for task in results],
                 "private_public_boundary_safe": True, "external_ai_calls": 0,
+                "full_goal_complete": False,
+            }, ensure_ascii=False, indent=2), encoding="utf8")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_API_401_AUTO_WORKER") != "1",
+    reason="requires isolated PG/MySQL/Redis stores and controlled Worker launch")
+async def test_worker_refresh_failure_is_reported_without_replaying_target(tmp_path):
+    evidence = Path(os.environ["QA_API_401_AUTO_WORKER_DIR"]) / "refresh-failure-report"
+    evidence.mkdir(parents=True, exist_ok=False)
+    with automatic_target(refresh_succeeds=False) as (base, requests, secrets):
+        async with isolated_runtime(tmp_path) as (settings, _, _, _, _):
+            projects = PostgresProjectStore(settings)
+            await projects.initialize()
+            sessions = PostgresSessionStore(settings)
+            await sessions.initialize()
+            jobs = ToolJobService(PostgresToolJobStore(settings))
+            await jobs.initialize()
+            references = ApiCredentialReferenceService(
+                store=PostgresApiCredentialStore(settings), session_store=sessions,
+            )
+            await references.initialize()
+            now = datetime.now(UTC)
+            project = await projects.create(ProjectRecord(
+                id=str(uuid4()), project_key="auto-401-refresh-failure",
+                name="Automatic 401 refresh failure", created_at=now, updated_at=now,
+            ))
+            parent = SessionRecord(
+                id=str(uuid4()), title="Automatic refresh failure parent", project_id=project.id,
+                status=SessionStatus.running, session_mode=SessionMode.background_task,
+                runtime_mode=RuntimeMode.background, mode_key="api_testing", created_at=now, updated_at=now,
+            )
+            await sessions.save_session(parent)
+            tool_runtime = ToolRuntimeService(
+                tool_job_service=jobs, session_store=sessions, settings=settings,
+                api_credential_reference_service=references,
+            )
+            launcher = ControlledWorkerLauncher(sessions, tool_runtime)
+            runtime = ApiTestingModeRuntime(
+                api_docs_service=None, settings=settings, coordinator_runtime_service=launcher,
+                session_store=sessions, credential_reference_service=references, tool_job_service=jobs,
+            )
+            state = ApiTestingState(
+                phase=PHASE_CAMPAIGN_READY,
+                campaign=ApiTestCampaign(
+                    campaign_id=str(uuid4()), project_id=project.id, project_name=project.name,
+                    objective="登录后读取资料；首次401时刷新一次，刷新失败后不得重放资料请求",
+                    tasks=campaign_tasks(base), execution_policy=ExecutionPolicy(max_retries=0),
+                ),
+            )
+            context = SimpleNamespace(
+                session_id=parent.id, turn_id=str(uuid4()), trace_id=str(uuid4()),
+                selected_agent_key="api-testing-agent", selected_model_key="", context_bundle={},
+            )
+
+            await runtime._execute_campaign(state, context)
+            output = runtime._build_output(state)
+            task_by_id = {task.task_id: task for task in state.campaign.tasks}
+            report_by_id = {task["task_id"]: task for task in state.report.tasks}
+            public_payload = json.dumps(output, ensure_ascii=False)
+            assert [event["path"] for event in requests] == [
+                "/login", "/profile", "/auth/refresh",
+            ]
+            assert [event["status"] for event in requests] == [200, 401, 401]
+            assert task_by_id["profile"].status == "failed"
+            assert task_by_id["profile"].execution_checkpoint["auth_refresh"]["state"] == "refresh_failed"
+            assert task_by_id["profile"].attempts == 1
+            assert task_by_id["refresh"].status == "failed"
+            assert state.phase == "report_ready"
+            assert output["status"] == "completed" and output["phase"] == "report_ready"
+            assert output["report"]["completed"] == 1
+            assert output["report"]["failed"] == 2
+            assert output["report"]["skipped"] == 0
+            assert report_by_id["profile"]["status"] == "failed"
+            assert report_by_id["profile"]["response_status"] == 401
+            assert report_by_id["refresh"]["status"] == "failed"
+            assert "/profile" in output["report_markdown"] and "401" in output["report_markdown"]
+            assert all(secret not in public_payload for secret in secrets)
+            (evidence / "verification.json").write_text(json.dumps({
+                "events": redacted_events(requests, secrets),
+                "campaign_phase": state.phase,
+                "report_counts": {key: output["report"][key] for key in ("completed", "failed", "skipped")},
+                "reported_profile_status": report_by_id["profile"]["status"],
+                "reported_refresh_status": report_by_id["refresh"]["status"],
+                "target_replayed": task_by_id["profile"].attempts > 1,
+                "credentials_absent_from_public_output": True,
+                "external_ai_calls": 0,
+                "full_goal_complete": False,
+            }, ensure_ascii=False, indent=2), encoding="utf8")
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_API_401_AUTO_WORKER") != "1",
+    reason="requires isolated PG/MySQL/Redis stores and controlled Worker launch")
+async def test_worker_campaign_timeout_retries_read_and_reports_final_result(tmp_path):
+    evidence = Path(os.environ["QA_API_401_AUTO_WORKER_DIR"]) / "request-timeout-retry"
+    evidence.mkdir(parents=True, exist_ok=False)
+    with timeout_retry_target(first_delay=1.0) as (base, requests, delivered_attempts):
+        async with isolated_runtime(tmp_path) as (settings, _, _, _, _):
+            projects = PostgresProjectStore(settings)
+            await projects.initialize()
+            sessions = PostgresSessionStore(settings)
+            await sessions.initialize()
+            jobs = ToolJobService(PostgresToolJobStore(settings))
+            await jobs.initialize()
+            references = ApiCredentialReferenceService(
+                store=PostgresApiCredentialStore(settings), session_store=sessions,
+            )
+            await references.initialize()
+            now = datetime.now(UTC)
+            project = await projects.create(ProjectRecord(
+                id=str(uuid4()), project_key="api-timeout-retry",
+                name="API request timeout retry", created_at=now, updated_at=now,
+            ))
+            parent = SessionRecord(
+                id=str(uuid4()), title="API request timeout retry", project_id=project.id,
+                status=SessionStatus.running, session_mode=SessionMode.background_task,
+                runtime_mode=RuntimeMode.background, mode_key="api_testing", created_at=now, updated_at=now,
+            )
+            await sessions.save_session(parent)
+            tool_runtime = ToolRuntimeService(
+                tool_job_service=jobs, session_store=sessions, settings=settings,
+                api_credential_reference_service=references,
+            )
+            launcher = ControlledWorkerLauncher(sessions, tool_runtime)
+            runtime = ApiTestingModeRuntime(
+                api_docs_service=None, settings=settings, coordinator_runtime_service=launcher,
+                session_store=sessions, credential_reference_service=references, tool_job_service=jobs,
+            )
+            task = ApiTestTask(
+                task_id="slow-read", method="GET", path="/slow", full_url=base + "/slow", status="ready",
+            )
+            state = ApiTestingState(
+                phase=PHASE_CAMPAIGN_READY,
+                campaign=ApiTestCampaign(
+                    campaign_id=str(uuid4()), project_id=project.id, project_name=project.name,
+                    objective="短超时只读请求失败后有限重试，报告最终真实结果",
+                    tasks=[task],
+                    execution_policy=ExecutionPolicy(max_retries=1, request_timeout_seconds=0.5),
+                ),
+            )
+            context = SimpleNamespace(
+                session_id=parent.id, turn_id=str(uuid4()), trace_id=str(uuid4()),
+                selected_agent_key="api-testing-agent", selected_model_key="", context_bundle={},
+            )
+
+            await runtime._execute_campaign(state, context)
+            output = runtime._build_output(state)
+            final_task = state.campaign.tasks[0]
+            first_result = launcher.runs[0][2].output["task_result"]
+            second_result = launcher.runs[1][2].output["task_result"]
+            assert requests == [{"attempt": 1, "path": "/slow"}, {"attempt": 2, "path": "/slow"}]
+            assert delivered_attempts == [2]
+            assert first_result["status"] == "failed"
+            assert first_result["request_outcome"] == "known_failed"
+            assert "timed out" in first_result["last_error"].lower()
+            assert first_result["timeout_seconds"] == 0.5
+            assert second_result["status"] == "completed" and second_result["response_status"] == 200
+            assert second_result["timeout_seconds"] == 0.5
+            first_result_ref = first_result["execution_checkpoint"].get("private_result_ref")
+            second_result_ref = second_result["execution_checkpoint"].get("private_result_ref")
+            assert first_result_ref and second_result_ref and first_result_ref != second_result_ref
+            assert launcher.task_ids == ["slow-read", "slow-read:attempt:2"]
+            assert final_task.status == "completed" and final_task.attempts == 2
+            assert final_task.timeout_seconds == 0.5 and final_task.response_body == {"attempt": 2, "ok": True}
+            assert final_task.execution_checkpoint["private_result_ref"] == second_result_ref
+            assert state.phase == "report_ready"
+            assert output["report"]["completed"] == 1 and output["report"]["failed"] == 0
+            (evidence / "verification.json").write_text(json.dumps({
+                "requests": requests,
+                "response_delivered_attempts": delivered_attempts,
+                "attempt_results": [
+                    {"status": first_result["status"], "request_outcome": first_result["request_outcome"],
+                     "error": first_result["last_error"], "timeout_seconds": first_result["timeout_seconds"]},
+                    {"status": second_result["status"], "response_status": second_result["response_status"],
+                     "timeout_seconds": second_result["timeout_seconds"]},
+                ],
+                "worker_dispatch_ids": launcher.task_ids,
+                "final_task_status": final_task.status,
+                "final_attempt_count": final_task.attempts,
+                "report_counts": {key: output["report"][key] for key in ("completed", "failed", "skipped")},
+                "external_ai_calls": 0,
                 "full_goal_complete": False,
             }, ensure_ascii=False, indent=2), encoding="utf8")
 

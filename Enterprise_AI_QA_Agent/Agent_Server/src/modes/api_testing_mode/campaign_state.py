@@ -204,7 +204,8 @@ class ApiTestTask(BaseModel):
     path_parameter_sources: dict[str, str] = Field(default_factory=dict)
     assertions: list[AssertionSpec] = Field(default_factory=list)
     resource_locks: list[str] = Field(default_factory=list)
-    timeout_seconds: float = 30.0
+    # Optional per-task override. If absent, the campaign request timeout applies.
+    timeout_seconds: float | None = Field(default=None, gt=0)
 
     # Runtime-managed fields
     status: str = "pending"

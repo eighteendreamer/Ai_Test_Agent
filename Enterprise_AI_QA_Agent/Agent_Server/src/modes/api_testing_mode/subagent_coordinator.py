@@ -110,8 +110,7 @@ class ApiSubagentCoordinator:
             return self._pool.all_tasks
         restored_running = self._pool.running_tasks()
         if restored_running and self._tool_jobs is not None:
-            deadline = asyncio.get_running_loop().time() + max(
-                self._poll_interval_seconds, self._policy.request_timeout_seconds * 2)
+            deadline = asyncio.get_running_loop().time() + self._worker_wait_timeout_seconds(restored_running)
             for task in restored_running:
                 remaining = deadline - asyncio.get_running_loop().time()
                 if remaining <= 0:
@@ -236,6 +235,18 @@ class ApiSubagentCoordinator:
             if not retryable:
                 break
             for task in retryable:
+                # A private result reference belongs to the previous worker
+                # attempt. Keep that attempt's ToolJob/session history intact,
+                # but do not compare its reference with the next attempt's
+                # result when the parent reads back the new worker output.
+                previous_private_result_ref = task.execution_checkpoint.pop("private_result_ref", None)
+                logger.info("api_worker_retry_scheduled", extra={
+                    "task_id": task.task_id,
+                    "previous_attempt": task.attempts,
+                    "next_attempt": task.attempts + 1,
+                    "request_outcome": task.request_outcome,
+                    "previous_private_result_detached": bool(previous_private_result_ref),
+                })
                 task.status = "ready"
                 task.last_error = ""
                 task.worker_status = ""
@@ -349,6 +360,7 @@ class ApiSubagentCoordinator:
             if self._credential_references is not None:
                 for task in launched_tasks:
                     task_payload = task.model_dump(mode="json")
+                    task_payload["timeout_seconds"] = self._effective_request_timeout(task)
                     task_payload["attempts"] = max(0, task.attempts - 1)
                     identity = task.task_id if task.attempts <= 1 else f"{task.task_id}:attempt:{task.attempts}"
                     self._dispatch_refs[task.task_id] = await self._credential_references.freeze_dispatch(
@@ -397,7 +409,10 @@ class ApiSubagentCoordinator:
                 if record and record.get("child_session_id"):
                     task.worker_session_id = str(record["child_session_id"])
                     self._emit_checkpoint("task_dispatched", task)
-            settled_sessions, timed_out_ids = await self._wait_for_sessions(child_session_ids)
+            settled_sessions, timed_out_ids = await self._wait_for_sessions(
+                child_session_ids,
+                timeout_seconds=self._worker_wait_timeout_seconds(launched_tasks),
+            )
             self._unsettled_child_session_ids.update(timed_out_ids)
             settled_map = {session.id: session for session in settled_sessions}
 
@@ -489,6 +504,7 @@ class ApiSubagentCoordinator:
     def _build_worker_spec(self, task: ApiTestTask) -> dict[str, Any]:
         current_credential = self._credential_manager.get(task.auth_ref) if task.auth_ref else None
         task_payload = task.model_dump(mode="json")
+        task_payload["timeout_seconds"] = self._effective_request_timeout(task)
         # The parent reserves this dispatch attempt before launch. The runner
         # increments attempts when it actually executes the HTTP request.
         task_payload["attempts"] = max(0, task.attempts - 1)
@@ -522,7 +538,24 @@ class ApiSubagentCoordinator:
             },
         }
 
-    async def _wait_for_sessions(self, child_session_ids: list[str]) -> tuple[list[Any], set[str]]:
+    def _effective_request_timeout(self, task: ApiTestTask) -> float:
+        if task.timeout_seconds is not None:
+            return task.timeout_seconds
+        return self._policy.request_timeout_seconds
+
+    def _worker_wait_timeout_seconds(self, tasks: list[ApiTestTask]) -> float:
+        request_timeout = max(
+            [self._policy.request_timeout_seconds]
+            + [self._effective_request_timeout(task) for task in tasks]
+        )
+        return max(self._poll_interval_seconds, request_timeout * 2)
+
+    async def _wait_for_sessions(
+        self,
+        child_session_ids: list[str],
+        *,
+        timeout_seconds: float | None = None,
+    ) -> tuple[list[Any], set[str]]:
         pending = {session_id for session_id in child_session_ids if session_id}
         settled: dict[str, Any] = {}
         terminal_statuses = {
@@ -531,8 +564,8 @@ class ApiSubagentCoordinator:
             SessionStatus.interrupted,
             SessionStatus.waiting_approval,
         }
-        timeout_seconds = max(self._poll_interval_seconds, self._policy.request_timeout_seconds * 2)
-        deadline = asyncio.get_running_loop().time() + timeout_seconds
+        wait_timeout_seconds = max(self._poll_interval_seconds, timeout_seconds or 0)
+        deadline = asyncio.get_running_loop().time() + wait_timeout_seconds
         while pending:
             completed_ids: list[str] = []
             read_timed_out = False
@@ -566,7 +599,7 @@ class ApiSubagentCoordinator:
                         "parent_session_id": str(self._parent_context.get("session_id") or ""),
                         "parent_turn_id": str(self._parent_context.get("turn_id") or ""),
                         "child_session_ids": sorted(pending),
-                        "timeout_seconds": timeout_seconds,
+                        "timeout_seconds": wait_timeout_seconds,
                     },
                 )
                 return list(settled.values()), pending

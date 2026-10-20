@@ -1,7 +1,12 @@
 import asyncio
 import json
+import time
 from datetime import UTC, datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from threading import Thread
 from types import SimpleNamespace
+
+import pytest
 
 from src.domain.models import SessionRecord
 from src.modes.api_testing_mode.campaign_state import (
@@ -500,3 +505,87 @@ def test_api_restored_running_task_stops_before_dispatching_other_work():
     assert tasks[0].last_error.startswith("worker_unsettled:")
     assert tasks[0].worker_session_id == "existing-child"
     assert tasks[1].status == "ready"
+
+
+@pytest.mark.parametrize(("task_timeout", "expected_status"), [(None, "failed"), (0.5, "completed")])
+def test_campaign_timeout_default_and_task_override_with_real_http_target(task_timeout, expected_status):
+    events = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_args):
+            pass
+
+        def do_GET(self):
+            events.append(self.path)
+            time.sleep(0.2)
+            body = b'{"ok":true}'
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+            except (BrokenPipeError, ConnectionResetError):
+                # A correct client timeout closes this deliberately slow response.
+                pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        task = ApiTestTask(
+            task_id="slow-read",
+            method="GET",
+            path="/slow",
+            full_url=f"http://127.0.0.1:{server.server_port}/slow",
+            timeout_seconds=task_timeout,
+            status="ready",
+        )
+        state = ApiTestingState(campaign=ApiTestCampaign(
+            campaign_id="campaign-timeout",
+            tasks=[task],
+            execution_policy=ExecutionPolicy(max_retries=0, request_timeout_seconds=0.05),
+        ))
+        context = SimpleNamespace(session_id="parent", turn_id="turn", trace_id="trace", context_bundle={})
+        runtime = ApiTestingModeRuntime(api_docs_service=None)
+
+        result = asyncio.run(runtime._execute_campaign(state, context))
+
+        assert events == ["/slow"]
+        assert result.campaign.tasks[0].status == expected_status
+        if expected_status == "failed":
+            assert "timed out" in result.campaign.tasks[0].last_error.lower()
+            assert result.campaign.tasks[0].response_status is None
+            assert result.report is not None and result.report.failed == 1
+        else:
+            assert result.campaign.tasks[0].response_status == 200
+            assert result.campaign.tasks[0].response_body == {"ok": True}
+            assert result.report is not None and result.report.completed == 1
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+
+
+def test_api_worker_spec_uses_campaign_timeout_unless_task_overrides_it():
+    def assigned_timeout(task_timeout):
+        task = ApiTestTask(task_id="read", method="GET", path="/slow", timeout_seconds=task_timeout)
+        coordinator = ApiSubagentCoordinator(
+            pool=ApiTaskPool([task]),
+            policy=ExecutionPolicy(request_timeout_seconds=0.25),
+            coordinator_runtime_service=None,
+            session_store=InMemorySessionStore(),
+            parent_context={"session_id": "parent", "turn_id": "turn"},
+            credential_manager=CredentialManager(),
+        )
+        worker = coordinator._build_worker_spec(task)
+        assigned = json.loads(worker["prompt"].split("Tool arguments:\n", 1)[1].split(
+            "\n\nAfter the tool", 1)[0])
+        return assigned["task"]["timeout_seconds"], coordinator._worker_wait_timeout_seconds([task])
+
+    default_timeout, default_wait = assigned_timeout(None)
+    override_timeout, override_wait = assigned_timeout(0.5)
+
+    assert default_timeout == 0.25 and default_wait == 0.5
+    assert override_timeout == 0.5 and override_wait == 1.0
