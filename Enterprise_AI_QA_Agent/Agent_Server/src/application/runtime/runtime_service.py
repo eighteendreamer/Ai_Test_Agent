@@ -710,13 +710,22 @@ class RuntimeService:
             return self._park_tool_result(session, state, ToolExecutionRecord.model_validate(waiting[0]))
 
         if pending_ids:
-            pending_turn["tool_results"] = tool_results
-            pending_turn["tool_messages"] = tool_messages
-            pending_turn["pending_approval_ids"] = pending_ids
-            pending_turn["pending_approvals"] = remaining_approvals
-            state["pending_turn"] = pending_turn
             state["control_state"] = "waiting_approval"
             state["termination_reason"] = "waiting_approval"
+            # Rebuild both the outer pending turn and its nested graph checkpoint
+            # from the authoritative state. Updating only the outer fields leaves
+            # a stale graph_state that wins during the next approval recovery.
+            state["pending_turn"] = self._build_pending_turn(state, stage="waiting_approval")
+            logger.info(
+                "approval_checkpoint_rebuilt",
+                extra={
+                    "session_id": session.id,
+                    "turn_id": turn_id,
+                    "approval_id": approval["id"],
+                    "remaining_approval_count": len(pending_ids),
+                    "tool_result_count": len(tool_results),
+                },
+            )
             snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
             events = self._events_from_log(session.id, state["event_log"])
             return RuntimeTurnResult(
@@ -726,7 +735,7 @@ class RuntimeService:
                 approvals=[],
                 state=state,
                 tool_messages=self._to_chat_messages(turn_id, [execution_record.model_dump(mode="python")]),
-                pending_turn=pending_turn,
+                pending_turn=state["pending_turn"],
             )
 
         if tool.key == "security-tool-bootstrap":
