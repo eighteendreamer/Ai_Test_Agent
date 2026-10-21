@@ -14,6 +14,7 @@ from test_model_completion_http import provider, Registry
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.model_clients.request_mapping import map_model_request, UnsupportedModelRequest
 from src.core.config import get_settings
+from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
 from src.schemas.model_request_options import ModelOutputFormat, ModelReasoningOptions, ModelRequestProfile
 
@@ -213,3 +214,59 @@ def test_previous_rustfs_generation_snapshot_hashes_still_validate():
     assert old.authoring.sha256 and len(old.modules) > 0
     assert all("output_format" not in module.generation.invocation.model_dump() for module in old.modules)
     assert facts["guard_send_count"] == 0
+
+
+def _model_config_row(provider_name, transport=None, capability_overrides=None):
+    return {
+        "id": 1,
+        "model_name": f"fixture-{provider_name}",
+        "api_key": "",
+        "base_url": "https://models.example/v1",
+        "provider": provider_name,
+        "transport": transport,
+        "capability_overrides": json.dumps(capability_overrides) if capability_overrides is not None else None,
+        "is_active": 1,
+        "created_at": None,
+        "updated_at": None,
+        "auth_type": "api_key",
+        "context_window": 128000,
+        "max_output_tokens": 8192,
+        "request_profile": None,
+    }
+
+
+@pytest.mark.parametrize(
+    ("provider_name", "transport", "expected_vision", "expected_multi_image", "expected_image_url"),
+    [
+        ("deepseek", "openai_chat_completions", False, False, True),
+        ("anthropic", "anthropic_messages", True, False, False),
+        ("openai", "anthropic_messages", True, False, False),
+        ("google", "google_gemini_generate_content", True, True, False),
+    ],
+)
+def test_model_capabilities_follow_protocol_provider_defaults(
+    provider_name, transport, expected_vision, expected_multi_image, expected_image_url,
+):
+    record = MySQLModelConfigStore(get_settings())._row_to_record(
+        _model_config_row(provider_name, transport)
+    )
+
+    assert record.capabilities.vision is expected_vision
+    assert record.capabilities.multi_image is expected_multi_image
+    assert record.capabilities.image_url_input is expected_image_url
+    assert record.capabilities.tool_calling is True
+    assert record.capabilities.streaming is True
+    assert record.capabilities.parallel_tool_calls is False
+
+
+def test_sparse_model_capability_overrides_refine_provider_defaults():
+    record = MySQLModelConfigStore(get_settings())._row_to_record(
+        _model_config_row("deepseek", "openai_chat_completions", {"tool_calling": False, "vision": True})
+    )
+
+    assert record.capability_overrides.tool_calling is False
+    assert record.capability_overrides.vision is True
+    assert record.capabilities.tool_calling is False
+    assert record.capabilities.vision is True
+    assert record.capabilities.reasoning is True
+    assert record.capabilities.streaming is True

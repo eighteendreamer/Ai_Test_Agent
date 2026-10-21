@@ -17,7 +17,7 @@ from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection
 from src.registry.models import ModelRegistry
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.schemas.settings import ModelConfigUpdateRequest
-from src.schemas.model_config import ModelInvocationRequest, model_invocation_parameters
+from src.schemas.model_config import ModelCapabilitiesOverride, ModelInvocationRequest, model_invocation_parameters
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_MODEL_REQUEST_PROFILE") != "1",
     reason="requires independent production API, built App and isolated MySQL/PG/Redis/RustFS")]
@@ -33,9 +33,11 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
             async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
                 store = MySQLModelConfigStore(settings)
                 store.initialize()
-                payload = {"model_name": "owned-profile-model", "provider": "openai", "transport": "openai_chat_completions",
+                payload = {"model_name": "owned-profile-model", "provider": "deepseek", "transport": "openai_chat_completions",
                     "base_url": url, "is_active": True, "max_output_tokens": 2048}
-                store.upsert(ModelConfigUpdateRequest(**payload, api_key="local-fixture-marker"))
+                capability_overrides = ModelCapabilitiesOverride(tool_calling=False, streaming=False)
+                store.upsert(ModelConfigUpdateRequest(**payload, api_key="local-fixture-marker",
+                    use_provider_defaults=False, capability_overrides=capability_overrides))
                 # Simulate the pre-upgrade nullable-column absence in this fixture's owned table only.
                 table = settings.database.llm_model_table
                 assert table.startswith("up_cli_llm_model_")
@@ -61,7 +63,15 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
                         await card.locator(".settings-model-card__action-edit").click()
                         editor = page.locator(".settings-model-editor-modal")
                         textarea = editor.get_by_label("模型请求配置（JSON，可选）")
+                        capability_textarea = editor.locator("label").filter(has_text="能力覆盖").locator("textarea")
                         await expect(textarea).to_have_value("")
+                        assert json.loads(await capability_textarea.input_value()) == {"tool_calling": False, "streaming": False}
+                        assert await editor.locator('input[placeholder="请选择或输入供应商"]').input_value() == "deepseek"
+                        await capability_textarea.fill("[]")
+                        await editor.locator(".settings-modal-actions .primary-btn").click()
+                        await expect(page.get_by_text("能力覆盖必须是有效 JSON 对象，字段值只能是 true、false 或 null。", exact=True)).to_be_visible()
+                        assert not any(item["method"] == "PATCH" for item in network)
+                        await capability_textarea.fill(json.dumps({"tool_calling": False, "streaming": False}, ensure_ascii=False, indent=2))
                         await textarea.fill("[]")
                         await editor.locator(".settings-modal-actions .primary-btn").click()
                         await expect(page.get_by_text("请求配置必须是有效的 JSON 对象。", exact=True)).to_be_visible()
@@ -71,16 +81,28 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
                             await editor.locator(".settings-modal-actions .primary-btn").click()
                         response = await saved.value
                         assert response.status == 200, await response.text()
-                        saved_profile = (await response.json())["request_profile"]
-                        save("product-saved", {"request_profile": saved_profile})
+                        saved_model = await response.json()
+                        saved_profile = saved_model["request_profile"]
+                        assert saved_model["provider"] == "deepseek"
+                        assert saved_model["capability_overrides"]["tool_calling"] is False
+                        assert saved_model["capability_overrides"]["streaming"] is False
+                        save("product-saved", {"request_profile": saved_profile,
+                            "provider": saved_model["provider"], "capability_overrides": saved_model["capability_overrides"],
+                            "capabilities": saved_model["capabilities"]})
                         await expect(editor).not_to_be_visible()
                         await page.reload()
                         await page.locator(".settings-section-btn").filter(has_text="模型设置").click()
                         await card.locator(".settings-model-card__action-edit").click()
                         assert json.loads(await textarea.input_value()) == saved_profile
+                        assert json.loads(await capability_textarea.input_value()) == {"tool_calling": False, "streaming": False}
                         await page.screenshot(path=str(evidence / "profile-editor.png"), full_page=True)
                         assert not errors
                     frozen_record = MySQLModelConfigStore(settings).get_by_name(payload["model_name"])
+                    assert frozen_record.provider == "deepseek"
+                    assert frozen_record.capabilities.tool_calling is False
+                    assert frozen_record.capabilities.streaming is False
+                    assert frozen_record.capabilities.vision is False
+                    assert frozen_record.capabilities.parallel_tool_calls is False
                     frozen = model_invocation_parameters(frozen_record)
                     runtime = ModelRuntimeService(ModelRegistry(MySQLModelConfigStore(settings)), settings)
                     request = ModelInvocationRequest(system_prompt="Return JSON.", messages=[{"role": "user", "content": "{}"}])
@@ -88,11 +110,21 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
                     result = await runtime.invoke(frozen_record.key, request, expected_parameters=frozen, expected_runtime_parameters=runtime_fixed)
                     assert result.response_summary["mode"] == "ok" and len(sends) == 1
                     assert sends[0]["body"]["max_tokens"] == 2048 and sends[0]["body"]["reasoning_effort"] == "low"
+                    tool_request = ModelInvocationRequest(system_prompt="Do not call unsupported tools.",
+                        messages=[{"role": "user", "content": "Inspect the order."}],
+                        tools=[{"name": "inspect_order", "description": "Inspect one order",
+                            "input_schema": {"type": "object", "properties": {}}}])
+                    tool_result = await runtime.invoke(frozen_record.key, tool_request)
+                    assert tool_result.response_summary["mode"] == "ok" and len(sends) == 2
+                    assert "tools" not in sends[-1]["body"]
+                    assert "parallel_tool_calls" not in sends[-1]["body"]
                     save("reloaded-actual-http", {"frozen": frozen, "runtime": runtime_fixed, "requests": sends,
-                        "result": result.model_dump(mode="json")})
+                        "result": result.model_dump(mode="json"), "tool_request_result": tool_result.model_dump(mode="json")})
                     omitted = await client.patch("/settings/models/"+payload["model_name"], json=payload)
                     omitted.raise_for_status()
                     assert omitted.json()["request_profile"] == saved_profile
+                    assert omitted.json()["capability_overrides"]["tool_calling"] is False
+                    assert omitted.json()["capability_overrides"]["streaming"] is False
                     rejected = await client.patch("/settings/models/"+payload["model_name"], json={**payload, "request_profile": {"unknown": True}})
                     assert rejected.status_code == 422
                     incompatible = await client.patch("/settings/models/"+payload["model_name"], json={**payload,
@@ -106,13 +138,15 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
                     listing = await client.get("/settings/models"); listing.raise_for_status()
                     reloaded = next(item for item in listing.json() if item["name"] == payload["model_name"])
                     assert reloaded["request_profile"] == saved_profile
+                    assert reloaded["capabilities"]["tool_calling"] is False
+                    assert reloaded["capabilities"]["streaming"] is False
                     assert "api_key" not in reloaded
                     cleared = await client.patch("/settings/models/"+payload["model_name"], json={**payload, "request_profile": None})
                     cleared.raise_for_status()
                     assert MySQLModelConfigStore(settings).get_by_name(payload["model_name"]).request_profile is None
                     with pytest.raises(ValueError, match="模型参数已变化"):
                         await runtime.invoke(frozen_record.key, request, expected_parameters=frozen)
-                    assert len(sends) == 1
+                    assert len(sends) == 2
                     save("restart-and-clear", {"reloaded": reloaded, "cleared": cleared.json(), "sends_after_rejected_resume": len(sends)})
     finally:
         for path in tmp_path.iterdir():

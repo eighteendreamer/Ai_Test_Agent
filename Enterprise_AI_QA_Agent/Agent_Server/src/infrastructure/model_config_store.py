@@ -7,11 +7,11 @@ import logging
 from src.application.model_clients.provider_profiles import (
     normalize_provider,
     normalize_transport,
+    resolve_model_capabilities,
 )
 from src.core.config import Settings
 from src.infrastructure.sqlalchemy_runtime import mysql_raw_connection
 from src.schemas.model_config import (
-    ModelCapabilities,
     ModelCapabilitiesOverride,
     ModelConfigPublic,
     ModelConfigRecord,
@@ -20,26 +20,6 @@ from src.schemas.settings import ModelConfigUpdateRequest
 from src.schemas.model_request_options import ModelRequestProfile, validate_profile_transport
 
 logger = logging.getLogger(__name__)
-
-
-# All model capabilities are enabled by default on the backend; the frontend no
-# longer exposes per-model capability toggles. Legacy capability_overrides rows
-# still apply on top for backward compatibility.
-_DEFAULT_CAPABILITIES = ModelCapabilities(
-    text_input=True,
-    text_output=True,
-    tool_calling=True,
-    vision=True,
-    multi_image=True,
-    file_input=True,
-    pdf_input=True,
-    reasoning=True,
-    json_mode=True,
-    streaming=True,
-    parallel_tool_calls=True,
-    image_url_input=True,
-    image_base64_input=True,
-)
 
 
 class MySQLModelConfigStore:
@@ -723,7 +703,9 @@ class MySQLModelConfigStore:
         provider = normalize_provider(row["provider"] or "")
         transport = normalize_transport(row.get("transport"), provider=provider)
         capability_overrides = self._parse_capability_overrides(row.get("capability_overrides"))
-        capabilities = capability_overrides.apply_to(_DEFAULT_CAPABILITIES)
+        capabilities = capability_overrides.apply_to(
+            resolve_model_capabilities(provider, transport)
+        )
         base_url = (row["base_url"] or "").rstrip("/")
         if transport == "openai_chat_completions" and base_url.endswith("/chat/completions"):
             base_url = base_url[: -len("/chat/completions")]

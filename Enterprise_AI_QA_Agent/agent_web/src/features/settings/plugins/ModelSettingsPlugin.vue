@@ -6,6 +6,7 @@ import { api } from "../../../services/api";
 import { t } from "../../../services/i18n";
 import type {
   ModelApplication,
+  ModelCapabilitiesOverride,
   ModelConfigPublic,
   ModelConfigUpdateRequest,
   ModelRequestProfile,
@@ -27,6 +28,7 @@ const TRANSPORT_OPTIONS: DropdownSelectOption[] = [
 const loading = ref(false);
 const saving = ref(false);
 const requestProfileText = ref("");
+const capabilityOverrideText = ref("");
 const showEditorModal = ref(false);
 const editingModelName = ref<string | null>(null);
 const busyActionKey = ref("");
@@ -197,8 +199,9 @@ function showMessage(tone: MessageTone, text: string) {
 
 function resetModelDraft() {
   requestProfileText.value = "";
+  capabilityOverrideText.value = "";
   modelDraft.model_name = "";
-  modelDraft.provider = "";
+  modelDraft.provider = "openai";
   modelDraft.transport = "openai_chat_completions";
   modelDraft.base_url = "";
   modelDraft.api_key = null;
@@ -222,6 +225,12 @@ function openCreateModal() {
 
 function openEditModal(item: ModelConfigPublic) {
   requestProfileText.value = item.request_profile ? JSON.stringify(item.request_profile, null, 2) : "";
+  const capabilityOverrides = Object.fromEntries(
+    Object.entries(item.capability_overrides ?? {}).filter(([, value]) => value !== null && value !== undefined),
+  ) as ModelCapabilitiesOverride;
+  capabilityOverrideText.value = Object.keys(capabilityOverrides).length
+    ? JSON.stringify(capabilityOverrides, null, 2)
+    : "";
   editingModelName.value = item.name;
   modelDraft.model_name = item.name;
   modelDraft.provider = item.provider;
@@ -229,8 +238,8 @@ function openEditModal(item: ModelConfigPublic) {
   modelDraft.base_url = item.api_base_url;
   modelDraft.api_key = null;
   modelDraft.is_active = item.is_active;
-  modelDraft.use_provider_defaults = true;
-  modelDraft.capability_overrides = {};
+  modelDraft.use_provider_defaults = Object.keys(capabilityOverrides).length === 0;
+  modelDraft.capability_overrides = capabilityOverrides;
   modelDraft.auth_type = item.auth_type ?? "api_key";
   modelDraft.oauth_provider = item.oauth_provider ?? null;
   modelDraft.oauth_refresh_token = null;
@@ -291,7 +300,7 @@ async function saveModel() {
       return;
     }
   } else {
-    if (!modelDraft.transport?.trim() || !modelDraft.base_url.trim()) {
+    if (!modelDraft.provider.trim() || !modelDraft.transport?.trim() || !modelDraft.base_url.trim()) {
       showMessage("error", t("modelSettings.provider_transport_url_required"));
       return;
     }
@@ -306,6 +315,27 @@ async function saveModel() {
     }
   } catch {
     showMessage("error", t("modelSettings.request_profile_invalid"));
+    return;
+  }
+
+  let capability_overrides: ModelCapabilitiesOverride = {};
+  try {
+    if (capabilityOverrideText.value.trim()) {
+      const parsed: unknown = JSON.parse(capabilityOverrideText.value);
+      const allowed = new Set<keyof ModelCapabilitiesOverride>([
+        "text_input", "text_output", "tool_calling", "vision", "multi_image", "file_input",
+        "pdf_input", "reasoning", "json_mode", "streaming", "parallel_tool_calls",
+        "image_url_input", "image_base64_input",
+      ]);
+      if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) throw new Error("Expected an object");
+      for (const [key, value] of Object.entries(parsed)) {
+        if (!allowed.has(key as keyof ModelCapabilitiesOverride) ||
+          (value !== null && typeof value !== "boolean")) throw new Error("Invalid capability override");
+      }
+      capability_overrides = parsed as ModelCapabilitiesOverride;
+    }
+  } catch {
+    showMessage("error", t("modelSettings.capability_override_invalid"));
     return;
   }
   saving.value = true;
@@ -332,8 +362,8 @@ async function saveModel() {
     base_url,
     api_key: isOAuth.value ? null : (modelDraft.api_key?.trim() || null),
     is_active: modelDraft.is_active,
-    use_provider_defaults: true,
-    capability_overrides: {},
+    use_provider_defaults: !Object.values(capability_overrides).some((value) => value !== null && value !== undefined),
+    capability_overrides,
     auth_type: modelDraft.auth_type,
     oauth_provider: isOAuth.value ? (modelDraft.oauth_provider || null) : null,
     oauth_refresh_token: isOAuth.value ? (modelDraft.oauth_refresh_token?.trim() || null) : null,
@@ -720,6 +750,11 @@ async function deleteModel(item: ModelConfigPublic) {
               <input v-model="modelDraft.model_name" type="text" placeholder="claude-opus-4-7 / gpt-5.4" />
             </label>
 
+            <label>
+              <span>{{ t("modelSettings.provider") }}</span>
+              <input v-model="modelDraft.provider" type="text" :placeholder="t('modelSettings.provider_ph')" />
+            </label>
+
             <label class="settings-provider-field">
               <span>{{ t("modelSettings.transport") }}</span>
               <DropdownSelect
@@ -908,6 +943,13 @@ async function deleteModel(item: ModelConfigPublic) {
             <textarea v-model="requestProfileText" rows="7" spellcheck="false"
               :placeholder='JSON.stringify({ version: 1, revision: 1, output_formats: ["json_object"], chat_token_parameter: "max_tokens" }, null, 2)' />
             <small>{{ t("modelSettings.request_profile_hint") }}</small>
+          </label>
+
+          <label class="full">
+            <span>{{ t("modelSettings.capability_override") }}</span>
+            <textarea v-model="capabilityOverrideText" rows="5" spellcheck="false"
+              :placeholder='JSON.stringify({ vision: false, parallel_tool_calls: false }, null, 2)' />
+            <small>{{ t("modelSettings.capability_override_desc") }}</small>
           </label>
 
           <div class="full settings-application-section">

@@ -75,3 +75,20 @@
 使用本地受控 HTTP 服务逐个捕获实际请求和响应，运行 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Google Gemini generateContent、LangChain OpenAI-compatible 五种路径，覆盖原生/流式、完整/截断终态、usage、工具调用、错误包装和旧协议兼容，结果 **81通过、17.41秒**。这证明当前统一内部请求/结果契约和 provider-specific adapter 在受控协议范围内可工作；不证明外部供应商服务端都接受相同可选字段。
 
 当前结论：不增加第二套模型框架；继续使用 `ModelInvocationRequest/Result`、`UnifiedMessage`、`ModelCapabilities` 和 request profile。仍需外部供应商逐项验收、具体模型能力声明核对、真实流式/媒体质量，以及默认 Agent 完整路径；默认 Step 账号按用户决定暂缓。历史证据不改写。
+
+## 2026-10-21 能力配置复核与产品验收
+
+用户确认 Step 模型已认证，后续真实默认 AI 验收可以继续；这不等同于默认 Agent 完整链路已经通过。
+
+继续沿用现有模型适配层，没有新增第二套框架。Anthropic 仍经 `client.messages.create(...)` 调用 Messages API；OpenAI Responses、Chat Completions、Google GenAI 各自保留原生客户端。`ModelInvocationRequest/Result`、`UnifiedMessage`、request profile 和 provider-specific client 已覆盖当前传输边界；SDK/HTTP 与能力映射回归共 61 项通过，但这不替代具体供应商和具体模型的服务端兼容性验收。
+
+本次确认并修复能力声明根因：MySQL 回读原先把所有 capability 默认置为 true，设置页编辑又会清空已有 `capability_overrides`。现在能力基线来自 provider profile；Anthropic Messages 与 Google GenAI 按明确 transport 取对应协议基线，再应用 MySQL 中逐模型的稀疏覆盖。设置页恢复供应商标识输入和 JSON 覆盖编辑，覆盖字段、类型非法时不发送保存请求。没有增加数据库列或迁移；旧的空覆盖配置现在按 provider/transport profile 解析。
+
+验收证据：
+
+- `pytest -q tests/test_model_request_profile.py tests/test_model_clients.py`：**61 passed**，含 provider/transport 默认能力及稀疏覆盖回归。
+- `npm run build`：类型检查与 Vite 生产构建成功。
+- `RUN_LIVE_MODEL_REQUEST_PROFILE=1 pytest -q tests/test_model_request_profile_product.py`：**1 passed in 76.62s**。使用隔离 MySQL、PostgreSQL、Redis 和 RustFS，实际浏览器编辑 DeepSeek provider 与能力覆盖，刷新后确认 MySQL 保存值仍在；使用真实 SDK 向受控 HTTP 服务发请求，`tool_calling=false` 时没有发送 `tools` / `parallel_tool_calls`。验收 Redis 容器由夹具 `docker rm` 删除，容器不再存在。
+- 本轮证据保存在 `docs/upgrade_2026-10-03/p0-model-capability-profile-product-final-20261021/`。
+
+能力 profile 仍是 provider/protocol 默认值，不证明任意具体模型都具备这些能力；应按实际模型核对并设置逐模型覆盖，真实外部供应商、多模态质量和默认 Agent 全链路仍待验收。消费点复查还发现 `multi_image`、`file_input`、`pdf_input`、`image_url_input`、`image_base64_input`、`json_mode` 等字段没有在所有对应请求路径中统一校验/执行；它们仍是适配层待实现/待验收项，不能据 UI 覆盖成功推断功能有效。此前 Step 未认证的记录属于当时状态；当前按用户确认更新为已认证，默认 AI 完整路径要以重新实测为准。

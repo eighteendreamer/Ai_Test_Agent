@@ -221,3 +221,15 @@ def normalize_transport(
         return value  # type: ignore[return-value]
     profile = resolve_provider_profile(provider or "openai")
     return profile.transport
+
+
+def resolve_model_capabilities(provider: str, transport: str | None) -> ModelCapabilities:
+    """Return protocol defaults, then let the model's stored overrides refine them."""
+    resolved_transport = normalize_transport(transport, provider=provider)
+    if resolved_transport in {"anthropic_messages", "google_gemini_generate_content"}:
+        return next(
+            profile.capabilities
+            for profile in PROVIDER_PROFILES
+            if profile.transport == resolved_transport
+        )
+    return resolve_provider_profile(provider).capabilities
