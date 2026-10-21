@@ -67,6 +67,12 @@ class AgentCaseReceiptService:
         if count is None or limit is None:
             raise ValueError("回执纠正缺少原累计预算，不能为历史运行补造调用额度")
         if count >= limit or (window > 0 and int(usage.get("prompt_tokens") or 0) >= window * .9):
+            logger.warning("agent_case_receipt_budget_unavailable", extra={
+                "run_id": context.run_id, "run_item_id": context.run_item_id,
+                "model_call_count": count, "max_iterations": limit,
+                "prompt_tokens": int(usage.get("prompt_tokens") or 0),
+                "context_window": window, "termination_reason": state.get("termination_reason", ""),
+            })
             raise ValueError("原模型或上下文预算已耗尽，保留原回执错误，不新增发送")
         if self._models is None or self._objects is None:
             raise RuntimeError("正式只读回执依赖未配置，不能丢失原响应后调用模型")

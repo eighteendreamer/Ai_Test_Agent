@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from test_agent_case_assessment import business_http
+from test_agent_case_assessment import business_http, receipt
 from test_agent_case_execution import adapter_environment, approval_continuation
 from test_agent_case_session import ControlledAgent
 from test_case_plan_run_creation import LIVE
@@ -53,7 +53,13 @@ class ReceiptAgent(ControlledAgent):
             if self.corrected == "tool":
                 return ModelInvocationResult(text=self.good.text, response_summary={"mode": "ok", "finish_reason": "stop"},
                     tool_calls=[ModelToolCall(id="forbidden", name="api-test-runner", arguments={})])
-            data = json.loads(self.good.text)
+            original = self.good
+            if original is None:
+                # Budget-reservation coverage reaches the read-only correction
+                # before the graph can make its otherwise-final model call.
+                original = ModelInvocationResult(text=json.dumps(receipt(), ensure_ascii=False),
+                    response_summary={"mode": "ok", "finish_reason": "stop"})
+            data = json.loads(original.text)
             if self.corrected == "fake-reference":
                 data["steps"][1]["checks"][0]["observations"][0]["call_id"] = "not-this-execution"
             return ModelInvocationResult(text=json.dumps(data, ensure_ascii=False),
@@ -148,7 +154,7 @@ async def test_actual_captured_mixed_report_corrects_from_owned_evidence_once_th
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("live", [False, LIVE])
-@pytest.mark.parametrize("failure", ["invalid", "fake-reference", "tool", "truncated", "budget", "unknown", "disabled"])
+@pytest.mark.parametrize("failure", ["invalid", "fake-reference", "tool", "truncated", "unknown", "disabled"])
 async def test_rejects_bad_or_unknown_correction_without_repeating_business(tmp_path, business_http, failure, live):
     agent = ReceiptAgent(corrected=failure if failure in {"invalid", "fake-reference", "tool"} else "valid",
         original="truncated" if failure == "truncated" else "captured", interrupt=failure == "unknown")
@@ -156,8 +162,6 @@ async def test_rejects_bad_or_unknown_correction_without_repeating_business(tmp_
     async with adapter_environment(tmp_path, business_http, live, agent=agent, planning_policy=policy) as values:
         _, _, reader, sessions, runs, _, adapter, args, _, _ = values
         try:
-            if failure == "budget":
-                sessions._runtime_service._max_iterations = 4
             pending = await finish_graph(values)
             with pytest.raises((ValueError, RuntimeError)):
                 await approval_continuation(runs, reader, adapter, args, pending)
@@ -170,6 +174,57 @@ async def test_rejects_bad_or_unknown_correction_without_repeating_business(tmp_
             await export(values, name=failure + ("-postgres" if live else "-memory"), effects=business_http[1])
         finally:
             await cleanup(values)
+
+
+@pytest.mark.asyncio
+async def test_runitem_budget_reserves_one_readonly_receipt_correction_after_required_operations(
+    tmp_path, business_http,
+):
+    agent = ReceiptAgent(original="captured")
+    policy = CasePlanningPolicy(receipt_correction_protocol="case-receipt-correction-v1")
+    async with adapter_environment(tmp_path, business_http, agent=agent, planning_policy=policy) as values:
+        _, _, reader, sessions, runs, _, adapter, args, _, _ = values
+        try:
+            sessions._runtime_service._max_iterations = 4
+            pending = await finish_graph(values)
+            snapshot = await reader.get_latest_snapshot(pending.session_id)
+            saved_pending_turn = snapshot.graph_state["pending_turn"]
+            assert saved_pending_turn["graph_state"]["model_response_summary"]["mode"] == "ok"
+            outcome = await approval_continuation(runs, reader, adapter, args, pending)
+            assert outcome.completion.status == "passed"
+            assert [method for method, _ in business_http[1]] == ["POST", "GET", "DELETE"]
+            assert len(agent.requests) == 3 and len(agent.correction_requests) == 1
+            attempt_checkpoint = (await runs.get_latest_attempt((await args())["item"].id)).checkpoint_payload
+            correction = attempt_checkpoint["receipt_correction"]
+            assert correction["phase"] == "response"
+            assert correction["execution_model_calls"] == 3
+            assert correction["total_model_calls"] == correction["max_iterations"] == 4
+            assert agent.correction_requests[0].tools == []
+            snapshots = await reader.list_snapshots(attempt_checkpoint["session_id"], include_graph_state=True)
+            state = snapshots[-1].graph_state
+            assert state["termination_reason"] == "case_receipt_budget_reserved"
+            assert state["model_call_count"] == 3
+            assert state["model_response_summary"]["mode"] == "ok"
+            assert len(state["tool_results"]) == 3
+            assert (await adapter().execute(**await args())).completion.status == "passed"
+            assert len(agent.requests) == 3 and len(agent.correction_requests) == 1
+            assert [method for method, _ in business_http[1]] == ["POST", "GET", "DELETE"]
+        finally:
+            await cleanup(values)
+
+
+@pytest.mark.asyncio
+async def test_no_receipt_correction_policy_keeps_the_last_graph_iteration_available(tmp_path, business_http):
+    agent = ReceiptAgent(original="valid")
+    async with adapter_environment(tmp_path, business_http, agent=agent,
+        planning_policy=CasePlanningPolicy()) as values:
+        _, _, reader, sessions, runs, _, adapter, args, _, _ = values
+        sessions._runtime_service._max_iterations = 4
+        pending = await finish_graph(values)
+        outcome = await approval_continuation(runs, reader, adapter, args, pending)
+        assert outcome.completion.status == "passed"
+        assert len(agent.requests) == 4 and not agent.correction_requests
+        assert [method for method, _ in business_http[1]] == ["POST", "GET", "DELETE"]
 
 
 @pytest.mark.asyncio

@@ -12,7 +12,7 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_input_validation import validate_tool_input as _validate_tool_input
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_messages import build_tool_message
-from src.application.runtime.state_persistence import persisted_turn_budget
+from src.application.runtime.state_persistence import build_pending_turn
 from src.application.runtime.tool_child_wait import park_tool_wait
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.core.safety_gate import SafetyGate, SecurityContext, SafetyDecision
@@ -103,48 +103,12 @@ def build_tool_executor_node(
         state["pending_approvals"] = pending_approvals
 
         if pending_approvals:
-            state["pending_turn"] = {
-                **persisted_turn_budget(state),
-                "turn_id": state["turn_id"],
-                "trace_id": state["trace_id"],
-                "user_message": state["user_message"],
-                "normalized_input": state["normalized_input"],
-                "selected_agent_key": state["selected_agent_key"],
-                "selected_agent_name": state["selected_agent_name"],
-                "selected_model_key": state["selected_model_key"],
-                "selected_model_name": state["selected_model_name"],
-                "selected_model_provider": state["selected_model_provider"],
-                "requested_skill_keys": state["requested_skill_keys"],
-                "resolved_skill_keys": state["resolved_skill_keys"],
-                "skill_prompt_blocks": state["skill_prompt_blocks"],
-                "memory_hits": state["memory_hits"],
-                "memory_prompt_blocks": state["memory_prompt_blocks"],
-                "observation_hits": state["observation_hits"],
-                "observation_prompt_blocks": state["observation_prompt_blocks"],
-                "active_mcp_servers": state["active_mcp_servers"],
-                "mcp_prompt_blocks": state["mcp_prompt_blocks"],
-                "available_tool_keys": state["available_tool_keys"],
-                "deferred_tool_keys": state["deferred_tool_keys"],
-                "model_visible_tool_keys": state["model_visible_tool_keys"],
-                "allowed_tool_keys": state["allowed_tool_keys"],
-                "approval_required_tool_keys": state["approval_required_tool_keys"],
-                "denied_tool_keys": state["denied_tool_keys"],
-                "permission_decisions": state["permission_decisions"],
-                "loop_iteration": state["loop_iteration"],
-                "max_iterations": state["max_iterations"],
-                "context_bundle": state["context_bundle"],
-                "system_prompt": state["system_prompt"],
-                "conversation_messages": [
-                    *state["runtime_messages"],
-                    state["assistant_tool_call_message"],
-                ],
-                "resume_tool_messages": new_tool_messages,
-                "tool_messages": state["tool_messages"],
-                "tool_results": tool_results,
-                "worker_dispatches": state["worker_dispatches"],
-                "pending_approval_ids": [item["id"] for item in pending_approvals],
-                "pending_approvals": pending_approvals,
-            }
+            state["pending_turn"] = build_pending_turn(state, stage="waiting_approval")
+            state["pending_turn"]["conversation_messages"] = [
+                *state["runtime_messages"],
+                state["assistant_tool_call_message"],
+            ]
+            state["pending_turn"]["resume_tool_messages"] = new_tool_messages
             append_graph_event(
                 state,
                 "graph.waiting_for_approval",

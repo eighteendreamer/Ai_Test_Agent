@@ -16,7 +16,9 @@ def build_finalizer_node(
             state["continue_loop"] = False
             return state
 
-        if state.get("termination_reason") in {"max_iterations", "context_budget_exhausted"} and not state["model_tool_calls"]:
+        if state.get("termination_reason") in {
+            "max_iterations", "context_budget_exhausted", "case_receipt_budget_reserved",
+        } and not state["model_tool_calls"]:
             return state
 
         if is_model_failure_summary(state.get("model_response_summary")):
