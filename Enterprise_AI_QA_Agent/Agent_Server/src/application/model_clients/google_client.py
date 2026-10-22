@@ -410,6 +410,20 @@ class GoogleGenAIClient:
             )
 
         working = dict(schema)
+        exclusive_minimum = working.pop("exclusiveMinimum", None)
+        if exclusive_minimum is not None:
+            if isinstance(exclusive_minimum, bool) or not isinstance(
+                exclusive_minimum, (int, float)
+            ):
+                raise ProviderClientError(
+                    "Gemini function parameter schema 'exclusiveMinimum' must be numeric."
+                )
+            minimum = working.get("minimum")
+            if minimum is None or minimum < exclusive_minimum:
+                working["minimum"] = exclusive_minimum
+            strict_note = f"Must be greater than {exclusive_minimum}."
+            description = str(working.get("description") or "").strip()
+            working["description"] = f"{description} {strict_note}".strip()
         if "allOf" in working:
             raise ProviderClientError(
                 "Gemini function parameter schema uses unsupported 'allOf'; "

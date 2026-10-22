@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pytest
 from google.genai import types as genai_types
+from pydantic import ValidationError
 
 from src.application.model_clients.base import ProviderClientError
 from src.application.model_clients.google_client import GoogleGenAIClient
+from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.registry.tools import ToolRegistry
 
 
@@ -104,6 +106,24 @@ def test_registered_tool_schemas_validate_as_google_function_parameters() -> Non
             name="schema_probe",
             parameters=schema,
         )
+
+
+def test_api_timeout_schema_maps_for_google_without_accepting_zero_at_runtime() -> None:
+    tool = ToolRegistry().get("api-test-runner")
+    timeout_schema = tool.input_schema["properties"]["task"]["properties"][
+        "timeout_seconds"
+    ]
+    converted = GoogleGenAIClient()._sanitize_function_parameters(timeout_schema)
+    timeout_branch = next(
+        branch for branch in converted["anyOf"] if branch.get("type") == "number"
+    )
+
+    assert timeout_branch["minimum"] == 0
+    assert "Must be greater than 0." in timeout_branch["description"]
+    genai_types.Schema.model_validate(converted)
+
+    with pytest.raises(ValidationError):
+        ApiTestTask(task_id="timeout-boundary", method="GET", path="/", timeout_seconds=0)
 
 
 def test_google_schema_conversion_preserves_empty_nested_schema() -> None:
