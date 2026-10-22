@@ -40,6 +40,30 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径；模型客户端与请求映射回归通过。
 
+## 正式回执纠正与进程恢复复验
+
+本轮在受控真实 HTTP 目标、隔离 PostgreSQL/MySQL/RustFS、真实 Redis Worker 和生产 API 进程上，分别在回执纠正的两个持久边界杀掉 API：
+
+- `response`：纠正响应已写入 RustFS，恢复后 Run 结果为 `passed`；原始 POST/GET/DELETE 业务副作用各一次。
+- `invoking`：纠正请求已写入 RustFS、响应尚未落盘，恢复后结果为 `error` 且保留 `execution_recovery_required=true`；不把未知状态误报为通过。
+
+两种边界都等待原 Run lease 和资源 lease 自然过期，由生产恢复 Worker 接管；终态重投没有新增模型调用或业务请求，临时 Redis 容器、隔离数据库、对象和资源租约均清理完成。
+
+实际命令分别为：
+
+```powershell
+$env:RUN_LIVE_EXECUTION_CLI_TESTS='1'
+$env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-process-recovery-current-20261023-response'
+..\\.venv\\Scripts\\python.exe -X utf8 -m pytest 'tests/test_receipt_process_recovery_live.py::test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business[response]' -q --tb=short --junitxml=docs/upgrade_2026-10-03/p2-receipt-process-recovery-current-20261023-response.xml
+# 1 passed in 350.83s
+
+$env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-process-recovery-current-20261023-invoking'
+..\\.venv\\Scripts\\python.exe -X utf8 -m pytest 'tests/test_receipt_process_recovery_live.py::test_owned_api_kill_recovers_receipt_without_resending_or_repeating_business[invoking]' -q --tb=short --junitxml=docs/upgrade_2026-10-03/p2-receipt-process-recovery-current-20261023-invoking.xml
+# 1 passed in 356.93s
+```
+
+这证明的是当前工作区的回执纠正实现和恢复边界，不等同于默认 Step 模型真实调用成功；默认 Step 仍被供应商 `no active step plan subscription` 阻断在首次规划请求。
+
 ## 已实现但默认模型或产品闭环尚未验收
 
 - 默认 AI 的“理解需求 → 当前项目选用例 → 排序 → 判断缺口 → 补正式用例/准备步骤 → 执行 → 结果证据”完整链路。
