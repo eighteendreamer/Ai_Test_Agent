@@ -20,14 +20,18 @@
 | 无 transcript 时重建父任务并读回已完成 ToolJob | `tests/test_api_worker_result_recovery_live.py` | 1 passed，8.26 秒；恢复新增 HTTP 为 0 |
 | Agent Worker 同进程与持久子进程，受控模型，真实 API/Redis/PG/MySQL/RustFS | `tests/test_api_agent_worker_live.py -k "controlled-model"` | 2 passed，100.37 秒 |
 | provider 适配、请求映射、Responses/Chat 分离、完成状态和请求配置 | `tests/test_model_clients.py tests/test_model_completion_contract.py tests/test_model_request_profile.py tests/test_model_request_profile_storage.py` | 92 passed，1 skipped，24.34 秒 |
+| 报告中心、原件下载、RustFS 工件、API 重启后读回和终态重投 | `tests/test_api_report_credentials_product.py::test_cookie_report_download_restart_and_original_job_recovery` | 1 passed，56.69 秒；浏览器、生产 API、隔离 PG/MySQL/Redis/RustFS 均实际运行 |
 
 证据目录：
 
 - `p3-api-worker-auth-storage-current-20261023-01/`
 - `p3-api-worker-result-recovery-current-20261023-02/`
 - `p3-api-agent-worker-controlled-current-20261023-01/`
+- `p3-api-cookie-report-product-current-20261023-rerun/`
 
 测试夹具创建的临时 Redis、隔离 PostgreSQL 数据库、MySQL 配置表和 RustFS 对象均在 teardown 清理；本轮结束时没有 `qa-execution-cli-*` 容器残留。
+
+报告页验收还核对了下载文件 SHA-256 与 RustFS 元数据一致、PostgreSQL 只保存工件路径元数据、公开任务与页面均未出现凭据。API 重启窗口内页面先收到一次 `GET /sessions/{id}` 的 500，随后同一请求返回 200；网络记录将它定位在受控重启范围 `[28,29)`，没有页面错误或非计划失败，因此不把重启竞态误判为产品请求成功，也不新增无依据的重试逻辑。
 
 ## 默认 Step 边界
 
