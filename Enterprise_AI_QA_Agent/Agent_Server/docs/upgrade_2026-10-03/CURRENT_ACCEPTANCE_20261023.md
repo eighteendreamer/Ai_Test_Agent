@@ -38,7 +38,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - 执行中逻辑缺口触发持久 Run 重规划的受控闭环已验证：执行 Agent 收到只读业务响应后引用已结算 ToolJob 的精确 JSON 路径，追加正式前置到未领取条目并保留已领取 Attempt；状态查询可恢复丢失回执，终态重投不重复提交。当前工作树复验 `5 passed in 14.39s`。测试使用脚本化受控 Agent，不证明默认 Step 的推理质量或目标业务测试通过。
 - 文档版本、上传原件、解析快照、确定性差异、影响分析和需求追踪专项。
 - API 鉴权刷新、依赖传值、未知写入只读查证、进程恢复和报告脱敏专项。
-- DeepSeek 基础人工录制、事件清洗、响应关联和知识投影专项。
+- DeepSeek 真实页面的 Playwright 自动化录制、事件清洗、响应关联和知识投影专项；尚未验收 Electron/人工录制入口或默认 AI 对这份录制知识的实际使用。
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
 - Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
