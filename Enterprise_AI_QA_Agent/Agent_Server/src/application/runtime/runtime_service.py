@@ -1895,6 +1895,20 @@ class RuntimeService:
 
     def _state_from_pending_turn(self, session: SessionRecord, pending_turn: dict[str, Any]) -> dict[str, Any]:
         graph_state = dict(pending_turn.get("graph_state", {}))
+        conversation_messages = pending_turn.get("conversation_messages")
+        if isinstance(conversation_messages, list):
+            graph_messages = graph_state.get("runtime_messages")
+            if graph_messages != conversation_messages:
+                logger.warning(
+                    "approval_checkpoint_transcript_reconciled",
+                    extra={
+                        "session_id": session.id,
+                        "turn_id": str(pending_turn.get("turn_id") or graph_state.get("turn_id") or ""),
+                        "graph_message_count": len(graph_messages) if isinstance(graph_messages, list) else 0,
+                        "conversation_message_count": len(conversation_messages),
+                    },
+                )
+                graph_state["runtime_messages"] = conversation_messages
         return self._state_from_graph_data(
             session=session,
             graph_state=graph_state,

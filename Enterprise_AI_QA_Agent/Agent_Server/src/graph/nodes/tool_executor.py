@@ -103,11 +103,16 @@ def build_tool_executor_node(
         state["pending_approvals"] = pending_approvals
 
         if pending_approvals:
-            state["pending_turn"] = build_pending_turn(state, stage="waiting_approval")
-            state["pending_turn"]["conversation_messages"] = [
+            # Keep the assistant tool-call batch in the canonical transcript
+            # before persisting either checkpoint representation. Approval
+            # recovery prefers graph_state.runtime_messages, so appending only
+            # to the outer conversation_messages would lose this batch when a
+            # later approval rebuilds the checkpoint.
+            state["runtime_messages"] = [
                 *state["runtime_messages"],
                 state["assistant_tool_call_message"],
             ]
+            state["pending_turn"] = build_pending_turn(state, stage="waiting_approval")
             state["pending_turn"]["resume_tool_messages"] = new_tool_messages
             append_graph_event(
                 state,

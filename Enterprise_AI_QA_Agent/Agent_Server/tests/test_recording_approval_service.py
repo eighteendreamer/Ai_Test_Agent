@@ -307,6 +307,17 @@ def test_resolve_approval_regular_tool_approval_keeps_default_resume_path():
     service, store = _build_session_service()
     detail = asyncio.run(service.create_session(CreateSessionRequest(title="工具会话")))
     session_id = detail.id
+    session = asyncio.run(store.get_session(session_id))
+    session.status = SessionStatus.waiting_approval
+    session.metadata["pending_turn"] = {
+        "turn_id": "turn-regular-tool",
+        "pending_approval_ids": ["appr-1"],
+    }
+    session.metadata["control"] = {
+        "control_state": "waiting_approval",
+        "is_resumable": True,
+    }
+    asyncio.run(store.save_session(session))
     approval = _make_approval(approval_type="tool_call")
     approval.session_id = session_id
     asyncio.run(store.save_approval(session_id, approval))
