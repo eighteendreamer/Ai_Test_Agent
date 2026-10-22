@@ -1,0 +1,529 @@
+{
+  "scope": "saved controlled plans; actual product and production API restart",
+  "boundary": "after_commit",
+  "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+  "request": {
+    "expected_revision": 0,
+    "idempotency_key": "9e7ffdd1-200b-4a5e-b130-0ecf8e470d3c",
+    "plan_id": "31f530a4-eb52-48ff-9e89-2bed84bc69b3",
+    "reason": "保留已领取前置，调整未领取的查询并增加独立检查"
+  },
+  "upstream": [
+    {
+      "status": 200,
+      "body": {
+        "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+        "revision": 1,
+        "idempotency_key": "9e7ffdd1-200b-4a5e-b130-0ecf8e470d3c",
+        "request_sha256": "48ba9e836596fa2a11158d8d53381575fd1b8559ee8b1313cccde0996470274a",
+        "candidate_plan_id": "31f530a4-eb52-48ff-9e89-2bed84bc69b3",
+        "reason": "保留已领取前置，调整未领取的查询并增加独立检查",
+        "before_snapshot_sha256": "fb46049494926741b643107dd79b0fee3b94e46e47103c7749b31052d5667a6c",
+        "after_snapshot_sha256": "31df5e9e9da87ce7c3bceaf0de55cec26eb8d7573924664ff226b7fd9b6a4762",
+        "added_item_ids": [
+          "5334726b-e4cd-5b2c-8100-3135d7892ad0"
+        ],
+        "updated_item_ids": [
+          "e74adfe1-facc-52b4-949e-a26137e7ec71"
+        ],
+        "cancelled_item_ids": [
+          "3316cdcc-75c4-5a43-813f-d317ac9a66d6"
+        ],
+        "item_changes": [
+          {
+            "change": "added",
+            "run_item_id": "5334726b-e4cd-5b2c-8100-3135d7892ad0",
+            "before": null,
+            "after": {
+              "id": "5334726b-e4cd-5b2c-8100-3135d7892ad0",
+              "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+              "case_id": "0fd34281-7009-4f62-9d2d-2bcf89bc0687",
+              "case_version_id": "c35160de-c722-4507-a524-132e0f4a3e36",
+              "position": 3,
+              "plan_item_key": "extra",
+              "dependencies": [],
+              "status": "queued",
+              "waiting_reason": null,
+              "attempt_no": 0,
+              "lease_owner": null,
+              "lease_token": null,
+              "lease_expires_at": null,
+              "heartbeat_at": null,
+              "approval_id": null,
+              "tool_job_id": null,
+              "result_id": null,
+              "regression_source_result_id": null,
+              "created_at": "2026-10-22T08:14:02.678764Z",
+              "updated_at": "2026-10-22T08:14:02.678764Z",
+              "started_at": null,
+              "completed_at": null,
+              "resource_cleanup_completed_at": null,
+              "active_started_at": null,
+              "waiting_started_at": null,
+              "active_duration_ms": 0,
+              "waiting_duration_ms": 0,
+              "paused_duration_ms": 0,
+              "wall_clock_duration_ms": 0
+            }
+          },
+          {
+            "change": "updated",
+            "run_item_id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+            "before": {
+              "id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+              "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+              "case_id": "c1489aeb-51e5-4ee9-8568-fd451d7e0d16",
+              "case_version_id": "c954470b-1c9f-47a5-8622-8fd9d24746ae",
+              "position": 3,
+              "plan_item_key": "left",
+              "dependencies": [
+                {
+                  "item_id": "02e06040-6bf8-552d-9bd1-5475d3b57cad",
+                  "completion_condition": "passed",
+                  "required_preparation_keys": [],
+                  "required_output_paths": [
+                    [
+                      "case_output",
+                      "body",
+                      "order.id"
+                    ]
+                  ]
+                }
+              ],
+              "status": "queued",
+              "waiting_reason": null,
+              "attempt_no": 0,
+              "lease_owner": null,
+              "lease_token": null,
+              "lease_expires_at": null,
+              "heartbeat_at": null,
+              "approval_id": null,
+              "tool_job_id": null,
+              "result_id": null,
+              "regression_source_result_id": null,
+              "created_at": "2026-10-22T08:13:33.243412Z",
+              "updated_at": "2026-10-22T08:13:33.243412Z",
+              "started_at": null,
+              "completed_at": null,
+              "resource_cleanup_completed_at": null,
+              "active_started_at": null,
+              "waiting_started_at": null,
+              "active_duration_ms": 0,
+              "waiting_duration_ms": 0,
+              "paused_duration_ms": 0,
+              "wall_clock_duration_ms": 0
+            },
+            "after": {
+              "id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+              "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+              "case_id": "c1489aeb-51e5-4ee9-8568-fd451d7e0d16",
+              "case_version_id": "c954470b-1c9f-47a5-8622-8fd9d24746ae",
+              "position": 4,
+              "plan_item_key": "left",
+              "dependencies": [
+                {
+                  "item_id": "02e06040-6bf8-552d-9bd1-5475d3b57cad",
+                  "completion_condition": "passed",
+                  "required_preparation_keys": [],
+                  "required_output_paths": []
+                }
+              ],
+              "status": "queued",
+              "waiting_reason": null,
+              "attempt_no": 0,
+              "lease_owner": null,
+              "lease_token": null,
+              "lease_expires_at": null,
+              "heartbeat_at": null,
+              "approval_id": null,
+              "tool_job_id": null,
+              "result_id": null,
+              "regression_source_result_id": null,
+              "created_at": "2026-10-22T08:13:33.243412Z",
+              "updated_at": "2026-10-22T08:14:02.678764Z",
+              "started_at": null,
+              "completed_at": null,
+              "resource_cleanup_completed_at": null,
+              "active_started_at": null,
+              "waiting_started_at": null,
+              "active_duration_ms": 0,
+              "waiting_duration_ms": 0,
+              "paused_duration_ms": 0,
+              "wall_clock_duration_ms": 0
+            }
+          },
+          {
+            "change": "cancelled",
+            "run_item_id": "3316cdcc-75c4-5a43-813f-d317ac9a66d6",
+            "before": {
+              "id": "3316cdcc-75c4-5a43-813f-d317ac9a66d6",
+              "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+              "case_id": "16271c0f-e102-4f92-8882-bff5fd855bf4",
+              "case_version_id": "dd60d167-0fde-4ec5-bf47-578f2e93f166",
+              "position": 4,
+              "plan_item_key": "right",
+              "dependencies": [
+                {
+                  "item_id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+                  "completion_condition": "terminal",
+                  "required_preparation_keys": [
+                    "seed"
+                  ],
+                  "required_output_paths": [
+                    [
+                      "preparations",
+                      "seed",
+                      "output",
+                      "id"
+                    ]
+                  ]
+                }
+              ],
+              "status": "queued",
+              "waiting_reason": null,
+              "attempt_no": 0,
+              "lease_owner": null,
+              "lease_token": null,
+              "lease_expires_at": null,
+              "heartbeat_at": null,
+              "approval_id": null,
+              "tool_job_id": null,
+              "result_id": null,
+              "regression_source_result_id": null,
+              "created_at": "2026-10-22T08:13:33.243412Z",
+              "updated_at": "2026-10-22T08:13:33.243412Z",
+              "started_at": null,
+              "completed_at": null,
+              "resource_cleanup_completed_at": null,
+              "active_started_at": null,
+              "waiting_started_at": null,
+              "active_duration_ms": 0,
+              "waiting_duration_ms": 0,
+              "paused_duration_ms": 0,
+              "wall_clock_duration_ms": 0
+            },
+            "after": {
+              "id": "3316cdcc-75c4-5a43-813f-d317ac9a66d6",
+              "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+              "case_id": "16271c0f-e102-4f92-8882-bff5fd855bf4",
+              "case_version_id": "dd60d167-0fde-4ec5-bf47-578f2e93f166",
+              "position": 5,
+              "plan_item_key": "right",
+              "dependencies": [
+                {
+                  "item_id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+                  "completion_condition": "terminal",
+                  "required_preparation_keys": [
+                    "seed"
+                  ],
+                  "required_output_paths": [
+                    [
+                      "preparations",
+                      "seed",
+                      "output",
+                      "id"
+                    ]
+                  ]
+                }
+              ],
+              "status": "cancelled",
+              "waiting_reason": null,
+              "attempt_no": 0,
+              "lease_owner": null,
+              "lease_token": null,
+              "lease_expires_at": null,
+              "heartbeat_at": null,
+              "approval_id": null,
+              "tool_job_id": null,
+              "result_id": null,
+              "regression_source_result_id": null,
+              "created_at": "2026-10-22T08:13:33.243412Z",
+              "updated_at": "2026-10-22T08:14:02.678764Z",
+              "started_at": null,
+              "completed_at": "2026-10-22T08:14:02.678764Z",
+              "resource_cleanup_completed_at": null,
+              "active_started_at": null,
+              "waiting_started_at": null,
+              "active_duration_ms": 0,
+              "waiting_duration_ms": 0,
+              "paused_duration_ms": 0,
+              "wall_clock_duration_ms": 0
+            }
+          }
+        ],
+        "created_at": "2026-10-22T08:14:02.678764Z"
+      }
+    }
+  ],
+  "forced_stop_code": 1,
+  "terminated_owned_backend": null,
+  "revision": [
+    {
+      "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+      "revision": 1,
+      "idempotency_key": "9e7ffdd1-200b-4a5e-b130-0ecf8e470d3c",
+      "request_sha256": "48ba9e836596fa2a11158d8d53381575fd1b8559ee8b1313cccde0996470274a",
+      "candidate_plan_id": "31f530a4-eb52-48ff-9e89-2bed84bc69b3",
+      "reason": "保留已领取前置，调整未领取的查询并增加独立检查",
+      "before_snapshot_sha256": "fb46049494926741b643107dd79b0fee3b94e46e47103c7749b31052d5667a6c",
+      "after_snapshot_sha256": "31df5e9e9da87ce7c3bceaf0de55cec26eb8d7573924664ff226b7fd9b6a4762",
+      "added_item_ids": [
+        "5334726b-e4cd-5b2c-8100-3135d7892ad0"
+      ],
+      "updated_item_ids": [
+        "e74adfe1-facc-52b4-949e-a26137e7ec71"
+      ],
+      "cancelled_item_ids": [
+        "3316cdcc-75c4-5a43-813f-d317ac9a66d6"
+      ],
+      "item_changes": [
+        {
+          "change": "added",
+          "run_item_id": "5334726b-e4cd-5b2c-8100-3135d7892ad0",
+          "before": null,
+          "after": {
+            "id": "5334726b-e4cd-5b2c-8100-3135d7892ad0",
+            "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+            "case_id": "0fd34281-7009-4f62-9d2d-2bcf89bc0687",
+            "case_version_id": "c35160de-c722-4507-a524-132e0f4a3e36",
+            "position": 3,
+            "plan_item_key": "extra",
+            "dependencies": [],
+            "status": "queued",
+            "waiting_reason": null,
+            "attempt_no": 0,
+            "lease_owner": null,
+            "lease_token": null,
+            "lease_expires_at": null,
+            "heartbeat_at": null,
+            "approval_id": null,
+            "tool_job_id": null,
+            "result_id": null,
+            "regression_source_result_id": null,
+            "created_at": "2026-10-22T08:14:02.678764Z",
+            "updated_at": "2026-10-22T08:14:02.678764Z",
+            "started_at": null,
+            "completed_at": null,
+            "resource_cleanup_completed_at": null,
+            "active_started_at": null,
+            "waiting_started_at": null,
+            "active_duration_ms": 0,
+            "waiting_duration_ms": 0,
+            "paused_duration_ms": 0,
+            "wall_clock_duration_ms": 0
+          }
+        },
+        {
+          "change": "updated",
+          "run_item_id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+          "before": {
+            "id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+            "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+            "case_id": "c1489aeb-51e5-4ee9-8568-fd451d7e0d16",
+            "case_version_id": "c954470b-1c9f-47a5-8622-8fd9d24746ae",
+            "position": 3,
+            "plan_item_key": "left",
+            "dependencies": [
+              {
+                "item_id": "02e06040-6bf8-552d-9bd1-5475d3b57cad",
+                "completion_condition": "passed",
+                "required_preparation_keys": [],
+                "required_output_paths": [
+                  [
+                    "case_output",
+                    "body",
+                    "order.id"
+                  ]
+                ]
+              }
+            ],
+            "status": "queued",
+            "waiting_reason": null,
+            "attempt_no": 0,
+            "lease_owner": null,
+            "lease_token": null,
+            "lease_expires_at": null,
+            "heartbeat_at": null,
+            "approval_id": null,
+            "tool_job_id": null,
+            "result_id": null,
+            "regression_source_result_id": null,
+            "created_at": "2026-10-22T08:13:33.243412Z",
+            "updated_at": "2026-10-22T08:13:33.243412Z",
+            "started_at": null,
+            "completed_at": null,
+            "resource_cleanup_completed_at": null,
+            "active_started_at": null,
+            "waiting_started_at": null,
+            "active_duration_ms": 0,
+            "waiting_duration_ms": 0,
+            "paused_duration_ms": 0,
+            "wall_clock_duration_ms": 0
+          },
+          "after": {
+            "id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+            "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+            "case_id": "c1489aeb-51e5-4ee9-8568-fd451d7e0d16",
+            "case_version_id": "c954470b-1c9f-47a5-8622-8fd9d24746ae",
+            "position": 4,
+            "plan_item_key": "left",
+            "dependencies": [
+              {
+                "item_id": "02e06040-6bf8-552d-9bd1-5475d3b57cad",
+                "completion_condition": "passed",
+                "required_preparation_keys": [],
+                "required_output_paths": []
+              }
+            ],
+            "status": "queued",
+            "waiting_reason": null,
+            "attempt_no": 0,
+            "lease_owner": null,
+            "lease_token": null,
+            "lease_expires_at": null,
+            "heartbeat_at": null,
+            "approval_id": null,
+            "tool_job_id": null,
+            "result_id": null,
+            "regression_source_result_id": null,
+            "created_at": "2026-10-22T08:13:33.243412Z",
+            "updated_at": "2026-10-22T08:14:02.678764Z",
+            "started_at": null,
+            "completed_at": null,
+            "resource_cleanup_completed_at": null,
+            "active_started_at": null,
+            "waiting_started_at": null,
+            "active_duration_ms": 0,
+            "waiting_duration_ms": 0,
+            "paused_duration_ms": 0,
+            "wall_clock_duration_ms": 0
+          }
+        },
+        {
+          "change": "cancelled",
+          "run_item_id": "3316cdcc-75c4-5a43-813f-d317ac9a66d6",
+          "before": {
+            "id": "3316cdcc-75c4-5a43-813f-d317ac9a66d6",
+            "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+            "case_id": "16271c0f-e102-4f92-8882-bff5fd855bf4",
+            "case_version_id": "dd60d167-0fde-4ec5-bf47-578f2e93f166",
+            "position": 4,
+            "plan_item_key": "right",
+            "dependencies": [
+              {
+                "item_id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+                "completion_condition": "terminal",
+                "required_preparation_keys": [
+                  "seed"
+                ],
+                "required_output_paths": [
+                  [
+                    "preparations",
+                    "seed",
+                    "output",
+                    "id"
+                  ]
+                ]
+              }
+            ],
+            "status": "queued",
+            "waiting_reason": null,
+            "attempt_no": 0,
+            "lease_owner": null,
+            "lease_token": null,
+            "lease_expires_at": null,
+            "heartbeat_at": null,
+            "approval_id": null,
+            "tool_job_id": null,
+            "result_id": null,
+            "regression_source_result_id": null,
+            "created_at": "2026-10-22T08:13:33.243412Z",
+            "updated_at": "2026-10-22T08:13:33.243412Z",
+            "started_at": null,
+            "completed_at": null,
+            "resource_cleanup_completed_at": null,
+            "active_started_at": null,
+            "waiting_started_at": null,
+            "active_duration_ms": 0,
+            "waiting_duration_ms": 0,
+            "paused_duration_ms": 0,
+            "wall_clock_duration_ms": 0
+          },
+          "after": {
+            "id": "3316cdcc-75c4-5a43-813f-d317ac9a66d6",
+            "run_id": "d851640e-ec73-5a4e-a4bd-2573276b573a",
+            "case_id": "16271c0f-e102-4f92-8882-bff5fd855bf4",
+            "case_version_id": "dd60d167-0fde-4ec5-bf47-578f2e93f166",
+            "position": 5,
+            "plan_item_key": "right",
+            "dependencies": [
+              {
+                "item_id": "e74adfe1-facc-52b4-949e-a26137e7ec71",
+                "completion_condition": "terminal",
+                "required_preparation_keys": [
+                  "seed"
+                ],
+                "required_output_paths": [
+                  [
+                    "preparations",
+                    "seed",
+                    "output",
+                    "id"
+                  ]
+                ]
+              }
+            ],
+            "status": "cancelled",
+            "waiting_reason": null,
+            "attempt_no": 0,
+            "lease_owner": null,
+            "lease_token": null,
+            "lease_expires_at": null,
+            "heartbeat_at": null,
+            "approval_id": null,
+            "tool_job_id": null,
+            "result_id": null,
+            "regression_source_result_id": null,
+            "created_at": "2026-10-22T08:13:33.243412Z",
+            "updated_at": "2026-10-22T08:14:02.678764Z",
+            "started_at": null,
+            "completed_at": "2026-10-22T08:14:02.678764Z",
+            "resource_cleanup_completed_at": null,
+            "active_started_at": null,
+            "waiting_started_at": null,
+            "active_duration_ms": 0,
+            "waiting_duration_ms": 0,
+            "paused_duration_ms": 0,
+            "wall_clock_duration_ms": 0
+          }
+        }
+      ],
+      "created_at": "2026-10-22T08:14:02.678764Z"
+    }
+  ],
+  "stats": {
+    "total": 5,
+    "queued": 2,
+    "claimed": 1,
+    "running": 1,
+    "waiting_resource": 0,
+    "waiting_approval": 0,
+    "passed": 0,
+    "failed": 0,
+    "error": 0,
+    "blocked": 0,
+    "skipped": 0,
+    "cancelled": 1
+  },
+  "attempt_plan_id": "20eb0afc-5329-4997-b88c-fd176242bf1b",
+  "current_plan_id": "31f530a4-eb52-48ff-9e89-2bed84bc69b3",
+  "checkpoint_preserved": true,
+  "suite_preserved": true,
+  "snapshot_count": 2,
+  "dispatch_intent_count": 1,
+  "new_claim_keys": [
+    "extra"
+  ],
+  "model_calls": 0,
+  "business_http_calls": 0
+}
