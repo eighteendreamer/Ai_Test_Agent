@@ -34,14 +34,15 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 
 - 模板、项目模板、Excel 行式/分表式及 JSON 导入、预览、错误阻断、评审启用、项目隔离和重启恢复。
 - 本轮对模板与导入做了当前工作树的产品复验：构建版 App/Playwright、独立 API、隔离 MySQL/PostgreSQL/RustFS/Redis；实际构造并导入 `rows.xlsx`、`split.xlsx`、`cases.json`、`invalid.xlsx`。覆盖项目模板保存、原件字节读回与下载、预览及错误报告下载、草稿幂等提交、评审/启用、JSON 新版本不改活动版本、编号冲突阻断、跨项目隔离及 API 重启后的数据读回。结果 **1 passed in 63.60s**；页面错误和非预期 API 错误均为0，项目隔离返回404，重启后数据仍可读。证据：`p1-case-import-full-product-current-resume-20261023-01/` 与对应 XML。该证据关闭了这些模板/导入页面流程的验收缺口，不包括未来项目平台数据源接入，也不代表普通需求文档生成闭环通过。
-- 普通文档生成当前工作树产品复验通过：`test_ordinary_document_modules_and_independent_saved_response_recovery` 的流式/非流式两组 **2 passed in 380.79s**。使用真实 Markdown/DOCX/PDF 输入、隔离 MySQL/PostgreSQL/RustFS/Redis、生产 API/Worker 和构建版 App/Playwright，并通过本机受控 HTTP 模型验证；两个页面场景均实现3/3模块完成，提交成功但丢失回执后通过回查恢复且没有重复提交，完整 JSON 草稿查看/人工新版本修订通过，页面错误与网络错误均为0。模块级错误恢复场景保留 `[completed, failed, completed]`，失败模块从已保存响应独立重试完成；模板在请求提交后修改不改变固定生成范围，API 重启后仍可完成。DOCX 的3个模块及文本型 PDF 的1个模块均完成并校验来源映射。JUnit 与逐项证据：`Agent_Server/docs/upgrade_2026-10-03/p1-document-generation-full-product-current-20261023-01.xml` 及同名目录。该模型是本地受控模型，因此证明产品链路、存储、恢复和页面行为，不证明默认 Step 的生成语义质量；该缺口仍未验收。
+- 普通文档生成当前工作树产品复验通过：`test_ordinary_document_modules_and_independent_saved_response_recovery` 的流式/非流式两组在干净隔离证据目录 **2 passed in 394.38s**。使用真实 Markdown/DOCX/PDF 输入、隔离 MySQL/PostgreSQL/RustFS/Redis、生产 API/Worker 和构建版 App/Playwright，并通过本机受控 HTTP 模型验证；两个页面场景均实现3/3模块完成，提交成功但丢失回执后通过回查恢复且没有重复提交，完整 JSON 草稿查看/人工新版本修订通过，页面错误与网络错误均为0。模块级错误恢复场景保留 `[completed, failed, completed]`，失败模块从已保存响应独立重试完成；模板在请求提交后修改不改变固定生成范围，API 重启后仍可完成。DOCX 的3个模块及文本型 PDF 的1个模块均完成并校验来源映射。JUnit 与逐项证据：`Agent_Server/docs/upgrade_2026-10-03/p1-document-generation-full-product-current-20261023-02.xml` 及同名目录。该模型是本地受控模型，因此证明产品链路、存储、恢复和页面行为，不证明默认 Step 的生成语义质量；该缺口仍未验收。
 - 执行中逻辑缺口触发持久 Run 重规划的受控闭环已验证：执行 Agent 收到只读业务响应后引用已结算 ToolJob 的精确 JSON 路径，追加正式前置到未领取条目并保留已领取 Attempt；状态查询可恢复丢失回执，终态重投不重复提交。当前工作树复验 `5 passed in 14.39s`。测试使用脚本化受控 Agent，不证明默认 Step 的推理质量或目标业务测试通过。
 - 文档版本、上传原件、解析快照、确定性差异、影响分析和需求追踪专项。
 - API 鉴权刷新、依赖传值、未知写入只读查证、进程恢复和报告脱敏专项。
 - DeepSeek 基础人工录制、事件清洗、响应关联和知识投影专项。
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
 - Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
-- 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径；模型客户端与请求映射回归通过。
+- 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
+- 持久 Run 修订规划回归本轮 **16 passed in 25.37s**。这证明当前工作树的修订规划服务测试通过，不替代默认 Step 的真实模型规划和业务执行验收。
 
 ## 正式回执纠正与进程恢复复验
 
