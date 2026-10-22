@@ -113,6 +113,13 @@ class PostgresTaskPoolStore:
                        t.creation_key,t.phase,t.message,t.attempt_no,t.plan_id,
                        COALESCE((t.checkpoint->>'next_round')::integer,0) AS round_count,
                        t.started_at,t.deadline_at,t.completed_at,
+                       CASE WHEN jsonb_typeof(t.seed->'run_revision')='object' THEN
+                           CASE WHEN jsonb_typeof(t.checkpoint->'run_revision_outcome')='object'
+                               THEN t.checkpoint->'run_revision_outcome'
+                               ELSE jsonb_build_object('run_id',t.seed->'run_revision'->>'run_id',
+                                   'status','pending','message','等待候选规划及运行修订确认')
+                           END
+                       END AS run_revision,
                        CASE WHEN d.id IS NOT NULL THEN jsonb_build_object({difference_fields}) END AS difference_task,
                        CASE WHEN i.id IS NOT NULL THEN jsonb_build_object({impact_fields}) END AS impact_task,
                        CASE WHEN g.id IS NOT NULL THEN jsonb_build_object({generation_fields},

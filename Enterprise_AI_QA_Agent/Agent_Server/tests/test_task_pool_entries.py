@@ -20,6 +20,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.planning_task_handler import PlanningTaskHandler
 from src.schemas.case_planning_task import CasePlanningTaskRequest
+from src.schemas.run_revision_planning import RunRevisionPlanningInput, RunRevisionPlanningOutcome
 from src.schemas.project import ProjectCreateRequest
 from src.schemas.session import SessionStatus, SessionMode, RuntimeMode
 from src.application.documents.parser_config_service import DocumentParserConfigService
@@ -121,6 +122,58 @@ async def test_unconfigured_task_pool_projection_reports_unavailable_without_res
             assert response.status_code == 503, response.text
             assert (await env.tasks.get(project.id, task.id)).status == 'queued'
             assert env.model.requests == []
+
+
+@pytest.mark.asyncio
+@live
+async def test_task_pool_projects_run_revision_outcome_without_exposing_checkpoint(tmp_path):
+    async with pool_environment(tmp_path) as env:
+        project = await env.projects.create(ProjectCreateRequest(project_key='pool-revision', name='运行修订任务池'))
+        task = await env.tasks.submit(project.id, CasePlanningTaskRequest(
+            creation_key='revision-visible', objective='读取运行修订结果'))
+        run_id = str(uuid4())
+        revision_input = RunRevisionPlanningInput(run_id=run_id, source_plan_id=str(uuid4()),
+            expected_revision=0, reason='执行发现缺少必要前置', required_case_versions={'case': 'v1'},
+            read_case_versions={'case': 'v1'}, context={'private_marker': 'PRIVATE-REVISION-CONTEXT'})
+        pending = RunRevisionPlanningOutcome(run_id=run_id, status='pending', message='等待候选规划及运行修订确认')
+        outcomes = [
+            None,
+            RunRevisionPlanningOutcome(run_id=run_id, status='applied', revision=1, message='修订已生效'),
+            RunRevisionPlanningOutcome(run_id=run_id, status='rejected', message='运行版本已变化'),
+        ]
+        with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+            cur.execute(f'SELECT seed,checkpoint FROM {env.jobs._table} WHERE id=%s', (task.id,))
+            row = cur.fetchone()
+            seed, checkpoint = row['seed'], row['checkpoint']
+
+        app = FastAPI(); app.state.task_pool_service = env.pool; app.include_router(router, prefix='/api/v1')
+        async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://fixture') as client:
+            response = await client.get('/api/v1/task-pool/entries', params={
+                'kind': 'case_planning', 'project_id': project.id})
+            assert response.status_code == 200, response.text
+            legacy_task = response.json()['items'][0]['task']
+            assert legacy_task['id'] == task.id and 'run_revision' not in legacy_task
+
+            seed['run_revision'] = revision_input.model_dump(mode='json')
+            with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                cur.execute(f'UPDATE {env.jobs._table} SET seed=%s::jsonb WHERE id=%s',
+                    (json.dumps(seed, ensure_ascii=False), task.id))
+            for outcome in outcomes:
+                expected = pending if outcome is None else outcome
+                if outcome is None:
+                    checkpoint.pop('run_revision_outcome', None)
+                else:
+                    checkpoint['run_revision_outcome'] = outcome.model_dump(mode='json')
+                with postgres_connect(env.settings) as conn, conn.cursor() as cur:
+                    cur.execute(f'UPDATE {env.jobs._table} SET checkpoint=%s::jsonb WHERE id=%s',
+                        (json.dumps(checkpoint, ensure_ascii=False), task.id))
+                response = await client.get('/api/v1/task-pool/entries', params={
+                    'kind': 'case_planning', 'project_id': project.id})
+                assert response.status_code == 200, response.text
+                projected = response.json()['items'][0]['task']
+                assert projected['run_revision'] == expected.model_dump(mode='json')
+                assert 'checkpoint' not in projected and 'seed' not in projected
+                assert 'PRIVATE-REVISION-CONTEXT' not in response.text
 
 
 @pytest.mark.asyncio
