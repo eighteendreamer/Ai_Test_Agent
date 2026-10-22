@@ -7,7 +7,7 @@ from src.schemas.case_execution import AgentCaseExecutionReceipt
 from src.schemas.scene_receipt import case_receipt_type, SCENE_RECEIPT_PROMPT_VERSION
 
 
-RECEIPT_PROMPT_VERSION = "case-execution-receipt-v7"
+RECEIPT_PROMPT_VERSION = "case-execution-receipt-v8"
 
 
 def receipt_prompt_version(protocol=None):
@@ -40,7 +40,9 @@ def case_result_contract(protocol=None) -> str:
         "Never create one receipt entry for each content_json.steps business step, and never "
         "repeat an item_key: if one fixed execution item contains several business steps, combine "
         "all of its checks and outputs under that single item_key entry. Include preparation and "
-        "cleanup items when they are requested; never claim passed without checks. Cover every "
+        "cleanup items only when they are explicitly present in the requested fixed execution items; "
+        "a tool or browser lifecycle failure does not create a second receipt entry. Never claim passed "
+        "without checks. Cover every "
         "expected result in the complete case. expected_path_tokens are literal keys/indexes "
         "into that item's expected_source in the assessment input (the complete fixed case JSON "
         "or preparation instructions). In the execution context it is content_json for a formal "
@@ -50,11 +52,22 @@ def case_result_contract(protocol=None) -> str:
         "expected_path_tokens with content_json, execution_items, plan_item, or any wrapper field. "
         "For example, if expected_source is {\"期望\":{\"cleanup_code\":200}}, the path is "
         "[\"期望\",\"cleanup_code\"], never [\"content_json\",\"期望\",\"cleanup_code\"]. "
+        "Follow the actual JSON keys; conceptual labels do not add nesting. If expected_source is "
+        "{\"metadata\":{\"false\":false},\"page_identity_rule\":\"page ID differs\"}, the path to "
+        "page_identity_rule is [\"page_identity_rule\"], never [\"metadata\",\"page_identity_rule\"]. "
         "For a preparation it is the instructions value itself and likewise has no instructions "
         "prefix. The server rejects paths that do not exist under this exact root. "
         "Do not invent expected status/fields that are absent from expected_source. observations and "
         "outputs must use the exact call_id from the tool message's output_reference (or the "
         "assessment manifest). Never replace it with tool names, ordinal labels or job_id. "
+        "Each observation/output reference is flat: {\"call_id\":\"call_abc123\",\"output_path_tokens\":[\"result\",\"count\"]}; "
+        "replace the example call ID with the exact evidenced ID. Do not wrap observations in kind/source. "
+        "The nested {\"kind\":\"reference\",\"source\":...} shape is only for a leaf inside output_structure. "
+        "For example, if expected_source is {\"expected_count\":\"1\"}, its path is [\"expected_count\"], "
+        "never [\"0\",\"expected_count\"] unless expected_source actually has a root array. "
+        "A valid reference has this exact form: {\"call_id\":\"call_abc123\","
+        "\"output_path_tokens\":[\"result\",\"count\"]}. Use that flat form for every observations element "
+        "and every outputs value. "
         "An output_reference of null means this call has no settled persisted evidence; "
         "do not cite its diagnostic output as observations or outputs. If an expectation "
         "could not be tested, report the step blocked/skipped/error with its concrete reason "

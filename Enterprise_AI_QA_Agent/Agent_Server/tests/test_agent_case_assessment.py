@@ -224,6 +224,24 @@ async def test_real_file_http_and_persisted_outputs_form_receipt_and_dependency_
 
 
 @pytest.mark.asyncio
+async def test_manifest_output_label_is_removed_only_when_persisted_payload_proves_equivalence(tmp_path, business_http):
+    async with execution(tmp_path, business_http) as env:
+        data = receipt()
+        data['steps'][1]['checks'][0]['observations'][0]['output_path_tokens'] = [
+            'output', 'task_result', 'response_status']
+        data['steps'][1]['outputs']['body']['output_path_tokens'] = [
+            'output', 'task_result', 'response_body']
+        outcome = await assess(env, data)
+        assert outcome.completion.status == 'passed'
+        assert outcome.completion.actual['case_output']['body']['order.id'] == business_http[2]
+
+        invalid = receipt()
+        invalid['steps'][1]['checks'][0]['observations'][0]['output_path_tokens'] = ['output', 'missing']
+        with pytest.raises(ValueError, match='output_path_tokens 不存在'):
+            await assess(env, invalid)
+
+
+@pytest.mark.asyncio
 async def test_numeric_and_negative_conditions_recomputed_and_semantic_evidence_labelled(tmp_path, business_http):
     async with execution(tmp_path, business_http) as env:
         data = receipt()
@@ -424,9 +442,58 @@ async def test_rejected_real_model_source_reference_is_visible_to_read_only_corr
         assert 'execution_items' in request.messages[0]['content']
         assert 'expected_source' in request.messages[0]['content']
         assert 'content_json, execution_items, plan_item' in request.system_prompt
+        assert ('If expected_source is {"metadata":{"false":false},"page_identity_rule":"page ID differs"}, '
+            'the path to page_identity_rule is ["page_identity_rule"], never '
+            '["metadata","page_identity_rule"].') in request.system_prompt
+        assert ('Each observation/output reference is flat: {"call_id":"call_abc123",'
+            '"output_path_tokens":["result","count"]}; replace the example call ID with the exact evidenced ID. '
+            'Do not wrap observations in kind/source.') in request.system_prompt
+        assert ('The nested {"kind":"reference","source":...} shape is only for a leaf inside output_structure.') in request.system_prompt
+        assert ('if expected_source is {"expected_count":"1"}, its path is ["expected_count"], '
+            'never ["0","expected_count"] unless expected_source actually has a root array.') in request.system_prompt
+        assert ('A valid reference has this exact form: {"call_id":"call_abc123",'
+            '"output_path_tokens":["result","count"]}. Use that flat form for every observations element '
+            'and every outputs value.') in request.system_prompt
         assert 'one receipt entry per requested execution item' in request.system_prompt
         assert request.trace_context['phase'] == 'case_assessment'
         assert len(business_http[1]) == 3
+
+
+def test_captured_nested_reference_alias_is_canonicalized_then_strictly_validated():
+    from src.application.test_runs.agent_case_assessment import AgentCaseAssessmentService
+    from src.schemas.case_execution import AgentCaseExecutionReceipt
+
+    # Minimized from the captured Agnes correction in
+    # docs/upgrade_2026-10-03/p2-default-ui-after-receipt-contract-v8-current-20261022-01/negative.
+    candidate = {'schema_version': 1, 'steps': [{
+        'item_key': 'count-one-target', 'status': 'failed', 'summary': 'Observed count 1; expected 2.',
+        'checks': [{'name': 'count_matches_expected', 'expected_path_tokens': ['expected_count'],
+            'observations': [{'call_id': 'call_2afff45c56b34549888b0c7c',
+                'output_path_tokens': ['result', 'count']}], 'operator': 'equals',
+            'verdict': 'failed', 'reason': 'Observed count=1 does not equal expected_count=2.'}],
+        'outputs': {
+            'count': {'kind': 'reference', 'source': {'call_id': 'call_2afff45c56b34549888b0c7c',
+                'output_path_tokens': ['result', 'count']}},
+            'pageId': {'kind': 'reference', 'source': {'call_id': 'call_2afff45c56b34549888b0c7c',
+                'output_path_tokens': ['result', 'pageId']}},
+        },
+    }]}
+
+    normalized, normalized_steps = AgentCaseAssessmentService._normalize_equivalent_output_forms(candidate)
+    assert normalized_steps == 1
+    reference = {'call_id': 'call_2afff45c56b34549888b0c7c', 'output_path_tokens': ['result', 'count']}
+    assert normalized['steps'][0]['outputs']['count'] == reference
+    assert candidate['steps'][0]['outputs']['count']['kind'] == 'reference'
+    assert AgentCaseExecutionReceipt.model_validate(normalized).steps[0].outputs['count'].call_id == reference['call_id']
+
+    malformed = deepcopy(candidate)
+    malformed['steps'][0]['outputs']['count']['source']['unrecognized'] = 'retained-for-strict-validation'
+    unchanged, changed_steps = AgentCaseAssessmentService._normalize_equivalent_output_forms(malformed)
+    assert changed_steps == 1
+    assert unchanged['steps'][0]['outputs']['count']['kind'] == 'reference'
+    assert 'unrecognized' in unchanged['steps'][0]['outputs']['count']['source']
+    with pytest.raises(ValueError):
+        AgentCaseExecutionReceipt.model_validate(unchanged)
 
 
 @pytest.mark.parametrize('actual,expected,operator,result', [

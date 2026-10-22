@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from src.modes.api_testing_mode.campaign_state import ApiTestTask
 from src.schemas.agent import ToolDescriptor
+from src.application.test_runs.execution_replanning import ExecutionReplanningRequest
 
 
 @dataclass(frozen=True)
@@ -228,6 +229,24 @@ class ToolRegistry:
                     tags=["coordinator", "worker", "async"],
                 ),
                 handler_key="subagent-dispatch",
+            ),
+            "run-plan-replanner": ToolModule(
+                descriptor=ToolDescriptor(
+                    key="run-plan-replanner", name="Run Plan Replanner", category="test_runs",
+                    description="Inspect the current managed Run or submit evidence-backed replanning of its "
+                        "unclaimed items after discovering a real gap. inspect returns the current revision. "
+                        "submit requires expected_revision, reason and settled evidence references with job_id plus "
+                        "non-empty output_path_tokens. The server extracts and redacts only those JSON values, "
+                        "with a 32 KiB total evidence limit. It saves a durable task; pending is not applied. "
+                        "Keep the submit operation_key "
+                        "stable. For status use a different read operation_key and submission_operation_key equal "
+                        "to the original submit key, in the same owned item. Refresh with a new read key. "
+                        "Claimed/current items remain frozen: preserve their actual blocked/failed result; "
+                        "never repeat business writes or claim a test passed because planning succeeded.",
+                    permission_level="safe", input_schema=ExecutionReplanningRequest.model_json_schema(),
+                    output_schema={"task_id": "string", "task_status": "string", "run_revision": "object"},
+                    tags=["test_runs", "planning"],
+                ), handler_key="run-plan-replanner",
             ),
             "knowledge-rag": ToolModule(
                 descriptor=ToolDescriptor(
@@ -605,13 +624,13 @@ class ToolRegistry:
                         "properties": {
                             "action": {
                                 "type": "string",
-                                "description": "One of navigate, inspect, screenshot, evaluate_js, run_actions, or command.",
+                                "description": "Use navigate/open first to establish the page for the persistent command session. Choose inspect/snapshot, screenshot, evaluate_js, run_actions, or command as needed. If a command session already exists for this run attempt, evaluate_js/eval reuses that page; otherwise it requires a target URL and opens an independent page.",
                             },
                             "target_url": {"type": "string", "description": "The target page URL."},
-                            "command": {"type": "string", "description": "A complete shell-quoted playwright-cli command string, or a single verb such as open/click/eval with args holding its operands. For eval prefer command=eval and args=[the complete JavaScript expression]; spaces inside the expression must stay in one array element."},
+                            "command": {"type": "string", "description": "For action=command, provide a single playwright-cli verb such as open/click/eval. Put operands in args; for eval use command=eval and pass the complete JavaScript expression as args[0], without shell quotes."},
                             "args": {
                                 "type": "array",
-                                "description": "For action=command: a complete command list including its verb when command is omitted, or operands of the single verb in command. Do not mix unrelated command representations.",
+                                "description": "For action=command, pass an argument vector: include the verb when command is omitted, or pass operands when command is a single verb. For eval, args[0] must be the complete JavaScript expression; do not wrap it in shell quotes.",
                                 "items": {"type": "string"},
                             },
                             "javascript": {"type": "string", "description": "JavaScript expression for evaluate_js."},

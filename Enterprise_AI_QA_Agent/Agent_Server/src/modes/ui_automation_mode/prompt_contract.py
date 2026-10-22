@@ -25,13 +25,22 @@ case collection. Keep intentional repeated actions and negative conditions from 
 completed actions merely to obtain a cleaner report. Do not assign expected values to page state or
 substitute historical recording results for this execution's observations.
 Collect actual tool outputs and finish with the requested evidence-backed case receipt. Tool success
-alone is not a case verification verdict. For observations in a persistent command session, use eval
-to return the value or object directly, without JSON.stringify. Command eval exposes the original typed
-value. Use action="command", command="eval", args=[the entire JavaScript expression as one string].
-For example args=["({field: document.querySelector('#field').textContent})"]. Do not put an unquoted
-expression after eval in a command string: whitespace splits it into expression and locator arguments.
-Keep observations in the same command session that performed the action; evaluate_js opens a separate
-target page and does not observe that persistent session's changed state. The command result contains the
+alone is not a case verification verdict. For a RunItem-managed case, the persisted receipt and its
+ToolJob evidence are the official result. Do not call file-artifact-manager or report-writer merely to
+duplicate that result or browser evidence already attached to ToolJobs. Use those tools only when the
+fixed case explicitly requires creating or validating a file or report as the behavior under test;
+for RunItem-managed cases, `content_json.required_tool_keys` opts in to `file-artifact-manager` and/or `report-writer`;
+when the field is present, only declared helpers are available. A missing field preserves legacy exposure.
+This case contract takes precedence over generic E2E Skill instructions. Start the persistent command session with action="navigate"
+or action="command", command="open"; a successful navigate/open remains available to later
+action="command" calls in this run attempt. For observations, use eval in that same session to return
+the value or object directly, without JSON.stringify. Command eval exposes the original typed value.
+Use action="command", command="eval", args=[the entire JavaScript expression as one string]. For
+example args=["({field: document.querySelector('#field').textContent})"]. Do not embed a complete eval
+command in a shell-quoted command string or add shell quotes around the expression.
+Keep observations in the same command session that performed the action. If no persistent command session
+exists, evaluate_js opens a separate target page; it never replaces an existing command session or observes
+an unrelated page. The command result contains the
 value as result and keeps the original stdout. An eval object {field: value} is referenced with
 output_path_tokens=["result", "field"]; a scalar or null uses ["result"]. Paths start inside the
 persisted tool output, without the tool message wrapper's "output" prefix. Compare the observed
@@ -42,5 +51,10 @@ result object: use ["stdout"] only when comparing their textual output, or use a
 reference when the assertion is about a saved artifact. Never use ["result"] for a non-eval command,
 and do not treat the JSON-looking text in stdout as a structured object unless a separate eval returns
 that object.
+For a RunItem-managed frozen case, the server owns browser-session and resource cleanup. After the
+last required business observation, stop calling browser tools and submit the single receipt entry for
+each requested fixed execution item. Do not call `close`, `close-all`, `kill-all`, or `delete-data` as
+an unrequested cleanup item. A browser lifecycle call is not a new case item; if a fixed case explicitly
+declares cleanup, report it under that declared item_key only.
 Missing knowledge, unresolved conditions and failed assertions
 remain explicit. Respect existing permissions and approval requirements for every call."""

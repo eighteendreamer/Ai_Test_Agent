@@ -21,7 +21,7 @@ from src.application.test_runs.literal_evidence import literal_value
 from src.application.test_runs.case_cleanup_coverage import cleanup_coverage
 from src.schemas.case_execution import (
     AgentCaseExecutionContext, AgentCaseExecutionReceipt, CaseOutputArray, CaseOutputObject,
-    CaseOutputReference,
+    CaseOutputReference, CaseToolEvidenceReference,
 )
 from src.schemas.model_config import ModelInvocationRequest, ModelInvocationResult
 from src.schemas.model_request_options import ModelOutputFormat
@@ -61,6 +61,120 @@ class AgentCaseAssessmentService:
     # tools need a receipt, without translating business cases into mode parameters.
     def __init__(self, tool_job_service: ToolJobService) -> None:
         self._jobs = tool_job_service
+
+    @staticmethod
+    def _unwrap_reference_node(value: Any) -> dict[str, Any] | None:
+        if (not isinstance(value, dict) or set(value) != {"kind", "source"}
+            or value.get("kind") != "reference" or not isinstance(value.get("source"), dict)):
+            return None
+        source = value["source"]
+        if "call_id" not in source or set(source) - {"call_id", "output_path_tokens"}:
+            return None
+        try:
+            return CaseToolEvidenceReference.model_validate(source).model_dump(mode="json")
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _normalize_equivalent_output_forms(candidate: Any) -> tuple[Any, int]:
+        """Canonicalize only exact, schema-valid equivalent evidence references."""
+        if not isinstance(candidate, dict) or not isinstance(candidate.get("steps"), list):
+            return candidate, 0
+
+        # No upstream counterpart (checked: case_result_contract, CaseToolEvidenceReference,
+        # CaseOutputReference and the captured Agnes correction): the output_structure leaf
+        # wrapper is sometimes repeated in observations/outputs. Unwrap only its exact,
+        # schema-valid source; the normal receipt schema still rejects every other shape.
+        normalized = deepcopy(candidate)
+        normalized_steps = 0
+        for step in normalized["steps"]:
+            if not isinstance(step, dict):
+                continue
+            changed = False
+            checks = step.get("checks")
+            if isinstance(checks, list):
+                for check in checks:
+                    if not isinstance(check, dict) or not isinstance(check.get("observations"), list):
+                        continue
+                    observations = check["observations"]
+                    for index, value in enumerate(observations):
+                        reference = AgentCaseAssessmentService._unwrap_reference_node(value)
+                        if reference is not None:
+                            observations[index] = reference
+                            changed = True
+
+            outputs = step.get("outputs")
+            if isinstance(outputs, dict):
+                for name, value in list(outputs.items()):
+                    reference = AgentCaseAssessmentService._unwrap_reference_node(value)
+                    if reference is not None:
+                        outputs[name] = reference
+                        changed = True
+
+            structure = step.get("output_structure")
+            if (isinstance(outputs, dict) and outputs and step.get("output_source") is None
+                and isinstance(structure, dict) and set(structure) == {"kind", "fields"}
+                and structure.get("kind") == "object"):
+                fields = structure.get("fields")
+                if (isinstance(fields, dict) and set(fields) == set(outputs)
+                    and all(isinstance(node, dict) and set(node) == {"kind", "source"}
+                        and node.get("kind") == "reference" and node.get("source") == outputs[name]
+                        for name, node in fields.items())):
+                    step.pop("output_structure")
+                    changed = True
+            if changed:
+                normalized_steps += 1
+        return normalized, normalized_steps
+
+    @staticmethod
+    def _normalize_persisted_output_paths(receipt, jobs) -> tuple[Any, int]:
+        """Remove only an evidence-manifest envelope prefix proven equivalent by the stored job.
+
+        The manifest exposes each persisted payload under an ``output`` display field. Some
+        providers copy that display label into ``output_path_tokens`` even though the contract
+        defines paths relative to the payload itself. The prefix is removed only when the stored
+        payload has no real top-level ``output`` key and the remaining path resolves exactly.
+        """
+        normalized = receipt.model_copy(deep=True)
+        changed = 0
+
+        def normalize_reference(reference):
+            nonlocal changed
+            job = jobs.get(reference.call_id)
+            tokens = list(reference.output_path_tokens)
+            if job is None or len(tokens) < 2 or tokens[0] != "output":
+                return
+            payload = job.output_payload
+            if not isinstance(payload, dict) or "output" in payload:
+                return
+            try:
+                literal_value(payload, tokens[1:])
+            except ValueError:
+                return
+            reference.output_path_tokens = tokens[1:]
+            changed += 1
+
+        def normalize_node(node):
+            if isinstance(node, CaseOutputReference):
+                normalize_reference(node.source)
+            elif isinstance(node, CaseOutputObject):
+                for child in node.fields.values():
+                    normalize_node(child)
+            elif isinstance(node, CaseOutputArray):
+                for child in node.items:
+                    normalize_node(child)
+
+        for step in normalized.steps:
+            for check in step.checks:
+                for reference in check.observations:
+                    normalize_reference(reference)
+            for reference in step.outputs.values():
+                normalize_reference(reference)
+            if step.output_source is not None:
+                normalize_reference(step.output_source)
+            if step.output_structure is not None:
+                normalize_node(step.output_structure)
+        return normalized, changed
 
     async def evidence_manifest(self, *, context: AgentCaseExecutionContext,
         tool_records: list[ToolExecutionRecord], session_id: str, turn_id: str,
@@ -159,6 +273,15 @@ class AgentCaseAssessmentService:
         elif raw.startswith("```") and raw.endswith("```") and "\n" in raw:
             raw = raw.split("\n", 1)[1].rsplit("```", 1)[0].strip()
         receipt_model = case_receipt_type(scene_receipt_protocol)
+
+        def validate_candidate(candidate):
+            normalized, normalized_steps = AgentCaseAssessmentService._normalize_equivalent_output_forms(candidate)
+            receipt = receipt_model.model_validate(normalized)
+            if normalized_steps:
+                logger.info("case_receipt_equivalent_output_forms_normalized",
+                    extra={"normalized_step_count": normalized_steps})
+            return receipt
+
         try:
             candidate = json.loads(raw)
         except json.JSONDecodeError as exc:
@@ -173,14 +296,14 @@ class AgentCaseAssessmentService:
                     parsed, _ = decoder.raw_decode(raw[index:])
                     if not isinstance(parsed, dict):
                         continue
-                    valid_candidates.append(receipt_model.model_validate(parsed))
+                    valid_candidates.append(validate_candidate(parsed))
                 except (json.JSONDecodeError, TypeError, ValueError):
                     continue
             if len(valid_candidates) != 1:
                 raise ValueError("执行回执必须包含唯一一个完整且符合结构的 JSON 对象") from exc
             logger.info("case_receipt_embedded_payload_decoded", extra={"candidate_count": 1})
             return valid_candidates[0]
-        return receipt_model.model_validate(candidate)
+        return validate_candidate(candidate)
 
     async def _load_evidence(self, context, records, session_id, turn_id, attempt_id, *, allow_pending=False) -> dict[str, ToolJobDetail]:
         if not session_id or not turn_id or not attempt_id:
@@ -302,6 +425,12 @@ class AgentCaseAssessmentService:
                 run_id=context.run_id, plan_id=context.plan_id)
             coverage = cleanup_coverage(context, inventory)
 
+        receipt, normalized_paths = self._normalize_persisted_output_paths(receipt, jobs)
+        if normalized_paths:
+            logger.info("case_receipt_manifest_output_prefix_normalized", extra={
+                "run_id": context.run_id, "run_item_id": context.run_item_id,
+                "normalized_reference_count": normalized_paths,
+            })
         return self._assess_loaded_steps(context=context, receipt=receipt, jobs=jobs, steps=steps,
             session_id=session_id, turn_id=turn_id, attempt_id=attempt_id, model_key=model_key,
             requested_item_keys=keys, inventory=inventory, coverage=coverage)

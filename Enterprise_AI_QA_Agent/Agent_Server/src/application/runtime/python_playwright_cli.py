@@ -490,6 +490,10 @@ class PythonPlaywrightCliRuntime:
         if verb == "click":
             self._require_args(args, 1, "click <ref> [button]")
             await self._locator(session, args[0]).click(button=args[1] if len(args) > 1 else "left")
+            # A click can start a fetch/XHR after Playwright's actionability check.
+            # Wait briefly for the observable page state to settle before the next
+            # command reads evidence from this same persistent session.
+            await self._wait_for_view_stable(session, max_seconds=3.0, quiet_ms=400, sample_ms=100)
             return await self._page_output(session, raw)
         if verb == "dblclick":
             self._require_args(args, 1, "dblclick <ref> [button]")

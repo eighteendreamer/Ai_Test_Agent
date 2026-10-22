@@ -351,23 +351,29 @@ class MCPRuntimeService:
         if action in {"command", "playwright-cli", "cli"}:
             return await self._run_browser_cli_command(payload, context)
 
-        target_url = self._resolve_target_url(payload, context)
-        if not target_url:
-            return {"status": "failed", "error": f"browser-control action '{action}' requires a target_url or url."}
-
         artifact_dir = self._prepare_artifact_dir(context, f"browser-control-{self._slug(action)}")
-        session_name = self._playwright_session_name(context, f"browser-control-{action}")
+        command_session_name = self._playwright_session_name(context, "browser-control-command")
+        has_command_session = self._playwright_cli.session_info(command_session_name) is not None
+        reuses_command_session = action in {"evaluate_js", "eval", "javascript"} and has_command_session
+        keeps_command_session = action in {"navigate", "open"} or reuses_command_session
+        session_scope = "browser-control-command" if keeps_command_session else f"browser-control-{action}"
+        session_name = self._playwright_session_name(context, session_scope)
+        target_url = self._resolve_target_url(payload, context)
+        if not target_url and not reuses_command_session:
+            return {"status": "failed", "error": f"browser-control action '{action}' requires a target_url or url."}
         command_log: list[dict[str, Any]] = []
+        keep_session_open = False
 
         try:
-            command_log.append(
-                await self._run_playwright_cli(
-                    session_name,
-                    ["open", target_url, *self._playwright_open_args()],
-                    artifact_dir,
+            if not reuses_command_session:
+                command_log.append(
+                    await self._run_playwright_cli(
+                        session_name,
+                        ["open", target_url, *self._playwright_open_args()],
+                        artifact_dir,
+                    )
                 )
-            )
-            command_log.extend(await self._resize_browser(session_name, artifact_dir))
+                command_log.extend(await self._resize_browser(session_name, artifact_dir))
 
             artifacts: list[dict[str, str]] = []
             result: Any = None
@@ -421,6 +427,24 @@ class MCPRuntimeService:
 
             transcript_path = self._write_transcript(artifact_dir, command_log)
             artifacts.append({"type": "transcript", "path": str(transcript_path)})
+            if action in {"navigate", "open"}:
+                await self._register_browser_resources(
+                    context,
+                    session_name,
+                    ["open", target_url, *self._playwright_open_args()],
+                    artifact_dir,
+                )
+                keep_session_open = True
+                LOGGER.info("browser_session_navigation_kept", extra={
+                    "browser_session": session_name,
+                    "action": action,
+                })
+            elif reuses_command_session:
+                keep_session_open = True
+                LOGGER.info("browser_session_existing_command_reused", extra={
+                    "browser_session": session_name,
+                    "action": action,
+                })
             return {
                 "status": "success",
                 "summary": f"browser-control action '{action}' completed with playwright-cli.",
@@ -431,7 +455,8 @@ class MCPRuntimeService:
                 "artifacts": artifacts,
             }
         finally:
-            await self._close_playwright_session(session_name, artifact_dir)
+            if not keep_session_open:
+                await self._close_playwright_session(session_name, artifact_dir)
 
     async def _run_browser_cli_command(self, payload: dict[str, Any], context: dict[str, Any]) -> dict[str, Any]:
         args = browser_command_args(payload)
