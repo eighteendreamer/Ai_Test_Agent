@@ -1,0 +1,38 @@
+{
+  "review_type": "assistant_source_to_draft_review",
+  "business_user_review_completed": false,
+  "technical_generation_passed": true,
+  "independent_configuration_recovery_passed": true,
+  "semantic_quality_passed": false,
+  "source": "alternate-requirements.md",
+  "source_sha256": "741450626e205789f25d68c736e800f79cc48244c592122f4aee0f867c750857",
+  "observations": [
+    {
+      "draft": "draft-version-0.json",
+      "paths": ["steps[0].evidence_field", "steps[1].evidence_field", "steps[2].evidence_field"],
+      "result": "unsupported_technical_assumption",
+      "detail": "来源未提供response.order.user_id、response.error_code、database.order_count这些字段，不能将它们视作已确认的断言路径。"
+    },
+    {
+      "draft": "draft-version-0.json",
+      "paths": ["test_data.nonexistent_order_id"],
+      "result": "unverified_test_data",
+      "detail": "示例999999999没有不存在证据，应先确认不存在条件，不能直接拿该值执行负向测试。"
+    },
+    {
+      "draft": "draft-version-0.json",
+      "paths": ["steps[0]", "steps[2].evidence_field"],
+      "result": "insufficient_observation",
+      "detail": "只查询自身订单不能证明不泄露他人订单；只看行数不能证明没有修改既有记录。"
+    },
+    {
+      "draft": "draft-version-1.json",
+      "paths": ["steps[2].expected", "preconditions[1]", "preconditions[2]"],
+      "result": "overstrong_expectation_and_unsupported_precondition",
+      "detail": "没有正在创建中的订单不等于没有历史订单，故列表仅含步骤1订单的预期可能误判正常系统；来源也没有确认title为实际接口字段。"
+    }
+  ],
+  "coverage_mapping_is_not_semantic_approval": true,
+  "drafts_enabled": false,
+  "full_goal_complete": false
+}

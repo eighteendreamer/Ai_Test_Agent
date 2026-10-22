@@ -1,0 +1,194 @@
+{
+  "content_json": {
+    "steps": [
+      {
+        "order": 1,
+        "action": "以已登录用户A身份提交包含非空标题的订单创建请求",
+        "expected": "订单创建成功，响应中包含系统生成的订单编号，且该订单归属用户A"
+      },
+      {
+        "order": 2,
+        "action": "以已登录用户A身份提交标题字段为空的订单创建请求",
+        "expected": "请求被拒绝，未创建新订单，也不返回新订单编号"
+      },
+      {
+        "order": 3,
+        "action": "查询用户A的订单列表，核对本用例提交的两次请求结果",
+        "expected": "仅存在步骤1成功创建的订单，不存在步骤2对应的订单"
+      }
+    ],
+    "cleanup": [
+      "若项目提供安全清理方式，删除步骤1创建的测试订单"
+    ],
+    "objective": "验证登录用户成功创建归属自己的订单时系统返回系统生成的订单编号，并验证标题为空时请求被拒绝且未创建订单。",
+    "test_data": {
+      "empty_title": "",
+      "valid_title": "使用项目认可的非空测试标题"
+    },
+    "checkpoints": [
+      {
+        "evidence": "步骤1的实际响应及订单编号字段",
+        "description": "核对成功创建订单的归属用户与系统生成的订单编号"
+      },
+      {
+        "evidence": "步骤2的拒绝响应",
+        "description": "核对空标题请求被拒绝且未创建订单"
+      },
+      {
+        "evidence": "用户A订单列表查询结果",
+        "description": "核对订单列表中仅存在步骤1的订单"
+      }
+    ],
+    "preconditions": [
+      "测试用户A已登录（会话/Token已在环境内预置）",
+      "项目接口文档已明确订单创建接口路径与字段定义（实际端点以项目文档为准）",
+      "订单标题字段为必填项"
+    ],
+    "required_tool_keys": [],
+    "negative_conditions": [
+      "不得将不同角色或互斥条件写在同一个步骤动作中",
+      "不得在未获得授权的情况下清理生产或共享环境数据"
+    ]
+  },
+  "execution_notes": "本用例覆盖订单创建模块的全部三条明确规则：归属规则、标题必填规则、编号返回规则。步骤1验证正向成功路径（规则1+规则3）；步骤2验证空标题负向拒绝路径（规则2）；步骤3作为可观察清理验证，确保步骤2未产生订单数据。登录态写入前置条件，不与业务操作合并。缺失接口端点和具体字段定义进入待确认清单，以项目接口文档为准。",
+  "generation_metadata": {
+    "template": {
+      "payload": {
+        "name": "默认测试用例模板",
+        "example_json": {
+          "steps": [
+            {
+              "order": 1,
+              "action": "以已登录用户A身份提交包含非空标题的订单",
+              "expected": "订单创建成功，返回系统生成的订单编号，且订单归属用户A"
+            },
+            {
+              "order": 2,
+              "action": "以已登录用户A身份提交标题为空的订单",
+              "expected": "请求被拒绝，不创建订单，也不返回新订单编号"
+            },
+            {
+              "order": 3,
+              "action": "查询用户A的订单列表，核对本用例提交的两次请求",
+              "expected": "仅存在步骤1成功创建的订单，不存在步骤2对应的订单"
+            }
+          ],
+          "cleanup": [
+            "若项目提供安全清理方式，删除步骤1创建的测试订单"
+          ],
+          "objective": "验证已登录用户创建订单的成功规则和空标题拒绝规则",
+          "test_data": {
+            "empty_title": "",
+            "valid_title": "使用项目认可的非空测试标题"
+          },
+          "checkpoints": [
+            {
+              "evidence": "实际响应和用户A的订单列表",
+              "description": "核对成功创建、空标题拒绝及用户归属"
+            }
+          ],
+          "preconditions": [
+            "测试用户A已登录",
+            "项目接口文档确认订单标题字段"
+          ],
+          "required_tool_keys": [],
+          "negative_conditions": [
+            "不得将不同角色、互斥条件或不同操作写在同一个步骤动作中"
+          ]
+        },
+        "execution_notes": "阅读完整用例内容，按目标、操作与预期执行并保存证据；步骤所需前置由项目依据确认，保留负向条件。托管用例中 required_tool_keys 仅用于声明被测行为确实需要的文件/报告工具，普通用例保持空数组。",
+        "writing_guidance": "依据项目文档逐条编写可评审用例，覆盖正常、异常与边界条件。每条用例明确目标、前置条件、操作、预期结果和可观察验证点。每个步骤只写一个角色、一个条件和一项主要操作；互斥条件或不同角色拆为不同步骤或用例，每步预期只对应该步操作。不要把登录/会话建立与目标业务操作合并；已有登录态写入前置条件，若测试登录行为，则单独成步并写明预期。模块内每条明确规则都必须映射到至少一个步骤预期；同时覆盖要求中的成功行为和拒绝/异常行为，不得只生成其中一类。保留负向条件。缺少业务依据时给出警告，禁止编造接口或元素。用例内容放入 content_json，JSON 结构可按项目调整；不要预先编译为测试模式的工具参数。仅当用例本身明确测试文件或报告的创建/验证行为时，才在 required_tool_keys 中列出file-artifact-manager 或 report-writer；否则保持空数组。不得仅为保存正式回执或重复浏览器证据而声明。"
+      },
+      "revision": 1,
+      "scope_key": "global",
+      "is_default": true,
+      "project_id": "70345571-46ed-46c4-b712-be082685cf60",
+      "content_hash": "3738dfe866d324d6f91bdcc13202e880aa4086db06090ff84b6a191d1850ac3a"
+    },
+    "document_generation": {
+      "segment": {
+        "index": 1,
+        "title": "订单创建",
+        "end_char": 129,
+        "block_ids": [
+          "block-4",
+          "block-5"
+        ],
+        "module_id": "f184ffeb-62e4-4ed5-a620-a81accd61a99",
+        "section_id": "section-3",
+        "start_char": 65
+      },
+      "group_id": "b957f159-7d1b-4c49-88cc-da7dca606261",
+      "response": {
+        "sha256": "76d4e53677ab17ada95ec024c310646831e466951d23b7e77114c9b31800a0b3",
+        "size_bytes": 8322,
+        "storage_uri": "rustfs://qa-agent/case-generation/70345571-46ed-46c4-b712-be082685cf60/d397c636-36a5-4e8c-962e-9b29c6aa6b50/ddc83b61-aab5-4849-80e0-84d52cd9d607/responses/ec4eae10-4bae-46f0-81e4-ead5dabf07c7/response.json"
+      },
+      "module_id": "f184ffeb-62e4-4ed5-a620-a81accd61a99",
+      "scope_sha256": "7711262689a5a132b41fc4f77750812824138ccc8b34e9e26520c12cd48eeac5",
+      "request_sha256": "660e1ea45eabef0e7c8e2265aacc4dcd018a5ed0670a3ebca13e356ef156165d",
+      "deployment_status": "unknown",
+      "parse_snapshot_id": "bbd0ec86-ef9f-4bc4-a382-7d9e733f1b2c",
+      "document_version_id": "f3e07947-859d-4a1a-8e7a-0de2ed0cbd39"
+    }
+  },
+  "preconditions": [],
+  "steps": [],
+  "assertions": [],
+  "test_data": {},
+  "cleanup": [],
+  "content_format": "json-v1",
+  "id": "9120208d-aa29-4b48-9e78-fc7e8946f434",
+  "case_id": "e2f829b2-2531-4649-98bd-42af4455c0fd",
+  "version": 1,
+  "content_hash": "27a5d685d40cd42d3c8ffca5fadf35e441cd60a4c47e27b060327c91d7c8fec2",
+  "source_refs": [
+    {
+      "source_type": "document_parse_snapshot",
+      "source_id": "bbd0ec86-ef9f-4bc4-a382-7d9e733f1b2c",
+      "version": "f3e07947-859d-4a1a-8e7a-0de2ed0cbd39",
+      "label": "订单创建",
+      "uri": "rustfs://qa-agent/document-parsing/70345571-46ed-46c4-b712-be082685cf60/e95203e6-6028-452c-bbfc-bd809f0ce47d/041f2ecd-c729-4fff-af35-1b4d8be6ae2b/bbd0ec86-ef9f-4bc4-a382-7d9e733f1b2c/result.json",
+      "metadata": {
+        "parser": {
+          "ocr": false,
+          "text": true,
+          "tables": true,
+          "formats": [
+            ".md",
+            ".txt"
+          ],
+          "sections": true,
+          "available": true,
+          "parser_id": "markdown",
+          "transport": "local",
+          "source_positions": [
+            "line"
+          ],
+          "implementation_version": "lightweight-v1"
+        },
+        "segment": {
+          "index": 1,
+          "title": "订单创建",
+          "end_char": 129,
+          "block_ids": [
+            "block-4",
+            "block-5"
+          ],
+          "module_id": "f184ffeb-62e4-4ed5-a620-a81accd61a99",
+          "section_id": "section-3",
+          "start_char": 65
+        },
+        "document_id": "e7074a41-ab70-5b60-8906-d18635531224",
+        "parse_sha256": "b9fd04b9be95dd19a0b3ac8cacce8cb723af55e8e4b79c9af0d839378f05ce7b",
+        "original_sha256": "741450626e205789f25d68c736e800f79cc48244c592122f4aee0f867c750857"
+      }
+    }
+  ],
+  "model_key": "agnes-2.5-flash",
+  "prompt_version": "test-case-generation-document-v7",
+  "skill_versions": {
+    "generate-test-cases": "sha256:5656d7d7f9511250823520043b55429092578207aecccd7e18bf3bbb4c001783"
+  },
+  "created_at": "2026-10-22T07:00:21.550749Z"
+}

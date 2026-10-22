@@ -1,0 +1,83 @@
+{
+  "schema_version": "document-generation-coverage-v2",
+  "review_state": "required",
+  "mapping_state": "complete",
+  "parse_snapshot_id": "bbd0ec86-ef9f-4bc4-a382-7d9e733f1b2c",
+  "module_id": "277701d7-4dae-489d-9293-8624cd161184",
+  "candidate_inventory_complete": true,
+  "items": [
+    {
+      "candidate_id": "a7eb15193199477a6f8d246c4c4a688cea79ca0e4c7ce42afbc494f48930e835",
+      "source_block_id": "block-3",
+      "start_char": 19,
+      "end_char": 37,
+      "source": {
+        "kind": "line",
+        "start_line": 3,
+        "end_line": 3,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "该规则要求查询接口只能返回当前用户自己的订单，需在正向查询中验证返回结果仅限当前用户范围。",
+      "step_refs": [
+        {
+          "case_key": "order_query-normal-self-order",
+          "step_order": 1,
+          "expected_field": "expected",
+          "expected_path": [
+            "steps",
+            0,
+            "expected"
+          ]
+        }
+      ],
+      "validation_issues": []
+    },
+    {
+      "candidate_id": "cf8a967c4d30ff2569c740fe8bb6654e3e30a4dcde249249762468df421b5216",
+      "source_block_id": "block-3",
+      "start_char": 37,
+      "end_char": 61,
+      "source": {
+        "kind": "line",
+        "start_line": 3,
+        "end_line": 3,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "该规则要求订单不存在时返回明确错误且不得创建或修改订单，需通过指定不存在的订单编号并核对无副作用来覆盖。",
+      "step_refs": [
+        {
+          "case_key": "order_query-normal-self-order",
+          "step_order": 2,
+          "expected_field": "expected",
+          "expected_path": [
+            "steps",
+            1,
+            "expected"
+          ]
+        },
+        {
+          "case_key": "order_query-normal-self-order",
+          "step_order": 3,
+          "expected_field": "expected",
+          "expected_path": [
+            "steps",
+            2,
+            "expected"
+          ]
+        }
+      ],
+      "validation_issues": []
+    }
+  ],
+  "unknown_candidate_ids": [],
+  "warnings": [],
+  "sha256": "1185a67a9cf41bbb1c19aae02e60cbfd30a1815d02788cce7b724c1dc4cac88e"
+}

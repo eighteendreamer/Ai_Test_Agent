@@ -1,0 +1,103 @@
+{
+  "schema_version": "document-generation-coverage-v2",
+  "review_state": "required",
+  "mapping_state": "complete",
+  "parse_snapshot_id": "7a76b360-b46a-47fe-9572-94fe03f6c246",
+  "module_id": "bc8e5ffe-a21f-4584-9536-e66586f51d48",
+  "candidate_inventory_complete": true,
+  "items": [
+    {
+      "candidate_id": "10d08bd5a8fe318e879f461eae5424fb2ea97bf29eeed1a9206995ab102a1133",
+      "source_block_id": "block-5",
+      "start_char": 74,
+      "end_char": 90,
+      "source": {
+        "kind": "line",
+        "start_line": 6,
+        "end_line": 6,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "该规则要求登录用户只能创建归属自己的订单，属于本模块核心正向前置规则，需通过已登录用户创建成功后核查归属来验证。",
+      "step_refs": [
+        {
+          "case_key": "order_create_success_and_empty_title_rejection",
+          "step_order": 1,
+          "expected_field": "expected",
+          "expected_path": [
+            "steps",
+            0,
+            "expected"
+          ]
+        }
+      ],
+      "validation_issues": []
+    },
+    {
+      "candidate_id": "503b36fc04d52fba84dfc9eb80e39186da9b547bd6c79ae4ba02f387845b3a1c",
+      "source_block_id": "block-5",
+      "start_char": 90,
+      "end_char": 110,
+      "source": {
+        "kind": "line",
+        "start_line": 6,
+        "end_line": 6,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "该规则要求标题必填且空标题必须拒绝并不得创建订单，是本模块明确的负向规则，需独立步骤覆盖拒绝行为及无订单创建结果。",
+      "step_refs": [
+        {
+          "case_key": "order_create_success_and_empty_title_rejection",
+          "step_order": 2,
+          "expected_field": "expected",
+          "expected_path": [
+            "steps",
+            1,
+            "expected"
+          ]
+        }
+      ],
+      "validation_issues": []
+    },
+    {
+      "candidate_id": "e2fd1b840e7a8601fde9fe338ea76c5fc1eae317b86f237b4a34cc4d8d40fdf4",
+      "source_block_id": "block-5",
+      "start_char": 110,
+      "end_char": 127,
+      "source": {
+        "kind": "line",
+        "start_line": 6,
+        "end_line": 6,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "该规则要求成功创建后返回系统生成的订单编号，属于本模块正向结果验证点，需在成功步骤的预期中明确声明。",
+      "step_refs": [
+        {
+          "case_key": "order_create_success_and_empty_title_rejection",
+          "step_order": 1,
+          "expected_field": "expected",
+          "expected_path": [
+            "steps",
+            0,
+            "expected"
+          ]
+        }
+      ],
+      "validation_issues": []
+    }
+  ],
+  "unknown_candidate_ids": [],
+  "warnings": [],
+  "sha256": "64549d3f23972cd8262bac14ff3aa12a95f06b73159369d77720d40b732b1db7"
+}

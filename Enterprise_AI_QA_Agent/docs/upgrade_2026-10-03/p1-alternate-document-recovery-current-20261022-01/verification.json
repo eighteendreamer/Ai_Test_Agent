@@ -1,0 +1,279 @@
+{
+  "scope": "real alternate model; two Markdown modules; API restart and independent configuration recovery",
+  "full_goal_complete": false,
+  "controlled_model": false,
+  "model_key": "agnes-2.5-flash",
+  "provider": "openai",
+  "transport": "openai_chat_completions",
+  "model_parameters": {
+    "key": "agnes-2.5-flash",
+    "provider": "openai",
+    "transport": "openai_chat_completions",
+    "model_id": "agnes-2.5-flash",
+    "temperature": null,
+    "max_tokens": 8192,
+    "context_window": 128000,
+    "max_output_tokens": 8192,
+    "capabilities": {
+      "text_input": true,
+      "text_output": true,
+      "tool_calling": true,
+      "vision": true,
+      "multi_image": false,
+      "file_input": false,
+      "pdf_input": false,
+      "reasoning": true,
+      "json_mode": false,
+      "streaming": true,
+      "parallel_tool_calls": false,
+      "image_url_input": true,
+      "image_base64_input": true
+    },
+    "auth_type": "api_key",
+    "oauth_provider": null,
+    "api_base_url_hash": "672955d9a16e30d4af14eb9afb9f5e10147f1dfc8a949cace97f486da47285ab",
+    "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "global_default_unchanged": true,
+  "actual_sdk_calls": 2,
+  "generation_completed": true,
+  "independent_recovery_complete": true,
+  "isolated_model_key": "agnes-2.5-flash",
+  "isolated_model_parameters": {
+    "key": "agnes-2.5-flash",
+    "provider": "openai",
+    "transport": "openai_chat_completions",
+    "model_id": "agnes-2.5-flash",
+    "temperature": null,
+    "max_tokens": 4096,
+    "context_window": 128000,
+    "max_output_tokens": 4096,
+    "capabilities": {
+      "text_input": true,
+      "text_output": true,
+      "tool_calling": true,
+      "vision": true,
+      "multi_image": false,
+      "file_input": false,
+      "pdf_input": false,
+      "reasoning": true,
+      "json_mode": false,
+      "streaming": true,
+      "parallel_tool_calls": false,
+      "image_url_input": true,
+      "image_base64_input": true
+    },
+    "auth_type": "api_key",
+    "oauth_provider": null,
+    "api_base_url_hash": "672955d9a16e30d4af14eb9afb9f5e10147f1dfc8a949cace97f486da47285ab",
+    "extra_headers_hash": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a"
+  },
+  "recovery_fault": "isolated_model_configuration_drift_before_send",
+  "api_restarted": true,
+  "original_group_statuses": [
+    "completed",
+    "failed"
+  ],
+  "original_failed_task_preserved": true,
+  "successful_sibling_versions_unchanged": true,
+  "retry_id": "30dd906b-942d-4e52-b4be-d1a87f9f0365",
+  "retry_task_id": "cf568b8c-d074-423f-8710-67653bc42cf2",
+  "retry_strategy": "frozen_request",
+  "configuration_fault_sdk_calls": 0,
+  "duplicate_retry_extra_sdk_calls": 0,
+  "group_id": "0677bacc-bae5-41e9-aa51-a50211e3a28a",
+  "parse_snapshot_id": "7a76b360-b46a-47fe-9572-94fe03f6c246",
+  "module_count": 2,
+  "draft_version_ids": [
+    "805efd2e-3450-484d-9585-f17bc487279c",
+    "2488b472-8434-4e77-a54f-b05e7d317fd2"
+  ],
+  "generation_reviews": [
+    {
+      "schema_version": "document-generation-coverage-v2",
+      "review_state": "required",
+      "mapping_state": "incomplete",
+      "parse_snapshot_id": "7a76b360-b46a-47fe-9572-94fe03f6c246",
+      "module_id": "b8b2d80e-cfdc-4581-9096-7b8325bf5cfe",
+      "candidate_inventory_complete": true,
+      "items": [
+        {
+          "candidate_id": "fae6c4ceed395017f15296413d219a7f504cadb11a1e559c40032f37b99dcd7b",
+          "source_block_id": "block-3",
+          "start_char": 19,
+          "end_char": 37,
+          "source": {
+            "kind": "line",
+            "start_line": 3,
+            "end_line": 3,
+            "page": null,
+            "path": [],
+            "part": null
+          },
+          "scope": "local",
+          "model_disposition": "in_scope",
+          "rationale": "需求明确要求'查询接口只能返回当前用户自己的订单'，本用例步骤1验证该行为",
+          "step_refs": [
+            {
+              "case_key": "order-query-module-test",
+              "step_order": 1,
+              "expected_field": "response.order.user_id",
+              "expected_path": null
+            }
+          ],
+          "validation_issues": [
+            "expected_field_invalid"
+          ]
+        },
+        {
+          "candidate_id": "edc2f14a78abaab12c3d934e14ade2dd97ebe62df492b358deb9b235152085fa",
+          "source_block_id": "block-3",
+          "start_char": 37,
+          "end_char": 61,
+          "source": {
+            "kind": "line",
+            "start_line": 3,
+            "end_line": 3,
+            "page": null,
+            "path": [],
+            "part": null
+          },
+          "scope": "local",
+          "model_disposition": "in_scope",
+          "rationale": "需求明确要求'订单不存在时返回明确错误，且不得创建或修改订单'，本用例步骤2验证错误返回、步骤3验证无副作用",
+          "step_refs": [
+            {
+              "case_key": "order-query-module-test",
+              "step_order": 2,
+              "expected_field": "response.error_code",
+              "expected_path": null
+            },
+            {
+              "case_key": "order-query-module-test",
+              "step_order": 3,
+              "expected_field": "database.order_count",
+              "expected_path": null
+            }
+          ],
+          "validation_issues": [
+            "expected_field_invalid"
+          ]
+        }
+      ],
+      "unknown_candidate_ids": [],
+      "warnings": [
+        "有 3 项来源或 JSON 预期路径校验问题。"
+      ],
+      "sha256": "c5f142ad7005c062de23ef13c6e35a7d1fce24788f96e430734d67f95afd2116"
+    },
+    {
+      "schema_version": "document-generation-coverage-v2",
+      "review_state": "required",
+      "mapping_state": "complete",
+      "parse_snapshot_id": "7a76b360-b46a-47fe-9572-94fe03f6c246",
+      "module_id": "bc8e5ffe-a21f-4584-9536-e66586f51d48",
+      "candidate_inventory_complete": true,
+      "items": [
+        {
+          "candidate_id": "10d08bd5a8fe318e879f461eae5424fb2ea97bf29eeed1a9206995ab102a1133",
+          "source_block_id": "block-5",
+          "start_char": 74,
+          "end_char": 90,
+          "source": {
+            "kind": "line",
+            "start_line": 6,
+            "end_line": 6,
+            "page": null,
+            "path": [],
+            "part": null
+          },
+          "scope": "local",
+          "model_disposition": "in_scope",
+          "rationale": "该规则要求登录用户只能创建归属自己的订单，属于本模块核心正向前置规则，需通过已登录用户创建成功后核查归属来验证。",
+          "step_refs": [
+            {
+              "case_key": "order_create_success_and_empty_title_rejection",
+              "step_order": 1,
+              "expected_field": "expected",
+              "expected_path": [
+                "steps",
+                0,
+                "expected"
+              ]
+            }
+          ],
+          "validation_issues": []
+        },
+        {
+          "candidate_id": "503b36fc04d52fba84dfc9eb80e39186da9b547bd6c79ae4ba02f387845b3a1c",
+          "source_block_id": "block-5",
+          "start_char": 90,
+          "end_char": 110,
+          "source": {
+            "kind": "line",
+            "start_line": 6,
+            "end_line": 6,
+            "page": null,
+            "path": [],
+            "part": null
+          },
+          "scope": "local",
+          "model_disposition": "in_scope",
+          "rationale": "该规则要求标题必填且空标题必须拒绝并不得创建订单，是本模块明确的负向规则，需独立步骤覆盖拒绝行为及无订单创建结果。",
+          "step_refs": [
+            {
+              "case_key": "order_create_success_and_empty_title_rejection",
+              "step_order": 2,
+              "expected_field": "expected",
+              "expected_path": [
+                "steps",
+                1,
+                "expected"
+              ]
+            }
+          ],
+          "validation_issues": []
+        },
+        {
+          "candidate_id": "e2fd1b840e7a8601fde9fe338ea76c5fc1eae317b86f237b4a34cc4d8d40fdf4",
+          "source_block_id": "block-5",
+          "start_char": 110,
+          "end_char": 127,
+          "source": {
+            "kind": "line",
+            "start_line": 6,
+            "end_line": 6,
+            "page": null,
+            "path": [],
+            "part": null
+          },
+          "scope": "local",
+          "model_disposition": "in_scope",
+          "rationale": "该规则要求成功创建后返回系统生成的订单编号，属于本模块正向结果验证点，需在成功步骤的预期中明确声明。",
+          "step_refs": [
+            {
+              "case_key": "order_create_success_and_empty_title_rejection",
+              "step_order": 1,
+              "expected_field": "expected",
+              "expected_path": [
+                "steps",
+                0,
+                "expected"
+              ]
+            }
+          ],
+          "validation_issues": []
+        }
+      ],
+      "unknown_candidate_ids": [],
+      "warnings": [],
+      "sha256": "64549d3f23972cd8262bac14ff3aa12a95f06b73159369d77720d40b732b1db7"
+    }
+  ],
+  "physical_requests": [
+    "fe3d6ea41bf7485c8fcc85fc9b9e50a3",
+    "86c2864ab57c476a8eee9aae9e1436f3"
+  ],
+  "terminal_replay_model_calls": 0,
+  "global_selected_model_unchanged": true
+}

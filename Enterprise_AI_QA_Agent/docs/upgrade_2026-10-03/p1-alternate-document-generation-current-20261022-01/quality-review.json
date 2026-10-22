@@ -1,0 +1,37 @@
+{
+  "review_type": "assistant_source_to_draft_review",
+  "business_user_review_completed": false,
+  "technical_generation_passed": true,
+  "semantic_quality_passed": false,
+  "source": "alternate-requirements.md",
+  "source_sha256": "741450626e205789f25d68c736e800f79cc48244c592122f4aee0f867c750857",
+  "observations": [
+    {
+      "draft": "draft-version-0.json",
+      "paths": ["steps[1]", "steps[2]"],
+      "result": "improved_from_previous_failure",
+      "detail": "明确使用不存在订单编号，预期返回错误，再查询核对无副作用；没有再把空列表当作不存在订单的错误响应。"
+    },
+    {
+      "draft": "draft-version-0.json",
+      "paths": ["steps[0]", "test_data", "preconditions"],
+      "result": "coverage_gap",
+      "detail": "只按用户A自己的条件查询，缺少其他用户订单对照。即使权限隔离缺失，该场景也可能通过。"
+    },
+    {
+      "draft": "draft-version-0.json",
+      "paths": ["steps[2]"],
+      "result": "observation_scope_limited",
+      "detail": "用户A订单列表前后相同只证明已观察范围，没有覆盖所有现有订单的修改。"
+    },
+    {
+      "draft": "draft-version-1.json",
+      "paths": ["steps[2]", "preconditions"],
+      "result": "ambiguous_or_overstrong_expectation",
+      "detail": "预期仅存在本次创建订单，但没有明确限定为本次记录或排除历史订单；需要评审确认验证范围。"
+    }
+  ],
+  "coverage_mapping_is_not_semantic_approval": true,
+  "drafts_enabled": false,
+  "full_goal_complete": false
+}

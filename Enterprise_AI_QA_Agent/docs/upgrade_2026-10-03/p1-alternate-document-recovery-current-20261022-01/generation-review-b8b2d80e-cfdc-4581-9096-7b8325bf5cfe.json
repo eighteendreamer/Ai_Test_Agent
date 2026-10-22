@@ -1,0 +1,77 @@
+{
+  "schema_version": "document-generation-coverage-v2",
+  "review_state": "required",
+  "mapping_state": "incomplete",
+  "parse_snapshot_id": "7a76b360-b46a-47fe-9572-94fe03f6c246",
+  "module_id": "b8b2d80e-cfdc-4581-9096-7b8325bf5cfe",
+  "candidate_inventory_complete": true,
+  "items": [
+    {
+      "candidate_id": "fae6c4ceed395017f15296413d219a7f504cadb11a1e559c40032f37b99dcd7b",
+      "source_block_id": "block-3",
+      "start_char": 19,
+      "end_char": 37,
+      "source": {
+        "kind": "line",
+        "start_line": 3,
+        "end_line": 3,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "需求明确要求'查询接口只能返回当前用户自己的订单'，本用例步骤1验证该行为",
+      "step_refs": [
+        {
+          "case_key": "order-query-module-test",
+          "step_order": 1,
+          "expected_field": "response.order.user_id",
+          "expected_path": null
+        }
+      ],
+      "validation_issues": [
+        "expected_field_invalid"
+      ]
+    },
+    {
+      "candidate_id": "edc2f14a78abaab12c3d934e14ade2dd97ebe62df492b358deb9b235152085fa",
+      "source_block_id": "block-3",
+      "start_char": 37,
+      "end_char": 61,
+      "source": {
+        "kind": "line",
+        "start_line": 3,
+        "end_line": 3,
+        "page": null,
+        "path": [],
+        "part": null
+      },
+      "scope": "local",
+      "model_disposition": "in_scope",
+      "rationale": "需求明确要求'订单不存在时返回明确错误，且不得创建或修改订单'，本用例步骤2验证错误返回、步骤3验证无副作用",
+      "step_refs": [
+        {
+          "case_key": "order-query-module-test",
+          "step_order": 2,
+          "expected_field": "response.error_code",
+          "expected_path": null
+        },
+        {
+          "case_key": "order-query-module-test",
+          "step_order": 3,
+          "expected_field": "database.order_count",
+          "expected_path": null
+        }
+      ],
+      "validation_issues": [
+        "expected_field_invalid"
+      ]
+    }
+  ],
+  "unknown_candidate_ids": [],
+  "warnings": [
+    "有 3 项来源或 JSON 预期路径校验问题。"
+  ],
+  "sha256": "c5f142ad7005c062de23ef13c6e35a7d1fce24788f96e430734d67f95afd2116"
+}

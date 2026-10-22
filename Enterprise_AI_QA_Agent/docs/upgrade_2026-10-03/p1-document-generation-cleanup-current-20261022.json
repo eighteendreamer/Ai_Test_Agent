@@ -1,0 +1,42 @@
+{
+  "audit_date": "2026-10-22",
+  "method": "post_fixture_readonly_database_and_RustFS_queries_plus_docker_ps",
+  "qa_execution_cli_containers_remaining": 0,
+  "checks": [
+    {
+      "evidence_directory": "p1-alternate-document-generation-current-20261022-01",
+      "container_removed": "qa-execution-cli-afdbdd6f3063445f",
+      "postgres_database_absent": "up_execution_cli_afdbdd6f3063445f",
+      "mysql_tables_absent": [
+        "up_cli_llm_model_afdbdd6f3063445f",
+        "up_cli_email_config_afdbdd6f3063445f",
+        "up_cli_channel_config_afdbdd6f3063445f",
+        "up_cli_sponsor_config_afdbdd6f3063445f",
+        "up_cli_application_config_afdbdd6f3063445f"
+      ],
+      "rustfs_referenced_objects_NoSuchKey": 5,
+      "saved_pg_records_match_api": "not_exported_by_original_test",
+      "configured_credential_matches_in_local_evidence": 0
+    },
+    {
+      "evidence_directory": "p1-alternate-document-recovery-current-20261022-01",
+      "container_removed": "qa-execution-cli-3a442391c090458a",
+      "postgres_database_absent": "up_execution_cli_3a442391c090458a",
+      "mysql_tables_absent": [
+        "up_cli_llm_model_3a442391c090458a",
+        "up_cli_email_config_3a442391c090458a",
+        "up_cli_channel_config_3a442391c090458a",
+        "up_cli_sponsor_config_3a442391c090458a",
+        "up_cli_application_config_3a442391c090458a"
+      ],
+      "rustfs_referenced_objects_NoSuchKey": 5,
+      "saved_pg_records_match_api": true,
+      "saved_pg_task_count": 3,
+      "saved_pg_retry_count": 1,
+      "configured_credential_matches_in_local_evidence": 0
+    }
+  ],
+  "retained": "local acceptance evidence; production data untouched",
+  "first_audit_error": "Expected ClientError but ArtifactStorageService wraps NoSuchKey as RuntimeError; read-only audit corrected against the current storage client; production code unchanged",
+  "full_goal_complete": false
+}
