@@ -177,6 +177,47 @@ def test_api_report_projection_uses_current_job_when_report_artifact_is_rustfs()
     assert workers == verifications == []
 
 
+def test_security_report_projection_uses_current_job_when_report_artifact_is_rustfs():
+    from types import SimpleNamespace
+    from src.schemas.tool_job import ToolJobStatus
+
+    session = _session("security-rustfs-report", {})
+    session.mode_key = "security_testing"
+    artifact = _artifact("security-rustfs-report", session.id)
+    artifact.tool_key = "security-scan-runner"
+    artifact.artifact_type = "report_json"
+    artifact.path = "rustfs://qa-agent/session/turn/report.json"
+    artifact.metadata = {"__storage_mode": "path_only"}
+    job = SimpleNamespace(
+        id=artifact.tool_job_id,
+        status=ToolJobStatus.completed,
+        summary="Security report ready",
+        output_payload={"report": {
+            "executive_summary": "本次安全测试完成 2 个任务。",
+            "total_tasks": 3,
+            "completed_tasks": 2,
+            "failed_tasks": 1,
+            "skipped_tasks": 0,
+            "total_findings": 4,
+            "activities": [
+                {"task_id": "missing", "agent_key": "security-web-verifier",
+                 "summary": "四个发现", "action": "completed"},
+            ],
+            "verification_result": {"passed": False, "summary": "部分完成"},
+            "settlement": {"status": "partial"},
+        }},
+    )
+
+    meta, workers, verifications = ReportService._prepare_test_report(session, [artifact], job)
+
+    assert meta["ready"] is True
+    assert meta["total_tasks"] == 3 and meta["completed_tasks"] == 2
+    assert meta["failed_tasks"] == 1 and meta["total_findings"] == 4
+    assert meta["summary"] == "本次安全测试完成 2 个任务。"
+    assert workers[0]["task_id"] == "missing" and workers[0]["status"] == "completed"
+    assert verifications[0]["status"] == "failed"
+
+
 def test_api_reports_are_included_in_reports_page_projection():
     import json
     session = _session("api-page", {})

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { connectEvents, getSession, getToolJobDetail, resolveApproval } from "./sessions.api";
+import { connectEvents, getArtifactContent, getSession, getToolJobDetail, resolveApproval } from "./sessions.api";
 
 describe("session API path parameters", () => {
   afterEach(() => {
@@ -9,7 +9,7 @@ describe("session API path parameters", () => {
 
   it("encodes session and nested IDs as path segments", async () => {
     const fetchMock = vi.fn().mockResolvedValue({
-      ok: true, status: 200, json: async () => ({}),
+      ok: true, status: 200, json: async () => ({}), text: async () => "",
     });
     vi.stubGlobal("fetch", fetchMock);
     const sessionId = "session?part#one";
@@ -18,11 +18,13 @@ describe("session API path parameters", () => {
     await getSession(sessionId);
     await resolveApproval(sessionId, nestedId, "approved");
     await getToolJobDetail(sessionId, nestedId);
+    await getArtifactContent(sessionId, nestedId);
 
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([
       "/api/v1/sessions/session%3Fpart%23one",
       "/api/v1/sessions/session%3Fpart%23one/approvals/item%3Fpart%23two",
       "/api/v1/sessions/session%3Fpart%23one/tool-jobs/item%3Fpart%23two",
+      "/api/v1/sessions/session%3Fpart%23one/artifacts/item%3Fpart%23two/content",
     ]);
   });
 

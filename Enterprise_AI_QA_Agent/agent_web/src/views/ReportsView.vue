@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 
 import { api } from "../services/api";
 import { t } from "../services/i18n";
@@ -46,6 +46,8 @@ const selectedSessionId = ref("");
 const reports = ref<ReportEntry[]>([]);
 const hasMore = ref(false);
 const nextOffset = ref(0);
+const reportContentByArtifact = ref<Record<string, string>>({});
+const reportContentRequest = ref(0);
 
 const selectedReport = computed(() => {
   if (!reports.value.length) {
@@ -67,6 +69,12 @@ const selectedReportBody = computed(() => {
   const inlineContent = artifactInlineContent(primaryArtifact);
   if (inlineContent) {
     return inlineContent;
+  }
+  const storedContent = primaryArtifact?.id
+    ? reportContentByArtifact.value[primaryArtifact.id]
+    : "";
+  if (storedContent) {
+    return storedContent;
   }
   return String(report.reportMeta.summary || "").trim();
 });
@@ -128,6 +136,37 @@ function artifactInlineContent(artifact?: ToolArtifactRecord | null): string {
   const metadata = artifact.metadata || {};
   const inlineText = metadata.__content_text;
   return typeof inlineText === "string" ? inlineText.trim() : "";
+}
+
+function reportPrimaryArtifact(entry: ReportEntry | null): ToolArtifactRecord | undefined {
+  if (!entry) {
+    return undefined;
+  }
+  return primaryReportArtifact(
+    [...entry.reportArtifacts, ...entry.artifacts],
+    entry.reportMeta,
+  );
+}
+
+async function loadSelectedReportContent(entry: ReportEntry | null) {
+  const artifact = reportPrimaryArtifact(entry);
+  if (!entry || !artifact || artifactInlineContent(artifact)
+      || reportContentByArtifact.value[artifact.id]) {
+    return;
+  }
+
+  const requestId = ++reportContentRequest.value;
+  try {
+    const content = await api.getArtifactContent(entry.session.id, artifact.id);
+    if (requestId === reportContentRequest.value && content.trim()) {
+      reportContentByArtifact.value = {
+        ...reportContentByArtifact.value,
+        [artifact.id]: content,
+      };
+    }
+  } catch {
+    // The summary projection remains visible when an artifact is unavailable.
+  }
 }
 
 function gradeForSession(entry: ReportEntry): string {
@@ -313,6 +352,10 @@ function handleBatchListScroll(event: Event) {
 onMounted(() => {
   void loadReports();
 });
+
+watch(selectedReport, (entry) => {
+  void loadSelectedReportContent(entry);
+}, { immediate: true });
 </script>
 
 <template>

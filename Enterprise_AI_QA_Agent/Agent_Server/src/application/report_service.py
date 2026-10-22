@@ -113,7 +113,8 @@ class ReportService:
         artifact = candidates[0]
         meta["tool_job_id"] = artifact.tool_job_id
         payload = None
-        if (session.mode_key == "api_testing" and job is not None and artifact.tool_job_id == job.id
+        if (session.mode_key in {"api_testing", "security_testing"}
+                and job is not None and artifact.tool_job_id == job.id
                 and isinstance(job.output_payload, dict)):
             current_report = job.output_payload.get("report")
             if isinstance(current_report, dict):

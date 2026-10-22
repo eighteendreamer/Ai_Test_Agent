@@ -18,7 +18,7 @@ import type {
   TaskPoolFilters,
   SessionVerificationResponse,
 } from "../types";
-import { request } from "./http";
+import { request, requestText } from "./http";
 
 function sessionPath(sessionId: string): string {
   return `/api/v1/sessions/${encodeURIComponent(sessionId)}`;
@@ -190,6 +190,10 @@ export function getToolJobDetail(sessionId: string, jobId: string): Promise<Tool
 
 export function listArtifacts(sessionId: string): Promise<ToolArtifactRecord[]> {
   return request(`${sessionPath(sessionId)}/artifacts`);
+}
+
+export function getArtifactContent(sessionId: string, artifactId: string): Promise<string> {
+  return requestText(`${sessionPath(sessionId)}/artifacts/${encodeURIComponent(artifactId)}/content`);
 }
 
 export function listVerifications(sessionId: string): Promise<SessionVerificationResponse> {

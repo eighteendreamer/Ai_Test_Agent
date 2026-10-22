@@ -52,3 +52,20 @@ export async function request<T>(url: string, init?: RequestInit): Promise<T> {
 
   return response.json() as Promise<T>;
 }
+
+export async function requestText(url: string, init?: RequestInit): Promise<string> {
+  const response = await fetch(url, {
+    headers: {
+      Accept: "text/plain, text/markdown, text/html, application/json;q=0.9, */*;q=0.1",
+      ...(init?.headers ?? {}),
+    },
+    ...init,
+  });
+
+  if (!response.ok) {
+    const detail = await readErrorMessage(response);
+    throw new HttpError(detail || `Request failed: ${response.status}`, response.status);
+  }
+
+  return response.text();
+}

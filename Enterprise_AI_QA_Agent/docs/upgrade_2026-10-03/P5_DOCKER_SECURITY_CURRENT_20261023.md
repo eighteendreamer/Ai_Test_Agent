@@ -20,6 +20,22 @@ API 重启后结果仍可读，终态工具回放没有新增请求，跨 sessio
 
 证据：`Agent_Server/docs/upgrade_2026-10-03/p5-docker-security-current-20261023-01/`。
 
+## 报告中心产品验收（2026-10-23 修复后）
+
+`Agent_Server/tests/test_security_report_product.py::test_real_security_report_artifact_and_built_app` 已真实通过（`1 passed in 70.39s`）。测试使用现有安全工具产生缺少响应头、完整响应头和不可达目标三种结果，并在独立 PostgreSQL、RustFS 和构建后的前端中核对：
+
+- 当前安全 `ToolJob.output_payload["report"]` 与 `report_json` 原件一致，报告列表正确显示任务总数 3、完成 2、失败 1、发现 4；
+- 报告正文通过现有 artifact content 接口从 RustFS 按当前 `report_markdown` 懒加载，页面能显示“任务总数：3”“失败：1”和“缺少 X-Frame-Options”；
+- 前端下载的 JSON 与工具最终回执中的统计、结算、验证和评估字段一致；
+- API 重启后报告正文和评级仍可读取，无计划外 4xx/5xx；
+- 测试结束后安全工具、Redis、隔离数据库、RustFS 对象及 `qa-execution-cli-*` 容器均已清理。
+
+根因是报告工件采用 `__storage_mode: path_only` 时，报告服务原先只对 API 模式使用当前任务回执，安全模式无法从元数据解析 JSON；同时前端只读取内联 `__content_text`，没有读取 RustFS 正文。修复保持原件在 RustFS、任务和结构化投影在 PostgreSQL，不把完整正文复制到 MySQL。
+
+代码验证：后端报告服务 `11 passed`；前端 sessions API `2 passed`；`npm run typecheck` 和 `npm run build` 均退出码 0。
+
+证据：`Agent_Server/docs/upgrade_2026-10-03/p5-docker-security-current-20261023-rerun-fixed/`。
+
 ## 仍未完成
 
 本轮证明的是 Docker 工具、原始输出、解析、证据和报告边界，不是 Agent 自主调用质量。仍需：真实 Agent 驱动性能/安全流程、真实业务目标、多级加压、AI 流式 TTFT/Token 吞吐、完整前端报告页面和更多中断/恢复组合。
