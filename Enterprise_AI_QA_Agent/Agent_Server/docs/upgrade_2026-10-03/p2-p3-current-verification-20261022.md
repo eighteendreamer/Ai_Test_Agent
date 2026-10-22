@@ -26,6 +26,24 @@ $env:QA_SOURCE_IDENTITY='1'
 
 JUnit 为 `p2-default-multi-case-step-user-auth-confirmed-current-20261022-01.xml`；脱敏 SDK/HTTP 与任务状态证据位于同名目录。默认 Step 链路目前只验证到首次规划请求；项目内用例选择、依赖排序、补全、Run 执行和结果证据均未到达。
 
+### Agnes 多用例轨迹复核
+
+按本地《Agent测试专项》的 Plan-and-Execute 计划完整性/依赖检查，以及《Agent轨迹与协议鲁棒性》的工具序列、参数来源和恢复断言，分别核对规划结果与后续证据阶段，不把某个阶段的成功当成完整 Run 通过。
+
+- `p2-multi-case-agnes-current-worktree-20261022-01` 的第1轮逻辑计划正确选中 `dependency-create-order` 为正式前置、`target-query-order` 为正式目标，并建立依赖边。随后效果/工具证据阶段接受绑定回执、查询工具契约，第5轮因“声明任务查询和完成状态必须对应”校验失败；没有发布计划或业务 HTTP。
+- `p2-multi-case-agnes-max-rounds8-current-20261022-01` 的逻辑阶段把已有正式创建用例改为 `prepare`，未满足优先复用正式前置的要求。后续效果声明多次因引用形状、任务角色和预期路径不符合固定 Schema 被拒，达到原有180秒总时限后规划失败；没有 Run 或业务 HTTP。
+- 较早的 `p2-multi-case-agnes-v2-excerpt-fix-current-20261022-01` 保存过“订单已创建”的空 `no_match` 计划；当前工作树已有逻辑阶段拒绝“无 target 且无 unresolved”的校验，并要求返回具体缺口。该轮是 logic-v7 旧提示版本，不能代表当前校验。
+
+效果子任务适配器会校验固定 task 身份，并要求 query 带查询内容、finish 提交回执。当前失败证据显示是模型输出不符合既定协议，尚未证明适配器存在转换缺陷。当前工作树的规划/效果任务回归实际运行：
+
+```powershell
+# Agent_Server
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_case_planning_stages.py tests/test_planning_effect_tasks.py tests/test_planning_evidence_references.py tests/test_case_planning.py -q --tb=short -rs
+# 73 passed, 15 skipped in 6.88s
+```
+
+15项跳过要求隔离 MySQL/PostgreSQL/RustFS 或当前已配置真实模型；未用其跳过数替代通过结论。当前范围分类为：固定版本选取、逻辑依赖校验、效果任务契约均有实现和受控回归；真实 Agnes 的正式前置选择尚不稳定，工具/效果证据阶段尚未形成可发布计划。当前未修改规划生产代码。
+
 ## P3：API 鉴权与依赖 HTTP 回归
 
 两组测试均在当前工作树重跑。测试通过本机受控 HTTP 服务与项目执行器发送实际请求；未调用外部模型，也没有启动 Docker。
