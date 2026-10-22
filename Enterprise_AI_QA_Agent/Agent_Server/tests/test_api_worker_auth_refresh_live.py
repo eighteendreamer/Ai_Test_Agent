@@ -1,5 +1,6 @@
 """Actual auth HTTP through both coordinators; controlled worker launching only."""
 from contextlib import contextmanager
+from copy import deepcopy
 from datetime import UTC, datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -138,13 +139,19 @@ class ControlledWorkerLauncher:
                 self.runs.append((call, execution_context, result))
                 output = result.output
             saved_child = await self.store.get_session(identity)
-            await self.store.save_session(SessionRecord(id=identity, title="Owned API worker fixture",
-                status=SessionStatus.completed, session_mode=SessionMode.background_task,
-                runtime_mode=RuntimeMode.background, mode_key="api_testing", created_at=now, updated_at=now,
-                project_id=saved_child.project_id if saved_child else None,
-                metadata=saved_child.metadata if saved_child else {},
-                messages=[ChatMessage(id=str(uuid4()), role=MessageRole.tool,
-                    content=json.dumps(output), created_at=now, metadata={"tool_key": "api-test-runner"})]))
+            tool_message = ChatMessage(id=str(uuid4()), role=MessageRole.tool,
+                content=json.dumps(output), created_at=now, metadata={"tool_key": "api-test-runner"})
+            if saved_child is None:
+                saved_child = SessionRecord(id=identity, title="Owned API worker fixture",
+                    status=SessionStatus.completed, session_mode=SessionMode.background_task,
+                    runtime_mode=RuntimeMode.background, mode_key="api_testing", created_at=now, updated_at=now,
+                    messages=[tool_message])
+            else:
+                saved_child = deepcopy(saved_child)
+                saved_child.status = SessionStatus.completed
+                saved_child.updated_at = now
+                saved_child.messages.append(tool_message)
+            await self.store.save_session(saved_child)
             records.append({"task_id": worker["task_id"], "child_session_id": identity, "status": "completed"})
         return {"ok": True, "workers": records}
 
