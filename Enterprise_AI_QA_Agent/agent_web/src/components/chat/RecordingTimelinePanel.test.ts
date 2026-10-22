@@ -19,6 +19,7 @@ vi.mock("../../stores/session", () => ({ useSessionStore: () => sessionStore }))
 vi.mock("../../features/projects/TestCaseContentDialog.vue", () => ({ default: { props: ["testCase", "initialVersionId"], template: '<div data-testid="case-dialog">{{testCase.id}}:{{initialVersionId}}</div>' } }));
 vi.mock("../../services/i18n", () => ({ t: (key: string, params?: Record<string, string>) => {
   if (params?.id) return `${key}:${params.id}`;
+  if (params?.count !== undefined) return `${key}:${params.count}`;
   return key;
 } }));
 vi.mock("vue-router", () => ({ useRouter: () => ({ push: vi.fn() }) }));
@@ -117,6 +118,69 @@ it("shows a saved draft on reopen with zero new POSTs", async () => {
   const wrapper = mount(Panel); await flushPromises();
   expect(wrapper.get('[data-testid="recording-case-draft-id"]').text()).toContain("saved-case");
   expect(api.createRecordingCaseDraft).not.toHaveBeenCalled();
+  wrapper.unmount();
+});
+
+it("shows delivery verification separately from unknown business completeness", async () => {
+  api.getRecordingDetail.mockResolvedValue({
+    ...structuredClone(recording),
+    finalize_metrics: {
+      recording_quality: {
+        omission: {
+          status: "verified",
+          business_capture_complete: "unknown",
+          missing_sequences: [],
+          sequence_gaps: [],
+        },
+        duplicate_candidates: [{ sequences: [1, 2] }],
+        noise: [{ seq: 0 }, { seq: 3 }],
+        response_action_associations: [{ response_event_sequence: 3 }],
+        unresolved_response_associations: [],
+      },
+    },
+  });
+  const { default: Panel } = await import("./RecordingTimelinePanel.vue");
+  const wrapper = mount(Panel);
+  await flushPromises();
+
+  const quality = wrapper.get('[data-testid="recording-quality"]');
+  expect(quality.text()).toContain("recordingPanel.quality.delivery_verified");
+  expect(quality.text()).toContain("recordingPanel.quality.business_unknown");
+  expect(quality.get("summary").text()).toContain("recordingPanel.quality.business_unknown");
+  expect(quality.text()).toContain("recordingPanel.quality.duplicate_candidates:1");
+  expect(quality.text()).toContain("recordingPanel.quality.observation_events:2");
+  expect(quality.text()).toContain("recordingPanel.quality.response_links:1");
+  expect(quality.text()).toContain("recordingPanel.quality.unresolved_responses:0");
+  wrapper.unmount();
+});
+
+it("makes a missing delivery receipt visible in the recording quality summary", async () => {
+  api.getRecordingDetail.mockResolvedValue({
+    ...structuredClone(recording),
+    finalize_metrics: {
+      recording_quality: {
+        omission: {
+          status: "missing",
+          business_capture_complete: "unknown",
+          missing_sequences: [4],
+          sequence_gaps: [{ from: 4, to: 5, count: 2 }],
+        },
+        duplicate_candidates: [],
+        noise: [],
+        response_action_associations: [],
+        unresolved_response_associations: [{ response_event_sequence: 6 }],
+      },
+    },
+  });
+  const { default: Panel } = await import("./RecordingTimelinePanel.vue");
+  const wrapper = mount(Panel);
+  await flushPromises();
+
+  const quality = wrapper.get('[data-testid="recording-quality"]');
+  expect(quality.text()).toContain("recordingPanel.quality.delivery_missing");
+  expect(quality.text()).toContain("recordingPanel.quality.missing_sequences:1");
+  expect(quality.text()).toContain("recordingPanel.quality.sequence_gaps:1");
+  expect(quality.text()).toContain("recordingPanel.quality.unresolved_responses:1");
   wrapper.unmount();
 });
 

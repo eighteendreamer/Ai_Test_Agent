@@ -53,6 +53,51 @@ const showPanel = computed(() => Boolean(recording.value) && (isActive.value || 
 
 const statusKey = computed(() => `recorder.status_${status.value || "unknown"}`);
 
+type RecordingQualityProjection = {
+  omission?: {
+    status?: string;
+    business_capture_complete?: string;
+    missing_sequences?: unknown[];
+    sequence_gaps?: unknown[];
+  };
+  duplicate_candidates?: unknown[];
+  noise?: unknown[];
+  response_action_associations?: unknown[];
+  unresolved_response_associations?: unknown[];
+};
+
+const recordingQuality = computed<RecordingQualityProjection | null>(() => {
+  const metrics = recording.value?.finalize_metrics;
+  if (!metrics || typeof metrics !== "object") return null;
+  const quality = (metrics as Record<string, unknown>).recording_quality;
+  return quality && typeof quality === "object" ? quality as RecordingQualityProjection : null;
+});
+
+const qualityDeliveryLabel = computed(() => {
+  switch (recordingQuality.value?.omission?.status) {
+    case "verified": return t("recordingPanel.quality.delivery_verified");
+    case "missing": return t("recordingPanel.quality.delivery_missing");
+    default: return t("recordingPanel.quality.delivery_unknown");
+  }
+});
+
+const qualityBusinessLabel = computed(() => recordingQuality.value?.omission?.business_capture_complete === "verified"
+  ? t("recordingPanel.quality.business_verified")
+  : t("recordingPanel.quality.business_unknown"));
+
+function qualityCount(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0;
+}
+
+const qualityCounts = computed(() => ({
+  duplicates: qualityCount(recordingQuality.value?.duplicate_candidates),
+  observations: qualityCount(recordingQuality.value?.noise),
+  responseLinks: qualityCount(recordingQuality.value?.response_action_associations),
+  unresolvedResponses: qualityCount(recordingQuality.value?.unresolved_response_associations),
+  missingSequences: qualityCount(recordingQuality.value?.omission?.missing_sequences),
+  sequenceGaps: qualityCount(recordingQuality.value?.omission?.sequence_gaps),
+}));
+
 const finalizeSummary = computed(() => {
   const metrics = recording.value?.finalize_metrics;
   if (!metrics || typeof metrics !== "object") {
@@ -222,6 +267,23 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
+      <details v-if="recordingQuality && isTerminal" class="recording-panel-quality" data-testid="recording-quality">
+        <summary>{{ t("recordingPanel.quality.title") }} · {{ qualityDeliveryLabel }} · {{ qualityBusinessLabel }}</summary>
+        <ul>
+          <li>{{ qualityBusinessLabel }}</li>
+          <li>{{ t("recordingPanel.quality.duplicate_candidates", { count: qualityCounts.duplicates }) }}</li>
+          <li>{{ t("recordingPanel.quality.observation_events", { count: qualityCounts.observations }) }}</li>
+          <li>{{ t("recordingPanel.quality.response_links", { count: qualityCounts.responseLinks }) }}</li>
+          <li>{{ t("recordingPanel.quality.unresolved_responses", { count: qualityCounts.unresolvedResponses }) }}</li>
+          <li v-if="qualityCounts.missingSequences > 0">
+            {{ t("recordingPanel.quality.missing_sequences", { count: qualityCounts.missingSequences }) }}
+          </li>
+          <li v-if="qualityCounts.sequenceGaps > 0">
+            {{ t("recordingPanel.quality.sequence_gaps", { count: qualityCounts.sequenceGaps }) }}
+          </li>
+        </ul>
+      </details>
+
       <footer v-if="isTerminal" class="recording-panel-foot">
         <p v-if="finalizeSummary" class="recording-panel-metrics">{{ finalizeSummary }}</p>
         <button
@@ -319,6 +381,28 @@ onBeforeUnmount(() => {
   font-size: 11px;
   color: #94a3b8;
   padding: 6px 2px;
+}
+
+.recording-panel-quality {
+  flex: none;
+  min-width: 0;
+  font-size: 10px;
+  color: #334155;
+}
+
+.recording-panel-quality summary {
+  cursor: pointer;
+  color: #334155;
+  font-weight: 600;
+  line-height: 1.4;
+}
+
+.recording-panel-quality ul {
+  margin: 4px 0 0;
+  padding-left: 18px;
+  max-height: 72px;
+  overflow-y: auto;
+  line-height: 1.45;
 }
 
 .recording-step {
