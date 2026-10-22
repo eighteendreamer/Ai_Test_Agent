@@ -13,8 +13,15 @@ logger = logging.getLogger(__name__)
 
 
 class PlanningTaskHandler:
-    def __init__(self, planner, store, *, worker_id: str):
+    def __init__(self, planner, store, *, worker_id: str, revision_finalizer=None):
         self._planner, self._store, self._worker_id = planner, store, worker_id
+        self._revision_finalizer = revision_finalizer
+
+    async def _finalize_revision(self, task):
+        if task.run_revision is not None and task.run_revision.status == "pending":
+            if self._revision_finalizer is None:
+                raise RuntimeError("运行修订任务尚未配置最终确认服务")
+            await self._revision_finalizer.finalize(task.project_id, task.id)
 
     async def __call__(self, task):
         command = CasePlanningTaskCommand.model_validate(task.payload)
@@ -28,6 +35,7 @@ class PlanningTaskHandler:
             if current.status in TERMINAL_PLANNING_TASK_STATUSES:
                 logger.info("case_planning_terminal_redelivery", extra={"project_id": command.project_id,
                     "task_id": command.task_id, "status": current.status})
+                await self._finalize_revision(current)
                 return
             raise TaskDeferred("规划任务仍由其他有效 attempt 执行")
         stop = asyncio.Event()
@@ -57,6 +65,12 @@ class PlanningTaskHandler:
             if renewal in done:
                 await renewal
             await execution
+            stop.set()
+            await renewal
+            current = await self._store.get(command.project_id, command.task_id)
+            if current is None:
+                raise RuntimeError("已完成规划任务不可读取")
+            await self._finalize_revision(current)
         except asyncio.CancelledError:
             logger.warning("case_planning_worker_interrupted", extra={"project_id": command.project_id,
                 "task_id": command.task_id, "attempt_id": claim.attempt_id})

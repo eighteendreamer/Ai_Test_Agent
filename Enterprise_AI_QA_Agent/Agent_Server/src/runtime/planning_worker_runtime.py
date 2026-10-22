@@ -1,4 +1,4 @@
-"""Own planning reads and their resources without booting API execution services.
+"""Own planning and append-only Run revisions without API execution services.
 
 Uses the same AppContainer providers and source wiring as main.py. Planning
 retains vector recall and finalized recording reads, but starts no Session,
@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 from src.containers import AppContainer
 from src.application.test_cases.planning_service import CasePlanningService
+from src.application.test_runs.plan_run_service import CasePlanRunService
+from src.application.test_runs.revision_planning_service import RunRevisionPlanningService
 from src.application.documents.parsing_service import DocumentParsingService
 from src.core.config import Settings
 from src.core.request_context import bind_request_context
@@ -32,6 +34,7 @@ class PlanningWorkerRuntime:
     planner: CasePlanningService
     tasks: PostgresPlanningTaskStore
     queue: RedisTaskQueue
+    revisions: RunRevisionPlanningService
 
 
 @asynccontextmanager
@@ -97,6 +100,16 @@ async def planning_worker_runtime(settings: Settings):
         tasks = PostgresPlanningTaskStore(settings,
             lease_seconds=settings.orchestration.task_outbox_lease_seconds)
         await initialize("planning_tasks", tasks.initialize())
+        # Replanning can publish an append-only revision, but starts no execution
+        # services or lease reaper. Existing Runs retain their claimed snapshots.
+        suites, runs = container.test_suite_store(), container.test_run_store()
+        # The API has already initialized these tables before creating the Run.
+        # Ordinary planning startup must not migrate execution tables.
+        revisions = RunRevisionPlanningService(tasks=tasks, planner=planner, runs=runs,
+            projects=container.project_service(), dispatch_stream=stream,
+            revision_service=CasePlanRunService(run_store=runs, suite_store=suites,
+                plan_store=container.case_plan_store(), case_service=container.test_case_service(),
+                project_service=container.project_service()))
         queue = RedisTaskQueue(settings.database.redis_url, stream=stream,
             group=f"{settings.orchestration.redis_task_consumer_group}:case_planning",
             socket_timeout_seconds=settings.orchestration.redis_task_socket_timeout_seconds,
@@ -107,6 +120,6 @@ async def planning_worker_runtime(settings: Settings):
         await initialize("task_queue", queue.connect())
         logger.info("case_planning_worker_runtime_started", extra={"queue": stream})
         try:
-            yield PlanningWorkerRuntime(planner=planner, tasks=tasks, queue=queue)
+            yield PlanningWorkerRuntime(planner=planner, tasks=tasks, queue=queue, revisions=revisions)
         finally:
             logger.info("case_planning_worker_runtime_stopping", extra={"queue": stream})

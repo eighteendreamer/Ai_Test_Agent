@@ -9,11 +9,14 @@ import asyncio
 import hashlib
 import logging
 import re
+from contextlib import asynccontextmanager
 from uuid import uuid4
 
 from src.application.test_cases.planning_sources import json_text
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
+from src.runtime.task_deferred import TaskDeferred
+from src.schemas.run_revision_planning import RunRevisionPlanningOutcome
 from src.schemas.case_planning_task import (
     CasePlanningTaskClaim, CasePlanningTaskCommand, CasePlanningTaskPage,
     CasePlanningTaskRecord, PlanningTaskCheckpoint, PlanningTaskSeed,
@@ -79,6 +82,11 @@ class PostgresPlanningTaskStore:
         return hashlib.sha256(json_text({"kind": "agent_regression", "parent_run_id": parent_run_id,
             "request": submission}).encode()).hexdigest()
 
+    @staticmethod
+    def run_revision_request_hash(run_id, submission) -> str:
+        return hashlib.sha256(json_text({"kind": "run_revision", "run_id": run_id,
+            "request": submission}).encode()).hexdigest()
+
     async def submit(self, *, project_id: str, creation_key: str, seed: PlanningTaskSeed,
                      request_hash: str, stream: str) -> CasePlanningTaskRecord:
         return await asyncio.to_thread(self._submit, project_id, creation_key, seed, request_hash, stream)
@@ -87,7 +95,9 @@ class PostgresPlanningTaskStore:
         if seed.plan.project_id != project_id or seed.project_context.get("id") != project_id:
             raise ValueError("规划输入项目身份不一致")
         source = seed.plan.regression
-        expected = (self.regression_request_hash(source.parent_run_id, source.submission) if source
+        revision = seed.run_revision
+        expected = (self.run_revision_request_hash(revision.run_id, revision.submission()) if revision else
+            self.regression_request_hash(source.parent_run_id, source.submission) if source
             else self.request_hash(seed.plan.request))
         if expected != request_hash:
             raise ValueError("规划输入与提交请求不一致")
@@ -218,6 +228,8 @@ class PostgresPlanningTaskStore:
         if any(getattr(checkpoint.plan, key) != getattr(original, key) for key in fixed):
             raise ValueError("规划检查点不能替换固定输入或身份")
         prior = PlanningTaskCheckpoint.model_validate(row["checkpoint"])
+        if checkpoint.run_revision_outcome is not None:
+            raise ValueError("规划阶段不能自行写入运行修订结果")
         if original.config_snapshot.policy.linked_source_protocol:
             progress = checkpoint.linked_sources
             if checkpoint.phase not in {"retrieval", "finished"} and progress is None:
@@ -336,9 +348,62 @@ class PostgresPlanningTaskStore:
     @staticmethod
     def _record(row):
         checkpoint = row["checkpoint"]
+        revision = row["seed"].get("run_revision")
+        outcome = (checkpoint.get("run_revision_outcome") or {"run_id": revision["run_id"],
+            "status": "pending", "message": "等待候选规划及运行修订确认"}) if revision else None
         return CasePlanningTaskRecord(id=str(row["id"]), project_id=str(row["project_id"]),
             creation_key=row["creation_key"], status=row["status"], phase=row["phase"], message=row["message"],
             attempt_no=row["attempt_no"], round_count=checkpoint.get("next_round", 0),
             plan_id=str(row["plan_id"]) if row["plan_id"] else None, created_at=row["created_at"],
             updated_at=row["updated_at"], started_at=row["started_at"], deadline_at=row["deadline_at"],
-            completed_at=row["completed_at"])
+            completed_at=row["completed_at"], run_revision=outcome)
+
+    @asynccontextmanager
+    async def _finalization_connection(self):
+        # Keep the task row locked across the existing (separate) Run revision
+        # transaction. All DB I/O stays off the event loop, as with other writes.
+        manager = postgres_connect(self._settings)
+        conn = await asyncio.to_thread(manager.__enter__)
+        try:
+            yield conn
+        except BaseException as exc:
+            await asyncio.to_thread(manager.__exit__, type(exc), exc, exc.__traceback__)
+            raise
+        else:
+            await asyncio.to_thread(manager.__exit__, None, None, None)
+
+    async def finalize_run_revision(self, project_id, task_id, apply):
+        def locked(conn):
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT * FROM {self._table} WHERE id=%s AND project_id=%s FOR UPDATE SKIP LOCKED",
+                    (task_id, project_id))
+                return cur.fetchone()
+
+        def save(conn, checkpoint):
+            with conn.cursor() as cur:
+                cur.execute(f"UPDATE {self._table} SET checkpoint=%s::jsonb,updated_at=NOW() WHERE id=%s RETURNING *",
+                    (checkpoint.model_dump_json(), task_id))
+                return self._record(cur.fetchone())
+
+        async with self._finalization_connection() as conn:
+            row = await asyncio.to_thread(locked, conn)
+            if row is None:
+                if await self.get(project_id, task_id) is None:
+                    raise KeyError("当前项目没有该规划任务")
+                raise TaskDeferred("规划任务的运行修订正在由其他投递确认")
+            seed = PlanningTaskSeed.model_validate(row["seed"])
+            if seed.run_revision is None:
+                return self._record(row)
+            if row["status"] not in {"completed", "failed"}:
+                raise TaskDeferred("候选规划尚未完成，不能确认运行修订")
+            checkpoint = PlanningTaskCheckpoint.model_validate(row["checkpoint"])
+            if checkpoint.run_revision_outcome is not None:
+                return self._record(row)
+            outcome = RunRevisionPlanningOutcome.model_validate(await apply(seed, checkpoint))
+            if outcome.run_id != seed.run_revision.run_id or outcome.status == "pending":
+                raise ValueError("修订确认必须保存当前运行的最终结果")
+            checkpoint.run_revision_outcome = outcome
+            saved = await asyncio.to_thread(save, conn, checkpoint)
+        logger.info("case_planning_run_revision_finalized", extra={"project_id": project_id,
+            "task_id": task_id, "run_id": outcome.run_id, "status": outcome.status})
+        return saved

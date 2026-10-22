@@ -186,7 +186,12 @@ class CasePlanningService:
 
     async def _recall(self, record: CasePlanRecord, fixed_case_versions: dict[str, str] | None = None) -> None:
         request, policy = record.request, record.config_snapshot.policy
-        if request.candidate_case_ids:
+        if fixed_case_versions:
+            # Fixed execution targets may exceed semantic recall's page size.
+            # Read every pinned version; the normal context budget still applies.
+            evidence = [await self._sources.case(record.project_id, case_id, version_id=version_id)
+                        for case_id, version_id in fixed_case_versions.items()]
+        elif request.candidate_case_ids:
             if len(set(request.candidate_case_ids)) > policy.max_candidates:
                 raise ValueError("指定候选数量超过规划配置限制")
             evidence = [await self._sources.case(record.project_id, case_id,

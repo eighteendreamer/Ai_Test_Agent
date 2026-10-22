@@ -72,6 +72,13 @@ class CasePlanningWorkflow:
                 raise ValueError("回归目标不能替换持久任务的固定输入")
             fixed_case_versions = dict(source.required_case_versions)
             planning_context = source.context
+        if seed.run_revision is not None:
+            source = seed.run_revision
+            if fixed_case_versions and fixed_case_versions != source.required_case_versions:
+                raise ValueError("运行修订目标不能替换持久任务的固定输入")
+            fixed_case_versions = dict(source.required_case_versions)
+            planning_context = source.context
+        read_case_versions = seed.run_revision.read_case_versions if seed.run_revision else fixed_case_versions
 
         async def save(message):
             if persist is not None:
@@ -90,7 +97,8 @@ class CasePlanningWorkflow:
             await self._planner._validate(record, decision, fixed_case_versions=versions,
                 preserve_read_metadata=pin_read_versions, validate_effects=validate_effects)
             if fixed_case_versions and {item.case_id: item.case_version_id for item in decision.items if item.kind == "target"} != fixed_case_versions:
-                raise ValueError("回归目标必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
+                label = "运行修订目标" if seed.run_revision else "回归目标"
+                raise ValueError(f"{label}必须完整保留指定用例及版本，其他正式项只能作为必要依赖")
 
         try:
             if checkpoint.phase == "finished" and record.decision is not None:
@@ -124,7 +132,7 @@ class CasePlanningWorkflow:
                 while checkpoint.phase != "finished":
                     await self._planner._projects.require_active(record.project_id)
                     if checkpoint.phase == "retrieval":
-                        await self._planner._recall(record, fixed_case_versions)
+                        await self._planner._recall(record, read_case_versions)
                         catalog_options = {"scene_queries":True} if policy.scene_query_protocol else {}
                         checkpoint.catalog = await self._planner._sources.catalog(record.project_id, policy.max_candidates, **catalog_options)
                         if policy.linked_source_protocol:
@@ -239,7 +247,8 @@ class CasePlanningWorkflow:
                             context["tool_catalog"] = tool_catalog(seed.tool_contracts, policy.max_candidates,
                                 navigation=native_navigation, operations=native_operations)
                         if fixed_case_versions:
-                            context["constraints"] = {"required_case_versions": fixed_case_versions, "regression": planning_context or {}}
+                            context["constraints"] = {"required_case_versions": fixed_case_versions,
+                                "run_revision" if seed.run_revision else "regression": planning_context or {}}
                         if record.environment is not None:
                             context["business_environment"] = record.environment.model_dump(mode="json")
                         if stage == "effects" and policy.evidence_reference_protocol:

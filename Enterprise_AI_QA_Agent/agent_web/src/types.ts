@@ -2054,6 +2054,19 @@ export interface CasePlanningTaskRequest extends CasePlanningRequest {
   creation_key: string;
 }
 
+export interface RunRevisionPlanningRequest {
+  creation_key: string;
+  expected_revision: number;
+  reason: string;
+}
+
+export interface RunRevisionPlanningOutcome {
+  run_id: string;
+  status: "pending" | "applied" | "rejected";
+  revision: number | null;
+  message: string;
+}
+
 export interface CasePlanningTaskRecord {
   id: string;
   project_id: string;
@@ -2069,6 +2082,7 @@ export interface CasePlanningTaskRecord {
   started_at: string | null;
   deadline_at: string | null;
   completed_at: string | null;
+  run_revision?: RunRevisionPlanningOutcome | null;
 }
 
 export interface CasePlanningTaskPage {

@@ -39,6 +39,10 @@ function sameVersions(actual: Record<string, string>, expected: Record<string, s
 async function accept(value: CasePlanningTaskRecord) {
   if (value.project_id !== props.projectId) throw new Error("规划任务不属于当前项目");
   task.value = value; creationKey.value = value.creation_key; persist();
+  if (value.run_revision) {
+    if (value.run_revision.status === "pending" && !disposed) timer = setTimeout(() => { void refresh(); }, 1000);
+    return;
+  }
   if (value.status === "completed" || value.status === "failed") {
     if (value.plan_id) {
       const plan = await api.getCasePlan(props.projectId, value.plan_id);
@@ -164,6 +168,10 @@ onUnmounted(() => { disposed = true; if (timer) clearTimeout(timer); });
     <p v-if="storageWarning" role="alert">{{ storageWarning }}</p>
     <p v-if="creationKey">规划请求编号：{{ creationKey }}</p>
     <p v-if="task" role="status">{{ labels[task.status] }} · {{ task.message }} · 已调用 {{ task.round_count }} 回合</p>
+    <p v-if="task?.run_revision" role="status">运行 {{ task.run_revision.run_id }} · {{
+      task.run_revision.status === 'applied' ? `修订已生效（版本 ${task.run_revision.revision}）`
+        : task.run_revision.status === 'rejected' ? '修订未应用' : '修订等待确认'
+    }} · {{ task.run_revision.message }}</p>
     <p v-if="creationKey && !task">提交结果尚未确认。先按原请求编号查询；当前页面重试保留原请求内容。刷新后不保存敏感输入，需要重新填写相同内容才能重试。</p>
     <button :disabled="busy || disabled || (!regression && !objective.trim()) || (!!task && ['queued', 'running'].includes(task.status))" @click="submit">
       {{ busy ? '处理中…' : creationKey && !task ? '重试规划提交' : task ? '另建规划任务' : regression ? '提交回归规划' : '生成执行计划' }}

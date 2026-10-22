@@ -32,6 +32,7 @@ import type {
   TestSuiteBundle,
   TestRunDetail,
   RunPlanRevisionRequest,
+  RunRevisionPlanningRequest,
   TestRunPlanRevisionRecord,
   TestRunPage,
   TestRunStatus,
@@ -361,6 +362,17 @@ export function listTestRunPlanRevisions(
   runId: string,
 ): Promise<TestRunPlanRevisionRecord[]> {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/plan-revisions`);
+}
+
+export function submitRunRevisionPlanningTask(
+  projectId: string,
+  runId: string,
+  payload: RunRevisionPlanningRequest,
+): Promise<CasePlanningTaskRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}/runs/${encodeURIComponent(runId)}/revision-planning-tasks`, {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
 export function cancelTestRun(runId: string, reason = "Cancelled by operator"): Promise<TestRunDetail> {

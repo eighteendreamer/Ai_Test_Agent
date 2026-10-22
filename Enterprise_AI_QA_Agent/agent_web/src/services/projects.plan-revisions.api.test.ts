@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from "vitest";
-import { listTestRunPlanRevisions, reviseTestRunPlan } from "./projects.api";
+import { listTestRunPlanRevisions, reviseTestRunPlan, submitRunRevisionPlanningTask } from "./projects.api";
 
 afterEach(() => vi.unstubAllGlobals());
 
@@ -19,4 +19,14 @@ it("submits an idempotent Run plan revision and reads its immutable history", as
   expect(fetchMock.mock.calls[1][1].method).toBeUndefined();
   expect(fetchMock.mock.calls[1][1].body).toBeUndefined();
   expect(fetchMock.mock.calls[1][1].headers).toEqual({ "Content-Type": "application/json" });
+});
+
+it("submits a durable replan with its original revision and request identity", async () => {
+  const fetchMock = vi.fn().mockResolvedValue({ ok: true, status: 202, json: async () => ({}) });
+  vi.stubGlobal("fetch", fetchMock);
+  const payload = { creation_key: "original", expected_revision: 0, reason: "执行发现新的前置缺口" };
+  await submitRunRevisionPlanningTask("project/?", "run/#", payload);
+  expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/projects/project%2F%3F/runs/run%2F%23/revision-planning-tasks");
+  expect(JSON.parse(fetchMock.mock.calls[0][1].body)).toEqual(payload);
+  expect(fetchMock.mock.calls[0][1].method).toBe("POST");
 });

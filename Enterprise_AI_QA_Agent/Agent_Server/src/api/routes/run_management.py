@@ -34,6 +34,7 @@ from src.schemas.run_management import (
 )
 from src.schemas.run_dispatch import RunDispatchAccepted
 from src.schemas.case_planning_task import CasePlanningTaskRecord
+from src.schemas.run_revision_planning import RunRevisionPlanningRequest
 from src.core.request_context import correlation_fields
 
 
@@ -192,6 +193,24 @@ async def list_test_run_plan_revisions(project_id: str, run_id: str, request: Re
         return await service.list_revisions(project_id, run_id)
     except (KeyError, ValueError, RuntimeError) as exc:
         raise _http_error(exc) from exc
+
+
+@router.post("/projects/{project_id}/runs/{run_id}/revision-planning-tasks",
+             response_model=CasePlanningTaskRecord, status_code=202)
+async def submit_run_revision_planning(project_id: str, run_id: str,
+                                       payload: RunRevisionPlanningRequest, request: Request):
+    service = getattr(request.app.state, "run_revision_planning_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="运行重规划服务未启用")
+    try:
+        return await service.submit(project_id, run_id, payload)
+    except (KeyError, ValueError) as exc:
+        raise _http_error(exc) from exc
+    except Exception as exc:
+        logger.error("run_revision_planning_unavailable", extra={"project_id": project_id,
+            "run_id": run_id, "error_type": type(exc).__name__})
+        raise HTTPException(status_code=503,
+            detail="重规划提交尚不能确认，请按原请求编号查询或重试") from None
 
 
 @router.post("/runs/{run_id}/claim", response_model=RunClaimResponse)

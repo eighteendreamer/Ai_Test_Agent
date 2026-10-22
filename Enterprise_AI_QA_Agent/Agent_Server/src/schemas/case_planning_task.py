@@ -14,6 +14,7 @@ from src.schemas.case_planning_sources import PlanningLinkedSources
 from src.schemas.case_planning_scenes import SceneLogicalPlanningDecisionV3, SceneLogicalPlanningDecisionV4, SceneEvidencePlanningDecision
 from src.schemas.case_planning_stages import EvidencePlanningDecision, EvidencePlanningDecisionV2, EvidencePlanningDecisionV3, PlanningStageCheckpoint, PlanningStagePrompts
 from src.schemas.case_planning_effect_tasks import EffectTaskCheckpoint
+from src.schemas.run_revision_planning import RunRevisionPlanningInput, RunRevisionPlanningOutcome
 
 
 TERMINAL_PLANNING_TASK_STATUSES = frozenset({"completed", "failed"})
@@ -38,6 +39,7 @@ class PlanningTaskSeed(PlanningModel):
     stage_prompts: PlanningStagePrompts | None = None
     required_source_prompt: str | None = Field(default=None, min_length=1, max_length=20000)
     linked_source_context_protocol: Literal["case-planning-linked-navigation-v1"] | None = None
+    run_revision: RunRevisionPlanningInput | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_seed(self, handler):
@@ -54,6 +56,8 @@ class PlanningTaskSeed(PlanningModel):
             data.pop("required_source_prompt", None)
         if self.linked_source_context_protocol is None:
             data.pop("linked_source_context_protocol", None)
+        if self.run_revision is None:
+            data.pop("run_revision", None)
         return data
 
 
@@ -72,6 +76,7 @@ class PlanningTaskCheckpoint(PlanningModel):
     stages: PlanningStageCheckpoint | None = None
     linked_sources: PlanningLinkedSources | None = None
     effect_tasks: EffectTaskCheckpoint | None = None
+    run_revision_outcome: RunRevisionPlanningOutcome | None = None
 
     @model_serializer(mode="wrap")
     def preserve_original_checkpoint(self, handler):
@@ -82,6 +87,8 @@ class PlanningTaskCheckpoint(PlanningModel):
             data.pop("stages", None)
         if self.effect_tasks is None:
             data.pop("effect_tasks", None)
+        if self.run_revision_outcome is None:
+            data.pop("run_revision_outcome", None)
         return data
 
 
@@ -100,6 +107,14 @@ class CasePlanningTaskRecord(PlanningModel):
     started_at: datetime | None = None
     deadline_at: datetime | None = None
     completed_at: datetime | None = None
+    run_revision: RunRevisionPlanningOutcome | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_task(self, handler):
+        data = handler(self)
+        if self.run_revision is None:
+            data.pop("run_revision", None)
+        return data
 
 
 class CasePlanningTaskPage(PlanningModel):

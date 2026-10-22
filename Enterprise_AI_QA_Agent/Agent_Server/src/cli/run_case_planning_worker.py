@@ -17,7 +17,8 @@ async def _run(*, once: bool, worker_id: str):
     settings = get_settings()
     async with planning_worker_runtime(settings) as runtime:
         worker = RedisTaskWorker.from_settings(runtime.queue, settings=settings, consumer=worker_id,
-            handler=PlanningTaskHandler(runtime.planner, runtime.tasks, worker_id=worker_id))
+            handler=PlanningTaskHandler(runtime.planner, runtime.tasks, worker_id=worker_id,
+                revision_finalizer=runtime.revisions))
         try:
             if once:
                 print(f"case_planning_processed={await worker.run_once()}")

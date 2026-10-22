@@ -109,6 +109,7 @@ from src.application.sessions.session_service import SessionService
 from src.application.test_runs.agent_case_execution import AgentCaseExecutionAdapter
 from src.application.test_runs.agent_regression_service import AgentRegressionService
 from src.application.test_runs.plan_run_service import CasePlanRunService
+from src.application.test_runs.revision_planning_service import RunRevisionPlanningService
 from src.application.test_cases.planning_task_service import CasePlanningTaskService
 from src.runtime.postgres_planning_task_store import PostgresPlanningTaskStore
 from src.application.security.upload_security_service import UploadSecurityService
@@ -577,6 +578,10 @@ async def _initialize_lifespan_resources(
     test_run_service.set_agent_regression_service(AgentRegressionService(plan_store=container.case_plan_store(),
         plan_run_service=case_plan_run_service, planning_service=case_planning_service, run_store=test_run_store,
         planning_task_service=case_planning_task_service))
+    app.state.run_revision_planning_service = RunRevisionPlanningService(tasks=planning_task_store,
+        planner=case_planning_service, runs=test_run_store, projects=project_service,
+        revision_service=case_plan_run_service,
+        dispatch_stream=planning_stream if planning_stream in settings.orchestration.task_stream_names else None)
 
     legacy_smoke_catalog = container.legacy_smoke_catalog()
     legacy_smoke_history_service = container.legacy_smoke_history_service()
