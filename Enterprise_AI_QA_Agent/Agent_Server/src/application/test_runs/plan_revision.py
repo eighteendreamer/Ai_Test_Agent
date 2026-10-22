@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from uuid import NAMESPACE_URL, uuid5
 
 from src.application.test_runs.dependencies import validate_run_dependencies
@@ -13,6 +14,29 @@ from src.schemas.run_management import (
     TestRunItemRecord,
     TestRunRecord,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def _owned_execution_definition(snapshot, owner_key):
+    # Same ownership/phase projection as build_agent_case_context. Reasons and
+    # evidence selections may be restated; actual operations and data flow may
+    # not be silently ignored when an item has already been claimed.
+    nodes = {}
+    owned = {key for key, owner in snapshot.owners.items() if owner == owner_key}
+    for node in snapshot.plan.decision.items:
+        if node.key in owned:
+            content = node.model_dump(mode="json", exclude={"reason", "evidence_ids"})
+            content["depends_on"] = sorted(content["depends_on"])
+            nodes[node.key] = {"item": content, "phase": snapshot.preparation_phases.get(node.key, "case")}
+    scopes = {}
+    for key, scope in (snapshot.preparation_scopes or {}).items():
+        if (scope.source_owner_key == owner_key or owner_key in scope.consumer_keys
+            or owned.intersection(scope.cleanup_keys)):
+            scopes[key] = {**scope.model_dump(mode="json"),
+                "consumer_keys": sorted(scope.consumer_keys), "cleanup_keys": sorted(scope.cleanup_keys)}
+    return {"nodes": nodes, "scopes": scopes}
 
 
 def build_run_plan_revision(
@@ -104,14 +128,23 @@ def build_run_plan_revision(
 
     for key in candidate_order:
         item = selected[key]
-        if item.id not in eligible_updates and item.id not in added_ids:
-            continue
         remapped = []
-        for dependency in item.dependencies:
+        for dependency in candidate_by_key[key].dependencies:
             parent_id = candidate_id_to_run_id.get(dependency.item_id)
             if parent_id is None:
                 raise ValueError("候选计划的运行依赖无法映射到当前运行条目")
             remapped.append(dependency.model_copy(update={"item_id": parent_id}))
+        if item.id not in eligible_updates and item.id not in added_ids:
+            if (_owned_execution_definition(current, item.plan_item_key)
+                != _owned_execution_definition(proposed, key)
+                or {dependency.item_id: dependency for dependency in item.dependencies}
+                != {dependency.item_id: dependency for dependency in remapped}):
+                logger.warning("run_plan_revision_execution_conflict", extra={"run_id": current_run.id,
+                    "run_item_id": item.id, "plan_item_key": item.plan_item_key,
+                    "candidate_plan_id": proposed.plan.id, "item_status": item.status,
+                    "attempt_no": item.attempt_no})
+                raise ValueError(f"候选计划改变了已领取或已有执行记录条目 {item.plan_item_key} 的执行步骤、依赖或数据来源；请基于当前状态重新规划")
+            continue
         selected[key] = item.model_copy(update={"dependencies": remapped})
 
     active_ids = {item.id for item in selected.values()}

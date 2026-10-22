@@ -29,6 +29,7 @@ from src.runtime.task_deferred import TaskDeferred
 from src.schemas.case_planning import CasePlanRunRequest, CasePlanningPolicy
 from src.schemas.case_planning_task import CasePlanningTaskRecord
 from src.schemas.run_revision_planning import RunRevisionPlanningRequest
+from src.schemas.run_management import RunItemCompletion
 
 
 live = pytest.mark.skipif(os.getenv("RUN_LIVE_RUN_REVISION_PLANNING") != "1",
@@ -278,6 +279,92 @@ async def test_competing_revision_records_rejection_and_keeps_candidate(tmp_path
         assert len(env.service._models.requests) == 4
         assert len(await env.creator.list_revisions(second.project_id, env.original.run.id)) == 1
         evidence(tmp_path.name, {"rejected": rejected.model_dump(mode="json"), "model_calls": 4})
+
+
+@pytest.mark.asyncio
+@live
+@pytest.mark.parametrize("boundary", ["claimed", "completed"])
+@pytest.mark.parametrize("change", ["dependency", "preparation", "binding", "explanation"])
+async def test_target_claimed_during_planning_checks_actual_execution_definition(tmp_path, monkeypatch, boundary, change):
+    async with revision_environment(tmp_path) as env:
+        task, _ = await submit(env)
+        query, changed_dependencies = replies(env)
+
+        def candidate_response(context):
+            if change == "dependency":
+                return changed_dependencies(context)
+            nodes = {node.key: node.model_dump(mode="json") for node in env.plan.decision.items}
+            if change == "preparation":
+                nodes["seed"]["instructions"]["operation"] += "；增加候选准备检查"
+            elif change == "binding":
+                nodes["left"]["input_bindings"]["id"]["output_path_tokens"] = ["alternate_id"]
+            else:
+                nodes["left"]["reason"] = "重新说明目标，实际操作和数据来源保持一致"
+                document = next(entry for entry in context["evidence"] if entry["kind"] == "document")
+                nodes["left"]["evidence_ids"].append(document["id"])
+            nodes["right"]["depends_on"].append("extra")
+            return finish(*nodes.values(), item(context, "item-4", key="extra", kind="dependency"))
+
+        env.service._models.replies = [query, candidate_response]
+        finalize = env.revisions.finalize
+        before_apply = None
+
+        async def claim_before_apply(*args):
+            nonlocal before_apply
+            pending = await env.jobs.get(task.project_id, task.id)
+            assert pending.status == "completed" and pending.run_revision.status == "pending"
+            # Actual store transitions make the previously queued target immutable
+            # after the planner has already frozen and read its submission input.
+            create = next(entry for entry in env.original.items if entry.plan_item_key == "create")
+            now = env.original.run.updated_at
+            await env.run_store.complete_item(create.id, create.lease_token,
+                RunItemCompletion(status="passed", summary="受控前置结果，解除领取条件",
+                    actual={"case_output": {"body": {"order.id": "controlled-owned-id"}}},
+                    payload_hash="b" * 64), now)
+            [(target, attempt)] = await env.run_store.claim_items(run_id=env.original.run.id,
+                worker_id="concurrent-executor", limit=1, lease_seconds=600, now=now)
+            assert target.plan_item_key == "left"
+            if boundary == "completed":
+                await env.run_store.start_item(target.id, attempt.lease_token, now)
+                await env.run_store.save_checkpoint(target.id, attempt.lease_token,
+                    "owned-racing-execution", {"observed": "controlled-failure"}, 1, now)
+                await env.run_store.complete_item(target.id, attempt.lease_token,
+                    RunItemCompletion(status="failed", summary="受控失败结果，验证历史保留",
+                        actual={"controlled_test_result": True}, payload_hash="c" * 64), now)
+            before_apply = await env.run_store.get_run(env.original.run.id)
+            return await finalize(*args)
+
+        monkeypatch.setattr(env.revisions, "finalize", claim_before_apply)
+        await handler(env)(delivery(task))
+        monkeypatch.setattr(env.revisions, "finalize", finalize)
+        saved = await env.jobs.get(task.project_id, task.id)
+        candidate = await env.service.get(task.project_id, saved.plan_id)
+        after = await env.run_store.get_run(env.original.run.id)
+        evidence(tmp_path.name, {"task": saved.model_dump(mode="json"),
+            "candidate": candidate.model_dump(mode="json"), "before": before_apply.model_dump(mode="json"),
+            "after": after.model_dump(mode="json"), "model_calls": len(env.service._models.requests)})
+        assert saved.status == "completed"
+        assert candidate.status == "planned"
+        if change == "explanation":
+            assert saved.run_revision.status == "applied" and after.run.plan_revision == 1
+            assert len(after.items) == len(before_apply.items) + 1
+            assert after.attempts == before_apply.attempts and after.results == before_apply.results
+            assert len(await env.creator.list_revisions(task.project_id, env.original.run.id)) == 1
+            for original in before_apply.items:
+                if original.attempt_no:
+                    updated = next(entry for entry in after.items if entry.id == original.id)
+                    assert updated.model_dump(exclude={"position", "updated_at"}) == original.model_dump(exclude={"position", "updated_at"})
+        else:
+            assert saved.run_revision.status == "rejected" and "已领取" in saved.run_revision.message
+            assert after == before_apply
+            assert await env.creator.list_revisions(task.project_id, env.original.run.id) == []
+        assert await env.suites.get(env.original.run.suite_id) == env.original_suite
+        for attempt in after.attempts:
+            fixed = await env.run_store.get_execution_detail(env.original.run.id, attempt.run_item_id, attempt.id)
+            assert fixed.run.plan_snapshot == env.original.run.plan_snapshot
+        await handler(env)(delivery(task))
+        assert len(env.service._models.requests) == 2
+        assert await env.run_store.get_run(env.original.run.id) == after
 
 
 @pytest.mark.asyncio

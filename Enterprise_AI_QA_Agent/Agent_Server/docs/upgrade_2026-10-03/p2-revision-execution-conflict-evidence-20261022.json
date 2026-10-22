@@ -1,0 +1,413 @@
+{
+  "scope": "P2 replan application conflicts with targets claimed or completed during planning; autonomous trigger remains missing",
+  "source_baseline_commit": "4e06041cb3cc74c54c76ac7618eed5d5435ac46f",
+  "tested_overlay_git_blobs": {
+    "Enterprise_AI_QA_Agent/Agent_Server/src/application/test_runs/plan_revision.py": "423039e8fd9b5ac223d98a4dc107fb7ad0e96835",
+    "Enterprise_AI_QA_Agent/Agent_Server/tests/test_run_revision_planning.py": "6c7c56a493936018810729a4a6e105d468fae182"
+  },
+  "results": {
+    "before_fix": {
+      "failed": 1,
+      "deselected": 8,
+      "seconds": 11.07
+    },
+    "intermediate": {
+      "passed": 10,
+      "seconds": 17.42
+    },
+    "final_service": {
+      "passed": 16,
+      "seconds": 28.2
+    },
+    "related_regression": {
+      "passed": 7,
+      "deselected": 40,
+      "seconds": 9.53
+    },
+    "isolated_export_recheck": {
+      "passed": 23,
+      "deselected": 40,
+      "seconds": 36.54
+    }
+  },
+  "uses_external_model": false,
+  "creates_containers": false,
+  "model_scope": "controlled in-process responses; actual MySQL/PostgreSQL/RustFS; not business execution quality",
+  "cleanup": {
+    "checked_at_utc": "2026-10-22T15:03:08.969978+00:00",
+    "scope": [
+      "p2-revision-claim-race-before-20261022",
+      "p2-revision-claim-race-after-20261022",
+      "p2-revision-execution-conflict-final-20261022",
+      "p2-revision-conflict-export-20261022"
+    ],
+    "allocation_count": 40,
+    "postgres_tables_checked": 680,
+    "postgres_tables_remaining": [],
+    "mysql_tables_checked": 40,
+    "mysql_tables_remaining": [],
+    "original_objects_checked": 40,
+    "original_objects_missing_NoSuchKey": 40,
+    "test_containers_remaining": [],
+    "docker_stderr": "",
+    "read_only_audit": true
+  },
+  "raw_evidence_policy": "Local only; may contain test lease identities. Manifest hashes do not publish raw records.",
+  "files": [
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-claim-race-before-20261022.xml",
+      "size_bytes": 964,
+      "sha256": "b155cef181dff4f23c7c7339fdefbb07cc01993d2321d3de061e4afc28e72c87"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-claim-race-after-20261022.xml",
+      "size_bytes": 1768,
+      "sha256": "039df7f8a66b2669b407f80e8bee023dabc4e16663128f1305d584d127ddcd35"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022.xml",
+      "size_bytes": 2776,
+      "sha256": "4fc324d4b168fdf26f259c97f1447ce300f0dff392577d856a4d7f1ebaa0e784"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-regression-20261022.xml",
+      "size_bytes": 1271,
+      "sha256": "f130235cfd239ddab0634560c1aa4e52cc459896cdef3e7d194424c3b6d81a15"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022.xml",
+      "size_bytes": 3803,
+      "sha256": "8a88aac522b32f499386ba0f75884450f775d81e3d47290b092373936e93a958"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022.json",
+      "size_bytes": 1109,
+      "sha256": "721e29fa4f4f965dfbd505e2f4efd1f421264156a3b8806ceee480288e7e2d28"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022.stdout",
+      "size_bytes": 117,
+      "sha256": "15217132935fd504c5d01bb32b000ed1879a9531f94e93b972dc7d55c8ef71c7"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022.stderr",
+      "size_bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-cleanup-20261022.json",
+      "size_bytes": 601,
+      "sha256": "278f4c6162e78a9bafb07ccbd0a5f1df5bf77c2758789365a9cac90159c54b34"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-claim-race-before-20261022/allocations-test_target_claimed_during_pla0.json",
+      "size_bytes": 786,
+      "sha256": "8f1473bd542357d180a3746283d2e5ac3d37cd54b58252fddc067b8282d47b44"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-claim-race-before-20261022/test_target_claimed_during_pla0.json",
+      "size_bytes": 83413,
+      "sha256": "8636ab9049ff5f23b0ca87f7d252abf63ae08cd73e2c771fd25f789f5e602b51"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_competing_revision_record0.json",
+      "size_bytes": 786,
+      "sha256": "3dd90099cd20c63d5d7dbfdbc4113ee75a9707709a9f749fd6b882fc2c3b4341"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_failed_candidate_is_retai0.json",
+      "size_bytes": 786,
+      "sha256": "48c4b84e9259159c288c3898fa82e1e721374867cc80da5ef2166d4934d88c53"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_model_cannot_drop_origina0.json",
+      "size_bytes": 786,
+      "sha256": "bd5157691afb85914dc41f16a0aa07d25c28b1d5830c6e7e1ef2aa243bf71e7c"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_response_checkpoint_resum0.json",
+      "size_bytes": 786,
+      "sha256": "ef81b8cfbd16a09b0a15e5a34dc08e44a8569d6fc5c1d5073c0a465e4fd99f6a"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_submission_replays_fixed_0.json",
+      "size_bytes": 786,
+      "sha256": "8ede20a2be9008c104b71a0678ecea9cd8dbd4cc456deaa4f986bc5fde7eaf76"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla0.json",
+      "size_bytes": 786,
+      "sha256": "dcf046c109bf3e28dbf7567cf7c9ad2d2a16366edbc614cd035ddc5dec637a86"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla1.json",
+      "size_bytes": 786,
+      "sha256": "73fe04df876bbfaf18c11a515d211db9deef39b19072946540168a64bbd3c788"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla2.json",
+      "size_bytes": 786,
+      "sha256": "b9892c8529fb891c80c2c5460a5e7430e7a5286c18bf635f9ecd92ea03d47ed5"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla3.json",
+      "size_bytes": 786,
+      "sha256": "1d3178aa20b5d3dcbbbf75c49d478718b983294a618ae89300b007d31c6e9ef2"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla4.json",
+      "size_bytes": 786,
+      "sha256": "2eae18da95199c3569193e8dc3be7ce1c45ed32b23d73b5720c76178792fb4e0"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla5.json",
+      "size_bytes": 786,
+      "sha256": "69caaabee92403e81cf03a0b0d3570622d6536e7b17bced12a26ff2112758e7c"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla6.json",
+      "size_bytes": 786,
+      "sha256": "f488b8b7ea59aaa42ada9dc62a5c4b7a1253ae125ceb849f748d3c41f19f698e"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_target_claimed_during_pla7.json",
+      "size_bytes": 786,
+      "sha256": "8c918c3a0c6dbfa6189f85ea1283b83c77f8d6b098372acb1cd0b1df0ed5ed35"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_terminal_redelivery_recov0.json",
+      "size_bytes": 786,
+      "sha256": "cb88d6c17fb326c8bf550f983aaca032a4fc2c82002eb05b58874ccbb6c0b309"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/allocations-test_terminal_redelivery_recov1.json",
+      "size_bytes": 786,
+      "sha256": "7f6d858460592a9c95babeb98ebb7df34f6f8a69b4b8fb3e956c7b66bb4bda86"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_competing_revision_record0.json",
+      "size_bytes": 871,
+      "sha256": "08a0807a09ea0d0cb1e1dbc638f08cae36d9a4f02c465bf3c606bb379c5ca01f"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_failed_candidate_is_retai0.json",
+      "size_bytes": 943,
+      "sha256": "b8571dd1ded11a9b3317d6c48d12cf191d8a8ca4b9a81880488d41e998dc552e"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_model_cannot_drop_origina0.json",
+      "size_bytes": 840,
+      "sha256": "58fb0243e9702cd4182ecf87d5596d60a19cb45a087fd7438280877e9283af42"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_response_checkpoint_resum0.json",
+      "size_bytes": 840,
+      "sha256": "903e76ec94a15f18156abcaa3d297cd5a1ac83e2c0cc50609d148cb2976d28a2"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_submission_replays_fixed_0.json",
+      "size_bytes": 8367,
+      "sha256": "2dbea7d0908e6d1067b0c0eb0b4facbfcb81a160c2a9c3fe9d23df69e3d359de"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla0.json",
+      "size_bytes": 83249,
+      "sha256": "cbca83e9ec7d490a90335dede1833542d4e7ff293e7849d95599f1fc9e5a5c5e"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla1.json",
+      "size_bytes": 85663,
+      "sha256": "4eb9b9a78a23b8fb818fcbb024325657ccf753e6909c01f3d1e22710a8cba153"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla2.json",
+      "size_bytes": 87843,
+      "sha256": "1cf712fe037156c84275ddf08ca2029844f948528767fb0cb6c73ebb23ef54b3"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla3.json",
+      "size_bytes": 90257,
+      "sha256": "dc30e118335e0f21fbf5fd3e625ec66baa4d761118a91f99b8c763d2845e1c3f"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla4.json",
+      "size_bytes": 87809,
+      "sha256": "466f274087af0bec5815d6ab25c9c5ea8d3a8010945ee0931789f02c0bc39dbc"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla5.json",
+      "size_bytes": 90223,
+      "sha256": "3960edaa75b09c044a63ff5224c6b4975bacabdd142475546746006b9a5f86a0"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla6.json",
+      "size_bytes": 94453,
+      "sha256": "db9ae6b5065646358700818c08569fd1b1381de36f9e19d57e83c86a7e890a71"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_target_claimed_during_pla7.json",
+      "size_bytes": 96867,
+      "sha256": "08d44164b49f3cf966e1d8ea7ffb7ba24956b8146b1eba06b93c725a2c7a9e36"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_terminal_redelivery_recov0.json",
+      "size_bytes": 13920,
+      "sha256": "d5f5c6e8a4674be1211c7fa0a8e965903db7238f0bf98c4d5ca183a00b03c93a"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-execution-conflict-final-20261022/test_terminal_redelivery_recov1.json",
+      "size_bytes": 13920,
+      "sha256": "0852b71cb74452123262294587f496233a8899af5f9aff5107f2db1de35839f8"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_competing_revision_record0.json",
+      "size_bytes": 786,
+      "sha256": "cdfca22cbf08b2148c4e6f0212a680c21547db54dad14fc8c9e05672d5a67c82"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_failed_candidate_is_retai0.json",
+      "size_bytes": 786,
+      "sha256": "0ba09875740562ff981aa7fb8b645a1c59bfd7eebd9b2c1dffa3aeffc4b97f3c"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_model_cannot_drop_origina0.json",
+      "size_bytes": 786,
+      "sha256": "ff4df2774de299cfef9b100b32de2dc230ed20e23bf9568d6f5e7b082ede19fe"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_response_checkpoint_resum0.json",
+      "size_bytes": 786,
+      "sha256": "ba91a1dce9f2e88b31bb75785a52868e4df255d7962e467c3cd76980c217a313"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_submission_replays_fixed_0.json",
+      "size_bytes": 786,
+      "sha256": "c91383cee4bd9b7a006c107744e48f6f14a4deb34ee0bd4a687c397e10d4105b"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla0.json",
+      "size_bytes": 786,
+      "sha256": "93ab684831974f59068b0f03251c1065f74a6c3512c92b1886cf3c6e64871730"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla1.json",
+      "size_bytes": 786,
+      "sha256": "4ffde146fda84eafed7349e0c18ceb9a8617439f7e568cd508639181ad26b4d6"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla2.json",
+      "size_bytes": 786,
+      "sha256": "5cfe8db44f185ef503894b14f83334a6e3954cbbc2efb16a911f33c3f4de88dd"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla3.json",
+      "size_bytes": 786,
+      "sha256": "4b147b0ffc47a9620fa0188e94344b1c57b5a6e73c54c91effaf5f5587fcb99e"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla4.json",
+      "size_bytes": 786,
+      "sha256": "d0a01e6d5544bd6be259ede6ddd976c2b152c44e066fe70dcdb827aa8f8750e8"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla5.json",
+      "size_bytes": 786,
+      "sha256": "5144a84820122112b49f527d9c76f9eb019a8b34fa0277d410d2ff87005b5dc3"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla6.json",
+      "size_bytes": 786,
+      "sha256": "bf7fcba1a065cc590d674f18a994890f7fdf6cb8756e2014a69745f0fbe9a50a"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_target_claimed_during_pla7.json",
+      "size_bytes": 786,
+      "sha256": "7b27a75ae3c224b825851daa31176c14d02d5b401a56f9cdc3ae4bfaa7b29211"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_terminal_redelivery_recov0.json",
+      "size_bytes": 786,
+      "sha256": "7e617fad94dd03b78f71e410a9cc365a27c2573cc3559a735f3c35d246f78bbb"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/allocations-test_terminal_redelivery_recov1.json",
+      "size_bytes": 786,
+      "sha256": "989869e98bd75757c29b6f73954f21322addbe985bdffbd5f94a7e0bb868b3da"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_competing_revision_record0.json",
+      "size_bytes": 871,
+      "sha256": "cdc32ea8ddf63f0cdf502560b37167d5f0ac68b38741a02f4731fd67dcf7c217"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_failed_candidate_is_retai0.json",
+      "size_bytes": 943,
+      "sha256": "58a8a9092b778cf831301779be5887993327b785089c81486f48cdd8a0774c0f"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_model_cannot_drop_origina0.json",
+      "size_bytes": 840,
+      "sha256": "87a4cc40ae5d1254a259f29fbe2f72c9437d1954cdc431d4ff583f87c46f9d87"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_response_checkpoint_resum0.json",
+      "size_bytes": 840,
+      "sha256": "b00d72936ae1b27230a3a72fdfd19bb2d0d8a7d33bba86f9f5efc0f8f56b119e"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_submission_replays_fixed_0.json",
+      "size_bytes": 8367,
+      "sha256": "90b0ab9df13ae9a2e9834276f2815e9b04751b8a388edfcdc8f5baaab5064281"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla0.json",
+      "size_bytes": 83249,
+      "sha256": "88c6ca0a27a854e26a683747fd97f98057c63e7d248c4c277e6579e2f7b528dd"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla1.json",
+      "size_bytes": 85663,
+      "sha256": "fb06e35394ad7e2d35dfcff095601bda547542986390478e5ff62376b8911eee"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla2.json",
+      "size_bytes": 87843,
+      "sha256": "5befed6c77ffd40502329dc8cebe9f95653fa48758cfc0e052ee81d701cc1ec4"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla3.json",
+      "size_bytes": 90257,
+      "sha256": "7cf6445cd6b9064b85f186bf751122c3b0d1019eab851388f4559d69b7035c59"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla4.json",
+      "size_bytes": 87809,
+      "sha256": "39c2eae6d5417ba6480b060cea14903087ff3168f2599592e17e5d1275a4d924"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla5.json",
+      "size_bytes": 90223,
+      "sha256": "fd1ca0c2168ad7745fa2713b5764a7c5ba5686d632f2aa75393eda7664064867"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla6.json",
+      "size_bytes": 94453,
+      "sha256": "2835e29aeba4bb7160f3f7f33f68e56f991c201e9797f486242fa7237aeaf9f0"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_target_claimed_during_pla7.json",
+      "size_bytes": 96867,
+      "sha256": "a408881e53cc27c705fff10dfca14122667454e7f365e3991db8cc0c68cfae33"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_terminal_redelivery_recov0.json",
+      "size_bytes": 13920,
+      "sha256": "ca8700e2748ba0ed424838193b689948f6982c90e95433bd9c05ac07b094d1ee"
+    },
+    {
+      "path": "docs/upgrade_2026-10-03/p2-revision-conflict-export-20261022/test_terminal_redelivery_recov1.json",
+      "size_bytes": 13920,
+      "sha256": "6df660bd961fd7d83f7b0e7c157bc613e0c38db5b6732f4db3dbb1bb9c965f51"
+    }
+  ]
+}
