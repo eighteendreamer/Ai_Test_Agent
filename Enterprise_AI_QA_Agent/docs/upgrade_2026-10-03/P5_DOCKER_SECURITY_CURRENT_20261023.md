@@ -36,6 +36,10 @@ API 重启后结果仍可读，终态工具回放没有新增请求，跨 sessio
 
 证据：`Agent_Server/docs/upgrade_2026-10-03/p5-docker-security-current-20261023-rerun-fixed/`。
 
+本轮再次独立运行完整报告产品验收：`1 passed in 74.74s`。JUnit：`Agent_Server/docs/upgrade_2026-10-03/p5-docker-security-current-20261023-codex-rerun.xml`。新证据确认报告投影 `ready=true`，任务总数/完成/失败/发现分别为 3/2/1/4；浏览器下载的 JSON 与回执一致，API 重启后页面可读，无页面错误或非计划 HTTP 错误。临时 Redis 与三台安全执行容器均已清理，按容器 ID 复查为空。未验证 Agent 自主规划或默认模型驱动的安全测试。
+
+本轮独立证据目录：`Agent_Server/docs/upgrade_2026-10-03/p5-docker-security-current-20261023-codex-rerun/`（完整数据库快照和运行日志保留在本机，未纳入本次提交）。
+
 ## 仍未完成
 
 本轮证明的是 Docker 工具、原始输出、解析、证据和报告边界，不是 Agent 自主调用质量。仍需：真实 Agent 驱动性能/安全流程、真实业务目标、多级加压、AI 流式 TTFT/Token 吞吐、完整前端报告页面和更多中断/恢复组合。

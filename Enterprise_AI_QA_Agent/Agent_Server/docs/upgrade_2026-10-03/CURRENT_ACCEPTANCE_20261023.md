@@ -38,6 +38,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - API 鉴权刷新、依赖传值、未知写入只读查证、进程恢复和报告脱敏专项。
 - DeepSeek 基础人工录制、事件清洗、响应关联和知识投影专项。
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
+- Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径；模型客户端与请求映射回归通过。
 
 ## 正式回执纠正与进程恢复复验
