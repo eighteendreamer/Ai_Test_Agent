@@ -15,7 +15,7 @@ from src.schemas.case_generation_tasks import GenerationObject, GenerationTaskRe
 from src.schemas.case_generation_tasks import GenerationRetryRequest, GenerationRetryView
 from src.application.test_cases.generation_retry import generation_retry_strategy
 from src.schemas.case_management import TestCaseDraftCreateRequest, TestCaseVersionCreateRequest
-from src.schemas.model_config import ModelInvocationResult, model_invocation_parameters
+from src.schemas.model_config import ModelInvocationResult, is_model_failure_summary, model_invocation_parameters
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,16 @@ class GenerationCheckpointUnavailable(RuntimeError):
 
 class GenerationBudgetExceeded(ValueError):
     pass
+
+
+_MODEL_FAILURE_ERROR_CODES = {
+    "missing_active_model": "model_missing_active",
+    "auth_error": "model_auth_error",
+    "missing_api_key": "model_missing_api_key",
+    "http_error": "model_http_error",
+    "incomplete_response": "model_incomplete_response",
+    "unsupported_request": "model_unsupported_request",
+}
 
 
 async def confirmed_generation_write(operation, *, stage, identity):
@@ -291,13 +301,18 @@ class GenerationTaskService:
             stage = "response_validation_rejected"
             if checkpoint is None or checkpoint.response is None: raise ValueError("模块没有持久原响应")
             result = await self._read_object(checkpoint.response, ModelInvocationResult)
+            if is_model_failure_summary(result.response_summary):
+                mode = str(result.response_summary.get("mode"))
+                stage = _MODEL_FAILURE_ERROR_CODES.get(mode, "model_invocation_failed")
+                raise ValueError(f"模型调用失败：{mode}")
             if checkpoint.response.size_bytes > policy.max_response_bytes:
                 raise GenerationBudgetExceeded("原响应超过固定大小，已保存但未提交草稿")
             batch = self._sources.parse_module_response(module, result)
             stage = "draft_commit_rejected"
             entries = await self._draft_entries(scope, group, module, checkpoint.response, batch, retry=claim.seed.retry)
+            review = {"generation_review": batch.coverage_review} if batch.coverage_review is not None else {}
             return await confirmed_generation_write(self._store.commit_module(claim, module, entries,
-                scope_sha256=scope.sha256), stage="draft_commit", identity=current.id)
+                scope_sha256=scope.sha256, **review), stage="draft_commit", identity=current.id)
         except (GenerationCheckpointUnavailable, ContinuationLeaseLostError, asyncio.CancelledError):
             raise
         except Exception as exc:

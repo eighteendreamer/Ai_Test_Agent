@@ -20,7 +20,7 @@ from src.runtime.postgres_generation_task_store import PostgresGenerationTaskSto
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.store import ContinuationLeaseLostError
-from src.schemas.case_generation_tasks import GenerationTaskPolicy, GenerationTaskRequest
+from src.schemas.case_generation_tasks import GenerationRetryRequest, GenerationTaskPolicy, GenerationTaskRequest
 from src.schemas.case_management import TestCaseVersionCreateRequest as VersionRequest
 from test_document_impact_analysis_context import configure
 from test_document_impact_calls import provider
@@ -225,6 +225,28 @@ async def test_actual_response_commit_loss_and_new_lease_use_saved_response(tmp_
             assert (await env.cases.get_case(case.case.id)).latest_version == 2
             await evidence("response-recovery", values, service, group, physical_requests=sends,
                 actual_generation_http_calls=1, actual_response_commit_reply_lost=True, new_lease_attempt=recovered.attempt_id)
+
+
+@pytest.mark.asyncio
+@LIVE
+async def test_actual_provider_failure_is_distinct_and_retry_resends(tmp_path):
+    async with generation_environment(tmp_path) as (values, service, store, config):
+        env, project, doc, _, case, *_ = values
+        with provider(mode="http_failure") as (endpoint, sends, _, _):
+            await configure(env, endpoint)
+            group = await service.submit(project.id, doc.id, task_request(await accepted(values), case))
+            _, tasks = await service.read_group(project.id, doc.id, group.id)
+            failed = await service.execute(await store.claim(project.id, tasks[0].id, worker_id="provider-failure"))
+            assert failed.status == "failed"
+            assert failed.error_code == "model_http_error"
+            assert failed.checkpoint and failed.checkpoint.response
+            assert len(sends) == 1
+            retry = await service.retry(project.id, doc.id, failed.id,
+                GenerationRetryRequest(creation_key="provider-failure-retry"))
+            assert retry.retry.strategy == "frozen_request"
+            recovered = await service.execute(await store.claim(project.id, retry.task.id, worker_id="provider-recovery"))
+            assert recovered.status == "failed" and recovered.error_code == "model_http_error" and len(sends) == 2
+            assert await store.get(project.id, failed.id) == failed
 
 
 @pytest.mark.asyncio
