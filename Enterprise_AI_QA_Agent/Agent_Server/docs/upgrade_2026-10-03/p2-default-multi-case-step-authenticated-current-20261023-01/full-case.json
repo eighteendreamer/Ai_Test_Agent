@@ -1,0 +1,33 @@
+{
+  "objective": "查询订单详情并验证响应字段",
+  "preconditions": [
+    "需要有效输入 order_id，必须使用执行计划提供的前置用例实际输出，禁止凭空编造"
+  ],
+  "steps": [
+    {
+      "order": 1,
+      "action": "使用前置执行项的正式输出 order_id 调用 GET /orders/{id}；该输入是前置用例输出字段，不是原始 HTTP 响应路径"
+    },
+    {
+      "order": 2,
+      "action": "检查状态码200、flag=false、count=1、nullable=null"
+    },
+    {
+      "order": 3,
+      "action": "按项目文档删除本次创建的订单并检查清理成功"
+    }
+  ],
+  "expected": {
+    "status_code": 200,
+    "flag": false,
+    "count": 1,
+    "nullable": null
+  },
+  "cleanup": [
+    "删除前置用例创建且本次查询使用的订单"
+  ],
+  "operations": {
+    "query": "http://127.0.0.1:60486/orders/{id}",
+    "cleanup": "http://127.0.0.1:60486/orders/{id}"
+  }
+}

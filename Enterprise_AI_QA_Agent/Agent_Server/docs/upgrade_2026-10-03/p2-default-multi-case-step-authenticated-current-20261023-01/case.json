@@ -1,0 +1,94 @@
+{
+  "case": {
+    "id": "c047810f-0c00-4648-a759-b9edb36b0fa5",
+    "project_id": "53f248e8-fbdb-4d98-8ab7-9dc71ac38ac4",
+    "case_key": "target-query-order",
+    "title": "查询订单详情并检查字段",
+    "mode_key": "api_testing",
+    "case_type": "json",
+    "priority": "P1",
+    "lifecycle_status": "draft",
+    "active_version_id": null,
+    "latest_version": 1,
+    "created_by": null,
+    "created_at": "2026-10-22T20:47:06.547676Z",
+    "updated_at": "2026-10-22T20:47:06.547676Z",
+    "archived_at": null,
+    "version_reviews": {
+      "4165e143-470b-4201-b376-c8800b283e70": {
+        "version_id": "4165e143-470b-4201-b376-c8800b283e70",
+        "version": 1,
+        "status": "draft",
+        "origin": "native",
+        "events": []
+      }
+    }
+  },
+  "version": {
+    "content_json": {
+      "objective": "查询订单详情并验证响应字段",
+      "preconditions": [
+        "需要有效输入 order_id，必须使用执行计划提供的前置用例实际输出，禁止凭空编造"
+      ],
+      "steps": [
+        {
+          "order": 1,
+          "action": "使用前置执行项的正式输出 order_id 调用 GET /orders/{id}；该输入是前置用例输出字段，不是原始 HTTP 响应路径"
+        },
+        {
+          "order": 2,
+          "action": "检查状态码200、flag=false、count=1、nullable=null"
+        },
+        {
+          "order": 3,
+          "action": "按项目文档删除本次创建的订单并检查清理成功"
+        }
+      ],
+      "expected": {
+        "status_code": 200,
+        "flag": false,
+        "count": 1,
+        "nullable": null
+      },
+      "cleanup": [
+        "删除前置用例创建且本次查询使用的订单"
+      ],
+      "operations": {
+        "query": "http://127.0.0.1:60486/orders/{id}",
+        "cleanup": "http://127.0.0.1:60486/orders/{id}"
+      }
+    },
+    "execution_notes": "按完整JSON、固定项目文档和实际前置输出执行。",
+    "generation_metadata": {
+      "template": {
+        "writing_guidance": "DO-NOT-INJECT-TEMPLATE"
+      }
+    },
+    "preconditions": [],
+    "steps": [],
+    "assertions": [],
+    "test_data": {},
+    "cleanup": [],
+    "content_format": "json-v1",
+    "id": "4165e143-470b-4201-b376-c8800b283e70",
+    "case_id": "c047810f-0c00-4648-a759-b9edb36b0fa5",
+    "version": 1,
+    "content_hash": "ac2176a652316113037b3860d07411c602733bc15f4ae6356b08fa688452a625",
+    "source_refs": [
+      {
+        "source_type": "api_doc",
+        "source_id": "1c649814-9aa1-5dbb-94fd-ec29c616a894",
+        "version": null,
+        "label": "",
+        "uri": null,
+        "metadata": {}
+      }
+    ],
+    "model_key": "manual",
+    "prompt_version": "manual-v1",
+    "skill_versions": {
+      "manual": "v1"
+    },
+    "created_at": "2026-10-22T20:47:06.547676Z"
+  }
+}
