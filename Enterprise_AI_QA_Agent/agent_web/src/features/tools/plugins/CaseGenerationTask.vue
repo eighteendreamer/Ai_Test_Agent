@@ -1,9 +1,20 @@
 <script setup lang="ts">
+import { ref, watch } from "vue";
 import JsonContentTree from "../../projects/JsonContentTree.vue";
+import TestCaseContentDialog from "../../projects/TestCaseContentDialog.vue";
 import GenerationRetryPanel from "./GenerationRetryPanel.vue";
 import { useGenerationTask } from "./useGenerationTask";
+import type { TestCaseRecord } from "../../../types";
 const props = withDefaults(defineProps<{ projectId: string; documentId: string; groupId: string; taskId: string; parentTaskId?: string; retryKey?: string }>(), { parentTaskId: "", retryKey: "" });
 const { task, group, scope, origin, versions, response, busy, error, permissionError, canWrite, load, readVersion, readResponse } = useGenerationTask(props);
+const reviewTarget = ref<{ testCase: TestCaseRecord; versionId: string } | null>(null);
+const identity = () => JSON.stringify([props.projectId, props.documentId, props.groupId, props.taskId, props.parentTaskId, props.retryKey]);
+watch(identity, () => { reviewTarget.value = null; });
+async function reviewVersion(versionId: string) {
+  const requestedIdentity = identity();
+  const testCase = await readVersion(versionId);
+  if (testCase && identity() === requestedIdentity) reviewTarget.value = { testCase, versionId };
+}
 const labels = { queued: "等待生成", running: "生成处理中", completed: "草稿或停用候选已保存", failed: "生成任务失败" };
 const kinds = { update: "更新草稿", create: "新建草稿", retirement_candidate: "停用候选" };
 </script>
@@ -34,6 +45,7 @@ const kinds = { update: "更新草稿", create: "新建草稿", retirement_candi
       <section v-for="reference in task.checkpoint?.receipt?.versions || []" :key="reference.version_id">
         <p>固定草稿 {{ reference.case_id }} · V{{ reference.version }} · {{ reference.version_id }}</p>
         <button class="secondary-btn" :disabled="busy" @click="readVersion(reference.version_id)">读取完整任务草稿 {{ reference.version_id }}</button>
+        <button class="secondary-btn" :disabled="busy" @click="reviewVersion(reference.version_id)">评审与修订此草稿 {{ reference.version_id }}</button>
         <section v-if="versions[reference.version_id]" :aria-label="`完整任务草稿 ${reference.version_id}`">
           <JsonContentTree :value="versions[reference.version_id].content_json" label="完整 JSON" />
           <details open><summary>完整草稿版本与自身说明</summary><pre>{{ JSON.stringify(versions[reference.version_id], null, 2) }}</pre></details>
@@ -46,6 +58,9 @@ const kinds = { update: "更新草稿", create: "新建草稿", retirement_candi
       <details><summary>任务与结果收据</summary><pre>{{ JSON.stringify(task, null, 2) }}</pre></details>
       <GenerationRetryPanel v-if="task.status === 'failed'" :key="task.id" :parent="task" :group="group" :scope="scope" :can-write="canWrite" :disabled="busy" />
     </template>
+    <TestCaseContentDialog v-if="reviewTarget" :key="`${reviewTarget.testCase.id}:${reviewTarget.versionId}`"
+      :test-case="reviewTarget.testCase" :initial-version-id="reviewTarget.versionId" :can-write="canWrite"
+      @close="reviewTarget = null" @saved="load" />
   </article>
 </template>
 

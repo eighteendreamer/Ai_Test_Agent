@@ -52,8 +52,41 @@ async def document_generation_product(*, tmp_path, port, evidence, project, doc,
         await expect(detail).to_contain_text("商城需求 😀")
         await detail.get_by_role("button", name="读取固定任务原响应", exact=True).click()
         await expect(detail.get_by_text("固定任务完整原响应", exact=True)).to_be_visible()
+        await detail.get_by_role("button", name="评审与修订此草稿 "+reference["version_id"], exact=True).click()
+        dialog = page.get_by_role("dialog", name="测试用例内容")
+        await expect(dialog).to_be_visible()
+        await expect(dialog.locator("select")).to_have_value(reference["version_id"])
+        before_versions = await client.get(f"/test-cases/{reference['case_id']}/versions")
+        assert before_versions.status_code == 200
+        original_version = next(item for item in before_versions.json() if item["id"] == reference["version_id"])
+        await dialog.get_by_role("button", name="编辑新版本", exact=True).click()
+        edited = {**original_version["content_json"], "人工评审备注": "保留固定来源，等待业务确认"}
+        await dialog.get_by_label("完整 JSON", exact=True).fill(json.dumps(edited, ensure_ascii=False))
+        async with page.expect_response(lambda value: value.request.method == "POST"
+                and value.url.endswith(f"/test-cases/{reference['case_id']}/versions")) as saved:
+            await dialog.get_by_role("button", name="保存新草稿版本", exact=True).click()
+        saved_response = await saved.value
+        assert saved_response.status == 201, await saved_response.text()
+        saved_revision = await saved_response.json()
+        await expect(dialog.locator("select")).to_have_value(saved_revision["id"])
+        after_versions = await client.get(f"/test-cases/{reference['case_id']}/versions")
+        assert after_versions.status_code == 200
+        saved_versions = after_versions.json()
+        assert any(item["id"] == reference["version_id"] and item["content_hash"] == original_version["content_hash"]
+            for item in saved_versions)
+        revised = max(saved_versions, key=lambda item: item["version"])
+        assert revised == saved_revision
+        assert revised["version"] == original_version["version"] + 1
+        assert revised["content_json"] == edited
+        assert revised["generation_metadata"]["manual_edit"]["source_version_id"] == reference["version_id"]
+        case_response = await client.get(f"/test-cases/{reference['case_id']}")
+        assert case_response.status_code == 200 and case_response.json()["active_version_id"] is None
+        await dialog.get_by_role("button", name="关闭", exact=True).click()
+        fixed_after_review = (await client.get(base+f"/case-generations/{group['id']}")).json()
+        assert fixed_after_review["modules"][0]["checkpoint"]["receipt"]["versions"][0]["version_id"] == reference["version_id"]
         assert errors == []
         (evidence/"product.json").write_text(json.dumps({"scope":"built App, actual document UI entry, production API and independent CLI with controlled model",
             "submissions":submissions,"group":group,"fixed_scope":scope,"report":report,
             "model_calls_before":before,"model_calls_after":len(calls),"lost_reply_recovered_without_post":True,
+            "reviewed_version": reference["version_id"], "saved_revision": revised["id"],
             "page_errors":errors,"network":network}, ensure_ascii=False, indent=2), encoding="utf-8")

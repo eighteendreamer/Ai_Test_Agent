@@ -2,7 +2,7 @@ import { onBeforeUnmount, ref, watch } from "vue";
 import { api } from "../../../services/api";
 import * as generation from "../../../services/caseGeneration.api";
 import type { GenerationGroup, GenerationScope, GenerationTask, GenerationRetryView, GenerationResponse } from "../../../services/caseGeneration.types";
-import type { TestCaseVersionRecord } from "../../../types";
+import type { TestCaseRecord, TestCaseVersionRecord } from "../../../types";
 import { assertGenerationGroup, assertGenerationScope, assertGenerationReport } from "./caseGenerationProduct";
 import { assertGenerationRetry } from "./generationRetryProduct";
 
@@ -57,19 +57,20 @@ export function useGenerationTask(props: Props) {
     } catch (err) { if (current(ctx)) { task.value = null; group.value = null; scope.value = null; origin.value = null; show(err); } }
     finally { if (current(ctx)) busy.value = false; }
   }
-  async function readVersion(versionId: string) {
-    if (!task.value || busy.value) return;
+  async function readVersion(versionId: string): Promise<TestCaseRecord | null> {
+    if (!task.value || busy.value) return null;
     const ctx = context(); const reference = task.value.checkpoint?.receipt?.versions.find(item => item.version_id === versionId);
     error.value = ""; busy.value = true;
     try {
       if (!reference) throw new Error("草稿不属于当前任务收据");
       const [record, values] = await Promise.all([api.getTestCase(reference.case_id), api.listTestCaseVersions(reference.case_id)]);
-      if (!current(ctx)) return;
+      if (!current(ctx)) return null;
       const value = values.find(item => item.id === versionId);
       if (record.id !== reference.case_id || record.project_id !== ctx.projectId || values.some(item => item.case_id !== reference.case_id)
         || !value || value.version !== reference.version || value.content_hash !== reference.content_hash) throw new Error("完整草稿与项目或固定收据不一致");
       versions.value = { ...versions.value, [versionId]: value };
-    } catch (err) { if (current(ctx)) show(err); }
+      return record;
+    } catch (err) { if (current(ctx)) show(err); return null; }
     finally { if (current(ctx)) busy.value = false; }
   }
   async function readResponse() {
