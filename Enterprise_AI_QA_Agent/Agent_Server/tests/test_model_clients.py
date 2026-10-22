@@ -18,6 +18,7 @@ from src.application.model_clients.google_client import GoogleGenAIClient
 from src.application.model_clients.openai_client import OpenAIChatClient
 from src.application.model_clients.openai_responses_client import OpenAIResponsesClient
 from src.application.model_clients.registry import resolve_client
+from src.application.model_clients.provider_profiles import normalize_transport
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
 from src.schemas.tool_runtime import ModelToolCall
@@ -89,6 +90,14 @@ def test_resolve_client_dispatches_by_transport() -> None:
         resolve_client(_config(provider="gemini", transport="openai_chat_completions").model_copy(update={"transport": "openai_chat_completions"})),
         OpenAIChatClient,
     )
+
+
+def test_unknown_explicit_transport_is_rejected_but_missing_transport_uses_provider_default() -> None:
+    assert normalize_transport(None, provider="anthropic") == "anthropic_messages"
+    assert normalize_transport("", provider="google") == "google_gemini_generate_content"
+    config = _config(transport="openai_chat_completions").model_copy(update={"transport": "responses_v2"})
+    with pytest.raises(ValueError, match="Unsupported model transport: responses_v2"):
+        resolve_client(config)
 
 
 # ---------------------------------------------------------------------------

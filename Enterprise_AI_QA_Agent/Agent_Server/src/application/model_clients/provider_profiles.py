@@ -219,6 +219,8 @@ def normalize_transport(
         "google_gemini_generate_content",
     }:
         return value  # type: ignore[return-value]
+    if value:
+        raise ValueError(f"Unsupported model transport: {value}")
     profile = resolve_provider_profile(provider or "openai")
     return profile.transport
 
