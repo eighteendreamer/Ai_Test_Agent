@@ -117,6 +117,8 @@
 !Agent_Server/tests/test_workspace_migration_process_live.py
 !Agent_Server/tests/test_execution_runtime_config.py
 !Agent_Server/tests/test_performance_ramp_duration.py
+!Agent_Server/tests/test_performance_request_forwarding.py
+!Agent_Server/tests/test_performance_public_http_live.py
 !Agent_Server/tests/test_case_json_templates.py
 !Agent_Server/tests/test_case_import_parser.py
 !Agent_Server/tests/test_case_import_service.py
@@ -136,9 +138,17 @@
 !Agent_Server/tests/test_agent_case_assessment.py
 !Agent_Server/tests/test_agent_case_session.py
 !Agent_Server/tests/test_agent_case_execution.py
+
+# Keep reusable audit sources and formal summaries; ignore generated acceptance
+# runs, which contain repeatable HTTP traces, screenshots, reports, and DB exports.
+/Agent_Server/Agent_Server/
 !docs/upgrade_2026-10-03/
-!docs/upgrade_2026-10-03/**
-/docs/upgrade_2026-10-03/**/__pycache__/
+/docs/upgrade_2026-10-03/**
+!docs/upgrade_2026-10-03/**/
+!docs/upgrade_2026-10-03/*.md
+!docs/upgrade_2026-10-03/*.py
+!docs/upgrade_2026-10-03/**/*.py
+!docs/upgrade_2026-10-03/p5-docker-perf-measurement-current/*.js
 /Agent_Server/uv.lock
 /_tool_list_mermaid.py
 /_tool/_smoke.svg
