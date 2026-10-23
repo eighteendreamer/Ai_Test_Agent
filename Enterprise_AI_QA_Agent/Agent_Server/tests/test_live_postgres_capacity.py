@@ -6,8 +6,9 @@ import hashlib
 import json
 import math
 import platform
-from pathlib import Path
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
+from pathlib import Path
 from time import perf_counter
 from uuid import uuid4
 
@@ -46,6 +47,23 @@ def _tables(settings: Settings, names: list[str]) -> None:
         with conn.cursor() as cur:
             for name in names:
                 cur.execute(f"DROP TABLE IF EXISTS {name}")
+
+
+@asynccontextmanager
+async def _soak_resources(settings: Settings, probes: _SoakBacklogProbes, *, drop_tables=_tables):
+    async with AsyncExitStack() as cleanup:
+        cleanup.callback(
+            drop_tables,
+            settings,
+            [
+                settings.database.postgres_test_case_result_table,
+                settings.database.postgres_test_run_attempt_table,
+                settings.database.postgres_test_run_item_table,
+                settings.database.postgres_test_run_table,
+            ],
+        )
+        cleanup.push_async_callback(probes.aclose)
+        yield
 
 
 def _settings_with_database_overrides(**overrides: object) -> Settings:
@@ -267,7 +285,8 @@ def _create_tables(settings: Settings) -> None:
                 "id UUID PRIMARY KEY, project_id UUID NOT NULL, suite_id UUID NOT NULL, "
                 "status TEXT NOT NULL, mode_key TEXT NOT NULL, session_id TEXT NULL, "
                 "parent_run_id UUID NULL, created_at TIMESTAMPTZ NOT NULL, "
-                "updated_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL)"
+                "updated_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL, "
+                "plan_snapshots JSONB NOT NULL DEFAULT '{}'::jsonb)"
             )
             cur.execute(
                 f"CREATE TABLE {settings.database.postgres_test_run_item_table} ("
@@ -508,7 +527,7 @@ async def test_live_postgres_lifecycle_soak():
     next_sample_at = perf_counter()
     started = perf_counter()
 
-    try:
+    async with _soak_resources(settings, probes):
         _create_tables(settings)
         await probes.start()
         while perf_counter() - started < duration_seconds:
@@ -646,17 +665,32 @@ async def test_live_postgres_lifecycle_soak():
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
             print(f"postgres_soak_report={output_path}")
-    finally:
-        await probes.aclose()
-        _tables(
+
+
+@pytest.mark.asyncio
+async def test_soak_postgres_cleanup_still_runs_when_probe_close_fails():
+    class FailingProbes:
+        async def aclose(self):
+            raise RuntimeError("probe close unavailable")
+
+    dropped = []
+    settings = Settings()
+    expected = [
+        settings.database.postgres_test_case_result_table,
+        settings.database.postgres_test_run_attempt_table,
+        settings.database.postgres_test_run_item_table,
+        settings.database.postgres_test_run_table,
+    ]
+
+    with pytest.raises(RuntimeError, match="probe close unavailable"):
+        async with _soak_resources(
             settings,
-            [
-                settings.database.postgres_test_case_result_table,
-                settings.database.postgres_test_run_attempt_table,
-                settings.database.postgres_test_run_item_table,
-                settings.database.postgres_test_run_table,
-            ],
-        )
+            FailingProbes(),
+            drop_tables=lambda value, tables: dropped.append((value, tables)),
+        ):
+            pass
+
+    assert dropped == [(settings, expected)]
 
 
 def test_soak_thresholds_are_observation_only_until_configured(monkeypatch):

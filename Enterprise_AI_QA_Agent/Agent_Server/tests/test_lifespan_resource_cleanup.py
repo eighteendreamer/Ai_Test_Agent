@@ -21,6 +21,45 @@ from src.infrastructure.sqlalchemy_runtime import (
     postgres_engine,
     postgres_sessionmaker,
 )
+from tests import test_p5_acceptance_ladder as p5
+
+
+@pytest.mark.asyncio
+async def test_p5_postgres_cleanup_still_runs_when_redis_cleanup_fails() -> None:
+    class FailingRedisCleanup:
+        def __init__(self) -> None:
+            self.closed = False
+
+        async def scan_iter(self, **_kwargs):
+            raise RuntimeError("redis cleanup unavailable")
+            yield  # pragma: no cover - keeps this an async iterator
+
+    class Resources:
+        def __init__(self, redis) -> None:
+            self._redis = redis
+            self.closed = False
+
+        async def close(self) -> None:
+            self._redis.closed = True
+            self.closed = True
+
+    redis = FailingRedisCleanup()
+    resources = Resources(redis)
+    dropped = []
+
+    with pytest.raises(RuntimeError, match="redis cleanup unavailable"):
+        await p5._cleanup_p5_resources(
+            redis,
+            resources,
+            "p5_test_fault",
+            "settings",
+            ["parent", "child"],
+            drop_tables=lambda settings, tables: dropped.append((settings, tables)),
+        )
+
+    assert redis.closed is True
+    assert resources.closed is True
+    assert dropped == [("settings", ["child", "parent"])]
 
 
 @pytest.mark.asyncio

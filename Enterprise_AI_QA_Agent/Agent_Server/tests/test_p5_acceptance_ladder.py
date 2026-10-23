@@ -25,7 +25,7 @@ import multiprocessing
 import random
 import socket
 import time
-from contextlib import asynccontextmanager
+from contextlib import AsyncExitStack, asynccontextmanager
 from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
@@ -287,13 +287,11 @@ async def relay_all(harness, *, limit: int = 200, rounds: int = 10) -> int:
     return published
 
 
-async def post_message(client, session_id, payload) -> str:
-    response = await client.post(
+async def post_message(client, session_id, payload) -> httpx.Response:
+    return await client.post(
         f"/sessions/{session_id}/messages",
         json=payload.model_dump(mode="json"),
     )
-    assert response.status_code == 202, f"submission failed: {response.status_code} {response.text}"
-    return response.json()["task"]["id"]
 
 
 async def pending_count(harness) -> int:
@@ -451,13 +449,10 @@ async def run_ladder_case(harness, fleet) -> None:
         nested = await asyncio.gather(*(
             submit_pair(client, index) for index in range(session_count)
         ))
-    task_ids = [task_id for pair in nested for task_id in pair]
+    responses = [response for pair in nested for response in pair]
     expected = 2 * session_count
-    assert len(set(task_ids)) == expected, "each submission must own exactly one durable task"
 
-    server_errors = sum(
-        1 for pair in nested for response in pair if response.status_code >= 500
-    )
+    server_errors = sum(response.status_code >= 500 for response in responses)
     error_limit = _TEST_CONFIG.run_live_p5_max_api_error_rate
     if error_limit >= 0:
         assert server_errors / expected <= error_limit, (
@@ -465,6 +460,13 @@ async def run_ladder_case(harness, fleet) -> None:
         )
     else:
         print(f"api error-rate gate disabled; measured {server_errors}/{expected}")
+    failed_submissions = [
+        f"{response.status_code} {response.text}" for response in responses
+        if response.status_code != 202
+    ]
+    assert failed_submissions == [], f"submission failed: {failed_submissions[:5]}"
+    task_ids = [response.json()["task"]["id"] for response in responses]
+    assert len(set(task_ids)) == expected, "each submission must own exactly one durable task"
 
     # Consumers are up before delivery, so the spawned processes cannot be
     # starved by the faster in-process one.
@@ -579,22 +581,24 @@ async def p5_harness(request):
     settings.orchestration.coordinator_max_workers = max(4, level)
     redis = Redis.from_url(settings.database.redis_url, decode_responses=True)
     resources = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, client=redis)
-    await resources.connect()
-    # One admission slot per concurrent Worker plus the in-process driver. A
-    # deferral at admission is legal, but it would burn an attempt number, and
-    # this ladder gate is about replayed *execution*, not capacity back-pressure.
-    await resources.configure_quota(scope="resource_type", identifier="agent", limit=level + 2)
-    runtime = LadderRuntime()
-    runtime.delay_range = (0.0, .02)
-    store, tasks, sessions, dispatcher = build_services(settings, runtime, resources)
-    outbox = PostgresTaskOutbox(settings)
-    queue = RedisTaskQueue(
-        settings.database.redis_url,
-        stream=settings.orchestration.agent_task_stream,
-        group=WORKER_GROUP,
-        client=redis,
-    )
+    redis_connected = False
     try:
+        await resources.connect()
+        redis_connected = True
+        # One admission slot per concurrent Worker plus the in-process driver. A
+        # deferral at admission is legal, but it would burn an attempt number, and
+        # this ladder gate is about replayed *execution*, not capacity back-pressure.
+        await resources.configure_quota(scope="resource_type", identifier="agent", limit=level + 2)
+        runtime = LadderRuntime()
+        runtime.delay_range = (0.0, .02)
+        store, tasks, sessions, dispatcher = build_services(settings, runtime, resources)
+        outbox = PostgresTaskOutbox(settings)
+        queue = RedisTaskQueue(
+            settings.database.redis_url,
+            stream=settings.orchestration.agent_task_stream,
+            group=WORKER_GROUP,
+            client=redis,
+        )
         await store.initialize()
         await outbox.initialize()
         await tasks.initialize()
@@ -633,11 +637,22 @@ async def p5_harness(request):
             concurrency=level,
         )
     finally:
-        keys = [key async for key in redis.scan_iter(match=f"{prefix}:*")]
-        if keys:
-            await redis.delete(*keys)
-        await redis.aclose()
-        _drop_tables(settings, list(reversed(tables)))
+        await _cleanup_p5_resources(
+            redis, resources, prefix, settings, tables, clean_redis=redis_connected,
+        )
+
+
+async def _cleanup_p5_resources(
+    redis, resources, prefix, settings, tables, *, clean_redis=True, drop_tables=_drop_tables,
+) -> None:
+    """Run every owned cleanup even when Redis cleanup itself fails."""
+    async with AsyncExitStack() as cleanup:
+        cleanup.callback(drop_tables, settings, list(reversed(tables)))
+        cleanup.push_async_callback(resources.close)
+        if clean_redis:
+            keys = [key async for key in redis.scan_iter(match=f"{prefix}:*")]
+            if keys:
+                await redis.delete(*keys)
 
 
 @pytest.mark.asyncio
