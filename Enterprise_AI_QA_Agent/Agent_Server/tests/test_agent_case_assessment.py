@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import base64
-from contextlib import asynccontextmanager
+from contextlib import ExitStack, asynccontextmanager
 from copy import deepcopy
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
@@ -27,6 +27,7 @@ from src.runtime.tool_job_store import InMemoryToolJobStore
 from src.schemas.case_planning import CasePlanningRequest, CasePlanRunRequest
 from src.schemas.tool_runtime import ModelToolCall
 from src.schemas.tool_job import ToolJobStatus
+from tests.test_live_postgres_concurrency import _drop_tables
 
 
 @pytest.fixture
@@ -134,18 +135,20 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
             jobs._case_action_admission = PostgresCaseActionAdmission(runs=store, jobs=jobs._store)
             tables.append(jobs._case_action_admission.operations.table)
             tables.append(jobs._case_action_admission.consumption.table)
-        await jobs.initialize()
         if live and jobs._case_action_admission is not None:
             tables.append(jobs._store.effect_evidence.table)
-        runtime = ToolRuntimeService(tool_job_service=jobs)
-        session, turn, attempt = str(uuid4()), str(uuid4()), run_attempt.id
-        tool_context = ToolExecutionContext(session_id=session, turn_id=turn, trace_id=turn,
-            user_message=context.objective, normalized_input=context.objective,
-            context_bundle={**context.runtime_context(), 'attempt_id': attempt})
-        tool = ToolRegistry().get('api-test-runner')
-        records = []
-        url, requests, actual_id = business_http
-        try:
+        with ExitStack() as cleanup:
+            if tables:
+                cleanup.callback(_drop_tables, env.settings, list(reversed(tables)))
+            await jobs.initialize()
+            runtime = ToolRuntimeService(tool_job_service=jobs)
+            session, turn, attempt = str(uuid4()), str(uuid4()), run_attempt.id
+            tool_context = ToolExecutionContext(session_id=session, turn_id=turn, trace_id=turn,
+                user_message=context.objective, normalized_input=context.objective,
+                context_bundle={**context.runtime_context(), 'attempt_id': attempt})
+            tool = ToolRegistry().get('api-test-runner')
+            records = []
+            url, requests, actual_id = business_http
             if services is not None:
                 services['environment'] = env
                 services['creator'] = creator
@@ -163,11 +166,6 @@ async def execution(tmp_path, business_http, live=False, perform_tools=True, wit
             assert len(requests) == (3 if perform_tools else 0)
             assert all(r.job_id and r.status in {'completed', 'partial'} for r in records)
             yield context, jobs, records, session, turn, attempt, detail, store, now, content
-        finally:
-            if tables:
-                with postgres_connect(env.settings) as conn, conn.cursor() as cur:
-                    for name in reversed(tables):
-                        cur.execute(f'DROP TABLE "{name}"')
 
 
 def reference(call_id, *path):
@@ -182,6 +180,43 @@ def receipt():
                 'observations': [reference(key, 'task_result', 'response_status')], 'operator': 'equals'}],
             'outputs': {'body': reference(key, 'task_result', 'response_body')}})
     return {'schema_version': 1, 'steps': steps}
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv('RUN_LIVE_PLAN_RUN_CREATION') != '1',
+    reason='requires isolated real PostgreSQL/MySQL/RustFS')
+async def test_live_execution_initialization_failure_drops_owned_tool_tables(
+    tmp_path, business_http, monkeypatch,
+):
+    owned = {}
+    original_initialize = ToolJobService.initialize
+
+    async def fail_after_base_tables(service):
+        if not isinstance(service._store, PostgresToolJobStore):
+            return await original_initialize(service)
+        settings = service._store._settings
+        tables = [
+            settings.database.postgres_tool_job_table,
+            settings.database.postgres_tool_artifact_table,
+        ]
+        owned.update(settings=settings, tables=tables)
+        await service._store.initialize()
+        raise RuntimeError('fault after tool tables were committed')
+
+    monkeypatch.setattr(ToolJobService, 'initialize', fail_after_base_tables)
+    try:
+        with pytest.raises(RuntimeError, match='fault after tool tables were committed'):
+            async with execution(tmp_path, business_http, live=True):
+                pytest.fail('initialization fault must prevent execution from yielding')
+
+        assert owned
+        with postgres_connect(owned['settings']) as conn, conn.cursor() as cur:
+            for table in owned['tables']:
+                cur.execute('SELECT to_regclass(%s) AS existing', (table,))
+                assert cur.fetchone()['existing'] is None
+    finally:
+        if owned:
+            _drop_tables(owned['settings'], list(reversed(owned['tables'])))
 
 
 async def assess(env, data=None, records=None):
