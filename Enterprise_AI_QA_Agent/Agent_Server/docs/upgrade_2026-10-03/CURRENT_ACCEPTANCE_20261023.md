@@ -43,6 +43,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - open Shadow DOM 当前工作树真实链路复验 **1项通过（40.20秒）**：生产 API、Chromium CDP、隔离 MySQL/PostgreSQL/Redis/Memgraph 实际记录嵌套 open root、运行时新增 open root 和 iframe 内 open root 的三个操作及响应，并生成包含这些响应的用例草稿；敏感祖先下的 `fixture-sensitive-marker` 未进入响应证据。契约继续明确 closed shadow root 为 `unobserved`，不虚报可见性；本次没有模型调用。证据：`p5-recording-shadow-current-20261023-02/` 与对应 JUnit XML。
 - 录制场景管理和元素别名的当前完整产品复验 **1项通过（89.82秒）**：真实 Chromium 录制后，在构建版项目页面创建场景、整理步骤顺序/说明/预期、绑定元素别名、保存不可变版本并转为正式用例草稿；同时验证响应丢失恢复、请求幂等与冲突、并发版本竞争、项目隔离、归档只读、API 重启读回，以及场景整理不会改写原始事件。最终 PostgreSQL 中2个场景头、6个版本，原事件和原始行保持不变，页面错误为空；本次 `default_ai_invoked=false`，不证明默认模型消费。证据：`p5-recording-scene-product-current-20261023-01/` 与对应 JUnit XML。
 - 录制回放失败定位已补成生产闭环并完成当前工作树实测：真实 Chromium 先录制输入和“执行保存”按钮，再让受控网页移除该按钮并放入不同语义的邻近按钮；生产回放 API 保留输入步骤通过、将点击步骤记录为失败且没有触发邻近按钮。相同 `request_id` 重投没有再次打开页面，跨项目请求返回404，逐步报告直接写入 PostgreSQL；API 重启后可读回。构建版项目页面实际显示失败步骤并能发起新回放。最终复验 **1 passed in 78.52s**，页面错误为0，Redis DB 15 清理后为空，未创建测试容器。证据：`p5-recording-replay-product-current-20261023-05.xml`、同名目录的 `facts.json` 和 `first-replay.json`。
+- 浏览器回放动作检查点已接入当前回放 Worker：PostgreSQL 回放表保存 JSONB `checkpoint`；每个动作执行前保存 `in_progress`，动作返回后保存结果，并由当前租约校验后写入。重领时，已有完成检查点直接跳过；只有导航/滚动允许在只读状态不一致时安全重放；输入值必须只读核对一致，点击、提交、双击、按键等没有通用只读证明时返回 `recovery_required=stop_without_replay`，不盲目重复副作用。逻辑回归 **18 passed**，真实 PostgreSQL/Redis 租约中断与重领 **2 passed**，真实浏览器回放产品回归 **1 passed in 72.12s**。本项证明了动作边界持久化和安全停止，尚未宣称未知业务副作用可以自动恢复。
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
 - Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
@@ -91,4 +92,4 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 
 本轮补充了可选的后台回放任务链：显式注册 `qa:tasks:recording_replay` 后，回放记录和 PostgreSQL Outbox 在同一事务保存，独立 Redis Worker 使用数据库租约领取、心跳和终态幂等；前端会轮询 `running` 记录。真实隔离 PostgreSQL/Redis 验收先模拟 Worker 在领取后中断，租约过期后由新 Worker 领取完成，终态重复投递没有再次执行（`tests/test_recording_replay_worker_product.py`，1 passed，6.95 秒）。未注册该 Stream 的部署仍保留同步兼容路径。
 
-当前仍未解决浏览器执行已经产生未知副作用后进程被杀的逐步恢复：没有可核对的浏览器动作检查点时不自动重放，需继续设计并验收未知状态处理；本轮也没有宣称人工 DeepSeek 或默认 AI 知识消费完成。
+当前仍未解决浏览器执行已经产生未知副作用后的自动业务恢复：动作检查点能够阻止盲目重放，并保留待人工/业务只读核对的 `recovery_required` 结果；针对具体业务页面的可验证断言、未知状态查证和继续执行仍需按场景设计和验收。本轮也没有宣称人工 DeepSeek 或默认 AI 知识消费完成。
