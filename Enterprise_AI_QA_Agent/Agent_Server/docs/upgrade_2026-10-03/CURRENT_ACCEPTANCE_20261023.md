@@ -48,6 +48,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
 - 持久 Run 修订规划回归本轮 **16 passed in 25.37s**。这证明当前工作树的修订规划服务测试通过，不替代默认 Step 的真实模型规划和业务执行验收。
+- 旧 Smoke 历史导入/投影补充真实 PostgreSQL 验收：`test_legacy_smoke_import_postgres_live.py` 在隔离数据库中实际写入旧目录结果，执行显式 `project_scope → project_id` 预检和物化，重建 Store 后读回 canonical case/suite/run/item/attempt/result，重复执行保持同一 Run，源快照篡改进入 `failed_count/errors` 且不覆盖账本。结果 **1 passed in 4.27s**；内存预检回归合计 **6 passed、1 skipped**。这只关闭旧 Smoke 导入边界，不代表其他历史表迁移或未知来源自动归属已完成。证据由提交 `3313e1ea3` 中的测试保留。
 
 - API 自动鉴权续期与 Cookie 持久化补验：`test_api_401_refresh_automatic_live.py` 与 Cookie HTTP 回归在独立证据目录中 **21 passed、1 skipped，120.40 秒**；另运行真实 PG/ToolJob/加密凭据/Cookie Worker 场景 **1 passed，11.07 秒**。实际对账了登录→401→刷新→重试、刷新失败不重放目标、超时新 attempt、进程中断后三个暂停点恢复、Cookie 属性轮换、服务重启读回及终态重投 0 个额外 HTTP。公开结果、Worker prompt 和存储投影均未出现明文凭据。跳过项是同一 Cookie 文件中未启用的另一条存储门控，不影响已通过的实际存储专项。证据：`p3-api-401-auto-current-20261023-run2/`、`p3-api-cookie-storage-current-20261023-run2/`。本项仍属于受控本地目标，不等同默认 Step 质量验收。
 
@@ -82,7 +83,7 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 - 默认 Step 普通需求文档全量生成质量、默认 UI 录制知识使用、默认 Agent API 完整流程。
 - 人工操作 DeepSeek 登录/聊天、默认 AI 使用录制知识完成断言，以及 closed Shadow DOM 的能力边界呈现；受控页面的 Electron iframe/弹窗、open Shadow DOM、场景编辑、元素别名及回放失败定位已有上述当前证据。
 - Agent 自主性能/安全规划、多级加压、TTFT/Token 吞吐和更多进程故障恢复。
-- 需求变更更广业务质量、部署适用性、历史迁移和更多格式/故障组合。
+- 需求变更更广业务质量、部署适用性、其他历史数据迁移和更多格式/故障组合。
 
 ## 仍需补实现或复现后才能确认的范围
 
