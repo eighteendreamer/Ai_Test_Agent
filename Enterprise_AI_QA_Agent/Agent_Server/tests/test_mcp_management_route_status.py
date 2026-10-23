@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 import sys
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -26,6 +27,7 @@ from src.registry.models import ModelRegistry
 from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
+from src.schemas.integration import IntegrationRecord
 from tests.live_postgres_config import LivePostgresTestConfig
 
 
@@ -99,6 +101,38 @@ async def test_mcp_management_crud_and_validation(app_and_store):
         assert (await client.post(f"{path}/confirm-stdio")).status_code == 200
         assert (await client.post(f"{path}/reconnect")).status_code == 400
         assert (await client.delete(path)).status_code == 200
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_and_store", ["postgres"], indirect=True)
+async def test_legacy_mcp_integration_migration_is_idempotent(app_and_store):
+    _, store = app_and_store
+    now = datetime.now(timezone.utc)
+    integration = IntegrationRecord(
+        id=f"legacy-{uuid4()}",
+        name="legacy HTTP integration",
+        kind="mcp",
+        transport="http",
+        endpoint_url="http://127.0.0.1:8765/mcp",
+        headers={"X-Fixture": "migration"},
+        capabilities=["tools"],
+        created_at=now,
+        updated_at=now,
+    )
+
+    first_count = await store.migrate_legacy_integrations([integration])
+    second_count = await store.migrate_legacy_integrations([integration])
+    migrated = [
+        item for item in await store.list_servers()
+        if item.metadata.get("legacy_integration_id") == integration.id
+    ]
+
+    assert first_count == 1
+    assert second_count == 0
+    assert len(migrated) == 1
+    assert migrated[0].transport == "streamable_http"
+    assert migrated[0].config["url"] == integration.endpoint_url
+    assert migrated[0].config["headers"] == integration.headers
 
 
 @pytest.mark.asyncio
