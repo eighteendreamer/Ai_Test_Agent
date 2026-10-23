@@ -34,6 +34,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 
 ## 已有实现且有实际验收证据
 
+- Worker CLI 验收夹具已删除未指定 Redis 时隐式启动重镜像的回退。必须传入 `redis_url` 或设置 `QA_ISOLATED_RUNTIME_REDIS_URL`，缺失/空白配置在资源分配前明确失败。复用现有 Redis DB 13，三个无配置边界加三个生产 API/独立执行 Worker 场景 **6 passed in 174.34s**；正常、预算耗尽及正式回执纠正均验证审批跨重启保留和终态重投无新增模型/业务操作。本轮未创建容器，Redis核对本轮键后精确清理至0键；其他存储由原夹具 teardown，未另做全存储清理审计。详见 `P2_EXPLICIT_REDIS_20261023.md`。这是受控模型验收，不代替默认 Step 闭环。
 - 模板、项目模板、Excel 行式/分表式及 JSON 导入、预览、错误阻断、评审启用、项目隔离和重启恢复。
 - 本轮对模板与导入做了当前工作树的产品复验：构建版 App/Playwright、独立 API、隔离 MySQL/PostgreSQL/RustFS/Redis；实际构造并导入 `rows.xlsx`、`split.xlsx`、`cases.json`、`invalid.xlsx`。覆盖项目模板保存、原件字节读回与下载、预览及错误报告下载、草稿幂等提交、评审/启用、JSON 新版本不改活动版本、编号冲突阻断、跨项目隔离及 API 重启后的数据读回。结果 **1 passed in 63.60s**；页面错误和非预期 API 错误均为0，项目隔离返回404，重启后数据仍可读。证据：`p1-case-import-full-product-current-resume-20261023-01/` 与对应 XML。该证据关闭了这些模板/导入页面流程的验收缺口，不包括未来项目平台数据源接入，也不代表普通需求文档生成闭环通过。
 - 普通文档生成当前工作树产品复验通过：`test_ordinary_document_modules_and_independent_saved_response_recovery` 的流式/非流式两组在干净隔离证据目录 **2 passed in 394.38s**。使用真实 Markdown/DOCX/PDF 输入、隔离 MySQL/PostgreSQL/RustFS/Redis、生产 API/Worker 和构建版 App/Playwright，并通过本机受控 HTTP 模型验证；两个页面场景均实现3/3模块完成，提交成功但丢失回执后通过回查恢复且没有重复提交，完整 JSON 草稿查看/人工新版本修订通过，页面错误与网络错误均为0。模块级错误恢复场景保留 `[completed, failed, completed]`，失败模块从已保存响应独立重试完成；模板在请求提交后修改不改变固定生成范围，API 重启后仍可完成。DOCX 的3个模块及文本型 PDF 的1个模块均完成并校验来源映射。JUnit 与逐项证据：`Agent_Server/docs/upgrade_2026-10-03/p1-document-generation-full-product-current-20261023-02.xml` 及同名目录。该模型是本地受控模型，因此证明产品链路、存储、恢复和页面行为，不证明默认 Step 的生成语义质量；该缺口仍未验收。

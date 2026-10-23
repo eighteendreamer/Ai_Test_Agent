@@ -43,7 +43,7 @@ from src.schemas.case_planning import CasePlanningPolicy
 from src.schemas.settings import GeneralSettingsPayload, ModelConfigUpdateRequest
 
 pytestmark = pytest.mark.skipif(os.getenv("RUN_LIVE_EXECUTION_CLI_TESTS") != "1",
-    reason="requires isolated PostgreSQL database, MySQL, RustFS and local Docker image")
+    reason="requires isolated PostgreSQL database, MySQL, RustFS and explicitly configured Redis")
 SERVER_ROOT = Path(__file__).resolve().parents[1]
 
 
@@ -98,11 +98,11 @@ class Processes:
 
 @asynccontextmanager
 async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
-    # A caller may explicitly reuse an already managed Redis instance.  The
-    # default remains a private disposable service so existing tests keep their
-    # isolation; the environment hook prevents product acceptance runs from
-    # silently starting a heavyweight fallback container.
-    redis_url = redis_url or os.getenv("QA_ISOLATED_RUNTIME_REDIS_URL") or None
+    # Require an explicit test service before allocating databases or processes.
+    redis_url = (redis_url or os.getenv("QA_ISOLATED_RUNTIME_REDIS_URL") or "").strip()
+    if not redis_url:
+        pytest.fail("Set QA_ISOLATED_RUNTIME_REDIS_URL or pass redis_url with an isolated test Redis database; "
+            "this fixture does not start containers", pytrace=False)
     settings = get_settings().model_copy(deep=True)
     base = settings.model_copy(deep=True)
     suffix = uuid4().hex[:16]
@@ -120,28 +120,21 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
     settings.orchestration.redis_task_block_ms = 100
     settings.orchestration.redis_task_reclaim_idle_ms = 1000
     settings.orchestration.redis_task_outbox_streams = ""
+    settings.database.redis_url = redis_url
+    settings.orchestration.redis_task_stream = f"qa:test:{suffix}:runs"
+    settings.orchestration.agent_task_stream = f"qa:test:{suffix}:agents"
+    settings.orchestration.redis_task_consumer_group = f"qa:test:{suffix}:workers"
     config_tables = []
     for field in ("llm_model_table", "email_config_table", "channel_config_table", "sponsor_config_table", "application_config_table"):
         name = "up_cli_" + field.removesuffix("_table") + "_" + suffix
         setattr(settings.database, field, name)
         config_tables.append(name)
     (tmp_path / "data").mkdir()
-    container = "qa-execution-cli-" + suffix
-    created_database, created_container, isolated_configs = False, False, False
+    created_database, isolated_configs = False, False
     queue = None
     processes = Processes(tmp_path, settings)
     objects = ArtifactStorageService(settings)
     owned_objects = []
-    docker_outputs = []
-
-    async def docker(*args):
-        completed = await asyncio.to_thread(subprocess.run, ["docker", *args],
-            capture_output=True, text=True, timeout=30)
-        docker_outputs.append({"action": args[0], "exit_code": completed.returncode,
-            "stdout": completed.stdout, "stderr": completed.stderr})
-        assert completed.returncode == 0, docker_outputs[-1]
-        return completed.stdout.strip()
-
     try:
         # Full lifespan contains hardcoded smoke tables. A unique DB isolates
         # all tables, rather than merely renaming selected settings fields.
@@ -160,22 +153,6 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
         config.initialize()
         config.save("workspace.general", GeneralSettingsPayload().model_dump(mode="json"))
         config.save("channel.advanced", ChannelAdvancedSettings().model_dump(mode="json"))
-        if redis_url:
-            # Product tests may reuse an explicitly supplied local Redis.  The
-            # randomly scoped streams/groups keep this fixture isolated without
-            # starting a second container.
-            settings.database.redis_url = redis_url
-            settings.orchestration.redis_task_stream = f"qa:test:{suffix}:runs"
-            settings.orchestration.agent_task_stream = f"qa:test:{suffix}:agents"
-            settings.orchestration.redis_task_consumer_group = f"qa:test:{suffix}:workers"
-        else:
-            # Verified executable in a cached local image, no installation/pull.
-            await docker("run", "--detach", "--name", container, "--publish", "127.0.0.1::6379",
-                "--entrypoint", "/opt/software/redis/bin/redis-server", "eighteenyear/bigdata-pytorch:2.6.1",
-                "--bind", "0.0.0.0", "--protected-mode", "no", "--save", "", "--appendonly", "no")
-            created_container = True
-            host = await docker("port", container, "6379/tcp")
-            settings.database.redis_url = "redis://" + host + "/0"
         processes.env = child_environment(settings)
         probe = Redis.from_url(settings.database.redis_url)
         try:
@@ -214,23 +191,17 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
         for uri in owned_objects:
             await objects.delete_object_uri(uri)
         await objects.close()
-        if created_container:
-            await docker("logs", container)
-            await docker("rm", "--force", container)
-        elif redis_url:
-            shared_redis = Redis.from_url(settings.database.redis_url)
-            try:
-                owned_keys = {
-                    settings.orchestration.redis_task_stream,
-                    f"{settings.orchestration.redis_task_stream}:dead_letter",
-                    settings.orchestration.agent_task_stream,
-                    f"{settings.orchestration.agent_task_stream}:dead_letter",
-                }
-                if owned_keys:
-                    await shared_redis.delete(*owned_keys)
-            finally:
-                await shared_redis.aclose()
-        (tmp_path / "docker.json").write_text(json.dumps(docker_outputs, ensure_ascii=False, indent=2), encoding="utf-8")
+        shared_redis = Redis.from_url(settings.database.redis_url)
+        try:
+            owned_keys = {
+                settings.orchestration.redis_task_stream,
+                f"{settings.orchestration.redis_task_stream}:dead_letter",
+                settings.orchestration.agent_task_stream,
+                f"{settings.orchestration.agent_task_stream}:dead_letter",
+            }
+            await shared_redis.delete(*owned_keys)
+        finally:
+            await shared_redis.aclose()
         if isolated_configs:
             with mysql_raw_connection(settings) as conn, conn.cursor() as cur:
                 for name in reversed(config_tables):
@@ -250,7 +221,7 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
             evidence.mkdir(exist_ok=True)
             for path in tmp_path.iterdir():
                 if (path.suffix in {".stdout", ".stderr"} or path.name in
-                    {"docker.json", "waiting.json", "requirements.md", "postgres-execution.json", "postgres-finally.json", "completed.json"}
+                    {"waiting.json", "requirements.md", "postgres-execution.json", "postgres-finally.json", "completed.json"}
                     or path.name.startswith(("model-", "receipt-"))):
                     shutil.copyfile(path, evidence / path.name)
 
