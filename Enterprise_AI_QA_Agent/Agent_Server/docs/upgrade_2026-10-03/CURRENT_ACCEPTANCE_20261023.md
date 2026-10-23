@@ -125,3 +125,9 @@ MySQL 配置库使用独立连接，应用中的模型、邮件、渠道、赞�
 MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::test_actual_mysql_profile_migration_editor_reload_and_restart` 在隔离 MySQL 上实际删除自有测试表的 `request_profile` 列，重复运行 Store 初始化后确认列恢复，再通过生产 API、构建版设置页面、API 重启及实际模型请求验证配置读写。该测试只证明模型配置中这一列的迁移和产品链路，不覆盖模型表其他历史字段、邮件/渠道/应用/赞助配置表，也不代表生产 MySQL 的所有旧结构已盘点。记录的列定义证据在 `p6-model-request-profile-product-current-20261022-01/mysql-migration.json`。
 
 调研结论：数据库职责仍符合“配置放 MySQL、业务状态放 PostgreSQL”；但升级治理目前不对称，PostgreSQL 有有限的显式 Alembic revisions，MySQL 配置结构依赖启动时自修复，业务 PostgreSQL 也有大量 Store 初始化 DDL。正确的下一步不是立刻再引入一套迁移工具，而是完成按数据库分类的初始化清单，标记每项是纯建表、兼容性补列、索引/约束演进还是默认数据写入，并对照已部署结构和测试证据；再依据这个清单制定分阶段迁移方案，保留初始化的兼容读取/新库引导职责，避免启动过程意外改结构或重复播种数据。本轮仅做只读调研。
+
+### 按配置表名的迁移覆盖粗盘
+
+`DatabaseConfig` 当前声明 **41 个 PostgreSQL 表名**和 **5 个 MySQL 配置表名**。对照四个 PostgreSQL revision，显式建表覆盖为 Outbox、ToolJob、ToolArtifact、Compaction；Run revision 只为已有 Run 表补 `plan_snapshots` 列，不负责创建 Run/Suite/Case 等业务基线。故这些 revision 不能作为其余配置表的部署基线。此前只读检查的当前 `QA_Agent` 配置库没有 `public.alembic_version`，只说明该库尚无 Alembic 运行记录；不能外推到其他环境。
+
+这仍是“按配置键盘点”的粗盘，不是完整 DDL 清单：Store 会创建配置项之外的派生表（例如文档 versions/assets/submissions、录制回放和场景版本、需求影响响应/计划等），并可能在同一张表上执行运行时 `ALTER TABLE`。下一轮需从 API/Worker 的实际初始化调用图枚举这些派生表，记录 DDL 行、旧形态支持、数据写入/播种副作用和已有真实测试，再谈迁移切换顺序。
