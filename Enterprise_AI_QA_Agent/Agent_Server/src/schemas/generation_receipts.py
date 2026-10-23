@@ -3,6 +3,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.schemas.generation_coverage import GenerationCoverageReview
+
 
 class GenerationObject(BaseModel):
     model_config = ConfigDict(extra="forbid")
@@ -25,3 +27,4 @@ class GenerationReceipt(BaseModel):
     response: GenerationObject | None
     versions: list[GenerationVersionReference]
     retirement_target: dict | None
+    generation_review: GenerationCoverageReview | None = None

@@ -115,7 +115,7 @@ async def test_alternate_model_generates_and_persists_two_document_modules(tmp_p
                 use_provider_defaults=False,
                 capability_overrides=selected.capability_overrides,
                 context_window=selected.context_window,
-                max_output_tokens=min(selected.max_output_tokens, 4096),
+                max_output_tokens=selected.max_output_tokens,
             )
             isolated_public = isolated_models.upsert(clone_request)
             isolated_model = isolated_models.get_by_name(selected.model_id)
@@ -398,6 +398,213 @@ async def test_alternate_model_generates_and_persists_two_document_modules(tmp_p
                     assert await call("GET", doc_base + f"/case-generations/{group['id']}") == result
                     assert await call("GET", doc_base + f"/case-generation-tasks/{tasks[1]['id']}") == tasks[1]
                     assert await call("GET", f"/test-cases/{first_case_id}/versions") == first_versions
+                    format_results = []
+                    format_request_ids = []
+                    format_validation_failures = []
+                    if os.getenv("RUN_LIVE_DOCUMENT_GENERATION_FORMATS") == "1":
+                        from docx import Document
+                        from test_document_parsers import actual_pdf
+
+                        word = Document()
+                        word.add_heading("商城需求 😀", 0)
+                        word.add_paragraph("所有接口均需登录，退款不能超过实付金额。")
+                        for title in ("注册", "订单", "查询"):
+                            word.add_heading(title, 1)
+                            word.add_paragraph("必须核对权限，失败不能修改原有数据。")
+                        table = word.add_table(rows=2, cols=2)
+                        table.cell(0, 0).text = "分页"
+                        table.cell(0, 1).text = "最多20条"
+                        table.cell(1, 0).text = "金额"
+                        table.cell(1, 1).text = "不超过实付"
+                        word_path = evidence / "ordinary-requirements.docx"
+                        word.save(word_path)
+                        pdf_path = evidence / "ordinary-requirements.pdf"
+                        actual_pdf(pdf_path)
+
+                        for path, expected_modules in ((word_path, 3), (pdf_path, 1)):
+                            format_key = path.suffix.removeprefix(".")
+                            newdoc = await call("POST", "/registry/api-docs/upload", {
+                                "project_id": project["id"],
+                                "filename": path.name,
+                                "request_id": "alternate-format-upload-" + format_key,
+                                "content_base64": base64.b64encode(path.read_bytes()).decode(),
+                            })
+                            owned.append(newdoc["original_asset"]["storage_uri"])
+                            format_base = f"/projects/{project['id']}/documents/{newdoc['id']}"
+                            parse_task = await call("POST", format_base + "/parse-tasks", {
+                                "creation_key": "alternate-format-parse-" + format_key,
+                                "version_id": newdoc["current_version_id"],
+                            }, 202)
+                            await run_worker("alternate-format-parser-" + format_key, DOCUMENT_PARSE_STREAM)
+                            parse_task = await call("GET", format_base + "/parse-tasks/" + parse_task["id"])
+                            assert parse_task["status"] == "completed", parse_task
+                            parsed_view = await call(
+                                "GET", format_base + "/parse-snapshots/" + parse_task["snapshot_id"]
+                            )
+                            parsed_result = parsed_view["result"]
+                            owned.append(parsed_view["snapshot"]["storage_uri"])
+                            if format_key == "docx":
+                                assert all(term in parsed_result["text"] for term in ("注册", "订单", "查询", "最多20条"))
+                                assert parsed_result["tables"]
+                                assert len(parsed_result["sections"]) >= 3
+                            else:
+                                assert "Order retention: 7 days." in parsed_result["text"]
+                                assert "Invalid ID returns an error." in parsed_result["text"]
+                                assert any(item["code"] == "pdf_structure_unavailable" for item in parsed_result["warnings"])
+
+                            format_request = {
+                                **request,
+                                "creation_key": "alternate-format-generation-" + format_key,
+                                "parse_snapshot_id": parse_task["snapshot_id"],
+                            }
+                            submitted = await call("POST", format_base + "/document-case-generations", format_request, 202)
+                            fixed = await call(
+                                "GET", format_base + f"/case-generations/{submitted['id']}/scope"
+                            )
+                            assert fixed["text"] == parsed_result["text"]
+                            assert fixed["parse_snapshot"]["id"] == parse_task["snapshot_id"]
+                            assert len(fixed["modules"]) == expected_modules
+                            assert "".join(
+                                fixed["text"][segment["start_char"]:segment["end_char"]]
+                                for segment in fixed["segments"]
+                            ) == fixed["text"]
+                            save(f"format-{format_key}-scope.json", fixed)
+
+                            before_files = {item.name for item in physical.glob("*.sdk-create.json")}
+                            for module_index in range(expected_modules):
+                                await run_worker(
+                                    f"alternate-format-{format_key}-{module_index}", GENERATION_STREAM
+                                )
+                            final = await call(
+                                "GET", format_base + f"/case-generations/{submitted['id']}"
+                            )
+                            assert all(item["status"] == "completed" for item in final["modules"]), final
+                            sdk_files = [
+                                item for item in physical.glob("*.sdk-create.json")
+                                if item.name not in before_files
+                            ]
+                            assert len(sdk_files) == expected_modules, [item.name for item in sdk_files]
+                            sdk_records = [json.loads(item.read_bytes()) for item in sdk_files]
+                            assert all(item["sdk_create_returned"] for item in sdk_records)
+                            assert all(len(item["physical_requests"]) == 1 for item in sdk_records)
+
+                            format_versions = []
+                            format_module_evidence = []
+                            for task in final["modules"]:
+                                review = task["checkpoint"]["receipt"]["generation_review"]
+                                response = await call(
+                                    "GET", format_base + f"/case-generation-tasks/{task['id']}/response"
+                                )
+                                reference = task["checkpoint"]["receipt"]["versions"][0]
+                                case = await call("GET", f"/test-cases/{reference['case_id']}")
+                                versions = await call("GET", f"/test-cases/{reference['case_id']}/versions")
+                                version = next(item for item in versions if item["id"] == reference["version_id"])
+                                save(f"format-{format_key}-draft-{len(format_versions)}.json", version)
+                                format_versions.append(version)
+                                issues = []
+                                if review["parse_snapshot_id"] != parse_task["snapshot_id"]:
+                                    issues.append("coverage_parse_snapshot_mismatch")
+                                if review["candidate_inventory_complete"] is not True:
+                                    issues.append("coverage_candidate_inventory_incomplete")
+                                if review["mapping_state"] != "complete":
+                                    issues.append("coverage_mapping_incomplete")
+                                if review["unknown_candidate_ids"]:
+                                    issues.append("coverage_unknown_candidate_ids")
+                                issues.extend(
+                                    f"{item['candidate_id']}:{issue}"
+                                    for item in review["items"]
+                                    for issue in item["validation_issues"]
+                                )
+                                if response["response_summary"]["mode"] != "ok":
+                                    issues.append("model_response_not_ok")
+                                if response["tool_calls"]:
+                                    issues.append("unexpected_tool_calls")
+                                if case["lifecycle_status"] != "draft" or case["active_version_id"] is not None:
+                                    issues.append("generated_case_not_unapproved_draft")
+                                if version["source_refs"][0]["source_id"] != parse_task["snapshot_id"]:
+                                    issues.append("draft_source_snapshot_mismatch")
+                                if version["generation_metadata"]["document_generation"]["parse_snapshot_id"] != parse_task["snapshot_id"]:
+                                    issues.append("draft_metadata_snapshot_mismatch")
+                                if issues:
+                                    format_validation_failures.append({
+                                        "format": format_key,
+                                        "module_id": task["module_id"],
+                                        "issues": issues,
+                                        "coverage_review": review,
+                                        "content_json": version["content_json"],
+                                    })
+                                format_module_evidence.append({
+                                    "module_id": task["module_id"],
+                                    "status": task["status"],
+                                    "case_id": reference["case_id"],
+                                    "version_id": reference["version_id"],
+                                    "coverage_mapping": review["mapping_state"],
+                                    "coverage_items": len(review["items"]),
+                                    "quality_issues": issues,
+                                })
+
+                            for reference_index, reference in enumerate([
+                                submitted["scope"],
+                                *[item["checkpoint"]["response"] for item in final["modules"]],
+                            ]):
+                                raw = (await objects.read_object_uri(reference["storage_uri"]))["content"]
+                                assert len(raw) == reference["size_bytes"]
+                                assert hashlib.sha256(raw).hexdigest() == reference["sha256"]
+                                save(f"format-{format_key}-object-{reference_index}.json", json.loads(raw))
+
+                            model_call_count = len(list(physical.glob("*.sdk-create.json")))
+                            for task in final["modules"]:
+                                await queues[GENERATION_STREAM].enqueue({
+                                    "schema_version": 1,
+                                    "task_type": "case_generation",
+                                    "project_id": project["id"],
+                                    "task_id": task["id"],
+                                })
+                                await run_worker(f"alternate-format-terminal-{format_key}-{task['id'][:6]}")
+                            assert len(list(physical.glob("*.sdk-create.json"))) == model_call_count
+                            assert await call(
+                                "GET", format_base + f"/case-generations/{submitted['id']}"
+                            ) == final
+
+                            stream_records = []
+                            for record in sdk_records:
+                                request_id = record["physical_requests"][0]
+                                format_request_ids.append(request_id)
+                                stream = json.loads((physical / f"{request_id}.sdk-stream.json").read_bytes())
+                                assert stream["sdk_iteration_finished"] is True
+                                assert stream["finish_reason"] == "stop"
+                                stream_records.append({
+                                    "request_id": request_id,
+                                    "finish_reason": stream["finish_reason"],
+                                    "completion_tokens": stream["numeric_usage"].get("completion_tokens"),
+                                })
+                                sent = json.loads((physical / f"{request_id}.request.json").read_bytes())
+                                context = json.loads(sent["messages"][-1]["content"])["evidence_context"]["document_generation"]
+                                assert context["text"] == fixed["text"]
+                                assert context["tables"] == parsed_result["tables"]
+
+                            format_summary = {
+                                "filename": path.name,
+                                "parse_status": parsed_view["snapshot"]["status"],
+                                "parse_sha256": parsed_view["snapshot"]["sha256"],
+                                "module_count": len(final["modules"]),
+                                "modules": format_module_evidence,
+                                "sdk_calls": len(sdk_records),
+                                "physical_requests": stream_records,
+                                "terminal_replay_extra_calls": 0,
+                                "quality_passed": not any(
+                                    item["format"] == format_key for item in format_validation_failures
+                                ),
+                                "draft_version_ids": [item["id"] for item in format_versions],
+                            }
+                            save(f"format-{format_key}-verification.json", format_summary)
+                            format_results.append(format_summary)
+                            report["format_acceptance"] = format_results
+                            report["format_validation_failures"] = format_validation_failures
+                    if format_validation_failures:
+                        raise AssertionError({
+                            "format_validation_failures": format_validation_failures
+                        })
                     report.update(
                         generation_completed=True,
                         independent_recovery_complete=True,
@@ -420,9 +627,10 @@ async def test_alternate_model_generates_and_persists_two_document_modules(tmp_p
                             request
                             for record in sdk_records
                             for request in record["physical_requests"]
-                        ],
+                        ] + format_request_ids,
                         actual_sdk_calls=len(sdk_files),
                         terminal_replay_model_calls=0,
+                        format_acceptance=format_results,
                     )
             finally:
                 for queue in queues.values():
