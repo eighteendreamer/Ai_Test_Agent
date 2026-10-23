@@ -100,3 +100,13 @@
 在当前工作树实际运行 `tests/test_model_completion_http.py tests/test_model_clients.py::test_resolve_client_dispatches_by_transport`，结果 **22 passed in 18.84s**。这些测试通过本机 HTTP server 捕获官方 SDK 的真实请求字节并返回各协议实际形状的同步/流式响应，覆盖五种路径（含 LangChain Chat）、URL/请求字段、usage、工具与完成状态；证明当前 SDK 版本下的协议映射边界，不证明外部供应商服务可用或任意具体模型支持已声明能力。未调用外部模型、未改 MySQL/PG 配置或容器。
 
 适配层的剩余具体缺口仍按 2026-10-21 记录处理：逐模型 capability override 中的多模态、文件/PDF 和 JSON mode 声明需要逐个追到所有运行时消费点，并用真实文件/图像和本机 provider HTTP 响应验证；当前 transport 分层与请求 profile 本身不应重做。
+
+## 2026-10-23 媒体能力门禁修复
+
+沿 `ModelInvocationRequest.structured_messages` 追到四种 SDK serializer 后，确认模型 capability 字段此前只保存/展示，调用入口没有校验。实际问题是：无视觉能力的模型仍会收到图片，Anthropic/Gemini 的远程 URL 图片会被 serializer 降成文字；文件/PDF 则会被序列化成 `[file:name]` 占位文本，可能被误认为模型读取了原件。
+
+复用现有 `map_model_request` 和 `UnsupportedModelRequest` 修复：调用前按 `vision`、`image_url_input`、`image_base64_input`、`multi_image` 校验；缺少能力时作为 `unsupported_request` 返回，不发送 HTTP。当前 provider serializers 没有文件上传/引用协议，因此所有文件/PDF输入明确拒绝；Google provider profile 不再虚报 `file_input=true`。正常单图仍按原 transport 字段发送，不改协议、不改 MySQL 配置或数据库 schema。
+
+回归实际结果：`tests/test_model_request_profile.py tests/test_model_completion_http.py tests/test_model_clients.py` **94 passed in 42.01s**。其中六种不支持图片/文件情况验证 provider HTTP 发送数为0；单张 OpenAI Chat 图片通过真实 SDK 发出；额外四种原生 transport 的 base64 图片实际请求矩阵分别核对 Chat `image_url`、Responses `input_image`、Anthropic `image/source.base64`、Gemini `inlineData` JSON wire shape。首次 Gemini 断言错误地比较了 SDK 内部 snake_case 对象；读取实际 HTTP body 后改为断言线上 camelCase，失败原件已由测试输出保留。
+
+当前分类：图像能力按配置门禁和四种协议映射**已有实现且本机 HTTP 验收通过**；文件/PDF capability 消费已变成明确拒绝，但文件/PDF transport 映射本身仍**未实现**；JSON mode 的模型级能力与其他格式还需继续核对。以上本机 HTTP 结果不等于各供应商真实服务端或具体模型质量验收。

@@ -175,7 +175,6 @@ PROVIDER_PROFILES: tuple[ProviderProfile, ...] = (
             tool_calling=True,
             vision=True,
             multi_image=True,
-            file_input=True,
             reasoning=True,
             streaming=True,
             image_url_input=False,

@@ -15,7 +15,7 @@ from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.model_clients.request_mapping import map_model_request, UnsupportedModelRequest
 from src.core.config import get_settings
 from src.infrastructure.model_config_store import MySQLModelConfigStore
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.model_config import ContentPart, ModelConfigRecord, ModelInvocationRequest, UnifiedMessage, model_invocation_parameters
 from src.schemas.model_request_options import ModelOutputFormat, ModelReasoningOptions, ModelRequestProfile
 
 
@@ -119,6 +119,56 @@ async def test_explicit_zero_reasoning_budget(transport):
         if transport == "anthropic_messages": assert sends[0]["body"]["thinking"] == {"type": "disabled"}
         else: assert sends[0]["body"]["generationConfig"]["thinkingConfig"] == {"thinking_budget": 0}
         evidence(transport+"-budget-zero", {"requests": sends, "result": result.model_dump(mode="json")})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(("parts", "capabilities", "option"), [
+    ([ContentPart(type="image_base64", data_base64="aGVsbG8=", mime_type="image/png")], {}, "vision"),
+    ([ContentPart(type="image_base64", data_base64="aGVsbG8=", mime_type="image/png")],
+        {"vision": True, "image_base64_input": False}, "image_base64_input"),
+    ([ContentPart(type="image_url", url="https://img.test/a.png")],
+        {"vision": True, "image_url_input": False}, "image_url_input"),
+    ([ContentPart(type="image_url", url="https://img.test/a.png"),
+        ContentPart(type="image_url", url="https://img.test/b.png")],
+        {"vision": True, "image_url_input": True, "multi_image": False}, "multi_image"),
+    ([ContentPart(type="file", file_name="spec.pdf", mime_type="application/pdf", data_base64="cGRm")],
+        {}, "pdf_input"),
+    ([ContentPart(type="file", file_name="notes.txt", mime_type="text/plain", data_base64="bm90ZXM=")],
+        {"file_input": True}, "file_input"),
+])
+async def test_unsupported_media_is_rejected_before_provider_send(parts, capabilities, option):
+    with provider("openai_chat_completions", False) as (url, sends, _):
+        config, runtime = runtime_config(url, "native_completion")
+        updated = config.capabilities.model_copy(update=capabilities)
+        config = config.model_copy(update={"supports_vision": updated.vision, "capabilities": updated})
+        runtime._model_registry = Registry(config)
+        request = ModelInvocationRequest(system_prompt="Inspect the supplied media.", messages=[],
+            structured_messages=[UnifiedMessage(role="user", parts=parts)])
+        result = await runtime.invoke("fixture", request)
+        assert result.response_summary["mode"] == "unsupported_request"
+        assert result.response_summary["option"] == option
+        assert not sends
+
+
+@pytest.mark.asyncio
+async def test_declared_single_image_is_sent_with_native_openai_chat_shape():
+    with provider("openai_chat_completions", False) as (url, sends, _):
+        config, runtime = runtime_config(url, "native_completion")
+        capabilities = config.capabilities.model_copy(update={
+            "vision": True, "image_url_input": True, "multi_image": False,
+        })
+        config = config.model_copy(update={"supports_vision": True, "capabilities": capabilities})
+        runtime._model_registry = Registry(config)
+        request = ModelInvocationRequest(system_prompt="Describe the image.", messages=[],
+            structured_messages=[UnifiedMessage(role="user", parts=[
+                ContentPart(type="image_url", url="https://img.test/a.png"),
+            ])])
+        result = await runtime.invoke("fixture", request)
+        assert result.response_summary["mode"] == "ok"
+        assert len(sends) == 1
+        assert sends[0]["body"]["messages"][-1]["content"] == [
+            {"type": "image_url", "image_url": {"url": "https://img.test/a.png"}},
+        ]
 
 
 @contextmanager

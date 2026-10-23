@@ -24,6 +24,34 @@ def map_model_request(config: ModelConfigRecord, request: ModelInvocationRequest
     parameters: dict[str, Any] = {}
     decisions: list[dict[str, str]] = []
 
+    image_count = 0
+    for message in request.structured_messages:
+        for part in message.parts:
+            if part.type == "image_base64":
+                image_count += 1
+                if not config.capabilities.vision:
+                    raise UnsupportedModelRequest("vision", "vision_not_enabled")
+                if not config.capabilities.image_base64_input:
+                    raise UnsupportedModelRequest("image_base64_input", "base64_image_not_enabled")
+            elif part.type == "image_url" and part.url:
+                image_count += 1
+                is_data_url = part.url.startswith("data:") and ";base64," in part.url
+                if not config.capabilities.vision:
+                    raise UnsupportedModelRequest("vision", "vision_not_enabled")
+                if is_data_url and not config.capabilities.image_base64_input:
+                    raise UnsupportedModelRequest("image_base64_input", "base64_image_not_enabled")
+                if not is_data_url and not config.capabilities.image_url_input:
+                    raise UnsupportedModelRequest("image_url_input", "image_url_not_enabled")
+            elif part.type == "file":
+                mime_type = str(part.mime_type or "").lower()
+                if mime_type == "application/pdf" and not config.capabilities.pdf_input:
+                    raise UnsupportedModelRequest("pdf_input", "pdf_input_not_enabled")
+                if not config.capabilities.file_input:
+                    raise UnsupportedModelRequest("file_input", "file_input_not_enabled")
+                raise UnsupportedModelRequest("file_input", "file_transport_not_mapped")
+    if image_count > 1 and not config.capabilities.multi_image:
+        raise UnsupportedModelRequest("multi_image", "multi_image_not_enabled")
+
     def unsupported(option, required, reason):
         if required:
             raise UnsupportedModelRequest(option, reason)

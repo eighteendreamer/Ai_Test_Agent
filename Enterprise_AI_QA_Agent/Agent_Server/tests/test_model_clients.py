@@ -175,7 +175,7 @@ def test_openai_client_maps_request_and_parses_response(monkeypatch: pytest.Monk
         ],
         tools=_TOOLS,
     )
-    parsed = asyncio.run(OpenAIChatClient().invoke(_config(), "secret", request))
+    parsed = asyncio.run(OpenAIChatClient().invoke(_config(supports_vision=True), "secret", request))
 
     call = _FakeAsyncOpenAI.last_instance.completions.calls[0]
     assert call["model"] == "gpt-test"

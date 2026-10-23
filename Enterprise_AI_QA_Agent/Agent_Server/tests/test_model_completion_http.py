@@ -17,7 +17,7 @@ from src.application.test_cases.planning_workflow import CasePlanningWorkflow
 from src.core.config import get_settings
 from src.schemas.case_planning import CasePlanningRequest
 from src.schemas.case_planning_task import PlanningTaskCheckpoint
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest
+from src.schemas.model_config import ContentPart, ModelConfigRecord, ModelInvocationRequest, UnifiedMessage
 from src.schemas.project import ProjectCreateRequest
 from src.application.model_clients.completion import model_completion_status
 from src.application.context.token_usage import normalize_usage
@@ -198,6 +198,43 @@ async def test_actual_sdk_fields_and_business_completion(tmp_path, transport, st
                     'private_headers_saved': False, 'full_P0_P5_complete': False}, ensure_ascii=False, indent=2), encoding='utf-8')
             assert terminal.plan.status == ('planning_failed' if limited else 'no_match')
             assert not env.service._models.requests
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('transport', ['openai_chat_completions', 'openai_responses',
+    'anthropic_messages', 'google_gemini_generate_content'])
+async def test_actual_sdk_maps_declared_base64_image_per_transport(transport):
+    with provider(transport, False) as (url, sends, _):
+        settings = get_settings().model_copy(deep=True)
+        settings.model.langchain_model_adapter_enabled = False
+        config = ModelConfigRecord(key='fixture', name='fixture', provider=(
+            'google' if transport == 'google_gemini_generate_content' else
+            'anthropic' if transport == 'anthropic_messages' else 'openai'),
+            transport=transport, model_id='fixture-model', api_base_url=url,
+            api_key='local-fixture-marker', max_output_tokens=512, supports_vision=True)
+        runtime = ModelRuntimeService(Registry(config), settings)
+        request = ModelInvocationRequest(system_prompt='Describe this image.', messages=[],
+            structured_messages=[UnifiedMessage(role='user', parts=[ContentPart(
+                type='image_base64', data_base64='aGVsbG8=', mime_type='image/png')])])
+        result = await runtime.invoke('fixture', request)
+        assert result.response_summary['mode'] == 'ok'
+        assert len(sends) == 1
+        body = sends[0]['body']
+        if transport == 'openai_chat_completions':
+            media = body['messages'][-1]['content'][0]
+            assert media == {'type': 'image_url', 'image_url': {
+                'url': 'data:image/png;base64,aGVsbG8='}}
+        elif transport == 'openai_responses':
+            media = body['input'][-1]['content'][0]
+            assert media == {'type': 'input_image',
+                'image_url': 'data:image/png;base64,aGVsbG8=', 'detail': 'auto'}
+        elif transport == 'anthropic_messages':
+            media = body['messages'][-1]['content'][0]
+            assert media == {'type': 'image', 'source': {
+                'type': 'base64', 'media_type': 'image/png', 'data': 'aGVsbG8='}}
+        else:
+            media = body['contents'][0]['parts'][0]
+            assert media == {'inlineData': {'mimeType': 'image/png', 'data': 'aGVsbG8='}}
 
 
 @pytest.mark.asyncio
