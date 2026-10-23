@@ -34,6 +34,9 @@ class PerfTestingRequestState(BaseModel):
 
     raw_message: str = ""
     target: str | None = None
+    method: str | None = None
+    headers: dict[str, str] = Field(default_factory=dict)
+    body_template: dict[str, Any] | str | None = None
     workload_qps: int | None = None
     workload_vus: int | None = None
     duration_seconds: int | None = None

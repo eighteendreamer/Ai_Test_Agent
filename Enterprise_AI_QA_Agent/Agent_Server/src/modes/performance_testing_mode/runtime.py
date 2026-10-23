@@ -241,6 +241,12 @@ class PerformanceTestingModeRuntime:
             if key == "target_url" and value:
                 state.request.filled_slots["target"] = value
                 state.request.target = value
+            elif key == "method" and value:
+                state.request.method = value.strip().upper()
+            elif key == "headers" and value is not None:
+                state.request.headers = value
+            elif key == "body_template":
+                state.request.body_template = value
             elif key == "target_rate_rps" and value:
                 state.request.filled_slots["workload"] = f"rate={value}rps"
                 state.request.workload_qps = value
@@ -294,7 +300,8 @@ class PerformanceTestingModeRuntime:
         slots = req.filled_slots
 
         target_url = req.target or slots.get("target", "")
-        method = "GET"
+        endpoint = state.resolved_endpoint or {}
+        method = (req.method or endpoint.get("method") or "GET").strip().upper()
 
         workload_model = "open"
         target_rate = req.workload_qps
@@ -319,12 +326,19 @@ class PerformanceTestingModeRuntime:
             min_tps=req.sla_min_tps,
         )
 
+        target = PerfTarget(name="primary", url=target_url, method=method,
+            headers=req.headers or endpoint.get("headers", {}),
+            body_template=req.body_template if req.body_template is not None else endpoint.get("body_template"))
+        logger.info("performance_http_request_configured", extra={
+            "session_id": state.session_id, "method": target.method,
+            "header_count": len(target.headers), "has_body": target.body_template is not None,
+        })
         return PerfPlan(
             plan_id=f"plan-{uuid.uuid4().hex[:8]}",
             title=f"压测 {target_url}",
             engine=req.engine or slots.get("engine") or (self._settings.orchestration.performance_default_engine if self._settings else "k6"),
             run_intent=req.run_intent or "probe",
-            targets=[PerfTarget(name="primary", url=target_url, method=method)],
+            targets=[target],
             workload=wl_config,
             smoke=SmokeConfig(),
             sla=sla,
@@ -387,6 +401,7 @@ class PerformanceTestingModeRuntime:
         endpoint_hint = arguments.get("endpoint_hint") or state.request.target or ""
 
         method, path = self._parse_endpoint_hint(endpoint_hint)
+        method = state.request.method or method
 
         result = await service.resolve_endpoint_from_docs(
             project_name=project_name,
