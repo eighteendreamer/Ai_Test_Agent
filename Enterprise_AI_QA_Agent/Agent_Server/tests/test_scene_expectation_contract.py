@@ -82,8 +82,8 @@ def test_original_schema_remains_selected_and_does_not_accept_scene_wire():
     with pytest.raises(ValueError): AgentCaseExecutionReceipt.model_validate(original)
     updated = deepcopy(original);updated["schema_version"] = 2
     assert SceneExecutionReceipt.model_validate(updated).steps[0].checks[0].expected_source
-    assert receipt_prompt_version() == "case-execution-receipt-v7"
-    assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v7"
+    assert receipt_prompt_version() == "case-execution-receipt-v8"
+    assert receipt_prompt_version("case-scene-receipt-v1") == "case-execution-scene-receipt-v8"
     assert '"SceneExecutionCheck"' in case_result_contract("case-scene-receipt-v1")
 
 
@@ -104,7 +104,13 @@ def test_prompt_revision_only_clarifies_existing_path_types_and_cardinality():
     path_types = ('All path token arrays contain strings only, including array indexes: index 0 is "0", '
         'never the JSON number 0. This applies to both expected_path_tokens and output_path_tokens. ')
     assert current.count(path_types) == 1
-    assert receipt_prompt_version() == "case-execution-receipt-v7"
+    assert receipt_prompt_version() == "case-execution-receipt-v8"
+    assert ('if expected_source is {"expected_count":"1"}, its path is ["expected_count"], '
+        'never ["0","expected_count"] unless expected_source actually has a root array.') in current
+    assert ('A valid reference has this exact form: {"call_id":"call_abc123",'
+        '"output_path_tokens":["result","count"]}. Use that flat form for every observations element '
+        'and every outputs value.') in current
+    assert "a tool or browser lifecycle failure does not create a second receipt entry" in current
 
 
 def test_natural_language_expectations_require_semantic_assessment():

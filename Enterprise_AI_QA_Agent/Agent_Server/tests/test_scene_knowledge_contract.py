@@ -3,6 +3,8 @@ import pytest
 from pydantic import ValidationError
 
 from src.application.recorder.scene_knowledge import RecordingSceneKnowledge, SceneKnowledgeQuery, SCENE_KNOWLEDGE_PROTOCOL
+from src.application.runtime.tool_input_validation import validate_tool_input
+from src.registry.tools import ToolRegistry
 
 
 def test_scene_read_requires_exact_identity_and_search_is_catalog_only():
@@ -12,6 +14,17 @@ def test_scene_read_requires_exact_identity_and_search_is_catalog_only():
         SceneKnowledgeQuery(operation="scene_search", scene_id="scene")
     query = SceneKnowledgeQuery(operation="scene_read", scene_id="s", version_id="v", content_hash="a" * 64)
     assert query.operation == "scene_read"
+
+
+def test_scene_operations_do_not_require_text_query():
+    schema = ToolRegistry().get("knowledge-rag").input_schema
+    assert validate_tool_input(schema, {
+        "operation": "scene_read",
+        "scene_id": "scene",
+        "version_id": "version",
+        "content_hash": "a" * 64,
+    }) == []
+    assert validate_tool_input(schema, {"operation": "scene_search"}) == []
 
 
 @pytest.mark.asyncio

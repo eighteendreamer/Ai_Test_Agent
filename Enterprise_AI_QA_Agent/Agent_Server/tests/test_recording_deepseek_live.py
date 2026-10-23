@@ -27,6 +27,11 @@ pytestmark = [
 async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_path):
     evidence = Path(os.environ["DEEPSEEK_RECORDING_EVIDENCE"])
     evidence.mkdir(parents=True, exist_ok=False)
+    agent_browser_executable = os.getenv("AGENT_BROWSER_EXECUTABLE", "").strip()
+    if agent_browser_executable and not Path(agent_browser_executable).is_file():
+        raise FileNotFoundError(
+            "AGENT_BROWSER_EXECUTABLE does not point to an installed agent-browser executable"
+        )
     graph = None
     project_id = None
     recording_id = None
@@ -101,6 +106,9 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                         "url": page.url,
                         "deep_thought_button_count": await thought.count(),
                         "search_button_count": await search.count(),
+                        "interaction_driver": (
+                            "agent-browser-cli" if agent_browser_executable else "playwright"
+                        ),
                     }
                     (evidence / "page-facts.json").write_text(
                         json.dumps(facts, ensure_ascii=False, indent=2), encoding="utf-8"
@@ -110,11 +118,88 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                     assert facts["search_button_count"] == 1
 
                     # These are browser operations against the public page; no login,
-                    # prompt submission, or account data is used.
-                    await thought.click()
-                    await thought.click()
-                    await search.click()
-                    await page.mouse.wheel(0, 700)
+                    # prompt submission, or account data is used. The CLI branch exercises
+                    # the same externally attached CDP path as a user's browser session.
+                    if agent_browser_executable:
+                        browser_session = "qa-deepseek-recording-" + uuid4().hex[:12]
+                        command_index = 0
+
+                        async def browser_command(*args: str) -> str:
+                            nonlocal command_index
+                            command_index += 1
+                            stem = f"agent-browser-{command_index:02d}"
+                            stdout_path = evidence / f"{stem}.stdout"
+                            stderr_path = evidence / f"{stem}.stderr"
+                            with (
+                                stdout_path.open("wb") as stdout,
+                                stderr_path.open("wb") as stderr,
+                            ):
+                                process = await asyncio.create_subprocess_exec(
+                                    agent_browser_executable,
+                                    "--session",
+                                    browser_session,
+                                    "--cdp",
+                                    str(cdp_port),
+                                    *args,
+                                    stdout=stdout,
+                                    stderr=stderr,
+                                )
+                                try:
+                                    async with asyncio.timeout(30):
+                                        return_code = await process.wait()
+                                except TimeoutError as exc:
+                                    process.kill()
+                                    await process.wait()
+                                    raise TimeoutError(
+                                        "agent-browser command timed out; "
+                                        f"stdout={stdout_path} stderr={stderr_path}"
+                                    ) from exc
+                            output = stdout_path.read_text(encoding="utf-8", errors="replace")
+                            if return_code != 0:
+                                error = stderr_path.read_text(encoding="utf-8", errors="replace")
+                                raise RuntimeError(
+                                    f"agent-browser exited {return_code}; args={args!r}; "
+                                    f"stdout={stdout_path}; stderr={stderr_path}; "
+                                    f"error={error[-1000:]}"
+                                )
+                            return output.strip()
+
+                        try:
+                            initial_snapshot = await browser_command("snapshot", "-i")
+                            (evidence / "snapshot-before-actions.txt").write_text(
+                                initial_snapshot, encoding="utf-8"
+                            )
+                            assert "深度思考" in initial_snapshot
+                            assert "智能搜索" in initial_snapshot
+                            await browser_command(
+                                "find", "role", "button", "click", "--name", "深度思考"
+                            )
+                            (evidence / "snapshot-after-deep-thought-1.txt").write_text(
+                                await browser_command("snapshot", "-i"), encoding="utf-8"
+                            )
+                            await browser_command(
+                                "find", "role", "button", "click", "--name", "深度思考"
+                            )
+                            (evidence / "snapshot-after-deep-thought-2.txt").write_text(
+                                await browser_command("snapshot", "-i"), encoding="utf-8"
+                            )
+                            await browser_command(
+                                "find", "role", "button", "click", "--name", "智能搜索"
+                            )
+                            (evidence / "snapshot-after-search.txt").write_text(
+                                await browser_command("snapshot", "-i"), encoding="utf-8"
+                            )
+                            await browser_command("scroll", "down", "700")
+                        finally:
+                            await browser_command("close")
+                        assert browser.is_connected(), (
+                            "agent-browser close terminated the attached browser"
+                        )
+                    else:
+                        await thought.click()
+                        await thought.click()
+                        await search.click()
+                        await page.mouse.wheel(0, 700)
                     await page.wait_for_timeout(1200)
                     await page.screenshot(path=str(evidence / "deepseek-page.png"), full_page=True)
                     stopped = await client.post(
