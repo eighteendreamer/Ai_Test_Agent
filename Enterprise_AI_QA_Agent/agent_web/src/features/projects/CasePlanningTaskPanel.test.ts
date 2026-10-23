@@ -33,6 +33,30 @@ describe("durable project planning UI", () => {
     w.unmount();
   });
 
+  it("keeps the selected snapshot and hash frozen across a lost response and page reload", async () => {
+    const environment = { environment_id: "environment-a", snapshot_id: "snapshot-a", expected_snapshot_sha256: "a".repeat(64) };
+    api.submitCasePlanningTask.mockImplementation(async (_, payload) => task("queued", { creation_key: payload.creation_key, request: payload }));
+    api.submitCasePlanningTask.mockRejectedValueOnce(new Error("response lost"));
+    api.getCasePlanningTaskByRequest.mockRejectedValue(new HttpError("not found", 404));
+    const first = mount(CasePlanningTaskPanel, { props: { projectId: "project", objective: "验证 staging", runtimeJson: "{}",
+      candidateCaseIds: ["case"], disabled: false, environment } });
+    await button(first, "生成执行计划").trigger("click"); await flushPromises();
+    const originalRequest = api.submitCasePlanningTask.mock.calls[0][1];
+    expect(originalRequest.environment).toEqual(environment);
+    expect(JSON.parse(window.sessionStorage.getItem("case-planning-task:project")!).environment).toEqual(environment);
+    await first.setProps({ environment: { environment_id: "environment-b", snapshot_id: "snapshot-b", expected_snapshot_sha256: "b".repeat(64) } });
+    await button(first, "重试规划提交").trigger("click"); await flushPromises();
+    expect(api.submitCasePlanningTask.mock.calls[1][1]).toEqual(originalRequest);
+    first.unmount();
+
+    const restored = mount(CasePlanningTaskPanel, { props: { projectId: "project", objective: "验证 staging", runtimeJson: "{}",
+      candidateCaseIds: ["case"], disabled: false, environment: null } });
+    await flushPromises();
+    await button(restored, "重试规划提交").trigger("click"); await flushPromises();
+    expect(api.submitCasePlanningTask.mock.calls[2][1]).toEqual(originalRequest);
+    restored.unmount();
+  });
+
   it("shows a failed explicit lookup and retries the same identity without falling back", async () => {
     api.getCasePlanningTask.mockRejectedValueOnce(new HttpError("task query unavailable", 503));
     const w = mount(CasePlanningTaskPanel, { props: { projectId: "project", initialTaskId: "historical-task",

@@ -3,8 +3,9 @@ import { onMounted, onUnmounted, ref } from "vue";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { CasePlanRecord, CasePlanningTaskRecord, CasePlanningTaskRequest, RegressionPlanningSelection, RegressionPlanningTaskRequest } from "../../types";
+import type { BusinessEnvironmentSelection } from "../../services/businessPlanning.types";
 
-const props = defineProps<{ projectId: string; objective: string; runtimeJson: string; candidateCaseIds: string[]; disabled: boolean; initialTaskId?: string; regression?: RegressionPlanningSelection }>();
+const props = defineProps<{ projectId: string; objective: string; runtimeJson: string; candidateCaseIds: string[]; disabled: boolean; initialTaskId?: string; regression?: RegressionPlanningSelection; environment?: BusinessEnvironmentSelection | null }>();
 const emit = defineEmits<{ completed: [plan: CasePlanRecord]; submitted: []; selectionRequired: [] }>();
 const task = ref<CasePlanningTaskRecord | null>(null);
 const recent = ref<CasePlanningTaskRecord[]>([]);
@@ -12,6 +13,7 @@ const creationKey = ref("");
 const busy = ref(false);
 const error = ref("");
 const storageWarning = ref("");
+const restoredEnvironment = ref<BusinessEnvironmentSelection | null>(null);
 let pending: { kind: "standard"; payload: CasePlanningTaskRequest } | { kind: "regression"; runId: string; payload: RegressionPlanningTaskRequest } | null = null;
 let regressionSubmission: RegressionPlanningTaskRequest | null = null;
 let timer: ReturnType<typeof setTimeout> | undefined;
@@ -25,7 +27,9 @@ function storageKey() {
 }
 function persist() {
   try {
-    window.sessionStorage.setItem(storageKey(), JSON.stringify({ creationKey: creationKey.value, taskId: task.value?.id || "" }));
+    const frozenEnvironment = pending?.kind === "standard" ? pending.payload.environment : restoredEnvironment.value;
+    window.sessionStorage.setItem(storageKey(), JSON.stringify({ creationKey: creationKey.value, taskId: task.value?.id || "",
+      ...(frozenEnvironment ? { environment: frozenEnvironment } : {}) }));
     storageWarning.value = "";
   } catch {
     storageWarning.value = "浏览器无法保存任务编号。请保留下方请求编号，或从项目规划任务列表找回。";
@@ -47,6 +51,7 @@ async function accept(value: CasePlanningTaskRecord) {
     if (value.plan_id) {
       const plan = await api.getCasePlan(props.projectId, value.plan_id);
       if (plan.project_id !== props.projectId || plan.id !== value.plan_id) throw new Error("任务结果计划身份不一致");
+      if (plan.request?.environment) restoredEnvironment.value = { ...plan.request.environment };
       if (props.regression && (plan.regression?.parent_run_id !== props.regression.parentRunId
         || JSON.stringify(plan.regression.submission.result_ids) !== JSON.stringify(props.regression.resultIds)
         || (regressionSubmission && (!sameVersions(plan.regression.version_overrides, regressionSubmission.version_overrides || {})
@@ -102,8 +107,11 @@ async function submit() {
         } };
         regressionSubmission = pending.payload;
       } else {
+        const environment = props.environment ?? restoredEnvironment.value;
         pending = { kind: "standard", payload: { creation_key: creationKey.value, objective: props.objective.trim(),
-          candidate_case_ids: [...props.candidateCaseIds], runtime_context: context as Record<string, unknown> } };
+          candidate_case_ids: [...props.candidateCaseIds], runtime_context: context as Record<string, unknown>,
+          ...(environment ? { environment: { ...environment } } : {}) } };
+        restoredEnvironment.value = environment ? { ...environment } : null;
       }
       task.value = null; persist(); emit("submitted");
     } catch (err) { showError(err); return; }
@@ -154,6 +162,15 @@ onMounted(async () => {
     if (raw) {
       const stored = JSON.parse(raw);
       if (typeof stored.creationKey !== "string" || !stored.creationKey || stored.creationKey.length > 160) throw new Error("无效任务身份");
+      const environment = stored.environment;
+      if (environment !== undefined) {
+        if (!environment || typeof environment.environment_id !== "string" || typeof environment.snapshot_id !== "string"
+          || typeof environment.expected_snapshot_sha256 !== "string" || !/^[0-9a-f]{64}$/.test(environment.expected_snapshot_sha256)) {
+          throw new Error("无效固定环境身份");
+        }
+        restoredEnvironment.value = { environment_id: environment.environment_id, snapshot_id: environment.snapshot_id,
+          expected_snapshot_sha256: environment.expected_snapshot_sha256 };
+      }
       creationKey.value = stored.creationKey;
     }
   } catch { storageWarning.value = "无法读取保存的任务身份，请从项目规划任务列表找回。"; }

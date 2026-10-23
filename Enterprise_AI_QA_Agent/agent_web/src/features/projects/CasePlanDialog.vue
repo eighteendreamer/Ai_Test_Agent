@@ -3,8 +3,10 @@ import { computed, onMounted, ref, watch } from "vue";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { CasePlanItem, CasePlanRecord, CasePlanRunRequest, CasePlanningConfig, ModeDescriptor, TestRunDetail, RegressionPlanningSelection } from "../../types";
+import type { BusinessEnvironmentSelection } from "../../services/businessPlanning.types";
 import JsonContentTree from "./JsonContentTree.vue";
 import CasePlanningTaskPanel from "./CasePlanningTaskPanel.vue";
+import BusinessEnvironmentSnapshotPicker from "./BusinessEnvironmentSnapshotPicker.vue";
 
 const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[]; initialTaskId?: string; regression?: RegressionPlanningSelection; candidateOnly?: boolean }>(), { modes: () => [], candidateOnly: false });
 const emit = defineEmits<{ close: []; started: [detail: TestRunDetail]; candidate: [plan: CasePlanRecord] }>();
@@ -23,6 +25,8 @@ const knownRunId = ref("");
 const storageWarning = ref("");
 const regressionVersions = ref<Record<string, string>>({ ...props.regression?.versionOverrides });
 const regressionLocked = ref(false);
+const environmentSelection = ref<BusinessEnvironmentSelection | null>(null);
+const environmentPickerOpen = ref(false);
 const regressionRequest = computed(() => props.regression ? { ...props.regression, versionOverrides: { ...regressionVersions.value } } : undefined);
 function chooseRegressionVersion(caseId: string, versionId: string | null, selected: boolean) {
   if (regressionLocked.value) return;
@@ -62,6 +66,7 @@ function persistLaunch() {
 }
 function selectPlan(value: CasePlanRecord) {
   plan.value = value; savedId.value = value.id;
+  environmentSelection.value = value.request?.environment ? { ...value.request.environment } : null;
   if (value.regression) {
     regressionVersions.value = { ...value.regression.version_overrides };
     regressionLocked.value = true;
@@ -406,6 +411,13 @@ onMounted(loadPolicy);
         <p>{{ candidateCaseIds.length ? `以已选的 ${candidateCaseIds.length} 条用例为初始候选，必要前置仍在当前项目内查询。` : '根据目标召回当前项目内的已启用用例。' }}</p>
         <label>测试目标<textarea v-model="objective" :disabled="busy" maxlength="20000" placeholder="说明本次要验证的功能与约束" /></label>
         <label>已有运行信息（JSON）<textarea v-model="runtimeJson" :disabled="busy" placeholder='例如：{"order_id":"本次已有订单编号"}' /></label>
+        <div class="environment-selection">
+          <button type="button" :disabled="busy" @click="environmentPickerOpen = true">选择固定测试环境快照（可选）</button>
+          <p v-if="environmentSelection">规划请求将固定环境 {{ environmentSelection.environment_id }}、快照 {{ environmentSelection.snapshot_id }} 及其哈希。</p>
+          <p v-else>未选择时按现有项目规划方式执行。</p>
+        </div>
+        <BusinessEnvironmentSnapshotPicker v-if="environmentPickerOpen" v-model="environmentSelection"
+          :project-id="projectId" @close="environmentPickerOpen = false" />
       </template>
       <details v-if="config"><summary>规划设置</summary><div class="policy-fields">
         <label>最多查询回合<input v-model.number="config.policy.max_rounds" :disabled="busy" type="number" min="1" max="20"></label>
@@ -481,12 +493,18 @@ onMounted(loadPolicy);
       </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
       <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
       <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"
+        :environment="environmentSelection"
         :candidate-case-ids="candidateCaseIds" :initial-task-id="initialTaskId" :regression="regressionRequest" :disabled="busy || !config" @submitted="regressionLocked = true" @selection-required="regressionLocked = false" @completed="selectPlan" />
       <template v-if="!regression"><label>已保存的计划编号<input v-model="savedId" :disabled="busy" placeholder="输入当前项目的计划编号"></label>
         <button :disabled="busy || !savedId.trim()" @click="openSaved">查看已保存计划</button>
       </template>
       <template v-if="plan">
-        <h3>{{ statusLabels[plan.status] }}</h3><p>{{ plan.summary }}</p>
+        <h3>{{ statusLabels[plan.status] }}</h3><p>{{ plan.status === "no_match" ? "未找到符合本次目标的正式用例；本次未创建测试运行。" : plan.summary }}</p>
+        <section v-if="plan.environment" class="fixed-environment" aria-label="计划固定的目标环境">
+          <h3>计划固定的目标环境</h3>
+          <p>{{ plan.environment.snapshot.configuration.payload.display_name }} · {{ plan.environment.snapshot.configuration.payload.base_url }}</p>
+          <p>快照 {{ plan.environment.snapshot.id }} · 配置修订 {{ plan.environment.snapshot.configuration.revision }} · 部署状态未知</p>
+        </section>
         <p v-if="plan.regression">回归来源：{{ plan.regression.parent_run_id }} · {{ Object.keys(plan.regression.source_results_by_case).length }} 条固定失败项。新运行结果关联原失败，准备成功不计为目标通过。</p>
         <section v-if="canLaunch && !candidateOnly" class="launch-controls" aria-label="启动已保存计划">
           <p>启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。</p>
@@ -533,4 +551,5 @@ onMounted(loadPolicy);
 .plan-items > li { border-top: 1px solid #d8dee8; margin-top: 16px; padding-top: 8px; }
 .plan-items h4 { margin: 8px 0; }
 .gaps { color: #95501f; }
+.environment-selection, .fixed-environment { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; padding: 12px; }
 </style>

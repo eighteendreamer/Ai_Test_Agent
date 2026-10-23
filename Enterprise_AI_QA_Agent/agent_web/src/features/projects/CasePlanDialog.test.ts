@@ -8,7 +8,7 @@ import documentExpected from "../../../tests/fixtures/case-document-expected.act
 import itemOperationActual from "../../../tests/fixtures/case-item-operation.actual.json";
 import linkedSourceActual from "../../../tests/fixtures/case-linked-source.actual.json";
 
-const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn() }));
+const api = vi.hoisted(() => ({ getCasePlanningPolicy: vi.fn(), saveCasePlanningPolicy: vi.fn(), createCasePlan: vi.fn(), submitCasePlanningTask: vi.fn(), submitRegressionPlanningTask: vi.fn(), getCasePlanningTaskByRequest: vi.fn(), getCasePlanningTask: vi.fn(), listCasePlanningTasks: vi.fn(), getCasePlan: vi.fn(), launchCasePlan: vi.fn(), getTestRun: vi.fn(), listBusinessEnvironments: vi.fn(), listBusinessEnvironmentSnapshots: vi.fn() }));
 vi.mock("../../services/api", () => ({ api }));
 const config = () => ({ scope_key: "global", revision: 1, policy: { max_rounds: 5, max_candidates: 20, max_items: 50, max_context_chars: 180000, timeout_seconds: 180 } });
 function plan(status = "planned") {
@@ -36,6 +36,10 @@ describe("case planning", () => {
     api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "task", project_id: projectId, creation_key: payload.creation_key, status: "completed", plan_id: "plan", round_count: 1, message: "完成" }));
     api.getCasePlanningTaskByRequest.mockRejectedValue(new HttpError("not found", 404));
     api.listCasePlanningTasks.mockResolvedValue({ items: [] });
+    api.listBusinessEnvironments.mockResolvedValue({ items: [{ id: "environment", project_id: "project", request: { request_id: "register", environment_key: "staging" }, status: "active" }], offset: 0, limit: 50, has_more: false });
+    api.listBusinessEnvironmentSnapshots.mockResolvedValue({ items: [{ id: "snapshot", project_id: "project", environment_id: "environment",
+      configuration: { payload: { display_name: "Staging", base_url: "https://staging.example.test" }, revision: 3 }, sha256: "a".repeat(64),
+      captured_at: "2026-10-21T00:00:00Z", deployment_status: "unknown" }], offset: 0, limit: 20, has_more: false });
     api.getCasePlan.mockResolvedValue(plan());
     api.launchCasePlan.mockResolvedValue({ run: { id: "run-1", status: "queued" }, items: [], attempts: [], results: [] });
   });
@@ -79,6 +83,24 @@ describe("case planning", () => {
     expect(wrapper.text()).toContain("末尾关键验证😀");
     expect(wrapper.text()).toContain("false");
     expect(wrapper.text()).toContain("生成计划只保存执行依据");
+    wrapper.unmount();
+  });
+
+  it("freezes the selected project snapshot id and hash into the planning request", async () => {
+    const wrapper = setup(); await flushPromises();
+    await button(wrapper, "选择固定测试环境快照（可选）").trigger("click"); await flushPromises();
+    expect(api.listBusinessEnvironments).toHaveBeenCalledWith("project", { status: "active", limit: 50, offset: 0 });
+    await wrapper.get("select").setValue("environment"); await flushPromises();
+    expect(api.listBusinessEnvironmentSnapshots).toHaveBeenCalledWith("project", "environment", 20, 0);
+    await wrapper.get('input[type="radio"]').trigger("change"); await flushPromises();
+    expect(wrapper.text()).toContain("规划请求将固定环境 environment、快照 snapshot");
+    await wrapper.findAll("textarea")[0].setValue("验证 staging 上的订单查询");
+    await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
+    expect(api.submitCasePlanningTask).toHaveBeenCalledWith("project", expect.objectContaining({
+      objective: "验证 staging 上的订单查询",
+      environment: { environment_id: "environment", snapshot_id: "snapshot", expected_snapshot_sha256: "a".repeat(64) },
+    }));
+    expect(wrapper.text()).toContain("部署状态未知");
     wrapper.unmount();
   });
 
@@ -132,6 +154,21 @@ describe("case planning", () => {
     expect(api.getCasePlan).toHaveBeenCalledWith("project", "plan");
     expect(wrapper.text()).toContain("仍有执行缺口");
     expect(wrapper.text()).toContain("缺少依据");
+    wrapper.unmount();
+  });
+
+  it("does not present a no-match model summary as an execution result", async () => {
+    api.getCasePlan.mockResolvedValue({
+      ...plan("no_match"),
+      summary: "前置用例已创建订单，实际响应HTTP 201。",
+      decision: { items: [], unresolved: [{ condition: "缺少目标用例", reason: "没有匹配的正式目标。" }] },
+    });
+    const wrapper = setup(); await flushPromises();
+    await wrapper.find('input[placeholder="输入当前项目的计划编号"]').setValue("plan");
+    await button(wrapper, "查看已保存计划").trigger("click"); await flushPromises();
+    expect(wrapper.text()).toContain("未找到符合本次目标的正式用例；本次未创建测试运行。");
+    expect(wrapper.text()).not.toContain("HTTP 201");
+    expect(wrapper.text()).toContain("缺少目标用例");
     wrapper.unmount();
   });
 
