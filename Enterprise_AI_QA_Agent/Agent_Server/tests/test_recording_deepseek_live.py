@@ -35,6 +35,7 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
     graph = None
     project_id = None
     recording_id = None
+    manual_interaction = os.getenv("DEEPSEEK_RECORDING_INTERACTION", "").strip() == "manual"
 
     async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
         graph = MemgraphRuntimeProvider(settings)
@@ -66,7 +67,7 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
             async with async_playwright() as playwright:
                 cdp_port = free_port()
                 browser = await playwright.chromium.launch(
-                    headless=True,
+                    headless=not manual_interaction,
                     args=[f"--remote-debugging-port={cdp_port}"],
                 )
                 try:
@@ -107,6 +108,7 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                         "deep_thought_button_count": await thought.count(),
                         "search_button_count": await search.count(),
                         "interaction_driver": (
+                            "manual-browser" if manual_interaction else
                             "agent-browser-cli" if agent_browser_executable else "playwright"
                         ),
                     }
@@ -120,7 +122,12 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                     # These are browser operations against the public page; no login,
                     # prompt submission, or account data is used. The CLI branch exercises
                     # the same externally attached CDP path as a user's browser session.
-                    if agent_browser_executable:
+                    if manual_interaction:
+                        await asyncio.to_thread(
+                            input,
+                            "人工录制已开始。请在打开的 DeepSeek 页面依次点击“深度思考”两次、点击“智能搜索”一次、向下滚动约一屏，然后回复“完成”继续验收。\n",
+                        )
+                    elif agent_browser_executable:
                         browser_session = "qa-deepseek-recording-" + uuid4().hex[:12]
                         command_index = 0
 
@@ -208,7 +215,8 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                     stopped.raise_for_status()
                     detail = stopped.json()
                 finally:
-                    await browser.close()
+                    if browser.is_connected():
+                        await browser.close()
             quality = detail["finalize_metrics"]["recording_quality"]
             with postgres_connect(settings) as conn, conn.cursor() as cur:
                 cur.execute(
