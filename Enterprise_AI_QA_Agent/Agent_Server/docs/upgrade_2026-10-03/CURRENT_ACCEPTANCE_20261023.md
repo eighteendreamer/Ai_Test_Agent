@@ -152,6 +152,12 @@ Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_setti
 
 真实 MySQL 随机表的屏障测试让两个 Store 都先观察到空表再并发播种。原实现复现一个初始化成功、另一个因 `uniq_sponsor_name` 重复而失败，存在多 API 实例启动竞争。修复将默认插入改为按唯一键冲突执行 no-op 更新，不覆盖已存在赞助配置，也不吞掉其他 SQL 错误。`tests/test_sponsor_config.py` 真实 MySQL/单元组合 **5 passed in 0.81s**；并发初始化均成功且默认行仅一份，随后将 logo 改为运营值并再次初始化，值保持不变。`tests/test_workspace_settings.py` 另在启用真实 MySQL 条件下 **8 passed in 7.51s**。测试仅使用随机 MySQL 表并清理，不访问 Docker/Redis。赞助旧表缺列升级与真实部署 schema 盘点仍未覆盖；当前结论仅是首次建表和并发播种边界。
 
+### MySQL 旧邮件配置表转换
+
+仓库 MySQL dump 中存在可复核的旧 schema：`system_email_config_legacy_20260421072223` 包含 provider 主键、`from_email`、`from_name`、`reply_to`、`config_json`。当前 Store 检测 `config_json` 后将原表重命名为带时间戳的 legacy 备份，再创建新 schema 并仅迁入 `AGENT_MAIL_PROVIDERS` 白名单中的行；`api_key`/`secret_key` 独立写入凭据字段，普通 config JSON 字段迁入 `extra_config`，`cli_path` 按现有规则移除。原表重命名为备份，不会物理删除旧内容。
+
+真实隔离 MySQL 测试使用随机表重建上述旧结构、写入一条测试邮箱并运行正式 Store 初始化。首次验证确认备份和凭据保留，但新记录遗漏 `from_name` 与 `reply_to`；它们只留在备份，活动记录不能读取。修复将非空两字段保存在新记录 `extra_config`，未增加数据库列。测试再次初始化并确认不重复迁移、检查备份原值仍在；异常清理会删除该随机前缀下的原表和所有 legacy 表。与邮件服务回归合计 **41 passed in 1.77s**。这证明该旧 schema 样本的转换映射，不证明其他未登记历史 schema；MySQL DDL 隐式提交，若在 rename/create/逐行导入之间进程中断，当前初始化器没有显式迁移状态记录或自动恢复，本轮未做故障注入，需另行设计和验收。
+
 ### MCP 旧结构迁移字段往返修复
 
 为确认 Store initializer 对旧扁平列的转换是否保真，在随机 PostgreSQL 表中构造含旧列的 MCP 记录（transport、description、project/document/endpoint、headers、provider_key、capabilities），执行当前 initializer 后通过正式 Store 读回。首次真实测试失败：旧 `capabilities` 已写入 `metadata.legacy_capabilities`，旧列也被删除，但 `_record_from_row()` 只读取已不存在的列，API 对象返回空 capabilities。根因是 PostgreSQL 规范表通过 JSONB `metadata` 存储该字段时，写入映射没有写 capabilities，读取映射也没有从迁移元数据回退。
