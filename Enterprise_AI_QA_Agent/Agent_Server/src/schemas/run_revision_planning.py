@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_serializer
 
 from src.schemas.case_planning import PlanningModel
 
@@ -29,9 +29,20 @@ class RunRevisionPlanningInput(PlanningModel):
     required_case_versions: dict[str, str] = Field(min_length=1, max_length=200)
     read_case_versions: dict[str, str] = Field(min_length=1, max_length=200)
     context: dict[str, Any]
+    execution_trigger: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_original_input(self, handler):
+        data = handler(self)
+        if self.execution_trigger is None:
+            data.pop("execution_trigger", None)
+        return data
 
     def submission(self) -> dict:
-        return {"expected_revision": self.expected_revision, "reason": self.reason}
+        result = {"expected_revision": self.expected_revision, "reason": self.reason}
+        if self.execution_trigger is not None:
+            result["execution_trigger"] = self.execution_trigger
+        return result
 
 
 class RunRevisionPlanningOutcome(PlanningModel):

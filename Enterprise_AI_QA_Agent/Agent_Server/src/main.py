@@ -596,6 +596,7 @@ async def _initialize_lifespan_resources(
             deterministic_confidence_threshold=settings.orchestration.intent_deterministic_confidence_threshold,
         )
     )
+    from src.application.test_runs.execution_replanning import ExecutionReplanningService
     tool_runtime_service = ToolRuntimeService(
         request_timeout_seconds=settings.model.llm_request_timeout_seconds,
         settings=settings,
@@ -604,6 +605,8 @@ async def _initialize_lifespan_resources(
         tool_job_service=tool_job_service,
         session_store=store,
         api_credential_reference_service=api_credential_references,
+        execution_replanning_service=ExecutionReplanningService(planning=app.state.run_revision_planning_service,
+            tasks=planning_task_store, runs=test_run_store, jobs=tool_job_service),
         transcript_hygiene_service=transcript_hygiene_service,
         artifact_storage_service=artifact_storage_service,
         api_docs_service=api_docs_service,

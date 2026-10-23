@@ -17,10 +17,12 @@ class RunRevisionPlanningService:
         self._tasks, self._planner, self._runs = tasks, planner, runs
         self._projects, self._revisions, self._stream = projects, revision_service, dispatch_stream
 
-    async def submit(self, project_id: str, run_id: str, request: RunRevisionPlanningRequest):
+    async def submit(self, project_id: str, run_id: str, request: RunRevisionPlanningRequest, *, execution_trigger=None):
         await self._projects.get(project_id)
-        digest = self._tasks.run_revision_request_hash(run_id,
-            request.model_dump(mode="json", exclude={"creation_key"}))
+        submission = request.model_dump(mode="json", exclude={"creation_key"})
+        if execution_trigger is not None:
+            submission["execution_trigger"] = execution_trigger
+        digest = self._tasks.run_revision_request_hash(run_id, submission)
         existing = await self._tasks.get_by_request(project_id, request.creation_key, request_hash=digest)
         if existing:
             logger.info("run_revision_planning_replayed", extra={"project_id": project_id,
@@ -51,9 +53,12 @@ class RunRevisionPlanningService:
                 "verification_results": result.actual.get("verification_results", [])} for result in detail.results],
             "instructions": "保留原目标及其固定版本；已领取项的步骤、前置和数据来源不可更改。"
                 "根据新缺口查询项目依据，仅修订未领取部分，沿用可保留项的 key；不能用准备成功替代目标验证。"}
+        if execution_trigger is not None:
+            context["execution_trigger"] = execution_trigger
         source = RunRevisionPlanningInput(run_id=run_id, source_plan_id=original.id,
             expected_revision=request.expected_revision, reason=request.reason,
-            required_case_versions=targets, read_case_versions=versions, context=context)
+            required_case_versions=targets, read_case_versions=versions, context=context,
+            execution_trigger=execution_trigger)
         # Fixed scope is not a bounded semantic-recall candidate list (the same
         # distinction is used by regression planning for more than 50 targets).
         planning = CasePlanningRequest(objective=original.request.objective, model_key=original.model_key,
