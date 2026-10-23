@@ -293,3 +293,25 @@ class RecordingEventAck(BaseModel):
 
     accepted: int
     duplicates: int
+
+
+class RecordingReplayRequest(BaseModel):
+    """显式触发一次录制回放；request_id 是副作用请求的幂等身份。"""
+
+    request_id: str = Field(min_length=1, max_length=160)
+    project_id: str = Field(min_length=1, max_length=160)
+
+
+class RecordingReplayRecord(BaseModel):
+    """持久化回放报告。业务结果属于 PostgreSQL，不进入配置库。"""
+
+    id: str
+    recording_id: str
+    project_id: str
+    request_id: str
+    request_hash: str
+    status: Literal["running", "completed", "failed"]
+    created_at: datetime
+    finished_at: datetime | None = None
+    report: dict[str, Any] | None = None
+    error: str | None = None

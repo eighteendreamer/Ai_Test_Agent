@@ -7,9 +7,9 @@ import RecordingScenesView from "./RecordingScenesView.vue";
 import type { SceneBundle } from "../features/recorder/sceneApi";
 import { HttpError } from "../services/http";
 
-const mocks=vi.hoisted(()=>({getProjectOverview:vi.fn(),listRecordings:vi.fn(),list:vi.fn(),create:vi.fn(),recoverCreation:vi.fn(),get:vi.fn(),versions:vi.fn(),save:vi.fn(),recoverVersion:vi.fn(),draft:vi.fn()}));
+const mocks=vi.hoisted(()=>({getProjectOverview:vi.fn(),listRecordings:vi.fn(),listRecordingReplays:vi.fn(),runRecordingReplay:vi.fn(),list:vi.fn(),create:vi.fn(),recoverCreation:vi.fn(),get:vi.fn(),versions:vi.fn(),save:vi.fn(),recoverVersion:vi.fn(),draft:vi.fn()}));
 vi.mock("../services/api",()=>({api:{getProjectOverview:mocks.getProjectOverview}}));
-vi.mock("../features/recorder/recordingApi",()=>({listRecordings:mocks.listRecordings}));
+vi.mock("../features/recorder/recordingApi",()=>({listRecordings:mocks.listRecordings,listRecordingReplays:mocks.listRecordingReplays,runRecordingReplay:mocks.runRecordingReplay}));
 vi.mock("../features/recorder/sceneApi",()=>({scenesApi:mocks}));
 vi.mock("vue-router",()=>({useRoute:()=>route}));
 const route=reactive({params:{projectId:""}});
@@ -23,8 +23,23 @@ beforeEach(()=>{
   vi.resetAllMocks();route.params.projectId=id;
   mocks.getProjectOverview.mockResolvedValue({project:{name:"实际场景项目",status:"active"}});
   mocks.listRecordings.mockResolvedValue([{id:recorded.version.source.recording_id,name:"新录制",status:"completed"}]);
+  mocks.listRecordingReplays.mockResolvedValue([]);
   mocks.list.mockResolvedValue({items:[{scene_id:recorded.scene_id,name:recorded.version.content.name,version:2,step_count:recorded.version.content.steps.length}],has_more:false});
   mocks.get.mockResolvedValue(recorded);mocks.versions.mockResolvedValue([{id:recorded.version.id,version:2}]);
+});
+
+it("shows the persisted per-step replay failure report",async()=>{
+  mocks.runRecordingReplay.mockResolvedValue({id:"replay-1",recording_id:recorded.version.source.recording_id,
+    project_id:id,request_id:"request-1",request_hash:"hash",status:"completed",created_at:"2026-10-23T00:00:00Z",
+    finished_at:"2026-10-23T00:00:01Z",error:null,report:{summary:{total:2,passed:1,failed:1,skipped:0,success_rate:.5},
+      steps:[{seq:4,action:"click",strategy:"",status:"failed",error:"all strategies exhausted",elapsed_ms:10}]}});
+  const wrapper=mountView();
+  try {
+    await flushPromises();await button(wrapper,"运行回放诊断").trigger("click");await flushPromises();
+    expect(mocks.runRecordingReplay).toHaveBeenCalledTimes(1);
+    expect(wrapper.get("[aria-label='回放诊断报告']").text()).toContain("all strategies exhausted");
+    expect(wrapper.text()).toContain("回放完成：通过 1，失败 1，跳过 0");
+  } finally { wrapper.unmount(); }
 });
 
 it("keeps an unknown creation identity and recovers by GET without an automatic write retry",async()=>{

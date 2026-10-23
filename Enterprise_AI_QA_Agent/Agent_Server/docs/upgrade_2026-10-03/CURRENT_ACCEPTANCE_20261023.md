@@ -42,6 +42,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - 当前工作树的原生 Electron 录制产品链路已补充复验：`settled`、`response-dom`、`bridge-loss`、`nested-frame`、`popup` 和 `popup-close` 共 **6项通过**。这些场景实际启动 Electron，通过录制 HTTP API 写入隔离 PostgreSQL，将截图写入并读回 RustFS，并查询项目范围知识投影；同时验证操作后新增 DOM、完成后晚到批次返回409且不改变终态、跨来源两层 iframe 的操作/输入/响应关联、弹窗独立页面身份及关闭对账。逐项证据明确记录 `manual_deepseek=false`、`ai_model_use=false`、`full_recording_acceptance=false`，因此这里只关闭当前受控页面的 Electron 采集边界，不代表人工 DeepSeek 或默认 AI 使用录制知识已经验收。JUnit：`p5-electron-recording-current-20261023-01.xml`、`p5-electron-recording-current-20261023-response-dom.xml`、`p5-electron-recording-current-20261023-bridge-loss.xml`、`p5-electron-recording-current-20261023-nested-frame.xml`、`p5-electron-recording-current-20261023-popup.xml`。
 - open Shadow DOM 当前工作树真实链路复验 **1项通过（40.20秒）**：生产 API、Chromium CDP、隔离 MySQL/PostgreSQL/Redis/Memgraph 实际记录嵌套 open root、运行时新增 open root 和 iframe 内 open root 的三个操作及响应，并生成包含这些响应的用例草稿；敏感祖先下的 `fixture-sensitive-marker` 未进入响应证据。契约继续明确 closed shadow root 为 `unobserved`，不虚报可见性；本次没有模型调用。证据：`p5-recording-shadow-current-20261023-02/` 与对应 JUnit XML。
 - 录制场景管理和元素别名的当前完整产品复验 **1项通过（89.82秒）**：真实 Chromium 录制后，在构建版项目页面创建场景、整理步骤顺序/说明/预期、绑定元素别名、保存不可变版本并转为正式用例草稿；同时验证响应丢失恢复、请求幂等与冲突、并发版本竞争、项目隔离、归档只读、API 重启读回，以及场景整理不会改写原始事件。最终 PostgreSQL 中2个场景头、6个版本，原事件和原始行保持不变，页面错误为空；本次 `default_ai_invoked=false`，不证明默认模型消费。证据：`p5-recording-scene-product-current-20261023-01/` 与对应 JUnit XML。
+- 录制回放失败定位已补成生产闭环并完成当前工作树实测：真实 Chromium 先录制输入和“执行保存”按钮，再让受控网页移除该按钮并放入不同语义的邻近按钮；生产回放 API 保留输入步骤通过、将点击步骤记录为失败且没有触发邻近按钮。相同 `request_id` 重投没有再次打开页面，跨项目请求返回404，逐步报告直接写入 PostgreSQL；API 重启后可读回。构建版项目页面实际显示失败步骤并能发起新回放。最终复验 **1 passed in 78.52s**，页面错误为0，Redis DB 15 清理后为空，未创建测试容器。证据：`p5-recording-replay-product-current-20261023-05.xml`、同名目录的 `facts.json` 和 `first-replay.json`。
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
 - Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
@@ -76,7 +77,7 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 - 默认 AI 的“理解需求 → 当前项目选用例 → 排序 → 判断缺口 → 补正式用例/准备步骤 → 执行 → 结果证据”完整链路。
 - 默认 Step 自主发现执行缺口、选择前置并完成目标执行的质量验收；受控执行重规划通过不能替代该验收。
 - 默认 Step 普通需求文档全量生成质量、默认 UI 录制知识使用、默认 Agent API 完整流程。
-- 人工操作 DeepSeek 登录/聊天、默认 AI 使用录制知识完成断言、closed Shadow DOM 的能力边界呈现和失败定位的完整产品闭环；受控页面的 Electron iframe/弹窗、open Shadow DOM、场景编辑和元素别名已有上述当前证据。
+- 人工操作 DeepSeek 登录/聊天、默认 AI 使用录制知识完成断言，以及 closed Shadow DOM 的能力边界呈现；受控页面的 Electron iframe/弹窗、open Shadow DOM、场景编辑、元素别名及回放失败定位已有上述当前证据。
 - Agent 自主性能/安全规划、多级加压、TTFT/Token 吞吐和更多进程故障恢复。
 - 需求变更更广业务质量、部署适用性、历史迁移和更多格式/故障组合。
 
@@ -84,4 +85,4 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 
 不能把“未验收”直接判定为“缺实现”。下一阶段先以当前真实失败样本定位：Step 订阅恢复后重跑同一 P2 场景；若规划进入下一阶段，再根据真实轨迹判断是模型输出、协议字段映射、规划校验还是执行器缺陷，再决定是否改代码。其他模块继续保持现有模型适配和项目/数据隔离边界。
 
-录制失败定位已确认属于缺实现，而非仅缺验收：`RecordingReplayExecutor` 目前只被单元测试和直接 Chromium 测试调用，生产录制路由、服务装配、PostgreSQL 持久化及前端页面均未引用；其报告仅存在于调用内存，无法在项目页面查看或在 API 重启后恢复。此外录制端保存滚动坐标为 `scroll_top/scroll_left`，执行器当前读取 `top/left`，真实滚动回放会退化为 `(0,0)`。后续应按录制域现有分层补幂等回放任务/结果存储、项目范围 API、页面逐步失败报告和真实漂移页面验收，并先修正该字段契约；不能以现有 `test_replay_live.py` 的直接类调用宣称产品失败定位完成。
+录制失败定位本轮已从“缺实现”转为“已有实现且产品实测通过”：新增项目范围的幂等回放 API、PostgreSQL 报告存储、启动装配和前端逐步报告；滚动字段读取与录制端的 `scroll_top/scroll_left` 对齐。实测同时发现并修正了两个旧执行器假阳性根因：普通 DOM 目标不再用绝对坐标盲点，几何候选必须匹配录制语义；Playwright `JSHandle` 转换及释放顺序按实际生命周期处理。当前边界是回放请求仍在一个 HTTP 请求内同步完成，进程在运行中被杀时会保留 `running` 记录，需用新请求重新诊断；本轮没有把它扩展为后台任务，也没有宣称人工 DeepSeek 或默认 AI 知识消费完成。

@@ -29,8 +29,8 @@ _TEST_PAGE = "data:text/html;charset=utf-8," + quote(
     "<form id='login' onsubmit='return false'>"
     "<input id='username' class='user-input' placeholder='用户名' />"
     "<input id='password' type='password' />"
-    "<button id='submit' type='button'>登 录</button>"
-    "<canvas id='board' width='200' height='100'></canvas>"
+    "<button id='submit' type='button' style='position:fixed;left:8px;top:250px;width:100px;height:40px'>登 录</button>"
+    "<canvas id='board' width='200' height='100' style='position:fixed;left:8px;top:400px'></canvas>"
     "</form>"
     "<script>window.__marks = [];"
     "document.getElementById('username').addEventListener('input',"
@@ -90,8 +90,21 @@ def test_live_replay_full_chain_with_strategy_hits() -> None:
                 "click",
                 target={"tag": "CANVAS"},
                 pixel={
-                    "viewport_point": {"x": 100, "y": 500},
+                    "viewport_point": {"x": 100, "y": 450},
                     "bbox": {"x": 8, "y": 400, "w": 200, "h": 100},
+                    "rel_offset": {"rx": 0.5, "ry": 0.5},
+                },
+            ),
+            # 旧定位均失效，但语义与空间锚点仍指向同一按钮 → geometry。
+            _event(
+                4,
+                "click",
+                target={"tag": "BUTTON", "role": "button", "locators": {
+                    "id": "removed-submit", "css": "#removed-submit",
+                    "xpath": "/html/body/button[99]", "text": "登 录",
+                }},
+                pixel={
+                    "bbox": {"x": 8, "y": 250, "w": 100, "h": 40},
                     "rel_offset": {"rx": 0.5, "ry": 0.5},
                 },
             ),
@@ -108,6 +121,7 @@ def test_live_replay_full_chain_with_strategy_hits() -> None:
         # 像素策略命中（geometry 或 viewport_point 均为合法兜底）
         assert by_seq[3].status == "passed"
         assert by_seq[3].strategy in {"geometry", "viewport_point"}
-        assert report.success_rate == 0.75
+        assert by_seq[4].status == "passed" and by_seq[4].strategy == "geometry"
+        assert report.success_rate == 0.8
 
     asyncio.run(scenario())

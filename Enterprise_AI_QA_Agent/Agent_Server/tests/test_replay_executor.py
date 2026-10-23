@@ -1,18 +1,22 @@
 """回放执行器计划构建单测（P2-1 纯函数部分，不连浏览器）。
 
 覆盖：事件类型过滤（page_scan/未知 skip）、file_change skip（无文件实体）、
-脱敏 fill skip（安全红线）、定位策略链顺序（id→testid→role_name→css→xpath
-→geometry(bbox+rel_offset)→viewport_point）、geometry 锚点计算、
+脱敏 fill skip（安全红线）、普通 DOM 定位策略链（id→testid→role_name→css→xpath
+→geometry）、Canvas 坐标兜底、geometry 锚点计算、
 报告汇总（success_rate/passed/failed/skipped）。
 """
 
 from __future__ import annotations
 
 from src.application.recorder.replay_executor import (
+    RecordingReplayExecutor,
     ReplayReport,
+    ReplayStep,
     ReplayStepResult,
     build_replay_plan,
 )
+import asyncio
+import pytest
 from src.schemas.recording import RecorderEvent
 
 
@@ -93,7 +97,31 @@ def test_locator_strategy_chain_order() -> None:
         ]
     )
     chain = [s["strategy"] for s in steps[0].strategies]
-    assert chain == ["id", "testid", "role_name", "css", "xpath", "geometry", "viewport_point"]
+    assert chain == ["id", "testid", "role_name", "css", "xpath", "geometry"]
+
+
+def test_viewport_point_is_reserved_for_canvas_targets() -> None:
+    target = {"tag": "CANVAS", "locators": {}, "attributes": {}}
+    step = build_replay_plan([_event(0, "click", target=target,
+        pixel={"viewport_point": {"x": 100, "y": 200}})])[0]
+    assert [item["strategy"] for item in step.strategies] == ["viewport_point"]
+
+
+def test_role_without_name_is_not_a_stable_identity() -> None:
+    class Handle:
+        async def evaluate(self, _expression):
+            return {"tag": "BUTTON", "role": "button", "name": "", "text": "", "attributes": {}}
+
+    async def scenario():
+        executor = RecordingReplayExecutor()
+        with pytest.raises(RuntimeError, match="does not match recorded target semantics"):
+            await executor._verify_candidate(Handle(), {
+                "tag": "BUTTON", "role": "button",
+                "locators": {"role_name": {"role": "button", "name": None}, "text": None},
+                "attributes": {},
+            }, "role_name")
+
+    asyncio.run(scenario())
 
 
 def test_partial_locators_yield_only_available_strategies() -> None:
@@ -143,3 +171,20 @@ def test_report_summary_counts_and_success_rate() -> None:
 def test_empty_plan_success_rate_zero_division_safe() -> None:
     report = ReplayReport(recording_id="rec-1", entry_url="https://x")
     assert report.success_rate == 0.0
+
+
+def test_recorded_scroll_coordinate_names_are_executed() -> None:
+    class Page:
+        argument = None
+
+        async def evaluate(self, _script, argument):
+            self.argument = argument
+
+    async def scenario():
+        page = Page()
+        result = await RecordingReplayExecutor()._run_step(page, ReplayStep(
+            seq=7, action="scroll", detail={"value": {"scroll_top": 321, "scroll_left": 45}}))
+        assert result.status == "passed" and result.strategy == "scroll_to"
+        assert page.argument == {"top": 321, "left": 45}
+
+    asyncio.run(scenario())

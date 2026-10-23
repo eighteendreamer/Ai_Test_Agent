@@ -97,7 +97,7 @@ class Processes:
 
 
 @asynccontextmanager
-async def isolated_runtime(tmp_path):
+async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
     settings = get_settings().model_copy(deep=True)
     base = settings.model_copy(deep=True)
     suffix = uuid4().hex[:16]
@@ -128,6 +128,7 @@ async def isolated_runtime(tmp_path):
     objects = ArtifactStorageService(settings)
     owned_objects = []
     docker_outputs = []
+    external_redis_initial_keys: set[bytes] | None = None
 
     async def docker(*args):
         completed = await asyncio.to_thread(subprocess.run, ["docker", *args],
@@ -155,13 +156,27 @@ async def isolated_runtime(tmp_path):
         config.initialize()
         config.save("workspace.general", GeneralSettingsPayload().model_dump(mode="json"))
         config.save("channel.advanced", ChannelAdvancedSettings().model_dump(mode="json"))
-        # Verified executable in a cached local image, no installation/pull.
-        await docker("run", "--detach", "--name", container, "--publish", "127.0.0.1::6379",
-            "--entrypoint", "/opt/software/redis/bin/redis-server", "eighteenyear/bigdata-pytorch:2.6.1",
-            "--bind", "0.0.0.0", "--protected-mode", "no", "--save", "", "--appendonly", "no")
-        created_container = True
-        host = await docker("port", container, "6379/tcp")
-        settings.database.redis_url = "redis://" + host + "/0"
+        if redis_url:
+            # Product tests may reuse an explicitly supplied local Redis.  The
+            # randomly scoped streams/groups keep this fixture isolated without
+            # starting a second container.
+            settings.database.redis_url = redis_url
+            settings.orchestration.redis_task_stream = f"qa:test:{suffix}:runs"
+            settings.orchestration.agent_task_stream = f"qa:test:{suffix}:agents"
+            settings.orchestration.redis_task_consumer_group = f"qa:test:{suffix}:workers"
+            shared_redis = Redis.from_url(settings.database.redis_url)
+            try:
+                external_redis_initial_keys = set(await shared_redis.keys("*"))
+            finally:
+                await shared_redis.aclose()
+        else:
+            # Verified executable in a cached local image, no installation/pull.
+            await docker("run", "--detach", "--name", container, "--publish", "127.0.0.1::6379",
+                "--entrypoint", "/opt/software/redis/bin/redis-server", "eighteenyear/bigdata-pytorch:2.6.1",
+                "--bind", "0.0.0.0", "--protected-mode", "no", "--save", "", "--appendonly", "no")
+            created_container = True
+            host = await docker("port", container, "6379/tcp")
+            settings.database.redis_url = "redis://" + host + "/0"
         processes.env = child_environment(settings)
         probe = Redis.from_url(settings.database.redis_url)
         try:
@@ -203,6 +218,15 @@ async def isolated_runtime(tmp_path):
         if created_container:
             await docker("logs", container)
             await docker("rm", "--force", container)
+        elif redis_url:
+            shared_redis = Redis.from_url(settings.database.redis_url)
+            try:
+                current_keys = set(await shared_redis.keys("*"))
+                owned_keys = current_keys - (external_redis_initial_keys or set())
+                if owned_keys:
+                    await shared_redis.delete(*owned_keys)
+            finally:
+                await shared_redis.aclose()
         (tmp_path / "docker.json").write_text(json.dumps(docker_outputs, ensure_ascii=False, indent=2), encoding="utf-8")
         if isolated_configs:
             with mysql_raw_connection(settings) as conn, conn.cursor() as cur:

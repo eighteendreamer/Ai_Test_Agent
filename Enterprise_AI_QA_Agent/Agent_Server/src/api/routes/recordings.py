@@ -34,6 +34,8 @@ from src.schemas.recording import (
     RecordingPublic,
     RecordingCaptureSettings,
     RecordingCaseDraftResponse,
+    RecordingReplayRecord,
+    RecordingReplayRequest,
 )
 
 logger = logging.getLogger(__name__)
@@ -375,3 +377,31 @@ async def get_case_draft_from_recording(recording_id: str, request: Request,
     except ValueError as exc:
         raise HTTPException(status_code=404 if str(exc).startswith("recording not found:") else 409,
                             detail=str(exc)) from exc
+
+
+def _replay_service(request: Request) -> Any:
+    service = getattr(request.app.state, "recording_replay_service", None)
+    if service is None:
+        raise HTTPException(status_code=503, detail="recording replay service not initialized")
+    return service
+
+
+@router.post("/{recording_id}/replays", response_model=RecordingReplayRecord, status_code=201)
+async def run_recording_replay(recording_id: str, payload: RecordingReplayRequest, request: Request):
+    """显式重复录制操作并保存逐步定位报告；同一 request_id 不重复执行。"""
+    try:
+        return await _replay_service(request).run(recording_id, payload)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{recording_id}/replays", response_model=list[RecordingReplayRecord])
+async def list_recording_replays(recording_id: str, request: Request,
+                                 project_id: str = Query(min_length=1),
+                                 limit: int = Query(default=20, ge=1, le=100)):
+    try:
+        return await _replay_service(request).list(recording_id, project_id, limit)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc

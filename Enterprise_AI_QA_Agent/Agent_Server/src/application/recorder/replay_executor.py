@@ -47,6 +47,12 @@ _LOCATOR_STRATEGY_FIELDS: list[tuple[str, str]] = [
 ]
 
 _STEP_TIMEOUT_SECONDS = 10.0
+_LOCATOR_TIMEOUT_SECONDS = 1.5
+
+# Absolute coordinates are only meaningful for pixel surfaces.  Treating a
+# coordinate click on an ordinary DOM control as success hides element removal
+# and can operate an unrelated control after layout drift.
+_PIXEL_SURFACE_TAGS = {"CANVAS"}
 
 # CSS id 标识符合法字符（数字/字母/连字符/下划线；不以数字开头由 # 语义兼容）
 _CSS_ID_RE = re.compile(r"[A-Za-z_-][A-Za-z0-9_-]*")
@@ -189,7 +195,7 @@ def build_replay_plan(events: list[RecorderEvent]) -> list[ReplayStep]:
                  "bbox": dict(bbox), "rel_offset": dict(rel)}
             )
         point = pixel.get("viewport_point") if isinstance(pixel.get("viewport_point"), dict) else None
-        if isinstance(point, dict):
+        if isinstance(point, dict) and str(target.get("tag") or "").upper() in _PIXEL_SURFACE_TAGS:
             strategies.append(
                 {"strategy": "viewport_point", "kind": "point",
                  "x": float(point.get("x") or 0), "y": float(point.get("y") or 0)}
@@ -246,13 +252,12 @@ class RecordingReplayExecutor:
                         ReplayStepResult(seq=step.seq, action=step.action, status="failed",
                                          error=f"entry unreachable: {exc}")
                     )
-                return report
-
-            for step in plan:
-                report.steps.append(await self._run_step(page, step))
+            else:
+                for step in plan:
+                    report.steps.append(await self._run_step(page, step))
         finally:
             await self._shutdown()
-        report.finished_at = datetime.now(timezone.utc)
+            report.finished_at = datetime.now(timezone.utc)
         logger.info(
             "replay finished: recording_id=%s total=%s passed=%s failed=%s skipped=%s",
             recording_id, report.total, report.passed, report.failed, report.skipped,
@@ -281,10 +286,16 @@ class RecordingReplayExecutor:
                                     strategy="", error=step.skip_reason)
         started = datetime.now(timezone.utc)
         try:
-            strategy = await self._dispatch(page, step)
+            async with asyncio.timeout(_STEP_TIMEOUT_SECONDS):
+                strategy = await self._dispatch(page, step)
             elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
             return ReplayStepResult(seq=step.seq, action=step.action, strategy=strategy,
                                     status="passed", elapsed_ms=elapsed)
+        except TimeoutError:
+            elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
+            logger.warning("replay step timed out: seq=%s action=%s", step.seq, step.action)
+            return ReplayStepResult(seq=step.seq, action=step.action, status="failed",
+                                    error=f"step timeout after {_STEP_TIMEOUT_SECONDS:g}s", elapsed_ms=elapsed)
         except Exception as exc:  # noqa: BLE001 单步失败不中断整链（报告聚合）
             elapsed = int((datetime.now(timezone.utc) - started).total_seconds() * 1000)
             logger.warning(
@@ -304,8 +315,8 @@ class RecordingReplayExecutor:
 
         if step.action == "scroll":
             value = step.detail.get("value") or {}
-            top = int(value.get("top") or 0) if isinstance(value, dict) else 0
-            left = int(value.get("left") or 0) if isinstance(value, dict) else 0
+            top = int(value.get("scroll_top", value.get("top", 0)) or 0) if isinstance(value, dict) else 0
+            left = int(value.get("scroll_left", value.get("left", 0)) or 0) if isinstance(value, dict) else 0
             await page.evaluate("(p) => window.scrollTo(p.left, p.top)", {"left": left, "top": top})
             return "scroll_to"
 
@@ -334,7 +345,7 @@ class RecordingReplayExecutor:
         last_error: Exception | None = None
         for strategy in step.strategies:
             try:
-                handle = await self._apply_strategy(page, strategy)
+                handle = await self._apply_strategy(page, strategy, step.detail.get("target") or {})
                 if handle is not None:
                     return handle
             except Exception as exc:  # noqa: BLE001 该级失效：降级下一级
@@ -347,7 +358,7 @@ class RecordingReplayExecutor:
             f"all strategies exhausted for seq={step.seq}: {last_error or 'no locator available'}"
         )
 
-    async def _apply_strategy(self, page: Any, strategy: dict[str, Any]) -> Any:
+    async def _apply_strategy(self, page: Any, strategy: dict[str, Any], target: dict[str, Any]) -> Any:
         kind = strategy.get("kind")
         strategy_name = str(strategy["strategy"])
         if kind == "selector":
@@ -367,7 +378,9 @@ class RecordingReplayExecutor:
                     if strategy_name == "css"
                     else page.locator(f"xpath={raw}").first
                 )
-            await handle.wait_for(state="attached", timeout=_STEP_TIMEOUT_SECONDS * 1000)
+            await handle.wait_for(state="attached", timeout=_LOCATOR_TIMEOUT_SECONDS * 1000)
+            trusted_css_id = strategy_name == "css" and bool(re.fullmatch(r"#[A-Za-z_-][A-Za-z0-9_-]*", raw))
+            await self._verify_candidate(handle, target, strategy_name, trusted_identity=trusted_css_id)
             handle.strategy = strategy_name  # 命中策略回填报告
             return handle
         if kind == "role":
@@ -376,18 +389,86 @@ class RecordingReplayExecutor:
             if name:
                 locator = page.get_by_role(str(strategy["role"]), name=name, exact=False)
             handle = locator.first
-            await handle.wait_for(state="attached", timeout=_STEP_TIMEOUT_SECONDS * 1000)
+            await handle.wait_for(state="attached", timeout=_LOCATOR_TIMEOUT_SECONDS * 1000)
+            await self._verify_candidate(handle, target, strategy_name, trusted_identity=bool(name))
             handle.strategy = str(strategy["strategy"])
             return handle
         if kind == "geometry":
             # bbox+rel_offset 几何重锚：找几何上最接近的可交互元素（元素漂移容错）
             handle = await self._nearest_interactive(page, float(strategy["x"]), float(strategy["y"]))
+            await self._verify_candidate(handle, target, strategy_name)
             handle.strategy = str(strategy["strategy"])
             return handle
         if kind == "point":
+            tag = str(target.get("tag") or "").upper()
+            if tag not in _PIXEL_SURFACE_TAGS:
+                raise RuntimeError(f"viewport point is not allowed for DOM target tag={tag or 'unknown'}")
+            hit = await page.evaluate(
+                "(p) => { const el=document.elementFromPoint(p.x,p.y); return el ? el.tagName : null; }",
+                {"x": float(strategy["x"]), "y": float(strategy["y"])},
+            )
+            if str(hit or "").upper() != tag:
+                raise RuntimeError(f"viewport point no longer resolves recorded {tag} target")
             await page.mouse.click(float(strategy["x"]), float(strategy["y"]))
             return _VirtualHandle("viewport_point")
         raise RuntimeError(f"unknown strategy kind: {kind}")
+
+    async def _verify_candidate(self, handle: Any, target: dict[str, Any], strategy: str,
+                                *, trusted_identity: bool = False) -> None:
+        """Reject a locator that now resolves an unrelated element.
+
+        Direct id/test-id/role locators already carry a stable identity; for
+        structural CSS/XPath and geometry fallback, require at least one saved
+        semantic signal in addition to tag/role.  This keeps drift recovery but
+        turns a removed target into a visible failed step instead of a false
+        successful click on its neighbour.
+        """
+        observed = await handle.evaluate(
+            """(el) => {
+                const text = (value) => String(value || '').replace(/\\s+/g, ' ').trim();
+                const tag = String(el.tagName || '').toUpperCase();
+                const explicitRole = text(el.getAttribute('role')).toLowerCase();
+                const implicit = tag === 'BUTTON' ? 'button'
+                    : tag === 'A' && el.hasAttribute('href') ? 'link'
+                    : tag === 'INPUT' && ['button','submit','reset'].includes(String(el.type || '').toLowerCase()) ? 'button'
+                    : tag === 'INPUT' ? 'textbox'
+                    : tag === 'SELECT' ? 'combobox'
+                    : tag === 'TEXTAREA' ? 'textbox' : '';
+                const attrs = {};
+                for (const name of ['type','name','placeholder','alt','title','href','data-testid','data-test','data-qa']) {
+                    const value = el.getAttribute(name);
+                    if (value !== null) attrs[name] = String(value);
+                }
+                const bodyText = text(el.innerText || el.textContent);
+                const name = text(el.getAttribute('aria-label') || el.getAttribute('title')
+                    || el.getAttribute('alt') || el.getAttribute('placeholder') || bodyText);
+                return {tag, role: explicitRole || implicit, name, text: bodyText, attributes: attrs};
+            }"""
+        )
+        expected_tag = str(target.get("tag") or "").upper()
+        if expected_tag and observed.get("tag") != expected_tag:
+            raise RuntimeError(f"{strategy} candidate tag changed from {expected_tag} to {observed.get('tag') or 'unknown'}")
+
+        expected_role = str(target.get("role") or "").strip().lower()
+        if expected_role and observed.get("role") and observed["role"] != expected_role:
+            raise RuntimeError(f"{strategy} candidate role changed from {expected_role} to {observed['role']}")
+        if trusted_identity or strategy in {"id", "testid"}:
+            return
+
+        locators = target.get("locators") if isinstance(target.get("locators"), dict) else {}
+        role_name = locators.get("role_name") if isinstance(locators.get("role_name"), dict) else {}
+        expected_names = [str(role_name.get("name") or "").strip(), str(locators.get("text") or "").strip()]
+        observed_names = {str(observed.get("name") or "").strip(), str(observed.get("text") or "").strip()}
+        if any(name and name in observed_names for name in expected_names):
+            return
+
+        expected_attrs = target.get("attributes") if isinstance(target.get("attributes"), dict) else {}
+        observed_attrs = observed.get("attributes") if isinstance(observed.get("attributes"), dict) else {}
+        semantic_keys = ("name", "placeholder", "alt", "title", "href", "data-testid", "data-test", "data-qa")
+        if any(str(expected_attrs.get(key) or "") and str(expected_attrs[key]) == str(observed_attrs.get(key) or "")
+               for key in semantic_keys):
+            return
+        raise RuntimeError(f"{strategy} candidate does not match recorded target semantics")
 
     async def _nearest_interactive(self, page: Any, x: float, y: float) -> Any:
         selector_and_handle = await page.evaluate_handle(
@@ -407,9 +488,9 @@ class RecordingReplayExecutor:
             }""",
             {"x": x, "y": y},
         )
-        element = await selector_and_handle.as_element()
-        await selector_and_handle.dispose()
+        element = selector_and_handle.as_element()
         if element is None:
+            await selector_and_handle.dispose()
             raise RuntimeError("no interactive element near anchor point")
         return _ElementHandleAdapter(element)
 
@@ -436,6 +517,9 @@ class _ElementHandleAdapter:
     def __init__(self, element: Any) -> None:
         self._element = element
         self.strategy = "geometry"
+
+    async def evaluate(self, expression: str) -> Any:
+        return await self._element.evaluate(expression)
 
     async def click(self, timeout: float = 0) -> None:
         await self._element.click(timeout=timeout)

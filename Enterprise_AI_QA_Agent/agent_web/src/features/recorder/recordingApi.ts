@@ -59,6 +59,28 @@ export interface RecordingCaseDraftResponse {
   version: TestCaseVersionRecord;
 }
 
+export interface RecordingReplayStep {
+  seq: number;
+  action: string;
+  strategy: string;
+  status: "passed" | "failed" | "skipped";
+  error: string;
+  elapsed_ms: number;
+}
+
+export interface RecordingReplayRecord {
+  id: string;
+  recording_id: string;
+  project_id: string;
+  request_id: string;
+  request_hash: string;
+  status: "running" | "completed" | "failed";
+  created_at: string;
+  finished_at: string | null;
+  report: {summary: {total: number; passed: number; failed: number; skipped: number; success_rate: number}; steps: RecordingReplayStep[]} | null;
+  error: string | null;
+}
+
 export async function listRecordings(limit = 20, scope: {sessionId?: string; projectId?: string} = {}): Promise<RecordingPublic[]> {
   const query = new URLSearchParams({limit: String(limit)});
   if (scope.sessionId) query.set("session_id", scope.sessionId);
@@ -93,6 +115,18 @@ export async function createRecordingCaseDraft(
 export function getRecordingCaseDraft(recordingId: string, projectId?: string): Promise<RecordingCaseDraftResponse | null> {
   const query = projectId ? `?project_id=${encodeURIComponent(projectId)}` : "";
   return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/case-draft${query}`);
+}
+
+export function runRecordingReplay(recordingId: string, projectId: string, requestId: string): Promise<RecordingReplayRecord> {
+  return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/replays`, {
+    method: "POST",
+    body: JSON.stringify({project_id: projectId, request_id: requestId}),
+  });
+}
+
+export function listRecordingReplays(recordingId: string, projectId: string): Promise<RecordingReplayRecord[]> {
+  const query = new URLSearchParams({project_id: projectId});
+  return request(`/api/v1/recordings/${encodeURIComponent(recordingId)}/replays?${query.toString()}`);
 }
 
 /** 事件条目主标签：优先语义名（text/role name），退化到 css/id。 */

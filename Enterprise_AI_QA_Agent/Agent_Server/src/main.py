@@ -937,6 +937,12 @@ async def _initialize_lifespan_resources(
         test_case_service=test_case_service,
     )
     app.state.recording_case_draft_service = recording_case_draft_service
+    from src.infrastructure.recording_replay_store import PostgresRecordingReplayStore
+    from src.application.recorder.replay_service import RecordingReplayService
+    recording_replay_store = PostgresRecordingReplayStore(settings)
+    await recording_replay_store.initialize()
+    app.state.recording_replay_service = RecordingReplayService(recordings=recorder_service,
+        projects=project_service, store=recording_replay_store)
     from src.infrastructure.recording_scene_store import PostgresRecordingSceneStore
     from src.application.recorder.scene_service import RecordingSceneService
     scene_store = PostgresRecordingSceneStore(settings)
