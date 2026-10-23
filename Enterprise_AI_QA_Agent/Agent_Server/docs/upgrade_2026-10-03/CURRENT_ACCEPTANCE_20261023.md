@@ -111,3 +111,9 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 补充盘点确认同一配置库仍有 Session/事件/消息/快照/审批、Agent Task/Attempt、ToolJob/Artifact、Memory、Outbox 和 ResourceCleanup 等持久数据（例如 Session 109、事件 3,711、消息 217、快照 101、审批 9、Agent Task/Attempt 6/3、ToolJob/Artifact 35/10、Memory 313、Outbox 16）。只读取聚合计数并核对关联：事件、消息、快照、审批无孤儿；Session `event_count` 与事件行数一致，`snapshot_count` 与快照最大版本一致；TurnTask 当前 Attempt 指针有效；ToolArtifact 均关联 ToolJob，且 ToolJob 的 `artifact_count` 与工件行数一致。以上九项异常计数均为 0。该核对证明这些当前记录的关系投影一致，不代表它们已由 Alembic 管理，也不覆盖原始业务语义、外部对象内容或其他部署环境；查询未读取正文或凭据，未修改数据。
 
 验证命令：`RUN_LIVE_POSTGRES_TESTS=1 ..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests\\test_schema_migrations.py tests\\test_legacy_smoke_import_postgres_live.py -q --tb=short`，结果 **32 passed in 15.29s**。测试在随机隔离 PostgreSQL Schema/数据库验证四 revision 的真实 DDL、受支持旧结构保留、重复升级、失败/回滚保护，以及 Smoke 导入的显式项目映射、完整 canonical 投影读回、重复导入幂等和源快照篡改拒绝；结束后只读确认随机 Schema/数据库均已清理。它证明受支持迁移边界，不替代其他 Store 的生产历史盘点或迁移，也不代表本机 `QA_Agent` 已运行 Alembic。
+
+### 应用启动时的数据库结构初始化边界
+
+进一步检查启动调用链后确认，应用没有在启动流程统一执行 Alembic upgrade。API lifespan 在组装服务时直接调用多个 Store/Service 的 `initialize()`；独立规划 Worker、生成 Worker 也会初始化各自使用的 Store。相关入口包括 `Agent_Server/src/main.py` 的应用 lifespan、`Agent_Server/src/runtime/planning_worker_runtime.py` 的 `build_service()`、`Agent_Server/src/runtime/generation_worker_runtime.py` 的 `build_service()`。这些 Store 初始化实现包含各自的 `CREATE TABLE` / `ALTER TABLE`，而 `Agent_Server/alembic/README` 明确 Alembic 不覆盖应用自有表，也不应以 stamp 或运行时 initializer 假装完成迁移。
+
+因此当前不是“应用启动由 Alembic 统一迁移”，而是“少数持久结构由显式 Alembic revision 管理，其余仍由运行时 Store 初始化创建或演进”。新增 revision 只能覆盖其明确声明的对象；在没有逐 Store 清点结构版本、旧部署形态和启动副作用前，不能把简单补 revision 视为完整迁移方案。本轮只完成代码路径调研，没有调用这些初始化器去改写现有数据库，也没有新增迁移。
