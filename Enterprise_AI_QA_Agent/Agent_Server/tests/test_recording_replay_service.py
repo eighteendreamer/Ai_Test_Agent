@@ -1,10 +1,17 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from src.application.recorder.replay_executor import ReplayReport, ReplayStepResult
 from src.application.recorder.replay_service import RecordingReplayService
-from src.schemas.recording import RecordingReplayRequest, RecordingSession, RecordingStatus
+from src.runtime.recording_replay_task_handler import RecordingReplayTaskHandler
+from src.schemas.recording import (
+    RecordingReplayClaim,
+    RecordingReplayRequest,
+    RecordingSession,
+    RecordingStatus,
+)
 
 
 class Projects:
@@ -52,6 +59,37 @@ class Store:
         return [value for value in self.by_request.values() if value.recording_id == recording_id][:limit]
 
 
+class DispatchStore(Store):
+    def __init__(self):
+        super().__init__()
+        self.lease_seconds = 30
+        self.submissions = []
+        self.claimed = None
+        self.heartbeats = 0
+
+    async def submit(self, record, *, stream):
+        self.submissions.append((record, stream))
+        return await self.create_or_get(record)
+
+    async def get_by_id(self, project_id, replay_id):
+        return next((value for value in self.by_request.values()
+                     if value.project_id == project_id and value.id == replay_id), None)
+
+    async def claim(self, project_id, replay_id, *, worker_id):
+        record = await self.get_by_id(project_id, replay_id)
+        if record is None or self.claimed is not None:
+            return None
+        self.claimed = RecordingReplayClaim(record=record, worker_id=worker_id,
+            attempt_id="attempt-1", lease_token="lease-1", remaining_seconds=30)
+        return self.claimed
+
+    async def heartbeat(self, claim):
+        self.heartbeats += 1
+
+    async def finish_claim(self, claim, *, report=None, error=None):
+        return await self.finish(claim.record.id, report=report, error=error)
+
+
 class Executor:
     calls = 0
 
@@ -77,3 +115,41 @@ async def test_replay_is_project_scoped_persisted_and_idempotent():
     assert (await service.list("recording-1", "project-1"))[0] == first
     with pytest.raises(KeyError):
         await service.list("recording-1", "project-2")
+
+
+@pytest.mark.asyncio
+async def test_registered_dispatch_persists_outbox_intent_without_running_browser():
+    Executor.calls = 0
+    store = DispatchStore()
+    service = RecordingReplayService(recordings=Recordings(), projects=Projects(), store=store,
+        executor_factory=Executor, dispatch_stream="qa:tasks:recording_replay")
+    result = await service.run("recording-1", RecordingReplayRequest(
+        request_id="background-request", project_id="project-1"))
+    assert result.status == "running"
+    assert len(store.submissions) == 1
+    assert store.submissions[0][1] == "qa:tasks:recording_replay"
+    assert Executor.calls == 0
+    duplicate = await service.run("recording-1", RecordingReplayRequest(
+        request_id="background-request", project_id="project-1"))
+    assert duplicate == result and len(store.submissions) == 2
+    assert Executor.calls == 0
+
+
+@pytest.mark.asyncio
+async def test_replay_worker_claim_executes_once_and_terminal_delivery_does_not_repeat():
+    Executor.calls = 0
+    store = DispatchStore()
+    service = RecordingReplayService(recordings=Recordings(), projects=Projects(), store=store,
+        executor_factory=Executor, dispatch_stream="qa:tasks:recording_replay")
+    submitted = await service.run("recording-1", RecordingReplayRequest(
+        request_id="worker-request", project_id="project-1"))
+    handler = RecordingReplayTaskHandler(service, store, worker_id="worker-1")
+    task = SimpleNamespace(payload={"task_id": submitted.id, "replay_id": submitted.id,
+        "recording_id": submitted.recording_id, "project_id": submitted.project_id})
+    await handler(task)
+    assert Executor.calls == 1
+    assert (await store.get_by_id("project-1", submitted.id)).status == "completed"
+
+    # A redelivered terminal command is acknowledged without opening another browser.
+    await handler(task)
+    assert Executor.calls == 1

@@ -94,6 +94,17 @@ async function loadReplay() {
     if (current === revision && id === recordingId.value) replay.value = items[0] ?? null;
   } catch (e) { if (current === revision) error.value = e instanceof Error ? e.message : String(e); }
 }
+async function waitForReplay(id: string, requestId: string, current: number) {
+  for (let attempt = 0; attempt < 120; attempt += 1) {
+    await new Promise((resolve) => window.setTimeout(resolve, 1000));
+    if (current !== revision || id !== recordingId.value) return null;
+    const items = await listRecordingReplays(id, projectId.value);
+    const latest = items.find((item) => item.request_id === requestId) ?? items[0];
+    if (latest) replay.value = latest;
+    if (!latest || latest.status !== "running") return latest ?? null;
+  }
+  return replay.value;
+}
 async function diagnoseReplay() {
   const id = recordingId.value, current = revision;
   if (!id) return;
@@ -102,6 +113,15 @@ async function diagnoseReplay() {
     const result = await runRecordingReplay(id, projectId.value, crypto.randomUUID());
     if (current !== revision || id !== recordingId.value) return;
     replay.value = result;
+    if (result.status === "running") {
+      message.value = "回放已提交，等待 Worker 完成";
+      const settled = await waitForReplay(id, result.request_id, current);
+      if (settled && settled.status !== "running") {
+        const summary = settled.report?.summary;
+        message.value = summary ? `回放完成：通过 ${summary.passed}，失败 ${summary.failed}，跳过 ${summary.skipped}` : `回放${settled.status}`;
+      }
+      return;
+    }
     const summary = result.report?.summary;
     message.value = summary ? `回放完成：通过 ${summary.passed}，失败 ${summary.failed}，跳过 ${summary.skipped}` : `回放${result.status}`;
   } catch (e) { if (current === revision) error.value = e instanceof Error ? e.message : String(e); }

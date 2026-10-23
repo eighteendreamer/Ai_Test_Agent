@@ -315,3 +315,22 @@ class RecordingReplayRecord(BaseModel):
     finished_at: datetime | None = None
     report: dict[str, Any] | None = None
     error: str | None = None
+
+
+class RecordingReplayCommand(BaseModel):
+    """Outbox payload for a durable recording replay attempt."""
+
+    task_id: str = Field(min_length=1, max_length=160)
+    replay_id: str = Field(min_length=1, max_length=160)
+    recording_id: str = Field(min_length=1, max_length=160)
+    project_id: str = Field(min_length=1, max_length=160)
+
+
+class RecordingReplayClaim(BaseModel):
+    """Lease fenced execution view used by the replay Worker."""
+
+    record: RecordingReplayRecord
+    worker_id: str = Field(min_length=1, max_length=160)
+    attempt_id: str = Field(min_length=1, max_length=160)
+    lease_token: str = Field(min_length=1, max_length=160)
+    remaining_seconds: float

@@ -941,11 +941,16 @@ async def _initialize_lifespan_resources(
     )
     app.state.recording_case_draft_service = recording_case_draft_service
     from src.infrastructure.recording_replay_store import PostgresRecordingReplayStore
-    from src.application.recorder.replay_service import RecordingReplayService
+    from src.application.recorder.replay_service import RECORDING_REPLAY_STREAM, RecordingReplayService
     recording_replay_store = PostgresRecordingReplayStore(settings)
     await recording_replay_store.initialize()
+    recording_replay_stream = (RECORDING_REPLAY_STREAM
+        if settings.orchestration.redis_task_dispatch_enabled
+        and RECORDING_REPLAY_STREAM in settings.orchestration.task_stream_names else None)
     app.state.recording_replay_service = RecordingReplayService(recordings=recorder_service,
-        projects=project_service, store=recording_replay_store)
+        projects=project_service, store=recording_replay_store,
+        dispatch_stream=recording_replay_stream)
+    app.state.recording_replay_store = recording_replay_store
     from src.infrastructure.recording_scene_store import PostgresRecordingSceneStore
     from src.application.recorder.scene_service import RecordingSceneService
     scene_store = PostgresRecordingSceneStore(settings)

@@ -42,6 +42,28 @@ it("shows the persisted per-step replay failure report",async()=>{
   } finally { wrapper.unmount(); }
 });
 
+it("polls a durable running replay until the worker saves its report",async()=>{
+  vi.useFakeTimers();
+  mocks.listRecordingReplays.mockReset();
+  mocks.listRecordingReplays.mockResolvedValueOnce([]).mockResolvedValue([
+    {id:"replay-queued",recording_id:recorded.version.source.recording_id,project_id:id,
+      request_id:"request-queued",request_hash:"hash",status:"completed",created_at:"2026-10-23T00:00:00Z",
+      finished_at:"2026-10-23T00:00:02Z",error:null,report:{summary:{total:1,passed:1,failed:0,skipped:0,success_rate:1},steps:[]}},
+  ]);
+  mocks.runRecordingReplay.mockResolvedValue({id:"replay-queued",recording_id:recorded.version.source.recording_id,
+    project_id:id,request_id:"request-queued",request_hash:"hash",status:"running",created_at:"2026-10-23T00:00:00Z",
+    finished_at:null,error:null,report:null});
+  const wrapper=mountView();
+  try {
+    await vi.runAllTimersAsync(); await flushPromises();
+    await button(wrapper,"运行回放诊断").trigger("click"); await flushPromises();
+    expect(wrapper.text()).toContain("回放已提交，等待 Worker 完成");
+    await vi.advanceTimersByTimeAsync(1000); await flushPromises();
+    expect(wrapper.text()).toContain("回放完成：通过 1，失败 0，跳过 0");
+    expect(wrapper.get("[aria-label='回放诊断报告']").text()).toContain("completed");
+  } finally { wrapper.unmount(); vi.useRealTimers(); }
+});
+
 it("keeps an unknown creation identity and recovers by GET without an automatic write retry",async()=>{
   mocks.create.mockRejectedValue(new Error("connection closed after submission"));
   mocks.recoverCreation.mockResolvedValue(recorded);
