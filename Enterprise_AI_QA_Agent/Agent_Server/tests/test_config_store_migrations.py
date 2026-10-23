@@ -3,6 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 import os
 from threading import Barrier
+import traceback
 from uuid import uuid4
 
 import pytest
@@ -189,7 +190,7 @@ async def test_legacy_email_config_migration_recovers_after_rename_interrupt(mon
             return result
 
         monkeypatch.setattr(SQLAlchemyCursor, "execute", interrupt_after_rename)
-        with pytest.raises(RuntimeError, match="simulated process interruption"):
+        with pytest.raises(RuntimeError, match="Cannot migrate MySQL email configuration table"):
             store.initialize()
         assert renamed
         monkeypatch.setattr(SQLAlchemyCursor, "execute", original_execute)
@@ -228,7 +229,7 @@ async def test_legacy_email_config_migration_recovers_after_rename_interrupt(mon
     os.getenv("RUN_LIVE_UPGRADE_CONFIG_TESTS") != "1",
     reason="requires configured MySQL; uses random isolated email config tables",
 )
-async def test_legacy_email_config_migration_keeps_source_when_staging_fails(monkeypatch):
+async def test_legacy_email_config_migration_keeps_source_when_staging_fails(monkeypatch, caplog):
     settings = get_settings().model_copy(deep=True)
     table = f"up_email_stage_{uuid4().hex[:12]}"
     settings.database.email_config_table = table
@@ -240,7 +241,9 @@ async def test_legacy_email_config_migration_keeps_source_when_staging_fails(mon
         nonlocal failed
         if table_name is not None and not failed:
             failed = True
-            raise RuntimeError("simulated staging population failure")
+            # Reproduce the captured unique-name conflict with actual SQL. Its
+            # parameter tuple also contains the fixture's credential marker.
+            original_insert(self, cursor, record, table_name)
         return original_insert(self, cursor, record, table_name)
 
     try:
@@ -264,9 +267,15 @@ async def test_legacy_email_config_migration_keeps_source_when_staging_fails(mon
             connection.commit()
 
         monkeypatch.setattr(MySQLEmailConfigStore, "_insert_record", fail_first_staging_insert)
-        with pytest.raises(RuntimeError, match="simulated staging population failure"):
+        with pytest.raises(RuntimeError, match="Cannot migrate MySQL email configuration table") as raised:
             store.initialize()
         assert failed
+        rendered = "".join(traceback.format_exception(raised.value)) + caplog.text
+        assert "staging-key" not in rendered
+        assert "email_config_legacy_migration_failed" in caplog.text
+        diagnostic = next(record for record in caplog.records
+                          if record.message == "email_config_legacy_migration_failed")
+        assert diagnostic.error_type == "IntegrityError" and diagnostic.table == table
 
         with mysql_raw_connection(settings) as connection, connection.cursor() as cursor:
             cursor.execute(

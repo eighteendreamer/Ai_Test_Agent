@@ -166,6 +166,8 @@ Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_setti
 
 这些证据证明仓库中这一种旧 schema 在当前 MySQL 8.0/InnoDB/ROW 环境下的映射、并发和两个故障点，不证明其他未登记历史 schema、MySQL 5.7/NDB/STATEMENT 复制环境或真实数据库服务进程在 DDL 执行中宕机的服务器级恢复。运行时转换依然不是覆盖全部 MySQL 配置表的统一显式迁移体系。
 
+随后检查迁移失败可见性时，用真实 staging 唯一键冲突复现了 SQLAlchemy 异常参数泄漏：异常串和 `logger.exception` 的堆栈包含测试邮箱的凭据标记。现按已有 `MySQLApplicationConfigStore` 做法，只记录表、阶段和错误类型，向调用者抛出不带原异常链的上下文错误；异常清理和锁释放同样不输出原异常参数。真实 SQL 失败测试同时断言日志及对外格式化异常不含凭据标记、旧表未改且后续可重试。受影响邮件组合回归再次 **113 passed in 6.11s**，两个改动文件编译通过。本项验证的是迁移错误边界，不外推为所有数据库调用日志均已审计。
+
 ### MCP 旧结构迁移字段往返修复
 
 为确认 Store initializer 对旧扁平列的转换是否保真，在随机 PostgreSQL 表中构造含旧列的 MCP 记录（transport、description、project/document/endpoint、headers、provider_key、capabilities），执行当前 initializer 后通过正式 Store 读回。首次真实测试失败：旧 `capabilities` 已写入 `metadata.legacy_capabilities`，旧列也被删除，但 `_record_from_row()` 只读取已不存在的列，API 对象返回空 capabilities。根因是 PostgreSQL 规范表通过 JSONB `metadata` 存储该字段时，写入映射没有写 capabilities，读取映射也没有从迁移元数据回退。

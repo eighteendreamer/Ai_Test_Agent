@@ -413,12 +413,13 @@ class MySQLEmailConfigStore:
                         "email_config_migration_lock_release_unconfirmed",
                         extra={"table": self._settings.database.email_config_table},
                     )
-            except Exception:
+            except Exception as exc:
                 # Closing this connection also releases the named lock. Keep the
                 # original migration error visible if the explicit release fails.
-                logger.exception(
+                logger.error(
                     "email_config_migration_lock_release_failed",
-                    extra={"table": self._settings.database.email_config_table},
+                    extra={"table": self._settings.database.email_config_table,
+                           "error_type": type(exc).__name__},
                 )
 
     def _migrate_legacy_table(self, conn, cur) -> None:
@@ -463,24 +464,31 @@ class MySQLEmailConfigStore:
                     "migrated_row_count": migrated_count,
                 },
             )
-        except Exception:
-            logger.exception(
+        except Exception as exc:
+            # SQLAlchemy exception strings include the full SQL parameter tuple,
+            # which contains mailbox credentials on this migration path.
+            logger.error(
                 "email_config_legacy_migration_failed",
-                extra={"table": source_table, "staging_table": staging_name},
+                extra={"table": source_table, "staging_table": staging_name,
+                       "error_type": type(exc).__name__},
             )
             try:
                 if self._table_exists(cur, staging_name):
                     cur.execute(f"DROP TABLE `{staging_name}`")
                     conn.commit()
-            except Exception:
+            except Exception as cleanup_error:
                 # A dead process or broken connection cannot clean its stage.
                 # The next lock owner replaces this deterministic table before
                 # rebuilding, so preserve the original migration error here.
-                logger.exception(
+                logger.error(
                     "email_config_migration_stage_cleanup_failed",
-                    extra={"table": source_table, "staging_table": staging_name},
+                    extra={"table": source_table, "staging_table": staging_name,
+                           "error_type": type(cleanup_error).__name__},
                 )
-            raise
+            raise RuntimeError(
+                f"Cannot migrate MySQL email configuration table {source_table!r} "
+                f"({type(exc).__name__})"
+            ) from None
 
     def _migration_lock_name(self) -> str:
         identity = (
