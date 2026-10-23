@@ -97,7 +97,12 @@ class Processes:
 
 
 @asynccontextmanager
-async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
+async def isolated_runtime(
+    tmp_path,
+    *,
+    redis_url: str | None = None,
+    seed_workspace_config: bool = True,
+):
     # Require an explicit test service before allocating databases or processes.
     redis_url = (redis_url or os.getenv("QA_ISOLATED_RUNTIME_REDIS_URL") or "").strip()
     if not redis_url:
@@ -151,8 +156,9 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
         isolated_configs = True
         config = MySQLApplicationConfigStore(settings)
         config.initialize()
-        config.save("workspace.general", GeneralSettingsPayload().model_dump(mode="json"))
-        config.save("channel.advanced", ChannelAdvancedSettings().model_dump(mode="json"))
+        if seed_workspace_config:
+            config.save("workspace.general", GeneralSettingsPayload().model_dump(mode="json"))
+            config.save("channel.advanced", ChannelAdvancedSettings().model_dump(mode="json"))
         processes.env = child_environment(settings)
         probe = Redis.from_url(settings.database.redis_url)
         try:
