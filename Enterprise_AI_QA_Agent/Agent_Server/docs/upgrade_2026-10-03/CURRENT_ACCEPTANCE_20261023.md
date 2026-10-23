@@ -143,3 +143,9 @@ MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::t
 MCP 顺序重跑已有真实隔离 PostgreSQL 专项：`tests/test_mcp_management_route_status.py::test_legacy_mcp_integration_migration_is_idempotent` 结果 **1 passed in 9.46s**。测试第一次迁入一条旧 HTTP 集成，第二次调用返回 0，读回数据库仍只有一条映射记录，并验证 transport、URL 和 headers 转换。它只证明顺序重试幂等，不覆盖多 API 实例并发启动时“查询旧 ID → 插入”的竞态，也未测试从真实本地 catalog 文件读取的 API 启动闭环。测试使用随机 PostgreSQL 表并在 fixture 结束时删除；未创建 Docker/Redis 容器，未触碰当前业务表。
 
 以上是代码路径结论，不代表这些边界已经在多 API 实例或实际旧部署上验收。对 MCP 应继续验证多实例并发导入，再决定是否需要唯一约束或迁移账本；对 Workspace 旧文件和 MySQL 赞助结构则需分别准备真实隔离数据验证，不能把一个 `initialize()` 幂等测试外推到所有配置 Store。
+
+### MCP 旧结构迁移字段往返修复
+
+为确认 Store initializer 对旧扁平列的转换是否保真，在随机 PostgreSQL 表中构造含旧列的 MCP 记录（transport、description、project/document/endpoint、headers、provider_key、capabilities），执行当前 initializer 后通过正式 Store 读回。首次真实测试失败：旧 `capabilities` 已写入 `metadata.legacy_capabilities`，旧列也被删除，但 `_record_from_row()` 只读取已不存在的列，API 对象返回空 capabilities。根因是 PostgreSQL 规范表通过 JSONB `metadata` 存储该字段时，写入映射没有写 capabilities，读取映射也没有从迁移元数据回退。
+
+修复后，`_record_params()` 将非空 capabilities 写入兼容元数据；`_record_from_row()` 优先读仍存在的旧列，缺列时从 `metadata.legacy_capabilities` 读取。旧结构迁移字段读回及新建 PostgreSQL 记录能力列表往返由 `tests/test_mcp_management_route_status.py` 覆盖；整个文件在真实隔离 PostgreSQL 上 **30 passed in 8.90s**。随机表由 fixture 清理。此修复不改变表结构或 API 字段；多实例并发旧集成导入仍未验证。
