@@ -21,3 +21,9 @@
 统一结果采用nullable测量字段：缺失为None/JSON null，实测0仍为0；无样本或SLA所需字段缺失返回inconclusive、passed=null及missing_metrics，确定违约优先fail。两引擎解析、曲线、观测、基线显示、Markdown/HTML同步；PG现有JSON列和前端通用JSON树支持null，无迁移。原件不改写，历史0无法倒推是否缺失。非法汇总抛明确解析错误，由runner已有异常日志/失败路径记录，不再静默空指标。核对现有验证服务对passed=null/非通过报告返回partial，增加跨层回归证据。完整原件生产持久化和烟测行为继续独立调查，本步不虚报已完成。
 
 首次修复后Docker四场景1通过42.29秒、扩大96通过17.36秒。但新违约原件同时证明生成器将0.001ms通过int截为0，脚本/engine表达式和业务SLA不相同。按现有浮点SLA及error_rate字符串生成方式保留延迟小数，新增原件表达式断言并重验；不把首次成功当作修复了这个数值缺陷。中间:g版本Docker1通过34.04秒/扩大97通过17.54秒；最终采用str仅移除整数末尾.0，避免:g默认六位有效数字继续损失精度，追加123.456789断言，重新运行受影响适配器/契约及真实Docker。原有引擎严格<与分析器最大值>在刚好等于阈值时仍可能分歧，本批分歧返回inconclusive，不默认为pass；比较语义的产品统一另需依据，历史结果不重写。
+
+## 2026-10-19 当前版本真实复验
+
+在当前源码和当前缓存镜像下重新执行 `tests/test_performance_docker_measurement.py`，结果为 **1通过、0失败、0跳过，41.79秒**。证据目录为 `p5-docker-perf-measurement-current/`。测试实际启动独立 API、受管 `hashicorp/http-echo:1.0.0` 目标和 `grafana/k6:latest`（镜像摘要 `sha256:5221b620…`，k6 v2.2.0），保存生成脚本、k6 stdout/stderr、summary、运行原件、Markdown/HTML/JSON 报告、模式输出、PG 指标和资源分配记录。
+
+四个真实变体的结果为：default P99 0.49594929ms / `pass`，smoke P99 0.47185108ms / `pass`，故意缺少 P99 / `inconclusive` 且 `passed=null`，违约阈值 0.001ms / P99 0.60107887ms / `fail`。违约场景 k6 退出码为99但 runner仍保存原始结果并由报告明确判定失败；所有受管容器完整 ID 均已删除，PG 四条记录与报告指标一致。此次仍是受控本地目标的采集、解析和报告验收，不是持续容量基线、默认 Agent 自主调用、AI 流式阶段指标或完整性能产品验收。

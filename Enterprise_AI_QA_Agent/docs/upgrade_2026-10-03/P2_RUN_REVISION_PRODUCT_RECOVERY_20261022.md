@@ -79,3 +79,13 @@ $env:QA_RUN_PLAN_REVISION_PRODUCT_EVIDENCE_DIR='G:\Code_Warehouse\Ai_Test_Agent\
 | 继续查证/验收 | 未知副作用的自动只读查证、完整准备状态；默认 AI 的项目选取→排序→补全→执行，以及其他七方向的既定未完成项 |
 
 Step 认证按用户确认为通过；本轮没有重复调用未改变的外部状态。此前实际调用返回无有效 Step Plan 套餐，不应写成未认证。本轮也没有更换模型协议：Anthropic 仍调用 `client.messages.create`，`await_provider_io` 仅包裹 I/O，OpenAI Responses 为独立 transport。
+
+## Agent 自动触发边界复核
+
+沿现有调用链复查后，需把“修订能力已实现”和“Agent 会自主触发”分开：`RunRevisionPlanningService.submit` 已经把 Run 状态、固定目标版本、当前条目/结果和原因封装为 `run_revision` 输入，复用 PostgreSQL 持久规划任务及现有 `CasePlanningWorkflow`；`PlanningTaskHandler` 在规划完成或终态重投时调用 finalizer，finalizer 校验原目标/版本仍完整后，通过现有 `CasePlanRunService.revise` 自动应用候选。该路径已有 `tests/test_run_revision_planning.py` 专项，但测试需要隔离 MySQL、PostgreSQL、RustFS，不能在当前 RustFS 不可用时宣称本轮重验。
+
+代码搜索只找到 API 路由、应用组合根和规划 Worker 对 `RunRevisionPlanningService` 的连接，没有从 Agent graph、用例执行模式或工具调用路径提交规划任务的调用点。因此已实现的是“收到明确重规划请求后，生成候选并自动修订未领取部分”；缺少的是 Agent 根据执行证据发现缺口并提交该请求的触发逻辑，不需要再建一个规划器或修订存储。
+
+`build_run_plan_revision` 仅更新 `queued`、`attempt_no == 0`、未领取、无租约且无结果的条目。已领取/执行过的 RunItem 会按原记录保留，即使候选计划为它添加了新的依赖，也不能据此认为当前条目已等待该依赖。因而实现触发时必须区分：尚未领取的目标可经现有服务补入依赖；已领取目标的缺口不能靠改写当前 RunItem 修复，必须保留当前 Attempt/检查点/结果并先走单独明确的恢复或新运行语义。不能自动重置已完成条目或在未知副作用后盲目重放。
+
+该边界与本地课程中的轨迹要求一致：依赖必须在执行前满足，参数来源要能追溯，重复提交须幂等，错误恢复保留已发生效果的证据（`项目借鉴/llm-testing-course/Agent测试专项.html`、`Agent轨迹与协议鲁棒性.html`）。下一步若实施，只接入已有持久规划 API/服务，并先为“未领取目标自动补入”定义 Agent 可观察的缺口证据、触发上限和终态；已领取目标的恢复需另行验证，不扩大现有 revision API 的权限。

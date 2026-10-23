@@ -26,6 +26,8 @@ P4 需求追踪的当前构建版产品流程补验（2026-10-20）：实际 DOC
 
 模型适配层在当前工作树重新运行 `test_model_clients.py`、`test_model_request_profile.py`、`test_langchain_model_adapter.py`，**67 passed，27.05秒**。结论不变：统一内部请求/结果契约与 provider-specific 原生协议客户端是当前代码结构；Anthropic 用 Messages，OpenAI Responses 独立分派，LangChain 仅接受 OpenAI-compatible Chat。本批本地 HTTP fixture 与 SDK 测试没有发现需要将供应商改成单一 wire protocol 的根因或失败证据；这不证明每个远程供应商都可用。
 
+**2026-10-22 P1 生成质量验收状态：** 真实 Markdown 场景在文档上传阶段返回 HTTP 500，模型 SDK 调用数为 0。上传安全链路依赖现有 RustFS 临时桶；配置端点 `127.0.0.1:9000` 的只读 HTTP 探测返回空响应。该次结果分类为存储环境前置未满足，不能据此判断生成逻辑或语义质量；恢复现有存储服务后重跑同一场景。
+
 ### 当前未完成项的分类〔2026-10-22〕
 
 | 方向 | 已有实现/专项证据 | 尚未验收 | 仍需补实现或查证 |
@@ -5014,3 +5016,98 @@ $env:QA_API_401_AUTO_WORKER_DIR='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_Q
 隔离验收 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` **1 passed，36.10秒**。目标页面 HTTP 200，两个按钮各唯一；PostgreSQL 原始事件为 6 条（4 条预期操作、1 条 page_scan、1 条 page_response），动作逐项对账通过，响应关联覆盖动作序号 `[1,2,3,4]`，发现 1 组重复候选但两次真实点击均保留，2 条观察事件保留为证据且没有删除事件；`integrity.degraded=false`。JUnit 为 `p0-deepseek-action-oracle-current-20261021-01.xml`，页面事实、截图、数据库事件及质量投影保存在 `p0-deepseek-action-oracle-current-20261021-01/`。
 
 准确边界：`omission.status=verified` 只表示已发布事件送达与 PostgreSQL 序号连续；`business_capture_complete` 仍为 `unknown`。本验收用 Playwright 驱动真实 Chromium 页面，不是物理人工操作；使用的是 `cdp-attach` 录制入口，没有验收 Electron 审批/工具栏入口、登录态、业务输入、所有潜在页面事件、跨文档/iframe/Shadow DOM，或默认 AI 消费录制知识。本轮只加强测试断言，没有修改生产录制代码、数据库结构或配置，也没有调用外部模型。
+
+### 7.150 P3 已提交写入超时后的只读查证与真实进程恢复（2026-10-21）
+
+依据本地接口测试课程及 Agent 协议恢复要求，复核 `ApiTaskExecutor`、`ApiTaskPool`、`ApiSubagentCoordinator`、`ApiWorkerResultReader` 和原始 ToolJob 保存链。已有实现会保留写请求的 `unknown`，拒绝重试；显式 GET 查证只记录观察，不改写原写任务或释放依赖。此前 HTTP 测试的查证状态由 fixture 预置，缺少“业务数据确实落库、响应丢失、杀进程、从原 Job 恢复后查询”的组合证据，因此本步只补验收，没有修改生产协调器或增加恢复机制。
+
+新增 `tests/test_api_unknown_write_recovery_live.py`，按既有临时表隔离模式，仅创建本次拥有的 PostgreSQL 项目、会话、Job、私有引用及业务目标表；不启动完整 API lifespan，不创建 Redis/Docker，不修改 MySQL 配置。目标接口每次 POST 都插入一个新 UUID，业务键没有唯一约束，避免目标自身去重掩盖重复请求；提交之后延迟响应，使实际客户端超时。两个参数分别在 Worker 原 Job 已保存但父协调器尚未合并、父协调器已合并 unknown 后暂停，然后由外部进程执行 kill，使用新进程恢复。
+
+实际运行 **2 passed、0 skipped，51.53秒**。两场景均在 PostgreSQL 中只查到1条实际业务数据；HTTP 严格为一次 POST 加一次 GET；查询结果的实际 ID 与已提交记录一致，四项查询断言通过。原写任务仍为 `failed/unknown`，只读查证为 `completed/effect_present`，依赖项为 `skipped`，尝试次数为 `[1,1,0]`。原 Job 的逐字段快照在恢复和终态重投后不变，终态重投新增 HTTP 为0，Worker Job 总数为2；结构化报告保留1完成/1失败/1跳过和查证观察。全部12张自建表在每个场景结束后已清理。JUnit 为 `p3-api-unknown-write-process-current-20261021-01.xml`，逐阶段 PG 读回、原 Job、stdout/stderr、HTTP 和清理证据位于同名目录。
+
+六个相邻 API 模块回归 **73 passed、7 skipped，35.05秒**，JUnit 为 `p3-api-unknown-write-regression-current-20261021-01.xml`。跳过的是原有真实完整服务/Worker 门控，不算通过。本结果关闭的是 API Testing Mode 的显式查证和两处进程恢复场景；不是正式用例 Run 的自动查证、默认模型自主选择查证、原 ToolJob 返回尚未保存时的恢复、查证后自动继续业务或完整产品页验收。完整 P0—P5 仍未完成。
+
+### 7.151 项目环境管理与规划快照选择页面（2026-10-21）
+
+**已有实现**：后端项目环境登记、MySQL 目标配置、PostgreSQL 快照、归档与历史 API 已存在；前端请求客户端和标准规划 `environment` DTO 已存在。快照只固定目标配置，后端返回的部署状态固定为 `unknown`。
+
+**本步补实现**：项目详情加入“测试环境”入口；管理对话框支持登记、读取/保存目标、创建快照、查看历史及归档。普通用例规划可选择当前项目有效环境中的固定快照，提交 `environment_id`、`snapshot_id` 和预期 SHA-256；规划任务会将选择保存在原请求中，网络响应未知时沿用同一选择。已保存计划展示服务端冻结的目标地址、配置修订和“部署状态未知”。回归规划协议不变。
+
+注册和快照写入先按原请求号查询，再使用同一请求号提交；配置 PUT 没有幂等回执，响应失败后仅重新读取并比对，界面不自动重发。规划任务请求的敏感运行上下文仍不写入 sessionStorage；只存恢复同一快照选择所需的标识与哈希。
+
+**实际验收**：前端管理器/规划选择器专项 **98 passed**，`npm run typecheck` 与 `npm run build` 退出码0。另用真实 Chromium 页面驱动登记、配置、捕获、选择及归档；MySQL 配置按目标作用域读回，PostgreSQL 快照哈希与 API 响应相同，选择器发出的 ID/hash 与已保存快照相同，归档后历史仍可读。测试使用现有隔离 MySQL/PostgreSQL 环境服务，没有 Redis/Docker；浏览器错误为0。JUnit 和逐步 API/数据库读回见 `Agent_Server/docs/upgrade_2026-10-03/business-environment-ui-live-current-20261021-01/`。
+
+**仍未完成**：这一步只完成环境管理和规划快照入口，不等于需求适用性评审完整产品闭环，也不证明目标系统已部署。部署状态核验、适用性审核的页面全链路、真实计划执行时目标行为与需求影响的业务验收，继续留在原 P0—P5 范围内。
+
+### 7.152 P2 UI RunItem 重复回执工件与模型预算核对（2026-10-21）
+
+在当前工作树运行 `tests/test_default_ui_scene_live.py` 的 Agnes 隔离模型场景，证据位于 `p0-default-ui-agent-skill-filter-current-20261021-01/`，JUnit 为 `p0-default-ui-agent-skill-filter-current-20261021-01.xml`。正向 Run 选择固定 UI 用例并读取场景知识；执行页初始计数为0，实际点击一次后计数为1，执行页实际 POST 一次。但 RunItem 最终为 `error`，正式回执未完成。负向场景在规划阶段因回执缺少 `summary` 和准备项 `evidence_ids` 被拒绝，没有创建 Run。此轮没有关闭 UI Run 正式结果验收。
+
+逐项对账正向 Run 的11个 PostgreSQL 快照、11个 ToolJob 和 `physical/` 请求记录后，确认有8次成功结束的逻辑模型调用，正好达到默认 `runtime_max_iterations=8`；第8次调用仍请求 `file-artifact-manager`，没有生成最终 assistant 回执。运行时按预算契约未发送第9次调用，并以 `budget_exhausted` 保留工具证据。Agent 写入回执工件4次，其中 `case-receipt-final.json` 重复3次。物理追踪记录12个 SDK create 和13个 HTTP attempt；其中1个 SDK create 包含2个物理 attempt，SDK 内首次 attempt 没有响应头，第二次完成。故逻辑预算耗尽来自工具循环未收敛；这不是把 SDK retry 算作新的逻辑调用。首次无响应 attempt 的原因仍未确定。
+
+实际模型为隔离 Agnes `agnes-2.5-flash`，并非默认 Step。请求正文含有 RunItem 专用提示，明确要求不要用 `file-artifact-manager` 或 `report-writer` 重复提交正式结果；但这两个工具仍对模型可见，提示规则没有阻止重复调用。当前工作树 `tests/test_agent_case_session.py tests/test_approval_model_budget.py` 回归为 **13 passed、4 skipped**。这些证据不支持提升全局预算、改 Provider 协议或对所有用例屏蔽文件/报告能力。下一步先查固定用例如何声明真实工具需求，并核对现有 per-run 工具治理接口，再设计保留文件/报告作为被测行为时能力的确定性约束，通过同类完整 Run 验证后才确认修复。
+
+Step 账号认证按用户确认已完成；此前默认 Step 多用例推理 HTTP 400 / Step Plan entitlement 失败证据保持有效，本轮没有重发相同请求。P2 与完整 P0—P5 继续未完成。
+
+### 7.156 P2 UI 正式回执失败与工具范围方案复核（2026-10-21）
+
+重新对照 §7.152 的 UI Run 现场与 §7.153 的审批恢复修复。旧现场在审批续跑后达到 8 次逻辑模型调用，最终状态为 `budget_exhausted`；`AgentCaseExecutionService` 随后请求只读回执纠正，但当时图状态已没有可用预算。§7.153 修复的正是审批快照未完整保存 `model_response_summary`、导致预算预留判断丢失成功响应状态的问题。因旧 UI 失败轨迹与该修复处于同一调用边界，不能再单凭旧轨迹认定文件/报告工具必须从 UI RunItem 中移除。
+
+当前 UI 模式及 Agent 仍注册 `file-artifact-manager`、`report-writer`；固定用例提示已限定为只有用例明确测试文件或报告行为时才调用。这些工具仍需在同场景复验中观察，但现有证据不足以证明应默认屏蔽，也不足以设计新的用例级工具白名单。不要改变自由 UI 测试能力或误拦实际被测行为。
+
+**修复后行为验证**：在 `Agent_Server` 运行 `uv run --locked python -m pytest tests/test_agent_case_receipt_correction.py::test_runitem_budget_reserves_one_readonly_receipt_correction_after_required_operations -q --tb=short`，结果 **1 passed，7.58 秒**。受控 HTTP 真实观察 `POST → GET → DELETE` 各一次；审批续跑保留预算，在最后一次原始图调用前停止工具循环，使用唯一一次无工具只读调用产生正式回执，RunItem 为 passed，终态重放没有新增模型或业务请求。此验收不启动 Docker、不访问外部模型。
+
+**分类与下一步**：审批恢复时的只读回执预算保留已有实现且当前行为测试通过。§7.152 的实际 Agnes UI Run 仍需在 §7.153 后的当前工作树复验，确认浏览器交互、重复文件工件和正式 RunItem 回执；该全链路夹具会创建并清理本地 Redis Docker 容器。只有复验仍出现重复工具调用并导致正式回执失败时，才继续基于该新轨迹评估用例声明的工具需求或确定性治理；不先做模式级封锁。
+
+### 7.153 P2 审批恢复时回执纠正预算丢失与终态覆盖修复（2026-10-21）
+
+**已有实现**：固定用例回执纠正协议、模型调用预算、只读纠正请求、原业务证据校验和纠正请求/响应检查点均已存在。前一轮回归确认业务请求不会因只读纠正而重放，但在剩余预算恰好为一次时无法进入纠正。
+
+**根因与修复**：`tool_executor` 为审批恢复手工拼装了较窄的 `pending_turn`，只保存预算计数，没有保存 `graph_state.model_response_summary`。恢复代码从 `pending_turn.graph_state` 还原响应摘要，所以能恢复 `model_call_count`，却把成功响应状态还原成空值，预算保留判断因此拒绝预留。审批待办改为复用既有 `build_pending_turn` 完整序列化器，同时保留该节点原有的 `conversation_messages` 与 `resume_tool_messages`。另一个跨节点问题是 `finalizer` 会把模型调用器设置的 `case_receipt_budget_reserved` 覆盖为 `assistant_final`；现在沿用已有预算终态分支保留该原因。测试 fixture 补入其缺失的公共 `receipt` fixture 引用，并移除临时调试输出。
+
+**功能验证**：预算预留专项真实 HTTP 夹具 **1 passed**。断言证明审批恢复拿到完整响应摘要，三次业务副作用仍严格为 `POST → GET → DELETE` 且各一次；最后一次模型调用是无工具只读回执纠正；回执通过；终态重投不新增模型调用或业务请求。受影响回归 `test_agent_case_receipt_correction.py`、`test_agent_case_session.py`、`test_approval_model_budget.py`、`test_turn_budget_persistence.py`、`test_tool_wait_batch.py` 为 **40 passed、21 skipped**；跳过项受真实 PostgreSQL/模型门控控制，不计为通过，受控批次证据在 `Agent_Server/docs/upgrade_2026-10-03/p2-receipt-budget-approval-state-fix-20261021-01/`。审批/路由模块 `test_intent_safety_routing.py` 为 **110 passed**。测试使用内存存储和本机受控 HTTP，不启动 Docker、不调用外部模型，也不修改 MySQL 配置或数据库 schema。
+
+**仍未完成**：以上证明审批检查点在受控模型下正确保存预算和回执纠正终态，不证明默认 Step 或 Agnes UI Run 已取得正式通过回执，也不替代真实操作系统进程中断/重启验收。Step 账号认证按用户确认为完成；最新已存默认多用例推理证据仍在首次请求收到 HTTP 400，等待供应商推理授权/服务状态变化后再做完整默认 AI 验收。本轮没有重复请求。P2 及 P0—P5 继续进行。
+
+### 7.154 多模型 SDK 适配层当前工作树复验（2026-10-21）
+
+复核 §7.96 所列适配实现及当前工作树：`resolve_client` 按显式 `transport` 分派 Chat Completions、Responses、Anthropic Messages、Gemini；统一请求/结果契约不把 provider 原生端点改写成同一种协议。`AnthropicMessagesClient` 仍直接调用 `client.messages.create(...)`，外层 `await_provider_io` 只等待原调用并归一化网络 I/O 异常；`OpenAIResponsesClient` 是单独客户端，只有 `openai_responses` 配置进入 `client.responses.create(...)`。`map_model_request` 按 transport/profile 映射请求字段；启用 LangChain 的路径也只对符合条件的 Chat Completions 配置开放。
+
+当前工作树复跑 `tests/test_model_clients.py` 为 **15 passed**；`tests/test_model_request_profile.py` 通过本机 HTTP 服务实测同步/流式请求的真实发送正文，为 **46 passed**。Anthropic Messages 的 `/v1/messages`、OpenAI Responses 的 `/v1/responses`、Chat Completions 和 Gemini 的字段形状分别被检查。该测试不访问外网模型账号。结论与 §7.96 一致：**项目已需要且已有 per-transport 适配层；目前没有依据再叠加一个单体统一协议层，也没有发现 Anthropic 被替换成 Responses。** 本轮没有修改适配器代码、模型协议、MySQL 配置或依赖版本。
+
+### 7.155 P2 Step 认证后默认多用例复验与回执响应进程恢复（2026-10-21）
+
+用户再次确认 Step 模型账号已认证。重新读取默认 MySQL 模型配置后，实际运行 `tests/test_default_coverage_production.py::test_actual_default_model_plans_and_executes_complete_case`，使用全新隔离项目与多用例依赖场景：**1 failed，32.13 秒**。配置身份仍为 `step-5-preview` / `openai_chat_completions` / `api.stepfun.com/step_plan/v1`，全局默认模型未改变。首个真实流式请求返回 HTTP 400（SDK `request_params_invalid`），未完成 SDK create、没有生成计划或 Run，也没有业务 HTTP。当前物理记录只保存状态码和错误类型；此前独立最小探测已记录脱敏响应“无有效 Step Plan 订阅”。因此账号认证按用户确认完成，Step 推理/订阅可用性仍未通过；本次不能归因为计划逻辑或 API key 认证失败。测试创建的临时 Redis 容器已由夹具删除，`docker run/logs/rm` 均为退出码0，`docker ps -a` 无 `qa-execution-cli-*` 残留。JUnit 与隔离证据在 `Agent_Server/docs/upgrade_2026-10-03/p2-default-multi-case-step-auth-after-auth-20261021-01.xml` 及同名目录。
+
+随后针对 §7.153 的审批快照修复复验真实进程恢复。实施前核对 `test_receipt_process_recovery_live.py`：它使用正式 API、独立 CLI Worker、实际模型 SDK、本机受控 HTTP 响应及隔离 MySQL/PostgreSQL；该夹具测试不会请求外部模型。分别运行 `response` 与 `invoking` 两个非流式边界，结果分别为 **1 passed，355.55 秒**、**1 passed，354.27 秒**。两个场景都在纠正请求阶段强制结束自建 API；立即恢复为0，原 RunItem 租约自然过期后恢复为1，300秒资源租约也自然结束并清理。`response` 场景先持久化响应和 SHA-256，恢复后 RunItem 通过并复用同一响应；`invoking` 场景只持久化了请求，恢复后保留 `execution_recovery_required` 并以 `error` 结束，不盲目重发纠正。两条路径的业务目标均只执行一次 `POST → GET → DELETE`，数据清理后剩余0条；终态重投新增模型请求0、业务请求0，资源使用归零。每场景共6次本机模型 HTTP轨迹，`invoking` 的最后一次纠正请求没有响应。证据及 JUnit 位于 `Agent_Server/docs/upgrade_2026-10-03/p2-receipt-process-recovery-current-20261021-01/` 与 `Agent_Server/docs/upgrade_2026-10-03/p2-receipt-process-recovery-current-20261021-02/`。
+
+两次进程验收分别创建 `qa-execution-cli-bddae276071742c2` 与 `qa-execution-cli-2728148106d248fb` 临时 Redis 容器，只绑定本机随机端口；运行、日志读取和删除命令退出码均为0，最终无容器残留。受控模型、测试项目、Run、PostgreSQL 数据库及 MySQL 测试配置均为隔离数据；未改全局默认配置或 schema。P2 默认 Step 多用例闭环仍停在首个供应商请求；回执纠正的当前工作树 `response`、`invoking` 进程边界均已通过受控 HTTP 验收，默认 Step UI 正式回执仍未通过；完整 P0—P5 继续未完成。
+
+### 7.157 P0 多审批恢复工具历史不一致修复（2026-10-22）
+
+**已有实现**：工具执行、审批、完整待恢复 checkpoint、模型传输适配和结果持久化均已存在。**确认缺口**：`tool_executor` 曾在 `build_pending_turn` 之后才把 assistant tool-call 批次附加到外层 transcript；嵌套 `graph_state.runtime_messages` 保存的是旧历史。恢复优先读取嵌套状态，导致部分审批恢复时丢失当前批次。修复前回归在第一次部分审批后明确失败，缺少当前 assistant `tool_calls`。
+
+**修复**：先将 assistant tool-call 批次写入规范 runtime transcript，再同时构建外层和嵌套 checkpoint；恢复旧 checkpoint 时如两份 transcript 不同，则以已持久化的外层 `conversation_messages` 对齐恢复状态，并记录不含正文的告警上下文。未新增工具、重试、自动审批或模式映射。
+
+**功能测试**：生产 `ToolRuntimeService` 驱动本机 HTTP 目标，两次分批审批各产生一次 GET；断言旧历史、当前批次、完整 tool-call/result 身份均未重复或遗漏，并检查 checkpoint 双层一致性。普通审批服务测试夹具补齐 `waiting_approval` 初始状态，保持生产状态约束。
+
+实际命令（`Agent_Server`）：
+
+```powershell
+..\.venv\Scripts\python.exe -m pytest tests\test_approval_checkpoint_consistency.py tests\test_tool_executor_safety_gate.py tests\test_approval_model_budget.py tests\test_cancelled_run_missing_approval_recovery.py tests\test_runtime_interrupt_tool_calls.py tests\test_security_approval_boundary.py tests\test_recording_approval_service.py -q --tb=short -rs
+# 38 passed，6 skipped，14.67 秒
+```
+
+6 项跳过受隔离 PostgreSQL/MySQL/RustFS 和 `RUN_LIVE_POSTGRES_TESTS=1` 门控。本轮未启动 Docker、未请求外网模型。Step 认证按用户确认已完成；默认 Step 完整 Agent 流程仍待按当前凭据状态重新验收，已有 2026-10-22 HTTP 400 探测只代表当时未成功，不能替代新一轮端到端结果。该修复只关闭多审批 checkpoint transcript 不一致，不代表重复 HTTP 发送审计或 P0—P5 总验收完成。
+
+### 7.158 P1 普通文档真实生成与独立模块恢复验收（2026-10-22）
+
+先验证前次 P1 失败的直接前置：`bigdata-major` 中 RustFS 未运行，`/minio/health/live` 不可用；PID 文件记录 `389`，该 PID 实为 Java `Signal Dispatch`。既有 `start.sh` 只用 `kill -0` 判断 PID 是否存活，会因 PID 复用误报 RustFS 已运行。确认 RustFS 没有进程且 9000 无监听后，删除该失效 PID 文件并调用原脚本；没有新建容器、停 Java、改 RustFS 数据或更改应用配置。RustFS 以 PID `10295` 启动，健康端点 HTTP 200，上传与对象读取随后通过。服务当前保持运行；容器内启动脚本的 PID 身份校验仍是已发现但未修复的基础设施问题。
+
+使用真实非默认 Agnes 模型重新运行 `tests/test_document_generation_alternate_live.py::test_alternate_model_generates_and_persists_two_document_modules`，结果 **1 passed，110.18 秒，0 skipped**。测试创建真实 Markdown 需求并通过产品 API 上传、解析和固定范围，随后生成“订单查询”“订单创建”两个 JSON 草稿；引用同一解析快照且 coverage v2 映射完整。通过隔离 MySQL 的配置漂移在第二模块发送模型请求前制造失败，重启 API 后只重试该模块；重试子任务完成，第一模块版本不变，原生成组保留 `completed/failed` 历史状态。实际 2 次 SDK create、2 次 HTTP 请求；故障、重复重试和终态重投均没有额外模型调用。RustFS 原件、解析快照、scope、响应对象均在生成阶段实际读回并逐项核验字节数及 SHA-256。
+
+JUnit 为 `Agent_Server/docs/upgrade_2026-10-03/p1-alternate-document-generation-after-rustfs-20261022-01.xml`，完整 API/Worker、模块、草稿、重试、覆盖映射和对象证据在同名目录。fixture 记录临时 Redis `qa-execution-cli-b3789a7aae1146d2` 成功启动、读日志并删除；隔离 PostgreSQL 数据库和 MySQL 临时配置表清理完成，当前无 `qa-execution-cli-*` 容器残留。
+
+**范围结论**：普通 Markdown 文档的两模块 API/Worker 生成及独立恢复由真实模型通过一组功能样本；默认/项目模板和 Excel/JSON 的项目页面、完整浏览器流程、DOCX/PDF 与更多业务样本仍需继续验收。两个草稿仍是待评审状态，未自动启用。此次未修改业务代码、schema、MySQL 全局配置或模型协议。
+
+Step 账号认证按用户确认已完成。最近脱敏探针的 Step 推理请求收到供应商 HTTP 400 `you have no active step plan subscription`；这不能归类为认证失败，也没有证据支持改协议或字段。默认 Step 多用例规划→排序/补全→正式 Run 仍未验收；本次没有重发 Step 请求。P0—P5 总体仍进行中。

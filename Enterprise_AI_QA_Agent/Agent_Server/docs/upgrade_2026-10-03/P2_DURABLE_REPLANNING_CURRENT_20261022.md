@@ -1,6 +1,6 @@
 # P2 持久重规划：当前验收与交付边界
 
-日期：2026-10-22。完整升级目标继续未完成。这里验收的是收到明确重规划请求后的候选生成、修订及恢复，不代表执行 Agent 已能自主发现缺口并触发请求。
+初始记录日期：2026-10-22。完整升级目标继续未完成。以下分开记录持久修订服务和后来接入的执行触发链路；受控 Agent 测试不代表默认 Step 的推理质量已通过。
 
 ## 调研结论与实现依据
 
@@ -9,8 +9,9 @@
 - `RunRevisionPlanningService` 已把原 Run、固定目标版本、条目和结果封装为持久规划输入；复用现有 `CasePlanningWorkflow`，不另建规划器。
 - `PlanningTaskHandler` 在候选完成或终态重投时调用 finalizer。候选与 Run 修订属于不同事务；必须先查询已提交历史，才能恢复丢失的确认。
 - `build_run_plan_revision` 只更新尚未领取、无 Attempt/租约/结果的条目。已领取项继续使用原快照，不能通过给候选添加前置来修复正在执行的目标。
-- 当前源代码没有从执行 Agent 图或工具路径提交重规划请求的调用点。这是仍需补实现的触发边界。
-- 前端已有手工候选修订页面；本次同步重规划请求/结果类型、API 方法及任务确认状态，不宣称已提供自主触发或完整重规划提交页面。
+- 截至2026-10-22，执行 Agent 图或工具路径尚无重规划提交调用点；该结论是当时状态，不能作为当前状态。
+- 执行侧后来通过受控 `GapAgent` 接入 `run-plan-replanner` 工具，按 ToolJob 和 `output_path_tokens` 引用已结算证据，再复用本节的持久 Run 修订服务。默认 Step 是否能自主识别缺口并正确触发仍未验收。
+- 前端已有手工候选修订面板；受控执行图测试验证的是 Agent 工具触发及后台修订，不等于默认模型质量验收或所有用户交互均已验收。
 
 存储沿用现有约定：MySQL 配置，PostgreSQL 任务/计划/Run/证据目录，RustFS 原件。新任务字段使用现有 JSONB；不新增生产表或模型协议，不修改全局默认模型。
 
@@ -74,9 +75,42 @@ $env:RUN_LIVE_REGRESSION_PLANNING='1'
 
 ## 继续未完成
 
-1. Agent 根据实际执行证据自主提出缺口并触发重规划；尚未领取部分与已领取目标的恢复语义须分开，不重置完成项或盲目重发未知写入。
+1. 执行 Agent 根据实际证据提交持久重规划的入口和受控端到端链路已实现并通过；证据契约为 ToolJob ID 加非空 `output_path_tokens`，服务端只提取并脱敏所选 JSON 值，整批持久化证据限制为32 KiB。默认 Step 模型的实际质量验收、更多并发/断网组合仍待完成。
 2. 默认 AI 完整项目选取→排序→补全→执行，以及 UI 正式回执、知识使用及其他模式；本轮没有再次请求外部默认模型。
 3. 重规划提交入口的完整产品页面、更多并发/断网组合和生产历史迁移。
 4. 原目标所列 UI 人工录制、Docker 完整报告、需求变更业务质量、全阶段请求追踪及其他未验收范围。
 
+## 执行 Agent 触发重规划与窄证据（2026-10-23）
+
+交付前复核发现，第一版工具虽只接收 ToolJob 身份，但会把该任务的整个 `output_payload` 复制进持久规划上下文。该行为可能放大 PostgreSQL 任务 JSONB 和模型输入，也会把与缺口无关的输出带入重规划。仓库已有 `CaseToolEvidenceReference`、`literal_value()` 和 `output_path_tokens` 约定，因此沿用现成的字面 JSON 路径契约，不新增路径解析方式或数据库字段。
+
+当前提交要求 Agent 对每条证据提供 `job_id` 与非空 `output_path_tokens`。服务端仍校验证据来自同项目、同 Run、同固定 Attempt/执行上下文中的已结算 ToolJob，然后从已保存的原始输出提取路径值、执行现有敏感信息清洗，并只把所选值及路径身份写入重规划任务。所有引用的 UTF-8 JSON 序列化总量上限为32 KiB；路径不存在或超限会在创建规划任务前失败并留下日志。工具描述和动态 Prompt 同步了字段契约及限制。
+
+实际验收在受控 Agent、隔离 PostgreSQL 业务/任务存储、MySQL 配置存储、RustFS 原件存储和本机受控 HTTP 目标上完成。Agent 实际发出 GET，收到 HTTP 409 JSON，读到 `required_case=item-4` 后提交精确路径；规划 Worker 读取原件与用例依据，生成候选并应用到未领取项。断言确认模型规划上下文只含 `item-4` 与来源路径，不包含完整 `response_body`。另验证持久提交后丢失返回可通过独立 status 找回且不重复提交；外部 Attempt、过期修订、缺失证据、缺失路径及32 KiB 上限被拒绝，Run 修订未被错误推进。
+
+命令与结果：
+
+```powershell
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_execution_replanning.py -q --tb=short --maxfail=1
+# 2 passed, 3 skipped（未设置 live 验收开关）
+
+$env:RUN_LIVE_EXECUTION_REPLANNING='1'
+$env:QA_EXECUTION_REPLANNING_DIR='docs/upgrade_2026-10-03/p2-execution-replanning-evidence-path-live-20261023-rerun'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_execution_replanning.py -q --tb=short --maxfail=1 --junitxml=docs/upgrade_2026-10-03/p2-execution-replanning-evidence-path-live-20261023-rerun.xml
+# 5 passed, 14.15s
+
+..\.venv\Scripts\python.exe -X utf8 -m py_compile src/application/test_runs/execution_replanning.py src/schemas/run_revision_planning.py src/application/runtime/tool_runtime_service.py
+# exit code 0
+```
+
+上述为受控 Agent 的实际功能验收，不是默认 Step 模型质量验收。最终重跑确认隔离测试 teardown 删除专属 PostgreSQL 表与 RustFS 原件；对两轮共36张临时表及6个原件的只读回查均确认不存在。本轮没有启动 Docker 容器或调用外部模型。最终真实证据和 JUnit 位于 `p2-execution-replanning-evidence-path-live-20261023-rerun/` 及同前缀 XML。
+
 Step 账号认证按用户确认记录为完成；此前最小实际请求返回无有效 Step Plan 订阅，不能写成未认证。Anthropic 保留 Messages 调用，其他 SDK transport 和字段映射保持独立；当前没有新证据支持统一为某一家协议。
+
+## 当前执行触发复验（2026-10-23）
+
+在当前工作树重新运行 `tests/test_execution_replanning.py`，结果 **5 passed in 14.39s**，JUnit 为 `p2-execution-replanning-evidence-path-live-20261023-agent-rerun.xml`。测试使用隔离 MySQL/PostgreSQL/RustFS、本机受控 HTTP 目标和受控 `GapAgent`，没有启动 Docker 或请求外部模型。
+
+覆盖的行为是：Agent 收到实际只读 HTTP 409 后读取 `required_case`，检查当前修订号，以 `job_id` 和精确 `output_path_tokens` 提交重规划；服务端提取并清洗所选 JSON 值，规划 Worker 把正式前置用例追加到未领取条目，已领取条目及原 Attempt/结果保持不变。提交返回丢失时，status 可找回已保存结果，终态重投不再创建规划任务。
+
+本测试中的 Agent 决策由受控脚本给定，不是默认 Step 或其他真实模型自行理解并决定重规划；业务目标最终按 `blocked` 保留，不能将重规划候选生成误报为目标测试通过。当前分类：执行触发实现与受控闭环**已验证**；默认 Step 识别/排序/补全质量、真实目标执行、多 Worker 竞争和更多网络故障组合**仍待验收**。
