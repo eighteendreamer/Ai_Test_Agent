@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 from datetime import datetime
+from hashlib import sha256
 import json
+import logging
 from pathlib import Path
 
 from src.core.config import Settings
@@ -23,6 +25,19 @@ AGENT_MAIL_PROVIDERS = (
     "aws_agent_mailbox",
 )
 AGENT_MAIL_PROVIDER_SQL = ", ".join(f"'{key}'" for key in AGENT_MAIL_PROVIDERS)
+AGENT_MAIL_PROVIDER_NAMES = {
+    "tencent_agently": "腾讯 Agent Mail",
+    "agentmail": "AgentMail",
+    "robotomail": "Robotomail",
+    "openmail": "OpenMail",
+    "dead_simple_email": "Dead Simple Email",
+    "agenticmail": "AgenticMail",
+    "aws_agent_mailbox": "AWS Agent Mailbox",
+}
+MYSQL_IDENTIFIER_MAX_LENGTH = 64
+MYSQL_MIGRATION_LOCK_TIMEOUT_SECONDS = 10
+
+logger = logging.getLogger(__name__)
 
 
 class MySQLEmailConfigStore:
@@ -39,7 +54,7 @@ class MySQLEmailConfigStore:
 
                 columns = self._list_columns(cur)
                 if "config_json" in columns:
-                    self._migrate_legacy_table(cur)
+                    self._initialize_legacy_table(conn, cur)
                     conn.commit()
                     return
 
@@ -243,14 +258,15 @@ class MySQLEmailConfigStore:
             updated_at=record.updated_at,
         )
 
-    def _table_exists(self, cur) -> bool:
+    def _table_exists(self, cur, table_name: str | None = None) -> bool:
+        resolved_table = table_name or self._settings.database.email_config_table
         cur.execute(
             """
             SELECT COUNT(*) AS total
             FROM information_schema.tables
             WHERE table_schema=%s AND table_name=%s
             """,
-            (self._settings.database.mysql_database, self._settings.database.email_config_table),
+            (self._settings.database.mysql_database, resolved_table),
         )
         return bool(cur.fetchone()["total"])
 
@@ -265,10 +281,11 @@ class MySQLEmailConfigStore:
         )
         return {row["COLUMN_NAME"] for row in cur.fetchall()}
 
-    def _create_table(self, cur) -> None:
+    def _create_table(self, cur, table_name: str | None = None) -> None:
+        resolved_table = table_name or self._settings.database.email_config_table
         cur.execute(
             f"""
-            CREATE TABLE IF NOT EXISTS `{self._settings.database.email_config_table}` (
+            CREATE TABLE IF NOT EXISTS `{resolved_table}` (
                 `id` BIGINT NOT NULL AUTO_INCREMENT,
                 `config_name` VARCHAR(120) NOT NULL,
                 `provider` VARCHAR(64) NOT NULL,
@@ -359,16 +376,118 @@ class MySQLEmailConfigStore:
                 (active_id, active_id),
             )
 
-    def _migrate_legacy_table(self, cur) -> None:
-        legacy_rows = self._fetch_legacy_rows(cur)
-        backup_name = (
-            f"{self._settings.database.email_config_table}_legacy_{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    def _initialize_legacy_table(self, conn, cur) -> None:
+        lock_name = self._migration_lock_name()
+        cur.execute(
+            "SELECT GET_LOCK(%s, %s) AS acquired",
+            (lock_name, MYSQL_MIGRATION_LOCK_TIMEOUT_SECONDS),
         )
-        cur.execute(f"RENAME TABLE `{self._settings.database.email_config_table}` TO `{backup_name}`")
-        self._create_table(cur)
-        for row in legacy_rows:
-            if str(row.get("provider") or "").strip().lower() in AGENT_MAIL_PROVIDERS:
-                self._insert_record(cur, self._legacy_row_to_record(row))
+        lock_result = cur.fetchone()
+        if not lock_result or int(lock_result["acquired"] or 0) != 1:
+            raise RuntimeError(
+                "Timed out acquiring the MySQL email configuration migration lock "
+                f"for table {self._settings.database.email_config_table!r}"
+            )
+
+        try:
+            # The caller inspected information_schema before taking the named
+            # lock. End that transaction so a waiter does not reuse a stale
+            # schema snapshot after another instance completes the swap.
+            # MySQL named locks are connection-scoped and survive commits.
+            conn.commit()
+            # Another application instance may have completed the migration while
+            # this connection waited for the server-scoped named lock.
+            if not self._table_exists(cur):
+                self._create_table(cur)
+                return
+            columns = self._list_columns(cur)
+            if "config_json" not in columns:
+                return
+            self._migrate_legacy_table(conn, cur)
+        finally:
+            try:
+                cur.execute("SELECT RELEASE_LOCK(%s) AS released", (lock_name,))
+                released = cur.fetchone()
+                if not released or int(released["released"] or 0) != 1:
+                    logger.warning(
+                        "email_config_migration_lock_release_unconfirmed",
+                        extra={"table": self._settings.database.email_config_table},
+                    )
+            except Exception:
+                # Closing this connection also releases the named lock. Keep the
+                # original migration error visible if the explicit release fails.
+                logger.exception(
+                    "email_config_migration_lock_release_failed",
+                    extra={"table": self._settings.database.email_config_table},
+                )
+
+    def _migrate_legacy_table(self, conn, cur) -> None:
+        legacy_rows = self._fetch_legacy_rows(cur)
+        source_table = self._settings.database.email_config_table
+        staging_name = _derived_table_name(source_table, "_migration_stage")
+        backup_name = _derived_table_name(
+            source_table,
+            f"_legacy_{datetime.utcnow().strftime('%Y%m%d%H%M%S%f')}",
+        )
+        migrated_count = 0
+        logger.info(
+            "email_config_legacy_migration_started",
+            extra={"table": source_table, "legacy_row_count": len(legacy_rows)},
+        )
+        try:
+            if self._table_exists(cur, staging_name):
+                logger.warning(
+                    "email_config_stale_migration_stage_replaced",
+                    extra={"table": source_table, "staging_table": staging_name},
+                )
+                cur.execute(f"DROP TABLE `{staging_name}`")
+            self._create_table(cur, staging_name)
+            for row in legacy_rows:
+                if str(row.get("provider") or "").strip().lower() in AGENT_MAIL_PROVIDERS:
+                    self._insert_record(cur, self._legacy_row_to_record(row), staging_name)
+                    migrated_count += 1
+
+            # Persist the fully populated replacement before the atomic name swap.
+            # MySQL DDL commits implicitly, but the explicit boundary also makes
+            # the intended recovery point visible to this connection adapter.
+            conn.commit()
+            cur.execute(
+                f"RENAME TABLE `{source_table}` TO `{backup_name}`, "
+                f"`{staging_name}` TO `{source_table}`"
+            )
+            logger.info(
+                "email_config_legacy_migration_completed",
+                extra={
+                    "table": source_table,
+                    "backup_table": backup_name,
+                    "migrated_row_count": migrated_count,
+                },
+            )
+        except Exception:
+            logger.exception(
+                "email_config_legacy_migration_failed",
+                extra={"table": source_table, "staging_table": staging_name},
+            )
+            try:
+                if self._table_exists(cur, staging_name):
+                    cur.execute(f"DROP TABLE `{staging_name}`")
+                    conn.commit()
+            except Exception:
+                # A dead process or broken connection cannot clean its stage.
+                # The next lock owner replaces this deterministic table before
+                # rebuilding, so preserve the original migration error here.
+                logger.exception(
+                    "email_config_migration_stage_cleanup_failed",
+                    extra={"table": source_table, "staging_table": staging_name},
+                )
+            raise
+
+    def _migration_lock_name(self) -> str:
+        identity = (
+            f"{self._settings.database.mysql_database}."
+            f"{self._settings.database.email_config_table}"
+        )
+        return f"qa.email.migrate.{sha256(identity.encode('utf-8')).hexdigest()[:40]}"
 
     def _fetch_legacy_rows(self, cur) -> list[dict]:
         cur.execute(
@@ -394,7 +513,7 @@ class MySQLEmailConfigStore:
             extra_config["reply_to"] = _clean_str(row.get("reply_to"))
         extra_config.pop("cli_path", None)
         return EmailConfigRecord(
-            config_name="Agent 原生邮箱",
+            config_name=AGENT_MAIL_PROVIDER_NAMES.get(provider, provider),
             provider=provider,
             owner_agent_key="global",
             api_key=_clean_str(config.get("api_key")),
@@ -413,10 +532,16 @@ class MySQLEmailConfigStore:
             updated_at=_to_datetime(row.get("updated_at")),
         )
 
-    def _insert_record(self, cur, record: EmailConfigRecord) -> None:
+    def _insert_record(
+        self,
+        cur,
+        record: EmailConfigRecord,
+        table_name: str | None = None,
+    ) -> None:
+        resolved_table = table_name or self._settings.database.email_config_table
         cur.execute(
             f"""
-            INSERT INTO `{self._settings.database.email_config_table}`
+            INSERT INTO `{resolved_table}`
             (config_name, provider, owner_agent_key, api_key, secret_key, sender_email, test_email, test_mode,
              enabled, is_default, description, smtp_host, smtp_port, smtp_username, extra_config_json, created_at, updated_at)
             VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
@@ -570,3 +695,13 @@ def _to_datetime(value):
     if value is None or isinstance(value, datetime):
         return value
     return datetime.fromisoformat(str(value))
+
+
+def _derived_table_name(base_name: str, suffix: str) -> str:
+    if len(base_name) + len(suffix) <= MYSQL_IDENTIFIER_MAX_LENGTH:
+        return base_name + suffix
+    digest = sha256(base_name.encode("utf-8")).hexdigest()[:8]
+    prefix_length = MYSQL_IDENTIFIER_MAX_LENGTH - len(suffix) - len(digest) - 1
+    if prefix_length < 1:
+        raise ValueError(f"MySQL table suffix is too long: {suffix!r}")
+    return f"{base_name[:prefix_length]}_{digest}{suffix}"
