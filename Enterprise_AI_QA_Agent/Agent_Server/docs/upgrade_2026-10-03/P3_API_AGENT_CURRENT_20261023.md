@@ -56,3 +56,17 @@ Step 账号按用户确认记录为“已认证”。现有默认文档生成证
 
 这关闭了受控 Agent API 的自动 401/Cookie 持久化验收缺口，但不扩展为默认 Step 质量通过。默认 Step 的完整 Agent API、断网和多 Worker 竞争仍需在供应商推理可用后复验；产品报告页面已有独立通过证据，仍需把默认模型路径与页面状态逐项对账。
 
+### 2026-10-23 持久 Worker 请求超时重试补验
+
+在真实隔离 PostgreSQL/MySQL/RustFS 与持久 Worker 场景中，使用本机 `redis://127.0.0.1:6379/15`，不启动临时 Docker 容器，实际请求本机受控 HTTP 目标：
+
+```powershell
+$env:RUN_LIVE_API_401_AUTO_WORKER='1'
+$env:QA_ISOLATED_RUNTIME_REDIS_URL='redis://127.0.0.1:6379/15'
+$env:QA_API_401_AUTO_WORKER_DIR='docs/upgrade_2026-10-03/p3-api-timeout-worker-current-20261023-01'
+..\.venv\Scripts\python.exe -X utf8 -m pytest tests/test_api_401_refresh_automatic_live.py::test_worker_campaign_timeout_retries_read_and_reports_final_result -q --tb=short --junitxml=docs/upgrade_2026-10-03/p3-api-timeout-worker-current-20261023-01.xml
+# 1 passed in 18.26s
+```
+
+逐项证据 `p3-api-timeout-worker-current-20261023-01/request-timeout-retry/verification.json` 记录同一路径两次真实 HTTP 请求：第一次在 0.5 秒超时、标记 `known_failed` 且没有响应；第二次 attempt 返回 HTTP 200。Worker 最终任务为 `completed`，attempt 数为 2，报告统计为 completed=1、failed=0、skipped=0；没有调用外部 AI。测试结束时未发现 `qa-execution-cli-*` 容器。该结果只补强受控 API Worker 的安全读请求超时重试和报告，不证明默认 Step 完整流程、断网语义、多 Worker 竞争或默认模型质量。
+
