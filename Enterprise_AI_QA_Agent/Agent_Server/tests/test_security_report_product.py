@@ -98,7 +98,7 @@ async def test_real_security_report_artifact_and_built_app(tmp_path):
             batch = page.locator(".batch-item").filter(has_text=session["id"][:8])
             await expect(batch).to_be_visible()
             await batch.click()
-            body = page.locator(".report-detail .summary-body")
+            body = page.locator(".report-detail .summary-body").first
             await expect(body).to_contain_text("任务总数：3")
             await expect(body).to_contain_text("失败：1")
             await expect(body).to_contain_text("缺少 X-Frame-Options")
