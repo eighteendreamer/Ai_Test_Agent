@@ -75,11 +75,38 @@ RUN_LIVE_RUNTIME_SCHEMA_INVENTORY=1 pytest tests/test_runtime_schema_inventory_p
 
 五个 Python 改动文件通过 `py_compile`；当前虚拟环境未安装 `ruff`，因此未执行 lint。
 
-结束后独立确认本轮 `live_wait_*`、`live_duration_*` 测试表和 `up_execution_cli_*` 隔离数据库均为 0。本轮未修改 `QA_Agent` 的业务结构或数据，未创建容器。
+结束后独立确认本轮 `live_wait_*`、`live_duration_*` 测试表和 `up_execution_cli_*` 隔离数据库均为 0。初次结构对账和索引修复验证阶段没有修改 `QA_Agent` 的业务结构或数据，也未创建容器。后续清理夹具复验曾触发一次当前库恢复操作，见下一节；因此不能再把整个连续工作过程描述为“当前库始终只读”。
+
+## 后续清理夹具复验与当前状态
+
+继续调查 72 张历史测试隔离表时，容量、P5 和 Agent 回执夹具均发现清理所有权边界：初始化进入 `try` 之前可能已经建表，Redis/探针清理失败也可能阻断后续 PostgreSQL DROP。修复使用 `ExitStack` / `AsyncExitStack` 提前登记清理，并以故障注入证明前一个清理失败时后续 DROP 仍执行。P5 的真实单并发复验同时发现错误率统计把已解析的任务 ID 字符串误当成 HTTP 响应；现保留原始响应完成状态统计，确认 202 后再读取任务 ID。容量夹具则同步补齐业务 Store 已固定写入的 `plan_snapshots` 列。
+
+首次编写 soak 清理故障注入时，pytest 的实际模块名与字符串 monkeypatch 目标不一致，测试意外调用了真实 `_tables()`，删除当前 `QA_Agent.public` 的以下四张表：
+
+- `agent_test_runs`
+- `agent_test_run_items`
+- `agent_test_run_attempts`
+- `agent_test_case_results`
+
+这是实际发生的错误，不能写成只读检查。删除前没有单独保存四表行数，因此不能用事后结果绝对证明原表为 0 行。可核对的旁证是：事件发生后仍存在的正式用例、用例版本、套件、套件项均为 0 行；Run 计划修订派生表不存在；ToolJob、Outbox、Session 和 Approval 中带非空 `run_id` 的记录均为 0。仓库中的测试也为这类现场验收使用随机隔离表名。上述证据没有发现可恢复的正式 Run 来源，但它不等价于删除前备份。
+
+发现后立即执行现行 `PostgresTestRunStore.initialize()` 恢复四表。恢复后四表均存在且为 0 行。随后重新运行完整生产 schema inventory：在随机隔离数据库启动生产 API 和组件 initializer 后，与当前库做列、约束和索引语义比较，结果四表均无差异；原来的 5 张真实差异收敛为 `agent_sessions`、`agent_turn_tasks`、`agent_perf_runs` 3 张，36 张较新表缺口及 72 张历史测试隔离表保持原样。结果：
+
+```text
+tests/test_runtime_schema_inventory_production.py::test_fresh_full_api_initialization_and_restart_have_stable_schema_and_data
+1 passed in 22.57s
+
+agent_test_runs changed=false
+agent_test_run_items changed=false
+agent_test_run_attempts changed=false
+agent_test_case_results changed=false
+```
+
+故障注入现改为显式传入假的 DROP 回调，不再依赖模块名 monkeypatch，也不会使用默认正式表名。72 张既有历史隔离表仍未删除。进程被强制终止时 Python teardown 无法运行，后续若要处理这些 orphan，仍需先生成精确候选清单并由用户明确授权。
 
 ## 部署顺序结论
 
-当前样本给出了可执行的迁移前置顺序，但本轮仍不直接改生产库：
+当前样本给出了可执行的迁移前置顺序。除上述误删后的必要结构恢复外，不再直接改当前库：
 
 1. 先只读导出各部署的同类结构快照，并识别测试遗留表与正式表。
 2. 对现有四个 Alembic revision 使用离线 SQL 审核，不 stamp 未覆盖对象。
