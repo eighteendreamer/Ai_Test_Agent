@@ -37,3 +37,9 @@ $env:DEEPSEEK_RECORDING_EVIDENCE='G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_
 ## 清理
 
 测试结束后回查没有残留 `qa-execution-cli-*` 容器。隔离 PostgreSQL、MySQL、Redis、Memgraph 和录制对象由测试夹具清理；本轮没有改生产配置、数据库 schema 或模型协议。
+
+## 2026-10-23 CDP 驱动补充探针
+
+另运行底层生产 `CdpAttachDriver` 的官网探针 `Agent_Server/tests/test_recorder_deepseek_live.py`，结果 **1 passed in 7.32s**。实际 Chromium 访问公开首页、进入对话页并填写无敏感测试文本“录制探针”，未提交消息；采集到 6 条 `click`、`fill`、`navigate`、`page_scan` 事件。`finish.json` 对账 `emitted_count=6`，`pending=0`、`frames_unconfirmed=0`、`transport_dropped=0`、`channel_dropped=0`；实际截图 146806 字节。原始事件、结束回执和截图位于 `docs/upgrade_2026-10-03/p0-deepseek-cdp-probe-current-20261023-01/`，JUnit 为同名 XML。
+
+该探针只补强 CDP 驱动采集与结束回执，不经过生产录制 API、数据库、清洗投影或 AI 知识消费；这些边界以本报告上方的生产验收为准。
