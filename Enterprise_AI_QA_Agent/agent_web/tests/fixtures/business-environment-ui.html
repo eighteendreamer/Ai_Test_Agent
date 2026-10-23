@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="zh-CN">
+    <head>
+      <meta charset="UTF-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <title>项目环境验收</title>
+      <style>
+        :root { --surface: #fff; --surface-muted: #f8fafc; --border: #d7dee8; --text: #1f2937; --danger: #b91c1c; color-scheme: light; font-family: system-ui, sans-serif; }
+        body { margin: 0; color: var(--text); background: #fff; }
+      </style>
+    </head>
+  <body>
+    <div id="app"></div>
+    <script type="module">
+      import { createApp, h, ref } from "vue";
+      import BusinessEnvironmentManager from "../../src/features/projects/BusinessEnvironmentManager.vue";
+      import BusinessEnvironmentSnapshotPicker from "../../src/features/projects/BusinessEnvironmentSnapshotPicker.vue";
+
+      const query = new URLSearchParams(location.search);
+      const projectId = query.get("project_id");
+      const mode = query.get("mode");
+      if (!projectId) throw new Error("project_id is required");
+      if (mode === "picker") {
+        const App = {
+          setup() {
+            const selection = ref(null);
+            return () => h("main", [
+              h(BusinessEnvironmentSnapshotPicker, {
+                projectId,
+                modelValue: selection.value,
+                "onUpdate:modelValue": value => { selection.value = value; },
+                onClose: () => {},
+              }),
+              h("output", { "data-testid": "selected-environment" }, JSON.stringify(selection.value)),
+            ]);
+          },
+        };
+        createApp(App).mount("#app");
+      } else {
+        const App = {
+          setup() {
+            const open = ref(true);
+            return () => open.value
+              ? h(BusinessEnvironmentManager, { projectId, onClose: () => { open.value = false; } })
+              : h("p", "环境管理已关闭");
+          },
+        };
+        createApp(App).mount("#app");
+      }
+    </script>
+  </body>
+</html>
