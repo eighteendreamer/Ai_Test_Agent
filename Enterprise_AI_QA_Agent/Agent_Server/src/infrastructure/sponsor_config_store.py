@@ -91,6 +91,7 @@ class MySQLSponsorConfigStore:
                 INSERT INTO `{self._settings.database.sponsor_config_table}`
                 (name, logo_file, website_url, sponsor_type, sort_order, enabled, description)
                 VALUES (%s, %s, %s, %s, %s, %s, %s)
+                ON DUPLICATE KEY UPDATE name=VALUES(name)
                 """,
                 (
                     sponsor.name,
