@@ -31,9 +31,21 @@ pytest tests/test_document_difference_production.py -q --tb=short --maxfail=1
 - 文本型 PDF 使用 `pypdf`，提供分页文本；OCR、表格、标题结构和复杂布局会明确标记为不支持或不可靠。
 - 解析器和配置变化追加新快照，不覆盖旧快照。
 
+## Git 来源真实产品验收
+
+命令：
+
+```text
+RUN_LIVE_DOCUMENT_GIT_PRODUCTION=1
+pytest tests/test_document_git_production.py -q --tb=short
+```
+
+结果：**2 passed，197.16 秒**，参数为 Markdown 和 DOCX。真实构建版页面登记项目本地仓库，按指定 commit/path 解析固定来源，导入独立文档 V1，再将另一 commit 导入为当前文档 V2；解析 Worker、差异 Worker、RustFS 原件、PostgreSQL 版本/快照和 MySQL 项目 Git 配置均实际读回。页面丢失导入响应后按原 request_id 查询恢复，API 重启后历史仍可读；仓库文件状态和哈希保持不变，普通上传仍不依赖 Git。
+
+证据目录：`Agent_Server/docs/upgrade_2026-10-03/p4-document-git-production-current-20261023-01/`，JUnit 为同名 XML。该验收证明 Git 入口的只读、版本关联和生产页面链路，不代表默认 Step 的影响判断质量。
+
 ## 仍未完成
 
-1. Git 作为独立可选来源的真实产品入口、只读仓库路径/commit/blob 证据及明确关联为已有文档新版本的完整页面验收。
-2. 需求影响分析、增量草稿、追踪矩阵与更多业务变更场景的默认模型质量验收。
-3. 扫描 PDF/OCR、Docling HTTP 扩展和更多解析故障组合；首期不应把这些能力写成已支持。
+1. 需求影响分析、增量草稿、追踪矩阵与更多业务变更场景的默认模型质量验收。
+2. 扫描 PDF/OCR、Docling HTTP 扩展和更多解析故障组合；首期不应把这些能力写成已支持。
 
