@@ -106,6 +106,8 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 
 代码核对确认历史迁移不是一个覆盖全系统的迁移器：API 文档 JSON catalog 由显式脚本导入 PostgreSQL；旧 Smoke 运行历史通过只读预检、显式 `project_scope → project_id` 映射和追加式导入账本投影到正式 Case/Suite/Run/Attempt/Result；Alembic 目前只有 Outbox、ToolJob、Compaction 和 Run 计划快照四个 revision。其他 PostgreSQL Store 仍由各自 `initialize()` 创建/演进，不能把 Alembic revision 或单一导入专项视为所有生产历史迁移完成。`alembic/README` 已按当前实际的四个 revision 更新。
 
-对当前应用配置的 PostgreSQL 数据库 `QA_Agent` 执行只读核对：`agent_smoke_run_history`、正式 Case/Suite/Run/Attempt/Result 表和 `agent_api_docs` 均为 0 行；`agent_legacy_smoke_import_ledger` 与 `public.alembic_version` 均不存在。结果说明这份当前配置库没有历史记录可供生产投影对账，也不能据此推断其他部署环境状态或宣称生产迁移已通过。未写入或修改该数据库。
+对当前应用配置的 PostgreSQL 数据库 `QA_Agent` 执行只读核对：`agent_smoke_run_history`、正式 Case/Suite/Run/Attempt/Result 表和 `agent_api_docs` 均为 0 行；`agent_legacy_smoke_import_ledger` 与 `public.alembic_version` 均不存在。结果说明这份当前配置库没有旧 Smoke→正式 Run 或 API 文档 catalog 迁移样本可供对应投影对账；不能据此推断其他部署环境状态或宣称生产迁移已通过。未写入或修改该数据库。
+
+补充盘点确认同一配置库仍有 Session/事件/消息/快照/审批、Agent Task/Attempt、ToolJob/Artifact、Memory、Outbox 和 ResourceCleanup 等持久数据（例如 Session 109、事件 3,711、消息 217、快照 101、审批 9、Agent Task/Attempt 6/3、ToolJob/Artifact 35/10、Memory 313、Outbox 16）。只读取聚合计数并核对关联：事件、消息、快照、审批无孤儿；Session `event_count` 与事件行数一致，`snapshot_count` 与快照最大版本一致；TurnTask 当前 Attempt 指针有效；ToolArtifact 均关联 ToolJob，且 ToolJob 的 `artifact_count` 与工件行数一致。以上九项异常计数均为 0。该核对证明这些当前记录的关系投影一致，不代表它们已由 Alembic 管理，也不覆盖原始业务语义、外部对象内容或其他部署环境；查询未读取正文或凭据，未修改数据。
 
 验证命令：`RUN_LIVE_POSTGRES_TESTS=1 ..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests\\test_schema_migrations.py tests\\test_legacy_smoke_import_postgres_live.py -q --tb=short`，结果 **32 passed in 15.29s**。测试在随机隔离 PostgreSQL Schema/数据库验证四 revision 的真实 DDL、受支持旧结构保留、重复升级、失败/回滚保护，以及 Smoke 导入的显式项目映射、完整 canonical 投影读回、重复导入幂等和源快照篡改拒绝；结束后只读确认随机 Schema/数据库均已清理。它证明受支持迁移边界，不替代其他 Store 的生产历史盘点或迁移，也不代表本机 `QA_Agent` 已运行 Alembic。
