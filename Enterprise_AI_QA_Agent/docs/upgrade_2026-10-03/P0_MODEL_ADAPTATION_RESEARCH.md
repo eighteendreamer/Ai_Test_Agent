@@ -92,3 +92,11 @@
 - 本轮证据保存在 `docs/upgrade_2026-10-03/p0-model-capability-profile-product-final-20261021/`。
 
 能力 profile 仍是 provider/protocol 默认值，不证明任意具体模型都具备这些能力；应按实际模型核对并设置逐模型覆盖，真实外部供应商、多模态质量和默认 Agent 全链路仍待验收。消费点复查还发现 `multi_image`、`file_input`、`pdf_input`、`image_url_input`、`image_base64_input`、`json_mode` 等字段没有在所有对应请求路径中统一校验/执行；它们仍是适配层待实现/待验收项，不能据 UI 覆盖成功推断功能有效。此前 Step 未认证的记录属于当时状态；当前按用户确认更新为已认证，默认 AI 完整路径要以重新实测为准。
+
+## 2026-10-23 当前工作树复核
+
+再次逐层核对 `ModelRuntimeService`、`request_mapping.py`、transport registry、provider profiles 和四家原生客户端。当前架构仍是：内部统一 `ModelInvocationRequest/Result` 与 `UnifiedMessage`；输出格式、推理要求和 token 参数通过版本化 request profile 校验/映射；Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google GenAI 分别由各自客户端构造原生请求、解析原生响应和流事件。`anthropic_client.py` 的同步与流式调用都明确为 `client.messages.create(...)`；只有 `openai_responses_client.py` 调用 `client.responses.create(...)`。因此需要保留当前 provider-specific 适配边界，不新增第二套通用层，也不统一改成 Responses。
+
+在当前工作树实际运行 `tests/test_model_completion_http.py tests/test_model_clients.py::test_resolve_client_dispatches_by_transport`，结果 **22 passed in 18.84s**。这些测试通过本机 HTTP server 捕获官方 SDK 的真实请求字节并返回各协议实际形状的同步/流式响应，覆盖五种路径（含 LangChain Chat）、URL/请求字段、usage、工具与完成状态；证明当前 SDK 版本下的协议映射边界，不证明外部供应商服务可用或任意具体模型支持已声明能力。未调用外部模型、未改 MySQL/PG 配置或容器。
+
+适配层的剩余具体缺口仍按 2026-10-21 记录处理：逐模型 capability override 中的多模态、文件/PDF 和 JSON mode 声明需要逐个追到所有运行时消费点，并用真实文件/图像和本机 provider HTTP 响应验证；当前 transport 分层与请求 profile 本身不应重做。
