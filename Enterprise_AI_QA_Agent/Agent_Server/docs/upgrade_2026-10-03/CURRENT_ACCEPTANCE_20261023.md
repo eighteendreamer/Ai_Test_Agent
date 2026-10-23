@@ -39,6 +39,7 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - 文档版本、上传原件、解析快照、确定性差异、影响分析和需求追踪专项。
 - API 鉴权刷新、依赖传值、未知写入只读查证、进程恢复和报告脱敏专项。
 - DeepSeek 真实页面的 Playwright 自动化录制、事件清洗、响应关联和知识投影专项；尚未验收 Electron/人工录制入口或默认 AI 对这份录制知识的实际使用。
+- 当前工作树的原生 Electron 录制产品链路已补充复验：`settled`、`response-dom`、`bridge-loss`、`nested-frame`、`popup` 和 `popup-close` 共 **6项通过**。这些场景实际启动 Electron，通过录制 HTTP API 写入隔离 PostgreSQL，将截图写入并读回 RustFS，并查询项目范围知识投影；同时验证操作后新增 DOM、完成后晚到批次返回409且不改变终态、跨来源两层 iframe 的操作/输入/响应关联、弹窗独立页面身份及关闭对账。逐项证据明确记录 `manual_deepseek=false`、`ai_model_use=false`、`full_recording_acceptance=false`，因此这里只关闭当前受控页面的 Electron 采集边界，不代表人工 DeepSeek 或默认 AI 使用录制知识已经验收。JUnit：`p5-electron-recording-current-20261023-01.xml`、`p5-electron-recording-current-20261023-response-dom.xml`、`p5-electron-recording-current-20261023-bridge-loss.xml`、`p5-electron-recording-current-20261023-nested-frame.xml`、`p5-electron-recording-current-20261023-popup.xml`。
 - Docker 性能/安全工具的真实调用、原始输出、指标/发现解析、RustFS 证据和报告中心专项。
 - Docker 安全报告中心在修复后的独立完整产品复验通过（任务统计 3/2/1、发现 4、原件下载、API 重启恢复和容器清理均有证据）；这仍不等同于 Agent 自主安全规划或默认 Step 驱动验收。
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
@@ -71,8 +72,9 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 ## 已实现但默认模型或产品闭环尚未验收
 
 - 默认 AI 的“理解需求 → 当前项目选用例 → 排序 → 判断缺口 → 补正式用例/准备步骤 → 执行 → 结果证据”完整链路。
+- 默认 Step 自主发现执行缺口、选择前置并完成目标执行的质量验收；受控执行重规划通过不能替代该验收。
 - 默认 Step 普通需求文档全量生成质量、默认 UI 录制知识使用、默认 Agent API 完整流程。
-- UI 登录/聊天、iframe、跨文档、Shadow DOM、场景编辑、元素别名和失败定位的完整产品闭环。
+- 人工操作 DeepSeek 登录/聊天、默认 AI 使用录制知识完成断言、Shadow DOM、场景编辑、元素别名和失败定位的完整产品闭环；受控页面的 Electron iframe/弹窗采集已有上述当前证据。
 - Agent 自主性能/安全规划、多级加压、TTFT/Token 吞吐和更多进程故障恢复。
 - 需求变更更广业务质量、部署适用性、历史迁移和更多格式/故障组合。
 
