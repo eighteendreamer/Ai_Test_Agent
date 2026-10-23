@@ -5,6 +5,7 @@ into structured WorkloadModel configurations.
 """
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
@@ -33,6 +34,22 @@ from src.modes.performance_testing_mode.plan_state import (
     TrafficMixEntry,
     WorkloadModel,
 )
+
+
+logger = logging.getLogger(__name__)
+
+
+def build_default_ramp_stages(target: int, duration_seconds: int) -> list[RampStage]:
+    """Preserve the requested duration, including short runs and division remainders."""
+    if duration_seconds <= 0:
+        raise ValueError("默认性能阶梯的持续时长必须大于0秒")
+    first_ms = duration_seconds * 1000 // 3
+    durations = [first_ms, first_ms, duration_seconds * 1000 - 2 * first_ms]
+    stages = [RampStage(target=stage_target, duration=f"{milliseconds // 1000}s" if milliseconds % 1000 == 0
+        else f"{milliseconds}ms") for stage_target, milliseconds in zip((target // 2, target, target), durations)]
+    logger.info("performance_default_ramp_built", extra={"duration_seconds": duration_seconds,
+        "target": target, "stage_durations_ms": durations})
+    return stages
 
 
 class WorkloadModeler:
@@ -101,11 +118,7 @@ class WorkloadModeler:
             virtual_users=max(total_rate_rps * 2, 100),
             target_rate_rps=total_rate_rps,
             hold_seconds=duration_seconds,
-            ramp_stages=[
-                RampStage(target=total_rate_rps // 2, duration=f"{duration_seconds // 3}s"),
-                RampStage(target=total_rate_rps, duration=f"{duration_seconds // 3}s"),
-                RampStage(target=total_rate_rps, duration=f"{duration_seconds // 3}s"),
-            ],
+            ramp_stages=build_default_ramp_stages(total_rate_rps, duration_seconds),
         )
 
         return WorkloadModel(

@@ -90,12 +90,18 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
                         variants = [
                             ("default", RunOptions(timeout_seconds=30), 1000, "pass"),
                             ("smoke", RunOptions(timeout_seconds=30, is_smoke=True), 1000, "pass"),
+                            ("open-ramp", RunOptions(timeout_seconds=30), 1000, "pass"),
+                            ("closed-ramp", RunOptions(timeout_seconds=30), 1000, "pass"),
                             ("missing", RunOptions(timeout_seconds=30, extra_args=["--summary-trend-stats=avg,min,med,max,p(90),p(95)"]), 1000, "inconclusive"),
                             ("violating", RunOptions(timeout_seconds=30), 0.001, "fail"),
                         ]
                         for variant, options, p99_limit, expected in variants:
                             variant_plan = plan.model_copy(deep=True)
                             variant_plan.sla.p99_ms = p99_limit
+                            if variant in {"open-ramp", "closed-ramp"}:
+                                variant_plan.workload.model = "open" if variant == "open-ramp" else "closed"
+                                variant_plan.workload.mode = "ramping_arrival_rate" if variant == "open-ramp" else "ramping_vus"
+                                variant_plan.workload.target_rate_rps = 4
                             script = adapter.build_script(variant_plan)
                             script.filename = variant + ".js"
                             (evidence / script.filename).write_text(script.script_content, encoding="utf-8")
@@ -129,12 +135,12 @@ async def test_actual_k6_measurements_thresholds_missing_and_postgres(tmp_path):
                             cur.execute(f"SELECT * FROM {settings.database.postgres_perf_runs_table} ORDER BY started_at")
                             rows = [dict(row) for row in cur.fetchall()]
                             write_json(evidence / "postgres-metrics.json", rows)
-                        assert len(rows) == 4
+                        assert len(rows) == 6
                         for name, run, parsed, report in results:
                             row = next(row for row in rows if row["run_id"] == run.run_id)
                             assert row["metrics_json"]["p99_ms"] == parsed.metrics.p99_ms and row["verdict"] == report.verdict
                         baseline = await runtime._metrics_store.get_baseline(plan.targets[0].url, project_id=project["id"])
-                        assert baseline is not None and baseline.p99_ms == results[1][2].metrics.p99_ms
+                        assert baseline is not None and baseline.p99_ms == results[3][2].metrics.p99_ms
                         write_json(evidence / "facts.json", {"project_id": project["id"], "session_id": session["id"],
                             "scope": "production runner/parser/report with managed actual Docker; no Agent/model invocation",
                             "target": started.model_dump(), "target_url": plan.targets[0].url,

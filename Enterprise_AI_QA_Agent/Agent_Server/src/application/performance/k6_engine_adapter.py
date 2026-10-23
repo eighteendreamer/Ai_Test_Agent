@@ -11,7 +11,8 @@ import socket
 from typing import Any
 from urllib.parse import urlparse, urlunparse
 
-from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfTarget, RampStage
+from src.modes.performance_testing_mode.plan_state import PerfPlan, PerfTarget
+from src.modes.performance_testing_mode.workload_modeler import build_default_ramp_stages
 from .engine_adapter import EngineCommand, PerfEngineAdapter, RawMetrics, RunOptions, ScriptArtifact, metric_number
 from .request_validation import correlation_bindings
 
@@ -208,26 +209,16 @@ class K6EngineAdapter:
                 lines.append(f"      preAllocatedVUs: {wl.virtual_users or 100},")
                 lines.append(f"      maxVUs: {plan.limits.max_vus},")
                 lines.append("      stages: [")
-                for stage in wl.ramp_stages:
+                for stage in wl.ramp_stages or build_default_ramp_stages(wl.target_rate_rps or 50, wl.hold_seconds):
                     lines.append(f'        {{ target: {stage.target}, duration: "{stage.duration}" }},')
-                if not wl.ramp_stages:
-                    target_rps = wl.target_rate_rps or 50
-                    lines.append(f'        {{ target: {target_rps // 2}, duration: "{wl.hold_seconds // 3}s" }},')
-                    lines.append(f'        {{ target: {target_rps}, duration: "{wl.hold_seconds // 3}s" }},')
-                    lines.append(f'        {{ target: {target_rps}, duration: "{wl.hold_seconds // 3}s" }},')
                 lines.append("      ],")
             lines.append("    },")
             lines.append("  },")
         else:
             if wl.mode == "ramping_vus" or wl.ramp_stages:
                 lines.append("  stages: [")
-                for stage in wl.ramp_stages:
+                for stage in wl.ramp_stages or build_default_ramp_stages(wl.virtual_users or 50, wl.hold_seconds):
                     lines.append(f'    {{ target: {stage.target}, duration: "{stage.duration}" }},')
-                if not wl.ramp_stages:
-                    vus = wl.virtual_users or 50
-                    lines.append(f'    {{ target: {vus // 2}, duration: "{wl.hold_seconds // 3}s" }},')
-                    lines.append(f'    {{ target: {vus}, duration: "{wl.hold_seconds // 3}s" }},')
-                    lines.append(f'    {{ target: {vus}, duration: "{wl.hold_seconds // 3}s" }},')
                 lines.append("  ],")
             else:
                 lines.append(f"  vus: {wl.virtual_users or 50},")
