@@ -148,4 +148,6 @@ MCP 顺序重跑已有真实隔离 PostgreSQL 专项：`tests/test_mcp_managemen
 
 为确认 Store initializer 对旧扁平列的转换是否保真，在随机 PostgreSQL 表中构造含旧列的 MCP 记录（transport、description、project/document/endpoint、headers、provider_key、capabilities），执行当前 initializer 后通过正式 Store 读回。首次真实测试失败：旧 `capabilities` 已写入 `metadata.legacy_capabilities`，旧列也被删除，但 `_record_from_row()` 只读取已不存在的列，API 对象返回空 capabilities。根因是 PostgreSQL 规范表通过 JSONB `metadata` 存储该字段时，写入映射没有写 capabilities，读取映射也没有从迁移元数据回退。
 
-修复后，`_record_params()` 将非空 capabilities 写入兼容元数据；`_record_from_row()` 优先读仍存在的旧列，缺列时从 `metadata.legacy_capabilities` 读取。旧结构迁移字段读回及新建 PostgreSQL 记录能力列表往返由 `tests/test_mcp_management_route_status.py` 覆盖；整个文件在真实隔离 PostgreSQL 上 **30 passed in 8.90s**。随机表由 fixture 清理。此修复不改变表结构或 API 字段；多实例并发旧集成导入仍未验证。
+修复后，`_record_params()` 将非空 capabilities 写入兼容元数据；`_record_from_row()` 优先读仍存在的旧列，缺列时从 `metadata.legacy_capabilities` 读取。旧结构迁移字段读回及新建 PostgreSQL 记录能力列表往返由 `tests/test_mcp_management_route_status.py` 覆盖；当时整个文件在真实隔离 PostgreSQL 上 **30 passed in 8.90s**。随机表由 fixture 清理。此修复不改变表结构或 API 字段。
+
+后续对旧 integrations → PostgreSQL MCP 的并发边界做了屏障复现：两个独立 Store 同时完成空结果查询后继续写入，原实现最终产生同一 `legacy_integration_id` 的两条记录（测试失败，实际读回 2 条）。修复让该导入路径使用由旧 integration ID 经 UUIDv5 确定的 PostgreSQL 主键，复用现有 `ON CONFLICT (id) DO UPDATE` 原子收敛并发写入；普通 MCP 创建仍使用随机 UUID，JSON Store 未改变。并发测试、旧结构迁移字段测试、能力往返测试及原 MCP 路由测试在真实隔离 PostgreSQL 下全文件 **31 passed in 12.33s**。既有已迁移记录仍由 metadata 去重并保留原 ID；本修复不重写它们。该测试覆盖两个同进程独立 Store 和同步屏障，尚未覆盖多主机网络故障或长期历史重复数据清理。
