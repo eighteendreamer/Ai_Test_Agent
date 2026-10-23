@@ -7,7 +7,7 @@ from src.schemas.case_effect_sources import DocumentExpectedReference
 from src.schemas.case_execution import AgentCaseExecutionReceipt, CaseConsumptionClosure, CaseExecutionCheck, CaseStepReceipt
 
 SCENE_RECEIPT_PROTOCOL = "case-scene-receipt-v1"
-SCENE_RECEIPT_PROMPT_VERSION = "case-execution-scene-receipt-v7"
+SCENE_RECEIPT_PROMPT_VERSION = "case-execution-scene-receipt-v8"
 
 
 class SceneExpectedReference(DocumentExpectedReference):

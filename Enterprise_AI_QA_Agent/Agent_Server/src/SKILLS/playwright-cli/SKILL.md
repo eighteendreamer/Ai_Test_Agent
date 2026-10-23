@@ -14,6 +14,8 @@ Do not request Bash execution for browser work. Convert the CLI-style intent int
 - Use `ui-page-explorer` for UI access bootstrap, ARIA semantic exploration, and UI graph generation.
 - Use `browser-control` for explicit CLI-shaped commands such as `open`, `goto`, `snapshot`, `screenshot`, `eval`, and single browser actions.
 - Use `browser-automation` for ordered action sequences such as click/fill/type/press/wait/screenshot.
+- In a test run attempt, `browser-control` `navigate`/`open` keeps the page in the persistent command session for follow-up `command` calls; explicitly close that session when finished.
+- For Agent tool calls, send `action="command"`, `command="eval"`, and the full JavaScript expression as one `args` element without shell quoting.
 
 Keep the command vocabulary below as the planning language, the same way Claude Code uses `playwright-cli` from the command line.
 

@@ -52,6 +52,10 @@ def test_frozen_ui_cases_do_not_receive_exploration_only_entry_contract():
     assert "actual" in contract and "receipt" in contract
     assert "`ui_recording_scene`" in contract
     assert "never pass a recording_id" in contract
+    assert "Do not call file-artifact-manager or report-writer merely to" in contract
+    assert "fixed case explicitly requires creating or validating a file or report" in contract
+    assert "content_json.required_tool_keys" in contract
+    assert "A missing field preserves legacy exposure" in contract
 
 
 def test_free_ui_keeps_original_entry_contract():
@@ -63,3 +67,8 @@ def test_frozen_ui_contract_distinguishes_eval_value_from_cli_stdout():
     assert "network, snapshot, open, click and screenshot" in UI_CASE_EXECUTION_PROMPT_CONTRACT
     assert "Never use [\"result\"] for a non-eval command" in UI_CASE_EXECUTION_PROMPT_CONTRACT
     assert "Other command verbs expose textual output under stdout" in ToolRegistry().get("browser-control").output_schema["result"]
+
+
+def test_frozen_ui_contract_leaves_browser_cleanup_to_the_run_resource_owner():
+    assert "the server owns browser-session and resource cleanup" in UI_CASE_EXECUTION_PROMPT_CONTRACT
+    assert "Do not call `close`, `close-all`, `kill-all`, or `delete-data`" in UI_CASE_EXECUTION_PROMPT_CONTRACT

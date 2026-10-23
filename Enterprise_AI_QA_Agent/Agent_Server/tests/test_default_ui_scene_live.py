@@ -54,14 +54,18 @@ def verify_observation_page(detail, jobs, page_id, recording_page):
         assert job["id"] in evidence_job_ids, "正式结果必须引用观察对应的ToolJob"
         assert job["metadata"]["run_id"] == result["run_id"]
         assert job["metadata"]["run_item_id"] == result["run_item_id"]
-        literal_value(job["output_payload"], observation["output_path_tokens"])
-        value = job["output_payload"].get("result")
-        if isinstance(value, dict):
-            # These are the two keys actually emitted by captured default-model
-            # eval expressions, not a production output normalization rule.
+        observed_value = literal_value(job["output_payload"], observation["output_path_tokens"])
+        if isinstance(observed_value, str) and observed_value == page_id:
+            observed_page_ids.add(observed_value)
+        # A formal observation can point at a sibling field such as `count`
+        # while the same browser-control response carries the page identity.
+        # The path above must still resolve first; then use that same persisted
+        # ToolJob response to prove the observation came from the current page.
+        payload_result = job.get("output_payload", {}).get("result")
+        if isinstance(payload_result, dict):
             for key in ("page_id", "pageId"):
-                if key in value:
-                    observed_page_ids.add(value[key])
+                if key in payload_result:
+                    observed_page_ids.add(payload_result[key])
     assert page_id != recording_page
     assert observed_page_ids == {page_id}, "正式观察必须来自本次执行页面，不能复用录制页面"
 
@@ -127,9 +131,13 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
         (output / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
     target = CountPage()
     origin = target.start()
-    original = MySQLModelConfigStore(get_settings()).get_default_active()
-    save("model-parameters.json", model_invocation_parameters(original))
-    invocation_model = original.model_copy(deep=True)
+    global_models = MySQLModelConfigStore(get_settings())
+    original = global_models.get_default_active()
+    selected_model_name = os.getenv("QA_DEFAULT_UI_MODEL_NAME")
+    source_model = global_models.get_by_name(selected_model_name) if selected_model_name else original
+    save("configured-default-model-parameters.json", model_invocation_parameters(original))
+    save("selected-source-model-parameters.json", model_invocation_parameters(source_model))
+    invocation_model = source_model.model_copy(deep=True)
     profile_path = os.getenv("QA_DEFAULT_UI_REQUEST_PROFILE")
     if profile_path:
         invocation_model.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
@@ -141,13 +149,14 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
             settings.api_auth_token = SecretStr(uuid4().hex)
             settings.orchestration.redis_task_outbox_streams = settings.orchestration.case_planning_task_stream
             models = MySQLModelConfigStore(settings); models.initialize()
-            model = models.upsert(ModelConfigUpdateRequest(model_name=original.model_id,
-                provider=original.provider, transport=original.transport, request_profile=invocation_model.request_profile,
-                base_url=original.api_base_url, api_key=original.api_key, auth_type=original.auth_type,
-                oauth_provider=original.oauth_provider, oauth_refresh_token=original.oauth_refresh_token,
-                applications=original.applications, is_active=True, use_provider_defaults=False,
-                capability_overrides=original.capability_overrides, context_window=original.context_window,
-                max_output_tokens=original.max_output_tokens))
+            model = models.upsert(ModelConfigUpdateRequest(model_name=source_model.model_id,
+                provider=source_model.provider, transport=source_model.transport,
+                request_profile=invocation_model.request_profile,
+                base_url=source_model.api_base_url, api_key=source_model.api_key, auth_type=source_model.auth_type,
+                oauth_provider=source_model.oauth_provider, oauth_refresh_token=source_model.oauth_refresh_token,
+                applications=["task_execution"], is_active=True, use_provider_defaults=False,
+                capability_overrides=source_model.capability_overrides, context_window=source_model.context_window,
+                max_output_tokens=source_model.max_output_tokens))
             assert model_invocation_parameters(models.get_default_active()) == model_invocation_parameters(invocation_model)
             processes.env = child_environment(settings)
             processes.env["QA_DEFAULT_PROBE_DIR"] = str(output / "physical")
@@ -210,16 +219,21 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
                     save("fixed-scene.json", scene)
                     scene_read = {"query": "读取固定增加一次场景", "operation": "scene_read", "scene_id": scene["scene_id"],
                         "version_id": scene["version"]["id"], "content_hash": scene["version"]["content_hash"]}
-                    business = {"objective": "实际点击计数按钮一次并验证当前计数", "scene_read": scene_read,
+                    business = {"objective": "实际点击计数按钮一次，验证计数并确认当前页面身份", "scene_read": scene_read,
                         "target_url": origin, "initial_count": "0", "expected_count": expected,
-                        "steps": [{"action": "先读取固定场景的别名和真实定位，再打开新的项目页面（初始计数必须0），真实点击增加一次并读取当前页面计数",
-                            "expected": expected}], "metadata": {"false": False, "zero": 0, "nullable": None}}
+                        "recording_page_id": recording_page,
+                        "page_identity_rule": "当前页面ID非空且不同于 recording_page_id",
+                        "required_tool_keys": [],
+                        "steps": [{"action": "读取固定场景的别名和真实定位，打开新的项目页面（初始计数必须0），点击一次并读取当前页面的计数和页面ID",
+                            "expected": "计数等于 expected_count；页面ID非空且不同于 recording_page_id"}],
+                        "metadata": {"false": False, "zero": 0, "nullable": None}}
                     case = await post(root + "/test-cases", {"case_key": "count-one", "title": "增加一次真实验证",
                         "mode_key": "ui_automation", "case_type": "json", "content_json": business,
                         "execution_notes": "先调用JSON中scene_read指定的knowledge-rag读取固定场景。录制只作操作知识，不能当本次实际值。"
-                            "然后使用现有browser-control的command/args打开项目页面并真实click一次，最后只读eval取得#count和#page-id。"
-                            "command调用共享会话；不要在读结果时重新打开页面，不得赋值DOM或改点击次数去满足预期。实际值与expected_count比较，"
-                            "初始计数固定0，不能增加准备动作改变该条件；不符则正式failed，遵守原回执协议与权限。",
+                            "然后使用现有browser-control的command/args打开项目页面并真实click一次，最后只读eval返回包含#count和#page-id的对象。"
+                            "正式回执必须分别引用实际计数和page_id；page_id必须非空且不同于recording_page_id。"
+                            "command调用共享会话；不要在读结果时重新打开页面，不得赋值DOM或改点击次数去满足预期。实际计数与expected_count比较，"
+                            "初始计数固定0，不能增加准备动作改变该条件；任何一项不符则正式failed，遵守原回执协议与权限。",
                         "source_refs": [{"source_type": "ui_recording_scene", "source_id": scene["scene_id"],
                             "version": scene["version"]["id"], "metadata": {"content_hash": scene["version"]["content_hash"]}}],
                         "model_key": "manual", "prompt_version": "manual-v1", "skill_versions": {"manual": "v1"},
@@ -287,6 +301,9 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
                         cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table}")
                         jobs = [dict(r) for r in cur.fetchall()]
                     save("tool-jobs.json", jobs)
+                    helper_jobs = [job["tool_key"] for job in jobs
+                        if job["tool_key"] in {"file-artifact-manager", "report-writer"}]
+                    assert helper_jobs == [], f"case did not declare file/report behavior: {helper_jobs}"
                     downloads = []
                     for job in jobs:
                         job_detail = await get(f"/sessions/{job['session_id']}/tool-jobs/{job['id']}")
@@ -324,9 +341,13 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
                     assert await get("/runs/" + run_id) == detail
                     assert len([e for e in target.events if e["method"] == "POST"]) == 2
                     assert len(list((output / "physical").glob("*.request.json"))) == sends
-                    save("verification.json", {"controlled_model": False, "default_planning": True,
+                    uses_default_model = model_invocation_parameters(source_model) == model_invocation_parameters(original)
+                    save("verification.json", {"controlled_model": False, "default_planning": uses_default_model,
+                        "execution_model_key": model.key, "execution_transport": model.transport,
+                        "uses_global_default_model": uses_default_model,
                         "isolated_request_profile_override": bool(profile_path),
-                        "default_execution": True, "scene_expected_receipt_v2": False,
+                        "default_execution": uses_default_model, "scene_expected_receipt_v2": False,
+                        "case_scoped_file_report_tool_calls": helper_jobs,
                         "authority": "server-owned controlled-page fixture, not public authorization workflow",
                         "status": detail["results"][0]["status"], "expected": expected, "events": target.events,
                         "terminal_extra_business_requests": 0, "terminal_extra_model_requests": 0})
@@ -365,4 +386,4 @@ async def test_default_ui_reads_fixed_scene_and_verifies_actual_page(tmp_path, e
             if p.is_file() and (p.suffix in {".stdout", ".stderr"} or p.name == "docker.json"):
                 shutil.copyfile(p, output / p.name)
         target.close()
-        assert model_invocation_parameters(MySQLModelConfigStore(get_settings()).get_default_active()) == model_invocation_parameters(original)
+        assert model_invocation_parameters(global_models.get_default_active()) == model_invocation_parameters(original)

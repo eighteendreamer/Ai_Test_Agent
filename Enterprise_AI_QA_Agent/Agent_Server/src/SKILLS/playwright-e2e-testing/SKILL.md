@@ -12,7 +12,8 @@ description: 使用 Playwright 规划和执行基于用户行为的 Web UI 探�
 - 使用 `ui-automation-runner` 进入 UI 模式状态机并确认方向、子方向和缺失信息。
 - 使用 `ui-page-explorer` 建立页面、实体、元素和可达状态图。
 - 使用 `browser-automation` 或 `browser-control` 执行当前系统支持的 Playwright 风格命令。
-- 使用 `file-artifact-manager` 和 `report-writer` 保存截图、日志、trace 元数据与结论。
+- 对不属于固定用例 RunItem 的交互式 UI 探索，使用 `file-artifact-manager` 和 `report-writer` 保存截图、日志、trace 元数据与结论。
+- 对固定用例 RunItem 执行，正式结果由运行回执和已关联的 ToolJob 证据保存；不要仅为复制正式结果或已有浏览器证据调用 `file-artifact-manager`、`report-writer`。只有固定用例明确要求生成或验证文件／报告这一被测行为时，才调用这些工具。
 - 当前 UI runtime 报告测试执行员工未实现时，停止声称完整 E2E 套件已执行，并输出所缺能力。
 
 ## 工作流程

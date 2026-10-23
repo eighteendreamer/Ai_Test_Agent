@@ -54,7 +54,7 @@ def test_captured_negative_observation_rejects_wrong_evidence(fault):
         verify_observation_page(detail, jobs, page_id, recording_page)
 
 
-def test_captured_incomplete_correction_remains_error_and_prose_is_not_silently_repaired():
+def test_captured_incomplete_correction_stays_error_and_unique_embedded_receipt_parses():
     sample = json.loads(FIXTURE.read_bytes())["incomplete_correction"]
     assert sample["result_status"] == "error"
     assert "length" in sample["error_message"]
@@ -63,10 +63,46 @@ def test_captured_incomplete_correction_remains_error_and_prose_is_not_silently_
         AgentCaseAssessmentService.parse_response(correction)
     graph = sample["original_response"]
     response = ModelInvocationResult(text=graph["model_response_text"], response_summary=graph["model_response_summary"])
-    with pytest.raises(ValueError, match="JSON"):
-        AgentCaseAssessmentService.parse_response(response)
-    # Diagnostic only: the isolated JSON is schema-valid. Production must keep
-    # rejecting the unframed original and the incomplete correction response.
+    # The parser contract accepts one complete schema-valid receipt after brief
+    # prose, while the provider's truncated correction remains an error.
+    embedded = AgentCaseAssessmentService.parse_response(response)
+    assert embedded.steps[0].status == "failed"
     raw = response.text[response.text.index('{"schema_version"'):]
     receipt = AgentCaseAssessmentService.parse_response(response.model_copy(update={"text": raw}))
     assert receipt.steps[0].status == "failed"
+
+
+def test_captured_equivalent_output_forms_keep_the_persisted_receipt():
+    # Reduced from the real Agnes correction at
+    # p2-default-ui-agnes-post-checkpoint-current-20261022-01/positive/correction-response-public.json.
+    count_ref = {"call_id": "call_4030011b742746b4bd954bd2", "output_path_tokens": ["result", "count"]}
+    page_ref = {"call_id": "call_4030011b742746b4bd954bd2", "output_path_tokens": ["result", "pageId"]}
+    captured = {
+        "schema_version": 1,
+        "steps": [{
+            "item_key": "count-one-target",
+            "status": "passed",
+            "summary": "目标页点击一次并读取实际计数和页面身份。",
+            "outputs": {"count": count_ref, "pageId": page_ref},
+            "output_structure": {"kind": "object", "fields": {
+                "count": {"kind": "reference", "source": count_ref},
+                "pageId": {"kind": "reference", "source": page_ref},
+            }},
+        }],
+    }
+    response = ModelInvocationResult(text=json.dumps(captured, ensure_ascii=False),
+        response_summary={"mode": "ok", "finish_reason": "stop"})
+
+    parsed = AgentCaseAssessmentService.parse_response(response)
+
+    assert {name: reference.model_dump(mode="json")
+        for name, reference in parsed.steps[0].outputs.items()} == {"count": count_ref, "pageId": page_ref}
+    assert parsed.steps[0].output_structure is None
+
+    conflicting = deepcopy(captured)
+    conflicting["steps"][0]["output_structure"]["fields"]["count"]["source"] = {
+        "call_id": count_ref["call_id"], "output_path_tokens": ["result", "different-count"]}
+    with pytest.raises(ValueError, match="输出"):
+        AgentCaseAssessmentService.parse_response(ModelInvocationResult(
+            text=json.dumps(conflicting, ensure_ascii=False),
+            response_summary={"mode": "ok", "finish_reason": "stop"}))
