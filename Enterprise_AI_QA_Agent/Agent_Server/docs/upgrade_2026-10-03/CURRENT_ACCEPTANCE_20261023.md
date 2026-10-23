@@ -146,6 +146,12 @@ MCP 顺序重跑已有真实隔离 PostgreSQL 专项：`tests/test_mcp_managemen
 
 Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_settings.py::test_real_mysql_preferences_http_restart_and_prompt_share_one_source`，使用随机 MySQL 表和临时旧文件，先导入 general 与 channel 两类配置，再经真实 HTTP 修改数据库值、破坏两份旧文件并以新的 Store/Service 重启读取。结果 **1 passed in 6.87s**；整个 `tests/test_workspace_settings.py` 在启用真实 MySQL 条件下 **8 passed in 8.47s**。测试结束删除唯一随机配置表，不启动 Docker/Redis，不改正式配置表。此项纠正此前本记录称“未找到真实 MySQL 旧文件迁移专门验收”的误判；目前未覆盖的是中断和并发初始化边界。
 
+### MySQL 赞助默认数据并发初始化
+
+赞助表的首次定义已包含当前 Store 使用的全部字段和 `uniq_sponsor_name`，从源码历史未发现旧版本补列逻辑；现存表若缺列不会被自动修复。运行时初始化只在表为空时播种 `DEFAULT_SPONSORS`，因此有任意运营数据时不会补默认行或覆盖记录。
+
+真实 MySQL 随机表的屏障测试让两个 Store 都先观察到空表再并发播种。原实现复现一个初始化成功、另一个因 `uniq_sponsor_name` 重复而失败，存在多 API 实例启动竞争。修复将默认插入改为按唯一键冲突执行 no-op 更新，不覆盖已存在赞助配置，也不吞掉其他 SQL 错误。`tests/test_sponsor_config.py` 真实 MySQL/单元组合 **5 passed in 0.81s**；并发初始化均成功且默认行仅一份，随后将 logo 改为运营值并再次初始化，值保持不变。`tests/test_workspace_settings.py` 另在启用真实 MySQL 条件下 **8 passed in 7.51s**。测试仅使用随机 MySQL 表并清理，不访问 Docker/Redis。赞助旧表缺列升级与真实部署 schema 盘点仍未覆盖；当前结论仅是首次建表和并发播种边界。
+
 ### MCP 旧结构迁移字段往返修复
 
 为确认 Store initializer 对旧扁平列的转换是否保真，在随机 PostgreSQL 表中构造含旧列的 MCP 记录（transport、description、project/document/endpoint、headers、provider_key、capabilities），执行当前 initializer 后通过正式 Store 读回。首次真实测试失败：旧 `capabilities` 已写入 `metadata.legacy_capabilities`，旧列也被删除，但 `_record_from_row()` 只读取已不存在的列，API 对象返回空 capabilities。根因是 PostgreSQL 规范表通过 JSONB `metadata` 存储该字段时，写入映射没有写 capabilities，读取映射也没有从迁移元数据回退。
