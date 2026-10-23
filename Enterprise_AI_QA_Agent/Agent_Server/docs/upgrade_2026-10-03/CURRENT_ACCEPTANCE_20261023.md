@@ -22,6 +22,8 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 
 结果：`1 failed in 26.52s`。测试只完成了任务提交和首次规划调用，任务状态为 `failed`，没有创建 Run，没有业务 HTTP 请求，因此项目内用例选取、排序、补全、固定执行和结果回执尚未得到默认 Step 真实证据。
 
+本次继续复验相同多用例依赖场景，结果 `1 failed in 38.42s`。默认仍为 `step-5-preview` / `openai_chat_completions`，全局默认身份未变；规划 Worker 执行一次流式 SDK 调用并发送一次 HTTP 请求，供应商返回 HTTP 400（`request_params_invalid`，SDK `BadRequestError`）。任务进入 Worker 后失败，未形成计划或 Run，业务 HTTP 请求数为 0。故当前依旧没有默认 Step 的选取、排序、补全和执行证据；用户确认的账号认证状态不因此改写为认证失败。结构化复验记录：同名目录中的 `verification.json` 与 `planning-task.json`；JUnit 原件保留在本地证据目录。
+
 失败的物理请求返回 HTTP 400。随后使用同一 MySQL 配置做三个最小脱敏请求：非流式、流式、流式加 `stream_options.include_usage`，三者均返回：
 
 ```json
