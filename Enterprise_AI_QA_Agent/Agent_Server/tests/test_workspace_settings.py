@@ -110,6 +110,9 @@ async def test_real_mysql_preferences_http_restart_and_prompt_share_one_source(t
             cursor.execute("SHOW TABLES LIKE %s", (table,))
             assert cursor.fetchone() is None
     (tmp_path / "general_settings.json").write_text(json.dumps({"language": "ja-JP"}), encoding="utf-8")
+    (tmp_path / "channel_advanced_settings.json").write_text(
+        json.dumps({"max_steps": 9, "allowlist": {"qq_users": ["legacy-user"]}}), encoding="utf-8",
+    )
     store = MySQLApplicationConfigStore(settings)
     service = WorkspaceSettingsService(store, tmp_path)
     listener = None
@@ -117,6 +120,8 @@ async def test_real_mysql_preferences_http_restart_and_prompt_share_one_source(t
     serving = None
     try:
         await asyncio.to_thread(service.initialize)
+        assert service.get_channel_advanced_settings().max_steps == 9
+        assert service.get_channel_advanced_settings().allowlist.qq_users == ["legacy-user"]
         # Production dependency-injector wiring must give Prompt the same source.
         container = AppContainer()
         container.settings.override(settings)
@@ -154,6 +159,7 @@ async def test_real_mysql_preferences_http_restart_and_prompt_share_one_source(t
             assert response.json()["max_steps"] == 7
         # A different service/store reads durable changes, even with a bad file.
         (tmp_path / "general_settings.json").write_text("{", encoding="utf-8")
+        (tmp_path / "channel_advanced_settings.json").write_text("{", encoding="utf-8")
         restarted = WorkspaceSettingsService(MySQLApplicationConfigStore(settings), tmp_path)
         await asyncio.to_thread(restarted.initialize)
         assert restarted.get_general_settings().language == "en-US"
