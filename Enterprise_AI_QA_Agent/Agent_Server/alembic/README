@@ -10,9 +10,14 @@ It preserves the current shape or adds a zero watermark to the initializer-
 supported legacy shape missing only that column. It does not infer a historical
 watermark, reset a claim, change its owner/lease or replay completed compaction.
 The session event table is a runtime dependency, not covered by this revision.
+20261019_0004 adds the claim-time plan snapshot JSONB column when the configured
+test-run table already exists. It does not rewrite existing Run records or
+fabricate historical plan snapshots. Fresh installations create that table
+through its existing initializer.
 Existing rows, IDs, payloads, attempts, evidence and publication state are preserved.
-This is not a baseline for the remaining application schemas. Store initializers
-remain active until their own frozen revisions and deployment policy are added.
+These four revisions are not a baseline for the remaining application schemas.
+Store initializers remain active until their own frozen revisions and deployment
+policy are added.
 
 From Agent_Server, with the same PostgreSQL configuration as the application:
 
@@ -41,7 +46,7 @@ to supply its own transaction; Config.attributes['settings'] supplies the usual
 table configuration. The caller owns such a connection and its commit/rollback.
 Loading the migration logging configuration leaves application loggers enabled.
 
-All three revisions intentionally refuse destructive downgrade because queued work
+All four revisions intentionally refuse destructive downgrade because queued work
 and evidence can predate the migration. Use a reviewed backup restore/forward repair for
 rollback; an offline downgrade is not a data-preserving recovery plan.
 

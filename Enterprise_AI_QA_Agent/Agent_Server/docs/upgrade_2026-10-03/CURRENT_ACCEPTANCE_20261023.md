@@ -101,3 +101,11 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 本轮补充了可选的后台回放任务链：显式注册 `qa:tasks:recording_replay` 后，回放记录和 PostgreSQL Outbox 在同一事务保存，独立 Redis Worker 使用数据库租约领取、心跳和终态幂等；前端会轮询 `running` 记录。真实隔离 PostgreSQL/Redis 验收先模拟 Worker 在领取后中断，租约过期后由新 Worker 领取完成，终态重复投递没有再次执行（`tests/test_recording_replay_worker_product.py`，1 passed，6.95 秒）。未注册该 Stream 的部署仍保留同步兼容路径。
 
 当前仍未解决浏览器执行已经产生未知副作用后的自动业务恢复：动作检查点能够阻止盲目重放，并保留待人工/业务只读核对的 `recovery_required` 结果；针对具体业务页面的可验证断言、未知状态查证和继续执行仍需按场景设计和验收。本轮也没有宣称人工 DeepSeek 或默认 AI 知识消费完成。
+
+## 生产历史迁移与投影只读调研
+
+代码核对确认历史迁移不是一个覆盖全系统的迁移器：API 文档 JSON catalog 由显式脚本导入 PostgreSQL；旧 Smoke 运行历史通过只读预检、显式 `project_scope → project_id` 映射和追加式导入账本投影到正式 Case/Suite/Run/Attempt/Result；Alembic 目前只有 Outbox、ToolJob、Compaction 和 Run 计划快照四个 revision。其他 PostgreSQL Store 仍由各自 `initialize()` 创建/演进，不能把 Alembic revision 或单一导入专项视为所有生产历史迁移完成。`alembic/README` 已按当前实际的四个 revision 更新。
+
+对当前应用配置的 PostgreSQL 数据库 `QA_Agent` 执行只读核对：`agent_smoke_run_history`、正式 Case/Suite/Run/Attempt/Result 表和 `agent_api_docs` 均为 0 行；`agent_legacy_smoke_import_ledger` 与 `public.alembic_version` 均不存在。结果说明这份当前配置库没有历史记录可供生产投影对账，也不能据此推断其他部署环境状态或宣称生产迁移已通过。未写入或修改该数据库。
+
+验证命令：`RUN_LIVE_POSTGRES_TESTS=1 ..\\.venv\\Scripts\\python.exe -X utf8 -m pytest tests\\test_schema_migrations.py tests\\test_legacy_smoke_import_postgres_live.py -q --tb=short`，结果 **32 passed in 15.29s**。测试在随机隔离 PostgreSQL Schema/数据库验证四 revision 的真实 DDL、受支持旧结构保留、重复升级、失败/回滚保护，以及 Smoke 导入的显式项目映射、完整 canonical 投影读回、重复导入幂等和源快照篡改拒绝；结束后只读确认随机 Schema/数据库均已清理。它证明受支持迁移边界，不替代其他 Store 的生产历史盘点或迁移，也不代表本机 `QA_Agent` 已运行 Alembic。
