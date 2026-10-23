@@ -388,6 +388,10 @@ class MySQLEmailConfigStore:
             for key, value in config.items()
             if key not in {"api_key", "secret_key"}
         })
+        if _clean_str(row.get("from_name")):
+            extra_config["from_name"] = _clean_str(row.get("from_name"))
+        if _clean_str(row.get("reply_to")):
+            extra_config["reply_to"] = _clean_str(row.get("reply_to"))
         extra_config.pop("cli_path", None)
         return EmailConfigRecord(
             config_name="Agent 原生邮箱",
