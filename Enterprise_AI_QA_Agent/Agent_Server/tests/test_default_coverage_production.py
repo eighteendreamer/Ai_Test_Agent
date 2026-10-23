@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import shutil
 from uuid import uuid4
+from types import SimpleNamespace
 
 import httpx
 import pytest
@@ -38,6 +39,35 @@ from src.schemas.model_request_options import ModelRequestProfile
 
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def safe_config_identity(config: ModelConfigRecord) -> str:
+    payload = {
+        "parameters": model_invocation_parameters(config),
+        "api_key_sha256": hashlib.sha256((config.api_key or "").encode()).hexdigest(),
+        "oauth_refresh_token_sha256": hashlib.sha256(
+            (config.oauth_refresh_token or "").encode()
+        ).hexdigest(),
+    }
+    encoded = json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    return hashlib.sha256(encoded.encode()).hexdigest()
+
+
+def default_probe_environment(settings, evidence_directory: Path) -> dict[str, str]:
+    environment = child_environment(settings)
+    environment["QA_DEFAULT_PROBE_DIR"] = str(evidence_directory / "physical")
+    return environment
+
+
+def test_default_probe_environment_restores_observer_path_after_rebuild(tmp_path):
+    settings = SimpleNamespace(
+        model_dump=lambda *, mode: {"api_auth_token": None},
+        api_auth_token=None,
+    )
+
+    environment = default_probe_environment(settings, tmp_path)
+
+    assert environment["QA_DEFAULT_PROBE_DIR"] == str(tmp_path / "physical")
 
 
 def multi_case_dependency_fixture(endpoint: str) -> tuple[str, str, list[dict]]:
@@ -130,7 +160,16 @@ async def test_actual_SDK_event_hooks_preserve_full_stream_and_do_not_save_auth(
 @pytest.mark.skipif(os.getenv("RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION") != "1", reason="actual current model and isolated main/API/CLIs/stores")
 async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, regression_business_http):
     global_settings = get_settings().model_copy(deep=True)
-    original_model = MySQLModelConfigStore(global_settings).get_default_active()
+    source_models = MySQLModelConfigStore(global_settings)
+    global_default_before = source_models.get_default_active()
+    requested_model_name = os.getenv("QA_EXECUTION_MODEL_NAME", "").strip()
+    original_model = (
+        source_models.get_by_name(requested_model_name)
+        if requested_model_name
+        else global_default_before
+    )
+    assert original_model is not None, "the explicitly selected execution model is not configured"
+    global_default_identity = safe_config_identity(global_default_before)
     parameters = model_invocation_parameters(original_model)
     invocation_model = original_model.model_copy(deep=True)
     profile_path = os.getenv("QA_DEFAULT_REQUEST_PROFILE")
@@ -151,7 +190,10 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
     orders, created = regression_business_http[1:]
     directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
     directory.mkdir(parents=True, exist_ok=False)
+    execution_model_role = "default" if original_model.key == global_default_before.key else "explicit_alternate"
     report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
+        "execution_model_role": execution_model_role, "execution_model_key": original_model.key,
+        "global_default_model_key": global_default_before.key,
         "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
     report["case_shape"] = case_shape
     report["isolated_invocation_parameters"] = invocation_parameters
@@ -178,8 +220,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
             context_window=original_model.context_window, max_output_tokens=invocation_model.max_output_tokens)
         model = models.upsert(execution_model)
         assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
-        processes.env = child_environment(settings)
-        processes.env["QA_DEFAULT_PROBE_DIR"] = str(directory / "physical")
+        processes.env = default_probe_environment(settings, directory)
         port = free_port()
         args = ("-m", "tests.default_model_probe", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
         api = processes.start("default-api", *args)
@@ -301,8 +342,10 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     reference_protocol = os.getenv("QA_EVIDENCE_REFERENCE_PROTOCOL", "case-planning-evidence-references-v1")
                     policy.evidence_reference_protocol = reference_protocol
                     report["evidence_reference_protocol"] = reference_protocol
-                    report["baseline"] = ("case-planning-evidence-references-v12" if reference_protocol.endswith("-v2")
-                        else "43f1700b plus evidence references v11")
+                    report["baseline"] = (
+                        "current worktree plus evidence references v14" if reference_protocol.endswith("-v3") else
+                        "current worktree plus evidence references v13" if reference_protocol.endswith("-v2") else
+                        "43f1700b plus evidence references v11")
                 if os.getenv("QA_EFFECT_TASKS") == "1":
                     policy.planning_stage_protocol = "case-planning-staged-evidence-v3"
                     report["baseline"] = "28fc566c plus separate evidence tasks"
@@ -345,6 +388,13 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                         "timeout_seconds": float(planning_timeout),
                     })
                     report["isolated_planning_timeout_seconds"] = policy.timeout_seconds
+                planning_max_rounds = os.getenv("QA_DEFAULT_PLANNING_MAX_ROUNDS")
+                if planning_max_rounds:
+                    policy = CasePlanningPolicy.model_validate({
+                        **policy.model_dump(mode="json"),
+                        "max_rounds": int(planning_max_rounds),
+                    })
+                    report["isolated_planning_max_rounds"] = policy.max_rounds
                 r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
                 assert r.status_code == 200, r.text
                 candidate_case_ids = ([case_bundles[key]["case"]["id"] for key in
@@ -383,7 +433,10 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 plan = await get(root + "/case-plans/" + task["plan_id"])
                 save("plan.json", plan)
                 report["planning_completed"] = True
-                report["default_model_planning_completed"] = not executor_only
+                report["selected_model_planning_completed"] = not executor_only
+                report["default_model_planning_completed"] = (
+                    not executor_only and execution_model_role == "default"
+                )
                 if case_shape == "multi-case-dependency":
                     ids = {key: value["case"]["id"] for key, value in case_bundles.items()}
                     nodes = plan["decision"]["items"]
@@ -436,7 +489,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                 # reclaim interval; the production setting remains unchanged.
                 settings.orchestration.redis_task_reclaim_idle_ms = 1000
                 settings.orchestration.redis_task_block_ms = 100
-                processes.env = child_environment(settings)
+                processes.env = default_probe_environment(settings, directory)
                 worker = processes.start("default-execution-worker", "-m", "tests.default_model_probe", "src.cli.run_redis_worker",
                     "--worker-id", "default-execute")
                 loop = asyncio.get_running_loop()
@@ -591,5 +644,7 @@ async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, r
                     shutil.copyfile(p, directory / p.name)
             report['SDK_create_observations'] = [json.loads(p.read_bytes()) for p in sorted((directory/'physical').glob('*.sdk-create.json'))]
             report['SDK_stream_observations'] = [json.loads(p.read_bytes()) for p in sorted((directory/'physical').glob('*.sdk-stream.json'))]
-            assert model_invocation_parameters(MySQLModelConfigStore(global_settings).get_default_active()) == parameters
+            global_default_after = MySQLModelConfigStore(global_settings).get_default_active()
+            assert safe_config_identity(global_default_after) == global_default_identity
+            report["global_default_unchanged"] = True
             save("verification.json", report)

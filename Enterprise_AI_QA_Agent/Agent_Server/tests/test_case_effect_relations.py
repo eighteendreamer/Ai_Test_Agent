@@ -212,7 +212,7 @@ async def test_actual_formal_mixed_effects_and_all_original_objects(tmp_path, re
         plan = await base.service.create(project.id, CasePlanningRequest(objective="按完整正式JSON测试产生与清理",
             candidate_case_ids=[case.case.id]))
         assert plan.status == "planned", plan.summary
-        expected_prompt_version = ("case-planning-evidence-references-v11" if references else "case-planning-linked-documents-v10" if linked else "case-planning-item-operation-prefetch-v9" if item_selection else "case-planning-source-identity-v8" if full_identity else "case-planning-declared-operation-prefetch-v7" if prefetch else "case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5")
+        expected_prompt_version = ("case-planning-evidence-references-v11+logic-v8" if references else "case-planning-linked-documents-v10+logic-v8" if linked else "case-planning-item-operation-prefetch-v9+logic-v8" if item_selection else "case-planning-source-identity-v8+logic-v8" if full_identity else "case-planning-declared-operation-prefetch-v7+logic-v8" if prefetch else "case-planning-document-expected-v6+logic-v8" if document_expected else "case-planning-staged-evidence-v8")
         if linked:
             expected_prompt_version += "+linked-navigation-v1"
         assert plan.prompt_version == expected_prompt_version
@@ -466,7 +466,7 @@ async def test_actual_pg_v2_logic_ack_loss_preserves_formal_relation_and_origina
         assert terminal.status == "completed" and terminal.attempt_no == 2 and terminal.deadline_at == before.deadline_at
         assert len(env.model.requests) == 4
         plan = await env.service.get(project.id, terminal.plan_id)
-        assert plan.prompt_version == ("case-planning-document-expected-v6" if document_expected else "case-planning-staged-evidence-v5") and plan.status == "planned"
+        assert plan.prompt_version == ("case-planning-document-expected-v6+logic-v8" if document_expected else "case-planning-staged-evidence-v8") and plan.status == "planned"
         assert plan.decision.items[0].cleanup_sources == ["target"] and plan.decision.items[0].depends_on == []
         await PlanningTaskHandler(env.service, restored, worker_id="terminal")(delivery(task))
         assert len(env.model.requests) == 4

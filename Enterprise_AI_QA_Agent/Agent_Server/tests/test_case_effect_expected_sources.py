@@ -10,6 +10,7 @@ from src.application.runtime.case_effect_relations import compile_relations
 from src.application.test_cases.planning_stages import build_stage_prompts
 from src.schemas.case_effect_sources import SOURCE_PROTOCOL, SourceEffectCheck
 from src.schemas.case_planning import PlanningDecisionV3, PlanningEvidence
+from src.schemas.case_planning_stages import RELATION_PROMPT_VERSION
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -44,7 +45,13 @@ def test_actual_default_case_uses_document_expected_without_added_fields_and_pre
     assert doc.payload['content'][proof['char_start']:proof['char_end']] == 'DELETE'
     assert proof['line'] == 4 and proof['version'] == doc.version
     assert content == original and '证据契约' not in content
-    assert build_stage_prompts('case-planning-staged-evidence-v2').model_dump(mode='json') == saved['seed']['stage_prompts']
+    frozen_prompts = saved['seed']['stage_prompts']
+    assert 'case-planning-staged-evidence-v5' in saved['seed']['plan']['prompt_version']
+    assert '已读取的项目正式用例' not in frozen_prompts['logic']
+    current_prompts = build_stage_prompts('case-planning-staged-evidence-v2')
+    assert current_prompts.model_dump(mode='json') != frozen_prompts
+    assert '已读正式用例可提供条件，必须加入dependency' in current_prompts.logic
+    assert RELATION_PROMPT_VERSION == 'case-planning-staged-evidence-v8'
     with pytest.raises(ValueError, match='来源协议'):
         compile_relations(item, content, [doc])
 
