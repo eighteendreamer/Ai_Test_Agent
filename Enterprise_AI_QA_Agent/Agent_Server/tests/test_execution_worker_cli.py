@@ -98,6 +98,11 @@ class Processes:
 
 @asynccontextmanager
 async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
+    # A caller may explicitly reuse an already managed Redis instance.  The
+    # default remains a private disposable service so existing tests keep their
+    # isolation; the environment hook prevents product acceptance runs from
+    # silently starting a heavyweight fallback container.
+    redis_url = redis_url or os.getenv("QA_ISOLATED_RUNTIME_REDIS_URL") or None
     settings = get_settings().model_copy(deep=True)
     base = settings.model_copy(deep=True)
     suffix = uuid4().hex[:16]
@@ -128,7 +133,6 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
     objects = ArtifactStorageService(settings)
     owned_objects = []
     docker_outputs = []
-    external_redis_initial_keys: set[bytes] | None = None
 
     async def docker(*args):
         completed = await asyncio.to_thread(subprocess.run, ["docker", *args],
@@ -164,11 +168,6 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
             settings.orchestration.redis_task_stream = f"qa:test:{suffix}:runs"
             settings.orchestration.agent_task_stream = f"qa:test:{suffix}:agents"
             settings.orchestration.redis_task_consumer_group = f"qa:test:{suffix}:workers"
-            shared_redis = Redis.from_url(settings.database.redis_url)
-            try:
-                external_redis_initial_keys = set(await shared_redis.keys("*"))
-            finally:
-                await shared_redis.aclose()
         else:
             # Verified executable in a cached local image, no installation/pull.
             await docker("run", "--detach", "--name", container, "--publish", "127.0.0.1::6379",
@@ -221,8 +220,12 @@ async def isolated_runtime(tmp_path, *, redis_url: str | None = None):
         elif redis_url:
             shared_redis = Redis.from_url(settings.database.redis_url)
             try:
-                current_keys = set(await shared_redis.keys("*"))
-                owned_keys = current_keys - (external_redis_initial_keys or set())
+                owned_keys = {
+                    settings.orchestration.redis_task_stream,
+                    f"{settings.orchestration.redis_task_stream}:dead_letter",
+                    settings.orchestration.agent_task_stream,
+                    f"{settings.orchestration.agent_task_stream}:dead_letter",
+                }
                 if owned_keys:
                     await shared_redis.delete(*owned_keys)
             finally:
