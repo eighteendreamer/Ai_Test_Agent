@@ -154,9 +154,15 @@ Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_setti
 
 ### MySQL 旧邮件配置表转换
 
-仓库 MySQL dump 中存在可复核的旧 schema：`system_email_config_legacy_20260421072223` 包含 provider 主键、`from_email`、`from_name`、`reply_to`、`config_json`。当前 Store 检测 `config_json` 后将原表重命名为带时间戳的 legacy 备份，再创建新 schema 并仅迁入 `AGENT_MAIL_PROVIDERS` 白名单中的行；`api_key`/`secret_key` 独立写入凭据字段，普通 config JSON 字段迁入 `extra_config`，`cli_path` 按现有规则移除。原表重命名为备份，不会物理删除旧内容。
+仓库 MySQL dump 中存在可复核的旧 schema：`system_email_config_legacy_20260421072223` 包含 provider 主键、`from_email`、`from_name`、`reply_to`、`config_json`。当前 Store 检测 `config_json` 后仅迁入 `AGENT_MAIL_PROVIDERS` 白名单中的行；`api_key`/`secret_key` 独立写入凭据字段，普通 config JSON 字段迁入 `extra_config`，`cli_path` 按现有规则移除。转换先在 staging 表完整写入并提交，再使用单条多表 `RENAME TABLE` 将旧表原子切换为带时间戳的备份、staging 切换为规范表；原表作为备份保留，不会物理删除旧内容。
 
-真实隔离 MySQL 测试使用随机表重建上述旧结构、写入一条测试邮箱并运行正式 Store 初始化。首次验证确认备份和凭据保留，但新记录遗漏 `from_name` 与 `reply_to`；它们只留在备份，活动记录不能读取。修复将非空两字段保存在新记录 `extra_config`，未增加数据库列。测试再次初始化并确认不重复迁移、检查备份原值仍在；异常清理会删除该随机前缀下的原表和所有 legacy 表。与邮件服务回归合计 **41 passed in 1.77s**。这证明该旧 schema 样本的转换映射，不证明其他未登记历史 schema；MySQL DDL 隐式提交，若在 rename/create/逐行导入之间进程中断，当前初始化器没有显式迁移状态记录或自动恢复，本轮未做故障注入，需另行设计和验收。
+真实隔离 MySQL 测试使用随机表重建上述旧结构并运行正式 Store 初始化。第一轮验证确认备份和凭据保留，但新记录遗漏 `from_name` 与 `reply_to`；修复将非空两字段保存在新记录 `extra_config`，未增加数据库列。继续扩展后又复现两项根因：多 provider 都使用固定配置名会触发 `uniq_email_config_name`；旧流程在先 rename、后建表/逐行导入期间中断，会让重启创建空规范表而丢失活动配置。修复恢复仓库原有的 provider 稳定命名规则，并将转换改为 staging 构建加原子多表 rename。
+
+当前配置库实测为 MySQL **8.0.45**、`binlog_format=ROW`。官方 MySQL 行为核对确认 `RENAME TABLE old TO backup, stage TO old` 在单条语句内原子完成，命名锁在 commit 后继续由当前连接持有。Store 以数据库和表身份的哈希命名 `GET_LOCK`，串行化多实例迁移；持锁后先 commit 结束等待前的旧 schema 快照，再重新检查结构。首次并发实测暴露第二个初始化器复用旧事务视图、访问新表时报 `Unknown column 'from_email'`，上述事务边界修复后通过。
+
+`tests/test_config_store_migrations.py` 现有五个真实 MySQL 场景全部通过：单 provider 字段与备份保留；多 provider 唯一命名；原子 rename 完成后模拟进程中断并重启读回；staging 写入失败时旧规范表仍原样可用且可重试；两个独立 Store 同时观察旧结构时由命名锁收敛为一份备份和完整新表。结果 **5 passed in 4.17s**。邮件配置、服务、发送错误分类、设置动作、腾讯认证确认及认证持久化组合回归 **113 passed in 7.19s**。Python 两个改动文件实际编译通过；环境未安装 `ruff`，未执行 lint。结束后只读确认本轮随机测试表和 `qa.email.migrate.*` 命名锁均为 0；另两张此前失败运行遗留、且按精确随机夹具格式核实的旧备份表已按精确表名清理。
+
+这些证据证明仓库中这一种旧 schema 在当前 MySQL 8.0/InnoDB/ROW 环境下的映射、并发和两个故障点，不证明其他未登记历史 schema、MySQL 5.7/NDB/STATEMENT 复制环境或真实数据库服务进程在 DDL 执行中宕机的服务器级恢复。运行时转换依然不是覆盖全部 MySQL 配置表的统一显式迁移体系。
 
 ### MCP 旧结构迁移字段往返修复
 
