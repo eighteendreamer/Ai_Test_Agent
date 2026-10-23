@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import os
 from types import SimpleNamespace
+from urllib.parse import quote
 
 import pytest
 
@@ -139,6 +140,69 @@ def test_mcp_commands_reuse_only_same_attempt_and_keep_artifacts(tmp_path):
         finally:
             await service.close()
         assert not service._playwright_cli._sessions
+    asyncio.run(run())
+
+
+def test_mcp_navigation_keeps_the_command_session_for_follow_up_actions(tmp_path):
+    async def run():
+        from src.application.resources.session_resource_service import SessionResourceService
+        from src.runtime.session_resource_store import InMemorySessionResourceStore
+        from src.schemas.session_resource import SessionResourceKind
+
+        registry = SimpleNamespace(get=lambda key: SimpleNamespace(
+            enabled=True, capabilities=["browser-control"], name="browser"))
+        resources = SessionResourceService(InMemorySessionResourceStore())
+        service = MCPRuntimeService(registry, browser_settings(), resources)
+        service._artifact_root = tmp_path
+        context = {
+            "project_id": "p-navigation",
+            "session_id": "s-navigation",
+            "turn_id": "t-navigation",
+            "run_id": "r-navigation",
+            "run_item_id": "i-navigation",
+            "attempt_id": "a-navigation",
+        }
+        html = """<!doctype html><html><meta charset="utf-8"><title>Browser session</title>
+<button id="increment">Increment</button><output id="count">0</output>
+<script>document.querySelector('#increment').onclick=()=>{const node=document.querySelector('#count');node.textContent=String(Number(node.textContent)+1)};</script>
+</html>"""
+        target_url = "data:text/html;charset=utf-8," + quote(html, safe="")
+        session_name = service._playwright_session_name(context, "browser-control-command")
+
+        async def command(command_text):
+            return await service.call("browser", "browser-control", {
+                "action": "command", "command": command_text,
+            }, context)
+
+        try:
+            navigation = await service.call("browser", "browser-control", {
+                "action": "navigate", "target_url": target_url,
+            }, context)
+            assert navigation["status"] == "success"
+            assert service._playwright_cli.session_info(session_name) is not None
+            active = await resources.list_active(context["session_id"])
+            assert any(item.kind == SessionResourceKind.browser_session
+                       and item.resource_key == session_name for item in active)
+
+            snapshot = await command("snapshot")
+            assert snapshot["status"] == "success"
+            assert "Increment" in snapshot["stdout"]
+            assert (await command("eval \"document.querySelector('#count').textContent\""))["result"] == "0"
+            assert (await command("click #increment"))["status"] == "success"
+            assert (await command("eval \"document.querySelector('#count').textContent\""))["result"] == "1"
+            active = await resources.list_active(context["session_id"])
+            assert sum(item.kind == SessionResourceKind.browser_session
+                       and item.resource_key == session_name for item in active) == 1
+
+            closed = await command("close")
+            assert closed["status"] == "success"
+            assert service._playwright_cli.session_info(session_name) is None
+            active = await resources.list_active(context["session_id"])
+            assert not any(item.kind == SessionResourceKind.browser_session
+                           and item.resource_key == session_name for item in active)
+        finally:
+            await service.close()
+
     asyncio.run(run())
 
 

@@ -43,18 +43,22 @@ class InMemorySessionResourceStore:
 
     async def save(self, resource: SessionResourceRecord) -> SessionResourceRecord:
         async with self._lock:
-            if resource.kind == SessionResourceKind.browser_session:
-                for existing in self._resources.values():
-                    if (existing.session_id == resource.session_id and existing.kind == resource.kind
-                            and existing.resource_key == resource.resource_key
+            for existing in self._resources.values():
+                if (existing.session_id == resource.session_id and existing.kind == resource.kind
+                        and existing.resource_key == resource.resource_key):
+                    if (resource.kind == SessionResourceKind.browser_session
                             and existing.metadata.get("allocation_generation") is not None):
                         old_generation = int(existing.metadata["allocation_generation"])
                         generation = int(resource.metadata.get("allocation_generation") or 0)
                         if generation < old_generation or (generation == old_generation and existing.status != SessionResourceStatus.active):
                             LOGGER.info("session_resource_stale_registration_ignored", extra={"resource_id": existing.id})
                             return existing
-                        resource = resource.model_copy(update={"id": existing.id, "created_at": existing.created_at})
-                        break
+                    resource = resource.model_copy(update={
+                        "id": existing.id,
+                        "created_at": existing.created_at,
+                        "metadata": {**existing.metadata, **resource.metadata},
+                    })
+                    break
             resource.updated_at = datetime.utcnow()
             if resource.id not in self._resources:
                 self._by_session[resource.session_id].append(resource.id)

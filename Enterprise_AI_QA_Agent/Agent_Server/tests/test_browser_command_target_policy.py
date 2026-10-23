@@ -94,6 +94,18 @@ def test_complete_and_split_commands_have_same_navigation_target(arguments):
     assert browser_command_navigation_target({"action": "command", **arguments}) == "http://127.0.0.1:8080/"
 
 
+@pytest.mark.parametrize(("command", "expected"), [
+    ('eval "document.querySelector(\'#count\').textContent"',
+        ["eval", "document.querySelector('#count').textContent"]),
+    ('open "http://127.0.0.1:8080/a b"', ["open", "http://127.0.0.1:8080/a b"]),
+    (r'open --profile="C:\Temp\Browser Profiles\one"',
+        ["open", r"--profile=C:\Temp\Browser Profiles\one"]),
+])
+def test_quoted_command_strings_remove_wrapping_quotes_without_damaging_values(command, expected):
+    from src.application.runtime.browser_commands import browser_command_args
+    assert browser_command_args({"action": "command", "command": command}) == expected
+
+
 @pytest.mark.parametrize("context", [
     {"trusted_resource_scope": {"project_url": "http://127.0.0.1:8080"}},
     {"trusted_target_hosts": ["127.0.0.1"]},

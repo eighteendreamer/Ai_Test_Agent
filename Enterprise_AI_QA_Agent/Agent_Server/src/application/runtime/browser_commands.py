@@ -12,7 +12,10 @@ logger = logging.getLogger(__name__)
 def browser_command_args(payload: dict[str, Any]) -> list[str]:
     raw = payload.get("args") or payload.get("command_args") or payload.get("command") or []
     if isinstance(raw, str):
-        args = shlex.split(raw, posix=False)
+        # Tool callers send shell-quoted command strings, not Windows argv.
+        # POSIX tokenization removes wrapper quotes so eval receives JavaScript
+        # source instead of evaluating a quoted string literal.
+        args = shlex.split(raw, posix=True)
     elif isinstance(raw, list):
         args = [str(item) for item in raw]
     else:
