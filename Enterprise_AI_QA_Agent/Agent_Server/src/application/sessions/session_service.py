@@ -1422,6 +1422,13 @@ class SessionService:
             # Selection and planning are already frozen. Keep the normal mode and
             # permission context without another semantic-intent model request.
             request = self._input_orchestrator_service.orchestrate(session, payload)
+            if managed_by_run and mode.key == "ui_automation":
+                # Frozen RunItems have a dedicated execution and evidence contract.
+                # The interactive E2E Skill prescribes a separate file/report
+                # workflow that duplicates the RunItem's persisted receipt and can
+                # consume the fixed turn budget. Keep the CLI command Skill, whose
+                # runtime instructions are part of the actual browser tool contract.
+                request.skill_keys = [key for key in request.skill_keys if key != "playwright-e2e-testing"]
             request.turn_id = turn_id
             if request.routing_decision is not None:
                 request.routing_decision.queue_behavior = "reject_when_busy"

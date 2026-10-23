@@ -22,6 +22,7 @@ from src.modes.ui_automation_mode.prompt_contract import UI_AUTOMATION_PROMPT_CO
 from src.schemas.prompting import PromptAssemblyResult, PromptSection
 from src.schemas.case_execution import AgentCaseExecutionContext
 from src.application.test_runs.agent_case_contract import case_result_contract
+from src.application.test_runs.execution_replanning import execution_replanning_enabled
 from src.schemas.settings import GeneralSettingsPayload
 
 # Language display names for the output language instruction.
@@ -524,6 +525,25 @@ class PromptAssemblyService:
                 metadata={"project_id": frozen.project_id, "run_id": frozen.run_id,
                     "run_item_id": frozen.run_item_id, "plan_id": frozen.plan_id, "trusted": False},
             ))
+            if execution_replanning_enabled(context_bundle):
+                sections.append(PromptSection(
+                    key="execution_replanning", title="Execution Gap and Run Replanning",
+                    source="test_runs.agent_execution", cache_scope="dynamic", priority=85,
+                    content="When actual execution or project knowledge reveals a new logical gap affecting "
+                        "unclaimed Run items, use run-plan-replanner: inspect the current revision, then submit "
+                        "a specific reason and settled evidence references from this execution, each with job_id "
+                        "and a non-empty output_path_tokens path to the exact relevant persisted JSON value. "
+                        "Never submit an entire tool output when a narrower path is available. "
+                        "The server binds the project, Run and original execution identity. Keep the submit "
+                        "operation_key stable. If its return is lost, query status using a separate read "
+                        "operation_key and submission_operation_key equal to that original submit key in the "
+                        "same owned item. For a refresh use a new read key. A queued/completed planning task "
+                        "is not an applied revision: inspect run_revision.status. The current claimed item "
+                        "and all started/completed items remain frozen. Record its actual blocked/failed "
+                        "outcome and evidence; regression uses a new Run. Do not wait in an unbounded polling "
+                        "loop, expand unrelated scope, resend uncertain business writes, or claim tests "
+                        "passed because a new plan was saved. Independent valid work can continue.",
+                ))
             if context_bundle.get("case_assessment_requested") is True:
                 sections.append(PromptSection(
                     key="case_result_contract", title="Evidence-backed Case Result Receipt",

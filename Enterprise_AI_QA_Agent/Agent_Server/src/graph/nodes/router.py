@@ -6,8 +6,12 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.capabilities.capability_resolver import CapabilityResolver
-from src.application.capabilities.tool_exposure_policy import ToolExposurePolicy
+from src.application.capabilities.tool_exposure_policy import (
+    CASE_SCOPED_OPTIONAL_TOOL_KEYS,
+    ToolExposurePolicy,
+)
 from src.application.security.prompt_injection_policy import PromptInjectionPolicy
+from src.application.test_runs.execution_replanning import TOOL_KEY as REPLANNING_TOOL_KEY, execution_replanning_enabled
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.graph.state import AgentGraphState
 from src.registry.agents import AgentRegistry
@@ -62,6 +66,32 @@ def build_router_node(
             for tool_key in skill.tool_keys
         ]
         context_bundle = dict(state.get("context_bundle") or {})
+        case_tool_scope = tool_exposure_policy.case_tool_scope(context_bundle=context_bundle)
+        excluded_case_tool_keys = (
+            CASE_SCOPED_OPTIONAL_TOOL_KEYS.difference(case_tool_scope.required_tool_keys)
+            if case_tool_scope.required_tool_keys is not None else set()
+        )
+        if case_tool_scope.invalid_reason:
+            LOGGER.warning("case_tool_requirements_invalid", extra={
+                "run_id": context_bundle.get("run_id", ""),
+                "run_item_id": context_bundle.get("run_item_id", ""),
+                "reason": case_tool_scope.invalid_reason,
+                "fallback": "legacy_tool_exposure",
+            })
+        if case_tool_scope.unknown_tool_keys:
+            LOGGER.warning("case_tool_requirements_unrecognized", extra={
+                "run_id": context_bundle.get("run_id", ""),
+                "run_item_id": context_bundle.get("run_item_id", ""),
+                "tool_keys": sorted(case_tool_scope.unknown_tool_keys),
+                "scope": "file_report_helpers_only",
+            })
+        if case_tool_scope.required_tool_keys is not None:
+            LOGGER.info("case_tool_scope_applied", extra={
+                "run_id": context_bundle.get("run_id", ""),
+                "run_item_id": context_bundle.get("run_item_id", ""),
+                "required_tool_keys": sorted(case_tool_scope.required_tool_keys),
+                "excluded_tool_keys": sorted(excluded_case_tool_keys),
+            })
         required_capabilities = [
             str(item).strip()
             for item in context_bundle.get("required_capabilities", [])
@@ -105,6 +135,7 @@ def build_router_node(
             dict.fromkeys(
                 [
                     "skill",
+                    *([REPLANNING_TOOL_KEY] if execution_replanning_enabled(context_bundle) else []),
                     *mode_tool_keys,
                     *loaded_skill_tools,
                     *agent_skill_tools,
@@ -118,7 +149,9 @@ def build_router_node(
             required_capabilities=required_capabilities,
             allowed_capabilities=allowed_capabilities,
         )
-        tools = tool_exposure_policy.filter_supported(tools=tools, agent=agent)
+        tools = tool_exposure_policy.filter_supported(
+            tools=tools, agent=agent, excluded_tool_keys=excluded_case_tool_keys, context_bundle=context_bundle,
+        )
         state["selected_agent_key"] = agent.key
         state["selected_agent_name"] = agent.name
         state["selected_model_key"] = selected_model.key
@@ -225,6 +258,8 @@ def build_router_node(
         eligible_deferred_tools = tool_exposure_policy.filter_supported(
             tools=eligible_deferred_tools,
             agent=agent,
+            excluded_tool_keys=excluded_case_tool_keys,
+            context_bundle=context_bundle,
         )
         restrict_tool_expansion = "do_not_expand_tool_access" in safety_assessment.get("restrictions", [])
         if restrict_tool_expansion:
@@ -271,6 +306,8 @@ def build_router_node(
             available_tools=",".join(state["available_tool_keys"]) or "none",
             mode_registered_tools=",".join(mode_tool_keys) or "none",
             requested_tools=",".join(requested_tool_keys) or "none",
+            case_required_tool_keys=",".join(sorted(case_tool_scope.required_tool_keys or ())) or "none",
+            case_excluded_tool_keys=",".join(sorted(excluded_case_tool_keys)) or "none",
             deferred_tool_count=len(state["deferred_tool_keys"]),
             indirect_injection_signal_count=context_bundle["indirect_injection_signal_count"],
         )

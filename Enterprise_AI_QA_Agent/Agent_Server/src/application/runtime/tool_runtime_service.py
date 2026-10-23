@@ -219,6 +219,7 @@ class ToolRuntimeService:
         security_bug_service=None,
         tool_job_heartbeat_interval_seconds: float | None = None,
         api_credential_reference_service=None,
+        execution_replanning_service=None,
     ) -> None:
         self._request_timeout_seconds = request_timeout_seconds
         self._settings = settings
@@ -234,6 +235,7 @@ class ToolRuntimeService:
         self._session_store = session_store
         self._api_credential_references = api_credential_reference_service
         self._recording_scene_knowledge = None
+        self._execution_replanning = execution_replanning_service
         self._transcript_hygiene_service = transcript_hygiene_service or TranscriptHygieneService()
         self._output_safety_policy = OutputSafetyPolicy()
         self._coordinator_runtime_service = coordinator_runtime_service
@@ -318,6 +320,7 @@ class ToolRuntimeService:
             "workflow-router": self._run_workflow_router,
             "subagent-dispatch": self._run_subagent_dispatch,
             "knowledge-rag": self._run_knowledge_rag,
+            "run-plan-replanner": self._run_execution_replanning,
             "web_search": self._run_web_search,
             "api-docs-library": self._run_api_docs_library,
             "attachment-reader": self._run_attachment_reader,
@@ -1006,6 +1009,22 @@ class ToolRuntimeService:
             "output": result.payload,
             "error": result.error,
         }
+
+    async def _run_execution_replanning(self, arguments, context):
+        from src.application.test_runs.execution_replanning import ExecutionReplanningRequest
+        if self._execution_replanning is None:
+            logger.error("execution_replanning_unavailable", extra={"tool_job_id": context.tool_job_id})
+            return {"status": "failed", "ok": False, "error": "execution_replanning_unavailable",
+                "summary": "执行重规划服务尚未初始化。"}
+        try:
+            request = ExecutionReplanningRequest.model_validate(arguments)
+            return await self._execution_replanning.execute(request, context)
+        except (KeyError, ValueError) as exc:
+            from pydantic import ValidationError
+            logger.warning("execution_replanning_rejected", extra={"tool_job_id": context.tool_job_id,
+                "error_type": type(exc).__name__, "action": arguments.get("action")})
+            return {"status": "failed", "ok": False, "error": "execution_replanning_rejected",
+                "summary": "执行重规划参数不符合契约" if isinstance(exc, ValidationError) else str(exc)}
 
     async def _run_knowledge_rag(
         self,

@@ -32,6 +32,7 @@ from src.application.model_adapters.tool_adapter import LangChainToolAdapter
 from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
 from src.application.capabilities.capability_resolver import CapabilityResolver
 from src.application.capabilities.tool_exposure_policy import ToolExposurePolicy
+from src.application.test_runs.execution_replanning import TOOL_KEY as REPLANNING_TOOL_KEY, execution_replanning_enabled
 from src.registry.agents import AgentRegistry
 from src.registry.skills import SkillRegistry
 from src.application.security.approval_scope_service import ApprovalScopeService
@@ -1160,6 +1161,8 @@ class RuntimeService:
         # the legacy graph-only ``skill`` dispatcher must not be exposed as a
         # business tool with a non-existent ToolRuntime handler.
         keys = [*mode_keys, *requested]
+        if execution_replanning_enabled(state.get("context_bundle") or {}):
+            keys.append(REPLANNING_TOOL_KEY)
         if self._skill_registry is not None:
             keys.extend(
                 tool_key
@@ -1199,7 +1202,8 @@ class RuntimeService:
             ],
         )
         if agent is not None:
-            descriptors = ToolExposurePolicy().filter_supported(tools=descriptors, agent=agent)
+            descriptors = ToolExposurePolicy().filter_supported(tools=descriptors, agent=agent,
+                context_bundle=state.get("context_bundle") or {})
         policy = self._build_permission_policy_context(
             session_mode=session.session_mode,
             runtime_mode=session.runtime_mode,

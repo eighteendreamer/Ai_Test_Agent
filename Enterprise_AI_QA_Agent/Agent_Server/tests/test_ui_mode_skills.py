@@ -176,6 +176,51 @@ async def test_ui_router_injects_selected_bodies_and_browser_tools():
     assert "ui-page-explorer" in routed["available_tool_keys"]
     assert "browser-automation" in routed["available_tool_keys"]
     assert "file-artifact-manager" in routed["available_tool_keys"]
+    assert "report-writer" in routed["available_tool_keys"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("required_tool_keys", "expected_optional_tools"),
+    [
+        (None, {"file-artifact-manager", "report-writer"}),
+        ([], set()),
+        (["file-artifact-manager"], {"file-artifact-manager"}),
+    ],
+    ids=["legacy-case", "explicit-none", "explicit-file-behavior"],
+)
+async def test_managed_case_scopes_optional_result_tools_without_changing_free_ui(
+    required_tool_keys, expected_optional_tools,
+):
+    registry = SkillRegistry()
+    router = build_router_node(
+        AgentRegistry(),
+        ToolRegistry(),
+        _FakeModelRegistry(),
+        registry,
+        SkillRuntimeService(registry),
+        _FakeMcpRuntimeService(),
+        None,
+    )
+    state = _router_state(ModeRegistry().get("ui_automation").model_dump(mode="python"))
+    case_content = {}
+    if required_tool_keys is not None:
+        case_content["required_tool_keys"] = required_tool_keys
+    state["context_bundle"].update({
+        "execution_basis": "cases",
+        "case_execution_managed": True,
+        "run_id": "run-ui-scope",
+        "run_item_id": "item-ui-scope",
+        "case_execution": {
+            "target_key": "target",
+            "steps": [{"phase": "case", "item": {"key": "target"}, "content_json": case_content}],
+        },
+    })
+
+    routed = await router(state)
+    all_exposable = set(routed["available_tool_keys"]) | set(routed["deferred_tool_keys"])
+    optional_tools = {"file-artifact-manager", "report-writer"}
+    assert all_exposable.intersection(optional_tools) == expected_optional_tools
 
 
 def test_dynamic_ui_skill_load_exposes_existing_browser_runtime():

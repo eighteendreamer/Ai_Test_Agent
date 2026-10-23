@@ -31,8 +31,10 @@ from src.runtime.store import InMemorySessionStore
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas.agent import ModelDescriptor
+from src.schemas.case_execution import AgentCaseExecutionContext, CaseExecutionStep
+from src.schemas.case_planning import FormalCasePlanItem
 from src.schemas.model_config import ModelInvocationResult
-from src.schemas.session import RuntimeMode, SessionMode, SessionStatus, SendMessageRequest, ApprovalDecisionRequest, ToolApprovalStatus
+from src.schemas.session import RuntimeMode, SessionMode, SessionStatus, SendMessageRequest, ApprovalDecisionRequest, SessionSnapshot, ToolApprovalStatus
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 
 
@@ -243,6 +245,59 @@ async def test_frozen_case_uses_actual_session_runtime_graph_tools_and_replays_w
             await sessions.execute_case_turn(session_id, context=context, attempt_id=attempt, mode_key='default')
         assert len(business_http[1]) == 3
         await sessions.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(('mode_key', 'managed_by_run', 'expected_skill_keys'), [
+    ('ui_automation', True, ['playwright-cli']),
+    ('ui_automation', False, ['playwright-e2e-testing', 'playwright-cli']),
+    ('api_testing', True, ['api-contract-testing', 'api-test-generation', 'test-data-strategy']),
+])
+async def test_case_turn_uses_run_specific_ui_skills_without_changing_other_modes(
+    mode_key, managed_by_run, expected_skill_keys,
+):
+    modes = ModeRegistry()
+    store = InMemorySessionStore()
+    session = session_record()
+    session.project_id = 'formal-project'
+    session.mode_key = mode_key
+    session.selected_agent = modes.get(mode_key).default_agent_key
+    await store.save_session(session)
+
+    item = FormalCasePlanItem(
+        key='target', kind='target', reason='验证固定用例', evidence_ids=['case-evidence'],
+        case_id='case-id', case_version_id='case-version-id',
+    )
+    context = AgentCaseExecutionContext(
+        project_id='formal-project', run_id='run-id', run_item_id='run-item-id', plan_id='plan-id',
+        objective='点击页面按钮并核对实际状态', target_key='target',
+        steps=[CaseExecutionStep(item=item, phase='case', content_json={'steps': [{'action': '点击按钮'}]})],
+    )
+    captured = {}
+    service = SessionService(store, InputOrchestratorService(modes), None, modes)
+
+    async def no_busy_submission(**kwargs):
+        return None
+
+    async def capture_submission(**kwargs):
+        captured['request'] = kwargs['execution_request']
+        return SessionSnapshot(
+            id='captured-snapshot', session_id=session.id, version=1, stage='completed',
+            created_at=datetime.now(timezone.utc), graph_state={},
+        )
+
+    service._handle_busy_submission = no_busy_submission
+    service._run_submission_locked = capture_submission
+
+    await service.execute_case_turn(
+        session.id, context=context, attempt_id='attempt-id', mode_key=mode_key,
+        managed_by_run=managed_by_run,
+    )
+
+    request = captured['request']
+    assert request.skill_keys == expected_skill_keys
+    assert request.context['execution_basis'] == 'cases'
+    assert request.context['case_execution_managed'] is managed_by_run
 
 
 @pytest.mark.parametrize('agent_key', ['api-testing-agent', 'api-executor-worker'])
