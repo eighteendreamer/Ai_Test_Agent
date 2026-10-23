@@ -43,6 +43,7 @@ class PostgresRecordingReplayStore:
                 finished_at TIMESTAMPTZ NULL,
                 report JSONB NULL,
                 error TEXT NULL,
+                checkpoint JSONB NULL,
                 UNIQUE(recording_id, request_id)
             )""")
             for statement in (
@@ -53,6 +54,7 @@ class PostgresRecordingReplayStore:
                 f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ NULL",
                 f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS started_at TIMESTAMPTZ NULL",
                 f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()",
+                f"ALTER TABLE {self._table} ADD COLUMN IF NOT EXISTS checkpoint JSONB NULL",
             ):
                 cursor.execute(statement)
             cursor.execute(f"CREATE INDEX IF NOT EXISTS idx_{self._table}_recording_created ON {self._table}(recording_id, created_at DESC, id)")
@@ -143,6 +145,23 @@ class PostgresRecordingReplayStore:
                 if cursor.rowcount != 1:
                     raise ContinuationLeaseLostError("录制回放任务租约已失效")
         await asyncio.to_thread(update)
+
+    async def save_checkpoint(self, claim: RecordingReplayClaim, checkpoint: dict) -> RecordingReplayRecord:
+        """Persist an action boundary while the claim still owns the lease."""
+        return await asyncio.to_thread(self._save_checkpoint, claim, checkpoint)
+
+    def _save_checkpoint(self, claim: RecordingReplayClaim, checkpoint: dict) -> RecordingReplayRecord:
+        with postgres_connect(self._settings) as connection, connection.cursor() as cursor:
+            cursor.execute(f"""UPDATE {self._table} SET checkpoint=%s::jsonb,updated_at=clock_timestamp()
+                WHERE id=%s AND project_id=%s AND status='running'
+                AND attempt_id=%s AND worker_id=%s AND lease_token=%s
+                AND lease_expires_at>clock_timestamp() RETURNING *""",
+                (json.dumps(make_json_safe(checkpoint), ensure_ascii=False), claim.record.id,
+                 claim.record.project_id, claim.attempt_id, claim.worker_id, claim.lease_token))
+            row = cursor.fetchone()
+        if row is None:
+            raise ContinuationLeaseLostError("录制回放任务当前 attempt 无法保存动作检查点")
+        return self._record(row)
 
     async def finish_claim(self, claim: RecordingReplayClaim, *, report: dict | None = None,
                            error: str | None = None) -> RecordingReplayRecord:

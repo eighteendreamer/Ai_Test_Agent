@@ -315,6 +315,7 @@ class RecordingReplayRecord(BaseModel):
     finished_at: datetime | None = None
     report: dict[str, Any] | None = None
     error: str | None = None
+    checkpoint: dict[str, Any] | None = None
 
 
 class RecordingReplayCommand(BaseModel):

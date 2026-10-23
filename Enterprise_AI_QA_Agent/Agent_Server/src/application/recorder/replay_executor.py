@@ -27,7 +27,7 @@ import logging
 import re
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Awaitable, Callable
 
 from src.schemas.recording import RecorderEvent
 
@@ -95,6 +95,7 @@ class ReplayReport:
     started_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     finished_at: datetime | None = None
     steps: list[ReplayStepResult] = field(default_factory=list)
+    recovery_required: dict[str, Any] | None = None
 
     @property
     def total(self) -> int:
@@ -117,7 +118,7 @@ class ReplayReport:
         return (self.passed / self.total) if self.total else 0.0
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        payload = {
             "recording_id": self.recording_id,
             "entry_url": self.entry_url,
             "started_at": self.started_at.isoformat(),
@@ -141,6 +142,9 @@ class ReplayReport:
                 for s in self.steps
             ],
         }
+        if self.recovery_required is not None:
+            payload["recovery_required"] = self.recovery_required
+        return payload
 
 
 # ------------------------------------------------------------ 计划（纯函数）
@@ -237,8 +241,45 @@ class RecordingReplayExecutor:
     # ------------------------------------------------------------ 公共入口
 
     async def execute(self, *, recording_id: str, entry_url: str, events: list[RecorderEvent]) -> ReplayReport:
+        """Run a replay without durable action checkpoints (legacy path)."""
+        return await self._execute(recording_id=recording_id, entry_url=entry_url, events=events)
+
+    async def execute_with_checkpoint(
+        self,
+        *,
+        recording_id: str,
+        entry_url: str,
+        events: list[RecorderEvent],
+        checkpoint: dict[str, Any] | None,
+        checkpoint_callback: Callable[[dict[str, Any]], Awaitable[None]],
+    ) -> ReplayReport:
+        """Run with lease-fenced action boundaries.
+
+        A persisted ``started`` step is never replayed blindly.  Only navigation
+        and scrolling may be repeated without a business write.  Inputs and
+        business actions require a read-only proof or the replay stops with an
+        explicit recovery requirement.
+        """
+        return await self._execute(
+            recording_id=recording_id,
+            entry_url=entry_url,
+            events=events,
+            checkpoint=checkpoint,
+            checkpoint_callback=checkpoint_callback,
+        )
+
+    async def _execute(
+        self,
+        *,
+        recording_id: str,
+        entry_url: str,
+        events: list[RecorderEvent],
+        checkpoint: dict[str, Any] | None = None,
+        checkpoint_callback: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+    ) -> ReplayReport:
         plan = build_replay_plan(events)
         report = ReplayReport(recording_id=recording_id, entry_url=entry_url)
+        state = self._normalise_checkpoint(checkpoint)
         self._playwright = await self._start_playwright()
         try:
             self._browser = await self._playwright.chromium.launch(headless=self._headless)
@@ -254,7 +295,59 @@ class RecordingReplayExecutor:
                     )
             else:
                 for step in plan:
-                    report.steps.append(await self._run_step(page, step))
+                    prior = state["steps"].get(str(step.seq))
+                    in_progress = state.get("in_progress")
+                    if in_progress is not None:
+                        if str(in_progress.get("seq")) != str(step.seq):
+                            self._mark_recovery_required(report, step,
+                                "checkpoint contains an unresolved earlier action")
+                            break
+                        decision = await self._resume_decision(page, step, {"status": "in_progress"})
+                        if decision == "verified":
+                            report.steps.append(ReplayStepResult(
+                                seq=step.seq, action=step.action, status="skipped",
+                                error="recovered_without_replay",
+                            ))
+                            state["in_progress"] = None
+                            state["steps"][str(step.seq)] = {
+                                "seq": step.seq, "action": step.action,
+                                "strategy": "recovery_read_only", "status": "verified",
+                                "error": "recovered_without_replay",
+                            }
+                            if checkpoint_callback is not None:
+                                await checkpoint_callback(self._checkpoint_payload(state))
+                            continue
+                        if decision == "unknown":
+                            self._mark_recovery_required(report, step, "recovery_unknown_side_effect")
+                            break
+                        # replay_safe: execute navigation/scroll again, which has
+                        # no generic business write boundary.
+                    if prior is not None:
+                        if prior.get("status") in {"passed", "skipped", "verified"}:
+                            report.steps.append(ReplayStepResult(
+                                seq=step.seq, action=step.action,
+                                strategy=str(prior.get("strategy") or ""), status="skipped",
+                                error="recovered_without_replay",
+                            ))
+                            continue
+                        self._mark_recovery_required(report, step, "recovery_unknown_side_effect")
+                        break
+
+                    if checkpoint_callback is not None:
+                        state["in_progress"] = {"seq": step.seq, "action": step.action}
+                        await checkpoint_callback(self._checkpoint_payload(state))
+                    result = await self._run_step(page, step)
+                    report.steps.append(result)
+                    if checkpoint_callback is not None:
+                        state["in_progress"] = None
+                        state["steps"][str(step.seq)] = {
+                            "seq": step.seq,
+                            "action": step.action,
+                            "strategy": result.strategy,
+                            "status": result.status,
+                            "error": result.error,
+                        }
+                        await checkpoint_callback(self._checkpoint_payload(state))
         finally:
             await self._shutdown()
             report.finished_at = datetime.now(timezone.utc)
@@ -263,6 +356,72 @@ class RecordingReplayExecutor:
             recording_id, report.total, report.passed, report.failed, report.skipped,
         )
         return report
+
+    @staticmethod
+    def _normalise_checkpoint(checkpoint: dict[str, Any] | None) -> dict[str, Any]:
+        if not isinstance(checkpoint, dict):
+            return {"version": 1, "steps": {}, "in_progress": None}
+        steps = checkpoint.get("steps")
+        return {
+            "version": int(checkpoint.get("version") or 1),
+            "steps": dict(steps) if isinstance(steps, dict) else {},
+            "in_progress": checkpoint.get("in_progress") if isinstance(checkpoint.get("in_progress"), dict) else None,
+        }
+
+    @staticmethod
+    def _checkpoint_payload(state: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "version": state["version"],
+            "steps": dict(state["steps"]),
+            "in_progress": dict(state["in_progress"]) if isinstance(state.get("in_progress"), dict) else None,
+        }
+
+    async def _resume_decision(self, page: Any, step: ReplayStep, prior: dict[str, Any]) -> str:
+        """Return verified, replay_safe, or unknown without firing a business action."""
+        if prior.get("status") == "skipped":
+            return "verified"
+        if prior.get("status") not in {"in_progress", "started", "passed"}:
+            return "unknown"
+        if step.action == "navigate":
+            expected = str(step.detail.get("url") or "")
+            return "verified" if expected and str(getattr(page, "url", "")) == expected else "replay_safe"
+        if step.action == "scroll":
+            value = step.detail.get("value") or {}
+            expected_top = int(value.get("scroll_top", value.get("top", 0)) or 0) if isinstance(value, dict) else 0
+            expected_left = int(value.get("scroll_left", value.get("left", 0)) or 0) if isinstance(value, dict) else 0
+            try:
+                current = await page.evaluate("() => ({top: window.scrollY, left: window.scrollX})")
+            except Exception:
+                return "unknown"
+            if not isinstance(current, dict):
+                return "unknown"
+            return "verified" if (int(current.get("top", -1)) == expected_top and
+                                  int(current.get("left", -1)) == expected_left) else "replay_safe"
+        if step.action == "fill":
+            # A value mismatch is not permission to fill again: input/change
+            # handlers may already have caused an external effect.
+            if not isinstance(step.detail.get("value"), str):
+                return "unknown"
+            try:
+                handle = await self._resolve_element(page, step)
+                current = await handle.input_value()
+            except Exception:
+                return "unknown"
+            return "verified" if current == step.detail["value"] else "unknown"
+        # click, submit, dblclick, and key have no generic read-only proof.
+        return "unknown"
+
+    @staticmethod
+    def _mark_recovery_required(report: ReplayReport, step: ReplayStep, reason: str) -> None:
+        result = ReplayStepResult(seq=step.seq, action=step.action, status="failed", error=reason)
+        report.steps.append(result)
+        report.recovery_required = {
+            "status": "required",
+            "seq": step.seq,
+            "action": step.action,
+            "reason": reason,
+            "policy": "stop_without_replay",
+        }
 
     async def _shutdown(self) -> None:
         if self._browser is not None:

@@ -188,3 +188,91 @@ def test_recorded_scroll_coordinate_names_are_executed() -> None:
         assert page.argument == {"top": 321, "left": 45}
 
     asyncio.run(scenario())
+
+
+def test_checkpoint_resume_requires_read_only_proof_for_business_actions() -> None:
+    class Page:
+        url = "https://example.test/"
+
+        async def evaluate(self, _script, _argument=None):
+            return {"top": 0, "left": 0}
+
+    async def scenario():
+        executor = RecordingReplayExecutor()
+        page = Page()
+        click = ReplayStep(seq=4, action="click", strategies=[])
+        assert await executor._resume_decision(page, click, {"status": "passed"}) == "unknown"
+
+        scroll = ReplayStep(seq=5, action="scroll", detail={"value": {"top": 0, "left": 0}})
+        assert await executor._resume_decision(page, scroll, {"status": "passed"}) == "verified"
+
+    asyncio.run(scenario())
+
+
+def test_checkpoint_payload_marks_action_before_and_after_execution() -> None:
+    class Page:
+        url = "https://example.test/"
+
+        async def goto(self, url, wait_until=None):
+            self.url = url
+
+        async def evaluate(self, _script, argument=None):
+            return None
+
+    class Browser:
+        async def new_context(self):
+            return self
+
+        async def new_page(self):
+            return Page()
+
+        async def close(self):
+            return None
+
+    class Chromium:
+        async def launch(self, headless=True):
+            return Browser()
+
+    class Playwright:
+        chromium = Chromium()
+
+        async def stop(self):
+            return None
+
+    async def scenario():
+        executor = RecordingReplayExecutor()
+        executor._start_playwright = lambda: _resolved(Playwright())
+        checkpoints = []
+
+        async def save(value):
+            checkpoints.append(value)
+
+        result = await executor.execute_with_checkpoint(
+            recording_id="rec-1", entry_url="https://example.test/",
+            events=[_event(0, "scroll", value={"top": 20})],
+            checkpoint=None, checkpoint_callback=save,
+        )
+        assert result.steps[0].status == "passed"
+        assert checkpoints[0]["in_progress"] == {"seq": 0, "action": "scroll"}
+        assert checkpoints[-1]["in_progress"] is None
+        assert checkpoints[-1]["steps"]["0"]["status"] == "passed"
+
+        recovered = RecordingReplayExecutor()
+        recovered._start_playwright = lambda: _resolved(Playwright())
+        result = await recovered.execute_with_checkpoint(
+            recording_id="rec-2", entry_url="https://example.test/",
+            events=[_event(0, "click", target={"tag": "BUTTON", "locators": {"id": "save"}})],
+            checkpoint={"version": 1, "steps": {}, "in_progress": {"seq": 0, "action": "click"}},
+            checkpoint_callback=save,
+        )
+        assert result.recovery_required["reason"] == "recovery_unknown_side_effect"
+        assert result.steps[0].status == "failed"
+
+    async def _run():
+        await scenario()
+
+    asyncio.run(_run())
+
+
+async def _resolved(value):
+    return value

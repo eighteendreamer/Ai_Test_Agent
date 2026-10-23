@@ -73,8 +73,18 @@ class RecordingReplayService:
             return await self._store.finish_claim(claim, error="only completed recordings can be replayed")
         events = await self._recordings.get_events(record.recording_id)
         try:
-            report = await self._executor_factory().execute(recording_id=record.recording_id,
-                entry_url=session.entry_url, events=events)
+            executor = self._executor_factory()
+            if hasattr(executor, "execute_with_checkpoint") and hasattr(self._store, "save_checkpoint"):
+                async def save_checkpoint(checkpoint: dict) -> None:
+                    await self._store.save_checkpoint(claim, checkpoint)
+
+                report = await executor.execute_with_checkpoint(
+                    recording_id=record.recording_id, entry_url=session.entry_url, events=events,
+                    checkpoint=record.checkpoint, checkpoint_callback=save_checkpoint,
+                )
+            else:
+                report = await executor.execute(recording_id=record.recording_id,
+                    entry_url=session.entry_url, events=events)
             result = await self._store.finish_claim(claim, report=report.to_dict())
             logger.info("recording_replay_worker_completed", extra={"recording_id": record.recording_id,
                 "project_id": record.project_id, "replay_id": result.id,
