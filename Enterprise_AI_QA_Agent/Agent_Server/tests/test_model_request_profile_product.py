@@ -18,6 +18,7 @@ from src.registry.models import ModelRegistry
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.schemas.settings import ModelConfigUpdateRequest
 from src.schemas.model_config import ModelCapabilitiesOverride, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.model_request_options import ModelOutputFormat
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.skipif(os.getenv("RUN_LIVE_MODEL_REQUEST_PROFILE") != "1",
     reason="requires independent production API, built App and isolated MySQL/PG/Redis/RustFS")]
@@ -31,6 +32,10 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
     try:
         with provider("openai_chat_completions", False) as (url, sends, _):
             async with isolated_runtime(tmp_path) as (settings, processes, _, _, _):
+                save("allocations", {"postgres_database": settings.database.postgres_database,
+                    "mysql_tables": [getattr(settings.database, field) for field in (
+                        "llm_model_table", "email_config_table", "channel_config_table", "sponsor_config_table", "application_config_table")],
+                    "redis_streams": [settings.orchestration.redis_task_stream, settings.orchestration.agent_task_stream]})
                 store = MySQLModelConfigStore(settings)
                 store.initialize()
                 payload = {"model_name": "owned-profile-model", "provider": "deepseek", "transport": "openai_chat_completions",
@@ -105,11 +110,14 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
                     assert frozen_record.capabilities.parallel_tool_calls is False
                     frozen = model_invocation_parameters(frozen_record)
                     runtime = ModelRuntimeService(ModelRegistry(MySQLModelConfigStore(settings)), settings)
-                    request = ModelInvocationRequest(system_prompt="Return JSON.", messages=[{"role": "user", "content": "{}"}])
+                    request = ModelInvocationRequest(system_prompt="Return JSON.", messages=[{"role": "user", "content": "{}"}],
+                        output_format=ModelOutputFormat(kind="json_object"))
                     runtime_fixed = runtime.get_invocation_runtime_parameters(frozen_record.key)
                     result = await runtime.invoke(frozen_record.key, request, expected_parameters=frozen, expected_runtime_parameters=runtime_fixed)
                     assert result.response_summary["mode"] == "ok" and len(sends) == 1
                     assert sends[0]["body"]["max_tokens"] == 2048 and sends[0]["body"]["reasoning_effort"] == "low"
+                    assert sends[0]["body"]["response_format"] == {"type": "json_object"}
+                    assert isinstance(json.loads(result.text), dict)
                     tool_request = ModelInvocationRequest(system_prompt="Do not call unsupported tools.",
                         messages=[{"role": "user", "content": "Inspect the order."}],
                         tools=[{"name": "inspect_order", "description": "Inspect one order",
@@ -141,13 +149,20 @@ async def test_actual_mysql_profile_migration_editor_reload_and_restart(tmp_path
                     assert reloaded["capabilities"]["tool_calling"] is False
                     assert reloaded["capabilities"]["streaming"] is False
                     assert "api_key" not in reloaded
+                    restarted_runtime = ModelRuntimeService(ModelRegistry(MySQLModelConfigStore(settings)), settings)
+                    restarted = await restarted_runtime.invoke(frozen_record.key, request, expected_parameters=frozen,
+                        expected_runtime_parameters=runtime_fixed)
+                    assert restarted.response_summary["mode"] == "ok" and len(sends) == 3
+                    assert sends[-1]["body"]["response_format"] == {"type": "json_object"}
+                    assert json.loads(restarted.text) == json.loads(result.text)
                     cleared = await client.patch("/settings/models/"+payload["model_name"], json={**payload, "request_profile": None})
                     cleared.raise_for_status()
                     assert MySQLModelConfigStore(settings).get_by_name(payload["model_name"]).request_profile is None
                     with pytest.raises(ValueError, match="模型参数已变化"):
                         await runtime.invoke(frozen_record.key, request, expected_parameters=frozen)
-                    assert len(sends) == 2
-                    save("restart-and-clear", {"reloaded": reloaded, "cleared": cleared.json(), "sends_after_rejected_resume": len(sends)})
+                    assert len(sends) == 3
+                    save("restart-and-clear", {"reloaded": reloaded, "cleared": cleared.json(), "sends_after_rejected_resume": len(sends),
+                        "restarted_result": restarted.model_dump(mode="json"), "requests": sends})
     finally:
         for path in tmp_path.iterdir():
             if path.suffix in {".stdout", ".stderr"} or path.name in {"docker.json", "postgres-finally.json"}:
