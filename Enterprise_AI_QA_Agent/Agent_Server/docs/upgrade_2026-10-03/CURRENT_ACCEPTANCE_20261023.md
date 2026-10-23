@@ -117,3 +117,11 @@ $env:QA_RECEIPT_PROCESS_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-receipt-pro
 进一步检查启动调用链后确认，应用没有在启动流程统一执行 Alembic upgrade。API lifespan 在组装服务时直接调用多个 Store/Service 的 `initialize()`；独立规划 Worker、生成 Worker 也会初始化各自使用的 Store。相关入口包括 `Agent_Server/src/main.py` 的应用 lifespan、`Agent_Server/src/runtime/planning_worker_runtime.py` 的 `build_service()`、`Agent_Server/src/runtime/generation_worker_runtime.py` 的 `build_service()`。这些 Store 初始化实现包含各自的 `CREATE TABLE` / `ALTER TABLE`，而 `Agent_Server/alembic/README` 明确 Alembic 不覆盖应用自有表，也不应以 stamp 或运行时 initializer 假装完成迁移。
 
 因此当前不是“应用启动由 Alembic 统一迁移”，而是“少数持久结构由显式 Alembic revision 管理，其余仍由运行时 Store 初始化创建或演进”。新增 revision 只能覆盖其明确声明的对象；在没有逐 Store 清点结构版本、旧部署形态和启动副作用前，不能把简单补 revision 视为完整迁移方案。本轮只完成代码路径调研，没有调用这些初始化器去改写现有数据库，也没有新增迁移。
+
+### MySQL 配置库初始化与迁移覆盖
+
+MySQL 配置库使用独立连接，应用中的模型、邮件、渠道、赞助配置 Store 在 API lifespan 中调用 `initialize()`；文档操作和规划 Worker 会初始化应用配置 Store。当前 Alembic `env.py` 使用 PostgreSQL URL 和 PostgreSQL advisory lock，仓库内没有 MySQL Alembic 环境或并行迁移目录。因此配置库结构当前仍由这些 Store 在运行时负责：模型配置 Store 建表并逐项补列；邮件和渠道配置 Store 会检查并补齐历史列，渠道配置还会补唯一键；应用配置 Store 建版本化配置表；赞助配置 Store 建表，并在空表时写入默认赞助记录。
+
+MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::test_actual_mysql_profile_migration_editor_reload_and_restart` 在隔离 MySQL 上实际删除自有测试表的 `request_profile` 列，重复运行 Store 初始化后确认列恢复，再通过生产 API、构建版设置页面、API 重启及实际模型请求验证配置读写。该测试只证明模型配置中这一列的迁移和产品链路，不覆盖模型表其他历史字段、邮件/渠道/应用/赞助配置表，也不代表生产 MySQL 的所有旧结构已盘点。记录的列定义证据在 `p6-model-request-profile-product-current-20261022-01/mysql-migration.json`。
+
+调研结论：数据库职责仍符合“配置放 MySQL、业务状态放 PostgreSQL”；但升级治理目前不对称，PostgreSQL 有有限的显式 Alembic revisions，MySQL 配置结构依赖启动时自修复，业务 PostgreSQL 也有大量 Store 初始化 DDL。正确的下一步不是立刻再引入一套迁移工具，而是完成按数据库分类的初始化清单，标记每项是纯建表、兼容性补列、索引/约束演进还是默认数据写入，并对照已部署结构和测试证据；再依据这个清单制定分阶段迁移方案，保留初始化的兼容读取/新库引导职责，避免启动过程意外改结构或重复播种数据。本轮仅做只读调研。
