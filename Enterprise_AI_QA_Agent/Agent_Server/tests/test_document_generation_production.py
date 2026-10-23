@@ -36,12 +36,20 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
     def responder(body):
         context = json.loads(body["messages"][-1]["content"])["evidence_context"]["document_generation"]
         segment = context["segment"]
+        case_key = "ordinary-module-" + segment["module_id"]
+        candidates = context["coverage_targets"]
+        steps = [{"order": index + 1, "action": "核对固定来源语句", "expected": item["statement"]}
+            for index, item in enumerate(candidates)]
         content = {"目标": segment["title"], "依据": context["text"][segment["start_char"]:segment["end_char"]],
-            "全局规则": "所有接口均需登录，退款不能超过实付金额。", "嵌套": {"零": 0, "布尔": False, "空": None}}
+            "steps": steps, "全局规则": "所有接口均需登录，退款不能超过实付金额。",
+            "嵌套": {"零": 0, "布尔": False, "空": None}}
         if segment["index"] == 1: content["完整长字段"] = "保留长响应原件" * 10000
-        return json.dumps({"cases": [{"case_key": "ordinary-module-" + segment["module_id"],
-            "title": segment["title"], "case_type": "json", "content_json": content,
-            "execution_notes": "根据完整JSON执行，核对业务结果并保留证据"}], "warnings": []}, ensure_ascii=False)
+        assessments = [{"candidate_id": item["id"], "disposition": "in_scope", "rationale": "受控样本逐条映射。",
+            "step_refs": [{"case_key": case_key, "step_order": index + 1, "expected_field": "expected"}]}
+            for index, item in enumerate(candidates)]
+        return json.dumps({"cases": [{"case_key": case_key, "title": segment["title"], "case_type": "json",
+            "content_json": content, "execution_notes": "根据完整JSON执行，核对业务结果并保留证据"}],
+            "warnings": [], "coverage_assessments": assessments}, ensure_ascii=False)
     try:
         with provider(responder=responder, message_responder=
                 (lambda body: {"role": "assistant", "content": responder(body)}) if streaming else None) as (endpoint, calls, _, _):
@@ -129,6 +137,14 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
                         assert (await client.get(base+f"/case-generations/{group['id']}")).json() == report
                         versions = []
                         for task in [report["modules"][0], child, report["modules"][2]]:
+                            coverage = task["checkpoint"]["receipt"]["generation_review"]
+                            assert coverage["review_state"] == "required"
+                            assert coverage["schema_version"] == "document-generation-coverage-v2"
+                            assert coverage["mapping_state"] == "complete", coverage
+                            assert coverage["candidate_inventory_complete"] is True
+                            assert all(not item["validation_issues"] for item in coverage["items"])
+                            assert all(reference["expected_path"] is not None
+                                for item in coverage["items"] for reference in item["step_refs"])
                             ref = task["checkpoint"]["receipt"]["versions"][0]
                             values = (await client.get(f"/test-cases/{ref['case_id']}/versions")).json()
                             version = next(v for v in values if v["id"] == ref["version_id"])
@@ -182,6 +198,9 @@ async def test_ordinary_document_modules_and_independent_saved_response_recovery
                                 for index in range(expected_modules): await run("ordinary-format-"+path.suffix[1:]+"-"+str(index))
                                 final = (await client.get(newbase+f"/case-generations/{submitted['id']}")).json()
                                 assert all(t["status"] == "completed" for t in final["modules"]), final
+                                assert all(t["checkpoint"]["receipt"]["generation_review"]["items"] for t in final["modules"])
+                                assert all(t["checkpoint"]["receipt"]["generation_review"]["mapping_state"] == "complete"
+                                    for t in final["modules"])
                                 assert len(calls) == before+expected_modules
                                 for call in calls[before:]:
                                     context = json.loads(call["messages"][-1]["content"])["evidence_context"]["document_generation"]

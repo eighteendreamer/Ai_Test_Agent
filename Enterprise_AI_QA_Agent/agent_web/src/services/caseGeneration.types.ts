@@ -21,6 +21,23 @@ export interface GenerationTaskRequest {
   model_key?: string | null;
 }
 export interface GenerationObject { storage_uri: string; sha256: string; size_bytes: number }
+export interface GenerationCoverageStepReference {
+  case_key: string; step_order: number; expected_field: string; expected_path: (string | number)[] | null;
+}
+export interface GenerationCoverageReviewItem {
+  candidate_id: string; source_block_id: string; start_char: number; end_char: number;
+  source: { kind: "line" | "docx" | "page"; start_line?: number | null; end_line?: number | null;
+    page?: number | null; path: number[]; part?: string | null };
+  scope: "local" | "inherited" | "unscoped";
+  model_disposition: "in_scope" | "out_of_scope" | "uncertain" | "not_reported";
+  rationale: string | null; step_refs: GenerationCoverageStepReference[]; validation_issues: string[];
+}
+export interface GenerationCoverageReview {
+  schema_version: "document-generation-coverage-v2"; review_state: "required";
+  mapping_state: "complete" | "incomplete" | "empty_inventory"; parse_snapshot_id: string; module_id: string;
+  candidate_inventory_complete: boolean; items: GenerationCoverageReviewItem[];
+  unknown_candidate_ids: string[]; warnings: string[]; sha256: string;
+}
 export interface GenerationGroup {
   id: string; project_id: string; document_id: string; version_id: string;
   creation_key: string; request_hash: string; scope: GenerationObject; scope_sha256: string;
@@ -32,6 +49,7 @@ export interface GenerationReceipt {
   response: GenerationObject | null;
   versions: { case_id: string; version_id: string; version: number; content_hash: string }[];
   retirement_target: Record<string, unknown> | null;
+  generation_review?: GenerationCoverageReview | null;
 }
 export interface GenerationTask {
   id: string; project_id: string; document_id: string; version_id: string; group_id: string; module_id: string;

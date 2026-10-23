@@ -24,7 +24,8 @@ from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.test_cases.case_service import TestCaseService as CaseService
 from src.application.test_cases.case_store import InMemoryTestCaseStore, PostgresTestCaseStore
 from src.application.test_cases.generation_pipeline import ModelTestCaseGenerator, ProjectTestCaseContextProvider
-from src.application.test_cases.template_service import TestCaseTemplateService as TemplateService
+from src.application.test_cases.template_service import (TEMPLATE_CONFIG_KEY, TestCaseTemplateService as TemplateService,
+    default_generation_template, legacy_default_generation_template_v1, legacy_default_generation_template_v2)
 from src.core.config import get_settings
 from src.infrastructure.application_config_store import ApplicationConfigRecord, MySQLApplicationConfigStore
 from src.infrastructure.model_config_store import MySQLModelConfigStore
@@ -50,6 +51,12 @@ class _Configs:
         record = ApplicationConfigRecord(key, scope_key, deepcopy(payload), previous.revision + 1 if previous else 1)
         self.records[scope_key, key] = record
         return record
+
+    def save_if_revision(self, key, payload, *, expected_revision, scope_key="global"):
+        previous = self.get(key, scope_key=scope_key)
+        if previous is None or previous.revision != expected_revision:
+            return None
+        return self.save(key, payload, scope_key=scope_key)
 
 
 class _Objects:
@@ -126,7 +133,17 @@ async def test_custom_json_http_versions_template_snapshot_and_project_isolation
         project = await projects.create(ProjectCreateRequest(project_key="json-one", name="JSON one"))
         other = await projects.create(ProjectCreateRequest(project_key="json-two", name="JSON two"))
         templates = TemplateService(store=configs, project_service=projects)
+        await asyncio.to_thread(configs.save, TEMPLATE_CONFIG_KEY,
+            legacy_default_generation_template_v1().model_dump(mode="json"), only_if_missing=True)
         await templates.initialize()
+        await templates.initialize()
+        migrated_default = configs.get(TEMPLATE_CONFIG_KEY)
+        assert migrated_default.revision == 2
+        assert migrated_default.payload == default_generation_template().model_dump(mode="json")
+        stale_update = await asyncio.to_thread(configs.save_if_revision, TEMPLATE_CONFIG_KEY,
+            legacy_default_generation_template_v1().model_dump(mode="json"), expected_revision=1)
+        assert stale_update is None
+        assert configs.get(TEMPLATE_CONFIG_KEY).payload == default_generation_template().model_dump(mode="json")
         cases = CaseService(store=case_store, project_service=projects)
         await cases.initialize()
         app = FastAPI()
@@ -137,6 +154,10 @@ async def test_custom_json_http_versions_template_snapshot_and_project_isolation
             default = await client.get(f"/projects/{project.id}/test-case-generation-template")
             default.raise_for_status()
             assert default.json()["is_default"] is True
+            assert "一个角色、一个条件和一项主要操作" in default.json()["payload"]["writing_guidance"]
+            assert default.json()["payload"]["example_json"]["required_tool_keys"] == []
+            assert "file-artifact-manager" in default.json()["payload"]["writing_guidance"]
+            assert all("或" not in step["action"] for step in default.json()["payload"]["example_json"]["steps"])
             custom = {**default.json()["payload"], "writing_guidance": "保留自定义业务扩展。", "example_json": {"任意结构": {"deep": [1, 2]}}}
             saved = await client.put(f"/projects/{project.id}/test-case-generation-template", json=custom)
             saved.raise_for_status()
@@ -236,6 +257,39 @@ async def test_legacy_hash_and_persisted_record_are_not_rewritten(tmp_path, live
 
 
 @pytest.mark.asyncio
+async def test_template_initialize_preserves_custom_global_and_project_templates():
+    projects = ProjectService(store=InMemoryProjectStore())
+    await projects.initialize()
+    project = await projects.create(ProjectCreateRequest(project_key="template-custom", name="Template custom"))
+    configs = _Configs()
+    custom_global = default_generation_template().model_copy(update={"name": "保留管理员默认模板"})
+    configs.save(TEMPLATE_CONFIG_KEY, custom_global.model_dump(mode="json"))
+    custom_project = default_generation_template().model_copy(update={"writing_guidance": "保留项目指导"})
+    configs.save(TEMPLATE_CONFIG_KEY, custom_project.model_dump(mode="json"), scope_key=project.id)
+
+    await TemplateService(store=configs, project_service=projects).initialize()
+
+    assert configs.get(TEMPLATE_CONFIG_KEY).payload == custom_global.model_dump(mode="json")
+    assert configs.get(TEMPLATE_CONFIG_KEY).revision == 1
+    assert configs.get(TEMPLATE_CONFIG_KEY, scope_key=project.id).payload == custom_project.model_dump(mode="json")
+
+
+@pytest.mark.asyncio
+async def test_template_initialize_migrates_only_the_unmodified_previous_default_v2():
+    projects = ProjectService(store=InMemoryProjectStore())
+    await projects.initialize()
+    await projects.create(ProjectCreateRequest(project_key="template-v2", name="Template v2"))
+    configs = _Configs()
+    configs.save(TEMPLATE_CONFIG_KEY, legacy_default_generation_template_v2().model_dump(mode="json"))
+
+    await TemplateService(store=configs, project_service=projects).initialize()
+
+    migrated = configs.get(TEMPLATE_CONFIG_KEY)
+    assert migrated.revision == 2
+    assert migrated.payload == default_generation_template().model_dump(mode="json")
+
+
+@pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv("RUN_LIVE_CASE_GENERATION_TESTS") != "1", reason="requires current configured model, actual MySQL/PostgreSQL/RustFS")
 async def test_actual_document_model_skill_template_generation_is_frozen_in_postgres(tmp_path):
     async with _stores(tmp_path, True) as (settings, project_store, case_store, configs, doc_store, objects):
@@ -262,7 +316,7 @@ async def test_actual_document_model_skill_template_generation_is_frozen_in_post
                 assert item.case.lifecycle_status == "draft"
                 assert item.version.content_json
                 assert item.version.execution_notes
-                assert item.version.prompt_version == "test-case-generation-json-v3"
+                assert item.version.prompt_version == "test-case-generation-json-v6"
                 assert item.version.source_refs[0].source_id == document.id
                 assert item.version.generation_metadata["template"]["content_hash"] == template.content_hash
                 loaded = await PostgresTestCaseStore(settings).get_version(item.version.id)

@@ -26,6 +26,12 @@ from src.schemas.case_management import (
     GeneratedTestCaseDraft,
     TestCaseGenerateRequest,
 )
+from src.schemas.generation_coverage import (
+    DocumentGenerationCoverageCandidate,
+    GenerationCoverageAssessment,
+    GenerationCoverageReviewItem,
+    fixed_generation_coverage_review,
+)
 
 
 PROMPT_VERSION = "test-case-generation-v1"
@@ -40,12 +46,22 @@ class _ModelGeneratedPayload(BaseModel):
     warnings: list[str] = Field(default_factory=list)
 
 
+class _ModelGeneratedPayloadWithCoverage(_ModelGeneratedPayload):
+    coverage_assessments: list[GenerationCoverageAssessment]
+
+
 def _requires_content_json(context):
     return any(isinstance(context.get(key), dict) for key in ("generation_template", "incremental_generation"))
 
 
-def _generation_output_schema(*, requires_content_json):
-    schema = _ModelGeneratedPayload.model_json_schema()
+def _requires_coverage_review(context):
+    document = context.get("document_generation")
+    return isinstance(document, dict) and isinstance(document.get("coverage_targets"), list)
+
+
+def _generation_output_schema(*, requires_content_json, requires_coverage_review=False):
+    payload_model = _ModelGeneratedPayloadWithCoverage if requires_coverage_review else _ModelGeneratedPayload
+    schema = payload_model.model_json_schema()
     if requires_content_json:
         # _CaseBusinessContent.business_content() reads JSON preferentially;
         # template_service already requires business fields inside that JSON.
@@ -60,6 +76,129 @@ def _generation_output_schema(*, requires_content_json):
         for key in ("TestCaseStep", "TestCaseAssertion"):
             schema["$defs"].pop(key)
     return schema
+
+
+def _prepared_generation_context(prepared):
+    try:
+        message = prepared.invocation.messages[0]
+        payload = json.loads(message["content"])
+        context = payload["evidence_context"]
+    except (IndexError, KeyError, TypeError, json.JSONDecodeError) as exc:
+        raise ValueError("固定生成请求缺少可读取的证据上下文") from exc
+    if not isinstance(context, dict):
+        raise ValueError("固定生成请求的证据上下文不是对象")
+    return context
+
+
+def _coverage_warnings(warnings, coverage_review):
+    result = list(warnings)
+    if coverage_review is None:
+        return result
+    result.extend(coverage_review.warnings)
+    result.append("来源语句与用例 JSON 路径只做结构核对；规则范围及语义覆盖仍需人工逐条评审。")
+    return list(dict.fromkeys(result))
+
+
+def _build_coverage_review(assessments, context, cases):
+    document = context["document_generation"]
+    candidates = [DocumentGenerationCoverageCandidate.model_validate(item)
+        for item in document.get("coverage_targets", [])]
+    candidate_by_id = {item.id: item for item in candidates}
+    groups: dict[str, list[GenerationCoverageAssessment]] = {}
+    unknown_ids = set()
+    for assessment in assessments:
+        if assessment.candidate_id not in candidate_by_id:
+            unknown_ids.add(assessment.candidate_id)
+        else:
+            groups.setdefault(assessment.candidate_id, []).append(assessment)
+
+    cases_by_key = {case.case_key: case for case in cases}
+    source_text = str(document.get("text") or "")
+    items = []
+    issues_count = 0
+    missing_count = 0
+    for candidate in candidates:
+        found = groups.get(candidate.id, [])
+        issues = []
+        if not (0 <= candidate.start_char <= candidate.end_char <= len(source_text)) or \
+            source_text[candidate.start_char:candidate.end_char] != candidate.statement:
+            issues.append("source_span_mismatch")
+        if not found:
+            disposition, rationale, step_refs = "not_reported", None, []
+            issues.append("assessment_missing")
+            missing_count += 1
+        else:
+            assessment = found[0]
+            disposition, rationale = assessment.disposition, assessment.rationale
+            selections = assessment.step_refs
+            if len(found) > 1:
+                issues.append("assessment_duplicate")
+            if len({(ref.case_key, ref.step_order, ref.expected_field) for ref in selections}) != len(selections):
+                issues.append("step_reference_duplicate")
+            step_refs = []
+            for selection in selections:
+                path = None
+                case = cases_by_key.get(selection.case_key)
+                if case is None:
+                    issues.append("case_key_unknown")
+                else:
+                    content = case.content_json
+                    steps = content.get("steps") if isinstance(content, dict) else None
+                    matches = [(index, step) for index, step in enumerate(steps)
+                        if isinstance(step, dict) and type(step.get("order")) is int
+                        and step["order"] == selection.step_order] if isinstance(steps, list) else []
+                    if len(matches) != 1:
+                        issues.append("step_order_invalid")
+                    else:
+                        index, step = matches[0]
+                        value = step.get(selection.expected_field)
+                        if isinstance(value, str) and value.strip():
+                            path = ["steps", index, selection.expected_field]
+                        else:
+                            issues.append("expected_field_invalid")
+                step_refs.append({"case_key": selection.case_key, "step_order": selection.step_order,
+                    "expected_field": selection.expected_field, "expected_path": path})
+            if disposition == "in_scope" and not selections:
+                issues.append("in_scope_without_expected_mapping")
+            if disposition == "out_of_scope" and step_refs:
+                issues.append("out_of_scope_has_expected_mapping")
+        issues_count += len(issues)
+        items.append(GenerationCoverageReviewItem(candidate_id=candidate.id,
+            source_block_id=candidate.source_block_id, start_char=candidate.start_char,
+            end_char=candidate.end_char, source=candidate.source, scope=candidate.scope,
+            model_disposition=disposition, rationale=rationale, step_refs=step_refs,
+            validation_issues=list(dict.fromkeys(issues))))
+
+    inventory_complete = bool(document.get("coverage_inventory_complete", True))
+    warnings = [str(item) for item in document.get("coverage_inventory_warnings", [])]
+    if not candidates:
+        warnings.append("解析结果没有生成来源语句候选；不能据此推断文档没有待覆盖规则。")
+    if missing_count:
+        warnings.append(f"模型未逐条处理 {missing_count} 个来源语句候选。")
+    if unknown_ids:
+        warnings.append(f"模型返回了 {len(unknown_ids)} 个固定清单之外的候选编号。")
+    if issues_count:
+        warnings.append(f"有 {issues_count} 项来源或 JSON 预期路径校验问题。")
+    if not inventory_complete:
+        warnings.append("来源语句候选清单已截断，不能视为完整检查。")
+    if not candidates:
+        mapping_state = "empty_inventory"
+    elif (not inventory_complete or unknown_ids or missing_count or issues_count):
+        mapping_state = "incomplete"
+    else:
+        mapping_state = "complete"
+    segment = document.get("segment") or {}
+    snapshot = document.get("parse_snapshot") or {}
+    review = fixed_generation_coverage_review(mapping_state=mapping_state,
+        parse_snapshot_id=str(snapshot.get("id") or "missing-parse-snapshot"),
+        module_id=str(segment.get("module_id") or "missing-module"),
+        candidate_inventory_complete=inventory_complete, items=items,
+        unknown_candidate_ids=sorted(unknown_ids), warnings=list(dict.fromkeys(warnings)))
+    logger.info("case_generation_coverage_review_built", extra={
+        "module_id": review.module_id, "parse_snapshot_id": review.parse_snapshot_id,
+        "candidate_count": len(candidates), "mapping_state": review.mapping_state,
+        "missing_count": missing_count, "unknown_count": len(unknown_ids), "issue_count": issues_count})
+    return review
 
 
 class ProjectTestCaseContextProvider:
@@ -253,20 +392,27 @@ class ModelTestCaseGenerator:
             raise RuntimeError(f"Required Skill is unavailable: {GENERATION_SKILL_KEY}")
         model_request = self._build_request(request, context, skill_blocks)
         result = await self._models.invoke(model_key, model_request)
-        payload = self._parse_payload(str(result.text or ""))
+        requires_coverage = _requires_coverage_review(context)
+        payload = self._parse_payload(str(result.text or ""), require_coverage=requires_coverage)
         requires_json = _requires_content_json(context)
         if requires_json and any(case.content_json is None for case in payload.cases):
             raise ValueError("Model did not return content_json required by the generation request")
+        generated_cases = payload.cases[:request.max_cases]
+        coverage_review = _build_coverage_review(payload.coverage_assessments, context, generated_cases) if requires_coverage else None
         skill_hash = hashlib.sha256("\n\n".join(skill_blocks).encode("utf-8")).hexdigest()[:16]
         return GeneratedTestCaseBatch(model_key=model_key,
-            prompt_version="test-case-generation-json-v3" if requires_json else PROMPT_VERSION,
-            skill_versions={GENERATION_SKILL_KEY: f"sha256:{skill_hash}"}, cases=payload.cases[:request.max_cases], warnings=payload.warnings)
+            prompt_version=("test-case-generation-document-v8" if requires_coverage else
+                "test-case-generation-json-v6" if requires_json else PROMPT_VERSION),
+            skill_versions={GENERATION_SKILL_KEY: f"sha256:{skill_hash}"}, cases=generated_cases,
+            warnings=_coverage_warnings(payload.warnings, coverage_review), coverage_review=coverage_review)
 
     @staticmethod
     def _build_request(request, context, skill_blocks):
         skill_content = "\n\n".join(skill_blocks)
         requires_json = _requires_content_json(context)
-        schema = _generation_output_schema(requires_content_json=requires_json)
+        requires_coverage = _requires_coverage_review(context)
+        schema = _generation_output_schema(requires_content_json=requires_json,
+            requires_coverage_review=requires_coverage)
         output_schema = json.dumps(schema, ensure_ascii=False)
         logger.info("case_generation_output_schema_selected", extra={
             "content_format": "json-v1" if requires_json else "legacy-compatible",
@@ -278,6 +424,12 @@ class ModelTestCaseGenerator:
             "Use only facts present in the supplied project evidence. Mark uncertainty in warnings. "
             "Return exactly one JSON object matching the JSON Schema, without markdown fences. "
             "case_key must be a stable lowercase machine key. Steps must be contiguous from 1. "
+            "Each step.action must contain one actor, one condition, and one primary operation; do not combine "
+            "mutually exclusive states, actors, or alternative actions in one step. Split alternatives into separate "
+            "steps or cases. Do not combine login/session setup with the target business operation: put an already "
+            "established session in preconditions, or make an in-scope login a separate step with its own expected. "
+            "Make each step.expected correspond only to that action. If the source permits "
+            "multiple outcomes, state those outcomes explicitly in expected; otherwise record uncertainty in warnings. "
             "Assertions must be observable and mode-appropriate.\n"
             f"JSON Schema: {output_schema}"
         )
@@ -291,7 +443,10 @@ class ModelTestCaseGenerator:
             system_prompt += (
                 "\nPut every complete case's business content in content_json. Preserve custom nested fields. "
                   "Keep case_key/title/case_type/priority in the outer governance envelope. "
-                  "Include execution_notes that make the case understandable independently of the template."
+                  "Include execution_notes that make the case understandable independently of the template. "
+                  "Use content_json.required_tool_keys only for file-artifact-manager or report-writer when creating "
+                  "or validating that file/report is itself part of the tested behavior; otherwise return an empty array. "
+                  "Never declare these tools merely to duplicate the formal case receipt or browser evidence."
             )
         if isinstance(context.get("incremental_generation"), dict):
             system_prompt += (
@@ -305,8 +460,31 @@ class ModelTestCaseGenerator:
             system_prompt += (
                 "\nGenerate cases for the focused document_generation.segment only, using the complete fixed text "
                 "to understand shared and cross-section rules. Preserve negative conditions and nested business JSON. "
+                "For each independent explicit rule in that module, map at least one concrete step.expected to it; "
+                "cover both required success behavior and required rejection/error behavior when the source contains both. "
+                "Keep authentication/session setup separate from the module operation; use a precondition for an existing "
+                "session or a separate step when login itself is being tested. "
+                "Do not count the objective alone as coverage and do not silently omit a rule. If a rule lacks required "
+                "endpoint, data, or environment facts, retain it as a precondition or warning without inventing details. "
                 "Use distinct stable case keys per module. Source range coverage does not prove case coverage. "
                 "Never activate or execute cases. Mark missing coverage and uncertainty in warnings."
+            )
+        if requires_coverage:
+            system_prompt += (
+                "\nThe fixed document_generation.coverage_targets are parser-grounded source statement candidates, "
+                "not approved requirements. Return exactly one coverage_assessments entry for every candidate_id, "
+                "and no invented candidate IDs. Use disposition=in_scope only when this module must verify the "
+                "statement; out_of_scope requires a concrete reason; uncertain preserves ambiguity. For in_scope, "
+                "map to one or more existing content_json.steps[].order values whose expected field directly states "
+                "the observable behavior. Each step_refs item must contain case_key, step_order, and expected_field. "
+                'Example: if a step is {"order":1,"action":"query","expected":"the order belongs to user A"}, '
+                'its reference is {"case_key":"query_user_a","step_order":1,"expected_field":"expected"}. '
+                "expected_field is the literal property name, not the text stored under that property. "
+                "step_order is the integer stored in steps[].order (usually starts at 1), never the zero-based array "
+                "index. expected_field is the exact key in that step whose non-empty string directly states the "
+                "observable result; do not return an array index or JSON path. The server resolves the selected order "
+                "to a JSON path. Do not cite a step that only repeats the objective or combines a separate operation. "
+                "These are model suggestions only; do not claim coverage approval or test success."
             )
         return ModelInvocationRequest(
             system_prompt=system_prompt,
@@ -351,10 +529,13 @@ class ModelTestCaseGenerator:
         invocation = self._build_request(request, context, [skill.prompt_block for skill in fixed.skills])
         incremental = isinstance(context.get("incremental_generation"), dict)
         document = isinstance(context.get("document_generation"), dict)
+        requires_coverage = _requires_coverage_review(context)
         requires_json = _requires_content_json(context)
         kind = "incremental" if incremental else "document" if document else "frozen"
+        prompt_version = ("test-case-generation-document-v8" if requires_coverage else
+            f"test-case-generation-{kind}-v{5 if requires_json else 1}")
         prepared = fixed_generation_snapshot(PreparedCaseGeneration, authoring=fixed, request=request,
-            invocation=invocation, prompt_version=f"test-case-generation-{kind}-v{2 if requires_json else 1}",
+            invocation=invocation, prompt_version=prompt_version,
             response_transport_protocol="case-generation-stream-response-v1" if document
                 and fixed.model_parameters.get("capabilities", {}).get("streaming") else None,
             requires_content_json=requires_json)
@@ -371,14 +552,18 @@ class ModelTestCaseGenerator:
             raise ValueError("生成响应被截断，未把部分输出当完整候选")
         if is_model_response_incomplete(summary):
             raise ValueError("生成响应未完整结束，未创建草稿")
-        payload = self._parse_payload(str(result.text or ""))
+        context = _prepared_generation_context(fixed)
+        requires_coverage = _requires_coverage_review(context)
+        payload = self._parse_payload(str(result.text or ""), require_coverage=requires_coverage)
         if len(payload.cases) > fixed.request.max_cases:
             raise ValueError("生成输出超过固定范围，未截取或丢弃额外候选")
         if fixed.requires_content_json and any(case.content_json is None for case in payload.cases):
             raise ValueError("固定生成请求要求完整content_json，未创建替代用例")
+        coverage_review = _build_coverage_review(payload.coverage_assessments, context, payload.cases) if requires_coverage else None
         return GeneratedTestCaseBatch(model_key=fixed.authoring.model_key, prompt_version=fixed.prompt_version,
             skill_versions={skill.key: f"sha256:{skill.sha256}" for skill in fixed.authoring.skills},
-            cases=payload.cases, warnings=payload.warnings)
+            cases=payload.cases, warnings=_coverage_warnings(payload.warnings, coverage_review),
+            coverage_review=coverage_review)
 
     async def invoke_frozen(
         self,
@@ -441,7 +626,7 @@ class ModelTestCaseGenerator:
         return default_key
 
     @staticmethod
-    def _parse_payload(text: str) -> _ModelGeneratedPayload:
+    def _parse_payload(text: str, *, require_coverage=False) -> _ModelGeneratedPayload:
         normalized = text.strip()
         candidates = [normalized]
         candidates.extend(
@@ -469,7 +654,8 @@ class ModelTestCaseGenerator:
             if not isinstance(parsed, dict):
                 continue
             try:
-                return _ModelGeneratedPayload.model_validate(parsed)
+                payload_model = _ModelGeneratedPayloadWithCoverage if require_coverage else _ModelGeneratedPayload
+                return payload_model.model_validate(parsed)
             except ValueError:
                 continue
         raise ValueError(

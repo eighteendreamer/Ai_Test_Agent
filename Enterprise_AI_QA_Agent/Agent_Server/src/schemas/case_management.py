@@ -6,6 +6,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
+from src.schemas.generation_coverage import GenerationCoverageReview
+
 
 TestCaseLifecycleStatus = Literal["draft", "pending_review", "active", "disabled", "archived"]
 TestCasePriority = Literal["P0", "P1", "P2", "P3"]
@@ -205,6 +207,7 @@ class GeneratedTestCaseBatch(BaseModel):
     skill_versions: dict[str, str] = Field(min_length=1)
     cases: list[GeneratedTestCaseDraft] = Field(min_length=1)
     warnings: list[str] = Field(default_factory=list)
+    coverage_review: GenerationCoverageReview | None = None
 
 
 class TestCaseBundle(BaseModel):

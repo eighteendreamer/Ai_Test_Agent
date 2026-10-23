@@ -7,6 +7,7 @@ import { useRoute, useRouter } from "vue-router";
 import { api } from "../services/api";
 import ProjectExecutionDashboard from "../features/projects/ProjectExecutionDashboard.vue";
 import TestCaseTemplateEditor from "../features/projects/TestCaseTemplateEditor.vue";
+import BusinessEnvironmentManager from "../features/projects/BusinessEnvironmentManager.vue";
 import TestCaseContentDialog from "../features/projects/TestCaseContentDialog.vue";
 import CaseImportDialog from "../features/projects/CaseImportDialog.vue";
 import CasePlanDialog from "../features/projects/CasePlanDialog.vue";
@@ -106,6 +107,7 @@ const regressionBatchesLoading = ref(false);
 
 const generationOpen = ref(false);
 const templateEditorOpen = ref(false);
+const businessEnvironmentOpen = ref(false);
 const caseImportOpen = ref(false);
 const casePlanOpen = ref(false);
 const casePlanTaskId = ref("");
@@ -227,6 +229,7 @@ function resetProjectResources() {
   regressionBatches.value = [];
   selectedCasesById.value = {};
   templateEditorOpen.value = false;
+  businessEnvironmentOpen.value = false;
   caseImportOpen.value = false;
   casePlanOpen.value = false;
   contentCase.value = null;
@@ -921,6 +924,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
           <div><h2>{{ selected.name }}</h2><p>{{ selected.description || "暂无项目说明" }}</p></div>
           <div class="actions">
             <RouterLink :to="`/projects/${selected.id}/recording-scenes`">录制场景</RouterLink>
+            <button @click="businessEnvironmentOpen = true">测试环境</button>
             <button :disabled="selected.status === 'archived'" @click="openEdit(selected)">编辑</button>
             <button class="danger" :disabled="selected.status === 'archived'" @click="archiveSelected">归档</button>
           </div>
@@ -1203,6 +1207,7 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
     </div>
 
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
+    <BusinessEnvironmentManager v-if="businessEnvironmentOpen" :key="selectedId" :project-id="selectedId" @close="businessEnvironmentOpen = false" />
     <CaseImportDialog v-if="caseImportOpen" :key="selectedId" :project-id="selectedId" :modes="generationModes" @close="caseImportOpen = false" @imported="loadTestCases" />
     <CasePlanDialog v-if="casePlanOpen" :key="`${selectedId}:${casePlanTaskId}:${JSON.stringify(casePlanRegression)}`" :project-id="selectedId" :initial-task-id="casePlanTaskId" :regression="casePlanRegression" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
     <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases(); loadOverview()" />

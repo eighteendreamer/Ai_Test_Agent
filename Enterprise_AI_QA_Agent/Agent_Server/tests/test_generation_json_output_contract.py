@@ -80,7 +80,7 @@ async def test_actual_truncated_response_stays_rejected_and_history_stays_author
     generator = ModelTestCaseGenerator(model_runtime_service=models, skill_runtime_service=None)
     current = await generator.prepare_frozen(request=old.request, authoring=old.authoring,
         context=json.loads(old.invocation.messages[0]["content"])["evidence_context"])
-    assert current.prompt_version == "test-case-generation-document-v2"
+    assert current.prompt_version == "test-case-generation-document-v5"
     assert old.prompt_version == "test-case-generation-document-v1"
     assert scope.model_dump(mode="json") == raw
     for prepared in (old, current):
@@ -104,7 +104,7 @@ async def test_new_direct_generation_records_prompt_and_legacy_generation_keeps_
     generator = ModelTestCaseGenerator(model_runtime_service=models, skill_runtime_service=_SkillRuntime())
     batch = await generator.generate(request=GenerateRequest(objective="生成草稿", mode_key="api_testing"),
         context={"generation_template": {"payload": {}}})
-    assert batch.prompt_version == "test-case-generation-json-v3"
+    assert batch.prompt_version == "test-case-generation-json-v6"
     request = ModelTestCaseGenerator._build_request(
         GenerateRequest(objective="旧格式生成", mode_key="api_testing"), {}, ["skill"])
     assert request.output_format.schema_definition == _ModelGeneratedPayload.model_json_schema()

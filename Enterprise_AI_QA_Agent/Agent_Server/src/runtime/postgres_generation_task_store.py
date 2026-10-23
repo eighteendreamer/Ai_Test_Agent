@@ -351,10 +351,10 @@ class PostgresGenerationTaskStore(PostgresDocumentTaskStore):
             cur.execute(f"UPDATE {self._tasks} SET checkpoint=%s::jsonb,phase='response_saved',updated_at=NOW() WHERE id=%s", (checkpoint.model_dump_json(), claim.task.id))
             return checkpoint
 
-    async def commit_module(self, claim, module, entries, *, scope_sha256):
-        return await asyncio.to_thread(self._commit_module, claim, module, entries, scope_sha256)
+    async def commit_module(self, claim, module, entries, *, scope_sha256, generation_review=None):
+        return await asyncio.to_thread(self._commit_module, claim, module, entries, scope_sha256, generation_review)
 
-    def _commit_module(self, claim, module, entries, scope_sha256):
+    def _commit_module(self, claim, module, entries, scope_sha256, generation_review=None):
         module = IncrementalGenerationModule.model_validate_json(module.model_dump_json())
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT status FROM {self._projects} WHERE id=%s FOR SHARE", (claim.task.project_id,))
@@ -386,7 +386,8 @@ class PostgresGenerationTaskStore(PostgresDocumentTaskStore):
             receipt = {"module_id": module.id, "kind": module.kind, "scope_sha256": scope_sha256,
                 "response": checkpoint.response.model_dump(mode="json") if checkpoint and checkpoint.response else None,
                 "versions": [{"case_id": v.case_id, "version_id": v.id, "version": v.version, "content_hash": v.content_hash} for v in versions],
-                "retirement_target": module.target.model_dump(mode="json") if module.kind == "retirement_candidate" else None}
+                "retirement_target": module.target.model_dump(mode="json") if module.kind == "retirement_candidate" else None,
+                "generation_review": generation_review.model_dump(mode="json") if generation_review else None}
             checkpoint = (checkpoint or GenerationModuleCheckpoint(phase="result_saved")).model_copy(update={"phase": "result_saved", "receipt": receipt})
             # Lease and original deadline both fence the entire draft/receipt
             # transaction after any case row lock wait.

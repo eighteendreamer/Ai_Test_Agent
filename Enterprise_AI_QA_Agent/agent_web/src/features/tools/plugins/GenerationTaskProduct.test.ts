@@ -50,6 +50,52 @@ it("reads the observed fixed group and complete 12-step JSON/notes without gener
   expect(service.submitCaseGeneration).not.toHaveBeenCalled(); expect(service.retryCaseGeneration).not.toHaveBeenCalled();
 });
 
+it("renders the fixed-source coverage receipt as a human review suggestion", async () => {
+  const candidateId = "a".repeat(64);
+  const scopeHash = "b".repeat(64);
+  const fixed = clone(observed.scope) as any;
+  const report = clone(observed.normal) as unknown as GenerationGroupView;
+  const savedTask = report.modules.find(item => item.id === task.id)!;
+  fixed.sha256 = scopeHash;
+  report.group.scope_sha256 = scopeHash;
+  report.modules.forEach(item => {
+    if (item.checkpoint?.receipt) item.checkpoint.receipt.scope_sha256 = scopeHash;
+  });
+  savedTask.checkpoint!.receipt!.scope_sha256 = scopeHash;
+  savedTask.checkpoint!.receipt!.generation_review = {
+    schema_version: "document-generation-coverage-v2", review_state: "required", mapping_state: "incomplete",
+    parse_snapshot_id: "fixed-parse-snapshot", module_id: task.module_id, candidate_inventory_complete: true,
+    items: [{ candidate_id: candidateId, source_block_id: "block-2", start_char: 15, end_char: 31,
+      source: { kind: "line", start_line: 4, end_line: 4, path: [] }, scope: "local", model_disposition: "in_scope",
+      rationale: "AI建议核对订单不存在时的错误响应。",
+      step_refs: [
+        { case_key: "query-missing-order", step_order: 1, expected_field: "expected", expected_path: ["steps", 0, "expected"] },
+        { case_key: "query-missing-order", step_order: 99, expected_field: "expected", expected_path: null },
+      ], validation_issues: ["step_order_invalid"] }],
+    unknown_candidate_ids: [], warnings: ["有1项来源或JSON预期路径校验问题。"], sha256: "c".repeat(64),
+  };
+  const fixedModule = fixed.modules.find((item: { id: string }) => item.id === task.module_id)!;
+  fixedModule.generation.invocation.messages[0].content = JSON.stringify({ evidence_context: {
+    document_generation: { coverage_targets: [{ id: candidateId, statement: "不存在订单时必须返回明确错误。" }] },
+  } });
+  service.readCaseGeneration.mockResolvedValue(report);
+  service.readCaseGenerationScope.mockResolvedValue(fixed);
+
+  const w = panel(); await flushPromises();
+
+  expect(w.text()).toContain("来源语句与用例预期映射（待人工评审）");
+  expect(w.text()).toContain("结构核对不完整");
+  expect(w.text()).toContain("不存在订单时必须返回明确错误。");
+  expect(w.text()).toContain("第 4–4 行");
+  expect(w.text()).toContain("步骤 1 · expected");
+  expect(w.text()).toContain("content_json/steps/0/expected");
+  expect(w.text()).toContain("步骤 99 · expected");
+  expect(w.text()).toContain("未解析为有效 JSON 路径");
+  expect(w.text()).toContain("step_order_invalid");
+  expect(service.submitCaseGeneration).not.toHaveBeenCalled();
+  expect(service.retryCaseGeneration).not.toHaveBeenCalled();
+});
+
 it.each([0,1])("opens the actual retry strategy %i through the original request", async index => {
   const item = retries.items[index]!; const w = retryPanel(index); await flushPromises();
   expect(w.text()).toContain(item.view.retry.creation_key); expect(w.text()).toContain(item.view.retry.parent_task_id);

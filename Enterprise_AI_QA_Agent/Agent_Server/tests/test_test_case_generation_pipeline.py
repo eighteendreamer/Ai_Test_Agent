@@ -268,3 +268,23 @@ def test_model_generator_loads_skill_and_returns_validated_cases_without_fallbac
         assert prefixed.cases[0].case_key == "orders-smoke"
 
     asyncio.run(scenario())
+
+
+def test_json_generation_prompt_requires_atomic_unambiguous_steps():
+    _, generator_type = _pipeline_components()
+    from src.application.test_cases.template_service import default_generation_template
+
+    request = generator_type._build_request(
+        GenerateRequest(objective="生成订单用例", mode_key="api_testing"),
+        {"generation_template": {"payload": default_generation_template().model_dump(mode="json")},
+         "document_generation": {"segment": {"title": "订单创建"}}},
+        ["generate-test-cases skill instructions"],
+    )
+
+    assert "one actor, one condition, and one primary operation" in request.system_prompt
+    assert "do not combine" in request.system_prompt
+    assert "Do not combine login/session setup" in request.system_prompt
+    assert "separate steps or cases" in request.system_prompt
+    assert "每个步骤只写一个角色、一个条件和一项主要操作" in request.system_prompt
+    assert "map at least one concrete step.expected" in request.system_prompt
+    assert "do not silently omit a rule" in request.system_prompt

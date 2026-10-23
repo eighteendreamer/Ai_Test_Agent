@@ -25,6 +25,8 @@ class ApplicationConfigStore(Protocol):
     def initialize(self) -> None: ...
     def get(self, config_key: str, *, scope_key: str = "global") -> ApplicationConfigRecord | None: ...
     def save(self, config_key: str, payload: dict[str, Any], *, scope_key: str = "global", only_if_missing: bool = False) -> ApplicationConfigRecord: ...
+    def save_if_revision(self, config_key: str, payload: dict[str, Any], *, expected_revision: int,
+                         scope_key: str = "global") -> ApplicationConfigRecord | None: ...
 
 
 class MySQLApplicationConfigStore:
@@ -96,6 +98,47 @@ class MySQLApplicationConfigStore:
         logger.info("application_config_saved", extra={
             "config_key": config_key, "scope_key": scope_key, "revision": record.revision,
             "only_if_missing": only_if_missing,
+        })
+        return record
+
+    def save_if_revision(self, config_key: str, payload: dict[str, Any], *, expected_revision: int,
+                         scope_key: str = "global") -> ApplicationConfigRecord | None:
+        if not config_key or len(config_key) > 128 or not scope_key or len(scope_key) > 64:
+            raise ValueError("Application configuration key or scope is invalid.")
+        if not isinstance(payload, dict) or expected_revision < 1:
+            raise ValueError("Conditional application configuration update is invalid.")
+        encoded = json.dumps(payload, ensure_ascii=False, allow_nan=False)
+        record = None
+        changed = False
+        try:
+            with mysql_raw_connection(self._settings) as connection:
+                with connection.cursor() as cursor:
+                    cursor.execute(
+                        f"UPDATE `{self._table}` SET payload_json=%s, revision=revision+1, "
+                        "updated_at=CURRENT_TIMESTAMP(6) WHERE scope_key=%s AND config_key=%s AND revision=%s",
+                        (encoded, scope_key, config_key, expected_revision),
+                    )
+                    changed = cursor.rowcount == 1
+                    if changed:
+                        cursor.execute(
+                            f"SELECT config_key, scope_key, payload_json, revision FROM `{self._table}` "
+                            "WHERE scope_key=%s AND config_key=%s", (scope_key, config_key),
+                        )
+                        record = self._record(cursor.fetchone())
+                connection.commit()
+        except Exception as exc:
+            logger.error("application_config_conditional_save_failed", extra={
+                "config_key": config_key, "scope_key": scope_key, "error_type": type(exc).__name__,
+            })
+            raise RuntimeError(f"Cannot conditionally update application configuration: {config_key}") from None
+        if not changed:
+            logger.info("application_config_conditional_save_skipped", extra={
+                "config_key": config_key, "scope_key": scope_key, "expected_revision": expected_revision,
+            })
+            return None
+        logger.info("application_config_saved", extra={
+            "config_key": config_key, "scope_key": scope_key, "revision": record.revision,
+            "only_if_missing": False, "conditional": True,
         })
         return record
 
