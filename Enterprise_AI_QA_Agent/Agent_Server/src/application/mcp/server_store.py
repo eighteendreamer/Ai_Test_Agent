@@ -5,7 +5,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.application.mcp.errors import (
     MCPCatalogReadError,
@@ -369,12 +369,12 @@ class PostgresMCPServerStore:
             raise MCPServerNotFoundError("MCP server not found.")
         return server
 
-    async def create_server(self, payload: MCPServerCreateRequest) -> MCPServerRecord:
+    async def create_server(self, payload: MCPServerCreateRequest, *, _record_id: str | None = None) -> MCPServerRecord:
         now = datetime.now(timezone.utc)
         config = _config_for_create_payload(payload)
         transport = payload.transport or _normalize_transport(config)
         record = MCPServerRecord(
-            id=str(uuid4()),
+            id=_record_id or str(uuid4()),
             name=_normalize_text(payload.name) or "",
             enabled=payload.enabled,
             transport=transport,
@@ -513,7 +513,8 @@ class PostgresMCPServerStore:
                         "legacy_integration_id": integration.id,
                         "migrated_from": "integrations",
                     },
-                )
+                ),
+                _record_id=str(uuid5(NAMESPACE_URL, f"enterprise-qa:mcp-legacy:{integration.id}")),
             )
             count += 1
         return count

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 import sys
 from datetime import datetime, timezone
@@ -134,6 +135,47 @@ async def test_legacy_mcp_integration_migration_is_idempotent(app_and_store):
     assert migrated[0].transport == "streamable_http"
     assert migrated[0].config["url"] == integration.endpoint_url
     assert migrated[0].config["headers"] == integration.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_and_store", ["postgres"], indirect=True)
+async def test_concurrent_legacy_mcp_migration_keeps_one_record(app_and_store):
+    _, store = app_and_store
+    concurrent_store = PostgresMCPServerStore(settings=store._settings)
+    now = datetime.now(timezone.utc)
+    integration = IntegrationRecord(
+        id=f"legacy-concurrent-{uuid4()}",
+        name="concurrent legacy integration",
+        kind="mcp",
+        transport="http",
+        endpoint_url="http://127.0.0.1:8765/concurrent",
+        created_at=now,
+        updated_at=now,
+    )
+    ready = 0
+    both_read = asyncio.Event()
+
+    async def synchronized_empty_list():
+        nonlocal ready
+        ready += 1
+        if ready == 2:
+            both_read.set()
+        await both_read.wait()
+        return []
+
+    store.list_servers = synchronized_empty_list
+    concurrent_store.list_servers = synchronized_empty_list
+
+    await asyncio.gather(
+        store.migrate_legacy_integrations([integration]),
+        concurrent_store.migrate_legacy_integrations([integration]),
+    )
+    migrated = [
+        item for item in await PostgresMCPServerStore(settings=store._settings).list_servers()
+        if item.metadata.get("legacy_integration_id") == integration.id
+    ]
+
+    assert len(migrated) == 1
 
 
 @pytest.mark.asyncio
