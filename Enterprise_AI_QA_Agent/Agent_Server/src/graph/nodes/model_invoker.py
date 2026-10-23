@@ -1,10 +1,12 @@
 ﻿from __future__ import annotations
 
 from copy import deepcopy
+import logging
 
 from src.application.context.token_usage import TokenUsage, normalize_usage
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.runtime.case_action_binding import action_input_schema
+from src.application.model_clients.completion import is_model_response_incomplete, model_completion_status
 from src.core.request_context import new_id
 from src.graph.state import AgentGraphState
 from src.registry.tools import ToolRegistry
@@ -24,6 +26,28 @@ _API_WORKER_ONLY_ARGUMENTS = {
     "dispatch_ref",
     "auth_token_field",
 }
+logger = logging.getLogger(__name__)
+
+
+def _case_receipt_correction_reserved(state: AgentGraphState, *, context_exhausted: bool) -> bool:
+    """Keep one original turn admission for the existing evidence-only receipt correction."""
+    bundle = state.get("context_bundle") or {}
+    execution = bundle.get("case_execution") or {}
+    count = state.get("model_call_count")
+    limit = state.get("max_iterations")
+    summary = state.get("model_response_summary") or {}
+    return bool(
+        bundle.get("case_execution_managed")
+        and isinstance(execution, dict)
+        and execution.get("receipt_correction_protocol") == "case-receipt-correction-v1"
+        and count is not None
+        and limit is not None
+        and limit > 1
+        and count == limit - 1
+        and not context_exhausted
+        and summary.get("mode") == "ok"
+        and not is_model_response_incomplete(summary)
+    )
 
 
 def _model_tool_input_schema(tool: dict, state: AgentGraphState) -> dict:
@@ -55,23 +79,52 @@ def build_model_invoker_node(
         prompt_tokens = int(usage.get("prompt_tokens") or 0)
         context_window = int(state.get("model_context_window") or 0)
         context_exhausted = prompt_tokens > 0 and context_window > 0 and prompt_tokens >= context_window * 0.9
-        if count is not None and (count >= state["max_iterations"] or context_exhausted):
-            reason = "context_budget_exhausted" if context_exhausted else "max_iterations"
+        receipt_correction_reserved = _case_receipt_correction_reserved(
+            state, context_exhausted=context_exhausted,
+        )
+        if (count is not None and state.get("max_iterations") is not None
+            and count == state["max_iterations"] - 1
+            and (state.get("context_bundle") or {}).get("case_execution_managed")):
+            execution = (state.get("context_bundle") or {}).get("case_execution") or {}
+            summary = state.get("model_response_summary") or {}
+            logger.info("case_receipt_budget_reserve_evaluated", extra={
+                "run_id": (state.get("context_bundle") or {}).get("run_id", ""),
+                "run_item_id": (state.get("context_bundle") or {}).get("run_item_id", ""),
+                "model_call_count": count, "max_iterations": state["max_iterations"],
+                "receipt_correction_protocol": execution.get("receipt_correction_protocol", ""),
+                "response_mode": summary.get("mode", ""),
+                "completion_status": model_completion_status(summary),
+                "context_budget_exhausted": context_exhausted,
+                "reserved": receipt_correction_reserved,
+            })
+        if count is not None and (count >= state["max_iterations"] or context_exhausted or receipt_correction_reserved):
+            reason = ("case_receipt_budget_reserved" if receipt_correction_reserved else
+                "context_budget_exhausted" if context_exhausted else "max_iterations")
             state["model_tool_calls"] = []
             state["assistant_tool_call_message"] = {}
-            state["model_response_summary"] = {"mode": "budget_exhausted"}
-            state["model_response_text"] = (
-                "The turn reached its model or context limit across tool loops and approvals. "
-                "Existing tool evidence is preserved; no additional model request was sent."
-            )
-            state["final_response"] = state["model_response_text"]
+            if receipt_correction_reserved:
+                state["final_response"] = (
+                    "The RunItem execution-call budget is reserved for its evidence-only formal receipt. "
+                    "Existing tool evidence is preserved; no additional tool-enabled model request was sent."
+                )
+                event = "graph.case_receipt_budget_reserved"
+                message = "The final original-turn admission is preserved for the evidence-only RunItem receipt correction."
+            else:
+                state["model_response_summary"] = {"mode": "budget_exhausted"}
+                state["model_response_text"] = (
+                    "The turn reached its model or context limit across tool loops and approvals. "
+                    "Existing tool evidence is preserved; no additional model request was sent."
+                )
+                state["final_response"] = state["model_response_text"]
+                event = "graph.context_budget_exhausted" if context_exhausted else "graph.max_iterations_reached"
+                message = "Runtime stopped before another model admission exceeded the original turn limit."
             state["pending_turn"] = {}
             state["continue_loop"] = False
             state["termination_reason"] = reason
-            append_graph_event(state, "graph." + ("context_budget_exhausted" if context_exhausted else "max_iterations_reached"), "model_invoker",
-                "Runtime stopped before another model admission exceeded the original turn limit.",
+            append_graph_event(state, event, "model_invoker", message,
                 model_call_count=count, max_iterations=state["max_iterations"],
-                prompt_tokens=prompt_tokens, context_window=context_window)
+                prompt_tokens=prompt_tokens, context_window=context_window,
+                receipt_correction_reserved=receipt_correction_reserved)
             return state
         model_visible_tool_keys = list(state.get("model_visible_tool_keys", state["available_tool_keys"]))
         append_graph_event(
