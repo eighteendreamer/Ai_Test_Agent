@@ -142,7 +142,7 @@ MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::t
 
 MCP 顺序重跑已有真实隔离 PostgreSQL 专项：`tests/test_mcp_management_route_status.py::test_legacy_mcp_integration_migration_is_idempotent` 结果 **1 passed in 9.46s**。测试第一次迁入一条旧 HTTP 集成，第二次调用返回 0，读回数据库仍只有一条映射记录，并验证 transport、URL 和 headers 转换。它只证明顺序重试幂等，不覆盖多 API 实例并发启动时“查询旧 ID → 插入”的竞态，也未测试从真实本地 catalog 文件读取的 API 启动闭环。测试使用随机 PostgreSQL 表并在 fixture 结束时删除；未创建 Docker/Redis 容器，未触碰当前业务表。
 
-以上是代码路径结论，不代表所有旧部署形态均已验收。MCP 顺序与同进程并发导入已有下文所述真实 PostgreSQL 验收；Workspace 两类旧文件已有真实 MySQL 导入与重启验收。MySQL 赞助旧结构、异常中断和并发初始化仍需分别验证，不能把一个 Store 的测试外推到其他配置 Store。
+以上是代码路径结论，不代表所有旧部署形态均已验收。MCP 顺序与同进程并发导入已有下文所述真实 PostgreSQL 验收；Workspace 两类旧文件已有真实 MySQL 导入与重启验收。MySQL 赞助配置没有仓库可证实的旧结构，当前实际结构与初始定义的核对见下文；不能把一个 Store 的测试外推到其他配置 Store。
 
 Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_settings.py::test_real_mysql_preferences_http_restart_and_prompt_share_one_source`，使用随机 MySQL 表和临时旧文件，先导入 general 与 channel 两类配置，再经真实 HTTP 修改数据库值、破坏两份旧文件并以新的 Store/Service 重启读取。结果 **1 passed in 6.87s**；整个 `tests/test_workspace_settings.py` 在启用真实 MySQL 条件下 **8 passed in 8.47s**。测试结束删除唯一随机配置表，不启动 Docker/Redis，不改正式配置表。此项纠正此前本记录称“未找到真实 MySQL 旧文件迁移专门验收”的误判；目前未覆盖的是中断和并发初始化边界。
 
@@ -150,7 +150,9 @@ Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_setti
 
 赞助表的首次定义已包含当前 Store 使用的全部字段和 `uniq_sponsor_name`，从源码历史未发现旧版本补列逻辑；现存表若缺列不会被自动修复。运行时初始化只在表为空时播种 `DEFAULT_SPONSORS`，因此有任意运营数据时不会补默认行或覆盖记录。
 
-真实 MySQL 随机表的屏障测试让两个 Store 都先观察到空表再并发播种。原实现复现一个初始化成功、另一个因 `uniq_sponsor_name` 重复而失败，存在多 API 实例启动竞争。修复将默认插入改为按唯一键冲突执行 no-op 更新，不覆盖已存在赞助配置，也不吞掉其他 SQL 错误。`tests/test_sponsor_config.py` 真实 MySQL/单元组合 **5 passed in 0.81s**；并发初始化均成功且默认行仅一份，随后将 logo 改为运营值并再次初始化，值保持不变。`tests/test_workspace_settings.py` 另在启用真实 MySQL 条件下 **8 passed in 7.51s**。测试仅使用随机 MySQL 表并清理，不访问 Docker/Redis。赞助旧表缺列升级与真实部署 schema 盘点仍未覆盖；当前结论仅是首次建表和并发播种边界。
+真实 MySQL 随机表的屏障测试让两个 Store 都先观察到空表再并发播种。原实现复现一个初始化成功、另一个因 `uniq_sponsor_name` 重复而失败，存在多 API 实例启动竞争。修复将默认插入改为按唯一键冲突执行 no-op 更新，不覆盖已存在赞助配置，也不吞掉其他 SQL 错误。`tests/test_sponsor_config.py` 真实 MySQL/单元组合 **5 passed in 0.81s**；并发初始化均成功且默认行仅一份，随后将 logo 改为运营值并再次初始化，值保持不变。`tests/test_workspace_settings.py` 另在启用真实 MySQL 条件下 **8 passed in 7.51s**。测试仅使用随机 MySQL 表并清理，不访问 Docker/Redis。
+
+继续按仓库历史核对赞助表：功能首次引入的建表定义、当前源码和仓库唯一 MySQL dump 从一开始就是同一组 10 个字段及 `uniq_sponsor_name(name)`，Git 历史没有补列、删列或字段语义迁移。对当前实际配置库执行只读 `information_schema` 核对，`system_sponsor_config` 的字段、类型、默认值、主键和唯一键与该定义一致；正式 Store `list_enabled()` 实际读回 1 条启用记录及正确的本地 logo URL。没有证据支持此前“赞助旧表缺列升级”这一待办，因此不凭空增加 `ALTER TABLE`。如果某个外部部署存在仓库未记录的手工 schema 漂移，应先取得该环境的实际结构与数据样本，再建立显式迁移；本结论不把未知部署判定为兼容。
 
 ### MySQL 旧邮件配置表转换
 
