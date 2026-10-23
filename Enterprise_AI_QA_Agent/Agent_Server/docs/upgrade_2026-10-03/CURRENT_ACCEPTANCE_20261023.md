@@ -136,13 +136,15 @@ MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::t
 
 启动调用图还包含不属于 DDL 的持久化写入，迁移审计不能只看建表语句：
 
-- `WorkspaceSettingsService.initialize()` 在 MySQL 配置 key 不存在时读取旧 `general_settings.json` / `channel_advanced_settings.json`，校验后使用 `only_if_missing=True` 初始化配置；已有数据库值不会被旧文件覆盖。当前有服务级测试覆盖此逻辑，尚未找到针对真实 MySQL 旧文件迁移与 API 重启的专门验收。
+- `WorkspaceSettingsService.initialize()` 在 MySQL 配置 key 不存在时读取旧 `general_settings.json` / `channel_advanced_settings.json`，校验后使用 `only_if_missing=True` 初始化配置；已有数据库值不会被旧文件覆盖。真实 MySQL/HTTP/重启测试现已覆盖两类旧文件的导入、数据库更新优先和损坏旧文件不覆盖已迁移数据；异常中断和多实例并发初始化仍未覆盖。
 - API 启动调用 `PostgresMCPServerStore.migrate_legacy_integrations()`，把本地 `data/integrations/catalog.json` 中 kind 为 `mcp` 的记录复制到 PostgreSQL MCP Store；目标行用 `metadata.legacy_integration_id` 做重复识别，保留本地源文件。源码中没有独立迁移账本，去重检查与插入之间的并发安全尚未由测试证明。
 - MySQL 赞助 Store 在配置表为空时播种默认赞助数据；这与表结构升级分属不同副作用，迁移方案必须避免结构升级时重复或误覆盖运营配置。
 
 MCP 顺序重跑已有真实隔离 PostgreSQL 专项：`tests/test_mcp_management_route_status.py::test_legacy_mcp_integration_migration_is_idempotent` 结果 **1 passed in 9.46s**。测试第一次迁入一条旧 HTTP 集成，第二次调用返回 0，读回数据库仍只有一条映射记录，并验证 transport、URL 和 headers 转换。它只证明顺序重试幂等，不覆盖多 API 实例并发启动时“查询旧 ID → 插入”的竞态，也未测试从真实本地 catalog 文件读取的 API 启动闭环。测试使用随机 PostgreSQL 表并在 fixture 结束时删除；未创建 Docker/Redis 容器，未触碰当前业务表。
 
-以上是代码路径结论，不代表这些边界已经在多 API 实例或实际旧部署上验收。对 MCP 应继续验证多实例并发导入，再决定是否需要唯一约束或迁移账本；对 Workspace 旧文件和 MySQL 赞助结构则需分别准备真实隔离数据验证，不能把一个 `initialize()` 幂等测试外推到所有配置 Store。
+以上是代码路径结论，不代表所有旧部署形态均已验收。MCP 顺序与同进程并发导入已有下文所述真实 PostgreSQL 验收；Workspace 两类旧文件已有真实 MySQL 导入与重启验收。MySQL 赞助旧结构、异常中断和并发初始化仍需分别验证，不能把一个 Store 的测试外推到其他配置 Store。
+
+Workspace MySQL 旧文件迁移实测补充：扩展 `tests/test_workspace_settings.py::test_real_mysql_preferences_http_restart_and_prompt_share_one_source`，使用随机 MySQL 表和临时旧文件，先导入 general 与 channel 两类配置，再经真实 HTTP 修改数据库值、破坏两份旧文件并以新的 Store/Service 重启读取。结果 **1 passed in 6.87s**；整个 `tests/test_workspace_settings.py` 在启用真实 MySQL 条件下 **8 passed in 8.47s**。测试结束删除唯一随机配置表，不启动 Docker/Redis，不改正式配置表。此项纠正此前本记录称“未找到真实 MySQL 旧文件迁移专门验收”的误判；目前未覆盖的是中断和并发初始化边界。
 
 ### MCP 旧结构迁移字段往返修复
 
