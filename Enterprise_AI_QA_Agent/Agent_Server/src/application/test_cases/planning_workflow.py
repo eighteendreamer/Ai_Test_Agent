@@ -10,7 +10,10 @@ from time import perf_counter
 from uuid import uuid4
 
 from src.application.test_cases.planning_sources import json_text
-from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision, stage_prompt_version
+from src.application.test_cases.planning_stages import (
+    merge_evidence_decision, previous_relation_logic_prompt_version, seal_logical_decision,
+    stage_prompt_version, validate_relation_logic_finish,
+)
 from src.schemas.case_planning_stages import (
     EvidencePlanningDecision, LogicalPlanningDecision, PlanningStageCheckpoint,
     RELATION_STAGE_PROTOCOL, LogicalPlanningDecisionV2, EvidencePlanningDecisionV2,
@@ -33,7 +36,8 @@ from src.application.test_cases.planning_effect_tasks import (
 )
 from src.schemas.case_planning_effect_tasks import EFFECT_TASK_PROTOCOL, EffectTaskDecision, EffectTaskCheckpoint
 from src.schemas.case_planning_references import (
-    REFERENCE_PROTOCOL_V2, ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+    REFERENCE_PROTOCOL_V2, REFERENCE_PROTOCOL_V3, ReferencedEvidenceDecision,
+    ReferencedEvidenceDecisionV2, ReferencedEvidenceDecisionV3,
 )
 from src.application.test_cases.planning_tool_contracts import NAVIGATION_PROMPT_VERSION, OPERATION_PROMPT_VERSION, query_tool_contracts, tool_catalog
 from src.runtime.store import ContinuationLeaseLostError
@@ -108,7 +112,16 @@ class CasePlanningWorkflow:
             if seed.stage_prompts is not None:
                 expected_version = required_source_prompt_version(linked_context_prompt_version(
                     stage_prompt_version(policy, seed.stage_prompts), seed.linked_source_context_protocol), request)
-                if (record.prompt_version != expected_version or seed.system_prompt != seed.stage_prompts.logic
+                prompt_version_matches = record.prompt_version == expected_version
+                if not prompt_version_matches:
+                    legacy_version = required_source_prompt_version(linked_context_prompt_version(
+                        stage_prompt_version(policy, seed.stage_prompts, include_logic_revision=False),
+                        seed.linked_source_context_protocol), request)
+                    previous_logic_version = previous_relation_logic_prompt_version(expected_version)
+                    if previous_logic_version is not None:
+                        previous_logic_version = required_source_prompt_version(previous_logic_version, request)
+                    prompt_version_matches = record.prompt_version in {legacy_version, previous_logic_version}
+                if (not prompt_version_matches or seed.system_prompt != seed.stage_prompts.logic
                     or policy.planning_stage_protocol != seed.stage_prompts.protocol):
                     raise ValueError("阶段Prompt与固定规划版本不一致")
                 if checkpoint.stages is None:
@@ -252,7 +265,8 @@ class CasePlanningWorkflow:
                         if record.environment is not None:
                             context["business_environment"] = record.environment.model_dump(mode="json")
                         if stage == "effects" and policy.evidence_reference_protocol:
-                            context["evidence_reference_catalog"] = evidence_reference_catalog(record.evidence)
+                            context["evidence_reference_catalog"] = evidence_reference_catalog(
+                                record.evidence, policy.evidence_reference_protocol)
                         body = json_text(context)
                         if len(body) + len(prompt) > policy.max_context_chars:
                             raise ValueError("完整规划上下文超过配置限制，未截断用例；请缩小候选范围或调整配置")
@@ -371,8 +385,11 @@ class CasePlanningWorkflow:
                             if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
                                 logic_type = LogicalPlanningDecisionV4
                             if stage == "effects" and policy.evidence_reference_protocol:
-                                effects_type = (ReferencedEvidenceDecisionV2 if
-                                    policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
+                                effects_type = (
+                                    ReferencedEvidenceDecisionV3
+                                    if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V3 else
+                                    ReferencedEvidenceDecisionV2
+                                    if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
                                     ReferencedEvidenceDecision)
                             if policy.scene_query_protocol:
                                 logic_type, effects_type = scene_decision_types(
@@ -407,10 +424,12 @@ class CasePlanningWorkflow:
                                             "completed_tasks": len(task_candidate.completed)})
                                         await save("声明任务回执已保存，继续原剩余预算")
                                         continue
-                            if isinstance(decision, (ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2)):
+                            if isinstance(decision, (ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+                                                      ReferencedEvidenceDecisionV3)):
                                 reference_options = {"query_decision_type":SceneEvidencePlanningDecision} if policy.scene_query_protocol else {}
                                 decision = bind_evidence_references(decision,
-                                    round_record.get("evidence_reference_catalog"), record.evidence, **reference_options)
+                                    round_record.get("evidence_reference_catalog"), record.evidence,
+                                    reference_protocol=policy.evidence_reference_protocol, **reference_options)
                                 round_record["canonical_evidence_decision"] = decision.model_dump(mode="json")
                             if isinstance(decision, LogicalPlanningDecisionV4) and (decision.action == "finish" or not policy.scene_query_protocol):
                                 validate_operation_selections(decision, decision.operation_selections, record.evidence)
@@ -418,6 +437,8 @@ class CasePlanningWorkflow:
                             if decision.action == "finish" and stage == "effects" and not isinstance(wire_decision, EffectTaskDecision):
                                 decision = merge_evidence_decision(checkpoint.stages, decision, record.evidence)
                             if decision.action == "finish":
+                                if stage == "logic":
+                                    validate_relation_logic_finish(decision, record.prompt_version)
                                 if policy.preparation_scope_protocol is not None:
                                     round_record["preparation_scope_declaration"] = {
                                         item.key: {"cleanup_sources": list(item.cleanup_sources),
@@ -476,8 +497,13 @@ class CasePlanningWorkflow:
                                 await validate_plan(decision, validate_effects=True)
                             await self._planner._projects.require_active(record.project_id)
                             record.decision, record.summary = decision, decision.summary
-                            record.status = ("no_match" if not any(item.kind == "target" for item in decision.items)
+                            no_match = not any(item.kind == "target" for item in decision.items)
+                            record.status = ("no_match" if no_match
                                 else "blocked" if decision.unresolved else "planned")
+                            if no_match:
+                                record.summary = "未找到符合本次目标的正式用例；本次未创建测试运行。"
+                                logger.info("case_planning_no_match", extra={"project_id": record.project_id,
+                                    "plan_id": record.id, "unresolved_count": len(decision.unresolved)})
                             checkpoint.phase = "finished"
                             break
                         checkpoint.pending_decision = decision

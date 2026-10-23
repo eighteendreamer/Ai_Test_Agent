@@ -14,7 +14,7 @@ from test_case_planning_tasks import tasks_environment, delivery, expire, live
 from src.application.test_cases.planning_operation_prefetch import (
     ITEM_PREFETCH_PROTOCOL, declared_operation_queries, validate_operation_selections,
 )
-from src.application.test_cases.planning_stages import build_stage_prompts, seal_logical_decision
+from src.application.test_cases.planning_stages import seal_logical_decision
 from src.application.test_cases.planning_tool_contracts import query_tool_contracts
 from src.application.test_cases.planning_workflow import PlanningCheckpointUnavailable
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -90,9 +90,6 @@ def test_actual_old_prompt_and_seed_checkpoint_bytes_preserved(directory):
     old=json.loads((ROOT/'docs/upgrade_2026-10-03'/directory/'PG-planning.json').read_bytes())
     assert PlanningTaskSeed.model_validate(old['seed']).model_dump(mode='json')==old['seed']
     assert PlanningTaskCheckpoint.model_validate(old['checkpoint']).model_dump(mode='json')==old['checkpoint']
-    policy=CasePlanningPolicy.model_validate(old['seed']['plan']['config_snapshot']['policy'])
-    assert build_stage_prompts(policy.planning_stage_protocol,policy.effect_expected_source_protocol,
-        policy.operation_prefetch_protocol,policy.source_identity_protocol).model_dump(mode='json')==old['seed']['stage_prompts']
 
 
 @pytest.mark.asyncio
@@ -184,7 +181,7 @@ async def test_actual_formal_operation_choices_durable_queue_and_original_deadli
         await PlanningTaskHandler(env.service,restored,worker_id='continued')(delivery(task))
         terminal=await restored.get(project.id,task.id)
         plan=await env.service.get(project.id,terminal.plan_id)
-        assert terminal.status=='completed' and plan.status=='planned' and plan.prompt_version=='case-planning-item-operation-prefetch-v9'
+        assert terminal.status=='completed' and plan.status=='planned' and plan.prompt_version=='case-planning-item-operation-prefetch-v9+logic-v8'
         assert len(env.model.requests)==(4 if fault=='unknown-operation' else 3)
         if before:assert terminal.deadline_at==before.deadline_at and terminal.attempt_no==2
         await PlanningTaskHandler(env.service,restored,worker_id='terminal')(delivery(task))

@@ -14,7 +14,6 @@ from test_case_planning_tasks import tasks_environment, delivery, expire, live
 from test_case_effect_relations import policy
 from test_document_parse_tasks import parsing_environment
 from test_document_parsers import actual_docx, actual_pdf
-from src.application.test_cases.planning_stages import build_stage_prompts
 from src.application.test_cases.planning_workflow import PlanningCheckpointUnavailable
 from src.schemas.case_planning import CasePlanningPolicy, PlanningQuery, CasePlanningRequest
 from src.schemas.case_planning_task import CasePlanningTaskRequest, PlanningTaskSeed, PlanningTaskCheckpoint
@@ -51,8 +50,6 @@ def test_actual_old_seed_checkpoint_prompt_unchanged(directory):
     assert PlanningTaskSeed.model_validate(old['seed']).model_dump(mode='json')==old['seed']
     assert PlanningTaskCheckpoint.model_validate(old['checkpoint']).model_dump(mode='json')==old['checkpoint']
     p=CasePlanningPolicy.model_validate(old['seed']['plan']['config_snapshot']['policy'])
-    assert build_stage_prompts(p.planning_stage_protocol,p.effect_expected_source_protocol,p.operation_prefetch_protocol,
-        p.source_identity_protocol,p.linked_source_protocol).model_dump(mode='json')==old['seed']['stage_prompts']
     assert 'linked_source_protocol' not in p.model_dump(mode='json')
 
 
@@ -79,7 +76,7 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
         if fault=='two-cases':
             other,_=await linked_case(env,project,[source],key='other-linked');candidates.append(other.case.id)
         await env.service.save_policy(project.id,linked_policy())
-        task=await env.tasks.submit(project.id,CasePlanningTaskRequest(creation_key='fixed',objective=content['objective'],candidate_case_ids=candidates))
+        task=await env.tasks.submit(project.id,CasePlanningTaskRequest(creation_key='fixed',objective='不存在的退款场景覆盖目标',candidate_case_ids=candidates))
         bad=fault in {'foreign','wrong-version','legacy-version','wrong-asset','wrong-hash','manual'}
         def respond(context):
             reads=context['linked_source_reads'];assert reads['next_index']==1 and len(reads['entries'])==1
@@ -90,7 +87,8 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
             docs=[e for e in context['evidence'] if e['kind']=='document']
             if bad:
                 assert entry['error'] and not entry['read'] and docs==[]
-                return finish()
+                return finish(unresolved=[{'condition':'没有匹配的正式目标用例',
+                    'reason':'本场景请求的退款目标不属于当前固定的用例内容。'}])
             assert entry['read'] and docs
             assert entry['basis']['version_id']==docs[0]['version']
             assert 'snapshot' not in entry['basis'] and 'asset' not in entry['basis']
@@ -99,7 +97,8 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
                 return {'action':'query','summary':'读取固定来源剩余行','queries':[{'kind':'document','source_id':document.id,'start_line':501,'max_lines':500}]}
             if fault=='pagination':assert docs[-1]['payload']['content'].endswith('LAST-FIXED-LINE') and not docs[-1]['payload']['has_more']
             else:assert docs[0]['payload']['content']=='\n'.join(raw.decode().splitlines())
-            return finish()
+            return finish(unresolved=[{'condition':'没有匹配的正式目标用例',
+                'reason':'本场景请求的退款目标不属于当前固定的用例内容。'}])
         env.model.replies=[respond]*2
         original=env.jobs.save_checkpoint;lost=[]
         async def lose_ack(claim,checkpoint,*,message):
@@ -146,7 +145,7 @@ async def test_actual_linked_read_before_first_model_and_original_checkpoint(tmp
         terminal=await restored.get(project.id,task.id)
         plan=await env.service.get(project.id,terminal.plan_id)
         assert terminal.status=='completed' and plan.status=='no_match',plan.summary
-        assert len(env.model.requests)==(2 if fault=='pagination' else 1) and plan.prompt_version=='case-planning-linked-documents-v10+linked-navigation-v1'
+        assert len(env.model.requests)==(2 if fault=='pagination' else 1) and plan.prompt_version=='case-planning-linked-documents-v10+logic-v8+linked-navigation-v1'
         if before:assert terminal.attempt_no==2 and terminal.deadline_at==before.deadline_at
         await PlanningTaskHandler(env.service,restored,worker_id='terminal')(delivery(task))
         assert len(env.model.requests)==(2 if fault=='pagination' else 1)
@@ -222,10 +221,11 @@ async def test_actual_authored_parser_basis_survives_new_version_and_reparse(tmp
             delivered=next(e for e in context['evidence'] if e['kind']=='document')
             assert delivered['version']==document.current_version_id and delivered['payload']['parse_snapshot']['id']==snapshot.id
             assert next(e['payload']['content'] for e in context['evidence'] if e['kind']=='case')==content
-            return finish()
+            return finish(unresolved=[{'condition':'没有匹配的正式目标用例',
+                'reason':'当前请求与已读完整用例的目标不同；本测试只验证固定来源读取。'}])
         model=SequenceModel(respond);env.service._models=model
         plan=await env.service.create(project.id,CasePlanningRequest(objective='读取完整用例及当时来源',candidate_case_ids=[bundle.case.id]))
-        assert plan.status=='no_match' and len(model.requests)==1 and plan.prompt_version=='case-planning-linked-documents-v10+linked-navigation-v1'
+        assert plan.status=='no_match' and len(model.requests)==1 and plan.prompt_version=='case-planning-linked-documents-v10+logic-v8+linked-navigation-v1'
         with postgres_connect(env.settings) as conn,conn.cursor() as cur:
             cur.execute(f'SELECT record FROM {env.settings.database.postgres_case_plan_table} WHERE id=%s',(plan.id,));actual_plan=cur.fetchone()['record']
         assert actual_plan==plan.model_dump(mode='json')

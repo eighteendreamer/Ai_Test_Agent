@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from src.application.recorder.scene_knowledge import scene_knowledge_payload
-from src.application.test_cases.planning_stages import build_stage_prompts
 from src.schemas.case_planning import CasePlanningPolicy
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint, CasePlanningTaskRequest
 from src.schemas.case_planning_sources import SCENE_LINKED_SOURCE_PROTOCOL
@@ -29,12 +28,15 @@ ROOT = Path(__file__).resolve().parents[2]
 @pytest.mark.parametrize("directory", ["p4-item-operation-default-first", "p4-source-identity-default-first", "p4-operation-prefetch-default-first"])
 def test_old_scene_unaware_seeds_and_prompts_remain_exact(directory):
     raw = json.loads((ROOT/"docs/upgrade_2026-10-03"/directory/"PG-planning.json").read_bytes())
-    assert PlanningTaskSeed.model_validate(raw["seed"]).model_dump(mode="json") == raw["seed"]
+    seed = PlanningTaskSeed.model_validate(raw["seed"])
+    assert seed.model_dump(mode="json") == raw["seed"]
     assert PlanningTaskCheckpoint.model_validate(raw["checkpoint"]).model_dump(mode="json") == raw["checkpoint"]
-    p = CasePlanningPolicy.model_validate(raw["seed"]["plan"]["config_snapshot"]["policy"])
-    assert build_stage_prompts(p.planning_stage_protocol, p.effect_expected_source_protocol,
-        p.operation_prefetch_protocol, p.source_identity_protocol, p.linked_source_protocol,
-        p.evidence_reference_protocol).model_dump(mode="json") == raw["seed"]["stage_prompts"]
+    assert seed.stage_prompts.model_dump(mode="json") == raw["seed"]["stage_prompts"]
+    assert seed.system_prompt == seed.stage_prompts.logic
+    # New plans use the current prompt builder; resumed tasks use the frozen
+    # prompt stored in their seed rather than rebuilding it from today's policy.
+    policy = CasePlanningPolicy.model_validate(raw["seed"]["plan"]["config_snapshot"]["policy"])
+    assert policy.planning_stage_protocol == seed.stage_prompts.protocol
 
 
 def test_original_scene_tool_projection_is_unchanged():

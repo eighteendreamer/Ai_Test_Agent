@@ -6,7 +6,8 @@ from pydantic import Field, model_serializer, model_validator
 from src.schemas.case_planning import PlanningQuery
 from src.schemas.case_planning_stages import LogicalPlanningDecisionV3, LogicalPlanningDecisionV4, EvidencePlanningDecisionV3
 from src.schemas.case_planning_references import (
-    ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+    REFERENCE_PROTOCOL_V3, ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+    ReferencedEvidenceDecisionV3,
 )
 
 SCENE_QUERY_PROTOCOL = "case-planning-scene-query-v1"
@@ -62,8 +63,14 @@ class SceneReferencedEvidenceDecisionV2(ReferencedEvidenceDecisionV2):
     queries: list[ScenePlanningQuery] = Field(default_factory=list, max_length=8)
 
 
+class SceneReferencedEvidenceDecisionV3(ReferencedEvidenceDecisionV3):
+    queries: list[ScenePlanningQuery] = Field(default_factory=list, max_length=8)
+
+
 def scene_decision_types(item_operations, references):
-    effects_type = (SceneReferencedEvidenceDecisionV2 if references == "case-planning-evidence-references-v2"
-        else SceneReferencedEvidenceDecision if references else SceneEvidencePlanningDecision)
+    effects_type = (
+        SceneReferencedEvidenceDecisionV3 if references == REFERENCE_PROTOCOL_V3 else
+        SceneReferencedEvidenceDecisionV2 if references == "case-planning-evidence-references-v2" else
+        SceneReferencedEvidenceDecision if references else SceneEvidencePlanningDecision)
     return (SceneLogicalPlanningDecisionV4 if item_operations else SceneLogicalPlanningDecisionV3,
         effects_type)

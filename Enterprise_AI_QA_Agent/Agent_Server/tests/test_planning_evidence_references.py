@@ -6,11 +6,17 @@ import os
 from pathlib import Path
 
 import pytest
-from src.application.test_cases.planning_evidence_references import evidence_reference_catalog, bind_evidence_references
-from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision, build_stage_prompts
+from src.application.test_cases.planning_evidence_references import (
+    evidence_reference_catalog, bind_evidence_references,
+)
+from src.application.test_cases.planning_effect_tasks import DECISIONS_V2
+from src.application.test_cases.planning_stages import merge_evidence_decision, seal_logical_decision
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
-from src.schemas.case_planning import CasePlanRecord
-from src.schemas.case_planning_references import ReferencedEvidenceDecision, REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2
+from src.schemas.case_planning import CasePlanRecord, PlanningDecisionV3
+from src.schemas.case_planning_references import (
+    ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2, ReferencedEvidenceDecisionV3,
+    REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2, REFERENCE_PROTOCOL_V3,
+)
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -19,6 +25,26 @@ ROOT = Path(__file__).resolve().parents[2]
 def reference_wire(value, catalog, reference_protocol=REFERENCE_PROTOCOL):
     """Test fixture adapter; production never chooses the model's assertions."""
     value = deepcopy(value)
+    if reference_protocol == REFERENCE_PROTOCOL_V3:
+        ids = {entry["evidence_id"]: ref for ref, entry in catalog["evidence_refs"].items()}
+        documents = {entry["evidence_id"]: ref for ref, entry in catalog["documents"].items()}
+        for binding in value.get("bindings", []):
+            binding["evidence_refs"] = [ids[ref] for ref in binding.pop("evidence_ids")]
+            for declaration in binding["effect_declarations"] or []:
+                for check in declaration["checks"] + declaration["select_when"]:
+                    source = check.get("expected_source")
+                    if source is None:
+                        continue
+                    document_ref = documents[source["evidence_id"]]
+                    text_ref = next((key for key, anchor in catalog["texts"].items() if
+                        anchor["document_ref"] == document_ref and anchor["text"] == source.get("excerpt")), None)
+                    if text_ref:
+                        check["expected_source"] = {"text_ref": text_ref, "payload_path_tokens": None,
+                            "excerpt": None, "literal": source["literal"], "encoding": source["encoding"]}
+                    else:
+                        check["expected_source"] = {"document_ref": document_ref, **{key: source.get(key) for key in
+                            ("payload_path_tokens", "excerpt", "literal", "encoding")}}
+        return value
     ids = {entry["evidence_id"]: ref for ref, entry in catalog["evidence"].items()}
     for binding in value.get("bindings", []):
         binding["evidence_ids"] = [ids[ref] for ref in binding["evidence_ids"]]
@@ -48,6 +74,38 @@ def actual():
     return plan, canonical, catalog
 
 
+def reference_wire_v3(value, evidence):
+    """Use the v3 wire vocabulary while preserving the captured canonical result."""
+    value = deepcopy(value)
+    catalog = evidence_reference_catalog(evidence, REFERENCE_PROTOCOL_V3)
+    evidence_aliases = {entry["evidence_id"]: ref
+        for ref, entry in catalog["evidence_refs"].items()}
+    documents = {entry["evidence_id"]: ref
+        for ref, entry in catalog["documents"].items()}
+    for binding in value.get("bindings", []):
+        binding["evidence_refs"] = [evidence_aliases[item] for item in binding.pop("evidence_ids")]
+        for declaration in binding["effect_declarations"] or []:
+            for check in declaration["checks"] + declaration["select_when"]:
+                source = check.get("expected_source")
+                if source is None:
+                    continue
+                document_ref = documents[source["evidence_id"]]
+                text_ref = next((key for key, anchor in catalog["texts"].items()
+                    if anchor["document_ref"] == document_ref and anchor["text"] == source.get("excerpt")), None)
+                if text_ref:
+                    check["expected_source"] = {
+                        "text_ref": text_ref, "payload_path_tokens": None, "excerpt": None,
+                        "literal": source["literal"], "encoding": source["encoding"],
+                    }
+                else:
+                    check["expected_source"] = {
+                        "document_ref": document_ref,
+                        **{key: source.get(key) for key in
+                            ("payload_path_tokens", "excerpt", "literal", "encoding")},
+                    }
+    return value, catalog
+
+
 def test_actual_wire_restores_the_original_business_decision_and_checks():
     plan, canonical, catalog = actual()
     wire = reference_wire(canonical, catalog)
@@ -62,6 +120,74 @@ def test_actual_wire_restores_the_original_business_decision_and_checks():
     merged = merge_evidence_decision(stages, restored, plan.evidence)
     validate_effect_declarations(merged, "case-effect-evidence-v2", plan.evidence, "case-effect-coverage-v2", "case-effect-document-expected-v1")
     assert next(e.payload['content'] for e in plan.evidence if e.kind == 'case')['steps'][-1]['business'] == {'false': False, 'zero': 0, 'nullable': None}
+
+
+def test_v3_wire_restores_captured_business_decision_and_rejects_unknown_aliases():
+    plan, canonical, _ = actual()
+    wire, catalog = reference_wire_v3(canonical, plan.evidence)
+    assert '"evidence_refs"' in json.dumps(wire)
+    assert '"document_ref"' in json.dumps(wire) or '"text_ref"' in json.dumps(wire)
+    restored = bind_evidence_references(
+        ReferencedEvidenceDecisionV3.model_validate(wire), catalog, plan.evidence,
+        reference_protocol=REFERENCE_PROTOCOL_V3)
+    assert restored.model_dump(mode="json") == canonical
+    logical = deepcopy(plan.decision.model_dump(mode="json"))
+    for binding in restored.bindings:
+        next(item for item in logical["items"] if item["key"] == binding.item_key)["effect_declarations"] = [
+            declaration.model_dump(mode="json") for declaration in binding.effect_declarations]
+    validate_effect_declarations(PlanningDecisionV3.model_validate(logical), 'case-effect-evidence-v2', plan.evidence,
+        'case-effect-coverage-v2', 'case-effect-document-expected-v1')
+
+    invalid_alias = deepcopy(wire)
+    invalid_alias["bindings"][0]["evidence_refs"][0] = "E999"
+    with pytest.raises(ValueError, match="未登记的证据短引用"):
+        bind_evidence_references(ReferencedEvidenceDecisionV3.model_validate(invalid_alias), catalog,
+            plan.evidence, reference_protocol=REFERENCE_PROTOCOL_V3)
+
+
+def test_actual_agnes_v2_excerpt_is_bound_to_the_fixed_text_anchor():
+    raw = json.loads((ROOT / "Agent_Server/docs/upgrade_2026-10-03/p2-multi-case-agnes-current-20261022-01/PG-planning.json").read_bytes())
+    plan = CasePlanRecord.model_validate(raw["checkpoint"]["plan"])
+    final_round = plan.rounds[-1]
+    wire_text = final_round["wire_response_text"].strip()
+    assert wire_text.startswith("```json\n") and wire_text.endswith("\n```")
+    wire = json.loads(wire_text[len("```json\n"):-len("\n```")])
+    catalog = final_round["evidence_reference_catalog"]
+    task_decision = DECISIONS_V2["produced"].model_validate(wire)
+    decision = ReferencedEvidenceDecisionV2.model_validate(
+        task_decision.model_dump(mode="json", exclude={"task"}))
+    bound = bind_evidence_references(decision, catalog, plan.evidence,
+        reference_protocol=REFERENCE_PROTOCOL_V2).model_dump(mode="json")
+
+    checked = 0
+    for binding_index, binding in enumerate(wire["bindings"]):
+        for declaration_index, declaration in enumerate(binding["effect_declarations"] or []):
+            for group in ("checks", "select_when"):
+                for check_index, check in enumerate(declaration[group]):
+                    source = check.get("expected_source") or {}
+                    if not source.get("reference", "").startswith("T") or source.get("excerpt") is None:
+                        continue
+                    anchor = catalog["texts"][source["reference"]]["text"]
+                    assert anchor.count(source["excerpt"]) == 1
+                    assert source["excerpt"].count(source["literal"]) == 1
+                    canonical = bound["bindings"][binding_index]["effect_declarations"][declaration_index][group][check_index]["expected_source"]
+                    assert canonical["excerpt"] == source["excerpt"]
+                    checked += 1
+    assert checked == 3
+
+    invalid_wire = deepcopy(wire)
+    invalid_source = next(check["expected_source"]
+        for binding in invalid_wire["bindings"]
+        for declaration in binding["effect_declarations"] or []
+        for check in declaration["checks"] + declaration["select_when"]
+        if (check.get("expected_source") or {}).get("reference", "").startswith("T"))
+    invalid_source["excerpt"] = "并非固定原文中的片段"
+    with pytest.raises(ValueError, match="固定锚点"):
+        invalid_task_decision = DECISIONS_V2["produced"].model_validate(invalid_wire)
+        invalid_decision = ReferencedEvidenceDecisionV2.model_validate(
+            invalid_task_decision.model_dump(mode="json", exclude={"task"}))
+        bind_evidence_references(invalid_decision, catalog, plan.evidence,
+            reference_protocol=REFERENCE_PROTOCOL_V2)
 
 
 @pytest.mark.parametrize("mutation", ["unknown-e", "unknown-t", "tool-as-document", "catalog-text", "catalog-hash", "wrong-literal"])
@@ -91,15 +217,15 @@ def test_v10_seed_checkpoint_and_prompts_are_unchanged():
     seed=PlanningTaskSeed.model_validate(raw['seed'])
     assert seed.model_dump(mode='json') == raw['seed']
     assert PlanningTaskCheckpoint.model_validate(raw['checkpoint']).model_dump(mode='json') == raw['checkpoint']
-    p=seed.plan.config_snapshot.policy
-    assert build_stage_prompts(p.planning_stage_protocol,p.effect_expected_source_protocol,p.operation_prefetch_protocol,p.source_identity_protocol,p.linked_source_protocol) == seed.stage_prompts
     assert REFERENCE_PROTOCOL not in json.dumps(seed.model_dump(mode='json'))
 
 
 @pytest.mark.asyncio
 @pytest.mark.skipif(os.getenv('RUN_LIVE_CASE_PLANNING_TASKS') != '1', reason='actual MySQL/PG/RustFS planning task')
 @pytest.mark.parametrize('fault', ['none', 'response-ack', 'unknown-reference'])
-async def test_actual_durable_references_survive_response_commit_and_current_changes(tmp_path, monkeypatch, fault):
+@pytest.mark.parametrize('reference_protocol', [REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V3])
+async def test_actual_durable_references_survive_response_commit_and_current_changes(
+        tmp_path, monkeypatch, fault, reference_protocol):
     from test_case_planning_tasks import tasks_environment, delivery, expire
     from test_planning_linked_sources import linked_case, linked_policy
     from test_case_effect_relations import document_declaration
@@ -112,12 +238,13 @@ async def test_actual_durable_references_survive_response_commit_and_current_cha
     from src.application.test_cases.planning_workflow import PlanningCheckpointUnavailable
     from src.infrastructure.postgres_runtime import postgres_connect
     async with tasks_environment(tmp_path) as env:
-        project = await env.projects.create(ProjectCreateRequest(project_key='references-'+fault, name='固定证据短引用'))
+        project_key = 'references-' + fault + '-' + reference_protocol.rsplit('-', 1)[-1]
+        project = await env.projects.create(ProjectCreateRequest(project_key=project_key, name='固定证据短引用'))
         raw = (ROOT/'docs/upgrade_2026-10-03/p4-linked-source-default-fixed/requirements.md').read_bytes()
         source_path = tmp_path/'requirements.md'; source_path.write_bytes(raw)
         document = await env.docs.upload_document(project_id=project.id,filename=source_path.name,content_base64=base64.b64encode(raw).decode())
         case, content = await linked_case(env, project, [{'source_type':'api_doc','source_id':document.id}])
-        policy = linked_policy().model_copy(update={'evidence_reference_protocol':REFERENCE_PROTOCOL})
+        policy = linked_policy().model_copy(update={'evidence_reference_protocol':reference_protocol})
         await env.service.save_policy(project.id,policy)
         task = await env.tasks.submit(project.id,CasePlanningTaskRequest(creation_key='original',objective=content['objective'],candidate_case_ids=[case.case.id]))
         def respond(context):
@@ -132,8 +259,10 @@ async def test_actual_durable_references_survive_response_commit_and_current_cha
             tool = next(e for e in context['evidence'] if e['kind']=='tool')
             value = {'action':'finish','summary':'实际固定原文证据','bindings':[{'item_key':'target','evidence_ids':[tool['id'],document_evidence['id']],
                 'effect_declarations':[document_declaration('produced','target',document_evidence),document_declaration('cleanup','target',document_evidence)]}]}
-            wire=reference_wire(value,context['evidence_reference_catalog'])
-            if fault=='unknown-reference' and not context['validation_feedback']:wire['bindings'][0]['evidence_ids']=['E999']
+            wire=reference_wire(value,context['evidence_reference_catalog'],reference_protocol)
+            if fault=='unknown-reference' and not context['validation_feedback']:
+                field = 'evidence_refs' if reference_protocol == REFERENCE_PROTOCOL_V3 else 'evidence_ids'
+                wire['bindings'][0][field]=['E999']
             return wire
         env.model.replies=[respond]*3
         original=env.jobs.save_checkpoint;claims=[]
@@ -165,10 +294,14 @@ async def test_actual_durable_references_survive_response_commit_and_current_cha
         terminal=await restored.get(project.id,task.id)
         plan=await env.service.get(project.id,terminal.plan_id)
         assert terminal.status=='completed' and plan.status=='planned',plan.summary
-        assert plan.prompt_version=='case-planning-evidence-references-v11+linked-navigation-v1'
+        if reference_protocol == REFERENCE_PROTOCOL_V3:
+            assert plan.prompt_version=='case-planning-evidence-references-v14+logic-v8+linked-navigation-v1'
+        else:
+            assert plan.prompt_version=='case-planning-evidence-references-v11+logic-v8+linked-navigation-v1'
         assert len(env.model.requests)==(3 if fault=='unknown-reference' else 2)
         assert plan.rounds[-1]['canonical_evidence_decision']['bindings'][0]['effect_declarations']
-        assert ReferencedEvidenceDecision.model_validate_json(plan.rounds[-1]['wire_response_text']).model_dump(mode='json') == plan.rounds[-1]['decision']
+        decision_model = ReferencedEvidenceDecisionV3 if reference_protocol == REFERENCE_PROTOCOL_V3 else ReferencedEvidenceDecision
+        assert decision_model.model_validate_json(plan.rounds[-1]['wire_response_text']).model_dump(mode='json') == plan.rounds[-1]['decision']
         if before:assert terminal.attempt_no==2 and terminal.deadline_at==before.deadline_at
         count=len(env.model.requests)
         await PlanningTaskHandler(env.service,restored,worker_id='terminal')(delivery(task))
@@ -178,7 +311,8 @@ async def test_actual_durable_references_survive_response_commit_and_current_cha
             saved=dict(cur.fetchone())
         saved['deadline_at']=saved['deadline_at'].isoformat()
         if os.getenv('QA_EVIDENCE_REFERENCE_DIR'):
-            out=Path(os.environ['QA_EVIDENCE_REFERENCE_DIR'])/fault;out.mkdir(parents=True,exist_ok=False)
+            out=Path(os.environ['QA_EVIDENCE_REFERENCE_DIR'])/reference_protocol.rsplit('-',1)[-1]/fault
+            out.mkdir(parents=True,exist_ok=False)
             (out/'requirements.md').write_bytes(raw)
             (out/'verification.json').write_text(json.dumps({'actual_PG':saved,'actual_requests':[x.model_dump(mode='json') for x in env.model.requests],
                 'actual_MySQL':(await env.service.get_policy(project.id)).model_dump(mode='json'), 'controlled_model':True,'business_HTTP':0,

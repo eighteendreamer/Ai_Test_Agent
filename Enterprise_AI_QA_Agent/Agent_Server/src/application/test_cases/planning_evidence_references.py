@@ -1,14 +1,19 @@
 """Bind only actual delivered evidence; keep business selection with the model."""
 from src.application.runtime.case_action_binding import _digest
 from src.schemas.case_planning_stages import EvidencePlanningDecisionV3
-from src.schemas.case_planning_references import REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2
+from src.schemas.case_planning_references import (
+    REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2, REFERENCE_PROTOCOL_V3,
+)
 
 
-def evidence_reference_catalog(evidence):
+def evidence_reference_catalog(evidence, reference_protocol=REFERENCE_PROTOCOL):
+    if reference_protocol not in {REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2, REFERENCE_PROTOCOL_V3}:
+        raise ValueError("未知的证据短引用协议")
+    split_document_refs = reference_protocol == REFERENCE_PROTOCOL_V3
     # No upstream counterpart (checked: impact text anchors/identity bindings,
     # planning fixed evidence, document expected compiler): current-call aliases
     # are a wire adapter, not a new canonical identity or business rule.
-    entries, texts = {}, {}
+    entries, documents, texts = {}, {}, {}
     for index, entry in enumerate(evidence, 1):
         # Case hashes belong to the case version, not its planning wrapper.
         # Scene content_hash belongs to its immutable asset; payload_hash covers
@@ -27,6 +32,10 @@ def evidence_reference_catalog(evidence):
         content = entry.payload.get("content")
         if entry.kind != "document" or not isinstance(content, str) or not content:
             continue
+        document_ref = f"D{len(documents) + 1}"
+        if split_document_refs:
+            documents[document_ref] = {"kind": "document", "evidence_id": entry.id, "source_id": entry.source_id,
+                "version": entry.version, "content_hash": entry.content_hash}
         ranges = [(0, len(content))]
         start = 0
         for line in content.splitlines(keepends=True):
@@ -35,45 +44,96 @@ def evidence_reference_catalog(evidence):
                 ranges.append((start, end))
             start += len(line)
         for start, end in ranges:
-            texts[f"T{len(texts) + 1}"] = {"evidence_ref": ref, "payload_path_tokens": ["content"],
-                "char_start": start, "char_end": end, "text": content[start:end]}
-    value = {"protocol": REFERENCE_PROTOCOL, "evidence": entries, "texts": texts}
+            text_entry = {"payload_path_tokens": ["content"], "char_start": start,
+                "char_end": end, "text": content[start:end]}
+            if split_document_refs:
+                text_entry["document_ref"] = document_ref
+            else:
+                text_entry["evidence_ref"] = ref
+            texts[f"T{len(texts) + 1}"] = text_entry
+    if split_document_refs:
+        value = {"protocol": REFERENCE_PROTOCOL_V3, "evidence_refs": entries,
+            "documents": documents, "texts": texts}
+    else:
+        # Keep the exact v1 catalog shape for v1/v2 frozen plan compatibility.
+        value = {"protocol": REFERENCE_PROTOCOL, "evidence": entries, "texts": texts}
     return {**value, "sha256": _digest(value)}
 
 
-def bind_evidence_references(decision, catalog, evidence, *, query_decision_type=None):
-    if catalog != evidence_reference_catalog(evidence):
+def bind_evidence_references(decision, catalog, evidence, *, query_decision_type=None,
+                             reference_protocol=REFERENCE_PROTOCOL):
+    if catalog != evidence_reference_catalog(evidence, reference_protocol):
         raise ValueError("本次调用短引用目录与固定已读证据不同")
 
-    def entry(ref):
-        if ref not in catalog["evidence"]:
+    def evidence_entry(ref):
+        references = catalog["evidence_refs"] if reference_protocol == REFERENCE_PROTOCOL_V3 else catalog["evidence"]
+        if ref not in references:
             raise ValueError(f"未登记的证据短引用：{ref}")
-        return catalog["evidence"][ref]
+        return references[ref]
+
+    def document_entry(ref):
+        if ref not in catalog["documents"]:
+            raise ValueError(f"未登记的文档短引用：{ref}")
+        return catalog["documents"][ref]
+
+    def anchored_text_excerpt(reference, anchor, text_id):
+        excerpt = reference.get("excerpt")
+        if excerpt is None:
+            return anchor["text"]
+        anchored_text = anchor.get("text")
+        literal = reference.get("literal")
+        if not isinstance(anchored_text, str) or anchored_text.count(excerpt) != 1:
+            raise ValueError(f"原文短引用 {text_id} 的excerpt不是固定锚点中唯一的连续子串")
+        if not isinstance(literal, str) or excerpt.count(literal) != 1:
+            raise ValueError(f"原文短引用 {text_id} 的literal未在excerpt中唯一出现")
+        return excerpt
 
     value = decision.model_dump(mode="json")
     for binding in value["bindings"]:
-        binding["evidence_ids"] = [entry(ref)["evidence_id"] for ref in binding["evidence_ids"]]
+        if reference_protocol == REFERENCE_PROTOCOL_V3:
+            refs = binding.pop("evidence_refs")
+        else:
+            refs = binding["evidence_ids"]
+        binding["evidence_ids"] = [evidence_entry(ref)["evidence_id"] for ref in refs]
         for declaration in binding["effect_declarations"] or []:
             for check in declaration["checks"] + declaration["select_when"]:
                 reference = check.get("expected_source")
                 if reference is None:
                     continue
-                reference_id = reference.get("reference")
-                text_reference = (reference_id.startswith("T") if isinstance(reference_id, str)
-                    else bool(reference.get("text_ref")))
-                if text_reference:
-                    text_id = reference_id if isinstance(reference_id, str) else reference["text_ref"]
-                    anchor = catalog["texts"].get(text_id)
-                    if anchor is None:
-                        raise ValueError(f"未登记的原文短引用：{text_id}")
-                    source = entry(anchor["evidence_ref"])
-                    normalized = {"payload_path_tokens": anchor["payload_path_tokens"], "excerpt": anchor["text"],
-                        "literal": reference["literal"], "encoding": reference["encoding"]}
+                if reference_protocol == REFERENCE_PROTOCOL_V3:
+                    if reference.get("text_ref"):
+                        text_id = reference["text_ref"]
+                        anchor = catalog["texts"].get(text_id)
+                        if anchor is None:
+                            raise ValueError(f"未登记的原文短引用：{text_id}")
+                        source = document_entry(anchor["document_ref"])
+                        normalized = {"payload_path_tokens": anchor["payload_path_tokens"],
+                            "excerpt": anchored_text_excerpt(reference, anchor, text_id),
+                            "literal": reference["literal"],
+                            "encoding": reference["encoding"]}
+                    else:
+                        source = document_entry(reference["document_ref"])
+                        normalized = {key: reference[key] for key in
+                            ("payload_path_tokens", "excerpt", "literal", "encoding")
+                            if reference.get(key) is not None}
                 else:
-                    evidence_id = reference_id if isinstance(reference_id, str) else reference["evidence_ref"]
-                    source = entry(evidence_id)
-                    normalized = {key: reference[key] for key in
-                        ("payload_path_tokens", "excerpt", "literal", "encoding") if reference.get(key) is not None}
+                    reference_id = reference.get("reference")
+                    text_reference = (reference_id.startswith("T") if isinstance(reference_id, str)
+                        else bool(reference.get("text_ref")))
+                    if text_reference:
+                        text_id = reference_id if isinstance(reference_id, str) else reference["text_ref"]
+                        anchor = catalog["texts"].get(text_id)
+                        if anchor is None:
+                            raise ValueError(f"未登记的原文短引用：{text_id}")
+                        source = evidence_entry(anchor["evidence_ref"])
+                        normalized = {"payload_path_tokens": anchor["payload_path_tokens"],
+                            "excerpt": anchored_text_excerpt(reference, anchor, text_id),
+                            "literal": reference["literal"], "encoding": reference["encoding"]}
+                    else:
+                        evidence_id = reference_id if isinstance(reference_id, str) else reference["evidence_ref"]
+                        source = evidence_entry(evidence_id)
+                        normalized = {key: reference[key] for key in
+                            ("payload_path_tokens", "excerpt", "literal", "encoding") if reference.get(key) is not None}
                 if source["kind"] != "document":
                     raise ValueError("文档预期短引用不能指向用例或工具")
                 check["expected_source"] = {**normalized,
@@ -84,12 +144,25 @@ def bind_evidence_references(decision, catalog, evidence, *, query_decision_type
 
 def reference_expected_prompt(*, version=REFERENCE_PROTOCOL):
     """Keep supported citation forms identical across planning task prompts."""
+    if version == REFERENCE_PROTOCOL_V3:
+        return (
+            "预期二选一：expected_path_tokens相对正式完整content或prepare.instructions；"
+            "expected_source使用document_ref的D短引用及payload_path_tokens，或text_ref的T短引用及literal/encoding。"
+            "D只表示文档结构值，T只表示目录中的确切原文；E只用于evidence_refs，不得放进expected_source。"
+            "T的excerpt优先为null；若返回非空excerpt，必须是该T锚点原文中唯一的连续子串，且literal在其中唯一出现，系统会校验后再绑定原文。"
+            "不复制正式ID/hash；literal必须唯一存在，json仅解码标量，text保留字符。"
+            "重复原文有歧义时用D加唯一excerpt/literal/encoding或说明缺口，不能猜测。"
+            "文档依据对应的E短引用仍须加入evidence_refs。"
+        )
     return (
         "预期二选一：expected_path_tokens相对正式完整content或prepare.instructions；"
         + ("expected_source使用单一reference字段，值为E短引用并提供payload_path_tokens，或T短引用并提供literal和encoding。"
             if version == REFERENCE_PROTOCOL_V2 else
             "expected_source引用文档E及payload_path_tokens，或T原文引用加literal和encoding。") +
-        "T已提供确切原文，不复制ID/hash/excerpt；literal必须唯一存在，json仅解码标量，text保留字符。"
+        ("T的excerpt优先为null；若返回非空excerpt，必须是该T锚点原文中唯一的连续子串，且literal在其中唯一出现，系统会校验后再绑定原文。"
+            if version == REFERENCE_PROTOCOL_V2 else
+         "T已提供确切原文，不复制ID/hash/excerpt；") +
+        "literal必须唯一存在，json仅解码标量，text保留字符。"
         "重复原文有歧义时用E+唯一excerpt/literal/encoding或说明缺口，不能猜测。"
         "文档来源的E必须加入该项evidence_ids；不用目录冒充正文。"
     )
@@ -97,11 +170,12 @@ def reference_expected_prompt(*, version=REFERENCE_PROTOCOL):
 
 def reference_effects_prompt(schema, *, version=REFERENCE_PROTOCOL):
     from src.application.test_cases.planning_sources import json_text
+    evidence_field = "evidence_refs" if version == REFERENCE_PROTOCOL_V3 else "evidence_ids"
     return (
         "只读规划当前项目的执行证据，不执行业务、不报告通过。完整用例/说明/原文和工具契约已经提供；"
         "logical_plan/hash及operation_selections固定，不改用例、项、instructions、依赖或清理关系。"
-        "bindings只追加现有item_key的evidence_ids、input_bindings、effect_declarations及具体缺口。"
-        "本阶段evidence_ids使用evidence_reference_catalog中的E短引用，正式ID和hash由系统还原。"
+        f"bindings只追加现有item_key的{evidence_field}、input_bindings、effect_declarations及具体缺口。"
+        f"本阶段{evidence_field}使用evidence_reference_catalog中的E短引用，正式ID和hash由系统还原。"
         + reference_expected_prompt(version=version) +
         "input_bindings引用外部依赖实际输出或runtime_context顶层input_key。所有路径为字面量键/索引数组，含点号键不拆。"
         "产生项声明produced，清理项声明cleanup；每份有唯一declaration_id、操作输入select_when、object_path_tokens、collection和checks。"

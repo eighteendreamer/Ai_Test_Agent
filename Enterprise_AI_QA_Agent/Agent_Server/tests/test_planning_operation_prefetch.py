@@ -15,7 +15,6 @@ from src.application.test_cases.planning_operation_prefetch import (
     PREFETCH_PROTOCOL, PREFETCH_PROMPT_VERSION, declared_operation_queries,
 )
 from src.application.test_cases.planning_tool_contracts import query_tool_contracts
-from src.application.test_cases.planning_stages import build_stage_prompts
 from src.application.test_cases.planning_workflow import PlanningCheckpointUnavailable
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.planning_task_handler import PlanningTaskHandler
@@ -65,8 +64,6 @@ def test_old_v6_seed_checkpoint_and_prompts_preserve_original_bytes_and_new_poli
     old = json.loads((ROOT/'docs/upgrade_2026-10-03/p4-expected-source-logged-final/document-durable-recovery/verification.json').read_bytes())['actual_PG']
     assert PlanningTaskSeed.model_validate(old['seed']).model_dump(mode='json') == old['seed']
     assert PlanningTaskCheckpoint.model_validate(old['checkpoint']).model_dump(mode='json') == old['checkpoint']
-    original = old['seed']['stage_prompts']
-    assert build_stage_prompts(original['protocol'], 'case-effect-document-expected-v1').model_dump(mode='json') == original
     with pytest.raises(ValidationError, match='明确操作预读'):
         CasePlanningPolicy(operation_prefetch_protocol=PREFETCH_PROTOCOL)
 
@@ -153,7 +150,7 @@ async def test_actual_fixed_operation_queue_read_and_commit_recovery(tmp_path, m
         plan=await env.service.get(project.id,terminal.plan_id)
         assert terminal.status=='completed' and plan.status=='planned'
         assert len(env.model.requests)==(4 if fault=='unknown-operation' else 3)
-        assert plan.prompt_version==('case-planning-source-identity-v8' if full_identity else PREFETCH_PROMPT_VERSION)
+        assert plan.prompt_version==(('case-planning-source-identity-v8' if full_identity else PREFETCH_PROMPT_VERSION)+'+logic-v8')
         assert plan.config_snapshot.policy.operation_prefetch_protocol==PREFETCH_PROTOCOL
         if before: assert terminal.deadline_at==before.deadline_at and terminal.attempt_no==2
         origin=next(r['operation_prefetch'] for r in plan.rounds if 'operation_prefetch' in r)

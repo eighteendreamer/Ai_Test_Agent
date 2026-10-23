@@ -13,7 +13,7 @@ from test_document_parsers import actual_docx, actual_pdf
 from test_case_planning import SequenceModel
 from test_case_effect_relations import policy
 from src.infrastructure.postgres_runtime import postgres_connect
-from src.application.test_cases.planning_stages import build_stage_prompts, stage_prompt_version
+from src.application.test_cases.planning_stages import stage_prompt_version
 from src.application.test_cases.planning_sources import FULL_SOURCE_IDENTITY_PROTOCOL
 from src.application.runtime.case_effect_expected_sources import document_expected_value
 from src.schemas.case_planning import CasePlanningPolicy, CasePlanningRequest, PlanningEvidence, PlanningDecisionV3
@@ -52,12 +52,12 @@ def test_actual_three_wrong_references_remain_rejected_by_old_identity_and_resol
     'p4-expected-source-logged-final/document-durable-recovery'])
 def test_actual_old_seed_checkpoint_and_prompts_are_byte_equivalent(directory):
     old=json.loads((ROOT/'docs/upgrade_2026-10-03'/directory/'verification.json').read_bytes())['actual_PG']
-    assert PlanningTaskSeed.model_validate(old['seed']).model_dump(mode='json')==old['seed']
+    seed=PlanningTaskSeed.model_validate(old['seed'])
+    assert seed.model_dump(mode='json')==old['seed']
     assert PlanningTaskCheckpoint.model_validate(old['checkpoint']).model_dump(mode='json')==old['checkpoint']
     policy=CasePlanningPolicy.model_validate(old['seed']['plan']['config_snapshot']['policy'])
-    prompts=build_stage_prompts(policy.planning_stage_protocol,policy.effect_expected_source_protocol,policy.operation_prefetch_protocol)
-    assert prompts.model_dump(mode='json')==old['seed']['stage_prompts']
-    assert stage_prompt_version(policy,prompts)==old['seed']['plan']['prompt_version']
+    prompts=seed.stage_prompts
+    assert stage_prompt_version(policy,prompts,include_logic_revision=False)==old['seed']['plan']['prompt_version']
     assert 'source_identity_protocol' not in policy.model_dump(mode='json')
 
 
@@ -104,11 +104,12 @@ async def test_actual_parsed_originals_share_payload_and_version_but_keep_explic
             source_identity_protocol=FULL_SOURCE_IDENTITY_PROTOCOL))
         model=SequenceModel({'action':'query','summary':'读取实际解析版本',
             'queries':[query.model_dump(mode='json')]},
-            {'action':'finish','summary':'当前项目没有正式目标用例','items':[]})
+            {'action':'finish','summary':'当前项目没有正式目标用例','items':[],
+             'unresolved':[{'condition':'没有匹配的正式目标用例','reason':'本测试项目只提供固定文档，没有创建业务测试用例。'}]})
         env.service._models=model
         plan=await env.service.create(project.id,CasePlanningRequest(objective='读取该固定文档并检查正式用例'))
         assert plan.status=='no_match' and len(model.requests)==2,plan.model_dump(mode='json')
-        assert plan.prompt_version=='case-planning-source-identity-v8'
+        assert plan.prompt_version=='case-planning-source-identity-v8+logic-v8'
         assert plan.config_snapshot==frozen_policy
         captured=next(e for e in plan.evidence if e.kind=='document')
         assert captured==new[0]

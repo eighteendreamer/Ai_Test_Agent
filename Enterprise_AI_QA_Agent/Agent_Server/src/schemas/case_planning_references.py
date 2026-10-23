@@ -2,14 +2,16 @@
 from typing import Annotated, Literal
 
 from pydantic import Field, model_validator
-from src.schemas.case_planning import PlanningModel
+from src.schemas.case_planning import PlanInputBinding, PlanningModel
 from src.schemas.case_planning_stages import EvidenceItemBindingV3, EvidencePlanningDecisionV3
 from src.schemas.case_effect_sources import SourceEffectCheck, SourceOperationSelector, SourceEffectRelationDeclaration
 
 REFERENCE_PROTOCOL = "case-planning-evidence-references-v1"
 REFERENCE_PROMPT_VERSION = "case-planning-evidence-references-v11"
 REFERENCE_PROTOCOL_V2 = "case-planning-evidence-references-v2"
-REFERENCE_PROMPT_VERSION_V2 = "case-planning-evidence-references-v12"
+REFERENCE_PROMPT_VERSION_V2 = "case-planning-evidence-references-v13"
+REFERENCE_PROTOCOL_V3 = "case-planning-evidence-references-v3"
+REFERENCE_PROMPT_VERSION_V3 = "case-planning-evidence-references-v14"
 
 
 class ReferencedDocumentExpected(PlanningModel):
@@ -72,7 +74,7 @@ class ReferencedDocumentTextV2(PlanningModel):
 class ReferencedTextExpectedV2(PlanningModel):
     reference: str = Field(pattern=r"^T[1-9][0-9]*$")
     payload_path_tokens: None = None
-    excerpt: None = None
+    excerpt: str | None = Field(default=None, min_length=1, max_length=8000)
     literal: str = Field(min_length=1, max_length=8000)
     encoding: Literal["text", "json"]
 
@@ -101,3 +103,55 @@ class ReferencedItemBindingV2(EvidenceItemBindingV3):
 
 class ReferencedEvidenceDecisionV2(EvidencePlanningDecisionV3):
     bindings: list[ReferencedItemBindingV2] = Field(default_factory=list, max_length=200)
+
+
+class ReferencedDocumentValueV3(PlanningModel):
+    document_ref: str = Field(pattern=r"^D[1-9][0-9]*$")
+    payload_path_tokens: list[Annotated[str, Field(max_length=256)]] = Field(max_length=32)
+    excerpt: None = None
+    literal: None = None
+    encoding: None = None
+
+
+class ReferencedDocumentTextV3(PlanningModel):
+    document_ref: str = Field(pattern=r"^D[1-9][0-9]*$")
+    payload_path_tokens: list[Annotated[str, Field(max_length=256)]] = Field(max_length=32)
+    excerpt: str = Field(min_length=1, max_length=8000)
+    literal: str = Field(min_length=1, max_length=8000)
+    encoding: Literal["text", "json"]
+
+
+class ReferencedTextExpectedV3(PlanningModel):
+    text_ref: str = Field(pattern=r"^T[1-9][0-9]*$")
+    payload_path_tokens: None = None
+    excerpt: str | None = Field(default=None, min_length=1, max_length=8000)
+    literal: str = Field(min_length=1, max_length=8000)
+    encoding: Literal["text", "json"]
+
+
+ReferencedDocumentExpectedV3 = ReferencedDocumentValueV3 | ReferencedDocumentTextV3 | ReferencedTextExpectedV3
+
+
+class ReferencedEffectCheckV3(SourceEffectCheck):
+    expected_source: ReferencedDocumentExpectedV3 | None = None
+
+
+class ReferencedOperationSelectorV3(SourceOperationSelector):
+    expected_source: ReferencedDocumentExpectedV3 | None = None
+
+
+class ReferencedEffectDeclarationV3(SourceEffectRelationDeclaration):
+    checks: list[ReferencedEffectCheckV3] = Field(min_length=1, max_length=200)
+    select_when: list[ReferencedOperationSelectorV3] = Field(min_length=1, max_length=20)
+
+
+class ReferencedItemBindingV3(PlanningModel):
+    item_key: str = Field(min_length=1, max_length=80)
+    evidence_refs: list[Annotated[str, Field(pattern=r"^E[1-9][0-9]*$")]] = Field(min_length=1, max_length=50)
+    input_bindings: dict[str, PlanInputBinding] = Field(default_factory=dict)
+    effect_evidence: None = None
+    effect_declarations: list[ReferencedEffectDeclarationV3] | None = Field(default=None, min_length=1, max_length=200)
+
+
+class ReferencedEvidenceDecisionV3(EvidencePlanningDecisionV3):
+    bindings: list[ReferencedItemBindingV3] = Field(default_factory=list, max_length=200)

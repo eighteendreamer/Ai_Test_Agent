@@ -17,7 +17,7 @@ from src.schemas.case_effect_sources import SourceEffectRelationDeclaration
 STAGE_PROTOCOL = "case-planning-staged-evidence-v1"
 STAGED_PROMPT_VERSION = "case-planning-staged-evidence-v4"
 RELATION_STAGE_PROTOCOL = "case-planning-staged-evidence-v2"
-RELATION_PROMPT_VERSION = "case-planning-staged-evidence-v5"
+RELATION_PROMPT_VERSION = "case-planning-staged-evidence-v8"
 
 
 class BusinessPlanningQuery(PlanningQuery):
@@ -141,7 +141,7 @@ class PlanningStagePrompts(PlanningModel):
     logic: str
     effects: str
     effect_tasks: dict[Literal["bindings", "produced", "cleanup"], str] | None = None
-    task_prompt_revision: Literal[1, 2, 3, 4, 5] = 1
+    task_prompt_revision: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9] = 1
 
     @model_serializer(mode="wrap")
     def preserve_original_prompts(self, handler):

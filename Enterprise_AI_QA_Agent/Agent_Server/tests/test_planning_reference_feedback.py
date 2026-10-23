@@ -62,12 +62,25 @@ def test_actual_ambiguity_reports_the_exact_declaration_field_and_count(caplog):
     assert "DELETE同一路径" not in str(log.__dict__)
 
 
-def test_actual_t_excerpt_remains_invalid_in_both_schema_and_parser():
-    wire = captured()["invalid_t_excerpt_cleanup"]
+def test_actual_t_excerpt_is_accepted_when_bound_to_the_fixed_original():
+    sample = captured()
+    wire = sample["invalid_t_excerpt_cleanup"]
+    jsonschema.validate(wire, effect_task_schema("cleanup", REFERENCE_PROTOCOL_V2))
+    state, _ = accept(sample, wire)
+    assert state.completed[-1].task == "cleanup"
+
+
+@pytest.mark.parametrize("mutation", ["outside-anchor", "literal-not-in-excerpt"])
+def test_t_excerpt_cannot_escape_its_anchor_or_drop_the_literal(mutation):
+    sample = captured()
+    wire = deepcopy(sample["invalid_t_excerpt_cleanup"])
+    reference = wire["bindings"][0]["effect_declarations"][0]["select_when"][0]["expected_source"]
+    if mutation == "outside-anchor":
+        reference["excerpt"] = "DELETE返回204"
+    else:
+        reference["excerpt"] = "200"
     with pytest.raises(ValueError):
-        DECISIONS_V2["cleanup"].model_validate(wire)
-    with pytest.raises(jsonschema.ValidationError):
-        jsonschema.validate(wire, effect_task_schema("cleanup", REFERENCE_PROTOCOL_V2))
+        accept(sample, wire)
 
 
 def test_explicit_e_excerpt_resolves_the_same_original_value_and_location():
@@ -107,7 +120,13 @@ def test_fine_citation_cannot_invent_or_ignore_original_text(mutation):
 
 @pytest.mark.parametrize("protocol", [REFERENCE_PROTOCOL, REFERENCE_PROTOCOL_V2])
 def test_each_task_keeps_the_existing_reference_fallback_guidance(protocol):
-    for prompt in effect_task_prompts(protocol).values():
+    prompts = effect_task_prompts(protocol)
+    for task in ("produced", "cleanup"):
+        prompt = prompts[task]
         assert "literal必须唯一存在" in prompt
         assert "重复原文有歧义时用E+唯一excerpt/literal/encoding" in prompt
-        assert "T已提供确切原文，不复制ID/hash/excerpt" in prompt
+        if protocol == REFERENCE_PROTOCOL_V2:
+            assert "T的excerpt优先为null" in prompt
+            assert "T锚点原文中唯一的连续子串" in prompt
+        else:
+            assert "T已提供确切原文，不复制ID/hash/excerpt" in prompt

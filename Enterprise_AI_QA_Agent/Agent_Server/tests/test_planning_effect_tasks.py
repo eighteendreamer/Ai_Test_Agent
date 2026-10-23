@@ -9,13 +9,17 @@ from test_planning_evidence_references import actual, reference_wire
 from src.application.test_cases.planning_stages import seal_logical_decision, build_stage_prompts, stage_prompt_version
 from src.application.test_cases.planning_effect_tasks import (
     DECISIONS, _prompt_schema, accept_task_decision, aggregate_task_receipts, effect_task_prompts,
-    DECISIONS_V2, next_effect_task, check_task_progress, effect_task_output_format, effect_task_schema, task_roles,
+    DECISIONS_V2, DECISIONS_V3, next_effect_task, check_task_progress, effect_task_output_format,
+    effect_task_schema, task_roles,
 )
 from src.application.runtime.case_effect_evidence import validate_effect_declarations
 from src.schemas.case_planning import PlanningDecisionV3, CasePlanningPolicy
 from src.schemas.case_planning_stages import LogicalPlanningDecisionV3, PlanningOperationSelection, PlanningStagePrompts
 from src.schemas.case_planning_effect_tasks import BindingTaskDecision, ProducedTaskDecision, EffectTaskCheckpoint
-from src.schemas.case_planning_references import REFERENCE_PROTOCOL_V2, ReferencedDocumentExpectedV2
+from src.schemas.case_planning_references import (
+    REFERENCE_PROTOCOL_V2, REFERENCE_PROTOCOL_V3, ReferencedDocumentExpected,
+    ReferencedDocumentExpectedV2, ReferencedTextExpectedV3,
+)
 from src.schemas.case_planning_task import PlanningTaskSeed, PlanningTaskCheckpoint
 
 ROOT = Path(__file__).resolve().parents[2] / "docs/upgrade_2026-10-03"
@@ -56,6 +60,11 @@ def test_v2_effect_schema_uses_single_document_reference_alias():
     prompt_schema = json.loads(effect_task_prompts(REFERENCE_PROTOCOL_V2)["produced"].split("\nJSON Schema: ", 1)[1])
     assert prompt_schema == _prompt_schema(schema)
     assert 'expected_source={reference:"T3"' in effect_task_prompts(REFERENCE_PROTOCOL_V2)["produced"]
+    expected = TypeAdapter(ReferencedDocumentExpectedV2).validate_python({
+        "reference": "T3", "payload_path_tokens": None, "excerpt": "订单已创建",
+        "literal": "订单已创建", "encoding": "text",
+    })
+    assert expected.excerpt == "订单已创建"
 
 
 def test_v2_effect_wire_rejects_v1_dual_reference_fields():
@@ -63,6 +72,50 @@ def test_v2_effect_wire_rejects_v1_dual_reference_fields():
         TypeAdapter(ReferencedDocumentExpectedV2).validate_python({
             "reference": "E1", "evidence_ref": "E1", "text_ref": "T1", "payload_path_tokens": [],
         })
+
+
+def test_v3_effect_schema_separates_item_evidence_from_document_expectations():
+    schema = effect_task_schema("produced", REFERENCE_PROTOCOL_V3)
+    binding = schema["$defs"]["TaskDeclarationsV3"]["properties"]
+    assert "evidence_refs" in binding and "evidence_ids" not in binding
+    for name in ("ReferencedDocumentValueV3", "ReferencedDocumentTextV3", "ReferencedTextExpectedV3"):
+        expected = schema["$defs"][name]
+        assert set(expected["required"]) == set(expected["properties"])
+        assert "evidence_ref" not in expected["properties"]
+        assert "reference" not in expected["properties"]
+    for name in ("ReferencedEffectCheckV3", "ReferencedOperationSelectorV3"):
+        definition = schema["$defs"][name]
+        assert {"expected_path_tokens", "expected_source"} <= set(definition["required"])
+    prompt = effect_task_prompts(REFERENCE_PROTOCOL_V3)["produced"]
+    assert 'document_ref:"D1"' in prompt
+    assert 'text_ref:"T3"' in prompt
+    assert "evidence_refs使用" in prompt
+    assert "E只用于evidence_refs" in prompt
+    assert "E短引用、用例或工具证据写入expected_source" in prompt
+    assert "evidence_ids使用" not in prompt
+    assert "T锚点原文中唯一的连续子串" in prompt
+    assert effect_task_output_format("produced", REFERENCE_PROTOCOL_V3).schema_definition == schema
+    text_expected = ReferencedTextExpectedV3.model_validate({
+        "text_ref": "T3", "payload_path_tokens": None, "excerpt": "订单已创建",
+        "literal": "订单已创建", "encoding": "text",
+    })
+    assert text_expected.excerpt == "订单已创建"
+
+
+def test_v3_rejects_the_actual_full_id_and_ambiguous_e_reference_failure():
+    # The real Agnes response at round 5 used canonical IDs in evidence_ids and
+    # used a case E alias as a document expected_source. Both are invalid in v3.
+    raw = json.loads((ROOT / "p2-alternate-model-live-20261021-10/PG-planning.json").read_bytes())
+    rounds = raw["checkpoint"]["plan"]["rounds"]
+    failed = next(entry for entry in rounds if entry.get("round") == 5)
+    wire = json.loads(failed["wire_response_text"])
+    assert any(str(value).startswith(("case:", "document:"))
+        for value in wire["bindings"][0]["evidence_ids"])
+    assert any(check.get("expected_source", {}).get("reference", "").startswith("E")
+        for declaration in wire["bindings"][0]["effect_declarations"]
+        for check in declaration["checks"] + declaration["select_when"])
+    with pytest.raises(ValueError):
+        DECISIONS_V3["produced"].model_validate(wire)
 
 
 def test_strict_effect_schema_requires_both_nullable_expected_source_fields():
@@ -82,13 +135,30 @@ def test_effect_task_prompt_disambiguates_case_paths_document_refs_and_roles():
     assert 'expected_path_tokens=["期望","create_code"]' in common
     assert "路径相对content_json对象本身" in common
     assert 'text_ref:"T3"' in common
-    assert "E和T是二选一的文档短引用" in common
+    assert "E结构引用与T原文引用二选一" in common
+    assert "绝不能在T对象中同时携带其底层文档的evidence_ref" in common
     assert "用例E证据的预期只能走expected_path_tokens" in common
     assert "条件全部同时匹配" in common
+    assert "select_when每项只有input_path_tokens、expected_path_tokens、expected_source，不包含operator" in common
+    assert "operator只属于checks" in common
+    assert "不得复制case:/document:完整证据ID" in common
     assert "不得把模板当作实际path预期" in common
     assert "validation_feedback中的case:/document:等ID仅用于定位" in common
     assert "不能在produced任务里添加role=cleanup" in prompts["produced"]
     assert "只返回role=cleanup" in prompts["cleanup"]
+
+
+def test_actual_v1_dual_reference_failure_rejects_and_single_text_reference_is_valid():
+    # Exact expected_source shape from the actual rejected v1 response.
+    source = {"evidence_ref": "E1", "text_ref": "T1", "payload_path_tokens": None,
+        "excerpt": "POST /orders", "literal": "POST /orders", "encoding": "text"}
+    assert source["evidence_ref"] == "E1" and source["text_ref"] == "T1"
+    with pytest.raises(ValueError, match="只能选择一个E或T引用"):
+        TypeAdapter(ReferencedDocumentExpected).validate_python(source)
+
+    corrected = {**source, "evidence_ref": None, "excerpt": None}
+    parsed = TypeAdapter(ReferencedDocumentExpected).validate_python(corrected)
+    assert parsed.text_ref == "T1" and parsed.evidence_ref is None
 
 
 def test_binding_task_uses_item_sources_without_native_effect_path_instructions():
@@ -180,6 +250,23 @@ def test_v2_task_receipts_bind_e_and_t_aliases_to_canonical_evidence():
     assert merged == plan.decision
 
 
+def test_regression_real_agnes_output_rejects_canonical_ids_and_selector_operator():
+    # These two invalid forms were present together in the real Agnes round
+    # saved at p2-alternate-model-live-20261021-08/PG-planning.json, round 3.
+    _, _, _, tasks = captured_tasks()
+    value = deepcopy(tasks["produced"])
+    value["bindings"][0]["evidence_ids"] = [
+        "case:74d5be8e-54c0-4116-9286-a598d9defcb7",
+        "case:e3c1ca00-f5ba-4e88-a8fa-ce6fec08e715",
+    ]
+    value["bindings"][0]["effect_declarations"][0]["select_when"][0]["operator"] = "equals"
+    with pytest.raises(ValueError) as rejected:
+        DECISIONS_V2["produced"].model_validate(value)
+    message = str(rejected.value)
+    assert "String should match pattern" in message
+    assert "Extra inputs are not permitted" in message
+
+
 @pytest.mark.parametrize("fault", ["foreign-item", "missing-item", "unknown-e", "role", "wrong-path", "duplicate-id"])
 def test_bad_task_cannot_change_saved_previous_receipt(fault):
     plan, fixed, catalog, tasks = captured_tasks()
@@ -230,8 +317,8 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     prompts = build_stage_prompts(policy.planning_stage_protocol, policy.effect_expected_source_protocol,
         policy.operation_prefetch_protocol, policy.source_identity_protocol, policy.linked_source_protocol, policy.evidence_reference_protocol)
     assert set(prompts.effect_tasks) == set(DECISIONS)
-    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r5")
-    assert prompts.task_prompt_revision == 5
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v1.r7")
+    assert prompts.task_prompt_revision == 7
     assert "cleanup_sources引用实际产生该业务对象的item_key" in prompts.logic
     assert "不是执行DELETE/清理步骤的item_key" in prompts.logic
     assert "目标用例正文包含清理步骤、cleanup字段或清理操作，也不能因此自引用" in prompts.logic
@@ -246,6 +333,39 @@ def test_new_strategy_is_explicit_frozen_policy_not_global_model_setting():
     assert policy.timeout_seconds == plan.config_snapshot.policy.timeout_seconds
     config["evidence_reference_protocol"] = None
     with pytest.raises(ValueError): CasePlanningPolicy.model_validate(config)
+
+
+def test_v3_reference_protocol_is_explicitly_versioned_in_the_frozen_prompt():
+    plan, _, _, _ = captured_tasks()
+    config = plan.config_snapshot.policy.model_dump(mode="json")
+    config["evidence_reference_protocol"] = REFERENCE_PROTOCOL_V3
+    config["planning_stage_protocol"] = "case-planning-staged-evidence-v3"
+    policy = CasePlanningPolicy.model_validate(config)
+    prompts = build_stage_prompts(
+        policy.planning_stage_protocol,
+        policy.effect_expected_source_protocol,
+        policy.operation_prefetch_protocol,
+        policy.source_identity_protocol,
+        policy.linked_source_protocol,
+        policy.evidence_reference_protocol,
+    )
+    assert prompts.task_prompt_revision == 9
+    assert "evidence_refs" in prompts.effect_tasks["bindings"]
+    assert "document_ref" in prompts.effect_tasks["produced"]
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v3.r9")
+
+    config["evidence_reference_protocol"] = REFERENCE_PROTOCOL_V2
+    policy = CasePlanningPolicy.model_validate(config)
+    prompts = build_stage_prompts(
+        policy.planning_stage_protocol,
+        policy.effect_expected_source_protocol,
+        policy.operation_prefetch_protocol,
+        policy.source_identity_protocol,
+        policy.linked_source_protocol,
+        policy.evidence_reference_protocol,
+    )
+    assert prompts.task_prompt_revision == 8
+    assert stage_prompt_version(policy, prompts).endswith("+effect-tasks-v2.r8")
 
 
 def test_cross_case_cleanup_scope_assigns_produced_role_to_creator():

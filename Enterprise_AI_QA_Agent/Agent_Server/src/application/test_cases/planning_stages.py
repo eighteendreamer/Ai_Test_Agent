@@ -17,43 +17,129 @@ from src.application.test_cases.planning_operation_prefetch import (
 from src.schemas.case_planning_sources import (LINKED_SOURCE_PROTOCOL, LINKED_SOURCE_PROMPT_VERSION,
     SCENE_LINKED_SOURCE_PROTOCOL, SCENE_LINKED_SOURCE_PROMPT_VERSION)
 from src.schemas.case_planning_references import (
-    REFERENCE_PROMPT_VERSION, REFERENCE_PROMPT_VERSION_V2,
-    REFERENCE_PROTOCOL_V2, ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2,
+    REFERENCE_PROMPT_VERSION, REFERENCE_PROMPT_VERSION_V2, REFERENCE_PROMPT_VERSION_V3,
+    REFERENCE_PROTOCOL_V2, REFERENCE_PROTOCOL_V3,
+    ReferencedEvidenceDecision, ReferencedEvidenceDecisionV2, ReferencedEvidenceDecisionV3,
 )
 from src.application.test_cases.planning_evidence_references import reference_effects_prompt
 from src.schemas.case_planning_scenes import SCENE_QUERY_PROMPT_VERSION, scene_decision_types
 
 SOURCE_IDENTITY_PROMPT_VERSION = "case-planning-source-identity-v8"
+LEGACY_RELATION_PROMPT_VERSION = "case-planning-staged-evidence-v5"
+PREVIOUS_RELATION_LOGIC_PROMPT_VERSION = "case-planning-staged-evidence-v7"
 
 
-def stage_prompt_version(policy, stages):
+def previous_relation_logic_prompt_version(prompt_version):
+    current_marker = "+logic-v" + RELATION_PROMPT_VERSION.rsplit("-v", 1)[-1]
+    previous_marker = "+logic-v" + PREVIOUS_RELATION_LOGIC_PROMPT_VERSION.rsplit("-v", 1)[-1]
+    if current_marker in prompt_version:
+        return prompt_version.replace(current_marker, previous_marker, 1)
+    if prompt_version == RELATION_PROMPT_VERSION or prompt_version.startswith(RELATION_PROMPT_VERSION + "+"):
+        return PREVIOUS_RELATION_LOGIC_PROMPT_VERSION + prompt_version[len(RELATION_PROMPT_VERSION):]
+    return None
+
+
+def uses_current_relation_logic_prompt(prompt_version):
+    current_marker = "+logic-v" + RELATION_PROMPT_VERSION.rsplit("-v", 1)[-1]
+    return (prompt_version == RELATION_PROMPT_VERSION
+        or prompt_version.startswith(RELATION_PROMPT_VERSION + "+")
+        or current_marker in prompt_version)
+
+
+def validate_relation_logic_finish(decision, prompt_version):
+    if not uses_current_relation_logic_prompt(prompt_version) or decision.action != "finish":
+        return
+    if not any(item.kind == "target" for item in decision.items) and not decision.unresolved:
+        raise ValueError("当前逻辑计划没有目标用例，必须在unresolved中列出具体缺口及原因")
+
+
+def _prune_unreferenced_schema_defs(schema):
+    definitions = schema.get("$defs")
+    if not definitions:
+        return schema
+
+    referenced = set()
+
+    def collect_refs(value):
+        if isinstance(value, dict):
+            ref = value.get("$ref")
+            if isinstance(ref, str) and ref.startswith("#/$defs/"):
+                name = ref[len("#/$defs/"):].split("/", 1)[0]
+                referenced.add(name.replace("~1", "/").replace("~0", "~"))
+            for child in value.values():
+                collect_refs(child)
+        elif isinstance(value, list):
+            for child in value:
+                collect_refs(child)
+
+    collect_refs({key: value for key, value in schema.items() if key != "$defs"})
+    pending = list(referenced)
+    visited = set()
+    while pending:
+        name = pending.pop()
+        if name in visited:
+            continue
+        visited.add(name)
+        definition = definitions.get(name)
+        if definition is None:
+            continue
+        before = set(referenced)
+        collect_refs(definition)
+        pending.extend(referenced - before)
+
+    schema["$defs"] = {name: value for name, value in definitions.items() if name in visited}
+    return schema
+
+
+def stage_prompt_version(policy, stages, *, include_logic_revision=True):
     if stages.protocol == "case-planning-staged-evidence-v3":
-        task_version = "v2" if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else "v1"
+        task_version = ("v3" if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V3 else
+            "v2" if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else "v1")
         revision = f".r{stages.task_prompt_revision}" if stages.task_prompt_revision != 1 else ""
-        return stage_prompt_version(policy, stages.model_copy(update={"protocol": RELATION_STAGE_PROTOCOL})) + f"+effect-tasks-{task_version}{revision}"
+        return stage_prompt_version(policy, stages.model_copy(update={"protocol": RELATION_STAGE_PROTOCOL}),
+            include_logic_revision=include_logic_revision) + f"+effect-tasks-{task_version}{revision}"
+
+    def overlay_version(version):
+        if stages.protocol != RELATION_STAGE_PROTOCOL or not include_logic_revision:
+            return version
+        relation_revision = RELATION_PROMPT_VERSION.rsplit("-v", 1)[-1]
+        return f"{version}+logic-v{relation_revision}"
+
+    reference_version = (
+        REFERENCE_PROMPT_VERSION_V3 if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V3 else
+        REFERENCE_PROMPT_VERSION_V2 if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
+        REFERENCE_PROMPT_VERSION)
     if policy.scene_query_protocol:
-        return SCENE_QUERY_PROMPT_VERSION
+        version = SCENE_QUERY_PROMPT_VERSION
+        if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V3:
+            version += "+evidence-references-v3"
+        return overlay_version(version)
     if policy.linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
-        return SCENE_LINKED_SOURCE_PROMPT_VERSION
+        version = SCENE_LINKED_SOURCE_PROMPT_VERSION
+        if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V3:
+            version += "+evidence-references-v3"
+        return overlay_version(version)
     if policy.evidence_reference_protocol:
-        return REFERENCE_PROMPT_VERSION_V2 if policy.evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else REFERENCE_PROMPT_VERSION
+        return overlay_version(reference_version)
     if policy.linked_source_protocol:
-        return LINKED_SOURCE_PROMPT_VERSION
+        return overlay_version(LINKED_SOURCE_PROMPT_VERSION)
     if policy.operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
-        return ITEM_PREFETCH_PROMPT_VERSION
+        return overlay_version(ITEM_PREFETCH_PROMPT_VERSION)
     if policy.source_identity_protocol:
-        return SOURCE_IDENTITY_PROMPT_VERSION
+        return overlay_version(SOURCE_IDENTITY_PROMPT_VERSION)
     if policy.operation_prefetch_protocol:
-        return PREFETCH_PROMPT_VERSION
+        return overlay_version(PREFETCH_PROMPT_VERSION)
     if policy.effect_expected_source_protocol:
-        return SOURCE_PROMPT_VERSION
-    return RELATION_PROMPT_VERSION if stages.protocol == RELATION_STAGE_PROTOCOL else STAGED_PROMPT_VERSION
+        return overlay_version(SOURCE_PROMPT_VERSION)
+    if stages.protocol == RELATION_STAGE_PROTOCOL:
+        return RELATION_PROMPT_VERSION if include_logic_revision else LEGACY_RELATION_PROMPT_VERSION
+    return STAGED_PROMPT_VERSION
 
 
-def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None, scene_query_protocol=None):
+def _build_stage_prompts_unprojected(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None, source_identity_protocol=None, linked_source_protocol=None, evidence_reference_protocol=None, scene_query_protocol=None):
     if protocol == "case-planning-staged-evidence-v3":
         from src.application.test_cases.planning_effect_tasks import effect_task_prompts
-        base = build_stage_prompts(RELATION_STAGE_PROTOCOL, expected_source_protocol, operation_prefetch_protocol,
+        base = _build_stage_prompts_unprojected(RELATION_STAGE_PROTOCOL, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol, scene_query_protocol)
         prompts = effect_task_prompts(evidence_reference_protocol)
         logic = ("本版本必须区分清理执行者与被清理对象的产生者：cleanup_sources引用实际产生该业务对象的item_key，"
@@ -63,12 +149,17 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
             "depends_on、用例类型、步骤顺序或HTTP方法本身都不能证明对象来源。来源不明确时写unresolved，不猜来源、不自引用。"
             "不清理的项保留空关系，依据完整操作与原文判断。") + base.logic
         return PlanningStagePrompts(protocol=protocol, logic=logic, effects=prompts["bindings"],
-            effect_tasks=prompts, task_prompt_revision=5)
+            effect_tasks=prompts,
+            task_prompt_revision=(
+                9 if evidence_reference_protocol == REFERENCE_PROTOCOL_V3 else
+                8 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else 7))
     if scene_query_protocol:
-        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
+        original = _build_stage_prompts_unprojected(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, linked_source_protocol, evidence_reference_protocol)
         logic_type = LogicalPlanningDecisionV4 if operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL else LogicalPlanningDecisionV3
-        effects_type = (ReferencedEvidenceDecisionV2 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
+        effects_type = (
+            ReferencedEvidenceDecisionV3 if evidence_reference_protocol == REFERENCE_PROTOCOL_V3 else
+            ReferencedEvidenceDecisionV2 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
             ReferencedEvidenceDecision if evidence_reference_protocol else EvidencePlanningDecisionV3)
         new_logic, new_effects = scene_decision_types(operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL, evidence_reference_protocol)
         instruction = ("可以按业务缺口查询当前项目的未关联场景。scenes使用query/offset搜索，目录仅导航；"
@@ -85,7 +176,7 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
             setattr(original, stage, instruction + prompt)
         return original
     if linked_source_protocol == SCENE_LINKED_SOURCE_PROTOCOL:
-        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol,
+        original = _build_stage_prompts_unprojected(protocol, expected_source_protocol, operation_prefetch_protocol,
             source_identity_protocol, LINKED_SOURCE_PROTOCOL, evidence_reference_protocol)
         instruction = ("linked_source_reads还包含正式用例明确关联场景的固定读取。scene证据是完整不可变场景版本、原始响应与别名定位依据；"
             "不把目录、organized或not_executed当执行成功。"
@@ -96,19 +187,21 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
             if evidence_reference_protocol else "证据阶段引用实际evidence.id和content_hash。") + original.effects
         return original
     if evidence_reference_protocol:
-        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol, linked_source_protocol)
-        reference_model = (ReferencedEvidenceDecisionV2 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2
-            else ReferencedEvidenceDecision)
+        original = _build_stage_prompts_unprojected(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol, linked_source_protocol)
+        reference_model = (
+            ReferencedEvidenceDecisionV3 if evidence_reference_protocol == REFERENCE_PROTOCOL_V3 else
+            ReferencedEvidenceDecisionV2 if evidence_reference_protocol == REFERENCE_PROTOCOL_V2 else
+            ReferencedEvidenceDecision)
         original.effects = reference_effects_prompt(reference_model.model_json_schema(), version=evidence_reference_protocol)
         return original
     if linked_source_protocol:
-        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol)
+        original = _build_stage_prompts_unprojected(protocol, expected_source_protocol, operation_prefetch_protocol, source_identity_protocol)
         original.logic = ("linked_source_reads是首次推理前对完整用例明确关联文档的只读记录。已读正文在evidence；"
             "current_linked_source表示仅有ID时捕获的当前资料，不是当时编写依据；来源错误和has_more保留，不假装已读完整。"
             "后续document分页继续同一固定版本/解析；多基准歧义不自动选。不要为了请求已读原文重复query，必要的新资料仍可查询。") + original.logic
         return original
     if operation_prefetch_protocol == ITEM_PREFETCH_PROTOCOL:
-        original = build_stage_prompts(protocol, expected_source_protocol, None, source_identity_protocol)
+        original = _build_stage_prompts_unprojected(protocol, expected_source_protocol, None, source_identity_protocol)
         original.logic = original.logic.replace(json_text(LogicalPlanningDecisionV3.model_json_schema()),
             json_text(LogicalPlanningDecisionV4.model_json_schema()))
         original.logic = (
@@ -124,7 +217,7 @@ def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_
         ) + original.effects
         return original
     if source_identity_protocol == FULL_SOURCE_IDENTITY_PROTOCOL:
-        original = build_stage_prompts(protocol, expected_source_protocol, operation_prefetch_protocol)
+        original = _build_stage_prompts_unprojected(protocol, expected_source_protocol, operation_prefetch_protocol)
         identity = "本计划文档/录制依据id使用完整content_hash摘要，查询结果与evidence.id为同一身份；引用该完整id，不截断或补写摘要。"
         original.logic = identity + original.logic
         original.effects = identity + original.effects
@@ -224,14 +317,18 @@ def build_relation_stage_prompts():
     )
     logic = common + (
         "逻辑阶段：理解用户目标→当前项目选用例→初排→判断必要信息或状态由谁提供→补全→最终依赖排序。"
-        "正式项引用完整固定case_id/case_version_id；必要前置可不直接匹配用户目标，优先查询正式用例。"
+        "用户目标对应的正式用例必须设为target；必要前置可不直接匹配用户目标，作为dependency加入。正式项引用完整固定case_id/case_version_id。"
+        "本阶段只制定未来计划，没有执行工具；用例说明、前置条件和计划步骤不代表已经发生。不得声称订单已创建、接口已调用或收到具体HTTP响应，除非输入明确提供对应的既有执行回执。"
+        "prepare只在已查阅的项目正式用例均不能提供所需前置时使用；若已读正式用例可提供条件，必须加入dependency并引用其固定case_id/case_version_id，不能复制其操作成为prepare。"
+        "例：查询订单需要有效订单且项目有创建订单正式用例时，创建用例为dependency，查询用例为target并依赖前者。"
         "没有正式前置而项目原文有可靠依据才补prepare.instructions；不虚构接口/元素；负向条件不补正向。"
         "完整正式用例可自行创建、查询和清理，也可清理prepare产生的数据，不强制拆成多个用例或准备项。"
         "谁实际执行清理就由谁声明cleanup_sources，正式项也可声明；prepare创建、target清理时来源写在target，不能写在只创建的prepare。"
+        "cleanup_sources的值必须是本计划items中执行项的key/item_key，不能填case_key、case_id或case_version_id；清理正式创建用例产生的数据时填写该创建执行项的key。"
         "同项内部创建后清理可cleanup_sources引用自身，表示操作效果来源，不添加depends_on自身。"
         "外部来源应先提供条件；共享清理需在必要消费者之后，依赖不能循环；不凭标题/HTTP方法猜关系。"
         "input_bindings为空，effect_declarations不填：下一阶段绑定技术证据。只查询业务用例、文档、录制。"
-        "finish的items仅有必要目标/前置/准备；缺依据写unresolved，没有目标说明原因。\nJSON Schema: "
+        "finish的items仅有必要目标/前置/准备；缺依据写unresolved。若finish没有任何target，unresolved必须至少写明一条具体缺口及原因：缺少什么目标/必要条件，以及已读候选为何不能提供；不能只在summary解释，也不能转成自由测试。\nJSON Schema: "
     ) + json_text(LogicalPlanningDecisionV2.model_json_schema())
     effects = common + (
         "证据阶段：logical_plan/hash固定，不换项、用例、instructions、depends_on、cleanup_sources或业务理由。"
@@ -246,6 +343,32 @@ def build_relation_stage_prompts():
         "不能删逻辑缺口或清理关系。完成finish，否则query固定技术依据。\nJSON Schema: "
     ) + json_text(EvidencePlanningDecisionV2.model_json_schema())
     return PlanningStagePrompts(protocol=RELATION_STAGE_PROTOCOL, logic=logic, effects=effects)
+
+
+def _project_logical_schema_after_composition(prompts):
+    if prompts.protocol not in {RELATION_STAGE_PROTOCOL, "case-planning-staged-evidence-v3"}:
+        return prompts
+    original_schema = json_text(LogicalPlanningDecisionV2.model_json_schema())
+    if original_schema not in prompts.logic:
+        return prompts
+
+    logic_schema = LogicalPlanningDecisionV2.model_json_schema()
+    for name in ("LogicalFormalCaseItemV2", "LogicalPreparationItemV2"):
+        properties = logic_schema["$defs"][name]["properties"]
+        for field in ("input_bindings", "effect_evidence", "effect_declarations", "effect_schema"):
+            properties.pop(field, None)
+    _prune_unreferenced_schema_defs(logic_schema)
+    projected_schema = json_text(logic_schema)
+    logic = prompts.logic.replace(original_schema, projected_schema)
+    return prompts.model_copy(update={"logic": logic})
+
+
+def build_stage_prompts(protocol=None, expected_source_protocol=None, operation_prefetch_protocol=None,
+                        source_identity_protocol=None, linked_source_protocol=None,
+                        evidence_reference_protocol=None, scene_query_protocol=None):
+    prompts = _build_stage_prompts_unprojected(protocol, expected_source_protocol, operation_prefetch_protocol,
+        source_identity_protocol, linked_source_protocol, evidence_reference_protocol, scene_query_protocol)
+    return _project_logical_schema_after_composition(prompts)
 
 
 def build_document_source_prompts():

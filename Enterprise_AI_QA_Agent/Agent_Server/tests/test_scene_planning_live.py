@@ -182,7 +182,8 @@ async def test_actual_scene_source_before_planning_and_fixed_recovery(tmp_path, 
                     entry = context["linked_source_reads"]["entries"][0]
                     assert entry["error"] and not entry["read"] and entry["basis"] is None
                     assert not any(e["kind"] == "scene" for e in context["evidence"])
-                    return finish()
+                    return finish(unresolved=[{"condition":"没有匹配的正式目标用例",
+                        "reason":"当前只读检查固定来源错误，不是用例正文中的业务目标。"}])
                 model.replies = [rejected]
                 await PlanningTaskHandler(planner, jobs, worker_id="scene-" + fault)(delivery(failed_task))
                 result = await jobs.get(owner, failed_task.id)
