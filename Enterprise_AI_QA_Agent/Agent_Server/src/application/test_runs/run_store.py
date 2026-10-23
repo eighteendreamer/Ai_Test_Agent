@@ -22,7 +22,12 @@ from src.application.test_runs.plan_snapshot_identity import (claim_plan_snapsho
 from src.application.test_runs.plan_revision import build_run_plan_revision
 from src.application.test_runs.plan_revision_lock import lock_plan_projection
 from src.infrastructure.postgres_runtime import postgres_connect
-from src.infrastructure.postgres_identifiers import derived_postgres_table
+from src.infrastructure.postgres_identifiers import (
+    derived_postgres_table,
+    postgres_index_name,
+    postgres_relation_parts,
+    postgres_relation_sql,
+)
 from src.infrastructure.storage_utils import ensure_utc_datetime
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
 from src.schemas.suite_management import TestSuiteBundle
@@ -2004,8 +2009,32 @@ class PostgresTestRunStore:
                     f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_run_status_position "
                     f"ON {self._item_table} (run_id, status, position ASC)"
                 )
+                item_relation_parts = postgres_relation_parts(self._item_table)
+                lease_expiry_index_name = f"idx_{item_relation_parts[-1]}_lease_expiry"
+                lease_expiry_index = postgres_index_name(self._item_table, "lease_expiry")
+                lease_expiry_relation = postgres_relation_sql(
+                    (*item_relation_parts[:-1], lease_expiry_index_name)
+                )
                 cur.execute(
-                    f"CREATE INDEX IF NOT EXISTS idx_{self._item_table}_lease_expiry "
+                    "SELECT pg_catalog.pg_get_indexdef(i.indexrelid) AS definition, "
+                    "pg_catalog.pg_get_expr(i.indpred,i.indrelid) AS predicate "
+                    "FROM pg_catalog.pg_index i "
+                    "JOIN pg_catalog.pg_class index_class ON index_class.oid=i.indexrelid "
+                    "WHERE index_class.relname=%s AND i.indrelid=to_regclass(%s)",
+                    (lease_expiry_index_name, self._item_table),
+                )
+                lease_expiry_row = cur.fetchone()
+                if lease_expiry_row is not None and (
+                    "run_id, lease_expires_at" not in lease_expiry_row["definition"]
+                    or "waiting_resource" not in (lease_expiry_row["predicate"] or "")
+                ):
+                    cur.execute(f"DROP INDEX IF EXISTS {lease_expiry_relation}")
+                    logger.info(
+                        "test_run_lease_expiry_index_upgraded",
+                        extra={"table": self._item_table, "index": lease_expiry_index_name},
+                    )
+                cur.execute(
+                    f"CREATE INDEX IF NOT EXISTS {lease_expiry_index} "
                     f"ON {self._item_table} (run_id, lease_expires_at) "
                     "WHERE status IN ('claimed', 'running', 'waiting_resource')"
                 )

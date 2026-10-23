@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -10,6 +11,7 @@ from src.application.test_runs.run_store import (
     PostgresTestRunStore,
 )
 from src.core.config import Settings
+from src.infrastructure.postgres_runtime import postgres_connect
 from src.schemas import run_management
 from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_live_postgres_concurrency import _create_claim_tables, _drop_tables
@@ -84,5 +86,55 @@ async def test_postgres_store_waits_for_lease_expiry_before_reclaim() -> None:
     try:
         _create_claim_tables(settings)
         await _exercise_waiting_resource_claim(PostgresTestRunStore(settings))
+    finally:
+        _drop_tables(settings, list(reversed(tables)))
+
+
+@pytest.mark.skipif(
+    not LivePostgresTestConfig().run_live_postgres_tests,
+    reason="set RUN_LIVE_POSTGRES_TESTS=1 to use local PostgreSQL",
+)
+@pytest.mark.asyncio
+async def test_postgres_initializer_replaces_legacy_lease_expiry_predicate() -> None:
+    suffix = uuid4().hex[:10]
+    tables = [f"live_wait_upgrade_{kind}_{suffix}" for kind in ("run", "item", "attempt", "result")]
+    settings = Settings()
+    database = settings.database.model_copy(update={
+        "postgres_test_run_table": tables[0],
+        "postgres_test_run_item_table": tables[1],
+        "postgres_test_run_attempt_table": tables[2],
+        "postgres_test_case_result_table": tables[3],
+    })
+    settings = settings.model_copy(update={"database": database})
+    index = f"idx_{tables[1]}_lease_expiry"
+    try:
+        _create_claim_tables(settings)
+        with postgres_connect(settings) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                f"CREATE TABLE {tables[3]} ("
+                "id UUID PRIMARY KEY,run_id UUID NOT NULL,run_item_id UUID NOT NULL,"
+                "case_id UUID NOT NULL,case_version_id UUID NOT NULL,attempt_id UUID NOT NULL,"
+                "status TEXT NOT NULL,payload_hash TEXT NOT NULL,regression_source_result_id UUID NULL,"
+                "created_at TIMESTAMPTZ NOT NULL,record JSONB NOT NULL,UNIQUE(run_item_id))"
+            )
+            cursor.execute(
+                f"CREATE INDEX {index} ON {tables[1]} (run_id,lease_expires_at) "
+                "WHERE status IN ('claimed','running')"
+            )
+
+        await asyncio.gather(
+            PostgresTestRunStore(settings).initialize(),
+            PostgresTestRunStore(settings).initialize(),
+        )
+
+        with postgres_connect(settings) as connection, connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT pg_catalog.pg_get_expr(i.indpred,i.indrelid) AS predicate "
+                "FROM pg_catalog.pg_index i JOIN pg_catalog.pg_class c ON c.oid=i.indexrelid "
+                "WHERE c.relname=%s",
+                (index,),
+            )
+            predicate = cursor.fetchone()["predicate"]
+        assert "waiting_resource" in predicate
     finally:
         _drop_tables(settings, list(reversed(tables)))

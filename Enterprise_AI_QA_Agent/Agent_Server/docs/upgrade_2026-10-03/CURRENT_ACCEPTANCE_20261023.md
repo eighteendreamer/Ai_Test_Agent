@@ -139,6 +139,8 @@ MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::t
 
 上述初始化清单现已用空隔离库实测补齐：完整生产 API 首次启动创建76张 PostgreSQL 表，其中39张来自41个配置声明，另37张为文档/生成/影响/需求、环境、API Agent、Smoke、Run修订、ToolJob证据和录制回放派生表；余下 `agent_perf_runs` 与 `agent_resource_cleanup_jobs` 分别由性能模式首次持久化和独立 Cleanup Worker initializer 持有，不能为凑齐清单强塞进 API lifespan。调用两项正式 initializer 后共78张表，41个配置声明全部存在。MySQL五张隔离配置表全部建立，启动产生15个应用配置键、4条模型配置和1条赞助配置，邮件/渠道均为空。创建项目并修改通用设置后重启 API，两个数据分别从 PostgreSQL/MySQL 读回；两次启动的表集合、各表行数和配置 revision 完全一致，且没有 `alembic_version`。结果 **1 passed in 23.29s**；隔离 PostgreSQL、随机 MySQL 表和 Redis `qa:test:*` 键均清理为0，没有创建容器。完整清单和边界见 `P6_RUNTIME_SCHEMA_INVENTORY_20261023.md`。这证明当前空库引导与幂等，不等于已有部署的全部历史 schema 已迁移，也不支持直接补全量 revision。
 
+随后取得当前配置 PostgreSQL `QA_Agent.public` 的真实历史结构样本，并与上述78表新库基线做只读 catalog 对账；不读取业务行正文、不调用当前库 initializer。当前库共114表：缺少36张较新业务/派生表，另有72张 `cap_*`、`soak_*`、`p5_test_*`、`up_ass_*` 历史测试隔离表，本轮未擅自删除。共同表归一时间戳精度和列物理顺序后只剩5张语义差异：Session、Agent Task、性能记录和 Run 的缺列均已有现行 initializer；RunItem 的旧同名租约索引仍只覆盖 `claimed/running`，现有 `CREATE INDEX IF NOT EXISTS` 无法把 `waiting_resource` 加进谓词。真实隔离 PostgreSQL 先复现 **1 failed**，修复改为核对 catalog 后只替换不兼容的项目自有索引，两个 Store 并发初始化通过。迁移、等待资源和 Store 回归 **59 passed in 10.47s**，最终生产结构对账复验 **1 passed in 23.52s**；当前 `QA_Agent` 始终只读，测试表/隔离数据库清理为0，未创建容器。详见 `P6_CURRENT_SCHEMA_COMPARE_20261023.md`。
+
 ### 启动期数据迁移与播种副作用
 
 启动调用图还包含不属于 DDL 的持久化写入，迁移审计不能只看建表语句：

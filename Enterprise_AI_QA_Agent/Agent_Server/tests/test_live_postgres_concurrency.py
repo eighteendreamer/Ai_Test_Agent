@@ -327,7 +327,8 @@ def _create_claim_tables(settings: Settings) -> None:
                 "id UUID PRIMARY KEY, project_id UUID NOT NULL, suite_id UUID NOT NULL, "
                 "status TEXT NOT NULL, mode_key TEXT NOT NULL, session_id TEXT NULL, "
                 "parent_run_id UUID NULL, created_at TIMESTAMPTZ NOT NULL, "
-                "updated_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL)"
+                "updated_at TIMESTAMPTZ NOT NULL, record JSONB NOT NULL, "
+                "plan_snapshots JSONB NOT NULL DEFAULT '{}'::jsonb)"
             )
             cur.execute(
                 f"CREATE TABLE {settings.database.postgres_test_run_item_table} ("

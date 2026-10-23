@@ -569,6 +569,9 @@ def test_postgres_initialize_adds_queryable_regression_link_columns(monkeypatch)
         def execute(self, statement, parameters=None):
             self.statements.append(" ".join(statement.split()))
 
+        def fetchone(self):
+            return None
+
     class Connection:
         def __init__(self, cursor):
             self._cursor = cursor
@@ -1152,7 +1155,9 @@ def test_postgres_cancel_uses_the_same_item_then_run_lock_order(monkeypatch):
         def execute(self, statement, parameters=None):
             normalized = " ".join(statement.split())
             self.calls.append(normalized)
-            if normalized.startswith("SELECT saved.record,"):
+            if normalized.startswith("SELECT %s::regclass::oid"):
+                self.rows = [{"table_oid": 12345}]
+            elif normalized.startswith("SELECT saved.record,"):
                 self.rows = [{"record": run.model_dump(mode="json"),
                     "items": [], "attempts": [], "results": []}]
             elif "FROM agent_test_runs" in normalized:

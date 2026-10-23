@@ -75,4 +75,6 @@ MySQL 启动结果为：
 
 **已有实现但未覆盖全部部署**：四个 Alembic revision 的有限迁移、旧邮件配置转换、MCP 旧集成迁入、Workspace 旧文件迁入等各有专项，但不能外推到其他未登记历史结构。
 
-**仍需补实现或取得部署证据后再决定**：其余 Store 的冻结 revision、从已部署旧结构到冻结结构的迁移顺序、关闭运行时 DDL 的切换策略。当前没有各部署环境的实际旧 schema 样本，不应凭空生成全量 ALTER 或把 initializer 执行结果 stamp 成 Alembic head。
+**已取得一份实际历史部署样本**：当前配置的 `QA_Agent.public` 已与全新生产初始化基线做只读 catalog 对账。发现 36 张当前样本尚未初始化的新表、72 张历史测试隔离表，以及 5 张公共表的语义差异；其中四类已有 initializer 收敛入口，一项 RunItem 同名旧索引无法由 `CREATE INDEX IF NOT EXISTS` 更新，已用真实旧结构复现并修复。详见 `P6_CURRENT_SCHEMA_COMPARE_20261023.md`。
+
+**仍需取得其他部署证据后再决定**：其余 Store 的冻结 revision、跨部署迁移批次和关闭运行时 DDL 的最终切换策略。不能把这一份本机历史样本外推到所有部署，也不应生成推测性的全量 ALTER 或把 initializer 执行结果 stamp 成 Alembic head。
