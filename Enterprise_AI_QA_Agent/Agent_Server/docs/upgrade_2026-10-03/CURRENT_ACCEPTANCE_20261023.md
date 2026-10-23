@@ -131,3 +131,13 @@ MySQL 不是完全未经实测：`tests/test_model_request_profile_product.py::t
 `DatabaseConfig` 当前声明 **41 个 PostgreSQL 表名**和 **5 个 MySQL 配置表名**。对照四个 PostgreSQL revision，显式建表覆盖为 Outbox、ToolJob、ToolArtifact、Compaction；Run revision 只为已有 Run 表补 `plan_snapshots` 列，不负责创建 Run/Suite/Case 等业务基线。故这些 revision 不能作为其余配置表的部署基线。此前只读检查的当前 `QA_Agent` 配置库没有 `public.alembic_version`，只说明该库尚无 Alembic 运行记录；不能外推到其他环境。
 
 这仍是“按配置键盘点”的粗盘，不是完整 DDL 清单：Store 会创建配置项之外的派生表（例如文档 versions/assets/submissions、录制回放和场景版本、需求影响响应/计划等），并可能在同一张表上执行运行时 `ALTER TABLE`。下一轮需从 API/Worker 的实际初始化调用图枚举这些派生表，记录 DDL 行、旧形态支持、数据写入/播种副作用和已有真实测试，再谈迁移切换顺序。
+
+### 启动期数据迁移与播种副作用
+
+启动调用图还包含不属于 DDL 的持久化写入，迁移审计不能只看建表语句：
+
+- `WorkspaceSettingsService.initialize()` 在 MySQL 配置 key 不存在时读取旧 `general_settings.json` / `channel_advanced_settings.json`，校验后使用 `only_if_missing=True` 初始化配置；已有数据库值不会被旧文件覆盖。当前有服务级测试覆盖此逻辑，尚未找到针对真实 MySQL 旧文件迁移与 API 重启的专门验收。
+- API 启动调用 `MCPServerStore.migrate_legacy_integrations()`，把本地 `data/integrations/catalog.json` 中 kind 为 `mcp` 的记录复制到 PostgreSQL MCP Store；目标行用 `metadata.legacy_integration_id` 做重复识别，保留本地源文件。源码中没有独立迁移账本，去重检查与插入之间的并发安全尚未由测试证明；当前测试搜索未发现该迁移方法的定向回归。
+- MySQL 赞助 Store 在配置表为空时播种默认赞助数据；这与表结构升级分属不同副作用，迁移方案必须避免结构升级时重复或误覆盖运营配置。
+
+以上是代码路径结论，不代表这些边界已经在多 API 实例或实际旧部署上验收。对 MCP 应先补可复现的重复启动/并发导入验证，再决定是否需要唯一约束或迁移账本；对 Workspace 旧文件和 MySQL 赞助结构则需分别准备真实隔离数据验证，不能把一个 `initialize()` 幂等测试外推到所有配置 Store。
