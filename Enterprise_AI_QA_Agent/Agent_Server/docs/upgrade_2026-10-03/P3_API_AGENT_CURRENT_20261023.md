@@ -45,3 +45,14 @@ Step 账号按用户确认记录为“已认证”。现有默认文档生成证
 2. 补充断网、进程中断和多 Worker 竞争的默认配置场景；现有受控场景已覆盖部分恢复边界。
 3. 完成产品页面的真实浏览器回归，并将 API 报告、证据下载和失败定位与前端状态逐项对账。
 
+## 2026-10-23 自动续期与 Cookie 补验
+
+在不调用外部模型的前提下，使用本机受控 HTTP 目标和独立证据目录运行：
+
+- `tests/test_api_401_refresh_automatic_live.py tests/test_api_cookie_session_http.py`：**21 passed、1 skipped，120.40 秒**。
+- `test_cookie_attributes_private_storage_worker_read_and_replay`：真实 PostgreSQL ToolJob、加密凭据和受控 Worker **1 passed，11.07 秒**。
+
+证据证明自动 401 的登录、刷新、目标重试、刷新失败不重放、超时新 attempt，以及 API 进程在三个暂停点中断后的恢复均符合当前契约；Cookie 属性轮换、旧 Cookie 清理、Worker 读取、服务重启读回和终态重投也通过。三次进程恢复均无额外 HTTP，原 Job 不变；明文凭据不进入 prompt、公开结果或持久化公开字段。证据目录为 `p3-api-401-auto-current-20261023-run2/` 和 `p3-api-cookie-storage-current-20261023-run2/`。
+
+这关闭了受控 Agent API 的自动 401/Cookie 持久化验收缺口，但不扩展为默认 Step 质量通过。默认 Step 的完整 Agent API、断网和多 Worker 竞争仍需在供应商推理可用后复验；产品报告页面已有独立通过证据，仍需把默认模型路径与页面状态逐项对账。
+

@@ -48,6 +48,8 @@ $env:QA_DEFAULT_COVERAGE_DIR='Agent_Server/docs/upgrade_2026-10-03/p2-default-mu
 - 模型适配层的独立 transport：Anthropic Messages、OpenAI Chat Completions、OpenAI Responses、Google Gemini 及 LangChain 兼容路径。本轮核查确认 Anthropic 非流式和流式均调用 `client.messages.create`；OpenAI Responses 只由 `openai_responses` transport 选择。内部统一请求/结果契约与各协议客户端分层保留。本轮模型客户端、请求映射、完成状态、HTTP 故障和 embedding 路由回归 **184 passed in 124.23s**；这验证本地映射及错误处理，不证明每家供应商当前服务可用。
 - 持久 Run 修订规划回归本轮 **16 passed in 25.37s**。这证明当前工作树的修订规划服务测试通过，不替代默认 Step 的真实模型规划和业务执行验收。
 
+- API 自动鉴权续期与 Cookie 持久化补验：`test_api_401_refresh_automatic_live.py` 与 Cookie HTTP 回归在独立证据目录中 **21 passed、1 skipped，120.40 秒**；另运行真实 PG/ToolJob/加密凭据/Cookie Worker 场景 **1 passed，11.07 秒**。实际对账了登录→401→刷新→重试、刷新失败不重放目标、超时新 attempt、进程中断后三个暂停点恢复、Cookie 属性轮换、服务重启读回及终态重投 0 个额外 HTTP。公开结果、Worker prompt 和存储投影均未出现明文凭据。跳过项是同一 Cookie 文件中未启用的另一条存储门控，不影响已通过的实际存储专项。证据：`p3-api-401-auto-current-20261023-run2/`、`p3-api-cookie-storage-current-20261023-run2/`。本项仍属于受控本地目标，不等同默认 Step 质量验收。
+
 ## 正式回执纠正与进程恢复复验
 
 本轮在受控真实 HTTP 目标、隔离 PostgreSQL/MySQL/RustFS、真实 Redis Worker 和生产 API 进程上，分别在回执纠正的两个持久边界杀掉 API：

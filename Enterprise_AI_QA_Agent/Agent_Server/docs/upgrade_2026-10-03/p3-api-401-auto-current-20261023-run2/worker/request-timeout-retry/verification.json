@@ -1,0 +1,41 @@
+{
+  "requests": [
+    {
+      "attempt": 1,
+      "path": "/slow"
+    },
+    {
+      "attempt": 2,
+      "path": "/slow"
+    }
+  ],
+  "response_delivered_attempts": [
+    2
+  ],
+  "attempt_results": [
+    {
+      "status": "failed",
+      "request_outcome": "known_failed",
+      "error": "Request timed out after 0.5s",
+      "timeout_seconds": 0.5
+    },
+    {
+      "status": "completed",
+      "response_status": 200,
+      "timeout_seconds": 0.5
+    }
+  ],
+  "worker_dispatch_ids": [
+    "slow-read",
+    "slow-read:attempt:2"
+  ],
+  "final_task_status": "completed",
+  "final_attempt_count": 2,
+  "report_counts": {
+    "completed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "external_ai_calls": 0,
+  "full_goal_complete": false
+}
