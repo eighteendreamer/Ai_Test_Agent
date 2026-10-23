@@ -97,6 +97,12 @@ function apiTasksFor(entry: ReportEntry | null): Record<string, unknown>[] {
   return Array.isArray(tasks) ? tasks.filter(isRecord) : [];
 }
 
+function taskCountFor(entry: ReportEntry): number {
+  return entry.session.mode_key === "api_testing"
+    ? apiTasksFor(entry).length
+    : entry.workerDispatches.length;
+}
+
 const selectedApiTasks = computed(() => apiTasksFor(selectedReport.value));
 const selectedIsApiReport = computed(() => selectedReport.value?.session.mode_key === "api_testing");
 
@@ -416,7 +422,7 @@ watch(selectedReport, (entry) => {
             <div class="batch-stats">
               <span class="stat pass">
                 <i class="fa-solid fa-layer-group"></i>
-                {{ entry.workerDispatches.length }} {{ t("reports.tasks_unit") }}
+                {{ taskCountFor(entry) }} {{ t("reports.tasks_unit") }}
               </span>
               <span class="stat fail">
                 <i class="fa-solid fa-shield-halved"></i>

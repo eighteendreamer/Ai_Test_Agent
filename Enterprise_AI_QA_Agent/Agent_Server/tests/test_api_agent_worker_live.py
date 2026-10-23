@@ -158,7 +158,14 @@ def worker_model():
                 previous = [m for m in messages if m['role'] == 'tool']
                 match = re.search(r'Tool arguments:\s*(\{.*?\})\s*After the tool finishes', user, re.S)
                 phase = 'child' if match else 'parent'
-                if not previous:
+                campaign_report_ready = any(re.search(
+                    r'"phase"\s*:\s*"report_ready"', str(message.get('content') or ''))
+                    for message in previous)
+                should_call_tool = (
+                    (phase == "child" and not previous)
+                    or (phase == "parent" and not campaign_report_ready)
+                )
+                if should_call_tool:
                     args = json.loads(match.group(1)) if match else {}
                     if match:
                         assert set(args) == {'worker_action', 'dispatch_ref'}
@@ -221,13 +228,16 @@ async def test_real_agent_worker_private_auth_and_terminal_redelivery(tmp_path, 
         'model_source': model_source}
     secret_values = []
     parent_checkpoint_timeline = []
-    model_context = worker_model() if model_source == 'controlled' else nullcontext((None, [], []))
-    with auth_target() as (business, events), model_context as (model_url, requests, failures):
+    with auth_target() as (business, events), (worker_model() if model_source == 'controlled'
+            else nullcontext((None, [], []))) as (model_url, requests, failures):
         try:
             async with isolated_runtime(tmp_path) as (settings, processes, _, objects, owned):
                 settings.api_auth_token = SecretStr(uuid4().hex)
                 settings.orchestration.coordinator_durable_children = durable
                 settings.orchestration.redis_task_outbox_streams = settings.orchestration.agent_task_stream
+                # This scenario starts two consumers. Use the production reclaim window so
+                # the idle test fixture's 1s default cannot steal an actively executing turn.
+                settings.orchestration.redis_task_reclaim_idle_ms = 120000
                 models = MySQLModelConfigStore(settings)
                 models.initialize()
                 if model_source == 'controlled':

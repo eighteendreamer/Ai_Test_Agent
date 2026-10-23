@@ -338,6 +338,7 @@ async def test_actual_tool_jobs_and_saved_worker_sessions_replay_refreshed_crede
                 assert result["error"] == "api_credential_key_unavailable" and not result["http_request_sent"]
                 denied["missing_key"] = result["error"]
                 original_child = await reader.get_session(sample_context.session_id)
+                assert original_child is not None
                 for field, value in [("parent_turn_id", str(uuid4())), ("task_id", "different-task"),
                                      ("dispatch_role", "other-worker")]:
                     await reader.mutate_metadata(original_child.id, lambda meta, field=field, value=value: meta.update({field: value}))
@@ -347,12 +348,19 @@ async def test_actual_tool_jobs_and_saved_worker_sessions_replay_refreshed_crede
                     await reader.mutate_metadata(original_child.id, lambda meta: meta.update(original_child.metadata))
                 other_project = await projects.create(ProjectRecord(id=str(uuid4()), project_key="other-api-reference",
                     name="Other owned project", created_at=now, updated_at=now))
+                # The metadata mutations advance state_revision; reload before
+                # a full-session write instead of weakening optimistic locking.
+                original_child = await reader.get_session(sample_context.session_id)
+                assert original_child is not None
+                original_project_id = original_child.project_id
                 original_child.project_id = other_project.id
                 await reader.save_session(original_child)
                 result = await ApiTestingModeRuntime(api_docs_service=None, credential_reference_service=references).handle(sample_call.arguments, sample_context)
                 assert result["error"] == "api_worker_project_scope_invalid" and not result["http_request_sent"]
                 denied["project"] = result["error"]
-                original_child.project_id = parent.project_id
+                original_child = await reader.get_session(sample_context.session_id)
+                assert original_child is not None
+                original_child.project_id = original_project_id
                 await reader.save_session(original_child)
                 missing = await ApiTestingModeRuntime(api_docs_service=None, credential_reference_service=references).handle(
                     {"worker_action": "execute_task", "dispatch_ref": str(uuid4())}, sample_context)
@@ -525,15 +533,19 @@ async def test_parent_campaign_private_state_report_and_original_job_recovery(tm
                         await page.locator(".report-detail").evaluate("element => { element.scrollTop = 0; }")
                         await page.locator(".report-detail .grade-box").wait_for(state="visible")
                         body = await page.locator(".report-detail .summary-body").first.inner_text()
+                        summary_table = await page.locator(".api-report-summary").inner_text()
+                        sidebar_task_count = await batch.locator(".stat.pass").inner_text()
                         task_cards = page.locator(".api-task-report-card")
                         assert await task_cards.count() == 3
-                        assert "总任务数\t3" in body
-                        assert "通过\t3" in body
+                        assert "3 个任务" in sidebar_task_count
+                        assert "总任务数\t3" in summary_table
+                        assert "通过\t3" in summary_table
                         assert await page.locator(".report-detail .grade-box").inner_text() == "良好"
                         assert not errors, errors
                         (evidence / "browser-observation.json").write_text(json.dumps({
                             "job_id": job.id, "grade": await page.locator(".report-detail .grade-box").inner_text(),
-                            "summary": body, "task_cards": await task_cards.count(),
+                            "summary": body, "summary_table": summary_table,
+                            "sidebar_task_count": sidebar_task_count, "task_cards": await task_cards.count(),
                             "page_errors": errors, "network": network,
                             "scope": "actual PG/RustFS API report, production API, built App and Chromium; no external AI",
                             "full_goal_complete": False,
