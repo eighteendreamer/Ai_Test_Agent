@@ -28,6 +28,7 @@ from src.registry.modes import ModeRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.schemas.integration import IntegrationRecord
+from src.schemas.mcp_management import MCPServerCreateRequest
 from tests.live_postgres_config import LivePostgresTestConfig
 
 
@@ -133,6 +134,75 @@ async def test_legacy_mcp_integration_migration_is_idempotent(app_and_store):
     assert migrated[0].transport == "streamable_http"
     assert migrated[0].config["url"] == integration.endpoint_url
     assert migrated[0].config["headers"] == integration.headers
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_and_store", ["postgres"], indirect=True)
+async def test_legacy_mcp_schema_migration_preserves_record_fields(app_and_store):
+    _, store = app_and_store
+    table = store._settings.database.postgres_mcp_server_table
+    record_id = f"legacy-schema-{uuid4()}"
+    now = datetime.now(timezone.utc)
+    legacy_columns = {
+        "transport": "TEXT",
+        "description": "TEXT",
+        "project_name": "TEXT",
+        "document_url": "TEXT",
+        "endpoint_url": "TEXT",
+        "command": "TEXT",
+        "args": "JSONB",
+        "headers": "JSONB",
+        "env": "JSONB",
+        "cwd": "TEXT",
+        "provider_key": "TEXT",
+        "capabilities": "JSONB",
+    }
+    with postgres_connect(store._settings) as connection, connection.cursor() as cursor:
+        for name, data_type in legacy_columns.items():
+            cursor.execute(f"ALTER TABLE {table} ADD COLUMN {name} {data_type}")
+        cursor.execute(
+            f"""INSERT INTO {table} (
+                id, name, enabled, purpose, config, supported_protocols, confirmed_at,
+                metadata, created_at, updated_at, transport, description, project_name,
+                document_url, endpoint_url, command, args, headers, env, cwd,
+                provider_key, capabilities
+            ) VALUES (
+                %s, %s, TRUE, NULL, '{{}}'::jsonb, '[]'::jsonb, NULL, '{{}}'::jsonb,
+                %s, %s, 'streamable_http', %s, %s, %s, %s, NULL, '[]'::jsonb,
+                %s::jsonb, '{{}}'::jsonb, NULL, %s, %s::jsonb
+            )""",
+            (record_id, "legacy schema fixture", now, now, "legacy description",
+             "legacy project", "https://docs.invalid/mcp", "https://mcp.invalid/api",
+             '{"X-Legacy":"kept"}', "legacy-provider", '["legacy-capability"]'),
+        )
+
+    await store.initialize()
+    record = await store.get_server(record_id)
+
+    assert record.transport == "streamable_http"
+    assert record.purpose == "legacy description"
+    assert record.project_name == "legacy project"
+    assert record.document_url == "https://docs.invalid/mcp"
+    assert record.endpoint_url == "https://mcp.invalid/api"
+    assert record.headers == {"X-Legacy": "kept"}
+    assert record.provider_key == "legacy-provider"
+    assert record.capabilities == ["legacy-capability"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("app_and_store", ["postgres"], indirect=True)
+async def test_postgres_mcp_capabilities_round_trip(app_and_store):
+    _, store = app_and_store
+    created = await store.create_server(MCPServerCreateRequest(
+        name="capability round trip",
+        transport="stdio",
+        command="fixture",
+        capabilities=["tools", "resources"],
+    ))
+
+    loaded = await store.get_server(created.id)
+
+    assert loaded.capabilities == ["tools", "resources"]
 
 
 @pytest.mark.asyncio

@@ -678,6 +678,9 @@ class PostgresMCPServerStore:
 
 
 def _record_params(record: MCPServerRecord) -> tuple[object, ...]:
+    metadata = dict(record.metadata)
+    if record.capabilities or "legacy_capabilities" in metadata:
+        metadata["legacy_capabilities"] = list(record.capabilities)
     return (
         record.id,
         record.name,
@@ -686,7 +689,7 @@ def _record_params(record: MCPServerRecord) -> tuple[object, ...]:
         json.dumps(make_json_safe(record.config), ensure_ascii=False),
         json.dumps(make_json_safe(record.supported_protocols), ensure_ascii=False),
         record.confirmed_at,
-        json.dumps(make_json_safe(record.metadata), ensure_ascii=False),
+        json.dumps(make_json_safe(metadata), ensure_ascii=False),
         record.created_at,
         record.updated_at,
     )
@@ -708,6 +711,12 @@ def _table_schema_and_name(table: str) -> tuple[str, str]:
 def _record_from_row(row: dict[str, Any]) -> MCPServerRecord:
     config = _normalize_config(row.get("config") or {})
     supported_protocols = _normalize_protocols(row.get("supported_protocols") if isinstance(row.get("supported_protocols"), list) else [])
+    metadata = dict(row.get("metadata") or {})
+    capabilities = row.get("capabilities")
+    if not isinstance(capabilities, list):
+        capabilities = metadata.get("legacy_capabilities")
+    if not isinstance(capabilities, list):
+        capabilities = []
     transport = (
         _normalize_transport({"transport": row.get("transport")})
         if row.get("transport")
@@ -734,10 +743,10 @@ def _record_from_row(row: dict[str, Any]) -> MCPServerRecord:
         headers=dict(headers or {}),
         env=dict(env or {}),
         cwd=row.get("cwd") or _normalize_text(config.get("cwd")),
-        capabilities=list(row.get("capabilities") or []),
+        capabilities=list(capabilities),
         provider_key=row.get("provider_key") or _normalize_text(config.get("provider_key")),
         confirmed_at=ensure_utc_datetime(row.get("confirmed_at")),
-        metadata=dict(row.get("metadata") or {}),
+        metadata=metadata,
         created_at=ensure_utc_datetime(row["created_at"]) or datetime.now(timezone.utc),
         updated_at=ensure_utc_datetime(row["updated_at"]) or datetime.now(timezone.utc),
     )
