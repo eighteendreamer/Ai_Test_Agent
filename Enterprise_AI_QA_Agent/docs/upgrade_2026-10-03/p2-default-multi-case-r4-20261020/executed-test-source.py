@@ -1,0 +1,559 @@
+"""Actual configured default model plans and executes full fixed JSON cases."""
+import base64
+from contextlib import ExitStack
+from copy import deepcopy
+import hashlib
+import json
+import os
+from pathlib import Path
+import shutil
+from uuid import uuid4
+
+import httpx
+import pytest
+from pydantic import SecretStr
+
+from default_model_probe import install
+from test_agent_case_execution import regression_business_http
+from test_case_effect_evidence import NEW_POLICY
+from test_case_cleanup_coverage_production import contexts
+from test_document_impact_calls import provider
+from test_document_impact_production import collect_objects
+from test_execution_worker_cli import child_environment, free_port, isolated_runtime, wait_api
+from src.application.model_clients.openai_client import OpenAIChatClient
+from src.core.config import get_settings
+from src.infrastructure.model_config_store import MySQLModelConfigStore
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.redis_task_queue import RedisTaskQueue
+from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelCapabilitiesOverride, ModelTransportOptions, model_invocation_parameters
+from src.schemas.case_planning_task import PLANNING_RESPONSE_PROTOCOL
+from src.schemas.case_planning_stages import STAGE_PROTOCOL
+from src.schemas.case_planning import CasePlanningPolicy
+from src.schemas.settings import ModelConfigUpdateRequest
+from src.schemas.model_request_options import ModelRequestProfile
+
+
+ROOT = Path(__file__).resolve().parents[2]
+
+
+def multi_case_dependency_fixture(endpoint: str) -> tuple[str, str, list[dict]]:
+    document = (
+        "# 订单接口\n"
+        f"POST {endpoint}/orders 无需鉴权，创建一条订单，返回201和JSON顶层字面量键 order.id（含点号，不是嵌套路径）。\n"
+        f"GET {endpoint}/orders/{{id}} 返回订单详情；有效ID返回200，字段为 flag=false、count=1、nullable=null。\n"
+        f"DELETE {endpoint}/orders/{{id}} 删除订单并返回200。\n"
+    )
+    objective = "查询一条已有订单的详情，并核对实际返回的状态和字段内容。"
+    create = {
+        "case_key": "dependency-create-order",
+        "title": "创建临时订单并记录实际ID",
+        "content": {
+            "objective": "创建一条临时订单，供需要订单数据的正式用例使用",
+            "steps": [
+                {"order": 1, "action": "POST /orders 创建订单，检查实际响应状态为201"},
+                {"order": 2, "action": "记录本次响应中的 order.id，不得猜造或复用其他订单ID"},
+            ],
+            "expected": {"status_code": 201, "order_id_present": True},
+            "operations": {"create": endpoint + "/orders"},
+        },
+    }
+    target = {
+        "case_key": "target-query-order",
+        "title": "查询订单详情并检查字段",
+        "content": {
+            "objective": "查询订单详情并验证响应字段",
+            "preconditions": ["需要有效订单ID，禁止凭空编造"],
+            "steps": [
+                {"order": 1, "action": "使用前置创建用例实际返回的 order.id 调用 GET /orders/{id}"},
+                {"order": 2, "action": "检查状态码200、flag=false、count=1、nullable=null"},
+                {"order": 3, "action": "按项目文档删除本次创建的订单并检查清理成功"},
+            ],
+            "expected": {"status_code": 200, "flag": False, "count": 1, "nullable": None},
+            "cleanup": ["删除前置用例创建且本次查询使用的订单"],
+            "operations": {"query": endpoint + "/orders/{id}", "cleanup": endpoint + "/orders/{id}"},
+        },
+    }
+    unrelated = {
+        "case_key": "unrelated-product-sort",
+        "title": "检查商品目录价格排序",
+        "content": {
+            "objective": "验证商品目录可按价格升序排列",
+            "steps": [{"order": 1, "action": "GET /products?sort=price，验证价格升序"}],
+            "expected": {"status_code": 200, "price_order": "ascending"},
+        },
+    }
+    return document, objective, [create, target, unrelated]
+
+
+def test_multi_case_dependency_fixture_exercises_an_unrequested_formal_prerequisite():
+    document, objective, cases = multi_case_dependency_fixture("http://127.0.0.1:8000")
+    by_key = {case["case_key"]: case for case in cases}
+    assert len(by_key) == 3
+    assert "已有订单的详情" in objective
+    assert "order.id" in document
+    assert "临时订单" in by_key["dependency-create-order"]["content"]["objective"]
+    assert "order.id" in json.dumps(by_key["dependency-create-order"]["content"], ensure_ascii=False)
+    assert "GET /orders/{id}" in json.dumps(by_key["target-query-order"]["content"], ensure_ascii=False)
+    assert "GET /products?sort=price" in json.dumps(by_key["unrelated-product-sort"]["content"], ensure_ascii=False)
+
+
+@pytest.mark.asyncio
+async def test_actual_SDK_event_hooks_preserve_full_stream_and_do_not_save_auth(tmp_path):
+    original = install(tmp_path)
+    try:
+        with provider(message_responder=lambda body: {"role": "assistant", "content": "actual-stream-tail"}) as (url, sends, _, _):
+            config = ModelConfigRecord(key="probe", name="probe", provider="openai", transport="openai_chat_completions",
+                model_id="probe", api_base_url=url, max_output_tokens=80)
+            secret = uuid4().hex
+            deltas = []
+            async def receive(delta):
+                deltas.append(delta)
+            result = await OpenAIChatClient(timeout_seconds=5, max_retries=0).stream(config, secret,
+                ModelInvocationRequest(system_prompt="Trace fixture", messages=[{"role": "user", "content": "trace fixture"}]), receive)
+            assert result["text"] == "actual-stream-tail" == "".join(deltas)
+            requests = list(tmp_path.glob("*.request.json"))
+            assert len(requests) == len(sends) == 1
+            assert json.loads(requests[0].read_bytes()) == sends[0]
+            assert secret not in "".join(p.read_text(encoding="utf-8") for p in tmp_path.glob("*.json"))
+            response = json.loads(next(tmp_path.glob("*.response.json")).read_text(encoding="utf-8"))
+            assert response["status_code"] == 200 and response["body_read_by_probe"] is False
+    finally:
+        OpenAIChatClient._make_client = original
+
+
+@pytest.mark.asyncio
+@pytest.mark.skipif(os.getenv("RUN_LIVE_DEFAULT_COVERAGE_PRODUCTION") != "1", reason="actual current model and isolated main/API/CLIs/stores")
+async def test_actual_default_model_plans_and_executes_complete_case(tmp_path, regression_business_http):
+    global_settings = get_settings().model_copy(deep=True)
+    original_model = MySQLModelConfigStore(global_settings).get_default_active()
+    parameters = model_invocation_parameters(original_model)
+    invocation_model = original_model.model_copy(deep=True)
+    profile_path = os.getenv("QA_DEFAULT_REQUEST_PROFILE")
+    if profile_path:
+        invocation_model.request_profile = ModelRequestProfile.model_validate_json(Path(profile_path).read_bytes())
+        invocation_model = ModelConfigRecord.model_validate(invocation_model.model_dump())
+    output_token_override = os.getenv("QA_DEFAULT_MAX_OUTPUT_TOKENS")
+    if output_token_override:
+        invocation_model = ModelConfigRecord.model_validate({
+            **invocation_model.model_dump(),
+            "max_output_tokens": int(output_token_override),
+        })
+    invocation_parameters = model_invocation_parameters(invocation_model)
+    assert original_model.transport == "openai_chat_completions", "Probe currently targets the actual OpenAI-compatible SDK"
+    case_shape = os.getenv("QA_DEFAULT_CASE_SHAPE", "full")
+    assert case_shape in {"full", "single-create-cleanup", "multi-case-dependency"}
+    endpoint, effects, _ = regression_business_http[0]
+    orders, created = regression_business_http[1:]
+    directory = Path(os.environ["QA_DEFAULT_COVERAGE_DIR"])
+    directory.mkdir(parents=True, exist_ok=False)
+    report = {"baseline": "c7d20303 plus staged planning worktree" if os.getenv("QA_STAGED_PLANNING") == "1" else "eae3393a plus frozen operation contracts v3", "configured_model_parameters": parameters, "controlled_model": False,
+        "planning_completed": False, "business_execution_completed": False, "full_P0_P5_complete": False}
+    report["case_shape"] = case_shape
+    report["isolated_invocation_parameters"] = invocation_parameters
+    report["isolated_profile_override"] = bool(profile_path)
+    report["isolated_max_output_tokens_override"] = bool(output_token_override)
+    executor_only = os.getenv("QA_RECEIPT_EXECUTOR_ONLY") == "1"
+    report["controlled_planning"] = executor_only
+    planning_providers = ExitStack()
+    if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+        report["baseline"] = "d81b25e8 plus formal effect relations v2"
+    def save(name, value):
+        (directory / name).write_text(json.dumps(value, ensure_ascii=False, indent=2, default=str), encoding="utf-8")
+    async with isolated_runtime(tmp_path) as (settings, processes, queue, objects, owned):
+        settings.api_auth_token = SecretStr(uuid4().hex)
+        settings.orchestration.redis_task_outbox_streams = settings.orchestration.case_planning_task_stream
+        models = MySQLModelConfigStore(settings)
+        models.initialize()
+        execution_model = ModelConfigUpdateRequest(model_name=original_model.model_id, provider=original_model.provider,
+            transport=original_model.transport, request_profile=invocation_model.request_profile,
+            base_url=original_model.api_base_url, api_key=original_model.api_key,
+            auth_type=original_model.auth_type, oauth_provider=original_model.oauth_provider,
+            oauth_refresh_token=original_model.oauth_refresh_token, applications=original_model.applications, is_active=True,
+            use_provider_defaults=False, capability_overrides=original_model.capability_overrides,
+            context_window=original_model.context_window, max_output_tokens=invocation_model.max_output_tokens)
+        model = models.upsert(execution_model)
+        assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
+        processes.env = child_environment(settings)
+        processes.env["QA_DEFAULT_PROBE_DIR"] = str(directory / "physical")
+        port = free_port()
+        args = ("-m", "tests.default_model_probe", "uvicorn", "src.main:app", "--host", "127.0.0.1", "--port", str(port))
+        api = processes.start("default-api", *args)
+        project = task = plan = detail = None
+        try:
+            async with httpx.AsyncClient(base_url=f"http://127.0.0.1:{port}/api/v1", timeout=240,
+                headers={"Authorization": "Bearer " + settings.api_auth_token.get_secret_value()}) as client:
+                await wait_api(client, api)
+                async def post(path, data, status=200):
+                    r = await client.post(path, json=data)
+                    assert r.status_code == status, (r.status_code, r.text)
+                    return r.json()
+                async def get(path):
+                    r = await client.get(path)
+                    assert r.status_code == 200, (r.status_code, r.text)
+                    return r.json()
+                project = await post("/projects", {"project_key": "default-" + uuid4().hex, "name": "默认Agent真实完整用例", "base_url": endpoint}, 201)
+                root = "/projects/" + project["id"]
+                source = directory / "requirements.md"
+                candidate_case_specs = []
+                if case_shape == "multi-case-dependency":
+                    assert not executor_only, "multi-case quality acceptance must use the actual default planner"
+                    document, planning_objective, candidate_case_specs = multi_case_dependency_fixture(endpoint)
+                    content = candidate_case_specs[1]["content"]
+                elif case_shape == "single-create-cleanup":
+                    document = (f"# 单订单创建与清理\nPOST {endpoint}/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n"
+                        f"DELETE {endpoint}/orders/{{id}} 返回200及刚删除的订单JSON。必须用POST实际返回的order.id删除本次创建的记录，不得猜测ID。\n"
+                        "原生工具api-test-runner的execute_task可调用这些接口。\n")
+                    content = {"objective": "依据项目文档创建一条订单，使用真实返回的 order.id 清理该订单",
+                        "requires": ["本次 POST 实际返回的 order.id"],
+                        "期望": {"create_code": 201, "cleanup_code": 200},
+                        "steps": [{"order": 1, "action": "POST /orders 创建一条订单，读取实际返回的 order.id"},
+                            {"order": 2, "action": "DELETE /orders/{id}，id 必须使用本次 POST 实际返回值，并核对删除成功"}],
+                        "cleanup": ["删除本次 POST 创建的订单"],
+                        "operations": {"create": endpoint + "/orders", "cleanup": endpoint + "/orders/{id}"}}
+                else:
+                    document = (f"# 实际查询及准备清理\nPOST {endpoint}/orders 不需要鉴权和请求体，每次创建一个订单，返回201，JSON键order.id是完整键（含点号）。\n"
+                        "本次需要准备两条订单，第二条作为未查询的独立记录，两个ID均要保存。第一条count=1，第二条count=0；flag=false、nullable=null。\n"
+                        f"GET {endpoint}/orders/{{id}} 返回200及该订单完整JSON。DELETE同一路径返回200及刚删除的订单JSON。\n"
+                        "查询第一条并验证其返回；最后逐条清理本次两个订单。没有已存在ID，需依据本文件准备，不能猜ID。原生工具api-test-runner的execute_task可调用这些接口。\n")
+                    content = {"objective": "查询第一条实际订单，保留未查询订单并在结束时清理全部本次记录", "requires": ["actual_order_id"],
+                        "期望": {"code": 200, "flag": False, "count": 1, "nullable": None},
+                        "steps": [{"order": i+1, "action": action} for i, action in enumerate([
+                            "读取项目需求和实际ID来源；没有ID需要先准备", "确认准备两条记录且记录两个实际ID", "GET第一条/orders/{id}",
+                            "核对状态码200", "核对flag为False", "核对count为1", "核对nullable为null并清理所有本次记录", "LAST-DEFAULT-COVERAGE-STEP"])],
+                        "negative_condition": "没有订单ID时不得凭空推断，必须取得实际返回",
+                        "operations": {"query": endpoint + "/orders/{id}"}}
+                    content["steps"][-1]["business"] = {"false": False, "zero": 0, "nullable": None}
+                if case_shape != "multi-case-dependency":
+                    planning_objective = content["objective"]
+                source.write_text(document, encoding="utf-8")
+                doc = await post("/registry/api-docs/upload", {"project_id": project["id"], "filename": source.name,
+                    "content_base64": base64.b64encode(source.read_bytes()).decode()})
+                owned.append(doc["storage_uri"])
+                assert (await objects.read_object_uri(doc["storage_uri"]))["content"] == source.read_bytes()
+                save("document.json", doc)
+                save("full-case.json", content)
+                case_bundles = {}
+                case_contents = {}
+                if candidate_case_specs:
+                    for spec in candidate_case_specs:
+                        case_bundle = await post(root + "/test-cases", {"case_key": spec["case_key"], "title": spec["title"],
+                            "mode_key": "api_testing", "case_type": "json", "content_json": spec["content"],
+                            "execution_notes": "按完整JSON、固定项目文档和实际前置输出执行。",
+                            "source_refs": [{"source_type": "api_doc", "source_id": doc["id"]}], "model_key": "manual", "prompt_version": "manual-v1",
+                            "skill_versions": {"manual": "v1"}, "generation_metadata": {"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}}, 201)
+                        case_id = case_bundle["case"]["id"]
+                        case_bundles[spec["case_key"]] = case_bundle
+                        case_contents[case_id] = spec["content"]
+                        await post(f"/test-cases/{case_id}/submit-review", {})
+                        await post(f"/test-cases/{case_id}/activate", {})
+                    bundle = case_bundles["target-query-order"]
+                    save("candidate-cases.json", case_bundles)
+                else:
+                    case_title = "单订单创建清理" if case_shape == "single-create-cleanup" else "完整八步已有订单查询"
+                    bundle = await post(root + "/test-cases", {"case_key": "default-query", "title": case_title,
+                        "mode_key": "api_testing", "case_type": "json", "content_json": content,
+                        "execution_notes": "按完整JSON和项目文档完成，必要准备和清理沿运行计划；未知字段仍保留。",
+                        "source_refs": [{"source_type": "api_doc", "source_id": doc["id"]}], "model_key": "manual", "prompt_version": "manual-v1",
+                        "skill_versions": {"manual": "v1"}, "generation_metadata": {"template": {"writing_guidance": "DO-NOT-INJECT-TEMPLATE"}}}, 201)
+                    case_contents[bundle["case"]["id"]] = content
+                    await post(f"/test-cases/{bundle['case']['id']}/submit-review", {})
+                    await post(f"/test-cases/{bundle['case']['id']}/activate", {})
+                save("case.json", bundle)
+                cid = bundle["case"]["id"]
+                policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1", "effect_coverage_max_bytes": 1024000})
+                if os.getenv("QA_STAGED_PLANNING") == "1":
+                    policy = policy.model_copy(update={"planning_stage_protocol": STAGE_PROTOCOL})
+                if os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1":
+                    policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                        "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                        "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2"})
+                if os.getenv("QA_OPERATION_PREFETCH") == "1":
+                    policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                        "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                        "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                        "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                        "operation_prefetch_protocol": "case-planning-declared-operation-prefetch-v1"})
+                    report["baseline"] = "e4d268e8 plus declared operation prefetch v7"
+                if os.getenv("QA_SOURCE_IDENTITY") == "1":
+                    policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                        "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                        "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                        "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                        "source_identity_protocol": "case-planning-source-full-hash-v1"})
+                    report["baseline"] = "5b5490ac plus source identity v8"
+                if os.getenv("QA_ITEM_OPERATION_SELECTION") == "1":
+                    policy = CasePlanningPolicy.model_validate({**policy.model_dump(mode="json"),
+                        "preparation_scope_protocol": "preparation-scope-v2", "effect_evidence_protocol": "case-effect-evidence-v2",
+                        "effect_coverage_protocol": "case-effect-coverage-v2", "planning_stage_protocol": "case-planning-staged-evidence-v2",
+                        "effect_expected_source_protocol": "case-effect-document-expected-v1",
+                        "source_identity_protocol": "case-planning-source-full-hash-v1",
+                        "operation_prefetch_protocol": "case-planning-item-operation-prefetch-v2"})
+                    report["baseline"] = "07275986 plus item operation selection v9"
+                if os.getenv("QA_LINKED_SOURCES") == "1":
+                    policy.linked_source_protocol = "case-planning-linked-documents-v1"
+                    report["baseline"] = "af790e15 plus fixed linked sources v10"
+                if os.getenv("QA_EVIDENCE_REFERENCES") == "1":
+                    reference_protocol = os.getenv("QA_EVIDENCE_REFERENCE_PROTOCOL", "case-planning-evidence-references-v1")
+                    policy.evidence_reference_protocol = reference_protocol
+                    report["evidence_reference_protocol"] = reference_protocol
+                    report["baseline"] = ("case-planning-evidence-references-v12" if reference_protocol.endswith("-v2")
+                        else "43f1700b plus evidence references v11")
+                if os.getenv("QA_EFFECT_TASKS") == "1":
+                    policy.planning_stage_protocol = "case-planning-staged-evidence-v3"
+                    report["baseline"] = "28fc566c plus separate evidence tasks"
+                if os.getenv("QA_RECEIPT_CORRECTION") == "1":
+                    policy.receipt_correction_protocol = "case-receipt-correction-v1"
+                    report["isolated_receipt_correction_enabled"] = True
+                    transport = os.getenv("QA_RECEIPT_TRANSPORT_OPTIONS")
+                    if transport:
+                        policy.receipt_correction_transport_options = ModelTransportOptions.model_validate_json(transport)
+                if executor_only:
+                    # Diagnose the existing execution adapter using a real HTTP
+                    # planning fixture, not a second external planning attempt.
+                    # This path is explicitly NOT a default-model planning pass.
+                    from test_case_planning import item as plan_item, finish as plan_finish
+                    policy = NEW_POLICY.model_copy(update={"effect_coverage_protocol": "case-effect-coverage-v1",
+                        "effect_coverage_max_bytes": 1024000,
+                        "receipt_correction_protocol": policy.receipt_correction_protocol,
+                        "receipt_correction_transport_options": policy.receipt_correction_transport_options})
+                    def receipt_diagnostic_plan(body):
+                        context = json.loads(body["messages"][-1]["content"])
+                        documents = [e for e in context["evidence"] if e["kind"] == "document"]
+                        if not documents:
+                            return json.dumps({"action": "query", "summary": "读取真实项目文档用于执行诊断",
+                                "queries": [{"kind": "document", "source_id": doc["id"]}]}, ensure_ascii=False)
+                        target = plan_item(context, "default-query", key="target_order_query")
+                        target["evidence_ids"].extend(e["id"] for e in documents)
+                        return json.dumps(plan_finish(target), ensure_ascii=False)
+                    planning_endpoint, planning_calls, _, _ = planning_providers.enter_context(
+                        provider(responder=receipt_diagnostic_plan))
+                    planning_model = models.upsert(ModelConfigUpdateRequest(model_name="receipt-diagnostic-controlled-plan",
+                        provider="openai", transport="openai_chat_completions", base_url=planning_endpoint,
+                        api_key=uuid4().hex, is_active=True, use_provider_defaults=False,
+                        capability_overrides=ModelCapabilitiesOverride(streaming=False),
+                        context_window=128000, max_output_tokens=4096))
+                    report["baseline"] = "ef28497f; controlled HTTP planning; real default Agent execution only"
+                planning_timeout = os.getenv("QA_DEFAULT_PLANNING_TIMEOUT_SECONDS")
+                if planning_timeout:
+                    policy = CasePlanningPolicy.model_validate({
+                        **policy.model_dump(mode="json"),
+                        "timeout_seconds": float(planning_timeout),
+                    })
+                    report["isolated_planning_timeout_seconds"] = policy.timeout_seconds
+                r = await client.put(root + "/case-plans/policy", json=policy.model_dump(mode="json"))
+                assert r.status_code == 200, r.text
+                candidate_case_ids = ([case_bundles[key]["case"]["id"] for key in
+                    ("dependency-create-order", "target-query-order", "unrelated-product-sort")]
+                    if candidate_case_specs else [cid])
+                request = {"creation_key": "default-complete-plan", "objective": planning_objective,
+                    "model_key": model.key, "candidate_case_ids": candidate_case_ids}
+                report["candidate_case_ids"] = candidate_case_ids
+                if executor_only:
+                    request["model_key"] = planning_model.key
+                task = await post(root + "/case-planning-tasks", request, 202)
+                save("submission.json", task)
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed FROM {settings.database.postgres_case_planning_task_table} WHERE id=%s", (task["id"],))
+                    frozen = cur.fetchone()["seed"]
+                assert frozen["response_protocol"] == PLANNING_RESPONSE_PROTOCOL
+                report["frozen_response_protocol"] = frozen["response_protocol"]
+                report["frozen_linked_source_context_protocol"] = frozen.get("linked_source_context_protocol")
+                if os.getenv("QA_STAGED_PLANNING") == "1" or os.getenv("QA_FORMAL_EFFECT_RELATIONS") == "1" or os.getenv("QA_OPERATION_PREFETCH") == "1" or os.getenv("QA_SOURCE_IDENTITY") == "1" or os.getenv("QA_ITEM_OPERATION_SELECTION") == "1":
+                    assert frozen["stage_prompts"]["protocol"] == policy.planning_stage_protocol
+                    report["frozen_stage_protocol"] = frozen["stage_prompts"]["protocol"]
+                planning_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.case_planning_task_stream,
+                    group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
+                await planning_queue.connect()
+                try:
+                    assert await PostgresTaskOutbox(settings).relay_once(planning_queue, limit=1) == 1
+                    worker = processes.start("default-planning-worker", "-m", "tests.default_model_probe", "src.cli.run_case_planning_worker",
+                        "--once", "--worker-id", "default-plan")
+                    code = await processes.wait(worker, timeout=max(220, policy.timeout_seconds + 60))
+                finally:
+                    await planning_queue.close()
+                task = await get(root + "/case-planning-tasks/" + task["id"])
+                save("planning-task.json", task)
+                print("default_planning_terminal " + json.dumps({"status": task["status"], "worker_exit": code}), flush=True)
+                assert code == 0 and task["status"] == "completed", task
+                plan = await get(root + "/case-plans/" + task["plan_id"])
+                save("plan.json", plan)
+                report["planning_completed"] = True
+                report["default_model_planning_completed"] = not executor_only
+                if case_shape == "multi-case-dependency":
+                    ids = {key: value["case"]["id"] for key, value in case_bundles.items()}
+                    nodes = plan["decision"]["items"]
+                    formal = [node for node in nodes if node["kind"] != "prepare"]
+                    assert {node["case_id"] for node in formal} == {
+                        ids["dependency-create-order"], ids["target-query-order"]
+                    }, nodes
+                    assert ids["unrelated-product-sort"] not in {
+                        node["case_id"] for node in nodes if node.get("case_id")
+                    }, nodes
+                    source_node = next(node for node in formal if node["case_id"] == ids["dependency-create-order"])
+                    target_node = next(node for node in formal if node["case_id"] == ids["target-query-order"])
+                    assert source_node["kind"] == "dependency" and target_node["kind"] == "target", nodes
+                    assert source_node["key"] in target_node["depends_on"], nodes
+                    binding = target_node["input_bindings"]["id"]
+                    assert binding["source_item"] == source_node["key"]
+                    assert binding["output_path_tokens"] == ["body", "order.id"]
+                    report["selected_formal_case_ids"] = sorted(node["case_id"] for node in formal)
+                    report["unrelated_candidate_excluded"] = True
+                if executor_only:
+                    save("controlled-planning-requests.json", planning_calls)
+                    models.upsert(execution_model)
+                    assert model_invocation_parameters(models.get_default_active()) == invocation_parameters
+                assert plan["config_snapshot"]["policy"]["effect_coverage_protocol"] == policy.effect_coverage_protocol
+                detail = await post(root + "/case-plans/" + plan["id"] + "/runs", {"creation_key": "default-complete-run", "mode_key": "api_testing"}, 201)
+                if case_shape == "multi-case-dependency":
+                    by_plan_key = {node["key"]: node for node in plan["decision"]["items"] if node["kind"] != "prepare"}
+                    run_items = {entry["plan_item_key"]: entry for entry in detail["items"]}
+                    source_key = next(key for key, node in by_plan_key.items()
+                        if node["case_id"] == case_bundles["dependency-create-order"]["case"]["id"])
+                    target_key = next(key for key, node in by_plan_key.items()
+                        if node["case_id"] == case_bundles["target-query-order"]["case"]["id"])
+                    assert list(run_items).index(source_key) < list(run_items).index(target_key)
+                    source_item = run_items[source_key]
+                    target_item = run_items[target_key]
+                    assert any(edge["item_id"] == source_item["id"] and
+                        ["case_output", "body", "order.id"] in edge["required_output_paths"]
+                        for edge in target_item["dependencies"]), target_item
+                rid = detail["run"]["id"]
+                assert await PostgresTaskOutbox(settings).relay_once(queue, limit=1) == 1
+                worker = processes.start("default-execution-worker", "-m", "tests.default_model_probe", "src.cli.run_redis_worker",
+                    "--once", "--worker-id", "default-execute")
+                assert await processes.wait(worker, timeout=420) == 0
+                for index in range(12):
+                    detail = await get("/runs/" + rid)
+                    save(f"run-{index}.json", detail)
+                    waiting = next((i for i in detail["items"] if i["status"] == "waiting_approval"), None)
+                    if waiting is None:
+                        break
+                    await post("/run-items/" + waiting["id"] + "/approval", {"approval_id": waiting["approval_id"], "decision": "approved"})
+                detail = await get("/runs/" + rid)
+                save("final-run.json", detail)
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT id,tool_key,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (rid,))
+                    jobs = [dict(row) for row in cur.fetchall()]
+                save("PG-tool-jobs.json", jobs)
+                if executor_only or all(i["status"] == "passed" for i in detail["items"]):
+                    # Redeliver the actual owned terminal dispatch. Never reset
+                    # a RunItem or infer a new task payload.
+                    assert all(i["status"] in {"passed", "failed", "error", "blocked", "skipped"} for i in detail["items"])
+                    sends_before = len(list((directory / "physical").glob("*.send.json")))
+                    effects_before = deepcopy(effects)
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table} WHERE payload->>'run_id'=%s", (rid,))
+                        dispatches = [row["payload"] for row in cur.fetchall()]
+                    assert len(dispatches) == 1
+                    await queue.enqueue(dispatches[0])
+                    worker = processes.start("default-execution-terminal", "-m", "tests.default_model_probe",
+                        "src.cli.run_redis_worker", "--once", "--worker-id", "default-terminal")
+                    assert await processes.wait(worker, timeout=60) == 0
+                    assert len(list((directory / "physical").glob("*.send.json"))) == sends_before
+                    assert effects == effects_before
+                    assert await get("/runs/" + rid) == detail
+                    report["terminal_replay_extra_physical_requests"] = 0
+                assert all(i["status"] == "passed" for i in detail["items"]), detail
+                expected_creates = 1 if case_shape in {"single-create-cleanup", "multi-case-dependency"} else 2
+                expected_queries = 0 if case_shape == "single-create-cleanup" else 1
+                assert len(created) == expected_creates and not orders, (effects, orders)
+                assert [method for method, _ in effects].count("POST") == expected_creates
+                assert [method for method, _ in effects].count("GET") >= expected_queries
+                assert [method for method, _ in effects].count("DELETE") == expected_creates
+                target = next(r for r in detail["results"] if r["case_id"] == cid)
+                assert target["actual"]["case_status"] == "passed"
+                if case_shape == "multi-case-dependency":
+                    source_id = case_bundles["dependency-create-order"]["case"]["id"]
+                    source_result = next(r for r in detail["results"] if r["case_id"] == source_id)
+                    assert source_result["actual"]["case_status"] == "passed"
+                    assert effects == [
+                        ("POST", "/orders"),
+                        ("GET", "/orders/" + created[0]),
+                        ("DELETE", "/orders/" + created[0]),
+                    ], effects
+                    report["dependency_output_used_by_real_http"] = created[0]
+                coverages = [c for r in detail["results"] for c in r["actual"].get("effect_cleanup_coverage", {}).get("cleanups", {}).values()]
+                if any(i.get("cleanup_sources") for i in plan["decision"]["items"]):
+                    assert coverages and all(c["status"] == "passed" for c in coverages)
+                    assert sum(c["known_object_count"] for c in coverages) >= len(created)
+                # A complete formal case can do its own preparation and cleanup.
+                # Prove every actual object against reliable PG task returns even
+                # when there is no separate prepare item or coverage declaration.
+                native = [j for j in jobs if j["tool_key"] == "api-test-runner"
+                    and j["output_payload"].get("task_result")
+                    and not j["metadata"].get("case_operation", {}).get("decision") == "replayed"]
+                produced = [j["output_payload"]["task_result"]["response_body"]["order.id"]
+                    for j in native if j["input_payload"].get("task", {}).get("method") == "POST"]
+                removed = [j["output_payload"]["task_result"]["response_body"]["order.id"]
+                    for j in native if j["input_payload"].get("task", {}).get("method") == "DELETE"]
+                assert set(produced) == set(removed) == set(created) and len(produced) == len(removed) == expected_creates
+                assert all(j["status"] == "completed" for j in native)
+                report.update(declared_cleanup_scope=bool(coverages), actual_PG_object_cleanup_verified=True,
+                    case_internal_cleanup_server_coverage_verified=bool(coverages))
+                report["business_execution_completed"] = True
+                for p in (directory / "physical").glob("*.request.json"):
+                    body = json.loads(p.read_bytes())
+                    assert "DO-NOT-INJECT-TEMPLATE" not in json.dumps(body, ensure_ascii=False)
+                    for frozen in (c for c in contexts(body) if c.get("effect_coverage_protocol")):
+                        for step in (s for s in frozen["steps"] if s["phase"] == "case"):
+                            case_id = step["item"]["case_id"]
+                            assert step["content_json"] == case_contents[case_id]
+        finally:
+            report.update(project_id=project["id"] if project else None, task=task, plan=plan, actual_business_HTTP=effects,
+                actual_created_ids=created, remaining_orders=deepcopy(orders))
+            if task:
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT seed,checkpoint,status FROM {settings.database.postgres_case_planning_task_table} WHERE id=%s", (task["id"],))
+                    row = cur.fetchone()
+                if row:
+                    save("PG-planning.json", dict(row))
+            if detail:
+                downloaded = []
+                for attempt in detail["attempts"]:
+                    correction = (attempt.get("checkpoint_payload") or {}).get("receipt_correction")
+                    if not correction:
+                        continue
+                    for key in ("request", "response"):
+                        ref = correction.get(key)
+                        if not ref:
+                            continue
+                        owned.append(ref["uri"])
+                        raw = (await objects.read_object_uri(ref["uri"]))["content"]
+                        assert len(raw) == ref["size_bytes"]
+                        assert hashlib.sha256(raw).hexdigest() == ref["sha256"]
+                        name = "receipt-" + correction["call_id"] + "-" + key + ".json"
+                        (directory / name).write_bytes(raw)
+                        downloaded.append({"file": name, **ref, "download_verified": True})
+                save("receipt-original-downloads.json", downloaded)
+                with postgres_connect(settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT id,tool_key,status,metadata,input_payload,output_payload FROM {settings.database.postgres_tool_job_table} WHERE metadata->>'run_id'=%s", (detail["run"]["id"],))
+                    save("PG-tool-jobs.json", [dict(row) for row in cur.fetchall()])
+                    sessions = {(i.get("execution_checkpoint") or {}).get("session_id") for i in detail["items"]}
+                    sessions.update(((r.get("actual") or {}).get("execution_checkpoint") or {}).get("session_id") for r in detail["results"])
+                    sessions.update((a.get("checkpoint_payload") or {}).get("session_id") for a in detail["attempts"])
+                    sessions.discard(None)
+                    if sessions:
+                        # Public model response and numeric/state identity only;
+                        # never export the whole graph or private reasoning.
+                        cur.execute(f"""SELECT id,session_id,version,stage,
+                            graph_state->'model_response_text' AS model_response_text,
+                            graph_state->'final_response' AS final_response,
+                            graph_state->'context_bundle'->'case_execution' AS case_execution,
+                            graph_state->'model_response_summary' AS model_response_summary,
+                            graph_state->'model_call_count' AS model_call_count,
+                            graph_state->'max_iterations' AS max_iterations
+                            FROM {settings.database.postgres_snapshot_table} WHERE session_id=ANY(%s) ORDER BY session_id,version""", (list(sessions),))
+                        save("PG-public-receipt-snapshots.json", [dict(row) for row in cur.fetchall()])
+                    else:
+                        report["public_receipt_snapshot_session_identity_missing"] = True
+            collect_objects(settings, owned)
+            await processes.close()
+            planning_providers.close()
+            for p in tmp_path.iterdir():
+                if p.suffix in {".stdout", ".stderr"}:
+                    shutil.copyfile(p, directory / p.name)
+            report['SDK_create_observations'] = [json.loads(p.read_bytes()) for p in sorted((directory/'physical').glob('*.sdk-create.json'))]
+            report['SDK_stream_observations'] = [json.loads(p.read_bytes()) for p in sorted((directory/'physical').glob('*.sdk-stream.json'))]
+            assert model_invocation_parameters(MySQLModelConfigStore(global_settings).get_default_active()) == parameters
+            save("verification.json", report)
