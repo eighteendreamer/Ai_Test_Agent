@@ -221,6 +221,23 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"需求变更与追踪——用户业务评审"的验收缺口；仍缺：部署/环境适用性中的执行期准入（admission）默认模型路径与产品页面交互层。
 
+### 执行期准入（admission）默认模型路径验收通过
+
+同验收扩展执行段后（同一测试 `test_default_business_applicability_live.py`）：
+
+```text
+1 passed in 187.94s
+```
+
+证据：`p4-business-applicability-default-deepseek-current-20261024-06/` 及同名 XML。在环境绑定规划与 Run 启动之后：
+
+- 提交"当前状态未知"修订评审（points/cases 全部 `unknown`，`expected_review_id` 指向原评审）——模拟上次确认后部署状态可能变化的真实场景。
+- 独立执行 Worker 以真实默认模型执行 Run：条目 `passed`、Run `completed`；结果 `actual.environment_admission` 记录 `{reviews: [unknown 修订], decision: no_explicit_invalid}`，且该准入快照原样持久化到执行 attempt（`execution_attempt_id` 回读一致）——"无显式失效即放行、结论留痕"的准入语义在默认模型路径成立。
+- 执行物理模型 HTTP 2 次；终态重投后 Run 与结果完全一致、零新增模型调用。
+- 全程 `global_model_unchanged=true`。
+
+这关闭了总表"需求变更与追踪——部署/环境适用性"在 API 生产链路的验收缺口（applicability → planning → admission 全链默认模型/人工决策路径）；仍缺产品页面交互层。
+
 ## 两份旧 Worker 汇总原件恢复完成
 
 定位：总表所指"两份旧 Worker 汇总原件"是 2026-09-09/09-10 两个早期 DA-E4 会话（`0ea013f1`"DA-E4 safe tool acceptance"、`bae284c1` 同名）的 session-history 汇总报告——当年在会话 **running** 状态下生成（仅 4 事件、报告 Status=running），会话完成后从未刷新，故长期呈现为"未恢复的旧汇总"。
