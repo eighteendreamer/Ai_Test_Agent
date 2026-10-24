@@ -123,7 +123,45 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 ### 验收基础设施根因修复：隔离运行时的任务流按运行唯一化
 
-本轮第 3 次复现"一次性规划 Worker 消费到上一运行的遗留投递后提前退出"（`case_planning_task_claim_skipped` → 退出，本运行条目停留 `queued`）。根因：`isolated_runtime` 已将 runs/agents 流与消费组按运行唯一命名，但 `case_planning`/`cleanup`/`compaction`/`embedding`/`vector_rebuild` 五个后缀解析流仍沿用生产名，共享流中前序运行（尤其被杀运行）的投递会先于本运行条目被单批 `--once` Worker 读到，其任务行在当前隔离库不存在而失败退出。修复（`tests/test_execution_worker_cli.py`）：五个流一并注册为 `qa:test:{suffix}:*`，与既有命名模式一致；生产常驻 Worker 不受影响。修复后 UI 两变体连跑通过（此前同批运行必现失败）。运行后复核 Redis 仅余常驻键。
+本轮第 3 次复现"一次性规划 Worker 消费到上一运行的遗留投递后提前退出"（`case_planning_task_claim_skipped` → 退出，本运行条目停留 `queued`）。根因：`isolated_runtime` 已将 runs/agents 流与消费组按运行唯一命名，但 `case_planning`/`cleanup`/`compaction`/`embedding`/`vector_rebuild` 五个后缀解析流仍沿用生产名，共享流中前序运行（尤其被杀运行）的投递会先于本运行条目被单批 `--once` Worker 读到，其任务行在当前隔离库不存在而失败退出。修复（`tests/test_execution_worker_cli.py`）：`case_planning`/`compaction`/`embedding`/`vector_rebuild` 四个一次性任务流注册为 `qa:test:{suffix}:*`，与既有命名模式一致；**cleanup 流保持共享**——租约登记表位于全局 `qa:` 命名空间，清理投递必须能被后续运行的 Worker 继续消费（详见下节 Docker 安全验收的发现）。生产常驻 Worker 不受影响。修复后 UI 两变体连跑通过（此前同批运行必现失败）。运行后复核 Redis 仅余常驻键。
+
+## Docker 性能与安全：默认模型完整闭环验收通过（deepseek-flash）
+
+### 性能：默认 Agent 自主规划 k6 全链路
+
+`RUN_LIVE_DEFAULT_PERFORMANCE_AGENT=1` 下执行 `tests/test_default_performance_agent_live.py::test_default_agent_actual_k6_report_and_terminal_replay`：
+
+```text
+1 passed in 103.16s
+```
+
+证据：`p5-docker-performance-default-deepseek-current-20261024-02/` 及同名 XML。
+
+- 真实默认模型（`deepseek-flash`）在完整生产 API + 独立 Agent Worker 中驱动 performance-testing-agent：用户消息 → 自主规划 k6 方案（1 VU closed、2 秒、SLA P99<1000ms）→ 3 次审批 → 真实 Docker 冒烟 + 负载两次执行 → 正式报告。会话 `completed`，模型物理 HTTP 共 3 次，`global_model_unchanged=true`。
+- 真实指标落 PostgreSQL `perf_runs` 恰 1 行：samples=6619、p50/p95/p99、error_rate=0、throughput ≈3309 tps，`verdict=pass`；指标与 `performance-test-runner` ToolJob 的 `metrics` 完全一致。
+- 原件下载：冒烟+负载两个 execution 的证据工件经 API 读回并核对 SHA-256（`performance-execution-v1` schema）。
+- 构建版前端实测（Playwright）：报告中心列表 → 详情"良好"/pass → 指标 JSON 下载内容与 ToolJob metrics 一致，页面零错误、无 ≥400 网络请求。
+- API 重启后终态重投：模型 HTTP、ToolJob 数、perf_runs 行数三项全部零新增。
+
+### 前端密闭性修复：字体图标改为本地自托管
+
+性能验收首轮在最后的前端步骤失败（`Page.goto` 30 秒 load 超时，页面最终渲染正常）。逐请求复现定位：`agent_web/index.html` 此前从 `cdnjs.cloudflare.com` 加载 font-awesome 6.4.0——该公网请求一旦悬挂即阻塞 `load` 事件，验收环境对公网延迟敏感且产物不密闭。修复：CSS 与 8 个 webfont 文件自托管到 `agent_web/public/font-awesome/`（Vite 原样拷入 dist，CSS 内相对路径不变），`index.html` 改为本地引用。复现脚本确认构建产物零外网请求、字体本地加载；修复后性能验收整体通过。首轮失败证据保留于 `p5-docker-performance-default-deepseek-current-20261024-01/`。
+
+### 安全：默认配置模型驱动的 Docker 安全战役
+
+`RUN_LIVE_SECURITY_AGENT=1`、`QA_SECURITY_AGENT_MODEL_NAME=deepseek-flash` 下执行 `tests/test_security_agent_live.py::test_configured_security_agent_runs_docker_campaign_and_terminal_replay`：
+
+```text
+1 passed in 107.58s
+```
+
+证据：`p5-security-agent-deepseek-current-20261024-05/` 及同名 XML。真实默认配置模型（显式选择 `deepseek-flash`，与全局默认同源同参）驱动安全 Agent 完成真实 Docker 扫描战役：自有回环 HTTP 目标（故意缺失安全头）→ Agent 规划并执行容器化扫描 → 发现解析与报告 `report_verified=true` → 终态重投零新增（`sdk_calls=0`、`physical_model_requests=0`、`target_requests=0`、`tool_jobs=0`）；Docker 资源租约全部结清（`pending=0/active=0`）。
+
+### 配套根因修复（本轮发现）
+
+1. **清理流与全局租约登记表的命名空间必须一致**（`tests/test_execution_worker_cli.py`）：安全验收前三轮均失败于 `assert not pending_docker`。排查确认租约登记表 `qa:lease:metadata` 是全局共享命名空间，而上一轮把 cleanup 流改为按运行唯一——运行内未处理完的清理投递随隔离运行时销毁，登记永久滞留 `cleanup_pending`，且其流消息已不存在、任何后续 Worker 都无法收敛（三轮失败的 `external_resource_id` 完全相同，即同一批滞留条目反复绊倒后续运行）。修复：cleanup 流恢复共享，使遗留投递可被后续运行消费；另精确清理了本机测试遗留的 7 条死会话登记。教训：登记表全局的队列，其流也必须全局。
+2. **安全测试的资源断言按 project 过滤**（`tests/test_security_agent_live.py`）：`list_cleanup_pending()`/`list_active()` 此前不带项目过滤，在全局登记表上断言——生产部署中其他项目的合法滞留条目也会令其失败。改为 `project_id=project["id"]` 限定本战役。
+3. **清理 Worker 补齐运行日志**（`src/cli/run_resource_cleanup_worker.py`）：该 CLI 是唯一未调用 `configure_logging()` 的入口，处理过程与失败完全不可见（本轮排查的直接障碍）。补齐后与其他 CLI 一致。
 
 ## 环境清理
 
