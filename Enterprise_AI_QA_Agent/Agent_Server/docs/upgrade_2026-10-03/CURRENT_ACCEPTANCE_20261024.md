@@ -257,6 +257,18 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"按用例执行——完整产品流程"的缺口（产品对话框 → 默认模型规划 → 启动 → 默认模型执行 → 结果与终态重投，全链真实）；该方向仍缺：未知副作用只读查证与执行中计划修订的专项（API 级已有受控证据）。
 
+## 执行中计划修订：默认模型专项已建设、未通过（如实记录）
+
+新增验收 `tests/test_default_execution_replanning_live.py`（门控 `RUN_LIVE_DEFAULT_EXECUTION_REPLANNING=1`）：复用受控版 `execution_environment`（隔离真实 MySQL/PG/RustFS、真实 ToolJob/修订桥接），规划保持受控（fixture_plan + candidate_replies），**执行 Agent 换为真实默认模型**（deepseek-flash，经会话别名键注册，全部参数/凭据/端点为真实默认值）。
+
+实测 5 轮未通过，**失败原因均为真实产品行为而非测试缺陷**，最终形态取证（`p2-execution-replanning-default-deepseek-current-20261024-05/evidence.json`）：
+
+- 真实模型未按受控脚本的四步链（读缺口 → inspect → 提交修订 → blocked 回执）执行，而是先调用 `api-docs-library` 查询项目文档（`operation_key: docs-search-fixtures`），随后调用 `run-plan-replanner` 的 `inspect`（已完成，能正确读取运行修订状态）——说明模型理解了修订工具的存在。
+- 但其工具调用在 action-binding/admission/operation 三协议栈下未通过准入门（操作未声明或调用未产生可靠返回检查点），错误恢复 L5 按设计终止会话并保留原状态（"固定动作没有可靠返回检查点；保留原状态并先查证"）——**保护门行为正确**，模型从未到达缺口读取与修订提交。
+- 附带发现：L5 之前模型键一致性断言（会话别名 `controlled-case-agent` vs 实际模型键）会先终止执行——验收按既有 receipt-stream 模式以真实配置注册别名键解决。
+
+结论与后续选项（按优先级）：(a) 产品改进——`execution_replanning` 提示词小节补充一份精确的工具调用编排示例（含 `_case_action`/`operation_key` 的合法组合），这本身需要独立验收；(b) 更强的默认模型重试本验收；(c) 降低协议栈（关闭 admission）的分层验收——但不替代全栈验收。受控模型版本（10-23，5 passed）仍是该机制正确性的现行证据；本专项证明的是**默认模型尚不能可靠驱动完整修订协议栈**。
+
 ## 两份旧 Worker 汇总原件恢复完成
 
 定位：总表所指"两份旧 Worker 汇总原件"是 2026-09-09/09-10 两个早期 DA-E4 会话（`0ea013f1`"DA-E4 safe tool acceptance"、`bae284c1` 同名）的 session-history 汇总报告——当年在会话 **running** 状态下生成（仅 4 事件、报告 Status=running），会话完成后从未刷新，故长期呈现为"未恢复的旧汇总"。
