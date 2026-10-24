@@ -216,8 +216,9 @@ async def test_original_is_scanned_before_conversion_can_remove_rejected_content
 
 @pytest.mark.asyncio
 async def test_content_type_detection_falls_back_when_libmagic_hangs(monkeypatch):
-    # python-magic may bind an incompatible libmagic from PATH whose import never
-    # returns; detection must fall back within its bound and stay disabled afterwards.
+    # Windows skips libmagic entirely (python-magic without a bundled libmagic
+    # can hang or segfault the interpreter); POSIX bounds the hung import and
+    # disables detection for the process lifetime afterwards.
     from src.application.security import upload_security_service as upload_security_module
     from src.core.config import Settings
 
@@ -233,13 +234,17 @@ async def test_content_type_detection_falls_back_when_libmagic_hangs(monkeypatch
 
     detected = await service._detect_content_type(b"# md", "probe.md", "text/markdown")
     assert detected == "text/markdown"
-    assert service._magic_detection_state == "unavailable"
+    if sys.platform == "win32":
+        assert service._magic_detection_state == "unknown"
+    else:
+        assert service._magic_detection_state == "unavailable"
 
-    monkeypatch.setattr(upload_security_module, "_MAGIC_DETECTION_TIMEOUT_SECONDS", 30)
-    started = time.monotonic()
-    detected = await service._detect_content_type(b"# md", "probe.md", "text/markdown")
-    assert time.monotonic() - started < 1
-    assert detected == "text/markdown"
+    if sys.platform != "win32":
+        monkeypatch.setattr(upload_security_module, "_MAGIC_DETECTION_TIMEOUT_SECONDS", 30)
+        started = time.monotonic()
+        detected = await service._detect_content_type(b"# md", "probe.md", "text/markdown")
+        assert time.monotonic() - started < 1
+        assert detected == "text/markdown"
 
 
 @pytest.mark.asyncio
