@@ -79,7 +79,18 @@ async def test_default_model_gap_read_verify_and_durable_revision(tmp_path, gap_
              "planning_model": "controlled (fixture_plan + candidate_replies)",
              "execution_subject": "real default model gap discovery, read-only verification and revision submission"}
     try:
-        async with execution_environment(tmp_path, gap_http) as f:
+        # The real model's rounds take far longer than the scripted agent's
+        # 15s default turn lease; extend it for this live acceptance. The
+        # document spells the full gap URL — a real project document names
+        # concrete endpoints, and the scripted agent's relative paths plus
+        # an injected base URL are fixture shortcuts the model cannot see.
+        manual_document = (
+            "# 执行补充依据\n"
+            "实际响应required_case=item-4时，left需要先执行项目正式用例item-4。\n"
+            "当前已领取项仍保持原步骤与版本；right无需新增准备。\n"
+            f"缺口只读验证：GET {gap_http[0]} 返回的 required_case 字段即为缺口证据。\n")
+        async with execution_environment(tmp_path, gap_http,
+                turn_execution_lease_seconds=300, document_text=manual_document) as f:
             try:
                 before = await f.runs.get_run(f.detail.run.id)
                 outcome = await f.adapter.execute(case=await f.env.cases.get_case(f.entry.case_id),
