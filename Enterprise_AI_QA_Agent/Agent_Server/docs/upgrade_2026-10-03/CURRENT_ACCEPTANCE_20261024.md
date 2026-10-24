@@ -88,6 +88,43 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表中"Agent API 测试——完整默认 Agent 流程仍未验收"的缺口；剩余缺口为更完整的断网/进程故障组合与产品页面报告的默认模型路径对账。
 
+## 正式回执与恢复：默认模型纠正语义与 UI 验收（deepseek-flash）
+
+### 默认模型纠正调用语义验收通过
+
+`RUN_LIVE_DEFAULT_RECEIPT_STREAM=1` 下执行 `tests/test_default_receipt_stream_live.py::test_default_correction_uses_frozen_stream_and_saved_response_once`：
+
+```text
+1 passed in 61.71s
+```
+
+证据：`p2-receipt-stream-default-deepseek-current-20261024-01/` 及同名 XML。受控图提供确定性无效的原始回执，**纠正调用本身走真实默认模型**（`deepseek-flash`，流式冻结协议 `case-receipt-stream-response-v1`，真实 MySQL/PostgreSQL/RustFS 与受控 HTTP 目标）：纠正物理请求恰 1 次、响应落盘后评估通过、条目 `passed`；业务 POST/GET/DELETE 各一次；重放已完成的 execute 不新增业务或模型请求（`terminal_extra_business_requests=0`、`terminal_extra_model_requests=0`）；纠正请求/响应原件哈希逐一核对。该测试为首次运行即通过。
+
+### 默认 AI UI 测试正式通过（positive + negative）
+
+`RUN_LIVE_DEFAULT_UI_SCENE=1` 下执行 `tests/test_default_ui_scene_live.py::test_default_ui_reads_fixed_scene_and_verifies_actual_page` 两变体：
+
+```text
+2 passed in 152.42s
+```
+
+证据：`p2-default-ui-scene-deepseek-current-20261024-02/`（positive/、negative/）及同名 XML。
+
+- 真实默认模型（`deepseek-flash`）完成"规划 → 读取固定场景知识（knowledge-rag 引用场景版本内容哈希）→ 真实 Chromium 打开项目页 → click → 只读 eval 回读"全链路；`uses_global_default_model=true`。
+- positive：实际计数与预期一致，条目正式 `passed`；浏览器证据（transcript/截图）持久化到 RustFS 并可经 API 读回，页面身份与录制页区分（`page_id` 不同）。
+- negative：页面实际计数不符时，条目正式 `failed`——默认 AI 如实报告失败而不是迁就预期。
+- 场景内的审批等待、浏览器资源租约、资源清理 Worker 与终态重投均按测试断言通过。
+
+### 回执纠正"真实进程中断"的默认模型缺口（本轮如实记录）
+
+`tests/test_default_receipt_process_recovery_live.py`（在纠正调用进行中真实 `taskkill` 生产 API 进程树、自然租约过期后由生产恢复 Worker 接管）的默认模型路径本轮首次实跑：规划与执行均由真实 `deepseek-flash` 完成，但 **Agent 首次回执即通过全部校验**（只读健康检查用例），纠正阶段从未进入，`waiting_approval` 后条目直接 `passed`，测试在等待纠正边界处失败（证据 `p2-default-receipt-recovery-deepseek-current-20261024-01/invoking/`）。该测试写于 Step 时代，前提是"默认模型的原始回执大概率无效"；对回执质量足够高的默认模型（deepseek-flash），该前提不成立，且不存在向独立 API/Worker 进程注入确定性无效回执的测试钩子（`AgentRegistry` 为进程内硬编码）。
+
+当前状态判定：纠正管线的持久化/恢复/不重复语义已由两路证据覆盖——受控模型版本的真实进程中断两窗口（2026-10-23，`p2-receipt-process-recovery-current-20261023-response/invoking`）+ 本轮真实默认模型纠正调用语义（stream 版）。**剩余缺口**仅为"真实默认模型纠正调用进行中的进程中断"这一组合场景，需要先设计确定性触发机制（产品级测试钩子或可确定性触发首轮回执校验失败的用例设计）再补验收；不建议通过篡改模型响应伪造。
+
+### 验收基础设施根因修复：隔离运行时的任务流按运行唯一化
+
+本轮第 3 次复现"一次性规划 Worker 消费到上一运行的遗留投递后提前退出"（`case_planning_task_claim_skipped` → 退出，本运行条目停留 `queued`）。根因：`isolated_runtime` 已将 runs/agents 流与消费组按运行唯一命名，但 `case_planning`/`cleanup`/`compaction`/`embedding`/`vector_rebuild` 五个后缀解析流仍沿用生产名，共享流中前序运行（尤其被杀运行）的投递会先于本运行条目被单批 `--once` Worker 读到，其任务行在当前隔离库不存在而失败退出。修复（`tests/test_execution_worker_cli.py`）：五个流一并注册为 `qa:test:{suffix}:*`，与既有命名模式一致；生产常驻 Worker 不受影响。修复后 UI 两变体连跑通过（此前同批运行必现失败）。运行后复核 Redis 仅余常驻键。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
