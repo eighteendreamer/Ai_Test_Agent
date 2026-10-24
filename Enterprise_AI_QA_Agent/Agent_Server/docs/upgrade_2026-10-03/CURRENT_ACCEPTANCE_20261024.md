@@ -269,6 +269,27 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 结论与后续选项（按优先级）：(a) 产品改进——`execution_replanning` 提示词小节补充一份精确的工具调用编排示例（含 `_case_action`/`operation_key` 的合法组合），这本身需要独立验收；(b) 更强的默认模型重试本验收；(c) 降低协议栈（关闭 admission）的分层验收——但不替代全栈验收。受控模型版本（10-23，5 passed）仍是该机制正确性的现行证据；本专项证明的是**默认模型尚不能可靠驱动完整修订协议栈**。
 
+## UI 录制与知识：人工操作 DeepSeek 完整实测通过
+
+用户本人操作可见 Chromium 完成 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` 的人工模式（`RUN_LIVE_DEEPSEEK_RECORDING=1`、`DEEPSEEK_RECORDING_INTERACTION=manual`，pytest 需 `-s` 使 `input()` 可读——首跑因缺 `-s` 失败属测试运行方式问题）：
+
+```text
+1 passed in 87.26s
+```
+
+证据：`p5-deepseek-recording-manual-current-20261024-03/` 及同名 XML。用户在真实 DeepSeek 首页（HTTP 200、目标按钮各 1 个）自由操作后停止录制：
+
+- **忠实录制**：13 个事件 / 7 个动作——含初始 `navigate`、"深度思考"两次 `click` + 一次 `dblclick`（浏览器把快速连点报为双击）、"智能搜索"一次、`scroll` 两次；全部按序入库无遗漏（`omission.verified`、无序列缺口）。
+- **清洗不误删**：1 个重复候选、`removed_event_sequences=[]`（真实重复操作零误删）。
+- **响应关联**：4 组网络响应-动作关联全部解析、零未解析。
+- **无凭据泄漏**：事件流中无 `Authorization`、无 cookie。
+
+### 人工模式 oracle 适配（本轮修正，如实记录）
+
+首跑失败暴露了人工模式的 oracle 设计缺陷：原断言要求动作流与脚本**精确全等**——只适用于脚本回放，真人操作天然包含额外动作。第二轮用户故意自由操作（22 动作：多次点击、双击合并、输入文字、SPA 导航）复现该缺陷，同时其数据证明了产品指标全部健康（22 动作全部被响应关联覆盖、零未解析、零误删）。修正（`tests/test_recording_deepseek_live.py`）：受控分支保留精确全等；人工分支改为"**脚本动作在 dblclick 归一（展开为两次 click）后保序包含于录制流**"——无遗漏与顺序仍被强校验，用户的额外操作本就应被如实录制。产品断言（质量协议/关联/不误删/无泄漏）未动。
+
+这关闭了总表"UI 录制与知识——人工操作 DeepSeek 的完整实测"；该方向仍缺：默认 AI 实际使用录制知识完成断言、closed Shadow DOM 边界呈现。
+
 ## 两份旧 Worker 汇总原件恢复完成
 
 定位：总表所指"两份旧 Worker 汇总原件"是 2026-09-09/09-10 两个早期 DA-E4 会话（`0ea013f1`"DA-E4 safe tool acceptance"、`bae284c1` 同名）的 session-history 汇总报告——当年在会话 **running** 状态下生成（仅 4 事件、报告 Status=running），会话完成后从未刷新，故长期呈现为"未恢复的旧汇总"。
