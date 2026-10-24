@@ -184,6 +184,25 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"需求变更与追踪——更广业务场景的默认模型质量验收"在 API 生产链路的核心缺口；仍缺：用户业务评审的产品页面交互、部署/环境适用性（applicability/planning/admission）的默认模型路径，以及其他格式与更多故障组合。
 
+## 普通需求文档全量生成：默认模型模块进度与独立恢复验收通过（deepseek-flash）
+
+新增验收 `tests/test_default_document_generation_live.py::test_default_model_ordinary_document_modules_and_independent_recovery`（门控 `RUN_LIVE_DEFAULT_DOCUMENT_GENERATION=1`），流式/非流式两个变体：
+
+```text
+2 passed in 691.71s
+```
+
+证据：`p1-document-generation-default-deepseek-current-20261024-05/`（plain/、stream/）及同名 XML。每个变体的完整链路：
+
+- **全量生成质量（第一个生成组）**：真实默认模型对商城需求 Markdown 的 3 个模块各执行 1 次真实调用（非流式与流式各 3 次），全部 `completed`；每个模块的 `generation_review` 通过全部语义门（`mapping_state=complete`、候选清单完整、逐条无 validation_issues、step_refs 均有 expected_path）；共 9 个用例草稿（每模块至多 3 条），`generation_metadata` 记录解析快照来源；模板提交后修改不影响已固定范围。
+- **模块进度与独立恢复（第二个生成组）**：故意将 `max_response_bytes` 降至 1500，3 个模块的真实响应全部在落盘后按 `response_validation_rejected`（checkpoint `response_saved`）失败；恢复策略 `saved_response` 逐个重试——**重试全程 0 次模型调用**（仅使用 RustFS 中已保存的真实响应），模块状态保持 `failed` 供人工评审。
+- **采样差异如实记录**：恢复重试中，非流式 2/3 完成、流式 1/3 完成，其余被子任务的质量门以 `draft_commit_rejected` 拒绝（响应仍保留）。测试断言接受"完成或被门拒绝"两种合法结局并记录明细；机制断言（0 模型调用、响应保留、门拒绝保持失败态）全部成立。测试设计观察：恢复生成冻结的是被故意替换为测试字符串的写作指导模板，该无意义指导可能推高了此段的门拒绝率；质量生成（正常模板）6/6 全过。
+- 两个变体 `global_model_unchanged=true`；终态重投零模型调用（质量组逐模块重放后 send 数不变）。
+
+排查过程记录：首轮两变体失败于共享文档流（`qa:tasks:document_parsing` 等为进程级常量）的跨运行旧投递——流式变体的一次性解析 Worker 消费了非流式变体的遗留条目；已在测试开始处增加共享流清理，并在运行间保持既有清理纪律。另一处修正：恢复重试的错误码存在采样差异（`response_validation_rejected` / `draft_commit_rejected` 两种质量门），断言按"完成或被门拒绝"设计而非固定错误码。
+
+这关闭了总表"模板、生成、Excel 导入——普通需求文档全量生成的模块进度和独立恢复"的默认生成语义质量缺口（10-23 的受控版本明确不证明默认模型生成质量）；该方向仍缺：默认/项目模板与 Excel/JSON 导入的完整项目页面生产流程验收（页面交互层）。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
