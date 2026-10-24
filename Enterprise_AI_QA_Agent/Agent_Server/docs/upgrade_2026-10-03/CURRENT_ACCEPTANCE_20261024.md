@@ -203,6 +203,24 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"模板、生成、Excel 导入——普通需求文档全量生成的模块进度和独立恢复"的默认生成语义质量缺口（10-23 的受控版本明确不证明默认模型生成质量）；该方向仍缺：默认/项目模板与 Excel/JSON 导入的完整项目页面生产流程验收（页面交互层）。
 
+## 需求变更与追踪：用户业务评审与环境绑定规划验收通过（deepseek-flash）
+
+新增验收 `tests/test_default_business_applicability_live.py::test_default_model_environment_applicability_and_bound_planning`（门控 `RUN_LIVE_DEFAULT_BUSINESS_APPLICABILITY=1`）：
+
+```text
+1 passed in 179.33s
+```
+
+证据：`p4-business-applicability-default-deepseek-current-20261024-05/` 及同名 XML。场景：订单需求 V1→V2（total 口径变更+discount）经真实影响分析（默认模型）产出规则与需求评审后，部署到两个真实本地环境——旧语义部署（total=1000 无 discount）与新语义部署（total=900、discount=100）：
+
+- **用户业务适用性评审（人工决策，0 模型调用）**：两个环境各经真实业务环境注册、配置、快照（config revision/sha256 固定），并用 `api-test-runner` 发起真实 HTTP 观察旧/新部署的 `/app/orders/1` 实际响应（total=1000 / discount=100，`target_status=matched`）；用户分别提交适用性决策——旧环境两点 `not_effective`（新语义未生效，无用例结论可下）、新环境两点 `effective` 且用例版本 `valid`，观察以 sha256 固定；旧环境结论按 revision=2 撤回。决策全程模型 HTTP 为 0（业务评审是用户职责）。
+- **环境绑定规划（真实默认模型）**：用例激活后提交绑定新环境快照（`expected_snapshot_sha256`）的规划任务，独立规划 Worker 以真实默认模型完成——plan 的 `environment.snapshot` 与适用性评审逐字一致，决策项引用绑定用例版本；物理模型 HTTP 2 次；启动 Run 后 `plan_snapshot.plan.environment` 完整传播到持久 Run。
+- 全程 `global_model_unchanged=true`。
+
+本轮同时根因修复了一个贯穿全天的瞬时故障：**Windows 上 python-magic（无捆绑 libmagic）绑定 PATH 上的不兼容 DLL 后，`import magic` 除挂起外还会随机段错误杀死整个 API 进程**（线程模型不可捕获；今日多次"未归因 ReadError"均为此）。修复（`upload_security_service`）：Windows 直接跳过 libmagic 检测走字节签名回退，POSIX 保留有界检测；上传安全回归 17 passed，上传实测 0.65s 完成（原 10s 超时）。此前"需求变更验收首轮 ReadError"等记录的未归因故障在此一并归因。
+
+这关闭了总表"需求变更与追踪——用户业务评审"的验收缺口；仍缺：部署/环境适用性中的执行期准入（admission）默认模型路径与产品页面交互层。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
