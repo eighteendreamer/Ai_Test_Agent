@@ -7,6 +7,7 @@ import logging
 import mimetypes
 from pathlib import Path
 import re
+import sys
 import threading
 from typing import Any
 import zipfile
@@ -391,7 +392,12 @@ class UploadSecurityService:
         return self.CHAT_ATTACHMENT_EXTENSIONS | self.API_DOC_EXTENSIONS | self.SKILL_EXTENSIONS
 
     async def _detect_content_type(self, content: bytes, filename: str, declared_content_type: str) -> str:
-        if self._magic_detection_state != "unavailable":
+        # On Windows python-magic (without a bundled libmagic) binds whatever
+        # libmagic sits on PATH — observed to hang in magic_open() and also to
+        # segfault the interpreter — and neither failure is catchable from a
+        # thread. libmagic detection therefore only runs on POSIX; the byte
+        # signature fallback below covers the scan's content-type needs.
+        if sys.platform != "win32" and self._magic_detection_state != "unavailable":
             try:
                 detected = await asyncio.to_thread(self._magic_mime_type_bounded, content)
                 if self._magic_detection_state == "unknown":
