@@ -221,6 +221,18 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"需求变更与追踪——用户业务评审"的验收缺口；仍缺：部署/环境适用性中的执行期准入（admission）默认模型路径与产品页面交互层。
 
+## 两份旧 Worker 汇总原件恢复完成
+
+定位：总表所指"两份旧 Worker 汇总原件"是 2026-09-09/09-10 两个早期 DA-E4 会话（`0ea013f1`"DA-E4 safe tool acceptance"、`bae284c1` 同名）的 session-history 汇总报告——当年在会话 **running** 状态下生成（仅 4 事件、报告 Status=running），会话完成后从未刷新，故长期呈现为"未恢复的旧汇总"。
+
+恢复（2026-10-24，经产品自身 session-history 工具路径，非脚本拼装）：
+
+- 对两个会话各执行一次 `action=session_report, scope=current_session`（独立 ToolJob：`042f551d`、`7ec1a495`，均 `completed`），生成反映最终状态的汇总原件：会话 1 报告 Status=completed、3 消息/17 事件/1 快照；会话 2 Status=completed、4 消息/19 事件/1 快照。新工件为 `inline_text` 存储（与该工具现有行为一致）。
+- **原 4 份 9 月中期报告原封未动**（保留为历史记录）；恢复过程一次误重复（首次脚本在执行提交后才报错，产生同一会话的重复终版报告）已在逐字节核对内容一致后精确清除（删除误产生的 job `83491729` 及其 2 份工件），当前每个会话恰有一份终版汇总。
+- 本地查阅副本：`Agent_Server/docs/upgrade_2026-10-03/p6-worker-summary-recovery-20261024/`（recovered-*.md/.html 与 recovery-summary.json；该目录按忽略规则留本地）。生产库当前 session-history 工件共 8 份（2 旧 + 6 终版/成对）。
+
+这关闭了总表"重复请求与工程交付——两份旧 Worker 汇总原件仍未恢复"。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
