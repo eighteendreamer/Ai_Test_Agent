@@ -183,14 +183,15 @@ class AdmissionAgent(ControlledAgent):
 
 
 @asynccontextmanager
-async def agent_runtime(f,agent, *, action_admission=False):
+async def agent_runtime(f,agent, *, action_admission=False, turn_execution_lease_seconds=15):
     original_admission = f.jobs._case_action_admission
     if action_admission:
         from src.runtime.postgres_case_action_admission import PostgresCaseActionAdmission
         f.jobs._case_action_admission = PostgresCaseActionAdmission(runs=f.runs, jobs=f.jobs._store)
     async with session_stores(f.jobs,True) as (writer,reader):
         tools,skills,control = ToolRegistry(),SkillRegistry(),RuntimeControlRegistry()
-        runtime_tools = ToolRuntimeService(tool_job_service=f.jobs,session_store=writer)
+        runtime_tools = ToolRuntimeService(tool_job_service=f.jobs,session_store=writer,
+            api_docs_service=f.env.docs)
         graph = build_agent_graph(agent_registry=AgentRegistry(),tool_registry=tools,model_registry=ControlledModels(),
             skill_registry=skills,skill_runtime_service=SkillRuntimeService(skills),mcp_runtime_service=EmptyMCP(),
             memory_runtime_service=None,test_case_embedding_service=None,permission_service=PermissionService(),
@@ -199,7 +200,7 @@ async def agent_runtime(f,agent, *, action_admission=False):
         runtime = RuntimeService(graph=graph,model_runtime_service=agent,tool_runtime_service=runtime_tools,
             tool_registry=tools,runtime_control=control,tool_job_service=f.jobs,permission_service=PermissionService())
         sessions = SessionService(writer,InputOrchestratorService(ModeRegistry()),runtime,ModeRegistry(),
-            project_service=f.env.projects,turn_execution_lease_seconds=15)
+            project_service=f.env.projects,turn_execution_lease_seconds=turn_execution_lease_seconds)
         clock = [datetime.now(timezone.utc)]
         runs = RunService(store=f.runs,project_service=f.env.projects,suite_service=None,test_case_service=f.env.cases,
             session_store=writer,tool_job_service=f.jobs,clock=lambda:clock[0])

@@ -104,7 +104,8 @@ class GapAgent(ControlledAgent):
 
 
 @asynccontextmanager
-async def execution_environment(tmp_path, gap_http):
+async def execution_environment(tmp_path, gap_http, *, turn_execution_lease_seconds=15,
+        document_text=None):
     async with planned(tmp_path, True) as (env, store, suites, creator, old, now, outbox):
         project_id = old.project_id
         await env.service.save_policy(project_id, POLICY)
@@ -116,8 +117,9 @@ async def execution_environment(tmp_path, gap_http):
         # configuration used by the existing durable planning-worker tests.
         env.service._models = SubmissionModel()
         source = tmp_path / "execution-replanning.md"
-        source.write_text("# 执行补充依据\n实际响应required_case=item-4时，left需要先执行项目正式用例item-4。\n"
-            "当前已领取项仍保持原步骤与版本；right无需新增准备。\n", encoding="utf-8")
+        default_text = ("# 执行补充依据\n实际响应required_case=item-4时，left需要先执行项目正式用例item-4。\n"
+            "当前已领取项仍保持原步骤与版本；right无需新增准备。\n")
+        source.write_text(document_text or default_text, encoding="utf-8")
         document = await env.docs.upload_document(project_id=project_id, filename=source.name,
             content_base64=base64.b64encode(source.read_bytes()).decode())
         suffix = uuid4().hex[:12]
@@ -143,7 +145,8 @@ async def execution_environment(tmp_path, gap_http):
         f = SimpleNamespace(env=env, runs=store, jobs=jobs, tasks=tasks, revisions=revisions, bridge=bridge,
             plan=plan, detail=detail, document=document, creator=creator, suites=suites, target_calls=gap_http[1])
         try:
-            async with agent_runtime(f, GapAgent(gap_http[0]), action_admission=True) as (runs, adapter, reader, clock):
+            async with agent_runtime(f, GapAgent(gap_http[0]), action_admission=True,
+                turn_execution_lease_seconds=turn_execution_lease_seconds) as (runs, adapter, reader, clock):
                 claims = await store.claim_items(run_id=detail.run.id, worker_id="execution-replanner",
                     limit=2, lease_seconds=600, now=clock[0])
                 entry, attempt = next(row for row in claims if row[0].plan_item_key == "independent")
