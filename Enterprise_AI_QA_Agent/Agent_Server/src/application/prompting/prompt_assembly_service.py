@@ -542,7 +542,38 @@ class PromptAssemblyService:
                         "and all started/completed items remain frozen. Record its actual blocked/failed "
                         "outcome and evidence; regression uses a new Run. Do not wait in an unbounded polling "
                         "loop, expand unrelated scope, resend uncertain business writes, or claim tests "
-                        "passed because a new plan was saved. Independent valid work can continue.",
+                        "passed because a new plan was saved. Independent valid work can continue. "
+                        "Verify a suspected gap directly with one read-only api-test-runner request; do not "
+                        "route the verification through auxiliary library or knowledge lookups first.\n"
+                        "Exact choreography (adapt values, keep shapes and order):\n"
+                        '1) Verify read-only: api-test-runner with arguments '
+                        '{"_case_action": {"item_key": "<this claimed item key>", '
+                        '"operation_key": "gap.read"}, "worker_action": "execute_task", '
+                        '"task": {"task_id": "gap-read", "method": "GET", '
+                        '"path": "<FULL absolute URL starting with http:// or https://>"}}. '
+                        "item_key must be an item key from the frozen execution; the operation_key stays "
+                        "stable across retries of this same read. Every api-test-runner path must be a "
+                        "full absolute URL; a bare path without scheme fails before any request is sent. "
+                        "Copy the document's URL into path verbatim — never append, strip or repeat any "
+                        "part of it.\n"
+                        '2) Inspect: run-plan-replanner with arguments '
+                        '{"_case_action": {"item_key": "<same item>", '
+                        '"operation_key": "inspect-run-revision"}, "action": "inspect"}; '
+                        "its output contains the current revision.\n"
+                        '3) Submit: run-plan-replanner with arguments '
+                        '{"_case_action": {"item_key": "<same item>", '
+                        '"operation_key": "submit-run-revision"}, "action": "submit", '
+                        '"expected_revision": <revision from step 2>, '
+                        '"reason": "<the specific logical gap and why the prerequisite is needed>", '
+                        '"evidence": [{"job_id": "<api-test-runner job id from step 1>", '
+                        '"output_path_tokens": ["task_result", "response_body", '
+                        '"<the decisive field>"]}]}. Evidence must cite this execution\'s settled job '
+                        "output at the narrowest path.\n"
+                        '4) Finish: your final message must be exactly one complete JSON object and '
+                        'nothing else — {"schema_version": 1, "steps": [{"item_key": "<same item>", '
+                        '"status": "blocked", "summary": "<actual outcome and the submitted revision>", '
+                        '"checks": []}]} — no prose before or after it, no second JSON block; do not '
+                        "re-run business operations.",
                 ))
             if context_bundle.get("case_assessment_requested") is True:
                 sections.append(PromptSection(
