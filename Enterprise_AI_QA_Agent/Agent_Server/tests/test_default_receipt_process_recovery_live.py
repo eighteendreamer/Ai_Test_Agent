@@ -59,7 +59,9 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
             settings.orchestration.redis_task_outbox_streams = settings.orchestration.case_planning_task_stream
             global_settings = get_settings().model_copy(deep=True)
             original = MySQLModelConfigStore(global_settings).get_default_active()
-            assert original is not None and original.provider == "openai"
+            # The probe observes the OpenAI-compatible chat path, so any provider
+            # is acceptable as long as the configured transport routes through it.
+            assert original is not None and original.transport == "openai_chat_completions"
             models = MySQLModelConfigStore(settings)
             models.initialize()
             model = models.upsert(ModelConfigUpdateRequest(
