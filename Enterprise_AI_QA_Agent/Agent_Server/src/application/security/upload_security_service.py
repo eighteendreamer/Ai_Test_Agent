@@ -1,15 +1,28 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict, dataclass, field
 import io
+import logging
 import mimetypes
 from pathlib import Path
 import re
+import threading
 from typing import Any
 import zipfile
 
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.core.config import Settings
+
+logger = logging.getLogger(__name__)
+
+# python-magic may bind an incompatible libmagic found on PATH (e.g. Git for
+# Windows' msys-magic-1.dll) whose magic_open() never returns, so the import
+# itself can hang instead of raising. Detection therefore runs in a daemon
+# thread under this bound: the event loop stays responsive and a hung native
+# call cannot block interpreter shutdown; on expiry libmagic is disabled for
+# the process.
+_MAGIC_DETECTION_TIMEOUT_SECONDS = 10.0
 
 
 @dataclass(frozen=True)
@@ -126,6 +139,7 @@ class UploadSecurityService:
     def __init__(self, *, settings: Settings, artifact_storage_service: ArtifactStorageService) -> None:
         self._settings = settings
         self._artifact_storage_service = artifact_storage_service
+        self._magic_detection_state = "unknown"
 
     async def secure_store_upload(
         self,
@@ -139,7 +153,7 @@ class UploadSecurityService:
     ) -> dict[str, Any]:
         size_bytes = len(content)
         declared_content_type = content_type or mimetypes.guess_type(filename)[0] or "application/octet-stream"
-        detected_content_type = self._detect_content_type(content, filename, declared_content_type)
+        detected_content_type = await self._detect_content_type(content, filename, declared_content_type)
         temp_result = await self._artifact_storage_service.store_uploaded_bytes(
             content=content,
             filename=filename,
@@ -376,17 +390,47 @@ class UploadSecurityService:
             return self.SKILL_EXTENSIONS
         return self.CHAT_ATTACHMENT_EXTENSIONS | self.API_DOC_EXTENSIONS | self.SKILL_EXTENSIONS
 
-    def _detect_content_type(self, content: bytes, filename: str, declared_content_type: str) -> str:
-        extension = Path(filename).suffix.lower()
-        try:
+    async def _detect_content_type(self, content: bytes, filename: str, declared_content_type: str) -> str:
+        if self._magic_detection_state != "unavailable":
+            try:
+                detected = await asyncio.to_thread(self._magic_mime_type_bounded, content)
+                if self._magic_detection_state == "unknown":
+                    self._magic_detection_state = "ok"
+                if detected:
+                    return detected
+            except TimeoutError:
+                self._magic_detection_state = "unavailable"
+                logger.warning(
+                    "upload_magic_detection_disabled reason=timeout timeout_seconds=%s",
+                    _MAGIC_DETECTION_TIMEOUT_SECONDS,
+                )
+            except ImportError as exc:
+                self._magic_detection_state = "unavailable"
+                logger.info("upload_magic_detection_unavailable reason=%s", type(exc).__name__)
+            except Exception as exc:
+                logger.info("upload_magic_detection_unavailable reason=%s", type(exc).__name__)
+        return self._detect_content_type_by_signature(content, filename, declared_content_type)
+
+    @staticmethod
+    def _magic_mime_type_bounded(content: bytes) -> str | None:
+        outcome: dict[str, Any] = {}
+
+        def run() -> None:
             import magic  # type: ignore
 
-            detected = str(magic.from_buffer(content, mime=True) or "").strip()
-            if detected:
-                return detected
-        except Exception:
-            pass
+            outcome["value"] = str(magic.from_buffer(content, mime=True) or "").strip() or None
 
+        worker = threading.Thread(target=run, daemon=True, name="upload-magic-detection")
+        worker.start()
+        worker.join(_MAGIC_DETECTION_TIMEOUT_SECONDS)
+        if worker.is_alive():
+            raise TimeoutError("libmagic detection did not finish in time")
+        if "error" in outcome:
+            raise outcome["error"]
+        return outcome.get("value")
+
+    def _detect_content_type_by_signature(self, content: bytes, filename: str, declared_content_type: str) -> str:
+        extension = Path(filename).suffix.lower()
         if content.startswith(b"MZ"):
             return "application/x-dosexec"
         if content.startswith(b"\x7fELF"):

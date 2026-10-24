@@ -6,6 +6,8 @@ import asyncio
 import hashlib
 import json
 from datetime import datetime, timezone
+import sys
+import time
 
 import httpx
 import pytest
@@ -210,6 +212,34 @@ async def test_original_is_scanned_before_conversion_can_remove_rejected_content
         with pytest.raises(UploadSecurityError):
             await env.docs.upload_document(filename="untrusted.json", content_base64=base64.b64encode(raw).decode())
         assert not await env.docs.list_documents()
+
+
+@pytest.mark.asyncio
+async def test_content_type_detection_falls_back_when_libmagic_hangs(monkeypatch):
+    # python-magic may bind an incompatible libmagic from PATH whose import never
+    # returns; detection must fall back within its bound and stay disabled afterwards.
+    from src.application.security import upload_security_service as upload_security_module
+    from src.core.config import Settings
+
+    class HangingMagic:
+        @staticmethod
+        def from_buffer(content, mime=True):
+            time.sleep(5)
+            return "application/x-never"
+
+    monkeypatch.setitem(sys.modules, "magic", HangingMagic())
+    monkeypatch.setattr(upload_security_module, "_MAGIC_DETECTION_TIMEOUT_SECONDS", 0.1)
+    service = UploadSecurityService(settings=Settings(redis_url="redis://127.0.0.1:6379/15"), artifact_storage_service=None)
+
+    detected = await service._detect_content_type(b"# md", "probe.md", "text/markdown")
+    assert detected == "text/markdown"
+    assert service._magic_detection_state == "unavailable"
+
+    monkeypatch.setattr(upload_security_module, "_MAGIC_DETECTION_TIMEOUT_SECONDS", 30)
+    started = time.monotonic()
+    detected = await service._detect_content_type(b"# md", "probe.md", "text/markdown")
+    assert time.monotonic() - started < 1
+    assert detected == "text/markdown"
 
 
 @pytest.mark.asyncio
