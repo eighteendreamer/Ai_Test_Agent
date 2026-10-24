@@ -163,6 +163,27 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 2. **安全测试的资源断言按 project 过滤**（`tests/test_security_agent_live.py`）：`list_cleanup_pending()`/`list_active()` 此前不带项目过滤，在全局登记表上断言——生产部署中其他项目的合法滞留条目也会令其失败。改为 `project_id=project["id"]` 限定本战役。
 3. **清理 Worker 补齐运行日志**（`src/cli/run_resource_cleanup_worker.py`）：该 CLI 是唯一未调用 `configure_logging()` 的入口，处理过程与失败完全不可见（本轮排查的直接障碍）。补齐后与其他 CLI 一致。
 
+## 需求变更与追踪：默认模型更广业务闭环验收通过（deepseek-flash）
+
+新增验收 `tests/test_default_requirement_change_live.py::test_default_model_requirement_change_closed_loop`（门控 `RUN_LIVE_DEFAULT_REQUIREMENT_CHANGE=1`），以真实默认模型驱动完整需求变更闭环：
+
+```text
+1 passed in 186.50s
+```
+
+证据：`p4-requirement-change-default-deepseek-current-20261024-03/` 及同名 XML。业务场景为订单查询需求的真实变更（V1：total 为商品原价合计 → V2：total 改为折后应付合计并新增 discount 字段），区别于既有受控验收的保留期场景：
+
+- **上传→解析→比较**：V1/V2 经真实上传 API 与独立解析 Worker 建立两个解析快照，独立差异 Worker 完成确定性比较（不经 AI）。
+- **影响分析（真实默认模型）**：impact-coordinator-v2 协议下默认模型自主完成多轮协调——5 个单元全部 `analyzed`，产出 **2 条准确命中变更语义的规则**（"total 由商品原价合计改为折后应付合计"、"新增 discount 字段，无优惠时为 0"），7 处新版本来源引用，`semantic_status=pending_review`、`deployment_status=unknown`、状态 `partial`；物理模型 HTTP 仅 2 次。
+- **需求评审与追踪**：按规则提交正式需求评审（2 个验证点、case_links 关联既有正式用例版本），追踪矩阵两个验证点均为 `design_covered`、执行状态 `not_assessed`、部署 `unknown`（设计与执行分离呈现）。
+- **增量草稿（真实默认模型）**：`include_new_cases=True` 触发两个模块（既有用例新草稿版本 + 新用例草稿），均 `completed`；旧活动版本未被改写（`active_version_id` 不变）、新用例为 `draft` 生命周期，草稿 `generation_metadata` 记录需求版本来源；物理模型 HTTP 2 次。
+- **终态重投**：两个生成模块重放后任务状态与结果完全一致，新增模型 HTTP 为 0。
+- 全程 `global_model_unchanged=true`；真实 MySQL 配置只读。
+
+本轮首次运行（`...-02/`）在 14 秒时遭遇一次未捕获的 API 连接中断（`httpx.ReadError`，当时未保留进程日志，无法归因）；相同代码立即重跑即完整通过，测试已补充进程日志留存以便未来取证。该测试为本轮新增验收源码，按仓库先例强制登记。
+
+这关闭了总表"需求变更与追踪——更广业务场景的默认模型质量验收"在 API 生产链路的核心缺口；仍缺：用户业务评审的产品页面交互、部署/环境适用性（applicability/planning/admission）的默认模型路径，以及其他格式与更多故障组合。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
