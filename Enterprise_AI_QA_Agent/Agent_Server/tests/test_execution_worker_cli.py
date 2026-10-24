@@ -124,11 +124,16 @@ async def isolated_runtime(
     settings.orchestration.intent_semantic_classifier_enabled = False
     settings.orchestration.redis_task_block_ms = 100
     settings.orchestration.redis_task_reclaim_idle_ms = 1000
-    settings.orchestration.redis_task_outbox_streams = ""
     settings.database.redis_url = redis_url
     settings.orchestration.redis_task_stream = f"qa:test:{suffix}:runs"
     settings.orchestration.agent_task_stream = f"qa:test:{suffix}:agents"
     settings.orchestration.redis_task_consumer_group = f"qa:test:{suffix}:workers"
+    # Every suffix-resolved stream is also runtime-unique: a shared stream would
+    # let a one-shot test worker consume a previous run's stale delivery (its
+    # task row no longer exists in this isolated database) before its own task.
+    settings.orchestration.redis_task_outbox_streams = ",".join(
+        f"qa:test:{suffix}:{name}" for name in
+        ("case_planning", "cleanup", "compaction", "embedding", "vector_rebuild"))
     config_tables = []
     for field in ("llm_model_table", "email_config_table", "channel_config_table", "sponsor_config_table", "application_config_table"):
         name = "up_cli_" + field.removesuffix("_table") + "_" + suffix
