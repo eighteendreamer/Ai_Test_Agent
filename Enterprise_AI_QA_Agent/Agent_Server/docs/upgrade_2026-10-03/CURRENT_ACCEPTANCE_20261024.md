@@ -233,6 +233,16 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"重复请求与工程交付——两份旧 Worker 汇总原件仍未恢复"。
 
+## 模板与 Excel/JSON 导入：当前工作树完整项目页面复验通过
+
+`RUN_LIVE_CASE_IMPORT_FULL_PRODUCT=1` 下于**包含今日全部修复后的当前工作树**重跑 `tests/test_case_import_full_product.py::test_product_templates_excel_json_review_restart_and_isolation`：
+
+```text
+1 passed in 74.18s
+```
+
+证据：`p1-case-import-full-product-current-20261024-01/` 及同名 XML。构建版 App/Playwright 页面交互 + 独立 API + 隔离 MySQL/PostgreSQL/RustFS/Redis：项目模板保存、rows.xlsx/分表 xlsx/cases.json 实际导入（上传安全报告 allow、原件字节读回）、预览与错误报告下载（invalid.xlsx 阻断）、草稿提交、评审/启用、项目隔离 404、API 重启后数据读回，页面零错误。特别地，导入上传路径经过了今日 win32 libmagic 修复与字体自托管后的构建版前端——本复验同时确认今日修复无回归。这维持 10-23 对该页面流程验收缺口的关闭结论，并补充了本会话证据；不含未来项目平台数据源接入。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
