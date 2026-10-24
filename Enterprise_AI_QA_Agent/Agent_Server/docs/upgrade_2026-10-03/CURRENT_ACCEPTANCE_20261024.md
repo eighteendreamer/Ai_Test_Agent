@@ -238,6 +238,25 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"需求变更与追踪——部署/环境适用性"在 API 生产链路的验收缺口（applicability → planning → admission 全链默认模型/人工决策路径）；仍缺产品页面交互层。
 
+## 按用例执行：产品页面完整流程验收通过（deepseek-flash）
+
+新增验收 `tests/test_default_coverage_product_live.py::test_product_dialog_plans_launches_and_executes_with_default_model`（门控 `RUN_LIVE_DEFAULT_COVERAGE_PRODUCT=1`）：
+
+```text
+1 passed in 108.94s
+```
+
+证据：`p2-coverage-product-default-deepseek-current-20261024-09/` 及同名 XML。真实产品 `CasePlanDialog` 组件（Vite 服务的产品源码页面 + Playwright）驱动完整链路，后端为完整生产 API 与独立 Worker，模型为真实默认 `deepseek-flash`：
+
+- **页面规划**：真实对话框填入测试目标（多用例依赖场景）→ 点击"生成执行计划"→ 独立规划 Worker 以真实默认模型完成规划；计划结构正确（`dependency` 补入创建订单用例 + `target` 查询用例，理由引用 order_id 传递约束；无关的商品排序用例被排除）。页面代理以真实 token 注入认证（与桌面模式同机制），页面零错误。
+- **页面启动**：点击"启动测试运行"→ 对话框确认"已保存运行"并回报 Run 身份。
+- **真实执行**：独立执行 Worker 循环驱动（含审批处理），条目全部 `passed`，真实业务 HTTP POST/GET/DELETE 发生且清理完成；执行物理模型 HTTP 共 10 次；`global_model_unchanged=true`。
+- **终态重投**：重放派发后 Run 与结果逐字一致、零新增模型调用。
+
+过程记录（均为真实产品行为的边界确认，非测试特判）：规划校验对模型采样差异可能拒绝（本轮 10-24-07 运行规划两次校验未过而 failed），测试按产品用法走"另建规划任务 → 重新生成"的 UI 重试路径并保留失败尝试证据；对话框以 `modes` 列表首项作为默认模式，验收显式传入 `api_testing` 模式（此前一轮以首项默认模式启动被执行 Agent 正确 blocked——"未授予任何 API 执行工具"，属于模式与工具授予的正确联动）。
+
+这关闭了总表"按用例执行——完整产品流程"的缺口（产品对话框 → 默认模型规划 → 启动 → 默认模型执行 → 结果与终态重投，全链真实）；该方向仍缺：未知副作用只读查证与执行中计划修订的专项（API 级已有受控证据）。
+
 ## 两份旧 Worker 汇总原件恢复完成
 
 定位：总表所指"两份旧 Worker 汇总原件"是 2026-09-09/09-10 两个早期 DA-E4 会话（`0ea013f1`"DA-E4 safe tool acceptance"、`bae284c1` 同名）的 session-history 汇总报告——当年在会话 **running** 状态下生成（仅 4 事件、报告 Status=running），会话完成后从未刷新，故长期呈现为"未恢复的旧汇总"。
