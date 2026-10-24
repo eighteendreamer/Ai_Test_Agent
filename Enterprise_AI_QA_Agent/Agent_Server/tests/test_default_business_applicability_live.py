@@ -18,6 +18,7 @@ from src.application.documents.difference_service import DOCUMENT_DIFFERENCE_STR
 from src.application.documents.parsing_service import DOCUMENT_PARSE_STREAM
 from src.core.config import get_settings
 from src.infrastructure.model_config_store import MySQLModelConfigStore
+from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.document_impact_runtime import DOCUMENT_IMPACT_STREAM
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
@@ -347,6 +348,62 @@ async def test_default_model_environment_applicability_and_bound_planning(tmp_pa
                     facts["environment_planning"] = {"model_http": planning_calls,
                         "plan_items": len(plan["decision"]["items"]),
                         "environment_propagated_to_run": True}
+
+                    # --- Execution with environment admission (real default model) ---
+                    unknown_request = {**new_state["review_payload"], "request_id": "admission-current-unknown",
+                        "expected_review_id": new_state["review"]["id"],
+                        "points": [{**p, "status": "unknown"} for p in new_state["review_payload"]["points"]],
+                        "cases": [{**c, "status": "unknown"} for c in new_state["review_payload"].get("cases", [])]}
+                    unknown = await post(new_state["path"] + f"/snapshots/{new_state['snapshot']['id']}/applicability-reviews",
+                        unknown_request, 201)
+                    save("admission-unknown-review.json", unknown)
+                    run_id = detail["run"]["id"]
+                    with postgres_connect(settings) as conn, conn.cursor() as cur:
+                        cur.execute(f"SELECT payload FROM {settings.database.postgres_task_outbox_table} WHERE event_key=%s",
+                            ("test_run_dispatch:" + run_id,))
+                        delivery = cur.fetchone()["payload"]
+                    run_queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.redis_task_stream,
+                        group=settings.orchestration.redis_task_consumer_group, socket_timeout_seconds=1)
+                    await run_queue.connect()
+                    try:
+                        sends_before_execution = model_sends()
+                        await run_queue.enqueue(delivery)
+                        await run_worker("admission-execution-worker", "src.cli.run_redis_worker", "admission-execute")
+                        detail = await get("/runs/" + run_id)
+                        for _ in range(6):
+                            waiting = next((item for item in detail["items"] if item["status"] == "waiting_approval"), None)
+                            if waiting is None:
+                                break
+                            await post("/run-items/" + waiting["id"] + "/approval",
+                                {"approval_id": waiting["approval_id"], "decision": "approved"})
+                            detail = await get("/runs/" + run_id)
+                        save("admission-execution.json", {"run": detail["run"], "items": detail["items"],
+                            "results": detail.get("results", [])})
+                        assert detail["run"]["status"] == "completed", detail["run"]
+                        assert detail["items"][0]["status"] == "passed", detail["items"]
+                        result = detail["results"][0]
+                        admission = result["actual"]["environment_admission"]
+                        assert admission["reviews"] == [unknown], admission
+                        assert admission["decision"] == "no_explicit_invalid", admission
+                        original_attempt = next(a for a in detail["attempts"]
+                            if a["id"] == admission["execution_attempt_id"])
+                        assert original_attempt["environment_admission"] == admission
+                        execution_calls = model_sends() - sends_before_execution
+                        facts["environment_admission_execution"] = {"run_status": detail["run"]["status"],
+                            "item_status": detail["items"][0]["status"], "admission_decision": admission["decision"],
+                            "model_http": execution_calls}
+                        replay_before = (model_sends(), len(detail["results"]))
+                        await run_queue.enqueue(delivery)
+                        terminal = processes.start("admission-terminal-worker", "-m", "tests.default_model_probe",
+                            "src.cli.run_redis_worker", "--once", "--worker-id", "admission-terminal")
+                        assert await processes.wait(terminal, timeout=120) == 0
+                        detail_after = await get("/runs/" + run_id)
+                        assert detail_after == detail
+                        assert (model_sends(), len(detail_after["results"])) == replay_before
+                        facts["environment_admission_execution"]["terminal_replay_extra_model_http"] = \
+                            model_sends() - sends_before_execution - execution_calls
+                    finally:
+                        await run_queue.close()
             finally:
                 if api.poll() is None:
                     await processes.stop(api)
