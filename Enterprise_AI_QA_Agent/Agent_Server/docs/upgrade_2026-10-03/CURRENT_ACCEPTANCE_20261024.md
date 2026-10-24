@@ -257,17 +257,24 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"按用例执行——完整产品流程"的缺口（产品对话框 → 默认模型规划 → 启动 → 默认模型执行 → 结果与终态重投，全链真实）；该方向仍缺：未知副作用只读查证与执行中计划修订的专项（API 级已有受控证据）。
 
-## 执行中计划修订：默认模型专项已建设、未通过（如实记录）
+## 执行中计划修订：默认模型专项通过（提示词编排示例 + 夹具补全后）
 
-新增验收 `tests/test_default_execution_replanning_live.py`（门控 `RUN_LIVE_DEFAULT_EXECUTION_REPLANNING=1`）：复用受控版 `execution_environment`（隔离真实 MySQL/PG/RustFS、真实 ToolJob/修订桥接），规划保持受控（fixture_plan + candidate_replies），**执行 Agent 换为真实默认模型**（deepseek-flash，经会话别名键注册，全部参数/凭据/端点为真实默认值）。
+同验收（`tests/test_default_execution_replanning_live.py`，门控 `RUN_LIVE_DEFAULT_EXECUTION_REPLANNING=1`）在两项改进后**通过**：
 
-实测 5 轮未通过，**失败原因均为真实产品行为而非测试缺陷**，最终形态取证（`p2-execution-replanning-default-deepseek-current-20261024-05/evidence.json`）：
+```text
+1 passed in 40.83s
+```
 
-- 真实模型未按受控脚本的四步链（读缺口 → inspect → 提交修订 → blocked 回执）执行，而是先调用 `api-docs-library` 查询项目文档（`operation_key: docs-search-fixtures`），随后调用 `run-plan-replanner` 的 `inspect`（已完成，能正确读取运行修订状态）——说明模型理解了修订工具的存在。
-- 但其工具调用在 action-binding/admission/operation 三协议栈下未通过准入门（操作未声明或调用未产生可靠返回检查点），错误恢复 L5 按设计终止会话并保留原状态（"固定动作没有可靠返回检查点；保留原状态并先查证"）——**保护门行为正确**，模型从未到达缺口读取与修订提交。
-- 附带发现：L5 之前模型键一致性断言（会话别名 `controlled-case-agent` vs 实际模型键）会先终止执行——验收按既有 receipt-stream 模式以真实配置注册别名键解决。
+证据：`p2-execution-replanning-default-deepseek-current-20261024-12/` 及同名 XML。deepseek-flash 自主完成完整修订编排：文档探索 → **只读 GET 缺口端点（`gap.read`，请求精确一次）** → 真实拿到 409 + `required_case=item-4` → `inspect-run-revision` → `submit-run-revision`（reason 逐字引用真实响应体，evidence 引用 `task_result.response_body.required_case` 最窄路径）→ submit 回执丢失后按独立读键 `status-run-revision` 查询恢复 → 最终 blocked 回执（唯一 JSON 对象）；持久修订 applied、`plan_revision=1`、新增未领取项、已领取项 attempts/results 不变。全程 6 次模型调用。
 
-结论与后续选项（按优先级）：(a) 产品改进——`execution_replanning` 提示词小节补充一份精确的工具调用编排示例（含 `_case_action`/`operation_key` 的合法组合），这本身需要独立验收；(b) 更强的默认模型重试本验收；(c) 降低协议栈（关闭 admission）的分层验收——但不替代全栈验收。受控模型版本（10-23，5 passed）仍是该机制正确性的现行证据；本专项证明的是**默认模型尚不能可靠驱动完整修订协议栈**。
+两项改进（前两轮失败→逐层定位的完整过程保留于 `-01`~`-11` 证据目录）：
+
+1. **产品：`execution_replanning` 提示词小节补充精确编排示例**（`prompt_assembly_service.py`）——四步合法参数形状（`_case_action`/`operation_key`/完整绝对 URL/回执唯一 JSON 形状），并引导"直接 api-test-runner 只读验证优先，勿先走库检索"。受控回归 `RUN_LIVE_EXECUTION_REPLANNING=1` 全程 **5 passed** 无破坏。
+2. **测试基建：夹具对真实模型的补全**——`agent_runtime` 的 `ToolRuntimeService` 此前未注入 `api_docs_service`（模型调文档库即抛错触发 L5；产品环境无此缺口）、轮次租约 15s 对真实模型多轮不足（参数化默认不变）、夹具文档内容参数化（默认模型验收传入含完整端点 URL 的文档，与真实项目文档语义一致——此前脚本靠注入 URL 跳过了相对路径解析，模型在文档只有相对路径时正确诊断并转而引用文档证据提交修订，行为合理但偏离本验收剧本）。
+
+中途如实记录的两个非问题发现：模型一轮把文档 URL 末段拼重（`/execution-gap/execution-gap`）——定位为验收文档自身拼接错误，模型是逐字复制（verbatim 指令生效）；受控断言期望的端点 URL 本就含路径段。
+
+这关闭了总表"按用例执行——执行中计划修订"的默认模型专项（此前记录的选项 (a) 已实施并验证）；"未知副作用只读查证"由本验收的 gap.read 只读验证步骤与回放检查点专项共同覆盖。
 
 ## UI 录制与知识：人工操作 DeepSeek 完整实测通过
 
