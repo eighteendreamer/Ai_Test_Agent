@@ -253,14 +253,34 @@ async def test_actual_deepseek_manual_actions_are_recorded_and_diagnosed(tmp_pat
                 locators = target.get("locators") if isinstance(target.get("locators"), dict) else {}
                 role_name = locators.get("role_name") if isinstance(locators.get("role_name"), dict) else {}
                 action_signature.append((event["type"], role_name.get("name") or locators.get("text") or ""))
-            # Independent oracle: every scripted browser gesture must appear once,
-            # in order, in the persisted user-action stream.
-            assert action_signature == [
+            # Independent oracle. Scripted runs replay a fixed gesture list, so
+            # the persisted stream must equal it exactly. A human stream also
+            # faithfully records every extra gesture the operator really made,
+            # and a browser reports two quick presses as one dblclick (which is
+            # still the two intended clicks); the manual oracle therefore
+            # requires the scripted gestures to appear in order after only
+            # that dblclick normalization, not stream equality.
+            scripted_gestures = [
                 ("click", "深度思考"),
                 ("click", "深度思考"),
                 ("click", "智能搜索"),
                 ("scroll", ""),
             ]
+            if manual_interaction:
+                normalized: list[tuple[str, str]] = []
+                for signature in action_signature:
+                    if signature[0] == "dblclick":
+                        normalized.extend([("click", signature[1]), ("click", signature[1])])
+                    else:
+                        normalized.append(signature)
+                cursor = 0
+                for expected in scripted_gestures:
+                    while cursor < len(normalized) and normalized[cursor] != expected:
+                        cursor += 1
+                    assert cursor < len(normalized), (expected, normalized)
+                    cursor += 1
+            else:
+                assert action_signature == scripted_gestures
             linked_sequences = {seq for link in quality["response_action_associations"]
                 for seq in link["action_event_sequences"]}
             assert linked_sequences == action_sequences
