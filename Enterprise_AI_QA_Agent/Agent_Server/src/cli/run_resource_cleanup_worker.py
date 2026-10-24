@@ -9,6 +9,7 @@ import platform
 import re
 
 from src.core.config import get_settings
+from src.core.log_format import configure_logging
 from src.core.request_context import new_id
 from src.application.docker_management_service import DockerManagementService
 from src.runtime.docker_resource_cleanup import DockerResourceCleanup
@@ -111,6 +112,7 @@ async def _run(*, once: bool, worker_id: str) -> None:
 
 
 def main() -> None:
+    configure_logging()
     parser = argparse.ArgumentParser(description="Reap expired Redis resource leases independently from API workers.")
     parser.add_argument("--once", action="store_true", help="Run one bounded sweep and exit")
     parser.add_argument("--worker-id", default=None, help="Stable unique cleanup consumer id")
