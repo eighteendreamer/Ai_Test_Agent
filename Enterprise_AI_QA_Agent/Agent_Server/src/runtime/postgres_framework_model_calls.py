@@ -14,7 +14,7 @@ from dataclasses import dataclass
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_runtime_owner import (
-    assert_runtime_owner, configure_runtime_owner_transaction, runtime_owner_table,
+    assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row, runtime_owner_table,
 )
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
@@ -30,6 +30,10 @@ class FrameworkModelBudgetExceeded(RuntimeError):
     def __init__(self, kind: str):
         self.kind = kind
         super().__init__(f"Framework model budget exhausted: {kind}")
+
+
+class FrameworkModelBudgetMissing(ValueError):
+    """A historical binding has no admitted budget; never infer a fresh one."""
 
 
 @dataclass(frozen=True)
@@ -70,29 +74,62 @@ class PostgresFrameworkModelCalls:
         def save():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 self._owned(cur, owner, before_execution=True)
-                if owner.binding.model_config_fingerprint not in policy.model_config_fingerprints.values():
-                    raise ValueError("Model budget does not include the bound root model")
-                cur.execute(f"INSERT INTO {self.budgets_table}(binding_id,policy) VALUES(%s,%s::jsonb) "
-                    "ON CONFLICT DO NOTHING", (owner.binding.binding_id, policy.model_dump_json()))
-                saved = self._policy(cur, owner.binding.binding_id)
-                if saved != policy:
-                    raise ValueError("Frozen model budget cannot change during a Turn")
-                return saved
+                return self._freeze_policy(cur, owner.binding, policy)
         result = await asyncio.to_thread(save)
         logger.info("framework_model_budget_frozen", extra={"binding_id": owner.binding.binding_id,
             "max_calls": result.max_calls, "max_tokens": result.max_tokens, "deadline_at": result.deadline_at})
         return result
 
+    def freeze_submission(self, cur, binding: RuntimeBinding, policy: FrameworkModelBudget) -> FrameworkModelBudget:
+        """Freeze in the caller's task/input/outbox transaction, before claim.
+
+        A started historical Turn without a budget requires explicit recovery;
+        submission must not manufacture a fresh allowance for its past calls.
+        """
+        policy = FrameworkModelBudget.model_validate(policy.model_dump())
+        cur.execute(f"SELECT id FROM {self._settings.database.postgres_session_table} WHERE id=%s FOR UPDATE",
+            (binding.session_id,))
+        if cur.fetchone() is None:
+            raise ValueError("Model budget submission has no durable Session")
+        saved_owner = lock_owner_row(cur, self._settings, binding)
+        if saved_owner["owner_epoch"] != 0 or saved_owner["execution_state"] != "idle":
+            saved = self._policy(cur, binding.binding_id)
+            if saved != policy:
+                raise ValueError("Frozen model budget cannot change during a Turn")
+            return saved
+        return self._freeze_policy(cur, binding, policy)
+
+    def _freeze_policy(self, cur, binding, policy):
+        if binding.model_config_fingerprint not in policy.model_config_fingerprints.values():
+            raise ValueError("Model budget does not include the bound root model")
+        cur.execute(f"INSERT INTO {self.budgets_table}(binding_id,policy) VALUES(%s,%s::jsonb) "
+            "ON CONFLICT DO NOTHING", (binding.binding_id, policy.model_dump_json()))
+        saved = self._policy(cur, binding.binding_id)
+        if saved != policy:
+            raise ValueError("Frozen model budget cannot change during a Turn")
+        return saved
+
     async def snapshot(self, binding: RuntimeBinding) -> FrameworkModelBudgetSnapshot:
         def read():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                cur.execute(f"SELECT runtime_binding FROM {runtime_owner_table(self._settings)} WHERE binding_id=%s",
-                    (binding.binding_id,))
-                saved = cur.fetchone()
-                if saved is None or RuntimeBinding.model_validate(saved["runtime_binding"]) != binding:
-                    raise ValueError("Model ledger binding does not match its durable identity")
+                self._require_binding(cur, binding)
                 return self._snapshot(cur, binding.binding_id)
         return await asyncio.to_thread(read)
+
+    async def frozen_policy(self, binding: RuntimeBinding) -> FrameworkModelBudget:
+        """Read admission policy without loading the Turn's entire call history."""
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._require_binding(cur, binding)
+                return self._policy(cur, binding.binding_id)
+        return await asyncio.to_thread(read)
+
+    def _require_binding(self, cur, binding):
+        cur.execute(f"SELECT runtime_binding FROM {runtime_owner_table(self._settings)} WHERE binding_id=%s",
+            (binding.binding_id,))
+        saved = cur.fetchone()
+        if saved is None or RuntimeBinding.model_validate(saved["runtime_binding"]) != binding:
+            raise ValueError("Model ledger binding does not match its durable identity")
 
     async def prepare(self, owner: RuntimeExecutionOwner, intent: FrameworkModelCallIntent) -> FrameworkModelCallRecord:
         intent = FrameworkModelCallIntent.model_validate(intent.model_dump())
@@ -206,7 +243,7 @@ class PostgresFrameworkModelCalls:
         cur.execute(f"SELECT policy FROM {self.budgets_table} WHERE binding_id=%s", (binding_id,))
         row = cur.fetchone()
         if row is None:
-            raise ValueError("Turn has no frozen model budget")
+            raise FrameworkModelBudgetMissing("Turn has no frozen model budget")
         return FrameworkModelBudget.model_validate(row["policy"])
 
     def _snapshot(self, cur, binding_id):

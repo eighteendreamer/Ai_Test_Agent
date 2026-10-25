@@ -31,6 +31,7 @@ from src.runtime.postgres_runtime_owner import (
     register_runtime_binding, runtime_owner_table, configure_runtime_owner_transaction,
 )
 from src.runtime.framework_approval_journal import initialize_framework_approvals
+from src.schemas.framework_model_call import FrameworkModelBudget
 from src.schemas.session import (
     ApprovalDecisionRequest,
     ChatMessage,
@@ -78,14 +79,20 @@ class PostgresAgentTaskStore:
         message: ChatMessage,
         *,
         idempotency_key: str,
+        model_budget: FrameworkModelBudget | None = None,
     ) -> AgentTaskRecord:
-        """Persist a v2 task and its runtime binding atomically."""
+        """Persist task, binding and an explicitly supplied budget atomically.
+
+        Budgetless historical callers retain their existing storage contract;
+        the production Worker defers graph execution until a budget exists.
+        """
         return await asyncio.to_thread(
             self._submit_v2_sync,
             command,
             payload,
             message,
             idempotency_key,
+            model_budget,
         )
 
     async def submit_resume(
@@ -370,15 +377,16 @@ class PostgresAgentTaskStore:
             )
         return AgentTaskRecord.model_validate(row)
 
-    def _submit_v2_sync(self, command, payload, message, idempotency_key):
+    def _submit_v2_sync(self, command, payload, message, idempotency_key, model_budget=None):
         if command.operation != "message" or command.task_type != "agent_turn":
             raise ValueError("v2 message submission supports only message agent_turn commands")
         serialized = payload.model_dump(mode="json")
         binding = command.runtime_binding
-        content_hash = self._input_hash(
-            "message_v2",
-            {"payload": serialized, "runtime_binding_fingerprint": binding.fingerprint},
-        )
+        identity = {"payload": serialized, "runtime_binding_fingerprint": binding.fingerprint}
+        if model_budget is not None:
+            model_budget = FrameworkModelBudget.model_validate(model_budget.model_dump())
+            identity["model_budget"] = model_budget.model_dump(mode="json")
+        content_hash = self._input_hash("message_v2", identity)
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             row = self._submit_message_in_transaction(
@@ -390,7 +398,12 @@ class PostgresAgentTaskStore:
                 content_hash=content_hash,
                 runtime_binding=binding,
                 stream=self._settings.orchestration.agent_task_v2_stream,
+                model_budget=model_budget,
             )
+        if model_budget is not None:
+            logger.info("framework_model_budget_admitted", extra={"binding_id": binding.binding_id,
+                "task_id": row["id"], "max_calls": model_budget.max_calls, "max_tokens": model_budget.max_tokens,
+                "deadline_at": model_budget.deadline_at})
         return AgentTaskRecord.model_validate(row)
 
     def _submit_message_in_transaction(
@@ -404,11 +417,16 @@ class PostgresAgentTaskStore:
         content_hash,
         runtime_binding: RuntimeBinding | None = None,
         stream: str | None = None,
+        model_budget: FrameworkModelBudget | None = None,
     ):
         session = self._lock_session(cur, command.session_id)
         if runtime_binding is not None:
             try:
                 register_runtime_binding(cur, self._settings, runtime_binding)
+                if model_budget is not None:
+                    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+                    PostgresFrameworkModelCalls(self._settings).freeze_submission(cur, runtime_binding, model_budget)
             except ValueError as exc:
                 raise AgentSubmissionConflict(str(exc)) from exc
         existing = self._find_idempotent(

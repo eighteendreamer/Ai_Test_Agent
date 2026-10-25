@@ -111,6 +111,7 @@ class RuntimeService:
         tool_job_service: ToolJobService | None = None,
         framework_approval_projection=None,
         framework_approval_continuation=None,
+        deep_agent_bound_runtime_adapter: DeepAgentRuntimeAdapter | None = None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -124,6 +125,9 @@ class RuntimeService:
         self._context_max_tail_messages = context_max_tail_messages
         self._observability_service = observability_service
         self._deep_agent_runtime_adapter = deep_agent_runtime_adapter
+        self._deep_agent_bound_runtime_adapter = (
+            deep_agent_bound_runtime_adapter if deep_agent_bound_runtime_adapter is not None else deep_agent_runtime_adapter
+        )
         self._deep_agent_enabled = bool(deep_agent_enabled)
         self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
         self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
@@ -270,7 +274,7 @@ class RuntimeService:
                 raise ValueError("Runtime binding does not match the execution request")
             if binding.runtime_kind != "deepagents":
                 raise ValueError("Bound runtime has no implemented v2 execution path")
-            if not self._deep_agent_enabled or self._deep_agent_runtime_adapter is None:
+            if not self._deep_agent_enabled or self._deep_agent_bound_runtime_adapter is None:
                 raise RuntimeError("The bound Deep Agents runtime is unavailable in this Worker")
             return True
         return bool(
@@ -335,8 +339,10 @@ class RuntimeService:
             state=state,
             tool_records=tool_records,
         )
+        adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
+            else self._deep_agent_runtime_adapter)
         execution_task = asyncio.create_task(
-            self._deep_agent_runtime_adapter.execute(
+            adapter.execute(
                 DeepAgentRuntimeRequest(
                     session_id=session.id,
                     turn_id=request.turn_id,

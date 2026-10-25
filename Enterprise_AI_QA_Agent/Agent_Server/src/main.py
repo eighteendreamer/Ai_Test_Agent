@@ -177,6 +177,8 @@ from src.runtime.postgres_api_credential_store import PostgresApiCredentialStore
 from src.modes.api_testing_mode.credential_reference_service import ApiCredentialReferenceService
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
+from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
 from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
@@ -295,6 +297,11 @@ async def _initialize_lifespan_resources(
     agent_task_store = PostgresAgentTaskStore(settings, store)
     await agent_task_store.initialize()
     app.state.agent_task_store = agent_task_store
+    framework_model_calls = PostgresFrameworkModelCalls(settings)
+    await framework_model_calls.initialize()
+    app.state.framework_model_calls = framework_model_calls
+    logger.info("lifespan_framework_model_ledger_initialized", extra={
+        "budgets_table": framework_model_calls.budgets_table, "calls_table": framework_model_calls.calls_table})
     await PostgresResourceAllocationStore(settings).initialize()
     await PostgresBrowserAllocationStore(settings).initialize()
     app.state.task_outbox = task_outbox
@@ -668,13 +675,19 @@ async def _initialize_lifespan_resources(
         cleanup.push_async_callback(
             _close_lifespan_resource, "deep_agent_checkpoint_provider", deep_agent_checkpoint_provider.close,
         )
-    deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(
-        model_resolver=model_runtime_service.resolve_langchain_chat_model,
-        checkpointer_factory=(
+    deep_agent_adapter_kwargs = {
+        "model_resolver": model_runtime_service.resolve_langchain_chat_model,
+        "checkpointer_factory": (
             deep_agent_checkpoint_provider.open
             if deep_agent_checkpoint_provider is not None else None
         ),
-        skill_registry=skill_registry,
+        "skill_registry": skill_registry,
+    }
+    deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(**deep_agent_adapter_kwargs)
+    deep_agent_bound_runtime_adapter = DeepAgentRuntimeAdapter(
+        **deep_agent_adapter_kwargs,
+        model_call_policy=FrameworkModelCallPolicy(
+            calls=framework_model_calls, model_config_resolver=model_runtime_service.get_model_config),
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,
@@ -714,6 +727,7 @@ async def _initialize_lifespan_resources(
         context_max_tail_messages=settings.orchestration.context_max_tail_messages,
         observability_service=observability_service,
         deep_agent_runtime_adapter=deep_agent_runtime_adapter,
+        deep_agent_bound_runtime_adapter=deep_agent_bound_runtime_adapter,
         deep_agent_enabled=settings.deep_agents.enabled,
         deep_agent_pilot_mode_keys=settings.deep_agents.pilot_mode_keys,
         deep_agent_read_only_filesystem_enabled=settings.deep_agents.read_only_filesystem_enabled,
@@ -866,6 +880,7 @@ async def _initialize_lifespan_resources(
     session_service.set_agent_task_store(agent_task_store)
     app.state.agent_task_dispatcher = AgentTaskDispatcher(
         settings, agent_task_store, session_service, resource_lease_manager,
+        framework_model_calls=framework_model_calls,
     )
     cleanup.push_async_callback(
         _close_lifespan_resource, "agent_task_child_reaper", app.state.agent_task_dispatcher.stop_child_reaper,

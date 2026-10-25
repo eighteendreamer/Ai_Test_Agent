@@ -2,20 +2,20 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §26：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及模型账本到主代理/具名子代理/摘要实际请求的显式注入路径。共享预算的生产接线与活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §27：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要请求策略和预算受理/Worker/生产组装接线。自动生成绑定及预算、普通 DTO/前置模型调用治理、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
 | 阶段 | 本轮状态 | 下一出口 |
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
-| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25–26 增加模型账本及官方主/子代理/摘要实际请求的显式注入路径 | 共享预算生产初始化/受理/普通调用接线与活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
+| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25–27 增加根模型账本、官方主/子代理/摘要请求策略及预算受理/Worker/生产组装接线 | 自动生成绑定/预算、普通 DTO/前置模型调用治理、活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
 | P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批和对账自身失租的后继强杀 Harness（§12–24） | 首次 message、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
 
-模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本；生产组装尚未注入，普通 DTO 调用仍走既有路径。现有可选 Deep Agents 路由仍沿原开关，不得据此开放全系统新路由。
+模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本，§27 接入生产组装、显式预算受理和 Worker 检查；普通 DTO 调用仍走既有路径。现有可选 Deep Agents 路由仍沿原开关，默认提交入口仍生成 legacy 任务，不得据此开放全系统新路由。
 
 ## 2. 依据 → 发现 → 改动
 
@@ -771,3 +771,47 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 最终结果 **184 passed，229.80 秒，无 skip**，包含新策略最终 23 项、账本 22 项（含三个独立进程共享额度）、四协议 HTTP/SSE、既有 adapter、owner/checkpoint 与审批继续回归。新策略八项正常请求组合明确核对是否走流式端点，不能把普通返回误当流式通过。计数不与此前定向/失败结果累加。
 
 7 个相关 Python 文件的 `py_compile`、`git diff --check` 通过。未执行独立后端 lint/typecheck、前端测试/构建、全量系统回归、真实供应商/浏览器/领域 Runner 或部署验收；未修改前端、依赖版本或生产初始化。方案 §1.3/F4 与 §7.3 已同步区分已验证的显式注入和待接生产出口。
+
+## 27. P1 预算受理事务、Worker 准入与生产组装（2026-10-26）
+
+继续 §26 的生产接线出口，复用现有任务受理事务、根模型账本和不可变 RuntimeBinding。没有新增模型工具循环、运行时类型、绑定版本或默认路由。模型预算不再只能在显式执行 Harness 中初始化和冻结。
+
+### 依据与实现
+
+- `PostgresAgentTaskStore._submit_message_in_transaction` 已把绑定、任务、输入消息与 outbox 放在同一事务。本阶段增加 `submit_v2(..., model_budget=...)` 和账本同步事务端口 `freeze_submission`，在 Session → owner 锁内先冻结预算，再写任务。预算纳入幂等内容摘要；并发受理只能保存一份，重复请求不能放宽调用/Token 额度或延长 deadline。预算冻结或后续 outbox 写入失败会真实回滚全部受理事实。
+- 冻结端口与已有 owner 端口共用保存逻辑，校验冻结预算包含根模型指纹。仅未领取的 idle/epoch 0 Turn 可以首次创建预算；已领取/启动的历史 Turn 只接受一致的已有预算，不根据当前配置重建额度。历史缺预算使用可辨识的 `FrameworkModelBudgetMissing`，绑定身份错误仍显式失败。
+- 生产 Dispatcher 注入账本，领取非终态且可能执行图的 v2 任务前读取原预算；历史缺预算以 `framework_model_budget_unavailable` defer，保持未领取。终态重复投递及 `framework_reconcile` 纯事实对账不被此预算检查阻塞；它们不因此取得模型调用权。现有显式测试构造可继续不注入账本。
+- 应用 bootstrap 在已有 task/owner 初始化后 setup 两张模型账本表，保存 `app.state.framework_model_calls` 并记录初始化事件。受理成功、预算缺失 defer、实际模型调用和结算沿用现有结构化日志。沿用项目启动建表方式，没有在请求中 setup；未执行实际部署库升级验收。
+- `RuntimeService` 增加 bound adapter 依赖，按不可变 `request.runtime_binding` 选择。生产组装将根 policy 注入 bound adapter；无绑定的原可选试点使用既有 adapter。两者共用 checkpoint provider、模型解析器和能力配置，provider 沿用原 cleanup 关闭一次。这样既能要求绑定执行具备 owner，又保持旧试点已有语义。
+
+### TDD 与真实链路
+
+1. 受理契约首次 **1 failed，7.13 秒**：`submit_v2` 不接受 `model_budget`。实现事务端口后，账本与当时受理用例 **28 passed，67.08 秒**。
+2. Worker 契约首次 **1 failed / 1 passed / 6 deselected，8.44 秒**：Dispatcher 不接受 `framework_model_calls`。接线后受理文件当时 **9 passed，21.85 秒**。
+3. 官方 SDK Worker 链路首次 **1 failed / 9 deselected，6.92 秒**：RuntimeService 不接受 bound adapter。接通后文件当时 **10 passed，26.23 秒**。
+4. 新增真实官方 SDK 逐项审批及不同 owner 共用原预算，定向 **1 passed / 10 deselected，11.28 秒**。随后补充终态投递和纯对账两项准入边界，计数以最终联合回归为准。
+
+新增 `test_framework_model_admission.py` 使用 UUID 隔离 PostgreSQL 表、Redis stream 与 checkpoint schema，清理自身资源。初始执行覆盖真实 outbox → Redis Worker → Dispatcher → SessionService → RuntimeService → 官方 Deep Agents/SDK → 本机 HTTP 合成响应 → 根账本结算；完成后重复投递不再发 HTTP，无绑定试点选择旧 adapter 且不修改该根预算。
+
+逐项审批覆盖官方 SDK 首次产生 A/B 两项工具调用、实际业务审批投影与新 owner 恢复：批准 B 后仅执行 B，A 继续等待，不新增模型调用；拒绝 A 后发第二次模型请求。最终两条 completed 尝试共计 20 Token，根 max_calls=2 不变，实际模型调用的 owner_epoch 不同。该场景没有完整走 HTTP 审批 API/Redis 投递，不将已有其它层的验收重复算作该用例覆盖。
+
+### 保留的出口与兼容边界
+
+默认 `AgentTaskDispatcher.submit` 仍生成 legacy 任务；本阶段增加的是显式预算受理端口，尚未实现新 Turn 自动冻结实际模型/Prompt/Skill/工具制品及根预算的路由。`SessionService.execute_claimed_message` 的输入编排仍先于 owner 作用域，普通 DTO `ModelRuntimeService.invoke`、语义分类等前置模型请求尚未纳入根账本。不能把上述一条初始实链路外推为完整 Turn 全部调用受治理。
+
+活动执行时长、完整请求/响应不可变资产与迟到证据、完整错误/重试策略、首次 message 安全恢复、跨 Turn 上下文及受控 AgentCase 图仍待实现。默认新路由保持关闭；§23–26 的旧 v2 消费者排空/统一升级限制继续适用。没有恢复未知副作用或给历史已执行任务补发额度。
+
+未运行完整生产 lifespan/部署启动、真实供应商模型、浏览器/领域 Runner、全量系统回归、前端构建或独立后端 lint/typecheck。选定 lifespan cleanup 测试不等于完整应用启动验收；MySQL 参数没有开启环境，已在联合回归中显式 deselect，不作为通过或 PostgreSQL 验证替代。
+
+### 最终验证
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_admission.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_runtime_binding_persistence.py tests/test_agent_v2_worker_contract.py tests/test_agent_task_dispatch.py tests/test_framework_approval_runtime.py tests/test_framework_task_control.py tests/test_framework_approval_recovery.py tests/test_deep_agent_runtime_adapter.py tests/test_lifespan_resource_cleanup.py -k 'not mysql' -q -x -rs --tb=short
+```
+
+结果 **227 passed / 1 deselected，480.61 秒，无 skip**。包含受理文件最终 13 项、模型策略/账本、版本绑定、v2/旧任务 Worker、审批执行/停止/已知结果恢复（含独立进程强杀）、适配器和选定 lifespan cleanup 回归。该计数不与此前定向结果累加；没有将 deselect 的 MySQL 用例计为通过。
+
+6 个相关 Python 文件 `py_compile`、`git diff --check` 通过。没有新增依赖、配置、数据库表结构或公共 API；生产 setup 开始创建 §25 已有的两张模型账本表，部署角色需具备既有启动初始化所需权限。默认开关及实际部署状态未改变，P1 和整体迁移继续未完成。

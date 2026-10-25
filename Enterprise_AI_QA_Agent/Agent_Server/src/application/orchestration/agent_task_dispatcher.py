@@ -19,6 +19,7 @@ from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+from src.runtime.postgres_framework_model_calls import FrameworkModelBudgetMissing
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.agent_task import (
     AgentTaskAccepted,
@@ -61,12 +62,14 @@ def _seconds_since(value: datetime | None) -> float:
 
 class AgentTaskDispatcher:
     def __init__(self, settings, tasks, sessions, resources, *,
-                 framework_capabilities: FrameworkWorkerCapabilities | None = None):
+                 framework_capabilities: FrameworkWorkerCapabilities | None = None,
+                 framework_model_calls=None):
         self._settings = settings
         self._tasks = tasks
         self._sessions = sessions
         self._resources = resources
         self._framework_capabilities = framework_capabilities
+        self._framework_model_calls = framework_model_calls
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -614,6 +617,13 @@ class AgentTaskDispatcher:
                 if self._framework_capabilities is None:
                     raise TaskDeferred("framework_worker_capabilities_unavailable")
                 self._framework_capabilities.require(runtime_binding, operation=command.operation)
+                if (self._framework_model_calls is not None
+                    and stored.status not in TERMINAL_AGENT_TASK_STATUSES
+                    and command.operation != "framework_reconcile"):
+                    try:
+                        await self._framework_model_calls.frozen_policy(runtime_binding)
+                    except FrameworkModelBudgetMissing as exc:
+                        raise TaskDeferred("framework_model_budget_unavailable") from exc
             except TaskDeferred as exc:
                 LOGGER.warning("agent_v2_capability_unavailable", extra={
                     "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
