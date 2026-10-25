@@ -462,6 +462,7 @@ WorkItem（用户可交付；投影，不复制事实）
 规则：
 
 - Agent `StepCompleted` 只推进 `ExecutionStatus`，不直接写 `TestStatus`。
+- **不单独造第五套 `AgentStatus`**：Agent 的模型/工具进度由 `ExecutionStatus` + `Step/Attempt` 表达；确需展示“Agent 正在思考/调用工具”时，从 Step 类型派生 UI phase，不落独立状态字段。
 - `TestStatus=passed` 必须有至少一条 `VerificationStatus=verified` 的证据；否则只能是 `unverified` / `blocked`。
 - 语义判定必须标 `model_derived=true`、`confidence`、`rubric_version`，不能与确定性断言合并统计。
 - `WorkPhase`（业务阶段）由 kind adapter 从四轴派生，不单独存储两套真相。
@@ -721,6 +722,26 @@ ToolDescriptor 增加：`risk_level`、`interrupt_behavior`、`side_effect_key`�
 - 固定环境快照继续使用：目标配置 + revision + sha256；部署状态保持 `unknown`，不得由快照推断已部署。
 - 证据必须带环境身份（environment_id、snapshot_id、hash）与时间。
 - UI 断言/接口断言/DOM/截图/HAR/控制台日志/退出码统一映射到 Evidence kind，不各自定义结构。
+
+### 8.5 统一审批
+
+当前存在两类审批：会话工具审批，以及 TestRun 的 RunItem 等待审批。用户看到的是两个入口、两套状态、两套恢复路径。目标不是合并业务语义，而是统一**审批契约**：
+
+```text
+ApprovalEnvelope
+  approval_id, project_id, execution_id, step_id, kind (tool | run_item | change)
+  requested_by, risk_level, scope (once | step | execution | capability)
+  payload_ref, expires_at, status (pending | approved | denied | expired | cancelled)
+  decision_by, decision_at, reason, idempotency_key
+```
+
+规则：
+
+- 审批是 Execution 的 Step，不是旁路；审批未决时执行进入 `waiting_approval`，checkpoint 记录审批身份。
+- `scope` 必须可收窄，不能因一次批准而扩权；跨运行复用审批必须被拒绝。
+- steer 在审批等待期间只能排队，不能绕过审批；interrupt 不得静默丢弃待审批项。
+- 两类审批在 UI 统一为一个“待处理”队列，点击后定位到对应 Execution 的审批 Step。
+- 审批结果与工具执行、RunItem 状态写入同一事件账本，可回放、可审计。
 
 ---
 
