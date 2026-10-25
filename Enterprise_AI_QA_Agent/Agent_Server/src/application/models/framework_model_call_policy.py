@@ -10,6 +10,9 @@ from uuid import uuid4
 
 from langchain_core.messages import AIMessage, messages_to_dict
 
+from src.application.model_clients.http_observation import (
+    current_provider_call_observation, observe_provider_call,
+)
 from src.schemas.framework_model_call import FrameworkModelCallIntent, FrameworkModelUsage
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
 
@@ -153,7 +156,13 @@ class FrameworkModelCallPolicy:
             "model_attempt_id": intent.attempt_id, "logical_call_id": intent.logical_call_id,
             "branch_id": intent.branch_id, "purpose": intent.purpose, "transport": intent.transport})
         try:
-            result = await send()
+            active_observation = current_provider_call_observation()
+            if active_observation is None:
+                with observe_provider_call(intent.logical_call_id, intent.transport) as created_observation:
+                    result = await send()
+                active_observation = created_observation
+            else:
+                result = await send()
         except (Exception, asyncio.CancelledError) as exc:
             code = "request_cancelled" if isinstance(exc, asyncio.CancelledError) else "provider_request_failed"
             try:
@@ -171,6 +180,15 @@ class FrameworkModelCallPolicy:
                 response = await self._evidence.store_response(owner, intent, result, response_kind=response_kind)
                 await self._calls.append_response_observation(owner, intent.attempt_id,
                     response=response, response_kind=response_kind)
+                wire = await self._evidence.store_wire(owner, intent, active_observation)
+                logger.info("framework_model_wire_candidate", extra={
+                    "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
+                    "has_observation": active_observation is not None,
+                    "request_bytes": len(active_observation.request_body) if active_observation and active_observation.request_body is not None else 0,
+                    "response_bytes": len(active_observation.response_body) if active_observation else 0,
+                })
+                if wire is not None:
+                    await self._calls.append_wire_observation(owner, intent.attempt_id, observation=wire)
             except (Exception, asyncio.CancelledError) as exc:
                 # The response has arrived. Preserve uncertainty and any saved
                 # object even if its ledger reference could not be confirmed.

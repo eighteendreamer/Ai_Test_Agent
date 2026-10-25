@@ -22,6 +22,7 @@ from src.runtime.postgres_runtime_owner import (
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
+    FrameworkModelWireObservation,
 )
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -223,6 +224,34 @@ class PostgresFrameworkModelCalls:
         logger.info("framework_model_response_observed", extra={"binding_id": owner.binding.binding_id,
             "model_attempt_id": attempt_id, "owner_epoch": owner.owner_epoch,
             "observation_id": result.observation_id, "authoritative": False})
+        return result
+
+    async def append_wire_observation(self, owner: RuntimeExecutionOwner, attempt_id: str, *,
+                                      observation: dict) -> FrameworkModelWireObservation:
+        def append():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._require_binding(cur, owner.binding)
+                call = self._call(cur, owner.binding.binding_id, attempt_id)
+                self._require_origin_owner(call, owner)
+                if call.observer_token_sha256 is None:
+                    raise ValueError("Model wire observer identity is unavailable")
+                request, response = observation.get("request"), observation.get("response")
+                identity = json.dumps([call.binding_id, attempt_id,
+                    request.sha256 if request else None, response.sha256 if response else None,
+                    observation.get("attempt_sequence")], separators=(",", ":"))
+                item = FrameworkModelWireObservation(observation_id=hashlib.sha256(identity.encode()).hexdigest(),
+                    **observation, observed_at=self._now(cur))
+                existing = next((row for row in call.wire_observations
+                    if row.observation_id == item.observation_id), None)
+                if existing is not None:
+                    return existing
+                self._write(cur, call.model_copy(update={
+                    "wire_observations": [*call.wire_observations, item]}))
+                return item
+        result = await asyncio.to_thread(append)
+        logger.info("framework_model_wire_observed", extra={"binding_id": owner.binding.binding_id,
+            "model_attempt_id": attempt_id, "observation_id": result.observation_id,
+            "authoritative": False})
         return result
 
     async def start(self, owner: RuntimeExecutionOwner, attempt_id: str) -> tuple[FrameworkModelCallRecord, bool]:

@@ -52,6 +52,24 @@ class FrameworkModelEvidence:
             "data": TypeAdapter(Any).dump_python(data, mode="json")}
         return await self._store(owner, intent, canonical_model_input(payload), "response")
 
+    async def store_wire(self, owner, intent, observation):
+        if observation is None or observation.request_body is None and not observation.response_body:
+            return None
+        request = (await self._store_bytes(owner, intent, observation.request_body, "wire-request")
+            if observation.request_body is not None else None)
+        response = (await self._store_bytes(owner, intent, observation.response_body, "wire-response")
+            if observation.response_body else None)
+        return {
+            "request": request, "response": response,
+            "request_headers": observation.request_headers,
+            "response_headers": observation.response_headers,
+            "response_status_code": observation.response_status_code,
+            "request_body_truncated": observation.request_body_truncated,
+            "response_body_truncated": observation.response_body_truncated,
+            "response_complete": observation.response_complete,
+            "attempt_sequence": observation.request_attempt_count,
+        }
+
     async def _store(self, owner, intent, content, stage):
         # UUID write identities avoid overwriting an earlier/uncertain upload.
         # As in impact_checkpoint_io, retain possible orphans for reconciliation.
@@ -65,6 +83,14 @@ class FrameworkModelEvidence:
                 "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
                 "evidence_stage": stage, "object_prefix": prefix, "error_type": type(exc).__name__})
             raise
+        return FrameworkModelObject(storage_uri=saved["uri"], sha256=hashlib.sha256(content).hexdigest(),
+            size_bytes=len(content))
+
+    async def _store_bytes(self, owner, intent, content: bytes, stage: str):
+        prefix = "framework-models/" + hashlib.sha256(owner.binding.binding_id.encode()).hexdigest()
+        prefix += "/" + hashlib.sha256(intent.attempt_id.encode()).hexdigest() + "/" + uuid4().hex
+        saved = await self._objects.store_uploaded_bytes(content=content, filename=stage + ".bin",
+            object_prefix=prefix, content_type="application/octet-stream")
         return FrameworkModelObject(storage_uri=saved["uri"], sha256=hashlib.sha256(content).hexdigest(),
             size_bytes=len(content))
 

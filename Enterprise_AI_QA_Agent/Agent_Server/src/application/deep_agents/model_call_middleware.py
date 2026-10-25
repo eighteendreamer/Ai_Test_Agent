@@ -9,6 +9,9 @@ from langchain_core.messages.utils import get_buffer_string
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.runtime import get_runtime
 from deepagents.backends import StateBackend
+from src.application.model_clients.http_observation import (
+    current_provider_call_observation, create_observed_http_client, observe_provider_call,
+)
 from deepagents.middleware.summarization import (
     DEEPAGENTS_DEFAULT_SUMMARY_PROMPT, SummarizationMiddleware, compute_summarization_defaults,
 )
@@ -34,11 +37,59 @@ class FrameworkModelCallMiddleware(AgentMiddleware):
                 options["structured_output"] = {"strategy": type(strategy).__name__, "schemas": [
                     {"name": spec.name, "description": spec.description, "schema": spec.json_schema}
                     for spec in normalized.schema_specs]}
-        return await self._policy.invoke(owner=self._owner, model=request.model, model_key=self._model_key,
-            execution_info=request.runtime.execution_info, branch_name=self._branch_name,
-            purpose="subagent" if self._branch_name is not None else "agent", messages=messages,
-            tools=[convert_to_openai_tool(tool) for tool in request.tools], options=options,
-            send=lambda: handler(request))
+        execution_info = request.runtime.execution_info
+        active = current_provider_call_observation()
+        context = (None if active is not None else
+            observe_provider_call(f"graph:{self._owner.task_id}:{execution_info.checkpoint_ns}", self._model_key))
+        if context is None:
+            return await self._policy.invoke(owner=self._owner, model=request.model, model_key=self._model_key,
+                execution_info=execution_info, branch_name=self._branch_name,
+                purpose="subagent" if self._branch_name is not None else "agent", messages=messages,
+                tools=[convert_to_openai_tool(tool) for tool in request.tools], options=options,
+                send=lambda: handler(request))
+        with context:
+            http_client = create_observed_http_client()
+            try:
+                # ChatOpenAI is the only pinned graph model with an official
+                # per-instance async HTTP client field. Other transports keep
+                # their SDK-native construction until their documented client
+                # injection is wired and tested.
+                if http_client is not None and hasattr(request.model, "http_async_client"):
+                    model = request.model
+                    updates = {"http_async_client": http_client}
+                    from openai import AsyncOpenAI
+
+                    # ChatOpenAI keeps the provider settings under its public
+                    # Pydantic fields.  ``timeout``/``base_url`` are not
+                    # fields on this version; the corresponding names are
+                    # ``request_timeout``/``openai_api_base``.  Rebuilding
+                    # both the root client and the chat resource is required:
+                    # changing only ``http_async_client`` leaves the already
+                    # constructed SDK resource bound to the old transport.
+                    api_key = model.openai_api_key
+                    if hasattr(api_key, "get_secret_value"):
+                        api_key = api_key.get_secret_value()
+                    root = AsyncOpenAI(
+                        api_key=api_key,
+                        organization=model.openai_organization,
+                        base_url=model.openai_api_base,
+                        timeout=model.request_timeout,
+                        default_headers=model.default_headers,
+                        default_query=model.default_query,
+                        max_retries=model.max_retries or 0,
+                        http_client=http_client,
+                    )
+                    updates.update({"root_async_client": root,
+                        "async_client": root.chat.completions})
+                    request = request.override(model=model.model_copy(update=updates))
+                return await self._policy.invoke(owner=self._owner, model=request.model, model_key=self._model_key,
+                    execution_info=execution_info, branch_name=self._branch_name,
+                    purpose="subagent" if self._branch_name is not None else "agent", messages=messages,
+                    tools=[convert_to_openai_tool(tool) for tool in request.tools], options=options,
+                    send=lambda: handler(request))
+            finally:
+                if http_client is not None:
+                    await http_client.aclose()
 
 
 def governed_summarization(*, policy, owner, model, model_key, backend, branch_name=None):

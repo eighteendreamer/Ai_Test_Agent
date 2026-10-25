@@ -91,6 +91,22 @@ class FrameworkModelResponseObservation(_ModelCallValue):
     observed_at: datetime
 
 
+class FrameworkModelWireObservation(_ModelCallValue):
+    schema_version: Literal[1] = 1
+    observation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    request: FrameworkModelObject | None = None
+    response: FrameworkModelObject | None = None
+    request_headers: dict[str, str] = Field(default_factory=dict)
+    response_headers: dict[str, str] = Field(default_factory=dict)
+    response_status_code: StrictInt | None = Field(default=None, ge=100, le=599)
+    request_body_truncated: bool = False
+    response_body_truncated: bool = False
+    response_complete: bool = False
+    attempt_sequence: StrictInt = Field(ge=1)
+    authoritative: Literal[False] = False
+    observed_at: datetime
+
+
 class FrameworkModelCallRecord(_ModelCallValue):
     binding_id: str
     intent: FrameworkModelCallIntent
@@ -100,6 +116,7 @@ class FrameworkModelCallRecord(_ModelCallValue):
     observer_token_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     request: FrameworkModelObject | None = None
     response_observations: list[FrameworkModelResponseObservation] = Field(default_factory=list)
+    wire_observations: list[FrameworkModelWireObservation] = Field(default_factory=list)
     phase: Literal["ready", "invoking", "completed", "unknown"]
     usage: FrameworkModelUsage | None = None
     outcome_code: str | None = None

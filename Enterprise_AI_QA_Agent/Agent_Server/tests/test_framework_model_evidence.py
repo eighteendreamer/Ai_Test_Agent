@@ -186,6 +186,11 @@ async def test_official_response_evidence_survives_expired_owner_and_completion_
             assert call.request is not None
             observation, = call.response_observations
             assert not observation.authoritative
+            wire, = call.wire_observations
+            assert wire.request is not None and wire.response is not None
+            assert not wire.request_body_truncated and not wire.response_body_truncated
+            assert wire.response_complete is True
+            assert b"fixture" in (await objects.read_object_uri(wire.response.storage_uri))["content"]
             request = await h.policy._evidence.read(call.request)
             response = await h.policy._evidence.read_response(h.binding, call.intent, observation.response)
             assert request["messages"][-1]["data"]["content"] == "fixture request"

@@ -903,3 +903,33 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 ### 保留的风险与下一阶段
 
 历史模型调用记录的 `request` 资产字段可为空；兼容恢复不能凭摘要重建原始请求。首次 message 的确定性 attempt 身份、完整请求/响应 wire 资产、流式中间块、活动时间预算、未知外部副作用和跨 Turn transcript 仍未完成。响应观察解决“迟到事实可留存”，不等于 exactly-once，也不把非权威观察提升为工具或模型结果。
+
+## 30. P1 模型 HTTP wire 请求/响应观察（2026-10-26）
+
+本阶段继续 §29 的独立 wire 证据出口。模型应用层响应已经进入 RustFS/账本，但它不能证明供应商实际收到的 JSON 或返回的 SSE 字节。因此新增 `ProviderCallObservation` 的 HTTPX2 event hook：捕获请求/响应体、安全响应头、状态码、流式响应字节、截断标志和响应完整标志；wire 对象与应用层 response 对象分开保存，均只通过 URI、摘要和长度挂到账本。认证、Cookie、token、API key 和 secret 头不会保存，路由只保留四种已知安全路径，未知路径降为 `/<redacted>`。
+
+### Deep Agents 图内接入
+
+固定 `langchain-openai==1.6.2` 的 `ChatOpenAI` 有公开的 `http_async_client` 字段，但已构造的 `root_async_client`/`async_client` 不会因只更新该字段而改变。首次真实图调用暴露 `base_url`/`timeout` 字段名错误；依据固定版本官方模型源码，改用 `openai_api_base`、`request_timeout`、`default_headers`、`default_query` 和 `openai_api_key`，重建 `openai.AsyncOpenAI` 及其 `chat.completions` 资源后再把模型副本交给 handler。绑定失败不再静默降级；异常带类型和上下文向上暴露。Responses API 仍复用同一 root client 的 `responses` 资源，由官方模型路径选择。
+
+其它官方图模型（Anthropic/Gemini）尚未接入等价的 per-instance HTTP client 注入；它们当前仍记录应用层 response，wire 观察只有在 SDK 官方客户端注入方式查证并完成测试后才启用。普通 DTO 入口沿用已有按 transport 的官方客户端路径，图入口本阶段只验证 OpenAI Chat/Responses 的客户端替换。
+
+### TDD 与验证
+
+新增 HTTP 观察单测覆盖普通 JSON、SSE 转发、容量截断、响应完整性和敏感请求头过滤。随后重跑真实 PostgreSQL/RustFS 替身与 Deep Agents 图调用：首次失败是账本没有 wire observation，根因是图内客户端仍指向旧的 `root_async_client`；修正字段与根客户端重建后通过。
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_evidence.py::test_official_response_evidence_survives_expired_owner_and_completion_ack_loss -q -x --tb=short
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_model_http_observation.py tests/test_framework_model_evidence.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py -q --tb=short
+```
+
+结果分别为 **1 passed，7.09 秒** 和 **61 passed，141.61 秒，无 skip**。联合结果实际核对请求/响应 wire 对象存在、响应完整、失租后不结算 usage，以及不会因结算确认失败重发 HTTP。未执行 RustFS 真实服务、真实供应商、Anthropic/Gemini 图内 wire 注入、全量系统回归、前端构建或部署验收；因此不能把 wire 观察称为全传输完成。
+
+### 保留的风险与下一阶段
+
+当前观察只捕获一次逻辑调用中的请求体和响应体；多次 SDK 重试会更新观察的 attempt 计数，但尚未建立每次重试独立 wire 对象。大响应按上限截断，截断对象不能用于完整重放。流式响应在消费完成前保持 `response_complete=false`，断流不会被当作完整响应。RustFS 对象和 PostgreSQL 引用仍是分开提交，孤儿对象需由对账任务处理。
+
+历史调用仍可能没有 request/wire 资产；不能从摘要重建。首次 message 安全恢复、活动执行时间预算、Anthropic/Gemini 官方客户端注入、跨 Turn transcript、未知外部副作用和各领域 Runner/模式验收继续未完成。默认 v2 路由与生产开关没有改变。
