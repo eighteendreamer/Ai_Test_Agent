@@ -479,6 +479,10 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 边界：覆盖英文文本型 DOCX 与文本型 PDF；不覆盖扫描 PDF（首期无 OCR）、复杂版式、中文 PDF 字体嵌入，也不覆盖影响分析之后的评审/增量草稿（Markdown 主链已验收）。
 
+## 本轮剩余项复核（任务 E：compatibility 矩阵执行）
+
+复核 `src/modes/compatibility_testing_mode/environment_matrix.py`：九类环境全部由产品固定产出 `availability="missing_runner"`，仓库内不存在浏览器 Runner 注册/调度基础设施；本轮隔离环境也未提供任何 Runner。因此按既定边界不推进矩阵执行（不伪造执行证据），compatibility 方向的已完成证据仍为默认模型计划编排验收（`compat-mode-default-deepseek-current-20261025-07/`）与 14 项 Runner 持久化机制专项。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
