@@ -422,6 +422,27 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 过程迭代（证据保留于 `-01`~`-06`）：Worker 未走探针导致脚本未生效、venv python 为启动器致 Popen pid 与真实解释器不同、被杀 Worker 的执行资源租约使接管 Worker 进入 `waiting_resource`、attempt 记录没有 `lease_owner` 字段（改按租约令牌断言）。运行后 Redis DB13 仅余常驻键与共享 cleanup 流（pending=0）。
 
+## 重复请求与工程交付：API 文档 JSON catalog 导入投影核对
+
+只读复核（2026-10-25，当前配置库 `QA_Agent`）：`agent_api_docs`、`_versions`、`_assets`、`_submissions` 四表均存在且各 **0 行**；仓库内 `data/api_docs/catalog.json` 不存在。与 10-23 结论一致：当前配置库仍无生产 catalog 样本，无法做生产投影对账；本轮不伪造样本、未写入配置库。
+
+导入机制验收（非生产对账）：`RUN_LIVE_CASE_PLANNING_TESTS=1` 下执行既有 `tests/test_api_doc_versions.py::test_json_catalog_migration_preserves_versions_submissions_and_historical_assets`：
+
+```text
+1 passed in 5.44s
+```
+
+证据：`p6-api-doc-catalog-import-projection-current-20261025-01.xml`。在配置库中创建随机 `up_jd_*`/`up_jv_*`/`up_jc_*`/`up_jp_*` 表（先断言不存在，结束 DROP），真实 RustFS 保存并删除资产；legacy catalog 由产品自身 `JsonApiDocStore` 写出（2 个版本、派生资产、1 次提交）：
+
+- 导入结果 `read=1 inserted=1 skipped=0 invalid=0`；导入记录 `project_id=NULL`（强制显式映射、不猜项目），`legacy_project_name` 保留。
+- 版本/提交/派生资产完整投影：2 个版本、当前版本快照逐字段一致、派生资产内容含旧 `project_url`、提交 `next` 可读回。
+- 重复导入 `skipped=1`（幂等）。
+- 9 类目录篡改（版本父/ID、资产 ID/`version_id`、提交 `request_id`、快照 `created_at`、缺失 history 等）均 `invalid=1`，既有版本与快照未被覆盖。
+- 重新绑定项目后，按原 request/版本上传仍返回同一记录与版本（历史身份不被改写）。
+- 结束后复核：随机 PG/MySQL 表 0 残留，四张 catalog 表仍 0 行。
+
+边界：不证明任何真实部署的 catalog 内容可迁移（无样本），也不覆盖非 JSON 旧来源；只证明“产品写出的 legacy JSON → PostgreSQL 目录 + 版本/资产/提交投影”的语义、幂等与防篡改。生产迁移仍需在持有真实 catalog 的部署上执行脚本并逐条对账。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
