@@ -80,6 +80,7 @@ class TurnState:
     runtime_message_sections: list[dict[str, Any]] = field(default_factory=list)
     system_prompt: str = ""
     runtime_messages: list[dict[str, Any]] = field(default_factory=list)
+    framework_messages: list[dict[str, Any]] = field(default_factory=list)
 
     # Model invocation (per iteration, but accumulated token usage)
     model_request_payload: dict[str, Any] = field(default_factory=dict)

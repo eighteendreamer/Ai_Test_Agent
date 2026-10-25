@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from collections import defaultdict
 import os
 import subprocess
 from contextlib import asynccontextmanager, contextmanager, nullcontext
@@ -11,6 +12,7 @@ from types import SimpleNamespace
 
 import pytest
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage, messages_to_dict
 
 from src.application.deep_agents import (
     DeepAgentRuntimeAdapter,
@@ -26,6 +28,7 @@ from src.application.runtime.tool_governance_service import (
     ToolGovernanceService,
 )
 from src.application.runtime.runtime_service import RuntimeService
+from src.application.runtime.state_persistence import build_pending_turn
 from src.application.sessions.session_service import SessionService
 from src.core.config import DeepAgentsConfig
 from src.domain.models import SessionRecord
@@ -56,6 +59,93 @@ class _FakeAgent:
                 {"role": "assistant", "content": "DA_E1_OK"},
             ]
         }
+
+
+@pytest.mark.asyncio
+async def test_framework_transcript_round_trip_preserves_native_blocks_tool_ids_and_metadata():
+    native_messages = [
+        HumanMessage(content="inspect", id="human-1"),
+        AIMessage(
+            content=[{"type": "text", "text": "call lookup", "id": "part-1"}],
+            tool_calls=[
+                {"name": "lookup", "args": {"q": "x"}, "id": "call-1", "type": "tool_call"}
+            ],
+            additional_kwargs={"provider_signature": "sig-1"},
+            response_metadata={"token_usage": {"input_tokens": 2}},
+            id="assistant-1",
+        ),
+        ToolMessage(
+            content={"answer": "ok"},
+            tool_call_id="call-1",
+            name="lookup",
+            status="success",
+            id="tool-1",
+        ),
+        AIMessage(content="done", id="assistant-2"),
+    ]
+    calls: list[dict] = []
+
+    class NativeAgent:
+        async def ainvoke(self, payload, *, config):
+            calls.append({"payload": payload, "config": config})
+            assert isinstance(payload["messages"][1], AIMessage)
+            assert payload["messages"][1].tool_calls[0]["id"] == "call-1"
+            assert payload["messages"][1].additional_kwargs["provider_signature"] == "sig-1"
+            assert payload["messages"][2].tool_call_id == "call-1"
+            return {"messages": native_messages}
+
+    adapter = DeepAgentRuntimeAdapter(
+        model_resolver=lambda _key: _resolved_model(),
+        agent_factory=lambda **_kwargs: NativeAgent(),
+    )
+    result = await adapter.execute(
+        DeepAgentRuntimeRequest(
+            session_id="session-1",
+            turn_id="turn-1",
+            trace_id="trace-1",
+            model_key="qwen-test",
+            system_prompt="pilot",
+            messages=[],
+            framework_messages=messages_to_dict(native_messages),
+        )
+    )
+
+    assert calls
+    assert result.framework_messages[1]["data"]["tool_calls"][0]["id"] == "call-1"
+    assert result.framework_messages[1]["data"]["content"][0]["id"] == "part-1"
+    assert result.framework_messages[1]["data"]["additional_kwargs"]["provider_signature"] == "sig-1"
+    assert result.framework_messages[2]["data"]["tool_call_id"] == "call-1"
+
+
+def test_pending_turn_persists_framework_transcript_separately_from_display_projection():
+    state = defaultdict(list)
+    state.update(
+        {
+            "turn_id": "turn-1",
+            "trace_id": "trace-1",
+            "user_message": "inspect",
+            "normalized_input": "inspect",
+            "session_mode": "normal",
+            "runtime_mode": "interactive",
+            "mode_key": "code_review",
+            "selected_agent_key": "default",
+            "selected_agent_name": "Default",
+            "selected_model_key": "model-1",
+            "selected_model_name": "Model",
+            "selected_model_provider": "test",
+            "system_prompt": "pilot",
+            "runtime_messages": [{"role": "assistant", "content": "display"}],
+            "framework_messages": [
+                {"type": "ai", "data": {"content": [{"type": "text", "text": "native"}]}}
+            ],
+        }
+    )
+
+    pending = build_pending_turn(state, "waiting_approval")
+
+    assert pending["runtime_messages"] == [{"role": "assistant", "content": "display"}]
+    assert pending["framework_messages"][0]["data"]["content"][0]["text"] == "native"
+    assert pending["graph_state"]["framework_messages"] == pending["framework_messages"]
 
 
 @pytest.mark.asyncio

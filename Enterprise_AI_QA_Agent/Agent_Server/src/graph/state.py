@@ -43,6 +43,7 @@ class AgentGraphState(TypedDict):
     runtime_message_sections: list[dict[str, Any]]
     system_prompt: str
     runtime_messages: list[dict[str, Any]]
+    framework_messages: NotRequired[list[dict[str, Any]]]
     model_request_payload: dict[str, Any]
     model_response_summary: dict[str, Any]
     model_response_text: str

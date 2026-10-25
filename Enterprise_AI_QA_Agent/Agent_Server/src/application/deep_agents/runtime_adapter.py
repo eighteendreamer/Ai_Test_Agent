@@ -10,6 +10,10 @@ from typing import Any, Awaitable, Callable
 from src.application.deep_agents.read_only_backend import (
     build_read_only_filesystem_backend,
 )
+from src.application.deep_agents.framework_transcript import (
+    deserialize_messages,
+    serialize_messages,
+)
 
 
 class DeepAgentRuntimeError(RuntimeError):
@@ -24,6 +28,7 @@ class DeepAgentRuntimeRequest:
     model_key: str
     system_prompt: str
     messages: list[dict[str, Any]]
+    framework_messages: list[dict[str, Any]] | None = None
     context: dict[str, Any] = field(default_factory=dict)
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
@@ -44,6 +49,7 @@ class DeepAgentRuntimeResult:
     output_text: str
     metadata: dict[str, Any] = field(default_factory=dict)
     messages: list[dict[str, Any]] = field(default_factory=list)
+    framework_messages: list[dict[str, Any]] = field(default_factory=list)
     todos: list[dict[str, str]] = field(default_factory=list)
     subagent_events: list[dict[str, Any]] = field(default_factory=list)
     interrupts: list[dict[str, Any]] = field(default_factory=list)
@@ -126,7 +132,10 @@ class DeepAgentRuntimeAdapter:
                     interrupt_on=request.interrupt_on or None,
                     **harness_kwargs,
                 )
-                invoke_input = {"messages": list(request.messages)}
+                input_messages: list[Any] = list(request.messages)
+                if request.framework_messages:
+                    input_messages = deserialize_messages(request.framework_messages)
+                invoke_input = {"messages": input_messages}
                 if request.resume is not None:
                     from langgraph.types import Command
 
@@ -162,7 +171,9 @@ class DeepAgentRuntimeAdapter:
                 f"{exc.__class__.__name__}: {str(exc)[:240]}"
             ) from exc
 
-        messages = _normalize_messages(result.get("messages") if isinstance(result, dict) else [])
+        raw_messages = result.get("messages") if isinstance(result, dict) else []
+        messages = _normalize_messages(raw_messages)
+        framework_messages = serialize_messages(raw_messages)
         interrupts = [
             {"id": item.id, "value": item.value}
             for item in result.get("__interrupt__", [])
@@ -180,6 +191,7 @@ class DeepAgentRuntimeAdapter:
                 "message_count": len(messages),
             },
             messages=messages,
+            framework_messages=framework_messages,
             todos=_normalize_todos(result.get("todos") if isinstance(result, dict) else []),
             subagent_events=subagent_events,
             interrupts=interrupts,

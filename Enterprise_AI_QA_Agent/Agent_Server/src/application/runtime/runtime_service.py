@@ -326,6 +326,7 @@ class RuntimeService:
                         "governed by the application's permission and approval controls."
                     ),
                     messages=list(state["runtime_messages"]),
+                    framework_messages=list(state.get("framework_messages") or []),
                     context={**dict(request.context), "skill_keys": list(request.skill_keys)},
                     read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
                     read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
@@ -377,6 +378,7 @@ class RuntimeService:
             )
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
+        state["framework_messages"] = list(result.framework_messages or [])
         if result.interrupts:
             approvals = await self._record_deep_agent_interrupts(state, result)
             tool_records.extend(state.pop("_deep_agent_waiting_records", []))
@@ -1504,6 +1506,7 @@ class RuntimeService:
             "runtime_message_sections": [],
             "system_prompt": "",
             "runtime_messages": self._build_conversation_messages(session),
+            "framework_messages": [],
             "model_request_payload": {},
             "model_response_summary": {},
             "model_response_text": "",
@@ -1979,6 +1982,7 @@ class RuntimeService:
             "runtime_message_sections": list(graph_state.get("runtime_message_sections") or fallback_pending_turn.get("runtime_message_sections") or []),
             "system_prompt": str(graph_state.get("system_prompt") or fallback_pending_turn.get("system_prompt") or ""),
             "runtime_messages": list(graph_state.get("runtime_messages") or fallback_pending_turn.get("runtime_messages") or fallback_pending_turn.get("conversation_messages") or []),
+            "framework_messages": list(graph_state.get("framework_messages") or fallback_pending_turn.get("framework_messages") or []),
             "model_request_payload": dict(graph_state.get("model_request_payload") or {}),
             "model_response_summary": dict(graph_state.get("model_response_summary") or {}),
             "model_response_text": str(graph_state.get("model_response_text") or ""),
@@ -2092,6 +2096,7 @@ class RuntimeService:
             "runtime_message_sections": state["runtime_message_sections"],
             "system_prompt": state["system_prompt"],
             "runtime_messages": state["runtime_messages"],
+            "framework_messages": list(state.get("framework_messages") or []),
             "model_request_payload": state["model_request_payload"],
             "model_response_summary": state["model_response_summary"],
             "model_response_text": state["model_response_text"],
