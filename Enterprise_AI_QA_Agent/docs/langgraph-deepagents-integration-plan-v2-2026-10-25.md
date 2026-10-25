@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `3b8387d38` 及实施记录 §23 的本轮变更。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、5.3、8、10.3 节反映当前实施边界；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
+初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `5b868f927` 及实施记录 §24 的本轮变更。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、5.3、8、10.3 节反映当前实施边界；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
 
 ## 1. 结论与本次修订
 
@@ -9,7 +9,7 @@
 需要限定三个结论：
 
 - 附件反映方案形成时的缺口，部分已有后续实现，见第 1.3 节；不能将历史缺口写成当前全部缺失，也不能据此声称生产环境已经发生过重复副作用或 checkpoint 覆盖。
-- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离、决定 receipt 与原生 pending writes 同事务已有验证；v2 业务审批/API/续跑调度已在 fake model Harness 接通。已实现已知结果的审批失败对账与后继任务，并验证工具/native 结果保存后、业务 applied 投影前强杀 Worker 的独立进程接管；未知副作用、对账任务自身崩溃等完整恢复出口仍待实施验收。
+- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离、决定 receipt 与原生 pending writes 同事务已有验证；v2 业务审批/API/续跑调度已在 fake model Harness 接通。已实现已知结果审批的对账/后继及对账自身失租后继；独立进程验证工具/native 结果保存后、业务 applied 前，以及对账提交前/提交后 ACK 前强杀。首次 message、未知副作用等完整恢复出口仍待实施验收。
 - “决定已应用 → 工具结算”不能作为统一线性状态机：拒绝不会执行工具，批准后也可能被最新权限或预算阻止；决定交付、框架消费和工具结果应分别记录。
 
 本方案替代上一版接入方案中关于审批恢复、所有权、消息持久化和版本部署的简略约定。系统现状与各模式已有 Harness 的完整调查见[架构报告](system-architecture-and-harness-review-2026-10-25.md)。
@@ -49,7 +49,7 @@
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
 | F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
-| F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，对账自身崩溃尚无后继入口，不承诺外部 exactly-once |
+| F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态；对账运行失租可建立新对账，提交前/后强杀已验证，见 §24 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，确定性拒绝/返回数据库错误不自动重试；不承诺外部 exactly-once |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察；已知结果审批的独立 Worker 接管见实施记录 §21–23 | 无绑定旧试点仍用原 saver。同步工具的校验不能撤销已准入外部请求；领域 Runner 独立执行权及其余跨进程窗口仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
@@ -59,7 +59,7 @@
 
 #### 实现过程记录（实施记录 §12–17 时点）
 
-以下保留这些阶段的机制与当时待接线项；后续 Runtime/Session/Worker、API/UI 进展以本节当前判定表及实施记录 §18–23 为准。
+以下保留这些阶段的机制与当时待接线项；后续 Runtime/Session/Worker、API/UI 进展以本节当前判定表及实施记录 §18–24 为准。
 
 本次复核发现的 `sync` 缺口已在 adapter 层落实：所有带 checkpointer 的启动、指定决定恢复、`continue_from_checkpoint=True` 的 `ainvoke(None)` 和子代理事件入口显式使用 `durability="sync"`。无持久化旧试点不传 durability；固定 LangGraph 1.2.12 对无 saver 的 sync 调用会访问不存在的 `_put_checkpoint_fut`，已由真实框架回归复现。无新决定继续仅开放内部 adapter 协议，仍需 Session/Worker 根据交付凭证和 ToolJob 对账选择，不能对未判定的执行直接继续。`sync` 不保证外部副作用 exactly-once，也不保证工具开始前 resume receipt 已落库。
 
@@ -263,7 +263,7 @@ proof 另记 `evidence_kind=atomic_write/reconciled`。原子写证明与 pendin
 
 对账任务是 v2 明确的新操作类型，不能让旧 schema 的普通 `manual_resume` 在未知副作用时自动重放。自动对账只做确定性的状态补齐和目标查询；无法证明安全则明确等待人工处理。
 
-#### 已实现的审批后继协议（实施记录 §23）
+#### 已实现的审批后继协议（实施记录 §23–24）
 
 ```text
 approval_resume / approval_recover 原执行 failed 或 recovery_required（保持终态）
@@ -275,7 +275,9 @@ approval_resume / approval_recover 原执行 failed 或 recovery_required（保�
 - 对账复核原 task/attempt、binding、活跃 pending Turn、冻结决定、receipt、原生 interrupt/resume 和全部同 Turn ToolJob。只有终态 Job 或真正未启动的 waiting_approval 可自动继续；running/未知效果保持阻塞，即使已有非权威迟到观察也不能自动提升为结果。
 - proof、后继任务/outbox、对账完成及 Session 控制投影同事务提交。领取与 prepare 均核对后继和已完成对账的 proof；原生实际消费事实仍重新读取，未消费决定发指定 Command，已消费决定用 None 继续。
 - 对账链优先于同 Turn 排队 sibling；后续普通消息不能替换仍未结清的绑定 Turn。用户显式停止撤销 owner，禁止自动恢复。内部对账/后继输入不作为用户待发送消息展示；Coordinator 查找业务父任务识别 approval_recover，不识别对账任务。
-- 当前仅覆盖审批执行的已知结果恢复。首次 message 失败、对账任务自身失租、目标查询/人工对账、其它提交窗口仍待实现；不能把这条子链路描述成任意崩溃恢复，也不能开放生产默认路由。
+- 对账自身运行失租时，只有持久终态为 recovery_required、error_code 为 execution_owner_expired 且存在原 attempt 的任务，才受理新 framework_reconcile。新任务 reference_id 指向原审批执行，parent_task_id 指向刚失租的对账；JSONB 冻结原审批和前驱 task/attempt。受理及领取复核绑定、活跃 Turn 和当前 owner；同一前驱的重投/并发受理复用一个后继。
+- 确定性拒绝、未知效果、明确返回的数据库错误或用户停止不生成对账重试链。对账提交前强杀后事务全部回滚，失租后新建任务；提交后 ACK 前强杀时保留已完成对账和唯一审批后继，重投只确认终态。原任务/attempt 均不重置；实际强杀与旧代写入拒绝见 §24。
+- 当前仅覆盖审批执行的已知结果恢复及对账自身失租。首次 message 失败、目标查询/人工对账、其它提交窗口仍待实现；不能把这条子链路描述成任意崩溃恢复，也不能开放生产默认路由。
 
 ## 6. 执行所有权：同时保护 checkpoint 与业务写入
 
@@ -483,7 +485,7 @@ P2/P3 的关键真实链路：
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
 | P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；Runtime/Session、Dispatcher/API、outbox 与 v2 Worker 已接通，决定受理已从长 Session 执行锁分离；持久审批进度 DTO 与逐项前端投影已接通，详见实施记录 §12–20 | Harness 已验证真实 Runtime 初始 A/B、B 执行时 HTTP 提交 A、202/409/闭合后幂等回执、真实 Redis Worker 的逐项完成与重复投递不重执行，以及前端 jsdom 刷新/重连/并发响应；真实浏览器验收与 P2.3 跨进程出口仍待执行 |
-| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；已实现中断撤销、同步 ToolJob 执行权、未知返回阻断、迟到观察，以及已知结果审批的幂等对账/安全后继；见实施记录 §21–23 | 独立 Worker 在工具/native 结果保存后、业务 applied 前强杀，后续独立 Worker 对账、继续、应用 A 拒绝并闭合 Turn，B 计数为 1。未知效果及显式停止阻止后继；对账自身崩溃、其它 resume/proof 窗口、领域 Runner 独立执行权仍待实施验收，P2.3 未完成 |
+| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；已实现中断撤销、同步 ToolJob 执行权、未知返回阻断、迟到观察、已知结果审批的幂等对账/安全后继及对账自身失租后继；见实施记录 §21–24 | 独立 Worker 在工具/native 结果保存后、业务 applied 前，以及对账提交前/提交后 ACK 前强杀，后继继续并应用 A 拒绝，B 计数为 1。未知效果及显式停止阻止后继；首次 message、其它 resume/proof 窗口、领域 Runner 独立执行权仍待实施验收，P2.3 未完成 |
 
 P2.1 的只读投影重建可独立验收；v2 支持 message、approval_resume 和 §5.3 的 framework_reconcile / approval_recover。旧命令仍不能领取绑定任务，原生身份缺失不能降级走旧恢复。前端持久投影已通过 jsdom/Vue/Pinia 和构建检查，真实浏览器验收仍待执行；P2 整体及 P3 试点放量继续以该验收与 P2.3 出口为前提。
 

@@ -23,6 +23,7 @@ from src.schemas.framework_approval import approval_value_hash
 
 logger = logging.getLogger(__name__)
 APPROVAL_EXECUTIONS = frozenset({"approval_resume", "approval_recover"})
+RECOVERY_TASKS = APPROVAL_EXECUTIONS | {"framework_reconcile"}
 
 
 def require_recovery_origin(cur, tasks, session, binding, origin):
@@ -32,6 +33,7 @@ def require_recovery_origin(cur, tasks, session, binding, origin):
         or not origin["attempt_id"] or origin["interrupt_requested"]
         or origin["runtime_binding"] != binding.model_dump(mode="json")
         or origin["session_id"] != session["id"] or origin["project_id"] != session["project_id"]
+        or origin["turn_id"] != binding.turn_id
         or pending.get("turn_id") != binding.turn_id
         or (pending.get("context_bundle") or {}).get("runtime_binding") != binding.model_dump(mode="json")
         or control.get("last_interrupt_binding_id") == binding.binding_id):
@@ -42,7 +44,18 @@ def require_recovery_origin(cur, tasks, session, binding, origin):
         raise FrameworkApprovalRecoveryRequired("Explicitly interrupted Turn cannot resume automatically")
 
 
-def require_reconciliation_claim(cur, tasks, session, binding, row, owner):
+def is_expired_reconciliation(row):
+    """Only a lost running attempt permits another deterministic reconciliation.
+
+    A safety rejection or a returned database error is not a retry instruction.
+    The original task and attempt stay terminal even when this returns True.
+    """
+    return (row["operation"] == "framework_reconcile" and row["status"] == "recovery_required"
+        and row["error_code"] == "execution_owner_expired" and bool(row["attempt_id"])
+        and not row["interrupt_requested"])
+
+
+def reconciliation_origin(cur, tasks, session, binding, row):
     cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (row["reference_id"],))
     origin = cur.fetchone()
     if origin is None:
@@ -50,8 +63,31 @@ def require_reconciliation_claim(cur, tasks, session, binding, row, owner):
     require_recovery_origin(cur, tasks, session, binding, origin)
     if (row["input_payload"].get("origin_task_id") != origin["id"]
         or row["input_payload"].get("origin_attempt_id") != origin["attempt_id"]
-        or owner["task_id"] not in {origin["id"], row["id"]}):
-        raise FrameworkApprovalRecoveryRequired("Reconciliation origin attempt or coordinator changed")
+        or row["session_id"] != origin["session_id"] or row["turn_id"] != origin["turn_id"]
+        or row["project_id"] != origin["project_id"] or row["runtime_binding"] != origin["runtime_binding"]):
+        raise FrameworkApprovalRecoveryRequired("Reconciliation origin attempt or binding changed")
+    predecessor = origin
+    if row["parent_task_id"] != origin["id"]:
+        cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (row["parent_task_id"],))
+        predecessor = cur.fetchone()
+        payload = row["input_payload"]
+        if (predecessor is None or not is_expired_reconciliation(predecessor)
+            or predecessor["reference_id"] != origin["id"]
+            or predecessor["input_payload"].get("origin_task_id") != origin["id"]
+            or predecessor["input_payload"].get("origin_attempt_id") != origin["attempt_id"]
+            or predecessor["session_id"] != row["session_id"] or predecessor["turn_id"] != row["turn_id"]
+            or predecessor["project_id"] != row["project_id"] or predecessor["runtime_binding"] != row["runtime_binding"]
+            or payload.get("predecessor_task_id") != predecessor["id"]
+            or payload.get("predecessor_attempt_id") != predecessor["attempt_id"]):
+            raise FrameworkApprovalRecoveryRequired("Reconciliation predecessor has no matching expired attempt")
+    return origin, predecessor
+
+
+def require_reconciliation_claim(cur, tasks, session, binding, row, owner):
+    origin, predecessor = reconciliation_origin(cur, tasks, session, binding, row)
+    if (owner["task_id"] not in {predecessor["id"], row["id"]}
+        or (owner["task_id"] == predecessor["id"] and owner["attempt_id"] != predecessor["attempt_id"])):
+        raise FrameworkApprovalRecoveryRequired("Reconciliation coordinator attempt changed")
     return origin
 
 
@@ -113,11 +149,12 @@ class FrameworkApprovalRecovery:
                 raise KeyError(task_id)
             session = tasks._lock_session(cur, identity["session_id"])
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s", (task_id,))
-            origin = cur.fetchone()
-            if (origin["runtime_binding"] is None or origin["operation"] not in APPROVAL_EXECUTIONS
-                or origin["status"] not in {"failed", "recovery_required"}):
+            predecessor = cur.fetchone()
+            if (predecessor["runtime_binding"] is None or predecessor["operation"] not in RECOVERY_TASKS
+                or predecessor["status"] not in {"failed", "recovery_required"}
+                or (predecessor["operation"] == "framework_reconcile" and not is_expired_reconciliation(predecessor))):
                 return None
-            binding = RuntimeBinding.model_validate(origin["runtime_binding"])
+            binding = RuntimeBinding.model_validate(predecessor["runtime_binding"])
             owner = lock_owner_row(cur, self._settings, binding)
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE operation='framework_reconcile' AND parent_task_id=%s",
                 (task_id,))
@@ -125,17 +162,27 @@ class FrameworkApprovalRecovery:
             if existing is not None:
                 return tasks._record(existing)
             try:
-                require_recovery_origin(cur, tasks, session, binding, origin)
-            except FrameworkApprovalRecoveryRequired:
+                if predecessor["operation"] == "framework_reconcile":
+                    origin, _ = reconciliation_origin(cur, tasks, session, binding, predecessor)
+                else:
+                    origin = predecessor
+                    require_recovery_origin(cur, tasks, session, binding, origin)
+            except FrameworkApprovalRecoveryRequired as exc:
                 logger.info("framework_recovery_not_admitted", extra={"origin_task_id": task_id,
-                    "binding_id": binding.binding_id})
+                    "binding_id": binding.binding_id, "reason": str(exc)})
                 return None
-            if session["lease_active"] or owner["task_id"] != task_id:
+            if (session["lease_active"] or owner["task_id"] != task_id
+                or owner["attempt_id"] != predecessor["attempt_id"]):
+                logger.info("framework_recovery_owner_unavailable", extra={"task_id": task_id,
+                    "binding_id": binding.binding_id, "lease_active": session["lease_active"]})
                 return None
-            created = self._publish(cur, origin, operation="framework_reconcile", reference_id=task_id,
-                parent_id=task_id, input_payload={"origin_task_id": task_id, "origin_attempt_id": origin["attempt_id"]})
-        logger.info("framework_reconciliation_admitted", extra={"origin_task_id": task_id, "task_id": created.id,
-            "binding_id": binding.binding_id})
+            payload = {"origin_task_id": origin["id"], "origin_attempt_id": origin["attempt_id"]}
+            if predecessor["operation"] == "framework_reconcile":
+                payload.update(predecessor_task_id=task_id, predecessor_attempt_id=predecessor["attempt_id"])
+            created = self._publish(cur, origin, operation="framework_reconcile", reference_id=origin["id"],
+                parent_id=task_id, input_payload=payload)
+        logger.info("framework_reconciliation_admitted", extra={"origin_task_id": origin["id"], "task_id": created.id,
+            "predecessor_task_id": task_id, "binding_id": binding.binding_id})
         return created
 
     async def apply(self, task):
@@ -163,7 +210,7 @@ class FrameworkApprovalRecovery:
                 or row["runtime_binding"] != owner.binding.model_dump(mode="json")):
                 raise FrameworkApprovalRecoveryRequired("Reconciliation differs from its owned task")
             origin = require_reconciliation_claim(cur, tasks, session, owner.binding, row,
-                {"task_id": task.id})
+                {"task_id": task.id, "attempt_id": owner.attempt_id})
             plan, consumed = self._continuation.inspect_decision_in_transaction(cur, owner.binding, origin)
             cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} "
                 "WHERE session_id=%s AND turn_id=%s ORDER BY id FOR UPDATE", (task.session_id, task.turn_id))

@@ -33,6 +33,8 @@ async def wait_gate(redis, key, timeout):
 def framework_worker_process(settings, prefix, binding, pause_at):
     """A real v2 Redis Worker with official graph/storage and a counted fake tool."""
     from redis.asyncio import Redis
+    from redis import Redis as SyncRedis
+    from time import monotonic
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
     from src.application.runtime.tool_job_service import ToolJobService
     from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -61,6 +63,8 @@ def framework_worker_process(settings, prefix, binding, pause_at):
         dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities(binding.dependency_lock_sha256, True))
         prepare = h.runtime._framework_approval_continuation.prepare
         settle = h.runtime._framework_approval_continuation.settle
+        reconcile = h.runtime.reconcile_framework_task
+        append_event = tasks._event
 
         async def pause():
             # A killed child may retain a multiprocessing.Event semaphore. Redis
@@ -84,8 +88,30 @@ def framework_worker_process(settings, prefix, binding, pause_at):
                 await pause()
             return await settle(*args)
 
+        def event_with_pause(cur, row, event_type, payload):
+            append_event(cur, row, event_type, payload)
+            if pause_at == "reconcile_before_commit" and event_type == "framework.recovery_succeeded":
+                # This hook runs inside the actual PostgreSQL transaction thread.
+                # Kill after all writes, before commit; no mock rollback.
+                with SyncRedis.from_url(settings.database.redis_url, decode_responses=True) as gate:
+                    gate.rpush(f"{prefix}:control:entered", pause_at)
+                    deadline = monotonic() + 25
+                    while monotonic() < deadline:
+                        if gate.blpop(f"{prefix}:control:release", timeout=1) is not None:
+                            break
+                    else:
+                        raise TimeoutError("Reconciliation commit gate timed out")
+
+        async def reconcile_with_pause(*args, **kwargs):
+            result = await reconcile(*args, **kwargs)
+            if pause_at == "reconcile_after_commit":
+                await pause()
+            return result
+
         h.runtime._framework_approval_continuation.prepare = prepare_with_pause
         h.runtime._framework_approval_continuation.settle = settle_with_pause
+        h.runtime.reconcile_framework_task = reconcile_with_pause
+        tasks._event = event_with_pause
         h.runtime._tool_runtime_service._handlers["inspect_value"] = counted_tool
         queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.agent_task_v2_stream,
             group="control-v2", client=redis)

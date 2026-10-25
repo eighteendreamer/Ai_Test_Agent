@@ -1195,8 +1195,16 @@ class PostgresAgentTaskStore:
             framework_reconciliation = saved_binding is not None and row.get("operation") == "framework_reconcile"
             if framework_reconciliation:
                 from src.runtime.framework_approval_recovery import require_reconciliation_claim
+                from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 
-                require_reconciliation_claim(cur, self, session, saved_binding, row, binding_owner)
+                try:
+                    require_reconciliation_claim(cur, self, session, saved_binding, row, binding_owner)
+                except (FrameworkApprovalRecoveryRequired, ValidationError) as exc:
+                    self._update_status(cur, row, "recovery_required", None, "framework_reconciliation_changed")
+                    logger.warning("framework_reconciliation_claim_rejected", extra={"task_id": task_id,
+                        "binding_id": saved_binding.binding_id, "error_type": type(exc).__name__})
+                    cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
+                    return self._record(cur.fetchone())
             if framework_approval:
                 from src.runtime.framework_approval_submission import assert_claimable_approval
                 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired

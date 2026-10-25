@@ -103,6 +103,117 @@ async def test_failed_approval_delivery_admits_reconciliation_without_another_re
     assert outbox(h, reconciliations[0].id) is not None and h.effects == []
 
 
+async def expire_reconciliation(h):
+    origin = await claim_decision(h)
+    original = await expire(h, origin)
+    recovery = await h.tasks.ensure_framework_reconciliation(origin.id)
+    claimed = await h.tasks.claim(recovery.id, worker_id="lost-reconciler", expected_binding=h.binding)
+    await h.tasks.begin(claimed, resource_id="lost-reconcile", fencing_token=6)
+    expired = await expire(h, claimed)
+    return original, claimed, expired
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("crashes", [1, 3])
+async def test_expired_reconciliation_gets_one_new_task_and_preserves_both_terminal_attempts(runtime_harness, crashes):
+    h = runtime_harness
+    original, old, expired = await expire_reconciliation(h)
+    history = [expired]
+    for _ in range(crashes - 1):
+        candidate = await h.tasks.ensure_framework_reconciliation(expired.id)
+        claimed = await h.tasks.claim(candidate.id, worker_id="another-lost-reconciler", expected_binding=h.binding)
+        await h.tasks.begin(claimed, resource_id="another-lost-reconcile", fencing_token=7)
+        expired = await expire(h, claimed)
+        history.append(expired)
+    # The actual terminal delivery, rather than a test-only recovery entry, admits its successor.
+    await run_delivery(h, expired.id)
+    next_tasks = await asyncio.gather(*(h.tasks.ensure_framework_reconciliation(expired.id) for _ in range(3)))
+    assert all(item is not None for item in next_tasks)
+    assert len({item.id for item in next_tasks}) == 1
+    successor = next_tasks[0]
+    assert successor.id != expired.id and successor.operation == "framework_reconcile"
+    assert successor.parent_task_id == expired.id and successor.reference_id == original.id
+    assert successor.input["origin_task_id"] == original.id
+    assert successor.input["origin_attempt_id"] == original.attempt_id
+    assert successor.input["predecessor_task_id"] == expired.id
+    assert successor.input["predecessor_attempt_id"] == expired.attempt_id
+    assert await h.tasks.get(original.id) == original and await h.tasks.get(expired.id) == expired
+    await run_delivery(h, successor.id)
+    reconciled = await h.tasks.get(successor.id)
+    assert reconciled.status == "completed"
+    await run_delivery(h, reconciled.result_payload["successor_task_id"])
+    assert len(h.effects) == 1 and receipt(h).applied_at is not None
+    with pytest.raises(ContinuationLeaseLostError):
+        await h.runtime.reconcile_framework_task(old, tasks=h.tasks)
+    assert await h.tasks.get(original.id) == original and await h.tasks.get(expired.id) == expired
+    for terminal in history:
+        assert await h.tasks.get(terminal.id) == terminal
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("error_code", ["FrameworkApprovalRecoveryRequired", "ConnectionError"])
+async def test_reconciliation_failure_without_expiry_does_not_generate_retry_chain(runtime_harness, error_code):
+    h = runtime_harness
+    origin = await claim_decision(h)
+    await expire(h, origin)
+    recovery = await h.tasks.ensure_framework_reconciliation(origin.id)
+    claimed = await h.tasks.claim(recovery.id, worker_id="rejected-reconciler", expected_binding=h.binding)
+    await h.tasks.begin(claimed, resource_id="rejected-reconcile", fencing_token=6)
+    await h.tasks.finish(claimed, status="recovery_required", error_code=error_code)
+    before = await h.tasks.get(recovery.id)
+    await run_delivery(h, recovery.id)
+    assert await h.tasks.ensure_framework_reconciliation(recovery.id) is None
+    assert await h.tasks.get(recovery.id) == before
+    assert len([item for item in await h.tasks.list_session(h.session_id)
+        if item.operation == "framework_reconcile"]) == 1
+    assert h.effects == []
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_retry_publication_is_atomic_and_repeatable(runtime_harness, monkeypatch):
+    h = runtime_harness
+    original, old, expired = await expire_reconciliation(h)
+    append_event = h.tasks._event
+
+    def fail(cur, row, event_type, payload):
+        if event_type == "framework.framework_reconcile_queued":
+            raise ConnectionError("controlled retry publication rollback")
+        return append_event(cur, row, event_type, payload)
+
+    monkeypatch.setattr(h.tasks, "_event", fail)
+    with pytest.raises(ConnectionError, match="retry publication rollback"):
+        await h.tasks.ensure_framework_reconciliation(expired.id)
+    assert not [item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == expired.id]
+    monkeypatch.setattr(h.tasks, "_event", append_event)
+    next_task = await h.tasks.ensure_framework_reconciliation(expired.id)
+    assert next_task is not None and outbox(h, next_task.id) is not None
+    assert await h.tasks.get(original.id) == original and await h.tasks.get(expired.id) == expired
+
+
+@pytest.mark.asyncio
+async def test_explicit_interrupt_blocks_successor_of_expired_reconciliation(runtime_harness):
+    h = runtime_harness
+    original, old, expired = await expire_reconciliation(h)
+    assert (await interrupt(h)).status_code == 200
+    assert await h.tasks.ensure_framework_reconciliation(expired.id) is None
+    assert not [item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == expired.id]
+    assert await h.tasks.get(expired.id) == expired and h.effects == []
+
+
+@pytest.mark.asyncio
+async def test_reconciliation_successor_with_wrong_predecessor_attempt_cannot_claim(runtime_harness):
+    h = runtime_harness
+    original, old, expired = await expire_reconciliation(h)
+    successor = await h.tasks.ensure_framework_reconciliation(expired.id)
+    assert successor is not None
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"UPDATE {h.settings.database.postgres_agent_task_table} SET input_payload="
+            "jsonb_set(input_payload,'{predecessor_attempt_id}','\"unrelated-attempt\"') WHERE id=%s", (successor.id,))
+    saved = await h.tasks.claim(successor.id, worker_id="invalid-reconciler", expected_binding=h.binding)
+    assert saved.status == "recovery_required" and saved.attempt_no == 0
+    assert await h.tasks.ensure_framework_reconciliation(saved.id) is None and h.effects == []
+
+
 @pytest.mark.asyncio
 async def test_explicit_interrupt_does_not_create_automatic_recovery(runtime_harness):
     h = runtime_harness
@@ -301,7 +412,8 @@ async def test_explicit_interrupt_revokes_reconciler_before_publication(runtime_
 
 
 @pytest.mark.asyncio
-async def test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling(runtime_harness):
+@pytest.mark.parametrize("reconcile_pause", ["none", "reconcile_before_commit", "reconcile_after_commit"])
+async def test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling(runtime_harness, reconcile_pause):
     h = runtime_harness
     h.settings.orchestration.agent_task_v2_stream = f"{h.prefix}:recovery:v2"
     h.settings.orchestration.resource_default_lease_seconds = 3
@@ -314,11 +426,18 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
     ctx = multiprocessing.get_context("spawn")
     processes = []
 
-    async def replacement():
+    async def replacement(pause_at="none"):
         assert await h.outbox.relay_once(queue) == 1
-        process = ctx.Process(target=framework_worker_process, args=(h.settings, h.prefix, h.binding, "none"))
+        process = ctx.Process(target=framework_worker_process, args=(h.settings, h.prefix, h.binding, pause_at))
         processes.append(process)
         process.start()
+        if pause_at != "none":
+            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20)
+            assert phase[1] == pause_at, f"worker exit code: {process.exitcode}"
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+            assert process.exitcode is not None and process.exitcode != 0
+            return
         await asyncio.to_thread(process.join, 20)
         assert process.exitcode == 0
 
@@ -336,8 +455,23 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
         original = await expire(h, await h.tasks.get(accepted.task.id))
         await run_delivery(h, accepted.task.id)
         recovery = next(item for item in await h.tasks.list_session(h.session_id) if item.operation == "framework_reconcile")
-        await replacement()
+        await replacement(reconcile_pause)
         recovered = await h.tasks.get(recovery.id)
+        if reconcile_pause == "reconcile_before_commit":
+            assert recovered.status == "running" and recovered.result_payload is None
+            assert not [item for item in await h.tasks.list_session(h.session_id) if item.operation == "approval_recover"]
+            expired_reconciler = await expire(h, recovered)
+            await run_delivery(h, recovered.id)
+            retry = next(item for item in await h.tasks.list_session(h.session_id)
+                if item.operation == "framework_reconcile" and item.parent_task_id == recovered.id)
+            await replacement()
+            recovered = await h.tasks.get(retry.id)
+            assert await h.tasks.get(expired_reconciler.id) == expired_reconciler
+        elif reconcile_pause == "reconcile_after_commit":
+            assert recovered.status == "completed" and recovered.result_payload is not None
+            await run_delivery(h, recovered.id)
+            assert not [item for item in await h.tasks.list_session(h.session_id)
+                if item.operation == "framework_reconcile" and item.parent_task_id == recovered.id]
         assert recovered.status == "completed" and recovered.result_status == "reconciled"
         await replacement()
         assert (await h.tasks.get(recovered.result_payload["successor_task_id"])).status == "completed"

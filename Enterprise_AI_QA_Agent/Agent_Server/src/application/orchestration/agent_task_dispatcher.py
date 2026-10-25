@@ -630,7 +630,7 @@ class AgentTaskDispatcher:
                 raise ValueError("Bound framework task requires a v2 agent command")
             task = await self._tasks.claim(command.task_id, worker_id=worker_id)
         if task.status in TERMINAL_AGENT_TASK_STATUSES:
-            if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover"}:
+            if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
             return
         task_type = _task_type(command)
@@ -666,7 +666,7 @@ class AgentTaskDispatcher:
             queue=queue,
         ):
             await self._execute(task)
-            if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover"}:
+            if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
 
     async def _execute(self, task):

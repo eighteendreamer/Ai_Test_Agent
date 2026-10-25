@@ -2,7 +2,7 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §23：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端，以及已知结果审批的对账后继与独立进程强杀恢复。共享预算、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §24：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端，以及已知结果审批/对账自身失租的后继与独立进程强杀恢复。共享预算、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
 | P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定 | 共享实际调用预算、跨 Turn 上下文实链路与完整制品校验 |
-| P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批的对账/后继强杀 Harness（§12–23） | 对账自身崩溃、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
+| P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批和对账自身失租的后继强杀 Harness（§12–24） | 首次 message、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
@@ -630,3 +630,48 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 最终结果 **225 passed，483.00 秒，无 skip**，包括本阶段新文件 16 项、真实独立 Worker 强杀接管、旧审批 HTTP 及 Coordinator 相关回归。该结果覆盖修正后的最终业务代码，不与首轮或定向通过数累计。
 
 在 `agent_web` 运行 `npm run typecheck`（vue-tsc）通过；13 个涉及 Python 文件 `py_compile`、`git diff --cached --check` 通过。未运行独立后端 lint/typecheck、前端组件测试/生产构建或全量系统测试；本轮前端仅同步类型，实际供应商、浏览器、领域 Runner 和发布验收仍按前述范围保留待办。
+
+## 24. P2.3 对账自身失租后继与提交前后强杀（2026-10-26）
+
+上一轮为有效进展：提交 `5b868f927`，225 项受影响回归通过。当前工作区核对该提交后继续方案 §5.3；本阶段解决运行中 framework_reconcile 失租后终态无法继续的问题，不将原任务重置为 queued，也不将 Redis 传输重试当作业务恢复。
+
+### 实现与不变量
+
+- 复用 `FrameworkApprovalRecovery`，将审批原执行与对账前驱分开。首次对账维持旧输入；后续对账 reference_id 固定指向原审批执行，parent_task_id 指向失租对账，JSONB 增加 predecessor_task_id/predecessor_attempt_id，origin_task_id/origin_attempt_id 始终保持原审批身份。没有新表、列、索引、依赖、配置、operation 或公共路由。
+- 只对运行任务经实际领取逻辑判定为 recovery_required、execution_owner_expired 且有原 attempt 的对账受理后继。明确返回的 ConnectionError、安全校验拒绝、未知副作用、用户中断不会生成这类重试。这个限定防止确定性拒绝自动产生重试链；不声称为任意基础设施错误提供了自动恢复。
+- Session → owner 锁内复核活跃 Turn、binding、project、原审批 attempt 和前驱失租事实；领取同时要求 canonical owner 仍指向前驱 attempt 或当前执行。确定性 UUID5、同 Session 锁及现有任务/outbox 事务，使同一前驱的并发受理只产生一个后继。连续失租保留每一个终态 task/attempt。
+- 领取时前驱证明不匹配，任务直接成为 recovery_required，attempt_no 保持 0，并记录 framework_reconciliation_changed；不会在无法证明的身份上分配 owner。旧对账 owner 在后继接管后不能发布审批后继。
+- Dispatcher 在终态重投 ACK 前及正常执行结束后为对账检查后继受理。已 completed/reconciled 的对账不建立新对账，其已经原子发布的 approval_recover/outbox 继续使用；未知结果拒绝的对账也不会自动再排队。
+- 审批后继仍经过原有 proof、实际 native 消费事实、ToolJob 和 owner 检查，决定是否发送指定 Command 或用 None 继续。用户停止语义、原始审批、已保存工具结果和领域裁决边界保持原契约。
+
+### TDD 与故障证据
+
+新增前 6 项首轮 **3 failed / 3 passed，21.18 秒**：失租对账没有新任务、发布回滚未进入实际事务、无法校验后继的前驱 attempt。另三项验证确定性错误不重试及用户停止。实现后新文件首次 **22 passed，80.97 秒**；此时尚未加入后续两个强杀参数和连续三次失租参数，不作为最终代码验收。
+
+随后扩展已有独立 spawn Worker Harness，保持真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake model 和受控工具：
+
+1. 原审批 B 已完成工具和 native 结果、尚未写 applied 时，先杀掉原 Worker。
+2. 对账提交前：在实际同步数据库事务内完成后继/outbox、proof、对账与 Session 写入，再通过同步 Redis 门闩等待；父进程 terminate 并确认非零退出。数据库真实回滚，没有 approval_recover 残留；对账运行失租后，另一个 Worker 执行新对账与审批后继。
+3. 对账提交后 ACK 前：应用服务事务已返回，通过异步 Redis 门闩等待，再实际 terminate。重投读取 completed 对账，不再建立对账任务；另一个 Worker 领取已存在的唯一审批后继。
+4. 两个场景最终均应用 B 与 A 的决定（A 拒绝）、闭合 pending Turn，B 的 Redis 外部计数始终为 1，原审批失败历史不变。对账提交前场景还核对失租对账终态未被修改。
+
+这两个新增强杀参数定向结果 **2 passed / 22 deselected，55.77 秒**。同步门闩运行在真实事务线程，使用每次 1 秒 BLPOP 与总超时；没有模拟 rollback，也不使用强杀可能遗留锁的 multiprocessing.Event。补充连续三次失租、并发受理、前驱 attempt 篡改、发布注入失败后重试及旧 owner 拒绝，用于最终回归。
+
+### 剩余边界
+
+本阶段完成对账自身运行失租的恢复与这两个提交窗口。首次 message 没有可用 checkpoint、未知效果的外部查询/人工对账、其它 resume/proof/业务结算窗口、领域 Runner 独立执行权仍未完成，P2.3 保持未完成。共享模型预算、跨 Turn transcript、受控 AgentCaseExecution 图、逐模式 Harness 和真实发布继续属于整体目标。
+
+没有新 operation 或绑定版本，但前驱 JSONB 契约及领取校验要求本阶段 Worker；§23 的旧 v2 消费者排空/统一升级限制继续适用。没有更改默认路由，未进行供应商模型、浏览器、领域 Runner 或真实发布验收。没有前端文件改动。
+
+### 最终验证
+
+在 `Agent_Server` 运行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_task_control.py tests/test_framework_checkpoint_fencing.py tests/test_framework_approval_continuation.py tests/test_framework_approval_progress.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+最终结果 **162 passed，393.60 秒，无 skip**。包含恢复文件最终 25 项、三个审批/对账强杀参数、§21 原中断强杀、owner/checkpoint、业务审批继续、进度、绑定、旧任务与 Session 所有权回归。计数不与较早定向结果累加。
+
+5 个改动 Python 文件 `py_compile`、`git diff --check` 通过。没有运行独立后端 lint/typecheck、前端测试/构建、全量系统回归或真实供应商/浏览器/领域 Runner/双制品发布验收；本阶段未改前端或模型适配器。真实 PostgreSQL/Redis 与官方框架的受控工具结果不替代上述实际领域验收。
