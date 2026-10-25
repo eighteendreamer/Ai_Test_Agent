@@ -184,6 +184,9 @@ class OrchestrConfig(BaseModel):
     # explicitly.
     redis_task_outbox_streams: str = ""
     redis_task_consumer_group: str = "enterprise_ai_qa_agent:workers"
+    # Separate delivery bookkeeping for the v2 stream. Schema and durable
+    # binding validation, rather than the consumer group, enforce isolation.
+    agent_task_v2_consumer_group: str = "enterprise_ai_qa_agent:workers:agent-v2"
     redis_task_block_ms: int = 1000
     redis_task_reclaim_idle_ms: int = 120000
     redis_task_max_retries: int = Field(default=3, ge=0)

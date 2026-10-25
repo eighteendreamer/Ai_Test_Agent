@@ -194,6 +194,7 @@ class SessionService:
                     turn_id=str(task.turn_id),
                     trace_id=str(task.trace_id),
                 )
+                request.runtime_binding = task.runtime_binding
                 return await self._run_owned_submission_locked(
                     session,
                     payload,

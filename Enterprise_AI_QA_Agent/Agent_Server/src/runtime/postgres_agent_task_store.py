@@ -178,8 +178,9 @@ class PostgresAgentTaskStore:
         """Reap stalled claimed work; queue wait and live leases are not timeout."""
         return await asyncio.to_thread(self._reap_expired_children_sync, now, timeout_seconds)
 
-    async def claim(self, task_id: str, *, worker_id: str) -> AgentTaskExecution:
-        return await asyncio.to_thread(self._claim_sync, task_id, worker_id)
+    async def claim(self, task_id: str, *, worker_id: str,
+                    expected_binding: RuntimeBinding | None = None) -> AgentTaskExecution:
+        return await asyncio.to_thread(self._claim_sync, task_id, worker_id, expected_binding)
 
     async def begin(
         self,
@@ -323,6 +324,8 @@ class PostgresAgentTaskStore:
         return AgentTaskRecord.model_validate(row)
 
     def _submit_v2_sync(self, command, payload, message, idempotency_key):
+        if command.operation != "message" or command.task_type != "agent_turn":
+            raise ValueError("v2 message submission supports only message agent_turn commands")
         serialized = payload.model_dump(mode="json")
         binding = command.runtime_binding
         content_hash = self._input_hash(
@@ -642,6 +645,12 @@ class PostgresAgentTaskStore:
                 raise AgentSubmissionConflict(
                     "Session is not waiting for an approval continuation"
                 )
+            # The v2 continuation/decision transaction has not been implemented.
+            # Preserve the pending decision instead of routing a bound Turn to
+            # the legacy stream (integration plan section 8.1).
+            pending = (session.get("metadata") or {}).get("pending_turn") or {}
+            if (pending.get("context_bundle") or {}).get("runtime_binding") is not None:
+                raise AgentSubmissionConflict("Framework-bound approval requires a v2 continuation")
             cur.execute(
                 f"SELECT * FROM {self._settings.database.postgres_approval_table} "
                 "WHERE id=%s AND session_id=%s FOR UPDATE",
@@ -808,6 +817,8 @@ class PostgresAgentTaskStore:
     def _assert_resume_checkpoint(session, snapshot, *, reference_id, turn_id):
         if snapshot is None:
             raise AgentSubmissionConflict("No snapshot is available for resume")
+        if ((snapshot.get("graph_state") or {}).get("context_bundle") or {}).get("runtime_binding") is not None:
+            raise AgentSubmissionConflict("Framework-bound checkpoint requires a v2 continuation")
         if snapshot["id"] != reference_id:
             raise AgentSubmissionConflict("Resume checkpoint changed before submission")
         if snapshot["stage"] == "waiting_approval":
@@ -1033,7 +1044,7 @@ class PostgresAgentTaskStore:
             "project_id": session["project_id"]})
         return session
 
-    def _claim_sync(self, task_id, worker_id):
+    def _claim_sync(self, task_id, worker_id, expected_binding=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT session_id FROM {self._tasks} WHERE id=%s", (task_id,))
             identity = cur.fetchone()
@@ -1042,6 +1053,12 @@ class PostgresAgentTaskStore:
             session = self._lock_session(cur, identity["session_id"])
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task_id,))
             row = cur.fetchone()
+            saved_binding = (
+                RuntimeBinding.model_validate(row["runtime_binding"])
+                if row.get("runtime_binding") is not None else None
+            )
+            if saved_binding != expected_binding:
+                raise ValueError("Agent claim runtime binding does not match the durable task")
             if row["status"] in TERMINAL_AGENT_TASK_STATUSES:
                 return self._record(row)
             if row["status"] in {"claimed", "running"}:

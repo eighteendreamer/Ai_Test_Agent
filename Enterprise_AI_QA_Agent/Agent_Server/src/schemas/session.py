@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from src.schemas.runtime_binding import RuntimeBinding
 
 
 class MessageRole(str, Enum):
@@ -255,6 +256,8 @@ class InputRoutingDecision(BaseModel):
 
 class ExecutionRequest(BaseModel):
     turn_id: str
+    # Internal execution contract; SendMessageRequest cannot set this field.
+    runtime_binding: RuntimeBinding | None = None
     trace_id: str = ""
     session_id: str
     user_message: str

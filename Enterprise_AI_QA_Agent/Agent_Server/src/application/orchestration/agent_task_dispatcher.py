@@ -18,6 +18,8 @@ from src.core.request_context import bind_request_context, get_request_context, 
 from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
+from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.agent_task import (
     AgentTaskAccepted,
     AgentTaskCommand,
@@ -58,11 +60,13 @@ def _seconds_since(value: datetime | None) -> float:
 
 
 class AgentTaskDispatcher:
-    def __init__(self, settings, tasks, sessions, resources):
+    def __init__(self, settings, tasks, sessions, resources, *,
+                 framework_capabilities: FrameworkWorkerCapabilities | None = None):
         self._settings = settings
         self._tasks = tasks
         self._sessions = sessions
         self._resources = resources
+        self._framework_capabilities = framework_capabilities
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -70,6 +74,10 @@ class AgentTaskDispatcher:
     def set_coordinator_service(self, coordinator) -> None:
         """Inject the coordinator that turns finished child tasks into parent resumes."""
         self._coordinator = coordinator
+
+    def set_framework_capabilities(self, capabilities: FrameworkWorkerCapabilities) -> None:
+        """Install the v2 CLI's artifact capabilities before delivery starts."""
+        self._framework_capabilities = capabilities
 
     def _record_submission(self, command) -> None:
         agent_tasks_submitted_total().labels(
@@ -548,6 +556,38 @@ class AgentTaskDispatcher:
             # Legacy workers must never consume a v2 envelope. A dedicated v2
             # worker owns binding validation and its separate Redis stream.
             raise ValueError("v2 agent command requires the v2 worker stream")
+        await self._handle_command(
+            command,
+            worker_id=worker_id,
+            queue=self._settings.orchestration.agent_task_stream,
+        )
+
+    async def handle_v2(self, delivery, *, worker_id):
+        """Consume one v2 envelope after rechecking its durable binding.
+
+        The Redis stream is only a delivery mechanism.  PostgreSQL remains the
+        source of truth for both the task identity and the immutable runtime
+        binding, so a stale or manually altered envelope is rejected before a
+        task lease can be claimed.
+        """
+        command = parse_agent_task_command(delivery.payload)
+        if not isinstance(command, AgentTaskCommandV2):
+            raise ValueError("v2 worker requires a schema_version=2 agent command")
+        await self._handle_command(
+            command,
+            worker_id=worker_id,
+            queue=self._settings.orchestration.agent_task_v2_stream,
+            runtime_binding=command.runtime_binding,
+        )
+
+    async def _handle_command(
+        self,
+        command,
+        *,
+        worker_id: str,
+        queue: str,
+        runtime_binding: RuntimeBinding | None = None,
+    ) -> None:
         stored = await self._tasks.get(command.task_id)
         for name in (
             "operation",
@@ -562,7 +602,30 @@ class AgentTaskDispatcher:
         ):
             if getattr(command, name) != getattr(stored, name):
                 raise ValueError("Agent command identity does not match the durable task")
-        task = await self._tasks.claim(command.task_id, worker_id=worker_id)
+        if runtime_binding is not None:
+            if stored.runtime_binding is None:
+                raise ValueError("v2 task is missing its persisted runtime binding")
+            if stored.runtime_binding != runtime_binding:
+                raise ValueError("Agent command runtime binding does not match the durable task")
+            try:
+                if self._framework_capabilities is None:
+                    raise TaskDeferred("framework_worker_capabilities_unavailable")
+                self._framework_capabilities.require(runtime_binding, operation=command.operation)
+            except TaskDeferred as exc:
+                LOGGER.warning("agent_v2_capability_unavailable", extra={
+                    "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
+                    "runtime_kind": runtime_binding.runtime_kind,
+                    "runtime_version": runtime_binding.runtime_version,
+                    "worker_id": worker_id, "reason": str(exc),
+                })
+                raise
+            task = await self._tasks.claim(
+                command.task_id, worker_id=worker_id, expected_binding=runtime_binding,
+            )
+        else:
+            if stored.runtime_binding is not None:
+                raise ValueError("Bound framework task requires a v2 agent command")
+            task = await self._tasks.claim(command.task_id, worker_id=worker_id)
         if task.status in TERMINAL_AGENT_TASK_STATUSES:
             return
         task_type = _task_type(command)
@@ -593,7 +656,7 @@ class AgentTaskDispatcher:
             attempt_id=task.attempt_id,
             worker_id=worker_id,
             task_type=task_type,
-            queue=self._settings.orchestration.agent_task_stream,
+            queue=queue,
         ):
             await self._execute(task)
 

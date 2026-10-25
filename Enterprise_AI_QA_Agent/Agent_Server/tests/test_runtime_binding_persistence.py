@@ -10,7 +10,7 @@ from src.runtime.postgres_agent_task_store import AgentSubmissionConflict
 from src.schemas.agent_task import AgentTaskCommandV2
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ChatMessage, MessageRole, SendMessageRequest
-from tests.test_agent_task_dispatch import harness
+from tests.test_agent_task_dispatch import harness, prepare_pending_approval, prepare_resumable_session
 
 
 def make_binding(session_id: str, turn_id: str, **overrides) -> RuntimeBinding:
@@ -118,3 +118,41 @@ async def test_v2_retry_with_conflicting_binding_cannot_overwrite_persisted_bind
 
     loaded = await harness.tasks.get(first_command.task_id)
     assert loaded.runtime_binding == first_binding
+
+
+@pytest.mark.asyncio
+async def test_v2_message_submission_cannot_encode_unimplemented_continuation(harness):
+    selected = make_binding(harness.session_id, f"turn-{uuid4().hex}")
+    command = make_command(harness, selected).model_copy(update={"operation": "manual_resume"})
+    with pytest.raises(ValueError, match="only message"):
+        await harness.tasks.submit_v2(command, make_payload(), make_message(harness, selected),
+            idempotency_key=f"client-{uuid4().hex}")
+    assert await harness.tasks.list_session(harness.session_id) == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["manual_resume", "approval_resume"])
+async def test_legacy_submission_cannot_continue_a_framework_bound_checkpoint(harness, operation):
+    from src.schemas.session import ApprovalDecisionRequest, ResumeSessionRequest, ToolApprovalStatus
+
+    if operation == "manual_resume":
+        snapshot = await prepare_resumable_session(harness)
+        turn_id = snapshot.graph_state["turn_id"]
+        selected = make_binding(harness.session_id, turn_id)
+        snapshot.graph_state["context_bundle"] = {"runtime_binding": selected.model_dump(mode="json")}
+        await harness.store.save_snapshot(harness.session_id, snapshot)
+        submit = harness.dispatcher.submit_resume(harness.session_id, ResumeSessionRequest())
+    else:
+        approval = await prepare_pending_approval(harness)
+        session = await harness.store.get_session(harness.session_id)
+        selected = make_binding(harness.session_id, session.metadata["pending_turn"]["turn_id"])
+        session.metadata["pending_turn"]["context_bundle"] = {"runtime_binding": selected.model_dump(mode="json")}
+        await harness.store.save_session(session)
+        submit = harness.dispatcher.submit_approval(harness.session_id, approval.id,
+            ApprovalDecisionRequest(decision=ToolApprovalStatus.approved))
+    with pytest.raises(AgentSubmissionConflict, match="v2 continuation"):
+        await submit
+    assert await harness.tasks.list_session(harness.session_id) == []
+    if operation == "approval_resume":
+        approvals = await harness.store.list_approvals(harness.session_id)
+        assert approvals[0].status == ToolApprovalStatus.pending

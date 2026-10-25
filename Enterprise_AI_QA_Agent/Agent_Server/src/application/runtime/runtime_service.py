@@ -254,6 +254,15 @@ class RuntimeService:
         )
 
     def _should_use_deep_agent(self, request: ExecutionRequest) -> bool:
+        binding = request.runtime_binding
+        if binding is not None:
+            if binding.session_id != request.session_id or binding.turn_id != request.turn_id:
+                raise ValueError("Runtime binding does not match the execution request")
+            if binding.runtime_kind != "deepagents":
+                raise ValueError("Bound runtime has no implemented v2 execution path")
+            if not self._deep_agent_enabled or self._deep_agent_runtime_adapter is None:
+                raise RuntimeError("The bound Deep Agents runtime is unavailable in this Worker")
+            return True
         return bool(
             self._deep_agent_enabled
             and self._deep_agent_runtime_adapter is not None
@@ -1590,6 +1599,10 @@ class RuntimeService:
             "context_bundle": {
                 **request.context,
                 "project_id": session.project_id,
+                **({
+                    "runtime_binding": request.runtime_binding.model_dump(mode="json"),
+                    "checkpoint_namespace": request.runtime_binding.checkpoint_namespace,
+                } if request.runtime_binding is not None else {}),
             },
             "event_log": [],
             "final_response": "",
