@@ -2,20 +2,20 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §25：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及尚未接真实请求的模型账本存储基础。共享预算的请求接线、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §26：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及模型账本到主代理/具名子代理/摘要实际请求的显式注入路径。共享预算的生产接线与活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
 | 阶段 | 本轮状态 | 下一出口 |
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
-| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25 增加根预算与模型尝试账本存储端口 | 共享预算实际请求接线与活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
+| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25–26 增加模型账本及官方主/子代理/摘要实际请求的显式注入路径 | 共享预算生产初始化/受理/普通调用接线与活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
 | P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批和对账自身失租的后继强杀 Harness（§12–24） | 首次 message、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
 
-模型解析入口现在可以构造四传输官方对象。对象构造仍未连接 §25 的调用账本存储端口，不提供共享请求预算或恢复治理；现有可选 Deep Agents 路由仍沿原开关。不得据此开放全系统新路由。
+模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本；生产组装尚未注入，普通 DTO 调用仍走既有路径。现有可选 Deep Agents 路由仍沿原开关，不得据此开放全系统新路由。
 
 ## 2. 依据 → 发现 → 改动
 
@@ -724,3 +724,50 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 结果 **100 passed，156.09 秒，无 skip**，包含账本最终 22 项、owner/checkpoint 事务、审批继续、绑定与 Session 所有权回归。不与定向结果重复累计。
 
 两个新 Python 实现与新测试文件共 3 个文件的 `py_compile`、`git diff --cached --check` 通过。没有执行独立后端 lint/typecheck、前端测试/构建、全量系统回归、真实模型/流式调用、浏览器/领域 Runner 或部署库迁移/发布验收；本阶段没有接通这些执行入口，不能将存储端口验证外推为全系统请求预算已生效。
+
+## 26. P1 官方模型请求的显式治理与故障窗口（2026-10-26）
+
+继续 §25 的共享调用策略前置工作。新增 `application/models/framework_model_call_policy.py` 与 `application/deep_agents/model_call_middleware.py`，在 `DeepAgentRuntimeAdapter` 增加可选的显式 policy 注入。必须捕获有效 owner-bound checkpointer，不能在执行中查找“当前最新 owner”代替原 owner。测试使用真实 PostgreSQL/Redis、官方 Deep Agents 与四家协议 SDK，HTTP/SSE 对端为本机合成响应。
+
+### 依据与实现
+
+- [官方 Custom middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom) 及固定 1.4.6 的 ModelRequest/handler 契约：模型 wrap 接入主代理和每个已有具名子代理。结构化输出描述也纳入请求摘要，保留官方 ProviderStrategy/ToolStrategy 的执行路径。
+- `ModelRuntimeService.resolve_langchain_chat_model` 在官方模型 metadata 保存构建时配置指纹。指纹复用既有非秘密参数白名单，地址/headers 只保存 hash，凭据不入账。每次请求重新解析配置，对比构建快照及冻结根策略；不支持静默切换模型配置继续原 Turn。
+- 请求封套采用官方完整消息序列化、工具 schema 和调用设置；保存 SHA256，不保存 Prompt 正文。根、子分支、原生 task/namespace、用途和请求摘要构成稳定逻辑身份；每次发送产生独立 attempt。封套不是最终 wire 请求资产，后续仍需完整请求/响应证据。
+- 输入预留采用 UTF-8 封套长度加显式 framing 估算，输出预留取配置/显式设置较大值。它是保守准入估算，不是供应商 tokenizer，也不保证供应商实际 Token 硬上限。prepare/start 在 SDK 前完成；原生 usage 只结算一次，缺 usage 保留预留。
+- 固定 LangChain 1.4.6 摘要默认调用 `model.with_retry`，独立于主模型 wrap。固定 Deep Agents 0.7.13 的摘要向 LangChain 转发自定义 `summarizer`，因此替换同名摘要 slot，保留官方裁剪、Prompt、摘要状态和 backend，将摘要实际 `ainvoke` 单独接入根策略。摘要失败不触发默认三次重试。主分支和每个显式子代理分别注入，未开放自动 GP 子代理。
+- 主/子代理和摘要实际调用关闭本地 LangChain 模型缓存，避免缓存命中被记成新的物理请求；不影响供应商 prompt cache 的 usage。实际 HTTP 503 每种传输只观察到一个请求，策略自身不自动重试。
+- 发送异常/取消尝试归为 unknown，保留预留。响应已到达但结算确认失败时，不改写持久阶段，也不重发；记录 `framework_model_response_settlement_failed`，由后续对账检查实际是否已提交。失租不能写入 usage，迟到响应资产仍未实现。
+
+### 两个真实失败根因
+
+1. 具名子代理单独运行成功、顺序运行失败。最初 SSE fixture 将任何首包改写为固定文本，丢失原工具调用，已改为忠实输出原 tool_calls/finish_reason。修正后仍出现 `Error: task is not available.`，停止调整测试计数，追到官方 `register_harness_profile`：重复注册合并 excluded_tools，而不是替换。前一 Turn 隐藏的 task/文件工具永久污染同 provider 的后续 Turn。
+
+   依据 [官方 Profile 合并语义](https://docs.langchain.com/oss/python/deepagents/profiles#merge-semantics) 和固定源码，改为全局仅注册禁用默认 GP 的不变 profile；每次建图独立实例化官方工具排除中间件，继续同时过滤 schema 和阻止猜测的禁用工具调用。复用了锁定版本的私有 `_ToolExclusionMiddleware`，未另写一套工具门控；这是需随依赖升级回归的兼容点。已经运行旧代码的进程须排空并重启，空集合重新注册不能清除其污染。
+
+2. 初版缓存测试的 seed 使用 `bind_tools([])`，与 create_agent 的无工具请求不一致，产生假阴性。改为同样的官方 create_agent seed 后，先复现 HTTP 计数 1 而非 2，随后在实际治理边界关闭 cache。具名子代理测试显式先组装禁用能力的回合，再启用同 provider 的只读子代理，避免只在独立进程中偶然通过。
+
+### TDD 与验收边界
+
+新增测试首轮缺少 policy 模块，**1 failed，7.27 秒**。首批框架请求/摘要通过，随后子代理与结构化输出用例暴露上述 fixture/profile 和过宽拒绝问题；结构化输出改为记录官方 schema 描述。两个确定性根因用例修复前 **2 failed / 13 deselected，12.28 秒**，修复后当时的完整文件 **15 passed，45.96 秒**。
+
+补响应结算提交前/后丢失确认、响应可见前取消与失租，首轮 **2 failed / 2 passed / 15 deselected，16.93 秒**：缺少响应结算失败事件。补可检索事件和原异常说明后纳入联合回归。这些是实际 SDK 请求后的故障注入，未把测试中的模拟故障当成供应商真实事故。
+
+首次联合回归 **1 failed / 24 passed，78.98 秒**，独立进程预算测试在 Redis ready 门闩读超时。固定 Redis 源码默认 socket_timeout=5，而测试 BLPOP 等待 30 秒；单独复核 **1 passed，12.15 秒**，确认存在启动速度相关的测试时限错位。将父子门闩连接显式设为 35 秒，保留 30 秒服务端门闩；应用连接超时、业务预算和进程并发断言不变。
+
+**仍未完成的出口**：生产 setup 和初始受理冻结、普通 DTO/受控 AgentCase 的共享策略、动态参数/超时/错误与显式重试策略、完整流式终止/断流语义、活动执行时间、不可变请求/响应和迟到模型证据、首次 message 安全恢复。没有修改公共 API、数据库 schema、路由开关或依赖版本；两个模型账本表仍只在隔离 Harness 显式初始化。
+
+真实供应商、浏览器/领域 Runner、跨 Turn 上下文与双制品发布仍未验收。P1 与整个迁移保持未完成，默认 v2 生产路由保持关闭；§23–25 的旧 v2 消费者排空/统一升级限制继续适用。
+
+### 最终验证
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_chat_models.py tests/test_deep_agent_runtime_adapter.py tests/test_langchain_model_adapter.py tests/test_framework_checkpoint_fencing.py tests/test_framework_approval_continuation.py -q -x -rs --tb=short
+```
+
+最终结果 **184 passed，229.80 秒，无 skip**，包含新策略最终 23 项、账本 22 项（含三个独立进程共享额度）、四协议 HTTP/SSE、既有 adapter、owner/checkpoint 与审批继续回归。新策略八项正常请求组合明确核对是否走流式端点，不能把普通返回误当流式通过。计数不与此前定向/失败结果累加。
+
+7 个相关 Python 文件的 `py_compile`、`git diff --check` 通过。未执行独立后端 lint/typecheck、前端测试/构建、全量系统回归、真实供应商/浏览器/领域 Runner 或部署验收；未修改前端、依赖版本或生产初始化。方案 §1.3/F4 与 §7.3 已同步区分已验证的显式注入和待接生产出口。

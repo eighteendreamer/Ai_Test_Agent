@@ -51,8 +51,12 @@ def _reply(transport):
 
 def _stream_events(transport, response):
     if transport == "openai_chat_completions":
+        message = response["choices"][0]["message"]
+        delta = {"role": "assistant", "content": message.get("content")}
+        if message.get("tool_calls"):
+            delta["tool_calls"] = [{"index": index, **call} for index, call in enumerate(message["tool_calls"])]
         return [{**response, "object": "chat.completion.chunk", "choices": [{"index": 0,
-            "delta": {"role": "assistant", "content": "fixture answer"}, "finish_reason": "stop"}]}]
+            "delta": delta, "finish_reason": response["choices"][0]["finish_reason"]}]}]
     if transport == "openai_responses":
         item = response["output"][0]
         return [

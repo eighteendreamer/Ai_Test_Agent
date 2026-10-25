@@ -107,10 +107,16 @@ class ModelRuntimeService:
         api_key = await self._resolve_auth_token(config)
         if not api_key:
             raise ProviderClientError(f"Model '{config.name}' has no usable API key.")
-        return LangChainModelAdapter(
+        model = LangChainModelAdapter(
             timeout_seconds=self._settings.model.llm_request_timeout_seconds,
             max_retries=0,
         ).build_model(config, api_key)
+        from src.application.models.framework_model_call_policy import model_config_fingerprint
+
+        # This describes the configuration actually used to build the official
+        # object. It is non-secret metadata, never a provider request parameter.
+        return model.model_copy(update={"metadata": {**(model.metadata or {}),
+            "qa_model_config_fingerprint": model_config_fingerprint(config)}})
 
     async def invoke(
         self,

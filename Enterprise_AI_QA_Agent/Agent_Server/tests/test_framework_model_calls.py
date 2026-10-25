@@ -79,7 +79,7 @@ def reserve_in_process(settings_data, owner_data, intent_data, gate):
     from src.schemas.runtime_binding import RuntimeExecutionOwner
 
     settings = Settings.model_validate(settings_data)
-    with Redis.from_url(settings.database.redis_url, decode_responses=True) as redis:
+    with Redis.from_url(settings.database.redis_url, decode_responses=True, socket_timeout=35) as redis:
         redis.rpush(gate + ":ready", "ready")
         if redis.blpop(gate + ":release", timeout=30) is None:
             raise TimeoutError("Model ledger process gate timed out")
@@ -158,6 +158,8 @@ async def test_parallel_branches_share_atomic_root_budget(model_calls_harness, l
 
 @pytest.mark.asyncio
 async def test_independent_processes_cannot_oversubscribe_shared_root(model_calls_harness):
+    from redis.asyncio import Redis
+
     h = model_calls_harness
     await begin(h)
     assert await h.tasks.renew_framework_execution(h.task, 120)
@@ -168,15 +170,19 @@ async def test_independent_processes_cannot_oversubscribe_shared_root(model_call
     processes = [context.Process(target=reserve_in_process, args=(h.settings.model_dump(mode="json"),
         h.owner.model_dump(mode="json"), intent(branch_id=f"research-{index}", parent_branch_id="root",
             purpose="subagent").model_dump(mode="json"), gate)) for index in range(3)]
+    # The Redis default read timeout is 5s, shorter than this 30s process
+    # barrier. Use a dedicated connection so slow Windows spawn imports do
+    # not fail early or change the application's ordinary Redis timeouts.
+    gate_redis = Redis.from_url(h.settings.database.redis_url, decode_responses=True, socket_timeout=35)
     try:
         for process in processes:
             process.start()
         for _ in processes:
-            assert await h.redis.blpop(gate + ":ready", timeout=30) is not None
-        await h.redis.rpush(gate + ":release", *["release" for _ in processes])
+            assert await gate_redis.blpop(gate + ":ready", timeout=30) is not None
+        await gate_redis.rpush(gate + ":release", *["release" for _ in processes])
         results = []
         for _ in processes:
-            observed = await h.redis.blpop(gate + ":result", timeout=30)
+            observed = await gate_redis.blpop(gate + ":result", timeout=30)
             assert observed is not None
             results.append(json.loads(observed[1]))
         for process in processes:
@@ -191,6 +197,7 @@ async def test_independent_processes_cannot_oversubscribe_shared_root(model_call
             if process.is_alive():
                 process.terminate()
                 await asyncio.to_thread(process.join, 10)
+        await gate_redis.aclose()
 
 
 @pytest.mark.asyncio

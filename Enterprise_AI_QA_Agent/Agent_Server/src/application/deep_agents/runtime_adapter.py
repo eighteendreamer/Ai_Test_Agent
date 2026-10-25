@@ -80,11 +80,13 @@ class DeepAgentRuntimeAdapter:
         agent_factory: AgentFactory | None = None,
         skill_registry: Any | None = None,
         checkpointer_factory: Callable | None = None,
+        model_call_policy: Any | None = None,
     ) -> None:
         self._model_resolver = model_resolver
         self._agent_factory = agent_factory
         self._skill_registry = skill_registry
         self._checkpointer_factory = checkpointer_factory
+        self._model_call_policy = model_call_policy
 
     async def execute(self, request: DeepAgentRuntimeRequest) -> DeepAgentRuntimeResult:
         if (
@@ -135,6 +137,13 @@ class DeepAgentRuntimeAdapter:
                 )
             else:
                 harness_kwargs = {}
+            if self._model_call_policy is not None:
+                if execution_owner is None:
+                    raise DeepAgentRuntimeError("Governed model calls require a captured checkpoint owner.")
+                from src.application.deep_agents.model_call_middleware import configure_model_policy
+
+                harness_kwargs = configure_model_policy(harness_kwargs, policy=self._model_call_policy,
+                    owner=execution_owner, model=model, model_key=request.model_key)
             if request.interrupt_on:
                 try:
                     from langchain.agents.middleware import HumanInTheLoopMiddleware
@@ -291,6 +300,7 @@ class DeepAgentRuntimeAdapter:
                 HarnessProfile,
                 register_harness_profile,
             )
+            from deepagents.middleware._tool_exclusion import _ToolExclusionMiddleware
         except ImportError as exc:
             raise DeepAgentRuntimeError(
                 "Deep Agents DA-E1 requires HarnessProfile support to hide "
@@ -308,7 +318,6 @@ class DeepAgentRuntimeAdapter:
         if not read_only_filesystem_enabled:
             excluded_tools.update({"ls", "read_file", "glob", "grep"})
         profile = HarnessProfile(
-            excluded_tools=frozenset(excluded_tools),
             general_purpose_subagent=GeneralPurposeSubagentProfile(enabled=False),
         )
         providers = {"openai"}
@@ -323,7 +332,11 @@ class DeepAgentRuntimeAdapter:
         for provider in providers:
             register_harness_profile(provider, profile)
 
-        planning_middleware = []
+        # Deep Agents 0.7.13 registrations union excluded tool names globally.
+        # Only the invariant GP setting belongs in that registry. Use the
+        # pinned upstream exclusion implementation per graph so a previous
+        # Turn cannot disable capabilities explicitly enabled by this Turn.
+        planning_middleware = [_ToolExclusionMiddleware(excluded=frozenset(excluded_tools))]
         if cognitive_planning_enabled:
             try:
                 from langchain.agents.middleware import TodoListMiddleware
@@ -331,7 +344,7 @@ class DeepAgentRuntimeAdapter:
                 raise DeepAgentRuntimeError(
                     "Deep Agents DA-E3 cognitive planning requires TodoListMiddleware."
                 ) from exc
-            planning_middleware = [TodoListMiddleware()]
+            planning_middleware.append(TodoListMiddleware())
 
         subagent_kwargs: dict[str, Any] = {}
         if cognitive_subagents_enabled:
