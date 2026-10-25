@@ -29,6 +29,7 @@ from src.runtime.postgres_runtime_owner import (
     assert_runtime_owner, initialize_runtime_owners, lock_owner_row,
     register_runtime_binding, runtime_owner_table, configure_runtime_owner_transaction,
 )
+from src.runtime.framework_approval_journal import initialize_framework_approvals
 from src.schemas.session import (
     ApprovalDecisionRequest,
     ChatMessage,
@@ -326,6 +327,7 @@ class PostgresAgentTaskStore:
                 finished_at TIMESTAMPTZ, UNIQUE(task_id, attempt_no)
             )""")
             initialize_runtime_owners(cur, self._settings)
+            initialize_framework_approvals(cur, self._settings)
 
     def _submit_sync(self, command, payload, message, idempotency_key):
         serialized = payload.model_dump(mode="json")

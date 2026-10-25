@@ -196,15 +196,19 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 - `pregel/_runner.py::commit()` 在图任务成功、出错、取消或再次 interrupt 时提交任务写入。调用 `interrupt()` 返回，不代表该 resume 立即持久化；工具可能已经启动甚至结算，而 receipt 仍未 delivered。无证明不能推断“工具未执行”。
 - 官方 PostgreSQL saver 按写入通道选择 upsert 或 `ON CONFLICT DO NOTHING`。适配器不能只核对传入 `put_writes` 的参数后就标 delivered；必须在同一事务内确认实际保存的目标 resume 列表包含匹配位置和内容。冲突保留旧值或身份不一致时，事务失败并进入对账，不制造交付证明。
 
+**P2.1 实测补充**：同一任务依次经过两个 interrupt 时，固定 runner 的一个实际混合批次含 `__resume__=[decision_0]` 和 `__resume__=[decision_0, decision_1]` 两次写入。将该真实批次原样交给 PostgreSQL saver 3.1.2，`DO NOTHING` 只保留较短前缀；此前 invocation 的前缀也可能阻止增长。已增加 owner-bound 适配：仅对已关联业务审批的任务，在同一事务内验证已存/传入的各前缀相互兼容，以最长前缀调用官方 saver 的特殊通道 upsert，然后核对实际保存值并写 proof。相反决定、路径或内容矛盾仍回滚，重放短前缀不能截断已保存的长前缀。未映射任务和官方全局 scalar resume 保持原契约。该适配依赖固定框架版本，升级时必须运行相同真实任务回归，核对上游是否已修复。
+
 为绑定的候选版本增加受测的 saver 边界适配：在 `put_writes/aput_writes` 保存目标任务的 `__resume__` 时，将对应 receipt 的 `delivered` 证据与官方 pending writes 放进**同一连接、同一事务**。匹配依据为 namespace、graph_task_id、interrupt 映射、resume 位置及决定内容哈希；不得把无关任务或旧决定的写入算成本次交付。重放相同证明幂等。
 
-拟新增证明契约如下，字段表示应用设计，尚未建表：
+证明契约如下。当前已在 AgentTask 初始化中新增 `<agent_task_table>_interrupt`、`<agent_task_table>_decision`，并提供调用方事务端口；业务 API 自动创建 link/receipt、提交决定与 task/outbox 的贯通仍属 P2.2：
 
 | 记录 | 身份及不变量 |
 | --- | --- |
 | interrupt link | `binding_id + logical/physical namespace + checkpoint_id + graph_task_id + task_path + interrupt_id + resume_index`，关联源 AI 消息、原 tool_call_id、Approval、ToolJob；投影重建不改变已有映射 |
 | decision receipt | 一个 `decision_id` 唯一，保存规范化决定的 hash、queued/sending/delivered、applied_at；同一审批的相反决定不可覆盖 |
 | delivery proof | 引用真实 checkpoint write 的 thread/物理 namespace/checkpoint/task/channel/write index、列表内 resume_index、匹配的 decision_hash、owner epoch 和证明格式版本；记录不可变身份，不保存凭据 token |
+
+proof 另记 `evidence_kind=atomic_write/reconciled`。原子写证明与 pending writes 同提交；对账只读取匹配的已存事实并补投影。`owner_epoch` 表示本次证明校验的执行代次；reconciled 证明不冒称原生写入的原始 owner。已有证明的时间、代次与来源保持不变。两表沿当前业务表位于 public；checkpoint 继续使用配置的独立 schema，部署需要同数据库事务及相应 schema 权限。
 
 平台先持久化 interrupt link，才允许发送决定；对每项 per-call，必须从固定框架版本的任务/interrupt 结构及实际写入建立确定映射，不能将所有位置硬编码为 0。重复证明返回已有记录；已 delivered 的证明冲突不可改写。证明及原始写入的保留期限至少覆盖 Turn 的恢复期，清理前必须保证不再依赖它们继续执行。
 

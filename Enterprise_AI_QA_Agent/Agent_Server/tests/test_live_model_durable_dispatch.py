@@ -117,6 +117,7 @@ async def durable_application():
     for field, table in zip(fields, tables, strict=True):
         setattr(settings.database, f"postgres_{field}_table", table)
     tables.append(f"{settings.database.postgres_agent_task_table}_runtime")
+    tables.extend(f"{settings.database.postgres_agent_task_table}_{kind}" for kind in ("interrupt", "decision"))
     settings.orchestration.agent_task_stream = f"{prefix}:tasks:agent"
     redis = Redis.from_url(settings.database.redis_url, decode_responses=True,
                            socket_timeout=5, socket_connect_timeout=5)

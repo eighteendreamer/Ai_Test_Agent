@@ -15,6 +15,7 @@ from langgraph.checkpoint.postgres import PostgresSaver
 from src.application.deep_agents.threaded_postgres_saver import ThreadedPostgresSaver
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.store import ContinuationLeaseLostError
+from src.runtime.framework_approval_journal import FrameworkApprovalJournal
 
 
 logger = logging.getLogger(__name__)
@@ -25,6 +26,7 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
         super().__init__(pool, serde=serde)
         self.runtime_owner = owner  # Immutable snapshot, never read a new token from context.
         self._settings = settings
+        self._approval_journal = FrameworkApprovalJournal(settings, serde=self.serde)
 
     def _storage_config(self, config):
         configurable = dict((config or {}).get("configurable", {}))
@@ -80,7 +82,15 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
     def put_writes(self, config, writes, task_id, task_path=""):
         storage_config = self._storage_config(config)
         with self._write_transaction("put_writes") as saver:
+            with saver.conn.cursor() as cur:
+                resume = self._approval_journal.prepare_resume_in_transaction(cur, self.runtime_owner,
+                    storage_config, writes, task_id)
             saver.put_writes(storage_config, writes, task_id, task_path)
+            if resume is not None:
+                saver.put_writes(storage_config, [("__resume__", resume)], task_id, task_path)
+            with saver.conn.cursor() as cur:
+                self._approval_journal.record_delivery_in_transaction(cur, self.runtime_owner,
+                    storage_config, [("__resume__", resume)] if resume is not None else writes, task_id, task_path)
 
     def get_tuple(self, config):
         return self._graph_tuple(PostgresSaver(self.conn, serde=self.serde).get_tuple(self._storage_config(config)))

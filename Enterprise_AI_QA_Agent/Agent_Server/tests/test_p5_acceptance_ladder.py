@@ -574,6 +574,7 @@ async def p5_harness(request):
     for field, table in zip(TABLE_FIELDS, tables):
         setattr(settings.database, f"postgres_{field}_table", table)
     tables.append(f"{settings.database.postgres_agent_task_table}_runtime")
+    tables.extend(f"{settings.database.postgres_agent_task_table}_{kind}" for kind in ("interrupt", "decision"))
     prefix = f"p5_test_{suffix}"
     settings.orchestration.agent_task_stream = f"{prefix}:tasks:agent"
     settings.orchestration.agent_task_control_poll_seconds = .05
