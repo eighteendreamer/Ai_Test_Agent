@@ -201,6 +201,48 @@ trace_context: session_id / turn_id / trace_id / project_id
 
 **Deep Agents 恢复**：可选适配器注入独立 checkpointer，`thread_id=request.turn_id`；审批继续使用 `Command(resume=...)`，业务工具经应用治理包装。其默认开关关闭，不能代表主图的运行方式。官方对原生 interrupt 的要求是 checkpointer、thread_id 和 interrupt 调用：[LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)；checkpoint 与跨线程 memory store 的职责也不同：[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)。
 
+### 4.1 LangGraph、LangChain 和 Deep Agents 的审批关系
+
+**三者都能参与审批，它们是分层关系。** 上文“主图没有使用原生 interrupt”仅描述本项目接入现状，不表示 LangGraph 没有审批能力。
+
+| 层次 | 框架提供的机制 | 本项目的使用方式 |
+|---|---|---|
+| LangGraph | `interrupt(payload)` 暂停，checkpointer 保存执行状态；同一 `thread_id` 下以 `Command(resume=...)` 恢复 | 主图未接入这套原生暂停机制；可选 Deep Agents 适配器使用它 |
+| LangChain Agent | `HumanInTheLoopMiddleware` 按工具调用策略触发 interrupt，并解释人工决定 | 主图是自建 StateGraph，没有因为引入 LangChain 依赖就自动挂上此中间件 |
+| Deep Agents | `create_deep_agent(interrupt_on=..., checkpointer=...)` 配置工具审批，内部使用上述 HITL 中间件 | 试点将官方 interrupt 转成本系统 Approval，再将人工决定映射回官方 resume |
+
+官方依据：[LangGraph Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)、[LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)。这些机制管理执行暂停与恢复；本项目的业务审批记录、前端、执行范围与任务调度仍由应用负责。
+
+原生 interrupt 恢复会从所在节点开头重跑，因此中断前的副作用需要幂等处理。安装一个 checkpointer 并不能替代 ToolJob 的执行对账。
+
+### 4.2 主链审批：应用记录、持久任务和恢复方法
+
+1. **决定是否询问**：PermissionService 先计算工具权限；具体调用还经过 ExecutionSafetyPolicy / SafetyGate。工具权限要求询问、调用风险要求询问或安全判定要求审批时，进入等待。明确拒绝与安全授权缺失也有独立拒绝分支。
+2. **创建待审批事实**：`tool_executor._resolve_tool_call` 创建并标记等待的 ToolJob，生成 Approval，保存原始 `call_id`、工具参数、ToolJob 身份及 `approval_scope_hash`。此分支不执行该工具。
+3. **保存待续跑回合**：保存 assistant 工具调用批次、已有结果和 `pending_approval_ids` 到 `pending_turn` / 快照，结束本轮循环并展示待审批卡片。这里的 `graph_state` 是应用序列化状态，不是 LangGraph saver 自动产出的 checkpoint。
+4. **用户决定**：ApprovalPanel / Session Store 提交 `approved` 或 `denied`，附可选理由、客户端请求标识。普通会话走 `POST /sessions/{session_id}/approvals/{approval_id}`。
+5. **持久化并排队**：主应用注入 AgentTaskDispatcher 后，PostgreSQL 事务锁定会话和审批，记录决定、创建 `approval_resume` 任务、事件及 outbox；API 返回 202。之后 relay / Redis Stream / Worker 负责续跑，不在 HTTP 请求中直接调用模型。未注入 dispatcher 的兼容路径则使用 continuation 租约和后台协程。
+6. **执行或跳过工具**：`RuntimeService._resume_after_approval` 从应用状态重建回合，重新核对范围哈希和调用安全策略。批准且校验通过才执行原工具，并设置服务端审批标记；拒绝、范围不一致或安全策略拒绝时生成 denied 结果。范围哈希覆盖模式、工具、参数、环境及租户/工作区/项目字段。
+7. **补结果再继续模型**：当前批准的工具可先执行并保存结果；同批仍有审批时重建等待快照。全部决定处理完后，普通工具恢复链补齐匹配 `tool_call_id` 的结果消息，再进入 Agent 循环。安全工具 bootstrap 另有直接结算报告分支。
+
+依据：[审批创建与暂停](../Agent_Server/src/graph/nodes/tool_executor.py)、[权限策略](../Agent_Server/src/application/permissions/permission_service.py)、[会话审批分流](../Agent_Server/src/application/sessions/session_service.py)、[审批事务与 outbox](../Agent_Server/src/runtime/postgres_agent_task_store.py)、[恢复执行](../Agent_Server/src/application/runtime/runtime_service.py)、[范围绑定](../Agent_Server/src/application/security/approval_scope_service.py)、[前端提交](../agent_web/src/stores/session.ts)。
+
+### 4.3 Deep Agents 试点审批：官方 HITL 与应用治理桥接
+
+- `_build_deep_agent_business_tools` 为业务工具配置 `interrupt_on`，通过 `when` 查询应用治理策略；允许的决定明确为 `approve` / `reject`。
+- 适配器传入独立 checkpointer，以 `request.turn_id` 为框架 `thread_id`，接收 `__interrupt__`。CheckpointProvider 使用独立 PostgreSQL schema，业务 Session / Approval / TestRun 表仍保有其职责。
+- `_record_deep_agent_interrupts` 按原顺序匹配 action 与工具调用，创建本系统 Approval / ToolJob，并记录 interrupt ID 和 action index，因此复用现有前端审批。
+- `_resume_deep_agent_after_approval` 先收齐本批决定，再按 interrupt ID 和原 action 顺序构建 decisions，将 `approved` / `denied` 映射为 `approve` / `reject`，交给 `Command(resume=...)`。
+- 获批业务调用仍经过 ToolGovernanceService 的范围、权限、ToolJob 身份和领取检查。终态结果复用已有证据；已启动却无终态的未知执行结果要求对账，不直接重试。
+
+**当前接入没有开放编辑工具参数，也没有开放人工代答工具结果。** 官网当前 HITL 文档还列有 `edit` / `respond`，不能据此宣称本系统已实现这些操作；本地还缺少 `deepagents` 包，相关原生集成测试跳过。
+
+依据：[官方适配器](../Agent_Server/src/application/deep_agents/runtime_adapter.py)、[审批桥接](../Agent_Server/src/application/runtime/runtime_service.py)、[业务工具治理](../Agent_Server/src/application/runtime/tool_governance_service.py)、[checkpoint 提供器](../Agent_Server/src/application/deep_agents/checkpoint_provider.py)、[默认关闭配置](../Agent_Server/src/core/config.py)。
+
+### 4.4 其他审批入口与正式执行
+
+审批记录复用不代表续跑语义相同：UI 录制审批调用录制服务启动/拒绝；父会话代理审批向子会话转发决定；正式 TestRun 审批要求通过运行条目专用入口处理，前端按审批 source 分流，通用 Session 接口拒绝直接处理这些 TestRun 审批。
+
 **正式用例执行**：草稿 → 评审/启用固定版本 → 套件/计划冻结 → RunItem 原子领取 → Attempt/租约/checkpoint → 执行 → 证据校验 → Result。失败回归创建新运行，不能重置原终态。
 
 正式执行有两条适配路径：
@@ -379,6 +421,14 @@ python -m pytest tests/test_agent_task_dispatch.py tests/test_session_event_deli
 结果：**40 passed, 34 skipped，7.83s，退出码 0**。主要跳过项为真实 PostgreSQL/Redis、事务顺序和跨进程事件交付；未开启 live 环境门禁。
 
 曾有一次命令引用不存在的 `tests/test_tool_governance_service.py`，pytest 返回 `ERROR: file or directory not found`、`no tests ran`；随后核对文件清单，改为存在的 `test_deep_agent_tool_replay.py`，结果即批次 C。该命令错误不作为产品失败。
+
+### 审批机制追问的补充验证
+
+```text
+python -m pytest tests/test_approval_checkpoint_consistency.py tests/test_approval_model_budget.py tests/test_deep_agent_tool_replay.py tests/test_deep_agent_runtime_adapter.py tests/test_agent_task_dispatch.py -q --tb=short
+```
+
+结果：**43 passed, 42 skipped，10.77s，退出码 0**。通过项包含应用审批状态/工具消息一致性、审批后的模型预算以及工具结果回放等；跳过项涉及未安装的 Deep Agents 和未启用的真实 PostgreSQL/Redis 环境。此结果不证明官方 Deep Agents 审批集成或跨进程审批恢复已经在真实环境验收。本次仅补充本文，未修改运行代码；47 个本地文档链接均存在，`git diff --check` 通过。
 
 未执行：全量后端测试、前端构建/浏览器验收、真实模型供应商、真实数据库/Redis 跨进程 kill-recovery、真实浏览器/压测/安全目标、LangSmith 上报。原因：本轮为架构阅读，使用本地受控测试验证关键判断；未扩展为完整系统验收。
 
