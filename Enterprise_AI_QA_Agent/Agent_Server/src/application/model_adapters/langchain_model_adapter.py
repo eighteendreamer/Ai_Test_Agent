@@ -178,6 +178,8 @@ class LangChainModelAdapter(ModelPort):
             "model": config.model_id,
             "api_key": api_key,
             "base_url": config.api_base_url,
+            # Transport is selected by our config, never inferred from model names.
+            "use_responses_api": False,
             "timeout": self._timeout_seconds,
             "max_retries": self._max_retries,
             "max_completion_tokens": config.max_output_tokens,
