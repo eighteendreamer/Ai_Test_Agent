@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `5b868f927` 及实施记录 §24 的本轮变更。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、5.3、8、10.3 节反映当前实施边界；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
+初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `7b72f5590` 及实施记录 §25 的本轮变更。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、5.3、7.3、8、10.3 节反映当前实施边界；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
 
 ## 1. 结论与本次修订
 
@@ -51,7 +51,7 @@
 | F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
 | F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态；对账运行失租可建立新对账，提交前/后强杀已验证，见 §24 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，确定性拒绝/返回数据库错误不自动重试；不承诺外部 exactly-once |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察；已知结果审批的独立 Worker 接管见实施记录 §21–23 | 无绑定旧试点仍用原 saver。同步工具的校验不能撤销已准入外部请求；领域 Runner 独立执行权及其余跨进程窗口仍未完成 |
-| F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
+| F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；新增 owner 约束的根预算/模型尝试账本基础，见 §7.3 与实施记录 §25。`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 账本未接真实调用入口；动态策略、子代理/摘要全部请求覆盖、活动时间预算仍待实现。不能将账本存储测试视为请求已受治理 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
 | F6 版本识别不等于旧环境存在 | 已有 v2 schema、独立 stream/CLI、绑定复核与 lock 摘要能力校验，另有 legacy manifest | 真实双制品部署、存量审批继续、排空与回滚未验收；lock 文件哈希不证明运行环境已安装正确依赖 |
 
@@ -348,6 +348,21 @@ checkpoint 写入适配器的单次数据库操作：
 
 模型已发出而失联，不能承诺供应商端“只调用一次”。应用账本需保留不确定尝试，保证预算和审计不将其遗漏。
 
+### 7.3 已实现的账本基础与后续接线契约（实施记录 §25）
+
+`PostgresFrameworkModelCalls` 与 `framework_model_call.py` 提供根预算及尝试存储端口，复用 Session → owner 的事务锁与数据库时钟。它们尚未注入 `ModelRuntimeService`、Deep Agents、子代理或摘要中间件；也未在生产初始化或首次任务受理事务中接线。此阶段不能据此自动恢复首次消息。
+
+- 一个 binding 冻结调用上限、Token 准入额度、绝对截止时间及允许的模型配置指纹映射。后继 Worker 读取原预算，不能重新冻结更大的额度或延后的截止时间。
+- 每条尝试保存 branch/parent、logical_call_id、独立 attempt_id、用途、传输、模型/请求摘要及输入估算与输出预留；不保存凭据、owner token 或完整 Prompt。模型传输类型复用现有 `ModelTransport`。
+- `prepare` 原子占用根额度；`start` 只向原执行 owner 发放一次发送许可，并再次检查时限及实际用量超估后的根余额。重放相同 attempt 不能重新发送；事务异常回滚保留原状态。此许可是应用发送意图，不是供应商端幂等保证。
+- `ready → invoking → completed / unknown` 是本阶段尝试生命周期。缺 usage 的 completed 与 unknown 都保留原 Token 预留；实际 usage 可超过估算，必须真实入账，并阻止已超额后新增或尚未发送的调用。`actual_tokens=0` 不代表费用为零，应同时读取 charged_tokens、unmeasured_calls 和 unknown_calls。
+- 同一 branch/logical_call 不允许换 attempt 暗中重跑。显式重试仅接受同请求的唯一 unknown 前驱，新增 call 和 Token 预留；存储端口不自行触发重试，也不代替后续恢复策略授权。
+- 失租 owner 不得修改账本；新的有效 owner 可将旧 invoking 分类为 unknown，不能冒充原请求的响应观察者。尚未发送的旧 owner 预留保持占额，不能由后继直接发送。本阶段不释放这类预留，也不覆盖迟到模型响应的非权威资产归档。
+
+新增 `<agent_task_table>_model_budget` 与 `_model_call` 两张可显式初始化的表；先初始化既有任务/owner 表，再调用账本 setup。当前只有独立 Harness 执行该 setup，没有部署库迁移。Token 准入使用“已知实际用量 + 未结算/缺失用量预留”，未知实际费用可能高于估算，不能声称这是供应商实际 Token 的绝对硬上限。
+
+后续必做：受理时冻结预算、普通/框架实际请求共用策略、应用重试和稳定请求身份、摘要/子代理显式接线、配置变更校验、请求/响应不可变资产与迟到证据、已知失败及未发送尝试的结算策略、活动执行时长、真实 HTTP/流式故障验收。官方 [自定义 middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom) 提供 wrap 接入点；不能假定默认摘要调用或具名子代理自动经过主代理的同一个 hook。
+
 ## 8. 新旧版本部署与数据迁移
 
 ### 8.1 选择双环境、双队列
@@ -374,7 +389,7 @@ API/outbox relay 先成为兼容两类命令的过渡版本；outbox 每条记�
 
 ### 8.2 最小新增数据契约
 
-以下是完整目标逻辑记录，不能将表中全部字段视为已实现。当前已存在 RuntimeBinding/owner、v2 task/outbox、原生消息封套及 interrupt/decision journal；其生产接线与剩余字段分别按实施记录验收。尚缺契约沿项目既有迁移风格补齐：
+以下是完整目标逻辑记录，不能将表中全部字段视为已实现。当前已存在 RuntimeBinding/owner、v2 task/outbox、原生消息封套及 interrupt/decision journal，另有可显式初始化的模型账本基础（§7.3，尚未生产接线）；其生产接线与剩余字段分别按实施记录验收。尚缺契约沿项目既有迁移风格补齐：
 
 | 记录 | 最小内容与约束 |
 | --- | --- |
@@ -489,7 +504,7 @@ P2/P3 的关键真实链路：
 
 P2.1 的只读投影重建可独立验收；v2 支持 message、approval_resume 和 §5.3 的 framework_reconcile / approval_recover。旧命令仍不能领取绑定任务，原生身份缺失不能降级走旧恢复。前端持久投影已通过 jsdom/Vue/Pinia 和构建检查，真实浏览器验收仍待执行；P2 整体及 P3 试点放量继续以该验收与 P2.3 出口为前提。
 
-P1 的共享预算、跨 Turn transcript、版本实物校验也需完成才能放量，不能因为 P2 通过就忽略这些前置条件。代码审查完成后，再按第 9 节对各模式逐个冻结基线与验收，六个占位模式仍保持原边界。
+P1 的共享预算生产接线与活动时间计量、跨 Turn transcript、版本实物校验也需完成才能放量，不能因为 P2 通过或账本存储端口已有 Harness 就忽略这些前置条件。代码审查完成后，再按第 9 节对各模式逐个冻结基线与验收，六个占位模式仍保持原边界。
 
 ## 11. 本轮实际验证与局限
 

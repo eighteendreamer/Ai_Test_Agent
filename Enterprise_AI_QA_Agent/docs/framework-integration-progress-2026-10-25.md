@@ -2,20 +2,20 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §24：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端，以及已知结果审批/对账自身失租的后继与独立进程强杀恢复。共享预算、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §25：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及尚未接真实请求的模型账本存储基础。共享预算的请求接线、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
 | 阶段 | 本轮状态 | 下一出口 |
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
-| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定 | 共享实际调用预算、跨 Turn 上下文实链路与完整制品校验 |
+| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25 增加根预算与模型尝试账本存储端口 | 共享预算实际请求接线与活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
 | P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批和对账自身失租的后继强杀 Harness（§12–24） | 首次 message、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
 
-模型解析入口现在可以构造四传输官方对象。对象构造不提供共享调用账本、预算或恢复治理；现有可选 Deep Agents 路由仍沿原开关。不得据此开放全系统新路由。
+模型解析入口现在可以构造四传输官方对象。对象构造仍未连接 §25 的调用账本存储端口，不提供共享请求预算或恢复治理；现有可选 Deep Agents 路由仍沿原开关。不得据此开放全系统新路由。
 
 ## 2. 依据 → 发现 → 改动
 
@@ -675,3 +675,52 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 最终结果 **162 passed，393.60 秒，无 skip**。包含恢复文件最终 25 项、三个审批/对账强杀参数、§21 原中断强杀、owner/checkpoint、业务审批继续、进度、绑定、旧任务与 Session 所有权回归。计数不与较早定向结果累加。
 
 5 个改动 Python 文件 `py_compile`、`git diff --check` 通过。没有运行独立后端 lint/typecheck、前端测试/构建、全量系统回归或真实供应商/浏览器/领域 Runner/双制品发布验收；本阶段未改前端或模型适配器。真实 PostgreSQL/Redis 与官方框架的受控工具结果不替代上述实际领域验收。
+
+## 25. P1 根预算与模型尝试账本基础（2026-10-26）
+
+从 `7b72f5590` 的干净工作区继续检查首次 message 恢复。`SessionService.execute_claimed_message` 先读取输入、组装请求；`_run_owned_submission_locked` 将 pending_turn 清空后开始执行，现有自动对账仅覆盖审批执行。首次 message 的模型请求、响应和用量没有共享持久账本，不能以“没有 ToolJob”或“已有某个 checkpoint”推断整个 Turn 可以重跑。依方案 §5.2、7.2，先补这一前置存储契约；首次 message 恢复仍未实现。
+
+### 依据与实现范围
+
+- 当前 `ModelRuntimeService.resolve_langchain_chat_model` 配置模型对象后由框架直接调用，不经过 DTO `invoke`；本阶段不将对象工厂视为已提供真实调用治理。
+- 已检查固定 `langchain==1.4.6` 的 `model_call_limit.py`：before_model 检查图状态计数，after_model 增加 thread/run 计数。该能力可继续用于分支本地限额，但不提供应用根 Turn、并行分支、发送意图和未知尝试的原子账本。
+- [官方 middleware 文档](https://docs.langchain.com/oss/python/langchain/middleware/custom) 提供模型 wrap 接口；[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 区分 thread checkpoint 与应用持久事实。应用账本沿用 `PostgresDocumentImpactCalls` 的“准备 → 发放发送许可 → 保存响应/未知”模式及现有 owner 锁，无新增依赖。
+- 复核本地 `Agent测试专项.html` 的重复执行/幂等测试及 `Agent轨迹与协议鲁棒性.html` 的恢复和预算章节；本阶段同时断言轨迹阶段、预算持久事实、并发与终态历史。
+
+新增 `schemas/framework_model_call.py` 和 `runtime/postgres_framework_model_calls.py`。数据契约包括冻结根策略、分支/逻辑调用/尝试身份、实际执行 owner 的非秘密身份、用途、模型配置/请求摘要、输入估算与输出预留、usage、unknown 原因及数据库时间。
+
+账本 setup 可显式创建 `<agent_task_table>_model_budget` 与 `_model_call` 两表，外键归属现有 RuntimeBinding/owner。setup 不在请求内调用，本阶段未接生产初始化、任务受理事务或任何模型入口，只在 UUID 隔离表的 Harness 中执行并清理。没有修改既有表、配置、默认路由、公共 API、绑定版本或运行时依赖。
+
+### 已验证的不变量
+
+1. 所有变更在同一事务内按 Session → owner 加锁，复用 `assert_runtime_owner` 与锁后数据库时钟；prepare 可在 claimed/running 阶段预留，start 只接受 running。失租 owner 不能冻结、预留、发送或结算。
+2. 根预算只冻结一次，包含调用/Token 准入额度、绝对 deadline 和允许的模型配置指纹。重新实例化 store、重新 initialize 或换有效 owner 都不会清空额度或延长 deadline。
+3. prepare 对相同 attempt 幂等、不同请求/范围拒绝改写；同根的并行分支及三个独立 spawn 进程共享原子额度。子代理与摘要记录同样归属根 binding，分支 parent 固定。此项只验证存储端口，未证明真实子代理/摘要请求已调用该端口。
+4. `ready → invoking` 在提交后只发放一次发送许可；后继不能直接发送旧 owner 的 prepared 尝试。它仍占原预算，未实现自动释放。start 不是供应商的幂等键，也不证明外部请求一定已发送或已停止。
+5. `invoking → completed / unknown`：实际 usage 只结算一次，矛盾结果不得覆盖；缺 usage 的完成与 unknown 保留预留。真实用量高于估算时记录真实数值，阻止超额后新增及原已预留尚未发送的请求。额度使用估算/预留作为准入依据，不能保证未知的供应商实际 Token 绝不超上限。
+6. 同 branch/logical_call 更换 attempt 必须显式引用唯一 unknown 前驱和相同请求；新尝试再次计数/占额。store 不自动重试，也不提供恢复重试的业务授权。实际重试策略、已知失败结算和未发送预留释放仍待接线设计。
+7. 使用真实审批失租路径建立新 framework_reconcile owner，它可将旧 invoking 标为 unknown，保留旧请求的 owner 身份和预算。旧 owner 被拒绝；新 owner 不能冒充旧请求提交 usage；原审批任务/attempt 终态保持不变。
+8. 预留或 usage 保存后的注入异常会真实回滚，没有部分额度或半结算。截止时间在预留和发送前复核；已发送请求的结果允许在 deadline 之后入账。
+
+### TDD 记录与剩余出口
+
+先添加契约测试，首轮为 **1 error，7.34 秒**：缺少 `postgres_framework_model_calls` 模块，未当作通过。实现后首批 **19 passed，42.60 秒**。继续添加超估后的未发送调用用例，先出现 **1 failed / 20 deselected，6.20 秒**（没有抛预算异常），据此将根预算复核增加到发送许可事务。真实后继测试还纠正了测试断言：expiry claim 的即时返回不是完整重新读取值，终态对比应使用实际持久 task。
+
+加入独立进程并发及真实后继场景后，账本文件定向结果 **22 passed，53.95 秒，无 skip**。不与此前计数累加。进程通过 Redis 门闩同时进入 PostgreSQL 预留，父进程核对退出码、唯一剩余额度及清理；该场景未发送供应商 HTTP 请求。
+
+本阶段实现账本基础，P1 及整体迁移保持未完成。下一出口是预算随首次任务受理冻结、主图/Deep Agents/具名子代理/摘要每次实际请求共用策略、实际 HTTP 尝试与流式故障验收、配置快照及请求/响应不可变资产、活动执行时长、迟到模型响应的非权威归档。首次 message 的恢复仍必须等待这些持久事实与恢复策略接通，不能将本账本单独作为安全重跑证明。
+
+§23–24 的旧 v2 消费者排空/统一升级限制继续适用；没有真实发布、供应商、浏览器或领域 Runner 验收，也没有前端变更。
+
+### 最终验证
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_calls.py tests/test_framework_checkpoint_fencing.py tests/test_framework_approval_continuation.py tests/test_runtime_binding_persistence.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+结果 **100 passed，156.09 秒，无 skip**，包含账本最终 22 项、owner/checkpoint 事务、审批继续、绑定与 Session 所有权回归。不与定向结果重复累计。
+
+两个新 Python 实现与新测试文件共 3 个文件的 `py_compile`、`git diff --cached --check` 通过。没有执行独立后端 lint/typecheck、前端测试/构建、全量系统回归、真实模型/流式调用、浏览器/领域 Runner 或部署库迁移/发布验收；本阶段没有接通这些执行入口，不能将存储端口验证外推为全系统请求预算已生效。
