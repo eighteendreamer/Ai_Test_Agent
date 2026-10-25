@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-日期：2026-10-25。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11 节记录方案形成时的研究验证；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
+初稿日期：2026-10-25；最近复核：2026-10-26，代码基线 `790df56ef`。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11 节保留方案形成时的研究验证，第 1.3、5.1、10.3、12 节补充本次复核；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
 
 ## 1. 结论与本次修订
 
@@ -8,15 +8,15 @@
 
 需要限定三个结论：
 
-- 代码能证明当前保护缺失，不能据此声称生产环境已经发生过重复副作用或 checkpoint 覆盖。本轮没有复现这两类生产故障。
-- 官方逐项审批已经用候选依赖实际验证；真实 PostgreSQL/Redis、杀进程和旧 Worker 隔离仍待实施验收。
+- 附件反映方案形成时的缺口，部分已有后续实现，见第 1.3 节；不能将历史缺口写成当前全部缺失，也不能据此声称生产环境已经发生过重复副作用或 checkpoint 覆盖。
+- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离已有局部验证；v2 业务审批/API/receipt 与跨进程杀死、接管、对账的完整链路仍待验收。
 - “决定已应用 → 工具结算”不能作为统一线性状态机：拒绝不会执行工具，批准后也可能被最新权限或预算阻止；决定交付、框架消费和工具结果应分别记录。
 
 本方案替代上一版接入方案中关于审批恢复、所有权、消息持久化和版本部署的简略约定。系统现状与各模式已有 Harness 的完整调查见[架构报告](system-architecture-and-harness-review-2026-10-25.md)。
 
 ### 1.1 证据到问题的对应关系
 
-以下路径相对仓库根目录；行号是本次核验时的位置。F 表示问题，E 表示依据，后续 P 表示实施阶段。
+以下保留 **2026-10-25 方案形成时** 的证据快照；路径相对仓库根目录，行号不代表最新代码位置。F 表示问题，E 表示依据，后续 P 表示实施阶段。最新判断以第 1.3 节及实施记录为准。
 
 | 问题 | 已核实的依据 | 判定与落实位置 |
 | --- | --- | --- |
@@ -43,6 +43,21 @@
 | [Python Future.cancel](https://docs.python.org/3.11/library/concurrent.futures.html#concurrent.futures.Future.cancel) | 不以协程取消推断正在运行的同步线程已经停止 |
 
 额外核验了临时目录中实际下载的 `deepagents==0.7.13`、`langchain==1.4.6`、`langgraph==1.2.12`、`langgraph-checkpoint-postgres==3.1.2` 源码，重点为 `deepagents/graph.py`、`human_in_the_loop.py`、`langgraph/types.py`、`pregel/_loop.py` 和 `checkpoint/postgres/__init__.py`。网页可能更新，实施验收必须同时锁定包版本和制品摘要。
+
+### 1.3 附件六项意见的当前判定（2026-10-26）
+
+| 意见 | 当前代码事实 | 剩余实施边界 |
+| --- | --- | --- |
+| F1 逐项审批桥接必须整体改 | `runtime_adapter.py` 已显式安装官方 per-call HITL；`RuntimeService._resume_deep_agent_after_approval` 已有单项分支，批量分支保留历史兼容。`PostgresAgentTaskStore._submit_approval_sync` 仍要求 Session 等待审批，并拒绝绑定 Turn；`FrameworkWorkerCapabilities.require` 只允许 v2 `message` | 风险仍成立，不能说新路径仍一律等待整批。必须补 v2 决定事务、continuation、运行中接收其它决定、领取优先级、API/UI 和 receipt |
+| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查与官方 checkpoint 写入纳入同一连接事务；目前没有决定 receipt 与 `__resume__` 的原子证明 | 仍成立。不同池本身不是不可解决的障碍；能共用事务的写入放在同一连接，外部副作用使用稳定 ToolJob 身份与对账 |
+| F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
+| F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
+| F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
+| F6 版本识别不等于旧环境存在 | 已有 v2 schema、独立 stream/CLI、绑定复核与 lock 摘要能力校验，另有 legacy manifest | 真实双制品部署、存量审批继续、排空与回滚未验收；lock 文件哈希不证明运行环境已安装正确依赖 |
+
+附件末尾“本地未安装 Deep Agents”、仅完成 dry-run 的描述属于旧快照。当前独立 `.venv-framework-v2` 已安装锁定依赖，已有真实数据库局部测试。该进展仍不足以开放生产 v2 路由。
+
+另有本次复核发现的执行缺口：方案要求 `durability="sync"`，但 `DeepAgentRuntimeAdapter` 的 `ainvoke` 和 `_invoke_with_subagent_events` 尚未显式传入；固定 LangGraph 1.2.12 默认是 `async`。需在启动、单项继续、无新决定继续及子代理事件入口统一落实并测试。`sync` 约束图步骤持久化，不保证外部副作用 exactly-once，也不保证工具开始前 resume receipt 已落库。
 
 ## 2. 目标架构与模块边界
 
@@ -87,6 +102,8 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 - 代码制品、依赖锁摘要、Prompt 版本、Skill 内容摘要、工具 schema/治理策略版本、模型语义配置摘要。
 - 正式项目及可选的 `run_id / run_item_id / execution_attempt_id`。
 
+上述是完整目标契约。当前 `RuntimeBinding` 已保存主要版本、模型指纹和 lock 摘要，但尚不包含这里列出的全部代码制品、checkpoint 数据库/schema、治理策略与领域引用。后续应以兼容新增字段或版本化 manifest 补齐并验证解析方；不得将“已有版本字符串”视为这些实物已经冻结。
+
 同 Turn 恢复必须使用该绑定。鉴权凭据按引用解析，允许合规轮换；权限与安全策略执行时重新判断。模型、端点、协议、Prompt 或工具 schema 的语义变化不能静默续入原 Turn。
 
 `pending_turn` 继续保存业务引用、控制原因及恢复资格；完整框架消息和执行位置由 checkpoint 负责。新运行时不能从 UI 文本或旧快照重新拼出一份模型历史再追加到 checkpoint。缺少绑定的历史记录固定走 legacy，不能按当前功能开关猜测。
@@ -129,7 +146,7 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 
 ### 4.1 唯一审批点与调用身份
 
-对新 Deep Agents 路径显式安装官方 `HumanInTheLoopMiddleware`，采用 `interrupt_mode="per_call"`，只允许 `approve/reject`。官方此能力要求 `langchain>=1.4.6`，不能仅凭当前已安装的 1.4.0 实现。默认批量 HITL 通过工厂配置/同名中间件替换机制消除，并检查文件权限自动生成的 HITL 及每个子代理的最终栈。认知子代理默认仅有只读工具，无业务审批；未来增加业务工具时必须显式配置同等协议。
+对新 Deep Agents 路径显式安装官方 `HumanInTheLoopMiddleware`，采用 `interrupt_mode="per_call"`，只允许 `approve/reject`。官方此能力要求 `langchain>=1.4.6`；当前 v2 环境已锁定并安装 1.4.6，旧环境不能据此获得该能力。默认批量 HITL 通过工厂配置/同名中间件替换机制消除，并检查文件权限自动生成的 HITL 及每个子代理的最终栈。认知子代理默认仅有只读工具，无业务审批；未来增加业务工具时必须显式配置同等协议。
 
 治理规则先决定是否需要审批；HITL 负责真正暂停；平台负责审批记录和授权。批准后的工具包装器验证已消费的决定并继续治理，不再次创建另一套普通审批。当前权限若变严导致批准范围失效，返回可解释的阻止结果；如需重新申请，建立有明确父引用的新审批身份，不能把旧批准解释成新授权。
 
@@ -146,6 +163,8 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 | 工具执行 | 复用 ToolJob 状态与执行证据，另有对账标记 | 批准后可成功、失败、被阻止或结果未知；拒绝返回匹配的 ToolMessage，不执行工具 |
 
 `sending` 只表示一次可失租的发送尝试，不作为“框架肯定收到”的证据。最终展示由三组状态合成：“决定已提交”“工具执行中”“仍有待审批项”“执行需核对”等。API 保留 202 和现有 task 回执，以新增可选字段表达详情。
+
+当前 `_resume_deep_agent_after_approval` 在实际提交框架之前便发出 `approval.decision_applied` 事件；此历史事件不能作为 applied 证明。v2 在决定事务提交后投影“决定已记录”，在 receipt/proof 持久化后投影 delivered，观察到匹配的拒绝/治理阻止/工具结果后才写 applied；同步核对事件消费方，保留必要的旧事件兼容。
 
 项目事实来源是 `schemas/session.py` 的 `ToolApprovalStatus`：业务拒绝存为 `denied`；交给官方 HITL 时映射为决定类型 `reject`。`rejected` 不是当前存储枚举，不能因框架术语修改旧状态值。
 
@@ -168,9 +187,26 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 
 ### 5.1 决定交付证据
 
-候选 LangGraph 源码中，`interrupt()` 消费 resume 值后会发送 `__resume__` 写入，运行时会把它交给 saver。一次调用返回之前杀进程，也可能已经有该写入。因此，不能用“continuation 没返回”或“仍看到 interrupt”推断决定未交付。
+固定 LangGraph 1.2.12 源码中，`interrupt()` 消费 resume 值后会发送 `__resume__` 写入，运行时会把它交给 saver。一次调用返回之前杀进程，也可能已经有该写入。因此，不能用“continuation 没返回”或“仍看到 interrupt”推断决定未交付。
+
+**实际格式与时机必须按以下事实实施：**
+
+- `Command(resume={interrupt_id: decision})` 是调用输入。`pregel/_loop.py` 对合法 interrupt ID 映射放入执行配置，过滤该映射的全局 resume 写入；不能假定 `checkpoint_writes` 中直接存了该字典。
+- `types.py::interrupt()` 写的是图任务自身按 interrupt 调用顺序积累的列表，例如 `[decision_0, decision_1]` 或已消费前缀。`resume_index` 表示该列表内的位置，和数据库 `checkpoint_writes.idx` 不是同一个概念；后者由 saver 的 channel/index 映射决定。
+- `pregel/_runner.py::commit()` 在图任务成功、出错、取消或再次 interrupt 时提交任务写入。调用 `interrupt()` 返回，不代表该 resume 立即持久化；工具可能已经启动甚至结算，而 receipt 仍未 delivered。无证明不能推断“工具未执行”。
+- 官方 PostgreSQL saver 按写入通道选择 upsert 或 `ON CONFLICT DO NOTHING`。适配器不能只核对传入 `put_writes` 的参数后就标 delivered；必须在同一事务内确认实际保存的目标 resume 列表包含匹配位置和内容。冲突保留旧值或身份不一致时，事务失败并进入对账，不制造交付证明。
 
 为绑定的候选版本增加受测的 saver 边界适配：在 `put_writes/aput_writes` 保存目标任务的 `__resume__` 时，将对应 receipt 的 `delivered` 证据与官方 pending writes 放进**同一连接、同一事务**。匹配依据为 namespace、graph_task_id、interrupt 映射、resume 位置及决定内容哈希；不得把无关任务或旧决定的写入算成本次交付。重放相同证明幂等。
+
+拟新增证明契约如下，字段表示应用设计，尚未建表：
+
+| 记录 | 身份及不变量 |
+| --- | --- |
+| interrupt link | `binding_id + logical/physical namespace + checkpoint_id + graph_task_id + task_path + interrupt_id + resume_index`，关联源 AI 消息、原 tool_call_id、Approval、ToolJob；投影重建不改变已有映射 |
+| decision receipt | 一个 `decision_id` 唯一，保存规范化决定的 hash、queued/sending/delivered、applied_at；同一审批的相反决定不可覆盖 |
+| delivery proof | 引用真实 checkpoint write 的 thread/物理 namespace/checkpoint/task/channel/write index、列表内 resume_index、匹配的 decision_hash、owner epoch 和证明格式版本；记录不可变身份，不保存凭据 token |
+
+平台先持久化 interrupt link，才允许发送决定；对每项 per-call，必须从固定框架版本的任务/interrupt 结构及实际写入建立确定映射，不能将所有位置硬编码为 0。重复证明返回已有记录；已 delivered 的证明冲突不可改写。证明及原始写入的保留期限至少覆盖 Turn 的恢复期，清理前必须保证不再依赖它们继续执行。
 
 这是应用新增的恢复日志协议，**官方 saver 不自动提供该 receipt 或业务 exactly-once**。对框架内部 resume 写入格式的依赖必须版本化，并有候选版本故障测试。没有证明且状态矛盾时进入 `recovery_required`，不猜测已交付。读取真实 pending writes 可修复历史 receipt；不得仅凭 interrupt 消失推断应用成功。
 
@@ -182,6 +218,7 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 | --- | --- | --- |
 | interrupt 已保存，Approval/等待 ToolJob 尚未投影 | 根据稳定调用键 upsert；终态 ToolJob 直接引用结果 | 每次查询都新建审批或按工具名合并 |
 | 决定已记录，未交付 | outbox 重投/后继 continuation；领取 owner 后核对 checkpoint，再发送这一项 | 整批重发所有已决定项 |
+| receipt 未 delivered，但 ToolJob 已启动/结算 | 先按稳定操作身份对账；终态结果回放，未知效果保持阻塞；证明可安全继续后才重送尚未持久化的决定 | 把“未 delivered”解释成“没有副作用” |
 | `__resume__` 已保存，工具任务尚未完成 | 修复 delivered receipt，继续已有执行；检查 ToolJob 是否启动/未知 | 因 API 超时重发已持久化决定 |
 | ToolJob 已终态，checkpoint 未收齐结果 | 返回已保存的原始工具结果和证据，保持 tool_call_id；让图收敛 | 重做外部操作，或重新触发审批准备逻辑 |
 | checkpoint 已推进，业务/UI 投影未落库 | 按 checkpoint 版本、工具结果和 receipt 补投影，事件用稳定 key 去重 | 再次提交已消费决定或追加重复模型历史 |
@@ -250,7 +287,7 @@ checkpoint 写入适配器的单次数据库操作：
 
 继续调用供应商原生 API，不新增 OpenAI HTTP 网关。模型工厂复用现有数据库配置和凭据解析；[Anthropic 官方集成](https://docs.langchain.com/oss/python/integrations/chat/anthropic)与前述 Gemini 集成提供框架端点。
 
-当前实现只放行 Chat 且拒绝显式 `max_tokens`。P0 必须用项目真实配置做请求捕获测试：能正确映射则实现，不能映射则在受理前明确报告不支持。不能默默换参数或把“包已导入”视为四协议兼容。
+方案形成时的框架入口只放行 Chat 且拒绝显式 `max_tokens`；当前 `OfficialChatModelFactory` 已支持四传输，并通过本地 HTTP/SSE 与真实官方 SDK 的请求捕获测试，详见实施记录。真实供应商与部署配置仍需验收：能正确映射则支持，不能映射则在受理前明确报告不支持。不能默默换参数或把“包已导入”视为四协议兼容。
 
 ### 7.2 每次真实调用的接入点
 
@@ -280,6 +317,8 @@ checkpoint 写入适配器的单次数据库操作：
 | 命令 | 保留 schema v1 | 新 schema v2，带 binding/version/operation |
 | checkpoint | 旧 schema 与旧序列化契约 | 独立 v2 schema，按绑定定位 |
 | 审批和恢复 | 原 endpoint 语义，路由旧 Worker | 新契约；通用 API 根据绑定选择消费者 |
+
+当前已有 v2 stream、命令及独立 CLI 的实现；上表描述的是必须完成的部署边界。legacy manifest 和本地两个虚拟环境不代表已部署两个可服务的 Worker 制品，尤其 v2 continuation 尚不在当前 Worker 能力集合中。
 
 API/outbox relay 先成为兼容两类命令的过渡版本；outbox 每条记录固定目标 stream 和 schema，不在重试时按最新开关重算。新旧 Worker 只消费各自 stream，并在领取前复核数据库绑定。v2 Worker 缺少能力时 defer/告警，不能改用 legacy 运行。
 
@@ -391,6 +430,21 @@ P2/P3 的关键真实链路：
 
 固定评测集记录数据/评分/基线、Prompt、Skill、模型、runtime、依赖与环境版本；对比迁移前后质量、调用次数、Token、活动耗时、TTFT 和失败轨迹。阈值沿用已有模式质量门；没有基线的模式先生成并冻结基线再切换。
 
+### 10.3 P2 的实施依赖与 TDD 出口
+
+按下面顺序交付小阶段，不把新增 receipt 表本身视为审批迁移完成。所有“先失败”均需实际运行并保留失败输入，再实现和回归。
+
+| 步骤 | 改动与依据 | 先失败的用例及出口 |
+| --- | --- | --- |
+| P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
+| P2.1 决定交付证明 | 第 5.1 节的真实写入格式；新增版本化 link/receipt 存储，在 fenced saver 的既有连接事务内写证明 | 官方 per-call 真实 pending write 样本；多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明；receipt 写失败时 pending write 同时回滚，反之亦然 |
+| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；成对更新 store、envelope、outbox、能力声明、Dispatcher、Worker、API/事件/UI | A/B 同待审批，B 运行期间提交 A 仍返回 202；重复/相反点击、混合拒绝、过期/取消；后来的普通消息不能堵住活跃 Turn；已 delivered 调 `ainvoke(None)`，未 delivered 经 ToolJob 对账才发送指定决定；所有执行入口显式 sync durability |
+| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
+
+P2.1 的只读投影重建可独立验收；新增 v2 continuation 能力必须在 P2.2 端到端用例通过后才声明。P2 整体及 P3 试点放量必须等 P2.3 通过；当前 API 遇到绑定审批的冲突保护在具备完整替代路径之前保留。
+
+P1 的共享预算、跨 Turn transcript、版本实物校验也需完成才能放量，不能因为 P2 通过就忽略这些前置条件。代码审查完成后，再按第 9 节对各模式逐个冻结基线与验收，六个占位模式仍保持原边界。
+
 ## 11. 本轮实际验证与局限
 
 本轮新增[离线复现脚本](verify_framework_contracts_2026_10_25.py)，不修改业务数据库或项目依赖。
@@ -435,3 +489,18 @@ uv pip install --target $frameworkContractDir --python .venv/Scripts/python.exe 
 本轮未执行：真实 PostgreSQL/Redis 故障注入、跨进程 kill/recovery、真实供应商四协议调用、浏览器/压测/安全目标、前端构建和全量测试。它们需要实现后在隔离集成环境验收，不能从当前离线实验推出已通过。
 
 本轮交付范围仅为本修订方案、可复现的离线研究脚本及相应 Git 忽略例外；不修改运行代码、依赖声明、锁文件或生产配置。占位模式开发、领域引擎重写和外部模型兼容网关继续不在本次迁移范围内。
+
+## 12. 2026-10-26 复核记录与边界
+
+本节及第 1.3 节更新当前事实；第 11 节的“本轮”指 2026-10-25 最初方案研究，不代表后续仓库没有实施。
+
+本次重新读取附件、当前业务审批/Worker 能力边界、官方模型工厂、原生消息保存、owner-bound saver，以及已安装固定版本的 `types.py`、`pregel/_loop.py`、`pregel/_runner.py`、PostgreSQL saver 实现；在线重新核对官方 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 和 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)。Deep Agents 审批建立在 LangGraph interrupt 上；应用 receipt、Session 租约、ToolJob 和测试裁决均不是框架自动提供的业务语义。
+
+实际重跑命令（工作目录 `Agent_Server`）：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_runtime_binding_persistence.py tests/test_framework_checkpoint_fencing.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+```
+
+结果：**39 passed，70.96 秒，无 skip**。使用隔离测试表/schema，覆盖已有绑定持久化、Worker 边界、真实 checkpoint 事务与官方 per-call adapter；不覆盖尚未实现的业务 v2 审批/receipt、独立进程 kill/recovery、供应商真实请求及模式迁移。本次只更新方案和实施记录，不修改运行代码或依赖，不将设计补齐视为迁移完成。
