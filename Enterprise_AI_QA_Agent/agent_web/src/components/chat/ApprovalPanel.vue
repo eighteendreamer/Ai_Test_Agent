@@ -21,7 +21,7 @@ function progressLabel(item: FrameworkApprovalProgress) {
     <ApprovalDecisionCard v-for="approval in sessionStore.pendingApprovals" :key="approval.id" :approval="approval" />
     <article v-for="item in progress" :key="item.approval_id" class="approval-progress-card">
       <strong>{{ item.tool_name }}</strong>
-      <span>{{ t(`approvalPanel.decision_${item.decision}`) }}</span>
+      <span>{{ item.decision === "pending" ? t("approvalPanel.pending") : t(`approvalPanel.decision_${item.decision}`) }}</span>
       <p>{{ progressLabel(item) }}</p>
     </article>
   </section>

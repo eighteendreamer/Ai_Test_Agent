@@ -234,8 +234,8 @@ class PostgresAgentTaskStore:
             fencing_token,
         )
 
-    async def interrupt(self, session_id: str) -> bool:
-        return await asyncio.to_thread(self._interrupt_sync, session_id)
+    async def interrupt(self, session_id: str, *, reason: str = "User requested task interruption", source: str = "user") -> bool:
+        return await asyncio.to_thread(self._interrupt_sync, session_id, reason, source)
 
     async def interrupt_requested(self, task_id: str) -> bool:
         return await asyncio.to_thread(self._read_interrupt_sync, task_id)
@@ -465,11 +465,15 @@ class PostgresAgentTaskStore:
             ))
         row = cur.fetchone()
         if payload.interrupt_if_busy:
-            cur.execute(
-                f"UPDATE {self._tasks} SET interrupt_requested=TRUE "
-                "WHERE session_id=%s AND status IN ('claimed','running')",
-                (command.session_id,),
-            )
+            from src.runtime.framework_task_control import FrameworkTaskControl
+
+            if not FrameworkTaskControl(self).interrupt_in_transaction(cur, session,
+                reason="Follow-up input requested interruption", source="followup", exclude_task_id=command.task_id):
+                cur.execute(
+                    f"UPDATE {self._tasks} SET interrupt_requested=TRUE "
+                    "WHERE session_id=%s AND status IN ('claimed','running')",
+                    (command.session_id,),
+                )
         cur.execute(f"""INSERT INTO {self._settings.database.postgres_message_table}
             (id,session_id,role,content,created_at,metadata) VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
             (message.id, command.session_id, message.role.value, message.content, message.created_at,
@@ -895,9 +899,14 @@ class PostgresAgentTaskStore:
                 raise KeyError(task_id)
             return row["interrupt_requested"]
 
-    def _interrupt_sync(self, session_id):
+    def _interrupt_sync(self, session_id, reason="User requested task interruption", source="user"):
+        from src.runtime.framework_task_control import FrameworkTaskControl
+
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-            self._lock_session(cur, session_id)
+            configure_runtime_owner_transaction(cur, self._settings)
+            session = self._lock_session(cur, session_id)
+            if FrameworkTaskControl(self).interrupt_in_transaction(cur, session, reason=reason, source=source):
+                return True
             cur.execute(f"""SELECT * FROM {self._tasks} WHERE session_id=%s
                 AND status IN ('queued','waiting_resource','claimed','running')
                 ORDER BY sequence LIMIT 1 FOR UPDATE""", (session_id,))

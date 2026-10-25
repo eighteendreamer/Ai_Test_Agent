@@ -548,7 +548,8 @@ class AgentTaskDispatcher:
         return [AgentTaskRecord.model_validate(task.model_dump()) for task in tasks]
 
     async def interrupt(self, session_id, payload):
-        if await self._tasks.interrupt(session_id):
+        if await self._tasks.interrupt(session_id,
+            reason=payload.reason or "User requested task interruption", source=payload.source):
             return await self._sessions.get_session(session_id)
         return await self._sessions.interrupt_session(session_id, payload)
 

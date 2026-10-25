@@ -459,7 +459,7 @@ P2/P3 的关键真实链路：
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
 | P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；Runtime/Session、Dispatcher/API、outbox 与 v2 Worker 已接通，决定受理已从长 Session 执行锁分离；持久审批进度 DTO 与逐项前端投影已接通，详见实施记录 §12–20 | Harness 已验证真实 Runtime 初始 A/B、B 执行时 HTTP 提交 A、202/409/闭合后幂等回执、真实 Redis Worker 的逐项完成与重复投递不重执行，以及前端 jsdom 刷新/重连/并发响应；真实浏览器验收与 P2.3 跨进程出口仍待执行 |
-| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
+| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；已实现既有 interrupt/interrupt_if_busy 事务内撤销绑定 owner，保留决定与未知工具效果；见实施记录 §21。幂等对账/安全后继、ToolJob/Runner 执行权仍待实现 | 已验证独立 Worker 在 prepare 前被中断后不派发工具，以及效果产生后实际强杀、原任务失租终态不重领、B 外部计数仍为一次。其余 resume/proof/业务投影窗口、新代接管与旧代迟到业务写、A 决定最终生效仍待验收，P2.3 未完成 |
 
 P2.1 的只读投影重建可独立验收；v2 continuation 已在 HTTP/outbox/真实 Redis Worker/治理工具/原生图端到端用例通过后声明，仅支持 message 与 approval_resume。旧命令仍不能领取绑定任务，原生身份缺失不能降级走旧恢复。前端持久投影已通过 jsdom/Vue/Pinia 和构建检查，真实浏览器验收仍待执行；P2 整体及 P3 试点放量继续以该验收与 P2.3 出口为前提。
 

@@ -115,7 +115,8 @@ class FrameworkApprovalReadModel:
             or approval_value_hash(job["input_payload"]) != approval_value_hash(link.arguments)):
             raise FrameworkApprovalRecoveryRequired("Progress business identity changed")
         if approval["status"] == "pending":
-            if receipt or task or job["status"] != "waiting_approval":
+            if (receipt or task or job["status"] != "waiting_approval"
+                or row["execution_state"] in {"cancelled", "failed", "interrupted", "recovery_required"}):
                 raise FrameworkApprovalRecoveryRequired("Pending approval has execution facts")
             return
         expected = ({"type": "approve"} if approval["status"] == "approved" else

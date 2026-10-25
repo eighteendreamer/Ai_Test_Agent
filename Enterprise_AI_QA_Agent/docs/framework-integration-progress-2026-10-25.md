@@ -501,3 +501,34 @@ npm run build
 ```
 
 结果 **9 files / 49 tests passed**；`npm run build` 内含 `vue-tsc --noEmit`，类型检查及 Vite 生产构建通过。6 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。没有执行独立后端 lint/typecheck 或全量系统回归；上述明确列出的范围是本阶段验证结论。
+
+## 21. P2.3 持久中断与独立 Worker 故障 Harness（2026-10-26）
+
+依据方案 §5.3、§6 及既有 Session → owner → task 锁顺序，新增 `FrameworkTaskControl`，供现有 interrupt API 和 `interrupt_if_busy` 提交事务共用。此前只有 `interrupt_requested` 标记，Worker 轮询前仍持有写 checkpoint 的权限；这属于执行权撤销缺失，需要在持久事务边界解决。
+
+- 同一事务中定位当前绑定、撤销 owner、过期租约、结束当前 claimed/running attempt 为 interrupted，并将同 Turn 尚未领取的续跑任务置为 cancelled。终态任务不重置；不分配取消前尚不存在的 attempt。Session、事件、任务和 owner 一起提交或回滚；跟进输入受理失败时，旧 owner 仍有效。
+- 优先处理正在执行的任务，其次 pending_turn；保留不属于当前 Turn 的排队消息。新跟进输入排除自身，防止空闲会话提交时取消自己。重复中断通过持久 binding 引用幂等，不重复产生中断事件；绑定损坏不降级为 legacy 控制。
+- 保留 pending_turn、审批、冻结决定、receipt 和所有 ToolJob 事实。未知工具效果继续保持 running 等原状态，已 applied 的结果和证明不撤销。中断不是撤销外部副作用；不自动恢复，不新增取消 API 或业务枚举。
+- 原 owner 的 checkpoint、pending writes、heartbeat 和任务 finish 被既有 owner 校验拒绝。Session 读取不再因为另有排队消息而将绑定中断投影成“排队中”，也不将旧 waiting snapshot 显示为可直接恢复。该绑定待审批动作隐藏，持久进度显示 recovery_required；已经合法 applied 的项仍显示 applied。前端修正 pending/recovery 的翻译键并补回归。
+
+### TDD、故障注入与实际边界
+
+新文件首轮 **5 failed，16.94 秒**，其中 claimed 状态直接写 checkpoint 的一项测试设置违背既有 running-only 契约，已改为仅 started 参数写入初始 checkpoint；其余失败复现缺少即时撤销。随后新增空闲跟进自取消用例、停止后的 pending 审批进度用例、排队消息覆盖中断投影用例，均先失败再修正。前端 pending/recovery 翻译用例也先失败再修正。
+
+Harness 使用真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake model 和受控工具。两个独立 spawn 进程实际运行 v2 Redis Worker → Dispatcher → Session → Runtime → 官方图/治理工具链：一项在 prepare 前等待，中断后释放，确认无外部工具派发；另一项在工具递增 Redis 外部计数后等待，父进程实际 terminate 并确认非零退出，再过期原 Session 租约，确认任务进入 recovery_required 终态，重复领取仍是原 attempt，外部计数保持 1、ToolJob 结果未知、决定尚未 applied。后者只覆盖效果已产生而工具尚未返回这一真实强杀窗口。
+
+此前两个使用 multiprocessing.Event 的运行在最后强杀场景未结束，确认没有存活子 Worker 后停止了对应 pytest；未将它们计为通过。没有获取卡住线程的栈，不能断言具体卡点；共享 Event 在强杀后可能遗留信号量锁，符合官方 [Python 3.11 terminate 警告](https://docs.python.org/3.11/library/multiprocessing.html#multiprocessing.Process.terminate)。改为 Redis 消息门闩后首轮 **1 failed / 10 passed，39.90 秒**，实际错误是默认客户端 5 秒 socket timeout 短于 BLPOP 等待；依据已安装客户端源码，将每次阻塞设为 1 秒，并用总超时控制整个等待。最终新文件 **12 passed，44.36 秒**，未放宽外部计数、终态不可重领或真实杀进程的断言。
+
+安全对账/后继任务、ToolJob/Runner 原子执行权、旧 Worker 迟到业务结算、其它 resume/proof/业务投影强杀窗口与 A 决定最终继续仍未实现或验收，**P2.3 及整体迁移未完成**。没有新增依赖、数据库结构或配置，不改变新 Turn 默认路由。没有运行真实供应商模型、真实浏览器或领域 Runner；fake model/受控工具不替代这些验收。两次被停止的旧 pytest 不能保证执行了 fixture 清理，没有按测试名前缀批量删除遗留资源。
+
+### 最终验证
+
+在 `Agent_Server` 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_task_control.py tests/test_framework_approval_progress.py tests/test_framework_checkpoint_fencing.py tests/test_framework_approval_runtime.py tests/test_framework_approval_http.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+后端最终结果 **113 passed，248.11 秒，无 skip**，包括新文件 12 项；不与前述定向结果累计。两次原 Event 运行的中止不记为通过，Redis 门闩首轮客户端超时也不记为全绿。
+
+在 `agent_web` 运行 4 个相关测试文件：`ApprovalPanel.progress`、`sessionFrameworkApproval`、`sessionEventRefresh`、`sessionApprovalLifecycle`，结果 **4 files / 28 tests passed，6.40 秒**。`npm run build`（含 vue-tsc）通过，Vite 构建 8.53 秒；6 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。没有执行独立后端 lint/typecheck 或全量系统回归。

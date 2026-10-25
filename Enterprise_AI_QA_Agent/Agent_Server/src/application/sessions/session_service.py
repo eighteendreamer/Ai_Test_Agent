@@ -3064,7 +3064,7 @@ class SessionService:
             if queued and session.status not in {
                 SessionStatus.running,
                 SessionStatus.waiting_approval,
-            }:
+            } and not (control.get("control_state") == "interrupted" and control.get("last_interrupt_binding_id")):
                 control["control_state"] = "queued"
         derived_resumable = bool(control.get("is_resumable")) or (
             last_snapshot is not None
@@ -3076,6 +3076,9 @@ class SessionService:
         if self._agent_task_store is not None and resume_queued:
             derived_resumable = False
         derived_interrupted = bool(control.get("is_interrupted")) or session.status == SessionStatus.interrupted
+        interrupted_binding = control.get("last_interrupt_binding_id") if control.get("control_state") == "interrupted" else None
+        if interrupted_binding:
+            derived_resumable = False
         return SessionDetail(
             id=session.id,
             title=session.title,
@@ -3093,6 +3096,7 @@ class SessionService:
             selected_agent=session.selected_agent,
             pending_approvals=[
                 item for item in approvals if item.status == ToolApprovalStatus.pending
+                and (not interrupted_binding or item.metadata.get("framework_binding_id") != interrupted_binding)
             ],
             framework_approval_progress=approval_progress,
             last_snapshot=self._snapshot_for_detail(last_snapshot),

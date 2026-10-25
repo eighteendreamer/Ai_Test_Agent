@@ -38,10 +38,13 @@ describe("per-item approval panel", () => {
     store.session = { pending_approvals: [], framework_approval_progress: [
       { approval_id: "B", tool_name: "Inspect B", decision: "approved", phase: "decision_submitted" },
       { approval_id: "C", tool_name: "Inspect C", decision: "denied", phase: "applied", outcome: "rejected" },
+      { approval_id: "D", tool_name: "Inspect D", decision: "pending", phase: "recovery_required" },
     ] } as unknown as SessionDetail;
     const wrapper = mount(ApprovalPanel);
     expect(wrapper.text()).toContain("决定已提交");
     expect(wrapper.text()).toContain("已拒绝执行");
+    expect(wrapper.text()).toContain("需要恢复对账");
+    expect(wrapper.text()).not.toContain("approvalPanel.decision_pending");
     expect(wrapper.findAll("button")).toHaveLength(0);
     wrapper.unmount();
   });
