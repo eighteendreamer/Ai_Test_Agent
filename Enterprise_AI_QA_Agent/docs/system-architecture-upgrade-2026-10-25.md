@@ -1626,22 +1626,22 @@ class ChangePlan(BaseModel):
 
 ### 19.9 14 个测试模式索引
 
-| 模式 | 状态 | 业务功能 | 入口 |
-|---|---|---|---|
-| `default` | 可执行 | 非测试对话/兜底 | 直接图执行 |
-| `api_testing` | 可执行 | 文档→端点→依赖→执行→验证→报告 | `api_testing_mode/runtime.py` |
-| `ui_automation` | 可执行 | Playwright ARIA 理解、UI 图谱、录制回放 | `ui_automation_mode/runtime.py` |
-| `smoke_testing` | 可执行 | 核心链路冒烟 | `smoke_testing_mode/runtime.py` |
-| `performance` | 可执行 | k6/JMeter 压测、目标保护、指标 | `performance_testing_mode/runtime.py` |
-| `security` | 可执行 | Docker/Kali 隔离扫描、复现、取证 | `security_testing_mode/runtime.py` |
-| `compatibility` | 可执行 | 浏览器/设备矩阵分发 | `compatibility_testing_mode/runtime.py` |
-| `code_review` | 可执行 | 多角色评审、治理门禁 | `code_review_mode/governance/runtime.py` |
-| `integration` | **占位** | 服务契约/真实依赖集成测试（仅 Skills） | 无 runtime |
-| `unit_component` | **占位** | 单元/组件测试（仅 Skills） | 无 runtime |
-| `mobile` | **占位** | Android/iOS 矩阵（仅 Skills） | 无 runtime |
-| `visual_regression` | **占位** | 视觉回归（仅 Skills） | 无 runtime |
-| `accessibility` | **占位** | 无障碍（仅 Skills） | 无 runtime |
-| `reliability` | **占位** | 混沌/故障注入（仅 Skills） | 无 runtime |
+| 模式 | 状态 | 业务功能 | 入口 | 调优 |
+|---|---|---|---|---|
+| `default` | 可执行 | 非测试对话/兜底 | 直接图执行 | 保持薄；不叠加场景逻辑 |
+| `api_testing` | 可执行 | 文档→端点→依赖→执行→验证→报告 | `api_testing_mode/runtime.py` | 第一个包化为 Scenario Pack；验证/证据独立 |
+| `ui_automation` | 可执行 | Playwright ARIA 理解、UI 图谱、录制回放 | `ui_automation_mode/runtime.py` | 录制 Step 化；回放幂等；ARIA 作为证据 |
+| `smoke_testing` | 可执行 | 核心链路冒烟 | `smoke_testing_mode/runtime.py` | 与 Suite/Run 对齐；去掉独立结果存储 |
+| `performance` | 可执行 | k6/JMeter 压测、目标保护、指标 | `performance_testing_mode/runtime.py` | 指标进 Evidence；目标保护进 ToolDescriptor |
+| `security` | 可执行 | Docker/Kali 隔离扫描、复现、取证 | `security_testing_mode/runtime.py` | 拆 campaign/step/verdict；最高风险审批 |
+| `compatibility` | 可执行 | 浏览器/设备矩阵分发 | `compatibility_testing_mode/runtime.py` | Runner 并入 EnvironmentPort/Execution |
+| `code_review` | 可执行 | 多角色评审、治理门禁 | `code_review_mode/governance/runtime.py` | 评审结论作为 Evaluation；不冒充测试通过 |
+| `integration` | **占位** | 服务契约/真实依赖集成测试（仅 Skills） | 无 runtime | 隐藏可执行入口；补齐 Runner 后再开放 |
+| `unit_component` | **占位** | 单元/组件测试（仅 Skills） | 无 runtime | 同上 |
+| `mobile` | **占位** | Android/iOS 矩阵（仅 Skills） | 无 runtime | 同上；需设备/模拟器 Runner |
+| `visual_regression` | **占位** | 视觉回归（仅 Skills） | 无 runtime | 同上；需基线/差异证据 |
+| `accessibility` | **占位** | 无障碍（仅 Skills） | 无 runtime | 同上；需 a11y 规则集 |
+| `reliability` | **占位** | 混沌/故障注入（仅 Skills） | 无 runtime | 同上；需故障注入执行器 |
 
 ### 19.10 前端模块全量索引
 
