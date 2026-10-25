@@ -120,6 +120,26 @@ class DeepAgentRuntimeAdapter:
                 )
             else:
                 harness_kwargs = {}
+            if request.interrupt_on:
+                try:
+                    from langchain.agents.middleware import HumanInTheLoopMiddleware
+                except ImportError as exc:
+                    raise DeepAgentRuntimeError(
+                        "Deep Agents governed HITL requires LangChain HumanInTheLoopMiddleware."
+                    ) from exc
+                # create_deep_agent installs its own batched middleware when
+                # interrupt_on is present. Passing the same middleware name
+                # replaces that default with the required per-call policy.
+                harness_kwargs = {
+                    **harness_kwargs,
+                    "middleware": [
+                        *list(harness_kwargs.get("middleware") or []),
+                        HumanInTheLoopMiddleware(
+                            interrupt_on=request.interrupt_on,
+                            interrupt_mode="per_call",
+                        ),
+                    ],
+                }
             factory = self._resolve_factory()
             # Business tools are already wrapped by LangChainToolAdapter and
             # therefore enter the application's governance boundary.

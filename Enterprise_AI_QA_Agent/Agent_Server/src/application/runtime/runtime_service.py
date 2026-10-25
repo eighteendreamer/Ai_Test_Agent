@@ -1315,19 +1315,43 @@ class RuntimeService:
         )
 
     async def _record_deep_agent_interrupts(self, state: dict[str, Any], result) -> list[dict]:
-        """Project the official interrupt payload into existing approvals in order."""
+        """Project official batched or per-call HITL payloads into approvals."""
         calls = next(
             (list(message.get("tool_calls") or []) for message in reversed(result.messages)
              if message.get("role") == "assistant"), []
         )
         remaining = list(calls)
+        existing_approvals = {
+            str(item.get("metadata", {}).get("deep_agent_interrupt_id")): item
+            for item in state.get("context_bundle", {}).get("deep_agent_approval_batch", [])
+            if item.get("metadata", {}).get("deep_agent_interrupt_id")
+        }
         approvals = []
         records = []
         for interruption in result.interrupts:
-            for position, action in enumerate(interruption["value"]["action_requests"]):
+            value = interruption["value"]
+            interrupt_mode = "per_call" if value.get("type") == "tool_approval" else "batched"
+            actions = (
+                [{
+                    "name": value["name"],
+                    "args": value["args"],
+                    "tool_call_id": value.get("tool_call_id"),
+                }]
+                if interrupt_mode == "per_call"
+                else list(value.get("action_requests") or [])
+            )
+            if not actions:
+                raise RuntimeError("Official HITL interrupt contains no tool action.")
+            existing = existing_approvals.get(str(interruption["id"]))
+            if existing is not None:
+                approvals.append(existing)
+                continue
+            for position, action in enumerate(actions):
+                action_call_id = str(action.get("tool_call_id") or "")
                 matched = next(
                     (call for call in remaining
-                     if call["name"] == action["name"] and call["args"] == action["args"]),
+                     if (action_call_id and call.get("id") == action_call_id)
+                     or (call["name"] == action["name"] and call["args"] == action["args"])),
                     None,
                 )
                 if matched is None:
@@ -1344,6 +1368,7 @@ class RuntimeService:
                 prepared.approval["metadata"].update({
                     "deep_agent_interrupt_id": interruption["id"],
                     "deep_agent_action_index": position,
+                    "deep_agent_interrupt_mode": interrupt_mode,
                 })
                 approvals.append(prepared.approval)
                 records.append(prepared.record.model_dump(mode="python"))
@@ -1372,6 +1397,17 @@ class RuntimeService:
         batch = [dict(approval) if item["id"] == approval["id"] else item for item in batch]
         state["context_bundle"]["deep_agent_approval_batch"] = batch
         pending_ids.remove(approval["id"])
+        interrupt_mode = str(
+            approval.get("metadata", {}).get("deep_agent_interrupt_mode")
+            or next(
+                (
+                    item.get("metadata", {}).get("deep_agent_interrupt_mode")
+                    for item in batch
+                    if item.get("metadata", {}).get("deep_agent_interrupt_mode")
+                ),
+                "batched",
+            )
+        )
         if approval["status"] == "denied":
             job_id = approval["metadata"].get("tool_job_id")
             if job_id and self._tool_job_service is not None:
@@ -1391,7 +1427,7 @@ class RuntimeService:
             approval_id=approval["id"], decision=approval["status"],
             remaining_approval_count=len(pending_ids),
         )
-        if pending_ids:
+        if pending_ids and interrupt_mode != "per_call":
             state["pending_turn"] = self._build_pending_turn(state, stage="waiting_approval")
             return RuntimeTurnResult(
                 output_text="", approvals=[], state=state, tool_messages=[],
@@ -1399,6 +1435,37 @@ class RuntimeService:
                 snapshot=self._build_snapshot(session, state, session.snapshot_count + 1),
                 pending_turn=state["pending_turn"],
             )
+        if interrupt_mode == "per_call":
+            item = next(item for item in batch if item["id"] == approval["id"])
+            state["pending_turn"] = {}
+            state["termination_reason"] = ""
+            state["control_state"] = "resuming"
+            state["_deep_agent_resume"] = {
+                item["metadata"]["deep_agent_interrupt_id"]: (
+                    {"type": "approve"}
+                    if item["status"] == "approved"
+                    else {
+                        "type": "reject",
+                        "message": str(item.get("decision_note") or "Human denied execution."),
+                    }
+                )
+            }
+            request = ExecutionRequest(
+                turn_id=state["turn_id"], session_id=session.id,
+                trace_id=state["trace_id"],
+                user_message=state["user_message"], normalized_input=state["normalized_input"],
+                mode_key=state["mode_key"], agent_key=state["selected_agent_key"],
+                model_key=state["selected_model_key"], skill_keys=state["requested_skill_keys"],
+                context=dict(state["context_bundle"]),
+            )
+            result = await self._execute_observed(
+                session, request, state,
+                lambda: self._execute_deep_agent_turn(
+                    session, request, state=state, pilot_stage="DA-E4", on_model_chunk=on_model_chunk,
+                ),
+            )
+            result.events = result.events[persisted_events:]
+            return result
         resume: dict[str, Any] = {}
         for item in batch:
             interrupt_id = item["metadata"]["deep_agent_interrupt_id"]

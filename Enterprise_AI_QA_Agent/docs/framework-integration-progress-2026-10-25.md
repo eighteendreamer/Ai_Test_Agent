@@ -2,15 +2,15 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前提交只建设 P0 的依赖及模型契约基础，不构成逐项审批、持久恢复或模式切换验收。**
+**全系统迁移尚未完成。当前提交已完成 P0 基础、RuntimeBinding/版本化任务契约和原生 transcript；仍不构成跨进程审批恢复、checkpoint fencing 或模式切换验收。**
 
 ## 1. 阶段与现状
 
 | 阶段 | 本轮状态 | 下一出口 |
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
-| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态这一步；其余待实现 | 持久原生 transcript、共享实际调用预算、不可变绑定、双队列 |
-| P2 逐项审批、所有权、对账 | 待实现 | 真实 PostgreSQL/Redis 跨进程故障链，以及 checkpoint / pending writes / ToolJob 旧 owner 拒写 |
+| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript | 共享实际调用预算、v2 Worker、checkpoint namespace 实际绑定 |
+| P2 逐项审批、所有权、对账 | 已接入官方 `per_call` middleware 与单项 `Command(resume=...)` 投影；业务审批事务和 fencing 待实现 | 真实 PostgreSQL/Redis 跨进程故障链，以及 checkpoint / pending writes / ToolJob 旧 owner 拒写 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
@@ -83,4 +83,12 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 
 结果 **30 passed、2 skipped，19.60 秒**。测试使用 UUID 后缀的独立表并清理自身表，覆盖 PostgreSQL 事件持久化、SSE、顺序、跨进程读写；两个 skip 是内存参数无法承担数据库事务顺序/跨进程测试，对应 PostgreSQL 参数实际通过。
 
-这里验证的是已有事件投递基础设施，**没有验证 v2 checkpoint 的租约 fencing 或逐项审批杀进程恢复**。不能据此宣称 P1/P2 完成。真实供应商、Redis、新原生 transcript、全系统路由和所有权协议继续待实施。
+这里验证的是已有事件投递基础设施，**没有验证 v2 checkpoint 的租约 fencing 或逐项审批杀进程恢复**。不能据此宣称 P1/P2 完成。真实供应商、Redis、全系统路由和所有权协议继续待实施。
+
+## 6. P1/P2 已落地的契约边界
+
+- `RuntimeBinding` 固定 session/turn、runtime/state schema、prompt/skill/tool 版本、模型配置指纹和 lockfile SHA256；`thread_id` 强制等于 `turn_id`。旧 dispatcher 解析到 v2 envelope 会在领取任务前拒绝。
+- v2 task 将 binding 与 task、outbox 写入同一 PostgreSQL 事务；绑定指纹进入幂等哈希，冲突重试不能覆盖原绑定；v2 使用独立 `qa:tasks:agent:v2` stream。v2 Worker 尚未实现，因此不能把该 stream 当成已可投递生产流。
+- Deep Agents 结果若为 LangChain `BaseMessage`，使用官方 `messages_to_dict/messages_from_dict` 保存/恢复；应用的 role/content 投影仍单独保存。原生 tool call ID、内容块、provider metadata 和签名不会通过摘要重建。
+- Deep Agents 的 HITL 显式替换工厂默认的 batched middleware 为 `interrupt_mode="per_call"`。适配器能解析 `tool_approval` interrupt，并将审批决定恢复为单项 `Command(resume={interrupt_id: {"type": "approve"|"reject"}})`；同一 checkpoint 中未决定的 interrupt 继续保留。
+- 以上改动已通过 RuntimeBinding 实时 PostgreSQL/Redis 测试 **2 passed**、既有 agent task 集成 **19 passed**、Deep Agents/runtime 相关回归 **60 passed、4 skipped**。尚未覆盖 checkpoint pending writes、跨进程 owner fencing、ToolJob 对账和 v2 Worker。

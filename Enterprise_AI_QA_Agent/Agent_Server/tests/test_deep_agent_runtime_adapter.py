@@ -572,7 +572,9 @@ async def test_da_e4_business_tool_callback_is_wrapped_and_approval_stops_agent(
         )
     )
     assert result.output_text == ""
-    assert result.interrupts[0]["value"]["action_requests"][0]["name"] == "knowledge-rag"
+    assert result.interrupts[0]["value"]["type"] == "tool_approval"
+    assert result.interrupts[0]["value"]["name"] == "knowledge-rag"
+    assert result.interrupts[0]["value"]["tool_call_id"] == "governed-call"
     assert result.messages[-1]["tool_calls"][0]["id"] == "governed-call"
 
 
