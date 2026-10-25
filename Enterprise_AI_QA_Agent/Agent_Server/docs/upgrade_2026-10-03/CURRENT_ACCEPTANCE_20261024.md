@@ -309,6 +309,16 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"需求变更与追踪——产品页面交互层"缺口：该方向 API 链路（更广业务闭环、用户业务评审、环境绑定规划、执行期准入）与页面交互层均已实测。"其他格式与更多故障组合"仍属后续深化项。
 
+## UI 录制与知识：默认 AI 实际使用录制知识完成断言——证据澄清关闭
+
+复核确认本日已通过的 `test_default_ui_scene_live.py` 双参数验收（`p2-default-ui-scene-deepseek-current-20261024-02/`）**已完整覆盖**此缺口，此前记录沿用的"不代表默认 AI 使用录制知识已经验收"是 10-23 旧边界表述，现按证据澄清：
+
+- **知识固化**：场景版本写入正式断言 `assertions=[{kind: page, target: #count, operator: equals, expected: 参数}]`（positive=1 / negative=2）与"计数按钮"别名（`positive/fixed-scene.json` 在案）。
+- **知识读取**：测试断言 knowledge-rag 作业引用场景版本 `content_hash` 且含"计数按钮"——默认模型真实读取了固化知识而非自由发挥。
+- **知识使用与断言判定**：positive（场景预期 1，真实点击后计数 1）→ 条目 `passed`；negative（场景预期 2，真实点击后计数 1 ≠ 预期）→ 条目 `failed`。两变体 `default_planning/default_execution/uses_global_default_model` 均为真。negative 变体正是"默认 AI 用场景预期对照实际值、不迁就预期、如实判败"的直接证据。
+
+至此"默认 AI 实际使用知识并完成断言"关闭。该方向仍缺：closed Shadow DOM 的能力边界呈现（契约已声明 `unobserved`，产品页面呈现待专项）与跨文档关联的产品层深化。
+
 ## UI 录制与知识：人工操作 DeepSeek 完整实测通过
 
 用户本人操作可见 Chromium 完成 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` 的人工模式（`RUN_LIVE_DEEPSEEK_RECORDING=1`、`DEEPSEEK_RECORDING_INTERACTION=manual`，pytest 需 `-s` 使 `input()` 可读——首跑因缺 `-s` 失败属测试运行方式问题）：
