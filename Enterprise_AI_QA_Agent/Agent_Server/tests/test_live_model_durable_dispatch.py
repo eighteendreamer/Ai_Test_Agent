@@ -116,6 +116,7 @@ async def durable_application():
     tables = [f"modeltest_{field}_{suffix}" for field in fields]
     for field, table in zip(fields, tables, strict=True):
         setattr(settings.database, f"postgres_{field}_table", table)
+    tables.append(f"{settings.database.postgres_agent_task_table}_runtime")
     settings.orchestration.agent_task_stream = f"{prefix}:tasks:agent"
     redis = Redis.from_url(settings.database.redis_url, decode_responses=True,
                            socket_timeout=5, socket_connect_timeout=5)
@@ -127,7 +128,7 @@ async def durable_application():
     queue = RedisTaskQueue(settings.database.redis_url,
                            stream=settings.orchestration.agent_task_stream, group=prefix, client=redis)
     try:
-        # All eleven stores/FK targets belong to this test, including projects.
+        # All stores/FK targets belong to this test, including projects and owners.
         await PostgresProjectStore(settings).initialize()
         await store.initialize()
         await jobs.initialize()
@@ -154,7 +155,7 @@ async def durable_application():
             await redis.aclose()
             with postgres_connect(settings) as connection, connection.cursor() as cursor:
                 for table in reversed(tables):
-                    assert re.fullmatch(rf"modeltest_[a-z_]+_{suffix}", table)
+                    assert re.fullmatch(rf"modeltest_[a-z_]+_{suffix}(_runtime)?", table)
                     cursor.execute(f"DROP TABLE IF EXISTS {table}")
 
 

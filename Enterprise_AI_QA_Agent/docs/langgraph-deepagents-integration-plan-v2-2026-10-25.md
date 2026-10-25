@@ -219,7 +219,9 @@ checkpoint 写入适配器的单次数据库操作：
 
 接管和撤销也锁同一 owner。旧代操作若先获得锁，先线性化完成；新代接管必须等它提交。新代接管提交后，旧代任何新写入都会 epoch 不匹配而失败。锁等待后用实际数据库时钟核验过期，不能使用等待前的缓存判定。
 
-已核对 `langgraph-checkpoint-postgres==3.1.2`：官方 `_cursor` 对显式连接使用同一连接，`put/put_writes` 不另开独立池连接；pipeline 在该连接内执行。因此上述事务边界有源码依据。**尚未通过真实数据库验证**嵌套事务/pipeline、回滚、取消和连接归还；它们是 P2 必过项。部署 setup/migration 单独执行，不在业务事务里反复 `setup()`。
+已核对 `langgraph-checkpoint-postgres==3.1.2`：官方 `_cursor` 对显式连接使用同一连接，`put/put_writes` 不另开独立池连接；pipeline 在该连接内执行。因此上述事务边界有源码依据。方案形成时尚未通过真实数据库验证；2026-10-26 的同进程真实数据库事务、回滚、取消及连接归还验证见[实施记录第 8 节](framework-integration-progress-2026-10-25.md#8-owner-与-checkpoint-写入事务2026-10-26)。跨进程崩溃与决定 receipt 同事务仍是 P2 待过项。部署 setup/migration 单独执行，不在业务事务里反复 `setup()`。
+
+**namespace 落实修订（固定版本源码与实测依据）**：LangGraph 1.2.12 的 `pregel/_loop.py` 会把顶层调用的非空 `checkpoint_ns` 重置为 `""`，仅向 `invoke` 传入绑定 namespace 不构成存储隔离。v2 owner saver 将图的逻辑根 `""` 映射为绑定的物理 namespace，逻辑子图路径映射为 `绑定 namespace|逻辑路径`；读取时逆向映射 config/parent_config。thread_id 保持 turn_id，完整保留图内部路径。该适配必须覆盖根/嵌套 namespace、历史枚举、pending writes、原生审批继续与 delta channel 重建；不以篡改框架内部 task ID 实现隔离。
 
 保护范围包含 `put/aput`、`put_writes/aput_writes`、嵌套 namespace、清理/删除等所有可变操作。普通运行时不提供删除 thread 权限；管理清理也必须验证绑定终态和没有有效 owner。适配器还需保留官方 serializer、channel version、delta channel 及读取能力，不能仅实现两个写方法就丢掉 saver 的其它契约。读取可以提供只读检查接口，只有有效 owner 能继续执行或改变状态。
 

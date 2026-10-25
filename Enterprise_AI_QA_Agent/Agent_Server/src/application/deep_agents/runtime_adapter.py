@@ -102,6 +102,13 @@ class DeepAgentRuntimeAdapter:
                 "Deep Agents runtime requires session_id, turn_id and model_key."
             )
 
+        execution_owner = getattr(checkpointer, "runtime_owner", None)
+        if execution_owner is not None:
+            binding = execution_owner.binding
+            if (binding.session_id != request.session_id or binding.turn_id != request.turn_id
+                or binding.checkpoint_namespace != request.checkpoint_namespace):
+                raise DeepAgentRuntimeError("Checkpoint owner does not match the runtime request binding.")
+
         stage = _pilot_stage(request)
         try:
             model = await self._model_resolver(request.model_key)
@@ -162,7 +169,7 @@ class DeepAgentRuntimeAdapter:
 
                     invoke_input = Command(resume=request.resume)
                 configurable = {"thread_id": request.turn_id}
-                if request.checkpoint_namespace:
+                if request.checkpoint_namespace and execution_owner is None:
                     configurable["checkpoint_ns"] = request.checkpoint_namespace
                 invoke_config = {
                     "configurable": configurable,

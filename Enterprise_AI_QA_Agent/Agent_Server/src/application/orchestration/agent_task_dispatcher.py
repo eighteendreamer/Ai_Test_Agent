@@ -643,6 +643,8 @@ class AgentTaskDispatcher:
                 "attempt_id": task.attempt_id,
                 "attempt_no": task.attempt_no,
                 "worker_id": worker_id,
+                **({"binding_id": task.runtime_binding.binding_id,
+                    "owner_epoch": task.runtime_owner.owner_epoch} if task.runtime_owner is not None else {}),
             },
         )
         with bind_request_context(

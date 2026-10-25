@@ -12,6 +12,8 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from sqlalchemy.exc import DBAPIError
+
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
@@ -22,7 +24,11 @@ from src.schemas.agent_task import (
     AgentTaskRecord,
     TERMINAL_AGENT_TASK_STATUSES,
 )
-from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
+from src.runtime.postgres_runtime_owner import (
+    assert_runtime_owner, initialize_runtime_owners, lock_owner_row,
+    register_runtime_binding, runtime_owner_table, configure_runtime_owner_transaction,
+)
 from src.schemas.session import (
     ApprovalDecisionRequest,
     ChatMessage,
@@ -180,7 +186,17 @@ class PostgresAgentTaskStore:
 
     async def claim(self, task_id: str, *, worker_id: str,
                     expected_binding: RuntimeBinding | None = None) -> AgentTaskExecution:
-        return await asyncio.to_thread(self._claim_sync, task_id, worker_id, expected_binding)
+        try:
+            return await asyncio.to_thread(self._claim_sync, task_id, worker_id, expected_binding)
+        except DBAPIError as exc:
+            if expected_binding is None or getattr(exc.orig, "sqlstate", None) != "55P03":
+                raise
+            logger.warning("framework_owner_lock_busy", extra={
+                "task_id": task_id, "binding_id": expected_binding.binding_id, "worker_id": worker_id})
+            raise TaskDeferred("Framework owner lock is busy") from exc
+
+    async def renew_framework_execution(self, task: AgentTaskExecution, lease_seconds: int) -> bool:
+        return await asyncio.to_thread(self._renew_framework_execution_sync, task, lease_seconds)
 
     async def begin(
         self,
@@ -284,6 +300,8 @@ class PostgresAgentTaskStore:
             )
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS reference_id TEXT")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS runtime_binding JSONB")
+            cur.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {self._tasks}_v2_initial_turn_idx "
+                f"ON {self._tasks}(session_id,turn_id) WHERE runtime_binding IS NOT NULL AND operation='message'")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS parent_task_id TEXT")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS root_trace_id TEXT")
             cur.execute(
@@ -307,6 +325,7 @@ class PostgresAgentTaskStore:
                 status TEXT NOT NULL, error_code TEXT, started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 finished_at TIMESTAMPTZ, UNIQUE(task_id, attempt_no)
             )""")
+            initialize_runtime_owners(cur, self._settings)
 
     def _submit_sync(self, command, payload, message, idempotency_key):
         serialized = payload.model_dump(mode="json")
@@ -333,6 +352,7 @@ class PostgresAgentTaskStore:
             {"payload": serialized, "runtime_binding_fingerprint": binding.fingerprint},
         )
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
             row = self._submit_message_in_transaction(
                 cur,
                 command,
@@ -358,6 +378,11 @@ class PostgresAgentTaskStore:
         stream: str | None = None,
     ):
         session = self._lock_session(cur, command.session_id)
+        if runtime_binding is not None:
+            try:
+                register_runtime_binding(cur, self._settings, runtime_binding)
+            except ValueError as exc:
+                raise AgentSubmissionConflict(str(exc)) from exc
         existing = self._find_idempotent(
             cur,
             command.session_id,
@@ -366,6 +391,11 @@ class PostgresAgentTaskStore:
         )
         if existing:
             return existing
+        if runtime_binding is not None:
+            cur.execute(f"SELECT id FROM {self._tasks} WHERE session_id=%s AND turn_id=%s "
+                "AND runtime_binding IS NOT NULL AND operation='message'", (command.session_id, command.turn_id))
+            if cur.fetchone() is not None:
+                raise AgentSubmissionConflict("Runtime binding already has its initial message task")
         if command.operation == "coordinator_child":
             self._assert_coordinator_child_bounds(cur, command)
         if session["project_id"] != command.project_id:
@@ -1032,25 +1062,50 @@ class PostgresAgentTaskStore:
             return reaped
 
     def _lock_session(self, cur, session_id):
-        cur.execute(f"""SELECT *, COALESCE((metadata->>'turn_lease_expires_at')::timestamptz > NOW(), FALSE)
-            AS lease_active FROM {self._session_table} WHERE id=%s FOR UPDATE""", (session_id,))
+        cur.execute(f"SELECT * FROM {self._session_table} WHERE id=%s FOR UPDATE", (session_id,))
         session = cur.fetchone()
         if session is None:
             raise KeyError(session_id)
+        cur.execute("SELECT COALESCE(%s::timestamptz > clock_timestamp(), FALSE) AS lease_active",
+            ((session["metadata"] or {}).get("turn_lease_expires_at"),))
+        lease_active = cur.fetchone()["lease_active"]
         # Match PostgresSessionStore's public identity conversion: PostgreSQL
         # returns UUID objects, while AgentTaskCommand carries string IDs.
-        session = {**session, "project_id": str(session["project_id"]) if session["project_id"] is not None else None}
+        session = {**session, "lease_active": lease_active,
+            "project_id": str(session["project_id"]) if session["project_id"] is not None else None}
         logger.debug("agent_session_identity_loaded", extra={"session_id": session_id,
             "project_id": session["project_id"]})
         return session
 
+    def _renew_framework_execution_sync(self, task, lease_seconds):
+        if task.runtime_owner is None:
+            raise ValueError("Framework heartbeat requires a captured execution owner")
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            try:
+                assert_runtime_owner(cur, self._settings, task.runtime_owner)
+            except ContinuationLeaseLostError:
+                return False
+            cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata || jsonb_build_object(
+                'turn_lease_expires_at', to_jsonb(clock_timestamp() + %s * INTERVAL '1 second'))
+                WHERE id=%s RETURNING (metadata->>'turn_lease_expires_at')::timestamptz AS expires_at""",
+                (lease_seconds, task.session_id))
+            expires_at = cur.fetchone()["expires_at"]
+            cur.execute(f"UPDATE {runtime_owner_table(self._settings)} SET expires_at=%s WHERE binding_id=%s",
+                (expires_at, task.runtime_binding.binding_id))
+        return True
+
     def _claim_sync(self, task_id, worker_id, expected_binding=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            if expected_binding is not None:
+                configure_runtime_owner_transaction(cur, self._settings)
             cur.execute(f"SELECT session_id FROM {self._tasks} WHERE id=%s", (task_id,))
             identity = cur.fetchone()
             if identity is None:
                 raise KeyError(task_id)
             session = self._lock_session(cur, identity["session_id"])
+            if expected_binding is not None:
+                lock_owner_row(cur, self._settings, expected_binding)
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task_id,))
             row = cur.fetchone()
             saved_binding = (
@@ -1121,7 +1176,7 @@ class PostgresAgentTaskStore:
             )
             cur.execute(f"""UPDATE {self._session_table} SET metadata=metadata || jsonb_build_object(
                 'turn_lease_turn_id',%s::text,'turn_lease_owner',%s::text,'turn_lease_token',%s::text,
-                'turn_lease_expires_at',to_jsonb(NOW() + %s * INTERVAL '1 second')),
+                'turn_lease_expires_at',to_jsonb(clock_timestamp() + %s * INTERVAL '1 second')),
                 state_revision=state_revision+1, updated_at=NOW() WHERE id=%s""",
                 (
                     row["turn_id"],
@@ -1130,7 +1185,20 @@ class PostgresAgentTaskStore:
                     self._settings.orchestration.turn_execution_lease_seconds,
                     row["session_id"],
                 ))
-            self._event(cur, row, "agent_task.claimed", {})
+            if saved_binding is not None:
+                cur.execute(f"""UPDATE {runtime_owner_table(self._settings)} SET
+                    owner_epoch=owner_epoch+1,owner_token=%s,task_id=%s,attempt_id=%s,worker_id=%s,
+                    expires_at=(SELECT (metadata->>'turn_lease_expires_at')::timestamptz
+                        FROM {self._session_table} WHERE id=%s),execution_state='claimed'
+                    WHERE binding_id=%s RETURNING owner_epoch""",
+                    (token, task_id, attempt_id, worker_id, row["session_id"], saved_binding.binding_id))
+                row = {**row, "runtime_owner": RuntimeExecutionOwner(
+                    binding=saved_binding, owner_epoch=cur.fetchone()["owner_epoch"],
+                    owner_token=token, task_id=task_id, attempt_id=attempt_id, worker_id=worker_id)}
+            self._event(cur, row, "agent_task.claimed", ({
+                "binding_id": saved_binding.binding_id,
+                "owner_epoch": row["runtime_owner"].owner_epoch,
+            } if saved_binding is not None else {}))
         return self._record(row)
 
     def _transition_sync(
@@ -1143,7 +1211,13 @@ class PostgresAgentTaskStore:
         fencing_token,
     ):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            if task.runtime_binding is not None:
+                configure_runtime_owner_transaction(cur, self._settings)
             self._lock_session(cur, task.session_id)
+            if task.runtime_binding is not None:
+                if task.runtime_owner is None:
+                    raise ContinuationLeaseLostError("Framework task requires its captured execution owner")
+                assert_runtime_owner(cur, self._settings, task.runtime_owner, states=("claimed", "running"))
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task.id,))
             row = cur.fetchone()
             if not row or row["attempt_id"] != task.attempt_id or row["lease_token"] != task.lease_token:
@@ -1174,6 +1248,12 @@ class PostgresAgentTaskStore:
                 self._clear_lease(cur, row)
 
     def _update_status(self, cur, row, status, result_status, reason):
+        if row.get("runtime_binding") is not None:
+            saved_binding = RuntimeBinding.model_validate(row["runtime_binding"])
+            cur.execute(f"""UPDATE {runtime_owner_table(self._settings)} SET execution_state=%s,
+                expires_at=CASE WHEN %s='running' THEN expires_at ELSE clock_timestamp() END
+                WHERE binding_id=%s AND owner_token=%s""",
+                (status, status, saved_binding.binding_id, row["lease_token"]))
         cur.execute(f"""UPDATE {self._tasks} SET status=%s, result_status=%s,
             waiting_reason=%s, error_code=%s, updated_at=NOW() WHERE id=%s""",
             (status, result_status, reason if status == "waiting_resource" else None,

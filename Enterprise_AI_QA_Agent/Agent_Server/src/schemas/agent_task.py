@@ -7,7 +7,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.schemas.session import ConversationResponse
-from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
 
 AgentTaskStatus = Literal[
@@ -144,6 +144,7 @@ class AgentTaskRecord(BaseModel):
 class AgentTaskExecution(AgentTaskRecord):
     """Worker-only fields; never serialize this type in a public task response."""
     lease_token: str | None = None
+    runtime_owner: RuntimeExecutionOwner | None = None
     fencing_token: int | None = None
     input: dict[str, Any]
     user_message_id: str | None = None

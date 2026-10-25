@@ -82,6 +82,7 @@ def stored_task(runtime_binding):
         run_item_id=None,
         reference_id=None,
         runtime_binding=runtime_binding,
+        runtime_owner=None,
         status="claimed",
         created_at=datetime.now(timezone.utc),
         attempt_no=1,
@@ -289,6 +290,10 @@ async def test_v2_worker_executes_persisted_task_with_binding_context(harness):
     original_execute = harness.runtime.execute_turn
 
     async def tracked_execute(session, request, **kwargs):
+        from src.runtime.execution_context import current_framework_owner
+
+        captured = current_framework_owner()
+        assert captured is not None and captured.binding == request.runtime_binding
         contexts.append(dict(request.context))
         bindings.append(request.runtime_binding)
         return await original_execute(session, request, **kwargs)
@@ -401,6 +406,24 @@ def test_public_input_cannot_supply_runtime_binding_or_namespace():
         }))
     assert request.runtime_binding is None
     assert not {"runtime_binding", "runtime_kind", "runtime_version", "checkpoint_namespace"} & request.context.keys()
+
+
+@pytest.mark.asyncio
+async def test_bound_runtime_cannot_execute_without_a_captured_owner():
+    from src.application.runtime.runtime_service import RuntimeService
+    from src.runtime.control import RuntimeControlRegistry
+    from src.registry.tools import ToolRegistry
+    from tests.test_deep_agent_runtime_adapter import _ModelRuntimeStub, _runtime_session, _runtime_request
+
+    runtime = RuntimeService(graph=None, model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(), tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(), deep_agent_enabled=True,
+        deep_agent_runtime_adapter=object())
+    request = _runtime_request("session-1", "turn-1")
+    request.runtime_binding = binding()
+    with pytest.raises(RuntimeError, match="captured execution owner"):
+        await runtime._execute_deep_agent_turn(_runtime_session("session-1"), request,
+            state={}, pilot_stage="DA-E1", on_model_chunk=None)
 
 
 @pytest.mark.asyncio

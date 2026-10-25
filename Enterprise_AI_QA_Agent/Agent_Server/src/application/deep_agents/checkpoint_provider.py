@@ -6,6 +6,7 @@ from contextlib import asynccontextmanager
 from typing import Any, AsyncIterator
 
 from src.core.config import Settings
+from src.runtime.execution_context import current_framework_owner
 
 
 logger = logging.getLogger(__name__)
@@ -25,7 +26,7 @@ class DeepAgentCheckpointProvider:
         self._lock = asyncio.Lock()
 
     @asynccontextmanager
-    async def open(self) -> AsyncIterator[Any]:
+    async def open(self, *, owner=None) -> AsyncIterator[Any]:
         async with self._lock:
             if self._saver is None:
                 from src.application.deep_agents.threaded_postgres_saver import ThreadedPostgresSaver
@@ -79,7 +80,14 @@ class DeepAgentCheckpointProvider:
                     "deep_agent_checkpoint_ready",
                     extra={"schema": config.checkpoint_schema},
                 )
-        yield self._saver
+        execution_owner = owner if owner is not None else current_framework_owner()
+        if execution_owner is None:
+            yield self._saver
+        else:
+            from src.application.deep_agents.fenced_postgres_saver import FencedPostgresSaver
+
+            yield FencedPostgresSaver(self._pool, settings=self._settings,
+                owner=execution_owner, serde=self._saver.serde)
 
     async def close(self) -> None:
         if self._pool is not None:

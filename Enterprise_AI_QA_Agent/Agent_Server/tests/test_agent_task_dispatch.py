@@ -169,6 +169,7 @@ async def harness():
     tables = [f"agent_test_{field}_{suffix}" for field in fields]
     for field, table in zip(fields, tables):
         setattr(settings.database, f"postgres_{field}_table", table)
+    tables.append(f"{settings.database.postgres_agent_task_table}_runtime")
     prefix = f"agent_test_{suffix}"
     settings.orchestration.agent_task_stream = f"{prefix}:tasks:agent"
     settings.orchestration.agent_task_control_poll_seconds = .05

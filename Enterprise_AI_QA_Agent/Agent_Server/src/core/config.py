@@ -516,6 +516,8 @@ class DeepAgentsConfig(BaseModel):
     checkpoint_enabled: bool = False
     checkpoint_schema: str = "deepagents_checkpoint"
     checkpoint_pool_size: int = Field(default=4, ge=1, le=32)
+    checkpoint_lock_timeout_ms: int = Field(default=5000, ge=1)
+    checkpoint_statement_timeout_ms: int = Field(default=30000, ge=1)
     max_subagent_calls_per_turn: int = 1
     subagent_model_call_limit: int = 6
     subagent_tool_call_limit: int = 12

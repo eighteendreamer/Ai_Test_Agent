@@ -42,7 +42,7 @@ from src.domain.models import SessionRecord
 from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
-from src.runtime.execution_context import graph_event_scope
+from src.runtime.execution_context import graph_event_scope, current_framework_owner
 from src.runtime.execution_logging import append_graph_event, truncate_text
 from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
@@ -291,6 +291,10 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
+        if request.runtime_binding is not None:
+            owner = current_framework_owner()
+            if owner is None or owner.binding != request.runtime_binding:
+                raise RuntimeError("Bound runtime requires its captured execution owner")
         def on_subagent_event(item: dict[str, Any]) -> None:
             event_type = str(item.get("type") or "")
             append_graph_event(

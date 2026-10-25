@@ -80,3 +80,15 @@ class RuntimeBinding(BaseModel):
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+
+class RuntimeExecutionOwner(BaseModel):
+    """Worker-only authority captured once at claim, never graph state."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    binding: RuntimeBinding
+    owner_epoch: int = Field(ge=1)
+    owner_token: str = Field(min_length=1, repr=False)
+    task_id: str
+    attempt_id: str
+    worker_id: str

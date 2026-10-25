@@ -21,6 +21,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
+from src.runtime.execution_context import framework_owner_scope
 from src.runtime.session_lock_map import SessionLockMap
 from src.runtime.store import (
     ContinuationLeaseLostError,
@@ -167,6 +168,8 @@ class SessionService:
         payload = SendMessageRequest.model_validate(task.input)
         if not task.user_message_id:
             raise ValueError("Message task is missing its durable user message")
+        if task.runtime_binding is not None and task.runtime_owner is None:
+            raise ContinuationLeaseLostError("Framework message is missing its captured execution owner")
         async with self._session_locks[task.session_id]:
             await self._store.assert_turn_execution(task.session_id, task.lease_token)
             stop = asyncio.Event()
@@ -175,6 +178,7 @@ class SessionService:
                     session_id=task.session_id,
                     lease_token=task.lease_token,
                     stop_event=stop,
+                    framework_task=task if task.runtime_binding is not None else None,
                 )
             )
 
@@ -195,14 +199,15 @@ class SessionService:
                     trace_id=str(task.trace_id),
                 )
                 request.runtime_binding = task.runtime_binding
-                return await self._run_owned_submission_locked(
-                    session,
-                    payload,
-                    request,
-                    allow_interrupted=True,
-                    turn_lease_token=task.lease_token,
-                    user_message_id=task.user_message_id,
-                )
+                with framework_owner_scope(task.runtime_owner):
+                    return await self._run_owned_submission_locked(
+                        session,
+                        payload,
+                        request,
+                        allow_interrupted=True,
+                        turn_lease_token=task.lease_token,
+                        user_message_id=task.user_message_id,
+                    )
 
             try:
                 return await self._await_owned_execution(
@@ -1305,6 +1310,7 @@ class SessionService:
         session_id: str,
         lease_token: str,
         stop_event: asyncio.Event,
+        framework_task=None,
     ) -> bool | None:
         while not stop_event.is_set():
             try:
@@ -1316,11 +1322,15 @@ class SessionService:
                 pass
             if stop_event.is_set():
                 return
-            renewed = await self._store.renew_turn_execution(
-                session_id=session_id,
-                lease_token=lease_token,
-                lease_seconds=self._turn_execution_lease_seconds,
-            )
+            if framework_task is not None:
+                renewed = await self._agent_task_store.renew_framework_execution(
+                    framework_task, self._turn_execution_lease_seconds)
+            else:
+                renewed = await self._store.renew_turn_execution(
+                    session_id=session_id,
+                    lease_token=lease_token,
+                    lease_seconds=self._turn_execution_lease_seconds,
+                )
             if not renewed:
                 logger.error(
                     "turn_execution_heartbeat_lease_lost",
