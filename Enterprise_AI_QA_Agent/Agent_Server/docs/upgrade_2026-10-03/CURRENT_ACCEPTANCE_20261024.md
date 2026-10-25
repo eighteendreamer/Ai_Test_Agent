@@ -481,7 +481,7 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 ## 本轮剩余项复核（任务 E：compatibility 矩阵执行）
 
-复核 `src/modes/compatibility_testing_mode/environment_matrix.py`：九类环境全部由产品固定产出 `availability="missing_runner"`，仓库内不存在浏览器 Runner 注册/调度基础设施；本轮隔离环境也未提供任何 Runner。因此按既定边界不推进矩阵执行（不伪造执行证据），compatibility 方向的已完成证据仍为默认模型计划编排验收（`compat-mode-default-deepseek-current-20261025-07/`）与 14 项 Runner 持久化机制专项。
+复核 `src/modes/compatibility_testing_mode/`：环境矩阵共 13 项，其中 3 项 `local_browser`（Windows Chrome / Windows Edge / Linux Firefox）静态标记 `available`，其余 10 项远程/移动环境标记 `missing_runner` 并给出原因；`runtime._reconcile_environment_runner_availability` 仅在注入 `runner_service` 时按实际注册 Runner 复核可用性，而 `execute_approved_plan` 的调度计划依赖可用的 Runner/Provider。本隔离环境未提供 Runner 服务，仓库内也没有浏览器 Runner 的注册与执行基础设施，因此矩阵执行仍不可推进（不伪造执行证据）。compatibility 方向已完成证据仍为默认模型计划编排验收（`compat-mode-default-deepseek-current-20261025-07/`）与 14 项 Runner 持久化机制专项。
 
 ## 环境清理
 
