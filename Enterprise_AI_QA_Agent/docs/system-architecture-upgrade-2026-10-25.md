@@ -35,6 +35,21 @@
   - **Scenario Pack**：一个测试场景（API、UI、性能、安全、兼容性、代码评审等）的声明式扩展包。
   - **Workbench**：面向测试人员的工作台 UI，不是调试控制台。
 
+## 覆盖进度
+
+| 范围 | 当前证据 | 审查状态 |
+|---|---|---|
+| 执行主链与 Worker | HTTP → dispatcher → outbox/Redis → worker 的完整路径；内联路径与冻结执行路径 | 已核实代码；未实测 kill/接管 |
+| 持久化与恢复 | turn 末快照、lease/reaper、RunItem/Attempt 状态机；恢复测试只验证“放弃” | 已核实代码/测试断言；未做故障注入 |
+| 场景与模式 | 14 包 / 7 runtime / 6 placeholder；45 Agent；模式 if/elif；3 套模式 TaskPool | 已核实代码与注册表 |
+| 任务与生命周期 | 5 类任务 UNION；6 套状态；3 类计划/文档/生成链 | 已核实代码；未统计生产数据分布 |
+| 证据与完成语义 | 5 种 evidence 形状；确定性/语义混合裁决；四轴缺失 | 已核实代码；未审计真实运行样本 |
+| 上下文与记忆 | turn 开始压缩、world_state/prompt_cache 未接线、每轮宽写入 | 已核实代码；未测缓存命中 |
+| 前端工作台 | Composer 无停止、队列藏在控制台、24 条轨迹、5s 轮询、ProjectsView 2612 行 | 已核实代码；未做可用性测试 |
+| 模块边界与装配 | 790 行装配、57 setter、双容器、倒置依赖、80 处 DDL | 已核实代码；未做依赖图全量扫描 |
+| 成熟 Agent 参考 | Codex/Claude/Grok/Warp 的 steering、恢复、工具、事件、Inspector | 已核实关键源码位置；未做功能对等比较 |
+| 部署与容量 | API/Worker/Relay 实例数、Redis/PG 容量、多实例 SSE | **未验证**，需要运维数据与压测 |
+
 ---
 
 ## 0. 事实校正：旧判断与当前代码的差异
