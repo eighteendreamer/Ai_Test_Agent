@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-日期：2026-10-25。性质：经代码、官方源码和局部运行验证后的迁移设计；尚未实现运行时改造。
+日期：2026-10-25。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11 节记录方案形成时的研究验证；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
 
 ## 1. 结论与本次修订
 
@@ -141,11 +141,13 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 
 | 维度 | 状态/记录 | 含义 |
 | --- | --- | --- |
-| 人的决定 | 沿用审批 `pending / approved / rejected`，附 `decision_id、decided_at、actor、decision_hash` | 一次有效决定不可改写；取消/过期有效性用独立字段记录，避免擅改旧枚举 |
+| 人的决定 | 沿用审批 `pending / approved / denied`，附 `decision_id、decided_at、actor、decision_hash` | 一次有效决定不可改写；取消/过期有效性用独立字段记录，避免擅改旧枚举 |
 | 决定交付 | 新增 receipt：`queued / sending / delivered`，加 `applied_at / proof_ref / last_error` | delivered 表示决定随 `__resume__` 持久写入；applied 表示已观察到该决定产生的治理/工具结果，不等于副作用成功 |
 | 工具执行 | 复用 ToolJob 状态与执行证据，另有对账标记 | 批准后可成功、失败、被阻止或结果未知；拒绝返回匹配的 ToolMessage，不执行工具 |
 
 `sending` 只表示一次可失租的发送尝试，不作为“框架肯定收到”的证据。最终展示由三组状态合成：“决定已提交”“工具执行中”“仍有待审批项”“执行需核对”等。API 保留 202 和现有 task 回执，以新增可选字段表达详情。
+
+项目事实来源是 `schemas/session.py` 的 `ToolApprovalStatus`：业务拒绝存为 `denied`；交给官方 HITL 时映射为决定类型 `reject`。`rejected` 不是当前存储枚举，不能因框架术语修改旧状态值。
 
 ### 4.3 提交、排队和串行继续
 
