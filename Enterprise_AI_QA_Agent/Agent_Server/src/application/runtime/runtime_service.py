@@ -558,6 +558,11 @@ class RuntimeService:
             pending_turn={},
         )
 
+    async def reconcile_framework_task(self, task, *, tasks):
+        from src.runtime.framework_approval_recovery import FrameworkApprovalRecovery
+
+        return await FrameworkApprovalRecovery(tasks, self._framework_approval_continuation).apply(task)
+
     async def resume_framework_approval(
         self,
         session: SessionRecord,

@@ -1004,6 +1004,8 @@ export interface AgentTaskRecord {
     | "message"
     | "manual_resume"
     | "approval_resume"
+    | "framework_reconcile"
+    | "approval_recover"
     | "coordinator_child"
     | "coordinator_resume";
   session_id: string;

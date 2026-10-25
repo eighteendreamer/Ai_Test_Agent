@@ -160,6 +160,11 @@ class PostgresAgentTaskStore:
     async def get(self, task_id: str) -> AgentTaskExecution:
         return await asyncio.to_thread(self._get_sync, task_id)
 
+    async def ensure_framework_reconciliation(self, task_id):
+        from src.runtime.framework_approval_recovery import FrameworkApprovalRecovery
+
+        return await asyncio.to_thread(FrameworkApprovalRecovery(self).ensure, task_id)
+
     async def list_session(
         self,
         session_id: str,
@@ -1147,6 +1152,13 @@ class PostgresAgentTaskStore:
                 raise ValueError("Agent claim runtime binding does not match the durable task")
             if row["status"] in TERMINAL_AGENT_TASK_STATUSES:
                 return self._record(row)
+            pending = (session["metadata"] or {}).get("pending_turn") or {}
+            pending_binding = (pending.get("context_bundle") or {}).get("runtime_binding")
+            control = (session["metadata"] or {}).get("control") or {}
+            if (row["operation"] == "message" and pending_binding is not None
+                and pending.get("turn_id") != row["turn_id"]
+                and control.get("last_interrupt_binding_id") != pending_binding.get("binding_id")):
+                raise TaskDeferred("Pending framework Turn must settle before a later message")
             if row["status"] in {"claimed", "running"}:
                 if session["lease_active"] and session["metadata"].get("turn_lease_token") == row["lease_token"]:
                     raise TaskDeferred("Agent task is owned by another worker")
@@ -1179,11 +1191,26 @@ class PostgresAgentTaskStore:
                     )
                     cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
                     return self._record(cur.fetchone())
-            framework_approval = saved_binding is not None and row.get("operation") == "approval_resume"
+            framework_approval = saved_binding is not None and row.get("operation") in {"approval_resume", "approval_recover"}
+            framework_reconciliation = saved_binding is not None and row.get("operation") == "framework_reconcile"
+            if framework_reconciliation:
+                from src.runtime.framework_approval_recovery import require_reconciliation_claim
+
+                require_reconciliation_claim(cur, self, session, saved_binding, row, binding_owner)
             if framework_approval:
                 from src.runtime.framework_approval_submission import assert_claimable_approval
                 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 
+                if row["operation"] == "approval_resume":
+                    cur.execute(f"SELECT id FROM {self._tasks} WHERE session_id=%s AND turn_id=%s "
+                        "AND operation IN ('framework_reconcile','approval_recover') "
+                        "AND status IN ('queued','waiting_resource','claimed','running') LIMIT 1",
+                        (row["session_id"], row["turn_id"]))
+                    if cur.fetchone() is not None:
+                        raise TaskDeferred("Framework recovery must finish before sibling continuations")
+                if (binding_owner["execution_state"] in {"failed", "recovery_required"}
+                    and not row["interrupt_requested"]):
+                    raise TaskDeferred("Framework Turn requires reconciliation before approval continuation")
                 try:
                     assert_claimable_approval(cur, self, session, saved_binding, row, binding_owner)
                 except (AgentSubmissionConflict, FrameworkApprovalRecoveryRequired, ValidationError) as exc:
@@ -1197,6 +1224,7 @@ class PostgresAgentTaskStore:
             if session["lease_active"] or (
                 session["status"] == "waiting_approval"
                 and row.get("operation") != "approval_resume"
+                and not (framework_approval or framework_reconciliation)
             ):
                 raise TaskDeferred("Session is occupied or waiting for approval")
             if session["status"] == "running" and session["metadata"].get("turn_lease_token") != row["lease_token"]:
@@ -1206,8 +1234,11 @@ class PostgresAgentTaskStore:
                 AND status IN ('queued','waiting_resource','claimed','running')
                 AND NOT (%s AND operation='message' AND turn_id<>%s
                     AND status IN ('queued','waiting_resource'))
+                AND NOT (%s AND operation IN ('approval_resume','approval_recover') AND turn_id=%s
+                    AND status IN ('queued','waiting_resource'))
                 LIMIT 1""",
-                (row["session_id"], row["sequence"], framework_approval, row["turn_id"]),
+                (row["session_id"], row["sequence"], framework_approval or framework_reconciliation,
+                    row["turn_id"], framework_reconciliation or row["operation"] == "approval_recover", row["turn_id"]),
             )
             if cur.fetchone():
                 raise TaskDeferred("An earlier session input is pending")

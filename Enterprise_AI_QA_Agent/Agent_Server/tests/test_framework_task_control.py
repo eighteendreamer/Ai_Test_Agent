@@ -60,6 +60,7 @@ def framework_worker_process(settings, prefix, binding, pause_at):
         sessions._runtime_service = h.runtime
         dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities(binding.dependency_lock_sha256, True))
         prepare = h.runtime._framework_approval_continuation.prepare
+        settle = h.runtime._framework_approval_continuation.settle
 
         async def pause():
             # A killed child may retain a multiprocessing.Event semaphore. Redis
@@ -78,7 +79,13 @@ def framework_worker_process(settings, prefix, binding, pause_at):
                 await pause()
             return {"status": "completed", "summary": "cross-process tool evidence", "value": arguments["value"]}
 
+        async def settle_with_pause(*args):
+            if pause_at == "after_native":
+                await pause()
+            return await settle(*args)
+
         h.runtime._framework_approval_continuation.prepare = prepare_with_pause
+        h.runtime._framework_approval_continuation.settle = settle_with_pause
         h.runtime._tool_runtime_service._handlers["inspect_value"] = counted_tool
         queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.agent_task_v2_stream,
             group="control-v2", client=redis)

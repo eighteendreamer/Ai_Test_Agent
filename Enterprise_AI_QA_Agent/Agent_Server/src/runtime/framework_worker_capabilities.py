@@ -34,8 +34,9 @@ class FrameworkWorkerCapabilities:
     def require(self, binding: RuntimeBinding, *, operation: str) -> None:
         """Unavailable compatibility leaves the durable task unclaimed.
 
-        Deep Agents supports initial messages and owner-bound, journaled native
-        approval continuations. Other graph workflows and resume operations
+        Deep Agents supports initial messages, owner-bound native approval
+        continuations, deterministic reconciliation and proven successors.
+        Other graph workflows and resume operations
         require their own execution contracts before they can be admitted.
         """
         if binding.runtime_version != self.runtime_version:
@@ -48,5 +49,5 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_runtime_kind_unavailable")
         if not self.deepagents_available:
             raise TaskDeferred("framework_deepagents_unavailable")
-        if operation not in {"message", "approval_resume"}:
+        if operation not in {"message", "approval_resume", "framework_reconcile", "approval_recover"}:
             raise TaskDeferred("framework_operation_unavailable")

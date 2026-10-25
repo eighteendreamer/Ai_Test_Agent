@@ -246,6 +246,12 @@ class SessionService:
                 complete_lease=False,
             )
 
+    async def execute_claimed_reconciliation(self, task):
+        """Short deterministic transaction; no graph/model/tool invocation."""
+        async with self._session_locks[task.session_id]:
+            with framework_owner_scope(task.runtime_owner):
+                return await self._runtime_service.reconcile_framework_task(task, tasks=self._agent_task_store)
+
     async def execute_claimed_approval(
         self,
         task,
@@ -3039,6 +3045,7 @@ class SessionService:
                 task
                 for task in reversed(tasks)
                 if task.status in {"queued", "waiting_resource", "claimed"}
+                and task.operation not in {"framework_reconcile", "approval_recover"}
             ]
             resume_queued = any(task.operation == "manual_resume" for task in queued)
             local_queue = session.metadata.get("pending_input_queue", [])

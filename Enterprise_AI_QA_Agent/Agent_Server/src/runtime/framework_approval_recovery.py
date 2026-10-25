@@ -1,0 +1,199 @@
+"""Durable reconciliation and safe successors for failed native approval tasks.
+
+No upstream counterpart (checked: inbox/outbox, runtime owner, native decision
+journal, integration plan §5.2/5.3): framework persistence cannot decide whether
+an application tool's external effect is known. Never reset a terminal task.
+"""
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from uuid import NAMESPACE_URL, uuid5
+
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+from src.runtime.postgres_runtime_owner import (
+    assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row,
+)
+from src.schemas.agent_task import AgentTaskCommandV2
+from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_approval import approval_value_hash
+
+
+logger = logging.getLogger(__name__)
+APPROVAL_EXECUTIONS = frozenset({"approval_resume", "approval_recover"})
+
+
+def require_recovery_origin(cur, tasks, session, binding, origin):
+    pending = (session["metadata"] or {}).get("pending_turn") or {}
+    control = (session["metadata"] or {}).get("control") or {}
+    if (origin["operation"] not in APPROVAL_EXECUTIONS or origin["status"] not in {"failed", "recovery_required"}
+        or not origin["attempt_id"] or origin["interrupt_requested"]
+        or origin["runtime_binding"] != binding.model_dump(mode="json")
+        or origin["session_id"] != session["id"] or origin["project_id"] != session["project_id"]
+        or pending.get("turn_id") != binding.turn_id
+        or (pending.get("context_bundle") or {}).get("runtime_binding") != binding.model_dump(mode="json")
+        or control.get("last_interrupt_binding_id") == binding.binding_id):
+        raise FrameworkApprovalRecoveryRequired("Origin no longer belongs to a recoverable framework Turn")
+    cur.execute(f"SELECT id FROM {tasks._tasks} WHERE session_id=%s AND turn_id=%s AND interrupt_requested LIMIT 1",
+        (binding.session_id, binding.turn_id))
+    if cur.fetchone() is not None:
+        raise FrameworkApprovalRecoveryRequired("Explicitly interrupted Turn cannot resume automatically")
+
+
+def require_reconciliation_claim(cur, tasks, session, binding, row, owner):
+    cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (row["reference_id"],))
+    origin = cur.fetchone()
+    if origin is None:
+        raise FrameworkApprovalRecoveryRequired("Reconciliation origin is missing")
+    require_recovery_origin(cur, tasks, session, binding, origin)
+    if (row["input_payload"].get("origin_task_id") != origin["id"]
+        or row["input_payload"].get("origin_attempt_id") != origin["attempt_id"]
+        or owner["task_id"] not in {origin["id"], row["id"]}):
+        raise FrameworkApprovalRecoveryRequired("Reconciliation origin attempt or coordinator changed")
+    return origin
+
+
+def require_successor_proof(cur, settings, row):
+    """A recover command is valid only as the recorded child of a completed reconciliation."""
+    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE",
+        (row["parent_task_id"],))
+    parent = cur.fetchone()
+    payload = row["input_payload"]
+    result = (parent or {}).get("result_payload") or {}
+    proof = payload.get("recovery_proof")
+    if (parent is None or parent["operation"] != "framework_reconcile" or parent["status"] != "completed"
+        or parent["result_status"] != "reconciled" or parent["runtime_binding"] != row["runtime_binding"]
+        or parent["session_id"] != row["session_id"] or parent["turn_id"] != row["turn_id"]
+        or payload.get("reconciliation_task_id") != parent["id"] or result.get("successor_task_id") != row["id"]
+        or not isinstance(proof, dict) or result.get("proof") != proof
+        or proof.get("origin_task_id") != parent["reference_id"]
+        or proof.get("origin_task_id") != payload.get("origin_task_id")
+        or proof.get("origin_attempt_id") != payload.get("origin_attempt_id")
+        or proof.get("decision_id") != payload.get("decision_id")):
+        raise FrameworkApprovalRecoveryRequired("Recovery successor has no matching durable reconciliation proof")
+
+
+class FrameworkApprovalRecovery:
+    def __init__(self, tasks, continuation=None):
+        self._tasks, self._settings, self._continuation = tasks, tasks._settings, continuation
+
+    def _publish(self, cur, origin, *, operation, reference_id, parent_id, input_payload):
+        tasks = self._tasks
+        task_id = str(uuid5(NAMESPACE_URL, f"framework:{operation}:{parent_id}:{origin['attempt_id']}"))
+        command = AgentTaskCommandV2(task_id=task_id, operation=operation, session_id=origin["session_id"],
+            turn_id=origin["turn_id"], project_id=origin["project_id"], request_id=origin["request_id"],
+            trace_id=origin["trace_id"], run_id=origin["run_id"], run_item_id=origin["run_item_id"],
+            reference_id=reference_id, parent_task_id=parent_id, root_trace_id=origin["root_trace_id"],
+            runtime_binding=RuntimeBinding.model_validate(origin["runtime_binding"]))
+        cur.execute(f"""INSERT INTO {tasks._tasks}
+            (id,session_id,operation,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
+             idempotency_key,input_hash,input_payload,reference_id,parent_task_id,root_trace_id,runtime_binding)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s::jsonb) RETURNING *""",
+            (task_id, command.session_id, operation, command.turn_id, command.project_id, command.request_id,
+                command.trace_id, command.run_id, command.run_item_id, tasks._idempotency_key(operation, task_id),
+                approval_value_hash(input_payload), json.dumps(input_payload, ensure_ascii=False), reference_id,
+                parent_id, command.root_trace_id, command.runtime_binding.model_dump_json()))
+        row = cur.fetchone()
+        cur.execute(f"INSERT INTO {self._settings.database.postgres_task_outbox_table} (event_key,stream,payload) "
+            "VALUES (%s,%s,%s::jsonb)", (f"agent_turn:{task_id}", self._settings.orchestration.agent_task_v2_stream,
+                command.model_dump_json()))
+        tasks._event(cur, row, f"framework.{operation}_queued", {"origin_task_id": origin["id"],
+            "origin_attempt_id": origin["attempt_id"], "binding_id": command.runtime_binding.binding_id})
+        return tasks._record(row)
+
+    def ensure(self, task_id):
+        tasks = self._tasks
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            cur.execute(f"SELECT session_id FROM {tasks._tasks} WHERE id=%s", (task_id,))
+            identity = cur.fetchone()
+            if identity is None:
+                raise KeyError(task_id)
+            session = tasks._lock_session(cur, identity["session_id"])
+            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s", (task_id,))
+            origin = cur.fetchone()
+            if (origin["runtime_binding"] is None or origin["operation"] not in APPROVAL_EXECUTIONS
+                or origin["status"] not in {"failed", "recovery_required"}):
+                return None
+            binding = RuntimeBinding.model_validate(origin["runtime_binding"])
+            owner = lock_owner_row(cur, self._settings, binding)
+            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE operation='framework_reconcile' AND parent_task_id=%s",
+                (task_id,))
+            existing = cur.fetchone()
+            if existing is not None:
+                return tasks._record(existing)
+            try:
+                require_recovery_origin(cur, tasks, session, binding, origin)
+            except FrameworkApprovalRecoveryRequired:
+                logger.info("framework_recovery_not_admitted", extra={"origin_task_id": task_id,
+                    "binding_id": binding.binding_id})
+                return None
+            if session["lease_active"] or owner["task_id"] != task_id:
+                return None
+            created = self._publish(cur, origin, operation="framework_reconcile", reference_id=task_id,
+                parent_id=task_id, input_payload={"origin_task_id": task_id, "origin_attempt_id": origin["attempt_id"]})
+        logger.info("framework_reconciliation_admitted", extra={"origin_task_id": task_id, "task_id": created.id,
+            "binding_id": binding.binding_id})
+        return created
+
+    async def apply(self, task):
+        try:
+            result = await asyncio.to_thread(self._apply, task)
+        except Exception as exc:
+            logger.warning("framework_reconciliation_rejected", extra={"task_id": task.id,
+                "origin_task_id": task.reference_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_reconciliation_succeeded", extra={"task_id": task.id, "successor_task_id": result.id})
+        return result
+
+    def _apply(self, task):
+        if self._continuation is None or task.runtime_owner is None:
+            raise FrameworkApprovalRecoveryRequired("Reconciliation requires its owned native continuation service")
+        tasks, owner = self._tasks, task.runtime_owner
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            assert_runtime_owner(cur, self._settings, owner)
+            session = tasks._lock_session(cur, task.session_id)
+            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (task.id,))
+            row = cur.fetchone()
+            if (row is None or row["operation"] != "framework_reconcile" or row["status"] != "running"
+                or row["attempt_id"] != owner.attempt_id or row["lease_token"] != owner.owner_token
+                or row["runtime_binding"] != owner.binding.model_dump(mode="json")):
+                raise FrameworkApprovalRecoveryRequired("Reconciliation differs from its owned task")
+            origin = require_reconciliation_claim(cur, tasks, session, owner.binding, row,
+                {"task_id": task.id})
+            plan, consumed = self._continuation.inspect_decision_in_transaction(cur, owner.binding, origin)
+            cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} "
+                "WHERE session_id=%s AND turn_id=%s ORDER BY id FOR UPDATE", (task.session_id, task.turn_id))
+            jobs = cur.fetchall()
+            from src.runtime.framework_approval_continuation import TERMINAL_JOBS
+
+            for job in jobs:
+                if (job["metadata"].get("framework_binding_id") != owner.binding.binding_id
+                    or (job["status"] not in TERMINAL_JOBS
+                        and not (job["status"] == "waiting_approval" and job["started_at"] is None))):
+                    raise FrameworkApprovalRecoveryRequired("Turn has unknown tool effects; reconciliation cannot dispatch")
+            proof = {"schema_version": 1, "origin_task_id": origin["id"], "origin_attempt_id": origin["attempt_id"],
+                "decision_id": plan.receipt.decision_id, "decision_hash": plan.receipt.decision_hash,
+                "native_consumed": consumed, "tool_job_id": plan.job.id, "tool_job_status": plan.job.status.value,
+                "tool_output_hash": approval_value_hash(plan.job.output_payload)}
+            successor = self._publish(cur, origin, operation="approval_recover", reference_id=origin["reference_id"],
+                parent_id=task.id, input_payload={**origin["input_payload"], "origin_task_id": origin["id"],
+                    "origin_attempt_id": origin["attempt_id"], "reconciliation_task_id": task.id, "recovery_proof": proof})
+            cur.execute(f"UPDATE {tasks._tasks} SET result_payload=%s::jsonb WHERE id=%s",
+                (json.dumps({"successor_task_id": successor.id, "proof": proof}), task.id))
+            tasks._update_status(cur, row, "completed", "reconciled", None)
+            tasks._clear_lease(cur, row)
+            metadata = dict(session["metadata"])
+            for key in ("turn_lease_turn_id", "turn_lease_owner", "turn_lease_token", "turn_lease_expires_at"):
+                metadata.pop(key, None)
+            metadata["control"] = {**(metadata.get("control") or {}), "control_state": "waiting_approval",
+                "is_interrupted": False, "is_resumable": False}
+            cur.execute(f"UPDATE {tasks._session_table} SET status='waiting_approval',metadata=%s::jsonb, "
+                "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
+                (json.dumps(metadata, ensure_ascii=False), task.session_id))
+            tasks._event(cur, row, "framework.recovery_succeeded", {"successor_task_id": successor.id,
+                "origin_task_id": origin["id"], "binding_id": owner.binding.binding_id})
+            return successor

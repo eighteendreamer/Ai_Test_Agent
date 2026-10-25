@@ -61,9 +61,10 @@ class FrameworkApprovalReadModel:
                 LEFT JOIN {runtime_owner_table(settings)} o ON o.binding_id=l.binding_id
                 LEFT JOIN {receipts} r ON r.approval_id=a.id
                 LEFT JOIN {settings.database.postgres_tool_job_table} j ON j.id=l.link->>'tool_job_id'
-                LEFT JOIN {settings.database.postgres_agent_task_table} t
-                  ON t.session_id=a.session_id AND t.reference_id=a.id
-                  AND t.operation='approval_resume' AND t.runtime_binding IS NOT NULL
+                LEFT JOIN LATERAL (SELECT candidate.* FROM {settings.database.postgres_agent_task_table} candidate
+                  WHERE candidate.session_id=a.session_id AND candidate.reference_id=a.id
+                  AND candidate.operation IN ('approval_resume','approval_recover') AND candidate.runtime_binding IS NOT NULL
+                  ORDER BY candidate.sequence DESC LIMIT 1) t ON TRUE
                 JOIN {settings.database.postgres_session_table} s ON s.id=a.session_id
                 WHERE a.id=ANY(%s) ORDER BY a.created_at,a.id""", (ids,))
             return [self._project(row, session_id, turn_id) for row in cur.fetchall()]

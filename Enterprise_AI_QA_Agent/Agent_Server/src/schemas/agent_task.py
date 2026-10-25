@@ -23,13 +23,14 @@ AgentTaskStatus = Literal[
     "waiting_children",
     "coordinator_resuming",
 ]
-AgentTaskOperation = Literal[
+LegacyAgentTaskOperation = Literal[
     "message",
     "manual_resume",
     "approval_resume",
     "coordinator_child",
     "coordinator_resume",
 ]
+AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )
@@ -39,7 +40,7 @@ class AgentTaskCommand(BaseModel):
     model_config = ConfigDict(extra="forbid")
     schema_version: Literal[1] = 1
     task_type: Literal["agent_turn", "coordinator_child", "coordinator_resume"] = "agent_turn"
-    operation: AgentTaskOperation = "message"
+    operation: LegacyAgentTaskOperation = "message"
     task_id: str = Field(min_length=1, max_length=160)
     session_id: str = Field(min_length=1, max_length=160)
     turn_id: str = Field(min_length=1, max_length=160)

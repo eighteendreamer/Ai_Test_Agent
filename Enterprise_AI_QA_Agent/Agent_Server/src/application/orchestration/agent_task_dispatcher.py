@@ -630,6 +630,8 @@ class AgentTaskDispatcher:
                 raise ValueError("Bound framework task requires a v2 agent command")
             task = await self._tasks.claim(command.task_id, worker_id=worker_id)
         if task.status in TERMINAL_AGENT_TASK_STATUSES:
+            if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover"}:
+                await self._tasks.ensure_framework_reconciliation(task.id)
             return
         task_type = _task_type(command)
         agent_task_wait_seconds().labels(task_type=task_type).observe(
@@ -664,6 +666,8 @@ class AgentTaskDispatcher:
             queue=queue,
         ):
             await self._execute(task)
+            if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover"}:
+                await self._tasks.ensure_framework_reconciliation(task.id)
 
     async def _execute(self, task):
         lease, monitor = None, None
@@ -734,6 +738,12 @@ class AgentTaskDispatcher:
             )
             with bind_request_context(resource_id=lease.resource_id):
                 clock = monotonic()
+                if task.operation == "framework_reconcile":
+                    if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
+                        raise ContinuationLeaseLostError("Reconciliation admission lease lost before commit")
+                    await self._sessions.execute_claimed_reconciliation(task)
+                    finished_status = "completed"
+                    return
                 if task.operation == "message":
                     response = await self._sessions.execute_claimed_message(
                         task,
@@ -744,7 +754,7 @@ class AgentTaskDispatcher:
                         task,
                         ownership_monitor=monitor,
                     )
-                elif task.operation == "approval_resume":
+                elif task.operation in {"approval_resume", "approval_recover"}:
                     response = await self._sessions.execute_claimed_approval(
                         task,
                         ownership_monitor=monitor,
@@ -849,8 +859,9 @@ class AgentTaskDispatcher:
                             fencing_token=task.fencing_token,
                             payload=notification,
                         )
-                await self._tasks.finish(task, status="failed", error_code=type(exc).__name__)
-                finished_status = "failed"
+                failure_status = "recovery_required" if task.operation == "framework_reconcile" else "failed"
+                await self._tasks.finish(task, status=failure_status, error_code=type(exc).__name__)
+                finished_status = failure_status
                 if notification is not None:
                     await self._notify_parent_child_done(task, notification)
             else:

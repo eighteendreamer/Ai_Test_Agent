@@ -113,7 +113,7 @@ class FrameworkApprovalContinuation:
         cur.execute(f"SELECT * FROM {self._settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE",
             (owner.task_id,))
         task = cur.fetchone()
-        if (task is None or task["operation"] != "approval_resume" or task["status"] != "running"
+        if (task is None or task["operation"] not in {"approval_resume", "approval_recover"} or task["status"] != "running"
             or task["session_id"] != binding.session_id or task["turn_id"] != binding.turn_id
             or task["attempt_id"] != owner.attempt_id or task["lease_token"] != owner.owner_token
             or task["worker_id"] != owner.worker_id or task["interrupt_requested"]
@@ -125,6 +125,32 @@ class FrameworkApprovalContinuation:
         assert_active_approval(session, binding, approval_id, {"execution_state": "running"})
         if session["project_id"] != task["project_id"]:
             raise FrameworkApprovalRecoveryRequired("Continuation project changed after claim")
+        if task["operation"] == "approval_recover":
+            from src.runtime.framework_approval_recovery import require_successor_proof
+
+            require_successor_proof(cur, self._settings, task)
+        plan, consumed = self.inspect_decision_in_transaction(cur, binding, task)
+        if consumed:
+            receipt = self._journal.reconcile_delivery_in_transaction(cur, owner, approval_id)
+            event = ExecutionEvent(id=f"framework-decision:{decision_id}:delivered", session_id=binding.session_id,
+                type="approval.decision_delivered", timestamp=receipt.delivered_at,
+                turn_id=binding.turn_id, trace_id=task["trace_id"], request_id=task["request_id"],
+                attempt_id=owner.attempt_id, worker_id=owner.worker_id,
+                payload={"task_id": owner.task_id, "turn_id": binding.turn_id, "approval_id": approval_id,
+                    "decision_id": decision_id, "tool_job_id": plan.job.id, "interrupt_id": plan.link.interrupt_id})
+            self._sessions.append_event_in_transaction(cur, binding.session_id, event,
+                turn_lease_token=owner.owner_token)
+        else:
+            receipt = self._journal.mark_sending_in_transaction(cur, approval_id)
+        return plan.model_copy(update={"receipt": receipt})
+
+    def inspect_decision_in_transaction(self, cur, binding, task):
+        """Read frozen decision/native/Job facts under the caller's owner locks.
+
+        Shared by execution preflight and deterministic recovery. This method
+        neither sends a decision nor changes receipt delivery/application facts.
+        """
+        approval_id, decision_id = task["reference_id"], task["input_payload"].get("decision_id")
         cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE",
             (approval_id,))
         row = cur.fetchone()
@@ -160,16 +186,4 @@ class FrameworkApprovalContinuation:
             safe = unstarted or (job.status == ToolJobStatus.denied and job.started_at is None)
         if not safe:
             raise FrameworkApprovalRecoveryRequired("ToolJob outcome requires reconciliation before continuation")
-        if consumed:
-            receipt = self._journal.reconcile_delivery_in_transaction(cur, owner, approval_id)
-            event = ExecutionEvent(id=f"framework-decision:{decision_id}:delivered", session_id=binding.session_id,
-                type="approval.decision_delivered", timestamp=receipt.delivered_at,
-                turn_id=binding.turn_id, trace_id=task["trace_id"], request_id=task["request_id"],
-                attempt_id=owner.attempt_id, worker_id=owner.worker_id,
-                payload={"task_id": owner.task_id, "turn_id": binding.turn_id, "approval_id": approval_id,
-                    "decision_id": decision_id, "tool_job_id": job.id, "interrupt_id": link.interrupt_id})
-            self._sessions.append_event_in_transaction(cur, binding.session_id, event,
-                turn_lease_token=owner.owner_token)
-        else:
-            receipt = self._journal.mark_sending_in_transaction(cur, approval_id)
-        return FrameworkContinuationPlan(approval=approval, job=job, link=link, receipt=receipt)
+        return FrameworkContinuationPlan(approval=approval, job=job, link=link, receipt=receipt), consumed

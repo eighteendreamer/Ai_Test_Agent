@@ -45,6 +45,10 @@ def assert_active_approval(session, binding, approval_id, owner):
 def assert_claimable_approval(cur, tasks, session, binding, row, owner):
     """Do not let an obsolete continuation bypass Session input ordering."""
     assert_active_approval(session, binding, row["reference_id"], owner)
+    if row["operation"] == "approval_recover":
+        from src.runtime.framework_approval_recovery import require_successor_proof
+
+        require_successor_proof(cur, tasks._settings, row)
     cur.execute(f"SELECT * FROM {tasks._settings.database.postgres_approval_table} "
         "WHERE id=%s AND session_id=%s FOR UPDATE", (row["reference_id"], row["session_id"]))
     approval = cur.fetchone()

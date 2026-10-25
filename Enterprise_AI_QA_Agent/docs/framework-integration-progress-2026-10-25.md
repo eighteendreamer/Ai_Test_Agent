@@ -2,7 +2,7 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前已完成 P0 基础、RuntimeBinding/版本化任务契约、原生 transcript、owner/checkpoint 事务保护及决定交付日志的同进程真实数据库验证；仍不构成业务 v2 审批 API、跨进程故障恢复或模式切换验收。**
+**全系统迁移尚未完成。当前快照更新至 §23：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端，以及已知结果审批的对账后继与独立进程强杀恢复。共享预算、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
 | P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定 | 共享实际调用预算、跨 Turn 上下文实链路与完整制品校验 |
-| P2 逐项审批、所有权、对账 | 已接入官方 `per_call`、owner checkpoint 事务、receipt/proof、v2 决定原子受理与串行领取的内部端口 | 自动原生调用映射、API/Worker/Runtime/adapter 继续执行、交付与应用投影，以及跨进程故障链 |
+| P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批的对账/后继强杀 Harness（§12–23） | 对账自身崩溃、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
@@ -579,3 +579,54 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 ```
 
 结果 **55 passed，68.12 秒，无 skip**。14 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。未运行独立后端 lint/typecheck、前端测试/构建、全量系统或真实模型供应商/浏览器/领域 Runner 验收；本阶段未改前端，受控工具与 fake model 不替代真实领域出口。
+
+## 23. P2.3 已知结果审批的对账与安全后继（2026-10-26）
+
+依据方案 §5.2–5.3、现有 Session → owner → task 锁顺序，以及 continuation 的冻结决定/原生事实检查，新增 `FrameworkApprovalRecovery`。官方 [Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) 基于 LangGraph interrupt；[LangChain per_call](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 按 interrupt ID 决定单个调用；[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 保存 thread 执行状态。这些能力不提供应用审批、外部效果与 AgentTask 的共同事务，应用必须实现对账。复核了本地《Agent测试专项》《Agent轨迹与协议鲁棒性》对工具轨迹、重复执行及恢复的要求。
+
+### 实现边界
+
+```text
+approval_resume / approval_recover 原执行 failed 或 recovery_required（不可变终态）
+    → framework_reconcile（只核对持久事实）
+    → approval_recover（有 proof 的新任务）
+    → 既有 owner-bound 审批准备、Command/None、工具与应用投影链
+```
+
+- `ensure_framework_reconciliation` 复用 Session 锁、现有 task/attempt、确定性 UUID5 和任务/outbox 事务。同一失败原 task/attempt 的并发入队复用同一对账。原执行终态投递在 ACK 前受理；执行结束也检查持久状态受理，覆盖异常和返回 failed 响应。原任务与 attempt 不重置、不重领。
+- 对账检查原执行身份、同 Session/project/binding/pending Turn、用户显式中断、冻结决定、原生 interrupt/resume、ToolJob 身份及全部同 Turn Job。只允许终态或真正未启动的 waiting_approval；任何 running/未知效果都阻止后继，包括存在 §22 非权威迟到返回的情况。不调用图、模型或工具，不自动把观察提升为正式结果。
+- 后继/outbox、proof、对账 completed/reconciled 及 Session waiting_approval 投影在同一个业务事务提交。proof 保存原 task/attempt、decision ID/hash、原生消费事实和 Job 输出哈希。后继领取与 prepare 均复核已完成父对账及 proof；继续时仍重新读取实际原生事实，不能凭缓存 proof 选择 Command/None。
+- 对账和后继优先于同 Turn 排队 sibling；普通未来 Turn 不能替换未结清的绑定 Turn。显式用户中断撤销对账 owner，禁止发布后继。内部对账/后继输入不出现在用户 pending_input_queue。审批进度使用 lateral join 选最新审批执行，避免旧失败任务遮蔽后继或造成重复行。
+- Coordinator 查找活跃业务父任务增加 approval_recover，保留 durable 父身份；framework_reconcile 不属于业务派发执行。这项消费方修正不代表 v2 Coordinator 工作流已经迁移或验收。
+- `AgentTaskCommandV1` 保留原 operation Literal，拒绝新操作；v2 和任务记录支持新增两项，TypeScript union 同步。没有新数据库表、列、索引、依赖、配置、公共 API 路由或默认路由变化；恢复输入/proof 存既有 JSONB。
+
+### TDD、真实强杀与失败记录
+
+初始新文件 **6 failed，19.11 秒**，复现缺少对账受理；首轮实现 **6 passed，20.84 秒**。Sibling 排序用例先 **1 failed / 6 deselected，7.21 秒**（未抛 TaskDeferred），再修正恢复链优先级；未来输入用例先纠正 fixture 为 queued，再实际复现 claim 未 defer，修正后新文件 **8 passed，28.33 秒**。内部队列用例先纠正字段位于 detail.metadata，之后实际复现内部任务暴露，再修正投影。
+
+独立进程 Harness 复用 §21 的真实 spawn Worker、Redis 门闩、官方框架与真实 PostgreSQL。B 工具产生 Redis 计数并已保存终态 Job/native 结果，Worker 在 applied 投影前等待；父进程 terminate 并确认非零退出，过期原租约。随后分别启动独立 Worker 对账、执行后继、处理 A 的拒绝决定。断言 B 外部计数始终为 1、两项 receipt 均 applied、pending Turn 闭合、原失败 task/attempt 完全保留。该用例单独运行 **1 passed / 8 deselected，28.96 秒**；不代表未知效果窗口也能自动继续。
+
+审查新增 Coordinator 父任务用例先 **1 failed / 1 passed，5.95 秒**（approval_recover 返回 None）；同步消费方后 **2 passed，4.22 秒**。新增 failed 响应/异常两种入口用例先 **1 failed / 1 passed，9.41 秒**，发现只有异常受理对账；将入口收敛到执行结束后的持久状态检查，再定向 **2 passed，9.46 秒**。
+
+首轮大组回归 **1 failed / 166 passed，454.52 秒**：`test_http_approval_resolution_is_atomic_idempotent_and_worker_owned` 的 Worker 返回 0，实际 deferred。根因是扩展框架领取判断时丢失 legacy approval_resume 在 waiting_approval 状态下的原有通行条件；已恢复该条件，不修改旧用例断言。首轮不是全绿；后续完整结果见下节。
+
+### 交付限制与下一出口
+
+当前自动恢复只支持已知结果的审批执行。对账任务自身崩溃后没有新的自动对账后继；首次 message 故障、目标查询/人工处理未知效果、其它 resume/proof/结算强杀窗口、领域 Runner 独立执行权仍待实施。共享调用预算、跨 Turn 原生上下文、受控 AgentCaseExecution 图及逐模式 Harness 等继续属于整体目标，P2.3 与整体迁移均未完成。
+
+新操作复用 schema v2，runtime_version 仍为 v2.0.0；旧 v2 严格解析器可能在能力检查前拒绝新操作。启用恢复链前需要排空/停止旧 v2 消费者并统一更新 Worker，或先完成版本隔离部署，不能声称旧新 v2 同流滚动发布已兼容。生产默认 v2 路由保持关闭，真实双制品/排空/回滚未验收。
+
+未运行真实模型供应商、真实浏览器或领域 Runner；fake model/受控工具不替代这些出口。前端仅同步任务 operation 类型，未改变组件行为。
+
+### 最终验证
+
+在 `Agent_Server` 运行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_continuation.py tests/test_framework_approval_progress.py tests/test_framework_task_control.py tests/test_framework_tool_authority.py tests/test_framework_approval_runtime.py tests/test_framework_approval_http.py tests/test_framework_approval_submission.py tests/test_runtime_binding_persistence.py tests/test_agent_v2_worker_contract.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py tests/test_coordinator_claim_snapshot_save.py -q -x -rs --tb=short
+```
+
+最终结果 **225 passed，483.00 秒，无 skip**，包括本阶段新文件 16 项、真实独立 Worker 强杀接管、旧审批 HTTP 及 Coordinator 相关回归。该结果覆盖修正后的最终业务代码，不与首轮或定向通过数累计。
+
+在 `agent_web` 运行 `npm run typecheck`（vue-tsc）通过；13 个涉及 Python 文件 `py_compile`、`git diff --cached --check` 通过。未运行独立后端 lint/typecheck、前端组件测试/生产构建或全量系统测试；本轮前端仅同步类型，实际供应商、浏览器、领域 Runner 和发布验收仍按前述范围保留待办。
