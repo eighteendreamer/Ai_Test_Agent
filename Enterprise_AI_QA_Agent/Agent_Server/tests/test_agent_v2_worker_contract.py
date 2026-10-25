@@ -370,6 +370,12 @@ async def test_legacy_wire_cannot_claim_bound_v2_record():
     assert tasks.claimed == []
 
 
+@pytest.mark.parametrize("operation", ["manual_resume", "coordinator_child", "coordinator_resume"])
+def test_unimplemented_framework_operations_remain_unavailable(operation):
+    with pytest.raises(TaskDeferred, match="framework_operation_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require(binding(), operation=operation)
+
+
 def test_binding_controls_runtime_and_checkpoint_namespace():
     from src.application.runtime.runtime_service import RuntimeService
     from src.runtime.control import RuntimeControlRegistry

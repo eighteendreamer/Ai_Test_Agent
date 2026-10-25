@@ -10,10 +10,14 @@ import json
 import logging
 from uuid import uuid4
 
+from pydantic import ValidationError
+
 from src.infrastructure.postgres_runtime import postgres_connect
-from src.runtime.framework_approval_journal import FrameworkApprovalJournal, FrameworkApprovalRecoveryRequired
+from src.runtime.framework_approval_journal import (
+    FrameworkApprovalJournal, FrameworkApprovalRecoveryRequired, framework_approval_tables,
+)
 from src.runtime.postgres_agent_task_store import AgentSubmissionConflict
-from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction, lock_owner_row
+from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction, lock_owner_row, runtime_owner_table
 from src.schemas.agent_task import AgentTaskCommandV2, AgentTaskRecord
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ToolApprovalRequest, ToolApprovalStatus
@@ -60,6 +64,44 @@ class FrameworkApprovalSubmission:
         self._tasks = tasks
         self._settings = tasks._settings
         self._journal = FrameworkApprovalJournal(self._settings)
+
+    def binding_for(self, session_id, approval_id):
+        """Read the canonical binding, including an idempotent closed-Turn retry.
+
+        This is routing information only. The submission transaction rechecks
+        the active Turn, approval, link and decision before admitting any work.
+        """
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            cur.execute(f"SELECT metadata FROM {self._settings.database.postgres_session_table} WHERE id=%s",
+                (session_id,))
+            session = cur.fetchone()
+            if session is None:
+                raise KeyError(session_id)
+            cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} "
+                "WHERE session_id=%s AND id=%s", (session_id, approval_id))
+            approval = cur.fetchone()
+            if approval is None:
+                raise KeyError(approval_id)
+            links, _ = framework_approval_tables(self._settings)
+            cur.execute(f"SELECT owner.runtime_binding FROM {links} link "
+                f"LEFT JOIN {runtime_owner_table(self._settings)} owner ON owner.binding_id=link.binding_id "
+                "WHERE link.approval_id=%s", (approval_id,))
+            row = cur.fetchone()
+            if row is None:
+                pending = (session["metadata"] or {}).get("pending_turn") or {}
+                if ((approval["metadata"] or {}).get("framework_binding_id") is not None
+                    or (pending.get("context_bundle") or {}).get("runtime_binding") is not None):
+                    raise AgentSubmissionConflict("Framework-bound approval requires a valid v2 continuation link")
+                return None
+            try:
+                binding = RuntimeBinding.model_validate(row["runtime_binding"])
+            except ValidationError as exc:
+                raise FrameworkApprovalRecoveryRequired("Approval canonical runtime binding requires reconciliation") from exc
+            if binding.session_id != session_id:
+                raise FrameworkApprovalRecoveryRequired("Approval canonical binding belongs to another Session")
+            self._journal.require_link_in_transaction(cur, binding, approval_id, approval)
+            return binding
 
     def submit(self, command, approval_id, payload):
         try:

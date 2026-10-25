@@ -55,6 +55,7 @@ from src.schemas.session import (
     UpdateSessionRequest,
 )
 from src.schemas.case_execution import AgentCaseExecutionContext
+from src.schemas.agent_task import AgentTaskAccepted
 
 
 DEFAULT_EVENT_HISTORY_LIMIT = 500
@@ -882,7 +883,23 @@ class SessionService:
         session_id: str,
         approval_id: str,
         payload: ApprovalDecisionRequest,
-    ) -> ToolApprovalRequest:
+    ) -> ToolApprovalRequest | AgentTaskAccepted:
+        if payload.decision not in {ToolApprovalStatus.approved, ToolApprovalStatus.denied}:
+            raise ValueError("Approval decision must be approved or denied.")
+        session = await self._require_session(session_id)
+        approvals = await self._store.list_approvals(session_id)
+        selected = next((item for item in approvals if item.id == approval_id), None)
+        metadata = selected.metadata if selected is not None else {}
+        dedicated = (metadata.get("approval_type") == "ui_recording"
+            or metadata.get("source") in {"test_run_case_execution", "test_run_agent_execution"}
+            or metadata.get("proxy_child_session_id") or metadata.get("proxy_child_approval_id"))
+        pending_binding = session.metadata.get("pending_turn", {}).get("context_bundle", {}).get("runtime_binding")
+        if not dedicated and (metadata.get("framework_binding_id") is not None or pending_binding is not None):
+            if self._agent_task_dispatcher is None:
+                raise ValueError("Framework approval requires the durable Agent Worker dispatcher")
+            # Admission is a short database transaction. It must remain usable
+            # while another decision owns the long Session execution lock.
+            return await self._agent_task_dispatcher.submit_approval(session_id, approval_id, payload)
         async with self._session_locks[session_id]:
             if payload.decision not in {ToolApprovalStatus.approved, ToolApprovalStatus.denied}:
                 raise ValueError("Approval decision must be approved or denied.")

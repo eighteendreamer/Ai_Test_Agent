@@ -435,3 +435,30 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 ```
 
 结果 **174 passed，166.74 秒，无 skip**。这是最终代码的受影响边界回归，不与前述旧代码运行的 287 passed 相加。4 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。未运行独立 lint/type-check、前端构建、全量系统、真实供应商模型、独立 Worker kill/recovery 或领域 Runner 验收；本轮使用 fake model 与受控工具效果，未将它们计为通过。本阶段不新增依赖、配置或数据库迁移，不开放新 Turn 路由或 Worker continuation 能力。
+
+## 19. P2.2 HTTP 受理、v2 队列与 Worker 审批能力（2026-10-26）
+
+在 §18 的 Runtime/Session 接线之后贯通正式决定受理入口。复用 `FrameworkApprovalSubmission` 及既有 task/outbox，不建立第二个调度器。
+
+- 在 submission 服务提供只读 canonical binding 查询，由 task store 暴露异步端口。依据 approval → 持久化 link → runtime owner 的原绑定路由，即使 pending_turn 已闭合也能返回原任务回执；缺 link/损坏 binding 不返回 legacy。查询只提供路由事实，决定受理事务重新检查身份、活跃 Turn、项目与冻结决定。
+- Dispatcher 根据该绑定创建 `AgentTaskCommandV2`，调用已有原子 v2 决定提交端口，写入独立 v2 stream 的 outbox；旧审批继续使用 v1。重复同一决定返回同任务，改变 reason/client_request_id 不建立新 intent，冲突决定由审批 API 返回 409；格式/对账错误维持 400，缺失资源为 404。
+- Session 在长执行锁之外将普通绑定审批交给数据库受理事务。实际 B handler 等待时，HTTP 可以提交 A，原 B 租约/owner 保持，A 仍不能并发领取；B 保存结果时保留 A 原身份及已提交的拒绝状态。录制、TestRun 专用入口和代理审批仍走原领域分支；未配置 durable dispatcher 时不允许绑定审批落入本地旧循环。
+- 新增真实 HTTP → outbox → RedisTaskWorker → Dispatcher → Session → 官方 Deep Agents / PostgreSQL → ToolJob 结果链路用例，覆盖 B 批准或拒绝后 A 继续、终态不重领、重复投递不重执行，以及两项 delivered/applied 事件各一份。依据该出口打开 v2 Worker `approval_resume`，manual_resume / coordinator_child / coordinator_resume 仍拒绝。
+
+### TDD 与验证范围
+
+初始 HTTP 文件 **4 failed / 2 passed，22.50 秒**：复现仍生成旧任务/HTTP 400、执行中提交兄弟决定因长锁超时、闭合后只返回普通审批对象 200。接线后原 6 项 **6 passed，21.14 秒**。新增真实队列用例先 **2 failed，9.36 秒**，日志为 `agent_v2_capability_unavailable`；开启已实现操作后文件 **8 passed，25.97 秒**。之后补齐 HTTP TestRun/录制领域边界及未实现操作拒绝用例。
+
+Harness 使用真实 PostgreSQL/Redis、官方框架、fake model 和受控治理工具，不是供应商或领域 Runner 验收。Worker artifact capability 使用与夹具 binding 相同的固定 lock 标识验证兼容路由；它不代替实际两套部署产物、升级排空或 rollback 验收。没有跨进程杀掉框架 Worker；不能从同进程真实队列成功推定 P2.3 通过。
+
+前端目前仍按既有审批面板和事件刷新展示，尚未增加“决定已提交 / 执行中 / 结果已应用”的持久读模型。P2.2 全部、P2.3、共享预算、跨 Turn 原生 transcript、正式 AgentCaseExecution 图、逐模式 Harness 和真实供应商/Runner 验收仍未完成。本阶段不新增依赖、配置或数据库结构，不更改新 Turn 的运行时选择默认值。
+
+在 `Agent_Server` 设置 `RUN_LIVE_POSTGRES_TESTS=1` 后运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_http.py tests/test_framework_approval_runtime.py tests/test_framework_approval_submission.py tests/test_runtime_binding_persistence.py tests/test_agent_v2_worker_contract.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+最终结果 **141 passed，256.56 秒，无 skip**，包含 HTTP Harness 11 项及新增的 3 项未实现操作拒绝检查。前一轮相同文件集合（未带 -x）为 **1 failed / 140 passed，249.87 秒**，失败在原有 `test_busy_owner_lock_defers_claim_without_consuming_an_attempt` 的 0.8 秒外层等待超时；定向 binding/Worker 两文件为 **30 passed，37.82 秒**，随后上面整组重跑通过。没有改该测试的等待上限、断言或生产锁超时机制；该次超时的具体成因未进一步确认，保留失败事实，不将两次结果相加。
+
+8 个涉及 Python 文件 `py_compile` 与 `git diff --check` 通过。未执行独立 lint/type-check、前端构建、全量系统、真实供应商、独立框架 Worker kill/recovery、真实双产物或领域 Runner 验收；这些未计为通过。前端现有 `resolveApproval` 调用消费 202/409 的通用成功/错误路径，但其批准后的乐观“执行中”标签仍需下一阶段按持久事实修正。

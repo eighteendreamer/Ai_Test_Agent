@@ -140,6 +140,11 @@ class PostgresAgentTaskStore:
             submission_payload,
         )
 
+    async def get_approval_runtime_binding(self, session_id: str, approval_id: str) -> RuntimeBinding | None:
+        from src.runtime.framework_approval_submission import FrameworkApprovalSubmission
+
+        return await asyncio.to_thread(FrameworkApprovalSubmission(self).binding_for, session_id, approval_id)
+
     async def submit_approval_v2(self, command: AgentTaskCommandV2, approval_id: str,
                                  payload: ApprovalDecisionRequest) -> AgentTaskRecord:
         """One continuation per approval, independent of the caller's click ID."""
@@ -688,9 +693,8 @@ class PostgresAgentTaskStore:
                 raise AgentSubmissionConflict(
                     "Session is not waiting for an approval continuation"
                 )
-            # The internal v2 submission port is not yet wired to API/Worker
-            # continuation execution. Preserve the pending decision instead of
-            # routing a bound Turn to legacy (integration plan section 8.1).
+            # Bound approvals use the separate v2 command/decision transaction.
+            # A direct legacy store caller cannot bypass that routing contract.
             pending = (session.get("metadata") or {}).get("pending_turn") or {}
             if (pending.get("context_bundle") or {}).get("runtime_binding") is not None:
                 raise AgentSubmissionConflict("Framework-bound approval requires a v2 continuation")

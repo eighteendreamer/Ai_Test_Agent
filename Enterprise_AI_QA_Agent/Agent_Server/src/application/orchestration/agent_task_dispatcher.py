@@ -303,26 +303,27 @@ class AgentTaskDispatcher:
     ) -> AgentTaskAccepted:
         session = await self._sessions._require_session(session_id)
         pending_turn = session.metadata.get("pending_turn") or {}
+        binding = await self._tasks.get_approval_runtime_binding(session_id, approval_id)
         context = get_request_context()
-        command = AgentTaskCommand(
+        command_type = AgentTaskCommandV2 if binding is not None else AgentTaskCommand
+        command = command_type(
             task_id=new_id("task"),
             operation="approval_resume",
             session_id=session_id,
-            turn_id=str(pending_turn.get("turn_id") or f"approval_{approval_id}"),
+            turn_id=binding.turn_id if binding else str(pending_turn.get("turn_id") or f"approval_{approval_id}"),
             project_id=session.project_id,
             request_id=context.request_id if context else new_id("req"),
             trace_id=context.trace_id if context else new_id("trace"),
             run_id=context.run_id if context else None,
             run_item_id=context.run_item_id if context else None,
             reference_id=approval_id,
+            **({"runtime_binding": binding} if binding is not None else {}),
         )
         key = payload.client_request_id or f"{approval_id}:{payload.decision.value}"
-        task = await self._tasks.submit_approval(
-            command,
-            approval_id,
-            payload,
-            idempotency_key=key,
-        )
+        if binding is not None:
+            task = await self._tasks.submit_approval_v2(command, approval_id, payload)
+        else:
+            task = await self._tasks.submit_approval(command, approval_id, payload, idempotency_key=key)
         self._record_submission(command)
         LOGGER.info(
             "agent_approval_task_submitted",
@@ -333,7 +334,8 @@ class AgentTaskDispatcher:
                 "approval_id": approval_id,
                 "request_id": task.request_id,
                 "trace_id": task.trace_id,
-                "queue": self._settings.orchestration.agent_task_stream,
+                "queue": (self._settings.orchestration.agent_task_v2_stream if binding is not None
+                    else self._settings.orchestration.agent_task_stream),
                 "decision": payload.decision.value,
             },
         )

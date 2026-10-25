@@ -34,9 +34,9 @@ class FrameworkWorkerCapabilities:
     def require(self, binding: RuntimeBinding, *, operation: str) -> None:
         """Unavailable compatibility leaves the durable task unclaimed.
 
-        LangGraph controlled v2 workflows and end-to-end continuation execution
-        are not implemented yet. An internal decision submission port alone
-        does not make them available. Never fall through to the legacy loop.
+        Deep Agents supports initial messages and owner-bound, journaled native
+        approval continuations. Other graph workflows and resume operations
+        require their own execution contracts before they can be admitted.
         """
         if binding.runtime_version != self.runtime_version:
             raise TaskDeferred("framework_runtime_version_unavailable")
@@ -48,5 +48,5 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_runtime_kind_unavailable")
         if not self.deepagents_available:
             raise TaskDeferred("framework_deepagents_unavailable")
-        if operation != "message":
+        if operation not in {"message", "approval_resume"}:
             raise TaskDeferred("framework_operation_unavailable")

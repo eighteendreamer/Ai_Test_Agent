@@ -369,6 +369,8 @@ async def resolve_approval(
         return result
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="Approval or session not found") from exc
+    except AgentSubmissionConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
