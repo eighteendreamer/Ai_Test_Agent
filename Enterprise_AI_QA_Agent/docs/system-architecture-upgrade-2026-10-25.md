@@ -1159,7 +1159,14 @@ runs = SimpleNamespace(get=..., get_item=..., get_latest_attempt=...)
 adapter = AgentCaseExecutionAdapter(run_service=runs, ...)
 ```
 
-而产品 `AgentCaseExecutionAdapter._load` 现在调用 `self._runs.get_execution_detail(...)`（`agent_case_execution.py:58`），`TestRunService` 确实提供该方法（`run_service.py:352`）。因此失败是**测试替身过期**，不是产品无法恢复。  
+而产品 `AgentCaseExecutionAdapter._load` 现在调用 `self._runs.get_execution_detail(...)`（`agent_case_execution.py:58`），`TestRunService` 确实提供该方法（`run_service.py:352`）。实际失败：
+
+```text
+E   AttributeError: 'types.SimpleNamespace' object has no attribute 'get_execution_detail'
+tests/test_runtime_input_paths.py:221: in test_previously_admitted_parent_value_is_not_silently_replaced_on_recovery
+```
+
+因此失败是**测试替身过期**，不是产品无法恢复。  
 **影响**：`pytest tests/test_runtime_input_paths.py` 非全绿，不能把“测试通过”当作系统正确性的证明。  
 **方向**：夹具改为使用真实 `TestRunService` 或补齐 `get_execution_detail` 的受控桩；把它纳入 P0 测试卫生。
 
