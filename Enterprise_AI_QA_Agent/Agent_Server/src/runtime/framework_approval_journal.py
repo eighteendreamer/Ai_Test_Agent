@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 
+from langchain_core.messages import ToolMessage, messages_to_dict
 from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from psycopg import sql
 
@@ -64,13 +65,13 @@ class FrameworkApprovalJournal:
         links, receipts = framework_approval_tables(settings)
         self._links, self._receipts = f"public.{links}", f"public.{receipts}"
 
-    def _native_rows(self, cur, binding, link_config, task_id):
+    def _native_rows(self, cur, binding, link_config, task_id, *, channels=(RESUME, INTERRUPT)):
         cur.execute(sql.SQL("SELECT idx, channel, type, blob, task_path FROM {} "
             "WHERE thread_id=%s AND checkpoint_ns=%s AND checkpoint_id=%s AND task_id=%s "
-            "AND channel IN (%s,%s) ORDER BY idx").format(sql.Identifier(
+            "AND channel=ANY(%s) ORDER BY idx").format(sql.Identifier(
                 self._settings.deep_agents.checkpoint_schema, "checkpoint_writes")),
             (binding.thread_id, link_config["checkpoint_ns"], link_config["checkpoint_id"],
-             task_id, RESUME, INTERRUPT))
+             task_id, list(channels)))
         return {row["channel"]: {**row, "value": self._serde.loads_typed((row["type"], bytes(row["blob"])))}
             for row in cur.fetchall()}
 
@@ -229,6 +230,39 @@ class FrameworkApprovalJournal:
             "WHERE approval_id=%s AND state IN ('queued','sending')", (approval_id,))
         return self.get_receipt_in_transaction(cur, approval_id)
 
+    def require_tool_result_in_transaction(self, cur, binding, link):
+        """Read the original per-call task output using the official serializer."""
+        location = {"checkpoint_ns": self._namespace(binding, link.checkpoint_namespace),
+            "checkpoint_id": link.checkpoint_id}
+        rows = self._native_rows(cur, binding, location, link.graph_task_id, channels=("messages", "__error__"))
+        result = rows.get("messages")
+        if ("__error__" in rows or result is None or result["task_path"] != link.task_path
+            or not isinstance(result["value"], list)):
+            raise FrameworkApprovalRecoveryRequired("Native tool result requires reconciliation")
+        messages = result["value"]
+        if (len(messages) != 1 or not isinstance(messages[0], ToolMessage)
+            or messages[0].tool_call_id != link.tool_call_id or messages[0].name != link.tool_name):
+            raise FrameworkApprovalRecoveryRequired("Native tool result does not match the original call")
+        return messages[0], {"format_version": link.format_version, "thread_id": binding.thread_id,
+            **location, "graph_task_id": link.graph_task_id, "task_path": link.task_path,
+            "channel": "messages", "write_index": result["idx"], "tool_call_id": link.tool_call_id,
+            "tool_name": link.tool_name, "native_result_hash": approval_value_hash(messages_to_dict(messages))}
+
+    def record_application_in_transaction(self, cur, receipt, proof):
+        """Keep outcome evidence beside delivery proof without replacing it."""
+        if receipt.state != "delivered" or receipt.proof is None:
+            raise FrameworkApprovalRecoveryRequired("A decision without delivery evidence cannot be applied")
+        if receipt.applied_at is not None:
+            if receipt.proof.get("application") != proof:
+                raise FrameworkApprovalRecoveryRequired("Applied native tool result identity changed")
+            return receipt
+        if "application" in receipt.proof:
+            raise FrameworkApprovalRecoveryRequired("Application proof has no matching applied timestamp")
+        cur.execute(f"UPDATE {self._receipts} SET applied_at=clock_timestamp(), "
+            "proof=jsonb_set(proof,'{application}',%s::jsonb) WHERE decision_id=%s "
+            "AND state='delivered' AND applied_at IS NULL", (json.dumps(proof, ensure_ascii=False), receipt.decision_id))
+        return self.get_receipt_in_transaction(cur, receipt.approval_id)
+
     def prepare_resume_in_transaction(self, cur, owner, storage_config, writes, task_id):
         """Keep cumulative native resume prefixes monotonic for linked tasks.
 
@@ -309,7 +343,7 @@ class FrameworkApprovalJournal:
             if row["state"] == "delivered":
                 # A replacement owner can observe/replay the SAME durable fact.
                 # Preserve the first committing epoch/time as its proof.
-                if {k: v for k, v in row["proof"].items() if k not in {"owner_epoch", "evidence_kind"}} != {
+                if {k: v for k, v in row["proof"].items() if k not in {"owner_epoch", "evidence_kind", "application"}} != {
                     k: v for k, v in proof.items() if k not in {"owner_epoch", "evidence_kind"}}:
                     raise FrameworkApprovalRecoveryRequired("A delivery proof cannot change its identity")
                 continue
