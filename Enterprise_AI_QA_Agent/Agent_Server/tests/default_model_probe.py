@@ -232,6 +232,29 @@ def install(directory):
                     # the observation hook manually: it assigns the probe identity
                     # the stream observer and record writers rely on.
                     await request_hook(request)
+                    if scripted.get("network_outage"):
+                        # Real transport failure: dial an endpoint the caller has
+                        # closed and let httpx raise its actual connection error.
+                        # The exception class (and therefore the product's failure
+                        # handling) is the same one a real outage produces.
+                        async with httpx.AsyncClient(timeout=5) as outage_client:
+                            await outage_client.post(scripted["network_outage"], json={})
+                        raise AssertionError("network outage target unexpectedly answered")
+                    if scripted.get("block_model_call"):
+                        # Test-only barrier used to kill a real Worker while it is
+                        # inside a model call.
+                        block_marker = os.getenv("QA_DEFAULT_PROBE_GRAPH_BLOCK_MARKER")
+                        block_release = os.getenv("QA_DEFAULT_PROBE_GRAPH_BLOCK_RELEASE")
+                        if block_marker and block_release:
+                            Path(block_marker).write_text(json.dumps({
+                                "process_id": os.getpid(),
+                                "physical_request_id": request.extensions.get("qa_probe_identity"),
+                            }, ensure_ascii=False, indent=2), encoding="utf-8")
+                        deadline = perf_counter() + 180
+                        while block_release and not Path(block_release).exists():
+                            if perf_counter() >= deadline:
+                                raise TimeoutError("test-only model call barrier was not released")
+                            await asyncio.sleep(0.1)
                     wants_stream = bool(payload.get("stream"))
                     if wants_stream:
                         # The execution graph always streams; synthesize an SSE body
