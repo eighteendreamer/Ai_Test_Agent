@@ -443,6 +443,24 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 边界：不证明任何真实部署的 catalog 内容可迁移（无样本），也不覆盖非 JSON 旧来源；只证明“产品写出的 legacy JSON → PostgreSQL 目录 + 版本/资产/提交投影”的语义、幂等与防篡改。生产迁移仍需在持有真实 catalog 的部署上执行脚本并逐条对账。
 
+## UI 录制与知识：单次录制跨文档操作-响应关联验收通过
+
+新增验收 `tests/test_recording_multi_document_live.py`（门控 `RUN_LIVE_RECORDING_MULTI_DOCUMENT=1`）：
+
+```text
+1 passed in 16.35s
+```
+
+证据：`p5-recording-multi-document-current-20261025-02/`（`recording.json`、`pg-events.json`、`facts.json`）及同名 JUnit XML。真实 Chromium/CDP 录制 + 生产 API + 隔离 PostgreSQL/MySQL/RustFS/Redis + Memgraph：
+
+- 一次录制内：`/doc-a` 点击 `#load-a` → 真实 `fetch /api/a`（200）；整页导航到 `/doc-b` 后点击 `#load-b` → `fetch /api/b`（201）；随后停止。页面请求记录为 `doc-a, doc-a, /api/a, doc-b, /api/b`。
+- 两个动作的 `document_id` 不同（`page_id` 相同、URL 分别为 doc-a/doc-b）；两份 `page_response` 的 `action_local_seqs` 都只指向**同一文档**内动作（两个文档的 local_seq 均为 0，证明关联不能靠全局序号），网络列表只含各自 API 路径，无跨文档串线。
+- `recording_quality.response_action_associations` 恰 2 条，`(动作 seq, 响应 seq)` 为 (0,1) 与 (2,3)，`unresolved_response_associations=[]`，`omission.status=verified`。
+- `finish_receipt.protocol=recording-scopes-v2`：三份 document scope（录制附着时的初始空文档 + doc-a 2 事件 + doc-b 3 事件）全部 `confirmed=true`、`pg_verified=true`，`frames_unconfirmed=0`；有事件的 scope 恰为两个文档，且服务端逐 document 校验了 `page_id/frame_id/document_url` 与 local_seq 连续性。
+- 全程 `model_calls=0`。
+
+边界：覆盖同一标签页的整页导航形成的新文档；不覆盖新标签/新窗口（`page_id` 变化）与跨文档 iframe 组合（iframe/多 frame 已由 `test_recording_document_scopes.py` 与既有 iframe/open shadow 验收覆盖），也不覆盖 Electron 产品容器内录制。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
