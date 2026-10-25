@@ -1,6 +1,7 @@
 """Record SDK sends without replacing network, responses or production modules."""
 import asyncio
 import hashlib
+import httpx
 import json
 import os
 import re
@@ -110,6 +111,7 @@ async def observe_stream(stream, root, identity, state):
 
 
 def install(directory):
+    scripted_graph = json.loads(os.getenv("QA_DEFAULT_PROBE_SCRIPTED_GRAPH") or "null")
     root = Path(directory)
     root.mkdir(parents=True, exist_ok=True)
     original = OpenAIChatClient._make_client
@@ -194,10 +196,98 @@ def install(directory):
         client._client.event_hooks["request"].append(request_hook)
         client._client.event_hooks["response"].append(response_hook)
         send = client._client.send
+
         async def observed_send(request, *args, **kwargs):
             started = perf_counter()
             record = {"response_headers_received": False, "request_headers_saved": False, "body_read_by_probe": False}
             try:
+                scripted = None
+                if scripted_graph is not None:
+                    raw = await request.aread()
+                    try:
+                        payload = json.loads(raw)
+                        system = "\n".join(str(item.get("content", "")) for item in payload.get("messages", [])
+                            if item.get("role") == "system")
+                    except (ValueError, TypeError):
+                        payload, system = None, ""
+                    # Test-double for the execution graph only: graph turns replay a
+                    # caller-provided script (same nature as the controlled HTTP model
+                    # server), while the read-only correction call always reaches the
+                    # real provider.
+                    is_correction = "Review this completed Agent execution" in system
+                    is_graph = payload is not None and "Complete Frozen Case" in system
+                    if is_graph and not is_correction:
+                        # Select the turn from the message history (like the
+                        # controlled in-process agents do): a replayed or resumed
+                        # graph re-requests with its completed tool results, so
+                        # counting them keeps the script idempotent and never
+                        # re-fires a business side effect twice.
+                        completed = sum(1 for item in payload.get("messages", [])
+                            if item.get("role") == "tool")
+                        if completed < len(scripted_graph):
+                            scripted = scripted_graph[completed]
+                            scripted_turn = completed + 1
+                if scripted is not None:
+                    # The synthesized response bypasses the real transport, so run
+                    # the observation hook manually: it assigns the probe identity
+                    # the stream observer and record writers rely on.
+                    await request_hook(request)
+                    wants_stream = bool(payload.get("stream"))
+                    if wants_stream:
+                        # The execution graph always streams; synthesize an SSE body
+                        # with the same shape the real provider sends.
+                        deltas = []
+                        if scripted.get("tool_calls"):
+                            for index, item in enumerate(scripted["tool_calls"]):
+                                deltas.append({"delta": {"tool_calls": [{
+                                    "index": index, "id": item.get("id", f"call_{index}"),
+                                    "type": "function",
+                                    "function": {"name": item["name"], "arguments": item["arguments"]}}]},
+                                    "finish_reason": None})
+                            finish_reason = "tool_calls"
+                        else:
+                            deltas.append({"delta": {"role": "assistant",
+                                "content": scripted.get("text", "")}, "finish_reason": None})
+                            finish_reason = "stop"
+                        deltas.append({"delta": {}, "finish_reason": finish_reason})
+                        lines = []
+                        for choice in deltas:
+                            lines.append("data: " + json.dumps({"id": "chatcmpl-probe-scripted",
+                                "object": "chat.completion.chunk", "created": 0, "model": config.model_id,
+                                "choices": [choice]}, ensure_ascii=False) + "\n\n")
+                        lines.append("data: " + json.dumps({"id": "chatcmpl-probe-scripted",
+                            "object": "chat.completion.chunk", "created": 0, "model": config.model_id,
+                            "choices": [], "usage": {"prompt_tokens": 1, "completion_tokens": 1,
+                                "total_tokens": 2}}) + "\n\n")
+                        lines.append("data: [DONE]\n\n")
+                        sse_payload = "".join(lines).encode("utf-8")
+
+                        async def sse_body():
+                            yield sse_payload
+
+                        response = httpx.Response(200, headers={"content-type": "text/event-stream"},
+                            content=sse_body(), request=request)
+                    else:
+                        message = {}
+                        if scripted.get("tool_calls"):
+                            message["tool_calls"] = [{
+                                "id": item.get("id", f"call_{index}"),
+                                "type": "function",
+                                "function": {"name": item["name"], "arguments": item["arguments"]},
+                            } for index, item in enumerate(scripted["tool_calls"])]
+                            finish = "tool_calls"
+                        else:
+                            message["content"] = scripted.get("text", "")
+                            finish = "stop"
+                        completion = {"id": "chatcmpl-probe-scripted", "object": "chat.completion",
+                            "created": 0, "model": config.model_id,
+                            "choices": [{"index": 0, "message": {"role": "assistant", **message},
+                                "finish_reason": finish}],
+                            "usage": {"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2}}
+                        response = httpx.Response(200, json=completion, request=request)
+                    record.update(response_headers_received=True, status_code=200,
+                        scripted_graph_turn=scripted_turn)
+                    return response
                 response = await send(request, *args, **kwargs)
                 record.update(response_headers_received=True, status_code=response.status_code)
                 return response
