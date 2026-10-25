@@ -5,6 +5,7 @@ from typing import Any, Awaitable, Callable
 from langchain_openai import ChatOpenAI
 
 from src.application.model_adapters.base import ModelPort
+from src.application.model_adapters.official_chat_model_factory import OfficialChatModelFactory
 from src.application.model_adapters.message_adapter import (
     from_langchain_message,
     to_langchain_messages,
@@ -24,10 +25,9 @@ StreamHandler = Callable[[str], Awaitable[None]]
 class LangChainModelAdapter(ModelPort):
     """LangChain adapter for OpenAI-compatible Chat Completions providers.
 
-    The adapter returns the application's DTOs and deliberately does not
-    expose LangChain message objects beyond this module.  Provider-specific
-    integrations are added only after their dependency and contract matrix is
-    verified.
+    DTO invocation retains its Chat Completions contract. ``build_model``
+    exports official native models for all verified framework transports;
+    their complete messages remain owned by the harness.
     """
 
     def __init__(
@@ -174,34 +174,20 @@ class LangChainModelAdapter(ModelPort):
     def _build_model(self, config: ModelConfigRecord, api_key: str, *, http_async_client: Any = None) -> Any:
         if config.request_profile and config.request_profile.chat_token_parameter == "max_tokens":
             raise ProviderClientError("Explicit max_tokens requires the native Chat client; LangChain renames this field.")
-        kwargs: dict[str, Any] = {
-            "model": config.model_id,
-            "api_key": api_key,
-            "base_url": config.api_base_url,
-            # Transport is selected by our config, never inferred from model names.
-            "use_responses_api": False,
-            "timeout": self._timeout_seconds,
-            "max_retries": self._max_retries,
-            "max_completion_tokens": config.max_output_tokens,
-        }
-        if config.temperature is not None:
-            kwargs["temperature"] = config.temperature
-        if config.extra_headers:
-            kwargs["default_headers"] = dict(config.extra_headers)
-        if http_async_client is not None:
-            kwargs["http_async_client"] = http_async_client
-        return self._model_factory(**kwargs)
+        return OfficialChatModelFactory(timeout_seconds=self._timeout_seconds,
+            max_retries=self._max_retries, openai_factory=self._model_factory).create(
+                config, api_key, http_async_client=http_async_client)
 
     def build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
         """Build the provider model for another LangChain-native harness.
 
         The construction remains in this adapter so timeout, retry, headers
         and database-backed provider settings cannot diverge between the
-        normal LangChain path and a Deep Agents pilot.
+        normal LangChain path and a framework harness. This constructs a model;
+        per-call budgets, tracing and recovery governance belong to the runtime.
         """
-        model = self._build_model(config, api_key)
-        mapped = map_model_request(config, ModelInvocationRequest(system_prompt="", messages=[])).parameters
-        return model.bind(**mapped) if mapped else model
+        return OfficialChatModelFactory(timeout_seconds=self._timeout_seconds,
+            max_retries=self._max_retries, openai_factory=self._model_factory).build_model(config, api_key)
 
     async def _stream(self, model: Any, messages: list[Any]) -> Any:
         aggregate = None

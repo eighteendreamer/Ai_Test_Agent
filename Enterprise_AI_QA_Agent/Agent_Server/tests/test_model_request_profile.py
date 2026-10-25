@@ -222,7 +222,7 @@ def test_optional_schema_declared_json_object_fallback_and_budget_bounds():
 
 
 @pytest.mark.asyncio
-async def test_langchain_exported_model_keeps_declared_default_and_rejects_legacy_token():
+async def test_langchain_exported_model_keeps_declared_default_and_exact_legacy_token():
     with provider("openai_chat_completions", False) as (url, sends, _):
         from langchain_core.messages import HumanMessage
         config, runtime = runtime_config(url, "langchain_completion")
@@ -231,10 +231,13 @@ async def test_langchain_exported_model_keeps_declared_default_and_rejects_legac
         assert len(sends) == 1 and sends[0]["body"]["reasoning_effort"] == "low"
         assert sends[0]["body"]["max_completion_tokens"] == 2048
         config.request_profile.chat_token_parameter = "max_tokens"
-        with pytest.raises(Exception, match="incompatible with the LangChain harness"):
-            await runtime.resolve_langchain_chat_model("fixture")
-        assert len(sends) == 1
-        evidence("langchain-exported-default", {"requests": sends, "legacy_harness_rejected_without_send": True})
+        model = await runtime.resolve_langchain_chat_model("fixture")
+        await model.ainvoke([HumanMessage(content="Return JSON.")])
+        assert len(sends) == 2
+        assert sends[1]["body"]["max_tokens"] == 2048
+        assert "max_completion_tokens" not in sends[1]["body"]
+        assert sends[1]["body"]["reasoning_effort"] == "low"
+        evidence("langchain-exported-default", {"requests": sends, "legacy_harness_exact_token_field": True})
 
 
 @pytest.mark.asyncio

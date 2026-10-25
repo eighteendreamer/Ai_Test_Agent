@@ -104,18 +104,12 @@ class ModelRuntimeService:
             config = self._model_registry.get_runtime_config(model_key)
         except KeyError as exc:
             raise ProviderClientError(f"No active model configuration found for '{model_key}'.") from exc
-        if config.transport != "openai_chat_completions":
-            raise ProviderClientError(
-                "Deep Agents pilot currently supports only openai_chat_completions; "
-                f"received transport={config.transport!r}."
-            )
-        if config.request_profile and config.request_profile.chat_token_parameter == "max_tokens":
-            raise ProviderClientError("Explicit max_tokens is incompatible with the LangChain harness.")
         api_key = await self._resolve_auth_token(config)
         if not api_key:
             raise ProviderClientError(f"Model '{config.name}' has no usable API key.")
         return LangChainModelAdapter(
             timeout_seconds=self._settings.model.llm_request_timeout_seconds,
+            max_retries=0,
         ).build_model(config, api_key)
 
     async def invoke(
