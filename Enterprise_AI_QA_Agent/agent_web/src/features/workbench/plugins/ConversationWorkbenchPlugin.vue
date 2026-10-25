@@ -9,7 +9,8 @@ import RuntimeStatusPanel from "../../../components/chat/RuntimeStatusPanel.vue"
 import { useSessionStore } from "../../../stores/session";
 
 const sessionStore = useSessionStore();
-const hasPendingApprovals = computed(() => sessionStore.pendingApprovals.length > 0);
+const hasApprovalActivity = computed(() => sessionStore.pendingApprovals.length > 0
+  || (sessionStore.session?.framework_approval_progress?.length ?? 0) > 0);
 const composerAnchorRef = ref<HTMLElement | null>(null);
 const composerAnchorHeight = ref(196);
 const runtimePanelSize = ref(112);
@@ -60,13 +61,13 @@ onBeforeUnmount(() => {
         <div
           ref="composerAnchorRef"
           class="home-composer-anchor"
-          :class="{ 'home-composer-anchor-with-approval': hasPendingApprovals }"
+          :class="{ 'home-composer-anchor-with-approval': hasApprovalActivity }"
           :style="composerAnchorStyle"
         >
           <RuntimeStatusPanel />
           <ChatComposer :docked="true" />
           <Transition name="runtime-panel-transition">
-            <ApprovalPanel v-if="hasPendingApprovals" />
+            <ApprovalPanel v-if="hasApprovalActivity" />
           </Transition>
           <RecordingTimelinePanel />
         </div>

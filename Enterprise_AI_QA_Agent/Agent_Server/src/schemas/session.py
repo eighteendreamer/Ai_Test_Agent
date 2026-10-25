@@ -6,6 +6,7 @@ from typing import Any
 from uuid import uuid4
 
 from pydantic import BaseModel, Field
+from src.schemas.approval_progress import FrameworkApprovalProgress
 from src.schemas.runtime_binding import RuntimeBinding
 
 
@@ -159,6 +160,7 @@ class SessionDetail(SessionSummary):
     preferred_model: str | None = None
     selected_agent: str | None = None
     pending_approvals: list[ToolApprovalRequest] = Field(default_factory=list)
+    framework_approval_progress: list[FrameworkApprovalProgress] = Field(default_factory=list)
     last_snapshot: SessionSnapshot | None = None
     control_state: str = "idle"
     is_resumable: bool = False

@@ -462,3 +462,42 @@ Harness 使用真实 PostgreSQL/Redis、官方框架、fake model 和受控治�
 最终结果 **141 passed，256.56 秒，无 skip**，包含 HTTP Harness 11 项及新增的 3 项未实现操作拒绝检查。前一轮相同文件集合（未带 -x）为 **1 failed / 140 passed，249.87 秒**，失败在原有 `test_busy_owner_lock_defers_claim_without_consuming_an_attempt` 的 0.8 秒外层等待超时；定向 binding/Worker 两文件为 **30 passed，37.82 秒**，随后上面整组重跑通过。没有改该测试的等待上限、断言或生产锁超时机制；该次超时的具体成因未进一步确认，保留失败事实，不将两次结果相加。
 
 8 个涉及 Python 文件 `py_compile` 与 `git diff --check` 通过。未执行独立 lint/type-check、前端构建、全量系统、真实供应商、独立框架 Worker kill/recovery、真实双产物或领域 Runner 验收；这些未计为通过。前端现有 `resolveApproval` 调用消费 202/409 的通用成功/错误路径，但其批准后的乐观“执行中”标签仍需下一阶段按持久事实修正。
+
+## 20. P2.2 审批持久读模型与逐项前端展示（2026-10-26）
+
+依据方案 §4.2 的三个事实维度，以及 §17–19 已验证的决定回执、结果证明和队列接线，新增只读 `FrameworkApprovalReadModel`。它不调用图、模型或工具，不改写业务状态，也不根据 SSE 历史推断应用结果。
+
+- `SessionDetail.framework_approval_progress` 为独立公共 DTO；读取 pending_turn，已闭合时读取 control.last_turn_id，只展示当前/最近 Turn。录制、TestRun 和代理子审批保留专用入口。无框架审批时返回空列表，旧 inbox 不因展示逻辑要求初始化无关 ToolJob 表。
+- 对存在框架审批的 Turn，用一个 SQL statement snapshot 联合读取审批、原生映射、owner、决定回执、continuation task、ToolJob 与 Session 租约。展示 awaiting_decision / decision_submitted / executing / applying_result / applied / recovery_required；不增加持久状态列或第二套调度。
+- applied 要求已有 application 证明，且决定哈希、终态 Job、输出哈希及 outcome 一致；terminal Job 无应用证明时仍为 applying_result。缺失决定回执、业务身份改变、已应用输出被修改、运行任务失去 owner/Session 租约时显示 recovery_required，并记录可检索原因。等待实际 handler 调用前的失租也不能显示为普通排队。
+- 公共 DTO 只含业务身份、状态、时间和 outcome；不暴露 resume 参数、interrupt ID、owner token 或 proof。每项附数据库 statement_timestamp 的 observed_at，防止延迟到达的 POST 回执覆盖更新的 GET 观察；时间相同时保留当前观察，后续 GET 继续对账。
+- 前端使用实际 202 回执，只合并对应审批的进度，避免旧 sibling snapshot 恢复其它审批。异步受理后不再声称工具已执行或拒绝结果已应用；临时工具消息保留未结束标记。并发决定通过读取 revision 使旧 GET 失效，watcher/navigation generation 继续承担停止和切换生命周期，二者不混用。
+- `ApprovalDecisionCard` 从原卡片提取，按每项 props 计算录制细节；面板显示全部待审批项，可先操作 B，再操作 A。已决定项单独展示进度，最后一个 pending 消失后工作台仍挂载面板。SSE 连接/重连及 queued/delivered/applied 事件触发持久读取。applied 文案为“结果已记录”；拒绝、治理阻止有各自文案，不将其解释为测试通过。
+- 新字段后端默认空列表，TypeScript 为可选字段并兼容旧 payload。未增加依赖、数据库迁移、配置或新 Turn 默认路由；没有改变正式用例、领域 Runner、证据裁决或业务审批枚举。
+
+### TDD 与验证范围
+
+后端初始红灯 **1 failed，9.07 秒**：HTTP GET 缺少 framework_approval_progress。首轮实现 **8 passed，28.15 秒**，同时暴露枚举/时间字符串赋值的序列化警告；公共 DTO 使用赋值验证后消除。补充“已领取但未 dispatch 时 owner 过期”用例先 **1 failed / 8 deselected，7.42 秒**，随后修正按运行 continuation 的 authority 判断。
+
+前端初始 **6 failed / 13 passed**，复现只显示第一项、忽略 202 进度、SSE 重连不刷新。实现后定向 **24 passed**。之后并发响应之间的旧 GET 用例先失败，再将读取 revision 与生命周期 generation 分离；另补 watcher 停止期间回执返回、POST 旧观察晚到等场景，晚到回执也先失败再修正。首次 build 的 TypeScript 类型收窄和测试回执类型不完整错误如实保留，已修正后重新构建，不以 vitest 通过代替类型检查。
+
+Harness 使用真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake model 和受控治理工具；前端使用 jsdom/Vue/Pinia，包含实际工作台父组件的挂载检查。没有运行真实浏览器视觉/端到端验收、供应商模型、独立框架 Worker kill/replacement、真实双产物升级或领域 Runner；不能由本阶段推定这些出口已通过。P2.3、共享预算、跨 Turn 原生 transcript、受控 AgentCaseExecution 图与逐模式 Harness 等仍在整体迁移范围内，尚未完成。
+
+最终后端回归，在 `Agent_Server` 运行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_progress.py tests/test_framework_approval_http.py tests/test_framework_approval_runtime.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+结果 **89 passed，163.68 秒，无 skip、无序列化警告**，包括新读模型 9 项。较早运行的同组旧代码结果为 88 passed（新增失租用例当时尚未被收集），不与最终结果累加。
+
+最终前端回归，在 `agent_web` 运行：
+
+```powershell
+$taskFiles = @(rg --files src/stores -g 'session*.test.ts')
+npm test -- $taskFiles src/components/chat/ApprovalPanel.progress.test.ts
+npm run build
+```
+
+结果 **9 files / 49 tests passed**；`npm run build` 内含 `vue-tsc --noEmit`，类型检查及 Vite 生产构建通过。6 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。没有执行独立后端 lint/typecheck 或全量系统回归；上述明确列出的范围是本阶段验证结论。

@@ -504,6 +504,7 @@ function createTransientToolMessage(event: ExecutionEvent, status: string, summa
 }
 
 function updateTransientToolMessageStatus(message: ChatMessage, status: string, summary: string): ChatMessage {
+  const pending = ["running", "waiting_approval", "decision_submitted", "applying_result"].includes(status);
   let payload: Record<string, unknown> = {};
   try {
     const parsed = JSON.parse(message.content || "{}");
@@ -527,9 +528,9 @@ function updateTransientToolMessageStatus(message: ChatMessage, status: string, 
     ),
     metadata: {
       ...message.metadata,
-      delivery_status: status === "running" ? "streaming" : "completed",
+      delivery_status: pending ? "streaming" : "completed",
       tool_progress_status: status,
-      tool_progress_finalized: status === "running" ? "false" : "true",
+      tool_progress_finalized: pending ? "false" : "true",
     },
   };
 }
@@ -551,6 +552,7 @@ export const useSessionStore = defineStore("session", {
     scheduledToolingRefresh: false,
     refreshInFlight: false,
     refreshGeneration: 0,
+    sessionReadRevision: 0,
     toolingRefreshInFlight: false,
     resolvedApprovalIdsBySession: {} as Record<string, string[]>,
     lastToolingRefreshAt: "",
@@ -946,6 +948,7 @@ export const useSessionStore = defineStore("session", {
           if (this.error === SSE_RECONNECTING_ERROR || this.error === SSE_RECONNECT_EXHAUSTED_ERROR) {
             this.error = "";
           }
+          this.scheduleRefresh(true);
         },
         onError: (errorMessage) => {
           _assistantDeltaBuffers.get(this)?.flush();
@@ -1006,10 +1009,11 @@ export const useSessionStore = defineStore("session", {
         return;
       }
       const generation = this.refreshGeneration;
+      const readRevision = this.sessionReadRevision;
       this.refreshInFlight = true;
       try {
         const detail = await api.getSession(sessionId);
-        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+        if (generation !== this.refreshGeneration || readRevision !== this.sessionReadRevision || this.session?.id !== sessionId) {
           return;
         }
         this.applySession(detail);
@@ -1025,7 +1029,7 @@ export const useSessionStore = defineStore("session", {
         this.watcherError = _watcher.error;
         this.watcherLastSyncAt = _watcher.lastSyncAt;
       } catch (error) {
-        if (generation !== this.refreshGeneration || this.session?.id !== sessionId) {
+        if (generation !== this.refreshGeneration || readRevision !== this.sessionReadRevision || this.session?.id !== sessionId) {
           return;
         }
         _watcher.recordFailure(error instanceof Error ? error.message : "刷新会话失败。");
@@ -1180,6 +1184,7 @@ export const useSessionStore = defineStore("session", {
       _approvalManager.markResolving(approvalId);
       this.error = "";
       try {
+        let accepted: Awaited<ReturnType<typeof api.resolveApproval>> | undefined;
         if (approval?.metadata?.source === "test_run_case_execution"
           || approval?.metadata?.source === "test_run_agent_execution") {
           const runItemId = String(approval.metadata.run_item_id || "").trim();
@@ -1188,7 +1193,7 @@ export const useSessionStore = defineStore("session", {
           }
           await api.resolveTestRunItemApproval(runItemId, approvalId, decision, reason);
         } else {
-          await api.resolveApproval(
+          accepted = await api.resolveApproval(
             sessionId,
             approvalId,
             decision,
@@ -1203,10 +1208,29 @@ export const useSessionStore = defineStore("session", {
           [sessionId]: [...resolvedApprovalIds],
         };
         if (this.session?.id === sessionId) {
+          this.sessionReadRevision += 1;
           this.session.pending_approvals = this.session.pending_approvals.filter((item) => item.id !== approvalId);
-          const nextStatus = decision === "approved" ? "running" : "denied";
+          const queued = accepted && "task" in accepted;
+          if (accepted && "task" in accepted) {
+            // A receipt snapshot can predate a concurrent sibling decision.
+            // Consume this decision's projection only; GET reconciles the Turn.
+            const progress = accepted.session.framework_approval_progress?.find((item) => item.approval_id === approvalId);
+            const currentProgress = this.session.framework_approval_progress?.find((item) => item.approval_id === approvalId);
+            const currentObservation = parseServerDate(currentProgress?.observed_at)?.getTime();
+            const receiptObservation = parseServerDate(progress?.observed_at)?.getTime();
+            const newerObservationExists = currentObservation !== undefined && receiptObservation !== undefined
+              && currentObservation >= receiptObservation;
+            if (progress && !newerObservationExists) {
+              this.session.framework_approval_progress = [
+                ...(this.session.framework_approval_progress || []).filter((item) => item.approval_id !== approvalId),
+                progress,
+              ];
+            }
+            this.mergeReceiptEvents(accepted.events);
+          }
+          const nextStatus = queued ? "decision_submitted" : decision === "approved" ? "running" : "denied";
           const nextSummary =
-            decision === "approved"
+            queued ? "Approval decision submitted. Waiting for execution result." : decision === "approved"
               ? "Approval granted. Tool execution is running."
               : "Approval denied. Tool execution was skipped.";
           this.messages = this.messages.map((message) => {
@@ -1214,9 +1238,14 @@ export const useSessionStore = defineStore("session", {
             if (!isTransientToolMessage(message) || messageApprovalId !== approvalId) {
               return message;
             }
+            if (queued && !["waiting_approval", "decision_submitted"].includes(String(message.metadata.tool_progress_status))) {
+              return message;
+            }
             return updateTransientToolMessageStatus(message, nextStatus, nextSummary);
           });
           if (refreshGeneration === this.refreshGeneration) {
+            // A read captured before this admission is invalidated by the
+            // revision, independently of watcher/navigation generation.
             this.scheduleRefresh(true, 120);
           }
         }

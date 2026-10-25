@@ -145,6 +145,11 @@ class PostgresAgentTaskStore:
 
         return await asyncio.to_thread(FrameworkApprovalSubmission(self).binding_for, session_id, approval_id)
 
+    async def list_framework_approval_progress(self, session_id: str, turn_id: str):
+        from src.runtime.framework_approval_read_model import FrameworkApprovalReadModel
+
+        return await asyncio.to_thread(FrameworkApprovalReadModel(self._settings).list_turn, session_id, turn_id)
+
     async def submit_approval_v2(self, command: AgentTaskCommandV2, approval_id: str,
                                  payload: ApprovalDecisionRequest) -> AgentTaskRecord:
         """One continuation per approval, independent of the caller's click ID."""

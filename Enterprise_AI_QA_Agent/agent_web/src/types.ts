@@ -881,6 +881,24 @@ export interface TaskPoolFilters {
   project_id?: string;
 }
 
+export interface FrameworkApprovalProgress {
+  approval_id: string;
+  turn_id: string;
+  tool_job_id?: string | null;
+  tool_key: string;
+  tool_name: string;
+  decision: "pending" | "approved" | "denied";
+  phase: "awaiting_decision" | "decision_submitted" | "executing" | "applying_result" | "applied" | "recovery_required";
+  observed_at?: string;
+  delivery_state?: "queued" | "sending" | "delivered" | null;
+  tool_status?: ToolJobStatus | null;
+  task_status?: string | null;
+  outcome?: "rejected" | "governance_denied" | "tool_result" | null;
+  decided_at?: string | null;
+  delivered_at?: string | null;
+  applied_at?: string | null;
+}
+
 export interface SessionDetail {
   id: string;
   title: string;
@@ -897,6 +915,7 @@ export interface SessionDetail {
   preferred_model?: string | null;
   selected_agent?: string | null;
   pending_approvals: ToolApprovalRequest[];
+  framework_approval_progress?: FrameworkApprovalProgress[];
   last_snapshot?: SessionSnapshot | null;
   control_state: string;
   is_resumable: boolean;

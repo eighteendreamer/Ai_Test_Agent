@@ -51,6 +51,8 @@ describe("session SSE refresh after durable state changes", () => {
   });
 
   it.each([
+    ["approval.decision_queued", true],
+    ["approval.decision_delivered", true],
     ["approval.decision_applied", true],
     ["runtime.turn_completed", true],
     ["runtime.turn_failed", true],
@@ -114,5 +116,14 @@ describe("session SSE refresh after durable state changes", () => {
     FakeEventSource.instances[0].onopen?.();
 
     expect(store.error).toBe("");
+  });
+
+  it("refreshes durable facts on SSE reconnect even when no event was replayed", () => {
+    const store = useSessionStore();
+    store.session = { id: "session-1", pending_approvals: [], messages: [], metadata: {} } as unknown as SessionDetail;
+    const refresh = vi.spyOn(store, "scheduleRefresh").mockImplementation(() => {});
+    store.connectEvents(true);
+    FakeEventSource.instances[0].onopen?.();
+    expect(refresh).toHaveBeenCalledWith(true);
   });
 });

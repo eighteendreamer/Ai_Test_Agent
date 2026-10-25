@@ -3030,7 +3030,10 @@ class SessionService:
         )
         control = self._ensure_control_metadata(session)
         has_pending_turn = bool(session.metadata.get("pending_turn"))
+        approval_progress = []
         if self._agent_task_store is not None:
+            turn_id = (session.metadata.get("pending_turn") or {}).get("turn_id") or control.get("last_turn_id")
+            approval_progress = await self._agent_task_store.list_framework_approval_progress(session.id, turn_id)
             tasks = await self._agent_task_store.list_session(session.id, pending_only=True)
             queued = [
                 task
@@ -3091,6 +3094,7 @@ class SessionService:
             pending_approvals=[
                 item for item in approvals if item.status == ToolApprovalStatus.pending
             ],
+            framework_approval_progress=approval_progress,
             last_snapshot=self._snapshot_for_detail(last_snapshot),
             control_state=str(control.get("control_state") or (last_snapshot.stage if last_snapshot else session.status.value)),
             is_resumable=derived_resumable,
