@@ -87,7 +87,18 @@ class PostgresCaseActionAdmission:
             raise ValueError("动作确认缺少服务器固定新策略")
         runs = self._runs
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            # Framework locks precede the existing project → item/attempt → Job
+            # order; retain both authority checks in this same transaction.
+            from src.runtime.execution_context import current_framework_owner
+            from src.runtime.framework_tool_authority import assert_tool_scope
+            from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
+
+            owner = current_framework_owner()
+            if owner is not None:
+                configure_runtime_owner_transaction(cur, self._settings)
+                assert_runtime_owner(cur, self._settings, owner)
             job = self._read_job(cur, job_id)
+            assert_tool_scope(job.model_dump(mode="python"), owner)
             binding = self._binding(job, bundle, context)
             self._check_prior_receipt(job, binding)
             if job.started_at is not None or job.status.value not in {"queued", "waiting_approval"}:

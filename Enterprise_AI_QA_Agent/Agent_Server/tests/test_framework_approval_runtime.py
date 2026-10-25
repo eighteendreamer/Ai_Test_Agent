@@ -130,7 +130,8 @@ async def test_runtime_replay_then_successor_preserves_results_and_transcript_id
 async def test_runtime_unknown_effect_stops_before_adapter(runtime_harness):
     h = runtime_harness
     task = await claim_decision(h)
-    await h.jobs.claim_execution(h.proposals["B"].job.id)
+    with framework_owner_scope(task.runtime_owner):
+        await h.jobs.claim_execution(h.proposals["B"].job.id)
     with pytest.raises(FrameworkApprovalRecoveryRequired, match="reconcil"):
         await resume(h, task)
     assert h.adapter_requests == [] and h.effects == [] and receipt(h).state == "queued"

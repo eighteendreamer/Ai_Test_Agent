@@ -532,3 +532,50 @@ Harness 使用真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake mode
 后端最终结果 **113 passed，248.11 秒，无 skip**，包括新文件 12 项；不与前述定向结果累计。两次原 Event 运行的中止不记为通过，Redis 门闩首轮客户端超时也不记为全绿。
 
 在 `agent_web` 运行 4 个相关测试文件：`ApprovalPanel.progress`、`sessionFrameworkApproval`、`sessionEventRefresh`、`sessionApprovalLifecycle`，结果 **4 files / 28 tests passed，6.40 秒**。`npm run build`（含 vue-tsc）通过，Vite 构建 8.53 秒；6 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。没有执行独立后端 lint/typecheck 或全量系统回归。
+
+## 22. P2.3 同步工具执行权、未知返回与迟到观察（2026-10-26）
+
+依据方案 §6.2、现有 ToolJob 原子领取/输出 CAS 和 §21 的持久中断，补齐同步工具写入权限。checkpoint 的 owner 校验不会自动保护应用 ToolJob；本阶段在工具存储的实际事务中复用 runtime owner，不新增调度器或第二套任务状态机。
+
+- 新增 `framework_tool_authority.py`，统一 Session → runtime owner → ToolJob 锁顺序、数据库时钟租约、绑定和原执行身份校验。领取冻结 binding、epoch、task、attempt、worker 的非敏感引用，不把 owner token 写入该引用。整行保存不能替换冻结调用 ID、输入、绑定或执行身份。框架投影已有显式 owner 的事务传递该 owner；普通异步路径由 ContextVar 经 `asyncio.to_thread` 捕获原身份。
+- 创建、领取、心跳、输出观察、输出结算、finish、child-wait 和附件写入共用校验。缺少 owner 不能将已绑定 Job 当 legacy 写；下一合法协调代次也不能替代原执行结算。原有领域动作准入在其 Project → item/attempt → Job 锁之前校验框架 Session/owner，保留领域固定版本、租约、逻辑操作和消费证据约束。普通 stale reaper 排除绑定 Job，保留未知执行事实。
+- 框架直调与治理已领取工具均使用原子 claim；不再走旧的整行 mark_running。实际 handler 前执行短事务派发准入，成功提交后记录 admitted 日志；准入前已撤销的 owner 不进入 handler。**准入提交不与外部请求原子绑定**：已准入后撤销仍不能保证物理请求尚未发送，也不能撤销效果，不能将此实现描述为外部 exactly-once。
+- 失租写入原样抛出，不转成失败 Job。工具抛错且无可靠返回检查点时，保留未知 Job 并抛 `FrameworkApprovalRecoveryRequired`，原生图停止，不让模型继续推理或再次发送。工具已经返回并保存观察、后续附件处理期间失租时，原观察保留，旧 Worker 不能结算。
+- 迟到返回在普通输出写入被拒绝后，使用既有 inline ToolArtifact 保存 `framework_late_output`。事务验证原 Job 的冻结执行引用，按 Job/执行引用/内容哈希/观察状态生成稳定 ID，`ON CONFLICT DO NOTHING` 追加并去重；标记 `authoritative=False`，不更新 Job、receipt、application proof 或测试裁决。内容经过现有工具输出脱敏路径；没有新表、schema、依赖或配置。这个追加入口不调用普通附件 upsert，不声称任意内部附件修改接口已经改为不可变。
+
+### TDD 与兼容性边界
+
+新文件首轮 **11 failed，31.57 秒**，主要复现缺少执行权校验；原生 adapter 既有异常契约会包装为 `DeepAgentRuntimeError`，其中一项测试相应核对原始错误类型文本，未修改 adapter。初次实现后 **11 passed，30.88 秒**。扩展未领取直调、派发前撤销和下一代结算用例，先 **1 failed / 2 passed，11.74 秒**，暴露直调缺少原子执行引用，修正为共用 claim。unknown claim 用例先 **1 failed，7.27 秒**；效果后 TimeoutError 用例先 **1 failed，7.10 秒**，再修正未知效果不得结算为普通失败。加强后的超时用例先拒绝 A，再让最终 B 产生效果后丢失响应，断言无下一次模型调用。
+
+已有四份框架测试直接在无 owner 上下文中制造 running/terminal Job。新契约使初次受影响回归 **1 failed / 18 passed，51.37 秒**；仅修正这些 setup，在原任务 `framework_owner_scope` 内制造同样事实，保留未知效果/拒绝/终态断言。较早框架集合 **84 passed，208.70 秒**、较早新文件 **17 passed，47.68 秒**不是最终代码验收，不与最终结果相加。
+
+领域动作准入首轮 **1 failed / 15 passed，146.85 秒**，失败在 `test_actual_edited_context_parameters_and_expired_lease_preserve_pending_job` 的最后过期拒绝，原输出为 `DID NOT RAISE CaseActionClaimUnavailable`；定向重跑 **1 passed / 16 deselected，15.11 秒**。代码确认 `_write_item` 同时更新平铺 lease 列和 JSON record，不能将失败归因于写错权威存储。夹具原来用宿主时钟减一秒构造过期，而生产准入用数据库时钟；后续只读探测观察到数据库领先宿主约 1.234 秒，但没有捕获失败当时的时钟/租约，**不足以证明原失败根因**。仅加强夹具：用 `clock_timestamp()-INTERVAL '1 second'` 构造输入，并在数据库中断言已过期。完整重跑 **17 passed，163.21 秒，无 skip**；未放宽拒绝、pending Job 不变或零外部请求断言。
+
+新契约保留无绑定旧路径；已启动但没有冻结执行引用的历史绑定 Job 要求对账，不能自动认领为当前 epoch。持久后台 Runner 的独立执行权、幂等对账/安全后继、其余跨进程强杀窗口、剩余审批最终继续、共享模型预算、跨 Turn 原生 transcript 与逐模式 Harness 仍未完成。新 Turn 默认路由未改变，P2.3 和整体迁移保持未完成。
+
+### 最终验证
+
+在 `Agent_Server` 运行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_tool_authority.py tests/test_framework_task_control.py tests/test_framework_approval_continuation.py tests/test_framework_approval_projection.py tests/test_framework_tool_bridge.py tests/test_framework_approval_progress.py tests/test_framework_approval_runtime.py tests/test_framework_approval_http.py -q -x -rs --tb=short
+```
+
+结果 **118 passed，319.38 秒，无 skip**，其中新执行权文件 23 项。包含真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake model 和受控工具；§21 的独立 Worker 强杀 Harness 也随本组回归通过。
+
+同样在 `Agent_Server` 设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_PLAN_RUN_CREATION=1` 后运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_tool_operation_observation.py tests/test_deep_agent_tool_replay.py tests/test_tool_runtime_heartbeat.py tests/test_tool_executor_safety_gate.py -q -x -rs --tb=short
+```
+
+结果 **26 passed，52.23 秒，无 skip**。领域动作准入在 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_DOCUMENT_IMPACT_TASKS=1` 下运行 `tests/test_case_action_admission.py`，最终结果 **17 passed，163.21 秒，无 skip**，失败及夹具调整见上文。以上结果分别报告，不累计重复或较早版本运行。
+
+最后在 `RUN_LIVE_POSTGRES_TESTS=1` 下运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+结果 **55 passed，68.12 秒，无 skip**。14 个涉及 Python 文件 `py_compile`、`git diff --check` 通过。未运行独立后端 lint/typecheck、前端测试/构建、全量系统或真实模型供应商/浏览器/领域 Runner 验收；本阶段未改前端，受控工具与 fake model 不替代真实领域出口。

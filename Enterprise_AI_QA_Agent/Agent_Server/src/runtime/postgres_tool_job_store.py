@@ -1,15 +1,23 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
+import logging
 from datetime import datetime
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.postgres_identifiers import postgres_index_name, postgres_relation_parts
 from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
+from src.runtime.execution_context import current_framework_owner
+from src.runtime.framework_tool_authority import lock_tool_authority, execution_reference, EXECUTION_KEY
+from src.runtime.store import ContinuationLeaseLostError
+
+
+logger = logging.getLogger(__name__)
 
 
 class PostgresToolJobStore:
@@ -35,6 +43,49 @@ class PostgresToolJobStore:
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._claim_job_execution_sync, job_id)
 
+    async def assert_framework_dispatch(self, job_id: str) -> None:
+        await asyncio.to_thread(self._assert_framework_dispatch_sync, job_id)
+
+    def _assert_framework_dispatch_sync(self, job_id):
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            job = lock_tool_authority(cur, self._settings, job_id)
+            if job is None or job["status"] != "running" or job["started_at"] is None:
+                raise ContinuationLeaseLostError("Framework dispatch requires its claimed running ToolJob")
+        owner = current_framework_owner()
+        logger.info("framework_tool_dispatch_admitted", extra={"tool_job_id": job_id,
+            "binding_id": owner.binding.binding_id if owner else None,
+            "owner_epoch": owner.owner_epoch if owner else None})
+
+    async def append_framework_late_output(self, job_id, owner, payload, observation) -> None:
+        await asyncio.to_thread(self._append_framework_late_output_sync, job_id, owner, payload, observation)
+
+    def _append_framework_late_output_sync(self, job_id, owner, payload, observation):
+        # No upstream counterpart (checked: ToolArtifact inline evidence, plan
+        # §6.2): stale responses are append-only observations, never Job results.
+        reference = execution_reference(owner)
+        content = json.dumps(make_json_safe(payload), ensure_ascii=False, sort_keys=True, separators=(",", ":"), allow_nan=False)
+        digest = hashlib.sha256(content.encode("utf-8")).hexdigest()
+        identity = json.dumps([job_id, reference, digest, observation["status"], observation.get("non_execution")], sort_keys=True)
+        artifact_id = str(uuid5(NAMESPACE_URL, "framework-late-output:" + identity))
+        metadata = {"authoritative": False, EXECUTION_KEY: reference, "output_hash": digest,
+            "observation": observation, "schema_version": 1}
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            # This evidence-only transaction intentionally does not require an
+            # active owner. It verifies the immutable *original* execution ref.
+            job = self.get_job_in_transaction(cur, job_id, for_update=True)
+            if (job is None or job.session_id != owner.binding.session_id or job.turn_id != owner.binding.turn_id
+                or job.metadata.get("framework_binding_id") != owner.binding.binding_id
+                or job.metadata.get(EXECUTION_KEY) != reference):
+                raise ContinuationLeaseLostError("Late observation differs from the original ToolJob attempt")
+            cur.execute(f"""INSERT INTO {self._settings.database.postgres_tool_artifact_table}
+                (id,tool_job_id,session_id,turn_id,trace_id,tool_key,artifact_type,label,path,storage_mode,content_text,metadata,created_at)
+                VALUES (%s,%s,%s,%s,%s,%s,'framework_late_output','迟到工具响应（待核对）',
+                    'late-tool-output.json','inline_text',%s,%s::jsonb,clock_timestamp()) ON CONFLICT (id) DO NOTHING""",
+                (artifact_id, job.id, job.session_id, job.turn_id, job.trace_id, job.tool_key, content,
+                    json.dumps(metadata, ensure_ascii=False)))
+        logger.info("framework_late_tool_output_observed", extra={"tool_job_id": job_id,
+            "binding_id": owner.binding.binding_id, "owner_epoch": owner.owner_epoch, "artifact_id": artifact_id})
+
     async def heartbeat_job_execution(self, job_id: str, owner_token: str | None = None) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._heartbeat_job_execution_sync, job_id, owner_token)
 
@@ -43,6 +94,7 @@ class PostgresToolJobStore:
 
     def _park_child_wait_sync(self, job_id, summary, metadata):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status='waiting_children', summary=%s, metadata=metadata || %s::jsonb, updated_at=now()
                 WHERE id=%s AND status='running' AND NOT (metadata ? 'tool_output_observation') RETURNING *""",
@@ -55,6 +107,7 @@ class PostgresToolJobStore:
 
     def _claim_child_wait_sync(self, job_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status='running', heartbeat_at=now(), updated_at=now()
                 WHERE id=%s AND status='waiting_children' RETURNING *""", (job_id,))
@@ -69,6 +122,7 @@ class PostgresToolJobStore:
 
     def _observe_job_output_sync(self, job_id, output_payload, observation, metadata=None, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET output_payload=%s::jsonb, metadata=metadata || %s::jsonb, updated_at=now()
@@ -95,6 +149,7 @@ class PostgresToolJobStore:
     def _settle_job_output_sync(self, job_id, expected_output, expected_observation, output_payload,
                                status, summary, error_message, artifact_count, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET output_payload=%s::jsonb, status=%s, summary=%s, error_message=%s,
@@ -112,6 +167,7 @@ class PostgresToolJobStore:
 
     def _heartbeat_job_execution_sync(self, job_id, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET heartbeat_at = now(), updated_at = now()
@@ -130,6 +186,7 @@ class PostgresToolJobStore:
 
     def _finish_job_execution_sync(self, job_id, status, output_payload, summary, error_message, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status = %s, output_payload = %s::jsonb, summary = %s, error_message = %s,
@@ -146,8 +203,9 @@ class PostgresToolJobStore:
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             return self.create_job_if_absent_in_transaction(cur, job)
 
-    def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
+    def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord, *, framework_owner=None) -> ToolJobRecord:
         """Preserve an existing execution while sharing its caller's transaction."""
+        lock_tool_authority(cur, self._settings, job.id, candidate=job, owner=framework_owner, check_execution=False)
         cur.execute(f"""INSERT INTO {self._settings.database.postgres_tool_job_table} (
             id, session_id, turn_id, trace_id, call_id, tool_key, tool_name,
             status, summary, input_payload, metadata, created_at, updated_at
@@ -168,6 +226,12 @@ class PostgresToolJobStore:
 
     def claim_job_execution_in_transaction(self, cur, job_id, *, metadata=None):
         """Share the original claim with domain confirmation, without whole-row replacement."""
+        lock_tool_authority(cur, self._settings, job_id, check_execution=False)
+        metadata = dict(metadata or {})
+        owner = current_framework_owner()
+        if owner is not None:
+            metadata.update(framework_binding_id=owner.binding.binding_id,
+                framework_execution_owner=execution_reference(owner))
         cur.execute(f"""
             UPDATE {self._settings.database.postgres_tool_job_table}
             SET status = 'running', started_at = now(), heartbeat_at = now(), updated_at = now(),
@@ -276,8 +340,9 @@ class PostgresToolJobStore:
             with conn.cursor() as cur:
                 return self.save_job_in_transaction(cur, job)
 
-    def save_job_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
+    def save_job_in_transaction(self, cur, job: ToolJobRecord, *, framework_owner=None) -> ToolJobRecord:
         """Save using the caller's transaction, without committing independently."""
+        lock_tool_authority(cur, self._settings, job.id, candidate=job, owner=framework_owner)
         cur.execute(
             f"""
             INSERT INTO {self._settings.database.postgres_tool_job_table} (
@@ -386,6 +451,10 @@ class PostgresToolJobStore:
         metadata = _public_metadata(artifact.metadata)
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                job = lock_tool_authority(cur, self._settings, artifact.tool_job_id)
+                if job is not None and (job["session_id"] != artifact.session_id or job["turn_id"] != artifact.turn_id
+                    or job["tool_key"] != artifact.tool_key):
+                    raise ValueError("Artifact differs from its ToolJob identity")
                 cur.execute(
                     f"""
                     INSERT INTO {self._settings.database.postgres_tool_artifact_table} (
@@ -496,6 +565,7 @@ class PostgresToolJobStore:
                         SET status = %s,
                         updated_at = now()
                     WHERE status = %s
+                      AND NOT (metadata ? 'framework_binding_id')
                       AND (%s::text[] IS NULL OR id = ANY(%s::text[]))
                       AND COALESCE(heartbeat_at, updated_at)
                           < now() - (%s * INTERVAL '1 second')

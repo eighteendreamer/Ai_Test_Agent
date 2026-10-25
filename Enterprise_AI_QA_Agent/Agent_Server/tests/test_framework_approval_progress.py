@@ -6,6 +6,7 @@ import httpx
 import pytest
 
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.runtime.execution_context import framework_owner_scope
 from src.schemas.session import ApprovalDecisionRequest
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_checkpoint_fencing import checkpoint_harness
@@ -108,7 +109,8 @@ async def test_inconsistent_or_expired_execution_is_shown_for_reconciliation(run
     if changed == "output":
         await resume(h, task)
     elif changed == "expired":
-        await h.jobs.claim_execution(h.proposals["B"].job.id)
+        with framework_owner_scope(task.runtime_owner):
+            await h.jobs.claim_execution(h.proposals["B"].job.id)
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
         if changed == "expired":
             cur.execute(f"UPDATE {h.settings.database.postgres_agent_task_table}_runtime SET expires_at=clock_timestamp() "

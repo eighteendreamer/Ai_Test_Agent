@@ -71,6 +71,8 @@ from src.modes.api_testing_mode.runtime import ApiTestingModeRuntime
 from src.modes.compatibility_testing_mode.runtime import CompatibilityTestingModeRuntime
 from src.modes.security_testing_mode.runtime import SecurityTestingModeRuntime
 from src.runtime.store import SessionStore
+from src.runtime.store import ContinuationLeaseLostError
+from src.runtime.execution_context import current_framework_owner
 from src.schemas.agent import ToolDescriptor
 from src.schemas.model_config import ModelConfigRecord
 from src.schemas.tool_job import ToolJobRecord, ToolJobStatus, ToolNonExecutionEvidence
@@ -182,6 +184,9 @@ class ToolExecutionContext:
     def job_metadata(self) -> dict[str, Any]:
         """Persist server-owned run identity; never derive it from tool arguments."""
         metadata = {"selected_agent_key": self.selected_agent_key, "selected_model_key": self.selected_model_key}
+        owner = current_framework_owner()
+        if owner is not None:
+            metadata["framework_binding_id"] = owner.binding.binding_id
         if self.case_action_binding is not None:
             metadata["case_action_binding"] = self.case_action_binding.model_dump(mode="json")
             from src.application.runtime.case_effect_evidence import effect_intent, INTENT_KEY
@@ -608,11 +613,14 @@ class ToolRuntimeService:
                     logger.info("tool_terminal_job_replayed", extra={"tool_job_id": job.id,
                         "tool_key": tool.key, "session_id": context.session_id, "status": job.status.value})
                     return await self.record_from_job(job)
-                if action_admission:
+                if action_admission or current_framework_owner() is not None:
+                    from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+
+                    claim_error = CaseActionClaimUnavailable if action_admission else FrameworkApprovalRecoveryRequired
                     if context.claimed_job is not None:
                         if (context.claimed_job.id != job.id or context.claimed_job.status != ToolJobStatus.running
                             or context.claimed_job.metadata != job.metadata or job.status != ToolJobStatus.running):
-                            raise CaseActionClaimUnavailable("治理领取对象与原PG动作记录不同")
+                            raise claim_error("治理领取对象与原PG动作记录不同")
                     else:
                         claimed = await self._tool_job_service.claim_execution(job.id, context_bundle=context.context_bundle)
                         if claimed is None:
@@ -622,7 +630,7 @@ class ToolRuntimeService:
                                 ToolJobStatus.denied, ToolJobStatus.cancelled,
                             }:
                                 return await self.record_from_job(latest)
-                            raise CaseActionClaimUnavailable("原动作已领取但结果未知；先查证，不能重复发送")
+                            raise claim_error("原动作已领取但结果未知；先查证，不能重复发送")
                         job = claimed
                         if job.status in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
                             ToolJobStatus.denied, ToolJobStatus.cancelled}:
@@ -695,6 +703,8 @@ class ToolRuntimeService:
                 else nullcontext()
             )
             with trace_manager:
+                if job is not None and self._tool_job_service is not None and current_framework_owner() is not None:
+                    await self._tool_job_service.assert_dispatch_authority(job.id)
                 raw_result = await handler(business_arguments(call.arguments, context.case_action_binding), job_context)
             result = self._normalize_result(tool, raw_result, context=job_context)
             result, _, _ = self._output_safety_policy.sanitize_tool_output(result)
@@ -801,7 +811,18 @@ class ToolRuntimeService:
                 started_at=started_at,
                 completed_at=None if resolved_status == "waiting_children" else datetime.utcnow(),
             )
+        except ContinuationLeaseLostError:
+            logger.warning("framework_tool_execution_authority_lost", extra={"tool_key": tool.key,
+                "tool_job_id": job.id if job is not None else context.tool_job_id, "session_id": context.session_id})
+            raise
         except Exception as exc:
+            if current_framework_owner() is not None:
+                from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+
+                if isinstance(exc, FrameworkApprovalRecoveryRequired):
+                    logger.warning("framework_tool_execution_requires_recovery", extra={"tool_key": tool.key,
+                        "tool_job_id": job.id if job is not None else context.tool_job_id, "session_id": context.session_id})
+                    raise
             if child_wait_recovery:
                 # A failed claim acknowledgement or resumed handler has an
                 # unknown outcome. The losing reader must not settle the owner.
@@ -815,6 +836,13 @@ class ToolRuntimeService:
                 if isinstance(exc, CaseActionClaimUnavailable):
                     raise
                 raise CaseActionClaimUnavailable("固定动作没有可靠返回检查点；保留原状态并先查证") from exc
+            if current_framework_owner() is not None and not observed_output:
+                from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+
+                logger.warning("framework_tool_outcome_unknown", extra={"tool_key": tool.key,
+                    "tool_job_id": job.id if job is not None else context.tool_job_id,
+                    "session_id": context.session_id, "error_type": type(exc).__name__})
+                raise FrameworkApprovalRecoveryRequired("Framework tool has no reliable returned output; reconcile before retry") from exc
             sanitized_error, _ = self._output_safety_policy.sanitize_text(str(exc))
             failure_summary = f"Tool '{tool.key}' failed: {sanitized_error}"
             if job is not None and self._tool_job_service is not None:

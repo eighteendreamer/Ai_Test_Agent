@@ -9,7 +9,7 @@
 需要限定三个结论：
 
 - 附件反映方案形成时的缺口，部分已有后续实现，见第 1.3 节；不能将历史缺口写成当前全部缺失，也不能据此声称生产环境已经发生过重复副作用或 checkpoint 覆盖。
-- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离、决定 receipt 与原生 pending writes 同事务已有局部验证；v2 业务审批/API/续跑调度与跨进程杀死、接管、对账的完整链路仍待验收。
+- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离、决定 receipt 与原生 pending writes 同事务已有验证；v2 业务审批/API/续跑调度已在 fake model Harness 接通，独立 Worker 中断及一个强杀窗口已验证。安全接管、对账和后继任务的完整链路仍待验收。
 - “决定已应用 → 工具结算”不能作为统一线性状态机：拒绝不会执行工具，批准后也可能被最新权限或预算阻止；决定交付、框架消费和工具结果应分别记录。
 
 本方案替代上一版接入方案中关于审批恢复、所有权、消息持久化和版本部署的简略约定。系统现状与各模式已有 Harness 的完整调查见[架构报告](system-architecture-and-harness-review-2026-10-25.md)。
@@ -48,14 +48,18 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 提取原生身份，Runtime 原子投影业务审批；工具桥恢复持久化门控和当前审批；独立 continuation prepare 选择指定决定或 None，settle 根据持久化的原生结果投影拒绝和 applied。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。局部真实治理工具恢复不等于完整业务 API/续跑；Runtime/Session 消费续跑与结果投影端口、Dispatcher/Worker、API/UI 和跨进程出口仍待接通 |
-| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；journal 提供 link、queue、delivery 与事实对账；v2 决定、receipt、任务/outbox 共用受理事务；Runtime 新审批业务投影也使用独立 owner 事务 | 风险仍成立。投影、决定受理与执行写入仍有各自事务边界；完整 API、applied 投影与外部副作用对账未贯通，外部效果不在数据库事务内 |
-| F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
+| F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；Worker 只接受已实现的 `message`、`approval_resume`；持久进度 DTO 和前端逐项展示已通过局部 Harness，见实施记录 §12–20 | 独立 Worker 故障后的安全接管及其余决定最终生效、真实浏览器/供应商验收仍待完成；批量旧路径和专用领域审批继续保留 |
+| F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。正常逐项续跑、重复投递和并发受理已有真实 PostgreSQL/Redis、fake model 验证 | 多个事务及外部效果之间仍存在提交窗口；安全对账/后继任务及其它强杀窗口尚未贯通，不承诺外部 exactly-once |
+| F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察，见实施记录 §21–22 | 无绑定旧试点仍用原 saver。同步工具的校验不让数据库撤销已经准入的外部请求；跨进程安全接管、领域 Runner 独立执行权仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
 | F6 版本识别不等于旧环境存在 | 已有 v2 schema、独立 stream/CLI、绑定复核与 lock 摘要能力校验，另有 legacy manifest | 真实双制品部署、存量审批继续、排空与回滚未验收；lock 文件哈希不证明运行环境已安装正确依赖 |
 
 附件末尾“本地未安装 Deep Agents”、仅完成 dry-run 的描述属于旧快照。当前独立 `.venv-framework-v2` 已安装锁定依赖，已有真实数据库局部测试。该进展仍不足以开放生产 v2 路由。
+
+#### 实现过程记录（实施记录 §12–17 时点）
+
+以下保留这些阶段的机制与当时待接线项；后续 Runtime/Session/Worker、API/UI 进展以本节当前判定表及实施记录 §18–22 为准。
 
 本次复核发现的 `sync` 缺口已在 adapter 层落实：所有带 checkpointer 的启动、指定决定恢复、`continue_from_checkpoint=True` 的 `ainvoke(None)` 和子代理事件入口显式使用 `durability="sync"`。无持久化旧试点不传 durability；固定 LangGraph 1.2.12 对无 saver 的 sync 调用会访问不存在的 `_put_checkpoint_fut`，已由真实框架回归复现。无新决定继续仅开放内部 adapter 协议，仍需 Session/Worker 根据交付凭证和 ToolJob 对账选择，不能对未判定的执行直接继续。`sync` 不保证外部副作用 exactly-once，也不保证工具开始前 resume receipt 已落库。
 
@@ -276,7 +280,7 @@ checkpoint 写入适配器的单次数据库操作：
 
 接管和撤销也锁同一 owner。旧代操作若先获得锁，先线性化完成；新代接管必须等它提交。新代接管提交后，旧代任何新写入都会 epoch 不匹配而失败。锁等待后用实际数据库时钟核验过期，不能使用等待前的缓存判定。
 
-已核对 `langgraph-checkpoint-postgres==3.1.2`：官方 `_cursor` 对显式连接使用同一连接，`put/put_writes` 不另开独立池连接；pipeline 在该连接内执行。因此上述事务边界有源码依据。方案形成时尚未通过真实数据库验证；2026-10-26 的同进程真实数据库事务、回滚、取消及连接归还验证见[实施记录第 8 节](framework-integration-progress-2026-10-25.md#8-owner-与-checkpoint-写入事务2026-10-26)。决定 receipt 与 pending writes 同事务现已通过第 10 节的局部验证；跨进程崩溃、业务决定受理与串行继续仍是 P2 待过项。部署 setup/migration 单独执行，不在业务事务里反复 `setup()`。
+已核对 `langgraph-checkpoint-postgres==3.1.2`：官方 `_cursor` 对显式连接使用同一连接，`put/put_writes` 不另开独立池连接；pipeline 在该连接内执行。因此上述事务边界有源码依据。方案形成时尚未通过真实数据库验证；2026-10-26 的同进程真实数据库事务、回滚、取消及连接归还验证见[实施记录第 8 节](framework-integration-progress-2026-10-25.md#8-owner-与-checkpoint-写入事务2026-10-26)。决定 receipt 与 pending writes 同事务见第 10 节；业务决定受理与串行继续已有 §18–20 的局部 Harness，独立 Worker 的两个故障窗口见 §21。安全接管/后继和其余强杀窗口仍是 P2 待过项。部署 setup/migration 单独执行，不在业务事务里反复 `setup()`。
 
 **namespace 落实修订（固定版本源码与实测依据）**：LangGraph 1.2.12 的 `pregel/_loop.py` 会把顶层调用的非空 `checkpoint_ns` 重置为 `""`，仅向 `invoke` 传入绑定 namespace 不构成存储隔离。v2 owner saver 将图的逻辑根 `""` 映射为绑定的物理 namespace，逻辑子图路径映射为 `绑定 namespace|逻辑路径`；读取时逆向映射 config/parent_config。thread_id 保持 turn_id，完整保留图内部路径。该适配必须覆盖根/嵌套 namespace、历史枚举、pending writes、原生审批继续与 delta channel 重建；不以篡改框架内部 task ID 实现隔离。
 
@@ -285,6 +289,10 @@ checkpoint 写入适配器的单次数据库操作：
 保留 Windows 同步 saver 加 `to_thread` 的适配方向，但正确性由数据库隔离保证。取消 await 后仍可能运行的旧线程，也必须接受同样的 epoch 判定。给连接/锁/语句设置有限超时，防止接管无限等锁；这不替代所有权检查。
 
 ### 6.2 ToolJob 与领域 Runner 的所有权
+
+**同步工具当前实现（实施记录 §22）**：沿用 ToolJob CAS，在实际写入事务中按 Session → runtime owner → ToolJob 加锁并核验数据库时钟下的租约。原子领取冻结 `framework_binding_id` 和不含 token 的 `framework_execution_owner`（binding、epoch、task、attempt、worker）；心跳、输出观察、结算、finish、整行保存和附件写入都验证捕获的原执行身份。missing owner 或下一协调代次不能结算旧执行。旧的已启动绑定 Job 若没有执行引用，需要对账，不能根据当前 owner 补猜原身份。普通 stale reaper 不改变绑定工具。
+
+实际 handler 前有一次短事务派发准入，提交后不持锁等待外部调用。它能拒绝准入前已撤销的 owner，不能消除“准入已提交，外部请求尚未发出”窗口，也不能撤销已准入操作的外部效果。框架工具抛错且无可靠返回检查点时，保留未知事实并停止图，不转成可继续推理的普通失败结果。迟到返回使用既有 inline ToolArtifact，以原执行引用和内容哈希去重追加 `framework_late_output`，标记 `authoritative=False`；不修改 Job、决定或 applied proof，不作为通过证据。后台 Runner 独立执行权及安全对账仍是下述待实施契约。
 
 现有 once-per-call、原子领取、终态回放和输出 CAS 继续保留，但 v2 工具调用还需携带 owner 信息。普通同步工具在派发和权威结算时校验执行权。
 
@@ -459,7 +467,7 @@ P2/P3 的关键真实链路：
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
 | P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；Runtime/Session、Dispatcher/API、outbox 与 v2 Worker 已接通，决定受理已从长 Session 执行锁分离；持久审批进度 DTO 与逐项前端投影已接通，详见实施记录 §12–20 | Harness 已验证真实 Runtime 初始 A/B、B 执行时 HTTP 提交 A、202/409/闭合后幂等回执、真实 Redis Worker 的逐项完成与重复投递不重执行，以及前端 jsdom 刷新/重连/并发响应；真实浏览器验收与 P2.3 跨进程出口仍待执行 |
-| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；已实现既有 interrupt/interrupt_if_busy 事务内撤销绑定 owner，保留决定与未知工具效果；见实施记录 §21。幂等对账/安全后继、ToolJob/Runner 执行权仍待实现 | 已验证独立 Worker 在 prepare 前被中断后不派发工具，以及效果产生后实际强杀、原任务失租终态不重领、B 外部计数仍为一次。其余 resume/proof/业务投影窗口、新代接管与旧代迟到业务写、A 决定最终生效仍待验收，P2.3 未完成 |
+| P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；已实现中断事务撤销 owner、同步 ToolJob 的事务执行权校验、未知返回阻断及迟到响应观察；见实施记录 §21–22。幂等对账/安全后继、领域 Runner 独立执行权仍待实现 | 独立 Worker prepare 前中断及效果后强杀已有验证；同步工具迟到结算、失租前后派发准入和 to_thread 延迟写入已有局部 Harness。其余 resume/proof/业务投影强杀窗口、安全新代接管与 A 决定最终生效仍待验收，P2.3 未完成 |
 
 P2.1 的只读投影重建可独立验收；v2 continuation 已在 HTTP/outbox/真实 Redis Worker/治理工具/原生图端到端用例通过后声明，仅支持 message 与 approval_resume。旧命令仍不能领取绑定任务，原生身份缺失不能降级走旧恢复。前端持久投影已通过 jsdom/Vue/Pinia 和构建检查，真实浏览器验收仍待执行；P2 整体及 P3 试点放量继续以该验收与 P2.3 出口为前提。
 

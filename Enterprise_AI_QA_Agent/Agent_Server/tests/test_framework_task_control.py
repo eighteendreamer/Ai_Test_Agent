@@ -11,6 +11,7 @@ from langgraph.checkpoint.base import empty_checkpoint
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
+from src.runtime.execution_context import framework_owner_scope
 from src.schemas.session import ApprovalDecisionRequest
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_checkpoint_fencing import checkpoint_harness, config
@@ -181,7 +182,8 @@ async def test_waiting_native_interrupt_without_pending_task_can_be_stopped(runt
 async def test_interrupt_preserves_unknown_tool_effect_for_reconciliation(runtime_harness):
     h = runtime_harness
     task = await claim_decision(h)
-    job = await h.jobs.claim_execution(h.proposals["B"].job.id)
+    with framework_owner_scope(task.runtime_owner):
+        job = await h.jobs.claim_execution(h.proposals["B"].job.id)
     assert job.status.value == "running"
     response = await interrupt(h)
     assert response.status_code == 200

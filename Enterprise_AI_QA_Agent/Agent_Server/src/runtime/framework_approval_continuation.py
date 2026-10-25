@@ -78,7 +78,7 @@ class FrameworkApprovalContinuation:
                     job.output_payload = {"status": "denied", "approval_id": approval_id,
                         "native_feedback": message.content, "instruction_authority": "none"}
                     job.updated_at = job.completed_at = datetime.utcnow()
-                    job = self._jobs.save_job_in_transaction(cur, job)
+                    job = self._jobs.save_job_in_transaction(cur, job, framework_owner=owner)
                 outcome = "human_rejected"
             else:
                 try:

@@ -393,7 +393,6 @@ async def test_actual_governance_pending_job_denial_and_replay_use_same_receipt(
 @LIVE
 async def test_actual_edited_context_parameters_and_expired_lease_preserve_pending_job(tmp_path, retention_http):
     from copy import deepcopy
-    from datetime import datetime, timezone, timedelta
     from src.infrastructure.postgres_runtime import postgres_connect
     async with decisions_environment(tmp_path, retention_http) as f:
         async with active_actions(f) as (plan, entry, attempt, execution, runtime, call):
@@ -417,7 +416,14 @@ async def test_actual_edited_context_parameters_and_expired_lease_preserve_pendi
                 await runtime.execute(tool, request, replace(execution,
                     context_bundle={**execution.context_bundle,"project_id":"foreign"}))
             with postgres_connect(f.env.settings) as conn, conn.cursor() as cur:
-                f.runs._write_item(cur, entry.model_copy(update={"lease_expires_at":datetime.now(timezone.utc)-timedelta(seconds=1)}))
+                # Admission compares the database clock. Build and verify its
+                # expired input on that same clock, independent of host skew.
+                cur.execute("SELECT clock_timestamp()-INTERVAL '1 second' AS expired")
+                expired = cur.fetchone()["expired"]
+                f.runs._write_item(cur, entry.model_copy(update={"lease_expires_at": expired}))
+                cur.execute(f"SELECT lease_expires_at <= clock_timestamp() AS expired FROM {f.runs._item_table} WHERE id=%s",
+                    (entry.id,))
+                assert cur.fetchone()["expired"]
             with pytest.raises(CaseActionClaimUnavailable):
                 await runtime.execute(tool, request, execution)
             assert await f.jobs.get_job(job.id) == job

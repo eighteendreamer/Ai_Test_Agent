@@ -10,6 +10,8 @@ from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.runtime.tool_job_store import ToolJobStore
+from src.runtime.execution_context import current_framework_owner
+from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobDetail, ToolJobRecord, ToolJobStatus, ToolOutputObservation, ToolNonExecutionEvidence
 from src.infrastructure.storage_utils import make_json_safe
@@ -128,11 +130,15 @@ class ToolJobService:
             and getattr(self._store, "_settings", None) == settings
         )
 
-    def save_job_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
-        return self._store.save_job_in_transaction(cur, job)
+    def save_job_in_transaction(self, cur, job: ToolJobRecord, *, framework_owner=None) -> ToolJobRecord:
+        return self._store.save_job_in_transaction(cur, job, **({"framework_owner": framework_owner} if framework_owner else {}))
 
-    def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
-        return self._store.create_job_if_absent_in_transaction(cur, job)
+    def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord, *, framework_owner=None) -> ToolJobRecord:
+        return self._store.create_job_if_absent_in_transaction(cur, job, **({"framework_owner": framework_owner} if framework_owner else {}))
+
+    async def assert_dispatch_authority(self, job_id: str) -> None:
+        if current_framework_owner() is not None:
+            await self._store.assert_framework_dispatch(job_id)
 
     def get_job_in_transaction(self, cur, job_id: str, *, for_update: bool = False) -> ToolJobRecord | None:
         return self._store.get_job_in_transaction(cur, job_id, for_update=for_update)
@@ -202,6 +208,11 @@ class ToolJobService:
             observe_kwargs["metadata"] = verification_metadata
         try:
             saved = await self._store.observe_job_output(job_id, **observe_kwargs)
+        except ContinuationLeaseLostError:
+            owner = current_framework_owner()
+            if owner is not None:
+                await self._store.append_framework_late_output(job_id, owner, payload, observation.model_dump(mode="json"))
+            raise
         except Exception as exc:
             # A lost commit acknowledgement is uncertain; query this identity
             # rather than replace its output or call the tool again.

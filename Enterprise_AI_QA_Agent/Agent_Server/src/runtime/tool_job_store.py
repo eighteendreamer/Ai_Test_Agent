@@ -6,6 +6,7 @@ from uuid import uuid4
 from typing import Protocol
 
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
+from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 
 class ToolJobStore(Protocol):
@@ -13,6 +14,8 @@ class ToolJobStore(Protocol):
     async def save_job(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
+    async def assert_framework_dispatch(self, job_id: str) -> None: ...
+    async def append_framework_late_output(self, job_id: str, owner: RuntimeExecutionOwner, payload: dict, observation: dict) -> None: ...
     async def heartbeat_job_execution(self, job_id: str, owner_token: str | None = None) -> ToolJobRecord | None: ...
     async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None: ...
     async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None: ...
@@ -50,6 +53,12 @@ class InMemoryToolJobStore:
 
     async def initialize(self) -> None:
         return None
+
+    async def assert_framework_dispatch(self, job_id: str) -> None:
+        raise RuntimeError("Bound framework execution requires PostgreSQL owner authority")
+
+    async def append_framework_late_output(self, job_id: str, owner: RuntimeExecutionOwner, payload: dict, observation: dict) -> None:
+        raise RuntimeError("Bound framework observations require durable PostgreSQL storage")
 
     async def save_job(self, job: ToolJobRecord) -> ToolJobRecord:
         async with self._lock:

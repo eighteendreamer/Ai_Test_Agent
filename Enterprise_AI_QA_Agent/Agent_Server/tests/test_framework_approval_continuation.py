@@ -135,7 +135,8 @@ async def test_missing_delivery_projection_is_repaired_from_native_write(continu
 async def test_started_unknown_tool_blocks_resume_and_preserves_receipt(continuation_harness):
     h = continuation_harness
     task = await claim_decision(h)
-    job = await h.jobs.claim_execution(h.proposals["B"].job.id)
+    with framework_owner_scope(task.runtime_owner):
+        job = await h.jobs.claim_execution(h.proposals["B"].job.id)
     assert job.status.value == "running"
     with pytest.raises(FrameworkApprovalRecoveryRequired, match="reconcil"):
         await service(h).prepare(h.owner.runtime_owner, task.reference_id, task.input["decision_id"])
@@ -175,8 +176,9 @@ async def test_native_rejection_continues_without_dispatching_business_tool(cont
 async def test_terminal_job_before_native_delivery_replays_its_result(continuation_harness):
     h = continuation_harness
     task = await claim_decision(h)
-    job = await h.jobs.claim_execution(h.proposals["B"].job.id)
-    await h.jobs.mark_completed(job.id, "previous result", {"evidence": "previous result"})
+    with framework_owner_scope(task.runtime_owner):
+        job = await h.jobs.claim_execution(h.proposals["B"].job.id)
+        await h.jobs.mark_completed(job.id, "previous result", {"evidence": "previous result"})
     plan = await service(h).prepare(h.owner.runtime_owner, task.reference_id, task.input["decision_id"])
     assert not plan.continue_from_checkpoint
     await run_plan(h, plan)
@@ -276,8 +278,9 @@ async def test_sibling_continuation_finishes_with_paired_results_and_no_repeated
 async def test_rejection_cannot_hide_a_previously_executed_tool(continuation_harness):
     h = continuation_harness
     task = await claim_decision(h, decision="denied")
-    job = await h.jobs.claim_execution(h.proposals["B"].job.id)
-    await h.jobs.mark_completed(job.id, "unexpected execution", {"evidence": "needs reconciliation"})
+    with framework_owner_scope(task.runtime_owner):
+        job = await h.jobs.claim_execution(h.proposals["B"].job.id)
+        await h.jobs.mark_completed(job.id, "unexpected execution", {"evidence": "needs reconciliation"})
     with pytest.raises(FrameworkApprovalRecoveryRequired, match="reconcil"):
         await service(h).prepare(h.owner.runtime_owner, task.reference_id, task.input["decision_id"])
     assert receipt(h).state == "queued" and h.effects == []

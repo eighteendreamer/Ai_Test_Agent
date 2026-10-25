@@ -130,7 +130,7 @@ class FrameworkApprovalProjection:
                 raise FrameworkApprovalRecoveryRequired("Started ToolJob must be reconciled before denial projection")
             job.status, job.summary, job.output_payload = ToolJobStatus.denied, record.summary, record.output
             job.updated_at = job.completed_at = datetime.utcnow()
-            return self._jobs.save_job_in_transaction(cur, job), False
+            return self._jobs.save_job_in_transaction(cur, job, framework_owner=owner), False
 
     def _project(self, owner, proposal):
         try:
@@ -174,7 +174,7 @@ class FrameworkApprovalProjection:
                         "framework_call_id", "framework_native_identity"))):
                     raise FrameworkApprovalRecoveryRequired("Existing approval has a different native projection")
                 approval = saved
-            stored_job = self._jobs.create_job_if_absent_in_transaction(cur, job)
+            stored_job = self._jobs.create_job_if_absent_in_transaction(cur, job, framework_owner=owner)
             if (stored_job.session_id != job.session_id or stored_job.turn_id != job.turn_id
                 or stored_job.call_id != job.call_id or stored_job.tool_key != job.tool_key
                 or approval_value_hash(stored_job.input_payload) != approval_value_hash(job.input_payload)
