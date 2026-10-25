@@ -15,7 +15,16 @@
 - **完成语义不可审计**：没有一等公民 Evidence；通过可能来自 Agent 自述、确定性断言或语义模型，UI 无法区分。
 - **场景扩展靠改主链**：14 个模式、45 个硬编码 Agent、模式 runtime 由 if/elif 分发；新增一个测试场景要改多处，而不是装一个包。
 - **目标**：一个执行内核 + Scenario Pack + 测试工作台；P0 先做“契约冻结、死代码清理、输入四模式 + 停止、统一任务投影”，P1 做“Step checkpoint + Evidence/Verdict + 事件流”，P2 做“场景包化与结构收敛”。
-- **本文不实施代码**。需要用户拍板的 5 项在第 15.4 节。
+- **本轮补做了实测**：kill 恢复测试通过但证明的是“放弃恢复”；事件游标/幂等测试通过；`test_runtime_input_paths.py` 有 1 个测试夹具漂移失败；管理指令探针把“改默认模型”误判为性能测试；6 个占位模式会被 UI 选中。
+- **自然语言控制面**不是现有能力：当前只有测试意图。目标是把 NL 编译成受限 `SystemCommand`，经 dry-run、审批、应用、读回、回滚；P0 先做只读+澄清+拒绝。
+- **本文不实施代码**。需要用户拍板的 8 项在第 15.4 节；实测细节见第 16 章。
+
+| 质疑 | 本版回应 | 证据 |
+|---|---|---|
+| 有没有测试验证、复现 bug | 执行了 kill 恢复、项目/事件、PG 事件游标测试；复现了管理指令误路由、占位模式暴露、测试夹具漂移、任务池缺计数 | 第 16 章 T1–T6；命令与输出逐条列出 |
+| 是否了解每个部分的业务功能 | 覆盖 39 个 application 子包、36 个路由模块、14 个模式、前端 9 视图/6 features/3 stores | 第 17 章、19.7–19.10 |
+| 每部分怎么调优 | 每个业务域给出当前问题、调优方向、NL 控制入口；P0/P1/P2 优先级 | 17.1–17.5 |
+| 怎么用一句自然语言改配置/数据/任务 | 现状探针 + System Operator 设计：AdminIntent → ChangePlan → dry-run → 审批 → 应用 → 读回 → 回滚；命令目录与 Harness 接入点 | 第 18 章 |
 
 阅读路径：决策者看摘要 + 第 1、13、14 章；架构评审看第 3–12 章；实施负责人看第 13–15 章与附录。
 
@@ -912,6 +921,8 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 | P0-2 | 冻结 WorkItem/Execution/Step/Attempt/Evidence/InputCommand/EventEnvelope/ScenarioManifest 契约；WorkItem SQL VIEW；统一状态字典 | 任务中心一个投影、一个状态目录；前端 11 套映射归一 | VIEW 可回退到旧 UNION |
 | P0-3 | 输入四模式 + 持久化队列 + 停止按钮 + 队列 chip + 时间线一等事件 | 模型流中/工具中/turn 结束竞态全部通过；输入零丢失；停止有实际受理状态 | feature flag 关闭 steer，保留 queue |
 | P0-4 | 所有执行统一 Admission；内部 inline 仅测试开关；Worker 接管测试 | API 重启不中断长任务；kill worker 可接管；无第二接纳路径 | 开关切回 inline（仅短期） |
+| P0-5 | 修复 B-02 占位模式入口与 B-03 测试夹具漂移；建立“失败测试不得作为完成证据”门禁 | 可执行模式只剩 8 个；`test_runtime_input_paths.py` 全绿；占位模式不可启动 | 隐藏入口而非删除模式 |
+| P0-6 | System Operator P0：AdminIntent + 只读命令 + 澄清/拒绝；不开放写 | 20 条金样不误路由；未知/歧义 100% 澄清或拒绝；0 次写操作 | 关闭命令面板，仅保留测试意图 |
 
 ### P1：可恢复与证据化（4–6 个迭代）
 
@@ -922,6 +933,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 | P1-3 | ContextAssembler + 工具引用 + 稳定前缀 + Step 预算 | 长任务上下文占比可控；缓存前缀稳定；压缩后任务可继续 | 回退旧消息拼接 |
 | P1-4 | 事件账本 + Redis Stream 扇出 + SSE 游标 + Inspector | 多实例 <1s 推送；断线回补；终态可达 | 回退 PG 轮询 |
 | P1-5 | 记忆三层 + 显著性/TTL/冲突 | 记忆命中准确率可测；过期可识别 | 关闭长期记忆写入 |
+| P1-6 | System Operator P1：ChangePlan + dry-run/diff + Approval + 读回验证 + 变更审计；首批项目/环境/用例/运行命令 | 每条写命令有 before/after；未审批写入 0；读回不一致自动回滚 | 关闭写命令，仅保留只读 |
 
 ### P2：场景包与结构收敛（6–8 个迭代）
 
@@ -931,6 +943,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 | P2-2 | 合并 4 个 coordinator → ChildRunOrchestrator；3 个模式 task pool → TaskStore；RunStore 双实现 → 契约 + fake | 子运行取消/恢复/配额一致；状态机单实现 | 按模式开关回退 |
 | P2-3 | 拆分 tool_runtime / session_service / run_store；bootstrap 组合根；删除 setter 债 | 单文件预算达标；无循环依赖；测试可独立组装 | 原文件保留包装层 |
 | P2-4 | ChangeWorkItem 聚合与详情 | 一次文档变更可追踪到用例版本与回归结果 | 保留旧端点 |
+| P2-5 | System Operator P2：套件新版本、任务取消/重试、变更链、回滚、Scheduler（若确认需要） | 多命令部分失败可恢复；回滚成功；跨项目拒绝 | 逐命令开关 |
 
 ### P3：工作台与规模化（持续）
 
@@ -971,6 +984,8 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 | 新增测试场景 | 改 modes + registry + tool runtime + 前端 + 验证器 | 新增 1 个 Scenario Pack 目录 | 记录改动文件数与 conformance |
 | 强杀恢复 | Agent turn 放弃/整轮重来；TestRun 可接管 | 所有 execution 从最近 Step 续跑 | 三类 kill 点测试 |
 | 运行中输入 | queue / reject；无停止按钮 | steer / queue / interrupt + 0 丢失 | 四类竞态测试 |
+| 自然语言控制 | 仅测试意图；管理指令误路由 | 只读/写命令分级 + dry-run + 审批 + 读回 + 回滚 | 20–50 条金样 + 未审批写入为 0 |
+| 模式入口 | 6 个占位模式可被选中 | 仅 8 个可执行模式可启动 | 注册表/UI 双重过滤测试 |
 | 完成语义 | Agent 自述 + 混合校验 | 四轴 + Evidence/Verdict | 通过项证据覆盖率 100% |
 | 任务中心 | 5 表 UNION + 6 套入口 | 1 个投影 + `/tasks/:id` | 统一状态目录一致性 |
 | 状态映射 | 11 套前端手写 | 1 份 catalog 生成两端 | CI 快照 |
@@ -1039,21 +1054,26 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 3. **WorkItem 投影**：接受 SQL VIEW 起步，还是直接物化表（需 Alembic）？
 4. **数据库迁移窗口**：80 处 DDL 迁移是否允许分批在测试库先行、生产灰度？
 5. **多实例时间线**：P1 是否必须支持多 API 实例 SSE，还是先单实例、保留契约？
+6. **NL 控制面范围**：是否接受 P0 只读命令+澄清+拒绝、P1 才开放写命令？
+7. **调度器**：“今晚跑一次”是否需要新增后端 Scheduler，还是明确不支持定时、只支持立即运行？
+8. **项目默认模型**：当前只有全局模型激活；是否为“项目/场景默认模型”新增数据模型，还是 NL 层统一澄清？
 
 ### 15.5 本次审查边界
 
-**已核实（静态证据）**：
+**已核实（静态证据 + 本轮实测）**：
 
 - 当前工作区源码、配置、表结构与测试文件；关键路径均给出 `文件:行号`。
 - 现有架构文档与项目规则；与现状冲突处已在第 0 章校正。
 - 本地成熟 Agent 参考实现的关键代码位置；只提取边界与机制，不做功能对等比较。
-- 观察到的测试规模：后端 526 个测试文件；前端 77 个测试文件 / 564 个用例（最近一次全量运行结果，非本次重跑）。
+- 本轮实际执行：后端 kill 恢复用例 1 passed；项目/事件测试 22 passed/15 skipped；PG 事件测试 30 passed/2 skipped；`test_runtime_input_paths.py` 1 failed/4 passed/5 skipped；管理指令路由探针 6 条；模式注册表探针 14/6；只读管理 API 探针 4 项（项目/模型/模式/任务池）。
+- 前端 77 个测试文件 / 564 个用例（2026-10-25 06:13 全量运行；此后未改前端代码）。
 
 **未验证（不能据此宣称已通过）**：
 
 - 实际部署拓扑：API/Worker/Relay 的进程数、实例数、Redis/PG 容量与多实例行为。
 - 生产数据分布：任务量、长任务比例、审批等待时长、失败模式、租户/项目规模。
-- 运行时行为：本次未启动服务、未执行真实模型/工具/浏览器；所有恢复、竞态、性能结论都需要 P0/P1 验收测试证明。
+- 运行时行为：本次执行了隔离 PG/Redis 测试，但未执行真实模型、浏览器、设备或 Docker；未做真实 kill 时序、steer 竞态、多实例 SSE 与性能压测。T1 只证明当前“放弃恢复”的行为，不证明续跑。
+- 测试套件全绿：不成立；`test_runtime_input_paths.py` 有 1 个夹具漂移失败（见 16.3 B-03）。
 - 多实例 SSE、Redis Streams 扇出、4h/24h 长稳、浏览器/Docker 池上限。
 - 场景包迁移后的真实扩展成本；本文给出的“1 个目录”是设计目标，不是已验证结果。
 - 旧 DDL 迁移对现有数据库的兼容性与停机窗口。
@@ -1062,9 +1082,420 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 
 ---
 
-## 16. 附录：证据索引
+## 16. 实测、复现与失败样本
 
-### 16.1 执行与持久化
+> 本章只记录 2026-10-25 本轮实际执行的命令、输出与解释。未执行的验证不写成“通过”。
+
+### 16.1 实测环境与边界
+
+| 项 | 值 |
+|---|---|
+| 工作区 | `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent` |
+| 后端 | Python 3.11.16，项目 `.venv` |
+| 基础设施 | 本机 PostgreSQL、Redis 已监听；测试使用唯一临时表名并在 finally 删除 |
+| 前端 | 最近一次全量 `npm run test`：77 个文件 / 564 个用例通过（2026-10-25 06:13，代码此后未改） |
+| 未做 | 未启动真实模型调用、未做浏览器/设备/Docker 真实执行、未做多实例压测、未写生产库 |
+
+测试隔离说明：`tests/test_agent_task_dispatch.py` 与 `tests/test_session_event_delivery.py` 的 live 分支会生成 `agent_test_*` / `live_delivery_*` 临时表，只删除这些临时表；未触碰项目业务表。
+
+### 16.2 已执行测试与结果
+
+| # | 命令 | 结果 | 证明什么 / 不能证明什么 |
+|---|---|---|---|
+| T1 | `RUN_LIVE_POSTGRES_TESTS=1 python -m pytest tests/test_agent_task_dispatch.py::test_killed_worker_pending_is_reclaimed_without_replaying_started_agent -q` | **1 passed / 13.92s** | 证明当前 kill worker 后任务进入 `recovery_required`、`runtime.calls == []`、session 变为 `interrupted`。**这是“放弃恢复”的行为被测试固化，不代表可续跑**。不能证明真实生产 kill 的所有时序。 |
+| T2 | `python -m pytest tests/test_project_management_api.py tests/test_session_event_delivery.py -q` | **22 passed / 15 skipped / 5.29s** | 证明项目分页/计数契约、事件 memory 实现的顺序与幂等；Postgres 分支因未开 live 被跳过。 |
+| T3 | `RUN_LIVE_POSTGRES_TESTS=1 python -m pytest tests/test_session_event_delivery.py -q` | **30 passed / 2 skipped / 19.20s** | 证明 PG 临时表上的事件游标、追加顺序、幂等与回放；**不能证明多实例 SSE 扇出与 0.5s 轮询的端到端延迟**。 |
+| T4 | `python -m pytest tests/test_runtime_input_paths.py -q` | **1 failed / 4 passed / 5 skipped** | 失败：`AttributeError: 'types.SimpleNamespace' object has no attribute 'get_execution_detail'`。产品侧 `TestRunService.get_execution_detail` 存在（`run_service.py:352`），是测试夹具未同步新接口。**说明当前后端测试套件并非全绿，存在测试代码漂移**。 |
+| T5 | `python -m pytest tests/test_agent_task_dispatch.py -q`（整文件） | 未整文件执行 | 该文件包含 live 分支；只执行了恢复用例，避免无关表/多进程副作用。 |
+| T6 | 启动本地 API 后只读探针：`GET /projects?limit=1`、`GET /settings/models`、`GET /registry/modes`、`GET /task-pool?limit=1` | **全部 200**；项目 2 条（active 0 / archived 2）；模型配置 8 条（2 个 active）；模式 14 个（6 个 placeholder）；任务池返回 `items/limit/offset/has_more`，**无 total/counts** | 证明管理 API 与注册表可达；占位模式确实由 API 暴露；任务中心无法像项目列表一样显示全量计数。未读取/输出任何密钥。 |
+
+**解释**：T1 是“行为复现”而不是“缺陷测试失败”。当前设计明确把 kill 后 turn 视为不可续跑；真正要验收的“从最近 Step 续跑”在本仓库尚不存在。文档把它列为 P1 目标，而不是“已实现”。
+
+### 16.3 本轮复现的具体缺陷
+
+#### B-01：Natural Language 管理指令被误判为测试模式（已复现）
+
+直接调用生产 `IntentRecognitionService.recognize()`，不启动模型：
+
+| 用户原话 | 实际 candidate_mode | 实际 target/objectives | 实际 actions | 结论 |
+|---|---|---|---|---|
+| 把项目 demo 的默认模型改成 deepseek-chat，并把并发限制设为 3 | **performance_testing** | service / performance | respond | 因“并发”命中性能关键词，配置修改被路由到压测模式 |
+| 把用例 case-1 启用，加入套件 suite-2 并今晚跑一次 | None | general / general_assistance | respond | 完全没有管理动作能力 |
+| 取消任务 task-123 并回滚上一次配置 | None | general / general_assistance | respond | 没有任务取消/回滚意图 |
+| 给 staging 环境创建配置快照 | None | general / general_assistance | write | 只能识别“写”，不知道写什么 |
+| 把失败用例创建回归运行 | None | general / general_assistance | execute, write | 没有回归命令 |
+| 关闭安全测试模式 | **security_testing** | service / security | execute | 把“关闭”误解为执行安全测试 |
+
+**影响**：当前系统只能把自然语言理解为“测试任务”，不能作为系统控制面。更危险的是第一条会被路由到性能模式；如果模型/工具链被执行，可能产生与用户意图完全不同的动作。
+
+**证据**：`src/application/intent/intent_recognition_service.py:19-36,40-82` 只有 7 个测试模式的 token 表；`requested_actions` 只有 read/execute/write/delete/send，没有 project/model/task 等对象。实测输出见上表。
+
+#### B-02：6 个占位模式被 UI 当作可选测试模式（已复现）
+
+`ModeRegistry().list()` 实测：14 个模式，其中 6 个 `placeholder=True` 且 `is_test_mode=True`：
+
+```text
+unit_component_testing, accessibility_testing, visual_regression_testing,
+mobile_testing, reliability_testing, integration_testing
+```
+
+前端 `ProjectsView.vue:164` 的过滤条件只有：
+
+```ts
+modes.filter(item => item.is_test_mode && item.case_driven_policy !== "exempt")
+```
+
+没有排除 `placeholder`。因此“生成执行计划”“套件运行”“导入映射”的模式下拉会把没有 Runner 的占位模式当成可执行模式。`mobile_testing_mode/manifest.py` 明确写着“暂不提供设备、模拟器或移动 Runner”，却仍满足上述过滤条件。
+
+**影响**：用户可以选择一个没有执行能力的模式，得到“计划成功”但没有真实执行，属于产品层误导。  
+**方向**：`placeholder` 必须从可执行入口过滤；若要展示，单列“规划中/只提供 Skills”，并禁止用于 Run。
+
+#### B-03：测试夹具与产品接口漂移（已复现）
+
+`tests/test_runtime_input_paths.py:218` 构造：
+
+```python
+runs = SimpleNamespace(get=..., get_item=..., get_latest_attempt=...)
+adapter = AgentCaseExecutionAdapter(run_service=runs, ...)
+```
+
+而产品 `AgentCaseExecutionAdapter._load` 现在调用 `self._runs.get_execution_detail(...)`（`agent_case_execution.py:58`），`TestRunService` 确实提供该方法（`run_service.py:352`）。因此失败是**测试替身过期**，不是产品无法恢复。  
+**影响**：`pytest tests/test_runtime_input_paths.py` 非全绿，不能把“测试通过”当作系统正确性的证明。  
+**方向**：夹具改为使用真实 `TestRunService` 或补齐 `get_execution_detail` 的受控桩；把它纳入 P0 测试卫生。
+
+#### B-04：渠道配置承诺了 steer，但交互式执行面没有消费者的证据
+
+- 渠道高级设置已有 `ChannelQueueMode = steer / followup / collect / interrupt`（`schemas/channel_config.py:15`），`ChannelGatewayPolicyService` 会返回 `action="steer"`（`channel_gateway_policy.py:133-137`）。
+- 该决策通过 `POST` 设置路由返回给外部渠道适配器（`api/routes/settings.py:219-220`），本仓库内没有把 `steer` 写入当前 turn 的输入队列。
+- 交互式 `SessionService` 的 `queue_behavior` 只有 `reject_when_busy / enqueue_if_busy / interrupt_then_retry`（`session_service.py:1975-2012`），没有“下一步生效”的 steer 执行。
+- 前端 `interruptCurrentTurn` 只有定义，没有组件调用（`stores/session.ts:1231-1245`；`grep` 无 `.vue` 命中）。
+
+**结论**：渠道层有“steer 策略语言”，但会话执行层没有对应语义；外部适配器是否自行实现 steer 不在本仓库证据内，不能据此宣称系统已支持 steer。
+
+#### B-05：任务池契约缺全量计数（已通过只读 API 证实）
+
+`GET /task-pool?limit=1` 返回 `items/limit/offset/has_more`，没有 `total` 或分类计数；项目列表已经有 `total/counts`（`ProjectPage`）。任务中心若要做“全部/执行中/已完成/失败”的准确数量与跨页统计，只能逐页累加或再发多次查询。  
+**影响**：任务中心 UI 无法稳定显示全量计数；与项目列表的契约不一致。  
+**方向**：任务投影接口补 `total` + `counts`（按 WorkItem kind/phase），与项目列表同构。
+
+### 16.4 哪些结论被证实、修正或仍是静态推断
+
+| 结论 | 状态 | 依据 |
+|---|---|---|
+| HTTP 聊天主入口已走 Worker | **已证实（代码）** | `sessions.py:148-157` → dispatcher → outbox/Redis → worker |
+| Agent turn 强杀后不能续跑 | **已证实（运行测试 T1）** | `recovery_required` + `interrupted` + `runtime.calls=[]` |
+| 事件游标可回放、重复事件幂等 | **已证实（T3）** | 30 passed 的 PG 临时表测试 |
+| 后端测试套件全绿 | **已推翻** | T4 有 1 个失败（测试夹具漂移） |
+| 占位模式会被 UI 选中 | **已证实（注册表 + 前端过滤代码）** | 6 个 placeholder 且过滤未排除 |
+| 自然语言不能管理配置/任务 | **已证实（探针 B-01）** | 6 条指令的实际路由输出 |
+| SSE 0.5s 轮询导致多实例延迟 | **静态推断** | 代码有 0.5s 轮询与 PG 查询；未做多实例压测 |
+| 11 套前端状态映射 | **静态统计** | 逐个文件 grep；未做运行时一致性测试 |
+| RunStore 双实现漂移 | **静态推断** | 两套实现类与状态机；未构造差异样本 |
+| 模块依赖倒置/循环 | **静态统计** | grep import；未跑 import-linter |
+
+### 16.5 对原方案的修正
+
+- 原文把“kill 后不能续跑”写成架构判断；本轮用 T1 证明这是当前**被测试固化的行为**，不是偶发缺陷。方案仍保留 P1 Step checkpoint，但验收必须新增“续跑”断言，不能复用 T1。
+- 原文的“测试套件全绿”表述必须删除；当前至少 `test_runtime_input_paths.py` 有 1 个测试夹具失败。
+- 原文的“UI 无 steer”要精确为“交互式执行面无 steer；渠道策略层有 steer 词表但无仓库内执行消费者”。
+- 原文的“占位模式”从风险升级为**已复现产品缺陷**，列入 P0。
+
+---
+
+## 17. 逐模块业务地图与调优
+
+> 目的：回答“每一个部分是做什么的、现在该怎么调”。按业务域分组，覆盖 `application/` 的全部子包、36 个路由模块、14 个模式、前端 9 个视图与 3 个 store。  
+> 行内“调优”指本轮建议，不代表已实施。
+
+### 17.1 控制面与运行时
+
+| 模块 | 业务功能 | 关键入口 | 当前问题 | 调优方向 | NL 控制入口（目标） |
+|---|---|---|---|---|---|
+| `api/routes/*`（36 模块 / 349 个路由装饰器） | 对外 REST：会话、项目、用例、套件、运行、文档、录制、设置、注册表等 | `main.py:1059-1093` | 路由按业务散开；没有统一命令网关；管理操作与 Agent 工具两套接口 | 保留 REST 作为传输层；新增 `SystemCommand` 网关给控制面复用；OpenAPI 生成命令目录 | 所有管理命令 |
+| `core/config.py` | 290 个配置字段、11 个配置类 | `get_settings()` | 平铺、启动即读；缺少变更审计/版本 | 分域配置对象 + 校验 + `config_revision`；变更走命令与审计 | `config.set`、`quota.set` |
+| `main.py` / `containers.py` | 构造全部服务、setter 注入、路由注册 | `_initialize_lifespan_resources:213-1002` | 790 行装配、57 个 setter、双容器、循环依赖补洞 | `bootstrap/` 按子域组合根；构造器注入；依赖规则 CI | 不直接暴露 |
+| `sessions/` + `runtime/postgres_session_store.py` | 会话 CRUD、turn、队列、审批、快照、事件 | `SessionService` | turn 末快照；steer 缺失；内联路径；队列语义弱 | Admission + steer/queue/interrupt + Step checkpoint | `session.steer/queue/interrupt` |
+| `runtime/agent_loop.py` + `runtime_service.py` | 驱动 LangGraph 一轮执行、错误恢复 | `AgentLoop.run_turn:45-96` | 图外 while；`stream_turn` 死路径；每轮重跑前置节点 | Step Executor/事件流；保留图作为节点库 | `execution.inspect/steer` |
+| `graph/nodes/*`（9 节点） | 上下文、提示词、模型、路由、审批、工具、回复、收尾 | `graph/builder.py:74-154` | 批次串行；审批与执行交错；节点级事件不足 | ToolGateway + per-tool 中断；Step 事件；上下文片段化 | 通过 Execution 命令 |
+| `orchestration/` | InputOrchestrator、AgentTaskDispatcher、CoordinatorRuntimeService | `agent_task_dispatcher.py:78-136` | 中央与模式协调器双实现；reaper/watcher 重复 | 合并 ChildRunOrchestrator；统一子运行合同 | `task.cancel/retry` |
+| `intent/` | 测试模式意图识别、语义增强、安全意图 | `IntentRecognitionService.recognize` | 只有测试模式；管理指令误判（B-01） | 增加独立 `AdminIntent`，与测试意图分流 | `system.intent` |
+| `permissions/` + `security/approval` | 工具可见性、allow/ask/deny、审批 | `PermissionService.evaluate` | 只覆盖工具调用；管理命令无权限模型 | 命令级 capability + scope + 风险 | 所有写命令 |
+| `resources/` + `resource_*` | 浏览器/Docker/账号/环境租约、配额 | `ResourceLeaseManager` | 租约与 Execution 未统一；Step 级续租缺失 | Execution 绑定资源；长工具独立租约 | `quota.set` |
+| `observability/` + `flow/` + `reporting/` | Trace、事件投影、报告 | `FlowProjectionService` | 事件/报告/任务状态各自 ID；无统一 WorkItem | EventEnvelope + Evidence + WorkItem 投影 | `execution.inspect` |
+| `settings/` + `models/` + OAuth | 模型/邮箱/渠道配置、激活、连接测试 | `SettingsService` | 管理 API 有，但无 dry-run/diff/回滚；模型激活是全局 | 命令化配置：diff、审批、读回验证、回滚 | `model.activate/config.set` |
+| `artifacts/` + `images/` + `attachments/` | 对象存储、镜像目录、附件安全扫描 | `ArtifactStorageService` | 证据散落在 result/ToolJob/对象存储 | Evidence 统一引用 + retention | 证据查询 |
+| `mcp/` + `skills/` + `registries/` + `integrations/` | 外部工具/技能/能力目录 | RegistryService | 能力注册与执行绑定弱；45 Agent 硬编码 | Manifest 自动发现 + capability 解析 | `capability.enable/disable` |
+
+### 17.2 测试资产与执行
+
+| 模块 | 业务功能 | 关键入口 | 当前问题 | 调优方向 | NL 控制入口（目标） |
+|---|---|---|---|---|---|
+| `projects/` | 项目、环境、业务适用性、历史冒烟 | `ProjectService`、`BusinessEnvironmentService` | 项目状态与环境/配额未聚合；归档不可恢复 | WorkItem 投影 + 项目级配置聚合；归档 cascade | `project.create/update/archive` |
+| `test_cases/` | 用例草稿、版本、评审、启用、生成、导入、内容模板 | `TestCaseService`、`TestCaseGenerator` | 30 个文件、版本/评审/运行历史分散；占位模式混入 | 不可变版本 + Evidence 链接 + 统一用例详情 | `case.create/update/review/activate` |
+| `test_suites/` | 套件与冻结版本 | `TestSuiteService` | 4 个路由；冻结后无“追加用例”明确命令 | 套件版本命令（fork/add/freeze） | `suite.fork/add/freeze` |
+| `case_planning/`（在 `test_cases` / `runtime`） | 用例规划、候选、运行计划修订、回归规划 | `case_plans.py`、`case_planning_tasks.py` | 与运行修订/回归共用 planning task 表；状态多套 | 统一 Planning WorkItem + 版本化计划 | `plan.generate/revise` |
+| `test_runs/` | Run/RunItem/Attempt、领取、心跳、结果、回归、评估 | `run_store.py`、`run_service.py` | 4,124 行双实现；证据内嵌 JSON；终态混合 | 单契约 + fake；Evidence/Verdict；四轴状态 | `run.launch/cancel/retry/regression` |
+| `test_suites` + `run_management` | 套件冻结 → 运行 → 条目执行 | `suite_management.py`、`run_management.py` | Session 与 Run 通过 session_id 关联但 UI 分属两页 | 一个 Run Detail 证据中心；Session 深链 | `run.inspect` |
+| `testing/` | QA 方向、测试路由、验证/UI 探索 | `QATaskDirectionService` | 与 intent、verification 重叠 | 合并为 Scenario 选择策略 | `scenario.select` |
+| `compatibility/` | Runner 注册、任务下发、产物、报告 | `compatibility.py` 16 端点 | 独立 Runner 协议与 journal；与通用 Worker 不一致 | 并入 Execution 合同；Runner 作为 EnvironmentPort | `runner.register/requeue` |
+| `performance/` | k6/JMeter 引擎、目标保护、指标 | `performance_testing_mode/runtime.py` | 模式内再造执行链；与 Run/证据脱节 | Performance Scenario Pack + 指标 Evidence | `run.launch(mode=performance)` |
+| `security/` | 安全扫描、审批、隔离、漏洞复现 | `security_testing_mode/runtime.py` 4,009 行 | 巨型状态机；子代理双调用；风险策略分散 | 拆分 campaign/step/verdict；风险作为 ToolDescriptor | `run.launch(mode=security)` |
+| `recorder/` + `recording` | 浏览器录制、回放、转用例、断言建议 | `recordings.py` 16 端点、`recorder/` 13 文件 | 录制事件与执行证据两套；回放依赖外部状态 | 录制 Step/Evidence 化；回放幂等 | `recording.start/stop/replay` |
+| `exploration/` | UI 图谱、录制图谱 | `RecordingGraphStore` | 图谱事实与业务资产未统一 | 项目级资产图谱 + 版本 | `knowledge.reindex` |
+| 6 个占位模式 | 仅注册 Skills | `manifest.py` | **B-02：可被 UI 选中但无 Runner** | 过滤出可执行入口；显式“规划中” | `scenario.status` |
+
+### 17.3 文档、变更与知识
+
+| 模块 | 业务功能 | 关键入口 | 当前问题 | 调优方向 | NL 控制入口（目标） |
+|---|---|---|---|---|---|
+| `documents/` + `api_doc_resolution/` | API 文档上传、版本、解析、定位 | `api_docs.py` 17 端点、`document_parsing.py` 10 端点 | 上传不自动触发差异（`api_docs.py:107`）；版本与影响链手工 | `ChangeWorkItem` 自动串联 | `document.upload/diff` |
+| `document_differences` / `document_impacts` | 文档差异、影响分析 | 9 + 17 端点 | 两个独立任务与状态；需手工传 snapshot id | 统一 Change 阶段；自动触发 | `change.diff/impact` |
+| `case_generation_tasks` | 文档驱动用例生成、增量范围、重试 | 13 端点 | 独立 generation store；重试表重复生命周期 | 并入 ChangeWorkItem；统一重试 | `change.generate` |
+| `document_git` | Git 文档解析/导入 | 5 端点 | 与文档版本链未统一 | 作为文档来源适配器 | `document.import_git` |
+| `requirements/` + `coverage` | 需求、覆盖依据、执行覆盖 | 13 端点与 4 套 coverage | 覆盖机制 4 套；需求与用例/运行未强绑定 | 统一 Evidence/Coverage 视图 | `coverage.inspect` |
+| `knowledge/` + `context/` | 知识图谱、记忆、压缩、嵌入、MCP 运行时 | `KnowledgeGraphService`、`ContextCompactionService` | 每轮宽写入；world_state/prompt_cache 未接线 | 三层记忆 + Step 预算 + 证据索引 | `memory.forget/refresh` |
+| `prompting/` | Prompt 组装/提交 | `PromptAssemblyService` | 稳定前缀与工具排序无强制 | ContextAssembler + cache breakpoint | `execution.inspect` |
+| `deep_agents/` | DeepAgent checkpoint/runtime | `DeepAgentCheckpointProvider` | 与会话/运行 checkpoint 两套 | 统一 Checkpoint 合同 | `execution.resume` |
+
+### 17.4 前端业务地图
+
+| 模块 | 业务功能 | 当前问题 | 调优方向 |
+|---|---|---|---|
+| `views/WorkbenchView` + `features/workbench` | 会话工作台：时间线、输入、审批、运行状态 | 输入 busy 阻断；无停止/steer；队列藏底部 | 执行面两栏 + Inspector；输入四模式 |
+| `views/TaskPoolView` | 5 类任务总览、搜索、跳转 | 5s 轮询；session 跳 `/reports`；无统一详情 | `/tasks` + `/tasks/:id` + 事件驱动 |
+| `views/ProjectsView` | 项目目录/详情/5 tab/6 弹窗/运行审批 | 2,612 行；职责混杂 | 拆路由：概览/用例/套件/运行/文档/环境 |
+| `views/KnowledgeView` | 知识/UI 图谱浏览、删除项目 | 图谱与资产/证据分离 | 资产图谱 + 证据引用 |
+| `views/ToolsView` + `features/tools/plugins` | API 文档、MCP、注册表、扫描器、技能 | 5 个插件各有状态；无统一命令入口 | 能力目录 + 场景包状态 |
+| `views/ReportsView` | 报告列表/正文 | 自研 Markdown 渲染；与 Evidence 未打通 | 报告作为 Evidence/Evaluation 视图 |
+| `views/SettingsView` + `features/settings` | 模型/渠道/邮件/Docker/通用设置 | 保存即生效；无 diff/审批/回滚 | 配置命令 + 变更预览 |
+| `views/FlowView` | 会话事件投影 | 只读轨迹；无 Step/证据 | Inspector/执行详情 |
+| `views/RecorderWindowView` | 录制控制条与时间线 | 与执行面分离 | 录制作为 Execution 的一种 |
+| `stores/session.ts` | 1,524 行：消息/事件/队列/审批/回放 | 单一巨型 store；interrupt 无调用 | 拆 execution/approval/queue/stream；接入停止 |
+| `stores/app.ts` / `generalSettings.ts` | 健康检查、目录、主题、语言 | 与 session store 工具目录重复 | 目录单一来源 |
+| `services/*`（14 模块 + 聚合） | REST 客户端、15 语言、通知 | 30+ 文件；状态文案分散 | OpenAPI 生成客户端；状态 catalog |
+| `components/chat/*`（12 个） | 时间线、审批、运行状态、工具/校验面板 | 8 个开发面板挂在底部 | 时间线一等事件 + Inspector + debug 抽屉 |
+
+### 17.5 调优优先级（按业务收益/风险）
+
+| 优先级 | 领域 | 调优 | 验收 |
+|---|---|---|---|
+| P0 | 会话执行面 | 输入四模式、停止、队列 chip、时间线事件 | 四类竞态 + 输入零丢失 |
+| P0 | 模式入口 | 过滤 6 个 placeholder；禁止无 Runner 模式启动 | 14 → 8 可执行；选择占位模式被拒绝 |
+| P0 | 测试卫生 | 修复 `test_runtime_input_paths` 夹具漂移；建立“测试失败不得作为完成证据” | 该文件全绿 |
+| P0 | 任务/状态 | WorkItem 投影、单一状态目录、`/tasks/:id` | 11 套映射归一 |
+| P1 | 运行/证据 | Evidence/Verdict、四轴状态、单 RunStore 契约 | 通过项 100% 证据 |
+| P1 | 场景扩展 | Scenario Pack + Runtime Protocol + 8 个可执行模式迁移 | 新增场景不改内核 |
+| P1 | 上下文/记忆 | Step 预算、工具引用、三层记忆 | 长任务可控 + 命中率可测 |
+| P1 | 变更闭环 | ChangeWorkItem 串文档→影响→用例→回归 | 一次变更可追踪到结果 |
+| P2 | 模块结构 | 拆 5 个巨型服务、bootstrap、依赖门禁 | 文件预算 + import 零违规 |
+| P2 | UI IA | 四区、项目路由拆分、Inspector/证据中心 | 一任务一详情、URL 可深链 |
+| P2 | 部署/规模 | 多实例 SSE、配额、4h/24h soak | 延迟/恢复/重复副作用指标 |
+
+---
+
+## 18. 自然语言 Harness 控制面
+
+> 目标：让用户用一句自然语言完成“改配置、改数据、调度任务”，但不是让模型直接拼 SQL/调任意接口，而是把自然语言编译成**受限、可预演、可审批、可验证、可回滚**的系统命令。
+
+### 18.1 现状：系统只有“测试意图”，没有“管理意图”
+
+实测 B-01 已经证明：
+
+- `IntentRecognitionService` 的词表只有安全/性能/兼容/冒烟/代码评审/UI/API 七类，没有 project/model/quota/task/case 等系统对象。
+- `requested_actions` 只有 read/execute/write/delete/send，无法表达“改默认模型”“启用用例”“取消任务”。
+- 管理 API 存在（项目、用例、套件、运行、设置、环境、配额），但只被前端 REST 调用；Agent 工具目录里没有对应的管理工具（`registry/tools.py` 只有测试/项目读取类）。
+- 因此自然语言进入系统后，只能被当成测试聊天或普通对话，不能形成管理动作。
+
+### 18.2 目标形态：System Operator Scenario Pack
+
+自然语言控制面不是“再写一个聊天接口”，而是第 6 章 Scenario Pack 的一个特殊包：
+
+```text
+Scenario Pack: system_operator
+  runtime: SystemOperatorRuntime
+  verifier: ReadBackVerifier / DiffVerifier
+  evidence: ChangePlan / Diff / ApplyReceipt / AuditEvent
+  ui.panel: ChangeReviewPanel
+  tools: SystemCommandGateway（只暴露命令目录，不暴露原始 SQL/HTTP）
+```
+
+它与测试场景共享同一套：
+
+- WorkItem / Execution / Step / Attempt / Evidence；
+- Admission、steer、interrupt、checkpoint；
+- Approval、Permission、Audit；
+- EventEnvelope 与 Inspector。
+
+区别只在“执行动作”是系统命令，而不是测试工具。
+
+### 18.3 控制面流程
+
+```text
+用户自然语言
+  → 1. 管理意图识别（AdminIntent，LLM + 规则双通道）
+  → 2. 目标解析（项目/用例/套件/模型/环境/任务 ID；歧义则追问）
+  → 3. 生成 ChangePlan（有序 SystemCommand[]；每条带参数、前置条件、预期 diff、风险）
+  → 4. Dry-run（只读服务/API；校验引用、版本、权限、冲突；计算 before/after）
+  → 5. 审批（ApprovalEnvelope；按风险决定自动/人工；项目范围）
+  → 6. 应用（事务 + outbox + 幂等键；逐条执行，失败停止并保留已完成步骤）
+  → 7. 读回验证（ReadBackVerifier；比对预期 diff；不一致则进入回滚/人工）
+  → 8. 证据与审计（ChangePlan、Diff、ApplyReceipt、ReadBack、AuditEvent）
+  → 9. 回滚（由 before 快照生成逆命令；同样需要审批与审计）
+```
+
+关键：**模型只生成候选 ChangePlan；执行权在命令网关**。模型输出必须通过 JSON Schema + 命令白名单 + 目标存在性 + 版本前置条件 + 权限校验，任何一项失败都不得执行。
+
+#### 18.3.1 接入现有 Harness 的位置（不新建旁路系统）
+
+| 接入点 | 现状 | 需要的改动 |
+|---|---|---|
+| `InputOrchestratorService` | 只识别测试模式（`input_orchestrator_service.py`） | 增加 `message_kind=system_command` 或显式命令面板入口；先判断 AdminIntent，未命中再走测试意图 |
+| `AgentTaskDispatcher` | `submit()` 统一进 outbox/Redis（`agent_task_dispatcher.py:78-136`） | 增加任务类型 `system_change`；沿用同一幂等键、outbox、lease |
+| Worker | `run_agent_worker` 只处理聊天/审批/协调器任务 | 增加 `SystemChangeWorker` 或 dispatcher 内的 kind adapter；消费 `ChangePlan`，不执行自由文本 |
+| Execution/Runtime | `AgentLoop` 驱动 LangGraph | 不新增 LangGraph 节点：system_change 用独立 Step 执行器（parse/plan/dry_run/approve/apply/verify），复用 Execution/Step/Checkpoint 合同 |
+| `PermissionService` | 工具级 allow/ask/deny | 扩展为命令级 `capability.system.*`；模型只看得到允许的命令 |
+| 审批 | 工具审批 + RunItem 审批 | 统一 `ApprovalEnvelope`；高风险命令必须人工；审批本身是 execution 的 Step |
+| 事件 | `SessionEventSink` + SSE | 新增 `system.change.*` 事件；`EventEnvelope` 带 work_item/step/evidence |
+| 数据 | 80 处自建表 + Alembic | 新表只经 Alembic：`change_plans/change_commands/change_receipts/change_audit`；before/after 只存引用与哈希 |
+| UI | 无命令入口 | 在 Workbench 增加“系统操作”插件或命令面板；展示 plan/diff/审批/读回/回滚；与 Inspector 共用事件 |
+
+**为什么不用 LangGraph 新节点**：控制面需要的是“每一步可检查、可审批、可中断”的顺序命令，不是模型推理图；用现有 Execution/Step 合同即可，避免违反“不新增 LangGraph 节点”的约束。
+
+#### 18.3.2 最小契约（示意）
+
+```python
+class SystemCommand(BaseModel):
+    schema_version: Literal[1] = 1
+    command: str                       # 必须在命令白名单；如 project.update
+    target: dict[str, str]             # 解析后的 ID，不接受自由文本项目名
+    args: dict[str, Any]               # 命令参数（按命令 schema 校验）
+    preconditions: dict[str, Any]      # row_version / config_revision / sha256 / status
+    expected: dict[str, Any]           # 读回时必须匹配的字段
+    risk: Literal["low", "medium", "high", "irreversible"]
+    idempotency_key: str
+    reason: str
+
+class ChangePlan(BaseModel):
+    schema_version: Literal[1] = 1
+    user_intent: str
+    project_id: str
+    commands: list[SystemCommand]
+    dry_run: DryRunResult             # 每条的 before/after 与冲突
+    approvals_required: list[str]
+    rollback_plan: list[SystemCommand]
+    status: Literal["proposed", "approved", "applying", "verified", "rolled_back", "failed"]
+```
+
+`DryRunResult` 只包含字段 diff、目标存在性、版本/hash 校验、权限结果和不可逆标记；不含密钥明文。模型只能产出 `proposed`，不能把状态直接改成 `verified`。
+
+---
+
+### 18.4 命令目录（第一批）
+
+| 命令 | 目标 | 现有服务/接口 | 风险 | 审批 | 验证 | 回滚 |
+|---|---|---|---|---|---|---|
+| `project.create` | 项目 | `ProjectService.create`、`POST /projects` | 低 | 否 | 读回项目 | 归档（本轮无删除） |
+| `project.update` | 项目名称/URL/说明/scope | `ProjectService.update` | 低 | 否 | 字段 diff | 恢复 before |
+| `project.archive` | 项目 | `ProjectService.archive` | 中 | 是 | 状态读回 | **无 unarchive，需先补** |
+| `model.upsert` | 模型配置 | `SettingsService.update_model_config` | 高（密钥） | 是 | 连接测试 + 读回（不回显密钥） | 恢复 before 配置 |
+| `model.activate` | 全局主模型 | `SettingsService.activate_model_config` | 高 | 是 | 激活读回 | 恢复 before active |
+| `model.delete` | 模型 | `delete_model_config` | 高 | 是 | 读回替换模型 | 重建配置（需密钥） |
+| `config.set` | 通用/渠道/邮件设置 | `WorkspaceSettingsService` / settings service | 中-高 | 是（渠道/邮件） | 配置 diff + 健康检查 | 恢复 before |
+| `quota.set` | 资源/项目配额 | `ResourceQuotaService` | 中 | 是 | 配额读回 | 恢复 before |
+| `environment.register` | 测试环境 | `BusinessEnvironmentService` | 低 | 否 | 状态读回 | 归档 |
+| `environment.configure` | 目标地址/配置 | `saveBusinessTargetConfiguration` | 中 | 是 | revision/hash 读回 | 恢复 before revision |
+| `environment.snapshot` | 配置快照 | `captureBusinessEnvironment` | 中 | 否 | 快照 hash 读回 | 删除快照（若允许） |
+| `case.create/update` | 用例草稿/版本 | `TestCaseService` | 中 | 视项目策略 | 版本读回 | 追加新版本（不覆盖） |
+| `case.submit_review/activate` | 评审/启用 | `submit-review` / `activate` | 中-高 | 是 | 状态读回 | 回退到上一 active 版本 |
+| `suite.fork/add_case/freeze` | 套件版本 | `TestSuiteService` | 中 | 是（freeze） | 版本/membership 读回 | 保留旧套件版本 |
+| `plan.generate/revise` | 执行计划 | `case_plans` / `planning_tasks` | 低-中 | 修订需确认 | plan decision 读回 | 保留旧 plan |
+| `run.launch/cancel/retry` | 运行 | `run_management` / `run_service` | 高 | 启动/取消是 | 运行状态读回 | 取消不回滚已完成项 |
+| `run.regression` | 失败回归 | `run_management` regression | 中 | 是 | 新 run 与父链读回 | 取消新 run |
+| `task.cancel/retry` | 任务池 | dispatcher/task pool | 中 | 是 | 任务状态读回 | 重试生成新 attempt |
+| `document.upload/diff/impact` | 文档变更 | document routes | 中 | 差异/影响按策略 | 版本/任务读回 | 删除新版本需确认 |
+| `change.generate_cases` | 文档驱动生成 | generation routes | 中 | 是 | 草稿读回 | 删除草稿批次 |
+| `memory.forget/reindex` | 项目记忆/图谱 | knowledge/memory services | 高（数据丢失） | 是 + 二次确认 | 计数读回 | 备份后恢复（需新增） |
+| `schedule.create/disable` | 定时任务 | **当前无后端调度器** | 中 | 是 | 调度读回 | 删除计划 |
+
+**缺口**：`project.archive` 没有 unarchive；`schedule.*` 没有后端调度器；`suite.add_case` 没有现成命令；`project default model` 不是现有数据模型（模型激活是全局）。这些必须在 NL 层先“识别为不支持/需澄清”，不能假装执行。
+
+### 18.5 自然语言 → ChangePlan 示例
+
+| 自然语言 | 目标命令（示例） | 当前系统实际 | 处理策略 |
+|---|---|---|---|
+| “把项目 demo 默认模型改成 deepseek-chat，并发限制设为 3” | `model.activate{name}` + `quota.set{scope:project,id:demo,value:3}`；若“项目默认模型”不存在 → 追问“全局主模型还是项目策略” | 误判为 performance_testing（B-01） | 先修管理意图；模型语义需澄清 |
+| “启用用例 case-1，加入套件 suite-2，今晚跑一次” | `case.activate{case-1}` + `suite.add_case{suite-2,case-1}` + `schedule.create{...}` | general_assistance | 套件/调度缺口，返回“需要先创建套件新版本/无调度器” |
+| “取消任务 task-123 并回滚上一次配置” | `task.cancel{task-123}` + `config.rollback{last_change}` | general_assistance | 先确认任务类型；无配置变更历史则拒绝回滚 |
+| “给 staging 环境创建配置快照” | `environment.snapshot{staging}` | 仅识别 write | 目标解析 + 快照命令 |
+| “把失败用例创建回归运行” | `run.regression{source_run/ids}` | 仅识别 execute/write | 先查询失败项，生成候选再确认 |
+| “关闭安全测试模式” | `scenario.disable{security_testing}`（若系统需要） | 误判为 security_testing（B-01） | 管理意图与测试意图分流 |
+
+### 18.6 执行模型与安全约束
+
+- WorkItem `kind=system_change`；Execution steps：`parse → plan → dry_run → approve → apply → verify → (rollback)`。
+- 每一步写 checkpoint；apply 前可 interrupt；plan 阶段可 steer（用户补充约束）；apply 后不可 steer，只能 rollback。
+- 命令级权限：`capability.system.<domain>.<action>`，按项目/环境/角色授予；模型只能看到当前身份允许的命令（参考现有 `PermissionService` 的 allow/ask/deny 与 hidden 机制）。
+- 目标解析必须用 ID，不允许自由文本项目名直接执行；名称歧义 -> 追问。
+- 前置条件：`row_version` / `config_revision` / `sha256` / `status`；不满足则 dry-run 失败，不做“覆盖式成功”。
+- 密钥：命令只接受 secret reference，不接受明文；读回/审计永不含密钥；模型上下文只看到 `configured/missing`。
+- 破坏性命令（archive/delete/forget/rollback）二次确认 + 高风险的 `ApprovalEnvelope`；默认 dry-run。
+- 幂等：`idempotency_key` 绑定 ChangePlan + 命令序号；重复提交返回同一 receipt。
+- 审计：`system.change.proposed/dry_run/approved/applied/verified/rolled_back` 事件；含 before/after diff 的哈希与操作者。
+- 回滚：由 before 快照生成逆命令；无法逆的操作（删除模型密钥、已执行运行）必须标记 `irreversible`，在 dry-run 阶段明确告知。
+
+### 18.7 可行性矩阵
+
+| 能力 | 现状 | 证据 | 缺口 |
+|---|---|---|---|
+| 管理服务/API | 大部分存在 | `ProjectService`、`SettingsService`、`run_management`、`test_cases`、`business_environments` 等 | 缺统一命令 schema |
+| 管理意图 | 不存在 | B-01 探针 | 需新增 AdminIntent / ControlPlanePlanner |
+| 命令目录 | 不存在 | `registry/tools.py` 无管理工具 | 需新增 `SystemCommand` 与白名单 |
+| Dry-run/diff | 不存在 | 管理路由直接写 | 需只读读取 + diff 计算 |
+| 审批 | 工具审批存在 | `PermissionService`、`ApprovalEnvelope` 目标设计 | 管理命令未接入 |
+| 回滚 | 不存在 | 无变更历史表/逆命令 | 需变更快照 + 逆命令 |
+| 审计 | 部分事件 | settings/project 无统一变更审计 | 需 ChangeAudit |
+| 调度器 | 不存在 | 后端无 cron/schedule 模块 | “今晚跑”需新增 Scheduler 或明确不支持 |
+| UI | 无命令面板 | 前端无命令入口 | 可在 Workbench 增加“系统操作”会话/命令面板 |
+
+### 18.8 实施顺序（并入总路线）
+
+| 阶段 | 交付 | 验收 |
+|---|---|---|
+| P0 | AdminIntent + 只读命令（查询项目/用例/运行/配置）；识别不支持项并澄清；修 B-01 | 20 条金样句子：不误路由、未知项明确拒绝 |
+| P1 | ChangePlan + dry-run + diff + ApprovalEnvelope；项目 update/archive、环境配置/快照、用例启用、运行启动/取消 | 每条命令有 before/after + 读回；未审批写入为 0 |
+| P1 | 配置回滚（before 快照 + 逆命令）、审计事件、命令级权限 | 回滚成功；跨项目被拒绝 |
+| P2 | 套件新版本/追加用例、任务取消/重试、文档变更链、计划生成/修订 | 多命令 ChangePlan 原子性/部分失败可恢复 |
+| P2 | Scheduler（若确认需要“今晚跑”） | 定时触发幂等；失败可重试 |
+| P3 | 自然语言多轮澄清、批量变更、策略模板 | 30-50 条金样；人工纠正率可测 |
+
+### 18.9 验收金样（节选）
+
+| # | 自然语言 | 期望 | 必须拒绝/澄清的场景 |
+|---|---|---|---|
+| G1 | 把项目 demo 的描述改成“订单回归” | `project.update{id,description}` | 同名项目 → 追问 |
+| G2 | 归档项目 demo | `project.archive{id}` | 要删除 → 明确“无删除/无恢复” |
+| G3 | 启用用例 case-1 | `case.activate{id}` | 未评审/版本未固定 → 拒绝并说明 |
+| G4 | 把 model-x 设为全局主模型 | `model.activate{name}` | 连接测试失败 → 拒绝 |
+| G5 | 给 staging 创建配置快照 | `environment.snapshot{id}` | 配置未保存 → 先保存 |
+| G6 | 取消运行 run-1 | `run.cancel{id}` | 已完成 → 拒绝（终态不可取消） |
+| G7 | 把失败项创建回归 | `run.regression{...}` | 无失败项 → 拒绝 |
+| G8 | 把项目默认模型改成 X | 澄清“全局主模型/项目策略不支持” | 不得静默改成全局 |
+| G9 | 删除项目所有记忆 | `memory.forget{project}` + 二次确认 | 未确认 → 不执行 |
+| G10 | 今晚 12 点跑 suite-2 | `schedule.create`（若实现） | 无调度器 → 明确不支持 |
+
+### 18.10 研究结论
+
+1. **“一句话改系统”不是把自然语言直接交给模型执行**，而是“受限命令编译器 + dry-run + 审批 + 读回 + 回滚”。参考实现也采用这一边界：Codex 有 approval policy 与工具 orchestrator，Claude Code 有 plan mode 与 per-tool permission。
+2. 当前系统已具备**大部分管理服务与审批原语**，缺的是**命令目录、管理意图、diff/回滚、审计**，不是从零造平台。
+3. 最优先的一步不是做全量命令，而是 **P0 只读 + 澄清 + 拒绝**：先让系统听懂“哪些能做、哪些不能做”，避免误路由（B-01）造成真实写操作。
+4. “项目默认模型”“今晚跑”“套件追加用例”在现有数据模型中并不完整；自然语言控制面会**暴露并倒逼**这些领域缺口，不能靠提示词假装支持。
+
+---
+
+
+## 19. 附录：证据索引
+
+### 19.1 执行与持久化
 
 - `Agent_Server/src/api/routes/sessions.py:148-157` — HTTP messages → dispatcher。
 - `Agent_Server/src/application/orchestration/agent_task_dispatcher.py:78-136` — 任务提交。
@@ -1080,7 +1511,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 - `Agent_Server/src/runtime/postgres_session_store.py:2131-2165` — lease 过期 → interrupted。
 - `Agent_Server/tests/test_agent_task_dispatch.py:906-933` — kill 后放弃的验收断言。
 
-### 16.2 领域与运行
+### 19.2 领域与运行
 
 - `Agent_Server/src/application/test_runs/run_store.py:2644,2900,2924,2953,3437,3522` — claim/heartbeat/checkpoint/complete/expire/cancel。
 - `Agent_Server/src/schemas/run_management.py:16-42,230` — 状态枚举与 evidence ref。
@@ -1093,7 +1524,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 - `Agent_Server/src/application/runtime/tool_runtime_service.py:2894-2915,3905` — 模式 if/elif。
 - `Agent_Server/src/application/test_runs/run_store.py:220-1455,1456-4124` — 双实现。
 
-### 16.3 证据与变更
+### 19.3 证据与变更
 
 - `Agent_Server/src/schemas/session.py:104-123` — VerificationStatus/Evidence。
 - `Agent_Server/src/schemas/case_planning.py:277` — PlanningEvidence。
@@ -1101,7 +1532,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 - `Agent_Server/src/application/test_runs/execution_service.py:1248-1288` — 验证结果双写。
 - `Agent_Server/src/api/routes/document_differences.py:31`、`document_impacts.py:66`、`run_management.py:317,333` — 手工变更链。
 
-### 16.4 边界与装配
+### 19.4 边界与装配
 
 - `Agent_Server/src/main.py:213-1002,1059-1093` — 790 行装配与 35 路由。
 - `Agent_Server/src/containers.py` — 第二容器。
@@ -1110,7 +1541,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 - `Agent_Server/src/runtime/postgres_agent_task_store.py:248` — “TaskEnvelope 字段”注释，实际无统一契约。
 - `Agent_Server/alembic/versions/`（4 个）与 80 处 `CREATE TABLE IF NOT EXISTS`。
 
-### 16.5 前端
+### 19.5 前端
 
 - `agent_web/src/App.vue:144-153,155-201,268-329` — 8 tab 控制台。
 - `agent_web/src/components/ChatComposer.vue:192,269-274,307` — busy 发送阻断/无停止。
@@ -1121,7 +1552,7 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 - `agent_web/src/router/index.ts` — 16 路由，无 `/tasks/:id`。
 - `agent_web/src/features/workbench/plugins.ts` — 仅 idle/conversation 两个插件。
 
-### 16.6 参考实现
+### 19.6 参考实现
 
 - `DeepAgent-Studio/借鉴/codex/codex-rs/protocol/src/turn_input.rs:133-142` — 四类输入模式。
 - `DeepAgent-Studio/借鉴/codex/codex-rs/core/src/session/turn.rs:419-434` — turn 边界 drain。
@@ -1136,7 +1567,109 @@ bootstrap/        按子域组合根（runtime、testing、documents、recording
 
 ---
 
-## 17. 结论
+### 19.7 后端应用子包全量索引
+
+| 子包 | 业务功能（当前代码） | 文件数 | 调优要点 |
+|---|---|---:|---|
+| `api_doc_resolution/` | 将文档引用解析为可调用端点/证据 | 4 | 与文档版本、覆盖证据绑定 |
+| `artifacts/` | 产物对象存储适配 | 1 | 统一 Evidence 引用与 retention |
+| `capabilities/` | 能力解析、用例工具范围、工具暴露策略 | 3 | 命令级 capability；场景包声明 |
+| `compatibility/` | 兼容性 Runner 客户端、journal、产物 | 4 | 并入 Execution/EnvironmentPort |
+| `context/` | 压缩、嵌入、MCP、观察、转录清洁 | 8 | Step 预算 + 三层记忆 |
+| `data/` | 空目录（无 Python 文件） | 0 | 删除或明确用途 |
+| `deep_agents/` | DeepAgent checkpoint/runtime 适配 | 5 | 统一 Checkpoint 合同 |
+| `documents/` | API 文档 CRUD、版本、解析、导入 | 33 | ChangeWorkItem 入口 |
+| `exploration/` | UI/录制图谱存储 | 2 | 资产图谱 + 版本 |
+| `flow/` | 会话事件投影 | 2 | EventEnvelope + 可回放 |
+| `images/` | 镜像目录与解析 | 3 | 环境/场景资源引用 |
+| `integrations/` | 集成目录 | 1 | 能力注册统一 |
+| `intent/` | 测试意图、安全意图、语义增强 | 6 | 增加 AdminIntent，分流测试/管理 |
+| `knowledge/` | Memgraph 知识图谱 | 1 | 证据化知识 + 失效 |
+| `mail/` | 邮件能力、腾讯认证监控 | 5 | 场景包能力；凭证引用 |
+| `mcp/` | MCP 服务器管理、工具桥、目录 | 4 | Manifest 自动发现 |
+| `model_adapters/` | LangChain/legacy 模型适配 | 7 | 统一 ModelPort |
+| `model_clients/` | OpenAI/Anthropic/Gemini/embedding 客户端 | 12 | 协议边界、错误归一 |
+| `model_providers/` | OAuth Provider/flow | 5 | 凭证引用与审计 |
+| `models/` | 模型运行时、OAuth token | 3 | 激活/路由策略命令化 |
+| `observability/` | LangSmith、指标 | 7 | 本地事件为权威，Trace 旁路 |
+| `orchestration/` | InputOrchestrator、Dispatcher、Coordinator | 4 | 合并子运行编排 |
+| `performance/` | k6/JMeter、指标、目标保护 | 13 | 性能 Scenario Pack |
+| `permissions/` | 工具权限 allow/ask/deny | 1 | 扩展到系统命令权限 |
+| `projects/` | 项目、环境、适用性、历史冒烟 | 10 | WorkItem 投影 + 项目配置聚合 |
+| `prompting/` | Prompt 组装/提交 | 3 | 稳定前缀 + 片段预算 |
+| `recorder/` | 录制驱动、会话、回放、断言建议 | 13 | Step/Evidence 化 |
+| `registries/` | 注册中心聚合查询 | 1 | Manifest 自动注册 |
+| `reporting/` | 报告模板 | 1 | 报告 = Evidence/Evaluation 视图 |
+| `resources/` | 配额、会话资源 | 2 | Execution 绑定租约 |
+| `runtime/` | AgentLoop、ToolRuntime、Worker、PG stores | 19 | 拆 ToolGateway/ScenarioHost；Step 执行 |
+| `security/` | 安全执行、审批 scope、命令 profile | 18 | 风险策略进 ToolDescriptor |
+| `sessions/` | 会话服务 | 1 | Admission/Execution/Query 拆分 |
+| `settings/` | 模型/邮件/渠道/通用设置 | 3 | 命令化配置 + diff/回滚 |
+| `skills/` | 技能管理/市场 | 4 | Manifest 声明式加载 |
+| `test_cases/` | 用例生成/导入/评审/模板/版本 | 30 | 不可变版本 + 证据 |
+| `test_runs/` | Run/Item/Attempt/Assessment/Regression/Receipt | 27 | 单契约 + Evidence/Verdict |
+| `test_suites/` | 套件/冻结版本 | 3 | 版本化命令 |
+| `testing/` | QA 方向、路由、验证、UI 探索 | 5 | 收拢为 Scenario 选择 |
+
+### 19.8 API 路由模块全量索引
+
+| 业务域 | 路由模块（端点数） | 说明 |
+|---|---|---|
+| 会话/任务 | `sessions`(22)、`task_pool`(2)、`registry`(34)、`health`(2)、`metrics`(1) | 会话主链、任务池、能力目录、健康/指标 |
+| 项目/资产 | `projects`(9)、`case_management`(11)、`suite_management`(4)、`case_imports`(10)、`case_plans`(5)、`case_planning_tasks`(4)、`requirements`(13) | 项目、用例、套件、导入、计划、需求 |
+| 执行 | `run_management`(23)、`resource_occupancy`(1)、`resource_quotas`(2)、`compatibility`(16)、`security_bugs`(5) | 运行、配额、兼容 Runner、漏洞复现 |
+| 文档/变更 | `api_docs`(17)、`document_parsing`(10)、`document_differences`(9)、`document_impacts`(17)、`document_git`(5)、`case_generation_tasks`(13) | 文档上传/解析/差异/影响/生成 |
+| 录制/知识 | `recordings`(16)、`recording_scenes`(9)、`knowledge`(3) | 浏览器录制、场景、知识图谱 |
+| 平台 | `settings`(33)、`oauth`(6)、`mail`(6)、`integrations`(7)、`docker`(8)、`attachments`(1)、`sponsors`(1)、`reports`(1)、`business_applicability`(4)、`business_environments`(12) | 配置、授权、邮件、集成、Docker、附件、报告、环境 |
+
+合计 36 个路由模块、约 349 个路由装饰器；具体数字会随开发变化，本文以 2026-10-25 工作区为准。
+
+### 19.9 14 个测试模式索引
+
+| 模式 | 状态 | 业务功能 | 入口 |
+|---|---|---|---|
+| `default` | 可执行 | 非测试对话/兜底 | 直接图执行 |
+| `api_testing` | 可执行 | 文档→端点→依赖→执行→验证→报告 | `api_testing_mode/runtime.py` |
+| `ui_automation` | 可执行 | Playwright ARIA 理解、UI 图谱、录制回放 | `ui_automation_mode/runtime.py` |
+| `smoke_testing` | 可执行 | 核心链路冒烟 | `smoke_testing_mode/runtime.py` |
+| `performance` | 可执行 | k6/JMeter 压测、目标保护、指标 | `performance_testing_mode/runtime.py` |
+| `security` | 可执行 | Docker/Kali 隔离扫描、复现、取证 | `security_testing_mode/runtime.py` |
+| `compatibility` | 可执行 | 浏览器/设备矩阵分发 | `compatibility_testing_mode/runtime.py` |
+| `code_review` | 可执行 | 多角色评审、治理门禁 | `code_review_mode/governance/runtime.py` |
+| `integration` | **占位** | 服务契约/真实依赖集成测试（仅 Skills） | 无 runtime |
+| `unit_component` | **占位** | 单元/组件测试（仅 Skills） | 无 runtime |
+| `mobile` | **占位** | Android/iOS 矩阵（仅 Skills） | 无 runtime |
+| `visual_regression` | **占位** | 视觉回归（仅 Skills） | 无 runtime |
+| `accessibility` | **占位** | 无障碍（仅 Skills） | 无 runtime |
+| `reliability` | **占位** | 混沌/故障注入（仅 Skills） | 无 runtime |
+
+### 19.10 前端模块全量索引
+
+| 层 | 模块 | 业务功能 | 调优要点 |
+|---|---|---|---|
+| 视图 | `WorkbenchView` | 会话工作台（Hero/时间线/输入/审批） | 执行面两栏 + Inspector |
+| 视图 | `TaskPoolView` | 5 类任务总览 | `/tasks` + `/tasks/:id` |
+| 视图 | `ProjectsView` | 项目/用例/套件/运行/文档/环境 | 拆路由 |
+| 视图 | `KnowledgeView` | 知识/UI 图谱 | 资产图谱 |
+| 视图 | `ToolsView` | 文档/MCP/注册表/扫描器/技能 | 能力目录 |
+| 视图 | `ReportsView` | 报告查阅 | Evidence/Evaluation 视图 |
+| 视图 | `SettingsView` | 模型/渠道/邮件/Docker/通用 | 配置命令 + diff |
+| 视图 | `FlowView` | 事件轨迹 | Step/Inspector |
+| 视图 | `RecorderWindowView` | 录制控制条/时间线 | Execution 化 |
+| Feature | `features/workbench` | 工作台插件/会话面板 | 执行面插件 |
+| Feature | `features/projects` | 项目目录/表单/计划/运行/导入/环境 | 进一步拆详情 |
+| Feature | `features/tools` | 工具中心插件 | 能力/场景目录 |
+| Feature | `features/settings` | 设置插件 | 配置命令 |
+| Feature | `features/flow` | 轨迹视图 | 事件回放 |
+| Feature | `features/recorder` | 录制窗口逻辑 | 录制 Step |
+| Store | `session.ts` | 会话/事件/队列/审批/回放 | 拆 execution/stream/approval |
+| Store | `app.ts` | 健康/Agent/Tool 目录/主题 | 目录单一来源 |
+| Store | `generalSettings.ts` | 语言/外观/通知 | 配置命令化 |
+| 服务 | `services/*`（14 模块 + 聚合） | REST、SSE、i18n、通知 | OpenAPI 客户端 + 状态 catalog |
+| 组件 | `components/chat/*`（12） | 时间线/审批/运行/工具/校验 | 一等事件 + Inspector |
+
+
+## 20. 结论
 
 本系统的下一阶段不应继续“补八层”，而应完成三件事：
 
