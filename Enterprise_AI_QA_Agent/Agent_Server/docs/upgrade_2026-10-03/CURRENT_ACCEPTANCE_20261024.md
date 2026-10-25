@@ -319,6 +319,23 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 至此"默认 AI 实际使用知识并完成断言"关闭。该方向仍缺：closed Shadow DOM 的能力边界呈现（契约已声明 `unobserved`，产品页面呈现待专项）与跨文档关联的产品层深化。
 
+### closed Shadow DOM 能力边界呈现验收通过（真实 closed root）
+
+既有 open-Shadow 验收的 fixture 全部为 open roots，`closed_shadow_dom: "unobserved"` 此前只是无 closed root 样本上的字段默认值断言。新增 `tests/test_recording_closed_shadow_live.py`（门控 `RUN_LIVE_RECORDING_CLOSED_SHADOW=1`）在页面**真实构造 closed shadow root**（`attachShadow({mode:'closed'})`，内部含按钮与泄漏哨兵文本）后验证诚实边界：
+
+```text
+1 passed in 22.98s
+```
+
+证据：`p5-closed-shadow-boundary-current-20261025-01/` 及同名 XML。真实 Chromium + CDP 录制：
+
+- **对照路径不受影响**：light DOM 按钮动作与响应正常记录关联。
+- **closed 内物理点击的如实归因**：closed root 内按钮无法被选择器定位，测试以坐标物理点击（light DOM 的 echo 标记证明点击真实发生）；录制器把该点击**归因到宿主元素 `#closed-host`**（role None）——既不伪造 closed 内部定位（`#closed-action` 零出现），也不静默丢弃。
+- **无内容伪造/泄漏**：closed root 内部哨兵文本（`closed-private-marker`）在全部事件证据中零出现。
+- **契约标注一致**：全部 page_response 的 `closed_shadow_dom == "unobserved"`。
+
+这关闭了"closed Shadow DOM 的能力边界呈现"：边界不是 JSON 字段存在，而是真实 closed root 存在时物理交互被诚实归因、内部内容不进证据、契约如实标注。
+
 ## UI 录制与知识：人工操作 DeepSeek 完整实测通过
 
 用户本人操作可见 Chromium 完成 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` 的人工模式（`RUN_LIVE_DEEPSEEK_RECORDING=1`、`DEEPSEEK_RECORDING_INTERACTION=manual`，pytest 需 `-s` 使 `input()` 可读——首跑因缺 `-s` 失败属测试运行方式问题）：
