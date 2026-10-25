@@ -84,3 +84,19 @@ class FrameworkDecisionReceipt(BaseModel):
     applied_at: datetime | None = None
     proof: dict[str, Any] | None = None
     last_error: str | None = None
+
+
+class FrameworkContinuationPlan(PreparedFrameworkApproval):
+    """One validated decision; invocation mode derives from durable delivery."""
+
+    receipt: FrameworkDecisionReceipt
+
+    @property
+    def continue_from_checkpoint(self) -> bool:
+        return self.receipt.state == "delivered"
+
+    @property
+    def resume(self) -> dict[str, Any] | None:
+        if self.continue_from_checkpoint:
+            return None
+        return {self.link.interrupt_id: dict(self.receipt.decision)}

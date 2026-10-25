@@ -48,7 +48,7 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 提取原生身份，Runtime 原子投影业务审批；工具桥现从注入的 ToolRuntime 生成同一完整键，并恢复持久化门控和当前审批。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。局部真实治理工具恢复不等于完整业务 API/续跑；Dispatcher/Worker/Session 继续执行、API/UI、receipt 驱动的恢复选择与业务拒绝结果投影仍待实施 |
+| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 提取原生身份，Runtime 原子投影业务审批；工具桥恢复持久化门控和当前审批；独立 continuation prepare 已校验实际运行任务、receipt、原生事实及 ToolJob，并选择指定决定或 None。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。局部真实治理工具恢复不等于完整业务 API/续跑；Dispatcher/Worker/Session 继续执行、API/UI、业务拒绝及 applied 结果投影仍待实施 |
 | F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；journal 提供 link、queue、delivery 与事实对账；v2 决定、receipt、任务/outbox 共用受理事务；Runtime 新审批业务投影也使用独立 owner 事务 | 风险仍成立。投影、决定受理与执行写入仍有各自事务边界；完整 API、applied 投影与外部副作用对账未贯通，外部效果不在数据库事务内 |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
@@ -66,6 +66,8 @@
 新增业务投影见实施记录 §14：准备阶段不写数据库，投影阶段在同一 owner 事务内创建/复用等待 ToolJob、Approval、native link 和稳定创建事件。内部调用键包含 binding、Turn、图 namespace、源 AI 消息和供应商 call ID；界面仍保留原始 call ID。重投影和 Session 收尾保留已提交决定与终态结果；原生 link 的可选 `business_call_id` 存于既有 JSONB，防止移除原生元数据后降级为 legacy 校验。
 
 工具桥的后续接线见实施记录 §15：使用官方 ToolRuntime.state 与 execution_info，保留子图祖先 namespace，只移除当前 tools 任务分量；HITL 门控身份在图执行前异步从持久化 link 还原，业务执行时重新读取当前决定。当前治理阻止时，在 owner 事务内保留终态 ToolJob，只结算未启动的 waiting_approval，running 要求对账。原生 reject 会跳过业务 callback，其 ToolJob 拒绝结果和 applied 投影仍须由 continuation 完成；真实局部治理恢复不等于 Worker/API 接线通过，不能据此开放 v2 approval continuation。
+
+续跑准备的独立端口见实施记录 §16：`FrameworkApprovalContinuation.prepare` 在有效 owner 事务内重新核对实际 running approval_resume 任务及其冻结决定、业务审批/link、原 ToolJob 和保留的原生 interrupt/resume。只有校验通过才将 queued 改为 sending；已消费决定修复 delivery 投影并选择 None，不能仅凭 delivered 字段跳过原生证据校验。未知已启动效果、原生事实缺失及决定/工具状态矛盾要求对账。准备阶段不调用图、模型或工具，不设置 applied_at；业务拒绝结果投影及 Runtime/Session/Worker 消费此端口仍待后续接线。
 
 ## 2. 目标架构与模块边界
 
@@ -454,7 +456,7 @@ P2/P3 的关键真实链路：
 | --- | --- | --- |
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
-| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理/串行领取、adapter 原生身份提取与持久化入口 sync 已实现，详见实施记录 §12–13；仍须成对接通原生 link 投影、Dispatcher、Worker、API/事件/UI | 存储层和 adapter 局部 Harness 已通过；API 返回 202、根据 delivered 选择无新决定继续、未 delivered 先 ToolJob 对账，以及完整治理工具链路仍待出口验证 |
+| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理/串行领取、adapter 原生身份及 sync、原子审批投影、持久化门控和独立续跑准备端口已实现，详见实施记录 §12–16；仍须成对接通 Runtime/Session、Dispatcher、Worker、API/事件/UI | 局部 Harness 验证指定决定与 None 选择、未交付先查 ToolJob、已完成结果复用和原生事实修复；原生拒绝/applied 结果投影、API 返回 202 及完整生产治理链路仍待出口验证 |
 | P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
 
 P2.1 的只读投影重建可独立验收；新增 v2 continuation 能力必须在 P2.2 端到端用例通过后才声明。P2 整体及 P3 试点放量必须等 P2.3 通过；当前 API 遇到绑定审批的冲突保护在具备完整替代路径之前保留。

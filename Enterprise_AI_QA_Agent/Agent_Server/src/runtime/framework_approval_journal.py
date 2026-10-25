@@ -85,6 +85,18 @@ class FrameworkApprovalJournal:
         return binding.checkpoint_namespace + ("|" + logical if logical else "")
 
     @staticmethod
+    def _assert_native_interrupt(link, interruption):
+        if (interruption is None or interruption["task_path"] != link.task_path
+            or not isinstance(interruption["value"], (list, tuple))):
+            raise FrameworkApprovalRecoveryRequired("Native interrupt task requires reconciliation")
+        matches = [item for item in interruption["value"] if getattr(item, "id", None) == link.interrupt_id]
+        payload = matches[0].value if len(matches) == 1 else None
+        if (not isinstance(payload, dict) or payload.get("type") != "tool_approval"
+            or payload.get("tool_call_id") != link.tool_call_id or payload.get("name") != link.tool_name
+            or approval_value_hash(payload.get("args")) != approval_value_hash(link.arguments)):
+            raise FrameworkApprovalRecoveryRequired("Persisted tool interrupt requires reconciliation with its approval link")
+
+    @staticmethod
     def assert_business_link(binding, link, approval):
         metadata = (approval or {}).get("metadata") or {}
         if (approval is None or approval["session_id"] != binding.session_id
@@ -122,15 +134,9 @@ class FrameworkApprovalJournal:
         rows = self._native_rows(cur, binding, location, link.graph_task_id)
         interruption = rows.get(INTERRUPT)
         resumes = rows.get(RESUME, {}).get("value", [])
-        if (interruption is None or interruption["task_path"] != link.task_path
-            or not isinstance(resumes, list) or len(resumes) != link.resume_index):
+        if not isinstance(resumes, list) or len(resumes) != link.resume_index:
             raise FrameworkApprovalRecoveryRequired("Interrupt task or resume position is not durably pending")
-        matches = [item for item in interruption["value"] if item.id == link.interrupt_id]
-        payload = matches[0].value if len(matches) == 1 else None
-        if (not isinstance(payload, dict) or payload.get("type") != "tool_approval"
-            or payload.get("tool_call_id") != link.tool_call_id or payload.get("name") != link.tool_name
-            or approval_value_hash(payload.get("args")) != approval_value_hash(link.arguments)):
-            raise FrameworkApprovalRecoveryRequired("Persisted tool interrupt does not match its approval link")
+        self._assert_native_interrupt(link, interruption)
         cur.execute(f"""INSERT INTO {self._links} (approval_id,binding_id,checkpoint_ns,
             checkpoint_id,graph_task_id,resume_index,source_message_id,tool_call_id,link)
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
@@ -194,6 +200,34 @@ class FrameworkApprovalJournal:
         cur.execute(f"SELECT * FROM {self._receipts} WHERE approval_id=%s", (approval_id,))
         row = cur.fetchone()
         return FrameworkDecisionReceipt.model_validate(row) if row is not None else None
+
+    def require_native_decision_in_transaction(self, cur, binding, link, receipt):
+        """Verify the original task still proves a pending or consumed decision.
+
+        Delivery projections alone are not native evidence. Retained task writes
+        must identify the original interrupt and, when consumed, its exact frozen
+        resume value. This read never infers whether an external tool executed.
+        """
+        location = {"checkpoint_ns": self._namespace(binding, link.checkpoint_namespace),
+            "checkpoint_id": link.checkpoint_id}
+        rows = self._native_rows(cur, binding, location, link.graph_task_id)
+        interruption, saved = rows.get(INTERRUPT), rows.get(RESUME)
+        resumes = saved["value"] if saved is not None else []
+        self._assert_native_interrupt(link, interruption)
+        if (not isinstance(resumes, list) or len(resumes) < link.resume_index
+            or (saved is not None and saved["task_path"] != link.task_path)):
+            raise FrameworkApprovalRecoveryRequired("Native task facts require reconciliation")
+        consumed = len(resumes) > link.resume_index
+        if ((consumed and approval_value_hash(resumes[link.resume_index]) != receipt.decision_hash)
+            or (not consumed and receipt.state == "delivered")):
+            raise FrameworkApprovalRecoveryRequired("Native decision facts require reconciliation")
+        return consumed
+
+    def mark_sending_in_transaction(self, cur, approval_id):
+        """Called only after owner, continuation and execution preflight checks."""
+        cur.execute(f"UPDATE {self._receipts} SET state='sending',last_error=NULL "
+            "WHERE approval_id=%s AND state IN ('queued','sending')", (approval_id,))
+        return self.get_receipt_in_transaction(cur, approval_id)
 
     def prepare_resume_in_transaction(self, cur, owner, storage_config, writes, task_id):
         """Keep cumulative native resume prefixes monotonic for linked tasks.
