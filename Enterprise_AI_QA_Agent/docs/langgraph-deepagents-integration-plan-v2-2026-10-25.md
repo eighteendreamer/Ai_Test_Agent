@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，代码基线 `790df56ef`。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11 节保留方案形成时的研究验证，第 1.3、5.1、10.3、12 节补充本次复核；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
+初稿日期：2026-10-25；最近复核：2026-10-26，代码基线 `bde82d38b`。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11、12 节保留此前研究与复核记录，第 1.3、5.1、10.3、13 节反映当前实施边界；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
 
 ## 1. 结论与本次修订
 
@@ -9,7 +9,7 @@
 需要限定三个结论：
 
 - 附件反映方案形成时的缺口，部分已有后续实现，见第 1.3 节；不能将历史缺口写成当前全部缺失，也不能据此声称生产环境已经发生过重复副作用或 checkpoint 覆盖。
-- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离已有局部验证；v2 业务审批/API/receipt 与跨进程杀死、接管、对账的完整链路仍待验收。
+- 官方逐项审批、真实 PostgreSQL checkpoint 写入隔离、决定 receipt 与原生 pending writes 同事务已有局部验证；v2 业务审批/API/续跑调度与跨进程杀死、接管、对账的完整链路仍待验收。
 - “决定已应用 → 工具结算”不能作为统一线性状态机：拒绝不会执行工具，批准后也可能被最新权限或预算阻止；决定交付、框架消费和工具结果应分别记录。
 
 本方案替代上一版接入方案中关于审批恢复、所有权、消息持久化和版本部署的简略约定。系统现状与各模式已有 Harness 的完整调查见[架构报告](system-architecture-and-harness-review-2026-10-25.md)。
@@ -48,8 +48,8 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | `runtime_adapter.py` 已显式安装官方 per-call HITL；`RuntimeService._resume_deep_agent_after_approval` 已有单项分支，批量分支保留历史兼容。`PostgresAgentTaskStore._submit_approval_sync` 仍要求 Session 等待审批，并拒绝绑定 Turn；`FrameworkWorkerCapabilities.require` 只允许 v2 `message` | 风险仍成立，不能说新路径仍一律等待整批。必须补 v2 决定事务、continuation、运行中接收其它决定、领取优先级、API/UI 和 receipt |
-| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查与官方 checkpoint 写入纳入同一连接事务；目前没有决定 receipt 与 `__resume__` 的原子证明 | 仍成立。不同池本身不是不可解决的障碍；能共用事务的写入放在同一连接，外部副作用使用稳定 ToolJob 身份与对账 |
+| F1 逐项审批桥接必须整体改 | `runtime_adapter.py` 已显式安装官方 per-call HITL；`RuntimeService._resume_deep_agent_after_approval` 已有单项分支，批量分支保留历史兼容。`PostgresAgentTaskStore._submit_approval_sync` 仍要求 Session 等待审批，并拒绝绑定 Turn；`FrameworkWorkerCapabilities.require` 只允许 v2 `message` | 风险仍成立，不能说新路径仍一律等待整批。必须补 v2 决定事务、continuation、运行中接收其它决定、领取优先级、API/UI 和 receipt 生产接线 |
+| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；`FrameworkApprovalJournal` 已提供 link、queue、delivery 与只读事实对账端口 | 风险仍成立，不能再称完全没有 receipt。审批决定/task/outbox 原子受理、运行时自动建立 link、applied 投影与外部副作用对账仍未贯通；外部效果不在该数据库事务内 |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
@@ -153,6 +153,8 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 稳定调用键：`(binding_id, turn_id, checkpoint_ns, source_message_id, tool_call_id)`，其中源 AI 消息身份随 checkpoint 保存；跨模型轮次复用同一供应商 call ID 时也不能误认旧调用。interrupt 映射另存 `interrupt_id / graph_task_id / task_path / checkpoint_id / 工具 schema 版本 / 规范化参数哈希 / 审批范围哈希 / tool_job_id`。平台 ToolJob 使用完整调用键派生的内部 call 身份，返回框架时保留原 tool_call_id。
 
 工具名和参数相同仍可能是两次不同调用，不能靠 name+args 匹配。子代理 call ID 需 namespace 隔离。已持久化 interrupt 的重建保持同一个审批 ID；映射不一致时进入对账，不覆盖原决定。治理策略和参数冻结用于审计，当前权限仍实时检查。
+
+**审批门控在同一次调用的恢复中保持稳定。** 官方 HITL 文档及固定 1.4.6 的 `human_in_the_loop.py` 明确：可选 `when` 在恢复时会再次求值；若从 true 变成 false，可能直接执行工具并忽略原拒绝。本项目不将实时权限、预算或 Session 状态变化作为跳过已有 interrupt 的条件。需要条件门控时，按稳定调用身份保存最初门控判定，恢复沿用；最新权限和预算在治理包装器里独立校验，只能允许当前授权操作或返回阻止结果。此项为迁移约束，尚未声明当前使用了动态 `when` 或已出现绕过。验收必须覆盖“拒绝后策略变化仍不执行”和“批准后权限收紧返回阻止”。[官方条件审批说明](https://docs.langchain.com/oss/python/langchain/human-in-the-loop#conditional-interrupts)
 
 ### 4.2 分离三组状态
 
@@ -260,7 +262,7 @@ checkpoint 写入适配器的单次数据库操作：
 
 接管和撤销也锁同一 owner。旧代操作若先获得锁，先线性化完成；新代接管必须等它提交。新代接管提交后，旧代任何新写入都会 epoch 不匹配而失败。锁等待后用实际数据库时钟核验过期，不能使用等待前的缓存判定。
 
-已核对 `langgraph-checkpoint-postgres==3.1.2`：官方 `_cursor` 对显式连接使用同一连接，`put/put_writes` 不另开独立池连接；pipeline 在该连接内执行。因此上述事务边界有源码依据。方案形成时尚未通过真实数据库验证；2026-10-26 的同进程真实数据库事务、回滚、取消及连接归还验证见[实施记录第 8 节](framework-integration-progress-2026-10-25.md#8-owner-与-checkpoint-写入事务2026-10-26)。跨进程崩溃与决定 receipt 同事务仍是 P2 待过项。部署 setup/migration 单独执行，不在业务事务里反复 `setup()`。
+已核对 `langgraph-checkpoint-postgres==3.1.2`：官方 `_cursor` 对显式连接使用同一连接，`put/put_writes` 不另开独立池连接；pipeline 在该连接内执行。因此上述事务边界有源码依据。方案形成时尚未通过真实数据库验证；2026-10-26 的同进程真实数据库事务、回滚、取消及连接归还验证见[实施记录第 8 节](framework-integration-progress-2026-10-25.md#8-owner-与-checkpoint-写入事务2026-10-26)。决定 receipt 与 pending writes 同事务现已通过第 10 节的局部验证；跨进程崩溃、业务决定受理与串行继续仍是 P2 待过项。部署 setup/migration 单独执行，不在业务事务里反复 `setup()`。
 
 **namespace 落实修订（固定版本源码与实测依据）**：LangGraph 1.2.12 的 `pregel/_loop.py` 会把顶层调用的非空 `checkpoint_ns` 重置为 `""`，仅向 `invoke` 传入绑定 namespace 不构成存储隔离。v2 owner saver 将图的逻辑根 `""` 映射为绑定的物理 namespace，逻辑子图路径映射为 `绑定 namespace|逻辑路径`；读取时逆向映射 config/parent_config。thread_id 保持 turn_id，完整保留图内部路径。该适配必须覆盖根/嵌套 namespace、历史枚举、pending writes、原生审批继续与 delta channel 重建；不以篡改框架内部 task ID 实现隔离。
 
@@ -332,7 +334,7 @@ API/outbox relay 先成为兼容两类命令的过渡版本；outbox 每条记�
 
 ### 8.2 最小新增数据契约
 
-以下是拟新增逻辑记录，可按项目既有迁移风格建表；不是已存在字段：
+以下是完整目标逻辑记录，不能将表中全部字段视为已实现。当前已存在 RuntimeBinding/owner、v2 task/outbox、原生消息封套及 interrupt/decision journal；其生产接线与剩余字段分别按实施记录验收。尚缺契约沿项目既有迁移风格补齐：
 
 | 记录 | 最小内容与约束 |
 | --- | --- |
@@ -414,7 +416,7 @@ psycopg-pool==3.3.1
 | 层次 | 必须覆盖 | 通过判据 |
 | --- | --- | --- |
 | 模型协议 | 四传输实际配置、原生 endpoint/header/参数、分片工具调用、流式终止/usage、错误/重试、元数据往返 | 捕获真实请求和消息序列，不只测试返回字符串；无静默降级 |
-| 审批契约 | 任意先后决定、相同名/参数不同 call ID、重复/相反点击、running 时提交、并发、权限变化、取消后点击、专用入口 | 一项执行、其它保持等待；调用身份不变；相反决定冲突；无额外执行 |
+| 审批契约 | 任意先后决定、相同名/参数不同 call ID、重复/相反点击、running 时提交、并发、权限变化、门控恢复稳定性、取消后点击、专用入口 | 一项执行、其它保持等待；调用身份不变；相反决定冲突；原拒绝不因动态门控变化失效；无额外执行 |
 | 恢复协议 | 第 5 节每个提交窗口，尤其 resume pending write 已保存但调用未返回 | 对账动作明确；不重发已交付决定；终态 ToolJob 原结果回放 |
 | 所有权 | 旧 `put`、旧 `put_writes`、ToolJob 迟到结算、to_thread 取消后延迟提交 | 新 owner 接管后旧权威写入拒绝；失败事务不留下 delivered 假证明 |
 | 状态与预算 | 跨 Turn 原生消息、摘要完整批次、子代理/摘要调用、并行预算、未知用量、模型配置变更 | 工具调用/结果完整配对；预算不因恢复重置或并发超支 |
@@ -441,7 +443,7 @@ P2/P3 的关键真实链路：
 | 步骤 | 改动与依据 | 先失败的用例及出口 |
 | --- | --- | --- |
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
-| P2.1 决定交付证明 | 第 5.1 节的真实写入格式；新增版本化 link/receipt 存储，在 fenced saver 的既有连接事务内写证明 | 官方 per-call 真实 pending write 样本；多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明；receipt 写失败时 pending write 同时回滚，反之亦然 |
+| P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
 | P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；成对更新 store、envelope、outbox、能力声明、Dispatcher、Worker、API/事件/UI | A/B 同待审批，B 运行期间提交 A 仍返回 202；重复/相反点击、混合拒绝、过期/取消；后来的普通消息不能堵住活跃 Turn；已 delivered 调 `ainvoke(None)`，未 delivered 经 ToolJob 对账才发送指定决定；所有执行入口显式 sync durability |
 | P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
 
@@ -508,3 +510,34 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 ```
 
 结果：**39 passed，70.96 秒，无 skip**。使用隔离测试表/schema，覆盖已有绑定持久化、Worker 边界、真实 checkpoint 事务与官方 per-call adapter；不覆盖尚未实现的业务 v2 审批/receipt、独立进程 kill/recovery、供应商真实请求及模式迁移。本次只更新方案和实施记录，不修改运行代码或依赖，不将设计补齐视为迁移完成。
+
+## 13. 基线 bde82d38b 的附件复核与实施清单
+
+本节更新第 12 节之后的事实。附件的六类风险继续成立；其中“仍只有批量桥接”“v2 saver 没有所有权保护”“没有决定交付证明”“本地未安装 Deep Agents”不能作为当前状态引用。它们分别已有适配器或存储层实现，完整业务链仍未接通。
+
+### 13.1 先实现哪些边界
+
+| 顺序 | 明确改动 | 必须先写的失败用例 | 验收前保持的边界 |
+| --- | --- | --- | --- |
+| 1. P2.2 决定受理事务 | 在现有任务 store 的事务设施上建立独立、内聚的 v2 提交模块；校验调用主体与当前活跃 Turn；原子保存业务决定、receipt、唯一 continuation task 和 outbox | B 正在续跑时提交 A；任一步落库失败全部回滚；不同请求 ID 的重复点击复用原回执；相反决定冲突 | `queue_decision_in_transaction` 只读取已受理决定，不代替 API 授权；legacy 绑定审批冲突保护保留 |
+| 2. P2.2 调度与原生调用映射 | Runtime 从原始 AI 消息、StateSnapshot 任务及 interrupt 提取稳定身份；Approval/等待 ToolJob/link 按调用身份投影；活跃 Turn 的 continuation 优先于后续普通消息，同 thread 串行领取 | 同名同参数不同消息/call 不合并；投影中断后身份不变；普通消息排前也不堵塞续跑；并发只有一个有效 owner | 不用 name+args 推测身份；不以测试准备函数手工建 link 冒充生产接线 |
+| 3. P2.2 继续执行与投影 | 成对接通 Dispatcher、Worker、SessionService、Runtime、adapter；未交付决定先对账再发指定 Command，已交付无新决定时 `ainvoke(None)`；所有执行入口显式 `durability="sync"`；API/事件/UI 同步 | 恢复不重新导入历史；B 只执行一次、A 保持等待；拒绝/治理阻止都有对应结果；决定已记录、delivered、applied 不提前展示 | 只有端到端用例通过才声明 Worker 支持 approval continuation；专用录制/代理子审批/TestRun 入口保留领域校验 |
+| 4. P2.3 崩溃与副作用对账 | 失租任务保留 `recovery_required` 终态；增加幂等对账及安全后继任务；即时撤销取消 owner；贯通 framework owner、ToolJob 和 Runner 执行权 | 独立 Worker 被杀及旧 Worker 延迟写入；工具已结算但 checkpoint 未推进；外部结果未知；新 Worker 接管后 B 计数仍为一次 | 无结果查询/幂等支持的未知效果明确阻塞；终态 AgentTask/RunItem 不重置重领 |
+| 5. P1 剩余项、P3–P5 | 共享真实调用预算、跨 Turn transcript/context、版本实物校验、双制品部署；代码审查实链路及模式 Harness 逐个验收后放量，最终排空旧路径 | 并行子代理预算、摘要调用计数、原生消息跨 Turn、旧环境不可领取新任务、存量审批与回滚；每模式冻结评测基线 | P2 局部通过不替代 P1/P3；占位模式保持占位；现有 Runner 与正式测试版本链继续使用 |
+
+以上细化既定方案的实施顺序，覆盖全系统迁移的原始范围。每个实现阶段先复现失败、再做根因改动、运行相关回归并提交。
+
+### 13.2 本次核验的依据与结果
+
+重新读取[逐项适配器](../Agent_Server/src/application/deep_agents/runtime_adapter.py)、[任务 store](../Agent_Server/src/runtime/postgres_agent_task_store.py)、[Worker 能力](../Agent_Server/src/runtime/framework_worker_capabilities.py)、[官方模型工厂](../Agent_Server/src/application/model_adapters/official_chat_model_factory.py)、[fenced saver](../Agent_Server/src/application/deep_agents/fenced_postgres_saver.py)、[决定 journal](../Agent_Server/src/runtime/framework_approval_journal.py)、[Session 落库](../Agent_Server/src/application/sessions/session_service.py)及其调用边界；在线核对第 1.2 节官方资料，并确认固定 1.4.6 的 HITL 条件恢复行为。当前 adapter 仍缺显式 sync durability 和无新决定继续入口，Worker 仍只接受 v2 message，Session 仍逐条保存普通审批；这些均为待实施事实。
+
+实际重跑（工作目录 `Agent_Server`）：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_receipts.py -q -rs --tb=short
+```
+
+结果：**27 passed，68.71 秒，无 skip**。真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake model 验证决定 proof、pending writes、回滚、前缀增长及已有对账端口；不覆盖业务 v2 API、跨进程 kill、供应商模型或领域 Runner。通过 `importlib.metadata.version` 和实际 HITL 导入核对九个直接依赖均与第 10.1 节版本一致，签名包含 `interrupt_mode`；这不替代全新环境构建或供应商验收。
+
+本轮仅更新本方案和实施记录；未安装/升级依赖、修改业务代码或开放路由。未运行全量测试、独立 lint/type-check、前端构建、真实供应商和跨进程故障验收，原因是本轮交付为方案复核，且这些完整迁移出口尚未具备实现。
