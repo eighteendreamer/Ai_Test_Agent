@@ -52,20 +52,20 @@ class LangChainToolAdapter:
         self,
         tools: Iterable[ToolDescriptor],
         *,
-        invoke: Callable[[ToolDescriptor, str, dict[str, Any]], Awaitable[str]],
+        invoke: Callable[[ToolDescriptor, ToolRuntime, dict[str, Any]], Awaitable[str]],
         context_bundle: dict[str, Any] | None = None,
     ) -> list[Any]:
         """Build LangChain tools whose execution callback is application-owned.
 
-        The wrapper extracts the framework-provided ``tool_call_id`` from
-        ``ToolRuntime`` for Approval/Snapshot correlation. No
+        The callback receives the injected ``ToolRuntime`` so bound runtimes
+        can correlate the source AI message and graph namespace. No
         Registry handler is exposed directly to Deep Agents.
         """
         from langchain_core.tools import StructuredTool
 
         def bind(descriptor):
             async def governed(runtime: ToolRuntime, **arguments):
-                return await invoke(descriptor, runtime.tool_call_id, dict(arguments))
+                return await invoke(descriptor, runtime, dict(arguments))
 
             return governed
 

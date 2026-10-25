@@ -48,7 +48,7 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 提取原生身份，Runtime 经 `FrameworkApprovalProjection` 原子投影审批、等待 ToolJob、link 与创建事件。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。内部端口不等于完整业务 API/框架续跑；工具桥完整调用身份、Dispatcher/Worker/Runtime 继续执行、API/UI 与 receipt 生产接线仍待实施 |
+| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 提取原生身份，Runtime 原子投影业务审批；工具桥现从注入的 ToolRuntime 生成同一完整键，并恢复持久化门控和当前审批。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。局部真实治理工具恢复不等于完整业务 API/续跑；Dispatcher/Worker/Session 继续执行、API/UI、receipt 驱动的恢复选择与业务拒绝结果投影仍待实施 |
 | F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；journal 提供 link、queue、delivery 与事实对账；v2 决定、receipt、任务/outbox 共用受理事务；Runtime 新审批业务投影也使用独立 owner 事务 | 风险仍成立。投影、决定受理与执行写入仍有各自事务边界；完整 API、applied 投影与外部副作用对账未贯通，外部效果不在数据库事务内 |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
@@ -63,7 +63,9 @@
 
 事件流同时订阅 `updates` 与 `values`：前者采集 root interrupt，后者保留完整最终状态；不能仅用 `on_chain_end.output` 推断没有审批，因为固定版本的该事件输出不包含 interrupt。实际 nested Deep Agents 及 root 事件流回归见实施记录 §13。
 
-新增业务投影见实施记录 §14：准备阶段不写数据库，投影阶段在同一 owner 事务内创建/复用等待 ToolJob、Approval、native link 和稳定创建事件。内部调用键包含 binding、Turn、图 namespace、源 AI 消息和供应商 call ID；界面仍保留原始 call ID。重投影和 Session 收尾保留已提交决定与终态结果；原生 link 的可选 `business_call_id` 存于既有 JSONB，防止移除原生元数据后降级为 legacy 校验。旧工具桥仍仅按原始 call ID 执行，完整调用身份尚须成对接线与真实治理工具恢复验收，不能据此开放 v2 approval continuation。
+新增业务投影见实施记录 §14：准备阶段不写数据库，投影阶段在同一 owner 事务内创建/复用等待 ToolJob、Approval、native link 和稳定创建事件。内部调用键包含 binding、Turn、图 namespace、源 AI 消息和供应商 call ID；界面仍保留原始 call ID。重投影和 Session 收尾保留已提交决定与终态结果；原生 link 的可选 `business_call_id` 存于既有 JSONB，防止移除原生元数据后降级为 legacy 校验。
+
+工具桥的后续接线见实施记录 §15：使用官方 ToolRuntime.state 与 execution_info，保留子图祖先 namespace，只移除当前 tools 任务分量；HITL 门控身份在图执行前异步从持久化 link 还原，业务执行时重新读取当前决定。当前治理阻止时，在 owner 事务内保留终态 ToolJob，只结算未启动的 waiting_approval，running 要求对账。原生 reject 会跳过业务 callback，其 ToolJob 拒绝结果和 applied 投影仍须由 continuation 完成；真实局部治理恢复不等于 Worker/API 接线通过，不能据此开放 v2 approval continuation。
 
 ## 2. 目标架构与模块边界
 

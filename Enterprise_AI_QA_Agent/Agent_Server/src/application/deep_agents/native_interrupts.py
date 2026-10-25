@@ -13,10 +13,36 @@ from langchain_core.messages import AIMessage, ToolMessage
 from langgraph.types import StateSnapshot
 
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
-from src.schemas.framework_approval import NativeToolInterrupt, approval_value_hash
+from src.schemas.framework_approval import FrameworkToolCallIdentity, NativeToolInterrupt, approval_value_hash
 
 
 logger = logging.getLogger(__name__)
+
+
+def _source_call(messages, tool_call_id, tool_name, arguments):
+    source = next((item for item in reversed(messages) if isinstance(item, AIMessage)), None)
+    calls = [call for call in (source.tool_calls if source is not None else []) if call.get("id") == tool_call_id]
+    if (source is None or not source.id or len(calls) != 1 or calls[0].get("name") != tool_name
+        or approval_value_hash(calls[0].get("args")) != approval_value_hash(arguments)):
+        raise FrameworkApprovalRecoveryRequired("Tool task has no unambiguous source AI call")
+    return source, calls[0]
+
+
+def executing_tool_identity(binding, runtime, tool_name, arguments) -> FrameworkToolCallIdentity:
+    """Read the injected current call, keeping its parent graph namespace.
+
+    Fixed 1.2.12 ExecutionInfo.checkpoint_ns is task-scoped (see _algo.py).
+    Strip only the final tools:<task_id> component; ancestor task IDs identify
+    registered child graphs and must remain intact. Never use display history.
+    """
+    info = runtime.execution_info
+    if (info is None or info.thread_id != binding.thread_id or not runtime.tool_call_id
+        or info.checkpoint_ns.rsplit("|", 1)[-1] != f"tools:{info.task_id}"):
+        raise FrameworkApprovalRecoveryRequired("Executing tool has no matching native runtime identity")
+    messages = runtime.state.get("messages", []) if isinstance(runtime.state, dict) else []
+    source, call = _source_call(messages, runtime.tool_call_id, tool_name, arguments)
+    return FrameworkToolCallIdentity(checkpoint_namespace=info.checkpoint_ns.rpartition("|")[0],
+        source_message_id=source.id, tool_call_id=call["id"], tool_name=tool_name, arguments=arguments)
 
 
 async def collect_pending_tool_interrupts(agent, saver, config) -> list[NativeToolInterrupt]:
@@ -63,18 +89,12 @@ async def collect_pending_tool_interrupts(agent, saver, config) -> list[NativeTo
             # Official per-call tools fan out from the current model response.
             # Searching older AI messages would alias reused provider call IDs.
             messages = state.values.get("messages", []) if isinstance(state.values, dict) else []
-            source = next((item for item in reversed(messages) if isinstance(item, AIMessage)), None)
-            calls = [call for call in (source.tool_calls if source is not None else [])
-                if call.get("id") == action.get("tool_call_id")]
-            if (source is None or not source.id or len(calls) != 1
-                or calls[0].get("name") != action.get("name")
-                or approval_value_hash(calls[0].get("args")) != approval_value_hash(action.get("args"))):
-                raise FrameworkApprovalRecoveryRequired("Pending tool interrupt has no unambiguous source AI call")
+            source, call = _source_call(messages, action.get("tool_call_id"), action.get("name"), action.get("args"))
             identities.append(NativeToolInterrupt(
                 checkpoint_namespace=location.get("checkpoint_ns", ""), checkpoint_id=checkpoint_id,
                 graph_task_id=task.id, task_path=pending["task_path"], interrupt_id=interrupt.id,
-                resume_index=len(resumes), source_message_id=source.id, tool_call_id=calls[0]["id"],
-                tool_name=calls[0]["name"], arguments=calls[0]["args"]))
+                resume_index=len(resumes), source_message_id=source.id, tool_call_id=call["id"],
+                tool_name=call["name"], arguments=call["args"]))
 
     try:
         await visit(snapshot)

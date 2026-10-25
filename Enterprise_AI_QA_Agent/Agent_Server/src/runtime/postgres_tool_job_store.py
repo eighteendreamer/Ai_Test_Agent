@@ -338,11 +338,12 @@ class PostgresToolJobStore:
     def _get_job_sync(self, job_id: str) -> ToolJobRecord | None:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
-                cur.execute(
-                    f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id = %s",
-                    (job_id,),
-                )
-                row = cur.fetchone()
+                return self.get_job_in_transaction(cur, job_id)
+
+    def get_job_in_transaction(self, cur, job_id: str, *, for_update: bool = False) -> ToolJobRecord | None:
+        cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id=%s"
+            + (" FOR UPDATE" if for_update else ""), (job_id,))
+        row = cur.fetchone()
         return _job_from_row(row) if row else None
 
     def _list_jobs_sync(self, session_id: str | None = None) -> list[ToolJobRecord]:

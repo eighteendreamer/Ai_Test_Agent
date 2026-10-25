@@ -621,7 +621,7 @@ async def test_da_e4_business_tool_callback_is_wrapped_and_approval_stops_agent(
     )
     descriptor = ToolRegistry().get("knowledge-rag")
 
-    async def invoke(_descriptor, call_id, arguments):
+    async def invoke(_descriptor, runtime, arguments):
         pytest.fail("HITL must interrupt before the tool executes")
 
     from langgraph.checkpoint.memory import InMemorySaver

@@ -175,6 +175,10 @@ class FrameworkApprovalJournal:
             "approval_id": approval_id, "decision_id": decision_id})
         return self.get_receipt_in_transaction(cur, approval_id)
 
+    def links_in_transaction(self, cur, binding):
+        cur.execute(f"SELECT link FROM {self._links} WHERE binding_id=%s ORDER BY approval_id", (binding.binding_id,))
+        return [FrameworkInterruptLink.model_validate(row["link"]) for row in cur.fetchall()]
+
     def require_link_in_transaction(self, cur, binding, approval_id, approval):
         """Validate a saved mapping against its current business approval."""
         cur.execute(f"SELECT link FROM {self._links} WHERE approval_id=%s AND binding_id=%s",

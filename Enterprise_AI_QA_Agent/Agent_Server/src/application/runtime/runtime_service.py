@@ -26,6 +26,7 @@ from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_messages import build_tool_message
 from src.application.runtime.tool_governance_service import (
     GovernedToolCallContext,
+    GovernedToolCallResult,
     ToolGovernanceService,
 )
 from src.application.model_adapters.tool_adapter import LangChainToolAdapter
@@ -322,7 +323,7 @@ class RuntimeService:
             )
         approvals: list[dict[str, Any]] = []
         tool_records: list[dict[str, Any]] = list(state.get("tool_results") or [])
-        business_tools, interrupt_on = self._build_deep_agent_business_tools(
+        business_tools, interrupt_on = await self._build_deep_agent_business_tools(
             state=state,
             tool_records=tool_records,
         )
@@ -1241,7 +1242,7 @@ class RuntimeService:
             "deep_agent_governed_tool_stage": "DA-E4",
         }
 
-    def _build_deep_agent_business_tools(
+    async def _build_deep_agent_business_tools(
         self,
         *,
         state: dict[str, Any],
@@ -1252,25 +1253,54 @@ class RuntimeService:
         descriptors = self._tool_registry.get_many(list(state.get("model_visible_tool_keys") or []))
         batch = state.get("context_bundle", {}).get("deep_agent_approval_batch", [])
         by_call = {item["metadata"]["call_id"]: item for item in batch}
+        from src.application.deep_agents.native_interrupts import executing_tool_identity
+        from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+        from src.schemas.framework_approval import framework_tool_call_id
+        from src.schemas.runtime_binding import RuntimeBinding
+
+        bound = state.get("context_bundle", {}).get("runtime_binding")
+        binding = RuntimeBinding.model_validate(bound) if bound is not None else None
+        owner = current_framework_owner()
+        gates = frozenset()
+        if binding is not None:
+            if owner is None or owner.binding != binding or self._framework_approval_projection is None:
+                raise FrameworkApprovalRecoveryRequired("Governed tools require their captured native execution owner")
+            gates = await self._framework_approval_projection.gate_call_ids(owner)
 
         def when(request):
+            call_id = request.tool_call["id"]
+            if binding is not None:
+                identity = executing_tool_identity(binding, request.runtime,
+                    request.tool_call["name"], request.tool_call["args"])
+                call_id = framework_tool_call_id(binding, identity)
             call = ModelToolCall(
-                id=request.tool_call["id"], name=request.tool_call["name"],
+                id=call_id, name=request.tool_call["name"],
                 arguments=request.tool_call["args"],
             )
             # A resumed official interrupt must retain its original action order
             # even when policy has changed. Execution still rechecks that policy.
-            return call.id in by_call or self._tool_governance_service.requires_approval(
+            existing_gate = call.id in gates if binding is not None else call.id in by_call
+            return existing_gate or self._tool_governance_service.requires_approval(
                 call, self._deep_agent_governance_context(state)
             )
 
-        async def invoke(descriptor, call_id: str, arguments: dict[str, Any]):
+        async def invoke(descriptor, tool_runtime, arguments: dict[str, Any]):
+            call_id = tool_runtime.tool_call_id
+            approved = by_call.get(call_id)
+            if binding is not None:
+                if current_framework_owner() != owner:
+                    raise FrameworkApprovalRecoveryRequired("Governed tool execution owner changed")
+                identity = executing_tool_identity(binding, tool_runtime, descriptor.key, arguments)
+                call_id = framework_tool_call_id(binding, identity)
+                saved = await self._framework_approval_projection.find_for_call(owner, identity)
+                if call_id in gates and saved is None:
+                    raise FrameworkApprovalRecoveryRequired("Native tool approval disappeared after gate restoration")
+                approved = saved.model_dump(mode="python") if saved is not None else None
             append_graph_event(
                 state, "tool.execution_requested", "deepagents.tool_governance",
                 "Deep Agents requested a governed business tool.",
                 tool_key=descriptor.key, call_id=call_id, harness="deepagents",
             )
-            approved = by_call.get(call_id)
             result = await self._tool_governance_service.execute(
                 ModelToolCall(id=call_id, name=descriptor.key, arguments=arguments),
                 self._deep_agent_governance_context(state),
@@ -1280,10 +1310,16 @@ class RuntimeService:
                 result.record.approval_id = approved["id"]
                 result.record.job_id = approved["metadata"].get("tool_job_id")
                 if result.record.status == "denied" and self._tool_job_service is not None:
-                    await self._tool_job_service.mark_denied(
-                        result.record.job_id, summary=result.record.summary,
-                        output_payload=result.record.output,
-                    )
+                    if binding is not None:
+                        job, replayed = await self._framework_approval_projection.settle_blocked_tool(owner, identity, result.record)
+                        record = await self._tool_runtime_service.record_from_job(job)
+                        record.approval_id = approved["id"]
+                        result = GovernedToolCallResult(record=record, replayed=replayed)
+                    else:
+                        await self._tool_job_service.mark_denied(
+                            result.record.job_id, summary=result.record.summary,
+                            output_payload=result.record.output,
+                        )
             payload = result.record.model_dump(mode="python")
             tool_records[:] = [item for item in tool_records if item.get("call_id") != call_id]
             tool_records.append(payload)

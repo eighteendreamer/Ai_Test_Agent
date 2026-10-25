@@ -51,9 +51,9 @@ async def test_new_scene_is_read_by_the_actual_knowledge_tool(tmp_path):
                 submit_mode="immediate", execution_lane="conversation_turn"),
                 active_mode_key="code_review", available_tool_keys=frozenset({tool.key}))
             captured = []
-            async def invoke(descriptor, call_id, arguments):
+            async def invoke(descriptor, runtime, arguments):
                 assert descriptor.key == tool.key and arguments == call.arguments
-                result = await governance.execute(ModelToolCall(id=call_id, name=tool.key, arguments=arguments), boundary)
+                result = await governance.execute(ModelToolCall(id=runtime.tool_call_id, name=tool.key, arguments=arguments), boundary)
                 captured.append(result)
                 return json.dumps(result.record.model_dump(mode="json"), ensure_ascii=False)
             registered = LangChainToolAdapter().to_governed_tools([tool], invoke=invoke)[0]

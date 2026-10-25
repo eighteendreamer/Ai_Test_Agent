@@ -9,15 +9,17 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_approval_journal import FrameworkApprovalJournal, FrameworkApprovalRecoveryRequired
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.schemas.framework_approval import (
-    NativeToolInterrupt, PreparedFrameworkApproval, approval_value_hash,
+    FrameworkToolCallIdentity, NativeToolInterrupt, PreparedFrameworkApproval, approval_value_hash,
     framework_approval_id, framework_tool_call_id,
 )
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
+from src.schemas.tool_job import ToolJobStatus
 
 
 logger = logging.getLogger(__name__)
@@ -42,15 +44,93 @@ class FrameworkApprovalProjection:
                 "error_type": type(exc).__name__})
             raise
 
-    def _load(self, owner, approval_id):
+    async def find_for_call(self, owner, identity):
+        try:
+            identity = FrameworkToolCallIdentity.model_validate(identity.model_dump(mode="json"))
+            return await asyncio.to_thread(self._load, owner, framework_approval_id(owner.binding, identity), identity)
+        except Exception as exc:
+            logger.warning("framework_tool_approval_lookup_rejected", extra={
+                "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
+            raise
+
+    async def gate_call_ids(self, owner):
+        """Freeze existing gate identities before entering synchronous HITL.when."""
+        try:
+            identities = await asyncio.to_thread(self._gate_call_ids, owner)
+        except Exception as exc:
+            logger.warning("framework_tool_gate_restore_rejected", extra={
+                "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_tool_gates_restored", extra={
+            "binding_id": owner.binding.binding_id, "gate_count": len(identities)})
+        return identities
+
+    def _gate_call_ids(self, owner):
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             assert_runtime_owner(cur, self._settings, owner)
-            cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE",
-                (approval_id,))
-            row = cur.fetchone()
-            self._journal.require_link_in_transaction(cur, owner.binding, approval_id, row)
-            return ToolApprovalRequest.model_validate(row)
+            identities = set()
+            for link in self._journal.links_in_transaction(cur, owner.binding):
+                cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE",
+                    (link.approval_id,))
+                self._journal.assert_business_link(owner.binding, link, cur.fetchone())
+                if link.business_call_id is None:
+                    raise FrameworkApprovalRecoveryRequired("Bound execution requires a complete native business identity")
+                identities.add(link.business_call_id)
+            return frozenset(identities)
+
+    def _load(self, owner, approval_id, identity=None):
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            assert_runtime_owner(cur, self._settings, owner)
+            return self._load_in_transaction(cur, owner, approval_id, identity)
+
+    def _load_in_transaction(self, cur, owner, approval_id, identity=None):
+        cur.execute(f"SELECT * FROM {self._settings.database.postgres_approval_table} WHERE id=%s FOR UPDATE", (approval_id,))
+        row = cur.fetchone()
+        if row is None and identity is not None:
+            return None
+        link = self._journal.require_link_in_transaction(cur, owner.binding, approval_id, row)
+        if identity is not None and any(getattr(link, key) != getattr(identity, key)
+            for key in FrameworkToolCallIdentity.model_fields):
+            raise FrameworkApprovalRecoveryRequired("Executing tool differs from its native approval identity")
+        return ToolApprovalRequest.model_validate(row)
+
+    async def settle_blocked_tool(self, owner, identity, record):
+        """Record a current governance denial without rewriting prior execution."""
+        try:
+            result = await asyncio.to_thread(self._settle_blocked_tool, owner, identity, record)
+        except Exception as exc:
+            logger.warning("framework_blocked_tool_settlement_rejected", extra={
+                "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_blocked_tool_settled", extra={"binding_id": owner.binding.binding_id,
+            "tool_job_id": result[0].id, "status": result[0].status.value, "replayed": result[1]})
+        return result
+
+    def _settle_blocked_tool(self, owner, identity, record):
+        identity = FrameworkToolCallIdentity.model_validate(identity.model_dump(mode="json"))
+        call_id = framework_tool_call_id(owner.binding, identity)
+        if record.status != "denied" or record.call_id != call_id:
+            raise FrameworkApprovalRecoveryRequired("Blocked tool projection requires a matching governance denial")
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            assert_runtime_owner(cur, self._settings, owner)
+            approval = self._load_in_transaction(cur, owner, framework_approval_id(owner.binding, identity), identity)
+            if approval is None or approval.status.value == "pending":
+                raise FrameworkApprovalRecoveryRequired("Blocked tool has no persisted business decision")
+            job = self._jobs.get_job_in_transaction(cur, approval.metadata["tool_job_id"], for_update=True)
+            if (job is None or job.session_id != owner.binding.session_id or job.turn_id != owner.binding.turn_id
+                or job.call_id != call_id or job.tool_key != identity.tool_name or job.input_payload != identity.arguments):
+                raise FrameworkApprovalRecoveryRequired("Blocked tool has no matching original ToolJob")
+            if job.status in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed,
+                ToolJobStatus.denied, ToolJobStatus.cancelled}:
+                return job, True
+            if job.status != ToolJobStatus.waiting_approval or job.started_at is not None:
+                raise FrameworkApprovalRecoveryRequired("Started ToolJob must be reconciled before denial projection")
+            job.status, job.summary, job.output_payload = ToolJobStatus.denied, record.summary, record.output
+            job.updated_at = job.completed_at = datetime.utcnow()
+            return self._jobs.save_job_in_transaction(cur, job), False
 
     def _project(self, owner, proposal):
         try:

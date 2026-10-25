@@ -134,6 +134,9 @@ class ToolJobService:
     def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
         return self._store.create_job_if_absent_in_transaction(cur, job)
 
+    def get_job_in_transaction(self, cur, job_id: str, *, for_update: bool = False) -> ToolJobRecord | None:
+        return self._store.get_job_in_transaction(cur, job_id, for_update=for_update)
+
     async def mark_running(self, job: ToolJobRecord) -> ToolJobRecord:
         now = datetime.utcnow()
         job.status = ToolJobStatus.running

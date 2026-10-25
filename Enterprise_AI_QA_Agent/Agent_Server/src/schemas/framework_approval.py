@@ -18,20 +18,26 @@ def approval_value_hash(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-class NativeToolInterrupt(BaseModel):
-    """Execution identity read from a pending native tool task, before projection."""
+class FrameworkToolCallIdentity(BaseModel):
+    """Stable source identity shared by interrupt projection and tool execution."""
     model_config = ConfigDict(extra="forbid", frozen=True)
 
     checkpoint_namespace: str
+    source_message_id: str = Field(min_length=1)
+    tool_call_id: str = Field(min_length=1)
+    tool_name: str = Field(min_length=1)
+    arguments: dict[str, Any]
+
+
+class NativeToolInterrupt(FrameworkToolCallIdentity):
+    """Execution identity read from a pending native tool task, before projection."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
     checkpoint_id: str = Field(min_length=1)
     graph_task_id: str = Field(min_length=1)
     task_path: str
     interrupt_id: str = Field(min_length=1)
     resume_index: int = Field(ge=0)
-    source_message_id: str = Field(min_length=1)
-    tool_call_id: str = Field(min_length=1)
-    tool_name: str = Field(min_length=1)
-    arguments: dict[str, Any]
     format_version: Literal["langgraph-1.2.12"] = "langgraph-1.2.12"
 
 
@@ -47,12 +53,12 @@ class FrameworkInterruptLink(NativeToolInterrupt):
     business_call_id: str | None = Field(default=None, min_length=1)
 
 
-def framework_tool_call_id(binding, native: NativeToolInterrupt) -> str:
+def framework_tool_call_id(binding, native: FrameworkToolCallIdentity) -> str:
     return "framework:" + approval_value_hash([binding.binding_id, binding.turn_id,
         native.checkpoint_namespace, native.source_message_id, native.tool_call_id])
 
 
-def framework_approval_id(binding, native: NativeToolInterrupt) -> str:
+def framework_approval_id(binding, native: FrameworkToolCallIdentity) -> str:
     return str(uuid5(NAMESPACE_URL, "framework-approval:" + framework_tool_call_id(binding, native)))
 
 
