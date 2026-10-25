@@ -291,6 +291,24 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"正式回执与恢复——纠正阶段真实进程中断"组合缺口。至此该方向三要素（默认 AI UI 测试、真实默认纠正语义、纠正中进程中断+不重复操作）全部有默认模型实测证据。过程迭代（脚本计数不幂等导致审批重放时真实模型接管重打业务、SSE 合成、hook 手动补跑等）保留于 `-01`~`-03` 证据目录。
 
+## 需求变更与追踪：产品页面交互层（影响分析+用户业务评审+追踪）通过
+
+新增验收 `tests/test_default_requirement_review_product_live.py`（门控 `RUN_LIVE_DEFAULT_REQUIREMENT_REVIEW_PRODUCT=1`）：
+
+```text
+1 passed in 178.78s
+```
+
+证据：`p4-requirement-review-product-default-deepseek-current-20261025-09/` 及同名 XML。构建版 App（Vite preview 服务的产品构建）单浏览器会话走完，后端完整生产 API + 独立 Worker，模型为真实默认 `deepseek-flash`：
+
+- **页面提交影响分析**：API 完成 V1/V2 上传→解析→确定性差异后，页面导航至比较结果页，"文档影响分析入口"面板配置模型（deepseek 默认键）、single_attempt、explicit 用例范围（读取 order-total-check 完整版本并勾选 V1）、环境/发布声明，点击"提交固定影响分析"；独立影响 Worker 以真实默认模型完成——5 单元全部分析、2 条规则命中变更语义（total 口径+discount 新增），与 API 级验收结论一致。
+- **用户业务评审页面场景**（复用 `requirement_product_scenario.review_from_product`）：任务完成后页面显示"影响结果已保存"，打开"需求评审与追踪"面板完成 6 次真实评审——含丢回执后按原请求身份恢复（"提交结果尚未确认"提示→重载→"评审已保存"）、冲突修订被 409 拒绝、移除版本、跨项目 API 评审隔离；PostgreSQL 评审记录与历史逐字对账；全程 0 次新增模型调用（业务评审是用户职责）。追踪矩阵在场景各阶段断言（v1 覆盖→v2 移除呈现）。
+- 页面零错误、无 5xx；`global_model_unchanged=true`。
+
+过程修正（页面态事实，保留于 `-01`~`-08` 证据）：preview 代理空 token 需 API 免认证（与受控产品验收同模式）；设置区折叠需先展开；explicit 范围需勾选版本 checkbox；任务详情/评审按钮由 `activeTaskId` 驱动且评审场景的 reload 依赖同源 sessionStorage 提交恢复——因此提交与评审必须在同一浏览器会话（两个 preview 会话是不同端口/域，sessionStorage 隔离）；评审场景故意的 409 冲突拒绝不计入网络失败。
+
+这关闭了总表"需求变更与追踪——产品页面交互层"缺口：该方向 API 链路（更广业务闭环、用户业务评审、环境绑定规划、执行期准入）与页面交互层均已实测。"其他格式与更多故障组合"仍属后续深化项。
+
 ## UI 录制与知识：人工操作 DeepSeek 完整实测通过
 
 用户本人操作可见 Chromium 完成 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` 的人工模式（`RUN_LIVE_DEEPSEEK_RECORDING=1`、`DEEPSEEK_RECORDING_INTERACTION=manual`，pytest 需 `-s` 使 `input()` 可读——首跑因缺 `-s` 失败属测试运行方式问题）：
