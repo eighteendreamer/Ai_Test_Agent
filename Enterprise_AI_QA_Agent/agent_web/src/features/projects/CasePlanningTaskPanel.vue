@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from "vue";
+import { NAlert, NButton, NList, NListItem, NTag } from "naive-ui";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { CasePlanRecord, CasePlanningTaskRecord, CasePlanningTaskRequest, RegressionPlanningSelection, RegressionPlanningTaskRequest } from "../../types";
@@ -180,21 +181,45 @@ onUnmounted(() => { disposed = true; if (timer) clearTimeout(timer); });
 </script>
 
 <template>
-  <section aria-label="持久规划任务">
-    <p v-if="error" role="alert">{{ error }}</p>
-    <p v-if="storageWarning" role="alert">{{ storageWarning }}</p>
-    <p v-if="creationKey">规划请求编号：{{ creationKey }}</p>
-    <p v-if="task" role="status">{{ labels[task.status] }} · {{ task.message }} · 已调用 {{ task.round_count }} 回合</p>
-    <p v-if="task?.run_revision" role="status">运行 {{ task.run_revision.run_id }} · {{
-      task.run_revision.status === 'applied' ? `修订已生效（版本 ${task.run_revision.revision}）`
-        : task.run_revision.status === 'rejected' ? '修订未应用' : '修订等待确认'
-    }} · {{ task.run_revision.message }}</p>
-    <p v-if="creationKey && !task">提交结果尚未确认。先按原请求编号查询；当前页面重试保留原请求内容。刷新后不保存敏感输入，需要重新填写相同内容才能重试。</p>
-    <button :disabled="busy || disabled || (!regression && !objective.trim()) || (!!task && ['queued', 'running'].includes(task.status))" @click="submit">
-      {{ busy ? '处理中…' : creationKey && !task ? '重试规划提交' : task ? '另建规划任务' : regression ? '提交回归规划' : '生成执行计划' }}
-    </button>
-    <button v-if="creationKey || initialTaskId" :disabled="busy" @click="refresh">查询规划任务</button>
-    <button :disabled="busy" @click="loadRecent">项目规划任务</button>
-    <ul v-if="recent.length"><li v-for="entry in recent" :key="entry.id"><button :disabled="busy" @click="selectRecent(entry)">{{ labels[entry.status] }} · {{ entry.id }}</button></li></ul>
+
+<section aria-label="持久规划任务" class="planning-panel">
+    <NAlert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</NAlert>
+    <NAlert v-if="storageWarning" type="warning" :bordered="false" style="margin-bottom: 12px">{{ storageWarning }}</NAlert>
+    <p v-if="creationKey" class="dialog-hint">规划请求编号：{{ creationKey }}</p>
+    <NAlert v-if="task" type="info" :bordered="false" style="margin-bottom: 12px">
+      {{ labels[task.status] }} · {{ task.message }} · 已调用 {{ task.round_count }} 回合
+    </NAlert>
+    <NAlert v-if="task?.run_revision" type="info" :bordered="false" style="margin-bottom: 12px">
+      运行 {{ task.run_revision.run_id }} ·
+      {{
+        task.run_revision.status === 'applied' ? `修订已生效（版本 ${task.run_revision.revision}）`
+          : task.run_revision.status === 'rejected' ? '修订未应用' : '修订等待确认'
+      }} · {{ task.run_revision.message }}
+    </NAlert>
+    <NAlert v-if="creationKey && !task" type="warning" :bordered="false" style="margin-bottom: 12px">
+      提交结果尚未确认。先按原请求编号查询；当前页面重试保留原请求内容。刷新后不保存敏感输入，需要重新填写相同内容才能重试。
+    </NAlert>
+    <div class="dialog-actions-left">
+      <NButton
+        type="primary"
+        :loading="busy"
+        :disabled="busy || disabled || (!regression && !objective.trim()) || (!!task && ['queued', 'running'].includes(task.status))"
+        @click="submit"
+      >
+        {{ busy ? '处理中…' : creationKey && !task ? '重试规划提交' : task ? '另建规划任务' : regression ? '提交回归规划' : '生成执行计划' }}
+      </NButton>
+      <NButton v-if="creationKey || initialTaskId" :disabled="busy" @click="refresh">查询规划任务</NButton>
+      <NButton :disabled="busy" @click="loadRecent">项目规划任务</NButton>
+    </div>
+    <NList v-if="recent.length" bordered hoverable style="margin-top: 12px">
+      <NListItem v-for="entry in recent" :key="entry.id">
+        <div class="recent-row">
+          <NTag size="small" :bordered="false">{{ labels[entry.status] }}</NTag>
+          <NButton text type="primary" :disabled="busy" @click="selectRecent(entry)">{{ entry.id }}</NButton>
+        </div>
+      </NListItem>
+    </NList>
   </section>
+
+
 </template>

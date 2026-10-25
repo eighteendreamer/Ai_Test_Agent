@@ -29,6 +29,13 @@ class ProjectStore(Protocol):
         limit: int,
         offset: int,
     ) -> tuple[list[ProjectRecord], bool]: ...
+    async def count(
+        self,
+        *,
+        status: ProjectStatus | None,
+        query: str | None,
+    ) -> int: ...
+    async def counts(self) -> dict[str, int]: ...
     async def update(self, project: ProjectRecord) -> ProjectRecord: ...
 
 
@@ -59,6 +66,32 @@ class InMemoryProjectStore:
         limit: int,
         offset: int,
     ) -> tuple[list[ProjectRecord], bool]:
+        items = self._matching(status, query)
+        items.sort(key=lambda item: (item.created_at, item.id))
+        selected = items[offset : offset + limit + 1]
+        return [item.model_copy(deep=True) for item in selected[:limit]], len(selected) > limit
+
+    async def count(
+        self,
+        *,
+        status: ProjectStatus | None,
+        query: str | None,
+    ) -> int:
+        return len(self._matching(status, query))
+
+    async def counts(self) -> dict[str, int]:
+        values = list(self._projects.values())
+        return {
+            "all": len(values),
+            "active": sum(item.status == "active" for item in values),
+            "archived": sum(item.status == "archived" for item in values),
+        }
+
+    def _matching(
+        self,
+        status: ProjectStatus | None,
+        query: str | None,
+    ) -> list[ProjectRecord]:
         items = list(self._projects.values())
         if status:
             items = [item for item in items if item.status == status]
@@ -69,9 +102,7 @@ class InMemoryProjectStore:
                 for item in items
                 if needle in item.project_key.casefold() or needle in item.name.casefold()
             ]
-        items.sort(key=lambda item: (item.created_at, item.id))
-        selected = items[offset : offset + limit + 1]
-        return [item.model_copy(deep=True) for item in selected[:limit]], len(selected) > limit
+        return items
 
     async def update(self, project: ProjectRecord) -> ProjectRecord:
         async with self._lock:
@@ -122,6 +153,17 @@ class PostgresProjectStore:
         offset: int,
     ) -> tuple[list[ProjectRecord], bool]:
         return await asyncio.to_thread(self._list_sync, status, query, limit, offset)
+
+    async def count(
+        self,
+        *,
+        status: ProjectStatus | None,
+        query: str | None,
+    ) -> int:
+        return await asyncio.to_thread(self._count_sync, status, query)
+
+    async def counts(self) -> dict[str, int]:
+        return await asyncio.to_thread(self._counts_sync)
 
     async def update(self, project: ProjectRecord) -> ProjectRecord:
         return await asyncio.to_thread(self._update_sync, project)
@@ -179,13 +221,11 @@ class PostgresProjectStore:
                 row = cur.fetchone()
         return self._from_row(row) if row else None
 
-    def _list_sync(
+    def _where(
         self,
         status: ProjectStatus | None,
         query: str | None,
-        limit: int,
-        offset: int,
-    ) -> tuple[list[ProjectRecord], bool]:
+    ) -> tuple[str, list[object]]:
         clauses: list[str] = []
         parameters: list[object] = []
         if status:
@@ -196,6 +236,37 @@ class PostgresProjectStore:
             pattern = f"%{query}%"
             parameters.extend([pattern, pattern])
         where = f" WHERE {' AND '.join(clauses)}" if clauses else ""
+        return where, parameters
+
+    def _count_sync(self, status: ProjectStatus | None, query: str | None) -> int:
+        where, parameters = self._where(status, query)
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT count(*) AS total FROM {self._table}{where}", tuple(parameters))
+                row = cur.fetchone() or {}
+        return int(row.get("total") or 0)
+
+    def _counts_sync(self) -> dict[str, int]:
+        counts = {"all": 0, "active": 0, "archived": 0}
+        with postgres_connect(self._settings) as conn:
+            with conn.cursor() as cur:
+                cur.execute(f"SELECT status, count(*) AS total FROM {self._table} GROUP BY status")
+                rows = cur.fetchall() or []
+        for row in rows:
+            total = int(row.get("total") or 0)
+            counts["all"] += total
+            if row.get("status") in ("active", "archived"):
+                counts[row["status"]] = total
+        return counts
+
+    def _list_sync(
+        self,
+        status: ProjectStatus | None,
+        query: str | None,
+        limit: int,
+        offset: int,
+    ) -> tuple[list[ProjectRecord], bool]:
+        where, parameters = self._where(status, query)
         parameters.extend([limit + 1, offset])
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:

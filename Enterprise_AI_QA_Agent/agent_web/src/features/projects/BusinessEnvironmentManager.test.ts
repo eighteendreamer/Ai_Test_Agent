@@ -1,8 +1,9 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import BusinessEnvironmentManager from "./BusinessEnvironmentManager.vue";
 import { HttpError } from "../../services/http";
+import { clickButton, dialogText, setInputByLabel } from "../../test-utils/naive";
 
 const api = vi.hoisted(() => ({
   listBusinessEnvironments: vi.fn(), getBusinessEnvironmentRegistration: vi.fn(), registerBusinessEnvironment: vi.fn(),
@@ -20,7 +21,6 @@ const configuration = (baseUrl = "https://staging.example.test", revision = 1) =
   revision, payload: { display_name: "Staging", base_url: baseUrl, description: "test target" }, sha256: "b".repeat(64),
 });
 function setup() { return mount(BusinessEnvironmentManager, { props: { projectId: "project" } }); }
-function button(wrapper: ReturnType<typeof setup>, label: string) { return wrapper.findAll("button").find(value => value.text() === label)!; }
 
 describe("project business environment management", () => {
   beforeEach(() => {
@@ -40,31 +40,29 @@ describe("project business environment management", () => {
       request, configuration: configuration(), deployment_status: "unknown", captured_at: "2026-10-21T00:00:00Z", sha256: "c".repeat(64),
     }));
   });
+  afterEach(() => { document.body.innerHTML = ""; });
 
   it("registers an environment, saves its target in MySQL config, then captures and reads a fixed snapshot", async () => {
     const wrapper = setup(); await flushPromises();
     expect(api.listBusinessEnvironments).toHaveBeenCalled();
-    await wrapper.get("form input").setValue("staging");
-    expect((wrapper.get("form input").element as HTMLInputElement).value).toBe("staging");
-    expect((wrapper.get("form button").element as HTMLButtonElement).disabled).toBe(false);
-    await wrapper.get("form").trigger("submit"); await flushPromises();
+    await setInputByLabel(wrapper, "登记环境标识", "staging");
+    await clickButton(wrapper, "登记项目环境");
     const registration = api.registerBusinessEnvironment.mock.calls[0][1];
     expect(api.getBusinessEnvironmentRegistration).toHaveBeenCalledWith("project", registration.request_id);
     expect(registration.environment_key).toBe("staging");
     expect(api.registerBusinessEnvironment).toHaveBeenCalledWith("project", registration);
 
-    const displayName = wrapper.findAll("label").find(label => label.text().includes("目标显示名称"))!.get("input");
-    const baseUrl = wrapper.findAll("label").find(label => label.text().includes("目标地址"))!.get("input");
-    await displayName.setValue("Staging target"); await baseUrl.setValue("https://staging.example.test/app");
-    await button(wrapper, "保存目标配置").trigger("click"); await flushPromises();
+    await setInputByLabel(wrapper, "目标显示名称", "Staging target");
+    await setInputByLabel(wrapper, "目标地址", "https://staging.example.test/app");
+    await clickButton(wrapper, "保存目标配置");
     expect(api.saveBusinessTargetConfiguration).toHaveBeenCalledWith("project", "environment", {
       display_name: "Staging target", base_url: "https://staging.example.test/app", description: "",
     });
-    await button(wrapper, "创建配置快照").trigger("click"); await flushPromises();
+    await clickButton(wrapper, "创建配置快照");
     const capture = api.captureBusinessEnvironment.mock.calls[0][2];
     expect(api.getBusinessEnvironmentCapture).toHaveBeenCalledWith("project", "environment", capture.request_id);
     expect(capture).toEqual({ request_id: expect.any(String), expected_config_revision: 1, expected_config_sha256: "b".repeat(64) });
-    expect(wrapper.text()).toContain("目标配置快照已保存；部署状态仍为未知");
+    expect(dialogText()).toContain("目标配置快照已保存；部署状态仍为未知");
     wrapper.unmount();
   });
 
@@ -74,13 +72,12 @@ describe("project business environment management", () => {
       .mockResolvedValueOnce(configuration("https://staging.example.test/changed", 2));
     api.saveBusinessTargetConfiguration.mockRejectedValueOnce(new TypeError("response lost"));
     const wrapper = setup(); await flushPromises();
-    await button(wrapper, "staging · active · environment").trigger("click"); await flushPromises();
-    const baseUrl = wrapper.findAll("label").find(label => label.text().includes("目标地址"))!.get("input");
-    await baseUrl.setValue("https://staging.example.test/changed");
-    await button(wrapper, "保存目标配置").trigger("click"); await flushPromises();
+    await clickButton(wrapper, "staging · environment");
+    await setInputByLabel(wrapper, "目标地址", "https://staging.example.test/changed");
+    await clickButton(wrapper, "保存目标配置");
     expect(api.saveBusinessTargetConfiguration).toHaveBeenCalledTimes(1);
     expect(api.readBusinessTargetConfiguration).toHaveBeenCalledTimes(2);
-    expect(wrapper.text()).toContain("保存响应未收到，但已重读并确认当前配置与本次内容一致");
+    expect(dialogText()).toContain("保存响应未收到，但已重读并确认当前配置与本次内容一致");
     wrapper.unmount();
   });
 });

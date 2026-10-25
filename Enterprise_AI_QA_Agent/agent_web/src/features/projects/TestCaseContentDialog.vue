@@ -1,5 +1,20 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import {
+  NAlert,
+  NButton,
+  NCollapse,
+  NCollapseItem,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NInput,
+  NModal,
+  NSelect,
+  NSpin,
+  NTabPane,
+  NTabs,
+} from "naive-ui";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { TestCaseRecord, TestCaseVersionRecord } from "../../types";
@@ -7,6 +22,7 @@ import JsonContentTree from "./JsonContentTree.vue";
 
 const props = withDefaults(defineProps<{ testCase: TestCaseRecord; initialVersionId?: string; canWrite?: boolean }>(), { canWrite: true });
 const emit = defineEmits<{ close: []; saved: [] }>();
+const show = ref(true);
 const versions = ref<TestCaseVersionRecord[]>([]);
 const versionId = ref("");
 const loading = ref(false);
@@ -58,12 +74,20 @@ function resolveOperation() {
   return true;
 }
 const current = computed(() => versions.value.find(item => item.id === versionId.value));
+const versionOptions = computed(() => versions.value.map(version => ({
+  value: version.id,
+  label: `v${version.version} · ${labels[reviewStatus(version)]}${record.value.active_version_id === version.id ? "（已启用）" : ""}`,
+})));
 const content = computed(() => {
   const version = current.value;
   return version?.content_json ?? { preconditions: version?.preconditions ?? [], steps: version?.steps ?? [],
     assertions: version?.assertions ?? [], test_data: version?.test_data ?? {}, cleanup: version?.cleanup ?? [] };
 });
 const steps = computed(() => Array.isArray(content.value.steps) ? content.value.steps : current.value?.steps ?? []);
+
+function setTab(value: string | number) {
+  tab.value = String(value) as typeof tab.value;
+}
 
 async function load() {
   loading.value = true;
@@ -140,38 +164,133 @@ async function save() {
   } catch (err) { error.value = err instanceof Error ? err.message : "新版本保存失败"; }
   finally { saving.value = false; }
 }
+
+function close() {
+  show.value = false;
+  emit("close");
+}
+
 onMounted(() => { restoreOperation(); return load(); });
 </script>
 
 <template>
-  <div class="case-dialog-backdrop" @click.self="emit('close')">
-    <section class="case-dialog" role="dialog" aria-label="测试用例内容">
-      <header><div><h2>{{ testCase.title }}</h2><small>{{ testCase.case_key }}</small></div><button @click="emit('close')">关闭</button></header>
-      <p v-if="error" role="alert">{{ error }}</p>
-      <p v-if="storageWarning" role="status">{{ storageWarning }}</p>
-      <p v-if="pending" role="status">版本请求 {{ pending.requestId }} 尚待核对。<button :disabled="reviewing" @click="review()">重查并重试原请求</button><button v-if="rejected" @click="clearRejectedOperation">清除已拒绝请求</button></p>
-      <p v-if="loading">正在加载完整用例版本…</p>
-      <template v-else-if="current">
-        <label>版本<select v-model="versionId" :disabled="reviewing"><option v-for="version in versions" :key="version.id" :value="version.id">v{{ version.version }} · {{ labels[reviewStatus(version)] }}{{ record.active_version_id === version.id ? "（已启用）" : "" }}</option></select></label>
-        <p>当前版本：{{ labels[reviewStatus(current)] }}{{ record.active_version_id === current.id ? " · 当前启用" : "" }}<span v-if="!record.version_reviews?.[current.id] || record.version_reviews[current.id].origin === 'legacy_state'"> · 历史状态推导</span></p>
-        <nav v-if="canWrite && record.lifecycle_status !== 'archived'">
-          <button v-if="reviewStatus(current) === 'draft'" :disabled="reviewing || !!pending || saving" @click="review('submitted')">提交当前版本评审</button>
-          <button v-if="reviewStatus(current) !== 'draft'" :disabled="reviewing || !!pending || saving || (record.active_version_id === current.id && record.lifecycle_status === 'active' && reviewStatus(current) === 'approved')" @click="review('activated')">启用当前版本</button>
-        </nav>
-        <p v-if="current.execution_notes" class="notes">{{ current.execution_notes }}</p>
-        <nav><button @click="tab = 'steps'">步骤</button><button @click="tab = 'tree'">JSON 树</button><button @click="tab = 'raw'">JSON 原文</button><button :disabled="!canWrite || record.lifecycle_status === 'archived' || reviewing" @click="tab = 'edit'">编辑新版本</button></nav>
-        <div v-if="tab === 'steps'"><JsonContentTree v-for="(step, index) in steps" :key="index" :label="`步骤 ${index + 1}`" :value="step" /><p v-if="!steps.length">当前结构没有通用步骤数组，请使用 JSON 树查看完整内容。</p></div>
-        <JsonContentTree v-else-if="tab === 'tree'" label="用例" :value="content" />
-        <pre v-else-if="tab === 'raw'">{{ JSON.stringify(content, null, 2) }}</pre>
-        <div v-else><p>保存将追加草稿版本，保留原版本与已冻结的运行依据。</p><label>用例自身说明<textarea v-model="notes" rows="3"></textarea></label><label>完整 JSON<textarea v-model="editor" rows="18" class="json-editor"></textarea></label><button :disabled="saving" @click="save">{{ saving ? "保存中…" : "保存新草稿版本" }}</button></div>
-        <details><summary>来源及生成依据</summary><JsonContentTree label="来源" :value="current.source_refs" /><JsonContentTree label="生成记录" :value="current.generation_metadata ?? {}" /><small>SHA256 {{ current.content_hash }}</small></details>
-        <details><summary>版本评审记录</summary><JsonContentTree label="评审" :value="record.version_reviews?.[current.id] ?? { status: reviewStatus(current), origin: 'legacy_state' }" /></details>
-      </template>
-      <p v-else-if="!loading">没有可查看的用例版本。</p>
-    </section>
-  </div>
+  <NModal
+    v-model:show="show"
+    preset="card"
+    :title="testCase.title"
+    aria-label="测试用例内容"
+    style="width: min(960px, 96vw)"
+    :mask-closable="!saving && !reviewing"
+    :close-on-esc="!saving && !reviewing"
+    @update:show="!$event && emit('close')"
+  >
+    <p class="dialog-hint">{{ testCase.case_key }}</p>
+    <NAlert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</NAlert>
+    <NAlert v-if="storageWarning" type="warning" :bordered="false" style="margin-bottom: 12px">{{ storageWarning }}</NAlert>
+    <NAlert v-if="pending" type="info" :bordered="false" style="margin-bottom: 12px">
+      版本请求 {{ pending.requestId }} 尚待核对。
+    </NAlert>
+    <div v-if="pending" class="dialog-actions-left">
+      <NButton size="small" :loading="reviewing" @click="review()">重查并重试原请求</NButton>
+      <NButton v-if="rejected" size="small" @click="clearRejectedOperation">清除已拒绝请求</NButton>
+    </div>
+    <div v-if="loading" class="dialog-loading"><NSpin size="small" /> 正在加载完整用例版本…</div>
+    <template v-else-if="current">
+      <NForm label-placement="left" :show-feedback="false" class="version-form">
+        <NFormItem label="版本">
+          <NSelect v-model:value="versionId" :options="versionOptions" :disabled="reviewing" style="width: 320px" />
+        </NFormItem>
+      </NForm>
+      <p class="dialog-hint">
+        当前版本：{{ labels[reviewStatus(current)] }}{{ record.active_version_id === current.id ? " · 当前启用" : "" }}
+        <span v-if="!record.version_reviews?.[current.id] || record.version_reviews[current.id].origin === 'legacy_state'"> · 历史状态推导</span>
+      </p>
+      <div v-if="canWrite && record.lifecycle_status !== 'archived'" class="dialog-actions-left">
+        <NButton
+          v-if="reviewStatus(current) === 'draft'"
+          size="small"
+          :disabled="reviewing || !!pending || saving"
+          @click="review('submitted')"
+        >
+          提交当前版本评审
+        </NButton>
+        <NButton
+          v-if="reviewStatus(current) !== 'draft'"
+          size="small"
+          type="primary"
+          :disabled="reviewing || !!pending || saving || (record.active_version_id === current.id && record.lifecycle_status === 'active' && reviewStatus(current) === 'approved')"
+          @click="review('activated')"
+        >
+          启用当前版本
+        </NButton>
+      </div>
+      <p v-if="current.execution_notes" class="notes">{{ current.execution_notes }}</p>
+
+      <NTabs :value="tab" type="line" @update:value="setTab">
+        <NTabPane name="steps" tab="步骤">
+          <JsonContentTree v-for="(step, index) in steps" :key="index" :label="`步骤 ${index + 1}`" :value="step" />
+          <NEmpty v-if="!steps.length" description="当前结构没有通用步骤数组，请使用 JSON 树查看完整内容。" size="small" />
+        </NTabPane>
+        <NTabPane name="tree" tab="JSON 树">
+          <JsonContentTree label="用例" :value="content" />
+        </NTabPane>
+        <NTabPane name="raw" tab="JSON 原文">
+          <pre class="json-raw">{{ JSON.stringify(content, null, 2) }}</pre>
+        </NTabPane>
+        <NTabPane name="edit" tab="编辑新版本" :disabled="!canWrite || record.lifecycle_status === 'archived'">
+          <NAlert type="info" :bordered="false" style="margin-bottom: 12px">
+            保存将追加草稿版本，保留原版本与已冻结的运行依据。
+          </NAlert>
+          <NForm label-placement="top">
+            <NFormItem label="用例自身说明">
+              <NInput v-model:value="notes" type="textarea" :autosize="{ minRows: 3, maxRows: 6 }" />
+            </NFormItem>
+            <NFormItem label="完整 JSON">
+              <NInput v-model:value="editor" type="textarea" :autosize="{ minRows: 18, maxRows: 32 }" class="json-editor" />
+            </NFormItem>
+          </NForm>
+          <NButton type="primary" :loading="saving" :disabled="!canWrite || record.lifecycle_status === 'archived' || reviewing" @click="save">
+            保存新草稿版本
+          </NButton>
+        </NTabPane>
+      </NTabs>
+
+      <NCollapse style="margin-top: 12px">
+        <NCollapseItem title="来源及生成依据" name="source" display-directive="show">
+          <JsonContentTree label="来源" :value="current.source_refs" />
+          <JsonContentTree label="生成记录" :value="current.generation_metadata ?? {}" />
+          <small>SHA256 {{ current.content_hash }}</small>
+        </NCollapseItem>
+        <NCollapseItem title="版本评审记录" name="reviews" display-directive="show">
+          <JsonContentTree label="评审" :value="record.version_reviews?.[current.id] ?? { status: reviewStatus(current), origin: 'legacy_state' }" />
+        </NCollapseItem>
+      </NCollapse>
+    </template>
+    <NEmpty v-else-if="!loading" description="没有可查看的用例版本。" />
+
+    <template #footer>
+      <div class="dialog-actions">
+        <NButton :disabled="saving || reviewing" @click="close">关闭</NButton>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
 @import "./caseDialogs.css";
+
+.version-form {
+  margin-bottom: 4px;
+}
+
+.json-raw {
+  max-height: 420px;
+  overflow: auto;
+  font-size: 12px;
+}
+
+.json-editor :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
 </style>

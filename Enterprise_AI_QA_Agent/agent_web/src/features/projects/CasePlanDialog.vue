@@ -1,5 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import {
+  NAlert,
+  NButton,
+  NCollapse,
+  NCollapseItem,
+  NCheckbox,
+  NForm,
+  NFormItem,
+  NInput,
+  NInputNumber,
+  NModal,
+  NSelect,
+  NTag,
+} from "naive-ui";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type { CasePlanItem, CasePlanRecord, CasePlanRunRequest, CasePlanningConfig, ModeDescriptor, TestRunDetail, RegressionPlanningSelection } from "../../types";
@@ -10,6 +24,11 @@ import BusinessEnvironmentSnapshotPicker from "./BusinessEnvironmentSnapshotPick
 
 const props = withDefaults(defineProps<{ projectId: string; candidateCaseIds: string[]; modes?: ModeDescriptor[]; initialTaskId?: string; regression?: RegressionPlanningSelection; candidateOnly?: boolean }>(), { modes: () => [], candidateOnly: false });
 const emit = defineEmits<{ close: []; started: [detail: TestRunDetail]; candidate: [plan: CasePlanRecord] }>();
+const show = ref(true);
+function close() {
+  show.value = false;
+  emit("close");
+}
 const objective = ref("");
 const runtimeJson = ref("{}");
 const config = ref<CasePlanningConfig | null>(null);
@@ -34,6 +53,7 @@ function chooseRegressionVersion(caseId: string, versionId: string | null, selec
   else delete regressionVersions.value[caseId];
 }
 const testModes = computed(() => props.modes.filter(mode => mode.is_test_mode));
+const testModeOptions = computed(() => testModes.value.map(mode => ({ label: mode.name, value: mode.key })));
 const canLaunch = computed(() => plan.value && ["planned", "blocked"].includes(plan.value.status)
   && plan.value.decision?.items.some(item => item.kind === "target"));
 watch(testModes, modes => {
@@ -149,24 +169,24 @@ async function remember() {
   catch (err) { showError(err); }
   finally { busy.value = false; }
 }
-function chooseReceiptCorrection(event: Event) {
+function chooseReceiptCorrection(checked: boolean) {
   if (!config.value) return;
-  if ((event.target as HTMLInputElement).checked) config.value.policy.receipt_correction_protocol = "case-receipt-correction-v1";
+  if (checked) config.value.policy.receipt_correction_protocol = "case-receipt-correction-v1";
   else {
     delete config.value.policy.receipt_correction_protocol;
     delete config.value.policy.receipt_correction_transport_options;
   }
 }
-function chooseReceiptTransport(event: Event) {
+function chooseReceiptTransport(checked: boolean) {
   if (!config.value?.policy.receipt_correction_protocol) return;
-  if ((event.target as HTMLInputElement).checked) {
+  if (checked) {
     config.value.policy.receipt_correction_transport_options = { timeout_seconds: 60, max_retries: 0 };
   } else delete config.value.policy.receipt_correction_transport_options;
 }
-function chooseActionBinding(event: Event) {
+function chooseActionBinding(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) config.value.policy.action_binding_protocol = "case-action-binding-v1";
+  if (checked) config.value.policy.action_binding_protocol = "case-action-binding-v1";
   else {
     delete config.value.policy.action_binding_protocol;
     delete config.value.policy.action_admission_protocol;
@@ -179,10 +199,10 @@ function chooseActionBinding(event: Event) {
     delete config.value.policy.planning_stage_protocol;
   }
 }
-function chooseActionAdmission(event: Event) {
+function chooseActionAdmission(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) {
+  if (checked) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
   } else {
@@ -196,10 +216,10 @@ function chooseActionAdmission(event: Event) {
     delete config.value.policy.planning_stage_protocol;
   }
 }
-function chooseOperationRecovery(event: Event) {
+function chooseOperationRecovery(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) {
+  if (checked) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
     config.value.policy.operation_protocol = "case-operation-v1";
@@ -213,10 +233,10 @@ function chooseOperationRecovery(event: Event) {
     delete config.value.policy.planning_stage_protocol;
   }
 }
-function choosePreparationScopes(event: Event) {
+function choosePreparationScopes(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) {
+  if (checked) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
     config.value.policy.operation_protocol = "case-operation-v1";
@@ -230,10 +250,10 @@ function choosePreparationScopes(event: Event) {
     delete config.value.policy.planning_stage_protocol;
   }
 }
-function chooseEffectEvidence(event: Event) {
+function chooseEffectEvidence(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) {
+  if (checked) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
     config.value.policy.operation_protocol = "case-operation-v1";
@@ -247,10 +267,10 @@ function chooseEffectEvidence(event: Event) {
     delete config.value.policy.planning_stage_protocol;
   }
 }
-function chooseEffectCoverage(event: Event) {
+function chooseEffectCoverage(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) {
+  if (checked) {
     config.value.policy.action_binding_protocol = "case-action-binding-v1";
     config.value.policy.action_admission_protocol = "case-action-admission-v1";
     config.value.policy.operation_protocol = "case-operation-v1";
@@ -263,11 +283,11 @@ function chooseEffectCoverage(event: Event) {
     delete config.value.policy.planning_stage_protocol;
   }
 }
-function choosePlanningStages(event: Event) {
+function choosePlanningStages(checked: boolean) {
   if (!config.value) return;
   downgradeFormalEffects();
-  if ((event.target as HTMLInputElement).checked) {
-    chooseEffectCoverage(event);
+  if (checked) {
+    chooseEffectCoverage(true);
     config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v1";
   } else delete config.value.policy.planning_stage_protocol;
 }
@@ -280,9 +300,9 @@ function downgradeFormalEffects() {
   policy.effect_coverage_protocol = "case-effect-coverage-v1";
   policy.planning_stage_protocol = "case-planning-staged-evidence-v1";
 }
-function chooseFormalEffects(event: Event) {
+function chooseFormalEffects(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { downgradeFormalEffects(); return; }
+  if (!checked) { downgradeFormalEffects(); return; }
   config.value.policy.action_binding_protocol = "case-action-binding-v1";
   config.value.policy.action_admission_protocol = "case-action-admission-v1";
   config.value.policy.operation_protocol = "case-operation-v1";
@@ -291,31 +311,31 @@ function chooseFormalEffects(event: Event) {
   config.value.policy.effect_coverage_protocol = "case-effect-coverage-v2";
   if (config.value.policy.planning_stage_protocol !== "case-planning-staged-evidence-v3") config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
 }
-function chooseDocumentExpected(event: Event) {
+function chooseDocumentExpected(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) {
+  if (!checked) {
     downgradeEffectTasks();
     delete config.value.policy.effect_expected_source_protocol; delete config.value.policy.operation_prefetch_protocol;
     delete config.value.policy.source_identity_protocol; delete config.value.policy.linked_source_protocol; delete config.value.policy.evidence_reference_protocol; delete config.value.policy.scene_query_protocol; delete config.value.policy.scene_receipt_protocol; return;
   }
-  chooseFormalEffects(event);
+  chooseFormalEffects(true);
   config.value.policy.effect_expected_source_protocol = "case-effect-document-expected-v1";
 }
-function chooseConsumptionPhase(event: Event) {
+function chooseConsumptionPhase(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.consumption_protocol; return; }
-  chooseFormalEffects(event);
+  if (!checked) { delete config.value.policy.consumption_protocol; return; }
+  chooseFormalEffects(true);
   config.value.policy.consumption_protocol = "case-consumption-phase-v1";
 }
-function chooseOperationPrefetch(event: Event) {
+function chooseOperationPrefetch(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.operation_prefetch_protocol; return; }
-  chooseDocumentExpected(event);
+  if (!checked) { delete config.value.policy.operation_prefetch_protocol; return; }
+  chooseDocumentExpected(true);
   config.value.policy.operation_prefetch_protocol = "case-planning-declared-operation-prefetch-v1";
 }
-function chooseSourceIdentity(event: Event) {
+function chooseSourceIdentity(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) {
+  if (!checked) {
     downgradeEffectTasks();
     delete config.value.policy.evidence_reference_protocol;
     delete config.value.policy.linked_source_protocol;
@@ -327,59 +347,59 @@ function chooseSourceIdentity(event: Event) {
     }
     return;
   }
-  chooseDocumentExpected(event);
+  chooseDocumentExpected(true);
   config.value.policy.source_identity_protocol = "case-planning-source-full-hash-v1";
 }
-function chooseItemOperations(event: Event) {
+function chooseItemOperations(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) {
+  if (!checked) {
     if (config.value.policy.operation_prefetch_protocol === "case-planning-item-operation-prefetch-v2") {
       config.value.policy.operation_prefetch_protocol = "case-planning-declared-operation-prefetch-v1";
     }
     return;
   }
-  chooseSourceIdentity(event);
+  chooseSourceIdentity(true);
   config.value.policy.operation_prefetch_protocol = "case-planning-item-operation-prefetch-v2";
 }
-function chooseLinkedSources(event: Event) {
+function chooseLinkedSources(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) {
+  if (!checked) {
     delete config.value.policy.linked_source_protocol;
     if (!config.value.policy.scene_query_protocol) delete config.value.policy.scene_receipt_protocol;
     return;
   }
-  chooseSourceIdentity(event);
+  chooseSourceIdentity(true);
   config.value.policy.linked_source_protocol = "case-planning-linked-sources-v2";
 }
-function chooseEvidenceReferences(event: Event) {
+function chooseEvidenceReferences(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { downgradeEffectTasks(); delete config.value.policy.evidence_reference_protocol; return; }
-  chooseSourceIdentity(event);
+  if (!checked) { downgradeEffectTasks(); delete config.value.policy.evidence_reference_protocol; return; }
+  chooseSourceIdentity(true);
   config.value.policy.evidence_reference_protocol = config.value.policy.evidence_reference_protocol ?? "case-planning-evidence-references-v1";
 }
 function downgradeEffectTasks() {
   if (config.value?.policy.planning_stage_protocol === "case-planning-staged-evidence-v3") config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v2";
 }
-function chooseEffectTasks(event: Event) {
+function chooseEffectTasks(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { downgradeEffectTasks(); return; }
-  chooseEvidenceReferences(event);
+  if (!checked) { downgradeEffectTasks(); return; }
+  chooseEvidenceReferences(true);
   config.value.policy.planning_stage_protocol = "case-planning-staged-evidence-v3";
 }
-function chooseSceneQueries(event: Event) {
+function chooseSceneQueries(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) {
+  if (!checked) {
     delete config.value.policy.scene_query_protocol;
     if (config.value.policy.linked_source_protocol !== "case-planning-linked-sources-v2") delete config.value.policy.scene_receipt_protocol;
     return;
   }
-  chooseSourceIdentity(event);
+  chooseSourceIdentity(true);
   config.value.policy.scene_query_protocol = "case-planning-scene-query-v1";
 }
-function chooseSceneReceipt(event: Event) {
+function chooseSceneReceipt(checked: boolean) {
   if (!config.value) return;
-  if (!(event.target as HTMLInputElement).checked) { delete config.value.policy.scene_receipt_protocol; return; }
-  chooseSceneQueries(event);
+  if (!checked) { delete config.value.policy.scene_receipt_protocol; return; }
+  chooseSceneQueries(true);
   config.value.policy.scene_receipt_protocol = "case-scene-receipt-v1";
 }
 async function openSaved() {
@@ -393,163 +413,377 @@ onMounted(loadPolicy);
 </script>
 
 <template>
-  <div class="case-dialog-backdrop" @click.self="!busy && emit('close')">
-    <section class="case-dialog" role="dialog" aria-modal="true" aria-label="用例执行规划">
-      <header><h2>用例执行规划</h2><button :disabled="busy" @click="emit('close')">关闭</button></header>
-      <p>AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。</p>
-      <p v-if="regression">原运行：{{ regression.parentRunId }} · {{ regression.resultIds.length ? `已选 ${regression.resultIds.length} 条失败项` : '全部可回归失败项' }}。固定目标及版本后规划必要前置，原失败结果保留。</p>
-      <p v-if="regression && regressionLocked && !plan">本次回归选择已固定，正在按原任务查询；实际版本以保存的计划为准。</p>
-      <fieldset v-if="regression?.versionOptions?.length && (!regressionLocked || plan?.regression)"><legend>回归用例版本</legend>
-        <p>默认重测原失败版本。勾选后使用该用例当前已启用版本重新规划，未勾选项仍保留原版本；提交后本次选择固定。</p>
-        <label v-for="choice in regression.versionOptions" :key="choice.caseId">
-          <input type="checkbox" :checked="!!regressionVersions[choice.caseId]" :disabled="busy || regressionLocked || !choice.activeVersionId || choice.activeVersionId === choice.originalVersionId"
-            @change="chooseRegressionVersion(choice.caseId, choice.activeVersionId, ($event.target as HTMLInputElement).checked)">
+
+<NModal
+    v-model:show="show"
+    preset="card"
+    title="用例执行规划"
+    style="width: min(1040px, 97vw)"
+    :mask-closable="!busy"
+    :close-on-esc="!busy"
+    @update:show="!$event && close()"
+  >
+    <p class="dialog-hint">AI 根据测试目标选择项目内用例，并补足必要前置。生成计划只保存执行依据；启动后的进度与结果以运行详情为准。</p>
+
+    <NAlert v-if="regression" type="info" :bordered="false" style="margin: 12px 0">
+      原运行：{{ regression.parentRunId }} ·
+      {{ regression.resultIds.length ? `已选 ${regression.resultIds.length} 条失败项` : '全部可回归失败项' }}。
+      固定目标及版本后规划必要前置，原失败结果保留。
+    </NAlert>
+    <NAlert v-if="regression && regressionLocked && !plan" type="info" :bordered="false" style="margin-bottom: 12px">
+      本次回归选择已固定，正在按原任务查询；实际版本以保存的计划为准。
+    </NAlert>
+
+    <section v-if="regression?.versionOptions?.length && (!regressionLocked || plan?.regression)" class="plan-section">
+      <h3>回归用例版本</h3>
+      <p class="dialog-hint">默认重测原失败版本。勾选后使用该用例当前已启用版本重新规划，未勾选项仍保留原版本；提交后本次选择固定。</p>
+      <div class="policy-checks">
+        <NCheckbox
+          v-for="choice in regression.versionOptions"
+          :key="choice.caseId"
+          :checked="!!regressionVersions[choice.caseId]"
+          :disabled="busy || regressionLocked || !choice.activeVersionId || choice.activeVersionId === choice.originalVersionId"
+          @update:checked="(checked: boolean) => chooseRegressionVersion(choice.caseId, choice.activeVersionId, checked)"
+        >
           {{ choice.title }} · 原版本 {{ choice.originalVersionId }} → {{ choice.activeVersionId || '暂无启用版本' }}
-        </label>
-      </fieldset>
-      <template v-if="!regression">
-        <p>{{ candidateCaseIds.length ? `以已选的 ${candidateCaseIds.length} 条用例为初始候选，必要前置仍在当前项目内查询。` : '根据目标召回当前项目内的已启用用例。' }}</p>
-        <label>测试目标<textarea v-model="objective" :disabled="busy" maxlength="20000" placeholder="说明本次要验证的功能与约束" /></label>
-        <label>已有运行信息（JSON）<textarea v-model="runtimeJson" :disabled="busy" placeholder='例如：{"order_id":"本次已有订单编号"}' /></label>
-        <div class="environment-selection">
-          <button type="button" :disabled="busy" @click="environmentPickerOpen = true">选择固定测试环境快照（可选）</button>
-          <p v-if="environmentSelection">规划请求将固定环境 {{ environmentSelection.environment_id }}、快照 {{ environmentSelection.snapshot_id }} 及其哈希。</p>
-          <p v-else>未选择时按现有项目规划方式执行。</p>
+        </NCheckbox>
+      </div>
+    </section>
+
+    <template v-if="!regression">
+      <p class="dialog-hint">
+        {{ candidateCaseIds.length ? `以已选的 ${candidateCaseIds.length} 条用例为初始候选，必要前置仍在当前项目内查询。` : '根据目标召回当前项目内的已启用用例。' }}
+      </p>
+      <NForm label-placement="top">
+        <NFormItem label="测试目标" required>
+          <NInput
+            v-model:value="objective"
+            type="textarea"
+            :autosize="{ minRows: 4, maxRows: 10 }"
+            maxlength="20000"
+            show-count
+            :disabled="busy"
+            placeholder="说明本次要验证的功能与约束"
+          />
+        </NFormItem>
+        <NFormItem label="已有运行信息（JSON）">
+          <NInput
+            v-model:value="runtimeJson"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 6 }"
+            :disabled="busy"
+            placeholder='例如：{"order_id":"本次已有订单编号"}'
+          />
+        </NFormItem>
+      </NForm>
+      <div class="environment-selection">
+        <NButton size="small" :disabled="busy" @click="environmentPickerOpen = true">选择固定测试环境快照（可选）</NButton>
+        <p v-if="environmentSelection" class="dialog-hint">
+          规划请求将固定环境 {{ environmentSelection.environment_id }}、快照 {{ environmentSelection.snapshot_id }} 及其哈希。
+        </p>
+        <p v-else class="dialog-hint">未选择时按现有项目规划方式执行。</p>
+        <BusinessEnvironmentSnapshotPicker
+          v-if="environmentPickerOpen"
+          v-model="environmentSelection"
+          :project-id="projectId"
+          @close="environmentPickerOpen = false"
+        />
+      </div>
+    </template>
+
+    <NCollapse v-if="config" class="policy-collapse">
+      <NCollapseItem title="规划设置" name="policy">
+        <NForm label-placement="top" class="policy-form">
+          <div class="policy-fields">
+            <NFormItem label="最多查询回合">
+              <NInputNumber v-model:value="config.policy.max_rounds" :min="1" :max="20" :disabled="busy" />
+            </NFormItem>
+            <NFormItem label="每次候选数量">
+              <NInputNumber v-model:value="config.policy.max_candidates" :min="1" :max="50" :disabled="busy" />
+            </NFormItem>
+            <NFormItem label="最多执行项">
+              <NInputNumber v-model:value="config.policy.max_items" :min="1" :max="200" :disabled="busy" />
+            </NFormItem>
+            <NFormItem label="上下文字符上限">
+              <NInputNumber v-model:value="config.policy.max_context_chars" :min="10000" :max="1000000" :disabled="busy" />
+            </NFormItem>
+            <NFormItem label="超时秒数">
+              <NInputNumber v-model:value="config.policy.timeout_seconds" :min="1" :max="600" :disabled="busy" />
+            </NFormItem>
+          </div>
+
+          <div class="policy-checks">
+            <NCheckbox data-testid="action-binding" :checked="config.policy.action_binding_protocol === 'case-action-binding-v1'" :disabled="busy" @update:checked="chooseActionBinding">
+              记录工具所属执行项
+            </NCheckbox>
+            <NCheckbox data-testid="action-admission" :checked="config.policy.action_admission_protocol === 'case-action-admission-v1'" :disabled="busy" @update:checked="chooseActionAdmission">
+              执行前核对当前失效确认
+            </NCheckbox>
+            <NCheckbox data-testid="operation-recovery" :checked="config.policy.operation_protocol === 'case-operation-v1'" :disabled="busy" @update:checked="chooseOperationRecovery">
+              按逻辑操作恢复结果
+            </NCheckbox>
+            <NCheckbox data-testid="preparation-scopes" :checked="!!config.policy.preparation_scope_protocol" :disabled="busy" @update:checked="choosePreparationScopes">
+              按准备消费范围安排清理
+            </NCheckbox>
+            <NCheckbox data-testid="effect-evidence" :checked="!!config.policy.effect_evidence_protocol" :disabled="busy" @update:checked="chooseEffectEvidence">
+              保存实际对象证据
+            </NCheckbox>
+            <NCheckbox data-testid="formal-effects" :checked="['case-planning-staged-evidence-v2', 'case-planning-staged-evidence-v3'].includes(config.policy.planning_stage_protocol || '')" :disabled="busy" @update:checked="chooseFormalEffects">
+              支持正式用例内的产生与清理
+            </NCheckbox>
+            <NCheckbox data-testid="document-expected" :checked="!!config.policy.effect_expected_source_protocol" :disabled="busy" @update:checked="chooseDocumentExpected">
+              允许引用固定项目文档中的预期
+            </NCheckbox>
+            <NCheckbox data-testid="operation-prefetch" :checked="!!config.policy.operation_prefetch_protocol" :disabled="busy" @update:checked="chooseOperationPrefetch">
+              自动读取计划已明确选择的工具操作说明
+            </NCheckbox>
+            <NCheckbox data-testid="source-identity" :checked="!!config.policy.source_identity_protocol" :disabled="busy" @update:checked="chooseSourceIdentity">
+              使用统一的文档与录制引用
+            </NCheckbox>
+            <NCheckbox data-testid="item-operation-selections" :checked="config.policy.operation_prefetch_protocol === 'case-planning-item-operation-prefetch-v2'" :disabled="busy" @update:checked="chooseItemOperations">
+              读取正式用例及准备项已选操作的接口
+            </NCheckbox>
+            <NCheckbox data-testid="linked-sources" :checked="!!config.policy.linked_source_protocol" :disabled="busy" @update:checked="chooseLinkedSources">
+              规划前读取用例明确关联的文档与场景
+            </NCheckbox>
+            <NCheckbox data-testid="scene-queries" :checked="!!config.policy.scene_query_protocol" :disabled="busy" @update:checked="chooseSceneQueries">
+              允许规划时查询项目场景
+            </NCheckbox>
+            <NCheckbox data-testid="scene-receipts" :checked="!!config.policy.scene_receipt_protocol" :disabled="busy" @update:checked="chooseSceneReceipt">
+              允许按固定场景预期核对结果
+            </NCheckbox>
+            <NCheckbox data-testid="evidence-references" :checked="!!config.policy.evidence_reference_protocol" :disabled="busy" @update:checked="chooseEvidenceReferences">
+              由系统还原证据引用
+            </NCheckbox>
+            <NCheckbox data-testid="effect-tasks" :checked="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v3'" :disabled="busy" @update:checked="chooseEffectTasks">
+              分开补充传值、产生与清理证据
+            </NCheckbox>
+            <NCheckbox data-testid="effect-coverage" :checked="!!config.policy.effect_coverage_protocol" :disabled="busy" @update:checked="chooseEffectCoverage">
+              核对原对象清理覆盖
+            </NCheckbox>
+            <NCheckbox data-testid="consumption-phase-policy" :checked="!!config.policy.consumption_protocol" :disabled="busy" @update:checked="chooseConsumptionPhase">
+              清理前核验消费阶段结束
+            </NCheckbox>
+            <NCheckbox data-testid="planning-stages" :checked="!!config.policy.planning_stage_protocol" :disabled="busy" @update:checked="choosePlanningStages">
+              分阶段生成执行计划
+            </NCheckbox>
+            <NCheckbox :checked="!!config.policy.receipt_correction_protocol" :disabled="busy" @update:checked="chooseReceiptCorrection">
+              回执错误时只读纠正一次
+            </NCheckbox>
+            <NCheckbox v-if="config.policy.receipt_correction_protocol" data-testid="receipt-transport" :checked="!!config.policy.receipt_correction_transport_options" :disabled="busy" @update:checked="chooseReceiptTransport">
+              单独设置回执调用超时和重试
+            </NCheckbox>
+          </div>
+
+          <p v-if="config.policy.effect_expected_source_protocol" class="dialog-hint">保留原用例内容，预期引用已读取的文档版本和具体原文。影响后续计划。</p>
+          <p v-if="config.policy.linked_source_protocol" class="dialog-hint">保留来源版本和读取范围。仅有文档编号的引用标为当前关联资料；场景必须有明确版本和哈希，缺失时显示缺口。</p>
+          <p v-if="config.policy.linked_source_protocol === 'case-planning-linked-documents-v1'" class="dialog-hint">当前配置只读取关联文档。取消后重新勾选并保存，可同时读取明确关联的场景。</p>
+          <p v-if="config.policy.scene_query_protocol" class="dialog-hint">按缺口查找场景，再读取固定版本的完整步骤、响应和元素别名；目录不代表已执行。</p>
+          <p v-if="config.policy.scene_receipt_protocol" class="dialog-hint">后续运行可引用已读场景中保存的预期，与本次真实工具记录核对；仍须验证用例要求，场景可读不代表通过。</p>
+          <p v-if="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v3'" class="dialog-hint">每步保存结果并共用原回合数和超时；全部校验后才能启动测试。</p>
+          <p v-if="config.policy.effect_evidence_protocol" class="dialog-hint">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
+          <p v-if="config.policy.effect_coverage_protocol" class="dialog-hint">核对固定声明范围内的所有原对象及清理证据。未覆盖或来源未知时保留缺口，不代表共享消费已完成。</p>
+          <p v-if="config.policy.consumption_protocol" class="dialog-hint">消费结束后继续清理；失败结果保留。证据未知时不发送清理，旧运行保持原策略。</p>
+          <p v-if="config.policy.planning_stage_protocol" class="dialog-hint">先确定用例、必要前置和顺序，再补充执行证据；两阶段共用本次回合数和超时，全部校验后才可启动。</p>
+          <p class="dialog-hint">只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
+          <p v-if="config.policy.receipt_correction_protocol" class="dialog-hint">使用原预算和已保存证据，不重复测试操作。设置仅影响新计划，历史运行保留原策略。</p>
+
+          <div v-if="config.policy.receipt_correction_transport_options" class="policy-fields">
+            <NFormItem label="回执调用超时（秒）">
+              <NInputNumber data-testid="receipt-timeout" v-model:value="config.policy.receipt_correction_transport_options.timeout_seconds" :min="0.1" :max="600" :step="0.1" :disabled="busy" />
+            </NFormItem>
+            <NFormItem label="回执发送失败后的重试次数">
+              <NInputNumber data-testid="receipt-retries" v-model:value="config.policy.receipt_correction_transport_options.max_retries" :min="0" :max="10" :step="1" :disabled="busy" />
+            </NFormItem>
+          </div>
+          <p v-if="config.policy.receipt_correction_transport_options" class="dialog-hint">只读纠正最多进行一次。发送失败是否重试由这里的设置决定；0 表示只发送一次。未单独设置时沿用模型默认调用设置。</p>
+          <div v-if="config.policy.effect_evidence_protocol" class="policy-fields">
+            <NFormItem label="对象证据预算（字节）">
+              <NInputNumber
+                data-testid="effect-evidence-budget"
+                :value="config?.policy.effect_evidence_max_bytes ?? null"
+                :min="1"
+                :max="10000000"
+                :disabled="busy"
+                placeholder="512000"
+                @update:value="(value: number | null) => { if (config) config.policy.effect_evidence_max_bytes = value ?? undefined; }"
+              />
+            </NFormItem>
+          </div>
+          <div v-if="config.policy.effect_coverage_protocol" class="policy-fields">
+            <NFormItem label="覆盖证据预算（字节）">
+              <NInputNumber
+                data-testid="effect-coverage-budget"
+                :value="config?.policy.effect_coverage_max_bytes ?? null"
+                :min="1"
+                :max="10000000"
+                :disabled="busy"
+                placeholder="1024000"
+                @update:value="(value: number | null) => { if (config) config.policy.effect_coverage_max_bytes = value ?? undefined; }"
+              />
+            </NFormItem>
+          </div>
+        </NForm>
+        <NButton size="small" :disabled="busy" @click="remember">保存项目规划设置</NButton>
+      </NCollapseItem>
+    </NCollapse>
+
+    <NAlert v-if="error" type="error" :bordered="false" style="margin-top: 12px">{{ error }}</NAlert>
+    <NAlert v-if="notice" type="success" :bordered="false" style="margin-top: 12px">{{ notice }}</NAlert>
+
+    <CasePlanningTaskPanel
+      :project-id="projectId"
+      :objective="objective"
+      :runtime-json="runtimeJson"
+      :environment="environmentSelection"
+      :candidate-case-ids="candidateCaseIds"
+      :initial-task-id="initialTaskId"
+      :regression="regressionRequest"
+      :disabled="busy || !config"
+      @submitted="regressionLocked = true"
+      @selection-required="regressionLocked = false"
+      @completed="selectPlan"
+    />
+
+    <div v-if="!regression" class="dialog-actions-left plan-saved">
+      <NFormItem label="已保存的计划编号" :show-feedback="false" label-placement="left">
+        <NInput v-model:value="savedId" :disabled="busy" placeholder="输入当前项目的计划编号" style="width: 320px" />
+      </NFormItem>
+      <NButton size="small" :disabled="busy || !savedId.trim()" @click="openSaved">查看已保存计划</NButton>
+    </div>
+
+    <template v-if="plan">
+      <h3 class="plan-title">{{ statusLabels[plan.status] }}</h3>
+      <p class="dialog-hint">
+        {{ plan.status === "no_match" ? "未找到符合本次目标的正式用例；本次未创建测试运行。" : plan.summary }}
+      </p>
+      <section v-if="plan.environment" class="fixed-environment">
+        <h3>计划固定的目标环境</h3>
+        <p>{{ plan.environment.snapshot.configuration.payload.display_name }} · {{ plan.environment.snapshot.configuration.payload.base_url }}</p>
+        <p>快照 {{ plan.environment.snapshot.id }} · 配置修订 {{ plan.environment.snapshot.configuration.revision }} · 部署状态未知</p>
+      </section>
+      <NAlert v-if="plan.regression" type="info" :bordered="false" style="margin-bottom: 12px">
+        回归来源：{{ plan.regression.parent_run_id }} · {{ Object.keys(plan.regression.source_results_by_case).length }} 条固定失败项。
+        新运行结果关联原失败，准备成功不计为目标通过。
+      </NAlert>
+
+      <section v-if="canLaunch && !candidateOnly" class="launch-controls">
+        <p class="dialog-hint">启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。</p>
+        <NForm label-placement="top">
+          <NFormItem label="执行测试模式">
+            <NSelect
+              :value="modeKey"
+              :options="[...(pendingRequest || plan.regression) && !testModes.some(mode => mode.key === modeKey) ? [{ label: `${modeKey}（已保存的选项）`, value: modeKey }] : [], ...testModeOptions]"
+              :disabled="busy || !!pendingRequest || !!plan.regression"
+              style="width: 260px"
+              @update:value="(value: string) => { modeKey = value; }"
+            />
+          </NFormItem>
+          <NFormItem label="关联会话编号（可选）">
+            <NInput
+              v-model:value="sessionId"
+              :disabled="busy || !!pendingRequest || !!plan.regression"
+              maxlength="160"
+              placeholder="会话必须属于当前项目"
+              style="width: 320px"
+            />
+          </NFormItem>
+        </NForm>
+        <p v-if="pendingRequest" class="dialog-hint">启动请求编号：{{ pendingRequest.creation_key }}</p>
+        <NAlert v-if="storageWarning" type="warning" :bordered="false" style="margin-bottom: 12px">{{ storageWarning }}</NAlert>
+        <div v-if="knownRunId" class="dialog-actions-left">
+          <span class="dialog-hint">已保存运行：{{ knownRunId }}</span>
+          <NButton size="small" :disabled="busy" @click="viewRun">查看运行</NButton>
+          <NButton size="small" :disabled="busy" @click="newRun">另建一次运行</NButton>
         </div>
-        <BusinessEnvironmentSnapshotPicker v-if="environmentPickerOpen" v-model="environmentSelection"
-          :project-id="projectId" @close="environmentPickerOpen = false" />
-      </template>
-      <details v-if="config"><summary>规划设置</summary><div class="policy-fields">
-        <label>最多查询回合<input v-model.number="config.policy.max_rounds" :disabled="busy" type="number" min="1" max="20"></label>
-        <label>每次候选数量<input v-model.number="config.policy.max_candidates" :disabled="busy" type="number" min="1" max="50"></label>
-        <label>最多执行项<input v-model.number="config.policy.max_items" :disabled="busy" type="number" min="1" max="200"></label>
-        <label>上下文字符上限<input v-model.number="config.policy.max_context_chars" :disabled="busy" type="number" min="10000" max="1000000"></label>
-        <label>超时秒数<input v-model.number="config.policy.timeout_seconds" :disabled="busy" type="number" min="1" max="600"></label>
-        <label><input data-testid="action-binding" type="checkbox" :disabled="busy"
-          :checked="config.policy.action_binding_protocol === 'case-action-binding-v1'" @change="chooseActionBinding">记录工具所属执行项</label>
-        <label><input type="checkbox" data-testid="action-admission" :disabled="busy"
-          :checked="config.policy.action_admission_protocol === 'case-action-admission-v1'" @change="chooseActionAdmission">执行前核对当前失效确认</label>
-        <label><input data-testid="operation-recovery" type="checkbox" :disabled="busy"
-          :checked="config.policy.operation_protocol === 'case-operation-v1'" @change="chooseOperationRecovery">按逻辑操作恢复结果</label>
-        <label><input data-testid="preparation-scopes" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.preparation_scope_protocol" @change="choosePreparationScopes">按准备消费范围安排清理</label>
-        <label><input data-testid="effect-evidence" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.effect_evidence_protocol" @change="chooseEffectEvidence">保存实际对象证据</label>
-        <label><input data-testid="formal-effects" type="checkbox" :disabled="busy"
-          :checked="['case-planning-staged-evidence-v2', 'case-planning-staged-evidence-v3'].includes(config.policy.planning_stage_protocol || '')" @change="chooseFormalEffects">支持正式用例内的产生与清理</label>
-        <label><input data-testid="document-expected" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.effect_expected_source_protocol" @change="chooseDocumentExpected">允许引用固定项目文档中的预期</label>
-        <p v-if="config.policy.effect_expected_source_protocol">保留原用例内容，预期引用已读取的文档版本和具体原文。影响后续计划。</p>
-        <label><input data-testid="operation-prefetch" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.operation_prefetch_protocol" @change="chooseOperationPrefetch">自动读取计划已明确选择的工具操作说明</label>
-        <label><input data-testid="source-identity" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.source_identity_protocol" @change="chooseSourceIdentity">使用统一的文档与录制引用</label>
-        <label><input data-testid="item-operation-selections" type="checkbox" :disabled="busy"
-          :checked="config.policy.operation_prefetch_protocol === 'case-planning-item-operation-prefetch-v2'"
-          @change="chooseItemOperations">读取正式用例及准备项已选操作的接口</label>
-        <label><input data-testid="linked-sources" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.linked_source_protocol" @change="chooseLinkedSources">规划前读取用例明确关联的文档与场景</label>
-        <p v-if="config.policy.linked_source_protocol">保留来源版本和读取范围。仅有文档编号的引用标为当前关联资料；场景必须有明确版本和哈希，缺失时显示缺口。</p>
-        <p v-if="config.policy.linked_source_protocol === 'case-planning-linked-documents-v1'">当前配置只读取关联文档。取消后重新勾选并保存，可同时读取明确关联的场景。</p>
-        <label><input data-testid="scene-queries" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.scene_query_protocol" @change="chooseSceneQueries">允许规划时查询项目场景</label>
-        <p v-if="config.policy.scene_query_protocol">按缺口查找场景，再读取固定版本的完整步骤、响应和元素别名；目录不代表已执行。</p>
-        <label><input data-testid="scene-receipts" type="checkbox" :disabled="busy" :checked="!!config.policy.scene_receipt_protocol" @change="chooseSceneReceipt">允许按固定场景预期核对结果</label>
-        <p v-if="config.policy.scene_receipt_protocol">后续运行可引用已读场景中保存的预期，与本次真实工具记录核对；仍须验证用例要求，场景可读不代表通过。</p>
-        <label><input data-testid="evidence-references" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.evidence_reference_protocol" @change="chooseEvidenceReferences">由系统还原证据引用</label>
-        <label><input data-testid="effect-tasks" type="checkbox" :disabled="busy"
-          :checked="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v3'" @change="chooseEffectTasks">分开补充传值、产生与清理证据</label>
-        <p v-if="config.policy.planning_stage_protocol === 'case-planning-staged-evidence-v3'">每步保存结果并共用原回合数和超时；全部校验后才能启动测试。</p>
-        <p v-if="config.policy.effect_evidence_protocol">保存声明路径中的实际返回与验证结果；可另启用清理覆盖核对。共享消费完成仍需验证。</p>
-        <label v-if="config.policy.effect_evidence_protocol">对象证据预算（字节）<input data-testid="effect-evidence-budget" v-model.number="config.policy.effect_evidence_max_bytes"
-          type="number" min="1" max="10000000" placeholder="512000" :disabled="busy"></label>
-        <label><input data-testid="effect-coverage" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.effect_coverage_protocol" @change="chooseEffectCoverage">核对原对象清理覆盖</label>
-        <label v-if="config.policy.effect_coverage_protocol">覆盖证据预算（字节）<input data-testid="effect-coverage-budget" v-model.number="config.policy.effect_coverage_max_bytes"
-          type="number" min="1" max="10000000" placeholder="1024000" :disabled="busy"></label>
-        <p v-if="config.policy.effect_coverage_protocol">核对固定声明范围内的所有原对象及清理证据。未覆盖或来源未知时保留缺口，不代表共享消费已完成。</p>
-        <label><input data-testid="consumption-phase-policy" type="checkbox" :disabled="busy"
-          :checked="!!config.policy.consumption_protocol" @change="chooseConsumptionPhase">清理前核验消费阶段结束</label>
-        <p v-if="config.policy.consumption_protocol">消费结束后继续清理；失败结果保留。证据未知时不发送清理，旧运行保持原策略。</p>
-        <label><input type="checkbox" data-testid="planning-stages" :disabled="busy"
-          :checked="!!config.policy.planning_stage_protocol" @change="choosePlanningStages">分阶段生成执行计划</label>
-        <p v-if="config.policy.planning_stage_protocol">先确定用例、必要前置和顺序，再补充执行证据；两阶段共用本次回合数和超时，全部校验后才可启动。</p>
-        <p>只影响后续计划。明确失效时停止尚未领取的目标与前置动作；后置步骤保留，实际清理仍需核对已创建数据。</p>
-        <label><input type="checkbox" :disabled="busy" :checked="!!config.policy.receipt_correction_protocol"
-          @change="chooseReceiptCorrection">回执错误时只读纠正一次</label>
-        <p v-if="config.policy.receipt_correction_protocol">使用原预算和已保存证据，不重复测试操作。设置仅影响新计划，历史运行保留原策略。</p>
-        <template v-if="config.policy.receipt_correction_protocol">
-          <label><input data-testid="receipt-transport" type="checkbox" :disabled="busy"
-            :checked="!!config.policy.receipt_correction_transport_options" @change="chooseReceiptTransport">单独设置回执调用超时和重试</label>
-          <template v-if="config.policy.receipt_correction_transport_options">
-            <label>回执调用超时（秒）<input data-testid="receipt-timeout" v-model.number="config.policy.receipt_correction_transport_options.timeout_seconds"
-              :disabled="busy" type="number" min="0.1" max="600" step="0.1"></label>
-            <label>回执发送失败后的重试次数<input data-testid="receipt-retries" v-model.number="config.policy.receipt_correction_transport_options.max_retries"
-              :disabled="busy" type="number" min="0" max="10" step="1"></label>
-          </template>
-          <p>只读纠正最多进行一次。发送失败是否重试由这里的设置决定；0 表示只发送一次。未单独设置时沿用模型默认调用设置。</p>
-        </template>
-      </div><button :disabled="busy" @click="remember">保存项目规划设置</button></details>
-      <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
-      <CasePlanningTaskPanel :project-id="projectId" :objective="objective" :runtime-json="runtimeJson"
-        :environment="environmentSelection"
-        :candidate-case-ids="candidateCaseIds" :initial-task-id="initialTaskId" :regression="regressionRequest" :disabled="busy || !config" @submitted="regressionLocked = true" @selection-required="regressionLocked = false" @completed="selectPlan" />
-      <template v-if="!regression"><label>已保存的计划编号<input v-model="savedId" :disabled="busy" placeholder="输入当前项目的计划编号"></label>
-        <button :disabled="busy || !savedId.trim()" @click="openSaved">查看已保存计划</button>
-      </template>
-      <template v-if="plan">
-        <h3>{{ statusLabels[plan.status] }}</h3><p>{{ plan.status === "no_match" ? "未找到符合本次目标的正式用例；本次未创建测试运行。" : plan.summary }}</p>
-        <section v-if="plan.environment" class="fixed-environment" aria-label="计划固定的目标环境">
-          <h3>计划固定的目标环境</h3>
-          <p>{{ plan.environment.snapshot.configuration.payload.display_name }} · {{ plan.environment.snapshot.configuration.payload.base_url }}</p>
-          <p>快照 {{ plan.environment.snapshot.id }} · 配置修订 {{ plan.environment.snapshot.configuration.revision }} · 部署状态未知</p>
-        </section>
-        <p v-if="plan.regression">回归来源：{{ plan.regression.parent_run_id }} · {{ Object.keys(plan.regression.source_results_by_case).length }} 条固定失败项。新运行结果关联原失败，准备成功不计为目标通过。</p>
-        <section v-if="canLaunch && !candidateOnly" class="launch-controls" aria-label="启动已保存计划">
-          <p>启动时使用这份计划中的固定用例版本和必要前置。运行保存后由 Worker 领取，保存成功不代表测试通过。</p>
-          <label>执行测试模式<select v-model="modeKey" :disabled="busy || !!pendingRequest || !!plan.regression">
-            <option v-if="(pendingRequest || plan.regression) && !testModes.some(mode => mode.key === modeKey)" :value="modeKey">{{ modeKey }}（已保存的选项）</option>
-            <option v-for="mode in testModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option>
-          </select></label>
-          <label>关联会话编号（可选）<input v-model="sessionId" :disabled="busy || !!pendingRequest || !!plan.regression" maxlength="160" placeholder="会话必须属于当前项目"></label>
-          <p v-if="pendingRequest">启动请求编号：{{ pendingRequest.creation_key }}</p>
-          <p v-if="storageWarning" role="status">{{ storageWarning }}</p>
-          <template v-if="knownRunId"><p>已保存运行：{{ knownRunId }}</p><button :disabled="busy" @click="viewRun">查看运行</button><button :disabled="busy" @click="newRun">另建一次运行</button></template>
-          <button v-else :disabled="busy || (!pendingRequest && !modeKey)" @click="launch">{{ pendingRequest ? '重试启动请求' : '启动测试运行' }}</button>
-        </section>
-        <section v-if="canLaunch && candidateOnly" class="launch-controls" aria-label="选择 Run 修订候选计划">
-          <p>候选计划已固定到项目和用例版本。请检查上方执行项、依赖和缺口，再选择是否用于当前 Run 修订。</p>
-          <p>候选计划编号：{{ plan.id }}</p>
-          <button type="button" :disabled="busy" @click="emit('candidate', plan!)">将此计划用于当前 Run 修订</button>
-        </section>
-        <ul v-if="plan.warnings.length"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
-        <details v-if="operationSelections.length"><summary>逻辑阶段选定的工具接口</summary><JsonContentTree :value="operationSelections" /></details>
-        <details v-if="linkedSourceReads"><summary>用例关联来源的固定读取记录</summary><JsonContentTree :value="linkedSourceReads" /></details>
-        <ul v-if="plan.decision?.unresolved.length" class="gaps"><li v-for="(gap, index) in plan.decision.unresolved" :key="index">{{ gap.item_key ? `${gap.item_key}：` : '' }}{{ gap.condition }} · {{ gap.reason }}</li></ul>
-        <ol class="plan-items"><li v-for="item in plan.decision?.items" :key="item.key">
-          <h4>{{ kindLabels[item.kind] }} · {{ title(item) }}</h4><p>{{ item.reason }}</p>
+        <NButton v-else type="primary" :loading="busy" :disabled="busy || (!pendingRequest && !modeKey)" @click="launch">
+          {{ pendingRequest ? '重试启动请求' : '启动测试运行' }}
+        </NButton>
+      </section>
+
+      <section v-if="canLaunch && candidateOnly" class="launch-controls">
+        <p class="dialog-hint">候选计划已固定到项目和用例版本。请检查上方执行项、依赖和缺口，再选择是否用于当前 Run 修订。</p>
+        <p class="dialog-hint">候选计划编号：{{ plan.id }}</p>
+        <NButton type="primary" :disabled="busy" @click="emit('candidate', plan)">将此计划用于当前 Run 修订</NButton>
+      </section>
+
+      <NAlert v-if="plan.warnings.length" type="warning" :bordered="false" style="margin-bottom: 12px">
+        <ul class="issue-list"><li v-for="(warning, index) in plan.warnings" :key="index">{{ warning }}</li></ul>
+      </NAlert>
+
+      <NCollapse style="margin-bottom: 12px" :default-expanded-names="['operations', 'linked']">
+        <NCollapseItem v-if="operationSelections.length" title="逻辑阶段选定的工具接口" name="operations">
+          <JsonContentTree :value="operationSelections" />
+        </NCollapseItem>
+        <NCollapseItem v-if="linkedSourceReads" title="用例关联来源的固定读取记录" name="linked">
+          <JsonContentTree :value="linkedSourceReads" />
+        </NCollapseItem>
+      </NCollapse>
+
+      <NAlert v-if="plan.decision?.unresolved.length" type="warning" :bordered="false" style="margin-bottom: 12px">
+        <ul class="issue-list">
+          <li v-for="(gap, index) in plan.decision.unresolved" :key="index">
+            {{ gap.item_key ? `${gap.item_key}：` : '' }}{{ gap.condition }} · {{ gap.reason }}
+          </li>
+        </ul>
+      </NAlert>
+
+      <ol class="plan-items">
+        <li v-for="item in plan.decision?.items" :key="item.key">
+          <h4>{{ kindLabels[item.kind] }} · {{ title(item) }}</h4>
+          <p>{{ item.reason }}</p>
           <p v-if="item.depends_on.length">等待前置：{{ item.depends_on.join('、') }}</p>
           <p v-if="evidence(item)?.payload.execution_notes">{{ evidence(item)?.payload.execution_notes }}</p>
-          <details><summary>{{ item.kind === 'prepare' ? '准备操作与验证点' : '完整固定用例' }}</summary><JsonContentTree :value="content(item)" /></details>
-          <details v-if="Object.keys(item.input_bindings).length"><summary>数据来源</summary><JsonContentTree :value="item.input_bindings" /></details>
+          <NCollapse :default-expanded-names="(plan.decision?.items ?? []).flatMap(item => [`content-${item.key}`, `bindings-${item.key}`, `effect-${item.key}`, `declarations-${item.key}`])">
+            <NCollapseItem :title="item.kind === 'prepare' ? '准备操作与验证点' : '完整固定用例'" :name="`content-${item.key}`">
+              <JsonContentTree :value="content(item)" />
+            </NCollapseItem>
+            <NCollapseItem v-if="Object.keys(item.input_bindings).length" title="数据来源" :name="`bindings-${item.key}`">
+              <JsonContentTree :value="item.input_bindings" />
+            </NCollapseItem>
+            <NCollapseItem v-if="item.effect_evidence" title="对象证据声明" :name="`effect-${item.key}`">
+              <JsonContentTree :value="item.effect_evidence" />
+            </NCollapseItem>
+            <NCollapseItem v-if="item.effect_declarations" title="产生与清理证据声明" :name="`declarations-${item.key}`">
+              <JsonContentTree :value="item.effect_declarations" />
+            </NCollapseItem>
+          </NCollapse>
           <p>依据：{{ item.evidence_ids.join('、') }}</p>
           <p v-if="item.cleanup_sources">清理来源：{{ item.cleanup_sources.join('、') }}。这是计划范围，清理结果需实际证据核验。</p>
-          <details v-if="item.effect_evidence"><summary>对象证据声明</summary><JsonContentTree :value="item.effect_evidence" /></details>
-          <details v-if="item.effect_declarations"><summary>产生与清理证据声明</summary><JsonContentTree :value="item.effect_declarations" /></details>
-        </li></ol>
-        <details v-if="plan.evidence.some(e => e.kind !== 'case')"><summary>查询到的项目原文与录制依据</summary><template v-for="source in plan.evidence.filter(e => e.kind !== 'case')" :key="source.id"><p>{{ source.id }}</p><JsonContentTree :value="source.payload" /></template></details>
-      </template>
-    </section>
-  </div>
+        </li>
+      </ol>
+
+      <NCollapse v-if="plan.evidence.some(e => e.kind !== 'case')" style="margin-top: 12px" :default-expanded-names="['evidence']">
+        <NCollapseItem title="查询到的项目原文与录制依据" name="evidence">
+          <template v-for="source in plan.evidence.filter(e => e.kind !== 'case')" :key="source.id">
+            <p class="dialog-hint">{{ source.id }}</p>
+            <JsonContentTree :value="source.payload" />
+          </template>
+        </NCollapseItem>
+      </NCollapse>
+    </template>
+
+    <template #footer>
+      <div class="dialog-actions">
+        <NButton :disabled="busy" @click="close">关闭</NButton>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
 @import "./caseDialogs.css";
 .policy-fields { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 0 16px; }
+.policy-checks { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 12px; }
+.policy-collapse { margin: 16px 0; }
+.policy-form { margin-top: 8px; }
+.plan-section { margin: 12px 0; }
+.plan-title { margin-top: 16px; }
+.plan-saved { margin: 16px 0; }
+.issue-list { margin: 0; padding-left: 18px; }
 .plan-items { padding-left: 24px; }
 .plan-items > li { border-top: 1px solid #d8dee8; margin-top: 16px; padding-top: 8px; }
 .plan-items h4 { margin: 8px 0; }
 .gaps { color: #95501f; }
-.environment-selection, .fixed-environment { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; padding: 12px; }
+.environment-selection, .fixed-environment, .launch-controls { border: 1px solid var(--border); border-radius: 8px; margin: 12px 0; padding: 12px; }
 </style>

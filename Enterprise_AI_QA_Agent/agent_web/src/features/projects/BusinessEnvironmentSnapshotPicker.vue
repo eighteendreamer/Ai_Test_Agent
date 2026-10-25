@@ -1,5 +1,17 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import {
+  NAlert,
+  NButton,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NModal,
+  NRadio,
+  NRadioGroup,
+  NSelect,
+  NSpin,
+} from "naive-ui";
 import { api } from "../../services/api";
 import type { BusinessEnvironmentRecord, BusinessEnvironmentSnapshot } from "../../services/businessEnvironments.types";
 import type { BusinessEnvironmentSelection } from "../../services/businessPlanning.types";
@@ -10,6 +22,7 @@ const emit = defineEmits<{
   "update:modelValue": [value: BusinessEnvironmentSelection | null];
 }>();
 
+const show = ref(true);
 const environments = ref<BusinessEnvironmentRecord[]>([]);
 const environmentOffset = ref(0);
 const moreEnvironments = ref(false);
@@ -71,6 +84,11 @@ async function loadSnapshots(append = false) {
   }
 }
 
+function close() {
+  show.value = false;
+  emit("close");
+}
+
 function choose(snapshot: BusinessEnvironmentSnapshot) {
   if (snapshot.project_id !== props.projectId || snapshot.environment_id !== environmentId.value) {
     error.value = "快照与当前项目或环境不一致";
@@ -106,42 +124,78 @@ onMounted(() => { void loadEnvironments(); });
 </script>
 
 <template>
-  <div class="case-dialog-backdrop" @click.self="emit('close')">
-    <section class="case-dialog" role="dialog" aria-modal="true" aria-label="选择固定测试环境">
-      <header><h2>选择固定测试环境</h2><button type="button" @click="emit('close')">关闭</button></header>
-      <p>选择一个项目环境及其配置快照。快照只固定目标地址和配置，部署状态仍为未知，不代表需求已经部署。</p>
-      <p v-if="error" role="alert">{{ error }}</p>
-      <label>项目环境
-        <select v-model="environmentId" :disabled="loadingEnvironments">
-          <option value="">请选择环境</option>
-          <option v-for="item in environments" :key="item.id" :value="item.id">{{ item.request.environment_key }} · {{ item.id }}</option>
-        </select>
-      </label>
-      <button v-if="moreEnvironments" type="button" :disabled="loadingEnvironments" @click="loadEnvironments(true)">加载更多环境</button>
-      <p v-if="loadingEnvironments">正在加载项目环境…</p>
-      <template v-if="environmentId">
-        <p v-if="loadingSnapshots">正在读取该环境的固定快照…</p>
-        <p v-else-if="!snapshots.length">该环境当前页没有可选快照。请先在项目环境管理中保存目标配置并创建快照。</p>
-        <fieldset v-if="snapshots.length">
-          <legend>目标配置快照</legend>
-          <label v-for="snapshot in snapshots" :key="snapshot.id" class="snapshot-choice">
-            <input type="radio" name="business-environment-snapshot" :checked="modelValue?.snapshot_id === snapshot.id"
+
+<NModal
+    v-model:show="show"
+    preset="card"
+    title="选择固定测试环境"
+    style="width: min(720px, 94vw)"
+    :mask-closable="!loadingEnvironments && !loadingSnapshots"
+    :close-on-esc="!loadingEnvironments && !loadingSnapshots"
+    @update:show="!$event && close()"
+  >
+    <p class="dialog-hint">选择一个项目环境及其配置快照。快照只固定目标地址和配置，部署状态仍为未知，不代表需求已经部署。</p>
+    <NAlert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</NAlert>
+
+    <NForm label-placement="top">
+      <NFormItem label="项目环境">
+        <NSelect
+          :value="environmentId"
+          :options="[{ label: '请选择环境', value: '' }, ...environments.map(item => ({ label: `${item.request.environment_key} · ${item.id}`, value: item.id }))]"
+          :disabled="loadingEnvironments"
+          style="width: 100%"
+          @update:value="(value: string) => { environmentId = value; }"
+        />
+      </NFormItem>
+    </NForm>
+    <NButton v-if="moreEnvironments" size="small" :loading="loadingEnvironments" @click="loadEnvironments(true)">
+      加载更多环境
+    </NButton>
+    <div v-if="loadingEnvironments" class="dialog-loading"><NSpin size="small" /> 正在加载项目环境…</div>
+
+    <template v-if="environmentId">
+      <div v-if="loadingSnapshots" class="dialog-loading"><NSpin size="small" /> 正在读取该环境的固定快照…</div>
+      <NEmpty v-else-if="!snapshots.length" description="该环境当前页没有可选快照。请先在项目环境管理中保存目标配置并创建快照。" size="small" />
+      <section v-if="snapshots.length" class="snapshot-section">
+        <h3>目标配置快照</h3>
+        <NRadioGroup
+          :value="modelValue?.snapshot_id ?? ''"
+          @update:value="(value: string) => { const snapshot = snapshots.find(item => item.id === value); if (snapshot) choose(snapshot); }"
+        >
+          <div class="policy-checks">
+            <NRadio
+              v-for="snapshot in snapshots"
+              :key="snapshot.id"
+              :value="snapshot.id"
               :disabled="snapshot.project_id !== projectId || snapshot.environment_id !== environmentId"
-              @change="choose(snapshot)">
-            <span><strong>{{ snapshot.configuration.payload.display_name }}</strong> · {{ snapshot.configuration.payload.base_url }}<br>
-              配置修订 {{ snapshot.configuration.revision }} · {{ new Date(snapshot.captured_at).toLocaleString() }} · 部署状态未知</span>
-          </label>
-        </fieldset>
-        <button v-if="moreSnapshots" type="button" :disabled="loadingSnapshots" @click="loadSnapshots(true)">加载后续快照</button>
-      </template>
-      <p v-if="selectedSnapshot" role="status">已固定快照 {{ selectedSnapshot.id }}；提交规划时会同时发送快照哈希。</p>
-      <footer><button type="button" @click="emit('close')">完成</button></footer>
-    </section>
-  </div>
+            >
+              <strong>{{ snapshot.configuration.payload.display_name }}</strong> · {{ snapshot.configuration.payload.base_url }}<br>
+              配置修订 {{ snapshot.configuration.revision }} · {{ new Date(snapshot.captured_at).toLocaleString() }} · 部署状态未知
+            </NRadio>
+          </div>
+        </NRadioGroup>
+      </section>
+      <NButton v-if="moreSnapshots" size="small" :loading="loadingSnapshots" @click="loadSnapshots(true)">
+        加载后续快照
+      </NButton>
+    </template>
+    <NAlert v-if="selectedSnapshot" type="success" :bordered="false" style="margin-top: 12px">
+      已固定快照 {{ selectedSnapshot.id }}；提交规划时会同时发送快照哈希。
+    </NAlert>
+
+    <template #footer>
+      <div class="dialog-actions">
+        <NButton :disabled="loadingEnvironments || loadingSnapshots" @click="close">完成</NButton>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
 @import "./caseDialogs.css";
 .snapshot-choice { grid-template-columns: auto 1fr !important; align-items: start; }
 .snapshot-choice input { width: auto; margin-top: 4px; }
+.snapshot-section { margin: 12px 0; }
+.policy-checks { display: flex; flex-direction: column; gap: 10px; }
+.dialog-loading { display: flex; align-items: center; gap: 8px; color: var(--text-secondary, #64748b); padding: 8px 0; }
 </style>

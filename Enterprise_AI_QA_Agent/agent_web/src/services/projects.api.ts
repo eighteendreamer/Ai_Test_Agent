@@ -78,6 +78,10 @@ export function updateProject(
   });
 }
 
+export function getProject(projectId: string): Promise<ProjectRecord> {
+  return request(`/api/v1/projects/${encodeURIComponent(projectId)}`);
+}
+
 export function archiveProject(projectId: string): Promise<ProjectRecord> {
   return request(`/api/v1/projects/${encodeURIComponent(projectId)}/archive`, { method: "POST" });
 }

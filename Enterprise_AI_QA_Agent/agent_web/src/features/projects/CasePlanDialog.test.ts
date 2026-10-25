@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import CasePlanDialog from "./CasePlanDialog.vue";
 import { HttpError } from "../../services/http";
 import type { CasePlanningPolicy, ModeDescriptor } from "../../types";
+import { NCheckbox, NSelect } from "naive-ui";
+import { checkboxByTestId, checkboxByText, inputNumberByTestId, setCheckbox, setInputNumber } from "../../test-utils/naive";
 import documentExpected from "../../../tests/fixtures/case-document-expected.actual.json";
 import itemOperationActual from "../../../tests/fixtures/case-item-operation.actual.json";
 import linkedSourceActual from "../../../tests/fixtures/case-linked-source.actual.json";
@@ -20,9 +22,45 @@ function plan(status = "planned") {
 const modes: ModeDescriptor[] = ["api_testing", "code_review", "default"].map(key => ({ key, name: key,
   summary: "", description: "", category: "test", is_test_mode: key !== "default", case_driven_policy: key === "code_review" ? "exempt" : "required",
   default_agent_key: "", allowed_agent_keys: [], default_skill_keys: [], registered_tool_keys: [], harness_key: "", placeholder: false, tags: [] }));
-function setup(projectId = "project", candidateOnly = false) { return mount(CasePlanDialog, { props: { projectId, candidateCaseIds: ["case"], modes, candidateOnly } }); }
-function button(wrapper: ReturnType<typeof setup>, text: string) { return wrapper.findAll("button").find(b => b.text() === text)!; }
-async function generate(wrapper: ReturnType<typeof setup>) {
+async function expandPolicy(wrapper: any) {
+  const header = wrapper.findAll(".n-collapse-item__header-main").find((node: any) => node.text().includes("规划设置"));
+  const item = header?.element?.closest(".n-collapse-item");
+  if (header && item && !item.classList.contains("n-collapse-item--active")) await header.trigger("click");
+  await flushPromises();
+  await new Promise(resolve => setTimeout(resolve, 0));
+  await flushPromises();
+}
+async function setup(projectId = "project", candidateOnly = false) {
+  const wrapper = mount(CasePlanDialog, { props: { projectId, candidateCaseIds: ["case"], modes, candidateOnly },
+    global: { stubs: { teleport: true } } });
+  await flushPromises();
+  await expandPolicy(wrapper);
+  return wrapper;
+}
+async function mountWith(props: Record<string, unknown>) {
+  const wrapper = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: ["case"], modes, ...props },
+    global: { stubs: { teleport: true } } });
+  await flushPromises();
+  await expandPolicy(wrapper);
+  return wrapper;
+}
+function findSelect(wrapper: Awaited<ReturnType<typeof setup>>, value: string) {
+  return wrapper.findAllComponents(NSelect).find(select =>
+    (select.props("options") as Array<{ value: string }> | undefined)?.some(option => option.value === value));
+}
+async function chooseSelect(wrapper: Awaited<ReturnType<typeof setup>>, value: string) {
+  const select = findSelect(wrapper, value);
+  if (!select) throw new Error(`未找到包含 ${value} 的下拉项`);
+  select.vm.$emit("update:value", value);
+  await flushPromises();
+}
+async function savePolicy(wrapper: Awaited<ReturnType<typeof setup>>) {
+  await button(wrapper, "保存项目规划设置").trigger("click");
+  await flushPromises();
+  await expandPolicy(wrapper);
+}
+function button(wrapper: Awaited<ReturnType<typeof setup>>, text: string) { return wrapper.findAll("button").find(b => b.text() === text)!; }
+async function generate(wrapper: Awaited<ReturnType<typeof setup>>) {
   await flushPromises(); await wrapper.findAll("textarea")[0].setValue("验证");
   await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
 }
@@ -45,35 +83,39 @@ describe("case planning", () => {
   });
 
   it("saves evidence-only receipt correction as a project policy and can turn it off", async () => {
-    const wrapper = setup(); await flushPromises();
-    const label = () => wrapper.findAll("label").find(row => row.text().includes("回执错误时只读纠正一次"))!;
-    await label().get("input").setValue(true);
+    const wrapper = await setup(); await flushPromises();
+    const receipt = () => checkboxByText(wrapper, "回执错误时只读纠正一次")!;
+    receipt().vm.$emit("update:checked", true);
+    await flushPromises();
     expect(wrapper.text()).toContain("使用原预算和已保存证据，不重复测试操作");
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", expect.objectContaining({ receipt_correction_protocol: "case-receipt-correction-v1" }));
-    await label().get("input").setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    receipt().vm.$emit("update:checked", false);
+    await flushPromises();
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[api.saveCasePlanningPolicy.mock.calls.length - 1]?.[1]).not.toHaveProperty("receipt_correction_protocol");
   });
 
   it("saves explicit receipt timeout and retries, then clears them when correction is disabled", async () => {
     api.saveCasePlanningPolicy.mockImplementation(async (_, policy) => ({ ...config(), revision: 2, policy }));
-    const wrapper = setup(); await flushPromises();
-    const label = () => wrapper.findAll("label").find(row => row.text().includes("回执错误时只读纠正一次"))!;
-    await label().get("input").setValue(true);
-    await wrapper.get('[data-testid="receipt-transport"]').setValue(true);
-    await wrapper.get('[data-testid="receipt-timeout"]').setValue(95);
-    await wrapper.get('[data-testid="receipt-retries"]').setValue(0);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    const receipt = () => checkboxByText(wrapper, "回执错误时只读纠正一次")!;
+    receipt().vm.$emit("update:checked", true);
+    await flushPromises();
+    await setCheckbox(wrapper, "receipt-transport", true);
+    await setInputNumber(wrapper, "receipt-timeout", 95);
+    await setInputNumber(wrapper, "receipt-retries", 0);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", expect.objectContaining({
       receipt_correction_transport_options: { timeout_seconds: 95, max_retries: 0 } }));
-    await label().get("input").setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    receipt().vm.$emit("update:checked", false);
+    await flushPromises();
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1]).not.toHaveProperty("receipt_correction_transport_options");
   });
 
   it("submits the objective and existing information, then displays full fixed content", async () => {
-    const wrapper = setup(); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
     await wrapper.findAll("textarea")[0].setValue("验证未登录访问");
     await wrapper.findAll("textarea")[1].setValue('{"order_id":"existing"}');
     await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
@@ -87,10 +129,10 @@ describe("case planning", () => {
   });
 
   it("freezes the selected project snapshot id and hash into the planning request", async () => {
-    const wrapper = setup(); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
     await button(wrapper, "选择固定测试环境快照（可选）").trigger("click"); await flushPromises();
     expect(api.listBusinessEnvironments).toHaveBeenCalledWith("project", { status: "active", limit: 50, offset: 0 });
-    await wrapper.get("select").setValue("environment"); await flushPromises();
+    await chooseSelect(wrapper, "environment");
     expect(api.listBusinessEnvironmentSnapshots).toHaveBeenCalledWith("project", "environment", 20, 0);
     await wrapper.get('input[type="radio"]').trigger("change"); await flushPromises();
     expect(wrapper.text()).toContain("规划请求将固定环境 environment、快照 snapshot");
@@ -105,7 +147,7 @@ describe("case planning", () => {
   });
 
   it("keeps an empty candidate list so the server performs project-scoped automatic recall", async () => {
-    const wrapper = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: [], modes } });
+    const wrapper = await mountWith({ candidateCaseIds: [] });
     await flushPromises();
     await wrapper.findAll("textarea")[0].setValue("验证订单详情");
     await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
@@ -116,7 +158,7 @@ describe("case planning", () => {
   });
 
   it("lets the operator review and select a candidate plan without launching another Run", async () => {
-    const wrapper = setup("project", true);
+    const wrapper = await setup("project", true);
     await generate(wrapper);
 
     expect(wrapper.text()).toContain("候选计划编号：plan");
@@ -130,7 +172,7 @@ describe("case planning", () => {
   });
 
   it("rejects an array as run input and shows request errors", async () => {
-    const wrapper = setup(); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
     await wrapper.findAll("textarea")[0].setValue("验证");
     await wrapper.findAll("textarea")[1].setValue("[]");
     await button(wrapper, "生成执行计划").trigger("click"); await flushPromises();
@@ -146,8 +188,8 @@ describe("case planning", () => {
 
   it("saves project policy and reopens a plan with unresolved gaps", async () => {
     api.getCasePlan.mockResolvedValue(plan("blocked"));
-    const wrapper = setup(); await flushPromises();
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenCalledWith("project", config().policy);
     await wrapper.find('input[placeholder="输入当前项目的计划编号"]').setValue("plan");
     await button(wrapper, "查看已保存计划").trigger("click"); await flushPromises();
@@ -163,7 +205,7 @@ describe("case planning", () => {
       summary: "前置用例已创建订单，实际响应HTTP 201。",
       decision: { items: [], unresolved: [{ condition: "缺少目标用例", reason: "没有匹配的正式目标。" }] },
     });
-    const wrapper = setup(); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
     await wrapper.find('input[placeholder="输入当前项目的计划编号"]').setValue("plan");
     await button(wrapper, "查看已保存计划").trigger("click"); await flushPromises();
     expect(wrapper.text()).toContain("未找到符合本次目标的正式用例；本次未创建测试运行。");
@@ -173,27 +215,27 @@ describe("case planning", () => {
   });
 
   it("saves action ownership for new plans and can disable it without altering other policy", async () => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="action-binding"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "action-binding", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
     });
-    await wrapper.get('[data-testid="action-binding"]').setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "action-binding", false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", config().policy);
     wrapper.unmount();
   });
 
   it("freezes opt-in action admission and disables it when ownership is removed", async () => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="action-admission"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "action-admission", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1", action_admission_protocol: "case-action-admission-v1",
     });
-    await wrapper.get('[data-testid="action-binding"]').setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "action-binding", false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", config().policy);
     wrapper.unmount();
   });
@@ -202,15 +244,15 @@ describe("case planning", () => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({
       ...config(), scope_key: projectId, revision: 2, policy: { ...policy },
     }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="operation-recovery"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "operation-recovery", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
       action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
     });
-    await wrapper.get('[data-testid="action-admission"]').setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "action-admission", false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
     });
@@ -221,16 +263,16 @@ describe("case planning", () => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({
       ...config(), scope_key: projectId, revision: 2, policy: { ...policy },
     }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="preparation-scopes"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "preparation-scopes", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
       action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
       preparation_scope_protocol: "preparation-scope-v1",
     });
-    await wrapper.get('[data-testid="operation-recovery"]').setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "operation-recovery", false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
       action_admission_protocol: "case-action-admission-v1",
@@ -242,17 +284,17 @@ describe("case planning", () => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({
       ...config(), scope_key: projectId, revision: 2, policy: { ...policy },
     }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="effect-evidence"]').setValue(true);
-    await wrapper.get('[data-testid="effect-evidence-budget"]').setValue(4096);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "effect-evidence", true);
+    await setInputNumber(wrapper, "effect-evidence-budget", 4096);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
       action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
       preparation_scope_protocol: "preparation-scope-v1", effect_evidence_protocol: "case-effect-evidence-v1", effect_evidence_max_bytes: 4096,
     });
-    await wrapper.get('[data-testid="preparation-scopes"]').setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "preparation-scopes", false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
       ...config().policy, action_binding_protocol: "case-action-binding-v1",
       action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
@@ -265,23 +307,23 @@ describe("case planning", () => {
       api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({
         ...config(), scope_key: projectId, revision: 2, policy: { ...policy },
       }));
-      const wrapper = setup(); await flushPromises();
-      await wrapper.get('[data-testid="effect-coverage"]').setValue(true);
-      await wrapper.get('[data-testid="effect-coverage-budget"]').setValue(8192);
-      await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+      const wrapper = await setup(); await flushPromises();
+      await setCheckbox(wrapper, "effect-coverage", true);
+      await setInputNumber(wrapper, "effect-coverage-budget", 8192);
+      await savePolicy(wrapper);
       expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
         ...config().policy, action_binding_protocol: "case-action-binding-v1",
         action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
         preparation_scope_protocol: "preparation-scope-v1", effect_evidence_protocol: "case-effect-evidence-v1",
         effect_coverage_protocol: "case-effect-coverage-v1", effect_coverage_max_bytes: 8192,
       });
-      await wrapper.get(`[data-testid="${prerequisite}"]`).setValue(false);
-      await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+      await setCheckbox(wrapper, prerequisite, false);
+      await savePolicy(wrapper);
       const calls = api.saveCasePlanningPolicy.mock.calls;
       const policy = calls[calls.length - 1][1];
       expect(policy).not.toHaveProperty("effect_coverage_protocol");
       expect(policy).not.toHaveProperty("effect_coverage_max_bytes");
-      expect(wrapper.find('[data-testid="effect-coverage-budget"]').exists()).toBe(false);
+      expect(inputNumberByTestId(wrapper, "effect-coverage-budget")).toBeUndefined();
       wrapper.unmount();
     },
   );
@@ -291,17 +333,17 @@ describe("case planning", () => {
       api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({
         ...config(), scope_key: projectId, revision: 2, policy: { ...policy },
       }));
-      const wrapper = setup(); await flushPromises();
-      await wrapper.get('[data-testid="planning-stages"]').setValue(true);
-      await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+      const wrapper = await setup(); await flushPromises();
+      await setCheckbox(wrapper, "planning-stages", true);
+      await savePolicy(wrapper);
       expect(api.saveCasePlanningPolicy).toHaveBeenLastCalledWith("project", {
         ...config().policy, action_binding_protocol: "case-action-binding-v1",
         action_admission_protocol: "case-action-admission-v1", operation_protocol: "case-operation-v1",
         preparation_scope_protocol: "preparation-scope-v1", effect_evidence_protocol: "case-effect-evidence-v1",
         effect_coverage_protocol: "case-effect-coverage-v1", planning_stage_protocol: "case-planning-staged-evidence-v1",
       });
-      await wrapper.get(`[data-testid="${prerequisite}"]`).setValue(false);
-      await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+      await setCheckbox(wrapper, prerequisite, false);
+      await savePolicy(wrapper);
       const calls = api.saveCasePlanningPolicy.mock.calls;
       expect(calls[calls.length - 1][1]).not.toHaveProperty("planning_stage_protocol");
       wrapper.unmount();
@@ -309,9 +351,9 @@ describe("case planning", () => {
   );
 
   it("launches the saved identity with any test mode and opens the returned run", async () => {
-    const wrapper = setup(); await generate(wrapper);
-    expect(wrapper.findAll('select option').map(option => option.text())).toEqual(["api_testing", "code_review"]);
-    await wrapper.get('select').setValue("code_review");
+    const wrapper = await setup(); await generate(wrapper);
+    expect((findSelect(wrapper, "code_review")!.props("options") as Array<{ label: string }>).map(option => option.label)).toEqual(["api_testing", "code_review"]);
+    await chooseSelect(wrapper, "code_review");
     await wrapper.get('input[placeholder="会话必须属于当前项目"]').setValue(" same-project-session ");
     await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
     const payload = api.launchCasePlan.mock.calls[0][2];
@@ -328,22 +370,22 @@ describe("case planning", () => {
 
   it("keeps the exact uncertain request through closing and reopening, isolated by project", async () => {
     api.launchCasePlan.mockRejectedValueOnce(new Error("连接在提交后断开"));
-    const wrapper = setup(); await generate(wrapper);
-    await wrapper.get('select').setValue("code_review");
+    const wrapper = await setup(); await generate(wrapper);
+    await chooseSelect(wrapper, "code_review");
     await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
     const payload = { ...api.launchCasePlan.mock.calls[0][2] };
-    expect(wrapper.get('select').attributes("disabled")).toBeDefined();
+    expect(findSelect(wrapper, "code_review")!.props("disabled")).toBe(true);
     expect(wrapper.text()).toContain("启动结果尚未确认");
     wrapper.unmount();
     api.getCasePlan.mockResolvedValue(plan());
-    const reopened = setup(); await flushPromises();
+    const reopened = await setup(); await flushPromises();
     await reopened.get('input[placeholder="输入当前项目的计划编号"]').setValue("plan");
     await button(reopened, "查看已保存计划").trigger("click"); await flushPromises();
     await button(reopened, "重试启动请求").trigger("click"); await flushPromises();
     expect(api.launchCasePlan.mock.calls[1][2]).toEqual(payload);
     reopened.unmount();
     api.getCasePlan.mockResolvedValue({ ...plan(), project_id: "other" });
-    const other = setup("other"); await generate(other);
+    const other = await setup("other"); await generate(other);
     expect(other.text()).not.toContain(payload.creation_key);
     expect(button(other, "启动测试运行").exists()).toBe(true);
     other.unmount();
@@ -351,10 +393,10 @@ describe("case planning", () => {
 
   it("unlocks options after a definite rejection and preserves request in memory if storage fails", async () => {
     api.launchCasePlan.mockRejectedValueOnce(new HttpError("会话不属于当前项目", 409));
-    const wrapper = setup(); await generate(wrapper);
+    const wrapper = await setup(); await generate(wrapper);
     await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
     const rejected = api.launchCasePlan.mock.calls[0][2].creation_key;
-    expect(wrapper.get('select').attributes("disabled")).toBeUndefined();
+    expect(findSelect(wrapper, "code_review")!.props("disabled")).toBe(false);
     const failure = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("storage unavailable"); });
     api.launchCasePlan.mockRejectedValueOnce(new Error("连接断开"));
     await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
@@ -367,7 +409,7 @@ describe("case planning", () => {
   });
 
   it("reopens the saved run through the existing API and rejects a mismatched cached identity", async () => {
-    const wrapper = setup(); await generate(wrapper);
+    const wrapper = await setup(); await generate(wrapper);
     await button(wrapper, "启动测试运行").trigger("click"); await flushPromises();
     api.getTestRun.mockResolvedValue({ run: { id: "run-1", project_id: "foreign", plan_snapshot: { plan: { id: "plan" } } } });
     await button(wrapper, "查看运行").trigger("click"); await flushPromises();
@@ -389,12 +431,13 @@ describe("case planning", () => {
     api.getCasePlanningTaskByRequest.mockRejectedValue(new HttpError("当前项目没有该规划提交", 404));
     api.submitRegressionPlanningTask.mockImplementation(async (_, payload) => ({ id: "task", project_id: "project",
       creation_key: payload.creation_key, status: "queued", plan_id: null, round_count: 0, message: "排队" }));
-    const w = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: [], modes, regression: selection } });
+    const w = await mountWith({ candidateCaseIds: [], regression: selection });
     await flushPromises();
-    expect(w.find('input[type="checkbox"]').exists()).toBe(true);
-    expect(w.get('input[type="checkbox"]').attributes("disabled")).toBeUndefined();
+    expect(w.findAllComponents(NCheckbox).length).toBeGreaterThan(0);
+    expect(w.findAllComponents(NCheckbox)[0].props("disabled")).toBe(false);
     expect(api.submitRegressionPlanningTask).not.toHaveBeenCalled();
-    await w.get('input[type="checkbox"]').setValue(true);
+    w.findAllComponents(NCheckbox)[0].vm.$emit("update:checked", true);
+    await flushPromises();
     await button(w, "重试规划提交").trigger("click"); await flushPromises();
     expect(api.submitRegressionPlanningTask).toHaveBeenCalledWith("parent", {
       creation_key: "unconfirmed-request", result_ids: ["failure"], version_overrides: { case: "new-version" }, session_id: null });
@@ -410,22 +453,23 @@ describe("case planning", () => {
     api.getCasePlan.mockResolvedValue(fixed);
     api.submitRegressionPlanningTask.mockImplementation(async (_, payload) => ({ id: "task", project_id: "project",
       creation_key: payload.creation_key, status: "completed", plan_id: "plan", round_count: 1, message: "完成" }));
-    const w = mount(CasePlanDialog, { props: { projectId: "project", candidateCaseIds: [], modes, regression: selection } });
+    const w = await mountWith({ candidateCaseIds: [], regression: selection });
     await flushPromises();
-    await w.get('input[type="checkbox"]').setValue(true);
+    await w.findAllComponents(NCheckbox)[0].vm.$emit("update:checked", true);
+    await flushPromises();
     await button(w, "提交回归规划").trigger("click"); await flushPromises();
     expect(api.submitRegressionPlanningTask.mock.calls[0][1].version_overrides).toEqual({ case: "new-version" });
-    expect(w.get('input[type="checkbox"]').attributes()).toHaveProperty("disabled");
-    expect(w.get('select').element.value).toBe("code_review");
-    expect(w.get('select').attributes()).toHaveProperty("disabled");
+    expect(w.findAllComponents(NCheckbox)[0].props("disabled")).toBe(true);
+    expect(findSelect(w, "code_review")!.props("value")).toBe("code_review");
+    expect(findSelect(w, "code_review")!.props("disabled")).toBe(true);
     await button(w, "启动测试运行").trigger("click"); await flushPromises();
     expect(api.launchCasePlan.mock.calls[0][2]).toMatchObject({ mode_key: "code_review", session_id: "bound-session" });
     expect(w.text()).toContain("回归来源：parent"); w.unmount();
   });
   it("saves a consistent formal mixed-effects policy and preserves old settings when disabled", async () => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="formal-effects"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "formal-effects", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       preparation_scope_protocol: "preparation-scope-v2", effect_evidence_protocol: "case-effect-evidence-v2",
       effect_coverage_protocol: "case-effect-coverage-v2", planning_stage_protocol: "case-planning-staged-evidence-v2",
@@ -434,15 +478,15 @@ describe("case planning", () => {
     wrapper.unmount();
   });
   it.each(["formal-effects", "planning-stages", "effect-evidence"])("freezes document expectations and clears them when %s is disabled", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="document-expected"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "document-expected", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       effect_expected_source_protocol: "case-effect-document-expected-v1",
       planning_stage_protocol: "case-planning-staged-evidence-v2", timeout_seconds: 180,
     });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].effect_expected_source_protocol).toBeUndefined();
     wrapper.unmount();
   });
@@ -451,7 +495,7 @@ describe("case planning", () => {
     api.getCasePlan.mockResolvedValue(documentExpected.plan);
     api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "actual-plan-task", project_id: projectId,
       creation_key: payload.creation_key, status: "completed", plan_id: documentExpected.plan.id, round_count: 4, message: "完成" }));
-    const wrapper = setup(documentExpected.plan.project_id); await generate(wrapper);
+    const wrapper = await setup(documentExpected.plan.project_id); await generate(wrapper);
     expect(wrapper.text()).toContain("DELETE同一路径返回200及刚删除的订单JSON。");
     expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
     expect(wrapper.text()).toContain("产生与清理证据声明");
@@ -460,15 +504,15 @@ describe("case planning", () => {
   });
   it.each(["item-operation-selections", "source-identity", "operation-prefetch", "document-expected", "formal-effects", "operation-recovery"])("saves all-item operation selection and retains valid policy after disabling %s", async (name) => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="item-operation-selections"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "item-operation-selections", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       operation_prefetch_protocol: "case-planning-item-operation-prefetch-v2",
       source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180,
     });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefetch_protocol).not.toBe("case-planning-item-operation-prefetch-v2");
     if (name === "item-operation-selections" || name === "source-identity") {
       expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefetch_protocol).toBe("case-planning-declared-operation-prefetch-v1");
@@ -477,13 +521,13 @@ describe("case planning", () => {
   });
   it.each(["linked-sources", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves explicit linked sources and clears them with %s", async (name) => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="linked-sources"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "linked-sources", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ linked_source_protocol: "case-planning-linked-sources-v2",
       source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180 });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].linked_source_protocol).toBeUndefined();
     wrapper.unmount();
   });
@@ -492,7 +536,7 @@ describe("case planning", () => {
     api.getCasePlan.mockResolvedValue(actual);
     api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "operation-task", project_id: projectId,
       creation_key: payload.creation_key, status: "completed", plan_id: actual.id, round_count: 3, message: "完成" }));
-    const wrapper = setup(actual.project_id); await generate(wrapper);
+    const wrapper = await setup(actual.project_id); await generate(wrapper);
     expect(wrapper.text()).toContain("逻辑阶段选定的工具接口");
     expect(wrapper.text()).toContain("api-test-runner");
     expect(wrapper.text()).toContain("execute_task");
@@ -503,25 +547,25 @@ describe("case planning", () => {
   });
   it.each(["evidence-references", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves evidence reference policy and clears it with %s", async (name) => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="evidence-references"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "evidence-references", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ evidence_reference_protocol: "case-planning-evidence-references-v1",
       source_identity_protocol: "case-planning-source-full-hash-v1", timeout_seconds: 180 });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].evidence_reference_protocol).toBeUndefined();
     wrapper.unmount();
   });
   it.each(["evidence-references", "source-identity", "document-expected", "formal-effects"])("freezes separate evidence tasks and clears them with %s", async (name) => {
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="effect-tasks"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "effect-tasks", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({ planning_stage_protocol: "case-planning-staged-evidence-v3",
       evidence_reference_protocol: "case-planning-evidence-references-v1", timeout_seconds: 180, max_rounds: 5 });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].planning_stage_protocol).not.toBe("case-planning-staged-evidence-v3");
     wrapper.unmount();
   });
@@ -534,12 +578,12 @@ describe("case planning", () => {
       source_identity_protocol: "case-planning-source-full-hash-v1", evidence_reference_protocol: "case-planning-evidence-references-v2" };
     api.getCasePlanningPolicy.mockResolvedValue({ ...config(), policy });
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, saved) => ({ scope_key: projectId, revision: 2, policy: { ...saved } }));
-    const wrapper = setup(); await flushPromises();
-    expect((wrapper.get('[data-testid="evidence-references"]').element as HTMLInputElement).checked).toBe(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    expect(checkboxByTestId(wrapper, "evidence-references")!.props("checked")).toBe(true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1].evidence_reference_protocol).toBe("case-planning-evidence-references-v2");
-    await wrapper.get('[data-testid="effect-tasks"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "effect-tasks", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1]).toMatchObject({
       evidence_reference_protocol: "case-planning-evidence-references-v2", planning_stage_protocol: "case-planning-staged-evidence-v3" });
     wrapper.unmount();
@@ -548,13 +592,13 @@ describe("case planning", () => {
     const actual = linkedSourceActual.plan.config_snapshot;
     api.getCasePlanningPolicy.mockResolvedValue(actual);
     api.saveCasePlanningPolicy.mockImplementation(async (projectId, policy) => ({ scope_key: projectId, revision: 2, policy: { ...policy } }));
-    const wrapper = setup(); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
     expect(wrapper.text()).toContain("当前配置只读取关联文档");
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1].linked_source_protocol).toBe("case-planning-linked-documents-v1");
-    await wrapper.get('[data-testid="linked-sources"]').setValue(false);
-    await wrapper.get('[data-testid="linked-sources"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, "linked-sources", false);
+    await setCheckbox(wrapper, "linked-sources", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].linked_source_protocol).toBe("case-planning-linked-sources-v2");
     expect(wrapper.text()).not.toContain("当前配置只读取关联文档");
     wrapper.unmount();
@@ -564,7 +608,7 @@ describe("case planning", () => {
     api.getCasePlan.mockResolvedValue(actual);
     api.submitCasePlanningTask.mockImplementation(async (projectId, payload) => ({ id: "linked-task", project_id: projectId,
       creation_key: payload.creation_key, status: "completed", plan_id: actual.id, round_count: 2, message: "完成" }));
-    const wrapper = setup(actual.project_id); await generate(wrapper);
+    const wrapper = await setup(actual.project_id); await generate(wrapper);
     expect(wrapper.text()).toContain("用例关联来源的固定读取记录");
     expect(wrapper.text()).toContain("authored_snapshot");
     expect(wrapper.text()).toContain("LAST-DEFAULT-COVERAGE-STEP");
@@ -573,78 +617,78 @@ describe("case planning", () => {
     wrapper.unmount();
   });
   it.each(["document-expected", "formal-effects", "operation-recovery"])("saves unified references independently and clears them with %s", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="source-identity"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "source-identity", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       source_identity_protocol: "case-planning-source-full-hash-v1",
       effect_expected_source_protocol: "case-effect-document-expected-v1", timeout_seconds: 180,
     });
     expect(api.saveCasePlanningPolicy.mock.calls[0][1].operation_prefetch_protocol).toBeUndefined();
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].source_identity_protocol).toBeUndefined();
     wrapper.unmount();
   });
   it.each(["scene-queries", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves scene queries and clears them with %s", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="scene-queries"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "scene-queries", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       scene_query_protocol: "case-planning-scene-query-v1", source_identity_protocol: "case-planning-source-full-hash-v1",
       planning_stage_protocol: "case-planning-staged-evidence-v2", timeout_seconds: 180,
     });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].scene_query_protocol).toBeUndefined();
     wrapper.unmount();
   });
   it.each(["scene-receipts", "scene-queries", "source-identity", "document-expected", "formal-effects", "operation-recovery"])("saves scene receipts and clears them with %s", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="scene-receipts"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "scene-receipts", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       scene_receipt_protocol: "case-scene-receipt-v1", scene_query_protocol: "case-planning-scene-query-v1",
       source_identity_protocol: "case-planning-source-full-hash-v1",
     });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].scene_receipt_protocol).toBeUndefined();
     wrapper.unmount();
   });
   it.each(["document-expected", "formal-effects", "operation-recovery"])("saves declared operation reading and clears it with %s", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="operation-prefetch"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "operation-prefetch", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       operation_prefetch_protocol: "case-planning-declared-operation-prefetch-v1",
       effect_expected_source_protocol: "case-effect-document-expected-v1", timeout_seconds: 180,
     });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].operation_prefetch_protocol).toBeUndefined();
     wrapper.unmount();
   });
   it.each(["action-binding", "action-admission", "operation-recovery", "preparation-scopes", "effect-evidence", "effect-coverage", "planning-stages"])("removes mixed-effect policy consistently when %s is disabled", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="formal-effects"]').setValue(true);
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "formal-effects", true);
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     const saved = api.saveCasePlanningPolicy.mock.calls[0][1];
     expect(Object.values(saved).some(value => typeof value === "string" && value.endsWith("-v2"))).toBe(false);
     wrapper.unmount();
   });
 
   it.each(["consumption-phase-policy", "formal-effects", "operation-recovery"])("saves consumption closure and clears it with %s", async (name) => {
-    const wrapper = setup(); await flushPromises();
-    await wrapper.get('[data-testid="consumption-phase-policy"]').setValue(true);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    const wrapper = await setup(); await flushPromises();
+    await setCheckbox(wrapper, "consumption-phase-policy", true);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[0][1]).toMatchObject({
       consumption_protocol: "case-consumption-phase-v1", effect_coverage_protocol: "case-effect-coverage-v2",
       action_admission_protocol: "case-action-admission-v1", timeout_seconds: 180,
     });
-    await wrapper.get(`[data-testid="${name}"]`).setValue(false);
-    await button(wrapper, "保存项目规划设置").trigger("click"); await flushPromises();
+    await setCheckbox(wrapper, name, false);
+    await savePolicy(wrapper);
     expect(api.saveCasePlanningPolicy.mock.calls[1][1].consumption_protocol).toBeUndefined();
     wrapper.unmount();
   });

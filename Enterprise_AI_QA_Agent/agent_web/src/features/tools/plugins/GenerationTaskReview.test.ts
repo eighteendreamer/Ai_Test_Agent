@@ -6,6 +6,8 @@ import scope from "../../../../../docs/upgrade_2026-10-03/p1-alternate-document-
 import observedDraft from "../../../../../docs/upgrade_2026-10-03/p1-alternate-document-recovery-current-20261022-01/draft-version-0.json";
 import CaseGenerationTask from "./CaseGenerationTask.vue";
 import type { TestCaseRecord, TestCaseVersionRecord } from "../../../types";
+import { NInput, NSelect } from "naive-ui";
+import { buttonByText, clickButton, dialogElement, dialogText, setTab } from "../../../test-utils/naive";
 
 const generation = vi.hoisted(() => ({ readCaseGeneration: vi.fn(), readCaseGenerationScope: vi.fn() }));
 vi.mock("../../../services/caseGeneration.api", () => generation);
@@ -26,7 +28,7 @@ function panel() {
   return wrapper;
 }
 function button(wrapper: ReturnType<typeof mount>, text: string) {
-  const found = wrapper.findAll("button").find(item => item.text() === text);
+  const found = wrapper.findAll("button").find(item => item.text() === text) ?? buttonByText(wrapper, text);
   expect(found, `Missing action: ${text}`).toBeDefined();
   return found!;
 }
@@ -48,26 +50,27 @@ it("opens the real generated version even when a later draft exists, then append
   expect(wrapper.text()).toContain(`固定草稿 ${draft.case_id} · V1 · ${draft.id}`);
   await button(wrapper, `评审与修订此草稿 ${draft.id}`).trigger("click");
   await flushPromises();
-  const dialog = wrapper.get('[role="dialog"][aria-label="测试用例内容"]');
-  expect((dialog.get("select").element as HTMLSelectElement).value).toBe(draft.id);
-  expect(dialog.text()).toContain("response.order.user_id");
-  await button(wrapper, "编辑新版本").trigger("click");
+  expect(dialogElement('[role="dialog"][aria-label="测试用例内容"]')).not.toBeNull();
+  expect(wrapper.findAllComponents(NSelect)[0].props("value")).toBe(draft.id);
+  expect(dialogText()).toContain("response.order.user_id");
+  await setTab(wrapper, "edit");
   const correction = structuredClone(draft.content_json!);
   (correction.steps as Record<string, unknown>[]).forEach(step => delete step.evidence_field);
   correction["待确认事项"] = ["从项目契约确认响应字段后执行", "确认他人订单和不存在订单的测试数据"];
-  await dialog.get("textarea.json-editor").setValue(JSON.stringify(correction));
-  await button(wrapper, "保存新草稿版本").trigger("click");
+  const editor = wrapper.findAllComponents(NInput).find(input => input.classes().includes("json-editor"))!;
+  editor.vm.$emit("update:value", JSON.stringify(correction));
   await flushPromises();
+  await clickButton(wrapper, "保存新草稿版本");
   expect(api.createTestCaseVersion).toHaveBeenCalledWith(draft.case_id, expect.objectContaining({
     content_json: correction, source_refs: draft.source_refs, model_key: draft.model_key,
     prompt_version: draft.prompt_version, skill_versions: draft.skill_versions,
     generation_metadata: { ...draft.generation_metadata, manual_edit: { source_version_id: draft.id } },
   }));
-  expect((dialog.get("select").element as HTMLSelectElement).value).toBe("manual-revision");
+  expect(wrapper.findAllComponents(NSelect)[0].props("value")).toBe("manual-revision");
   expect(draft.content_json!.steps).toEqual(observedDraft.content_json.steps);
   expect(api.submitTestCaseReview).not.toHaveBeenCalled();
   expect(api.activateTestCase).not.toHaveBeenCalled();
-  await button(wrapper, "关闭").trigger("click");
+  await clickButton(wrapper, "关闭");
   expect(wrapper.text()).toContain(`固定草稿 ${draft.case_id} · V1 · ${draft.id}`);
 });
 
@@ -77,9 +80,11 @@ it("keeps archived project drafts readable and prevents editing or activation", 
   await flushPromises();
   await button(wrapper, `评审与修订此草稿 ${draft.id}`).trigger("click");
   await flushPromises();
-  expect(wrapper.find('[role="dialog"]').exists()).toBe(true);
-  expect(button(wrapper, "编辑新版本").attributes("disabled")).toBeDefined();
-  expect(wrapper.findAll("button").some(item => item.text() === "提交当前版本评审")).toBe(false);
+  expect(dialogElement('[role="dialog"][aria-label="测试用例内容"]')).not.toBeNull();
+  const editTab = Array.from(dialogElement('[role="dialog"]')!.querySelectorAll(".n-tabs-tab"))
+    .find(tab => tab.textContent?.includes("编辑新版本"))!;
+  expect(editTab.classList.contains("n-tabs-tab--disabled")).toBe(true);
+  expect(buttonByText(wrapper, "提交当前版本评审")).toBeUndefined();
   expect(api.createTestCaseVersion).not.toHaveBeenCalled();
 });
 
@@ -89,7 +94,7 @@ it("does not open a version that differs from the fixed generation receipt", asy
   await flushPromises();
   await button(wrapper, `评审与修订此草稿 ${draft.id}`).trigger("click");
   await flushPromises();
-  expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+  expect(dialogElement('[role="dialog"]')).toBeNull();
   expect(wrapper.get('[role="alert"]').text()).toContain("完整草稿与项目或固定收据不一致");
 });
 
@@ -103,6 +108,6 @@ it("discards an old project's pending review read after navigation", async () =>
   await wrapper.setProps({ projectId: "other-project" });
   release(structuredClone(record));
   await flushPromises();
-  expect(wrapper.find('[role="dialog"]').exists()).toBe(false);
+  expect(dialogElement('[role="dialog"]')).toBeNull();
   expect(api.createTestCaseVersion).not.toHaveBeenCalled();
 });

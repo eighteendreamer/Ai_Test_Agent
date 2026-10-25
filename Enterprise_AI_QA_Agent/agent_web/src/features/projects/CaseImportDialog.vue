@@ -1,11 +1,27 @@
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from "vue";
+import {
+  NAlert,
+  NButton,
+  NCollapse,
+  NCollapseItem,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NInputNumber,
+  NModal,
+  NSelect,
+  NSpin,
+  NUpload,
+} from "naive-ui";
+import type { UploadFileInfo } from "naive-ui";
 import { api } from "../../services/api";
 import type { CaseImportBatchView, CaseImportOptions, CaseImportSettingsRecord, CaseImportSheet, CaseImportSourceRecord } from "../../types";
 import JsonContentTree from "./JsonContentTree.vue";
 
 const props = defineProps<{ projectId: string; modes: Array<{ key: string; name: string }> }>();
 const emit = defineEmits<{ close: []; imported: [] }>();
+const show = ref(true);
 const settings = ref<CaseImportSettingsRecord | null>(null);
 const source = ref<CaseImportSourceRecord | null>(null);
 const sheets = ref<CaseImportSheet[]>([]);
@@ -24,6 +40,18 @@ const canCommit = computed(() => !!view.value && !busy.value && view.value.batch
   view.value.batch.preview.candidates.length > 0 && !view.value.conflicting_case_keys.length &&
   !view.value.batch.preview.issues.some(issue => issue.severity === "error"));
 const rootUrl = computed(() => `/api/v1/projects/${encodeURIComponent(props.projectId)}/test-case-imports`);
+const layoutOptions = computed(() => [
+  { label: "每行一条用例", value: "rows" },
+  { label: "用例与步骤分表", value: "split" },
+  ...(source.value && /\.json$/i.test(source.value.filename) ? [{ label: "JSON", value: "json" }] : []),
+]);
+const modeOptions = computed(() => props.modes.map(mode => ({ label: mode.name, value: mode.key })));
+const headerOptions = computed(() => (caseSheet.value?.headers.filter(Boolean) || []).map(header => ({ label: header, value: header })));
+const stepHeaderOptions = computed(() => (stepSheet.value?.headers.filter(Boolean) || []).map(header => ({ label: header, value: header })));
+const candidateOptions = computed(() => (view.value?.batch.preview.candidates || []).map((item, index) => ({
+  label: `${item.draft.case_key} · ${item.draft.title} · 第 ${item.row} 行`,
+  value: index,
+})));
 
 watch(options, () => { view.value = null; notice.value = ""; }, { deep: true });
 function mappedColumns(sheet: CaseImportSheet | undefined, current: Record<string, string>, fields: Record<string, string>) {
@@ -56,8 +84,7 @@ function readFile(file: File): Promise<string> {
     reader.readAsDataURL(file);
   });
 }
-async function choose(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0];
+async function processFile(file: File | null) {
   if (!file || !settings.value) return;
   error.value = ""; notice.value = ""; view.value = null; source.value = null; sheets.value = [];
   if (!/\.(xlsx|json)$/i.test(file.name)) { error.value = "请选择 .xlsx 或 .json 文件"; return; }
@@ -69,7 +96,10 @@ async function choose(event: Event) {
     options.value.layout = /\.json$/i.test(file.name) ? "json" : options.value.layout === "json" ? "rows" : options.value.layout;
     selectSheets();
   } catch (err) { showError(err); }
-  finally { busy.value = false; (event.target as HTMLInputElement).value = ""; }
+  finally { busy.value = false; }
+}
+function onFileChange({ file }: { file: Required<UploadFileInfo> }) {
+  if (file.file) void processFile(file.file);
 }
 function selectSheets() {
   if (!sheets.value.some(sheet => sheet.name === options.value.case_sheet)) options.value.case_sheet = sheets.value[0]?.name ?? null;
@@ -116,48 +146,176 @@ function downloadReport() {
   const url = URL.createObjectURL(new Blob([JSON.stringify(view.value, null, 2)], { type: "application/json" }));
   const link = document.createElement("a"); link.href = url; link.download = `case-import-${view.value.batch.id}.json`; link.click(); URL.revokeObjectURL(url);
 }
+function close() {
+  if (busy.value) return;
+  show.value = false;
+  emit("close");
+}
 onMounted(load);
 </script>
 
 <template>
-  <div class="case-dialog-backdrop" @click.self="!busy && emit('close')">
-    <section class="case-dialog" role="dialog" aria-label="导入测试用例">
-      <header><h2>导入测试用例</h2><button :disabled="busy" @click="emit('close')">关闭</button></header>
-      <p>导入后保存为草稿，评审启用后用于测试。重复提交同一预览不会重复创建；编号冲突不会覆盖旧用例。</p>
-      <nav><a :href="`${rootUrl}/templates/rows`" download>下载每行用例模板</a><a :href="`${rootUrl}/templates/split`" download>下载用例与步骤分表模板</a></nav>
-      <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p>
-      <label>Excel / JSON 文件<input type="file" accept=".xlsx,.json" :disabled="busy || !settings" @change="choose"></label>
-      <p v-if="busy" role="status">正在处理，请稍候…</p>
-      <template v-if="source">
-        <p>{{ source.filename }} · {{ source.size_bytes }} 字节 · <a :href="`${rootUrl}/sources/${source.id}/original`" download>下载原件</a></p>
-        <label>导入布局<select v-model="options.layout" :disabled="busy || /\.json$/i.test(source.filename)"><option value="rows">每行一条用例</option><option value="split">用例与步骤分表</option><option v-if="/\.json$/i.test(source.filename)" value="json">JSON</option></select></label>
-        <label>测试模式<select v-model="options.mode_key" :disabled="busy"><option v-for="mode in modes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
-        <template v-if="options.layout !== 'json'">
-          <label>表头行<input v-model.number="options.header_row" type="number" min="1" max="50" :disabled="busy"></label><button :disabled="busy" @click="inspect">读取表头</button>
-          <label>用例工作表<select v-model="options.case_sheet" :disabled="busy"><option v-for="sheet in sheets" :key="sheet.name" :value="sheet.name">{{ sheet.name }}</option></select></label>
-          <details open><summary>用例列映射</summary><div class="import-mapping"><label v-for="(label, key) in caseFields" :key="key">{{ label }}<select v-model="options.columns[key]" :disabled="busy"><option value="">不映射</option><option v-for="header in caseSheet?.headers.filter(Boolean)" :key="header" :value="header">{{ header }}</option></select></label></div></details>
-          <template v-if="options.layout === 'split'">
-            <label>步骤工作表<select v-model="options.step_sheet" :disabled="busy"><option v-for="sheet in sheets" :key="sheet.name" :value="sheet.name">{{ sheet.name }}</option></select></label>
-            <details open><summary>步骤列映射</summary><div class="import-mapping"><label v-for="(label, key) in stepFields" :key="key">{{ label }}<select v-model="options.step_columns[key]" :disabled="busy"><option value="">不映射</option><option v-for="header in stepSheet?.headers.filter(Boolean)" :key="header" :value="header">{{ header }}</option></select></label></div></details>
-          </template>
+  <NModal
+    v-model:show="show"
+    preset="card"
+    title="导入测试用例"
+    style="width: min(960px, 96vw)"
+    :mask-closable="!busy"
+    :close-on-esc="!busy"
+    @update:show="!$event && close()"
+  >
+    <p class="dialog-hint">导入后保存为草稿，评审启用后用于测试。重复提交同一预览不会重复创建；编号冲突不会覆盖旧用例。</p>
+    <div class="dialog-actions-left">
+      <NButton size="small" tag="a" :href="`${rootUrl}/templates/rows`" download>下载每行用例模板</NButton>
+      <NButton size="small" tag="a" :href="`${rootUrl}/templates/split`" download>下载用例与步骤分表模板</NButton>
+    </div>
+
+    <NAlert v-if="error" type="error" :bordered="false" style="margin: 12px 0">{{ error }}</NAlert>
+    <NAlert v-if="notice" type="success" :bordered="false" style="margin: 12px 0">{{ notice }}</NAlert>
+
+    <div class="dialog-actions-left" style="margin: 12px 0">
+      <NUpload
+        :show-file-list="false"
+        :default-upload="false"
+        accept=".xlsx,.json"
+        :disabled="busy || !settings"
+        @change="onFileChange"
+      >
+        <NButton :disabled="busy || !settings">选择 Excel / JSON 文件</NButton>
+      </NUpload>
+      <span v-if="busy" class="dialog-inline-loading"><NSpin size="small" /> 正在处理，请稍候…</span>
+    </div>
+
+    <template v-if="source">
+      <div class="source-line">
+        <span>{{ source.filename }} · {{ source.size_bytes }} 字节</span>
+        <NButton size="tiny" text tag="a" :href="`${rootUrl}/sources/${source.id}/original`" download>下载原件</NButton>
+      </div>
+      <NForm label-placement="top">
+        <NFormItem label="导入布局">
+          <NSelect
+            v-model:value="options.layout"
+            :options="layoutOptions"
+            :disabled="busy || /\.json$/i.test(source.filename)"
+            style="width: 220px"
+          />
+        </NFormItem>
+        <NFormItem label="测试模式">
+          <NSelect v-model:value="options.mode_key" :options="modeOptions" :disabled="busy" style="width: 220px" />
+        </NFormItem>
+      </NForm>
+      <template v-if="options.layout !== 'json'">
+        <div class="dialog-actions-left">
+          <NFormItem label="表头行" :show-feedback="false" label-placement="left">
+            <NInputNumber v-model:value="options.header_row" :min="1" :max="50" :disabled="busy" style="width: 110px" />
+          </NFormItem>
+          <NButton size="small" :disabled="busy" @click="inspect">读取表头</NButton>
+        </div>
+        <NForm label-placement="top">
+          <NFormItem label="用例工作表">
+            <NSelect
+              :value="options.case_sheet ?? null"
+              :options="sheets.map(sheet => ({ label: sheet.name, value: sheet.name }))"
+              :disabled="busy"
+              style="width: 240px"
+              @update:value="(value: string) => { options.case_sheet = value; }"
+            />
+          </NFormItem>
+        </NForm>
+        <NCollapse style="margin-bottom: 12px">
+          <NCollapseItem title="用例列映射" name="case-columns">
+            <div class="import-mapping">
+              <NFormItem v-for="(label, key) in caseFields" :key="key" :label="label" :show-feedback="false" label-placement="top">
+                <NSelect
+                  :value="options.columns[key] ?? ''"
+                  :options="[{ label: '不映射', value: '' }, ...headerOptions]"
+                  :disabled="busy"
+                  @update:value="(value: string) => { options.columns[key] = value; }"
+                />
+              </NFormItem>
+            </div>
+          </NCollapseItem>
+        </NCollapse>
+        <template v-if="options.layout === 'split'">
+          <NForm label-placement="top">
+            <NFormItem label="步骤工作表">
+              <NSelect
+                :value="options.step_sheet ?? null"
+                :options="sheets.map(sheet => ({ label: sheet.name, value: sheet.name }))"
+                :disabled="busy"
+                style="width: 240px"
+                @update:value="(value: string) => { options.step_sheet = value; }"
+              />
+            </NFormItem>
+          </NForm>
+          <NCollapse style="margin-bottom: 12px">
+            <NCollapseItem title="步骤列映射" name="step-columns">
+              <div class="import-mapping">
+                <NFormItem v-for="(label, key) in stepFields" :key="key" :label="label" :show-feedback="false" label-placement="top">
+                  <NSelect
+                    :value="options.step_columns[key] ?? ''"
+                    :options="[{ label: '不映射', value: '' }, ...stepHeaderOptions]"
+                    :disabled="busy"
+                    @update:value="(value: string) => { options.step_columns[key] = value; }"
+                  />
+                </NFormItem>
+              </div>
+            </NCollapseItem>
+          </NCollapse>
         </template>
-        <footer><button :disabled="busy || !options.mode_key" @click="preview">生成导入预览</button><button :disabled="busy" @click="remember">记住项目导入格式</button></footer>
       </template>
-      <template v-if="view">
-        <h3>预览：{{ view.batch.preview.candidates.length }} 条有效候选</h3>
-        <p>批次 {{ view.batch.id }} · {{ view.batch.status === 'committed' ? '已提交' : '等待提交' }}</p>
-        <p v-if="view.conflicting_case_keys.length" role="alert">编号已存在：{{ view.conflicting_case_keys.join('、') }}。请调整文件或映射后重新预览。</p>
-        <ul v-if="view.batch.preview.issues.length"><li v-for="(issue, index) in view.batch.preview.issues" :key="index">{{ issue.severity === 'error' ? '错误' : '提示' }} · {{ issue.sheet || 'JSON' }} {{ issue.row ? `第 ${issue.row} 行` : '' }} · {{ issue.message }}</li></ul>
-        <label v-if="view.batch.preview.candidates.length">查看用例<select v-model.number="candidateIndex"><option v-for="(item, index) in view.batch.preview.candidates" :key="index" :value="index">{{ item.draft.case_key }} · {{ item.draft.title }} · 第 {{ item.row }} 行</option></select></label>
-        <JsonContentTree v-if="candidate" label="完整用例 JSON" :value="candidate.draft.content_json" />
-        <footer><button :disabled="!canCommit" @click="commit">提交草稿</button><button @click="downloadReport">下载预览与错误报告</button></footer>
-      </template>
-    </section>
-  </div>
+      <div class="dialog-actions-left">
+        <NButton size="small" type="primary" :disabled="busy || !options.mode_key" @click="preview">生成导入预览</NButton>
+        <NButton size="small" :disabled="busy" @click="remember">记住项目导入格式</NButton>
+      </div>
+    </template>
+
+    <template v-if="view">
+      <NAlert type="info" :bordered="false" style="margin: 16px 0 12px">
+        预览：{{ view.batch.preview.candidates.length }} 条有效候选 · 批次 {{ view.batch.id }} ·
+        {{ view.batch.status === 'committed' ? '已提交' : '等待提交' }}
+      </NAlert>
+      <NAlert v-if="view.conflicting_case_keys.length" type="error" :bordered="false" style="margin-bottom: 12px">
+        编号已存在：{{ view.conflicting_case_keys.join('、') }}。请调整文件或映射后重新预览。
+      </NAlert>
+      <NAlert v-if="view.batch.preview.issues.length" type="warning" :bordered="false" style="margin-bottom: 12px">
+        <ul class="issue-list">
+          <li v-for="(issue, index) in view.batch.preview.issues" :key="index">
+            {{ issue.severity === 'error' ? '错误' : '提示' }} · {{ issue.sheet || 'JSON' }}
+            {{ issue.row ? `第 ${issue.row} 行` : '' }} · {{ issue.message }}
+          </li>
+        </ul>
+      </NAlert>
+      <NForm v-if="view.batch.preview.candidates.length" label-placement="top">
+        <NFormItem label="查看用例">
+          <NSelect
+            :value="candidateIndex"
+            :options="candidateOptions"
+            style="width: 420px"
+            @update:value="(value: number) => { candidateIndex = value; }"
+          />
+        </NFormItem>
+      </NForm>
+      <JsonContentTree v-if="candidate" label="完整用例 JSON" :value="candidate.draft.content_json" />
+      <NEmpty v-else description="暂无候选用例" size="small" />
+      <div class="dialog-actions-left" style="margin-top: 12px">
+        <NButton size="small" type="primary" :disabled="!canCommit" @click="commit">提交草稿</NButton>
+        <NButton size="small" @click="downloadReport">下载预览与错误报告</NButton>
+      </div>
+    </template>
+
+    <template #footer>
+      <div class="dialog-actions">
+        <NButton :disabled="busy" @click="close">关闭</NButton>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
 @import "./caseDialogs.css";
 .import-mapping { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 0 16px; }
-nav { flex-wrap: wrap; }
+.source-line { display: flex; align-items: center; gap: 12px; margin: 12px 0; color: var(--text-secondary, #64748b); }
+.dialog-inline-loading { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary, #64748b); }
+.issue-list { margin: 0; padding-left: 18px; }
 </style>

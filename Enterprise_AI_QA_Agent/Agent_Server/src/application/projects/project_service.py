@@ -5,6 +5,7 @@ from uuid import uuid4
 
 from src.application.projects.project_store import ProjectStore, utc_now
 from src.schemas.project import (
+    ProjectCounts,
     ProjectCreateRequest,
     ProjectPage,
     ProjectRecord,
@@ -69,7 +70,11 @@ class ProjectService:
             limit=limit,
             offset=offset,
         )
-        return ProjectPage(items=items, limit=limit, offset=offset, has_more=has_more)
+        normalized_query = (query or "").strip() or None
+        total = await self._store.count(status=status, query=normalized_query)
+        counts = await self._store.counts()
+        return ProjectPage(items=items, limit=limit, offset=offset, has_more=has_more,
+            total=total, counts=ProjectCounts(**counts))
 
     async def update(self, project_id: str, payload: ProjectUpdateRequest) -> ProjectRecord:
         project = await self.get(project_id)

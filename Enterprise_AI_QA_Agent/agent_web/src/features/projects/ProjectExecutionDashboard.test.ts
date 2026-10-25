@@ -38,7 +38,11 @@ describe("project execution dashboard", () => {
       expect(rows[1].findAll("td").map(td => td.text())).toEqual(["浏览器", "1", "0", "1", "3"]);
       expect(rows[2].findAll("td").map(td => td.text())).toEqual(["Docker", "0", "1", "1", "未单独设限"]);
     } finally { wrapper.unmount(); }
-    expect(vi.getTimerCount()).toBe(0);
+    const summaryCalls = api.getProjectExecutionSummary.mock.calls.length;
+    const occupancyCalls = api.getResourceOccupancy.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(api.getProjectExecutionSummary).toHaveBeenCalledTimes(summaryCalls);
+    expect(api.getResourceOccupancy).toHaveBeenCalledTimes(occupancyCalls);
   });
 
   it("rejects late responses from the previously selected project", async () => {
@@ -55,7 +59,11 @@ describe("project execution dashboard", () => {
       expect(wrapper.text()).not.toContain("执行条目26");
       expect(api.getResourceOccupancy.mock.calls[0][1].aborted).toBe(true);
     } finally { wrapper.unmount(); }
-    expect(vi.getTimerCount()).toBe(0);
+    const summaryCalls = api.getProjectExecutionSummary.mock.calls.length;
+    const occupancyCalls = api.getResourceOccupancy.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(api.getProjectExecutionSummary).toHaveBeenCalledTimes(summaryCalls);
+    expect(api.getResourceOccupancy).toHaveBeenCalledTimes(occupancyCalls);
   });
 
   it("shows Agent task limits separately from physical capacity", async () => {

@@ -1758,11 +1758,19 @@ export interface ProjectRecord {
   archived_at?: string | null;
 }
 
+export interface ProjectCounts {
+  all: number;
+  active: number;
+  archived: number;
+}
+
 export interface ProjectPage {
   items: ProjectRecord[];
   limit: number;
   offset: number;
   has_more: boolean;
+  total: number;
+  counts: ProjectCounts;
 }
 
 export interface ProjectOverview {

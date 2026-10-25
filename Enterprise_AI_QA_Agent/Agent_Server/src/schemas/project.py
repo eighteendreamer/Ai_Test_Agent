@@ -69,11 +69,19 @@ class ProjectUpdateRequest(BaseModel):
         return normalized or None
 
 
+class ProjectCounts(BaseModel):
+    all: int = 0
+    active: int = 0
+    archived: int = 0
+
+
 class ProjectPage(BaseModel):
     items: list[ProjectRecord]
     limit: int
     offset: int
     has_more: bool
+    total: int = 0
+    counts: ProjectCounts = Field(default_factory=ProjectCounts)
 
 
 class ProjectGraphOverview(BaseModel):

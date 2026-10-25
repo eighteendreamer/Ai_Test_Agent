@@ -1,10 +1,36 @@
 <script setup lang="ts">
 import CaseEffectCoveragePanel from "../features/projects/CaseEffectCoveragePanel.vue";
-import { computed, onMounted, ref, watch } from "vue";
-import { useMessage } from "naive-ui";
+import { computed, h, onMounted, ref, watch } from "vue";
+import {
+  NAlert,
+  NButton,
+  NDataTable,
+  NDescriptions,
+  NDescriptionsItem,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NGrid,
+  NGi,
+  NIcon,
+  NInput,
+  NModal,
+  NPagination,
+  NPopconfirm,
+  NSelect,
+  NStatistic,
+  NTabPane,
+  NTabs,
+  NTag,
+  NTooltip,
+  useMessage,
+} from "naive-ui";
+import type { DataTableColumns, DataTableRowKey } from "naive-ui";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "../services/api";
+import ProjectCatalog from "../features/projects/ProjectCatalog.vue";
+import ProjectFormModal from "../features/projects/ProjectFormModal.vue";
 import ProjectExecutionDashboard from "../features/projects/ProjectExecutionDashboard.vue";
 import TestCaseTemplateEditor from "../features/projects/TestCaseTemplateEditor.vue";
 import BusinessEnvironmentManager from "../features/projects/BusinessEnvironmentManager.vue";
@@ -30,6 +56,7 @@ import type {
   TestSuiteBundle,
   TestRunRecord,
   TestRunDetail,
+  TestRunItemRecord,
   TestRunPlanRevisionRecord,
   TestRunStatus,
 } from "../types";
@@ -45,17 +72,12 @@ const REGRESSION_BATCH_PAGE_SIZE = 20;
 const toast = useMessage();
 const route = useRoute();
 const router = useRouter();
-const projects = ref<ProjectRecord[]>([]);
+const selectedProject = ref<ProjectRecord | null>(null);
 const selectedId = ref(String(route.params.projectId || ""));
 const overview = ref<ProjectOverview | null>(null);
 const loading = ref(false);
-const saving = ref(false);
 const error = ref("");
-const query = ref("");
-const statusFilter = ref<"" | ProjectStatus>("");
 const editorOpen = ref(false);
-const editingId = ref("");
-const form = ref({ project_key: "", name: "", description: "", base_url: "", graph_scope_key: "" });
 
 const resourceTab = ref<ResourceTab>("cases");
 const modes = ref<ModeDescriptor[]>([]);
@@ -125,11 +147,9 @@ const runSaving = ref(false);
 const runSuite = ref<TestSuiteBundle | null>(null);
 const runForm = ref({ mode_key: "", session_id: "" });
 
-const selected = computed(() => projects.value.find(item => item.id === selectedId.value) ?? null);
+const selected = computed(() => selectedProject.value);
 const isDetailRoute = computed(() => route.name === "project-detail");
 const routeProjectId = computed(() => String(route.params.projectId || ""));
-const activeProjectCount = computed(() => projects.value.filter(item => item.status === "active").length);
-const archivedProjectCount = computed(() => projects.value.filter(item => item.status === "archived").length);
 const hasGenerationSources = computed(() => {
   const graph = overview.value?.graph;
   return Boolean(
@@ -176,30 +196,31 @@ async function loadModes() {
   }
 }
 
-async function loadProjects() {
+const RESOURCE_TABS: ResourceTab[] = ["cases", "suites", "runs", "legacy-smoke", "regressions"];
+
+function tabFromRoute(): ResourceTab {
+  const value = String(route.query.tab || "");
+  return RESOURCE_TABS.includes(value as ResourceTab) ? (value as ResourceTab) : "cases";
+}
+
+async function loadSelectedProject() {
+  const projectId = routeProjectId.value;
+  if (!projectId) {
+    selectedProject.value = null;
+    return;
+  }
   loading.value = true;
   error.value = "";
   try {
-    const page = await api.listProjects({
-      status: statusFilter.value || undefined,
-      query: query.value.trim() || undefined,
-      limit: 100,
-    });
-    projects.value = page.items;
-    if (isDetailRoute.value) {
-      selectedId.value = routeProjectId.value;
-      if (!projects.value.some(item => item.id === selectedId.value)) {
-        resetProjectResources();
-        await router.replace({ name: "projects" });
-        return;
-      }
-      await loadProjectDetail();
-    } else {
-      selectedId.value = "";
-      resetProjectResources();
-    }
+    selectedProject.value = await api.getProject(projectId);
+    selectedId.value = projectId;
+    resourceTab.value = tabFromRoute();
+    await loadProjectDetail();
   } catch (err) {
+    selectedProject.value = null;
+    resetProjectResources();
     error.value = err instanceof Error ? err.message : "项目加载失败";
+    await router.replace({ name: "projects" });
   } finally {
     loading.value = false;
   }
@@ -438,6 +459,12 @@ async function changeRegressionPage(direction: -1 | 1) {
 
 async function switchResourceTab(tab: ResourceTab) {
   resourceTab.value = tab;
+  if (isDetailRoute.value) {
+    const query = { ...route.query };
+    if (tab === "cases") delete query.tab;
+    else query.tab = tab;
+    if (query.tab !== route.query.tab) void router.replace({ query });
+  }
   if (tab === "cases") {
     caseOffset.value = 0;
     await loadTestCases();
@@ -477,57 +504,23 @@ async function changeRunPage(direction: -1 | 1) {
   await loadTestRuns();
 }
 
-function openCreate() {
-  editingId.value = "";
-  form.value = { project_key: "", name: "", description: "", base_url: "", graph_scope_key: "" };
+function openEdit() {
   editorOpen.value = true;
 }
 
-function openEdit(project: ProjectRecord) {
-  editingId.value = project.id;
-  form.value = {
-    project_key: project.project_key,
-    name: project.name,
-    description: project.description || "",
-    base_url: project.base_url || "",
-    graph_scope_key: project.graph_scope_key || "",
-  };
-  editorOpen.value = true;
-}
-
-async function saveProject() {
-  if (!form.value.name.trim() || (!editingId.value && !form.value.project_key.trim())) {
-    toast.error("项目标识和名称不能为空");
-    return;
-  }
-  saving.value = true;
-  try {
-    const common = {
-      name: form.value.name.trim(),
-      description: form.value.description.trim() || null,
-      base_url: form.value.base_url.trim() || null,
-      graph_scope_key: form.value.graph_scope_key.trim() || null,
-    };
-    const saved = editingId.value
-      ? await api.updateProject(editingId.value, common)
-      : await api.createProject({ project_key: form.value.project_key.trim(), ...common });
-    editorOpen.value = false;
-    selectedId.value = saved.id;
-    await loadProjects();
-    toast.success(editingId.value ? "项目已更新" : "项目已创建");
-  } catch (err) {
-    toast.error(err instanceof Error ? err.message : "保存项目失败");
-  } finally {
-    saving.value = false;
-  }
+function onProjectSaved(project: ProjectRecord) {
+  selectedProject.value = project;
+  editorOpen.value = false;
+  if (selectedId.value !== project.id) selectedId.value = project.id;
+  void loadOverview();
 }
 
 async function archiveSelected() {
   if (!selected.value || selected.value.status === "archived") return;
   try {
     await api.archiveProject(selected.value.id);
-    await loadProjects();
     toast.success("项目已归档，历史资源仍被保留");
+    await router.push({ name: "projects" });
   } catch (err) {
     toast.error(err instanceof Error ? err.message : "归档失败");
   }
@@ -840,15 +833,472 @@ async function loadMoreRegressionBatches() {
   }
 }
 
+const casePage = computed(() => Math.floor(caseOffset.value / CASE_PAGE_SIZE) + 1);
+const casePageCount = computed(() => casePage.value + (casesHaveMore.value ? 1 : 0));
+
+const caseStatusOptions = computed(() => [
+  { label: "全部状态", value: "" },
+  ...Object.entries(lifecycleLabels).map(([value, label]) => ({ label, value })),
+]);
+const runStatusOptions = [
+  { label: "全部运行状态", value: "" },
+  { label: "等待执行", value: "queued" },
+  { label: "执行中", value: "running" },
+  { label: "已完成", value: "completed" },
+  { label: "已取消", value: "cancelled" },
+];
+const regressionStatusOptions = [
+  { label: "全部失败状态", value: "" },
+  { label: "失败", value: "failed" },
+  { label: "错误", value: "error" },
+  { label: "阻塞", value: "blocked" },
+];
+const modeFilterOptions = computed(() => [
+  { label: "全部测试模式", value: "" },
+  ...modes.value.map((mode) => ({ label: mode.name, value: mode.key })),
+]);
+
+function onTabChange(name: string | number) {
+  void switchResourceTab(String(name) as ResourceTab);
+}
+
+function onCaseStatusChange(value: string) {
+  caseStatus.value = value as "" | TestCaseLifecycleStatus;
+  void searchCases();
+}
+
+function onRunStatusChange(value: string) {
+  runStatus.value = value as "" | TestRunStatus;
+  runOffset.value = 0;
+  void loadTestRuns();
+}
+
+function onRegressionStatusChange(value: string) {
+  regressionStatus.value = value as "" | RegressionFailureStatus;
+  void searchRegressionFailures();
+}
+
+function onRegressionModeChange(value: string) {
+  regressionMode.value = value;
+  void searchRegressionFailures();
+}
+const suitePage = computed(() => Math.floor(suiteOffset.value / SUITE_PAGE_SIZE) + 1);
+const suitePageCount = computed(() => suitePage.value + (suitesHaveMore.value ? 1 : 0));
+const runPage = computed(() => Math.floor(runOffset.value / RUN_PAGE_SIZE) + 1);
+const runPageCount = computed(() => runPage.value + (runsHaveMore.value ? 1 : 0));
+
+function setCasePage(value: number) {
+  caseOffset.value = (value - 1) * CASE_PAGE_SIZE;
+  void loadTestCases();
+}
+
+function setSuitePage(value: number) {
+  suiteOffset.value = (value - 1) * SUITE_PAGE_SIZE;
+  void loadTestSuites();
+}
+
+function setRunPage(value: number) {
+  runOffset.value = (value - 1) * RUN_PAGE_SIZE;
+  void loadTestRuns();
+}
+
+type TagType = "default" | "success" | "warning" | "error" | "info";
+
+function lifecycleTagType(value: TestCaseLifecycleStatus): TagType {
+  return ({ draft: "default", pending_review: "warning", active: "success",
+    disabled: "info", archived: "default" } as Record<string, TagType>)[value] || "default";
+}
+
+function runTagType(value: string): TagType {
+  return ({ queued: "info", running: "warning", completed: "success", cancelled: "default" } as Record<string, TagType>)[value] || "default";
+}
+
+function failureTagType(value: string): TagType {
+  return ({ failed: "error", error: "warning", blocked: "default" } as Record<string, TagType>)[value] || "default";
+}
+
+function priorityTagType(value: string): TagType {
+  return ({ P0: "error", P1: "warning", P2: "info", P3: "default" } as Record<string, TagType>)[value] || "default";
+}
+
+const checkedCaseIds = computed(() => Object.keys(selectedCasesById.value));
+const checkedRegressionIds = computed(() => Object.keys(selectedRegressionResults.value));
+
+function onCaseChecked(keys: DataTableRowKey[]) {
+  const checked = new Set(keys.map(String));
+  for (const testCase of testCases.value) {
+    if (checked.has(testCase.id) && testCase.lifecycle_status === "active" && testCase.active_version_id) {
+      selectedCasesById.value[testCase.id] = testCase;
+    } else if (!checked.has(testCase.id)) {
+      delete selectedCasesById.value[testCase.id];
+    }
+  }
+}
+
+function onRegressionChecked(keys: DataTableRowKey[]) {
+  const checked = new Set(keys.map(String));
+  for (const failure of regressionFailures.value) {
+    if (!checked.has(failure.source_result_id)) {
+      delete selectedRegressionResults.value[failure.source_result_id];
+    } else if (!selectedRegressionResults.value[failure.source_result_id]) {
+      toggleRegressionSelection(failure, true);
+    }
+  }
+}
+
+const caseColumns = computed<DataTableColumns<TestCaseRecord>>(() => [
+  {
+    type: "selection",
+    width: 46,
+    disabled: (row) => row.lifecycle_status !== "active" || !row.active_version_id,
+  },
+  {
+    title: "用例",
+    key: "title",
+    minWidth: 280,
+    sorter: (a, b) => a.title.localeCompare(b.title, "zh-CN"),
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("strong", row.title),
+      h("small", `${row.case_key} · ${row.case_type}`),
+    ]),
+  },
+  {
+    title: "状态",
+    key: "lifecycle_status",
+    width: 110,
+    render: (row) => h(NTag, { size: "small", bordered: false, type: lifecycleTagType(row.lifecycle_status) },
+      { default: () => lifecycleLabels[row.lifecycle_status] }),
+  },
+  { title: "模式", key: "mode_key", width: 150, render: (row) => modeLabel(row.mode_key) },
+  {
+    title: "优先级",
+    key: "priority",
+    width: 100,
+    render: (row) => h(NTag, { size: "small", bordered: false, type: priorityTagType(row.priority) },
+      { default: () => row.priority }),
+  },
+  {
+    title: "当前版本",
+    key: "active_version_id",
+    width: 180,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("span", row.active_version_id ? shortId(row.active_version_id) : "未启用"),
+      h("small", `最新 v${row.latest_version}`),
+    ]),
+  },
+  {
+    title: "操作",
+    key: "actions",
+    width: 180,
+    render: (row) => h("div", { class: "row-actions" }, [
+      h(NButton, { text: true, size: "small", onClick: () => { contentCase.value = row; } },
+        { default: () => "查看内容" }),
+      row.lifecycle_status !== "archived"
+        ? h(NButton, { text: true, size: "small", type: "primary",
+            onClick: () => { contentCase.value = row; } }, { default: () => "评审与启用" })
+        : null,
+    ]),
+  },
+]);
+
+const suiteColumns = computed<DataTableColumns<TestSuiteBundle>>(() => [
+  {
+    title: "套件名称",
+    key: "name",
+    minWidth: 260,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("strong", row.suite.name),
+      h("small", row.suite.id),
+    ]),
+  },
+  {
+    title: "状态",
+    key: "status",
+    width: 110,
+    render: (row) => h(NTag, { size: "small", bordered: false,
+      type: row.suite.status === "active" ? "success" : "default" },
+      { default: () => (row.suite.status === "active" ? "启用中" : "已归档") }),
+  },
+  { title: "条目数量", key: "items", width: 110, render: (row) => row.items.length },
+  {
+    title: "说明",
+    key: "description",
+    minWidth: 220,
+    ellipsis: { tooltip: true },
+    render: (row) => row.suite.description || "—",
+  },
+  {
+    title: "更新时间",
+    key: "updated_at",
+    width: 190,
+    render: (row) => formatServerDateTime(row.suite.updated_at),
+  },
+  {
+    title: "操作",
+    key: "actions",
+    width: 140,
+    render: (row) => h(NButton, {
+      text: true,
+      size: "small",
+      type: "primary",
+      disabled: selected.value?.status === "archived" || row.suite.status !== "active",
+      onClick: () => openRunEditor(row),
+    }, { default: () => "创建运行" }),
+  },
+]);
+
+const runColumns = computed<DataTableColumns<TestRunRecord>>(() => [
+  {
+    title: "运行",
+    key: "id",
+    minWidth: 230,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("strong", shortId(row.id)),
+      h("small", `${row.run_kind === "regression" ? "回归" : "普通"} · 套件 ${shortId(row.suite_id)}`),
+      row.parent_run_id ? h("small", `来源 ${shortId(row.parent_run_id)}`) : null,
+    ]),
+  },
+  {
+    title: "状态",
+    key: "status",
+    width: 110,
+    render: (row) => h(NTag, { size: "small", bordered: false, type: runTagType(row.status) },
+      { default: () => row.status }),
+  },
+  { title: "模式", key: "mode_key", width: 150, render: (row) => modeLabel(row.mode_key) },
+  {
+    title: "进度",
+    key: "progress",
+    width: 120,
+    render: (row) => {
+      const done = row.stats.passed + row.stats.failed + row.stats.error
+        + row.stats.blocked + row.stats.skipped + row.stats.cancelled;
+      return `${done} / ${row.stats.total}`;
+    },
+  },
+  {
+    title: "结果统计",
+    key: "stats",
+    minWidth: 240,
+    render: (row) => h("small", `通过 ${row.stats.passed} · 失败 ${row.stats.failed} · 错误 ${row.stats.error} · 阻塞 ${row.stats.blocked}`),
+  },
+  {
+    title: "创建时间",
+    key: "created_at",
+    width: 190,
+    sorter: (a, b) => a.created_at.localeCompare(b.created_at),
+    render: (row) => formatServerDateTime(row.created_at),
+  },
+  {
+    title: "操作",
+    key: "actions",
+    width: 260,
+    render: (row) => h("div", { class: "row-actions" }, [
+      h(NButton, { text: true, size: "small", type: "primary", onClick: () => openRunDetail(row) },
+        { default: () => "详情" }),
+      row.status === "queued" || row.status === "running"
+        ? h(NPopconfirm, { positiveText: "取消运行", negativeText: "返回", onPositiveClick: () => cancelRun(row) }, {
+            trigger: () => h(NButton, { text: true, size: "small", type: "error" }, { default: () => "取消" }),
+            default: () => "取消后该运行不再调度，确定继续？",
+          })
+        : null,
+      canCreateRegression(row)
+        ? h(NButton, {
+            text: true,
+            size: "small",
+            loading: regressionRunId.value === row.id,
+            disabled: Boolean(regressionRunId.value),
+            onClick: () => createRegressionRun(row),
+          }, { default: () => "失败项回归" })
+        : null,
+    ]),
+  },
+]);
+
+const legacySmokeColumns = computed<DataTableColumns<LegacySmokeRunSummary>>(() => [
+  {
+    title: "旧运行",
+    key: "legacy_run_id",
+    minWidth: 240,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("strong", shortId(row.legacy_run_id)),
+      h("small", `计划 ${shortId(row.legacy_plan_id)} · v${row.legacy_plan_version}`),
+    ]),
+  },
+  { title: "Scope", key: "project_scope", minWidth: 160 },
+  {
+    title: "原状态",
+    key: "legacy_status",
+    width: 160,
+    render: (row) => h(NTag, { size: "small", bordered: false }, { default: () => `${row.legacy_status} / ${row.legacy_verdict}` }),
+  },
+  {
+    title: "统计",
+    key: "stats",
+    minWidth: 240,
+    render: (row) => h("small", `总计 ${row.total_cases} · 通过 ${row.passed_cases} · 失败 ${row.failed_cases} · 阻塞 ${row.blocked_cases}`),
+  },
+  { title: "开始时间", key: "started_at", width: 190, render: (row) => formatServerDateTime(row.started_at) },
+  {
+    title: "用例摘要",
+    key: "case_results",
+    minWidth: 320,
+    render: (row) => h("div", { class: "resource-cell" }, row.case_results.map((item) =>
+      h("small", { key: item.legacy_case_id }, `${item.title}：${item.legacy_status} → ${item.mapped_status}（证据 ${item.evidence_count}）`))),
+  },
+]);
+
+const regressionColumns = computed<DataTableColumns<RegressionFailureSummary>>(() => [
+  {
+    type: "selection",
+    width: 46,
+    disabled: (row) => regressionSelectionDisabled(row),
+  },
+  {
+    title: "失败用例",
+    key: "case_title",
+    minWidth: 280,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("strong", row.case_title),
+      h("small", `${row.case_key} · Run ${shortId(row.source_run_id)}`),
+      h("small", row.summary),
+    ]),
+  },
+  {
+    title: "状态",
+    key: "failure_status",
+    width: 110,
+    render: (row) => h(NTag, { size: "small", bordered: false, type: failureTagType(row.failure_status) },
+      { default: () => row.failure_status }),
+  },
+  { title: "模式", key: "mode_key", width: 150, render: (row) => modeLabel(row.mode_key) },
+  {
+    title: "证据",
+    key: "evidence",
+    minWidth: 240,
+    render: (row) => h("small", `Evidence ${row.evidence_count} · Artifact ${row.artifact_count} · Verification ${row.verification_count}`),
+  },
+  {
+    title: "回归批次",
+    key: "regression_batch_count",
+    width: 150,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h("strong", String(row.regression_batch_count)),
+      h("small", row.latest_regression ? `最新 ${row.latest_regression.item_status}` : "尚未回归"),
+    ]),
+  },
+  { title: "失败时间", key: "failed_at", width: 190, sorter: (a, b) => a.failed_at.localeCompare(b.failed_at),
+    render: (row) => formatServerDateTime(row.failed_at) },
+  {
+    title: "操作",
+    key: "actions",
+    width: 160,
+    render: (row) => h(NButton, { text: true, size: "small", type: "primary",
+      onClick: () => openRegressionEvidence(row) }, { default: () => "证据与时间线" }),
+  },
+]);
+
+const generationModeOptions = computed(() =>
+  generationModes.value.map((mode) => ({ label: mode.name, value: mode.key })),
+);
+
+function itemTagType(value: string): TagType {
+  return ({
+    passed: "success",
+    failed: "error",
+    error: "warning",
+    blocked: "default",
+    running: "warning",
+    queued: "info",
+    waiting_approval: "info",
+    waiting_resource: "info",
+    cancelled: "default",
+    skipped: "default",
+  } as Record<string, TagType>)[value] || "default";
+}
+
+const runItemColumns = computed<DataTableColumns<TestRunItemRecord>>(() => [
+  { title: "位置", key: "position", width: 70 },
+  {
+    title: "状态",
+    key: "status",
+    width: 190,
+    render: (row) => h("div", { class: "resource-cell" }, [
+      h(NTag, { size: "small", bordered: false, type: itemTagType(row.status) },
+        { default: () => row.status }),
+      h("small", shortId(row.case_id)),
+      row.status === "waiting_resource"
+        ? h("small", waitingReasonLabel(row.waiting_reason || "resource_unavailable"))
+        : null,
+    ]),
+  },
+  {
+    title: "租约",
+    key: "lease_expires_at",
+    width: 190,
+    render: (row) => h("small", row.lease_expires_at
+      ? `到期 ${formatServerDateTime(row.lease_expires_at)}` : "—"),
+  },
+  {
+    title: "审批",
+    key: "approval_id",
+    width: 170,
+    render: (row) => h("small", row.status === "waiting_approval"
+      ? `待处理 ${shortId(row.approval_id || "")}`
+      : (row.approval_id ? shortId(row.approval_id) : "—")),
+  },
+  {
+    title: "补偿",
+    key: "resource_cleanup_completed_at",
+    width: 110,
+    render: (row) => h("small", row.status === "cancelled"
+      ? (row.resource_cleanup_completed_at ? "已完成" : "待补偿") : "—"),
+  },
+  {
+    title: "结果",
+    key: "result_id",
+    width: 130,
+    render: (row) => h("small", row.result_id ? shortId(row.result_id) : "—"),
+  },
+  {
+    title: "操作",
+    key: "actions",
+    width: 130,
+    render: (row) => row.status === "waiting_approval"
+      ? h("div", { class: "row-actions" }, [
+          h(NButton, { text: true, size: "small", type: "primary",
+            onClick: () => decideRunItemApproval(row, "approved") }, { default: () => "通过" }),
+          h(NButton, { text: true, size: "small", type: "error",
+            onClick: () => decideRunItemApproval(row, "denied") }, { default: () => "拒绝" }),
+        ])
+      : "—",
+  },
+]);
+
 onMounted(() => {
-  void Promise.all([loadModes(), loadProjects()]);
+  void loadModes();
+  if (isDetailRoute.value) void loadSelectedProject();
 });
 
 watch(routeProjectId, async (projectId) => {
-  if (!isDetailRoute.value || !projectId || projectId === selectedId.value) return;
+  if (!isDetailRoute.value) {
+    selectedProject.value = null;
+    selectedId.value = "";
+    resetProjectResources();
+    return;
+  }
+  if (!projectId || projectId === selectedId.value) return;
   selectedId.value = projectId;
   resetProjectResources();
-  await loadProjectDetail();
+  await loadSelectedProject();
+});
+
+watch(() => route.query.tab, (value) => {
+  if (!isDetailRoute.value) return;
+  const tab = RESOURCE_TABS.includes(String(value || "") as ResourceTab)
+    ? (String(value) as ResourceTab)
+    : "cases";
+  if (tab !== resourceTab.value) void switchResourceTab(tab);
 });
 
 watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) => {
@@ -862,349 +1312,333 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
 
 <template>
   <main class="projects-page">
-    <header v-if="!isDetailRoute" class="page-head">
-      <div>
-        <h1>测试项目</h1>
-        <p>查找和管理测试项目，进入项目后查看完整资料与测试资源。</p>
-      </div>
-      <button class="primary" @click="openCreate"><i class="fa-solid fa-plus"></i> 新建项目</button>
-    </header>
+    <ProjectCatalog v-if="!isDetailRoute" @select="selectProject" />
 
-    <section v-if="!isDetailRoute" class="toolbar">
-      <input v-model="query" placeholder="搜索项目名称或标识" @keyup.enter="loadProjects">
-      <select v-model="statusFilter" @change="loadProjects">
-        <option value="">全部状态</option>
-        <option value="active">启用中</option>
-        <option value="archived">已归档</option>
-      </select>
-      <button @click="loadProjects">查询</button>
-    </section>
-
-    <div v-if="error" class="error-banner">{{ error }}</div>
-    <section v-if="!isDetailRoute" class="catalog-summary" aria-label="项目统计">
-      <span><strong>{{ projects.length }}</strong> 个项目</span>
-      <span><i class="summary-dot active"></i>{{ activeProjectCount }} 个启用中</span>
-      <span><i class="summary-dot archived"></i>{{ archivedProjectCount }} 个已归档</span>
-    </section>
-
-    <section v-if="!isDetailRoute" class="project-catalog">
-        <div v-if="loading" class="empty">正在加载项目…</div>
-        <button
-          v-for="project in projects"
-          v-else
-          :key="project.id"
-          class="project-card"
-          @click="selectProject(project.id)"
-        >
-          <span class="project-card-head">
-            <span class="project-monogram">{{ project.name.slice(0, 1).toUpperCase() }}</span>
-            <span class="project-copy">
-              <strong>{{ project.name }}</strong>
-              <small>{{ project.project_key }}</small>
-            </span>
-            <span class="status" :class="project.status">{{ project.status === "active" ? "启用中" : "已归档" }}</span>
-          </span>
-          <span class="project-card-description">{{ project.description || "暂无项目说明" }}</span>
-          <span class="project-card-meta">
-            <span><i class="fa-solid fa-globe"></i>{{ project.base_url || "未设置 Base URL" }}</span>
-            <span><i class="fa-regular fa-clock"></i>更新于 {{ formatServerDateTime(project.updated_at) }}</span>
-          </span>
-          <span class="project-card-action">查看项目详情 <i class="fa-solid fa-arrow-right"></i></span>
-        </button>
-        <div v-if="!loading && !projects.length" class="empty">暂无符合条件的测试项目</div>
-    </section>
+    <NAlert v-if="isDetailRoute && error" type="error" :bordered="false" class="detail-alert">
+      {{ error }}
+    </NAlert>
 
       <section v-if="isDetailRoute && selected" class="project-detail">
         <div class="detail-breadcrumb">
-          <button type="button" @click="backToProjects"><i class="fa-solid fa-arrow-left"></i> 返回项目目录</button>
+          <NButton text type="primary" @click="backToProjects">
+            <template #icon>
+              <NIcon><i class="fa-solid fa-arrow-left" /></NIcon>
+            </template>
+            返回项目目录
+          </NButton>
           <span>/</span>
           <strong>{{ selected.name }}</strong>
         </div>
         <div class="detail-head">
           <div><h2>{{ selected.name }}</h2><p>{{ selected.description || "暂无项目说明" }}</p></div>
           <div class="actions">
-            <RouterLink :to="`/projects/${selected.id}/recording-scenes`">录制场景</RouterLink>
-            <button @click="businessEnvironmentOpen = true">测试环境</button>
-            <button :disabled="selected.status === 'archived'" @click="openEdit(selected)">编辑</button>
-            <button class="danger" :disabled="selected.status === 'archived'" @click="archiveSelected">归档</button>
+            <NButton size="small" @click="router.push(`/projects/${selected.id}/recording-scenes`)">录制场景</NButton>
+            <NButton size="small" @click="businessEnvironmentOpen = true">测试环境</NButton>
+            <NTooltip trigger="hover" :disabled="selected.status === 'active'">
+              <template #trigger>
+                <span>
+                  <NButton size="small" :disabled="selected.status !== 'active'" @click="openEdit">编辑</NButton>
+                </span>
+              </template>
+              已归档项目不可编辑
+            </NTooltip>
+            <NPopconfirm
+              positive-text="归档"
+              negative-text="取消"
+              :disabled="selected.status !== 'active'"
+              @positive-click="archiveSelected"
+            >
+              <template #trigger>
+                <span>
+                  <NButton size="small" type="error" :disabled="selected.status !== 'active'">归档</NButton>
+                </span>
+              </template>
+              归档后项目将不可编辑，历史资源仍会保留。
+            </NPopconfirm>
           </div>
         </div>
-        <div class="stats">
-          <article><span>API 文档</span><strong>{{ overview?.api_doc_count ?? 0 }}</strong></article>
-          <article><span>测试用例</span><strong>{{ overview?.test_case_count ?? 0 }}</strong></article>
-          <article><span>测试套件</span><strong>{{ overview?.test_suite_count ?? 0 }}</strong></article>
-          <article><span>测试运行</span><strong>{{ overview?.test_run_count ?? 0 }}</strong></article>
-          <article><span>测试会话</span><strong>{{ overview?.session_count ?? 0 }}</strong></article>
-          <article><span>图谱节点</span><strong>{{ (overview?.graph.page_count ?? 0) + (overview?.graph.element_count ?? 0) + (overview?.graph.entity_count ?? 0) + (overview?.graph.recording_count ?? 0) + (overview?.graph.action_count ?? 0) }}</strong></article>
-          <article><span>图谱关系</span><strong>{{ overview?.graph.edge_count ?? 0 }}</strong></article>
-        </div>
-        <dl class="facts">
-          <div><dt>Base URL</dt><dd>{{ selected.base_url || "未设置" }}</dd></div>
-          <div><dt>图谱 Scope</dt><dd>{{ selected.graph_scope_key || "未绑定" }}</dd></div>
-          <div><dt>项目 ID</dt><dd>{{ selected.id }}</dd></div>
-        </dl>
-        <p v-if="overview && !overview.graph.available" class="graph-warning">图谱暂不可用：{{ overview.graph.error }}</p>
+        <NGrid :cols="4" :x-gap="12" :y-gap="12" class="detail-stats">
+          <NGi><NStatistic label="API 文档" :value="overview?.api_doc_count ?? 0" /></NGi>
+          <NGi><NStatistic label="测试用例" :value="overview?.test_case_count ?? 0" /></NGi>
+          <NGi><NStatistic label="测试套件" :value="overview?.test_suite_count ?? 0" /></NGi>
+          <NGi><NStatistic label="测试运行" :value="overview?.test_run_count ?? 0" /></NGi>
+          <NGi><NStatistic label="测试会话" :value="overview?.session_count ?? 0" /></NGi>
+          <NGi>
+            <NStatistic
+              label="图谱节点"
+              :value="(overview?.graph.page_count ?? 0) + (overview?.graph.element_count ?? 0) + (overview?.graph.entity_count ?? 0) + (overview?.graph.recording_count ?? 0) + (overview?.graph.action_count ?? 0)"
+            />
+          </NGi>
+          <NGi><NStatistic label="图谱关系" :value="overview?.graph.edge_count ?? 0" /></NGi>
+        </NGrid>
+        <NDescriptions :column="3" bordered size="small" label-placement="left" class="detail-facts">
+          <NDescriptionsItem label="Base URL">{{ selected.base_url || "未设置" }}</NDescriptionsItem>
+          <NDescriptionsItem label="图谱 Scope">{{ selected.graph_scope_key || "未绑定" }}</NDescriptionsItem>
+          <NDescriptionsItem label="项目 ID">{{ selected.id }}</NDescriptionsItem>
+        </NDescriptions>
+        <NAlert v-if="overview && !overview.graph.available" type="warning" :bordered="false">
+          图谱暂不可用：{{ overview.graph.error }}
+        </NAlert>
 
         <ProjectExecutionDashboard :project-id="selected.id" />
 
         <section class="resource-panel">
-          <header class="resource-head">
-            <div class="tabs" role="tablist" aria-label="项目测试资源">
-              <button :class="{ active: resourceTab === 'cases' }" @click="switchResourceTab('cases')">测试用例</button>
-              <button :class="{ active: resourceTab === 'suites' }" @click="switchResourceTab('suites')">测试套件</button>
-              <button :class="{ active: resourceTab === 'runs' }" @click="switchResourceTab('runs')">测试历史</button>
-              <button :class="{ active: resourceTab === 'legacy-smoke' }" @click="switchResourceTab('legacy-smoke')">旧冒烟历史</button>
-              <button :class="{ active: resourceTab === 'regressions' }" @click="switchResourceTab('regressions')">回归中心</button>
-            </div>
-            <div v-if="resourceTab === 'cases'" class="actions">
-              <button :disabled="selected.status === 'archived'" @click="openSuiteEditor">创建套件</button>
-              <button class="primary" :disabled="selected.status === 'archived'" @click="openGeneration">生成用例</button>
-            </div>
-            <div v-else-if="resourceTab === 'regressions'" class="actions">
-              <button
-                class="primary"
-                :disabled="selected.status === 'archived' || !selectedRegressionFailures.length || Boolean(regressionRunId)"
-                @click="createSelectedRegressionRun"
-              >所选失败项回归（{{ selectedRegressionFailures.length }}）</button>
-            </div>
-            <div v-else-if="resourceTab === 'legacy-smoke'" class="actions">
-              <input
-                v-model="legacySmokeScopeInput"
-                class="scope-input"
-                placeholder="输入人工确认的旧 project_scope"
-                @keyup.enter="bindLegacySmokeScope"
+          <NTabs :value="resourceTab" type="line" @update:value="onTabChange">
+            <NTabPane name="cases" tab="测试用例">
+              <div class="case-toolbar">
+                <NButton size="small" :disabled="selected.status !== 'active'" @click="templateEditorOpen = true">
+                  用例生成模板
+                </NButton>
+                <NButton size="small" :disabled="selected.status !== 'active'" @click="caseImportOpen = true">
+                  导入 Excel / JSON
+                </NButton>
+                <NButton size="small" :disabled="selected.status !== 'active'" @click="casePlanTaskId = ''; casePlanRegression = undefined; casePlanOpen = true">
+                  用例执行规划
+                </NButton>
+                <NButton size="small" :disabled="selected.status !== 'active'" @click="openSuiteEditor">
+                  创建套件
+                </NButton>
+                <NButton size="small" type="primary" :disabled="selected.status !== 'active'" @click="openGeneration">
+                  生成用例
+                </NButton>
+                <NInput
+                  v-model:value="caseQuery"
+                  clearable
+                  placeholder="搜索用例标识或标题"
+                  style="width: 240px"
+                  @keyup.enter="searchCases"
+                />
+                <NSelect
+                  :value="caseStatus"
+                  :options="caseStatusOptions"
+                  style="width: 140px"
+                  @update:value="onCaseStatusChange"
+                />
+                <NButton size="small" @click="searchCases">查询</NButton>
+                <small>已选 {{ selectedActiveCases.length }} 条已启用用例</small>
+              </div>
+              <NDataTable
+                :columns="caseColumns"
+                :data="testCases"
+                :loading="casesLoading"
+                :row-key="(row: TestCaseRecord) => row.id"
+                :checked-row-keys="checkedCaseIds"
+                :scroll-x="1180"
+                size="small"
+                @update:checked-row-keys="onCaseChecked"
               >
-              <button
-                class="primary"
-                :disabled="selected.status === 'archived' || !legacySmokeScopeInput.trim()"
-                @click="bindLegacySmokeScope"
-              >绑定 Scope</button>
-            </div>
-          </header>
+                <template #empty><NEmpty description="暂无符合条件的测试用例" /></template>
+              </NDataTable>
+              <footer class="resource-pagination">
+                <span class="resource-muted">第 {{ casePage }} 页</span>
+                <NPagination
+                  :page="casePage"
+                  :page-count="casePageCount"
+                  :page-size="CASE_PAGE_SIZE"
+                  @update:page="setCasePage"
+                />
+              </footer>
+            </NTabPane>
 
-          <template v-if="resourceTab === 'cases'">
-            <div class="case-toolbar">
-              <button :disabled="selected?.status !== 'active'" @click="templateEditorOpen = true">用例生成模板</button>
-              <button :disabled="selected?.status !== 'active'" @click="caseImportOpen = true">导入 Excel / JSON</button>
-              <button :disabled="selected?.status !== 'active'" @click="casePlanTaskId = ''; casePlanRegression = undefined; casePlanOpen = true">用例执行规划</button>
-              <input v-model="caseQuery" placeholder="搜索用例标识或标题" @keyup.enter="searchCases">
-              <select v-model="caseStatus" @change="searchCases">
-                <option value="">全部状态</option>
-                <option v-for="(label, value) in lifecycleLabels" :key="value" :value="value">{{ label }}</option>
-              </select>
-              <button @click="searchCases">查询</button>
-              <small>已选 {{ selectedActiveCases.length }} 条已启用用例</small>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>选择</th><th>用例</th><th>状态</th><th>模式</th><th>优先级</th><th>当前版本</th><th>操作</th></tr></thead>
-                <tbody>
-                  <tr v-if="casesLoading"><td colspan="7" class="empty">正在加载测试用例…</td></tr>
-                  <tr v-for="testCase in testCases" v-else :key="testCase.id">
-                    <td>
-                      <input
-                        type="checkbox"
-                        :checked="Boolean(selectedCasesById[testCase.id])"
-                        :disabled="testCase.lifecycle_status !== 'active' || !testCase.active_version_id"
-                        :aria-label="`选择用例 ${testCase.title}`"
-                        @change="toggleCaseSelection(testCase, ($event.target as HTMLInputElement).checked)"
-                      >
-                    </td>
-                    <td><strong>{{ testCase.title }}</strong><small>{{ testCase.case_key }} · {{ testCase.case_type }}</small></td>
-                    <td><span class="case-status" :class="testCase.lifecycle_status">{{ lifecycleLabels[testCase.lifecycle_status] }}</span></td>
-                    <td>{{ modeLabel(testCase.mode_key) }}</td>
-                    <td><span class="priority" :class="testCase.priority.toLowerCase()">{{ testCase.priority }}</span></td>
-                    <td>
-                      <span v-if="testCase.active_version_id" :title="testCase.active_version_id">{{ shortId(testCase.active_version_id) }}</span>
-                      <span v-else>未启用</span>
-                      <small>最新 v{{ testCase.latest_version }}</small>
-                    </td>
-                    <td class="row-actions">
-                      <button @click="contentCase = testCase">查看内容</button>
-                      <button v-if="testCase.lifecycle_status !== 'archived'" @click="contentCase = testCase">评审与启用</button>
-                    </td>
-                  </tr>
-                  <tr v-if="!casesLoading && !testCases.length"><td colspan="7" class="empty">暂无符合条件的测试用例</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <footer class="pagination">
-              <span>第 {{ Math.floor(caseOffset / CASE_PAGE_SIZE) + 1 }} 页</span>
-              <div><button :disabled="caseOffset === 0 || casesLoading" @click="changeCasePage(-1)">上一页</button><button :disabled="!casesHaveMore || casesLoading" @click="changeCasePage(1)">下一页</button></div>
-            </footer>
-          </template>
+            <NTabPane name="suites" tab="测试套件">
+              <NDataTable
+                :columns="suiteColumns"
+                :data="suites"
+                :loading="suitesLoading"
+                :row-key="(row: TestSuiteBundle) => row.suite.id"
+                :scroll-x="1080"
+                size="small"
+              >
+                <template #empty><NEmpty description="暂无测试套件" /></template>
+              </NDataTable>
+              <footer class="resource-pagination">
+                <span class="resource-muted">第 {{ suitePage }} 页</span>
+                <NPagination
+                  :page="suitePage"
+                  :page-count="suitePageCount"
+                  :page-size="SUITE_PAGE_SIZE"
+                  @update:page="setSuitePage"
+                />
+              </footer>
+            </NTabPane>
 
-          <template v-else-if="resourceTab === 'suites'">
-            <div class="table-wrap suites-table">
-              <table>
-                <thead><tr><th>套件名称</th><th>状态</th><th>条目数量</th><th>说明</th><th>更新时间</th><th>操作</th></tr></thead>
-                <tbody>
-                  <tr v-if="suitesLoading"><td colspan="6" class="empty">正在加载测试套件…</td></tr>
-                  <tr v-for="bundle in suites" v-else :key="bundle.suite.id">
-                    <td><strong>{{ bundle.suite.name }}</strong><small>{{ bundle.suite.id }}</small></td>
-                    <td><span class="case-status" :class="bundle.suite.status">{{ bundle.suite.status === "active" ? "启用中" : "已归档" }}</span></td>
-                    <td>{{ bundle.items.length }}</td>
-                    <td>{{ bundle.suite.description || "—" }}</td>
-                    <td>{{ formatServerDateTime(bundle.suite.updated_at) }}</td>
-                    <td class="row-actions"><button :disabled="selected.status === 'archived' || bundle.suite.status !== 'active'" @click="openRunEditor(bundle)">创建运行</button></td>
-                  </tr>
-                  <tr v-if="!suitesLoading && !suites.length"><td colspan="6" class="empty">暂无测试套件</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <footer class="pagination">
-              <span>第 {{ Math.floor(suiteOffset / SUITE_PAGE_SIZE) + 1 }} 页</span>
-              <div><button :disabled="suiteOffset === 0 || suitesLoading" @click="changeSuitePage(-1)">上一页</button><button :disabled="!suitesHaveMore || suitesLoading" @click="changeSuitePage(1)">下一页</button></div>
-            </footer>
-          </template>
+            <NTabPane name="runs" tab="测试历史">
+              <div class="case-toolbar">
+                <NSelect
+                  :value="runStatus"
+                  :options="runStatusOptions"
+                  style="width: 160px"
+                  @update:value="onRunStatusChange"
+                />
+                <NButton size="small" @click="loadTestRuns">刷新</NButton>
+                <small>运行只保存调度状态；测试结论以 Runner 结果和证据为准。项目执行条目统计见上方“执行与资源”。</small>
+              </div>
+              <NDataTable
+                :columns="runColumns"
+                :data="testRuns"
+                :loading="runsLoading"
+                :row-key="(row: TestRunRecord) => row.id"
+                :scroll-x="1320"
+                size="small"
+              >
+                <template #empty><NEmpty description="暂无测试运行记录" /></template>
+              </NDataTable>
+              <footer class="resource-pagination">
+                <span class="resource-muted">第 {{ runPage }} 页</span>
+                <NPagination
+                  :page="runPage"
+                  :page-count="runPageCount"
+                  :page-size="RUN_PAGE_SIZE"
+                  @update:page="setRunPage"
+                />
+              </footer>
+            </NTabPane>
 
-          <template v-else-if="resourceTab === 'runs'">
-            <div class="case-toolbar">
-              <select v-model="runStatus" @change="runOffset = 0; loadTestRuns()">
-                <option value="">全部运行状态</option>
-                <option value="queued">等待执行</option>
-                <option value="running">执行中</option>
-                <option value="completed">已完成</option>
-                <option value="cancelled">已取消</option>
-              </select>
-              <button @click="loadTestRuns">刷新</button>
-              <small>运行只保存调度状态；测试结论以 Runner 结果和证据为准。项目执行条目统计见上方“执行与资源”。</small>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>运行</th><th>状态</th><th>模式</th><th>进度</th><th>结果统计</th><th>创建时间</th><th>操作</th></tr></thead>
-                <tbody>
-                  <tr v-if="runsLoading"><td colspan="7" class="empty">正在加载测试运行…</td></tr>
-                  <tr v-for="run in testRuns" v-else :key="run.id">
-                    <td><strong>{{ shortId(run.id) }}</strong><small>{{ run.run_kind === "regression" ? "回归" : "普通" }} · 套件 {{ shortId(run.suite_id) }}</small><small v-if="run.parent_run_id">来源 {{ shortId(run.parent_run_id) }}</small></td>
-                    <td><span class="case-status" :class="run.status">{{ run.status }}</span></td>
-                    <td>{{ modeLabel(run.mode_key) }}</td>
-                    <td>{{ run.stats.passed + run.stats.failed + run.stats.error + run.stats.blocked + run.stats.skipped + run.stats.cancelled }} / {{ run.stats.total }}</td>
-                    <td><small>通过 {{ run.stats.passed }} · 失败 {{ run.stats.failed }} · 错误 {{ run.stats.error }} · 阻塞 {{ run.stats.blocked }}</small></td>
-                    <td>{{ formatServerDateTime(run.created_at) }}</td>
-                    <td class="row-actions">
-                      <button @click="openRunDetail(run)">详情</button>
-                      <button v-if="run.status === 'queued' || run.status === 'running'" @click="cancelRun(run)">取消</button>
-                      <button v-if="canCreateRegression(run)" :disabled="Boolean(regressionRunId)" @click="createRegressionRun(run)">{{ regressionRunId === run.id ? "创建中…" : "失败项回归" }}</button>
-                      <span v-if="run.status !== 'queued' && run.status !== 'running' && !canCreateRegression(run)">—</span>
-                    </td>
-                  </tr>
-                  <tr v-if="!runsLoading && !testRuns.length"><td colspan="7" class="empty">暂无测试运行记录</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <footer class="pagination">
-              <span>第 {{ Math.floor(runOffset / RUN_PAGE_SIZE) + 1 }} 页</span>
-              <div><button :disabled="runOffset === 0 || runsLoading" @click="changeRunPage(-1)">上一页</button><button :disabled="!runsHaveMore || runsLoading" @click="changeRunPage(1)">下一页</button></div>
-            </footer>
-          </template>
+            <NTabPane name="legacy-smoke" tab="旧冒烟历史">
+              <div class="case-toolbar">
+                <NInput
+                  v-model:value="legacySmokeScopeInput"
+                  clearable
+                  placeholder="输入人工确认的旧 project_scope"
+                  style="width: 280px"
+                  @keyup.enter="bindLegacySmokeScope"
+                />
+                <NButton
+                  size="small"
+                  type="primary"
+                  :disabled="selected.status === 'archived' || !legacySmokeScopeInput.trim()"
+                  @click="bindLegacySmokeScope"
+                >
+                  绑定 Scope
+                </NButton>
+                <NButton size="small" @click="loadLegacySmokeRuns(undefined)">刷新</NButton>
+                <small>旧 Smoke catalog 仅作为只读历史快照展示，不支持领取、执行或直接回归。</small>
+              </div>
+              <div v-if="legacySmokeBindings.length" class="case-toolbar">
+                <small>已绑定 Scope：</small>
+                <NTag
+                  v-for="scope in legacySmokeBindings"
+                  :key="scope"
+                  size="small"
+                  closable
+                  @close="unbindLegacySmokeScope(scope)"
+                >
+                  {{ scope }}
+                </NTag>
+              </div>
+              <NDataTable
+                :columns="legacySmokeColumns"
+                :data="legacySmokeRuns"
+                :loading="legacySmokeLoading"
+                :row-key="(row: LegacySmokeRunSummary) => row.legacy_run_id"
+                :scroll-x="1280"
+                size="small"
+              >
+                <template #empty><NEmpty description="暂无已绑定的旧冒烟历史；请先输入人工确认的 project_scope。" /></template>
+              </NDataTable>
+              <footer class="resource-pagination">
+                <span class="resource-muted">第 {{ legacySmokeCursorStack.length + 1 }} 页</span>
+                <div class="resource-pagination-actions">
+                  <NButton size="small" :disabled="!legacySmokeCursorStack.length || legacySmokeLoading" @click="changeLegacySmokePage(-1)">上一页</NButton>
+                  <NButton size="small" :disabled="!legacySmokeNextCursor || legacySmokeLoading" @click="changeLegacySmokePage(1)">下一页</NButton>
+                </div>
+              </footer>
+            </NTabPane>
 
-          <template v-else-if="resourceTab === 'legacy-smoke'">
-            <div class="case-toolbar">
-              <small>旧 Smoke catalog 仅作为只读历史快照展示，不支持领取、执行或直接回归。</small>
-              <button @click="loadLegacySmokeRuns(undefined)">刷新</button>
-            </div>
-            <div v-if="legacySmokeBindings.length" class="case-toolbar">
-              <small>已绑定 Scope：{{ legacySmokeBindings.join("、") }}</small>
-              <button v-for="scope in legacySmokeBindings" :key="scope" @click="unbindLegacySmokeScope(scope)">解绑 {{ scope }}</button>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>旧运行</th><th>Scope</th><th>原状态</th><th>统计</th><th>开始时间</th><th>用例摘要</th></tr></thead>
-                <tbody>
-                  <tr v-if="legacySmokeLoading"><td colspan="6" class="empty">正在加载旧冒烟历史…</td></tr>
-                  <tr v-for="run in legacySmokeRuns" v-else :key="run.legacy_run_id">
-                    <td><strong>{{ shortId(run.legacy_run_id) }}</strong><small>计划 {{ shortId(run.legacy_plan_id) }} · v{{ run.legacy_plan_version }}</small></td>
-                    <td>{{ run.project_scope }}</td>
-                    <td><span class="case-status" :class="run.legacy_status">{{ run.legacy_status }} / {{ run.legacy_verdict }}</span></td>
-                    <td><small>总计 {{ run.total_cases }} · 通过 {{ run.passed_cases }} · 失败 {{ run.failed_cases }} · 阻塞 {{ run.blocked_cases }}</small></td>
-                    <td>{{ formatServerDateTime(run.started_at) }}</td>
-                    <td><small v-for="item in run.case_results" :key="item.legacy_case_id">{{ item.title }}：{{ item.legacy_status }} → {{ item.mapped_status }}（证据 {{ item.evidence_count }}）</small></td>
-                  </tr>
-                  <tr v-if="!legacySmokeLoading && !legacySmokeRuns.length"><td colspan="6" class="empty">暂无已绑定的旧冒烟历史；请先输入人工确认的 project_scope。</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <footer class="pagination">
-              <span>第 {{ legacySmokeCursorStack.length + 1 }} 页</span>
-              <div><button :disabled="!legacySmokeCursorStack.length || legacySmokeLoading" @click="changeLegacySmokePage(-1)">上一页</button><button :disabled="!legacySmokeNextCursor || legacySmokeLoading" @click="changeLegacySmokePage(1)">下一页</button></div>
-            </footer>
-          </template>
-
-          <template v-else>
-            <div class="case-toolbar">
-              <select v-model="regressionStatus" @change="searchRegressionFailures">
-                <option value="">全部失败状态</option>
-                <option value="failed">失败</option>
-                <option value="error">错误</option>
-                <option value="blocked">阻塞</option>
-              </select>
-              <select v-model="regressionMode" @change="searchRegressionFailures">
-                <option value="">全部测试模式</option>
-                <option v-for="mode in modes" :key="mode.key" :value="mode.key">{{ mode.name }}</option>
-              </select>
-              <button @click="searchRegressionFailures">刷新</button>
-              <small>批量回归仅允许选择同一个原始运行；原失败结果和用例版本保持不变。</small>
-            </div>
-            <div class="table-wrap">
-              <table>
-                <thead><tr><th>选择</th><th>失败用例</th><th>状态</th><th>模式</th><th>证据</th><th>回归批次</th><th>失败时间</th><th>操作</th></tr></thead>
-                <tbody>
-                  <tr v-if="regressionsLoading"><td colspan="8" class="empty">正在加载失败用例…</td></tr>
-                  <tr v-for="failure in regressionFailures" v-else :key="failure.source_result_id">
-                    <td>
-                      <input
-                        type="checkbox"
-                        :checked="Boolean(selectedRegressionResults[failure.source_result_id])"
-                        :disabled="regressionSelectionDisabled(failure)"
-                        :aria-label="`选择失败项 ${failure.case_title}`"
-                        @change="toggleRegressionSelection(failure, ($event.target as HTMLInputElement).checked)"
-                      >
-                    </td>
-                    <td><strong>{{ failure.case_title }}</strong><small>{{ failure.case_key }} · Run {{ shortId(failure.source_run_id) }}</small><small>{{ failure.summary }}</small></td>
-                    <td><span class="case-status" :class="failure.failure_status">{{ failure.failure_status }}</span></td>
-                    <td>{{ modeLabel(failure.mode_key) }}</td>
-                    <td><small>Evidence {{ failure.evidence_count }} · Artifact {{ failure.artifact_count }} · Verification {{ failure.verification_count }}</small></td>
-                    <td><strong>{{ failure.regression_batch_count }}</strong><small v-if="failure.latest_regression">最新 {{ failure.latest_regression.item_status }}</small><small v-else>尚未回归</small></td>
-                    <td>{{ formatServerDateTime(failure.failed_at) }}</td>
-                    <td class="row-actions"><button @click="openRegressionEvidence(failure)">证据与时间线</button></td>
-                  </tr>
-                  <tr v-if="!regressionsLoading && !regressionFailures.length"><td colspan="8" class="empty">暂无失败、错误或阻塞结果</td></tr>
-                </tbody>
-              </table>
-            </div>
-            <footer class="pagination">
-              <span>第 {{ regressionCursorStack.length + 1 }} 页</span>
-              <div><button :disabled="!regressionCursorStack.length || regressionsLoading" @click="changeRegressionPage(-1)">上一页</button><button :disabled="!regressionNextCursor || regressionsLoading" @click="changeRegressionPage(1)">下一页</button></div>
-            </footer>
-          </template>
+            <NTabPane name="regressions" tab="回归中心">
+              <div class="case-toolbar">
+                <NSelect
+                  :value="regressionStatus"
+                  :options="regressionStatusOptions"
+                  style="width: 160px"
+                  @update:value="onRegressionStatusChange"
+                />
+                <NSelect
+                  :value="regressionMode"
+                  :options="modeFilterOptions"
+                  style="width: 180px"
+                  @update:value="onRegressionModeChange"
+                />
+                <NButton size="small" @click="searchRegressionFailures">刷新</NButton>
+                <NButton
+                  size="small"
+                  type="primary"
+                  :loading="Boolean(regressionRunId)"
+                  :disabled="selected.status === 'archived' || !selectedRegressionFailures.length || Boolean(regressionRunId)"
+                  @click="createSelectedRegressionRun"
+                >
+                  所选失败项回归（{{ selectedRegressionFailures.length }}）
+                </NButton>
+                <small>批量回归仅允许选择同一个原始运行；原失败结果和用例版本保持不变。</small>
+              </div>
+              <NDataTable
+                :columns="regressionColumns"
+                :data="regressionFailures"
+                :loading="regressionsLoading"
+                :row-key="(row: RegressionFailureSummary) => row.source_result_id"
+                :checked-row-keys="checkedRegressionIds"
+                :scroll-x="1360"
+                size="small"
+                @update:checked-row-keys="onRegressionChecked"
+              >
+                <template #empty><NEmpty description="暂无失败、错误或阻塞结果" /></template>
+              </NDataTable>
+              <footer class="resource-pagination">
+                <span class="resource-muted">第 {{ regressionCursorStack.length + 1 }} 页</span>
+                <div class="resource-pagination-actions">
+                  <NButton size="small" :disabled="!regressionCursorStack.length || regressionsLoading" @click="changeRegressionPage(-1)">上一页</NButton>
+                  <NButton size="small" :disabled="!regressionNextCursor || regressionsLoading" @click="changeRegressionPage(1)">下一页</NButton>
+                </div>
+              </footer>
+            </NTabPane>
+          </NTabs>
         </section>
       </section>
       <section v-else-if="isDetailRoute" class="project-detail empty">项目不存在或已被移除</section>
 
-    <div v-if="editorOpen" class="modal-backdrop" @click.self="editorOpen = false">
-      <section class="editor">
-        <header><h2>{{ editingId ? "编辑项目" : "新建测试项目" }}</h2><button @click="editorOpen = false">×</button></header>
-        <label>项目标识<input v-model="form.project_key" :disabled="Boolean(editingId)" placeholder="orders-api"></label>
-        <label>项目名称<input v-model="form.name" placeholder="订单服务"></label>
-        <label>项目说明<textarea v-model="form.description" rows="3"></textarea></label>
-        <label>Base URL<input v-model="form.base_url" placeholder="https://api.example.com"></label>
-        <label>知识图谱 Scope<input v-model="form.graph_scope_key" placeholder="可选：映射现有 project_scope"></label>
-        <footer><button @click="editorOpen = false">取消</button><button class="primary" :disabled="saving" @click="saveProject">{{ saving ? "保存中…" : "保存" }}</button></footer>
-      </section>
-    </div>
+    <ProjectFormModal v-model:show="editorOpen" :project="selected" @saved="onProjectSaved" />
 
-    <div v-if="generationOpen" class="modal-backdrop" @click.self="generationOpen = false">
-      <section class="editor">
-        <header><h2>生成测试用例草稿</h2><button @click="generationOpen = false">×</button></header>
-        <p v-if="overview && !hasGenerationSources" class="generation-warning">当前项目没有可追溯的 API 文档、知识图谱或测试会话。请先导入或绑定项目资料，再生成测试用例。</p>
-        <label>生成目标<textarea v-model="generationForm.objective" rows="5" placeholder="描述本次需要覆盖的业务目标、范围与通过标准"></textarea></label>
-        <label>测试模式<select v-model="generationForm.mode_key"><option v-for="mode in generationModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
-        <label>模型标识（可选）<input v-model="generationForm.model_key" placeholder="留空使用服务端默认模型"></label>
-        <p>使用当前项目的生成模板；模板内容与版本将作为本次生成依据保存。</p>
-        <footer><button @click="generationOpen = false">取消</button><button class="primary" :disabled="generating || !hasGenerationSources" @click="generateCases">{{ generating ? "生成中…" : "生成草稿" }}</button></footer>
-      </section>
-    </div>
+    <NModal
+      v-model:show="generationOpen"
+      preset="card"
+      title="生成测试用例草稿"
+      style="width: min(640px, 92vw)"
+      :mask-closable="!generating"
+      :close-on-esc="!generating"
+    >
+      <NAlert v-if="overview && !hasGenerationSources" type="warning" :bordered="false" style="margin-bottom: 12px">
+        当前项目没有可追溯的 API 文档、知识图谱或测试会话。请先导入或绑定项目资料，再生成测试用例。
+      </NAlert>
+      <NForm label-placement="top">
+        <NFormItem label="生成目标" required>
+          <NInput
+            v-model:value="generationForm.objective"
+            type="textarea"
+            :autosize="{ minRows: 5, maxRows: 9 }"
+            placeholder="描述本次需要覆盖的业务目标、范围与通过标准"
+          />
+        </NFormItem>
+        <NFormItem label="测试模式" required>
+          <NSelect
+            v-model:value="generationForm.mode_key"
+            :options="generationModeOptions"
+            placeholder="选择测试模式"
+          />
+        </NFormItem>
+        <NFormItem label="模型标识（可选）">
+          <NInput v-model:value="generationForm.model_key" placeholder="留空使用服务端默认模型" />
+        </NFormItem>
+      </NForm>
+      <p class="dialog-hint">使用当前项目的生成模板；模板内容与版本将作为本次生成依据保存。</p>
+      <template #footer>
+        <div class="dialog-actions">
+          <NButton :disabled="generating" @click="generationOpen = false">取消</NButton>
+          <NButton type="primary" :loading="generating" :disabled="!hasGenerationSources" @click="generateCases">
+            生成草稿
+          </NButton>
+        </div>
+      </template>
+    </NModal>
 
     <TestCaseTemplateEditor v-if="templateEditorOpen" :project-id="selectedId" @close="templateEditorOpen = false" @saved="toast.success('项目模板已保存')" />
     <BusinessEnvironmentManager v-if="businessEnvironmentOpen" :key="selectedId" :project-id="selectedId" @close="businessEnvironmentOpen = false" />
@@ -1212,113 +1646,196 @@ watch([selectedId, () => route.query.planning_task_id], ([projectId, taskId]) =>
     <CasePlanDialog v-if="casePlanOpen" :key="`${selectedId}:${casePlanTaskId}:${JSON.stringify(casePlanRegression)}`" :project-id="selectedId" :initial-task-id="casePlanTaskId" :regression="casePlanRegression" :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes" @close="casePlanOpen = false" @started="openPlannedRun" />
     <TestCaseContentDialog v-if="contentCase" :key="contentCase.id" :test-case="contentCase" @close="contentCase = null" @saved="loadTestCases(); loadOverview()" />
 
-    <div v-if="suiteEditorOpen" class="modal-backdrop" @click.self="suiteEditorOpen = false">
-      <section class="editor suite-editor">
-        <header><h2>创建固定版本测试套件</h2><button @click="suiteEditorOpen = false">×</button></header>
-        <label>套件名称<input v-model="suiteForm.name" placeholder="订单服务核心回归套件"></label>
-        <label>套件说明（可选）<textarea v-model="suiteForm.description" rows="3"></textarea></label>
-        <div class="selection-summary"><strong>已选择 {{ selectedActiveCases.length }} 条用例</strong><small>套件会固定保存每条用例当前的 active_version_id。</small></div>
-        <footer><button @click="suiteEditorOpen = false">取消</button><button class="primary" :disabled="suiteSaving" @click="createSuite">{{ suiteSaving ? "创建中…" : "创建套件" }}</button></footer>
-      </section>
-    </div>
+    <NModal
+      v-model:show="suiteEditorOpen"
+      preset="card"
+      title="创建固定版本测试套件"
+      style="width: min(560px, 92vw)"
+      :mask-closable="!suiteSaving"
+      :close-on-esc="!suiteSaving"
+    >
+      <NForm label-placement="top">
+        <NFormItem label="套件名称" required>
+          <NInput v-model:value="suiteForm.name" placeholder="订单服务核心回归套件" maxlength="160" show-count />
+        </NFormItem>
+        <NFormItem label="套件说明（可选）">
+          <NInput
+            v-model:value="suiteForm.description"
+            type="textarea"
+            :autosize="{ minRows: 3, maxRows: 6 }"
+            maxlength="500"
+            show-count
+          />
+        </NFormItem>
+      </NForm>
+      <NAlert type="info" :bordered="false">
+        已选择 {{ selectedActiveCases.length }} 条用例。套件会固定保存每条用例当前的 active_version_id。
+      </NAlert>
+      <template #footer>
+        <div class="dialog-actions">
+          <NButton :disabled="suiteSaving" @click="suiteEditorOpen = false">取消</NButton>
+          <NButton type="primary" :loading="suiteSaving" @click="createSuite">创建套件</NButton>
+        </div>
+      </template>
+    </NModal>
 
-    <div v-if="runEditorOpen" class="modal-backdrop" @click.self="runEditorOpen = false">
-      <section class="editor">
-        <header><div><h2>创建测试运行</h2><p>{{ runSuite?.suite.name }} · {{ runSuite?.items.length ?? 0 }} 条固定版本用例</p></div><button @click="runEditorOpen = false">×</button></header>
-        <label>测试模式<select v-model="runForm.mode_key"><option v-for="mode in generationModes" :key="mode.key" :value="mode.key">{{ mode.name }}</option></select></label>
-        <label>关联 Session ID（可选）<input v-model="runForm.session_id" placeholder="仅接受已绑定当前项目的 Session"></label>
-        <div class="selection-summary"><strong>运行不会修改套件或用例版本</strong><small>Worker 将通过原子领取接口分批获取固定版本内容；失败、错误和阻塞结果可创建独立回归运行。</small></div>
-        <footer><button @click="runEditorOpen = false">取消</button><button class="primary" :disabled="runSaving" @click="createRun">{{ runSaving ? "创建中…" : "创建运行" }}</button></footer>
-      </section>
-    </div>
+    <NModal
+      v-model:show="runEditorOpen"
+      preset="card"
+      title="创建测试运行"
+      style="width: min(580px, 92vw)"
+      :mask-closable="!runSaving"
+      :close-on-esc="!runSaving"
+    >
+      <p class="dialog-hint">{{ runSuite?.suite.name }} · {{ runSuite?.items.length ?? 0 }} 条固定版本用例</p>
+      <NForm label-placement="top">
+        <NFormItem label="测试模式" required>
+          <NSelect v-model:value="runForm.mode_key" :options="generationModeOptions" placeholder="选择测试模式" />
+        </NFormItem>
+        <NFormItem label="关联 Session ID（可选）">
+          <NInput v-model:value="runForm.session_id" placeholder="仅接受已绑定当前项目的 Session" />
+        </NFormItem>
+      </NForm>
+      <NAlert type="info" :bordered="false">
+        运行不会修改套件或用例版本。Worker 将通过原子领取接口分批获取固定版本内容；失败、错误和阻塞结果可创建独立回归运行。
+      </NAlert>
+      <template #footer>
+        <div class="dialog-actions">
+          <NButton :disabled="runSaving" @click="runEditorOpen = false">取消</NButton>
+          <NButton type="primary" :loading="runSaving" @click="createRun">创建运行</NButton>
+        </div>
+      </template>
+    </NModal>
 
-    <div v-if="regressionDrawerOpen" class="modal-backdrop regression-backdrop" @click.self="regressionDrawerOpen = false">
-      <section class="editor regression-drawer">
-        <header><div><h2>证据与回归时间线</h2><p v-if="regressionContext">Result {{ shortId(regressionContext.source_result_id) }}</p></div><button @click="regressionDrawerOpen = false">×</button></header>
-        <div v-if="regressionDrawerLoading" class="empty">正在按需加载失败证据与回归批次…</div>
-        <template v-else-if="regressionContext">
-          <section class="context-summary">
-            <span class="case-status" :class="regressionContext.failure_status">{{ regressionContext.failure_status }}</span>
-            <div><strong>{{ regressionContext.summary }}</strong><small v-if="regressionContext.error_message">{{ regressionContext.error_message }}</small></div>
-          </section>
-          <dl class="facts compact-facts">
-            <div><dt>原始 Run</dt><dd>{{ regressionContext.source_run_id }}</dd></div>
-            <div><dt>用例版本</dt><dd>{{ regressionContext.case_version_id }}</dd></div>
-            <div><dt>失败时间</dt><dd>{{ formatServerDateTime(regressionContext.failed_at) }}</dd></div>
-          </dl>
-
-          <section class="drawer-section">
-            <h3>公开证据</h3>
-            <div v-if="!regressionContext.evidence.length" class="drawer-empty">无结构化 Evidence</div>
-            <article v-for="evidence in regressionContext.evidence" v-else :key="`${evidence.evidence_type}:${evidence.evidence_id}`" class="timeline-card">
-              <strong>{{ evidence.label || evidence.evidence_type }}</strong><small>{{ evidence.evidence_type }} · {{ evidence.evidence_id }}</small>
-            </article>
-            <div class="artifact-links">
-              <a
-                v-for="artifact in regressionContext.artifacts"
-                :key="artifact.artifact_id"
-                :href="artifact.content_url || undefined"
-                :aria-disabled="!artifact.content_url"
-                target="_blank"
-                rel="noopener noreferrer"
-              >Artifact {{ shortId(artifact.artifact_id) }}</a>
-            </div>
-          </section>
-
-          <section class="drawer-section">
-            <h3>Verification</h3>
-            <div v-if="!regressionContext.verifications.length" class="drawer-empty">无 Verification 结论</div>
-            <article v-for="verification in regressionContext.verifications" v-else :key="verification.id" class="timeline-card">
-              <strong>{{ verification.verifier || verification.id }} · {{ verification.status }}</strong>
-              <small>{{ verification.summary }} · {{ verification.passed_count }}/{{ verification.assertion_count }} 通过</small>
-            </article>
-          </section>
-
-          <section class="drawer-section">
-            <h3>回归批次时间线</h3>
-            <div v-if="!regressionBatches.length" class="drawer-empty">尚未创建回归批次</div>
-            <article v-for="batch in regressionBatches" v-else :key="batch.run_item_id" class="timeline-card">
-              <strong>{{ formatServerDateTime(batch.created_at) }} · {{ batch.item_status }}</strong>
-              <small>Run {{ shortId(batch.run_id) }} · 版本 {{ shortId(batch.case_version_id) }}</small>
-              <small v-if="batch.result_status">回归结果：{{ batch.result_status }}</small>
-            </article>
-            <button v-if="regressionBatchNextCursor" :disabled="regressionBatchesLoading" @click="loadMoreRegressionBatches">{{ regressionBatchesLoading ? "加载中…" : "加载更多批次" }}</button>
-          </section>
-        </template>
-      </section>
-    </div>
-
-    <div v-if="runDetailOpen" class="modal-backdrop" @click.self="runDetailOpen = false">
-      <section class="editor run-detail-editor">
-        <header><div><h2>测试运行详情</h2><p v-if="runDetail">{{ shortId(runDetail.run.id) }} · {{ runDetail.run.status }}</p></div><button @click="runDetailOpen = false">×</button></header>
-        <div v-if="runDetailLoading" class="empty">正在加载运行条目…</div>
-        <template v-else-if="runDetail">
-          <div class="selection-summary"><strong>进度 {{ runDetail.run.stats.passed + runDetail.run.stats.failed + runDetail.run.stats.error + runDetail.run.stats.blocked + runDetail.run.stats.skipped + runDetail.run.stats.cancelled }} / {{ runDetail.run.stats.total }}</strong><small>通过 {{ runDetail.run.stats.passed }} · 失败 {{ runDetail.run.stats.failed }} · 错误 {{ runDetail.run.stats.error }} · 等待资源 {{ runDetail.run.stats.waiting_resource }} · 阻塞 {{ runDetail.run.stats.blocked }} · 取消 {{ runDetail.run.stats.cancelled }}</small></div>
-          <RunPlanRevisionPanel v-if="runDetail.run.execution_strategy === 'agent' && runDetail.run.plan_snapshot"
-            :key="`${runDetail.run.id}:${runDetail.run.plan_revision || 0}`" :project-id="runDetail.run.project_id"
-            :run-id="runDetail.run.id" :expected-revision="runDetail.run.plan_revision || 0"
-            :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes"
-            :can-revise="runDetail.run.status === 'queued' || runDetail.run.status === 'running'"
-            @revised="refreshRunAfterRevision" />
-          <div class="table-wrap run-items-table">
-            <table><thead><tr><th>位置</th><th>状态</th><th>租约</th><th>审批</th><th>补偿</th><th>结果</th><th>操作</th></tr></thead><tbody>
-              <tr v-for="item in runDetail.items" :key="item.id">
-                <td>{{ item.position }}</td>
-                <td><span class="case-status" :class="item.status">{{ item.status }}</span><small>{{ shortId(item.case_id) }}</small><small v-if="item.status === 'waiting_resource'">{{ waitingReasonLabel(item.waiting_reason || 'resource_unavailable') }}</small></td>
-                <td><small v-if="item.lease_expires_at">到期 {{ formatServerDateTime(item.lease_expires_at) }}</small><small v-else>—</small></td>
-                <td><small v-if="item.status === 'waiting_approval'">待处理 {{ shortId(item.approval_id || '') }}</small><small v-else>{{ item.approval_id ? shortId(item.approval_id) : '—' }}</small></td>
-                <td><small v-if="item.status === 'cancelled'">{{ item.resource_cleanup_completed_at ? '已完成' : '待补偿' }}</small><small v-else>—</small></td>
-                <td><small v-if="item.result_id">{{ shortId(item.result_id) }}</small><small v-else>—</small></td>
-                <td class="row-actions"><button v-if="item.status === 'waiting_approval'" @click="decideRunItemApproval(item, 'approved')">通过</button><button v-if="item.status === 'waiting_approval'" @click="decideRunItemApproval(item, 'denied')">拒绝</button></td>
-              </tr>
-            </tbody></table>
+    <NModal
+      v-model:show="regressionDrawerOpen"
+      preset="card"
+      title="证据与回归时间线"
+      style="width: min(760px, 94vw)"
+    >
+      <div v-if="regressionDrawerLoading" class="dialog-loading">
+        <NSpin size="small" /> 正在按需加载失败证据与回归批次…
+      </div>
+      <template v-else-if="regressionContext">
+        <div class="context-summary">
+          <NTag size="small" :bordered="false" :type="failureTagType(regressionContext.failure_status)">
+            {{ regressionContext.failure_status }}
+          </NTag>
+          <div>
+            <strong>{{ regressionContext.summary }}</strong>
+            <small v-if="regressionContext.error_message">{{ regressionContext.error_message }}</small>
           </div>
-          <CaseEffectCoveragePanel v-for="result in runDetail.results" :key="result.id"
-            :coverage="result.actual.effect_cleanup_coverage" :result-label="shortId(result.id)" />
-          <footer><button v-if="runDetail.run.status === 'cancelled' && runDetail.items.some(item => !item.resource_cleanup_completed_at && (item.approval_id || item.tool_job_id))" @click="reconcileRunResources">重试资源补偿</button><button @click="runDetailOpen = false">关闭</button></footer>
-        </template>
-      </section>
-    </div>
+        </div>
+        <NDescriptions :column="3" bordered size="small" label-placement="left" class="detail-facts">
+          <NDescriptionsItem label="原始 Run">{{ regressionContext.source_run_id }}</NDescriptionsItem>
+          <NDescriptionsItem label="用例版本">{{ regressionContext.case_version_id }}</NDescriptionsItem>
+          <NDescriptionsItem label="失败时间">{{ formatServerDateTime(regressionContext.failed_at) }}</NDescriptionsItem>
+        </NDescriptions>
+
+        <section class="drawer-section">
+          <h3>公开证据</h3>
+          <NEmpty v-if="!regressionContext.evidence.length" description="无结构化 Evidence" size="small" />
+          <article v-for="evidence in regressionContext.evidence" v-else :key="`${evidence.evidence_type}:${evidence.evidence_id}`" class="timeline-card">
+            <strong>{{ evidence.label || evidence.evidence_type }}</strong>
+            <small>{{ evidence.evidence_type }} · {{ evidence.evidence_id }}</small>
+          </article>
+          <div class="artifact-links">
+            <NButton
+              v-for="artifact in regressionContext.artifacts"
+              :key="artifact.artifact_id"
+              text
+              tag="a"
+              :href="artifact.content_url || undefined"
+              :disabled="!artifact.content_url"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Artifact {{ shortId(artifact.artifact_id) }}
+            </NButton>
+          </div>
+        </section>
+
+        <section class="drawer-section">
+          <h3>Verification</h3>
+          <NEmpty v-if="!regressionContext.verifications.length" description="无 Verification 结论" size="small" />
+          <article v-for="verification in regressionContext.verifications" v-else :key="verification.id" class="timeline-card">
+            <strong>{{ verification.verifier || verification.id }} · {{ verification.status }}</strong>
+            <small>{{ verification.summary }} · {{ verification.passed_count }}/{{ verification.assertion_count }} 通过</small>
+          </article>
+        </section>
+
+        <section class="drawer-section">
+          <h3>回归批次时间线</h3>
+          <NEmpty v-if="!regressionBatches.length" description="尚未创建回归批次" size="small" />
+          <NTimeline v-else>
+            <NTimelineItem
+              v-for="batch in regressionBatches"
+              :key="batch.run_item_id"
+              :title="`${formatServerDateTime(batch.created_at)} · ${batch.item_status}`"
+              :content="`Run ${shortId(batch.run_id)} · 版本 ${shortId(batch.case_version_id)}${batch.result_status ? ' · 回归结果 ' + batch.result_status : ''}`"
+            />
+          </NTimeline>
+          <NButton
+            v-if="regressionBatchNextCursor"
+            size="small"
+            :loading="regressionBatchesLoading"
+            @click="loadMoreRegressionBatches"
+          >
+            加载更多批次
+          </NButton>
+        </section>
+      </template>
+      <template #footer>
+        <div class="dialog-actions">
+          <NButton @click="regressionDrawerOpen = false">关闭</NButton>
+        </div>
+      </template>
+    </NModal>
+
+    <NModal
+      v-model:show="runDetailOpen"
+      preset="card"
+      :title="`测试运行详情${runDetail ? ' · ' + shortId(runDetail.run.id) : ''}`"
+      style="width: min(1000px, 96vw)"
+    >
+      <div v-if="runDetailLoading" class="dialog-loading"><NSpin size="small" /> 正在加载运行条目…</div>
+      <template v-else-if="runDetail">
+        <NAlert type="info" :bordered="false" style="margin-bottom: 12px">
+          进度 {{ runDetail.run.stats.passed + runDetail.run.stats.failed + runDetail.run.stats.error + runDetail.run.stats.blocked + runDetail.run.stats.skipped + runDetail.run.stats.cancelled }} / {{ runDetail.run.stats.total }}
+          · 通过 {{ runDetail.run.stats.passed }} · 失败 {{ runDetail.run.stats.failed }} · 错误 {{ runDetail.run.stats.error }}
+          · 等待资源 {{ runDetail.run.stats.waiting_resource }} · 阻塞 {{ runDetail.run.stats.blocked }} · 取消 {{ runDetail.run.stats.cancelled }}
+        </NAlert>
+        <RunPlanRevisionPanel v-if="runDetail.run.execution_strategy === 'agent' && runDetail.run.plan_snapshot"
+          :key="`${runDetail.run.id}:${runDetail.run.plan_revision || 0}`" :project-id="runDetail.run.project_id"
+          :run-id="runDetail.run.id" :expected-revision="runDetail.run.plan_revision || 0"
+          :candidate-case-ids="selectedActiveCases.map(item => item.id)" :modes="modes"
+          :can-revise="runDetail.run.status === 'queued' || runDetail.run.status === 'running'"
+          @revised="refreshRunAfterRevision" />
+        <NDataTable
+          :columns="runItemColumns"
+          :data="runDetail.items"
+          :row-key="(row: TestRunItemRecord) => row.id"
+          :scroll-x="1100"
+          size="small"
+        >
+          <template #empty><NEmpty description="暂无运行条目" /></template>
+        </NDataTable>
+        <CaseEffectCoveragePanel v-for="result in runDetail.results" :key="result.id"
+          :coverage="result.actual.effect_cleanup_coverage" :result-label="shortId(result.id)" />
+      </template>
+      <template #footer>
+        <div class="dialog-actions">
+          <NButton
+            v-if="runDetail && runDetail.run.status === 'cancelled' && runDetail.items.some(item => !item.resource_cleanup_completed_at && (item.approval_id || item.tool_job_id))"
+            @click="reconcileRunResources"
+          >
+            重试资源补偿
+          </NButton>
+          <NButton type="primary" @click="runDetailOpen = false">关闭</NButton>
+        </div>
+      </template>
+    </NModal>
+
   </main>
 </template>
 

@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
 import { flushPromises, mount } from "@vue/test-utils";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import JsonContentTree from "./JsonContentTree.vue";
 import TestCaseTemplateEditor from "./TestCaseTemplateEditor.vue";
 import TestCaseContentDialog from "./TestCaseContentDialog.vue";
 import type { TestCaseRecord, TestCaseVersionRecord } from "../../types";
+import { allSelects, buttonByText, buttonTexts, dialogText, dialogElement, hasAlert, setInput, setSelect, setTab } from "../../test-utils/naive";
 
 const api = vi.hoisted(() => ({ getTestCaseGenerationTemplate: vi.fn(), saveTestCaseGenerationTemplate: vi.fn(),
   listTestCaseVersions: vi.fn(), createTestCaseVersion: vi.fn(), getTestCase: vi.fn(), submitTestCaseReview: vi.fn(), activateTestCase: vi.fn() }));
@@ -23,6 +24,7 @@ const testCase: TestCaseRecord = { id: "case-one", project_id: "project-one", ca
   latest_version: 1, created_at: version.created_at, updated_at: version.created_at };
 
 describe("project case authoring", () => {
+  afterEach(() => { document.body.innerHTML = ""; });
   beforeEach(() => {
     vi.clearAllMocks();
     window.sessionStorage.clear();
@@ -39,17 +41,18 @@ describe("project case authoring", () => {
     api.listTestCaseVersions.mockResolvedValue([version, later]);
     const wrapper = mount(TestCaseContentDialog, { props: { testCase, initialVersionId: version.id } });
     await flushPromises();
-    expect((wrapper.find("select").element as HTMLSelectElement).value).toBe(version.id);
-    expect(wrapper.text()).toContain("完整内容是执行依据");
+    expect(allSelects(wrapper)[0].props("value")).toBe(version.id);
+    expect(dialogText()).toContain("完整内容是执行依据");
     wrapper.unmount();
   });
 
   it("keeps complete fixed contents readable without exposing write actions", async () => {
     const wrapper = mount(TestCaseContentDialog, { props: { testCase, initialVersionId: version.id, canWrite: false } });
     await flushPromises();
-    expect(wrapper.text()).toContain("未知字段");
-    expect(wrapper.findAll("button").some(button => ["提交当前版本评审", "启用当前版本"].includes(button.text()))).toBe(false);
-    expect(wrapper.findAll("button").find(button => button.text() === "编辑新版本")!.attributes("disabled")).toBeDefined();
+    expect(dialogText()).toContain("未知字段");
+    expect(buttonTexts(wrapper).some(text => ["提交当前版本评审", "启用当前版本"].includes(text))).toBe(false);
+    await setTab(wrapper, "edit");
+    expect(buttonByText(wrapper, "保存新草稿版本")!.props("disabled")).toBe(true);
     expect(api.submitTestCaseReview).not.toHaveBeenCalled();
     expect(api.activateTestCase).not.toHaveBeenCalled();
     wrapper.unmount();
@@ -68,19 +71,19 @@ describe("project case authoring", () => {
   it("copies the default into project configuration and rejects malformed JSON", async () => {
     const wrapper = mount(TestCaseTemplateEditor, { props: { projectId: "project-one" } });
     await flushPromises();
-    expect(wrapper.text()).toContain("系统默认模板");
-    await wrapper.findAll("textarea")[0].setValue("保留业务扩展");
-    await wrapper.findAll("textarea")[2].setValue('{"custom":{"nested":[0,false]}}');
-    await wrapper.findAll("button").find(button => button.text() === "保存项目模板")!.trigger("click");
+    expect(dialogText()).toContain("系统默认模板");
+    await setInput(wrapper, 1, "保留业务扩展");
+    await setInput(wrapper, 3, '{"custom":{"nested":[0,false]}}');
+    await buttonByText(wrapper, "保存项目模板")!.trigger("click");
     await flushPromises();
     expect(api.saveTestCaseGenerationTemplate).toHaveBeenCalledWith("project-one", expect.objectContaining({
       writing_guidance: "保留业务扩展", example_json: { custom: { nested: [0, false] } },
     }));
     expect(wrapper.emitted("saved")).toHaveLength(1);
-    await wrapper.findAll("textarea")[2].setValue("{");
-    await wrapper.findAll("button").find(button => button.text() === "保存项目模板")!.trigger("click");
+    await setInput(wrapper, 3, "{");
+    await buttonByText(wrapper, "保存项目模板")!.trigger("click");
     await flushPromises();
-    expect(wrapper.find('[role="alert"]').exists()).toBe(true);
+    expect(hasAlert(wrapper)).toBe(true);
     expect(api.saveTestCaseGenerationTemplate).toHaveBeenCalledTimes(1);
     wrapper.unmount();
   });
@@ -88,13 +91,13 @@ describe("project case authoring", () => {
   it("shows full versions, steps and raw JSON without loading a template", async () => {
     const wrapper = mount(TestCaseContentDialog, { props: { testCase } });
     await flushPromises();
-    expect(wrapper.text()).toContain("未知字段");
-    expect(wrapper.text()).toContain("完整内容是执行依据");
-    await wrapper.findAll("button").find(button => button.text() === "步骤")!.trigger("click");
-    expect(wrapper.text()).toContain("按编号查询");
-    expect(wrapper.text()).toContain("custom");
-    await wrapper.findAll("button").find(button => button.text() === "JSON 原文")!.trigger("click");
-    expect(JSON.parse(wrapper.find("pre").text())).toEqual(version.content_json);
+    expect(dialogText()).toContain("未知字段");
+    expect(dialogText()).toContain("完整内容是执行依据");
+    await setTab(wrapper, "steps");
+    expect(dialogText()).toContain("按编号查询");
+    expect(dialogText()).toContain("custom");
+    await setTab(wrapper, "raw");
+    expect(JSON.parse(dialogElement("pre")!.textContent || "")).toEqual(version.content_json);
     expect(api.getTestCaseGenerationTemplate).not.toHaveBeenCalled();
     wrapper.unmount();
   });
@@ -102,18 +105,18 @@ describe("project case authoring", () => {
   it("saves edits as another version and retains the old content and source", async () => {
     const wrapper = mount(TestCaseContentDialog, { props: { testCase } });
     await flushPromises();
-    await wrapper.findAll("button").find(button => button.text() === "编辑新版本")!.trigger("click");
-    await wrapper.findAll("textarea")[1].setValue('{"自定义":{"保留":[0,false,null]},"新增":"值"}');
-    await wrapper.findAll("button").find(button => button.text() === "保存新草稿版本")!.trigger("click");
+    await setTab(wrapper, "edit");
+    await setInput(wrapper, 1, '{"自定义":{"保留":[0,false,null]},"新增":"值"}');
+    await buttonByText(wrapper, "保存新草稿版本")!.trigger("click");
     await flushPromises();
     expect(api.createTestCaseVersion).toHaveBeenCalledWith("case-one", expect.objectContaining({
       content_json: { "自定义": { "保留": [0, false, null] }, "新增": "值" }, source_refs: version.source_refs,
       generation_metadata: { template: { revision: 1 }, manual_edit: { source_version_id: "version-one" } },
     }));
     expect(wrapper.emitted("saved")).toHaveLength(1);
-    await wrapper.find("select").setValue("version-one");
-    expect(wrapper.text()).toContain("业务扩展");
-    expect(wrapper.text()).not.toContain('"新增"');
+    await setSelect(wrapper, "version-one");
+    expect(dialogText()).toContain("业务扩展");
+    expect(dialogText()).not.toContain('"新增"');
     expect(api.getTestCaseGenerationTemplate).not.toHaveBeenCalled();
     wrapper.unmount();
   });
@@ -143,21 +146,21 @@ describe("project case authoring", () => {
     });
     const wrapper = mount(TestCaseContentDialog, { props: { testCase } });
     await flushPromises();
-    await wrapper.find("select").setValue(v2.id);
-    await wrapper.findAll("button").find(button => button.text() === "提交当前版本评审")!.trigger("click");
+    await setSelect(wrapper, v2.id);
+    await buttonByText(wrapper, "提交当前版本评审")!.trigger("click");
     await flushPromises();
     expect(current.active_version_id).toBe(version.id);
-    expect(wrapper.text()).toContain("待评审");
-    await wrapper.findAll("button").find(button => button.text() === "启用当前版本")!.trigger("click");
+    expect(dialogText()).toContain("待评审");
+    await buttonByText(wrapper, "启用当前版本")!.trigger("click");
     await flushPromises();
     expect(api.activateTestCase).toHaveBeenCalledWith(testCase.id, v2.id, {
       request_id: expect.any(String), expected_active_version_id: version.id,
     });
-    expect(wrapper.text()).toContain("当前启用");
-    expect(wrapper.text()).toContain("版本评审记录");
-    expect(wrapper.text()).toContain("activated");
-    await wrapper.find("select").setValue(v3.id);
-    expect(wrapper.findAll("button").some(button => button.text() === "启用当前版本")).toBe(false);
+    expect(dialogText()).toContain("当前启用");
+    expect(dialogText()).toContain("版本评审记录");
+    expect(current.version_reviews?.[v2.id].events.some(event => event.action === "activated")).toBe(true);
+    await setSelect(wrapper, v3.id);
+    expect(buttonTexts(wrapper)).not.toContain("启用当前版本");
     wrapper.unmount();
   });
 
@@ -174,7 +177,7 @@ describe("project case authoring", () => {
     });
     const first = mount(TestCaseContentDialog, { props: { testCase } });
     await flushPromises();
-    await first.findAll("button").find(button => button.text() === "提交当前版本评审")!.trigger("click");
+    await buttonByText(first, "提交当前版本评审")!.trigger("click");
     await flushPromises();
     const stored = window.sessionStorage.getItem(`case-version-review:${testCase.project_id}:${testCase.id}`)!;
     expect(JSON.parse(stored).versionId).toBe(v2.id);

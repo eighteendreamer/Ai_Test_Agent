@@ -1,5 +1,21 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import {
+  NAlert,
+  NButton,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NInput,
+  NList,
+  NListItem,
+  NModal,
+  NPopconfirm,
+  NRadioButton,
+  NRadioGroup,
+  NSpin,
+  NTag,
+} from "naive-ui";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import type {
@@ -9,6 +25,7 @@ import type {
 
 const props = defineProps<{ projectId: string }>();
 const emit = defineEmits<{ close: [] }>();
+const show = ref(true);
 const page = ref<BusinessEnvironmentRecord[]>([]);
 const selected = ref<BusinessEnvironmentRecord | null>(null);
 const status = ref<"active" | "archived">("active");
@@ -246,6 +263,15 @@ async function archiveEnvironment() {
   finally { loading.value = false; }
 }
 
+function close() {
+  show.value = false;
+  emit("close");
+}
+
+function onStatusChange(value: string | number) {
+  void changeStatus(String(value) === "archived" ? "archived" : "active");
+}
+
 async function changeStatus(value: "active" | "archived") {
   if (status.value === value) return;
   status.value = value; page.value = []; offset.value = 0; moreEnvironments.value = false;
@@ -264,59 +290,158 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="case-dialog-backdrop" @click.self="emit('close')">
-    <section class="case-dialog" role="dialog" aria-modal="true" aria-label="项目测试环境管理">
-      <header><h2>项目测试环境</h2><button type="button" @click="emit('close')">关闭</button></header>
-      <p>每个环境属于当前项目。目标地址保存于项目配置；规划使用明确选择的固定快照。快照不证明目标版本已经部署。</p>
-      <p v-if="error" role="alert">{{ error }}</p><p v-if="notice" role="status">{{ notice }}</p><p v-if="storageWarning" role="alert">{{ storageWarning }}</p>
-      <nav aria-label="环境状态">
-        <button type="button" :aria-pressed="status === 'active'" @click="changeStatus('active')">有效环境</button>
-        <button type="button" :aria-pressed="status === 'archived'" @click="changeStatus('archived')">已归档环境</button>
-      </nav>
-      <form v-if="status === 'active'" @submit.prevent="registerEnvironment">
-        <label>登记环境标识<input v-model="environmentKey" :disabled="loading || !!pendingRegistration" maxlength="80" placeholder="例如 staging 或 production"></label>
-        <p v-if="pendingRegistration">原登记请求 {{ pendingRegistration.request_id }} · {{ pendingRegistration.environment_key }}</p>
-        <button type="submit" :disabled="loading || (!environmentKey.trim() && !pendingRegistration)">{{ pendingRegistration ? '按原请求核对并继续登记' : '登记项目环境' }}</button>
-      </form>
-      <button type="button" :disabled="loading" @click="loadEnvironments()">刷新环境</button>
-      <p v-if="loading">正在读取…</p>
-      <ul v-if="page.length" aria-label="项目环境列表">
-        <li v-for="environment in page" :key="environment.id">
-          <button type="button" :disabled="loading" :aria-current="selected?.id === environment.id ? 'true' : undefined" @click="selectEnvironment(environment)">
-            {{ environment.request.environment_key }} · {{ environment.status }} · {{ environment.id }}
-          </button>
-        </li>
-      </ul>
-      <p v-else-if="!loading">当前状态下没有环境</p>
-      <button v-if="moreEnvironments" type="button" :disabled="loading" @click="loadEnvironments(true)">加载更多环境</button>
 
-      <section v-if="selected" aria-label="环境目标配置">
-        <h3>{{ selected.request.environment_key }} · {{ selected.status }}</h3>
-        <p v-if="configRecord">当前配置修订 {{ configRecord.revision }} · {{ configRecord.sha256 }}</p>
-        <p v-else-if="configurationMissing">尚未配置目标地址</p>
-        <label>目标显示名称<input v-model="configuration.display_name" :disabled="loading || !canEdit"></label>
-        <label>目标地址<input v-model="configuration.base_url" :disabled="loading || !canEdit" type="url" placeholder="https://example.test"></label>
-        <label>说明（可选）<textarea v-model="configuration.description" :disabled="loading || !canEdit" rows="2"></textarea></label>
-        <button type="button" :disabled="loading || !canEdit || !!pendingCapture" @click="saveConfiguration">保存目标配置</button>
-        <button type="button" :disabled="loading || !canCapture" @click="captureSnapshot">{{ pendingCapture ? '按原请求核对快照' : '创建配置快照' }}</button>
-        <p v-if="pendingCapture?.environment_id === selected.id">快照请求 {{ pendingCapture.request.request_id }} · 配置修订 {{ pendingCapture.request.expected_config_revision }}</p>
-        <button v-if="canEdit" type="button" :disabled="loading" @click="archiveEnvironment">归档环境</button>
+<NModal
+    v-model:show="show"
+    preset="card"
+    title="项目测试环境"
+    style="width: min(960px, 96vw)"
+    :mask-closable="!loading"
+    :close-on-esc="!loading"
+    @update:show="!$event && close()"
+  >
+    <p class="dialog-hint">每个环境属于当前项目。目标地址保存于项目配置；规划使用明确选择的固定快照。快照不证明目标版本已经部署。</p>
+    <NAlert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</NAlert>
+    <NAlert v-if="notice" type="success" :bordered="false" style="margin-bottom: 12px">{{ notice }}</NAlert>
+    <NAlert v-if="storageWarning" type="warning" :bordered="false" style="margin-bottom: 12px">{{ storageWarning }}</NAlert>
 
-        <h3>历史目标快照</h3>
-        <p>快照按创建时间分页展示。每条记录中的部署状态均为未知。</p>
-        <ul v-if="snapshots.length">
-          <li v-for="snapshot in snapshots" :key="snapshot.id">
-            <button type="button" @click="selectedSnapshot = snapshot">{{ snapshot.configuration.payload.display_name }} · 修订 {{ snapshot.configuration.revision }} · {{ new Date(snapshot.captured_at).toLocaleString() }}</button>
-            <span> · {{ snapshot.id }} · 部署状态未知</span>
-          </li>
-        </ul>
-        <p v-else-if="!loading">没有历史快照</p>
-        <button v-if="moreSnapshots" type="button" :disabled="loading" @click="loadSnapshots(true)">加载后续快照</button>
-        <pre v-if="selectedSnapshot">{{ JSON.stringify(selectedSnapshot, null, 2) }}</pre>
-      </section>
-      <footer><button type="button" @click="emit('close')">完成</button></footer>
+    <NRadioGroup :value="status" size="small" @update:value="onStatusChange">
+      <NRadioButton value="active">有效环境</NRadioButton>
+      <NRadioButton value="archived">已归档环境</NRadioButton>
+    </NRadioGroup>
+
+    <div v-if="status === 'active'" class="env-register">
+      <NForm label-placement="left" :show-feedback="false">
+        <NFormItem label="登记环境标识">
+          <NInput
+            v-model:value="environmentKey"
+            :disabled="loading || !!pendingRegistration"
+            maxlength="80"
+            placeholder="例如 staging 或 production"
+            style="width: 260px"
+            @keyup.enter="registerEnvironment"
+          />
+        </NFormItem>
+        <NButton
+          type="primary"
+          size="small"
+          :loading="loading"
+          :disabled="loading || (!environmentKey.trim() && !pendingRegistration)"
+          @click="registerEnvironment"
+        >
+          {{ pendingRegistration ? '按原请求核对并继续登记' : '登记项目环境' }}
+        </NButton>
+      </NForm>
+      <p v-if="pendingRegistration" class="dialog-hint">
+        原登记请求 {{ pendingRegistration.request_id }} · {{ pendingRegistration.environment_key }}
+      </p>
+    </div>
+
+    <div class="dialog-actions-left" style="margin: 12px 0">
+      <NButton size="small" :disabled="loading" @click="loadEnvironments()">刷新环境</NButton>
+      <span v-if="loading" class="dialog-loading-inline"><NSpin size="small" /> 正在读取…</span>
+    </div>
+
+    <NList v-if="page.length" bordered hoverable>
+      <NListItem v-for="environment in page" :key="environment.id">
+        <div class="env-row">
+          <NButton
+            text
+            :type="selected?.id === environment.id ? 'primary' : 'default'"
+            :disabled="loading"
+            @click="selectEnvironment(environment)"
+          >
+            {{ environment.request.environment_key }} · {{ environment.id }}
+          </NButton>
+          <NTag size="small" :bordered="false" :type="environment.status === 'active' ? 'success' : 'default'">
+            {{ environment.status === 'active' ? '有效' : '已归档' }}
+          </NTag>
+        </div>
+      </NListItem>
+    </NList>
+    <NEmpty v-else-if="!loading" description="当前状态下没有环境" size="small" />
+    <NButton v-if="moreEnvironments" size="small" :disabled="loading" @click="loadEnvironments(true)">
+      加载更多环境
+    </NButton>
+
+    <section v-if="selected" class="env-detail">
+      <h3>{{ selected.request.environment_key }} · {{ selected.status }}</h3>
+      <p v-if="configRecord" class="dialog-hint">当前配置修订 {{ configRecord.revision }} · {{ configRecord.sha256 }}</p>
+      <p v-else-if="configurationMissing" class="dialog-hint">尚未配置目标地址</p>
+      <NForm label-placement="top">
+        <NFormItem label="目标显示名称">
+          <NInput v-model:value="configuration.display_name" :disabled="loading || !canEdit" maxlength="160" />
+        </NFormItem>
+        <NFormItem label="目标地址">
+          <NInput
+            v-model:value="configuration.base_url"
+            :disabled="loading || !canEdit"
+            placeholder="https://example.test"
+          />
+        </NFormItem>
+        <NFormItem label="说明（可选）">
+          <NInput
+            v-model:value="configuration.description"
+            type="textarea"
+            :autosize="{ minRows: 2, maxRows: 4 }"
+            :disabled="loading || !canEdit"
+          />
+        </NFormItem>
+      </NForm>
+      <div class="dialog-actions-left">
+        <NButton size="small" :disabled="loading || !canEdit || !!pendingCapture" @click="saveConfiguration">
+          保存目标配置
+        </NButton>
+        <NButton size="small" type="primary" :disabled="loading || !canCapture" @click="captureSnapshot">
+          {{ pendingCapture ? '按原请求核对快照' : '创建配置快照' }}
+        </NButton>
+        <NPopconfirm
+          positive-text="归档"
+          negative-text="取消"
+          @positive-click="archiveEnvironment"
+        >
+          <template #trigger>
+            <NButton v-if="canEdit" size="small" type="error" :disabled="loading">归档环境</NButton>
+          </template>
+          归档后该环境不再用于新规划，历史快照仍可查询。
+        </NPopconfirm>
+      </div>
+      <NAlert
+        v-if="pendingCapture?.environment_id === selected.id"
+        type="info"
+        :bordered="false"
+        style="margin-top: 12px"
+      >
+        快照请求 {{ pendingCapture.request.request_id }} · 配置修订 {{ pendingCapture.request.expected_config_revision }}
+      </NAlert>
+
+      <h3 class="env-section-title">历史目标快照</h3>
+      <p class="dialog-hint">快照按创建时间分页展示。每条记录中的部署状态均为未知。</p>
+      <NList v-if="snapshots.length" bordered hoverable>
+        <NListItem v-for="snapshot in snapshots" :key="snapshot.id">
+          <div class="env-row">
+            <NButton text type="primary" @click="selectedSnapshot = snapshot">
+              {{ snapshot.configuration.payload.display_name }} · 修订 {{ snapshot.configuration.revision }} ·
+              {{ new Date(snapshot.captured_at).toLocaleString() }}
+            </NButton>
+            <NTag size="small" :bordered="false">部署状态未知</NTag>
+          </div>
+          <template #suffix><small>{{ snapshot.id }}</small></template>
+        </NListItem>
+      </NList>
+      <NEmpty v-else-if="!loading" description="没有历史快照" size="small" />
+      <NButton v-if="moreSnapshots" size="small" :disabled="loading" @click="loadSnapshots(true)">
+        加载后续快照
+      </NButton>
+      <pre v-if="selectedSnapshot" class="snapshot-json">{{ JSON.stringify(selectedSnapshot, null, 2) }}</pre>
     </section>
-  </div>
+
+    <template #footer>
+      <div class="dialog-actions">
+        <NButton :disabled="loading" @click="close">完成</NButton>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
@@ -325,4 +450,10 @@ form { border-top: 1px solid var(--border); margin-top: 16px; padding-top: 12px;
 nav { display: flex; gap: 8px; margin: 12px 0; }
 li { margin: 8px 0; overflow-wrap: anywhere; }
 section[aria-label="环境目标配置"] { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 12px; }
+.env-register { margin: 16px 0 8px; }
+.env-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; }
+.env-detail { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 12px; }
+.env-section-title { margin-top: 20px; }
+.snapshot-json { max-height: 320px; overflow: auto; font-size: 12px; background: var(--bg-elevated, rgba(0,0,0,.03)); padding: 12px; border-radius: 8px; }
+.dialog-loading-inline { display: inline-flex; align-items: center; gap: 8px; color: var(--text-secondary, #64748b); }
 </style>

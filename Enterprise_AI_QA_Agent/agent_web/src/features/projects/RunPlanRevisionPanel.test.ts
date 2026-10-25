@@ -2,6 +2,7 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import RunPlanRevisionPanel from "./RunPlanRevisionPanel.vue";
+import { buttonByText, clickButton } from "../../test-utils/naive";
 
 const api = vi.hoisted(() => ({
   listTestRunPlanRevisions: vi.fn(),
@@ -78,10 +79,12 @@ it("shows immutable history and the affected RunItem details", async () => {
   expect(wrapper.text()).toContain("修订 3");
   expect(wrapper.text()).toContain("补齐查询前置");
   expect(wrapper.text()).toContain("plan-3");
+  await wrapper.get(".n-collapse-item__header-main").trigger("click");
+  await flushPromises();
   expect(wrapper.text()).toContain("item-new");
   expect(wrapper.text()).toContain("version-2");
   expect(wrapper.text()).toContain("刷新运行详情后再提交");
-  expect((wrapper.get('button[type="submit"]').element as HTMLButtonElement).disabled).toBe(true);
+  expect(buttonByText(wrapper, "提交计划修订")!.attributes("disabled")).toBeDefined();
 });
 
 it("submits the current revision and refreshes the panel after success", async () => {
@@ -90,8 +93,7 @@ it("submits the current revision and refreshes the panel after success", async (
   await flushPromises();
   await wrapper.get("input").setValue(" plan-3 ");
   await wrapper.get("textarea").setValue(" 补齐查询前置 ");
-  await wrapper.get("form").trigger("submit");
-  await flushPromises();
+  await clickButton(wrapper, "提交计划修订");
 
   expect(api.reviseTestRunPlan).toHaveBeenCalledWith("project-1", "run-1", expect.objectContaining({
     expected_revision: 2,
@@ -137,14 +139,12 @@ it("reuses the same idempotency key when a submission outcome is unknown", async
   await wrapper.get("input").setValue("plan-3");
   await wrapper.get("textarea").setValue("补齐查询前置");
 
-  await wrapper.get("form").trigger("submit");
-  await flushPromises();
+  await clickButton(wrapper, "提交计划修订");
   expect(wrapper.text()).toContain("重试会复用相同请求和幂等键");
   expect((wrapper.get("input").element as HTMLInputElement).disabled).toBe(true);
   const firstRequest = api.reviseTestRunPlan.mock.calls[0][2];
 
-  await wrapper.get("form").trigger("submit");
-  await flushPromises();
+  await clickButton(wrapper, "重试原修订");
   const secondRequest = api.reviseTestRunPlan.mock.calls[1][2];
 
   expect(secondRequest).toEqual(firstRequest);

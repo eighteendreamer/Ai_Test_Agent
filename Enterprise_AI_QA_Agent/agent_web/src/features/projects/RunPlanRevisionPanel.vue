@@ -1,5 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
+import {
+  NAlert,
+  NButton,
+  NCollapse,
+  NCollapseItem,
+  NEmpty,
+  NForm,
+  NFormItem,
+  NInput,
+  NSpin,
+} from "naive-ui";
 import { api } from "../../services/api";
 import { HttpError } from "../../services/http";
 import CasePlanDialog from "./CasePlanDialog.vue";
@@ -166,64 +177,88 @@ onMounted(() => {
 </script>
 
 <template>
-  <section class="run-plan-revision" aria-label="运行计划修订">
+
+<section class="run-plan-revision" aria-label="运行计划修订">
     <header class="revision-heading">
       <div>
         <h3>执行计划修订</h3>
-        <p>当前修订号 {{ expectedRevision }}。先在当前项目生成并评审候选计划，再提交；已领取或已执行条目会保留原快照。</p>
+        <p class="dialog-hint">当前修订号 {{ expectedRevision }}。先在当前项目生成并评审候选计划，再提交；已领取或已执行条目会保留原快照。</p>
       </div>
-      <button type="button" :disabled="historyLoading" @click="loadHistory">刷新历史</button>
+      <NButton size="small" :loading="historyLoading" @click="loadHistory">刷新历史</NButton>
     </header>
 
-    <p v-if="!canRevise" class="revision-muted">此运行当前不支持修订。</p>
-    <p v-else-if="stale" class="revision-warning" role="alert">
+    <NAlert v-if="!canRevise" type="info" :bordered="false" style="margin: 12px 0">此运行当前不支持修订。</NAlert>
+    <NAlert v-else-if="stale" type="warning" :bordered="false" style="margin: 12px 0">
       已发现更新的修订记录（{{ latestRevision }}）。请刷新运行详情后再提交，避免使用过期修订号。
-    </p>
+    </NAlert>
 
-    <form v-if="canRevise" class="revision-form" @submit.prevent="submitRevision">
-      <label>
-        候选计划编号
-        <input v-model="candidatePlanId" maxlength="160" :disabled="busy || !!pendingRequest"
-          placeholder="粘贴当前项目已保存的候选计划编号">
-      </label>
-      <button type="button" data-testid="open-candidate-planner"
-        :disabled="busy || !!pendingRequest || historyLoading || stale" @click="plannerOpen = true">
-        生成并审阅候选计划
-      </button>
-      <small>可使用上方流程生成并审阅候选计划，也可粘贴已保存的同项目计划编号。</small>
-      <label>
-        修订原因
-        <textarea v-model="reason" maxlength="2000" :disabled="busy || !!pendingRequest"
-          placeholder="说明为什么需要调整当前运行的未执行部分"></textarea>
-      </label>
-      <p v-if="pendingRequest" class="revision-warning">待确认请求：{{ pendingRequest.idempotency_key }}。输入已锁定以保持重试内容不变。</p>
-      <p v-if="storageWarning" class="revision-warning" role="alert">{{ storageWarning }}</p>
-      <p v-if="error" class="revision-error" role="alert">{{ error }}</p>
-      <p v-if="notice" role="status">{{ notice }}</p>
-      <div class="revision-actions">
-        <button type="submit" :disabled="!canSubmit">{{ busy ? "提交中…" : pendingRequest ? "重试原修订" : "提交计划修订" }}</button>
-        <button v-if="pendingRequest" type="button" :disabled="busy" @click="loadHistory">先核对修订历史</button>
+    <NForm v-if="canRevise" label-placement="top" class="revision-form">
+      <NFormItem label="候选计划编号">
+        <NInput
+          v-model:value="candidatePlanId"
+          maxlength="160"
+          :disabled="busy || !!pendingRequest"
+          placeholder="粘贴当前项目已保存的候选计划编号"
+        />
+      </NFormItem>
+      <div class="dialog-actions-left">
+        <NButton
+          data-testid="open-candidate-planner"
+          size="small"
+          :disabled="busy || !!pendingRequest || historyLoading || stale"
+          @click="plannerOpen = true"
+        >
+          生成并审阅候选计划
+        </NButton>
+        <small class="dialog-hint">可使用上方流程生成并审阅候选计划，也可粘贴已保存的同项目计划编号。</small>
       </div>
-    </form>
+      <NFormItem label="修订原因">
+        <NInput
+          v-model:value="reason"
+          type="textarea"
+          :autosize="{ minRows: 3, maxRows: 8 }"
+          maxlength="2000"
+          show-count
+          :disabled="busy || !!pendingRequest"
+          placeholder="说明为什么需要调整当前运行的未执行部分"
+        />
+      </NFormItem>
+      <NAlert v-if="pendingRequest" type="warning" :bordered="false">
+        待确认请求：{{ pendingRequest.idempotency_key }}。输入已锁定以保持重试内容不变。
+      </NAlert>
+      <NAlert v-if="storageWarning" type="warning" :bordered="false">{{ storageWarning }}</NAlert>
+      <NAlert v-if="error" type="error" :bordered="false">{{ error }}</NAlert>
+      <NAlert v-if="notice" type="success" :bordered="false">{{ notice }}</NAlert>
+      <div class="dialog-actions-left">
+        <NButton type="primary" :loading="busy" :disabled="!canSubmit" @click="submitRevision">
+          {{ busy ? "提交中…" : pendingRequest ? "重试原修订" : "提交计划修订" }}
+        </NButton>
+        <NButton v-if="pendingRequest" :disabled="busy" @click="loadHistory">先核对修订历史</NButton>
+      </div>
+    </NForm>
 
-    <p v-if="historyError" class="revision-error" role="alert">{{ historyError }}</p>
-    <p v-else-if="historyLoading && !history.length" class="revision-muted">正在读取修订历史…</p>
-    <div v-else-if="!history.length" class="revision-muted">暂无计划修订记录。</div>
+    <NAlert v-if="historyError" type="error" :bordered="false" style="margin-top: 12px">{{ historyError }}</NAlert>
+    <div v-else-if="historyLoading && !history.length" class="dialog-loading">
+      <NSpin size="small" /> 正在读取修订历史…
+    </div>
+    <NEmpty v-else-if="!history.length" description="暂无计划修订记录。" size="small" />
     <ol v-else class="revision-history">
       <li v-for="revision in history" :key="revision.revision">
         <strong>修订 {{ revision.revision }} · {{ revision.created_at }}</strong>
         <p>{{ revision.reason }}</p>
         <small>候选计划 {{ revision.candidate_plan_id }} · 新增 {{ revision.added_item_ids.length }} · 更新 {{ revision.updated_item_ids.length }} · 停用 {{ revision.cancelled_item_ids.length }}</small>
-        <details v-if="revision.item_changes.length">
-          <summary>查看条目变化（{{ revision.item_changes.length }}）</summary>
-          <ul>
-            <li v-for="change in revision.item_changes" :key="`${revision.revision}:${change.run_item_id}`">
-              {{ change.change }} · RunItem {{ change.run_item_id }} · {{ change.after.status }} · 用例 {{ change.after.case_id }} / {{ change.after.case_version_id }}
-            </li>
-          </ul>
-        </details>
+        <NCollapse v-if="revision.item_changes.length" style="margin-top: 8px">
+          <NCollapseItem :title="`查看条目变化（${revision.item_changes.length}）`" :name="`changes-${revision.revision}`" display-directive="show">
+            <ul class="revision-changes">
+              <li v-for="change in revision.item_changes" :key="`${revision.revision}:${change.run_item_id}`">
+                {{ change.change }} · RunItem {{ change.run_item_id }} · {{ change.after.status }} · 用例 {{ change.after.case_id }} / {{ change.after.case_version_id }}
+              </li>
+            </ul>
+          </NCollapseItem>
+        </NCollapse>
       </li>
     </ol>
+
     <CasePlanDialog v-if="plannerOpen" :key="`${projectId}:${runId}:revision-candidate`"
       :project-id="projectId" :candidate-case-ids="candidateCaseIds" :modes="modes" candidate-only
       @candidate="selectCandidatePlan" @close="plannerOpen = false" />

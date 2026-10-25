@@ -1,10 +1,12 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
+import { NAlert, NButton, NForm, NFormItem, NInput, NModal, NSpin } from "naive-ui";
 import { api } from "../../services/api";
 import type { GenerationTemplateRecord } from "../../types";
 
 const props = defineProps<{ projectId: string }>();
 const emit = defineEmits<{ close: []; saved: [] }>();
+const show = ref(true);
 const template = ref<GenerationTemplateRecord | null>(null);
 const form = ref({ name: "", writing_guidance: "", execution_notes: "", example: "" });
 const loading = ref(false);
@@ -38,28 +40,62 @@ async function save() {
     error.value = err instanceof Error ? err.message : "模板保存失败";
   } finally { saving.value = false; }
 }
+
+function close() {
+  show.value = false;
+  emit("close");
+}
+
 onMounted(() => load());
 </script>
 
 <template>
-  <div class="case-dialog-backdrop" @click.self="emit('close')">
-    <section class="case-dialog" role="dialog" aria-label="用例生成模板">
-      <header><h2>用例生成模板</h2><button @click="emit('close')">关闭</button></header>
-      <p>修改只影响后续生成。已有用例保存自己的内容和说明，执行时不会读取此模板。</p>
-      <p v-if="template">{{ template.is_default ? "系统默认模板" : "项目模板" }} · 修订 {{ template.revision }}</p>
-      <p v-if="error" role="alert">{{ error }}</p>
-      <p v-if="loading">正在加载模板…</p>
-      <template v-else-if="template">
-        <label>模板名称<input v-model="form.name"></label>
-        <label>AI 写作指导<textarea v-model="form.writing_guidance" rows="6"></textarea></label>
-        <label>随用例保存的执行说明<textarea v-model="form.execution_notes" rows="3"></textarea></label>
-        <label>JSON 结构与示例<textarea v-model="form.example" class="json-editor" rows="14"></textarea></label>
-      </template>
-      <footer><button :disabled="loading || saving" @click="load(true)">载入系统默认内容</button><button :disabled="loading || saving || !template" @click="save">{{ saving ? "保存中…" : "保存项目模板" }}</button></footer>
-    </section>
-  </div>
+  <NModal
+    v-model:show="show"
+    preset="card"
+    title="用例生成模板"
+    style="width: min(760px, 94vw)"
+    :mask-closable="!saving"
+    :close-on-esc="!saving"
+    @update:show="!$event && emit('close')"
+  >
+    <p class="dialog-hint">修改只影响后续生成。已有用例保存自己的内容和说明，执行时不会读取此模板。</p>
+    <p v-if="template" class="dialog-hint">
+      {{ template.is_default ? "系统默认模板" : "项目模板" }} · 修订 {{ template.revision }}
+    </p>
+    <NAlert v-if="error" type="error" :bordered="false" style="margin-bottom: 12px">{{ error }}</NAlert>
+    <div v-if="loading" class="dialog-loading"><NSpin size="small" /> 正在加载模板…</div>
+    <NForm v-else-if="template" label-placement="top">
+      <NFormItem label="模板名称" required>
+        <NInput v-model:value="form.name" maxlength="160" show-count />
+      </NFormItem>
+      <NFormItem label="AI 写作指导">
+        <NInput v-model:value="form.writing_guidance" type="textarea" :autosize="{ minRows: 6, maxRows: 14 }" />
+      </NFormItem>
+      <NFormItem label="随用例保存的执行说明">
+        <NInput v-model:value="form.execution_notes" type="textarea" :autosize="{ minRows: 3, maxRows: 8 }" />
+      </NFormItem>
+      <NFormItem label="JSON 结构与示例">
+        <NInput v-model:value="form.example" type="textarea" :autosize="{ minRows: 14, maxRows: 26 }" class="json-editor" />
+      </NFormItem>
+    </NForm>
+    <template #footer>
+      <div class="dialog-actions">
+        <NButton :disabled="loading || saving" @click="load(true)">载入系统默认内容</NButton>
+        <NButton :disabled="loading || saving || !template" type="primary" :loading="saving" @click="save">
+          保存项目模板
+        </NButton>
+        <NButton :disabled="saving" @click="close">关闭</NButton>
+      </div>
+    </template>
+  </NModal>
 </template>
 
 <style scoped>
 @import "./caseDialogs.css";
+
+.json-editor :deep(textarea) {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+}
 </style>

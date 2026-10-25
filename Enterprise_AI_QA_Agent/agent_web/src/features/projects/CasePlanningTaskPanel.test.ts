@@ -120,7 +120,7 @@ describe("durable project planning UI", () => {
     api.listCasePlanningTasks.mockResolvedValue({ items: [task("completed")] });
     await button(w, "项目规划任务").trigger("click"); await flushPromises();
     api.getCasePlanningTask.mockResolvedValue(task("completed"));
-    await button(w, "规划任务已完成 · task").trigger("click"); await flushPromises();
+    await button(w, "task").trigger("click"); await flushPromises();
     expect(w.emitted("completed")).toHaveLength(1); w.unmount();
   });
 
