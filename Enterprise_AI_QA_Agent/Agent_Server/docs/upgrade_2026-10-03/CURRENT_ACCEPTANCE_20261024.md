@@ -398,6 +398,30 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 证据：`p1-case-import-full-product-current-20261024-01/` 及同名 XML。构建版 App/Playwright 页面交互 + 独立 API + 隔离 MySQL/PostgreSQL/RustFS/Redis：项目模板保存、rows.xlsx/分表 xlsx/cases.json 实际导入（上传安全报告 allow、原件字节读回）、预览与错误报告下载（invalid.xlsx 阻断）、草稿提交、评审/启用、项目隔离 404、API 重启后数据读回，页面零错误。特别地，导入上传路径经过了今日 win32 libmagic 修复与字体自托管后的构建版前端——本复验同时确认今日修复无回归。这维持 10-23 对该页面流程验收缺口的关闭结论，并补充了本会话证据；不含未来项目平台数据源接入。
 
+## 重复请求与工程交付：模型断网与执行 Worker 中断恢复验收通过（deepseek-flash）
+
+新增验收 `tests/test_default_execution_outage_recovery_live.py`（门控 `RUN_LIVE_DEFAULT_EXECUTION_OUTAGE_RECOVERY=1`），两个持久窗口一次运行（隔离 Redis DB13、完整生产 API + 生产执行 Worker + 受控 HTTP 业务目标）：
+
+```text
+2 passed in 210.04s
+```
+
+证据：`p2-execution-outage-recovery-current-20261025-07/`（`model-outage/`、`worker-kill/`）及同名 JUnit XML。
+
+测试替身扩展（`tests/default_model_probe.py`）：脚本轮新增 `network_outage`（向已关闭端口发起真实连接，由 httpx 抛出真实 `ConnectError`）与 `block_model_call`（写标记后等待，供真实杀 Worker）；执行 Worker 现在也经探针入口启动（此前仅 API 有探针），使故障窗口确定性。
+
+- **model-outage（模型调用中断网）**：脚本第 1 轮在真实审批后执行 `POST /orders`（恰 1 次），第 2 轮模型调用向关闭端口发起真实连接并按真实传输错误失败（probe 记录 `ConnectError`）。条目落 `error` 并携带 `execution_checkpoint`，不伪报通过；终态重投零新增业务请求与零新增模型物理请求（`physical/*.request.json` 前后一致）。
+- **worker-kill（执行 Worker 进程中断）**：Worker 阻塞在首个模型调用时被真实 `taskkill /T /F`（探针进程 id 在案且确认已消失）；自然租约过期 → `recover-expired` → attempt1 `expired`；被杀死 Worker 的执行资源租约自然过期（隔离设置 20s）后由清理 Worker 结清；新 Worker `outage-recovery-second` 领取 attempt2，因“已记录执行意图但无快照”拒绝重放未知副作用，如实 `error` + `execution_recovery_required`；业务 POST 为 0 次，模型物理请求数不变。
+- 两窗口 `global_model_unchanged=true`；真实默认模型仅用于规划，执行图由既有脚本化替身回放（与受控 HTTP 模型服务器同性质）。
+
+边界（如实声明）：
+
+- 断网只切断“执行图 → 模型端点”的传输路径（真实连接拒绝），不等同整机网络分区；SDK/HTTP 层真实 TCP 故障由 `test_model_sdk_fault_http.py` 覆盖，本验收补的是业务链路反应。
+- 未知结果的 attempt 按产品设计**不自动重放**，本验收证明“不重复副作用、不伪造通过”，不证明“断网后自动续跑成功”；已完成副作用的安全续跑由检查点快照路径（回执恢复两窗口）覆盖。
+- 进程中断点位于首个模型调用返回前（Worker 独占模型调用的窗口），故该窗口业务副作用为 0；带已完成副作用的跨进程恢复由回执/快照路径证据覆盖。
+
+过程迭代（证据保留于 `-01`~`-06`）：Worker 未走探针导致脚本未生效、venv python 为启动器致 Popen pid 与真实解释器不同、被杀 Worker 的执行资源租约使接管 Worker 进入 `waiting_resource`、attempt 记录没有 `lease_owner` 字段（改按租约令牌断言）。运行后 Redis DB13 仅余常驻键与共享 cleanup 流（pending=0）。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
