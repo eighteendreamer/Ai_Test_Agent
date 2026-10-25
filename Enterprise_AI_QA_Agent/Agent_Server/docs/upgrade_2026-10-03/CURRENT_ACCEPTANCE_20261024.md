@@ -461,6 +461,24 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 边界：覆盖同一标签页的整页导航形成的新文档；不覆盖新标签/新窗口（`page_id` 变化）与跨文档 iframe 组合（iframe/多 frame 已由 `test_recording_document_scopes.py` 与既有 iframe/open shadow 验收覆盖），也不覆盖 Electron 产品容器内录制。
 
+## 需求变更与追踪：DOCX/PDF 变更链路的默认模型影响分析验收通过
+
+新增验收 `tests/test_default_requirement_change_formats_live.py`（门控 `RUN_LIVE_DEFAULT_REQUIREMENT_CHANGE_FORMATS=1`），DOCX 与 PDF 两个参数：
+
+```text
+2 passed in 167.88s
+```
+
+证据：`p4-requirement-change-formats-current-20261025-03/`（`docx/`、`pdf/`，含 V1/V2 原件字节、解析快照、差异、影响结果与 worker 日志）及同名 JUnit XML。每个格式的链路（生产 API + 独立解析/差异/影响 Worker，隔离 PostgreSQL/MySQL/RustFS/Redis）：
+
+- **真实原件**：现场生成 DOCX（`python-docx` 标题+段落）与文本型 PDF（`pypdf`，逐行文本页并转义括号），物理上传 V1 后作为新版本上传 V2（V2 原件字节读回一致），解析快照 `parser_id` 均为 `docx` / `pdf`，均有文本块。
+- **确定性差异**：独立差异 Worker 完成新旧快照比较（不经 AI）。
+- **影响分析（真实默认 `deepseek-flash`）**：每个格式 5 个单元全部 `analyzed`、2 条规则、DOCX 6 处 / PDF 7 处新版本来源引用，`semantic_status=pending_review`、`deployment_status=unknown`、`status=partial`；规则 JSON 命中 discount/折扣/优惠语义；每格式仅 2 次物理模型 HTTP；`global_model_unchanged=true`。
+
+过程记录（失败证据保留于 `-01`/`-02`）：PDF 夹具中未转义的 `(`/`)` 破坏 PDF 内容流，解析子进程 `parser_process_failed`（真实失败，非产品缺陷）；转义后通过。同一 pytest 进程内两格式连跑时，共享文档流（`qa:tasks:document_parsing` 等进程级名称）中的上一参数旧投递会让一次性 Worker 读到本库不存在的任务行（`document_parse_task_claim_skipped`），测试已在每参数开始处清理这三条共享流——与 10-24 文档生成记录同一测试基建边界，非产品缺陷。
+
+边界：覆盖英文文本型 DOCX 与文本型 PDF；不覆盖扫描 PDF（首期无 OCR）、复杂版式、中文 PDF 字体嵌入，也不覆盖影响分析之后的评审/增量草稿（Markdown 主链已验收）。
+
 ## 环境清理
 
 - Redis DB 13 复核后仅余常驻键（`qa:fencing:agent`、`qa:quota:limits`、`qa:tasks:case_planning`）；本轮测试产生的 2 个会话事件缓存键已精确删除。
