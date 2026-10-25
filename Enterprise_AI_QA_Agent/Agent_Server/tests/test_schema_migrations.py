@@ -304,6 +304,34 @@ async def test_tool_revision_supports_real_execution_and_evidence_without_initia
 
 
 @pytest.mark.asyncio
+async def test_tool_execution_owner_fencing_rejects_stale_heartbeat_and_settlement(live_schema):
+    settings, engine, schema = live_schema
+    with engine.begin() as connection:
+        migrate(connection, settings, schema, TOOL_REVISION)
+    settings.database.postgres_tool_job_table = f"{schema}.tool_jobs_owner_fencing"
+    settings.database.postgres_tool_artifact_table = f"{schema}.tool_artifacts_owner_fencing"
+    store = PostgresToolJobStore(settings)
+    await store.initialize()
+    job = normal_job().model_copy(update={"id": "owner-fenced-job"})
+    await store.create_job_if_absent(job)
+    claimed = await store.claim_job_execution(job.id)
+    assert claimed is not None
+    owner_token = str(claimed.metadata["execution_owner_token"])
+    assert owner_token
+    assert (await store.heartbeat_job_execution(job.id, owner_token="stale-owner")) is None
+    assert (await store.heartbeat_job_execution(job.id, owner_token=owner_token)) is not None
+    assert (await store.finish_job_execution(
+        job.id, status=ToolJobStatus.completed, output_payload={"result": "stale"},
+        summary="stale", error_message=None, owner_token="stale-owner",
+    )) is None
+    saved = await store.finish_job_execution(
+        job.id, status=ToolJobStatus.completed, output_payload={"result": "ok"},
+        summary="ok", error_message=None, owner_token=owner_token,
+    )
+    assert saved is not None and saved.status == ToolJobStatus.completed
+
+
+@pytest.mark.asyncio
 async def test_tool_upgrade_preserves_existing_rows_and_outbox_revision(live_schema):
     """Current supported unversioned table shape; not a historical deployment sample."""
     settings, engine, schema = live_schema

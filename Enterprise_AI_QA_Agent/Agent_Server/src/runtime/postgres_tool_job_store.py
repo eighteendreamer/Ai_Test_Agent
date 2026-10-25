@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import json
 from datetime import datetime
+from uuid import uuid4
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -34,8 +35,8 @@ class PostgresToolJobStore:
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._claim_job_execution_sync, job_id)
 
-    async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None:
-        return await asyncio.to_thread(self._heartbeat_job_execution_sync, job_id)
+    async def heartbeat_job_execution(self, job_id: str, owner_token: str | None = None) -> ToolJobRecord | None:
+        return await asyncio.to_thread(self._heartbeat_job_execution_sync, job_id, owner_token)
 
     async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None:
         return await asyncio.to_thread(self._park_child_wait_sync, job_id, summary, metadata)
@@ -61,21 +62,22 @@ class PostgresToolJobStore:
             return _job_from_row(row) if row else None
 
     async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
-                                 metadata: dict | None = None) -> ToolJobRecord | None:
+                                 metadata: dict | None = None, owner_token: str | None = None) -> ToolJobRecord | None:
         if metadata is None:
-            return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation)
-        return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation, metadata)
+            return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation, None, owner_token)
+        return await asyncio.to_thread(self._observe_job_output_sync, job_id, output_payload, observation, metadata, owner_token)
 
-    def _observe_job_output_sync(self, job_id, output_payload, observation, metadata=None):
+    def _observe_job_output_sync(self, job_id, output_payload, observation, metadata=None, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET output_payload=%s::jsonb, metadata=metadata || %s::jsonb, updated_at=now()
                 WHERE id=%s AND status='running' AND NOT (metadata ? 'tool_output_observation')
+                  AND (%s::text IS NULL OR metadata->>'execution_owner_token'=%s)
                 RETURNING *
             """, (json.dumps(make_json_safe(output_payload), ensure_ascii=False),
                   json.dumps({"tool_output_observation": observation, **make_json_safe(metadata or {})}, ensure_ascii=False),
-                  job_id))
+                  job_id, owner_token, owner_token))
             row = cur.fetchone()
             if row is not None:
                 self.effect_evidence.capture(cur, _job_from_row(row), output_payload, observation)
@@ -83,55 +85,60 @@ class PostgresToolJobStore:
 
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
                                output_payload: dict, status: ToolJobStatus, summary: str,
-                               error_message: str | None, artifact_count: int) -> ToolJobRecord | None:
+                               error_message: str | None, artifact_count: int,
+                               owner_token: str | None = None) -> ToolJobRecord | None:
         if status not in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed}:
             raise ValueError("Observed output requires a terminal tool status")
         return await asyncio.to_thread(self._settle_job_output_sync, job_id, expected_output,
-            expected_observation, output_payload, status, summary, error_message, artifact_count)
+            expected_observation, output_payload, status, summary, error_message, artifact_count, owner_token)
 
     def _settle_job_output_sync(self, job_id, expected_output, expected_observation, output_payload,
-                               status, summary, error_message, artifact_count):
+                               status, summary, error_message, artifact_count, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET output_payload=%s::jsonb, status=%s, summary=%s, error_message=%s,
                     artifact_count=%s, completed_at=now(), updated_at=now()
                 WHERE id=%s AND status IN ('running','resume_requested')
+                  AND (%s::text IS NULL OR metadata->>'execution_owner_token'=%s)
                   AND output_payload=%s::jsonb AND metadata->'tool_output_observation'=%s::jsonb
                 RETURNING *
             """, (json.dumps(make_json_safe(output_payload), ensure_ascii=False), status.value,
-                  summary, error_message, artifact_count, job_id,
+                  summary, error_message, artifact_count, job_id, owner_token, owner_token,
                   json.dumps(make_json_safe(expected_output), ensure_ascii=False),
                   json.dumps(expected_observation, ensure_ascii=False)))
             row = cur.fetchone()
             return _job_from_row(row) if row else None
 
-    def _heartbeat_job_execution_sync(self, job_id):
+    def _heartbeat_job_execution_sync(self, job_id, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET heartbeat_at = now(), updated_at = now()
-                WHERE id = %s AND status = 'running' RETURNING *
-            """, (job_id,))
+                WHERE id = %s AND status = 'running'
+                  AND (%s::text IS NULL OR metadata->>'execution_owner_token'=%s) RETURNING *
+            """, (job_id, owner_token, owner_token))
             row = cur.fetchone()
             return _job_from_row(row) if row else None
 
     async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
-                                   summary: str, error_message: str | None) -> ToolJobRecord | None:
+                                   summary: str, error_message: str | None,
+                                   owner_token: str | None = None) -> ToolJobRecord | None:
         if status not in {ToolJobStatus.completed, ToolJobStatus.failed, ToolJobStatus.cancelled}:
             raise ValueError("Execution settlement requires a terminal status")
-        return await asyncio.to_thread(self._finish_job_execution_sync, job_id, status, output_payload, summary, error_message)
+        return await asyncio.to_thread(self._finish_job_execution_sync, job_id, status, output_payload, summary, error_message, owner_token)
 
-    def _finish_job_execution_sync(self, job_id, status, output_payload, summary, error_message):
+    def _finish_job_execution_sync(self, job_id, status, output_payload, summary, error_message, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status = %s, output_payload = %s::jsonb, summary = %s, error_message = %s,
                     completed_at = now(), updated_at = now()
                 WHERE id = %s AND (status = 'running' OR (status = 'cancelled' AND %s = 'cancelled'))
+                  AND (%s::text IS NULL OR metadata->>'execution_owner_token'=%s)
                 RETURNING *
             """, (status.value, json.dumps(make_json_safe(output_payload), ensure_ascii=False),
-                  summary, error_message, job_id, status.value))
+                  summary, error_message, job_id, status.value, owner_token, owner_token))
             row = cur.fetchone()
             return _job_from_row(row) if row else None
 
@@ -170,9 +177,10 @@ class PostgresToolJobStore:
         cur.execute(f"""
             UPDATE {self._settings.database.postgres_tool_job_table}
             SET status = 'running', started_at = now(), heartbeat_at = now(), updated_at = now(),
-                metadata = metadata || %s::jsonb
+                metadata = metadata || jsonb_build_object('execution_owner_token', %s::text)
+                    || %s::jsonb
             WHERE id = %s AND started_at IS NULL AND status IN ('queued', 'waiting_approval')
-            RETURNING *""", (json.dumps(make_json_safe(metadata or {}), ensure_ascii=False), job_id))
+            RETURNING *""", (str(uuid4()), json.dumps(make_json_safe(metadata or {}), ensure_ascii=False), job_id))
         row = cur.fetchone()
         return _job_from_row(row) if row else None
 

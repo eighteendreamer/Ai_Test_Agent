@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta
+from uuid import uuid4
 from typing import Protocol
 
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
@@ -12,16 +13,18 @@ class ToolJobStore(Protocol):
     async def save_job(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def create_job_if_absent(self, job: ToolJobRecord) -> ToolJobRecord: ...
     async def claim_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
-    async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None: ...
+    async def heartbeat_job_execution(self, job_id: str, owner_token: str | None = None) -> ToolJobRecord | None: ...
     async def park_child_wait(self, job_id: str, *, summary: str, metadata: dict) -> ToolJobRecord | None: ...
     async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None: ...
     async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
-                                 metadata: dict | None = None) -> ToolJobRecord | None: ...
+                                 metadata: dict | None = None, owner_token: str | None = None) -> ToolJobRecord | None: ...
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
                                output_payload: dict, status: ToolJobStatus, summary: str,
-                               error_message: str | None, artifact_count: int) -> ToolJobRecord | None: ...
+                               error_message: str | None, artifact_count: int,
+                               owner_token: str | None = None) -> ToolJobRecord | None: ...
     async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
-                                   summary: str, error_message: str | None) -> ToolJobRecord | None: ...
+                                   summary: str, error_message: str | None,
+                                   owner_token: str | None = None) -> ToolJobRecord | None: ...
     async def get_job(self, job_id: str) -> ToolJobRecord | None: ...
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]: ...
     async def list_latest_jobs_for_sessions(self, session_ids: list[str], tool_keys: list[str]) -> list[ToolJobRecord]: ...
@@ -71,22 +74,26 @@ class InMemoryToolJobStore:
                 return None
             now = datetime.utcnow()
             job.status = ToolJobStatus.running
+            job.metadata["execution_owner_token"] = str(uuid4())
             job.started_at = job.heartbeat_at = job.updated_at = now
             return job.model_copy(deep=True)
 
-    async def heartbeat_job_execution(self, job_id: str) -> ToolJobRecord | None:
+    async def heartbeat_job_execution(self, job_id: str, owner_token: str | None = None) -> ToolJobRecord | None:
         async with self._lock:
             job = self._jobs.get(job_id)
-            if job is not None and job.status == ToolJobStatus.running:
+            if (job is not None and job.status == ToolJobStatus.running
+                and (owner_token is None or job.metadata.get("execution_owner_token") == owner_token)):
                 job.heartbeat_at = job.updated_at = datetime.utcnow()
                 return job.model_copy(deep=True)
             return None
 
     async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
-                                 metadata: dict | None = None) -> ToolJobRecord | None:
+                                 metadata: dict | None = None, owner_token: str | None = None) -> ToolJobRecord | None:
         async with self._lock:
             job = self._jobs.get(job_id)
-            if job is None or job.status != ToolJobStatus.running or "tool_output_observation" in job.metadata:
+            if (job is None or job.status != ToolJobStatus.running
+                or "tool_output_observation" in job.metadata
+                or (owner_token is not None and job.metadata.get("execution_owner_token") != owner_token)):
                 return None
             job.output_payload = output_payload
             job.metadata["tool_output_observation"] = observation
@@ -116,13 +123,15 @@ class InMemoryToolJobStore:
 
     async def settle_job_output(self, job_id: str, *, expected_output: dict, expected_observation: dict,
                                output_payload: dict, status: ToolJobStatus, summary: str,
-                               error_message: str | None, artifact_count: int) -> ToolJobRecord | None:
+                               error_message: str | None, artifact_count: int,
+                               owner_token: str | None = None) -> ToolJobRecord | None:
         if status not in {ToolJobStatus.completed, ToolJobStatus.partial, ToolJobStatus.failed}:
             raise ValueError("Observed output requires a terminal tool status")
         async with self._lock:
             job = self._jobs.get(job_id)
             if (job is None or job.status not in {ToolJobStatus.running, ToolJobStatus.resume_requested}
-                or job.output_payload != expected_output or job.metadata.get("tool_output_observation") != expected_observation):
+                or job.output_payload != expected_output or job.metadata.get("tool_output_observation") != expected_observation
+                or (owner_token is not None and job.metadata.get("execution_owner_token") != owner_token)):
                 return None
             job.status, job.output_payload, job.summary, job.error_message = status, output_payload, summary, error_message
             job.artifact_count = artifact_count
@@ -144,13 +153,15 @@ class InMemoryToolJobStore:
         return [job.model_copy(deep=True) for job in latest.values()]
 
     async def finish_job_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict,
-                                   summary: str, error_message: str | None) -> ToolJobRecord | None:
+                                   summary: str, error_message: str | None,
+                                   owner_token: str | None = None) -> ToolJobRecord | None:
         if status not in {ToolJobStatus.completed, ToolJobStatus.failed, ToolJobStatus.cancelled}:
             raise ValueError("Execution settlement requires a terminal status")
         async with self._lock:
             job = self._jobs.get(job_id)
-            if job is None or not (job.status == ToolJobStatus.running or
-                (job.status == status == ToolJobStatus.cancelled)):
+            if (job is None or not (job.status == ToolJobStatus.running or
+                (job.status == status == ToolJobStatus.cancelled))
+                or (owner_token is not None and job.metadata.get("execution_owner_token") != owner_token)):
                 return None
             job.status, job.output_payload, job.summary, job.error_message = status, output_payload, summary, error_message
             job.completed_at = job.updated_at = datetime.utcnow()

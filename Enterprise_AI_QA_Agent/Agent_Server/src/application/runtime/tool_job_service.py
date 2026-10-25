@@ -185,6 +185,9 @@ class ToolJobService:
             "output_payload": payload,
             "observation": observation.model_dump(mode="json"),
         }
+        owner_token = str((current.metadata if current else {}).get("execution_owner_token") or "") or None
+        if owner_token is not None:
+            observe_kwargs["owner_token"] = owner_token
         if verification_metadata is not None:
             observe_kwargs["metadata"] = verification_metadata
         try:
@@ -240,7 +243,8 @@ class ToolJobService:
         count = len(await self._store.list_artifacts(tool_job_id=job.id))
         saved = await self._store.settle_job_output(job.id, expected_output=job.output_payload,
             expected_observation=job.metadata[OUTPUT_OBSERVATION_KEY], output_payload=make_json_safe(output_payload),
-            status=status, summary=summary, error_message=error_message, artifact_count=count)
+            status=status, summary=summary, error_message=error_message, artifact_count=count,
+            owner_token=str(job.metadata.get("execution_owner_token") or "") or None)
         if saved is None:
             saved = await self._store.get_job(job.id)
             if saved is None or saved.status in {ToolJobStatus.running, ToolJobStatus.resume_requested}:
@@ -353,13 +357,15 @@ class ToolJobService:
         return await self._case_action_admission.operations.validate_job(job)
 
     async def finish_execution(self, job_id: str, *, status: ToolJobStatus, output_payload: dict[str, Any],
-                               summary: str, error_message: str | None = None) -> ToolJobRecord | None:
+                               summary: str, error_message: str | None = None,
+                               owner_token: str | None = None) -> ToolJobRecord | None:
         """Settle atomically without overwriting a concurrent cancellation/recovery."""
         return await self._store.finish_job_execution(job_id, status=status, output_payload=output_payload,
-                                                     summary=summary, error_message=error_message)
+                                                     summary=summary, error_message=error_message,
+                                                     owner_token=owner_token)
 
-    async def heartbeat_execution(self, job_id: str) -> ToolJobRecord | None:
-        return await self._store.heartbeat_job_execution(job_id)
+    async def heartbeat_execution(self, job_id: str, owner_token: str | None = None) -> ToolJobRecord | None:
+        return await self._store.heartbeat_job_execution(job_id, owner_token)
 
     async def cancel_job(self, job_id: str, reason: str | None = None) -> ToolJobRecord | None:
         return await self._mark(job_id, ToolJobStatus.cancelled, summary=reason or "Cancelled by operator.")
