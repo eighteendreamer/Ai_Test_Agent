@@ -144,12 +144,7 @@ class FrameworkApprovalJournal:
         cur.execute(f"SELECT * FROM public.{self._settings.database.postgres_approval_table} "
             "WHERE id=%s FOR UPDATE", (approval_id,))
         approval = cur.fetchone()
-        cur.execute(f"SELECT link FROM {self._links} WHERE approval_id=%s AND binding_id=%s",
-            (approval_id, binding.binding_id))
-        linked = cur.fetchone()
-        if approval is None or approval["session_id"] != binding.session_id or linked is None:
-            raise FrameworkApprovalRecoveryRequired("Decision has no matching native approval link")
-        self._assert_business_link(binding, FrameworkInterruptLink.model_validate(linked["link"]), approval)
+        self.require_link_in_transaction(cur, binding, approval_id, approval)
         if approval["status"] not in {"approved", "denied"}:
             raise FrameworkApprovalRecoveryRequired("A pending approval has no decision to deliver")
         decision = ({"type": "approve"} if approval["status"] == "approved" else
@@ -165,6 +160,17 @@ class FrameworkApprovalJournal:
         logger.info("framework_decision_queued", extra={"binding_id": binding.binding_id,
             "approval_id": approval_id, "decision_id": decision_id})
         return self.get_receipt_in_transaction(cur, approval_id)
+
+    def require_link_in_transaction(self, cur, binding, approval_id, approval):
+        """Validate a saved mapping against its current business approval."""
+        cur.execute(f"SELECT link FROM {self._links} WHERE approval_id=%s AND binding_id=%s",
+            (approval_id, binding.binding_id))
+        linked = cur.fetchone()
+        if approval is None or approval["session_id"] != binding.session_id or linked is None:
+            raise FrameworkApprovalRecoveryRequired("Decision has no matching native approval link")
+        link = FrameworkInterruptLink.model_validate(linked["link"])
+        self._assert_business_link(binding, link, approval)
+        return link
 
     def get_receipt_in_transaction(self, cur, approval_id):
         cur.execute(f"SELECT * FROM {self._receipts} WHERE approval_id=%s", (approval_id,))

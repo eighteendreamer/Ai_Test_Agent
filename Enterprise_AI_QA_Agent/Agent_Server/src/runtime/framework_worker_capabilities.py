@@ -34,8 +34,9 @@ class FrameworkWorkerCapabilities:
     def require(self, binding: RuntimeBinding, *, operation: str) -> None:
         """Unavailable compatibility leaves the durable task unclaimed.
 
-        LangGraph controlled v2 workflows and v2 continuation transactions are
-        not implemented yet. They must not fall through to the legacy loop.
+        LangGraph controlled v2 workflows and end-to-end continuation execution
+        are not implemented yet. An internal decision submission port alone
+        does not make them available. Never fall through to the legacy loop.
         """
         if binding.runtime_version != self.runtime_version:
             raise TaskDeferred("framework_runtime_version_unavailable")

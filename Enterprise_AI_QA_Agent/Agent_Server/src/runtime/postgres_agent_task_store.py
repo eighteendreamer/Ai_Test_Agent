@@ -12,6 +12,7 @@ import logging
 from datetime import datetime, timezone
 from uuid import uuid4
 
+from pydantic import ValidationError
 from sqlalchemy.exc import DBAPIError
 
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -138,6 +139,13 @@ class PostgresAgentTaskStore:
             idempotency_key,
             submission_payload,
         )
+
+    async def submit_approval_v2(self, command: AgentTaskCommandV2, approval_id: str,
+                                 payload: ApprovalDecisionRequest) -> AgentTaskRecord:
+        """One continuation per approval, independent of the caller's click ID."""
+        from src.runtime.framework_approval_submission import FrameworkApprovalSubmission
+
+        return await asyncio.to_thread(FrameworkApprovalSubmission(self).submit, command, approval_id, payload)
 
     async def get(self, task_id: str) -> AgentTaskExecution:
         return await asyncio.to_thread(self._get_sync, task_id)
@@ -303,6 +311,9 @@ class PostgresAgentTaskStore:
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS runtime_binding JSONB")
             cur.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {self._tasks}_v2_initial_turn_idx "
                 f"ON {self._tasks}(session_id,turn_id) WHERE runtime_binding IS NOT NULL AND operation='message'")
+            cur.execute(f"CREATE UNIQUE INDEX IF NOT EXISTS {self._tasks}_v2_approval_idx "
+                f"ON {self._tasks}(session_id,reference_id) "
+                "WHERE runtime_binding IS NOT NULL AND operation='approval_resume'")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS parent_task_id TEXT")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS root_trace_id TEXT")
             cur.execute(
@@ -677,9 +688,9 @@ class PostgresAgentTaskStore:
                 raise AgentSubmissionConflict(
                     "Session is not waiting for an approval continuation"
                 )
-            # The v2 continuation/decision transaction has not been implemented.
-            # Preserve the pending decision instead of routing a bound Turn to
-            # the legacy stream (integration plan section 8.1).
+            # The internal v2 submission port is not yet wired to API/Worker
+            # continuation execution. Preserve the pending decision instead of
+            # routing a bound Turn to legacy (integration plan section 8.1).
             pending = (session.get("metadata") or {}).get("pending_turn") or {}
             if (pending.get("context_bundle") or {}).get("runtime_binding") is not None:
                 raise AgentSubmissionConflict("Framework-bound approval requires a v2 continuation")
@@ -1107,7 +1118,7 @@ class PostgresAgentTaskStore:
                 raise KeyError(task_id)
             session = self._lock_session(cur, identity["session_id"])
             if expected_binding is not None:
-                lock_owner_row(cur, self._settings, expected_binding)
+                binding_owner = lock_owner_row(cur, self._settings, expected_binding)
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task_id,))
             row = cur.fetchone()
             saved_binding = (
@@ -1150,6 +1161,21 @@ class PostgresAgentTaskStore:
                     )
                     cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
                     return self._record(cur.fetchone())
+            framework_approval = saved_binding is not None and row.get("operation") == "approval_resume"
+            if framework_approval:
+                from src.runtime.framework_approval_submission import assert_claimable_approval
+                from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+
+                try:
+                    assert_claimable_approval(cur, self, session, saved_binding, row, binding_owner)
+                except (AgentSubmissionConflict, FrameworkApprovalRecoveryRequired, ValidationError) as exc:
+                    obsolete = isinstance(exc, AgentSubmissionConflict)
+                    status = "cancelled" if obsolete else "recovery_required"
+                    self._update_status(cur, row, status, None, "approval_continuation_changed")
+                    logger.warning("framework_approval_claim_rejected", extra={"task_id": task_id,
+                        "binding_id": saved_binding.binding_id, "status": status, "error_type": type(exc).__name__})
+                    cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
+                    return self._record(cur.fetchone())
             if session["lease_active"] or (
                 session["status"] == "waiting_approval"
                 and row.get("operation") != "approval_resume"
@@ -1160,8 +1186,10 @@ class PostgresAgentTaskStore:
             cur.execute(
                 f"""SELECT id FROM {self._tasks} WHERE session_id=%s AND sequence<%s
                 AND status IN ('queued','waiting_resource','claimed','running')
+                AND NOT (%s AND operation='message' AND turn_id<>%s
+                    AND status IN ('queued','waiting_resource'))
                 LIMIT 1""",
-                (row["session_id"], row["sequence"]),
+                (row["session_id"], row["sequence"], framework_approval, row["turn_id"]),
             )
             if cur.fetchone():
                 raise TaskDeferred("An earlier session input is pending")

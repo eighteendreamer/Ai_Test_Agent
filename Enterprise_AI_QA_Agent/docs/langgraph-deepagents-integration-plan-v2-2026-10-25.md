@@ -48,8 +48,8 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | `runtime_adapter.py` 已显式安装官方 per-call HITL；`RuntimeService._resume_deep_agent_after_approval` 已有单项分支，批量分支保留历史兼容。`PostgresAgentTaskStore._submit_approval_sync` 仍要求 Session 等待审批，并拒绝绑定 Turn；`FrameworkWorkerCapabilities.require` 只允许 v2 `message` | 风险仍成立，不能说新路径仍一律等待整批。必须补 v2 决定事务、continuation、运行中接收其它决定、领取优先级、API/UI 和 receipt 生产接线 |
-| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；`FrameworkApprovalJournal` 已提供 link、queue、delivery 与只读事实对账端口 | 风险仍成立，不能再称完全没有 receipt。审批决定/task/outbox 原子受理、运行时自动建立 link、applied 投影与外部副作用对账仍未贯通；外部效果不在该数据库事务内 |
+| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`submit_approval_v2` 和独立 `FrameworkApprovalSubmission` 现已提供原子受理端口、运行中接收其它决定及活跃 Turn 领取优先级。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。内部受理/领取不等于业务 API/框架续跑已接通；自动原生映射、Dispatcher/Worker/Runtime 继续执行、API/UI 与 receipt 生产接线仍待实施 |
+| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；`FrameworkApprovalJournal` 已提供 link、queue、delivery 与只读事实对账端口；v2 内部提交现将审批决定、receipt、唯一任务和 outbox 放入另一受理事务 | 风险仍成立。受理事务与执行写入事务分别存在；运行时自动建立 link、完整 API、applied 投影与外部副作用对账仍未贯通，外部效果不在数据库事务内 |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
@@ -180,6 +180,8 @@ Turn 首次受理时，和 AgentTask/outbox **同事务**保存 `RuntimeBinding`
 6. 每次只提交一个有效 interrupt 的决定：`Command(resume={interrupt_id: {"type": "approve"}})`；拒绝使用 `{"type":"reject", "message": ...}`。不要使用批量 `decisions`，不要把已交付的旧决定附在下次请求里。未交付但已启动过工具时，先完成第 5 节对账；不能跳过未知效果核对直接恢复。
 7. 一项执行完，框架可以继续返回其它 interrupt。尚未结束的并行工具结果保存在 pending writes；对账时同时检查 StateSnapshot、任务和 pending writes，不能只读取顶层 `values.messages`。
 8. 只有本轮工具批次均有合法结果，才能进入下一次模型调用。部分决定不表示允许绕过其余等待项。
+
+API 接线还需拆开受理与执行的进程内锁：当前 `SessionService.resolve_approval` 和 `execute_claimed_approval` 都持有 `_session_locks[session_id]`。在同进程部署或 Harness 中，直接复用这段锁会使 A 的提交等待 B 执行结束，即使数据库端口已经允许 running 时受理。v2 普通决定的短事务受理必须在长执行锁之外，执行仍保留独占；用真实 API 请求与被阻塞的 B Worker 验证 A 及时返回 202。单独调用 store 的通过结果不能代替此验收。
 
 逐项审批不定义业务依赖。需要 A 成功才能做 B 的场景，由受控图条件边或冻结执行计划表示；不能把它们作为同批独立工具调用，期待点击顺序实现依赖。
 
@@ -444,7 +446,7 @@ P2/P3 的关键真实链路：
 | --- | --- | --- |
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
-| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；成对更新 store、envelope、outbox、能力声明、Dispatcher、Worker、API/事件/UI | A/B 同待审批，B 运行期间提交 A 仍返回 202；重复/相反点击、混合拒绝、过期/取消；后来的普通消息不能堵住活跃 Turn；已 delivered 调 `ainvoke(None)`，未 delivered 经 ToolJob 对账才发送指定决定；所有执行入口显式 sync durability |
+| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理及串行领取端口已实现，详见实施记录第 12 节；仍须成对接通原生 link 投影、Dispatcher、Worker、API/事件/UI 与 adapter | 已覆盖存储层的 running 时受理、重复/相反决定、事务回滚、取消及队列优先级；API 返回 202、已 delivered 调 `ainvoke(None)`、未 delivered 先 ToolJob 对账和所有执行入口显式 sync durability 仍待完整出口验证 |
 | P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
 
 P2.1 的只读投影重建可独立验收；新增 v2 continuation 能力必须在 P2.2 端到端用例通过后才声明。P2 整体及 P3 试点放量必须等 P2.3 通过；当前 API 遇到绑定审批的冲突保护在具备完整替代路径之前保留。

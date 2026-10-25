@@ -62,7 +62,7 @@ async def native_approvals(h, monkeypatch):
     return SimpleNamespace(agent=agent, calls=calls, observed=observed, tasks=tasks)
 
 
-async def queue_decision(h, native, key="B", decision="approved", *, resume_index=0):
+async def link_pending_approval(h, native, key="B", *, resume_index=0):
     # Import after native_approvals so the first red run also checks the real
     # framework shape before the as-yet-unimplemented application boundary.
     from src.runtime.framework_approval_journal import FrameworkApprovalJournal
@@ -85,11 +85,18 @@ async def queue_decision(h, native, key="B", decision="approved", *, resume_inde
     journal = FrameworkApprovalJournal(h.settings)
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
         journal.link_interrupt_in_transaction(cur, h.owner.runtime_owner, link)
+    return SimpleNamespace(journal=journal, link=link)
+
+
+async def queue_decision(h, native, key="B", decision="approved", *, resume_index=0):
+    queued = await link_pending_approval(h, native, key, resume_index=resume_index)
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
         cur.execute(f"UPDATE {h.settings.database.postgres_approval_table} SET status=%s, "
             "decision_note=%s, resolved_at=clock_timestamp() WHERE id=%s",
-            (decision, "human choice", approval.id))
-        receipt = journal.queue_decision_in_transaction(cur, h.binding, approval.id, decision_id=str(uuid4()))
-    return SimpleNamespace(journal=journal, link=link, receipt=receipt)
+            (decision, "human choice", queued.link.approval_id))
+        receipt = queued.journal.queue_decision_in_transaction(cur, h.binding,
+            queued.link.approval_id, decision_id=str(uuid4()))
+    return SimpleNamespace(journal=queued.journal, link=queued.link, receipt=receipt)
 
 
 def receipt_record(h, queued):
