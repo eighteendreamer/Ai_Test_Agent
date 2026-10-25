@@ -276,6 +276,21 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了总表"按用例执行——执行中计划修订"的默认模型专项（此前记录的选项 (a) 已实施并验证）；"未知副作用只读查证"由本验收的 gap.read 只读验证步骤与回放检查点专项共同覆盖。
 
+## 正式回执与恢复：纠正阶段真实进程中断组合场景通过（deepseek-flash）
+
+此前记录的设计缺口（deepseek-flash 首轮回执即过校验、纠正从不触发）已用**确定性触发机制**关闭：`default_model_probe` 新增"脚本化执行图"测试替身（`QA_DEFAULT_PROBE_SCRIPTED_GRAPH`）——执行图的模型轮次按消息历史幂等回放调用方脚本（第一轮返回只读工具调用、第二轮返回故意无效的回执文本），与受控 HTTP 模型服务器同性质；**只读纠正调用始终放行真实默认模型**。测试替身同时支持非流式与 SSE 流式合成（执行图固定流式），并手动补跑观察 hook 保持物理证据完整。测试侧将隔离模型 streaming 覆盖为 False（替身约束）并以真实默认配置注册。
+
+`RUN_LIVE_DEFAULT_RECEIPT_RECOVERY=1` 下 `test_default_model_receipt_correction_api_kill_recovers_without_repeat` 两持久窗口：
+
+| 窗口 | 结果 | 恢复后结果 |
+|---|---|---|
+| invoking（纠正请求已落盘、响应未发出时杀 API） | `1 passed in 360.42s` | `error` + `execution_recovery_required=true`（不伪报通过） |
+| response（纠正响应已落盘后杀 API） | `1 passed in 352.16s` | `passed` |
+
+证据：`p2-default-receipt-recovery-deepseek-current-20261024-04/`（invoking/、response/）及两个 JUnit XML。两窗口均为：脚本化执行图真实执行业务 GET /health（恰 1 次，审批恢复重放不重复——probe 轮次按消息历史选择实现幂等）→ 无效回执触发纠正 → **真实默认模型**的只读纠正调用进行中/完成后被 `taskkill /T /F` 杀掉 API 进程树 → 自然租约过期 → 生产恢复 Worker 接管 → 按检查点恢复（响应未知的如实 error / 响应已存的 passed）→ 终态重投零新增业务与模型请求。纠正请求/响应原件 RustFS 哈希核对一致。
+
+这关闭了总表"正式回执与恢复——纠正阶段真实进程中断"组合缺口。至此该方向三要素（默认 AI UI 测试、真实默认纠正语义、纠正中进程中断+不重复操作）全部有默认模型实测证据。过程迭代（脚本计数不幂等导致审批重放时真实模型接管重打业务、SSE 合成、hook 手动补跑等）保留于 `-01`~`-03` 证据目录。
+
 ## UI 录制与知识：人工操作 DeepSeek 完整实测通过
 
 用户本人操作可见 Chromium 完成 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` 的人工模式（`RUN_LIVE_DEEPSEEK_RECORDING=1`、`DEEPSEEK_RECORDING_INTERACTION=manual`，pytest 需 `-s` 使 `input()` 可读——首跑因缺 `-s` 失败属测试运行方式问题）：
