@@ -67,9 +67,10 @@ def dto_model_usage(result, *, transport: str) -> FrameworkModelUsage | None:
 
 
 class FrameworkModelCallPolicy:
-    def __init__(self, *, calls, model_config_resolver: Callable[[str], ModelConfigRecord | None]):
+    def __init__(self, *, calls, model_config_resolver: Callable[[str], ModelConfigRecord | None], evidence=None):
         self._calls = calls
         self._model_config_resolver = model_config_resolver
+        self._evidence = evidence
 
     async def invoke(self, *, owner, model, model_key: str, execution_info, branch_name: str | None,
                      purpose: str, messages: list, tools: list, options: dict,
@@ -113,7 +114,8 @@ class FrameworkModelCallPolicy:
             # An explicit estimate, not a provider tokenizer or a hard cost cap.
             # UTF-8 bytes include native blocks/tool schemas plus framing allowance.
             reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=output_tokens)
-        return await self._invoke_intent(owner=owner, intent=intent, send=send, usage_reader=model_usage)
+        return await self._invoke_intent(owner=owner, intent=intent, send=send, usage_reader=model_usage,
+            envelope=envelope, response_kind="langchain_messages")
 
     async def invoke_dto(self, *, owner, config: ModelConfigRecord, request: ModelInvocationRequest,
                          options: dict, send: Callable[[], Awaitable[Any]]) -> Any:
@@ -135,10 +137,15 @@ class FrameworkModelCallPolicy:
             transport=config.transport, request_sha256=request_sha256,
             reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=config.max_output_tokens)
         return await self._invoke_intent(owner=owner, intent=intent, send=send,
-            usage_reader=lambda result: dto_model_usage(result, transport=config.transport))
+            usage_reader=lambda result: dto_model_usage(result, transport=config.transport),
+            envelope=envelope, response_kind="model_invocation_result")
 
-    async def _invoke_intent(self, *, owner, intent, send, usage_reader):
-        await self._calls.prepare(owner, intent)
+    async def _invoke_intent(self, *, owner, intent, send, usage_reader, envelope, response_kind):
+        if self._evidence is None:
+            await self._calls.prepare(owner, intent)
+        else:
+            request = await self._evidence.store_request(owner, intent, envelope)
+            await self._calls.prepare(owner, intent, request=request)
         _, permitted = await self._calls.start(owner, intent.attempt_id)
         if not permitted:
             raise RuntimeError("Governed model attempt has no new send permission")
@@ -159,6 +166,21 @@ class FrameworkModelCallPolicy:
                     "error_type": type(accounting_error).__name__, "request_error_type": type(exc).__name__})
                 exc.add_note("Model attempt remains reserved and requires durable reconciliation")
             raise
+        if self._evidence is not None:
+            try:
+                response = await self._evidence.store_response(owner, intent, result, response_kind=response_kind)
+                await self._calls.append_response_observation(owner, intent.attempt_id,
+                    response=response, response_kind=response_kind)
+            except (Exception, asyncio.CancelledError) as exc:
+                # The response has arrived. Preserve uncertainty and any saved
+                # object even if its ledger reference could not be confirmed.
+                logger.error("framework_model_response_evidence_unconfirmed", extra={
+                    "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
+                    "response_sha256": response.sha256 if "response" in locals() else None,
+                    "response_uri": response.storage_uri if "response" in locals() else None,
+                    "error_type": type(exc).__name__})
+                exc.add_note("Provider response arrived; reconcile evidence without resending the request")
+                raise
         try:
             await self._calls.complete(owner, intent.attempt_id, usage=usage_reader(result))
         except (Exception, asyncio.CancelledError) as exc:

@@ -76,12 +76,30 @@ class FrameworkModelUsage(_ModelCallValue):
         return self
 
 
+class FrameworkModelObject(_ModelCallValue):
+    storage_uri: str = Field(pattern=r"^rustfs://[^/]+/.+")
+    sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    size_bytes: StrictInt = Field(ge=1)
+
+
+class FrameworkModelResponseObservation(_ModelCallValue):
+    schema_version: Literal[1] = 1
+    observation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
+    response: FrameworkModelObject
+    response_kind: Literal["langchain_messages", "model_invocation_result"]
+    authoritative: Literal[False] = False
+    observed_at: datetime
+
+
 class FrameworkModelCallRecord(_ModelCallValue):
     binding_id: str
     intent: FrameworkModelCallIntent
     owner_epoch: int
     owner_task_id: str
     owner_attempt_id: str
+    observer_token_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    request: FrameworkModelObject | None = None
+    response_observations: list[FrameworkModelResponseObservation] = Field(default_factory=list)
     phase: Literal["ready", "invoking", "completed", "unknown"]
     usage: FrameworkModelUsage | None = None
     outcome_code: str | None = None

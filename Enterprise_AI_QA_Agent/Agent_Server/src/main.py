@@ -179,6 +179,7 @@ from src.runtime.postgres_task_outbox import PostgresTaskOutbox
 from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
+from src.application.models.framework_model_evidence import FrameworkModelEvidence
 from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.postgres_browser_allocation_store import PostgresBrowserAllocationStore
@@ -446,8 +447,13 @@ async def _initialize_lifespan_resources(
     runtime_control = container.runtime_control()
 
     model_runtime_service = container.model_runtime_service()
+    framework_model_evidence = (FrameworkModelEvidence(objects=artifact_storage_service)
+        if artifact_storage_service.enabled else None)
+    if framework_model_evidence is None:
+        logger.info("framework_model_evidence_storage_disabled", extra={"backend": "disabled"})
     framework_model_call_policy = FrameworkModelCallPolicy(
-        calls=framework_model_calls, model_config_resolver=model_runtime_service.get_model_config)
+        calls=framework_model_calls, model_config_resolver=model_runtime_service.get_model_config,
+        evidence=framework_model_evidence)
     model_runtime_service.set_framework_model_call_policy(framework_model_call_policy)
 
     test_case_store = container.test_case_store()

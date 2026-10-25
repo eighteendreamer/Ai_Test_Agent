@@ -870,3 +870,36 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 ```
 
 结果 **12 passed / 21 deselected，35.38 秒，无 skip**。其中 10 项与上述联合回归重叠，不能累计宣称新增 12 项不同覆盖。10 个相关 Python 文件 `py_compile`、`git diff --check` 通过。没有执行完整生产启动、独立 lint/typecheck、真实供应商或领域环境验收；这些局限不因本机官方 SDK HTTP、PostgreSQL/Redis Harness 通过而消失。
+
+## 29. P1 模型请求/响应证据与迟到响应观察（2026-10-26）
+
+本阶段补齐附件指出的“响应到达但结算确认失败”和“失租后迟到响应”持久事实。复用现有 `ArtifactStorageService`（RustFS），没有新增 blob 后端或把正文写入日志。模型账本记录不可变对象引用和原始执行身份；对象内容与 PostgreSQL 引用分开提交，任一写入确认失败都保留未知状态，禁止据此重发模型请求。
+
+### 实现边界
+
+- `FrameworkModelEvidence` 保存应用层 canonical JSON：请求封套包括完整框架消息、工具 schema、选项和配置指纹；LangChain 响应使用官方 `messages_to_dict` 保存原生内容块、消息 ID、tool call、usage、response metadata 和签名；DTO 响应只保存既有 `ModelInvocationResult` 的非请求摘要字段。响应资产标明 serializer、版本、binding 指纹、attempt、logical call 和 request hash。
+- `FrameworkModelObject` 只保存 URI、SHA-256 和长度；读取时重新计算摘要和长度，并复核响应身份。对象内容不含 owner token、API key、认证头或 HTTP 查询凭据。当前实现保存 SDK 应用对象，**不是供应商 HTTP wire body**；HTTP 事件仍只记录安全路由/状态/耗时，wire body 与 SSE 中间块属于后续独立接入。
+- `PostgresFrameworkModelCalls.append_response_observation` 是证据追加端口：只接受原始 attempt 的不可变 binding、task、attempt 和 observer token 摘要；允许原 owner 失租后写入，但不需要活跃租约。观察按 binding、attempt、响应类型和对象 hash 去重，`authoritative=false`，不改 phase、usage、预算、ToolJob 或 applied proof。新 owner 仍须先把 invoking 明确分类为 unknown，未知副作用不能因迟到对象自动继续。
+- 策略顺序为 `prepare(request asset) → start → provider send → response asset/observation → complete(usage)`。响应资产或其引用无法确认时保留 invoking/预留并抛出可检索事件；不调用第二次 provider。原始资产写入失败可能留下 RustFS 孤儿，必须由对账任务按 URI/hash 清理或认领，不能将孤儿当成已结算事实。
+- 生产 bootstrap 仅在 RustFS backend 启用时注入证据服务；未启用时保持现有调用路径并记录 `framework_model_evidence_storage_disabled`。因此当前默认关闭的 v2 路由不会被隐式打开；开启证据前必须配置对象存储和保留/清理策略。
+
+### TDD 与验证
+
+先添加红测验证：请求 hash 与资产身份不可变、重复准备不重复写入、失租迟到响应可追加且不结算 usage、伪造 owner/未发送 attempt 被拒绝、结算与观察并发不互相覆盖、对象篡改被摘要检查拒绝，以及官方 LangChain response 的原生消息往返。实现后执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_evidence.py -q -x --tb=short
+```
+
+结果 **14 passed，31.90 秒，无 skip**。模型策略与证据联合回归随后执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_evidence.py tests/test_framework_model_policy.py -q -x -rs --tb=short
+```
+
+结果 **37 passed，97.49 秒，无 skip**；5 个相关 Python 文件 `py_compile` 和 `git diff --check` 通过。没有执行 RustFS 真实服务、真实供应商、HTTP wire 捕获、全量系统回归或部署升级验收。
+
+### 保留的风险与下一阶段
+
+历史模型调用记录的 `request` 资产字段可为空；兼容恢复不能凭摘要重建原始请求。首次 message 的确定性 attempt 身份、完整请求/响应 wire 资产、流式中间块、活动时间预算、未知外部副作用和跨 Turn transcript 仍未完成。响应观察解决“迟到事实可留存”，不等于 exactly-once，也不把非权威观察提升为工具或模型结果。

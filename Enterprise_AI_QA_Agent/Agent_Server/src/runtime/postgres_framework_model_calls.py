@@ -8,6 +8,9 @@ and replacement Workers. This store accounts; it does not retry or call a model.
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
+import json
 import logging
 import re
 from dataclasses import dataclass
@@ -18,7 +21,7 @@ from src.runtime.postgres_runtime_owner import (
 )
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
-    FrameworkModelCallRecord, FrameworkModelUsage,
+    FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
 )
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -131,8 +134,13 @@ class PostgresFrameworkModelCalls:
         if saved is None or RuntimeBinding.model_validate(saved["runtime_binding"]) != binding:
             raise ValueError("Model ledger binding does not match its durable identity")
 
-    async def prepare(self, owner: RuntimeExecutionOwner, intent: FrameworkModelCallIntent) -> FrameworkModelCallRecord:
+    async def prepare(self, owner: RuntimeExecutionOwner, intent: FrameworkModelCallIntent, *,
+                      request: FrameworkModelObject | None = None) -> FrameworkModelCallRecord:
         intent = FrameworkModelCallIntent.model_validate(intent.model_dump())
+        if request is not None:
+            request = FrameworkModelObject.model_validate(request.model_dump())
+            if request.sha256 != intent.request_sha256:
+                raise ValueError("Model request asset does not match the intent digest")
         def reserve():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 self._owned(cur, owner, before_execution=True)
@@ -141,6 +149,12 @@ class PostgresFrameworkModelCalls:
                 if existing is not None:
                     if existing.intent != intent:
                         raise ValueError("Model attempt identity cannot change its intent")
+                    # Legacy records created before evidence assets have no
+                    # request reference. Preserve that historical fact during
+                    # recovery; never fabricate an asset or rewrite its
+                    # original request from a later projection.
+                    if existing.request is not None and existing.request != request:
+                        raise ValueError("Model request asset cannot change after preparation")
                     return existing
                 if snapshot.policy.model_config_fingerprints.get(intent.model_key) != intent.model_config_fingerprint:
                     raise ValueError("Model call configuration does not match its frozen model policy")
@@ -153,6 +167,7 @@ class PostgresFrameworkModelCalls:
                     raise FrameworkModelBudgetExceeded("tokens")
                 record = FrameworkModelCallRecord(binding_id=owner.binding.binding_id, intent=intent,
                     owner_epoch=owner.owner_epoch, owner_task_id=owner.task_id, owner_attempt_id=owner.attempt_id,
+                    observer_token_sha256=hashlib.sha256(owner.owner_token.encode()).hexdigest(), request=request,
                     phase="ready", created_at=self._now(cur))
                 return self._write(cur, record, insert=True)
         try:
@@ -165,6 +180,50 @@ class PostgresFrameworkModelCalls:
             "model_attempt_id": intent.attempt_id, "logical_call_id": intent.logical_call_id,
             "branch_id": intent.branch_id, "purpose": intent.purpose, "reserved_tokens": intent.reserved_tokens})
         return saved
+
+    async def append_response_observation(self, owner: RuntimeExecutionOwner, attempt_id: str, *,
+                                          response: FrameworkModelObject, response_kind: str
+                                          ) -> FrameworkModelResponseObservation:
+        """Append evidence from the original observer without granting authority.
+
+        No upstream counterpart (checked: LangGraph checkpoints, plan section
+        6.2, PostgresToolJobStore.append_framework_late_output): model responses
+        may arrive after lease expiry or an unconfirmed completion commit.
+        """
+        response = FrameworkModelObject.model_validate(response.model_dump())
+
+        def append():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._require_binding(cur, owner.binding)
+                # Evidence-only writes deliberately do not require a live lease.
+                # Lock the call, as settlement does, to preserve both facts.
+                call = self._call(cur, owner.binding.binding_id, attempt_id)
+                self._require_origin_owner(call, owner)
+                digest = hashlib.sha256(owner.owner_token.encode()).hexdigest()
+                if call.observer_token_sha256 is None or not hmac.compare_digest(call.observer_token_sha256, digest):
+                    raise ValueError("Model response observer does not match the original attempt")
+                if call.started_at is None or call.phase == "ready":
+                    raise ValueError("Model response evidence requires a sent attempt")
+                identity = json.dumps([call.binding_id, attempt_id, response_kind, response.sha256], separators=(",", ":"))
+                observation_id = hashlib.sha256(identity.encode()).hexdigest()
+                # Validate kind even for duplicate submissions.
+                observation = FrameworkModelResponseObservation(observation_id=observation_id,
+                    response=response, response_kind=response_kind, observed_at=self._now(cur))
+                existing = next((item for item in call.response_observations
+                    if item.observation_id == observation_id), None)
+                if existing is not None:
+                    if existing.response.size_bytes != response.size_bytes:
+                        raise ValueError("Model response digest has conflicting object size")
+                    return existing
+                self._write(cur, call.model_copy(update={
+                    "response_observations": [*call.response_observations, observation]}))
+                return observation
+
+        result = await asyncio.to_thread(append)
+        logger.info("framework_model_response_observed", extra={"binding_id": owner.binding.binding_id,
+            "model_attempt_id": attempt_id, "owner_epoch": owner.owner_epoch,
+            "observation_id": result.observation_id, "authoritative": False})
+        return result
 
     async def start(self, owner: RuntimeExecutionOwner, attempt_id: str) -> tuple[FrameworkModelCallRecord, bool]:
         def grant():
@@ -254,7 +313,7 @@ class PostgresFrameworkModelCalls:
         return FrameworkModelBudgetSnapshot(policy=policy, calls=calls)
 
     def _call(self, cur, binding_id, attempt_id):
-        cur.execute(f"SELECT record FROM {self.calls_table} WHERE binding_id=%s AND attempt_id=%s",
+        cur.execute(f"SELECT record FROM {self.calls_table} WHERE binding_id=%s AND attempt_id=%s FOR UPDATE",
             (binding_id, attempt_id))
         row = cur.fetchone()
         if row is None:
