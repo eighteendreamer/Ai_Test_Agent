@@ -27,6 +27,7 @@ from src.application.observability.trace_context import TraceContext
 from src.core.config import Settings
 from src.registry.models import ModelRegistry
 from src.runtime.execution_logging import summarize_messages, truncate_text
+from src.runtime.execution_context import current_framework_owner
 from src.schemas.model_config import (
     ContentPart,
     ModelConfigRecord,
@@ -59,9 +60,13 @@ class ModelRuntimeService:
         self._settings = settings
         self._oauth_token_service = oauth_token_service
         self._observability_service: LangSmithObservabilityAdapter | None = None
+        self._framework_model_call_policy = None
 
     def set_observability_service(self, service: LangSmithObservabilityAdapter | None) -> None:
         self._observability_service = service
+
+    def set_framework_model_call_policy(self, policy) -> None:
+        self._framework_model_call_policy = policy
 
     def get_default_model_config(self) -> ModelConfigRecord | None:
         try:
@@ -88,7 +93,8 @@ class ModelRuntimeService:
             "sdk_retry_policy": "existing_provider_defaults",
             "dependency_versions": {name: importlib.metadata.version(name) for name in dependencies}}
         if transport_options is not None:
-            if config.transport not in {"openai_chat_completions", "openai_responses", "anthropic_messages"}:
+            if config.transport not in {"openai_chat_completions", "openai_responses", "anthropic_messages",
+                "google_gemini_generate_content"}:
                 raise ValueError("该模型传输尚未验证显式SDK重试设置")
             parameters.update(sdk_retry_policy="explicit_transport_options",
                 transport_options=transport_options.model_dump(mode="json"))
@@ -126,6 +132,15 @@ class ModelRuntimeService:
         expected_runtime_parameters: dict[str, Any] | None = None,
         transport_options: ModelTransportOptions | None = None,
     ) -> ModelInvocationResult:
+        owner = current_framework_owner()
+        if owner is not None:
+            if self._framework_model_call_policy is None:
+                raise RuntimeError("Owner-bound DTO model invocation requires the framework model policy")
+            if transport_options is not None and transport_options.max_retries != 0:
+                raise ValueError("Owner-bound model retries require explicit accounted attempts")
+            transport_options = ModelTransportOptions(
+                timeout_seconds=(transport_options.timeout_seconds if transport_options else
+                    self._settings.model.llm_request_timeout_seconds), max_retries=0)
         trace_context = dict(request.trace_context)
         logical_call_id = str(trace_context.get("logical_call_id") or trace_context.get("call_id") or uuid4())
         trace_context["logical_call_id"] = logical_call_id
@@ -226,15 +241,25 @@ class ModelRuntimeService:
             trace_id=trace_context.get("trace_id", ""),
             attempt_id=trace_context.get("attempt_id", ""),
         ) as observation:
-            if self._uses_langchain(config):
-                result = await self._invoke_with_langchain_adapter(config, api_key, request, transport_options=transport_options)
-            else:
-                client = resolve_client(
-                    config,
+            async def send():
+                if self._uses_langchain(config):
+                    return await self._invoke_with_langchain_adapter(config, api_key, request,
+                        transport_options=transport_options, cache=False if owner is not None else None)
+                client = resolve_client(config,
                     timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
-                    **({"max_retries": transport_options.max_retries} if transport_options else {}),
-                )
-                result = await self._invoke_with_client(client, config, api_key, request)
+                    **({"max_retries": transport_options.max_retries} if transport_options else {}))
+                return await self._invoke_with_client(client, config, api_key, request)
+
+            try:
+                if owner is None:
+                    result = await send()
+                else:
+                    result = await self._framework_model_call_policy.invoke_dto(owner=owner, config=config,
+                        request=request, options={"transport_options": transport_options.model_dump(mode="json"),
+                            "streaming": _stream_handler_var.get() is not None,
+                            "langchain_adapter": self._uses_langchain(config)}, send=send)
+            except ProviderClientError as exc:
+                result = self._http_error_result(config, request, exc)
         result.response_summary["logical_call_id"] = logical_call_id
         result.response_summary["http_request_attempt_count"] = observation.request_attempt_count
         if mapped.decisions:
@@ -253,11 +278,13 @@ class ModelRuntimeService:
         api_key: str,
         request: ModelInvocationRequest,
         *, transport_options: ModelTransportOptions | None = None,
+        cache: bool | None = None,
     ) -> ModelInvocationResult:
         adapter = LangChainModelAdapter(
             timeout_seconds=transport_options.timeout_seconds if transport_options else self._settings.model.llm_request_timeout_seconds,
             max_retries=transport_options.max_retries if transport_options else 2,
             stream_handler=self._emit_stream_chunk if _stream_handler_var.get() is not None else None,
+            cache=cache,
         )
         trace_context = None
         if (self._observability_service is not None and
@@ -272,13 +299,10 @@ class ModelRuntimeService:
             if trace_context is not None
             else nullcontext()
         )
-        try:
-            with trace_manager:
-                result = await adapter.invoke(config, api_key, request)
-            self._log_completion(config, result.response_summary)
-            return result
-        except ProviderClientError as exc:
-            return self._http_error_result(config, request, exc)
+        with trace_manager:
+            result = await adapter.invoke(config, api_key, request)
+        self._log_completion(config, result.response_summary)
+        return result
 
     async def _resolve_auth_token(self, config: ModelConfigRecord) -> str | None:
         """Return the bearer token to use for this model config.
@@ -320,10 +344,7 @@ class ModelRuntimeService:
     ) -> ModelInvocationResult:
         request = self._sanitize_request_for_provider(config, request)
 
-        try:
-            parsed = await self._send_with_client(client, config, api_key, request)
-        except ProviderClientError as exc:
-            return self._http_error_result(config, request, exc)
+        parsed = await self._send_with_client(client, config, api_key, request)
 
         self._log_completion(config, parsed)
         return ModelInvocationResult(

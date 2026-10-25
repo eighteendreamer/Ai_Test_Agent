@@ -27,9 +27,7 @@ def resolve_client(
     if transport == "anthropic_messages":
         return AnthropicMessagesClient(timeout_seconds=timeout_seconds, **retry_options)
     if transport == "google_gemini_generate_content":
-        if max_retries is not None:
-            raise ValueError("Google客户端尚未验证显式SDK重试设置")
-        return GoogleGenAIClient(timeout_seconds=timeout_seconds)
+        return GoogleGenAIClient(timeout_seconds=timeout_seconds, **retry_options)
     if transport == "openai_responses":
         return OpenAIResponsesClient(timeout_seconds=timeout_seconds, **retry_options)
     return OpenAIChatClient(timeout_seconds=timeout_seconds, **retry_options)

@@ -51,7 +51,7 @@
 | F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
 | F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态；对账运行失租可建立新对账，提交前/后强杀已验证，见 §24 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，确定性拒绝/返回数据库错误不自动重试；不承诺外部 exactly-once |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察；已知结果审批的独立 Worker 接管见实施记录 §21–23 | 无绑定旧试点仍用原 saver。同步工具的校验不能撤销已准入外部请求；领域 Runner 独立执行权及其余跨进程窗口仍未完成 |
-| F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要模型策略、bootstrap 账本初始化、带预算的 v2 提交事务、Worker 预算检查和 bound adapter 已接通，见 §7.3 与实施记录 §25–27 | 普通 DTO（含语义分类等前置调用）、自动生成绑定/预算的新 Turn 路由、完整动态参数/超时/错误策略、活动时间和响应资产仍待实现。生产组装有端口不代表已放量或覆盖全系统请求 |
+| F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要及 owner 作用域内 DTO 请求共用根模型策略；bootstrap、带预算的 v2 受理、Worker 检查、bound adapter 与前置语义分类 owner 接线已接通，见 §7.3 与实施记录 §25–28 | 自动生成绑定/预算的新 Turn 路由、完整动态参数/超时/错误策略、活动时间和响应资产仍待实现。生产组装有端口不代表已放量；无 owner 的 legacy/其它领域请求不因此获得根预算 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
 | F6 版本识别不等于旧环境存在 | 已有 v2 schema、独立 stream/CLI、绑定复核与 lock 摘要能力校验，另有 legacy manifest | 真实双制品部署、存量审批继续、排空与回滚未验收；lock 文件哈希不证明运行环境已安装正确依赖 |
 
@@ -348,9 +348,9 @@ checkpoint 写入适配器的单次数据库操作：
 
 模型已发出而失联，不能承诺供应商端“只调用一次”。应用账本需保留不确定尝试，保证预算和审计不将其遗漏。
 
-### 7.3 已实现的账本、请求策略与受理接线（实施记录 §25–27）
+### 7.3 已实现的账本、请求策略与受理接线（实施记录 §25–28）
 
-`PostgresFrameworkModelCalls` 与 `framework_model_call.py` 提供根预算及尝试存储端口，复用 Session → owner 的事务锁与数据库时钟。`FrameworkModelCallPolicy` 已连接官方 Deep Agents 主代理、现有具名只读子代理及自动摘要；bootstrap 初始化账本并把策略注入 bound adapter。`submit_v2(..., model_budget=...)` 可在首次任务受理事务中冻结显式预算。普通 DTO `ModelRuntimeService.invoke`（包括输入语义分类等前置调用）、受控 AgentCase 图、自动生成绑定/预算并路由新 Turn 仍未接线；此阶段不能据此自动恢复首次消息或开放生产路由。
+`PostgresFrameworkModelCalls` 与 `framework_model_call.py` 提供根预算及尝试存储端口，复用 Session → owner 的事务锁与数据库时钟。`FrameworkModelCallPolicy` 已连接官方 Deep Agents 主代理、现有具名只读子代理、自动摘要及 owner 作用域内 `ModelRuntimeService.invoke`；bootstrap 初始化账本并把同一策略注入模型服务和 bound adapter。`submit_v2(..., model_budget=...)` 可在首次任务受理事务中冻结显式预算。受控 AgentCase 图、自动生成绑定/预算并路由新 Turn 仍未接线；此阶段不能据此自动恢复首次消息或开放生产路由。
 
 - 一个 binding 冻结调用上限、Token 准入额度、绝对截止时间及允许的模型配置指纹映射。后继 Worker 读取原预算，不能重新冻结更大的额度或延后的截止时间。
 - 每条尝试保存 branch/parent、logical_call_id、独立 attempt_id、用途、传输、模型/请求摘要及输入估算与输出预留；不保存凭据、owner token 或完整 Prompt。模型传输类型复用现有 `ModelTransport`。
@@ -368,7 +368,14 @@ checkpoint 写入适配器的单次数据库操作：
 - 生产 RuntimeService 按不可变 binding 选择受治理的 bound adapter；无绑定旧试点使用原 adapter。两者共用现有 checkpoint provider 和能力配置，不新增另一个模型工具循环。直接构造 RuntimeService 的现有测试调用者保留显式注入方式；生产 bootstrap 明确组装两条依赖路径。
 - 已用官方 SDK、本机合成响应和真实 PostgreSQL/Redis 验证初始 Worker 模型调用；另验证 A/B 逐项审批：初始调用一次，批准 B 后只执行 B 且不增加模型调用，拒绝 A 后才发第二次模型调用；不同执行 owner 共用同根额度。
 
-这些接线没有启用新 Turn 路由。旧 v2 消费者仍须排空并统一升级；缺少历史用量的已执行 Turn 不能由新 Worker 自动生成预算后继续。自动受理、普通 DTO/前置模型调用与全部版本资产尚未接通前，不能宣称根预算覆盖完整 Turn。
+这些接线没有启用新 Turn 路由。旧 v2 消费者仍须排空并统一升级；缺少历史用量的已执行 Turn 不能由新 Worker 自动生成预算后继续。自动受理与全部版本资产尚未接通前，不能宣称全系统迁移完成。
+
+普通 DTO 与前置模型调用（实施记录 §28）：
+
+- `SessionService.execute_claimed_message` 从输入编排开始建立捕获的 owner 作用域，语义分类实际 HTTP 请求也必须经过根账本。模型服务只从进程内 ContextVar 获取 owner，不接受公开 context 中的身份作为执行权；无绑定/无 owner 的旧调用继续原路径。
+- DTO 与官方图消息分别构造请求封套和用量读取器，共用同一个 prepare/start/send/complete/unknown 流程。DTO 根逻辑身份包含 binding、原任务、调用方 logical_call_id 和请求摘要；缺省调用 ID 仍沿现有服务生成规则，此阶段不因此提供首次消息的确定性重放。
+- 四种原生传输及既有 LangChain Chat 路径在 owner 下显式关闭 SDK 重试，非零隐式重试请求明确拒绝；缓存也在实际 LangChain DTO 模型对象关闭。HTTP 错误先记 unknown，再按旧 DTO 契约返回错误结果；缺失/不完整 usage 继续保留预留。Google 原生 SDK 使用 `HttpRetryOptions(attempts=max_retries+1)`；Anthropic 原生 usage 的输入包含缓存读取及创建 Token，原生响应摘要不改写。
+- 输入分类的框架 owner 缺失 policy 时在 HTTP 前失败。语义增强保留其现有可检索降级日志；任何后续实际模型调用仍受同根预算约束。后台独立领域任务与无 owner 的旧调用未被迁移为 v2。
 
 显式注入路径的实际行为：
 
@@ -378,7 +385,7 @@ checkpoint 写入适配器的单次数据库操作：
 - 受治理主/子代理和摘要请求显式关闭本地 LangChain 模型缓存，以免缓存命中被记为新的物理请求。供应商 prompt cache 仍由其实际 usage 表达。
 - Deep Agents 0.7.13 的 profile 注册会合并 excluded_tools，不能按 Turn 更新全局排除集合。全局 profile 只保留禁用默认 GP 的不变配置；每次建图使用独立的官方工具排除中间件。该中间件是固定版本的私有导入兼容点，升级时必须验收。已有进程若注册过旧排除集合，应排空并重启，不能靠新注册清除旧集合。[官方 Profile 合并语义](https://docs.langchain.com/oss/python/deepagents/profiles#merge-semantics)
 
-后续必做：自动受理时生成/冻结完整绑定与预算、普通 DTO/前置/受控图模型调用共用策略、完整动态参数/超时/错误与应用重试策略、请求/响应不可变资产与迟到证据、已知失败及未发送尝试的结算策略、活动执行时长、真实供应商/流式故障验收。官方 [自定义 middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom) 提供 wrap 接入点；不能将当前接线路径外推为所有内部模型调用均受治理。
+后续必做：自动受理时生成/冻结完整绑定与预算、受控图接线、完整动态参数/超时/错误与应用重试策略、请求/响应不可变资产与迟到证据、已知失败及未发送尝试的结算策略、活动执行时长、真实供应商/其余流式故障验收。官方 [自定义 middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom) 提供 wrap 接入点；不能将当前 owner 作用域内路径外推为所有独立领域模型调用均受治理。
 
 ## 8. 新旧版本部署与数据迁移
 

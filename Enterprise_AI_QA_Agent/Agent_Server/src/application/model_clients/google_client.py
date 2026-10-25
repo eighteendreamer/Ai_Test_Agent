@@ -77,8 +77,9 @@ class GoogleGenAIClient:
 
     client_key = "google_gemini_generate_content"
 
-    def __init__(self, *, timeout_seconds: float = 300.0) -> None:
+    def __init__(self, *, timeout_seconds: float = 300.0, max_retries: int | None = None) -> None:
         self._timeout_seconds = timeout_seconds
+        self._max_retries = max_retries
 
     async def invoke(
         self,
@@ -195,6 +196,10 @@ class GoogleGenAIClient:
             headers=headers or None,
             timeout=int(self._timeout_seconds * 1000),
             httpx_async_client=http_client,
+            # Official HttpRetryOptions counts the original request. Preserve
+            # the historical SDK default when the caller supplies no policy.
+            retry_options=(genai_types.HttpRetryOptions(attempts=self._max_retries + 1)
+                if self._max_retries is not None else None),
         )
         return genai.Client(
             api_key=api_key,

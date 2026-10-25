@@ -446,6 +446,9 @@ async def _initialize_lifespan_resources(
     runtime_control = container.runtime_control()
 
     model_runtime_service = container.model_runtime_service()
+    framework_model_call_policy = FrameworkModelCallPolicy(
+        calls=framework_model_calls, model_config_resolver=model_runtime_service.get_model_config)
+    model_runtime_service.set_framework_model_call_policy(framework_model_call_policy)
 
     test_case_store = container.test_case_store()
     test_case_template_service = container.test_case_template_service()
@@ -686,8 +689,7 @@ async def _initialize_lifespan_resources(
     deep_agent_runtime_adapter = DeepAgentRuntimeAdapter(**deep_agent_adapter_kwargs)
     deep_agent_bound_runtime_adapter = DeepAgentRuntimeAdapter(
         **deep_agent_adapter_kwargs,
-        model_call_policy=FrameworkModelCallPolicy(
-            calls=framework_model_calls, model_config_resolver=model_runtime_service.get_model_config),
+        model_call_policy=framework_model_call_policy,
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,

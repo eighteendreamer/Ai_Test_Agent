@@ -53,13 +53,15 @@ def test_existing_factories_receive_supported_explicit_options(transport):
     assert resolve_client(config)._max_retries == 2
 
 
-def test_google_option_rejected_before_any_dispatch():
+def test_google_transport_records_verified_explicit_options():
     config = _config(transport="google_gemini_generate_content")
     service = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config),
         SimpleNamespace(model=SimpleNamespace(langchain_model_adapter_enabled=False,llm_request_timeout_seconds=60)))
-    with pytest.raises(ValueError,match="尚未验证"):
-        service.get_invocation_runtime_parameters(config.key,
-            transport_options=ModelTransportOptions(timeout_seconds=120,max_retries=0))
+    parameters = service.get_invocation_runtime_parameters(config.key,
+        transport_options=ModelTransportOptions(timeout_seconds=120,max_retries=0))
+    assert parameters["sdk_retry_policy"] == "explicit_transport_options"
+    assert parameters["transport_options"] == {"timeout_seconds": 120, "max_retries": 0}
+    assert resolve_client(config, max_retries=0)._max_retries == 0
 
 
 @pytest.mark.asyncio

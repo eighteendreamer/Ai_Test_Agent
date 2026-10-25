@@ -2,20 +2,20 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §27：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要请求策略和预算受理/Worker/生产组装接线。自动生成绑定及预算、普通 DTO/前置模型调用治理、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §28：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线。自动生成绑定及预算、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
 | 阶段 | 本轮状态 | 下一出口 |
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
-| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25–27 增加根模型账本、官方主/子代理/摘要请求策略及预算受理/Worker/生产组装接线 | 自动生成绑定/预算、普通 DTO/前置模型调用治理、活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
+| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态、RuntimeBinding 与 v2 task/outbox 隔离、原生 transcript、v2 Worker 最小消费闭环、owner 与物理 namespace 绑定；§25–28 增加根模型账本、官方主/子代理/摘要及 owner 下 DTO 请求策略、前置语义分类和预算受理/Worker/生产组装接线 | 自动生成绑定/预算、活动时间计量、跨 Turn 上下文实链路与完整制品校验 |
 | P2 逐项审批、所有权、对账 | 已接入官方 per_call、owner checkpoint/同步 ToolJob 执行权、receipt/proof、v2 API/Worker/Runtime、持久前端进度，以及已知结果审批和对账自身失租的后继强杀 Harness（§12–24） | 首次 message、未知效果查询/人工对账、其余故障窗口、领域 Runner 执行权及真实浏览器验收 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
 
-模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本，§27 接入生产组装、显式预算受理和 Worker 检查；普通 DTO 调用仍走既有路径。现有可选 Deep Agents 路由仍沿原开关，默认提交入口仍生成 legacy 任务，不得据此开放全系统新路由。
+模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本，§27 接入生产组装、显式预算受理和 Worker 检查，§28 接通 owner 作用域内 DTO 及输入分类请求。无 owner 的旧调用仍沿既有路径。现有可选 Deep Agents 路由仍沿原开关，默认提交入口仍生成 legacy 任务，不得据此开放全系统新路由。
 
 ## 2. 依据 → 发现 → 改动
 
@@ -815,3 +815,58 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 结果 **227 passed / 1 deselected，480.61 秒，无 skip**。包含受理文件最终 13 项、模型策略/账本、版本绑定、v2/旧任务 Worker、审批执行/停止/已知结果恢复（含独立进程强杀）、适配器和选定 lifespan cleanup 回归。该计数不与此前定向结果累加；没有将 deselect 的 MySQL 用例计为通过。
 
 6 个相关 Python 文件 `py_compile`、`git diff --check` 通过。没有新增依赖、配置、数据库表结构或公共 API；生产 setup 开始创建 §25 已有的两张模型账本表，部署角色需具备既有启动初始化所需权限。默认开关及实际部署状态未改变，P1 和整体迁移继续未完成。
+
+## 28. P1 普通 DTO 与输入语义分类共用根预算（2026-10-26）
+
+从 §27 的提交继续检查前置模型调用。新增真实 HTTP 失败样本证实：`SessionService.execute_claimed_message` 的输入语义分类已经发出一次请求，但根账本仍为零，原因是 owner 作用域在输入编排之后才建立。本阶段将作用域提前到输入编排和后续执行共用的边界，始终捕获当次领取的 owner，不通过请求 context 或“最新 owner”查询获取执行权。
+
+### 依据与实现
+
+- 沿用 `ModelRuntimeService.invoke` 的四传输原生客户端与既有 LangChain Chat 选择、请求映射、鉴权、流式回调、HTTP 观察和 DTO 结果契约。bootstrap 把与 bound adapter 相同的 `FrameworkModelCallPolicy` 注入该单例模型服务；owner 作用域内缺少 policy 时在 HTTP 前失败。无 owner 调用保留既有默认策略，不因此自动变为 v2。
+- `FrameworkModelCallPolicy.invoke_dto` 只负责 DTO 封套、模型快照复核、Session/Turn 身份和用量读取；与官方图入口共用 `_invoke_intent` 的 prepare/start/send/complete/unknown 流程，没有第二套账本或结算循环。普通 DTO 保存 root/agent 用途，逻辑身份包含 binding、原 task、调用方 logical_call_id 及请求摘要。缺省调用 ID 仍按原服务生成，不构成首次 message 可确定性恢复的证明。
+- ProviderClientError 在共享策略记 unknown 后，再由模型服务转换成既有 HTTP 错误结果；取消继续传播并保留预留。响应结算确认失败沿同一既有故障边界处理，不把错误 DTO 误记为正常模型完成。缺失或不完整用量保留预留，显式零可以结算；Anthropic 缓存读取/创建计入输入，Gemini total 包含其余已报告用量，原生 response_summary 不改写。
+- owner 下显式禁用 SDK 重试；请求非零隐式重试会被拒绝，后续显式重试授权仍待实现。Google 原生客户端增加可选 max_retries，按固定 SDK `HttpRetryOptions.attempts` 的总尝试语义加 1；没有传选项时保留 SDK 默认。同步更新通用模型运行参数和原有 Google 拒绝契约测试，未扩大文档影响分析领域本身的支持矩阵。
+- LangChain DTO 模型在实际发送对象上关闭本地缓存，避免将命中已有缓存记作物理调用。其它旧调用继续原缓存设置。测试先用同配置/参数的原 DTO 请求建立缓存，再验证 owner 下仍产生实际 HTTP。
+
+### 官方签名复核与兼容修复
+
+真实 Anthropic DTO 用配置中的 `temperature=0.2` 首次触发 `TypeError: AsyncMessages.create() got an unexpected keyword argument 'temperature'`。固定 SDK 的生成签名已移除此 kwargs；[官方迁移文档](https://github.com/anthropics/anthropic-sdk-python/blob/main/MIGRATION.md) 明确允许旧模型通过 extra_body 显式透传。原生客户端按该文档将已配置值放入 extra_body，保留原 wire 字段，不静默丢弃配置。是否被真实目标模型接受仍需供应商验收。
+
+根用量读取依据 [Anthropic 官方输入计数](https://platform.claude.com/docs/en/api/rate-limits) 和既有原生 response_summary 契约；固定 Google SDK `types.py/HttpRetryOptions` 与 `_api_client.py/retry_args` 说明 attempts 包含初次请求。此阶段未升级任何依赖。
+
+### TDD 与定向结果
+
+- DTO 首轮 **1 failed，6.61 秒**：模型服务缺少 policy 注入端口。
+- 输入语义分类真实复现 **1 failed / 17 deselected，7.28 秒**：HTTP 次数为 1，账本 reserved_calls 为 0。提前 owner 作用域后纳入实际 PostgreSQL/SessionService 验收。
+- DTO 首轮推进暴露上述 Anthropic kwargs 不兼容；修复后发现 SDK 把未使用的可选缓存计数序列化为 None，初版过严用量读取导致 actual_tokens 为零但正确保留了预留。据固定原生字段语义将缺失/None 的可选缓存计数按零读取，核心输入/输出计数仍必须完整。
+- 补充用量测试首次因测试未提供 DTO 必填 text 失败（**1 failed / 20 passed，56.98 秒**），修正测试构造，没有改变生产 DTO 要求。随后 DTO、客户端、适配器及文档传输选定回归为 **58 passed / 6 skipped / 6 deselected，58.54 秒**；skip/deselect 是未开启 MySQL/PG/RustFS 文档任务环境的领域用例，没有算作通过。
+
+在此基础上新增五条真实流式取消用例，核对每条只发一次 HTTP、取消传播、unknown 与 Token 预留均持久保留。最终范围和计数以本节最终联合回归为准，不与上述中间结果累计。
+
+### 剩余出口
+
+本阶段覆盖捕获 owner 作用域内的普通模型入口及语义分类，不声称独立后台领域任务、无 owner 的 legacy 调用或全系统路由均纳入该根策略。自动冻结绑定/预算及版本实物、活动时间、完整动态参数/错误/显式重试策略、不可变请求/响应及迟到模型证据、首次 message 恢复、跨 Turn 上下文、受控 AgentCase 图和逐模式验收继续待实现。
+
+没有改变默认开关、schema、依赖、正式用例/Runner 或部署状态。旧 v2 Worker 仍须按 §23–27 排空/统一升级，不能混用不同预算治理行为。完整生产 lifespan、真实供应商、浏览器/领域 Runner、前端构建与独立后端 lint/typecheck 未验收。
+
+### 联合验证
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_dto.py tests/test_framework_model_policy.py tests/test_framework_model_admission.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py tests/test_model_request_profile.py tests/test_model_sdk_fault_http.py tests/test_semantic_intent_trace_http.py tests/test_session_execution_ownership.py tests/test_agent_v2_worker_contract.py tests/test_document_impact_transport.py::test_saved_grouped_requests_keep_exact_hash_and_old_transport_policy tests/test_document_impact_transport.py::test_existing_factories_receive_supported_explicit_options tests/test_document_impact_transport.py::test_google_transport_records_verified_explicit_options -q -x -rs --tb=short
+```
+
+结果 **312 passed，302.75 秒，无 skip**。其中新 DTO 文件当时 31 项：四原生传输与 LangChain Chat 的普通/流式调用、共用框架根预算、503 不暗中重试或重放、预算耗尽/缺 policy、无绑定旧路径、输入分类实际入账、身份与重试拒绝、本地缓存、六项用量边界和五条真实流式取消。另覆盖既有 SDK 故障、截断/缺终态、普通 DTO、受理审批、框架策略与 Session/Worker 所有权。此命令只选文档任务的五项非 live 契约参数，不代表未开启环境的十二项领域任务已通过。
+
+之后只加强 HTTP 字段断言及 Google 显式重试参数测试，生产实现未再修改；新增 DTO 文件最终 33 项。字段断言覆盖原生路径、headers、temperature 与 Token 字段，Google 无 owner 显式重试 0/1 分别核对真实请求 1/2 次；owner 路径仍拒绝非零隐式重试。
+
+这项补充首轮 **1 failed / 10 passed / 21 deselected，33.71 秒**：新增 Google 测试传入空 messages，被 SDK 的 contents 预检查拒绝，尚未发出 HTTP。仅将测试补为真实用户消息，没有修改生产实现。最终执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_dto.py -k 'owner_bound_dto_request or unbound_google_explicit' -q -x -rs --tb=short
+```
+
+结果 **12 passed / 21 deselected，35.38 秒，无 skip**。其中 10 项与上述联合回归重叠，不能累计宣称新增 12 项不同覆盖。10 个相关 Python 文件 `py_compile`、`git diff --check` 通过。没有执行完整生产启动、独立 lint/typecheck、真实供应商或领域环境验收；这些局限不因本机官方 SDK HTTP、PostgreSQL/Redis Harness 通过而消失。

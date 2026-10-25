@@ -37,11 +37,13 @@ class LangChainModelAdapter(ModelPort):
         max_retries: int = 2,
         stream_handler: StreamHandler | None = None,
         model_factory: Callable[..., Any] = ChatOpenAI,
+        cache: bool | None = None,
     ) -> None:
         self._timeout_seconds = timeout_seconds
         self._max_retries = max_retries
         self._stream_handler = stream_handler
         self._model_factory = model_factory
+        self._cache = cache
 
     async def invoke(
         self,
@@ -174,9 +176,10 @@ class LangChainModelAdapter(ModelPort):
     def _build_model(self, config: ModelConfigRecord, api_key: str, *, http_async_client: Any = None) -> Any:
         if config.request_profile and config.request_profile.chat_token_parameter == "max_tokens":
             raise ProviderClientError("Explicit max_tokens requires the native Chat client; LangChain renames this field.")
-        return OfficialChatModelFactory(timeout_seconds=self._timeout_seconds,
+        model = OfficialChatModelFactory(timeout_seconds=self._timeout_seconds,
             max_retries=self._max_retries, openai_factory=self._model_factory).create(
                 config, api_key, http_async_client=http_async_client)
+        return model.model_copy(update={"cache": self._cache}) if self._cache is not None else model
 
     def build_model(self, config: ModelConfigRecord, api_key: str) -> Any:
         """Build the provider model for another LangChain-native harness.

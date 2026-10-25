@@ -196,7 +196,10 @@ class AnthropicMessagesClient:
             "messages": self._build_messages(request, tool_name_map),
         }
         if config.temperature is not None:
-            params["temperature"] = config.temperature
+            # The locked SDK removed sampling kwargs. Its documented migration
+            # path for explicitly configured older models preserves the wire
+            # field through extra_body instead of dropping that configuration.
+            params["extra_body"] = {"temperature": config.temperature}
         if config.supports_tools and request.tools:
             params["tools"] = [
                 {

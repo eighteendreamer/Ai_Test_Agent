@@ -11,7 +11,7 @@ from uuid import uuid4
 from langchain_core.messages import AIMessage, messages_to_dict
 
 from src.schemas.framework_model_call import FrameworkModelCallIntent, FrameworkModelUsage
-from src.schemas.model_config import ModelConfigRecord, model_invocation_parameters
+from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
 
 
 logger = logging.getLogger(__name__)
@@ -34,6 +34,36 @@ def model_usage(value) -> FrameworkModelUsage | None:
         return None
     return FrameworkModelUsage(**{name: sum(message.usage_metadata[name] for message in ai)
         for name in ("input_tokens", "output_tokens", "total_tokens")})
+
+
+def dto_model_usage(result, *, transport: str) -> FrameworkModelUsage | None:
+    """Read complete native counters; missing facts retain the reservation."""
+    usage = result.response_summary.get("usage")
+    if not isinstance(usage, dict):
+        return None
+    if transport == "google_gemini_generate_content":
+        keys = ("promptTokenCount", "candidatesTokenCount", "totalTokenCount")
+    elif "prompt_tokens" in usage:
+        keys = ("prompt_tokens", "completion_tokens", "total_tokens")
+    else:
+        keys = ("input_tokens", "output_tokens", "total_tokens")
+    # Anthropic omits total and reports cache input separately. The native
+    # client preserves these fields; LangChain's normalized usage has total.
+    native_anthropic = transport == "anthropic_messages" and "total_tokens" not in usage
+    required = keys[:2] if native_anthropic else keys
+    if any(type(usage.get(key)) is not int or usage[key] < 0 for key in required):
+        return None
+    input_tokens, output_tokens = (usage[key] for key in keys[:2])
+    if native_anthropic:
+        cached = [usage[key] if usage.get(key) is not None else 0
+            for key in ("cache_read_input_tokens", "cache_creation_input_tokens")]
+        if any(type(value) is not int or value < 0 for value in cached):
+            return None
+        input_tokens += sum(cached)
+    total_tokens = input_tokens + output_tokens if native_anthropic else usage[keys[2]]
+    if total_tokens < input_tokens + output_tokens:
+        return None
+    return FrameworkModelUsage(input_tokens=input_tokens, output_tokens=output_tokens, total_tokens=total_tokens)
 
 
 class FrameworkModelCallPolicy:
@@ -83,13 +113,38 @@ class FrameworkModelCallPolicy:
             # An explicit estimate, not a provider tokenizer or a hard cost cap.
             # UTF-8 bytes include native blocks/tool schemas plus framing allowance.
             reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=output_tokens)
+        return await self._invoke_intent(owner=owner, intent=intent, send=send, usage_reader=model_usage)
+
+    async def invoke_dto(self, *, owner, config: ModelConfigRecord, request: ModelInvocationRequest,
+                         options: dict, send: Callable[[], Awaitable[Any]]) -> Any:
+        """Use the same lifecycle for application calls outside graph nodes."""
+        current = self._model_config_resolver(config.key)
+        fingerprint = model_config_fingerprint(config)
+        if current is None or model_config_fingerprint(current) != fingerprint:
+            raise ValueError("Model configuration changed before the DTO request was sent")
+        for field, identity in (("session_id", owner.binding.session_id), ("turn_id", owner.binding.turn_id)):
+            if request.trace_context.get(field, identity) != identity:
+                raise ValueError("Governed DTO model identity does not match the captured owner")
+        envelope = canonical_model_input({"request": request.model_dump(mode="json", exclude={"trace_context"}),
+            "options": options, "configuration_fingerprint": fingerprint})
+        request_sha256 = hashlib.sha256(envelope).hexdigest()
+        logical = hashlib.sha256(canonical_model_input([owner.binding.binding_id, owner.task_id,
+            request.trace_context["logical_call_id"], request_sha256])).hexdigest()
+        intent = FrameworkModelCallIntent(attempt_id=uuid4().hex, logical_call_id=logical,
+            branch_id="root", purpose="agent", model_key=config.key, model_config_fingerprint=fingerprint,
+            transport=config.transport, request_sha256=request_sha256,
+            reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=config.max_output_tokens)
+        return await self._invoke_intent(owner=owner, intent=intent, send=send,
+            usage_reader=lambda result: dto_model_usage(result, transport=config.transport))
+
+    async def _invoke_intent(self, *, owner, intent, send, usage_reader):
         await self._calls.prepare(owner, intent)
         _, permitted = await self._calls.start(owner, intent.attempt_id)
         if not permitted:
             raise RuntimeError("Governed model attempt has no new send permission")
         logger.info("framework_model_request_started", extra={"binding_id": owner.binding.binding_id,
-            "model_attempt_id": intent.attempt_id, "logical_call_id": logical, "branch_id": branch_id,
-            "purpose": purpose, "transport": config.transport})
+            "model_attempt_id": intent.attempt_id, "logical_call_id": intent.logical_call_id,
+            "branch_id": intent.branch_id, "purpose": intent.purpose, "transport": intent.transport})
         try:
             result = await send()
         except (Exception, asyncio.CancelledError) as exc:
@@ -105,7 +160,7 @@ class FrameworkModelCallPolicy:
                 exc.add_note("Model attempt remains reserved and requires durable reconciliation")
             raise
         try:
-            await self._calls.complete(owner, intent.attempt_id, usage=model_usage(result))
+            await self._calls.complete(owner, intent.attempt_id, usage=usage_reader(result))
         except (Exception, asyncio.CancelledError) as exc:
             # An acknowledgement failure may occur before or after commit.
             # Preserve the durable phase; only reconciliation can decide which

@@ -193,14 +193,14 @@ class SessionService:
                 ]
                 if session.project_id:
                     await self._require_active_project(session.project_id)
-                request = await self._input_orchestrator_service.orchestrate_async(
-                    session,
-                    payload,
-                    turn_id=str(task.turn_id),
-                    trace_id=str(task.trace_id),
-                )
-                request.runtime_binding = task.runtime_binding
                 with framework_owner_scope(task.runtime_owner):
+                    request = await self._input_orchestrator_service.orchestrate_async(
+                        session,
+                        payload,
+                        turn_id=str(task.turn_id),
+                        trace_id=str(task.trace_id),
+                    )
+                    request.runtime_binding = task.runtime_binding
                     return await self._run_owned_submission_locked(
                         session,
                         payload,
