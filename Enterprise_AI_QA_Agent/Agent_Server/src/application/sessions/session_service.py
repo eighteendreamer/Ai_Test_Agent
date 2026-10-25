@@ -21,7 +21,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
-from src.runtime.execution_context import framework_owner_scope
+from src.runtime.execution_context import framework_owner_scope, current_framework_owner
 from src.runtime.session_lock_map import SessionLockMap
 from src.runtime.store import (
     ContinuationLeaseLostError,
@@ -2445,6 +2445,18 @@ class SessionService:
 
         for approval_data in runtime_result.approvals:
             approval = ToolApprovalRequest.model_validate(approval_data)
+            binding_data = runtime_result.state.get("context_bundle", {}).get("runtime_binding")
+            if binding_data is not None:
+                from src.schemas.runtime_binding import RuntimeBinding
+
+                owner = current_framework_owner()
+                if owner is None or owner.binding != RuntimeBinding.model_validate(binding_data):
+                    raise RuntimeError("Bound approval finalization requires its captured runtime owner")
+                # The owner transaction already committed Approval/ToolJob/link
+                # and its stable event. A human may since have decided it.
+                # Read and validate that projection; never upsert the old copy.
+                await self._runtime_service.load_framework_approval(approval.id)
+                continue
             await self._store.save_approval(session_id, approval)
             await self._store.append_event(
                 session_id,

@@ -103,6 +103,7 @@ class RuntimeService:
         skill_registry: SkillRegistry | None = None,
         deep_agent_governed_tools_enabled: bool = False,
         tool_job_service: ToolJobService | None = None,
+        framework_approval_projection=None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -134,6 +135,7 @@ class RuntimeService:
         self._skill_registry = skill_registry
         self._deep_agent_governed_tools_enabled = bool(deep_agent_governed_tools_enabled)
         self._tool_job_service = tool_job_service
+        self._framework_approval_projection = framework_approval_projection
         self._tool_governance_service = (
             ToolGovernanceService(
                 tool_registry=tool_registry,
@@ -1332,6 +1334,8 @@ class RuntimeService:
 
     async def _record_deep_agent_interrupts(self, state: dict[str, Any], result) -> list[dict]:
         """Project official batched or per-call HITL payloads into approvals."""
+        if state.get("context_bundle", {}).get("runtime_binding") is not None:
+            return await self._record_framework_interrupts(state, result)
         calls = next(
             (list(message.get("tool_calls") or []) for message in reversed(result.messages)
              if message.get("role") == "assistant"), []
@@ -1394,6 +1398,48 @@ class RuntimeService:
                     approval_id=prepared.approval["id"], tool_job_id=prepared.record.job_id,
                     status="waiting_approval", harness="deepagents",
                 )
+        state["context_bundle"]["deep_agent_approval_batch"] = approvals
+        state["_deep_agent_waiting_records"] = records
+        return approvals
+
+    async def load_framework_approval(self, approval_id):
+        owner = current_framework_owner()
+        if owner is None or self._framework_approval_projection is None:
+            raise RuntimeError("Bound approval requires its execution owner and projection service")
+        return await self._framework_approval_projection.load(owner, approval_id)
+
+    async def _record_framework_interrupts(self, state, result):
+        from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+        from src.schemas.runtime_binding import RuntimeBinding
+
+        binding = RuntimeBinding.model_validate(state["context_bundle"]["runtime_binding"])
+        owner = current_framework_owner()
+        if (owner is None or owner.binding != binding or self._framework_approval_projection is None
+            or self._tool_governance_service is None):
+            raise FrameworkApprovalRecoveryRequired("Native interrupt projection has no matching runtime owner")
+        identities = result.native_interrupts
+        reported = [item["id"] for item in result.interrupts]
+        if len(reported) != len(set(reported)) or sorted(item.interrupt_id for item in identities) != sorted(reported):
+            raise FrameworkApprovalRecoveryRequired("Native interrupt projection is missing unique identities")
+        approvals, records = [], []
+        for identity in identities:
+            proposal = self._tool_governance_service.prepare_framework_approval(
+                binding, identity, self._deep_agent_governance_context(state))
+            projected = await self._framework_approval_projection.project(owner, proposal)
+            approval, job = projected.approval, projected.job
+            approvals.append(approval.model_dump(mode="python"))
+            if job.status.value in {"completed", "partial", "failed", "denied", "cancelled"}:
+                record = await self._tool_runtime_service.record_from_job(job)
+                record.approval_id = approval.id
+            elif job.status.value == "waiting_approval":
+                record = ToolExecutionRecord(call_id=job.call_id, job_id=job.id, tool_key=job.tool_key,
+                    tool_name=job.tool_name, status="waiting_approval", summary=approval.reason,
+                    trace_id=job.trace_id, input=job.input_payload, approval_id=approval.id,
+                    output={"status": "waiting_approval", "approval_id": approval.id,
+                        "instruction": "Do not retry this tool call while human approval is pending."})
+            else:
+                raise FrameworkApprovalRecoveryRequired("Native approval ToolJob has an unresolved execution")
+            records.append(record.model_dump(mode="python"))
         state["context_bundle"]["deep_agent_approval_batch"] = approvals
         state["_deep_agent_waiting_records"] = records
         return approvals

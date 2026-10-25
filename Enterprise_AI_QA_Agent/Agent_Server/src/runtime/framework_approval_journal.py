@@ -16,6 +16,7 @@ from psycopg import sql
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, lock_owner_row, runtime_owner_table
 from src.schemas.framework_approval import (
     FrameworkDecisionReceipt, FrameworkInterruptLink, approval_value_hash,
+    NativeToolInterrupt, framework_tool_call_id,
 )
 
 
@@ -84,7 +85,7 @@ class FrameworkApprovalJournal:
         return binding.checkpoint_namespace + ("|" + logical if logical else "")
 
     @staticmethod
-    def _assert_business_link(binding, link, approval):
+    def assert_business_link(binding, link, approval):
         metadata = (approval or {}).get("metadata") or {}
         if (approval is None or approval["session_id"] != binding.session_id
             or approval["tool_key"] != link.tool_key
@@ -93,6 +94,13 @@ class FrameworkApprovalJournal:
             or metadata.get("approval_scope_hash") != link.scope_hash
             or approval_value_hash(metadata.get("arguments")) != approval_value_hash(link.arguments)):
             raise FrameworkApprovalRecoveryRequired("Interrupt link does not match the business approval")
+        if link.business_call_id is not None or metadata.get("framework_native_identity") is not None:
+            native = NativeToolInterrupt.model_validate(link.model_dump(include=set(NativeToolInterrupt.model_fields)))
+            if (metadata.get("framework_native_identity") != native.model_dump(mode="json")
+                or metadata.get("framework_binding_id") != binding.binding_id
+                or metadata.get("framework_call_id") != framework_tool_call_id(binding, native)
+                or (link.business_call_id is not None and link.business_call_id != framework_tool_call_id(binding, native))):
+                raise FrameworkApprovalRecoveryRequired("Native business call identity changed after projection")
 
     def link_interrupt_in_transaction(self, cur, owner, link: FrameworkInterruptLink):
         assert_runtime_owner(cur, self._settings, owner, schema="public.")
@@ -102,7 +110,7 @@ class FrameworkApprovalJournal:
         cur.execute(f"SELECT * FROM public.{self._settings.database.postgres_approval_table} "
             "WHERE id=%s FOR UPDATE", (link.approval_id,))
         approval = cur.fetchone()
-        self._assert_business_link(binding, link, approval)
+        self.assert_business_link(binding, link, approval)
         cur.execute(f"SELECT link FROM {self._links} WHERE approval_id=%s", (link.approval_id,))
         saved = cur.fetchone()
         if saved is not None:
@@ -175,7 +183,7 @@ class FrameworkApprovalJournal:
         if approval is None or approval["session_id"] != binding.session_id or linked is None:
             raise FrameworkApprovalRecoveryRequired("Decision has no matching native approval link")
         link = FrameworkInterruptLink.model_validate(linked["link"])
-        self._assert_business_link(binding, link, approval)
+        self.assert_business_link(binding, link, approval)
         return link
 
     def get_receipt_in_transaction(self, cur, approval_id):

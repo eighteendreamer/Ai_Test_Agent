@@ -5,8 +5,11 @@ from datetime import datetime
 import hashlib
 import json
 from typing import Any, Literal
+from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field
+from src.schemas.session import ToolApprovalRequest
+from src.schemas.tool_job import ToolJobRecord
 
 
 def approval_value_hash(value: Any) -> str:
@@ -41,6 +44,25 @@ class FrameworkInterruptLink(NativeToolInterrupt):
     tool_job_id: str = Field(min_length=1)
     scope_hash: str = Field(min_length=1)
     tool_schema_version: str = Field(min_length=1)
+    business_call_id: str | None = Field(default=None, min_length=1)
+
+
+def framework_tool_call_id(binding, native: NativeToolInterrupt) -> str:
+    return "framework:" + approval_value_hash([binding.binding_id, binding.turn_id,
+        native.checkpoint_namespace, native.source_message_id, native.tool_call_id])
+
+
+def framework_approval_id(binding, native: NativeToolInterrupt) -> str:
+    return str(uuid5(NAMESPACE_URL, "framework-approval:" + framework_tool_call_id(binding, native)))
+
+
+class PreparedFrameworkApproval(BaseModel):
+    """Unpublished business projection, committed only under a runtime owner."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    approval: ToolApprovalRequest
+    job: ToolJobRecord
+    link: FrameworkInterruptLink
 
 
 class FrameworkDecisionReceipt(BaseModel):

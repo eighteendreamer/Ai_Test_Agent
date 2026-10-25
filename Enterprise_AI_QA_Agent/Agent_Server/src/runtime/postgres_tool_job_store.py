@@ -143,29 +143,23 @@ class PostgresToolJobStore:
             return _job_from_row(row) if row else None
 
     def _create_job_if_absent_sync(self, job: ToolJobRecord) -> ToolJobRecord:
-        with postgres_connect(self._settings) as conn:
-            with conn.cursor() as cur:
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_tool_job_table} (
-                        id, session_id, turn_id, trace_id, call_id, tool_key, tool_name,
-                        status, input_payload, metadata, created_at, updated_at
-                    ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s)
-                    ON CONFLICT (id) DO NOTHING
-                    """,
-                    (
-                        job.id, job.session_id, job.turn_id, job.trace_id, job.call_id,
-                        job.tool_key, job.tool_name, job.status.value,
-                        json.dumps(make_json_safe(job.input_payload), ensure_ascii=False),
-                        json.dumps(make_json_safe(job.metadata), ensure_ascii=False),
-                        job.created_at, job.updated_at,
-                    ),
-                )
-                cur.execute(
-                    f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id = %s",
-                    (job.id,),
-                )
-                return _job_from_row(cur.fetchone())
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            return self.create_job_if_absent_in_transaction(cur, job)
+
+    def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
+        """Preserve an existing execution while sharing its caller's transaction."""
+        cur.execute(f"""INSERT INTO {self._settings.database.postgres_tool_job_table} (
+            id, session_id, turn_id, trace_id, call_id, tool_key, tool_name,
+            status, summary, input_payload, metadata, created_at, updated_at
+            ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s)
+            ON CONFLICT (id) DO NOTHING""",
+            (job.id, job.session_id, job.turn_id, job.trace_id, job.call_id,
+             job.tool_key, job.tool_name, job.status.value, job.summary,
+             json.dumps(make_json_safe(job.input_payload), ensure_ascii=False),
+             json.dumps(make_json_safe(job.metadata), ensure_ascii=False), job.created_at, job.updated_at))
+        cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id=%s FOR UPDATE",
+            (job.id,))
+        return _job_from_row(cur.fetchone())
 
     def _claim_job_execution_sync(self, job_id: str) -> ToolJobRecord | None:
         with postgres_connect(self._settings) as conn:

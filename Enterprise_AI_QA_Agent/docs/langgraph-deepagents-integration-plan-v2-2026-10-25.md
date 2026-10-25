@@ -48,8 +48,8 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`submit_approval_v2` 和独立 `FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 现从原生 StateSnapshot 和持久化任务读取稳定身份。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。内部端口不等于完整业务 API/框架续跑；Approval/等待 ToolJob/link 的原子投影、Dispatcher/Worker/Runtime 继续执行、API/UI 与 receipt 生产接线仍待实施 |
-| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；`FrameworkApprovalJournal` 已提供 link、queue、delivery 与只读事实对账端口；v2 内部提交现将审批决定、receipt、唯一任务和 outbox 放入另一受理事务 | 风险仍成立。受理事务与执行写入事务分别存在；运行时自动建立 link、完整 API、applied 投影与外部副作用对账仍未贯通，外部效果不在数据库事务内 |
+| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 提取原生身份，Runtime 经 `FrameworkApprovalProjection` 原子投影审批、等待 ToolJob、link 与创建事件。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。内部端口不等于完整业务 API/框架续跑；工具桥完整调用身份、Dispatcher/Worker/Runtime 继续执行、API/UI 与 receipt 生产接线仍待实施 |
+| F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；journal 提供 link、queue、delivery 与事实对账；v2 决定、receipt、任务/outbox 共用受理事务；Runtime 新审批业务投影也使用独立 owner 事务 | 风险仍成立。投影、决定受理与执行写入仍有各自事务边界；完整 API、applied 投影与外部副作用对账未贯通，外部效果不在数据库事务内 |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
@@ -62,6 +62,8 @@
 原生身份提取采用 `agent.aget_state(..., subgraphs=True)` 还原增量消息，递归已注册子图，并在 owner 事务下读取同 checkpoint/task 的 interrupt、resume 与真实 `task_path`。源调用仅按当前原生 AI 消息的显式 call ID 匹配，并核对工具名和参数；不搜索历史同名调用。固定版本的 StateSnapshot 会包含已完成兄弟任务的旧 interrupt，需由同任务匹配的原生 ToolMessage 及 resume 事实排除；只存在已消费 resume、没有匹配任务结果时要求对账，不能创建下一审批。该 collector 限于官方 per-call `tools` 任务，不代替任意自定义图的审批映射。
 
 事件流同时订阅 `updates` 与 `values`：前者采集 root interrupt，后者保留完整最终状态；不能仅用 `on_chain_end.output` 推断没有审批，因为固定版本的该事件输出不包含 interrupt。实际 nested Deep Agents 及 root 事件流回归见实施记录 §13。
+
+新增业务投影见实施记录 §14：准备阶段不写数据库，投影阶段在同一 owner 事务内创建/复用等待 ToolJob、Approval、native link 和稳定创建事件。内部调用键包含 binding、Turn、图 namespace、源 AI 消息和供应商 call ID；界面仍保留原始 call ID。重投影和 Session 收尾保留已提交决定与终态结果；原生 link 的可选 `business_call_id` 存于既有 JSONB，防止移除原生元数据后降级为 legacy 校验。旧工具桥仍仅按原始 call ID 执行，完整调用身份尚须成对接线与真实治理工具恢复验收，不能据此开放 v2 approval continuation。
 
 ## 2. 目标架构与模块边界
 

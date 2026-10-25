@@ -22,6 +22,10 @@ from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.intent import ToolSafetyDecision
 from src.schemas.tool_job import ToolJobStatus
+from src.schemas.framework_approval import (
+    FrameworkInterruptLink, NativeToolInterrupt, PreparedFrameworkApproval,
+    framework_approval_id, framework_tool_call_id,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -321,15 +325,8 @@ class ToolGovernanceService:
         decision: ToolPermissionDecision,
         execution_safety: Any,
     ) -> GovernedToolCallResult:
-        safety_requires_approval = execution_safety.behavior == "ask"
-        reason = str(execution_safety.reason or decision.reason)
-        permission_source = "execution_safety_policy" if safety_requires_approval else decision.source
-        permission_reason_code = (
-            execution_safety.reason_code if safety_requires_approval else decision.reason_code
-        )
-        permission_policy_key = (
-            "execution_safety_policy.tool_call" if safety_requires_approval else decision.policy_key
-        )
+        reason, permission_source, permission_reason_code, permission_policy_key = self._approval_policy(
+            decision, execution_safety)
         approval_job_id = None
         if self._tool_job_service is not None:
             job = await self._tool_job_service.create_job(
@@ -362,6 +359,21 @@ class ToolGovernanceService:
                     "a new approval cannot replace persisted execution state."
                 )
 
+        return self._build_approval_result(tool=tool, call=call, context=context,
+            decision=decision, execution_safety=execution_safety, approval_job_id=approval_job_id)
+
+    @staticmethod
+    def _approval_policy(decision, execution_safety):
+        safety_requires_approval = execution_safety.behavior == "ask"
+        return (str(execution_safety.reason or decision.reason),
+            "execution_safety_policy" if safety_requires_approval else decision.source,
+            execution_safety.reason_code if safety_requires_approval else decision.reason_code,
+            "execution_safety_policy.tool_call" if safety_requires_approval else decision.policy_key)
+
+    def _build_approval_result(self, *, tool, call, context, decision, execution_safety, approval_job_id):
+        """Construct the common approval payload without publishing business rows."""
+        reason, permission_source, permission_reason_code, permission_policy_key = self._approval_policy(
+            decision, execution_safety)
         approval_mode_key = context.active_mode_key
         if tool.key == "security-tool-bootstrap":
             approval_mode_key = "security_tool_bootstrap"
@@ -413,6 +425,50 @@ class ToolGovernanceService:
             record=record,
             approval=approval.model_dump(mode="python"),
         )
+
+    def prepare_framework_approval(self, binding, native, context) -> PreparedFrameworkApproval:
+        """Apply existing policy, but defer all business writes to one projection."""
+        from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+        from src.schemas.session import ToolApprovalRequest
+
+        native = NativeToolInterrupt.model_validate(native.model_dump(mode="json"))
+        if (context.execution.session_id != binding.session_id or context.execution.turn_id != binding.turn_id
+            or self._tool_job_service is None):
+            raise FrameworkApprovalRecoveryRequired("Native approval preparation has no matching business runtime")
+        call = ModelToolCall(id=framework_tool_call_id(binding, native), name=native.tool_name,
+            arguments=native.arguments)
+        assessment = self._assess(call, context)
+        if isinstance(assessment, GovernedToolCallResult):
+            raise FrameworkApprovalRecoveryRequired("Native approval cannot be prepared under current governance")
+        tool, decision, execution_safety = assessment
+        if decision.behavior != "ask" and execution_safety.behavior != "ask":
+            raise FrameworkApprovalRecoveryRequired("Native approval gate changed before business projection")
+        context = replace(context, execution=context.execution.bind_call(call))
+        reason, source, reason_code, policy_key = self._approval_policy(decision, execution_safety)
+        job = self._tool_job_service.build_job(tool=tool, call_id=call.id,
+            session_id=binding.session_id, turn_id=binding.turn_id, trace_id=context.execution.trace_id,
+            input_payload=call.arguments, once_per_call=True, metadata={
+                **context.execution.job_metadata(), "phase": "approval_pending",
+                "selected_agent_key": context.execution.selected_agent_key,
+                "selected_model_key": context.execution.selected_model_key,
+                "permission_behavior": "ask", "permission_reason": reason, "permission_source": source,
+                "permission_visibility": decision.visibility, "permission_reason_code": reason_code,
+                "permission_policy_key": policy_key, "framework_binding_id": binding.binding_id,
+                "framework_native_identity": native.model_dump(mode="json")})
+        job.status, job.summary = ToolJobStatus.waiting_approval, reason
+        built = self._build_approval_result(tool=tool, call=call, context=context,
+            decision=decision, execution_safety=execution_safety, approval_job_id=job.id)
+        approval = ToolApprovalRequest.model_validate(built.approval)
+        approval.id = framework_approval_id(binding, native)
+        approval.metadata.update({"call_id": native.tool_call_id, "framework_call_id": call.id,
+            "framework_binding_id": binding.binding_id, "framework_native_identity": native.model_dump(mode="json"),
+            "deep_agent_interrupt_id": native.interrupt_id, "deep_agent_action_index": 0,
+            "deep_agent_interrupt_mode": "per_call"})
+        link = FrameworkInterruptLink(**native.model_dump(mode="json"), approval_id=approval.id,
+            binding_id=binding.binding_id, tool_key=tool.key, tool_job_id=job.id,
+            scope_hash=approval.metadata["approval_scope_hash"], tool_schema_version=binding.tool_schema_version,
+            business_call_id=call.id)
+        return PreparedFrameworkApproval(approval=approval, job=job, link=link)
 
     @staticmethod
     def _terminal_record(

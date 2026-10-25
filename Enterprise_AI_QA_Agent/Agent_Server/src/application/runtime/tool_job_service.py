@@ -100,7 +100,7 @@ class ToolJobService:
         now = datetime.utcnow()
         job = ToolJobRecord(
             id=(
-                str(uuid5(NAMESPACE_URL, json.dumps(["deepagents-tool", session_id, turn_id, call_id])))
+                self.call_job_id(session_id, turn_id, call_id)
                 if once_per_call else str(uuid4())
             ),
             session_id=session_id,
@@ -118,6 +118,10 @@ class ToolJobService:
         )
         return job
 
+    @staticmethod
+    def call_job_id(session_id: str, turn_id: str, call_id: str) -> str:
+        return str(uuid5(NAMESPACE_URL, json.dumps(["deepagents-tool", session_id, turn_id, call_id])))
+
     def supports_approval_transaction(self, settings) -> bool:
         return (
             callable(getattr(self._store, "save_job_in_transaction", None))
@@ -126,6 +130,9 @@ class ToolJobService:
 
     def save_job_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
         return self._store.save_job_in_transaction(cur, job)
+
+    def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord) -> ToolJobRecord:
+        return self._store.create_job_if_absent_in_transaction(cur, job)
 
     async def mark_running(self, job: ToolJobRecord) -> ToolJobRecord:
         now = datetime.utcnow()
