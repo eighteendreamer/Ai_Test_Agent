@@ -42,6 +42,7 @@ from src.domain.models import SessionRecord
 from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
+from src.runtime.execution_context import graph_event_scope
 from src.runtime.execution_logging import append_graph_event, truncate_text
 from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
@@ -169,7 +170,7 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult:
-        with self._runtime_control.execution_scope(session.id):
+        with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             return await self._execute_turn(
                 session, request, on_model_chunk=on_model_chunk, event_queue=event_queue,
             )
@@ -185,7 +186,6 @@ class RuntimeService:
             pilot_stage = self._deep_agent_pilot_stage()
             state = self._build_initial_state(session, request)
             self._prepare_deep_agent_governed_tools(session, request, state)
-            state["_event_queue"] = event_queue
             append_graph_event(
                 state,
                 "runtime.turn_started",
@@ -211,7 +211,6 @@ class RuntimeService:
         if self._context_compaction_service is not None:
             compaction_info = await self._context_compaction_service.maybe_compact(session)
         initial_state = self._build_initial_state(session, request)
-        initial_state["_event_queue"] = event_queue
         await self._attach_session_resources(initial_state)
         if compaction_info:
             append_graph_event(
@@ -524,7 +523,7 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult | None:
-        with self._runtime_control.execution_scope(session.id):
+        with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             return await self._resume_after_approval(
                 session, approval, on_model_chunk=on_model_chunk, event_queue=event_queue,
             )
@@ -547,7 +546,6 @@ class RuntimeService:
             )
 
         state = self._state_from_pending_turn(session, pending_turn)
-        state["_event_queue"] = event_queue
         await self._attach_session_resources(state)
         turn_id = str(state["turn_id"])
         tool_call = ModelToolCall(
@@ -966,7 +964,7 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult:
-        with self._runtime_control.execution_scope(session.id):
+        with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             return await self._resume_turn(
                 session, snapshot, resume_reason, on_model_chunk=on_model_chunk, event_queue=event_queue,
             )
@@ -980,7 +978,6 @@ class RuntimeService:
         event_queue: asyncio.Queue | None = None,
     ) -> RuntimeTurnResult:
         state = self._state_from_snapshot(session, snapshot)
-        state["_event_queue"] = event_queue
         await self._attach_session_resources(state)
         if state.get("pending_turn", {}).get("waiting_tool"):
             return await self._resume_waiting_tool(session, state, on_model_chunk=on_model_chunk)
@@ -1367,7 +1364,6 @@ class RuntimeService:
             return None
         state = self._state_from_pending_turn(session, pending_turn)
         persisted_events = len(state["event_log"])
-        state["_event_queue"] = event_queue
         batch = list(state["context_bundle"].get("deep_agent_approval_batch") or [])
         if not batch:
             raise ValueError("This pilot approval predates official HITL checkpoints; start a new turn.")

@@ -110,9 +110,6 @@ class TurnState:
     continue_loop: bool = False
     termination_reason: str = ""
 
-    # Internal (not serialized)
-    _event_queue: Any = field(default=None, repr=False)
-
 
 @dataclass(frozen=True)
 class LoopConfig:

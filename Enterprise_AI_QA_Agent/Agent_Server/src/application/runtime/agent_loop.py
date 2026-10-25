@@ -333,7 +333,6 @@ class AgentLoop:
             loop_iteration=state.get("loop_iteration", 0),
             continue_loop=bool(state.get("continue_loop", False)),
             termination_reason=state.get("termination_reason", ""),
-            _event_queue=state.get("_event_queue"),
         )
 
         config = LoopConfig(
@@ -413,5 +412,4 @@ class AgentLoop:
             "max_iterations": config.max_iterations,
             "continue_loop": turn.continue_loop,
             "termination_reason": turn.termination_reason,
-            "_event_queue": turn._event_queue,
         }

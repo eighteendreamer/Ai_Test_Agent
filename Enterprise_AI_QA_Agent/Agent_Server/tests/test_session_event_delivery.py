@@ -22,6 +22,7 @@ from src.core.config import get_settings
 from src.registry.modes import ModeRegistry
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import append_graph_event
+from src.runtime.execution_context import graph_event_scope
 from src.runtime.postgres_session_store import PostgresSessionStore
 from src.runtime.store import InMemorySessionStore
 from src.runtime.session_event_sink import SessionEventSink
@@ -304,8 +305,9 @@ async def test_two_sse_clients_each_receive_events_from_another_store_instance(s
 @pytest.mark.asyncio
 async def test_graph_live_event_and_finalized_event_have_the_same_identity():
     queue = asyncio.Queue()
-    state = {"session_id": "s", "turn_id": "t", "_event_queue": queue}
-    append_graph_event(state, "tool.started", "tool", "executing")
+    state = {"session_id": "s", "turn_id": "t"}
+    with graph_event_scope(queue):
+        append_graph_event(state, "tool.started", "tool", "executing")
     live = queue.get_nowait()
     final = RuntimeService._events_from_log(object(), "s", state["event_log"])[0]
     assert final.id == live.id and final.timestamp == live.timestamp
@@ -468,8 +470,9 @@ async def test_runtime_events_are_durable_while_runner_is_still_active(stores):
     finish = asyncio.Event()
 
     async def runtime(*, event_queue):
-        state = {"session_id": session_id, "turn_id": "live-turn", "_event_queue": event_queue}
-        append_graph_event(state, "tool.started", "tool", "live durable event")
+        state = {"session_id": session_id, "turn_id": "live-turn"}
+        with graph_event_scope(event_queue):
+            append_graph_event(state, "tool.started", "tool", "live durable event")
         await finish.wait()
         return RuntimeService._events_from_log(object(), session_id, state["event_log"])
 
@@ -523,13 +526,14 @@ async def test_event_buffer_overflow_defers_suffix_until_final_flush(stores):
     sink = SessionEventSink(writer, session_id, capacity=1, fence={})
 
     async def runtime(*, event_queue):
-        state = {"session_id": session_id, "_event_queue": event_queue}
-        append_graph_event(state, "first", "tool", "one")
-        append_graph_event(state, "second", "tool", "two")
-        await first_written.wait()
-        while sink._pending:
-            await asyncio.sleep(0)
-        append_graph_event(state, "third", "tool", "three")
+        state = {"session_id": session_id}
+        with graph_event_scope(event_queue):
+            append_graph_event(state, "first", "tool", "one")
+            append_graph_event(state, "second", "tool", "two")
+            await first_written.wait()
+            while sink._pending:
+                await asyncio.sleep(0)
+            append_graph_event(state, "third", "tool", "three")
         return RuntimeService._events_from_log(object(), session_id, state["event_log"])
 
     final_events = await sink.run(runtime)
@@ -546,9 +550,10 @@ async def test_event_buffer_overflow_does_not_hide_writer_failure():
             raise RuntimeError("injected event database outage")
 
     async def runtime(*, event_queue):
-        state = {"session_id": "s", "_event_queue": event_queue}
-        append_graph_event(state, "first", "tool", "one")
-        append_graph_event(state, "second", "tool", "two")
+        state = {"session_id": "s"}
+        with graph_event_scope(event_queue):
+            append_graph_event(state, "first", "tool", "one")
+            append_graph_event(state, "second", "tool", "two")
         return RuntimeService._events_from_log(object(), "s", state["event_log"])
 
     with pytest.raises(RuntimeError, match="injected event database outage"):
@@ -556,10 +561,11 @@ async def test_event_buffer_overflow_does_not_hide_writer_failure():
 
 
 def test_plain_event_queue_overflow_still_fails_explicitly():
-    state = {"session_id": "s", "_event_queue": asyncio.Queue(maxsize=1)}
-    append_graph_event(state, "first", "tool", "one")
-    with pytest.raises(RuntimeError, match="persistence buffer is full"):
-        append_graph_event(state, "second", "tool", "two")
+    state = {"session_id": "s"}
+    with graph_event_scope(asyncio.Queue(maxsize=1)):
+        append_graph_event(state, "first", "tool", "one")
+        with pytest.raises(RuntimeError, match="persistence buffer is full"):
+            append_graph_event(state, "second", "tool", "two")
 
 
 @pytest.mark.asyncio

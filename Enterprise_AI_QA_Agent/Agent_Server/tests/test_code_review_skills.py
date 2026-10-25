@@ -136,7 +136,6 @@ def _router_state(selected_mode: dict) -> dict:
         "max_iterations": 8,
         "continue_loop": False,
         "termination_reason": "",
-        "_event_queue": None,
     }
 
 

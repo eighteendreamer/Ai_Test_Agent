@@ -12,6 +12,7 @@ _AUDIT_OUTPUT_POLICY = OutputSafetyPolicy()
 
 from src.graph.state import AgentGraphState
 from src.runtime.session_event_sink import SessionEventSink
+from src.runtime.execution_context import current_graph_event_sink
 from src.schemas.session import ExecutionEvent
 
 
@@ -57,7 +58,7 @@ def append_graph_event(
 
     # The bounded sink persists a live prefix; finalization appends any
     # overflow suffix with the same IDs before the turn is settled.
-    event_queue: asyncio.Queue | None = state.get("_event_queue")
+    event_queue = current_graph_event_sink()
     if event_queue is not None:
         try:
             event_queue.put_nowait(event)

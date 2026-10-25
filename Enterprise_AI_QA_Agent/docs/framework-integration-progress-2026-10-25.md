@@ -9,7 +9,7 @@
 | 阶段 | 本轮状态 | 下一出口 |
 | --- | --- | --- |
 | P0 依赖与模型契约 | 已锁依赖、建立独立第三方环境；本地 HTTP/SSE 通过真实官方 SDK 验证四传输 | 真实供应商配置、目标部署环境及 workspace wheel 构建仍待验收 |
-| P1 状态、输入、预算、版本绑定 | 待实现 | 持久原生 transcript、可序列化图状态、共享实际调用预算、不可变绑定、双队列 |
+| P1 状态、输入、预算、版本绑定 | 已完成事件队列移出状态这一步；其余待实现 | 持久原生 transcript、共享实际调用预算、不可变绑定、双队列 |
 | P2 逐项审批、所有权、对账 | 待实现 | 真实 PostgreSQL/Redis 跨进程故障链，以及 checkpoint / pending writes / ToolJob 旧 owner 拒写 |
 | P3 代码审查实链路 | 待实现 | Prompt、Skills、只读探索、受治理子代理、流式事件及质量基线 |
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
@@ -67,3 +67,20 @@ uv lock --check --offline
 - 未修改领域 Runner、正式用例状态机及六个占位模式；没有创建生产数据迁移或投递新版任务。
 
 本记录随每个验证过的小阶段更新；必须保持方案目标与实际已实现范围分开。
+
+## 5. P1 第一步：事件资源移出图状态
+
+依据 v2 §3.3 与既有模型流式 ContextVar 作用域模式：事件 sink 现在由 `runtime/execution_context.py` 的执行作用域保存；启动、审批恢复、手动恢复三个公开入口负责建立和释放。图、循环状态对象不再保存 `_event_queue`，事件 ID、最终落库与溢出处理沿用原设施。
+
+TDD：先增加 checkpoint 可序列化、并行隔离、异常清理与三个入口测试，首次因缺上下文模块失败；实现后 **6 passed**。既有七模式和 Deep Agents 回归 **101 passed**。
+
+事件/中断/预算回归 **42 passed、18 skipped**，skip 包含未开启的真实服务和仅支持 PostgreSQL 的参数组合，没有计为通过。随后确认本机 PostgreSQL 健康，实际执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_session_event_delivery.py -q -rs --tb=short
+```
+
+结果 **30 passed、2 skipped，19.60 秒**。测试使用 UUID 后缀的独立表并清理自身表，覆盖 PostgreSQL 事件持久化、SSE、顺序、跨进程读写；两个 skip 是内存参数无法承担数据库事务顺序/跨进程测试，对应 PostgreSQL 参数实际通过。
+
+这里验证的是已有事件投递基础设施，**没有验证 v2 checkpoint 的租约 fencing 或逐项审批杀进程恢复**。不能据此宣称 P1/P2 完成。真实供应商、Redis、新原生 transcript、全系统路由和所有权协议继续待实施。

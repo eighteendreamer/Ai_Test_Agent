@@ -49,7 +49,7 @@ def _state(selected_mode: dict, agent_key: str = "security-testing-agent") -> di
         "tool_messages": [], "worker_dispatches": [], "context_bundle": {"selected_mode": selected_mode}, "event_log": [],
         "final_response": "", "pending_turn": {}, "control_state": "", "interrupt_requested": False,
         "interrupt_reason": "", "loop_iteration": 0, "max_iterations": 8, "continue_loop": False,
-        "termination_reason": "", "_event_queue": None,
+        "termination_reason": "",
     }
 
 
