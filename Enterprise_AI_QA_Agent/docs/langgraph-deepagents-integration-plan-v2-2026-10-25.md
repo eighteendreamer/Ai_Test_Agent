@@ -48,7 +48,7 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`submit_approval_v2` 和独立 `FrameworkApprovalSubmission` 现已提供原子受理端口、运行中接收其它决定及活跃 Turn 领取优先级。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。内部受理/领取不等于业务 API/框架续跑已接通；自动原生映射、Dispatcher/Worker/Runtime 继续执行、API/UI 与 receipt 生产接线仍待实施 |
+| F1 逐项审批桥接必须整体改 | 已有官方 per-call HITL 与 Runtime 单项分支，批量分支保留历史兼容；`submit_approval_v2` 和独立 `FrameworkApprovalSubmission` 已有原子受理与串行领取；bound adapter 现从原生 StateSnapshot 和持久化任务读取稳定身份。legacy 提交仍拒绝绑定 Turn，Worker 能力仍只允许 v2 `message` | 风险仍成立。内部端口不等于完整业务 API/框架续跑；Approval/等待 ToolJob/link 的原子投影、Dispatcher/Worker/Runtime 继续执行、API/UI 与 receipt 生产接线仍待实施 |
 | F2 checkpoint/业务/副作用不在一个事务 | `FencedPostgresSaver` 已将 owner 检查、官方 pending writes 与决定交付 proof 纳入同一连接事务；`FrameworkApprovalJournal` 已提供 link、queue、delivery 与只读事实对账端口；v2 内部提交现将审批决定、receipt、唯一任务和 outbox 放入另一受理事务 | 风险仍成立。受理事务与执行写入事务分别存在；运行时自动建立 link、完整 API、applied 投影与外部副作用对账仍未贯通，外部效果不在数据库事务内 |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 `put/aput`、`put_writes/aput_writes`，捕获不可变 owner，真实数据库测试验证旧代写入拒绝。无绑定的旧试点仍使用原 saver | 原因判断正确，已部分落实；不能再称 v2 saver 完全无保护。取消即时撤销、跨进程接管、ToolJob 与 framework owner 的贯通仍未完成 |
 | F4 模型对象不会自动继承调用策略 | `OfficialChatModelFactory` 已支持四传输和显式 Chat `max_tokens`；`resolve_langchain_chat_model` 返回模型后，框架仍直接调用模型对象 | 共享实际调用账本、动态策略、子代理/摘要预算仍待实现。不能继续用“当前只支持 Chat”描述框架工厂 |
@@ -57,7 +57,11 @@
 
 附件末尾“本地未安装 Deep Agents”、仅完成 dry-run 的描述属于旧快照。当前独立 `.venv-framework-v2` 已安装锁定依赖，已有真实数据库局部测试。该进展仍不足以开放生产 v2 路由。
 
-另有本次复核发现的执行缺口：方案要求 `durability="sync"`，但 `DeepAgentRuntimeAdapter` 的 `ainvoke` 和 `_invoke_with_subagent_events` 尚未显式传入；固定 LangGraph 1.2.12 默认是 `async`。需在启动、单项继续、无新决定继续及子代理事件入口统一落实并测试。`sync` 约束图步骤持久化，不保证外部副作用 exactly-once，也不保证工具开始前 resume receipt 已落库。
+本次复核发现的 `sync` 缺口已在 adapter 层落实：所有带 checkpointer 的启动、指定决定恢复、`continue_from_checkpoint=True` 的 `ainvoke(None)` 和子代理事件入口显式使用 `durability="sync"`。无持久化旧试点不传 durability；固定 LangGraph 1.2.12 对无 saver 的 sync 调用会访问不存在的 `_put_checkpoint_fut`，已由真实框架回归复现。无新决定继续仅开放内部 adapter 协议，仍需 Session/Worker 根据交付凭证和 ToolJob 对账选择，不能对未判定的执行直接继续。`sync` 不保证外部副作用 exactly-once，也不保证工具开始前 resume receipt 已落库。
+
+原生身份提取采用 `agent.aget_state(..., subgraphs=True)` 还原增量消息，递归已注册子图，并在 owner 事务下读取同 checkpoint/task 的 interrupt、resume 与真实 `task_path`。源调用仅按当前原生 AI 消息的显式 call ID 匹配，并核对工具名和参数；不搜索历史同名调用。固定版本的 StateSnapshot 会包含已完成兄弟任务的旧 interrupt，需由同任务匹配的原生 ToolMessage 及 resume 事实排除；只存在已消费 resume、没有匹配任务结果时要求对账，不能创建下一审批。该 collector 限于官方 per-call `tools` 任务，不代替任意自定义图的审批映射。
+
+事件流同时订阅 `updates` 与 `values`：前者采集 root interrupt，后者保留完整最终状态；不能仅用 `on_chain_end.output` 推断没有审批，因为固定版本的该事件输出不包含 interrupt。实际 nested Deep Agents 及 root 事件流回归见实施记录 §13。
 
 ## 2. 目标架构与模块边界
 
@@ -446,7 +450,7 @@ P2/P3 的关键真实链路：
 | --- | --- | --- |
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
-| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理及串行领取端口已实现，详见实施记录第 12 节；仍须成对接通原生 link 投影、Dispatcher、Worker、API/事件/UI 与 adapter | 已覆盖存储层的 running 时受理、重复/相反决定、事务回滚、取消及队列优先级；API 返回 202、已 delivered 调 `ainvoke(None)`、未 delivered 先 ToolJob 对账和所有执行入口显式 sync durability 仍待完整出口验证 |
+| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理/串行领取、adapter 原生身份提取与持久化入口 sync 已实现，详见实施记录 §12–13；仍须成对接通原生 link 投影、Dispatcher、Worker、API/事件/UI | 存储层和 adapter 局部 Harness 已通过；API 返回 202、根据 delivered 选择无新决定继续、未 delivered 先 ToolJob 对账，以及完整治理工具链路仍待出口验证 |
 | P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
 
 P2.1 的只读投影重建可独立验收；新增 v2 continuation 能力必须在 P2.2 端到端用例通过后才声明。P2 整体及 P3 试点放量必须等 P2.3 通过；当前 API 遇到绑定审批的冲突保护在具备完整替代路径之前保留。

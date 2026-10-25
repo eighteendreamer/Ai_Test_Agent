@@ -95,6 +95,15 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
     def get_tuple(self, config):
         return self._graph_tuple(PostgresSaver(self.conn, serde=self.serde).get_tuple(self._storage_config(config)))
 
+    def get_interrupt_task(self, config, task_id):
+        storage_config = self._storage_config(config)
+        with self._write_transaction("read_interrupt_task") as saver, saver.conn.cursor() as cur:
+            return self._approval_journal.pending_task_in_transaction(
+                cur, self.runtime_owner.binding, storage_config, task_id)
+
+    async def aget_interrupt_task(self, config, task_id):
+        return await asyncio.to_thread(self.get_interrupt_task, config, task_id)
+
     def list(self, config, *, filter=None, before=None, limit=None):
         storage_config = self._storage_config(config)
         all_namespaces = "checkpoint_ns" not in (config or {}).get("configurable", {})

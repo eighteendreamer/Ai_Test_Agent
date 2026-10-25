@@ -15,11 +15,10 @@ def approval_value_hash(value: Any) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
-class FrameworkInterruptLink(BaseModel):
+class NativeToolInterrupt(BaseModel):
+    """Execution identity read from a pending native tool task, before projection."""
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    approval_id: str = Field(min_length=1)
-    binding_id: str = Field(min_length=1)
     checkpoint_namespace: str
     checkpoint_id: str = Field(min_length=1)
     graph_task_id: str = Field(min_length=1)
@@ -29,12 +28,19 @@ class FrameworkInterruptLink(BaseModel):
     source_message_id: str = Field(min_length=1)
     tool_call_id: str = Field(min_length=1)
     tool_name: str = Field(min_length=1)
+    arguments: dict[str, Any]
+    format_version: Literal["langgraph-1.2.12"] = "langgraph-1.2.12"
+
+
+class FrameworkInterruptLink(NativeToolInterrupt):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    approval_id: str = Field(min_length=1)
+    binding_id: str = Field(min_length=1)
     tool_key: str = Field(min_length=1)
     tool_job_id: str = Field(min_length=1)
-    arguments: dict[str, Any]
     scope_hash: str = Field(min_length=1)
     tool_schema_version: str = Field(min_length=1)
-    format_version: Literal["langgraph-1.2.12"] = "langgraph-1.2.12"
 
 
 class FrameworkDecisionReceipt(BaseModel):

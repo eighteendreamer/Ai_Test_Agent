@@ -14,6 +14,7 @@ from src.application.deep_agents.framework_transcript import (
     deserialize_messages,
     serialize_messages,
 )
+from src.schemas.framework_approval import NativeToolInterrupt
 
 
 class DeepAgentRuntimeError(RuntimeError):
@@ -43,6 +44,7 @@ class DeepAgentRuntimeRequest:
     business_tools: list[Any] = field(default_factory=list)
     interrupt_on: dict[str, Any] = field(default_factory=dict)
     resume: dict[str, Any] | None = None
+    continue_from_checkpoint: bool = False
 
 
 @dataclass(frozen=True)
@@ -54,6 +56,7 @@ class DeepAgentRuntimeResult:
     todos: list[dict[str, str]] = field(default_factory=list)
     subagent_events: list[dict[str, Any]] = field(default_factory=list)
     interrupts: list[dict[str, Any]] = field(default_factory=list)
+    native_interrupts: list[NativeToolInterrupt] = field(default_factory=list)
 
 
 ModelResolver = Callable[[str], Awaitable[Any]]
@@ -84,8 +87,12 @@ class DeepAgentRuntimeAdapter:
         self._checkpointer_factory = checkpointer_factory
 
     async def execute(self, request: DeepAgentRuntimeRequest) -> DeepAgentRuntimeResult:
-        if (request.interrupt_on or request.resume) and self._checkpointer_factory is None:
+        if (
+            request.interrupt_on or request.resume is not None or request.continue_from_checkpoint
+        ) and self._checkpointer_factory is None:
             raise DeepAgentRuntimeError("Governed Deep Agents HITL requires a checkpointer.")
+        if request.resume is not None and request.continue_from_checkpoint:
+            raise DeepAgentRuntimeError("A checkpoint continuation cannot also submit a new decision.")
         checkpoint_context = (
             self._checkpointer_factory()
             if self._checkpointer_factory is not None
@@ -160,14 +167,18 @@ class DeepAgentRuntimeAdapter:
                     interrupt_on=request.interrupt_on or None,
                     **harness_kwargs,
                 )
-                input_messages: list[Any] = list(request.messages)
-                if request.framework_messages:
-                    input_messages = deserialize_messages(request.framework_messages)
-                invoke_input = {"messages": input_messages}
-                if request.resume is not None:
+                invoke_input: Any
+                if request.continue_from_checkpoint:
+                    invoke_input = None
+                elif request.resume is not None:
                     from langgraph.types import Command
 
                     invoke_input = Command(resume=request.resume)
+                else:
+                    input_messages: list[Any] = list(request.messages)
+                    if request.framework_messages:
+                        input_messages = deserialize_messages(request.framework_messages)
+                    invoke_input = {"messages": input_messages}
                 configurable = {"thread_id": request.turn_id}
                 if request.checkpoint_namespace and execution_owner is None:
                     configurable["checkpoint_ns"] = request.checkpoint_namespace
@@ -181,16 +192,29 @@ class DeepAgentRuntimeAdapter:
                         "harness": "deepagents",
                     },
                 }
+                # LangGraph 1.2.12 cannot use sync durability without a saver.
+                # Non-persistent legacy cognitive pilots have no checkpoint;
+                # every persisted initial/resume/continue path must use sync.
+                persistence_options = {"durability": "sync"} if checkpointer is not None else {}
                 if request.cognitive_subagents_enabled:
                     result, subagent_events = await _invoke_with_subagent_events(
                         agent,
                         invoke_input,
                         invoke_config,
                         on_event=request.on_subagent_event,
+                        persistence_options=persistence_options,
                     )
                 else:
-                    result = await agent.ainvoke(invoke_input, config=invoke_config)
+                    result = await agent.ainvoke(invoke_input, config=invoke_config, **persistence_options)
                     subagent_events = []
+                native_interrupts = []
+                if execution_owner is not None:
+                    from src.application.deep_agents.native_interrupts import collect_pending_tool_interrupts
+
+                    native_interrupts = await collect_pending_tool_interrupts(agent, checkpointer, invoke_config)
+                    reported_ids = {item.id for item in result.get("__interrupt__", [])}
+                    if {item.interrupt_id for item in native_interrupts} != reported_ids:
+                        raise DeepAgentRuntimeError("Returned interrupts disagree with pending native tasks.")
             finally:
                 if cleanup is not None:
                     cleanup()
@@ -226,6 +250,7 @@ class DeepAgentRuntimeAdapter:
             todos=_normalize_todos(result.get("todos") if isinstance(result, dict) else []),
             subagent_events=subagent_events,
             interrupts=interrupts,
+            native_interrupts=native_interrupts,
         )
 
     def _resolve_factory(self) -> AgentFactory:
@@ -498,19 +523,23 @@ def _pilot_stage(request: DeepAgentRuntimeRequest) -> str:
 
 async def _invoke_with_subagent_events(
     agent: Any,
-    invoke_input: dict[str, Any],
+    invoke_input: Any,
     invoke_config: dict[str, Any],
     *,
     on_event: Callable[[dict[str, Any]], None] | None,
+    persistence_options: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Project LangGraph v2 events into a stable, framework-neutral subset."""
     result: dict[str, Any] | None = None
     projected: list[dict[str, Any]] = []
     active_runs: dict[str, str] = {}
+    interrupts: dict[str, Any] = {}
     async for event in agent.astream_events(
         invoke_input,
         config=invoke_config,
         version="v2",
+        stream_mode=["updates", "values"],
+        **persistence_options,
     ):
         event_type = str(event.get("event") or "")
         event_name = str(event.get("name") or "").strip()
@@ -543,7 +572,16 @@ async def _invoke_with_subagent_events(
             projected.append(item)
             if on_event is not None:
                 on_event(item)
-        if event_type == "on_chain_end" and event_name == DEEP_AGENT_RUN_NAME:
+        if event_type == "on_chain_stream" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
+            chunk = data.get("chunk")
+            if isinstance(chunk, tuple) and len(chunk) == 2:
+                mode, payload = chunk
+                if mode == "values" and isinstance(payload, dict):
+                    result = payload
+                elif mode == "updates" and isinstance(payload, dict):
+                    for interruption in payload.get("__interrupt__", []):
+                        interrupts[interruption.id] = interruption
+        if event_type == "on_chain_end" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
             output = (event.get("data") or {}).get("output")
             if isinstance(output, dict):
                 result = output
@@ -551,6 +589,8 @@ async def _invoke_with_subagent_events(
         raise DeepAgentRuntimeError(
             "Deep Agents subagent event stream ended without a final graph state."
         )
+    if interrupts:
+        result = {**result, "__interrupt__": list(interrupts.values())}
     return result, projected
 
 

@@ -51,7 +51,7 @@ class _FakeAgent:
     def __init__(self, calls: list[dict]):
         self._calls = calls
 
-    async def ainvoke(self, payload, *, config):
+    async def ainvoke(self, payload, *, config, durability=None):
         self._calls.append({"payload": payload, "config": config})
         return {
             "messages": [
@@ -59,6 +59,75 @@ class _FakeAgent:
                 {"role": "assistant", "content": "DA_E1_OK"},
             ]
         }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["start", "resume", "continue"])
+@pytest.mark.parametrize("stream_events", [False, True])
+async def test_all_invocation_paths_use_sync_and_checkpoint_continuation_has_no_history(operation, stream_events):
+    captured = []
+
+    class Agent:
+        async def ainvoke(self, payload, *, config, durability=None):
+            captured.append((payload, durability))
+            return {"messages": [AIMessage(content="done")]}
+
+        async def astream_events(self, payload, *, config, version, stream_mode, durability=None):
+            captured.append((payload, durability))
+            yield {"event": "on_chain_end", "name": config["run_name"],
+                "data": {"output": {"messages": [AIMessage(content="done")]}}}
+
+    @asynccontextmanager
+    async def checkpoint():
+        yield object()
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda _key: _resolved_model(),
+        agent_factory=lambda **kwargs: Agent(), checkpointer_factory=checkpoint)
+    options = {"resume": {"interrupt-1": {"type": "approve"}}} if operation == "resume" else {}
+    if operation == "continue":
+        options["continue_from_checkpoint"] = True
+    await adapter.execute(DeepAgentRuntimeRequest(session_id="session", turn_id="turn", trace_id="trace",
+        model_key="model", system_prompt="system", messages=[{"role": "user", "content": "new input"}],
+        # This deliberately cannot be deserialized: continuations must not read it.
+        framework_messages=([{"invalid": "history"}] if operation != "start" else None),
+        cognitive_subagents_enabled=stream_events, **options))
+    assert captured[0][1] == "sync"
+    if operation == "continue":
+        assert captured[0][0] is None
+    elif operation == "resume":
+        from langgraph.types import Command
+        assert isinstance(captured[0][0], Command)
+        assert captured[0][0].resume == options["resume"]
+    else:
+        assert captured[0][0]["messages"][0]["content"] == "new input"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("options", [
+    {"continue_from_checkpoint": True}, {"resume": {"interrupt-1": {"type": "approve"}}},
+])
+async def test_checkpoint_continuation_requires_a_checkpointer_before_model_resolution(options):
+    async def unexpected_model(key):
+        raise AssertionError("model must not be resolved")
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=unexpected_model)
+    with pytest.raises(RuntimeError, match="requires a checkpointer"):
+        await adapter.execute(DeepAgentRuntimeRequest(session_id="session", turn_id="turn", trace_id="trace",
+            model_key="model", system_prompt="system", messages=[], **options))
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_continuation_cannot_also_submit_a_decision():
+    @asynccontextmanager
+    async def checkpoint():
+        raise AssertionError("must validate before opening the checkpoint")
+        yield
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda key: _resolved_model(), checkpointer_factory=checkpoint)
+    with pytest.raises(RuntimeError, match="cannot also submit"):
+        await adapter.execute(DeepAgentRuntimeRequest(session_id="session", turn_id="turn", trace_id="trace",
+            model_key="model", system_prompt="system", messages=[], continue_from_checkpoint=True,
+            resume={"interrupt-1": {"type": "approve"}}))
 
 
 @pytest.mark.asyncio
@@ -86,7 +155,7 @@ async def test_framework_transcript_round_trip_preserves_native_blocks_tool_ids_
     calls: list[dict] = []
 
     class NativeAgent:
-        async def ainvoke(self, payload, *, config):
+        async def ainvoke(self, payload, *, config, durability=None):
             calls.append({"payload": payload, "config": config})
             assert isinstance(payload["messages"][1], AIMessage)
             assert payload["messages"][1].tool_calls[0]["id"] == "call-1"
@@ -187,7 +256,7 @@ async def test_da_e1_maps_messages_and_keeps_business_tools_empty():
 @pytest.mark.asyncio
 async def test_da_e1_rejects_missing_assistant_output():
     class EmptyAgent:
-        async def ainvoke(self, payload, *, config):
+        async def ainvoke(self, payload, *, config, durability=None):
             return {"messages": [{"role": "user", "content": "only input"}]}
 
     adapter = DeepAgentRuntimeAdapter(

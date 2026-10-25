@@ -73,6 +73,12 @@ class FrameworkApprovalJournal:
         return {row["channel"]: {**row, "value": self._serde.loads_typed((row["type"], bytes(row["blob"])))}
             for row in cur.fetchall()}
 
+    def pending_task_in_transaction(self, cur, binding, storage_config, task_id):
+        """Read the persisted interrupt and resume position without inferring a path."""
+        rows = self._native_rows(cur, binding, storage_config["configurable"], task_id)
+        return {channel: {"task_path": row["task_path"], "value": row["value"]}
+            for channel, row in rows.items()}
+
     @staticmethod
     def _namespace(binding, logical):
         return binding.checkpoint_namespace + ("|" + logical if logical else "")
