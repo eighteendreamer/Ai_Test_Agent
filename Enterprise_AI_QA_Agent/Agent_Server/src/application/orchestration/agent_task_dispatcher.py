@@ -21,8 +21,10 @@ from src.runtime.task_deferred import TaskDeferred
 from src.schemas.agent_task import (
     AgentTaskAccepted,
     AgentTaskCommand,
+    AgentTaskCommandV2,
     AgentTaskRecord,
     TERMINAL_AGENT_TASK_STATUSES,
+    parse_agent_task_command,
 )
 from src.schemas.session import (
     ChatMessage,
@@ -541,7 +543,11 @@ class AgentTaskDispatcher:
         return await self._sessions.interrupt_session(session_id, payload)
 
     async def handle(self, delivery, *, worker_id):
-        command = AgentTaskCommand.model_validate(delivery.payload)
+        command = parse_agent_task_command(delivery.payload)
+        if isinstance(command, AgentTaskCommandV2):
+            # Legacy workers must never consume a v2 envelope. A dedicated v2
+            # worker owns binding validation and its separate Redis stream.
+            raise ValueError("v2 agent command requires the v2 worker stream")
         stored = await self._tasks.get(command.task_id)
         for name in (
             "operation",

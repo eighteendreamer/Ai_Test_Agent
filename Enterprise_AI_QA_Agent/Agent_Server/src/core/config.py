@@ -211,6 +211,7 @@ class OrchestrConfig(BaseModel):
     resource_global_limit: int = Field(default=20, ge=1)
     agent_task_limit: int = Field(default=20, ge=1)
     agent_task_stream: str = "qa:tasks:agent"
+    agent_task_v2_stream: str = "qa:tasks:agent:v2"
     agent_task_control_poll_seconds: float = Field(default=1.0, ge=0.05)
     session_event_buffer_capacity: int = Field(default=4096, ge=1)
     session_sse_poll_seconds: float = Field(default=0.5, ge=0.05)
@@ -305,7 +306,7 @@ class OrchestrConfig(BaseModel):
     @property
     def task_stream_names(self) -> tuple[str, ...]:
         """Return configured task streams once, preserving declaration order."""
-        values = [self.redis_task_stream, self.agent_task_stream]
+        values = [self.redis_task_stream, self.agent_task_stream, self.agent_task_v2_stream]
         values.extend(self.redis_task_outbox_streams.split(","))
         result: list[str] = []
         for value in values:

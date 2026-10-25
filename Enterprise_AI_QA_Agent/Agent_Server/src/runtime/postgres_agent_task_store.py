@@ -16,8 +16,13 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.agent_task import (
-    AgentTaskCommand, AgentTaskExecution, AgentTaskRecord, TERMINAL_AGENT_TASK_STATUSES,
+    AgentTaskCommand,
+    AgentTaskCommandV2,
+    AgentTaskExecution,
+    AgentTaskRecord,
+    TERMINAL_AGENT_TASK_STATUSES,
 )
+from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import (
     ApprovalDecisionRequest,
     ChatMessage,
@@ -52,6 +57,23 @@ class PostgresAgentTaskStore:
                      message: ChatMessage, *, idempotency_key: str) -> AgentTaskRecord:
         return await asyncio.to_thread(
             self._submit_sync,
+            command,
+            payload,
+            message,
+            idempotency_key,
+        )
+
+    async def submit_v2(
+        self,
+        command: AgentTaskCommandV2,
+        payload: SendMessageRequest,
+        message: ChatMessage,
+        *,
+        idempotency_key: str,
+    ) -> AgentTaskRecord:
+        """Persist a v2 task and its runtime binding atomically."""
+        return await asyncio.to_thread(
+            self._submit_v2_sync,
             command,
             payload,
             message,
@@ -228,6 +250,7 @@ class PostgresAgentTaskStore:
                 status TEXT NOT NULL DEFAULT 'queued', attempt_id TEXT, attempt_no INTEGER NOT NULL DEFAULT 0,
                 worker_id TEXT, lease_token TEXT, resource_id TEXT, fencing_token BIGINT,
                 waiting_reason TEXT, result_status TEXT, error_code TEXT,
+                runtime_binding JSONB,
                 interrupt_requested BOOLEAN NOT NULL DEFAULT FALSE,
                 created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(), updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
                 UNIQUE(session_id, idempotency_key)
@@ -259,6 +282,7 @@ class PostgresAgentTaskStore:
                 "operation TEXT NOT NULL DEFAULT 'message'"
             )
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS reference_id TEXT")
+            cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS runtime_binding JSONB")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS parent_task_id TEXT")
             cur.execute(f"ALTER TABLE {self._tasks} ADD COLUMN IF NOT EXISTS root_trace_id TEXT")
             cur.execute(
@@ -298,6 +322,26 @@ class PostgresAgentTaskStore:
             )
         return AgentTaskRecord.model_validate(row)
 
+    def _submit_v2_sync(self, command, payload, message, idempotency_key):
+        serialized = payload.model_dump(mode="json")
+        binding = command.runtime_binding
+        content_hash = self._input_hash(
+            "message_v2",
+            {"payload": serialized, "runtime_binding_fingerprint": binding.fingerprint},
+        )
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            row = self._submit_message_in_transaction(
+                cur,
+                command,
+                payload,
+                message,
+                effective_key=self._idempotency_key("message_v2", idempotency_key),
+                content_hash=content_hash,
+                runtime_binding=binding,
+                stream=self._settings.orchestration.agent_task_v2_stream,
+            )
+        return AgentTaskRecord.model_validate(row)
+
     def _submit_message_in_transaction(
         self,
         cur,
@@ -307,6 +351,8 @@ class PostgresAgentTaskStore:
         *,
         effective_key,
         content_hash,
+        runtime_binding: RuntimeBinding | None = None,
+        stream: str | None = None,
     ):
         session = self._lock_session(cur, command.session_id)
         existing = self._find_idempotent(
@@ -337,8 +383,8 @@ class PostgresAgentTaskStore:
         cur.execute(f"""INSERT INTO {self._tasks}
             (id,session_id,operation,turn_id,project_id,request_id,trace_id,run_id,run_item_id,
              priority,idempotency_key,input_hash,input_payload,user_message_id,reference_id,
-             parent_task_id,root_trace_id)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s) RETURNING *""",
+             parent_task_id,root_trace_id,runtime_binding)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s,%s,%s,%s,%s::jsonb) RETURNING *""",
             (
                 command.task_id,
                 command.session_id,
@@ -357,6 +403,9 @@ class PostgresAgentTaskStore:
                 command.reference_id,
                 command.parent_task_id,
                 command.root_trace_id,
+                json.dumps(
+                    runtime_binding.model_dump(mode="json"), ensure_ascii=False
+                ) if runtime_binding else None,
             ))
         row = cur.fetchone()
         if payload.interrupt_if_busy:
@@ -385,7 +434,7 @@ class PostgresAgentTaskStore:
                 "busy_status": session["status"],
                 "queue_depth": queue_depth,
                 "queue_behavior": "enqueue_if_busy",
-                "queue": self._settings.orchestration.agent_task_stream,
+                "queue": stream or self._settings.orchestration.agent_task_stream,
                 "source": payload.source,
             },
         )
@@ -393,7 +442,7 @@ class PostgresAgentTaskStore:
             (event_key,stream,payload) VALUES (%s,%s,%s::jsonb)""",
             (
                 f"{command.task_type}:{command.task_id}",
-                self._settings.orchestration.agent_task_stream,
+                stream or self._settings.orchestration.agent_task_stream,
                 command.model_dump_json(),
             ))
         return row
