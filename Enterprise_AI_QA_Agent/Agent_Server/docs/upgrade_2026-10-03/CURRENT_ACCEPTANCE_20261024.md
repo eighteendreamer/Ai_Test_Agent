@@ -336,6 +336,25 @@ python-magic 0.4.27 的加载器会接受 PATH 上的 `msys-magic-1.dll`（本�
 
 这关闭了"closed Shadow DOM 的能力边界呈现"：边界不是 JSON 字段存在，而是真实 closed root 存在时物理交互被诚实归因、内部内容不进证据、契约如实标注。
 
+## 按用例执行：compatibility 测试模式默认模型专项通过
+
+新增验收 `tests/test_default_compatibility_mode_live.py`（门控 `RUN_LIVE_DEFAULT_COMPATIBILITY_MODE=1`）——`compatibility_testing` 模式（`case_driven_policy: required`）此前只有 runner 持久化机制测试（14 项），无默认模型编排证据：
+
+```text
+1 passed in 46.37s
+```
+
+证据：`compat-mode-default-deepseek-current-20261025-07/` 及同名 XML。生产 API + 独立 Agent Worker + 真实默认模型（deepseek-flash，3 次物理调用），目标为本机受控 HTTP 产品页（经会话 `resource_scope` 受信，与其他默认模型验收同一 authority fixture）：
+
+- **默认模型自主编排**：先调 `compatibility-test-runner` 的 `get_capabilities`（completed），再以完整参数（objective/entrypoint/target_url/test_scope/data_policy/product_name/product_type）发起 `draft_plan`——参数语义正确，无编造。
+- **真实计划产物**：6 个环境（Windows/Chrome、Windows/Edge、Linux/Firefox、macOS/Safari、Android 14/Pixel 7、iOS 18/iPhone 16——跨桌面与移动的真实矩阵）、4 条用例、5 个风险项；`phase=awaiting_approval`（计划等待用户批准——正确产品语义，本验收按用户指示"只做计划"停在此相位）。
+- **环境可用性诚实呈现**：每个不可用环境带 `availability=missing_runner` 与具体 `unavailable_reason`（如"需要 macOS Runner 或远程浏览器云 Provider"）——隔离环境无 Runner 注册时计划如实降级为 partial 并说明原因，不伪报可执行。
+- 会话 completed、`global_model_unchanged=true`。
+
+迭代中发现的产品正确行为（保留于 `-01`~`-06`）：无受信 scope 时目标安全策略拦截私有地址（`untrusted_private_target`），且默认模型被拒后**如实报告拦截详情、不编造计划**（`-02` 会话证据）——这本身是安全门与模型诚实性的双重验证。批准续作竞态（400 already handled）按已处理容错。
+
+边界声明：本验收覆盖默认模型在 compatibility 模式下的**计划编排**（get_capabilities→draft_plan→产物与批准门）；矩阵执行（execute_approved_plan→Runner 调度→多环境执行→证据聚合）依赖已注册的浏览器 Runner 基础设施，属后续项（runner 持久化机制已有 14 项专项）。
+
 ## UI 录制与知识：人工操作 DeepSeek 完整实测通过
 
 用户本人操作可见 Chromium 完成 `tests/test_recording_deepseek_live.py::test_actual_deepseek_manual_actions_are_recorded_and_diagnosed` 的人工模式（`RUN_LIVE_DEEPSEEK_RECORDING=1`、`DEEPSEEK_RECORDING_INTERACTION=manual`，pytest 需 `-s` 使 `input()` 可读——首跑因缺 `-s` 失败属测试运行方式问题）：
