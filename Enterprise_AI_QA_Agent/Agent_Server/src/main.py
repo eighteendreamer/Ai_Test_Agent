@@ -62,6 +62,7 @@ from src.application.mail.auth_monitor import TencentAuthMonitor
 from src.application.models.oauth_token_service import OAuthTokenService
 from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
 from src.runtime.framework_approval_projection import FrameworkApprovalProjection
+from src.runtime.framework_approval_continuation import FrameworkApprovalContinuation
 from src.application.artifacts.artifact_storage_service import ArtifactStorageService
 from src.application.compatibility import CompatibilityRunnerService
 from src.application.documents.api_docs_service import ApiDocsService
@@ -730,6 +731,7 @@ async def _initialize_lifespan_resources(
         deep_agent_governed_tools_enabled=settings.deep_agents.governed_tools_enabled,
         tool_job_service=tool_job_service,
         framework_approval_projection=FrameworkApprovalProjection(settings, sessions=store, jobs=tool_job_service),
+        framework_approval_continuation=FrameworkApprovalContinuation(settings, sessions=store, jobs=tool_job_service),
     )
 
     app.state.settings = settings

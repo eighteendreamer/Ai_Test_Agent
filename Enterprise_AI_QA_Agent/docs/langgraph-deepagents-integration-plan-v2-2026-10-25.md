@@ -458,7 +458,7 @@ P2/P3 的关键真实链路：
 | --- | --- | --- |
 | P2.0 owner 与物理 namespace | 第 6 节；当前已实现 owner-bound saver，同进程真实数据库验证已过 | 已有旧代写入、to_thread 迟到、事务回滚、锁等待和 DeltaChannel 测试；跨进程出口仍由 P2.3 承担 |
 | P2.1 决定交付证明 | 第 5.1 节；link/receipt 存储与 fenced saver 同事务证明已实现，通过同进程真实数据库 Harness | 已验证官方 per-call 真实 pending write、多位置前缀、无关任务/namespace、内容冲突、`DO NOTHING` 保留旧值、重复证明及双向回滚；不替代 P2.2 生产接线或 P2.3 跨进程验收 |
-| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理/串行领取、adapter 原生身份及 sync、原子审批投影、持久化门控和独立续跑准备/结果投影端口已实现，详见实施记录 §12–17；仍须成对接通 Runtime/Session、Dispatcher、Worker、API/事件/UI | 局部 Harness 验证指定决定与 None 选择、未交付先查 ToolJob、已完成结果复用、原生事实修复及拒绝/applied 投影；API 返回 202 和完整生产治理链路仍待出口验证 |
+| P2.2 v2 决定受理与串行继续 | 第 4.3、8 节；内部受理/串行领取、adapter 原生身份及 sync、原子审批投影、持久化门控和续跑准备/结果投影端口已接通 Runtime/Session，详见实施记录 §12–18；仍须接通 Dispatcher、Worker 能力、API/事件/UI，并分离决定受理与长 Session 执行锁 | Harness 已从真实 Runtime 首次调用产生 A/B，再经 Session 先 B 后 A 验证治理效果、结果结算及展示消息去重；API 202、执行中提交另一决定及完整队列链仍待出口验证 |
 | P2.3 崩溃对账与后继任务 | 第 5.2–5.3、6.2 节；失租保持原任务终态，建立幂等的对账/后继操作；取消落库即撤销 owner | 实际杀死独立 Worker，覆盖工具前/后、resume/proof 提交前/后、业务投影前/后；新代接管、旧代迟到写；未知副作用阻塞而非重跑；B 外部计数保持一次，A 决定最终生效 |
 
 P2.1 的只读投影重建可独立验收；新增 v2 continuation 能力必须在 P2.2 端到端用例通过后才声明。P2 整体及 P3 试点放量必须等 P2.3 通过；当前 API 遇到绑定审批的冲突保护在具备完整替代路径之前保留。

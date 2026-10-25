@@ -258,15 +258,26 @@ class SessionService:
         approval = ToolApprovalRequest.model_validate(approval_payload)
         if approval.id != task.reference_id:
             raise ValueError("Approval task reference does not match its payload")
+        bound = task.runtime_binding is not None
+        if bound:
+            owner = task.runtime_owner
+            if (owner is None or owner.binding != task.runtime_binding or owner.task_id != task.id
+                or owner.attempt_id != task.attempt_id or owner.worker_id != task.worker_id
+                or owner.owner_token != task.lease_token):
+                raise ContinuationLeaseLostError("Framework approval is missing its matching captured owner")
+            if not isinstance(task.input.get("decision_id"), str) or not task.input["decision_id"]:
+                raise ValueError("Framework approval task is missing its frozen decision_id")
         async with self._session_locks[task.session_id]:
             await self._store.assert_turn_execution(task.session_id, task.lease_token)
             session = await self._require_session(task.session_id)
-            return await self._run_owned_approval_locked(
-                session=session,
-                approval=approval,
-                turn_lease_token=task.lease_token,
-                ownership_monitors=(ownership_monitor,),
-            )
+            with framework_owner_scope(task.runtime_owner):
+                return await self._run_owned_approval_locked(
+                    session=session,
+                    approval=approval,
+                    turn_lease_token=task.lease_token,
+                    ownership_monitors=(ownership_monitor,),
+                    framework_task=task if bound else None,
+                )
 
     def set_recording_approval_service(self, recording_approval_service) -> None:
         """注入 UI 录制审批服务（审批通过 → RecorderSessionService.launch）。"""
@@ -1063,6 +1074,7 @@ class SessionService:
         turn_lease_token: str,
         ownership_monitors: tuple[asyncio.Task, ...] = (),
         capture_snapshot: bool = False,
+        framework_task=None,
     ) -> ConversationResponse | SessionSnapshot:
         session_id = session.id
         turn_id = str(session.metadata.get("pending_turn", {}).get("turn_id", ""))
@@ -1073,6 +1085,7 @@ class SessionService:
                 session_id=session_id,
                 lease_token=turn_lease_token,
                 stop_event=heartbeat_stop,
+                framework_task=framework_task,
             )
         )
         stream_chunk_handler = self._build_stream_chunk_handler(
@@ -1105,14 +1118,19 @@ class SessionService:
         session = await self._require_session(session_id)
         settled = False
         try:
+            if framework_task is not None:
+                continuation_method = self._runtime_service.resume_framework_approval
+                continuation_args = (session, approval.id, framework_task.input["decision_id"])
+            else:
+                continuation_method = self._runtime_service.resume_after_approval
+                continuation_args = (session, approval.model_dump(mode="python"))
             continuation = await self._await_owned_execution(
                 session_id,
                 heartbeat_task,
                 stream_chunk_handler.run,
                 self._event_sink(session_id, turn_lease_token=turn_lease_token).run,
-                self._runtime_service.resume_after_approval,
-                session,
-                approval.model_dump(mode="python"),
+                continuation_method,
+                *continuation_args,
                 on_model_chunk=stream_chunk_handler,
                 ownership_monitors=ownership_monitors,
             )

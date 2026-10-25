@@ -9,7 +9,9 @@ import logging
 import re
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
+
+from pydantic import ValidationError
 
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
@@ -57,6 +59,9 @@ from src.schemas.session import (
     SessionSnapshot,
 )
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
+from src.schemas.framework_approval import FrameworkContinuationPlan
+from src.schemas.runtime_binding import RuntimeBinding
+from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 
 
 logger = logging.getLogger(__name__)
@@ -105,6 +110,7 @@ class RuntimeService:
         deep_agent_governed_tools_enabled: bool = False,
         tool_job_service: ToolJobService | None = None,
         framework_approval_projection=None,
+        framework_approval_continuation=None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -137,6 +143,7 @@ class RuntimeService:
         self._deep_agent_governed_tools_enabled = bool(deep_agent_governed_tools_enabled)
         self._tool_job_service = tool_job_service
         self._framework_approval_projection = framework_approval_projection
+        self._framework_approval_continuation = framework_approval_continuation
         self._tool_governance_service = (
             ToolGovernanceService(
                 tool_registry=tool_registry,
@@ -292,6 +299,7 @@ class RuntimeService:
         state: dict[str, Any],
         pilot_stage: str,
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
+        continuation_plan: FrameworkContinuationPlan | None = None,
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
         if request.runtime_binding is not None:
@@ -362,7 +370,10 @@ class RuntimeService:
                     ),
                     business_tools=business_tools,
                     interrupt_on=interrupt_on,
-                    resume=state.pop("_deep_agent_resume", None),
+                    resume=(continuation_plan.resume if continuation_plan is not None
+                        else state.pop("_deep_agent_resume", None)),
+                    continue_from_checkpoint=(continuation_plan.continue_from_checkpoint
+                        if continuation_plan is not None else False),
                 )
             ),
             name=f"deep-agent-turn:{session.id}:{request.turn_id}",
@@ -397,10 +408,18 @@ class RuntimeService:
             )
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
+        if continuation_plan is not None:
+            settled = await self._framework_approval_continuation.settle(
+                current_framework_owner(), continuation_plan.approval.id, continuation_plan.receipt.decision_id)
+            record = await self._tool_runtime_service.record_from_job(settled.job)
+            record.approval_id = settled.approval.id
+            self._merge_tool_records(tool_records, [record.model_dump(mode="python")])
         state["framework_messages"] = list(result.framework_messages or [])
         if result.interrupts:
             approvals = await self._record_deep_agent_interrupts(state, result)
-            tool_records.extend(state.pop("_deep_agent_waiting_records", []))
+            self._merge_tool_records(tool_records, state.pop("_deep_agent_waiting_records", []))
+        elif request.runtime_binding is not None:
+            state["context_bundle"]["deep_agent_approval_batch"] = []
         state["plan_steps"] = [item["content"] for item in result.todos]
         state["tool_results"] = tool_records
         state["tool_messages"] = [self._build_tool_message(ToolExecutionRecord.model_validate(item)) for item in tool_records]
@@ -431,7 +450,8 @@ class RuntimeService:
                 snapshot=snapshot,
                 approvals=approvals,
                 state=state,
-                tool_messages=self._to_chat_messages(state["turn_id"], tool_records),
+                tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
+                    binding_id=request.runtime_binding.binding_id if request.runtime_binding else None),
                 pending_turn=state["pending_turn"],
             )
         state["cognitive_subagent_events"] = list(result.subagent_events)
@@ -475,7 +495,8 @@ class RuntimeService:
             snapshot=snapshot,
             approvals=[],
             state=state,
-            tool_messages=self._to_chat_messages(state["turn_id"], tool_records),
+            tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
+                binding_id=request.runtime_binding.binding_id if request.runtime_binding else None),
             pending_turn={},
         )
 
@@ -537,6 +558,60 @@ class RuntimeService:
             pending_turn={},
         )
 
+    async def resume_framework_approval(
+        self,
+        session: SessionRecord,
+        approval_id: str,
+        decision_id: str,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
+        event_queue: asyncio.Queue | None = None,
+    ) -> RuntimeTurnResult:
+        """Continue the owned native decision without rebuilding checkpoint history."""
+        with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
+            return await self._resume_framework_approval(
+                session, approval_id, decision_id, on_model_chunk=on_model_chunk)
+
+    async def _resume_framework_approval(
+        self,
+        session: SessionRecord,
+        approval_id: str,
+        decision_id: str,
+        *,
+        on_model_chunk: Callable[[str], Awaitable[None]] | None,
+    ) -> RuntimeTurnResult:
+        owner = current_framework_owner()
+        pending = dict(session.metadata.get("pending_turn") or {})
+        binding_data = pending.get("context_bundle", {}).get("runtime_binding")
+        if (owner is None or self._framework_approval_continuation is None or not binding_data
+            or owner.binding.session_id != session.id or pending.get("turn_id") != owner.binding.turn_id):
+            raise FrameworkApprovalRecoveryRequired("Framework continuation has no matching pending Turn owner")
+        state = self._state_from_pending_turn(session, pending)
+        try:
+            pending_binding = RuntimeBinding.model_validate(binding_data)
+            restored_binding = RuntimeBinding.model_validate(state["context_bundle"].get("runtime_binding"))
+        except ValidationError as exc:
+            raise FrameworkApprovalRecoveryRequired("Framework continuation has a corrupt runtime binding") from exc
+        if (pending_binding != owner.binding or state["turn_id"] != owner.binding.turn_id
+            or restored_binding != owner.binding
+            or state["context_bundle"].get("checkpoint_namespace") != owner.binding.checkpoint_namespace):
+            raise FrameworkApprovalRecoveryRequired("Restored runtime state differs from its captured binding")
+        request = ExecutionRequest(session_id=session.id, turn_id=state["turn_id"], trace_id=state["trace_id"],
+            user_message=state["user_message"], normalized_input=state["normalized_input"],
+            mode_key=state["mode_key"], agent_key=state["selected_agent_key"], model_key=state["selected_model_key"],
+            skill_keys=state["requested_skill_keys"], context=dict(state["context_bundle"]), runtime_binding=owner.binding)
+        if not self._should_use_deep_agent(request):
+            raise FrameworkApprovalRecoveryRequired("Framework approval runtime is unavailable")
+        plan = await self._framework_approval_continuation.prepare(owner, approval_id, decision_id)
+        persisted_events = len(state["event_log"])
+        state.update(pending_turn={}, termination_reason="", control_state="resuming")
+        append_graph_event(state, "turn.resumed", "deepagents.hitl", "Owned native approval continuation started.",
+            approval_id=approval_id, decision_id=decision_id, continue_from_checkpoint=plan.continue_from_checkpoint)
+        result = await self._execute_observed(session, request, state,
+            lambda: self._execute_deep_agent_turn(session, request, state=state,
+                pilot_stage=self._deep_agent_pilot_stage(), on_model_chunk=on_model_chunk, continuation_plan=plan))
+        result.events = result.events[persisted_events:]
+        return result
+
     async def resume_after_approval(
         self,
         session: SessionRecord,
@@ -559,6 +634,10 @@ class RuntimeService:
         pending_turn = dict(session.metadata.get("pending_turn") or {})
         if not pending_turn:
             return None
+
+        if (pending_turn.get("context_bundle", {}).get("runtime_binding") is not None
+            or pending_turn.get("graph_state", {}).get("context_bundle", {}).get("runtime_binding") is not None):
+            raise FrameworkApprovalRecoveryRequired("Bound approvals require the owned framework continuation entry")
 
         if pending_turn.get("context_bundle", {}).get("deep_agent_harness") == "deepagents":
             return await self._resume_deep_agent_after_approval(
@@ -2320,7 +2399,13 @@ class RuntimeService:
             for entry in event_log
         ]
 
-    def _to_chat_messages(self, turn_id: str, tool_results: list[dict]) -> list[ChatMessage]:
+    @staticmethod
+    def _merge_tool_records(records: list[dict], updates: list[dict]) -> None:
+        by_call = {item["call_id"]: item for item in records}
+        by_call.update({item["call_id"]: item for item in updates})
+        records[:] = list(by_call.values())
+
+    def _to_chat_messages(self, turn_id: str, tool_results: list[dict], *, binding_id: str | None = None) -> list[ChatMessage]:
         messages: list[ChatMessage] = []
         for index, item in enumerate(tool_results, start=1):
             if item.get("status") == "waiting_approval":
@@ -2333,7 +2418,8 @@ class RuntimeService:
             ).strip()
             messages.append(
                 ChatMessage(
-                    id=str(uuid4()),
+                    id=(str(uuid5(NAMESPACE_URL, f"framework-tool:{binding_id}:{item['call_id']}"))
+                        if binding_id is not None else str(uuid4())),
                     role=MessageRole.tool,
                     content=content,
                     created_at=datetime.utcnow(),
