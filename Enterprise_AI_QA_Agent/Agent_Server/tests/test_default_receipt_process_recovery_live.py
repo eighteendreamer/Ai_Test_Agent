@@ -25,6 +25,7 @@ from src.infrastructure.model_config_store import MySQLModelConfigStore
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
 from src.runtime.postgres_task_outbox import PostgresTaskOutbox
+from src.schemas.model_config import ModelCapabilitiesOverride
 from src.schemas.settings import ModelConfigUpdateRequest
 
 
@@ -64,16 +65,32 @@ async def test_default_model_receipt_correction_api_kill_recovers_without_repeat
             assert original is not None and original.transport == "openai_chat_completions"
             models = MySQLModelConfigStore(settings)
             models.initialize()
+            # The execution graph replays a two-turn script through the probe (a
+            # read-only tool call, then a deliberately invalid receipt) so the
+            # correction trigger is deterministic; the read-only correction call
+            # itself always reaches the real default provider. Non-streaming only:
+            # the scripted test double answers plain chat completions.
+            overrides = (original.capability_overrides.model_copy(deep=True)
+                if original.capability_overrides is not None else ModelCapabilitiesOverride())
+            overrides.streaming = False
             model = models.upsert(ModelConfigUpdateRequest(
                 model_name=original.model_id, provider=original.provider, transport=original.transport,
                 request_profile=original.request_profile, base_url=original.api_base_url,
                 api_key=original.api_key, auth_type=original.auth_type, oauth_provider=original.oauth_provider,
                 oauth_refresh_token=original.oauth_refresh_token, applications=original.applications,
-                is_active=True, use_provider_defaults=False, capability_overrides=original.capability_overrides,
+                is_active=True, use_provider_defaults=False, capability_overrides=overrides,
                 context_window=original.context_window, max_output_tokens=original.max_output_tokens,
             ))
             processes.env = child_environment(settings)
             processes.env["QA_DEFAULT_PROBE_DIR"] = str(evidence / "physical")
+            health_url = f"http://127.0.0.1:{target_port}/health"
+            processes.env["QA_DEFAULT_PROBE_SCRIPTED_GRAPH"] = json.dumps([
+                {"tool_calls": [{"id": "health-get", "name": "api-test-runner", "arguments": json.dumps({
+                    "worker_action": "execute_task",
+                    "task": {"task_id": "health-check", "method": "GET", "path": health_url,
+                        "timeout_seconds": 30}})}]},
+                {"text": "Still not a receipt"},
+            ], ensure_ascii=False)
             if boundary == "invoking":
                 processes.env["QA_DEFAULT_PROBE_BLOCK_CORRECTION_MARKER"] = str(marker)
                 processes.env["QA_DEFAULT_PROBE_BLOCK_CORRECTION_RELEASE"] = str(release)
