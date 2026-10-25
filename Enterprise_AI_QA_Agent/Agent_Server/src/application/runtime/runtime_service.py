@@ -327,6 +327,9 @@ class RuntimeService:
                     ),
                     messages=list(state["runtime_messages"]),
                     framework_messages=list(state.get("framework_messages") or []),
+                    checkpoint_namespace=str(
+                        state.get("context_bundle", {}).get("checkpoint_namespace") or ""
+                    ) or None,
                     context={**dict(request.context), "skill_keys": list(request.skill_keys)},
                     read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
                     read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,

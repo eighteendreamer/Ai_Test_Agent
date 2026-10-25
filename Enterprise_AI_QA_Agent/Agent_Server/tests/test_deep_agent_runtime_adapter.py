@@ -169,13 +169,16 @@ async def test_da_e1_maps_messages_and_keeps_business_tools_empty():
             model_key="qwen-test",
             system_prompt="pilot",
             messages=[{"role": "user", "content": "inspect"}],
+            checkpoint_namespace="qa:v2",
         )
     )
 
     assert result.output_text == "DA_E1_OK"
     assert result.metadata["stage"] == "DA-E1"
     assert factory_calls[0]["tools"] == []
-    assert calls[0]["config"]["configurable"] == {"thread_id": "turn-1"}
+    assert calls[0]["config"]["configurable"] == {
+        "thread_id": "turn-1", "checkpoint_ns": "qa:v2",
+    }
     assert calls[0]["config"]["run_name"] == "enterprise_ai_qa_agent.deep_agent_turn"
     assert calls[0]["config"]["metadata"]["trace_id"] == "trace-1"
     assert calls[0]["payload"]["messages"] == [{"role": "user", "content": "inspect"}]

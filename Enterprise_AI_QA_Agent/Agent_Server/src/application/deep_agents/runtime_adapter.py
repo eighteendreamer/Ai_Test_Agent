@@ -29,6 +29,7 @@ class DeepAgentRuntimeRequest:
     system_prompt: str
     messages: list[dict[str, Any]]
     framework_messages: list[dict[str, Any]] | None = None
+    checkpoint_namespace: str | None = None
     context: dict[str, Any] = field(default_factory=dict)
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
@@ -160,8 +161,11 @@ class DeepAgentRuntimeAdapter:
                     from langgraph.types import Command
 
                     invoke_input = Command(resume=request.resume)
+                configurable = {"thread_id": request.turn_id}
+                if request.checkpoint_namespace:
+                    configurable["checkpoint_ns"] = request.checkpoint_namespace
                 invoke_config = {
-                    "configurable": {"thread_id": request.turn_id},
+                    "configurable": configurable,
                     "run_name": DEEP_AGENT_RUN_NAME,
                     "metadata": {
                         "session_id": request.session_id,
