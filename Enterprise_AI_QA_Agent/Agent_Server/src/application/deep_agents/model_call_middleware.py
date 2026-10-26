@@ -82,6 +82,17 @@ class FrameworkModelCallMiddleware(AgentMiddleware):
                     updates.update({"root_async_client": root,
                         "async_client": root.chat.completions})
                     request = request.override(model=model.model_copy(update=updates))
+                elif (
+                    http_client is not None
+                    and request.model.__class__.__module__.startswith("langchain_google_genai")
+                    and hasattr(request.model, "client")
+                ):
+                    model = request.model
+                    request = request.override(
+                        model=model.model_copy(
+                            update={"client": _build_observed_google_client(model, http_client)}
+                        )
+                    )
                 return await self._policy.invoke(owner=self._owner, model=request.model, model_key=self._model_key,
                     execution_info=execution_info, branch_name=self._branch_name,
                     purpose="subagent" if self._branch_name is not None else "agent", messages=messages,
@@ -90,6 +101,34 @@ class FrameworkModelCallMiddleware(AgentMiddleware):
             finally:
                 if http_client is not None:
                     await http_client.aclose()
+
+
+def _build_observed_google_client(model, http_client):
+    """Build the documented google-genai client with its async HTTP client."""
+    from google.genai import Client
+    from google.genai.types import HttpOptions
+
+    api_key = model.google_api_key
+    if hasattr(api_key, "get_secret_value"):
+        api_key = api_key.get_secret_value()
+    base_url = model.base_url
+    if isinstance(base_url, dict):
+        base_url = base_url.get("api_endpoint")
+    return Client(
+        vertexai=model.vertexai,
+        api_key=api_key if not model.credentials else None,
+        credentials=model.credentials,
+        project=model.project,
+        location=model.location,
+        http_options=HttpOptions(
+            base_url=base_url,
+            api_version=model.api_version,
+            headers=dict(model.additional_headers or {}),
+            client_args=model.client_args,
+            async_client_args=model.client_args,
+            httpx_async_client=http_client,
+        ),
+    )
 
 
 def governed_summarization(*, policy, owner, model, model_key, backend, branch_name=None):

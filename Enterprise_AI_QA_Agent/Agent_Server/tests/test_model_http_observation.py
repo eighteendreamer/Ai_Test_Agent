@@ -46,9 +46,10 @@ def gateway(*, streaming: bool):
 
 
 @pytest.mark.asyncio
-async def test_observation_captures_exact_non_stream_wire_bodies_without_secret_headers():
+@pytest.mark.parametrize("transport", ["openai_chat_completions", "google_gemini_generate_content"])
+async def test_observation_captures_exact_non_stream_wire_bodies_without_secret_headers(transport):
     with gateway(streaming=False) as (url, requests):
-        with observe_provider_call("logical-wire", "openai_chat_completions") as observation:
+        with observe_provider_call("logical-wire", transport) as observation:
             client = create_observed_http_client()
             try:
                 response = await client.post(url, content=b'{"prompt":"fixture"}',
@@ -71,9 +72,10 @@ async def test_observation_captures_exact_non_stream_wire_bodies_without_secret_
 
 
 @pytest.mark.asyncio
-async def test_observation_captures_stream_wire_bytes_after_consumer_reads_stream():
+@pytest.mark.parametrize("transport", ["openai_chat_completions", "google_gemini_generate_content"])
+async def test_observation_captures_stream_wire_bytes_after_consumer_reads_stream(transport):
     with gateway(streaming=True) as (url, _):
-        with observe_provider_call("logical-stream-wire", "openai_chat_completions") as observation:
+        with observe_provider_call("logical-stream-wire", transport) as observation:
             client = create_observed_http_client()
             try:
                 async with client.stream("POST", url, content=b"stream-request") as response:

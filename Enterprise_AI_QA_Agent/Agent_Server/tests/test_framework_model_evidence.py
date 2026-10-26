@@ -158,7 +158,12 @@ async def test_legacy_attempt_without_request_asset_is_not_rewritten_on_recovery
 
 
 @pytest.mark.asyncio
-async def test_official_response_evidence_survives_expired_owner_and_completion_ack_loss(harness, monkeypatch):
+@pytest.mark.parametrize("transport", [
+    "openai_chat_completions", "openai_responses", "google_gemini_generate_content",
+])
+async def test_official_response_evidence_survives_expired_owner_and_completion_ack_loss(
+    harness, monkeypatch, transport
+):
     from src.application.models.framework_model_evidence import FrameworkModelEvidence
     from src.application.artifacts.artifact_storage_service import ArtifactStorageService
     from tests.test_artifact_storage_service import _RustFSClient
@@ -166,8 +171,8 @@ async def test_official_response_evidence_survives_expired_owner_and_completion_
     from tests.test_framework_chat_models import _config, _provider
     from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeError
 
-    with _provider("openai_chat_completions") as (url, requests):
-        async with governed(harness, _config("openai_chat_completions", url)) as h:
+    with _provider(transport) as (url, requests):
+        async with governed(harness, _config(transport, url)) as h:
             client = _RustFSClient()
             objects = ArtifactStorageService(h.settings)
             monkeypatch.setattr(objects, "_rustfs_client", lambda: client)
@@ -194,7 +199,11 @@ async def test_official_response_evidence_survives_expired_owner_and_completion_
             request = await h.policy._evidence.read(call.request)
             response = await h.policy._evidence.read_response(h.binding, call.intent, observation.response)
             assert request["messages"][-1]["data"]["content"] == "fixture request"
-            assert response["data"]["messages"][0]["data"]["content"] == "fixture answer"
+            content = response["data"]["messages"][0]["data"]["content"]
+            if isinstance(content, list):
+                assert any(part.get("text") == "fixture answer" for part in content if isinstance(part, dict))
+            else:
+                assert content == "fixture answer"
             assert response["source"] == "sdk_application"
 
 

@@ -14,11 +14,18 @@ except ModuleNotFoundError as exc:
         raise
     httpx2 = None
 
+try:
+    import httpx
+except ModuleNotFoundError as exc:
+    if exc.name != "httpx":
+        raise
+    httpx = None
+
 
 _DEFAULT_BODY_CAPTURE_LIMIT = 8 * 1024 * 1024
 
 
-class _ObservedAsyncStream(httpx2.AsyncByteStream if httpx2 is not None else object):
+class _ObservedAsyncStreamMixin:
     """Tee an SDK response stream without consuming it in the response hook."""
 
     def __init__(self, stream, on_chunk: Callable[[bytes], None], on_complete: Callable[[bool], None]):
@@ -39,6 +46,18 @@ class _ObservedAsyncStream(httpx2.AsyncByteStream if httpx2 is not None else obj
 
     async def aclose(self):
         await self._stream.aclose()
+
+
+class _ObservedHttpx2AsyncStream(
+    _ObservedAsyncStreamMixin, httpx2.AsyncByteStream if httpx2 is not None else object
+):
+    pass
+
+
+class _ObservedHttpxAsyncStream(
+    _ObservedAsyncStreamMixin, httpx.AsyncByteStream if httpx is not None else object
+):
+    pass
 
 
 logger = logging.getLogger(__name__)
@@ -98,9 +117,13 @@ class ProviderCallObservation:
         self._response_status_code = response.status_code
         self._response_headers = _safe_headers(response.headers)
         if "text/event-stream" in str(response.headers.get("content-type", "")).lower():
-            response.stream = _ObservedAsyncStream(
-                response.stream, self._capture_response_chunk, self._complete_response
+            stream_class = (
+                _ObservedHttpx2AsyncStream
+                if httpx2 is not None and isinstance(response, httpx2.Response)
+                else _ObservedHttpxAsyncStream
             )
+            response.stream = stream_class(
+                response.stream, self._capture_response_chunk, self._complete_response)
         else:
             body = await response.aread()
             self._capture_response_chunk(body)
@@ -197,18 +220,16 @@ def create_observed_http_client() -> Any | None:
     observation = _current_call.get()
     if observation is None:
         return None
-    try:
-        import httpx2
-    except ModuleNotFoundError as exc:
-        if exc.name != "httpx2":
-            raise
+    client_module = httpx if observation.transport == "google_gemini_generate_content" else httpx2
+    dependency = "httpx" if client_module is httpx else "httpx2"
+    if client_module is None:
         logger.error("model_http_observer_unavailable", extra={
             "logical_call_id": observation.logical_call_id,
             "transport": observation.transport,
-            "dependency": "httpx2",
+            "dependency": dependency,
         })
         return None
-    return httpx2.AsyncClient(event_hooks=observation.http_event_hooks())
+    return client_module.AsyncClient(event_hooks=observation.http_event_hooks())
 
 
 def current_provider_request_attempt_count() -> int:

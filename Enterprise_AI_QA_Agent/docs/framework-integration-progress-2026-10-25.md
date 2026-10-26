@@ -2,7 +2,7 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §28：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线。自动生成绑定及预算、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §31：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。自动生成绑定及预算、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -15,7 +15,7 @@
 | P4 逐模式迁移 | 待实现 | 每模式公共契约与领域裁决验收 |
 | P5 旧实现收敛 | 待实现 | 存量绑定排空、未知操作结清和回滚验收 |
 
-模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本，§27 接入生产组装、显式预算受理和 Worker 检查，§28 接通 owner 作用域内 DTO 及输入分类请求。无 owner 的旧调用仍沿既有路径。现有可选 Deep Agents 路由仍沿原开关，默认提交入口仍生成 legacy 任务，不得据此开放全系统新路由。
+模型解析入口现在可以构造四传输官方对象并记录构建指纹。§26 通过显式 policy 注入连接 §25 的账本，§27 接入生产组装、显式预算受理和 Worker 检查，§28 接通 owner 作用域内 DTO 及输入分类请求，§29–31 保存应用层与 HTTP wire 证据并接入 OpenAI/Gemini 图内官方 HTTP 客户端。无 owner 的旧调用仍沿既有路径。现有可选 Deep Agents 路由仍沿原开关，默认提交入口仍生成 legacy 任务，不得据此开放全系统新路由。
 
 ## 2. 依据 → 发现 → 改动
 
@@ -933,3 +933,26 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 当前观察只捕获一次逻辑调用中的请求体和响应体；多次 SDK 重试会更新观察的 attempt 计数，但尚未建立每次重试独立 wire 对象。大响应按上限截断，截断对象不能用于完整重放。流式响应在消费完成前保持 `response_complete=false`，断流不会被当作完整响应。RustFS 对象和 PostgreSQL 引用仍是分开提交，孤儿对象需由对账任务处理。
 
 历史调用仍可能没有 request/wire 资产；不能从摘要重建。首次 message 安全恢复、活动执行时间预算、Anthropic/Gemini 官方客户端注入、跨 Turn transcript、未知外部副作用和各领域 Runner/模式验收继续未完成。默认 v2 路由与生产开关没有改变。
+
+## 31. P1 Gemini 图内 HTTP wire 注入（2026-10-26）
+
+本阶段补齐 §30 中可由官方公开 API 支持的 Gemini 图内 wire 观察。固定 `langchain-google-genai==4.4.0` 使用 `google-genai` 客户端；其 `HttpOptions` 公开 `httpx_async_client`，因此为每次受治理模型调用创建标准 `httpx.AsyncClient`，重建 `google.genai.Client`，再通过模型副本的公开 `client` 字段交给官方 LangChain 模型。请求级 timeout 和 retry 仍由 `ChatGoogleGenerativeAI` 原有 `_prepare_request` 生成 `HttpOptions`，没有复制一套重试策略。
+
+OpenAI/Anthropic SDK 使用 `httpx2`，Gemini 使用标准 `httpx`。`ProviderCallObservation` 根据实际响应类型选择对应的 `AsyncByteStream` 包装器，避免把两个不兼容的 HTTPX 类型混用。Anthropic 的 LangChain 模型目前只有私有 `_async_client`，没有采用私有属性注入；它仍保留应用层证据，等待官方公开客户端注入契约。
+
+### TDD 与验证
+
+先把现有失租/结算确认失败 wire 证据用例参数化到 OpenAI Chat Completions 与 Gemini。新增 Gemini 用例首轮 **1 failed / 1 passed，17.52 秒**，失败为 `wire_observations` 为空，确认图内模型仍使用旧客户端。实现官方 `HttpOptions.httpx_async_client` 注入和标准 HTTPX 流包装后，同一红测变为 **2 passed，13.30 秒**；再加入 OpenAI Responses 的原生内容块断言，三种图传输定向结果为 **3 passed，18.35 秒**。HTTP 观察单测扩展到两种 HTTPX 后为 **4 passed，4.04 秒**。
+
+最终联合回归：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_model_http_observation.py tests/test_framework_model_evidence.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_chat_models.py -q --tb=short
+```
+
+结果 **101 passed，227.63 秒，无 skip**。实际覆盖 Gemini 普通请求的 wire 请求/响应对象、完整标志、RustFS 替身和 PostgreSQL 账本；四传输官方模型、OpenAI Responses、流式/工具/策略及既有账本回归继续通过。相关 Python 文件 `py_compile` 与 `git diff --check` 已通过。
+
+### 保留边界
+
+本阶段没有用私有属性强行接入 Anthropic；没有执行真实 Anthropic/Gemini 供应商、真实 RustFS、全量系统、前端构建或部署验收。Gemini 的应用层 SDK 客户端和 wire HTTP 客户端分别由官方模型与观察层持有，结束调用时关闭观察客户端；对象存储和账本仍是分开提交。首次 message 安全恢复、活动执行时间、跨 Turn transcript、未知外部副作用、受控 AgentCase 图和逐模式 Harness 继续未完成。
