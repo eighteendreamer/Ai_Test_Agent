@@ -234,10 +234,17 @@ def prepare_event_projection(cur, settings, write, event):
         _require(all(_hash(item) == _hash(event) for item in originals), "Event differs from the frozen runtime event")
     else:
         _require(event.type in {"snapshot.saved", "verification.completed", "assistant.stream.completed",
-            "assistant.response_generated", "turn.completed"}
+            "assistant.response_generated", "turn.completed", "observations.persisted"}
             and event.id == asset.event_id(event.type) and _hash(event.timestamp) == _hash(asset.projection_at)
             and event.payload.get("turn_id") == binding.turn_id,
             "Event is not an original runtime or finalization event")
+        if event.type == "observations.persisted":
+            from src.runtime.framework_observation_projection import require_observation_projections
+
+            observations = require_observation_projections(cur, settings, stage, binding, asset.asset_sha256)
+            _require(event.payload.get("observation_ids") == [item.id for item in observations.observations]
+                and event.payload.get("observation_count") == len(observations.observations),
+                "Observation event differs from its original projection")
     receipt = _event_commits(stage, binding, asset.asset_sha256)
     row = _event_row(cur, settings, event.id)
     if receipt is not None and event.id in receipt.event_hashes:
@@ -329,6 +336,12 @@ def record_application_commit(cur, settings, session, events, write):
         required_events.add(result_asset.event_id("snapshot.saved"))
         if result_asset.verification_results:
             required_events.add(result_asset.event_id("verification.completed"))
+        if "observation_projection_asset" in (stage.source_manifest or {}):
+            from src.runtime.framework_observation_projection import require_observation_projections
+
+            observations = require_observation_projections(cur, settings, stage, binding, result_asset.asset_sha256)
+            if observations.observations:
+                required_events.add(result_asset.event_id("observations.persisted"))
         require_event_projections(cur, settings, stage, binding, result_asset.asset_sha256, required_events)
     completed = [event for event in events if event.type == "turn.completed" and event.payload.get("turn_id") == binding.turn_id]
     _require(len(completed) == 1 and completed[0].payload.get("session_status") == "completed"

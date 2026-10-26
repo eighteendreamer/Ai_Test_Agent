@@ -1,6 +1,9 @@
 from __future__ import annotations
 
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from src.runtime.framework_application_projection import FrameworkProjectionWrite
 
 from src.schemas.memory import MemoryPoint, MemorySearchRequest, MemoryWriteRequest, MemoryVectorRecord
 
@@ -13,9 +16,13 @@ class MemoryStoreProtocol(Protocol):
 
     async def refresh_connection_status(self) -> str: ...
 
-    async def write(self, request: MemoryWriteRequest) -> MemoryPoint | None:
+    async def write(self, request: MemoryWriteRequest, *,
+        framework_projection: FrameworkProjectionWrite | None = None) -> MemoryPoint | None:
         """Check supplied turn/compaction ownership in the memory write transaction."""
         ...
+
+    async def load_observation_projection(self, request: MemoryWriteRequest, *,
+        framework_projection: FrameworkProjectionWrite) -> MemoryPoint | None: ...
 
     async def search(self, request: MemorySearchRequest) -> list[MemoryPoint]: ...
 

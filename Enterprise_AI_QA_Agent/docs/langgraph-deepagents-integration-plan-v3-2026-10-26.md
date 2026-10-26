@@ -1,10 +1,10 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–20 节记录 A2 原结果资产、Runtime 回调、快照及事件分项回执。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
+日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–21 节记录 A2 原结果资产、Runtime 回调、快照、事件及观察分项回执。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
-当前实施见[实施记录 §46–49](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 已有原结果资产和正常 finalizer 消费，新增快照、事件分项的同事务回执及重入校验。A1 只承认有效原子提交凭证；A2-1 资产及分项回执也不自动授予后继或图恢复权。**A2 的完整部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
+当前实施见[实施记录 §46–50](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 已有原结果资产和正常 finalizer 消费，新增快照、事件、观察分项的同事务回执及重入校验。A1 只承认有效原子提交凭证；A2-1 资产及分项回执也不自动授予后继或图恢复权。**A2 的完整部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
 
 ## 1. 结论及附件意见的处理
 
@@ -691,3 +691,27 @@ A2-1 之后仍有一个明确空窗：`RuntimeService._execute_turn()` 已获得
 真实数据库红测、完整命令、最终结果及中间 Harness 修正见实施记录 §49。官方 Deep Agents/SDK、本地合成 HTTP、真实 PostgreSQL/Redis 的独立 Worker 在 `snapshot.saved` 事务提交后被强杀，原结果和实际事件回执保留、HTTP 不重复；仍无最终应用凭证，后继仍拒绝。此负断言不算完整部分投影恢复。
 
 本子步不关闭观察/Verification/消息的完整重入、A2-2 图终态→资产空窗、A2-3 projected→finish、A3 Memory/清理、跨 Turn、统一 Prompt/Skills、真实流式/取消、受控 AgentCase、逐模式 Harness 或双制品部署出口。生产开关保持关闭，完整开发目标继续 active。
+
+## 21. A2-1 续接：冻结观察意图并保存实际 Memory 行回执（2026-10-26）
+
+本子步基线 `5b8835d47`。沿 §12.1 收敛观察分项，不为观察另建调度器，也不提前开放部分投影后继。既有观察 builder 每次产生新 UUID，原 Memory UPSERT 又会更新内容和时间；仅给事件固定 ID 无法使唯一 finalizer 安全重入。
+
+### 21.1 实际契约与依据
+
+- 在既有 owner/stage 短事务中，首次从持久原 Runtime 结果构造 `ObservationRecord` 和原 `MemoryWriteRequest`，一起保存为 `FrameworkObservationAsset`。之后读取原资产，不再次调用 builder 或请求 mapper；保留原身份、时间、顺序和全部业务字段，不通过重新生成再比较代替复用。
+- `FrameworkObservationCommits` 保存实际 Memory 整行摘要，覆盖 embedding、metadata、mode_key、created_at、updated_at。行和回执在同连接事务提交；框架新插入不覆盖既有行，检查后发生 ID 碰撞也拒绝。已有回执且实际行匹配时只读复用，裸行、缺行或漂移转对账；legacy UPSERT 不改变。
+- 批次先预读回执，仅对缺失行调用 embedding/写入；部分批次失败后只补缺失项，结果 ID 保持原顺序。完整命中不会重新 embedding 或发布 Redis 副本；并发首次准备仍可能在行提交前产生多次 embedding，这不是物理请求 exactly-once。
+- `observations.persisted` 使用原 Runtime 资产派生的 ID/时间，接入已有事件回执；发布前核对全部原观察 ID/count 与实际行，最终 Session 事务内再次锁行复核。空观察保存空清单/回执，不伪造 persisted 事件。
+- A1 ACK-only 仍只确认已提交的应用结果，不额外要求当前 Memory/Redis 状态；观察行在完整业务提交后变化不授权重建答案或重新执行图。最终业务事务前若维护/backfill 修改原行，则要求对账；与维护并发的协调仍属 A3。
+
+这是基于原 Memory 服务和 PostgreSQL owner 事务的应用扩展。[官方 Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 区分 thread 内 checkpoint 与跨 thread store，[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 明确恢复时节点重入；它们不提供本项目观察行与业务提交的跨存储原子性。继续保持已锁定版本，不采用在线新版示例升级依赖。
+
+### 21.2 验证、部署与未完成出口
+
+真实 PostgreSQL 红测先复现两次收尾从两条观察变成四条，随后覆盖原资产复用、整行漂移、事务回滚、并发首次/重复写入、部分批次、embedding 期间失租、最终事务复核及 A1 权限范围。最新命令和结果见实施记录 §50；真实付费 embedding 回归返回 402，明确保留失败，不用隔离测试通过替代真实供应商验收。
+
+新写入 message-stage **10**，新 reader 支持 1–10；能力上限同步，reader 9/stage 10、reader 10/未来 stage 11 在 claim 前拒领。须先部署兼容读者或隔离消费者；没有 DDL 不等于已完成滚动/双制品演练。
+
+独立 Worker 在第一条观察行与回执提交后被强杀，使用实际 Deep Agents/官方 SDK、本地合成 HTTP 和 PostgreSQL/Redis；工具结果是在实际图返回后注入的受控投影样本，**不是领域 Runner 执行验收**。强杀后原资产/行/回执/根预算保留，HTTP 一次；仍没有最终应用凭证，失租后不创建自动后继。
+
+后续仍需 Verification/消息分项和正式 message_recover 准入，再闭合 A2-2、A2-3。Redis 失败副本补偿、embedding 已发送但行未提交的未知窗口、普通 Memory/清理、维护协调和 Runner 未知效果属于 A3；完整跨 Turn、统一上下文、真实流式/取消、受控 AgentCase、各模式 Harness、真实兼容部署仍独立验收。生产默认关闭，整体目标保持 active。

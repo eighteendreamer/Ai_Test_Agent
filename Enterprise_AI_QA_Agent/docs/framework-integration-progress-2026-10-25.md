@@ -2,11 +2,11 @@
 
 日期：2026-10-25 起。当前实施依据：[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)；[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子任务：A2-1 事件投影安全重入（§49）。已有原结果资产、快照与事件分项回执；尚未开放资产存在但最终事务未提交时的自动后继。下一步是观察稳定身份/实际回执、Verification/消息分项复用，再接既有 message_recover。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
+**当前子任务：A2-1 观察分项安全重入（§50）。已有原结果资产、快照/事件回执、原观察意图和实际 Memory 行回执；尚未开放资产存在但最终事务未提交时的自动后继。下一步是 Verification/消息分项复用，再接既有 message_recover。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**历史快照（截至 §44，不代替最新 §49）：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口、orchestrating 阶段的有证明后继及 Deep Agents 图输入资产已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**历史快照（截至 §44，不代替最新 §50）：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口、orchestrating 阶段的有证明后继及 Deep Agents 图输入资产已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1624,3 +1624,62 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 普通事件故障样本复用真实 PostgreSQL 和单节点 LangGraph/替身 Runtime；插入竞争用同事务稳定注入，不冒充真实跨 Session 进程竞争。历史格式用形状 fixture，不冒充旧二进制部署；上下文切换用 bind_request_context，不冒充已经开放接管。
 
 下一步仍需观察稳定身份/原内容及实际写入回执、Verification/消息分项复用，再沿既有 message_recover 开放部分投影后继。A2-2 图终态到资产空窗、A2-3 projected→finish、A3 Memory/清理、跨 Turn、统一 Prompt/Skills/Memory、流式/取消、受控 AgentCase、逐模式 Harness 与真实兼容发布均未完成。本轮未跑全量、前端、真实付费供应商/对象存储/领域 Runner、官方 saver conformance、双制品滚动/回滚；生产默认关闭，完整目标继续 active。
+
+## 50. A2-1 观察原资产、Memory 行回执及部分批次重入（2026-10-26）
+
+基线 `5b8835d47`。续接时工作区包含本分项未提交实现；先读取目标附件、规则与实际 diff，继续轮询确认仍存活的 session 32048，未因摘要或等待时间重启测试。该进程最终 **81 passed，227.27 秒**。此前问答回合仅澄清确认事项，不算开发进度；本次继续原开发目标，不重选框架、不升级依赖、不切生产。
+
+### 根因、依据与实现
+
+既有观察 builder 每次分配新 UUID，Memory 同 ID 又使用 UPSERT；故仅固定事件或工具结果不能保证收尾重入。续接前真实红测 **1 failed，6.87 秒**：最终事务前失败后再次 finalizer，原两行变四行。本分项冻结原观察与原请求，使用实际行同事务回执，而非再生成一次 UUID 或加异常重试。
+
+本次再次读取官方 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)，及本地 Agent 轨迹课程幂等/补偿段落。应用回执复用现有 owner/stage、Memory、事件与最终 Session 事务，不把 checkpoint/store 或节点恢复误称跨存储事务。
+
+- 新增 `FrameworkObservationAsset` / `FrameworkObservationCommits`：原 ObservationRecord 与 MemoryWriteRequest 成对冻结，原资产摘要绑定原 Runtime 结果；准备 builder/mapper 只执行一次。空清单可保存，不伪造 observations.persisted。
+- 新增 `framework_observation_projection.py`：用原 stage JSONB 保存意图与实际行摘要；行和回执同连接事务。框架写入 `ON CONFLICT DO NOTHING` 并验证实际插入，裸行或检查后碰撞不收录；合法重复只读复用，不覆盖内容/时间。摘要包含 embedding、metadata、mode_key、created_at、updated_at 等实际字段。
+- MemoryRuntime 预读已提交项，只为缺失项 embedding/写入，部分失败只补缺项并保留原顺序。完整命中不重新 embedding/发布 Redis；普通 Memory UPSERT 和非框架调用保持原契约。Protocol 与 PostgreSQL 实现、Session 调用方同步。
+- observations.persisted 按原 Runtime 资产派生身份和时间，加入原事件事务回执；发布前和最终 Session 事务内复核全部行与原 ID/count。事务期间所有权失效拒绝写入。日志只记录身份、计数和错误类型，不写正文/凭据。
+- A1 ACK-only 不增加“当前 Memory 行仍存在”的前置条件；新增用例在最终业务提交后删除派生 Memory 行，真实执行后继仍只补 ACK，不补造行/消息/事件，不执行图。最终事务前的行漂移仍要求对账，维护/backfill 的协调尚未闭合。
+- message-stage 新写入 **10**，读者支持 1–10，Worker 能力上限同步。claim 前覆盖 reader 9/stage 10、reader 10/未来 stage 11；这不是旧镜像双制品演练，兼容读者仍须先行或隔离消费者。
+
+中间一次真实失败 **1 failed，7.03 秒** 来自 Python datetime 经 JSON 字符串化后与数据库实际 datetime 比较，导致合法首写被拒；改为 Python 值再走统一 `_hash`，保留字段名诊断但不打印值。修复后单项 **1 passed，6.45 秒**；后续联合回归见下，不将这些中间结果累计为最终覆盖。
+
+### 本次实际验证
+
+以下均在 Agent_Server，使用独立 `.venv-framework-v2` 解释器；数据库组显式设置 `$env:RUN_LIVE_POSTGRES_TESTS='1'` 和 UTF-8 输出。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py -q -x -rs --tb=short
+```
+
+续接的最新联合进程 **81 passed，227.27 秒，无 skip**。该进程已包含并发首次写入、裸行/错误意图/检查后碰撞及 legacy UPSERT 用例，但早于下面新补的空清单和 A1 scope 两项。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_observation_projection.py -q -x -rs --tb=short
+```
+
+最终观察文件 **29 passed，82.86 秒，无 skip**，包括最后新增的空清单和 Memory 行删除后实际 ACK-only 后继。覆盖原内容/metadata/创建与更新时间/embedding/缺行漂移、准备及行回执回滚、并发首次/重复写入、批次失败、缓存命中不重 embedding/Redis、owner 失效、原资产/回执/格式错误、最终事务前漂移及实际进程强杀。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py tests/test_session_store_value_contract.py -q -x -rs --tb=short
+```
+
+**134 passed，170.88 秒，无 skip**；共享阶段/恢复/调度及普通 PostgreSQL/InMemory 值契约通过。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_memory_embedding_runtime.py tests/test_postgres_vector_memory_schema.py tests/test_memory_vector_replica.py tests/test_memory_vector_retrieval.py tests/test_live_compaction_ownership.py tests/test_compaction_record_store.py tests/test_context_compaction.py -q -x -rs --tb=short
+```
+
+**61 passed，67.45 秒，无 skip**；embedding/Redis 为受控替身，所有权组使用真实 PostgreSQL/Redis，不代表付费供应商验收。以上组之间有重叠，不累计为独立覆盖数。
+
+另一次扩展命令还选择了 `tests/test_live_memory_vector_retrieval.py`，结果 **1 failed、14 passed，6.63 秒**；真实 embedding 端点返回 **HTTP 402，account balance is insufficient**。本次未预先识别该文件会发出付费供应商请求，后续已停止该外部测试、不重试、不修改其 gate 或伪造通过；上面 61 项是明确不包含该供应商用例的独立回归，不能抹去此次失败。供应商验收仍未通过，后续实际调用需先确认环境与额度。
+
+项目根 `python -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际通过；独立环境无 ruff/mypy，PATH 也无命令，未安装，不声称 lint/typecheck 通过。一次串接命令因末尾查询不存在的工具返回 exit 1；随后分别检查编译/差异退出码均为 0，未把查询失败当作编译失败或隐去。
+
+### 证据等级、限制与下一步
+
+独立 Worker 使用实际 Deep Agents/SDK、本地合成 HTTP、真实 PostgreSQL/Redis；工具结果在图返回后注入为受控投影输入，不冒充真实领域工具执行。第一条观察行/回执事务提交后、MemoryRuntime 收到返回值前强杀，原资产/行/回执/根预算保留且 HTTP 一次。仍无最终应用凭证或 completed 事件、失租后仍拒绝自动后继；该负断言不是完整补偿成功。
+
+完整命中不重 embedding/Redis，不等于并发首写前的物理请求 exactly-once；embedding 已发送但行未提交、Redis 副本失败修复、维护/backfill 协调继续归 A3。新增观察回执不改变 A1 scope，不证明全部 Memory/资源效果已完成。
+
+下一步继续 Verification/消息分项与既有 message_recover 准入。A2-2 图终态→资产空窗、A2-3 projected→finish、A3、完整跨 Turn、统一 Prompt/Skills/Memory、真实流式/取消、受控 AgentCase、每模式 Harness、官方 saver conformance、真实对象存储/领域 Runner 和双制品部署仍未完成。未跑全量或前端；付费 embedding 失败已单列，不称真实供应商通过。生产默认开关不变，整体目标继续 active。

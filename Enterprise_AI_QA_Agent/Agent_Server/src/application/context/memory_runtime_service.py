@@ -4,7 +4,10 @@ import asyncio
 import hashlib
 import logging
 from collections.abc import Iterable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from src.runtime.framework_application_projection import FrameworkProjectionWrite
 
 from src.contracts.memory_store import MemoryStoreProtocol
 from src.application.context.embedding_runtime_service import EmbeddingRuntimeService
@@ -431,8 +434,44 @@ class MemoryRuntimeService:
         self,
         observations: Iterable[ObservationRecord],
         turn_lease_token: str | None = None,
+        *,
+        framework_projection: FrameworkProjectionWrite | None = None,
+        prepared_requests: list[MemoryWriteRequest] | None = None,
     ) -> list[str]:
-        write_ids: list[str] = []
+        if prepared_requests is not None and framework_projection is None:
+            raise ValueError("Prepared observation requests require their framework projection")
+        requests = (prepared_requests if prepared_requests is not None
+            else self.build_observation_requests(observations))
+        if turn_lease_token:
+            requests = [item.model_copy(update={"turn_lease_token": turn_lease_token}) for item in requests]
+        if framework_projection is None:
+            legacy_ids = []
+            for request in await self._attach_embeddings(requests):
+                point = await self._write_point(request)
+                if point is not None:
+                    legacy_ids.append(point.id)
+            return legacy_ids
+        write_ids: dict[str, str] = {}
+        pending = []
+        for request in requests:
+            point = None
+            if framework_projection is not None:
+                point = await self._memory_store.load_observation_projection(
+                    request, framework_projection=framework_projection)
+            if point is not None:
+                write_ids[str(request.metadata["memory_id"])] = point.id
+            else:
+                pending.append(request)
+        for request in await self._attach_embeddings(pending):
+            point = await self._write_point(request, **(
+                {"framework_projection": framework_projection} if framework_projection is not None else {}))
+            if point is not None:
+                write_ids[str(request.metadata["memory_id"])] = point.id
+        return [write_ids[str(item.metadata["memory_id"])] for item in requests
+            if str(item.metadata["memory_id"]) in write_ids]
+
+    @staticmethod
+    def build_observation_requests(observations: Iterable[ObservationRecord]) -> list[MemoryWriteRequest]:
         requests: list[MemoryWriteRequest] = []
         for observation in observations:
             requests.append(
@@ -457,16 +496,12 @@ class MemoryRuntimeService:
                     },
                 )
             )
-        for request in await self._attach_embeddings(requests):
-            if turn_lease_token:
-                request = request.model_copy(update={"turn_lease_token": turn_lease_token})
-            point = await self._write_point(request)
-            if point is not None:
-                write_ids.append(point.id)
-        return write_ids
+        return requests
 
-    async def _write_point(self, request: MemoryWriteRequest):
-        point = await self._memory_store.write(request)
+    async def _write_point(self, request: MemoryWriteRequest, *,
+        framework_projection: FrameworkProjectionWrite | None = None):
+        point = await self._memory_store.write(request, **(
+            {"framework_projection": framework_projection} if framework_projection is not None else {}))
         if point is None or self._vector_store is None:
             return point
         vector = request.metadata.get("embedding")

@@ -74,6 +74,7 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
         async def pause(*args, **kwargs):
             marker = {"before_finalization": "runtime-result-frozen", "after_snapshot": "snapshot-committed",
                 "after_snapshot_event": "snapshot-event-committed",
+                "after_observation_row": "observation-row-committed",
                 "after_commit": "application-committed"}[window]
             await redis.rpush(gate, marker)
             await asyncio.Event().wait()
@@ -98,6 +99,30 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                     await pause()
 
             sessions._store.append_event = append_and_pause
+        elif window == "after_observation_row":
+            from src.application.context.memory_runtime_service import MemoryRuntimeService
+            from src.application.context.observation_runtime_service import ObservationRuntimeService
+            from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+
+            # Controlled projection input after the real SDK/graph returns;
+            # this is not evidence of a real domain tool/Runner execution.
+            execute = runtime._execute_turn
+            async def execute_with_observation(*args, **kwargs):
+                result = await execute(*args, **kwargs)
+                result.state["tool_results"] = [{"tool_key": "fixture-reader", "status": "completed",
+                    "call_id": key, "summary": "original " + key, "output": {"text": key}} for key in ("A", "B")]
+                return result
+            runtime._execute_turn = execute_with_observation
+            memory = PostgresVectorMemoryStore(settings)
+            await memory.initialize()
+            sessions._memory_runtime_service = MemoryRuntimeService(memory)
+            sessions._observation_runtime_service = ObservationRuntimeService()
+            write = memory.write
+            async def write_and_pause(*args, **kwargs):
+                actual = await write(*args, **kwargs)
+                await pause()
+                return actual
+            memory.write = write_and_pause
         elif window == "after_commit":
             FrameworkMessageStages.projected = pause
         else:

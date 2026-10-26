@@ -4,9 +4,13 @@ import asyncio
 import json
 import logging
 import re
+from typing import TYPE_CHECKING
 from datetime import datetime
 from time import perf_counter
 from uuid import uuid4
+
+if TYPE_CHECKING:
+    from src.runtime.framework_application_projection import FrameworkProjectionWrite
 
 from src.application.observability.business_metrics import (
     POSTGRES_VECTOR_STORE,
@@ -42,8 +46,41 @@ class PostgresVectorMemoryStore:
         except Exception:
             return f"{self._backend}_unavailable"
 
-    async def write(self, request: MemoryWriteRequest) -> MemoryPoint | None:
-        return await asyncio.to_thread(self._write_sync, request)
+    async def write(self, request: MemoryWriteRequest, *,
+        framework_projection: FrameworkProjectionWrite | None = None) -> MemoryPoint | None:
+        try:
+            point = await asyncio.to_thread(self._write_sync, request, **(
+                {"framework_projection": framework_projection} if framework_projection is not None else {}))
+        except Exception as exc:
+            if framework_projection is not None:
+                LOGGER.warning("framework_observation_write_rejected", extra={
+                    "binding_id": framework_projection.owner.binding.binding_id,
+                    "observation_id": request.metadata.get("memory_id"), "error_type": type(exc).__name__})
+            raise
+        if framework_projection is not None:
+            LOGGER.info("framework_observation_row_saved", extra={
+                "binding_id": framework_projection.owner.binding.binding_id, "observation_id": point.id})
+        return point
+
+    async def load_observation_projection(self, request: MemoryWriteRequest, *,
+        framework_projection: FrameworkProjectionWrite) -> MemoryPoint | None:
+        def read():
+            from src.runtime.framework_observation_projection import prepare_memory_projection
+
+            with self._connect() as conn, conn.cursor() as cur:
+                _, _, _, row = prepare_memory_projection(cur, self._settings, framework_projection, request)
+                return _observation_point(row) if row is not None else None
+        try:
+            point = await asyncio.to_thread(read)
+        except Exception as exc:
+            LOGGER.warning("framework_observation_read_rejected", extra={
+                "binding_id": framework_projection.owner.binding.binding_id,
+                "observation_id": request.metadata.get("memory_id"), "error_type": type(exc).__name__})
+            raise
+        if point is not None:
+            LOGGER.info("framework_observation_row_reused", extra={
+                "binding_id": framework_projection.owner.binding.binding_id, "observation_id": point.id})
+        return point
 
     async def search(self, request: MemorySearchRequest) -> list[MemoryPoint]:
         return await self._timed_search(self._search_sync, request)
@@ -201,7 +238,8 @@ class PostgresVectorMemoryStore:
                 cur.execute("SELECT 1")
                 cur.fetchone()
 
-    def _write_sync(self, request: MemoryWriteRequest) -> MemoryPoint | None:
+    def _write_sync(self, request: MemoryWriteRequest,
+        framework_projection: FrameworkProjectionWrite | None = None) -> MemoryPoint | None:
         now = datetime.utcnow()
         point_id = str(
             request.metadata.get("memory_id") or request.metadata.get("id") or uuid4()
@@ -246,15 +284,15 @@ class PostgresVectorMemoryStore:
                         )
                 if request.compaction_key or request.compaction_owner_id:
                     self._assert_compaction_owner(cur, request)
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_memory_table} (
-                        id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
-                        source, stale, mode_key, metadata, embedding, created_at, updated_at
-                    ) VALUES (
-                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-                        %s, %s, %s, %s::jsonb, %s, %s, clock_timestamp()
-                    )
+                if framework_projection is not None:
+                    from src.runtime.framework_observation_projection import prepare_memory_projection
+
+                    projection_stage, observation_asset, observation, existing = prepare_memory_projection(
+                        cur, self._settings, framework_projection, request)
+                    if existing is not None:
+                        return _observation_point(existing)
+                    point.created_at = observation.created_at
+                conflict_clause = "ON CONFLICT (id) DO NOTHING" if framework_projection is not None else f"""
                     ON CONFLICT (id) DO UPDATE SET
                         scope = EXCLUDED.scope,
                         kind = EXCLUDED.kind,
@@ -273,6 +311,17 @@ class PostgresVectorMemoryStore:
                             clock_timestamp(),
                             {self._settings.database.postgres_memory_table}.updated_at + INTERVAL '1 microsecond'
                         )
+                """
+                cur.execute(
+                    f"""
+                    INSERT INTO {self._settings.database.postgres_memory_table} (
+                        id, scope, kind, content, summary, tags, session_id, turn_id, trace_id,
+                        source, stale, mode_key, metadata, embedding, created_at, updated_at
+                    ) VALUES (
+                        %s, %s, %s, %s, %s, %s, %s, %s, %s,
+                        %s, %s, %s, %s::jsonb, %s, %s, clock_timestamp()
+                    )
+                    {conflict_clause}
                     RETURNING updated_at
                     """,
                     (
@@ -294,6 +343,13 @@ class PostgresVectorMemoryStore:
                     ),
                 )
                 row = cur.fetchone()
+                if framework_projection is not None:
+                    from src.runtime.framework_application_projection import _require
+                    from src.runtime.framework_observation_projection import record_memory_projection
+
+                    _require(row is not None, "Observation row appeared after original intent validation")
+                    record_memory_projection(cur, self._settings, framework_projection,
+                        projection_stage, observation_asset, point)
                 point.updated_at = ensure_utc_datetime(row["updated_at"])
         return point
 
@@ -619,6 +675,10 @@ class PostgresVectorMemoryStore:
 
     def _connect(self):
         return postgres_connect(self._settings)
+
+
+def _observation_point(row: dict) -> MemoryPoint:
+    return MemoryPoint.model_validate({name: row[name] for name in MemoryPoint.model_fields if name in row})
 
 
 def _match_metadata_filters(metadata: dict, filters: dict) -> bool:

@@ -2794,6 +2794,8 @@ class SessionService:
             tool_results=list(runtime_result.state.get("tool_results", [])),
             context_bundle=dict(runtime_result.state.get("context_bundle", {})),
             fenced_write=fenced_write,
+            framework_projection=framework_projection if projection_asset is not None else None,
+            projection_asset=projection_asset,
         )
 
         assistant_message = ChatMessage(
@@ -3448,16 +3450,34 @@ class SessionService:
         tool_results: list[dict],
         context_bundle: dict,
         fenced_write: dict[str, str | None] | None = None,
+        framework_projection=None,
+        projection_asset=None,
     ) -> None:
         if self._memory_runtime_service is None or self._observation_runtime_service is None:
             return
-        observations = self._observation_runtime_service.build_tool_observations(
-            session_id=session.id,
-            turn_id=turn_id,
-            trace_id=trace_id,
-            tool_results=tool_results,
-            context_bundle=context_bundle,
-        )
+        write_options = {}
+        if framework_projection is not None:
+            from src.runtime.framework_observation_projection import FrameworkObservationProjections
+
+            def prepare(original):
+                state = original.runtime_result.state
+                items = self._observation_runtime_service.build_tool_observations(
+                    session_id=original.binding.session_id, turn_id=original.binding.turn_id,
+                    trace_id=str(state.get("trace_id", "")), tool_results=list(state.get("tool_results", [])),
+                    context_bundle=dict(state.get("context_bundle", {})))
+                return items, self._memory_runtime_service.build_observation_requests(items)
+
+            asset = await FrameworkObservationProjections(self._agent_task_store).prepare(framework_projection, prepare)
+            observations = asset.observations
+            write_options = {"framework_projection": framework_projection, "prepared_requests": asset.write_requests}
+        else:
+            observations = self._observation_runtime_service.build_tool_observations(
+                session_id=session.id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                tool_results=tool_results,
+                context_bundle=context_bundle,
+            )
         if not observations:
             return
         turn_lease_token = str((fenced_write or {}).get("turn_lease_token") or "")
@@ -3466,19 +3486,25 @@ class SessionService:
         observation_ids = await self._memory_runtime_service.write_observations(
             observations,
             turn_lease_token=turn_lease_token or None,
+            **write_options,
         )
+        event = self._make_event(
+            session.id,
+            "observations.persisted",
+            {
+                "turn_id": turn_id,
+                "trace_id": trace_id,
+                "observation_count": len(observation_ids),
+                "observation_ids": observation_ids,
+            },
+        )
+        if framework_projection is not None:
+            event.id = projection_asset.event_id(event.type)
+            event.timestamp = projection_asset.projection_at
         await self._store.append_event(
             session.id,
-            self._make_event(
-                session.id,
-                "observations.persisted",
-                {
-                    "turn_id": turn_id,
-                    "trace_id": trace_id,
-                    "observation_count": len(observation_ids),
-                    "observation_ids": observation_ids,
-                },
-            ),
+            event,
+            **({"framework_projection": framework_projection} if framework_projection is not None else {}),
             **(fenced_write or {}),
         )
 

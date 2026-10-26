@@ -56,6 +56,8 @@ def runtime_result_source(stage):
     source.pop(COMMIT_KEY, None)
     source.pop("snapshot_projection_commit", None)
     source.pop("event_projection_commits", None)
+    source.pop("observation_projection_asset", None)
+    source.pop("observation_projection_commits", None)
     return source
 
 
