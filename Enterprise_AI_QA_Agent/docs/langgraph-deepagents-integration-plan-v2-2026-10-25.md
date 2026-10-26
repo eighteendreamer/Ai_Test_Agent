@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近实施：2026-10-26，本轮从 `0dd9b7462` 继续，记录至实施记录 §39。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、submitted 与 orchestrated 的安全后继、语义分类实际输入冻结及未发送模型预留的显式转移端口已局部落实；编排中的恢复调用方、响应导入及其余迁移出口仍未完成。
+初稿日期：2026-10-25；最近实施：2026-10-26，本轮从 `4d19b2f4a` 继续，记录至实施记录 §40。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、submitted 与 orchestrated 的安全后继、语义分类实际输入冻结、未发送预留显式转移及已结算 DTO 响应只读导入端口已局部落实；编排中的恢复调用方、图内结果导入及其余迁移出口仍未完成。
 
 ## 1. 结论与本次修订
 
@@ -659,7 +659,7 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 | 阶段仍为 submitted，原任务因执行失租进入 recovery_required | §14.9 可创建 message_recover 后继：要求原准入/输入/用户消息/冻结预算一致，原 owner 未被替换且无有效租约，无显式中断、pending Turn 或已领取的后续输入，并排除任何模型、工具、checkpoint/pending writes 矛盾事实；缺准入或仅仅没有账本行仍不构成授权 |
 | 模型 ready，未发发送许可 | §14.10 的显式端口在有效新 owner 下原子转移原预留，保留同一 attempt、请求及根预算并追加谱系；普通重入仍拒绝旧 owner。应用编排恢复调用方和自动接线仍待实现，不能直接重跑整个 Turn |
 | 模型 invoking/unknown，缺响应或 usage | 禁止自动重发。HTTP 已发送与 start 后尚未发送无法仅从账本区分；即使没有业务副作用也可能重复计费 |
-| 完整响应已保存，checkpoint 尚未接收结果 | 先对账原尝试、资产身份、完整性和官方任务位置。非权威观察不自动变成任务输出；在结果导入协议通过故障 Harness 前保持需对账，不重发 |
+| 完整响应已保存，checkpoint 尚未接收结果 | 先对账原尝试、资产身份、完整性和官方任务位置。§14.13 已为有原子结算绑定的 completed DTO 提供只读解码端口，尚不写框架任务结果；invoking/unknown、旧 completed 缺绑定和非权威候选保持需对账，不重发 |
 | checkpoint 存在 | 必须核对实际待运行节点、原生结果、模型尝试与 ToolJob。checkpoint 存在不等于可以无条件 ainvoke(None)，部分节点可能从头执行 |
 | checkpoint 完成，Session/UI 尚未完成 | 按原稳定消息/事件身份补投影；不再调用模型、重导入历史或新建工具操作 |
 
@@ -784,6 +784,19 @@ Worker 重投原终态或观察原执行失租后可提交后继；不为一般�
 该资产是 PostgreSQL 中的实际语义输入，含原输入正文，不只是摘要，也不写入日志。模型密钥/请求头/地址不复制到资产，复用原参数白名单和相应摘要；日志只记录阶段、身份、来源摘要和 skip 原因。顶层 message-stage 继续使用 schema 3，嵌套语义输入有自己的 schema 1；没有新增 DDL/HTTP/operation。新写入标记 semantic_input_required，后续冻结 ExecutionRequest 时不得缺失；旧记录仍按历史读取，不补造过去的语义输入。部署仍须统一兼容 Worker，不能据此跳过 §15.4 制品验证。
 
 本轮没有开放 orchestrating 的自动后继，也没有接入 transfer_ready 或导入响应。模式注册表仍只有摘要，解析/合并与确定性路由代码版本实物、图初始状态及其真正读取的 PromptRegistry/Skill/Memory 资产仍需冻结；语义分类准备阶段没有读取后三者，不能伪造其快照。最终故障与协议测试结果见[实施记录 §39](framework-integration-progress-2026-10-25.md#39-图外语义分类实际输入冻结2026-10-26)。
+
+### 14.13 模型结算绑定与已结算 DTO 的只读导入（2026-10-26）
+
+编排恢复前核查发现：旧模型账本只保存 completed/usage，响应观察可继续追加，无法确定哪份资产属于当次成功结算。不能从“只有一个观察”“最后一个观察”或“用量相同”推断输出。现在由发送策略拿到原 append_response_observation 的稳定 ID，再将 `settled_response_id` 与 completed/usage 放入原 owner 事务一次写入；两份不同资产争用结算只能成功一次，相同结算可重复确认。
+
+- 有绑定的新记录写 model-call schema 3，校验所选观察确属原 binding/attempt、唯一且不晚于结算，必须有 started/settled 时间。原观察仍是 authoritative=false，绑定是独立的结算事实；后续观察不能改变它。
+- schema 1/2 读取时默认无绑定，序列化不额外增加 null 字段，避免改变历史冻结 model_calls 摘要。历史 completed 不反向猜测绑定。旧严格解析器不能读 schema 3；同一 v2 stream 仍须部署兼容制品，本轮没有验收滚动/双制品发布，也没有新增 DDL 或默认路由。
+- `verify_completed(owner, expected=...)` 在当前有效 owner 事务中读取原完整账本事实；允许新 owner 只读原结算，不改变原观察者/预算/阶段。旧 owner、事实漂移、无显式位置、非 completed 或缺结算绑定均不能取得该端口结果。
+- `FrameworkModelCallPolicy.restore_completed_dto` 复用原 DTO 意图构建，核对逻辑位置、模型配置、请求和选项，再实际读取原请求/响应对象，验证 hash/size、绑定及意图封套、响应类型/序列化版本、DTO 完整往返与原生 usage 对账。读对象后再次核验当前 owner 和原事实；缺 usage 时保留原预留，不制造计数。
+- 该端口只返回已结算 DTO；普通 invoke 不会自动调用它，不发供应商请求，不占新调用槽位、不修改用量、不创建任务或推进 checkpoint。Graph 的 langchain_messages 结果尚无导入端口；invoking/unknown 的观察也不会自动升级为完成。
+- 只读诊断投影 settled_response_id；completed 缺绑定时报告 model_settled_response_missing，automatic_replay_allowed 和 evidence_objects_verified 继续为 false。
+
+本阶段为 §14.2 恢复调用方准备明确的输出资产，不代表 orchestrating 后继已经接通。完整模式/确定性路由/解析代码制品、transfer_ready 调用方、已发送但未结算的响应对账、图结果导入与业务应用确认仍待完成。实际验证与证据等级见[实施记录 §40](framework-integration-progress-2026-10-25.md#40-模型结算响应绑定与已结算-dto-只读导入2026-10-26)。
 
 ## 15. 附件复核后的执行契约与发布出口（2026-10-26）
 

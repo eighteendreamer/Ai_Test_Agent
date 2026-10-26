@@ -14,7 +14,7 @@ from src.application.model_clients.http_observation import (
     current_provider_call_observation, observe_provider_call,
 )
 from src.schemas.framework_model_call import FrameworkModelCallIntent, FrameworkModelUsage
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
+from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult, model_invocation_parameters
 from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
 
 
@@ -124,6 +124,12 @@ class FrameworkModelCallPolicy:
     async def invoke_dto(self, *, owner, config: ModelConfigRecord, request: ModelInvocationRequest,
                          options: dict, send: Callable[[], Awaitable[Any]]) -> Any:
         """Use the same lifecycle for application calls outside graph nodes."""
+        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options)
+        return await self._invoke_intent(owner=owner, intent=intent, send=send,
+            usage_reader=lambda result: dto_model_usage(result, transport=config.transport),
+            envelope=envelope, response_kind="model_invocation_result")
+
+    def _dto_intent(self, *, owner, config, request, options):
         current = self._model_config_resolver(config.key)
         fingerprint = model_config_fingerprint(config)
         if current is None or model_config_fingerprint(current) != fingerprint:
@@ -142,11 +148,56 @@ class FrameworkModelCallPolicy:
             branch_id="root", purpose="agent", model_key=config.key, model_config_fingerprint=fingerprint,
             transport=config.transport, request_sha256=request_sha256,
             reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=config.max_output_tokens)
-        return await self._invoke_intent(owner=owner, intent=intent, send=send,
-            usage_reader=lambda result: dto_model_usage(result, transport=config.transport),
-            envelope=envelope, response_kind="model_invocation_result")
+        return intent, envelope
+
+    async def restore_completed_dto(self, *, owner, expected, config: ModelConfigRecord,
+                                    request: ModelInvocationRequest, options: dict) -> ModelInvocationResult:
+        """Decode a specifically settled DTO response; never call the provider.
+
+        This is an explicit application recovery port. It neither creates a
+        successor nor writes a checkpoint, and cannot promote late observations.
+        """
+        try:
+            return await self._restore_completed_dto(owner=owner, expected=expected, config=config,
+                request=request, options=options)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("framework_model_completed_dto_rejected", extra={"binding_id": owner.binding.binding_id,
+                "model_attempt_id": expected.intent.attempt_id, "error_type": type(exc).__name__})
+            raise
+
+    async def _restore_completed_dto(self, *, owner, expected, config, request, options):
+        if self._evidence is None:
+            raise ValueError("Completed DTO import requires its original evidence store")
+        expected = await self._calls.verify_completed(owner, expected=expected)
+        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options)
+        if (intent.model_dump(exclude={"attempt_id"}) != expected.intent.model_dump(exclude={"attempt_id"})
+            or expected.request is None or expected.request.sha256 != intent.request_sha256):
+            raise ValueError("Completed DTO import differs from its frozen request")
+        original_request = await self._evidence.read(expected.request)
+        if canonical_model_input(original_request) != envelope:
+            raise ValueError("Completed DTO request asset differs from its frozen input")
+        selected = next(item for item in expected.response_observations
+            if item.observation_id == expected.settled_response_id)
+        if selected.response_kind != "model_invocation_result":
+            raise ValueError("Completed response is not an application DTO")
+        payload = await self._evidence.read_response(owner.binding, expected.intent, selected.response)
+        if (payload.get("kind") != "model_invocation_result"
+            or payload.get("serializer") != {"name": "ModelInvocationResult", "version": "1"}):
+            raise ValueError("Completed DTO response serializer is unsupported")
+        result = ModelInvocationResult.model_validate(payload["data"])
+        if result.model_dump(mode="json", exclude={"request_payload"}) != payload["data"]:
+            raise ValueError("Completed DTO response contains unsupported data")
+        if dto_model_usage(result, transport=config.transport) != expected.usage:
+            raise ValueError("Completed DTO response usage differs from its settled ledger")
+        # Object reads cross an external/async boundary. Verify the owner and
+        # exact proof again before exposing a result to a recovery caller.
+        await self._calls.verify_completed(owner, expected=expected)
+        logger.info("framework_model_completed_dto_read", extra={"binding_id": owner.binding.binding_id,
+            "model_attempt_id": expected.intent.attempt_id, "settled_response_id": expected.settled_response_id})
+        return result
 
     async def _invoke_intent(self, *, owner, intent, send, usage_reader, envelope, response_kind):
+        observation = None
         saved = await self._calls.prepare_initial(owner, intent)
         intent = saved.intent
         if (saved.owner_epoch != owner.owner_epoch or saved.owner_task_id != owner.task_id
@@ -186,7 +237,7 @@ class FrameworkModelCallPolicy:
         if self._evidence is not None:
             try:
                 response = await self._evidence.store_response(owner, intent, result, response_kind=response_kind)
-                await self._calls.append_response_observation(owner, intent.attempt_id,
+                observation = await self._calls.append_response_observation(owner, intent.attempt_id,
                     response=response, response_kind=response_kind)
                 wire = await self._evidence.store_wire(owner, intent, active_observation)
                 logger.info("framework_model_wire_candidate", extra={
@@ -208,7 +259,8 @@ class FrameworkModelCallPolicy:
                 exc.add_note("Provider response arrived; reconcile evidence without resending the request")
                 raise
         try:
-            await self._calls.complete(owner, intent.attempt_id, usage=usage_reader(result))
+            await self._calls.complete(owner, intent.attempt_id, usage=usage_reader(result),
+                **({"response_id": observation.observation_id} if observation is not None else {}))
         except (Exception, asyncio.CancelledError) as exc:
             # An acknowledgement failure may occur before or after commit.
             # Preserve the durable phase; only reconciliation can decide which

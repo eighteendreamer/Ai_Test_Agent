@@ -1,10 +1,12 @@
 """Durable model accounting values; credentials and execution tokens stay out."""
 from __future__ import annotations
 
+import hashlib
+import json
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, computed_field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, computed_field, field_validator, model_serializer, model_validator
 
 from src.schemas.model_config import ModelTransport
 
@@ -92,6 +94,11 @@ class FrameworkModelResponseObservation(_ModelCallValue):
     observed_at: datetime
 
 
+def response_observation_id(binding_id: str, attempt_id: str, response_kind: str, response_sha256: str) -> str:
+    identity = json.dumps([binding_id, attempt_id, response_kind, response_sha256], separators=(",", ":"))
+    return hashlib.sha256(identity.encode()).hexdigest()
+
+
 class FrameworkModelWireObservation(_ModelCallValue):
     schema_version: Literal[1] = 1
     observation_id: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -131,7 +138,7 @@ class FrameworkModelReservationTransfer(_ModelCallValue):
 
 
 class FrameworkModelCallRecord(_ModelCallValue):
-    schema_version: Literal[1, 2] = 1
+    schema_version: Literal[1, 2, 3] = 1
     binding_id: str
     intent: FrameworkModelCallIntent
     owner_epoch: int
@@ -147,7 +154,29 @@ class FrameworkModelCallRecord(_ModelCallValue):
     created_at: datetime
     started_at: datetime | None = None
     settled_at: datetime | None = None
+    settled_response_id: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     reservation_transfers: list[FrameworkModelReservationTransfer] = Field(default_factory=list)
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_facts(self, handler):
+        value = handler(self)
+        if self.schema_version < 3 and self.settled_response_id is None:
+            value.pop("settled_response_id", None)
+        return value
+
+    @model_validator(mode="after")
+    def validate_response_settlement(self):
+        if self.settled_response_id is None:
+            return self
+        matches = [item for item in self.response_observations if item.observation_id == self.settled_response_id]
+        if (self.schema_version < 3 or self.phase != "completed" or self.started_at is None or self.settled_at is None
+            or self.outcome_code is not None or len(matches) != 1):
+            raise ValueError("Settled model response requires its completed attempt and unique observation")
+        selected = matches[0]
+        if (selected.observed_at > self.settled_at or self.settled_response_id != response_observation_id(
+            self.binding_id, self.intent.attempt_id, selected.response_kind, selected.response.sha256)):
+            raise ValueError("Settled model response differs from its original observation")
+        return self
 
     @model_validator(mode="after")
     def validate_transfers(self):

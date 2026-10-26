@@ -85,6 +85,7 @@ class MessageModelCallFact(_Fact):
     request_sha256: str
     usage: FrameworkModelUsage | None
     response_observations: list[FrameworkModelResponseObservation]
+    settled_response_id: str | None = None
     wire_observations: list[MessageModelWireFact]
     created_at: datetime
     started_at: datetime | None

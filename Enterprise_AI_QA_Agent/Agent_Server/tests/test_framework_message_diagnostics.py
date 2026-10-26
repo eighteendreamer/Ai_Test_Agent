@@ -70,6 +70,9 @@ async def test_diagnosis_preserves_model_phase_budget_and_non_authoritative_evid
     call, = report.model_calls
     assert call.attempt_id == selected.attempt_id and call.phase == phase
     assert call.request == request and call.usage == before.calls[0].usage
+    assert call.settled_response_id == before.calls[0].settled_response_id
+    if phase == "completed":
+        assert "model_settled_response_missing" in report.issues
     assert all(item.authoritative is False for item in call.response_observations)
     assert report.model_budget.charged_tokens == before.charged_tokens
     assert report.owner.matches_origin and report.owner.lease_active

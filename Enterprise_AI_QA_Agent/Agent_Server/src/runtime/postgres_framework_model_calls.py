@@ -24,6 +24,7 @@ from src.schemas.framework_model_call import (
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
     FrameworkModelWireObservation,
     FrameworkModelReservationOwner, FrameworkModelReservationTransfer,
+    response_observation_id,
 )
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -52,6 +53,7 @@ class _Settlement:
     phase: str
     usage: FrameworkModelUsage | None = None
     code: str | None = None
+    response_id: str | None = None
 
 
 class PostgresFrameworkModelCalls:
@@ -278,8 +280,7 @@ class PostgresFrameworkModelCalls:
                     raise ValueError("Model response observer does not match the original attempt")
                 if call.started_at is None or call.phase == "ready":
                     raise ValueError("Model response evidence requires a sent attempt")
-                identity = json.dumps([call.binding_id, attempt_id, response_kind, response.sha256], separators=(",", ":"))
-                observation_id = hashlib.sha256(identity.encode()).hexdigest()
+                observation_id = response_observation_id(call.binding_id, attempt_id, response_kind, response.sha256)
                 # Validate kind even for duplicate submissions.
                 observation = FrameworkModelResponseObservation(observation_id=observation_id,
                     response=response, response_kind=response_kind, observed_at=self._now(cur))
@@ -428,10 +429,38 @@ class PostgresFrameworkModelCalls:
         return result
 
     async def complete(self, owner: RuntimeExecutionOwner, attempt_id: str, *,
-                       usage: FrameworkModelUsage | None) -> FrameworkModelCallRecord:
+                       usage: FrameworkModelUsage | None, response_id: str | None = None) -> FrameworkModelCallRecord:
         if usage is not None:
             usage = FrameworkModelUsage.model_validate(usage.model_dump())
-        return await self._settle(owner, attempt_id, _Settlement("completed", usage=usage))
+        return await self._settle(owner, attempt_id, _Settlement("completed", usage=usage, response_id=response_id))
+
+    async def verify_completed(self, owner: RuntimeExecutionOwner, *, expected: FrameworkModelCallRecord) -> FrameworkModelCallRecord:
+        """Read the exact completed result under the current owner, without importing it.
+
+        No upstream counterpart (checked: framework response observations,
+        LangGraph persistence, plan §14.2): an application DTO has no graph
+        task result to read. This verifies a settled asset; it grants no replay.
+        """
+        expected = FrameworkModelCallRecord.model_validate_json(expected.model_dump_json())
+
+        def verify():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._owned(cur, owner)
+                if expected.binding_id != owner.binding.binding_id:
+                    raise ValueError("Completed model result differs from the current binding")
+                call = self._call(cur, owner.binding.binding_id, expected.intent.attempt_id)
+                if call != expected:
+                    raise FrameworkModelRecoveryRequired("completed_result_changed", call)
+                if call.phase != "completed" or call.intent.position_version != 1 or call.settled_response_id is None:
+                    raise FrameworkModelRecoveryRequired("completed_response_unavailable", call)
+                return call
+
+        try:
+            return await asyncio.to_thread(verify)
+        except Exception as exc:
+            logger.warning("framework_model_result_read_rejected", extra={"binding_id": owner.binding.binding_id,
+                "model_attempt_id": expected.intent.attempt_id, "error_type": type(exc).__name__})
+            raise
 
     async def mark_unknown(self, owner: RuntimeExecutionOwner, attempt_id: str, *, code: str) -> FrameworkModelCallRecord:
         # Codes describe outcomes, never raw provider errors/prompts/credentials.
@@ -449,19 +478,23 @@ class PostgresFrameworkModelCalls:
                 if settlement.phase == "completed":
                     self._require_origin_owner(call, owner)
                 if call.phase == settlement.phase:
-                    if call.usage != settlement.usage or call.outcome_code != settlement.code:
+                    if (call.usage != settlement.usage or call.outcome_code != settlement.code
+                        or call.settled_response_id != settlement.response_id):
                         raise ValueError("Settled model call result cannot change")
                     return call
                 if call.phase != "invoking":
                     raise ValueError("Model call phase cannot accept this result")
                 saved = call.model_copy(update={"phase": settlement.phase, "usage": settlement.usage,
-                    "outcome_code": settlement.code, "settled_at": self._now(cur)})
+                    "outcome_code": settlement.code, "settled_at": self._now(cur),
+                    "settled_response_id": settlement.response_id,
+                    "schema_version": 3 if settlement.response_id is not None else call.schema_version})
                 return self._write(cur, saved)
         result = await asyncio.to_thread(save)
         logger.log(logging.WARNING if settlement.phase == "unknown" else logging.INFO,
             "framework_model_call_settled", extra={"binding_id": result.binding_id,
                 "model_attempt_id": attempt_id, "phase": result.phase, "outcome_code": result.outcome_code,
                 "usage_known": result.usage is not None,
+                "settled_response_id": result.settled_response_id,
                 "charged_tokens": result.usage.total_tokens if result.usage else result.intent.reserved_tokens})
         if result.usage is not None and result.usage.total_tokens > result.intent.reserved_tokens:
             logger.warning("framework_model_usage_exceeded_reservation", extra={"binding_id": result.binding_id,
