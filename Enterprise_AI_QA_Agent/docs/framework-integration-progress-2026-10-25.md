@@ -1485,7 +1485,7 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 - 新增 `FrameworkRuntimeResult` / `FrameworkRuntimeResultAsset` 与 `FrameworkRuntimeResults`。资产保存完整 `RuntimeTurnResult` 七字段、绑定/输入/执行摘要、任务谱系、Verification、assistant 身份和固定投影时间；通过现有 message-stage JSONB 与 owner 事务保存，禁止 Python 进程对象进入资产。
 - `SessionService` 在首次 finalizer 前冻结资产，随后只从持久原件重建并调用原有 `_finalize_runtime_result`；Verification、assistant、完成事件使用资产中的稳定身份和时间。`FrameworkProjectionWrite` 在最终应用事务内再次核对资产身份、模型/ToolJob 摘要，防止异步投影阶段发生事实漂移。
 - message-stage schema 升至 7；应用提交凭证写入时保留更高 schema，避免带原结果资产的阶段被降回 6。没有新增队列、任务类型、DDL 或默认开关。
-- 同步纳入跨 Turn 原生 transcript 资产：保留 LangChain message wire 结构、工具调用 ID、provider metadata 和 digest；下一 Deep Agents Turn 只追加新用户消息，不用展示文本重建。
+- 原有跨 Turn transcript 草稿继续保留在工作区，不纳入本次提交；原生框架消息作为 RuntimeTurnResult.state 的一部分保存，不代表跨 Turn 完整链路已经接通。
 
 ### TDD 与验证
 
@@ -1496,6 +1496,14 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 ../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py -q -x -rs --tb=short
 ```
 
-结果 **107 passed，393.13 秒，无 skip**；另执行最新的资产漂移防护单测 **3 passed，15.64 秒**。独立暂存索引导出（不含未提交 transcript 草稿）执行资产文件、A1 独立 Worker 强杀和历史 completed observation 不升格：**24 passed，98.29 秒，无 skip**；索引源码确认 1371 个文件，未带入未提交 transcript 模块。`compileall` 与 `git diff --check` 通过。
+结果 **107 passed，393.13 秒，无 skip**；此轮启动后才增加的最终事务重验不在该结果中。新增真实数据库漂移测试复现资产初次读取后、最终事务前的竞态：模型事实变化却仍提交，**1 failed，10.19 秒，DID NOT RAISE**。根因是在资产 load 处验证而没有在实际提交事务内再验证；现由 FrameworkProjectionWrite 携带原资产摘要，最终事务锁内核对资产及模型/ToolJob 摘要，不靠写前单次检查。
+
+修复后该三参数测试 **3 passed，15.64 秒，无 skip**；另一重复启动的进程为 **3 passed，19.73 秒**，不累计覆盖。最终工作区完整重跑资产与 A1 投影两个文件：**51 passed，158.12 秒，无 skip**。此前重跑因工具句柄在中断后丢失，结果未回收，不计通过。独立模型结果导入/依赖回归 **37 passed，93.36 秒，无 skip**，启动早于最终事务变更，不替代最终源码回归。
+
+补入“初次读取后原资产被移除”的同类事务负例，复现 **1 failed，8.33 秒，DID NOT RAISE**：分支只在数据库仍有资产时校验，缺失被当成历史兼容。现要求写入方捕获的摘要与数据库资产存在性同时匹配；原无资产旧路径仍兼容，不补造证明。
+
+早期独立暂存索引导出（不含未提交 transcript 草稿）执行资产文件、A1 独立 Worker 强杀和历史 completed observation 不升格：**24 passed，98.29 秒，无 skip**。最终事务竞态修复后三参数版本的独立索引回归为 **27 passed，92.38 秒，无 skip**，早于随后新增的 asset_removed 参数，不冒充最后一次源码全覆盖。索引源码确认 1371 个文件，未带入未提交 transcript 模块。`compileall`（含 src/tests）与 `git diff --check` 通过；独立环境无 ruff（No module named ruff），没有安装 lint 工具或声称 lint/typecheck 通过。
+
+首次独立 Worker 测试还曾得到 **1 failed、15 passed，65.57 秒**：测试把 `tasks.get()` 返回值的 runtime_owner=None 当成可用执行权。该读取接口有意不发放 owner；测试已改为只读阶段资产，不重建或伪造执行 capability。其后资产文件 **18 passed，67.20 秒**；新补测试均以较晚回归为准，不叠加计数。
 
 上述测试不等于真实付费模型、真实对象存储、领域 Runner、官方 saver conformance、完整跨 Turn 请求或双制品滚动部署通过；图终态到资产前空窗、失租后部分投影补偿、projected 后任务结算及 Memory/清理仍未完成。生产默认开关保持关闭，整体 goal 继续 active。

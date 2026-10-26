@@ -455,7 +455,7 @@ async def test_application_commit_keeps_original_asset_and_prevents_refreeze(pro
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed", ["model", "tool", "asset"])
+@pytest.mark.parametrize("changed", ["model", "tool", "asset", "asset_removed"])
 async def test_final_transaction_rechecks_original_asset_after_async_projection_writes(projection_jobs, monkeypatch, changed):
     h = projection_jobs
     h.model_phase = "completed"
@@ -472,9 +472,12 @@ async def test_final_transaction_rechecks_original_asset_after_async_projection_
             else:
                 cur.execute(f"SELECT record FROM {message_stage_table(h.settings)} WHERE task_id=%s", (task.id,))
                 record = cur.fetchone()["record"]
-                asset = record["source_manifest"]["runtime_result_asset"]
-                asset["runtime_result"]["output_text"] = "late-change"
-                asset["asset_sha256"] = approval_value_hash({k: v for k, v in asset.items() if k != "asset_sha256"})
+                if changed == "asset_removed":
+                    record["source_manifest"].pop("runtime_result_asset")
+                else:
+                    asset = record["source_manifest"]["runtime_result_asset"]
+                    asset["runtime_result"]["output_text"] = "late-change"
+                    asset["asset_sha256"] = approval_value_hash({k: v for k, v in asset.items() if k != "asset_sha256"})
                 record["source_sha256"] = approval_value_hash(record["source_manifest"])
                 cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=%s::jsonb WHERE task_id=%s",
                     (json.dumps(record), task.id))

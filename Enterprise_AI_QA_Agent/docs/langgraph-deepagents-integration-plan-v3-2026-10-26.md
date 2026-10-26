@@ -615,6 +615,7 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 - `FrameworkRuntimeResultAsset` 保存完整 RuntimeTurnResult 的七个字段、原输入/绑定/任务谱系/模型账本/ToolJob 摘要、原 Verification、assistant 身份和投影时间；原生框架消息仍保存在 state 中，不转成展示文本。数据库中的原资产不可替换；Python 内嵌容器仍可能被调用方修改，所以 finalizer 重新读取持久原件并比较，而不只相信 frozen 对象。
 - `FrameworkRuntimeResults.freeze/load` 复用原 owner 事务锁和 message stage JSONB；无新表、任务类型、公开 API、队列或默认开关。结果仅限 completed、无 pending/审批、绑定匹配；未知模型/工具事实拒绝。读取原应用结果不导入模型响应，不补造 `settled_response_id`，也不改变图恢复所需的更强证明。
 - 正常框架 message 在 finalizer 前冻结；Verification 只准备一次。既有 `_finalize_runtime_result` 消费原资产，复用现有验证构造和最终事务，不复制第二套收尾。assistant、各类收尾事件、验证结果及时间保持原身份。无 owner 和非 completed 路径保留原行为。
+- 最终应用事务接收原资产摘要并在锁内再次核对原件和模型/ToolJob 摘要，防止初次读取后、异步投影写入间的事实漂移；该竞态由真实数据库红测复现后修复，不能仅凭 finalizer 开头的一次 load 认定安全。
 - message stage 格式增加 **7**，A1 写凭证时保留更高格式，不能把带资产的阶段降回 6。旧 1–6 仍可读取；旧严格读者不能读取 7，**无 DDL 不等于可滚动部署**。上线仍须先部署兼容读者、补齐格式能力路由；本次不启用生产路径。
 
 ### 17.3 权限与尚未闭合的出口

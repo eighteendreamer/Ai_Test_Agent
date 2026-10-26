@@ -127,6 +127,8 @@ def record_application_commit(cur, settings, session, events, write):
         and stage.owner_epoch == owner.owner_epoch and stage.owner_attempt_id == owner.attempt_id,
         "Application commit differs from its runtime submission")
     raw_result = (stage.source_manifest or {}).get("runtime_result_asset")
+    _require((raw_result is None) == (write.runtime_result_asset_sha256 is None),
+        "Application commit result asset disappeared or was not captured")
     if raw_result is not None:
         from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
 
