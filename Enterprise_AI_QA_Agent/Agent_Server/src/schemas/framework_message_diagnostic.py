@@ -128,6 +128,8 @@ class MessageProjectionFact(_Fact):
 
 class MessageStageFact(_Fact):
     phase: str
+    execution_task_id: str | None = None
+    recovery_count: int = 0
     owner_epoch: int | None
     owner_attempt_id: str | None
     source_sha256: str | None

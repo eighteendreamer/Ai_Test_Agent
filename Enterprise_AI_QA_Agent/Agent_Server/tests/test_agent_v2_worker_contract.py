@@ -68,6 +68,10 @@ class _Tasks:
         self.claimed.append(worker_id)
         return self.stored
 
+    async def ensure_framework_message_recovery(self, task_id):
+        assert task_id == self.stored.id
+        return None
+
 
 def stored_task(runtime_binding):
     return SimpleNamespace(

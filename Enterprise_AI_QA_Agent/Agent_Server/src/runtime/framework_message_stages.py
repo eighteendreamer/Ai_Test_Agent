@@ -25,6 +25,14 @@ class FrameworkMessageStageRecoveryRequired(RuntimeError):
 
 def validate_message_stage(record):
     stage = FrameworkMessageStage.model_validate(record)
+    if stage.schema_version == 1 and stage.recoveries:
+        raise FrameworkMessageStageRecoveryRequired("Initial message stage v1 has no recovery lineage contract")
+    predecessor, identities = stage.task_id, {stage.task_id}
+    for link in stage.recoveries:
+        if link.predecessor_task_id != predecessor or link.task_id in identities:
+            raise FrameworkMessageStageRecoveryRequired("Initial message stage recovery lineage is invalid")
+        predecessor = link.task_id
+        identities.add(link.task_id)
     expected_assets = {"source_manifest": stage.phase != "submitted",
         "execution_request": stage.phase in {"orchestrated", "runtime_submitted", "projected"}}
     for field, required in expected_assets.items():
@@ -84,7 +92,11 @@ class FrameworkMessageStages:
     def get(self, task_id, session_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT stage.record FROM {self._tasks._tasks} task LEFT JOIN {self._table} stage "
-                "ON stage.task_id=task.id WHERE task.id=%s AND task.session_id=%s", (task_id, session_id))
+                "ON stage.binding_id=task.runtime_binding->>'binding_id' "
+                "AND (stage.task_id=task.id OR (task.operation='message_recover' AND task.reference_id=stage.task_id "
+                f"AND EXISTS(SELECT 1 FROM {self._tasks._tasks} origin "
+                "WHERE origin.id=stage.task_id AND origin.session_id=task.session_id))) "
+                "WHERE task.id=%s AND task.session_id=%s", (task_id, session_id))
             row = cur.fetchone()
             if row is None:
                 raise KeyError(task_id)
@@ -120,26 +132,32 @@ class FrameworkMessageStages:
                 assert_runtime_owner(cur, self._settings, owner)
                 cur.execute(f"SELECT * FROM {self._tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
                 task = cur.fetchone()
-                cur.execute(f"SELECT record FROM {self._table} WHERE task_id=%s FOR UPDATE", (owner.task_id,))
+                cur.execute(f"SELECT record FROM {self._table} WHERE binding_id=%s FOR UPDATE", (owner.binding.binding_id,))
                 row = cur.fetchone()
                 if row is None:
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage admission is missing")
                 original = validate_message_stage(row["record"])
-                if (task is None or task["operation"] != "message" or task["status"] != "running"
+                if (task is None or task["operation"] not in {"message", "message_recover"} or task["status"] != "running"
                     or task["runtime_binding"] != owner.binding.model_dump(mode="json")
                     or task["attempt_id"] != owner.attempt_id or task["lease_token"] != owner.owner_token
                     or original.binding_id != owner.binding.binding_id or original.input_sha256 != task["input_hash"]
-                    or original.user_message_id != task["user_message_id"] or original.task_id != owner.task_id):
+                    or original.user_message_id != task["user_message_id"] or original.current_task_id != owner.task_id):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage identity differs from its origin")
                 if original.phase != expected or (expected != "submitted" and (
                     original.owner_epoch != owner.owner_epoch or original.owner_attempt_id != owner.attempt_id)):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage has already started; reconcile its origin")
                 if expected == "submitted":
+                    if task["operation"] == "message_recover":
+                        from src.runtime.framework_message_recovery import require_message_recovery_claim
+
+                        session = self._tasks._lock_session(cur, owner.binding.session_id)
+                        require_message_recovery_claim(cur, self._tasks, session, owner.binding, task,
+                            {"task_id": owner.task_id, "attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch})
                     self._require_input(cur, owner, task, values["source_manifest"])
                 cur.execute("SELECT clock_timestamp() AS now")
                 saved = validate_message_stage(original.model_copy(update={**values,
-                    "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
-                cur.execute(f"UPDATE {self._table} SET record=%s::jsonb WHERE task_id=%s", (saved.model_dump_json(), owner.task_id))
+                    "schema_version": 2, "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
+                cur.execute(f"UPDATE {self._table} SET record=%s::jsonb WHERE task_id=%s", (saved.model_dump_json(), original.task_id))
                 return saved
 
         try:

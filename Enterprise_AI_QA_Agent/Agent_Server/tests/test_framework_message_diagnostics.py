@@ -39,7 +39,7 @@ async def test_admitted_input_without_checkpoint_is_not_replay_permission(admiss
     assert report.input.payload_hash_matches and report.input.user_message_matches
     assert report.model_budget.policy == h.budget and report.model_budget.reserved_calls == 0
     assert report.checkpoints == [] and report.tool_jobs == []
-    assert {"checkpoint_store_missing", "tool_job_store_missing", "stage_recovery_not_implemented"} <= set(report.issues)
+    assert {"checkpoint_store_missing", "tool_job_store_missing", "stage_recovery_requires_admission"} <= set(report.issues)
     assert report.stage.phase == "submitted" and "stage_admission_unavailable" not in report.issues
     assert report.recovery_status == "recovery_required" and report.automatic_replay_allowed is False
     assert counts(h) == before

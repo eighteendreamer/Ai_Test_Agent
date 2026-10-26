@@ -4,13 +4,24 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
+
+
+class FrameworkMessageRecoveryLink(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str = Field(min_length=1)
+    predecessor_task_id: str = Field(min_length=1)
+    predecessor_attempt_id: str = Field(min_length=1)
+    predecessor_owner_epoch: int = Field(ge=1)
+    budget_sha256: str = Field(min_length=1)
+    admitted_at: datetime
 
 
 class FrameworkMessageStage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 2
     task_id: str
     binding_id: str
     input_sha256: str
@@ -23,5 +34,10 @@ class FrameworkMessageStage(BaseModel):
     execution_request: dict[str, Any] | None = None
     execution_sha256: str | None = None
     result_reference: str | None = None
+    recoveries: list[FrameworkMessageRecoveryLink] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+    @property
+    def current_task_id(self):
+        return self.recoveries[-1].task_id if self.recoveries else self.task_id

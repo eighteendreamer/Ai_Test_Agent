@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，本次实现从代码基线 `185225e01` 继续，记录至实施记录 §34。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新当前实施边界与剩余实施顺序；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。第 14 节的阶段准入与调用位置已局部落实，安全后继等待办仍未实现。
+初稿日期：2026-10-25；最近复核：2026-10-26，本次实现从代码基线 `f1ae31c7c` 继续，记录至实施记录 §35。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新当前实施边界与剩余实施顺序；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置及编排尚未开始时的安全后继已局部落实，其余恢复及迁移出口仍未完成。
 
 ## 1. 结论与本次修订
 
@@ -48,7 +48,7 @@
 
 | 意见 | 当前代码事实 | 剩余实施边界 |
 | --- | --- | --- |
-| F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
+| F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23；§35 新增编排未开始的 `message_recover`，单独使用首次消息准入协议 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
 | F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态；对账运行失租可建立新对账，提交前/后强杀已验证，见 §24 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，确定性拒绝/返回数据库错误不自动重试；不承诺外部 exactly-once |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察；已知结果审批的独立 Worker 接管见实施记录 §21–23 | 无绑定旧试点仍用原 saver。同步工具的校验不能撤销已准入外部请求；领域 Runner 独立执行权及其余跨进程窗口仍未完成 |
 | F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要及 owner 作用域内 DTO 请求共用根模型策略；受理预算、Worker 检查与前置语义分类已接线。应用层请求/响应资产、迟到观察及 OpenAI Chat/Responses、Gemini 图内 wire 注入已有局部验证；§34 补入稳定模型位置、意图先于资产和输入漂移拒绝，见 §7.3/14.8 | 自动生成绑定/预算及版本实物、活动时间、完整动态参数/错误/显式重试、Anthropic 图内 wire、多次 HTTP attempt 独立证据、真实对象存储/供应商仍待验收。资产保存不证明首次 message 可重放；无 owner 的调用不自动纳入根预算 |
@@ -645,18 +645,18 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 
 官方依据：本次重新核对 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 的 per-call 及恢复时 when 重算约束、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) 的 LangGraph interrupt 实现基础、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 的节点从头重入、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 的 pending writes 与 sync durability、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 的 thread/store 分工。在线文档已有新流接口示例，不将其直接移植到固定版本；以本地已安装版本签名和 Harness 为准。
 
-### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（诊断、阶段准入及调用位置已实现；安全后继待实施）
+### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（编排未开始的安全后继已实现；已开始阶段仍待实施）
 
 当前事实：`submit_v2` 已同事务保存原始输入、用户消息、binding、显式预算、阶段准入和 outbox。`execute_claimed_message` 从输入编排起设置 owner 作用域，在编排前冻结来源摘要清单，编排后冻结完整 ExecutionRequest；模型新逻辑位置及其原尝试已可持久查询。阶段推进、执行与诊断共用资产摘要校验，实际执行从冻结 JSON 重建请求。初始图状态、外部 Prompt/Skill/Memory 实物与安全后继尚未形成完整协议。`_run_owned_submission_locked` 清空 pending_turn 后才执行 Runtime，单凭“没有 checkpoint/ToolJob”仍不能证明没有发生模型或外部效果。
 
 实施拆为两步，每步独立验收：
 
 1. **先提供只读事实诊断（已实现内部端口，见 §14.7）**。定位原 task/attempt/binding，联合输出输入准入、owner/租约、模型尝试、最新 checkpoint/pending writes、ToolJob 和现有投影的证据及缺口。诊断不调用模型/图/工具、不发 outbox，不修改终态或补造 usage。未知/缺失事实明确显示 recovery_required 的原因。
-2. **再建立阶段准入与安全后继**。阶段准入、来源清单、ExecutionRequest JSON 与摘要、稳定模型位置和先持久意图后上传资产的顺序已实现（§14.8）；阶段不允许重入，已发送/未知调用不自动重发。后续仍需冻结实际外部资产及版本，明确安全后继操作、原 ready 预留转移和原响应导入。显式新尝试须记录前驱、授权和新增预算；现有账本存储端口不表示这些恢复策略已经接通。
+2. **再建立阶段准入与安全后继**。阶段准入、来源清单、ExecutionRequest JSON 与摘要、稳定模型位置和先持久意图后上传资产的顺序已实现（§14.8）；§35/14.9 接通阶段仍为 submitted 的新后继与串行领取。编排已开始的阶段不允许重入，已发送/未知调用不自动重发。后续仍需冻结实际外部资产及版本，实现原 ready 预留转移和原响应导入。显式新模型尝试须记录前驱、授权和新增预算；submitted 后继尚无任何模型调用，不创建或重置根预算。
 
 | 观察到的事实 | 恢复判定 |
 | --- | --- |
-| 仅原始输入存在，尚无 checkpoint | 当前保持 recovery_required。只有新增准入协议能证明尚未越过任何发送/工具派发边界、且输入与版本可还原时，未来才允许创建新后继；“没有账本行”本身不足以证明安全 |
+| 阶段仍为 submitted，原任务因执行失租进入 recovery_required | §14.9 可创建 message_recover 后继：要求原准入/输入/用户消息/冻结预算一致，原 owner 未被替换且无有效租约，无显式中断、pending Turn 或已领取的后续输入，并排除任何模型、工具、checkpoint/pending writes 矛盾事实；缺准入或仅仅没有账本行仍不构成授权 |
 | 模型 ready，未发发送许可 | 保留原预留及身份；后继不能冒用旧 owner 发送。未发送预留的释放/转移须单独实现和验证，不通过重建预算绕过 |
 | 模型 invoking/unknown，缺响应或 usage | 禁止自动重发。HTTP 已发送与 start 后尚未发送无法仅从账本区分；即使没有业务副作用也可能重复计费 |
 | 完整响应已保存，checkpoint 尚未接收结果 | 先对账原尝试、资产身份、完整性和官方任务位置。非权威观察不自动变成任务输出；在结果导入协议通过故障 Harness 前保持需对账，不重发 |
@@ -688,7 +688,7 @@ Runner 领取/heartbeat/结果结算须与自身领域租约及 framework owner 
 
 | 顺序 | 交付边界 | 必须看到的验收证据 |
 | --- | --- | --- |
-| A：首次 message 与活动时间 | §14.2–14.3；诊断、阶段/尝试身份已实现，再做安全后继和活动时间预算 | 上述六个崩溃窗口；HTTP 不盲重发、原预算/终态不重置、旧 owner 写入拒绝、等待不耗活动时长 |
+| A：首次 message 与活动时间 | §14.2–14.3；诊断、阶段/尝试身份及 submitted 后继已实现，再做已开始阶段的恢复和活动时间预算 | 上述六个崩溃窗口；HTTP 不盲重发、原预算/终态不重置、旧 owner 写入拒绝、等待不耗活动时长 |
 | B：原生上下文与制品冻结 | 跨 Turn 档案导入、Prompt/Skill/工具/模型及实际运行制品 manifest；补齐剩余资产契约 | 真实供应商消息往返、完整工具组/签名、漂移拒绝、历史缺资产可解释阻塞 |
 | C：P2.3 剩余恢复出口 | 未知目标查询/人工对账、领域 Runner 所有权、其余提交窗口 | 真正的独立 Worker kill、旧 Worker 延迟返回、一次目标效果与可核验证据；不能只造终态记录 |
 | D：P3 代码审查 | 接现有 PromptAssembly/项目/Memory/SkillRegistry，文件只读、受限子代理、真实流事件 | 固定仓库/提交样本的发现和行证据、目录边界、原根预算、审批/取消/恢复、真实浏览器展示 |
@@ -711,7 +711,7 @@ D 的本地开发可以在 A–C 期间推进；开启任何生产新 Turn 前�
 - 模型账本保持 ready/invoking/completed/unknown 和原预算；响应与 wire 资产仅返回原有引用及非权威/截断/完整性标记，不读取对象正文或补造 usage。缺表、缺预算及坏记录分别列出；账本无法完整解析时调用数和 Token 汇总返回未知，而非零。`evidence_objects_verified=false` 明示本次没有核验 RustFS 实物。
 - 输入摘要复用 v2 准入的同一个计算入口，包含 binding fingerprint 与准入时的可选冻结预算；同时识别历史无预算准入。无法重建摘要时报告校验缺口，不改写原摘要。展示消息检查身份和内容一致性，但不返回正文。
 - checkpoint 只读指定 thread 与确切物理 namespace/子 namespace 的最新身份、父 checkpoint、step 及 pending write 身份/channel；不解码 Prompt 或工具内容，也不推断图已完成或可以 `ainvoke(None)`。ToolJob 返回状态、执行 task/attempt/epoch 和结果存在性，保留未知执行待对账；SessionSnapshot 按原 Turn 选择，不把另一 Turn 的最新投影当原执行结果。
-- 返回的 `recovery_status=recovery_required` 和 `automatic_replay_allowed=false` 是本端口对自动重放的判定，不修改任务实际状态。§34 新准入记录返回阶段及摘要白名单，并核对冻结 JSON 的摘要；记录合法时标记 `stage_recovery_not_implemented`，缺失时标记 `stage_admission_unavailable`，损坏时额外报告 invalid/identity mismatch。活动时间、安全后继、完整消息位置重建及外部对象验真仍未由此端口实现。
+- 返回的 `recovery_status=recovery_required` 和 `automatic_replay_allowed=false` 是本端口对自动重放的判定，不修改任务实际状态。新准入记录返回阶段及摘要白名单，并核对冻结 JSON 的摘要；submitted 标记 `stage_recovery_requires_admission`，其它合法阶段仍标记 `stage_recovery_not_implemented`，缺失/损坏保留 unavailable/invalid/identity mismatch。§35 新增当前 execution_task_id 与 recovery_count，便于关联原任务和后继；这份快照不代替恢复提交事务或领取校验，仍不授予重放权。
 
 新增 Harness 和本次联合回归见[实施记录 §33](framework-integration-progress-2026-10-25.md#33-首次-message-只读事实诊断2026-10-26)。六个真实崩溃窗口与 Redis 重投的供应商 HTTP 次数验证仍属于 §14.2 第二步，不能用诊断测试替代。
 
@@ -730,3 +730,17 @@ submitted → orchestrating → orchestrated → runtime_submitted → projected
 - 前置语义分类使用固定 `input_orchestration:semantic_intent:v1` 位置；其恢复异常向上抛出，不能降级成一次新的正常编排。历史模型记录缺少 position_version 时保留原事实并阻止新位置自动发送。
 
 Harness 使用真实 PostgreSQL、Redis、官方 SDK 与本地 HTTP 合成供应商：分别在 start 前、start 已提交而 HTTP 未发、HTTP 已返回而结算未确认处强杀独立 Worker，再回收未 ACK 消息，观察 HTTP 次数分别保持 0/0/1，原 attempt/预算/阶段不变，原任务终态保留。它们验证阻止盲重发，没有创建安全后继；不代替真实付费供应商、真实 RustFS、响应导入、图完成后业务投影失败及其余 §14.2 出口。命令和实际结果见[实施记录 §34](framework-integration-progress-2026-10-25.md#34-首次-message-阶段准入与稳定模型位置2026-10-26)。依赖及生产默认开关未改变。
+
+### 14.9 编排尚未开始的安全后继（2026-10-26）
+
+`FrameworkMessageRecovery` 单独负责首次消息准入，不扩展审批恢复器。`ensure_framework_message_recovery(task_id)` 在 Session → owner → 原 task → stage 的锁与事务内校验 submitted 原因果准入，保存后继谱系、message_recover 任务和 v2 outbox；任一写入失败整体回滚。每个前驱 attempt 生成一个稳定任务 ID，重复调用只返回已有子任务。原终态 task/attempt 不重置，原 Turn/binding/input/user_message_id/冻结预算保持。
+
+准入限定为 operation=message/message_recover、status=recovery_required、error_code=execution_owner_expired 的已执行失租尝试。缺少阶段、来源已开始、输入或用户消息变化、预算缺失/漂移、显式中断、尚有 pending Turn、后续输入已领取、当前 owner 已变化均不自动继续。模型账本必须存在且没有任何调用；同时读取实际可用的 ToolJob、checkpoint 和 pending writes 表，发现相同 Turn/物理 namespace 的事实即拒绝。可选表尚未初始化不单独构成安全证明；授权依据是受 owner fence 保护、尚未进入编排的阶段记录。
+
+Worker 重投原终态或观察原执行失租后可提交后继；不为一般数据库错误、业务拒绝、已开始编排或未知模型/工具效果建立自动重试链。领取后继及进入编排前再次校验冻结输入、预算、谱系和执行事实。新 owner 获得更高 epoch；旧 Worker 不能推进原阶段。若后继再次失租且阶段仍为 submitted，可以创建新的有明确前驱的任务；一旦进入 orchestrating 则停止此路径，等待下一阶段恢复协议。
+
+阶段记录保留原 task_id，并由 recoveries 谱系确定 current_task_id；阶段推进仍更新原准入行。新写入使用阶段 schema_version=2，新代码读取无谱系的 schema 1；历史缺记录仍阻塞，不补造历史。该读兼容不代表旧 Worker 能理解 schema 2 或 message_recover，同一 v2 stream 的 Worker 必须统一部署对应制品，不能据此跳过双制品/排空验收。
+
+后继使用原用户消息，不添加第二条输入；后续排队消息等待恢复完成，恢复领取可越过尚未执行的后续输入，不能越过已经领取的输入。Coordinator 可识别正在运行的后继为父任务；Session 队列投影不将内部恢复任务显示成新用户输入。Python/前端 AgentTaskRecord operation 已同步；未新增公开 HTTP 入口或启用生产路由。
+
+独立进程 Harness 在阶段 begin 之前杀掉实际 Redis Worker，由另一 Worker 回收 PEL、建立后继、通过官方 Deep Agents/SDK 与 PostgreSQL saver 执行；本地供应商 HTTP 最终为一次，重复投递不增加调用，原预算与终态不变。这只闭合 §14.2 的“输入已入库但编排尚未开始”窗口。已开始语义调用、ready 转移、响应导入、图完成待投影、真实供应商和部署仍待完成；最终命令与结果见[实施记录 §35](framework-integration-progress-2026-10-25.md#35-编排尚未开始的首次消息安全后继2026-10-26)。

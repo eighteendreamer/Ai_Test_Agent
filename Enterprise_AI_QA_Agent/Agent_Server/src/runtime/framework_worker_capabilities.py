@@ -49,5 +49,5 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_runtime_kind_unavailable")
         if not self.deepagents_available:
             raise TaskDeferred("framework_deepagents_unavailable")
-        if operation not in {"message", "approval_resume", "framework_reconcile", "approval_recover"}:
+        if operation not in {"message", "approval_resume", "framework_reconcile", "approval_recover", "message_recover"}:
             raise TaskDeferred("framework_operation_unavailable")

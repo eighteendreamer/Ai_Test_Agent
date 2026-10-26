@@ -115,8 +115,10 @@ class FrameworkMessageDiagnostics:
                 else:
                     if (stage.task_id == task["id"] and stage.binding_id == binding.binding_id
                         and stage.input_sha256 == task["input_hash"] and stage.user_message_id == task["user_message_id"]):
-                        issues.append("stage_recovery_not_implemented")
-                        return MessageStageFact(**stage.model_dump(include=set(MessageStageFact.model_fields)))
+                        issues.append("stage_recovery_requires_admission" if stage.phase == "submitted"
+                            else "stage_recovery_not_implemented")
+                        return MessageStageFact(**stage.model_dump(include=set(MessageStageFact.model_fields)),
+                            execution_task_id=stage.current_task_id, recovery_count=len(stage.recoveries))
                     issues.append("stage_admission_identity_mismatch")
         issues.append("stage_admission_unavailable")
         return None
@@ -134,7 +136,7 @@ class FrameworkMessageDiagnostics:
         }
         message_matches = bool(message is not None and message["role"] == "user"
             and message["metadata"].get("turn_id") == task["turn_id"]
-            and message["content"] == payload.get("content"))
+            and isinstance(payload.get("content"), str) and message["content"] == payload["content"].strip())
         if not matches:
             issues.append("input_hash_mismatch" if policy is not None else "input_hash_unverifiable")
         if message is None:

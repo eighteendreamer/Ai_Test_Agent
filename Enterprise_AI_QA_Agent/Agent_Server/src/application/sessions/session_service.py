@@ -3060,7 +3060,7 @@ class SessionService:
                 task
                 for task in reversed(tasks)
                 if task.status in {"queued", "waiting_resource", "claimed"}
-                and task.operation not in {"framework_reconcile", "approval_recover"}
+                and task.operation not in {"framework_reconcile", "approval_recover", "message_recover"}
             ]
             resume_queued = any(task.operation == "manual_resume" for task in queued)
             local_queue = session.metadata.get("pending_input_queue", [])

@@ -640,6 +640,8 @@ class AgentTaskDispatcher:
                 raise ValueError("Bound framework task requires a v2 agent command")
             task = await self._tasks.claim(command.task_id, worker_id=worker_id)
         if task.status in TERMINAL_AGENT_TASK_STATUSES:
+            if task.runtime_binding is not None and task.operation in {"message", "message_recover"}:
+                await self._tasks.ensure_framework_message_recovery(task.id)
             if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
             return
@@ -676,6 +678,8 @@ class AgentTaskDispatcher:
             queue=queue,
         ):
             await self._execute(task)
+            if task.runtime_binding is not None and task.operation in {"message", "message_recover"}:
+                await self._tasks.ensure_framework_message_recovery(task.id)
             if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
 
@@ -754,7 +758,7 @@ class AgentTaskDispatcher:
                     await self._sessions.execute_claimed_reconciliation(task)
                     finished_status = "completed"
                     return
-                if task.operation == "message":
+                if task.operation in {"message", "message_recover"}:
                     response = await self._sessions.execute_claimed_message(
                         task,
                         ownership_monitor=monitor,

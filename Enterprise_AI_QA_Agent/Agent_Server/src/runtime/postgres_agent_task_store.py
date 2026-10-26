@@ -183,6 +183,11 @@ class PostgresAgentTaskStore:
 
         return await asyncio.to_thread(FrameworkMessageStages(self).get, task_id, session_id)
 
+    async def ensure_framework_message_recovery(self, task_id: str):
+        from src.runtime.framework_message_recovery import FrameworkMessageRecovery
+
+        return await FrameworkMessageRecovery(self).ensure(task_id)
+
     async def list_session(
         self,
         session_id: str,
@@ -1196,10 +1201,16 @@ class PostgresAgentTaskStore:
             pending = (session["metadata"] or {}).get("pending_turn") or {}
             pending_binding = (pending.get("context_bundle") or {}).get("runtime_binding")
             control = (session["metadata"] or {}).get("control") or {}
-            if (row["operation"] == "message" and pending_binding is not None
+            if (row["operation"] in {"message", "message_recover"} and pending_binding is not None
                 and pending.get("turn_id") != row["turn_id"]
                 and control.get("last_interrupt_binding_id") != pending_binding.get("binding_id")):
                 raise TaskDeferred("Pending framework Turn must settle before a later message")
+            if row["operation"] == "message":
+                cur.execute(f"SELECT id FROM {self._tasks} WHERE session_id=%s AND operation='message_recover' "
+                    "AND turn_id<>%s AND status IN ('queued','waiting_resource','claimed','running') LIMIT 1",
+                    (row["session_id"], row["turn_id"]))
+                if cur.fetchone() is not None:
+                    raise TaskDeferred("Pending message recovery must settle before a later message")
             if row["status"] in {"claimed", "running"}:
                 if session["lease_active"] and session["metadata"].get("turn_lease_token") == row["lease_token"]:
                     raise TaskDeferred("Agent task is owned by another worker")
@@ -1234,6 +1245,19 @@ class PostgresAgentTaskStore:
                     return self._record(cur.fetchone())
             framework_approval = saved_binding is not None and row.get("operation") in {"approval_resume", "approval_recover"}
             framework_reconciliation = saved_binding is not None and row.get("operation") == "framework_reconcile"
+            framework_message_recovery = saved_binding is not None and row.get("operation") == "message_recover"
+            if framework_message_recovery:
+                from src.runtime.framework_message_recovery import require_message_recovery_claim
+                from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+                try:
+                    require_message_recovery_claim(cur, self, session, saved_binding, row, binding_owner)
+                except (FrameworkMessageStageRecoveryRequired, ValidationError) as exc:
+                    self._update_status(cur, row, "recovery_required", None, "framework_message_recovery_changed")
+                    logger.warning("framework_message_recovery_claim_rejected", extra={"task_id": task_id,
+                        "binding_id": saved_binding.binding_id, "error_type": type(exc).__name__})
+                    cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
+                    return self._record(cur.fetchone())
             if framework_reconciliation:
                 from src.runtime.framework_approval_recovery import require_reconciliation_claim
                 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
@@ -1286,7 +1310,7 @@ class PostgresAgentTaskStore:
                 AND NOT (%s AND operation IN ('approval_resume','approval_recover') AND turn_id=%s
                     AND status IN ('queued','waiting_resource'))
                 LIMIT 1""",
-                (row["session_id"], row["sequence"], framework_approval or framework_reconciliation,
+                (row["session_id"], row["sequence"], framework_approval or framework_reconciliation or framework_message_recovery,
                     row["turn_id"], framework_reconciliation or row["operation"] == "approval_recover", row["turn_id"]),
             )
             if cur.fetchone():

@@ -30,7 +30,7 @@ LegacyAgentTaskOperation = Literal[
     "coordinator_child",
     "coordinator_resume",
 ]
-AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover"]
+AgentTaskOperation = Literal[LegacyAgentTaskOperation, "framework_reconcile", "approval_recover", "message_recover"]
 TERMINAL_AGENT_TASK_STATUSES = frozenset(
     {"completed", "interrupted", "failed", "cancelled", "recovery_required"}
 )

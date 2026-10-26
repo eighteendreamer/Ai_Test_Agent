@@ -1071,3 +1071,52 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 结果 **98 passed，180.69 秒，无 skip**，覆盖最终模型位置、历史缺位置、诊断、真实模型准入、分发和既有 Session/语义入口。本次变更的 Python 源码与两个新增测试执行 `python -m compileall -q <相关文件>` exit 0；`git diff --check` / `git diff --cached --check` 均 exit 0。两组最终测试为阶段 13 项与入口 98 项，不将中间 136 项重复累计。
 
 当前尚未实现首次 message 安全后继、旧 ready 预留转移、原响应导入、图完成后投影补偿、活动时间和完整初始图资产；这三个 kill 位置不覆盖方案要求的全部六个窗口。请求资产测试使用既有 RustFS 替身，HTTP 为本地合成供应商，未执行真实付费供应商、真实 RustFS、全系统/前端、浏览器/领域 Runner、独立 lint/typecheck 或双制品部署。九个固定依赖、生产默认开关均未改变，整体 P1/P2.3/P3–P5 继续未完成。
+
+## 35. 编排尚未开始的首次消息安全后继（2026-10-26）
+
+继续基线 `f1ae31c7c` 的首次消息恢复工作。上一阶段已证明“不得盲重发”，本阶段闭合输入入库但尚未进入编排的恢复窗口；没有将整个首次 Turn 当作一条可随意重试的函数。重新阅读原审批恢复器、任务领取/终态、阶段日志、owner fence、模型预算和 Session 投影后，新增独立 `FrameworkMessageRecovery` 与 `message_recover` 操作，复用原 inbox/outbox、原阶段表与租约。官方 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 明确节点恢复会重入，[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 保存图内步骤与 pending writes，均不能为图外输入编排自动提供恢复位置。
+
+### 契约、接线与兼容性
+
+- `ensure_framework_message_recovery` 只受理因 execution_owner_expired 进入 recovery_required 的 message/message_recover 尝试。阶段必须仍为 submitted，原 task/attempt、输入、用户消息、项目、冻结预算和 owner 均可验证；没有显式中断、pending Turn 或已经领取的后续输入。模型账本必须存在且零调用，实际存在的 ToolJob/checkpoint/pending writes 不得有该 Turn 的矛盾事实。安全依据是阶段因果准入及 owner 事务，不能从“表未初始化”或“没有一条模型记录”单独推断安全。
+- 后继 ID 绑定前驱 task/attempt；后继 task、谱系、outbox 与事件共事务。并发/重复受理只产生一个子任务。原 task/attempt 终态不重领，原 user_message_id、Turn/binding/input 和预算不重建；原输入消息不会重复插入。
+- 任务阶段仍存于原准入行，新增持久 recoveries 谱系并派生 current_task_id；领取后继及阶段 begin 再次核对原准入事实，防止提交后输入、预算、谱系或前驱变化。新 owner 使用更高 epoch；旧 owner 无法推进原阶段。尚未进入编排的后继再次失租，可以保存新的前驱尝试并继续；一般数据库错误/拒绝与已开始阶段不自动生成重试链。
+- Worker 处理终态/过期 message 重投时可以创建后继，通过既有 Redis/outbox 调度后进入正常 Session 输入流程。后续排队消息先等待该恢复，后继可越过尚未执行的后续输入；已领取的后续输入会阻止恢复准入，避免倒序执行。审批恢复器未参与这条路径。
+- Python v2 command/record、Worker operation 能力与前端 AgentTaskRecord 联合类型同步新增 message_recover；v1 command 仍拒绝该操作。Coordinator 可把实际运行后继当父任务，Session 队列投影排除内部恢复任务，避免伪造第二条用户输入。只读诊断增加 execution_task_id/recovery_count，submitted 使用 stage_recovery_requires_admission；automatic_replay_allowed 始终为 false，诊断快照不授予执行权。
+- 阶段 JSON 新写入为 schema_version=2，显式记录谱系；新代码能读取无谱系的 schema 1，并在写入/恢复受理时升级。schema 1 不能携带伪造谱系。没有新增表或 DDL，但存在 JSON 协议升级；旧 Worker 不理解 schema 2/message_recover，同一 v2 stream 须统一部署对应制品，不能以此宣布双环境或滚动部署已验收。历史缺准入或预算不补造。
+
+### TDD 与实际故障轨迹
+
+先运行新增测试，真实失败 **1 failed，8.25 秒**，缺少 ensure_framework_message_recovery。接线后，真实 Worker 测试暴露阶段开始返回成功却没有更新数据库：阶段原 task_id 与后继执行 task_id 不同，UPDATE 仍使用后继 ID。已以原准入身份定位阶段行，保持当前执行身份与原历史分离，没有重置原任务绕过问题。
+
+既有 v2 失租回归还暴露历史未初始化模型账本时查询直接报 UndefinedTable；现已将“缺模型准入存储/预算”显式列为不可恢复原因，保留原终态，而非补建空账本或吞掉任意数据库错误。只读诊断新增谱系断言实际红测 **1 failed，10.69 秒**，缺 execution_task_id；随后实现白名单投影。
+
+收尾审查又加入两条真实边界红测：修改后继引用后 getter 仍返回原阶段（**1 failed，10.16 秒**），以及原输入含首尾空白而 Dispatcher 已保存裁剪后的展示消息时恢复被误拒（**1 failed，8.23 秒**）。前者通过校验 recovery reference、原任务和 Session 范围修复；后者按现有 Dispatcher 的展示消息裁剪规则比较，原始输入和输入摘要保持不变。最终定向回归覆盖了这两项修复。
+
+开发中发现两个测试环境问题并修正：Redis v2 stream 必须使用隔离前缀；冷启动真实框架在一秒资源租约下会失租。独立进程测试只对被杀原 Worker 使用一秒资源租约，确认进程已终止后等待真实 TTL 到期并运行资源回收，后继使用正常 300 秒租约；没有延长已经丢失的旧执行权。
+
+新增 Harness 覆盖原输入/预算/唯一后继、并发受理、真实 outbox/Redis Worker 与重复投递、发布事务回滚、编排已开始/输入漂移/显式中断/缺准入/预算漂移拒绝、后继再次失租及旧 owner 拒绝、排队顺序、提交后 parent/input/stage/proof/version/budget 变化、模型/checkpoint/孤立 pending write 矛盾、只读谱系与 schema 1 读取/升级。相关既有 Worker 替身同步内部恢复端口；没有为生产实现添加 hasattr 兼容降级。
+
+独立进程用 multiprocessing.spawn 启实际 Redis Worker，在 FrameworkMessageStages.begin 前确认 running/submitted 后 terminate/join。replacement Worker 回收未 ACK PEL，保留原 recovery_required task/attempt，提交并领取新任务，经官方 Deep Agents、SDK 与 PostgreSQL saver 执行；本地供应商 HTTP 为 1，根预算仍为原对象且仅一个模型尝试，Token 实际用量 10；重复投递不新增 HTTP。开发中该文件为 **19 passed，73.57 秒**，之后继续扩展缺预算/proof version/schema 1 用例，最终结果以下面的联合回归为准，不累计。
+
+### 验证与保留出口
+
+后端联合命令（Agent_Server）：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_recovery.py tests/test_framework_message_stages.py tests/test_framework_message_diagnostics.py tests/test_agent_v2_worker_contract.py tests/test_framework_model_admission.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+```
+
+该联合命令实际结果为 **191 passed，529.91 秒，无 skip**。它在最后两项边界修复前启动，因此只能作为广泛回归证据，不能单独证明最后修复。随后针对最终源码重新运行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_recovery.py tests/test_framework_message_stages.py tests/test_framework_message_diagnostics.py -q -x -rs --tb=short
+```
+
+实际结果为 **55 passed，177.45 秒，无 skip**，覆盖 schema 2、schema 1 读取/升级、谱系引用范围以及裁剪展示消息的最终实现。
+
+前端已在 Agent_Web 执行 `npm run typecheck`（vue-tsc），exit 0。没有修改依赖、公开 HTTP 路由或生产默认开关。
+
+此阶段只实现 submitted 的安全后继，尚未完成编排已开始的语义结果导入、ready 预留转移、模型响应导入、图完成待投影补偿、活动时间、完整初始图资产、跨 Turn 管道及各模式 Harness。真实付费供应商、RustFS、浏览器/领域 Runner、完整前端构建/真实浏览器、独立后端 lint/typecheck 与双制品部署均未执行；不能将此阶段视为六个故障窗口或全系统迁移完成。
