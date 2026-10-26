@@ -223,9 +223,13 @@ class FrameworkMessageDiagnostics:
                 issues.append("model_usage_missing")
             if call.request is None:
                 issues.append("model_request_asset_missing")
+            origin = call.reservation_transfers[0].predecessor if call.reservation_transfers else call
             facts.append(MessageModelCallFact(attempt_id=call.intent.attempt_id, logical_call_id=call.intent.logical_call_id,
                 branch_id=call.intent.branch_id, purpose=call.intent.purpose, owner_task_id=call.owner_task_id,
                 owner_attempt_id=call.owner_attempt_id, owner_epoch=call.owner_epoch, phase=call.phase,
+                reservation_transfer_count=len(call.reservation_transfers),
+                reservation_origin_task_id=origin.owner_task_id, reservation_origin_attempt_id=origin.owner_attempt_id,
+                reservation_origin_epoch=origin.owner_epoch,
                 request=call.request, request_sha256=call.intent.request_sha256, usage=call.usage,
                 response_observations=call.response_observations,
                 wire_observations=[MessageModelWireFact(**item.model_dump(exclude={"schema_version", "request_headers",

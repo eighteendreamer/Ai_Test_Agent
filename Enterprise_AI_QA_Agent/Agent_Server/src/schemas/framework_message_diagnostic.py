@@ -76,6 +76,10 @@ class MessageModelCallFact(_Fact):
     owner_task_id: str
     owner_attempt_id: str
     owner_epoch: int
+    reservation_transfer_count: int = 0
+    reservation_origin_task_id: str | None = None
+    reservation_origin_attempt_id: str | None = None
+    reservation_origin_epoch: int | None = None
     phase: str
     request: FrameworkModelObject | None
     request_sha256: str

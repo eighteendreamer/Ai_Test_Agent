@@ -23,6 +23,7 @@ from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
     FrameworkModelWireObservation,
+    FrameworkModelReservationOwner, FrameworkModelReservationTransfer,
 )
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -325,6 +326,80 @@ class PostgresFrameworkModelCalls:
             "model_attempt_id": attempt_id, "observation_id": result.observation_id,
             "authoritative": False})
         return result
+
+    async def transfer_ready(self, owner: RuntimeExecutionOwner, *,
+                             expected: FrameworkModelCallRecord) -> FrameworkModelCallRecord:
+        """Explicitly reconcile an unsent reservation without spending a new slot.
+
+        No upstream counterpart (checked: LangGraph checkpointers/persistence,
+        PostgresDocumentImpactCalls, plan §14.2): the application owns model
+        send permission and replacement leases. This does not resume a task or
+        grant orchestration admission. Callers must supply the exact durable
+        predecessor; normal model reentry never invokes this port implicitly.
+        """
+        expected = FrameworkModelCallRecord.model_validate(expected.model_dump())
+        successor = FrameworkModelReservationOwner(owner_epoch=owner.owner_epoch,
+            owner_task_id=owner.task_id, owner_attempt_id=owner.attempt_id,
+            observer_token_sha256=hashlib.sha256(owner.owner_token.encode()).hexdigest())
+        digest = hashlib.sha256(json.dumps(expected.model_dump(mode="json"), sort_keys=True,
+            ensure_ascii=False, separators=(",", ":")).encode()).hexdigest()
+
+        def transfer():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._owned(cur, owner, before_execution=True)
+                self._require_unsent_reservation(expected)
+                if expected.binding_id != owner.binding.binding_id:
+                    raise ValueError("Model reservation transfer binding differs from the execution owner")
+                predecessor = self._reservation_owner(expected)
+                call = self._call(cur, owner.binding.binding_id, expected.intent.attempt_id)
+                # Resolve an uncertain transfer commit, including after its
+                # unique start has committed. Never rewind the persisted phase.
+                if (call.reservation_transfers and self._reservation_owner(call) == successor
+                    and call.reservation_transfers[-1].predecessor_record_sha256 == digest
+                    and call.reservation_transfers[-1].predecessor == predecessor):
+                    return call
+                if call != expected:
+                    raise FrameworkModelRecoveryRequired("reservation_predecessor_changed", call)
+                self._require_unsent_reservation(call)
+                snapshot = self._snapshot(cur, owner.binding.binding_id)
+                self._require_time(cur, snapshot.policy)
+                if snapshot.charged_tokens > snapshot.policy.max_tokens:
+                    raise FrameworkModelBudgetExceeded("tokens")
+                if snapshot.policy.model_config_fingerprints.get(call.intent.model_key) != call.intent.model_config_fingerprint:
+                    raise ValueError("Model reservation configuration differs from the frozen budget")
+                link = FrameworkModelReservationTransfer(predecessor=predecessor, successor=successor,
+                    predecessor_record_sha256=digest, transferred_at=self._now(cur))
+                return self._write(cur, call.model_copy(update={"schema_version": 2,
+                    **successor.model_dump(), "reservation_transfers": [*call.reservation_transfers, link]}))
+
+        try:
+            saved = await asyncio.to_thread(transfer)
+        except Exception as exc:
+            logger.warning("framework_model_reservation_transfer_rejected", extra={
+                "binding_id": owner.binding.binding_id, "model_attempt_id": expected.intent.attempt_id,
+                "owner_epoch": owner.owner_epoch, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_model_reservation_transferred", extra={
+            "binding_id": saved.binding_id, "model_attempt_id": saved.intent.attempt_id,
+            "predecessor_task_id": expected.owner_task_id,
+            "predecessor_attempt_id": expected.owner_attempt_id, "owner_task_id": owner.task_id,
+            "owner_attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch,
+            "transfer_count": len(saved.reservation_transfers), "phase": saved.phase})
+        return saved
+
+    @staticmethod
+    def _reservation_owner(call):
+        return FrameworkModelReservationOwner(**{field: getattr(call, field)
+            for field in FrameworkModelReservationOwner.model_fields})
+
+    @staticmethod
+    def _require_unsent_reservation(call):
+        if (call.phase != "ready" or call.intent.position_version != 1
+            or call.started_at is not None or call.settled_at is not None or call.usage is not None
+            or call.outcome_code is not None or call.response_observations or call.wire_observations
+            or call.observer_token_sha256 is None
+            or (call.request is not None and call.request.sha256 != call.intent.request_sha256)):
+            raise FrameworkModelRecoveryRequired("reservation_is_not_provably_unsent", call)
 
     async def start(self, owner: RuntimeExecutionOwner, attempt_id: str) -> tuple[FrameworkModelCallRecord, bool]:
         def grant():

@@ -2,7 +2,7 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-**全系统迁移尚未完成。当前快照更新至 §31：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。自动生成绑定及预算、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §36：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted 安全后继和未发送模型预留的显式转移端口已局部落实。自动生成绑定及预算、已开始编排的恢复调用方、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1120,3 +1120,49 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 前端已在 Agent_Web 执行 `npm run typecheck`（vue-tsc），exit 0。没有修改依赖、公开 HTTP 路由或生产默认开关。
 
 此阶段只实现 submitted 的安全后继，尚未完成编排已开始的语义结果导入、ready 预留转移、模型响应导入、图完成待投影补偿、活动时间、完整初始图资产、跨 Turn 管道及各模式 Harness。真实付费供应商、RustFS、浏览器/领域 Runner、完整前端构建/真实浏览器、独立后端 lint/typecheck 与双制品部署均未执行；不能将此阶段视为六个故障窗口或全系统迁移完成。
+
+## 36. 未发送模型预留的显式转移（2026-10-26）
+
+从干净基线 `bb12f3a77` 继续方案 §14.2/A。现有 `prepare_initial` 已定位原调用，`start` 仅允许原 owner；缺口是有效新 owner 无法显式接管仍未取得发送许可的预留。不能因此重建预算/attempt，也不能把调用重入改为自动接管。本阶段实现独立账本端口，尚未实现已开始编排的应用阶段恢复调用方。
+
+### 依据、实现和兼容边界
+
+重新阅读 `PostgresFrameworkModelCalls`、owner 行锁/任务领取、`PostgresDocumentImpactCalls`、审批后继及原消息恢复器。官方 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 区分图 checkpoint 与应用持久数据；应用发送许可和租约仍由本系统管理。复核本地《Agent轨迹与协议鲁棒性》《Agent测试专项》中的轨迹、幂等、故障恢复和调用成本要求。
+
+- 新增 `transfer_ready(owner, expected=完整前驱记录)`，在既有 Session → owner → call 锁中完成比较与写入。仅新 epoch、同 binding、显式位置、持久 ready 且无任何 started/settled/usage/结果矛盾时允许；旧位置缺 observer 身份也拒绝。有效 owner 本身仍通过原租约设施取得，不根据“最新 owner”查找替换凭据。
+- 原模型 attempt、intent、根额度、deadline、请求资产和创建时间不变，当前发送/观察 owner 更新为新执行身份。追加 `FrameworkModelReservationTransfer`，保存前驱/后继非秘密身份、observer 哈希、完整前驱摘要和数据库时间；原 owner 的 start/结算/响应观察被拒绝。schema 2 DTO 校验更高 epoch、连续谱系及尾部 owner；旧 schema 1 无谱系可读，不补造历史 position/observer。
+- 同一前驱/目标的并发重复转移只追加一个 link；已提交但确认丢失时，按前驱摘要返回当前事实，start 后也不回退阶段。第二次 owner 更换必须提供立即前驱快照；同一 owner 不允许伪造一次转移。deadline/Token/冻结指纹重新校验，失败真实回滚。
+- `MessageModelCallFact` 增加转移次数和原预留 task/attempt/epoch，保留当前 owner；不返回 observer 哈希或 token，不授予自动恢复。没有新增 HTTP、数据库 DDL、依赖或默认开关。扩展 JSON/实际转移 schema 2 不能由旧严格解析器读取，同一 v2 stream 仍须统一制品；本轮没有验证滚动发布。
+- `FrameworkModelCallPolicy`、`prepare_initial`、message recovery 的运行行为未放宽：普通重入仍拒绝 prior owner，submitted 后继仍拒绝任何模型事实。账本端口不发送请求、不建后继、不重入已开始的编排/图；后续有阶段准入的调用方必须显式对账后才调用它。
+
+### TDD 与实际 Harness
+
+第一条红测实际 **1 failed，13.14 秒**：缺少 `transfer_ready`。端口首批为 **7 passed，23.53 秒**。随后诊断红测实际 **1 failed / 9 deselected，11.83 秒**，缺少 reservation_transfer_count；实现白名单投影后当时文件 **10 passed，32.28 秒**。这些开发中结果不与最终结果累计。
+
+新文件 `test_framework_model_reservation_transfer.py` 覆盖并发唯一转移/唯一 start、原预算和资产保留、事务失败回滚、重复确认及二次换 owner、已发送/completed/unknown 拒绝、五类伪 ready 矛盾、历史缺位置拒绝、同 owner 拒绝、截止时间不重置、原身份响应拒绝及诊断脱敏。既有治理 Harness 增加可选的“领取但未 begin”入口，以真实领取协议生成尚未执行的 owner，而不是篡改运行任务为可重新领取。
+
+普通 DTO 和官方 LangChain 两条路径使用真实 PostgreSQL/SDK 与本地 HTTP 合成供应商：原 owner 在 claimed 阶段只能 prepare，start 因未运行被拒绝，HTTP 为 0；原领取失租后按既有任务协议重新领取，新 owner 普通调用仍拒绝 prior owner；显式转移后沿原位置发送一次，根调用数仍为 1，usage 为 10；后续重入不再发 HTTP。这是模型端口/调用策略验收，不是运行中首次消息的完整恢复。
+
+独立 `multiprocessing.spawn` 消费者在 `transfer_ready` 提交后写 Redis 门闩并等待，父进程确认数据库 ready/单 link 及子进程存活后 terminate/join。重建 store，在同一仍有效的 owner 租约下使用原快照核对提交，记录不变；原 attempt 仅得到一次 start，调用槽位仍为 1。此项验证进程死亡造成的 ACK 丢失，没有谎称 Worker 再次失租/接管或供应商真实请求验收。
+
+### 验证与剩余出口
+
+在 `Agent_Server` 执行定向最终命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_reservation_transfer.py -q -x -rs --tb=short
+```
+
+结果 **17 passed，54.52 秒，无 skip**，包含最终独立进程测试。受影响联合回归命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_reservation_transfer.py tests/test_framework_model_calls.py tests/test_framework_model_positions.py tests/test_framework_model_policy.py tests/test_framework_model_evidence.py tests/test_framework_message_diagnostics.py -q -x -rs --tb=short
+```
+
+联合回归结果 **103 passed，275.38 秒，无 skip**。其运行包含最终生产实现，但启动于最后一个独立进程测试添加前；该新增测试由上面的最终定向 17 项覆盖。两组运行分别报告，不把重复数字累计为不同覆盖。
+
+6 个涉及的 Python 源码/测试文件执行 `compileall` 全部通过；两份文档围栏与本地文件链接检查、`git diff --check` 通过。本轮没有前端实现变更，未重复运行前端检查。
+
+仍未完成：冻结外部编排资产、已开始 message 的阶段恢复准入与转移调用方、响应导入、活动时间、跨 Turn、受控 AgentCase 图和各模式 Harness。未运行真实供应商/RustFS、完整系统/前端/浏览器/领域 Runner、独立后端 lint/typecheck 或双制品部署；本轮不开放生产路由、不把此账本前置端口视为 A 阶段或整体迁移完成。

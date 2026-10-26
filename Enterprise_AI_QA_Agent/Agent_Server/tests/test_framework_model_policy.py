@@ -22,7 +22,7 @@ from tests.test_runtime_binding_persistence import make_binding, make_command, m
 
 
 @asynccontextmanager
-async def governed(h, config, **limits):
+async def governed(h, config, *, begin_execution=True, **limits):
     from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy, model_config_fingerprint
 
     h.calls = PostgresFrameworkModelCalls(h.settings)
@@ -32,8 +32,9 @@ async def governed(h, config, **limits):
     task = await h.tasks.submit_v2(make_command(h, h.binding), make_payload(), make_message(h, h.binding),
         idempotency_key=uuid4().hex)
     h.owner = await h.tasks.claim(task.id, worker_id="governed-model", expected_binding=h.binding)
-    await h.tasks.begin(h.owner, resource_id="model-policy-test", fencing_token=1)
-    await h.tasks.renew_framework_execution(h.owner, 120)
+    if begin_execution:
+        await h.tasks.begin(h.owner, resource_id="model-policy-test", fencing_token=1)
+        await h.tasks.renew_framework_execution(h.owner, 120)
     await h.calls.freeze(h.owner.runtime_owner, FrameworkModelBudget(
         max_calls=limits.get("max_calls", 8), max_tokens=limits.get("max_tokens", 500_000),
         deadline_at=datetime.now(timezone.utc) + timedelta(minutes=5),
