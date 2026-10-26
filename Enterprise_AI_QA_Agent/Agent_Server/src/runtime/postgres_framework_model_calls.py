@@ -40,6 +40,12 @@ class FrameworkModelBudgetMissing(ValueError):
     """A historical binding has no admitted budget; never infer a fresh one."""
 
 
+class FrameworkModelRecoveryRequired(ValueError):
+    def __init__(self, reason: str, call: FrameworkModelCallRecord):
+        self.reason, self.attempt_id, self.phase = reason, call.intent.attempt_id, call.phase
+        super().__init__(f"Model retry requires reconciliation: {reason}")
+
+
 @dataclass(frozen=True)
 class _Settlement:
     phase: str
@@ -137,6 +143,26 @@ class PostgresFrameworkModelCalls:
 
     async def prepare(self, owner: RuntimeExecutionOwner, intent: FrameworkModelCallIntent, *,
                       request: FrameworkModelObject | None = None) -> FrameworkModelCallRecord:
+        return await self._prepare(owner, intent, request=request, initial=False)
+
+    async def prepare_initial(self, owner: RuntimeExecutionOwner, intent: FrameworkModelCallIntent, *,
+                              request: FrameworkModelObject | None = None) -> FrameworkModelCallRecord:
+        """Admit a logical position once, returning its original attempt on reentry.
+
+        No upstream counterpart (checked: LangGraph task replay, _check_retry,
+        plan §14.2): request digests validate input; they do not define position.
+        Explicit retries continue through prepare with their original lineage.
+        """
+        if intent.position_version != 1 or intent.retry_of_attempt_id is not None:
+            raise ValueError("Initial model admission requires an explicit versioned call position")
+        try:
+            return await self._prepare(owner, intent, request=request, initial=True)
+        except FrameworkModelRecoveryRequired as exc:
+            logger.warning("framework_model_position_rejected", extra={"binding_id": owner.binding.binding_id,
+                "model_attempt_id": exc.attempt_id, "reason": exc.reason, "phase": exc.phase})
+            raise
+
+    async def _prepare(self, owner, intent, *, request, initial):
         intent = FrameworkModelCallIntent.model_validate(intent.model_dump())
         if request is not None:
             request = FrameworkModelObject.model_validate(request.model_dump())
@@ -146,6 +172,10 @@ class PostgresFrameworkModelCalls:
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 self._owned(cur, owner, before_execution=True)
                 snapshot = self._snapshot(cur, owner.binding.binding_id)
+                if initial:
+                    original = self._initial_position(snapshot.calls, intent)
+                    if original is not None:
+                        return original
                 existing = next((call for call in snapshot.calls if call.intent.attempt_id == intent.attempt_id), None)
                 if existing is not None:
                     if existing.intent != intent:
@@ -178,8 +208,50 @@ class PostgresFrameworkModelCalls:
                 "model_attempt_id": intent.attempt_id, "budget_kind": exc.kind})
             raise
         logger.info("framework_model_call_prepared", extra={"binding_id": saved.binding_id,
-            "model_attempt_id": intent.attempt_id, "logical_call_id": intent.logical_call_id,
-            "branch_id": intent.branch_id, "purpose": intent.purpose, "reserved_tokens": intent.reserved_tokens})
+            "model_attempt_id": saved.intent.attempt_id, "logical_call_id": saved.intent.logical_call_id,
+            "branch_id": saved.intent.branch_id, "purpose": saved.intent.purpose,
+            "reserved_tokens": saved.intent.reserved_tokens})
+        return saved
+
+    @staticmethod
+    def _initial_position(calls, intent):
+        originals = [call for call in calls if call.intent.logical_call_id == intent.logical_call_id
+            and call.intent.branch_id == intent.branch_id and call.intent.retry_of_attempt_id is None]
+        if len(originals) > 1:
+            raise FrameworkModelRecoveryRequired("position_has_multiple_origins", originals[0])
+        if originals:
+            original = originals[0]
+            if original.intent.model_dump(exclude={"attempt_id"}) != intent.model_dump(exclude={"attempt_id"}):
+                raise FrameworkModelRecoveryRequired("position_input_changed", original)
+            return original
+        legacy = next((call for call in calls if call.intent.position_version is None), None)
+        if legacy is not None:
+            raise FrameworkModelRecoveryRequired("legacy_position_unavailable", legacy)
+        return None
+
+    async def attach_request(self, owner: RuntimeExecutionOwner, attempt_id: str, *,
+                             request: FrameworkModelObject) -> FrameworkModelCallRecord:
+        """Bind immutable bytes to an admitted unsent intent before permission."""
+        request = FrameworkModelObject.model_validate(request.model_dump())
+
+        def attach():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._owned(cur, owner, before_execution=True)
+                call = self._call(cur, owner.binding.binding_id, attempt_id)
+                self._require_origin_owner(call, owner)
+                if request.sha256 != call.intent.request_sha256:
+                    raise ValueError("Model request asset does not match its admitted intent digest")
+                if call.request is not None:
+                    if call.request.sha256 != request.sha256 or call.request.size_bytes != request.size_bytes:
+                        raise ValueError("Model request asset cannot change after admission")
+                    return call
+                if call.phase != "ready" or call.intent.position_version != 1:
+                    raise FrameworkModelRecoveryRequired("request_asset_cannot_be_reconstructed", call)
+                return self._write(cur, call.model_copy(update={"request": request}))
+
+        saved = await asyncio.to_thread(attach)
+        logger.info("framework_model_request_asset_bound", extra={"binding_id": saved.binding_id,
+            "model_attempt_id": saved.intent.attempt_id, "request_sha256": saved.intent.request_sha256})
         return saved
 
     async def append_response_observation(self, owner: RuntimeExecutionOwner, attempt_id: str, *,

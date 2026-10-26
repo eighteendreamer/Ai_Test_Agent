@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `b8ebb12d6` 及实施记录 §31。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新当前实施边界与剩余实施顺序；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。第 14 节为本次附件复核的增补契约，不代表已实现其中的待办。
+初稿日期：2026-10-25；最近复核：2026-10-26，本次实现从代码基线 `185225e01` 继续，记录至实施记录 §34。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新当前实施边界与剩余实施顺序；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。第 14 节的阶段准入与调用位置已局部落实，安全后继等待办仍未实现。
 
 ## 1. 结论与本次修订
 
@@ -51,7 +51,7 @@
 | F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
 | F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态；对账运行失租可建立新对账，提交前/后强杀已验证，见 §24 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，确定性拒绝/返回数据库错误不自动重试；不承诺外部 exactly-once |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察；已知结果审批的独立 Worker 接管见实施记录 §21–23 | 无绑定旧试点仍用原 saver。同步工具的校验不能撤销已准入外部请求；领域 Runner 独立执行权及其余跨进程窗口仍未完成 |
-| F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要及 owner 作用域内 DTO 请求共用根模型策略；受理预算、Worker 检查与前置语义分类已接线。应用层请求/响应资产、迟到观察及 OpenAI Chat/Responses、Gemini 图内 wire 注入已有局部验证，见 §7.3 与实施记录 §25–31 | 自动生成绑定/预算及版本实物、活动时间、完整动态参数/错误/显式重试、Anthropic 图内 wire、多次 HTTP attempt 独立证据、真实对象存储/供应商仍待验收。资产保存不证明首次 message 可重放；无 owner 的调用不自动纳入根预算 |
+| F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要及 owner 作用域内 DTO 请求共用根模型策略；受理预算、Worker 检查与前置语义分类已接线。应用层请求/响应资产、迟到观察及 OpenAI Chat/Responses、Gemini 图内 wire 注入已有局部验证；§34 补入稳定模型位置、意图先于资产和输入漂移拒绝，见 §7.3/14.8 | 自动生成绑定/预算及版本实物、活动时间、完整动态参数/错误/显式重试、Anthropic 图内 wire、多次 HTTP attempt 独立证据、真实对象存储/供应商仍待验收。资产保存不证明首次 message 可重放；无 owner 的调用不自动纳入根预算 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
 | F6 版本识别不等于旧环境存在 | 已有 v2 schema、独立 stream/CLI、绑定复核与 lock 摘要能力校验，另有 legacy manifest | 真实双制品部署、存量审批继续、排空与回滚未验收；lock 文件哈希不证明运行环境已安装正确依赖 |
 
@@ -348,7 +348,7 @@ checkpoint 写入适配器的单次数据库操作：
 
 模型已发出而失联，不能承诺供应商端“只调用一次”。应用账本需保留不确定尝试，保证预算和审计不将其遗漏。
 
-### 7.3 已实现的账本、请求策略与受理接线（实施记录 §25–31）
+### 7.3 已实现的账本、请求策略与受理接线（实施记录 §25–31、34）
 
 `PostgresFrameworkModelCalls` 与 `framework_model_call.py` 提供根预算及尝试存储端口，复用 Session → owner 的事务锁与数据库时钟。`FrameworkModelCallPolicy` 已连接官方 Deep Agents 主代理、现有具名只读子代理、自动摘要及 owner 作用域内 `ModelRuntimeService.invoke`；bootstrap 初始化账本并把同一策略注入模型服务和 bound adapter。`submit_v2(..., model_budget=...)` 可在首次任务受理事务中冻结显式预算。受控 AgentCase 图、自动生成绑定/预算并路由新 Turn 仍未接线；此阶段不能据此自动恢复首次消息或开放生产路由。
 
@@ -373,7 +373,7 @@ checkpoint 写入适配器的单次数据库操作：
 普通 DTO 与前置模型调用（实施记录 §28）：
 
 - `SessionService.execute_claimed_message` 从输入编排开始建立捕获的 owner 作用域，语义分类实际 HTTP 请求也必须经过根账本。模型服务只从进程内 ContextVar 获取 owner，不接受公开 context 中的身份作为执行权；无绑定/无 owner 的旧调用继续原路径。
-- DTO 与官方图消息分别构造请求封套和用量读取器，共用同一个 prepare/start/send/complete/unknown 流程。DTO 根逻辑身份包含 binding、原任务、调用方 logical_call_id 和请求摘要；缺省调用 ID 仍沿现有服务生成规则，此阶段不因此提供首次消息的确定性重放。
+- DTO 与官方图消息分别构造请求封套和用量读取器，共用账本准入/start/send/complete/unknown 流程。§34 将新调用升级为 `position_version=1`：DTO 身份只含版本标记、binding 与调用方持久 logical_call_id；图内身份包含版本标记、binding、branch、namespace、原生 task 与 purpose。请求摘要校验该位置的不可变输入，不参与生成位置；owner-bound DTO 缺位置明确拒绝。历史 `position_version=None` 不补造位置，新旧记录不能据此自动混跑，详见 §14.8。
 - 四种原生传输及既有 LangChain Chat 路径在 owner 下显式关闭 SDK 重试，非零隐式重试请求明确拒绝；缓存也在实际 LangChain DTO 模型对象关闭。HTTP 错误先记 unknown，再按旧 DTO 契约返回错误结果；缺失/不完整 usage 继续保留预留。Google 原生 SDK 使用 `HttpRetryOptions(attempts=max_retries+1)`；Anthropic 原生 usage 的输入包含缓存读取及创建 Token，原生响应摘要不改写。
 - 输入分类的框架 owner 缺失 policy 时在 HTTP 前失败。语义增强保留其现有可检索降级日志；任何后续实际模型调用仍受同根预算约束。后台独立领域任务与无 owner 的旧调用未被迁移为 v2。
 
@@ -645,14 +645,14 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 
 官方依据：本次重新核对 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 的 per-call 及恢复时 when 重算约束、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) 的 LangGraph interrupt 实现基础、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 的节点从头重入、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 的 pending writes 与 sync durability、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 的 thread/store 分工。在线文档已有新流接口示例，不将其直接移植到固定版本；以本地已安装版本签名和 Harness 为准。
 
-### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（只读诊断已实现；安全后继待实施）
+### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（诊断、阶段准入及调用位置已实现；安全后继待实施）
 
-当前事实：`submit_v2` 已同事务保存原始输入、用户消息、binding、显式预算和 outbox。`execute_claimed_message` 从输入编排起设置 owner 作用域；但编排结果、初始上下文实物及每个前置调用的恢复位置尚未形成持久协议。`_run_owned_submission_locked` 清空 pending_turn 后才执行 Runtime；框架尝试目前使用 UUID4，DTO 缺省调用身份也不构成可重放证明。单凭“没有 checkpoint/ToolJob”不能证明没有发送过模型或发生过外部效果。
+当前事实：`submit_v2` 已同事务保存原始输入、用户消息、binding、显式预算、阶段准入和 outbox。`execute_claimed_message` 从输入编排起设置 owner 作用域，在编排前冻结来源摘要清单，编排后冻结完整 ExecutionRequest；模型新逻辑位置及其原尝试已可持久查询。阶段推进、执行与诊断共用资产摘要校验，实际执行从冻结 JSON 重建请求。初始图状态、外部 Prompt/Skill/Memory 实物与安全后继尚未形成完整协议。`_run_owned_submission_locked` 清空 pending_turn 后才执行 Runtime，单凭“没有 checkpoint/ToolJob”仍不能证明没有发生模型或外部效果。
 
 实施拆为两步，每步独立验收：
 
 1. **先提供只读事实诊断（已实现内部端口，见 §14.7）**。定位原 task/attempt/binding，联合输出输入准入、owner/租约、模型尝试、最新 checkpoint/pending writes、ToolJob 和现有投影的证据及缺口。诊断不调用模型/图/工具、不发 outbox，不修改终态或补造 usage。未知/缺失事实明确显示 recovery_required 的原因。
-2. **再建立阶段准入与安全后继**。在可能发生前置模型调用之前冻结来源清单、阶段身份及输入摘要；编排完成后冻结 ExecutionRequest/上下文资产及版本。以 binding、业务阶段、分支和持久逻辑调用位置为身份，先保存不可变 attempt，再发发送许可。请求 hash 用于校验相同身份下输入没有变化，不能让输入漂移自动变成一次新调用。重投找到原 attempt；显式新尝试必须记录前驱、授权和新增预算。确切表结构/DTO/operation 通过独立实现 diff 与契约评审冻结，本方案不臆造已存在端口。
+2. **再建立阶段准入与安全后继**。阶段准入、来源清单、ExecutionRequest JSON 与摘要、稳定模型位置和先持久意图后上传资产的顺序已实现（§14.8）；阶段不允许重入，已发送/未知调用不自动重发。后续仍需冻结实际外部资产及版本，明确安全后继操作、原 ready 预留转移和原响应导入。显式新尝试须记录前驱、授权和新增预算；现有账本存储端口不表示这些恢复策略已经接通。
 
 | 观察到的事实 | 恢复判定 |
 | --- | --- |
@@ -688,7 +688,7 @@ Runner 领取/heartbeat/结果结算须与自身领域租约及 framework owner 
 
 | 顺序 | 交付边界 | 必须看到的验收证据 |
 | --- | --- | --- |
-| A：首次 message 与活动时间 | §14.2–14.3；只读诊断先行，再做安全后继、阶段/尝试身份和时间预算 | 上述六个崩溃窗口；HTTP 不盲重发、原预算/终态不重置、旧 owner 写入拒绝、等待不耗活动时长 |
+| A：首次 message 与活动时间 | §14.2–14.3；诊断、阶段/尝试身份已实现，再做安全后继和活动时间预算 | 上述六个崩溃窗口；HTTP 不盲重发、原预算/终态不重置、旧 owner 写入拒绝、等待不耗活动时长 |
 | B：原生上下文与制品冻结 | 跨 Turn 档案导入、Prompt/Skill/工具/模型及实际运行制品 manifest；补齐剩余资产契约 | 真实供应商消息往返、完整工具组/签名、漂移拒绝、历史缺资产可解释阻塞 |
 | C：P2.3 剩余恢复出口 | 未知目标查询/人工对账、领域 Runner 所有权、其余提交窗口 | 真正的独立 Worker kill、旧 Worker 延迟返回、一次目标效果与可核验证据；不能只造终态记录 |
 | D：P3 代码审查 | 接现有 PromptAssembly/项目/Memory/SkillRegistry，文件只读、受限子代理、真实流事件 | 固定仓库/提交样本的发现和行证据、目录边界、原根预算、审批/取消/恢复、真实浏览器展示 |
@@ -711,6 +711,22 @@ D 的本地开发可以在 A–C 期间推进；开启任何生产新 Turn 前�
 - 模型账本保持 ready/invoking/completed/unknown 和原预算；响应与 wire 资产仅返回原有引用及非权威/截断/完整性标记，不读取对象正文或补造 usage。缺表、缺预算及坏记录分别列出；账本无法完整解析时调用数和 Token 汇总返回未知，而非零。`evidence_objects_verified=false` 明示本次没有核验 RustFS 实物。
 - 输入摘要复用 v2 准入的同一个计算入口，包含 binding fingerprint 与准入时的可选冻结预算；同时识别历史无预算准入。无法重建摘要时报告校验缺口，不改写原摘要。展示消息检查身份和内容一致性，但不返回正文。
 - checkpoint 只读指定 thread 与确切物理 namespace/子 namespace 的最新身份、父 checkpoint、step 及 pending write 身份/channel；不解码 Prompt 或工具内容，也不推断图已完成或可以 `ainvoke(None)`。ToolJob 返回状态、执行 task/attempt/epoch 和结果存在性，保留未知执行待对账；SessionSnapshot 按原 Turn 选择，不把另一 Turn 的最新投影当原执行结果。
-- 返回的 `recovery_status=recovery_required` 和 `automatic_replay_allowed=false` 是本端口对自动重放的判定，不修改任务实际状态。始终标记 `stage_admission_unavailable`：阶段准入、持久逻辑调用位置、活动时间和安全后继仍待后续独立实现。完整消息位置重建及资产验真也不由这个只读端口完成。
+- 返回的 `recovery_status=recovery_required` 和 `automatic_replay_allowed=false` 是本端口对自动重放的判定，不修改任务实际状态。§34 新准入记录返回阶段及摘要白名单，并核对冻结 JSON 的摘要；记录合法时标记 `stage_recovery_not_implemented`，缺失时标记 `stage_admission_unavailable`，损坏时额外报告 invalid/identity mismatch。活动时间、安全后继、完整消息位置重建及外部对象验真仍未由此端口实现。
 
 新增 Harness 和本次联合回归见[实施记录 §33](framework-integration-progress-2026-10-25.md#33-首次-message-只读事实诊断2026-10-26)。六个真实崩溃窗口与 Redis 重投的供应商 HTTP 次数验证仍属于 §14.2 第二步，不能用诊断测试替代。
+
+### 14.8 首次 message 阶段与稳定模型调用位置（2026-10-26）
+
+新增 `<agent_task_table>_message_stage` 表，随 task store 初始化显式创建；外键关联原 task/binding，在首次 v2 提交的同一个事务写入，失败整体回滚输入、预算、binding 和 outbox。历史缺表/缺记录不能反向认定为“从未执行”，升级前须盘点未结 v2 回合并保留兼容 Worker；没有为历史回合伪造准入。
+
+```text
+submitted → orchestrating → orchestrated → runtime_submitted → projected
+```
+
+- `orchestrating` 前冻结 Session revision、可见消息 ID/摘要、payload/metadata 摘要及绑定身份；排除租约凭据。这是来源清单，不能据此还原变化后的外部 Memory/Prompt/Skill 服务。
+- `orchestrated` 保存原 ExecutionRequest 完整 JSON 与摘要；`runtime_submitted` 在进入 `_run_owned_submission_locked` 前保存，表示应用即将提交 Runtime，不证明任何 provider HTTP 已发出。实际执行从冻结 JSON 重建，避免原 mutable request 后续变化。
+- 每次推进在 Session → owner → task → stage 的数据库锁和 owner fence 内校验原任务、阶段及来源/执行摘要；失租、重入或损坏均要求对账。`projected` 仅保存首次 message 返回的 output/snapshot ID，等待审批也可能到该阶段，不能等同于框架 Turn 全部完成。
+- 图与 DTO 请求先 `prepare_initial` 保存不可变意图/预算，再保存请求资产、绑定引用，最后取得唯一 start 许可。相同逻辑位置复用原 attempt；输入漂移明确拒绝。原 owner 的 ready 记录可获得尚未发出的唯一许可；invoking/completed/unknown 或不同 owner 不重发、不重置预算，也不自动导入结果。
+- 前置语义分类使用固定 `input_orchestration:semantic_intent:v1` 位置；其恢复异常向上抛出，不能降级成一次新的正常编排。历史模型记录缺少 position_version 时保留原事实并阻止新位置自动发送。
+
+Harness 使用真实 PostgreSQL、Redis、官方 SDK 与本地 HTTP 合成供应商：分别在 start 前、start 已提交而 HTTP 未发、HTTP 已返回而结算未确认处强杀独立 Worker，再回收未 ACK 消息，观察 HTTP 次数分别保持 0/0/1，原 attempt/预算/阶段不变，原任务终态保留。它们验证阻止盲重发，没有创建安全后继；不代替真实付费供应商、真实 RustFS、响应导入、图完成后业务投影失败及其余 §14.2 出口。命令和实际结果见[实施记录 §34](framework-integration-progress-2026-10-25.md#34-首次-message-阶段准入与稳定模型位置2026-10-26)。依赖及生产默认开关未改变。

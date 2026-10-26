@@ -126,6 +126,15 @@ class MessageProjectionFact(_Fact):
     framework_message_count: int
 
 
+class MessageStageFact(_Fact):
+    phase: str
+    owner_epoch: int | None
+    owner_attempt_id: str | None
+    source_sha256: str | None
+    execution_sha256: str | None
+    result_reference: str | None
+
+
 class FrameworkMessageDiagnostic(_Fact):
     schema_version: Literal[1] = 1
     observed_at: datetime
@@ -137,6 +146,7 @@ class FrameworkMessageDiagnostic(_Fact):
     binding: RuntimeBinding
     input: MessageInputFact
     owner: MessageOwnerFact
+    stage: MessageStageFact | None = None
     model_budget: MessageModelBudgetFact
     model_calls: list[MessageModelCallFact]
     checkpoints: list[MessageCheckpointFact]

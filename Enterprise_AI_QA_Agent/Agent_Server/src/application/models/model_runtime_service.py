@@ -142,6 +142,8 @@ class ModelRuntimeService:
                 timeout_seconds=(transport_options.timeout_seconds if transport_options else
                     self._settings.model.llm_request_timeout_seconds), max_retries=0)
         trace_context = dict(request.trace_context)
+        if owner is not None and not (trace_context.get("logical_call_id") or trace_context.get("call_id")):
+            raise ValueError("Owner-bound model invocation requires a durable call position")
         logical_call_id = str(trace_context.get("logical_call_id") or trace_context.get("call_id") or uuid4())
         trace_context["logical_call_id"] = logical_call_id
         request = request.model_copy(update={"trace_context": trace_context})

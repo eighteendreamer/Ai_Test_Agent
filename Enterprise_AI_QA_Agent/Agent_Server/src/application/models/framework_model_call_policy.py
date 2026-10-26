@@ -15,6 +15,7 @@ from src.application.model_clients.http_observation import (
 )
 from src.schemas.framework_model_call import FrameworkModelCallIntent, FrameworkModelUsage
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, model_invocation_parameters
+from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
 
 
 logger = logging.getLogger(__name__)
@@ -105,12 +106,12 @@ class FrameworkModelCallPolicy:
             # parent identifies the cognitive subgraph across model iterations.
             parent_ns = execution_info.checkpoint_ns.rsplit("|", 1)[0]
             branch_id = "subagent-" + hashlib.sha256(canonical_model_input([branch_name, parent_ns])).hexdigest()
-        logical = hashlib.sha256(canonical_model_input([owner.binding.binding_id, branch_id,
-            execution_info.checkpoint_ns, execution_info.task_id, purpose, request_sha256])).hexdigest()
+        logical = hashlib.sha256(canonical_model_input(["graph-position-v1", owner.binding.binding_id, branch_id,
+            execution_info.checkpoint_ns, execution_info.task_id, purpose])).hexdigest()
         output_tokens = max([config.max_output_tokens] + [value for name, value in options.items()
             if name in {"max_tokens", "max_completion_tokens", "max_output_tokens"}
             and isinstance(value, int) and not isinstance(value, bool)])
-        intent = FrameworkModelCallIntent(attempt_id=uuid4().hex, logical_call_id=logical,
+        intent = FrameworkModelCallIntent(position_version=1, attempt_id=uuid4().hex, logical_call_id=logical,
             branch_id=branch_id, parent_branch_id="root" if branch_name is not None else None,
             purpose=purpose, model_key=model_key, model_config_fingerprint=fingerprint,
             transport=config.transport, request_sha256=request_sha256,
@@ -133,9 +134,11 @@ class FrameworkModelCallPolicy:
         envelope = canonical_model_input({"request": request.model_dump(mode="json", exclude={"trace_context"}),
             "options": options, "configuration_fingerprint": fingerprint})
         request_sha256 = hashlib.sha256(envelope).hexdigest()
-        logical = hashlib.sha256(canonical_model_input([owner.binding.binding_id, owner.task_id,
-            request.trace_context["logical_call_id"], request_sha256])).hexdigest()
-        intent = FrameworkModelCallIntent(attempt_id=uuid4().hex, logical_call_id=logical,
+        position = request.trace_context.get("logical_call_id")
+        if not position:
+            raise ValueError("Governed DTO model invocation requires a durable call position")
+        logical = hashlib.sha256(canonical_model_input(["dto-position-v1", owner.binding.binding_id, position])).hexdigest()
+        intent = FrameworkModelCallIntent(position_version=1, attempt_id=uuid4().hex, logical_call_id=logical,
             branch_id="root", purpose="agent", model_key=config.key, model_config_fingerprint=fingerprint,
             transport=config.transport, request_sha256=request_sha256,
             reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=config.max_output_tokens)
@@ -144,14 +147,19 @@ class FrameworkModelCallPolicy:
             envelope=envelope, response_kind="model_invocation_result")
 
     async def _invoke_intent(self, *, owner, intent, send, usage_reader, envelope, response_kind):
-        if self._evidence is None:
-            await self._calls.prepare(owner, intent)
-        else:
+        saved = await self._calls.prepare_initial(owner, intent)
+        intent = saved.intent
+        if (saved.owner_epoch != owner.owner_epoch or saved.owner_task_id != owner.task_id
+            or saved.owner_attempt_id != owner.attempt_id):
+            raise FrameworkModelRecoveryRequired("position_owned_by_prior_attempt", saved)
+        if self._evidence is not None and saved.request is None and saved.phase == "ready":
             request = await self._evidence.store_request(owner, intent, envelope)
-            await self._calls.prepare(owner, intent, request=request)
-        _, permitted = await self._calls.start(owner, intent.attempt_id)
+            await self._calls.attach_request(owner, intent.attempt_id, request=request)
+        current, permitted = await self._calls.start(owner, intent.attempt_id)
         if not permitted:
-            raise RuntimeError("Governed model attempt has no new send permission")
+            logger.warning("framework_model_reentry_requires_reconciliation", extra={
+                "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id, "phase": current.phase})
+            raise FrameworkModelRecoveryRequired("position_already_started", current)
         logger.info("framework_model_request_started", extra={"binding_id": owner.binding.binding_id,
             "model_attempt_id": intent.attempt_id, "logical_call_id": intent.logical_call_id,
             "branch_id": intent.branch_id, "purpose": intent.purpose, "transport": intent.transport})

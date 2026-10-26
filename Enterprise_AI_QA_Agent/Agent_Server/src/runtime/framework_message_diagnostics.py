@@ -20,6 +20,10 @@ from src.schemas.framework_message_diagnostic import (
     MessageModelCallFact, MessageModelWireFact, MessageOwnerFact, MessageProjectionFact, MessageTaskFact, MessageToolJobFact,
 )
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_message_diagnostic import MessageStageFact
+from src.runtime.framework_message_stages import (
+    FrameworkMessageStageRecoveryRequired, message_stage_table, validate_message_stage,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -66,7 +70,7 @@ class FrameworkMessageDiagnostics:
             if task["operation"] != "message" or task["runtime_binding"] is None:
                 raise ValueError("Diagnosis requires a bound initial message task")
             binding = RuntimeBinding.model_validate(task["runtime_binding"])
-            issues = ["stage_admission_unavailable"]
+            issues = []
             if binding.session_id != session_id or binding.turn_id != task["turn_id"]:
                 # A corrupt root identity must not redirect a scoped read to
                 # another Turn's model ledger or checkpoint namespace.
@@ -90,12 +94,32 @@ class FrameworkMessageDiagnostics:
             checkpoints = self._checkpoints(cur, binding, issues)
             jobs = self._jobs(cur, task, binding, issues)
             projection = self._projection(cur, task, binding, session, issues)
+            stage = self._stage(cur, task, binding, issues)
             return FrameworkMessageDiagnostic(**observation, binding=binding,
                 task=MessageTaskFact(id=task_id, status=task["status"], error_code=task["error_code"],
                     attempt_id=task["attempt_id"], attempt_no=task["attempt_no"], attempt_status=attempt_status,
                     interrupt_requested=task["interrupt_requested"]),
-                input=admission, owner=owner, model_budget=budget, model_calls=calls,
+                input=admission, owner=owner, stage=stage, model_budget=budget, model_calls=calls,
                 checkpoints=checkpoints, tool_jobs=jobs, projection=projection, issues=list(dict.fromkeys(issues)))
+
+    def _stage(self, cur, task, binding, issues):
+        table = _table(message_stage_table(self._settings))
+        if _exists(cur, table):
+            cur.execute(f"SELECT record FROM {table} WHERE task_id=%s AND binding_id=%s", (task["id"], binding.binding_id))
+            row = cur.fetchone()
+            if row:
+                try:
+                    stage = validate_message_stage(row["record"])
+                except (ValidationError, FrameworkMessageStageRecoveryRequired):
+                    issues.append("stage_admission_invalid")
+                else:
+                    if (stage.task_id == task["id"] and stage.binding_id == binding.binding_id
+                        and stage.input_sha256 == task["input_hash"] and stage.user_message_id == task["user_message_id"]):
+                        issues.append("stage_recovery_not_implemented")
+                        return MessageStageFact(**stage.model_dump(include=set(MessageStageFact.model_fields)))
+                    issues.append("stage_admission_identity_mismatch")
+        issues.append("stage_admission_unavailable")
+        return None
 
     def _input(self, cur, task, binding, policy, issues):
         cur.execute(f"SELECT role, content, metadata FROM {_table(self._settings.database.postgres_message_table)} "

@@ -37,6 +37,7 @@ from src.schemas.session import (
     ConversationResponse,
     CreateSessionRequest,
     ExecutionEvent,
+    ExecutionRequest,
     InterruptSessionRequest,
     MessageKind,
     MessageRole,
@@ -194,6 +195,12 @@ class SessionService:
                 if session.project_id:
                     await self._require_active_project(session.project_id)
                 with framework_owner_scope(task.runtime_owner):
+                    stages = None
+                    if task.runtime_owner is not None:
+                        from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
+
+                        stages = FrameworkMessageStages(self._agent_task_store)
+                        await stages.begin(task.runtime_owner, message_source_manifest(session, task.runtime_binding, payload))
                     request = await self._input_orchestrator_service.orchestrate_async(
                         session,
                         payload,
@@ -201,7 +208,11 @@ class SessionService:
                         trace_id=str(task.trace_id),
                     )
                     request.runtime_binding = task.runtime_binding
-                    return await self._run_owned_submission_locked(
+                    if stages is not None:
+                        frozen = await stages.freeze_execution(task.runtime_owner, request)
+                        request = ExecutionRequest.model_validate(frozen.execution_request)
+                        await stages.submit_runtime(task.runtime_owner)
+                    result = await self._run_owned_submission_locked(
                         session,
                         payload,
                         request,
@@ -209,6 +220,10 @@ class SessionService:
                         turn_lease_token=task.lease_token,
                         user_message_id=task.user_message_id,
                     )
+                    if stages is not None:
+                        await stages.projected(task.runtime_owner,
+                            result.id if isinstance(result, SessionSnapshot) else result.output.id)
+                    return result
 
             try:
                 return await self._await_owned_execution(

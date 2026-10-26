@@ -1018,3 +1018,56 @@ git diff --check
 ```
 
 均 exit 0。没有增加依赖、数据库迁移或启用生产路由；测试文件受仓库既有忽略规则影响，交付时显式纳入本次提交。未执行独立 lint/typecheck、全系统/前端、真实供应商/真实 RustFS/浏览器/Runner 或双制品部署；本步没有这些执行链路。没有完成模型发送阶段身份、首次 message 安全后继、活动时间或真实崩溃重投验收，不能将本步报告为全系统迁移完成。
+
+## 34. 首次 message 阶段准入与稳定模型位置（2026-10-26）
+
+从干净基线 `185225e01` 继续 §14.2 的阶段准入与逻辑位置。根因是应用的首次消息编排发生在图之前，仅靠 checkpoint 无法定位它；原模型调用又将请求 hash 混入位置，同一逻辑位置发生输入漂移会被当作新调用。此步将位置与输入校验分离，建立应用阶段日志，没有复用审批后继操作冒充首次消息恢复。
+
+### 依据与改动边界
+
+- 重新核对官方 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 和 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)。逐项审批是框架能力；节点恢复会重入，框架不会自动保存图外编排位置。在线页面已有新接口，继续固定当前九个版本，没有照搬新流式示例或升级依赖。复核本地《Agent轨迹与协议鲁棒性》§7 的调用次数、异常恢复、重复效果和成本约束。
+- 新增 `FrameworkMessageStage`、`FrameworkMessageStages` 与 `<agent_task_table>_message_stage` 表。初始化由 task store setup 执行，首次 v2 提交与输入、binding、预算及 outbox 共事务；这是兼容性新增数据库结构。没有补造历史阶段，历史任务缺准入时拒绝执行。
+- Session 在编排前冻结来源清单，编排后冻结完整 ExecutionRequest JSON，实际执行从该 JSON 重建请求。来源清单保存可见消息及 metadata 摘要、Session revision 与绑定身份，排除租约凭据；不等于外部 Prompt/Skill/Memory 的实物档案。推进使用既有 Session → owner 的锁序，校验原 task/attempt、输入、owner 和阶段；执行与只读诊断共用冻结摘要完整性校验。
+- 阶段为 submitted/orchestrating/orchestrated/runtime_submitted/projected。runtime_submitted 发生在应用调用 Runtime 前，不代表模型已发送；projected 只保存首次 message 返回的 output/snapshot ID，允许该返回仍在等待审批，不表示整个框架 Turn 完成。初始完整 graph state 未冻结。
+- `FrameworkModelCallIntent.position_version=1` 标记新位置协议，历史默认为 None。图内位置由 binding/branch/namespace/task/purpose 构造；DTO 由 binding/持久 logical_call_id 构造，均不含请求 hash 或执行 owner task。`prepare_initial` 在 owner 事务内复用原 attempt，并对比不可变意图；输入漂移、多原点或缺少历史位置均要求对账，不能消耗新预算或发第二次 HTTP。
+- 顺序调整为持久模型意图/预留 → 请求资产上传 → immutable 引用绑定 → 唯一 start 许可。已有资产复用，已发送重入不再上传。原 owner 的 ready 可取得尚未发出的许可；invoking/completed/unknown 或不同 owner 均不重发，不自动导入响应。原账本 prepare/显式重试存储契约保持，未接入新的自动重试策略。
+- owner-bound DTO 缺持久位置在 HTTP 前拒绝，前置语义分类显式使用 `input_orchestration:semantic_intent:v1`。恢复异常向上抛出并记录，不能吞成正常语义降级。未迁移无 owner 的领域模型调用。
+- 内部诊断新增阶段白名单；合法阶段报告 stage_recovery_not_implemented，缺失/损坏保留对应问题码与 automatic_replay_allowed=false，不返回冻结请求正文，不取得执行权。
+
+### TDD 与独立进程故障验证
+
+本轮实际红测包含：同位置输入漂移没有抛错、请求资产上传前账本为 0、阶段端口缺失、准入后输入变化仍可执行。完成基础实现后，审查再次加入真实边界红测：冻结后改变原请求导致执行值与持久 JSON 不同（**1 failed，7.90 秒**）；损坏来源清单仍推进阶段（**1 failed，7.86 秒**）。现已从冻结 JSON 重建执行请求，并在阶段读取/推进/诊断统一核对内容摘要，未通过局部 fallback 绕过异常。
+
+新增 `test_framework_model_positions.py` 覆盖 DTO/图内输入漂移、三种发送/结算 ACK 丢失、四并发仅一次 HTTP、缺持久位置、历史缺 position_version 拒绝、意图先于资产及完成重入不再上传。新增 `test_framework_message_stages.py` 覆盖提交事务、来源先冻结、请求冻结/重建、缺准入与输入漂移、资产损坏、失租及独立 Worker 强杀。更新既有任务 fixture 清理新增外键表，以及诊断对新提交阶段的预期；没有改动无关测试。
+
+独立 Worker 使用 multiprocessing.spawn、真实 Redis Stream/PEL、outbox/dispatcher、PostgreSQL、前置语义分类与官方 SDK/本地 HTTP 合成供应商，在下面边界确认 child 已阻塞后 terminate/join，再由 replacement Worker 回收未 ACK 消息：
+
+| 强杀位置 | 模型阶段 | 已观察 HTTP | 重投后结果 |
+| --- | --- | --- | --- |
+| start 前 | ready | 0 | 原任务/attempt 进入 recovery_required，保留预算/阶段，不发送 |
+| start 已提交，HTTP 尚未发 | invoking | 0 | 不把“目标未收到”推断为可重发，保留原事实 |
+| HTTP 已返回，结算尚未确认 | invoking | 1 | HTTP 仍为 1，原模型/阶段不变，不补造 usage |
+
+没有创建安全 successor，也没有让 replacement Worker 冒充原 owner。ready/invoking 无法仅凭这些记录证明目标是否收到请求，是后继和响应导入协议必须继续处理的边界。
+
+### 实际验证与保留出口
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_stages.py -q -x -rs --tb=short
+```
+
+最终阶段用例 **13 passed，57.27 秒，无 skip**，包含上述三个独立进程强杀参数和最后的请求/摘要修复。此前开发中模型/阶段/诊断/策略/DTO/账本/证据/准入联合回归为 **136 passed，379.01 秒**；该进程在最后阶段修复之前启动，不能当作最终全部实现的验收，也不与最终结果累计。
+
+最终受影响入口联合回归：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_positions.py tests/test_framework_message_diagnostics.py tests/test_framework_model_admission.py tests/test_agent_task_dispatch.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py -q -x -rs --tb=short
+```
+
+结果 **98 passed，180.69 秒，无 skip**，覆盖最终模型位置、历史缺位置、诊断、真实模型准入、分发和既有 Session/语义入口。本次变更的 Python 源码与两个新增测试执行 `python -m compileall -q <相关文件>` exit 0；`git diff --check` / `git diff --cached --check` 均 exit 0。两组最终测试为阶段 13 项与入口 98 项，不将中间 136 项重复累计。
+
+当前尚未实现首次 message 安全后继、旧 ready 预留转移、原响应导入、图完成后投影补偿、活动时间和完整初始图资产；这三个 kill 位置不覆盖方案要求的全部六个窗口。请求资产测试使用既有 RustFS 替身，HTTP 为本地合成供应商，未执行真实付费供应商、真实 RustFS、全系统/前端、浏览器/领域 Runner、独立 lint/typecheck 或双制品部署。九个固定依赖、生产默认开关均未改变，整体 P1/P2.3/P3–P5 继续未完成。

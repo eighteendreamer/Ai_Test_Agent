@@ -178,6 +178,11 @@ class PostgresAgentTaskStore:
 
         return await asyncio.to_thread(FrameworkMessageDiagnostics(self).inspect, task_id, session_id)
 
+    async def get_framework_message_stage(self, task_id: str, *, session_id: str):
+        from src.runtime.framework_message_stages import FrameworkMessageStages
+
+        return await asyncio.to_thread(FrameworkMessageStages(self).get, task_id, session_id)
+
     async def list_session(
         self,
         session_id: str,
@@ -367,6 +372,9 @@ class PostgresAgentTaskStore:
             )""")
             initialize_runtime_owners(cur, self._settings)
             initialize_framework_approvals(cur, self._settings)
+            from src.runtime.framework_message_stages import initialize_message_stages
+
+            initialize_message_stages(cur, self._settings)
 
     def _submit_sync(self, command, payload, message, idempotency_key):
         serialized = payload.model_dump(mode="json")
@@ -491,6 +499,10 @@ class PostgresAgentTaskStore:
                 ) if runtime_binding else None,
             ))
         row = cur.fetchone()
+        if runtime_binding is not None:
+            from src.runtime.framework_message_stages import admit_message_stage
+
+            admit_message_stage(cur, self._settings, row)
         if payload.interrupt_if_busy:
             from src.runtime.framework_task_control import FrameworkTaskControl
 

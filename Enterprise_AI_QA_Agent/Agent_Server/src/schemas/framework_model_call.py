@@ -36,6 +36,7 @@ class FrameworkModelBudget(_ModelCallValue):
 
 
 class FrameworkModelCallIntent(_ModelCallValue):
+    position_version: Literal[1] | None = None
     attempt_id: str = Field(min_length=1, max_length=160)
     logical_call_id: str = Field(min_length=1, max_length=160)
     branch_id: str = Field(min_length=1, max_length=160)

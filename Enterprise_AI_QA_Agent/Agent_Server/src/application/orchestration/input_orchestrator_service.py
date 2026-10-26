@@ -15,6 +15,7 @@ from src.application.testing.direction_service import QATaskDirectionService
 from src.application.testing.mode_intent_service import TestModeIntentService
 from src.application.testing.router_service import QATaskRouterService
 from src.core.request_context import get_request_context
+from src.runtime.execution_context import current_framework_owner
 from src.schemas.intent import IntentDecision
 from src.schemas.session import (
     ExecutionRequest,
@@ -80,6 +81,8 @@ class InputOrchestratorService:
                     "mode_key": payload.mode_key or session.mode_key,
                     "thread_id": session.id,
                     "agent_key": "semantic-intent-classifier",
+                    **({"logical_call_id": "input_orchestration:semantic_intent:v1"}
+                        if current_framework_owner() is not None else {}),
                 },
             )
         execution = self.orchestrate(
