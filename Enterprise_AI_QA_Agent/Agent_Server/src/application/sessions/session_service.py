@@ -2798,22 +2798,12 @@ class SessionService:
             projection_asset=projection_asset,
         )
 
-        assistant_message = ChatMessage(
-            id=(runtime_result.snapshot.id if projection_owner is not None and not runtime_result.output_text
+        assistant_message = self._transcript_hygiene_service.finalization_assistant_message(
+            message_id=(runtime_result.snapshot.id if projection_owner is not None and not runtime_result.output_text
                 else assistant_message_id),
-            role=MessageRole.assistant,
             content=runtime_result.output_text,
             created_at=projection_at or datetime.utcnow(),
-            metadata=self._transcript_hygiene_service.assistant_message_metadata(
-                response_mode=response_mode,
-                metadata={
-                    "turn_id": runtime_result.state["turn_id"],
-                    "agent_key": runtime_result.state["selected_agent_key"],
-                    "agent_name": runtime_result.state["selected_agent_name"],
-                    "model_key": runtime_result.state["selected_model_key"],
-                    "model_name": runtime_result.state["selected_model_name"],
-                },
-            ),
+            state=runtime_result.state,
         )
         completion_events = []
         if runtime_result.output_text:
@@ -2916,17 +2906,22 @@ class SessionService:
                 }
             if verification_results:
                 existing_results = metadata.get("verification_results", [])
-                if not isinstance(existing_results, list):
-                    existing_results = []
-                existing_by_id = {
-                    str(item.get("id")): item
-                    for item in existing_results
-                    if isinstance(item, dict) and item.get("id")
-                }
-                for result in verification_results:
-                    result_payload = result.model_dump(mode="python")
-                    existing_by_id[str(result_payload["id"])] = result_payload
-                metadata["verification_results"] = list(existing_by_id.values())
+                if projection_asset is not None:
+                    from src.runtime.framework_finalization_projection import merge_original_verifications
+
+                    metadata["verification_results"] = merge_original_verifications(existing_results, projection_asset)
+                else:
+                    if not isinstance(existing_results, list):
+                        existing_results = []
+                    existing_by_id = {
+                        str(item.get("id")): item
+                        for item in existing_results
+                        if isinstance(item, dict) and item.get("id")
+                    }
+                    for result in verification_results:
+                        result_payload = result.model_dump(mode="python")
+                        existing_by_id[str(result_payload["id"])] = result_payload
+                    metadata["verification_results"] = list(existing_by_id.values())
             session.metadata = metadata
             self._set_pending_input_queue(session, latest_queue_entries)
             session.status = self._session_status_from_runtime_result(runtime_result)

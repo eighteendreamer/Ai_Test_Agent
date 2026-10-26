@@ -1,13 +1,24 @@
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from src.application.prompting.untrusted_content import wrap_untrusted_content
 from src.schemas.model_config import is_model_failure_summary
-from src.schemas.session import ChatMessage
+from src.schemas.session import ChatMessage, MessageRole
 
 
 class TranscriptHygieneService:
+    def finalization_assistant_message(self, *, message_id: str, content: str,
+        created_at: datetime, state: dict[str, Any]) -> ChatMessage:
+        """One deterministic projection for normal finalization and row checks."""
+        return ChatMessage(id=message_id, role=MessageRole.assistant, content=content, created_at=created_at,
+            metadata=self.assistant_message_metadata(
+                response_mode=str((state.get("model_response_summary") or {}).get("mode") or "ok"),
+                metadata={"turn_id": state["turn_id"], "agent_key": state["selected_agent_key"],
+                    "agent_name": state["selected_agent_name"], "model_key": state["selected_model_key"],
+                    "model_name": state["selected_model_name"]}))
+
     def build_runtime_messages(
         self,
         messages: list[ChatMessage],

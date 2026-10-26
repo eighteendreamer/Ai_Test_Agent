@@ -715,3 +715,11 @@ A2-1 之后仍有一个明确空窗：`RuntimeService._execute_turn()` 已获得
 独立 Worker 在第一条观察行与回执提交后被强杀，使用实际 Deep Agents/官方 SDK、本地合成 HTTP 和 PostgreSQL/Redis；工具结果是在实际图返回后注入的受控投影样本，**不是领域 Runner 执行验收**。强杀后原资产/行/回执/根预算保留，HTTP 一次；仍没有最终应用凭证，失租后不创建自动后继。
 
 后续仍需 Verification/消息分项和正式 message_recover 准入，再闭合 A2-2、A2-3。Redis 失败副本补偿、embedding 已发送但行未提交的未知窗口、普通 Memory/清理、维护协调和 Runner 未知效果属于 A3；完整跨 Turn、统一上下文、真实流式/取消、受控 AgentCase、各模式 Harness、真实兼容部署仍独立验收。生产默认关闭，整体目标保持 active。
+
+## 22. A2-1：最终消息与 Verification 的原意图校验
+
+基线 `2b997d012`。已完成第 12.1 节中消息/Verification 分项的唯一 finalizer 校验：共享 assistant 投影；同 ID Verification 精确复用且不覆盖冲突；最终原事务写前检查、原消息 INSERT OR REUSE、写后读取实际行再签 A1 凭证。无需新分项表或新持久格式，因为消息、Verification、Session 和 A1 凭证已经同事务提交。仅 hash 当前实际行不能证明它符合原 Runtime 意图；真实红测和最终回归见实施记录 §51。
+
+最终四投影文件 108 项、共享恢复/调度/审批投影 149 项、原资产/A1/执行验证 74 项通过；不将重叠范围相加。独立进程使用实际 Deep Agents/SDK 和本地合成 HTTP，工具消息/Verification 是受控注入且状态 not_run，不冒称领域测试通过。保留早期 fixture 错误和另组 6 项 LIVE skip 的事实。
+
+这是原意图与实际行的一致性补齐，**不是新的恢复授权**；当前资产存在而应用事务未提交仍不自动创建后继。下一步正式接入 message_recover，仅复用原资产补缺失投影；A1 已提交走 ACK-only。A2-2 图终态→资产、A2-3 projected→finish、A3 及其余全系统出口继续独立实施。生产默认关闭、依赖不变，整体目标未完成。

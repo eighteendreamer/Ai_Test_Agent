@@ -86,15 +86,22 @@ class PostgresSessionStore:
         turn_lease_token: str | None = None,
         framework_projection: FrameworkProjectionWrite | None = None,
     ) -> SessionRecord:
-        inserted = await asyncio.to_thread(
-            self._save_session_with_events_sync,
-            session,
-            events,
-            continuation_approval_id,
-            continuation_lease_token,
-            turn_lease_token,
-            framework_projection,
-        )
+        try:
+            inserted = await asyncio.to_thread(
+                self._save_session_with_events_sync,
+                session,
+                events,
+                continuation_approval_id,
+                continuation_lease_token,
+                turn_lease_token,
+                framework_projection,
+            )
+        except Exception as exc:
+            if framework_projection is not None:
+                LOGGER.warning("framework_application_projection_rejected", extra={"session_id": session.id,
+                    "binding_id": framework_projection.owner.binding.binding_id,
+                    "task_id": framework_projection.owner.task_id, "error_type": type(exc).__name__})
+            raise
         for event in inserted:
             await self._publish_hot_event(session.id, event)
         if framework_projection is not None:
@@ -981,14 +988,21 @@ class PostgresSessionStore:
         inserted: list[ExecutionEvent] = []
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                immutable_message_ids = frozenset()
                 if framework_projection is not None:
                     from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction, assert_runtime_owner
 
                     configure_runtime_owner_transaction(cur, self._settings)
                     assert_runtime_owner(cur, self._settings, framework_projection.owner)
+                    if framework_projection.runtime_result_asset_sha256 is not None:
+                        from src.runtime.framework_finalization_projection import prepare_finalization_projection
+
+                        immutable_message_ids = prepare_finalization_projection(
+                            cur, self._settings, framework_projection, candidate)
                 self._save_session_in_transaction(
                     cur, candidate, continuation_approval_id,
                     continuation_lease_token, turn_lease_token,
+                    immutable_message_ids=immutable_message_ids,
                 )
                 for event in events:
                     if event.session_id != session.id:
@@ -1018,6 +1032,8 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        *,
+        immutable_message_ids: frozenset[str] | set[str] = frozenset(),
     ) -> SessionRecord:
         now = datetime.utcnow()
         session.updated_at = now
@@ -1177,17 +1193,22 @@ class PostgresSessionStore:
         for item in session.messages:
             if not bool(item.metadata.get("persist_transcript", True)):
                 continue
-            cur.execute(
-                f"""
-                INSERT INTO {self._settings.database.postgres_message_table} (
-                    id, session_id, role, content, created_at, metadata
-                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+            # Original framework rows are insert-or-reuse, not editable drafts.
+            # The caller validates their actual rows again before the A1 proof.
+            conflict_clause = "ON CONFLICT (id) DO NOTHING" if item.id in immutable_message_ids else """
                 ON CONFLICT (id) DO UPDATE SET
                     session_id = EXCLUDED.session_id,
                     role = EXCLUDED.role,
                     content = EXCLUDED.content,
                     created_at = EXCLUDED.created_at,
                     metadata = EXCLUDED.metadata
+            """
+            cur.execute(
+                f"""
+                INSERT INTO {self._settings.database.postgres_message_table} (
+                    id, session_id, role, content, created_at, metadata
+                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                {conflict_clause}
                 """,
                 (
                     item.id,

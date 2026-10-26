@@ -320,6 +320,9 @@ def record_application_commit(cur, settings, session, events, write):
         _require(result_asset.model_calls_sha256 == _model_hash(cur, settings, binding)
             and result_asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
             "Application commit result execution facts changed")
+        from src.runtime.framework_finalization_projection import require_finalization_projection
+
+        require_finalization_projection(cur, settings, session, result_asset, stage.user_message_id)
     _require(session.id == binding.session_id and session.status.value == "completed"
         and not session.metadata.get("pending_turn")
         and (session.metadata.get("control") or {}).get("control_state") == "completed"

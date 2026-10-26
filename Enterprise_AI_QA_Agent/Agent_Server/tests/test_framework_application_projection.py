@@ -75,11 +75,46 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             marker = {"before_finalization": "runtime-result-frozen", "after_snapshot": "snapshot-committed",
                 "after_snapshot_event": "snapshot-event-committed",
                 "after_observation_row": "observation-row-committed",
+                "before_final_session": "finalization-prepared",
                 "after_commit": "application-committed"}[window]
             await redis.rpush(gate, marker)
             await asyncio.Event().wait()
 
-        if window == "before_finalization":
+        if window in {"before_final_session", "inside_final_transaction"}:
+            from src.schemas.session import ChatMessage, MessageRole, VerificationResult, VerificationStatus
+
+            # The real graph/SDK finishes; only application projection samples
+            # are injected. This is not an assertion about a domain Runner.
+            execute = runtime._execute_turn
+            async def execute_with_finalization(*args, **kwargs):
+                result = await execute(*args, **kwargs)
+                result.tool_messages = [ChatMessage(id=prefix + "-tool", role=MessageRole.tool,
+                    content="controlled tool projection", created_at=datetime.utcnow(),
+                    metadata={"turn_id": result.state["turn_id"], "tool_call_id": "controlled-call"})]
+                return result
+            runtime._execute_turn = execute_with_finalization
+            def verification(**kwargs):
+                return [VerificationResult(id=prefix + "-verification", session_id=kwargs["session_id"],
+                    turn_id=kwargs["turn_id"], trace_id=kwargs["trace_id"], verifier="fixture",
+                    status=VerificationStatus.not_run, summary="No assertion means not_run", created_at=datetime.utcnow())]
+            sessions._verification_service.build_results = verification
+            if window == "before_final_session":
+                sessions._store.save_session_with_events = pause
+            else:
+                import threading
+                import src.runtime.framework_application_projection as projections
+                from redis import Redis as SyncRedis
+
+                record = projections.record_application_commit
+                def record_and_pause(*args, **kwargs):
+                    record(*args, **kwargs)
+                    # Signal from the sync DB thread without sharing the
+                    # asyncio client or waiting for the transaction to commit.
+                    with SyncRedis.from_url(settings.database.redis_url) as signal:
+                        signal.rpush(gate, "finalization-uncommitted")
+                    threading.Event().wait()
+                projections.record_application_commit = record_and_pause
+        elif window == "before_finalization":
             sessions._finalize_runtime_result = pause
         elif window == "after_snapshot":
             save_snapshot = sessions._store.save_snapshot

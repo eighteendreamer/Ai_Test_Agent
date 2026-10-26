@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)；[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子任务：A2-1 观察分项安全重入（§50）。已有原结果资产、快照/事件回执、原观察意图和实际 Memory 行回执；尚未开放资产存在但最终事务未提交时的自动后继。下一步是 Verification/消息分项复用，再接既有 message_recover。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
+**当前子任务：A2-1 消息/Verification 原意图校验（§51）。已有原结果资产、快照/事件/观察回执，以及最终事务内原消息与 Verification 校验；尚未开放资产存在但最终事务未提交时的自动后继。下一步接既有 message_recover 的部分投影准入。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -1683,3 +1683,30 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 完整命中不重 embedding/Redis，不等于并发首写前的物理请求 exactly-once；embedding 已发送但行未提交、Redis 副本失败修复、维护/backfill 协调继续归 A3。新增观察回执不改变 A1 scope，不证明全部 Memory/资源效果已完成。
 
 下一步继续 Verification/消息分项与既有 message_recover 准入。A2-2 图终态→资产空窗、A2-3 projected→finish、A3、完整跨 Turn、统一 Prompt/Skills/Memory、真实流式/取消、受控 AgentCase、每模式 Harness、官方 saver conformance、真实对象存储/领域 Runner 和双制品部署仍未完成。未跑全量或前端；付费 embedding 失败已单列，不称真实供应商通过。生产默认开关不变，整体目标继续 active。
+
+## 51. A2-1：消息与 Verification 必须符合冻结原意图
+
+基线 `2b997d012`。真实 PostgreSQL 红测先在原 assistant ID 写入不同正文，再执行唯一 finalizer：旧实现保留错误行并签发 A1 凭证，结果 **1 failed，6.94 秒（DID NOT RAISE FrameworkMessageStageRecoveryRequired）**。根因是 rebase/UPSERT 后只对实际行取摘要，没有证明它对应冻结 Runtime 结果。
+
+将 assistant 构造集中到 TranscriptHygieneService，同一个确定性投影供正常 finalizer 和事务校验使用。Verification 同 ID 精确一致才复用，冲突/重复拒绝，缺失追加；其他 Turn 结果与偏好保留。最终 Session 事务写前校验候选、已有消息和原 user，冻结消息只 INSERT OR REUSE，写后再次读取实际消息/Verification/user，再签发原 A1 凭证。无新表、JSON 字段或持久格式，legacy 消息编辑不变。错误日志仅记录身份及异常类型。
+
+调用链另核对了 `_to_chat_messages`：框架工具身份稳定但每次重新分配 created_at。等待审批及审批继续没有本次 completed message 的原资产化 finalizer，不进入新增检查；本次未通过放宽原资产时间校验处理该静态风险，也不声称工具展示时间已跨审批稳定。
+
+### 实际验证
+
+均在 Agent_Server、独立 `.venv-framework-v2`，数据库组设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`；续接原进程 handle，未因等待超时重启：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 108 passed，293.54 秒，无 skip
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py tests/test_session_store_value_contract.py tests/test_framework_approval_projection.py -q -x -rs --tb=short
+# 149 passed，211.23 秒，无 skip
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_case_execution_verification.py -q -x -rs --tb=short
+# 74 passed，163.53 秒，无 skip
+```
+
+组间存在 fixture/范围关联，不将数字累计为全系统覆盖。一次早期四文件运行 **1 failed、24 passed，64.91 秒**，原因是测试把 SessionRecord dataclass 当作 Pydantic 调用 model_copy；读定义后改用 deepcopy，未修改生产实现迎合测试。另组 **31 passed、6 skipped，9.41 秒**；skip 是 test_case_operation_verification 的 opt-in LIVE fixture，要求隔离 PostgreSQL/MySQL/RustFS，不能称该领域真实集成通过。
+
+独立 Worker 在最终 Session 事务前及事务内提交前强杀，实际 Deep Agents/SDK、本地合成 HTTP、真实 PostgreSQL/Redis。工具消息及 not_run Verification 是图返回后注入的受控投影样本，**不是领域 Runner 执行/通过验收**。两窗口保留原资产及已提交分项，没有发布未提交答案/Verification/turn.completed；本阶段仍不开放自动后继。
+
+未跑全量、前端、独立 lint/typecheck、真实供应商/对象存储/领域 Runner、官方 saver conformance 或双制品部署；本阶段未发付费请求。A2-2、A2-3、A3、完整跨 Turn、统一上下文、流式/取消和逐模式迁移仍未完成。下一步沿既有 message_recover 授予仅补缺失应用投影的权限，不重新 invoke 图、模型或业务工具。
