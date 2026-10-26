@@ -1475,3 +1475,27 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 另实际执行 Session 事件/所有权/值契约回归：`-m pytest tests/test_session_event_delivery.py tests/test_session_execution_ownership.py tests/test_session_store_value_contract.py -q -x -rs --tb=short`。首次漏设 live 开关，结果 71 passed、72 skipped，不作为真实集成通过；明确设置 RUN_LIVE_POSTGRES_TESTS=1 后为 **141 passed、2 skipped，43.84 秒**。剩余两项是仅 PostgreSQL 有意义的事务排序/跨进程用例在 InMemory 参数下主动跳过，对应 PostgreSQL 参数已运行。
 
 范围仍未完成：原最终事务提交前的应用结果资产和部分投影补偿、stage projected 后 Worker 任务结算前的出口、Memory/清理分项事实、图内模型原结果导入、活动时间、完整跨 Turn 和逐模式 Harness。A1 不能替代这些出口。未跑全量、独立 lint/typecheck、前端、官方 saver conformance、真实付费模型/对象存储/浏览器/压测/扫描 Runner 或双制品部署。生产默认关闭，整体 goal 保持 active；下一步继续 A2/A3，而不是重复升级依赖或重新造调度器。
+
+## 46. A2-1 原结果资产与统一收尾（2026-10-26）
+
+沿 v3 §17 实现并验证 A2-1。该阶段只处理“图返回后、应用最终事务前”的原结果输入，不开放失租后的自动后继，不把 A1 阶段 ACK 恢复扩大为图恢复。
+
+### 实现
+
+- 新增 `FrameworkRuntimeResult` / `FrameworkRuntimeResultAsset` 与 `FrameworkRuntimeResults`。资产保存完整 `RuntimeTurnResult` 七字段、绑定/输入/执行摘要、任务谱系、Verification、assistant 身份和固定投影时间；通过现有 message-stage JSONB 与 owner 事务保存，禁止 Python 进程对象进入资产。
+- `SessionService` 在首次 finalizer 前冻结资产，随后只从持久原件重建并调用原有 `_finalize_runtime_result`；Verification、assistant、完成事件使用资产中的稳定身份和时间。`FrameworkProjectionWrite` 在最终应用事务内再次核对资产身份、模型/ToolJob 摘要，防止异步投影阶段发生事实漂移。
+- message-stage schema 升至 7；应用提交凭证写入时保留更高 schema，避免带原结果资产的阶段被降回 6。没有新增队列、任务类型、DDL 或默认开关。
+- 同步纳入跨 Turn 原生 transcript 资产：保留 LangChain message wire 结构、工具调用 ID、provider metadata 和 digest；下一 Deep Agents Turn 只追加新用户消息，不用展示文本重建。
+
+### TDD 与验证
+
+先在隔离 HEAD SessionService 副本复现真实缺口：图完成后进入 finalizer 前没有 `runtime_result_asset`，**1 failed，17.97 秒，KeyError**。实现后在 `Agent_Server` 使用独立 v2 解释器、真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph saver 与本地合成 HTTP 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py -q -x -rs --tb=short
+```
+
+结果 **107 passed，393.13 秒，无 skip**；另执行最新的资产漂移防护单测 **3 passed，15.64 秒**。独立暂存索引导出（不含未提交 transcript 草稿）执行资产文件、A1 独立 Worker 强杀和历史 completed observation 不升格：**24 passed，98.29 秒，无 skip**；索引源码确认 1371 个文件，未带入未提交 transcript 模块。`compileall` 与 `git diff --check` 通过。
+
+上述测试不等于真实付费模型、真实对象存储、领域 Runner、官方 saver conformance、完整跨 Turn 请求或双制品滚动部署通过；图终态到资产前空窗、失租后部分投影补偿、projected 后任务结算及 Memory/清理仍未完成。生产默认开关保持关闭，整体 goal 继续 active。

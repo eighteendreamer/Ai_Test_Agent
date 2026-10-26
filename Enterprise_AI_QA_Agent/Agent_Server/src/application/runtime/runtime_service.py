@@ -15,6 +15,7 @@ from pydantic import ValidationError
 
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
+from src.application.deep_agents.framework_transcript import append_turn_input
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -60,6 +61,7 @@ from src.schemas.session import (
 )
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.framework_approval import FrameworkContinuationPlan
+from src.schemas.framework_transcript import FrameworkTranscriptAsset
 from src.schemas.runtime_binding import RuntimeBinding
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 
@@ -201,7 +203,7 @@ class RuntimeService:
     ) -> RuntimeTurnResult:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
-            state = self._build_initial_state(session, request)
+            state = self._build_initial_state(session, request, include_framework_transcript=True)
             self._prepare_deep_agent_governed_tools(session, request, state)
             append_graph_event(
                 state,
@@ -1750,12 +1752,19 @@ class RuntimeService:
             environment=str(safety.get("environment") or "unknown"),
         )
 
-    def _build_initial_state(self, session: SessionRecord, request: ExecutionRequest) -> dict[str, Any]:
+    def _build_initial_state(
+        self,
+        session: SessionRecord,
+        request: ExecutionRequest,
+        *,
+        include_framework_transcript: bool = False,
+    ) -> dict[str, Any]:
         requested_model_key = request.model_key or session.preferred_model or ""
         model_config = self._effective_model_config(requested_model_key)
         selected_model_key = model_config.key if model_config is not None else (request.model_key or session.preferred_model or "")
         selected_model_name = model_config.name if model_config is not None else ""
         selected_model_provider = model_config.provider if model_config is not None else ""
+        framework_messages = self._framework_messages_for_new_turn(session, request) if include_framework_transcript else []
         return {
             "session_id": session.id,
             "turn_id": request.turn_id,
@@ -1796,7 +1805,7 @@ class RuntimeService:
             "runtime_message_sections": [],
             "system_prompt": "",
             "runtime_messages": self._build_conversation_messages(session),
-            "framework_messages": [],
+            "framework_messages": framework_messages,
             "model_request_payload": {},
             "model_response_summary": {},
             "model_response_text": "",
@@ -1826,6 +1835,21 @@ class RuntimeService:
             "continue_loop": False,
             "termination_reason": "",
         }
+
+    @staticmethod
+    def _framework_messages_for_new_turn(
+        session: SessionRecord,
+        request: ExecutionRequest,
+    ) -> list[dict[str, Any]]:
+        raw_asset = (session.metadata or {}).get("framework_transcript_asset")
+        if raw_asset is None:
+            return []
+        asset = FrameworkTranscriptAsset.model_validate(raw_asset)
+        if asset.session_id != session.id:
+            raise ValueError("Framework transcript asset belongs to another Session")
+        if asset.source_turn_id == request.turn_id:
+            raise ValueError("Framework transcript asset cannot seed its source Turn")
+        return append_turn_input(asset.framework_messages, request.user_message, request.turn_id)
 
     def _should_use_dedicated_security_runtime(self, request: ExecutionRequest) -> bool:
         return (

@@ -33,6 +33,7 @@ class FrameworkProjectionWrite:
     snapshot_id: str
     snapshot_sha256: str
     output_message_id: str | None
+    runtime_result_asset_sha256: str | None = None
 
 
 def _require(condition, message):
@@ -125,6 +126,16 @@ def record_application_commit(cur, settings, session, events, write):
     _require(stage.phase == "runtime_submitted" and stage.current_task_id == owner.task_id
         and stage.owner_epoch == owner.owner_epoch and stage.owner_attempt_id == owner.attempt_id,
         "Application commit differs from its runtime submission")
+    raw_result = (stage.source_manifest or {}).get("runtime_result_asset")
+    if raw_result is not None:
+        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+        result_asset = FrameworkRuntimeResultAsset.model_validate(raw_result)
+        _require(write.runtime_result_asset_sha256 == result_asset.asset_sha256,
+            "Application commit result asset changed before finalization")
+        _require(result_asset.model_calls_sha256 == _model_hash(cur, settings, binding)
+            and result_asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
+            "Application commit result execution facts changed")
     _require(session.id == binding.session_id and session.status.value == "completed"
         and not session.metadata.get("pending_turn")
         and (session.metadata.get("control") or {}).get("control_state") == "completed"
@@ -165,7 +176,7 @@ def record_application_commit(cur, settings, session, events, write):
     _require(previous is None or FrameworkProjectionCommit.model_validate(previous).model_dump(exclude={"committed_at"})
         == proof.model_dump(exclude={"committed_at"}), "Application commit cannot replace a different result")
     manifest[COMMIT_KEY] = previous or proof.model_dump(mode="json")
-    updated = validate_message_stage(stage.model_copy(update={"schema_version": 6,
+    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(6, stage.schema_version),
         "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
     cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
         (updated.model_dump_json(), stage.task_id))

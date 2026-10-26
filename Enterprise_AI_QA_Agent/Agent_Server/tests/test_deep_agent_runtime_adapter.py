@@ -29,6 +29,7 @@ from src.application.runtime.tool_governance_service import (
 )
 from src.application.runtime.runtime_service import RuntimeService
 from src.application.runtime.state_persistence import build_pending_turn
+from src.schemas.framework_transcript import framework_transcript_asset
 from src.application.sessions.session_service import SessionService
 from src.core.config import DeepAgentsConfig
 from src.domain.models import SessionRecord
@@ -1746,6 +1747,78 @@ def _runtime_request(session_id: str, turn_id: str) -> ExecutionRequest:
         mode_key="code_review",
         model_key="test-model",
     )
+
+
+def test_new_deep_agent_turn_rehydrates_lossless_framework_transcript_asset():
+    from src.application.deep_agents.framework_transcript import append_turn_input
+
+    previous = messages_to_dict([
+        HumanMessage(content="inspect", id="old-user"),
+        AIMessage(
+            content=[{"type": "text", "text": "call lookup", "id": "part-1"}],
+            tool_calls=[{"name": "lookup", "args": {"q": "x"}, "id": "call-1", "type": "tool_call"}],
+            additional_kwargs={"provider_signature": "sig-1"},
+            response_metadata={"token_usage": {"input_tokens": 2}},
+            id="old-assistant",
+        ),
+        ToolMessage(content={"answer": "ok"}, tool_call_id="call-1", name="lookup", id="old-tool"),
+    ])
+    asset = framework_transcript_asset(
+        session_id="session-transcript",
+        source_turn_id="turn-old",
+        runtime_version="deepagents-test",
+        framework_messages=previous,
+    )
+    session = _runtime_session("session-transcript")
+    session.metadata["framework_transcript_asset"] = asset.model_dump(mode="json")
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+    )
+
+    state = runtime._build_initial_state(
+        session,
+        _runtime_request(session.id, "turn-new"),
+        include_framework_transcript=True,
+    )
+
+    assert state["framework_messages"][1]["data"]["tool_calls"][0]["id"] == "call-1"
+    assert state["framework_messages"][1]["data"]["additional_kwargs"]["provider_signature"] == "sig-1"
+    assert state["framework_messages"][-1]["type"] == "human"
+    assert state["framework_messages"][-1]["data"]["content"] == "Review the evidence."
+
+
+def test_framework_transcript_asset_rejects_tampered_native_payload():
+    from pydantic import ValidationError
+
+    asset = framework_transcript_asset(
+        session_id="session-transcript",
+        source_turn_id="turn-old",
+        runtime_version="deepagents-test",
+        framework_messages=messages_to_dict([AIMessage(content="native", id="assistant-1")]),
+    )
+    payload = asset.model_dump(mode="json")
+    payload["framework_messages"][0]["data"]["content"] = "changed"
+
+    with pytest.raises(ValidationError, match="digest"):
+        type(asset).model_validate(payload)
+
+
+def test_session_finalization_projects_deep_agent_native_transcript_asset():
+    state = {
+        "turn_id": "turn-native",
+        "context_bundle": {"runtime_binding": {"runtime_version": "deepagents-test"}},
+        "model_response_summary": {"harness": "deepagents"},
+        "framework_messages": messages_to_dict([AIMessage(content="native", id="assistant-1")]),
+    }
+    asset = SessionService._build_framework_transcript_asset("session-transcript", state)
+
+    assert asset is not None
+    assert asset["source_turn_id"] == "turn-native"
+    assert asset["framework_messages"][0]["data"]["content"] == "native"
 
 
 class _ModelRuntimeStub:

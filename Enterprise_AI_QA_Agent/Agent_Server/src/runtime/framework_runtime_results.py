@@ -1,0 +1,145 @@
+"""Freeze finalization input under the original message owner, before writes.
+
+No upstream counterpart (checked: framework message stages/application commits,
+LangGraph persistence, integration plan v3 §12.1 A2-1): native graph checkpoints
+do not retain our RuntimeTurnResult or Verification identities. This asset does
+not admit a successor, prove an application commit, or authorize graph replay.
+"""
+from __future__ import annotations
+
+import asyncio
+from datetime import datetime
+import logging
+
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.runtime.framework_application_projection import COMMIT_KEY, _model_hash, _tool_hash
+from src.runtime.framework_message_stages import (
+    FrameworkMessageStageRecoveryRequired, message_stage_table, validate_message_stage,
+)
+from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
+from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_runtime_result import FrameworkRuntimeResult, FrameworkRuntimeResultAsset
+
+
+logger = logging.getLogger(__name__)
+RESULT_KEY = "runtime_result_asset"
+
+
+def _require(condition, message):
+    if not condition:
+        raise FrameworkMessageStageRecoveryRequired(message)
+
+
+class FrameworkRuntimeResults:
+    def __init__(self, tasks):
+        self._tasks, self._settings = tasks, tasks._settings
+
+    def _locked_stage(self, cur, owner):
+        configure_runtime_owner_transaction(cur, self._settings)
+        assert_runtime_owner(cur, self._settings, owner)
+        cur.execute(f"SELECT * FROM {self._tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
+        task = cur.fetchone()
+        cur.execute(f"SELECT record FROM {message_stage_table(self._settings)} WHERE binding_id=%s FOR UPDATE",
+            (owner.binding.binding_id,))
+        row = cur.fetchone()
+        _require(row is not None, "Runtime result has no message stage")
+        stage = validate_message_stage(row["record"])
+        _require(task is not None and task["status"] == "running"
+            and task["operation"] in {"message", "message_recover"}
+            and task["attempt_id"] == owner.attempt_id
+            and task["runtime_binding"] == owner.binding.model_dump(mode="json")
+            and stage.current_task_id == owner.task_id and stage.phase == "runtime_submitted",
+            "Runtime result has no matching active message owner")
+        return stage, task
+
+    @staticmethod
+    def _source(stage):
+        source = dict(stage.source_manifest or {})
+        source.pop(RESULT_KEY, None)
+        source.pop(COMMIT_KEY, None)
+        return source
+
+    def _validate(self, cur, owner, stage, task, raw):
+        asset = FrameworkRuntimeResultAsset.model_validate(raw)
+        lineage = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
+            *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
+                for link in stage.recoveries)}
+        _require(asset.binding == owner.binding and asset.input_sha256 == stage.input_sha256
+            and asset.execution_sha256 == stage.execution_sha256
+            and asset.source_sha256 == approval_value_hash(self._source(stage))
+            and asset.user_message == task["input_payload"].get("content", "")
+            and asset.assistant_message_id != task["user_message_id"]
+            and (asset.task_id, asset.attempt_id, asset.owner_epoch) in lineage,
+            "Runtime result identity or frozen input changed")
+        _require(asset.model_calls_sha256 == _model_hash(cur, self._settings, owner.binding)
+            and asset.tool_jobs_sha256 == _tool_hash(cur, self._settings, owner.binding),
+            "Runtime result execution facts changed")
+        return asset
+
+    async def freeze(self, owner, *, runtime_result, assistant_message_id, user_message, verification_results):
+        # Snapshot all mutable caller values before entering the synchronous DB
+        # transaction. Pydantic rejects arbitrary process objects; the digest
+        # also rejects non-finite JSON numbers rather than stringifying them.
+        result = FrameworkRuntimeResult.from_result(runtime_result).model_dump(mode="json")
+        verifications = [item.model_dump(mode="json") for item in verification_results]
+
+        def write():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                stage, task = self._locked_stage(cur, owner)
+                _require(stage.owner_epoch == owner.owner_epoch and stage.owner_attempt_id == owner.attempt_id,
+                    "Runtime result freeze differs from its runtime submission")
+                manifest = dict(stage.source_manifest or {})
+                _require(COMMIT_KEY not in manifest, "Runtime result cannot be replaced after application commit")
+                _require(user_message == task["input_payload"].get("content", "")
+                    and assistant_message_id != task["user_message_id"],
+                    "Runtime result differs from its admitted user input")
+                if RESULT_KEY in manifest:
+                    asset = self._validate(cur, owner, stage, task, manifest[RESULT_KEY])
+                    _require(asset.runtime_result.model_dump(mode="json") == result
+                        and asset.assistant_message_id == assistant_message_id and asset.user_message == user_message,
+                        "Runtime result asset is immutable")
+                    # Preparation can allocate random IDs. Only the original
+                    # saved preparation wins; a retry never replaces it.
+                    return asset
+                values = dict(binding=owner.binding.model_dump(mode="json"), task_id=owner.task_id,
+                    attempt_id=owner.attempt_id, owner_epoch=owner.owner_epoch, input_sha256=stage.input_sha256,
+                    source_sha256=approval_value_hash(self._source(stage)), execution_sha256=stage.execution_sha256,
+                    model_calls_sha256=_model_hash(cur, self._settings, owner.binding),
+                    tool_jobs_sha256=_tool_hash(cur, self._settings, owner.binding), runtime_result=result,
+                    assistant_message_id=assistant_message_id, user_message=user_message,
+                    verification_results=verifications, projection_at=datetime.utcnow().isoformat(),
+                    schema_version=1, scope="completed_message_finalization_input")
+                asset = FrameworkRuntimeResultAsset(**values, asset_sha256=approval_value_hash(values))
+                manifest[RESULT_KEY] = asset.model_dump(mode="json")
+                updated = validate_message_stage(stage.model_copy(update={"schema_version": 7,
+                    "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
+                cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
+                    (updated.model_dump_json(), stage.task_id))
+                return asset
+
+        try:
+            asset = await asyncio.to_thread(write)
+        except Exception as exc:
+            logger.warning("framework_runtime_result_freeze_rejected", extra={"task_id": owner.task_id,
+                "binding_id": owner.binding.binding_id, "owner_epoch": owner.owner_epoch,
+                "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_runtime_result_frozen", extra={"task_id": owner.task_id,
+            "binding_id": owner.binding.binding_id, "asset_sha256": asset.asset_sha256})
+        return asset
+
+    async def load(self, owner):
+        """Read only: no successor admission, projection, model or tool call."""
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                stage, task = self._locked_stage(cur, owner)
+                raw = (stage.source_manifest or {}).get(RESULT_KEY)
+                _require(raw is not None, "Original runtime result asset is missing")
+                return self._validate(cur, owner, stage, task, raw)
+
+        try:
+            return await asyncio.to_thread(read)
+        except Exception as exc:
+            logger.warning("framework_runtime_result_read_rejected", extra={"task_id": owner.task_id,
+                "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
+            raise

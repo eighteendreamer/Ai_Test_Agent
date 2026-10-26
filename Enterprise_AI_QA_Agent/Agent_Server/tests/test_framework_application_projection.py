@@ -30,8 +30,8 @@ from tests.test_framework_message_stages import run, selected, stage
 from tests.test_framework_model_calls import intent, usage
 
 
-def worker_waiting_after_application_commit(settings_data, config_data, prefix, gate):
-    """Real SDK/Deep Agents Worker, killed only after its application commit."""
+def worker_waiting_after_application_commit(settings_data, config_data, prefix, gate, window="after_commit"):
+    """Real SDK/Deep Agents Worker paused at an explicit application boundary."""
     from redis.asyncio import Redis
     from src.core.config import Settings
     from src.schemas.model_config import ModelConfigRecord
@@ -72,10 +72,15 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
         _, tasks, sessions, _ = build_services(settings, runtime, resources)
 
         async def pause(*args, **kwargs):
-            await redis.rpush(gate, "application-committed")
+            await redis.rpush(gate, "runtime-result-frozen" if window == "before_finalization" else "application-committed")
             await asyncio.Event().wait()
 
-        FrameworkMessageStages.projected = pause
+        if window == "before_finalization":
+            sessions._finalize_runtime_result = pause
+        elif window == "after_commit":
+            FrameworkMessageStages.projected = pause
+        else:
+            raise ValueError(f"Unknown application fault window: {window}")
         dispatcher = AgentTaskDispatcher(settings, tasks, sessions, resources, framework_model_calls=calls,
             framework_capabilities=FrameworkWorkerCapabilities("a" * 64, True))
         queue = RedisTaskQueue(settings.database.redis_url, stream=settings.orchestration.agent_task_v2_stream,
@@ -193,7 +198,7 @@ async def test_native_checkpoint_and_committed_application_recover_without_reexe
     assert (await h.tasks.get(successor.id)).status == "completed"
     assert await h.tasks.get(original.id) == terminal
     saved = await stage(h, original)
-    assert saved.phase == "projected" and saved.schema_version == 6
+    assert saved.phase == "projected" and saved.schema_version == 7
     after = await h.store.get_session(h.session_id)
     assert after.status.value == "completed" and after.metadata["control"]["control_state"] == "completed"
     def transcript(messages):

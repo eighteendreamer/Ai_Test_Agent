@@ -57,6 +57,7 @@ from src.schemas.session import (
 )
 from src.schemas.case_execution import AgentCaseExecutionContext
 from src.schemas.agent_task import AgentTaskAccepted
+from src.schemas.framework_transcript import framework_transcript_asset
 from src.runtime.framework_application_projection import FrameworkProjectionWrite
 from src.schemas.framework_approval import approval_value_hash
 
@@ -2058,6 +2059,9 @@ class SessionService:
                 on_model_chunk=stream_chunk_handler,
                 on_graph_input=on_graph_input,
             )
+            projection_asset = await self._prepare_framework_runtime_result(
+                projection_owner, runtime_result, assistant_message_id, payload.content,
+            )
             response = await self._finalize_runtime_result(
                 session=session,
                 runtime_result=runtime_result,
@@ -2065,6 +2069,7 @@ class SessionService:
                 user_message_override=payload.content,
                 turn_lease_token=turn_lease_token,
                 projection_owner=projection_owner,
+                **({"projection_asset": projection_asset} if projection_asset is not None else {}),
             )
             return runtime_result.snapshot.model_copy(deep=True) if capture_snapshot else response
         except ContinuationLeaseLostError:
@@ -2545,6 +2550,46 @@ class SessionService:
                     allow_interrupted=current_session.status == SessionStatus.interrupted,
                 )
 
+    @staticmethod
+    def _build_framework_transcript_asset(session_id: str, state: dict[str, Any]) -> dict[str, Any] | None:
+        """Project Deep Agents' native messages for the next independent Turn."""
+        framework_messages = list(state.get("framework_messages") or [])
+        context = dict(state.get("context_bundle") or {})
+        summary = dict(state.get("model_response_summary") or {})
+        if not framework_messages or not (
+            summary.get("harness") == "deepagents"
+            or context.get("deep_agent_harness") == "deepagents"
+        ):
+            return None
+        binding = dict(context.get("runtime_binding") or {})
+        asset = framework_transcript_asset(
+            session_id=session_id,
+            source_turn_id=str(state.get("turn_id") or ""),
+            runtime_version=str(binding.get("runtime_version") or "deepagents-unbound"),
+            framework_messages=framework_messages,
+        )
+        return asset.model_dump(mode="json")
+
+    def _runtime_verification_results(self, session_id, runtime_result):
+        return self._verification_service.build_results(
+            session_id=session_id,
+            turn_id=str(runtime_result.state["turn_id"]),
+            trace_id=str(runtime_result.state.get("trace_id", "")),
+            tool_results=list(runtime_result.state.get("tool_results", [])),
+            context_bundle=dict(runtime_result.state.get("context_bundle", {})),
+        )
+
+    async def _prepare_framework_runtime_result(self, owner, runtime_result, assistant_message_id, user_message):
+        if owner is None or self._control_state_from_runtime_result(runtime_result) != "completed":
+            return None
+        if owner != current_framework_owner() or self._agent_task_store is None:
+            raise ContinuationLeaseLostError("Framework result preparation requires its captured message owner")
+        from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+        return await FrameworkRuntimeResults(self._agent_task_store).freeze(owner,
+            runtime_result=runtime_result, assistant_message_id=assistant_message_id, user_message=user_message,
+            verification_results=self._runtime_verification_results(owner.binding.session_id, runtime_result))
+
     async def _finalize_runtime_result(
         self,
         session: SessionRecord,
@@ -2555,8 +2600,32 @@ class SessionService:
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
         projection_owner=None,
+        projection_asset=None,
     ) -> ConversationResponse:
         session_id = session.id
+        if projection_asset is not None:
+            if (projection_owner != current_framework_owner() or projection_owner is None
+                or projection_asset.binding != projection_owner.binding):
+                raise ContinuationLeaseLostError("Frozen finalization requires its captured framework owner")
+            from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+            from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+            persisted_asset = await FrameworkRuntimeResults(self._agent_task_store).load(projection_owner)
+            if persisted_asset != projection_asset:
+                raise FrameworkMessageStageRecoveryRequired("Finalization input differs from its persisted original result")
+            projection_asset = persisted_asset
+            runtime_result = projection_asset.runtime_result.restore()
+            assistant_message_id = projection_asset.assistant_message_id
+            user_message_override = projection_asset.user_message
+        projection_at = projection_asset.projection_at if projection_asset is not None else None
+
+        def finalization_event(session_id, event_type, payload):
+            event = self._make_event(session_id, event_type, payload)
+            if projection_asset is not None:
+                event.id = projection_asset.event_id(event_type)
+                event.timestamp = projection_at
+            return event
+
         fenced_write = {
             "continuation_approval_id": continuation_approval_id,
             "continuation_lease_token": continuation_lease_token,
@@ -2564,6 +2633,7 @@ class SessionService:
         }
         model_response_summary = runtime_result.state.get("model_response_summary", {})
         response_mode = str(model_response_summary.get("mode") or "ok")
+        framework_asset = self._build_framework_transcript_asset(session_id, runtime_result.state)
         # Live graph events are already durable. Stable IDs make this flush
         # idempotent, including runtimes which only return a final event log.
         for event in runtime_result.events:
@@ -2593,7 +2663,7 @@ class SessionService:
             await self._store.save_approval(session_id, approval)
             await self._store.append_event(
                 session_id,
-                self._make_event(
+                finalization_event(
                     session_id,
                     "approval.created",
                     {
@@ -2614,7 +2684,7 @@ class SessionService:
         session.metadata["pending_turn"] = runtime_result.pending_turn
         await self._store.append_event(
             session_id,
-            self._make_event(
+            finalization_event(
                 session_id,
                 "snapshot.saved",
                 {
@@ -2651,15 +2721,10 @@ class SessionService:
                 "total_tokens": int(turn_usage.get("total_tokens") or 0),
                 "context_window": int(runtime_result.state.get("model_context_window") or 0),
                 "turn_id": str(runtime_result.state.get("turn_id") or ""),
-                "updated_at": datetime.utcnow().isoformat(),
+                "updated_at": (projection_at or datetime.utcnow()).isoformat(),
             }
-        verification_results = self._verification_service.build_results(
-            session_id=session_id,
-            turn_id=str(runtime_result.state["turn_id"]),
-            trace_id=str(runtime_result.state.get("trace_id", "")),
-            tool_results=list(runtime_result.state.get("tool_results", [])),
-            context_bundle=dict(runtime_result.state.get("context_bundle", {})),
-        )
+        verification_results = (list(projection_asset.verification_results) if projection_asset is not None
+            else self._runtime_verification_results(session_id, runtime_result))
         if verification_results:
             existing_results = session.metadata.get("verification_results", [])
             if not isinstance(existing_results, list):
@@ -2668,7 +2733,7 @@ class SessionService:
             session.metadata["verification_results"] = [*existing_results, *serialized_results]
             await self._store.append_event(
                 session_id,
-                self._make_event(
+                finalization_event(
                     session_id,
                     "verification.completed",
                     {
@@ -2695,7 +2760,7 @@ class SessionService:
                 else assistant_message_id),
             role=MessageRole.assistant,
             content=runtime_result.output_text,
-            created_at=datetime.utcnow(),
+            created_at=projection_at or datetime.utcnow(),
             metadata=self._transcript_hygiene_service.assistant_message_metadata(
                 response_mode=response_mode,
                 metadata={
@@ -2711,7 +2776,7 @@ class SessionService:
         if runtime_result.output_text:
             session.messages.append(assistant_message)
             completion_events.append(
-                self._make_event(
+                finalization_event(
                     session_id,
                     "assistant.stream.completed",
                     {
@@ -2722,7 +2787,7 @@ class SessionService:
                 ),
             )
             completion_events.append(
-                self._make_event(
+                finalization_event(
                     session_id,
                     "assistant.response_generated",
                     {
@@ -2738,7 +2803,7 @@ class SessionService:
                 ),
             )
 
-        completion_event = self._make_event(
+        completion_event = finalization_event(
             session_id,
             "turn.completed" if self._session_status_from_runtime_result(runtime_result) != SessionStatus.interrupted else "turn.interrupted",
             {
@@ -2766,6 +2831,8 @@ class SessionService:
                 snapshot_id=runtime_result.snapshot.id,
                 snapshot_sha256=approval_value_hash(make_json_safe(runtime_result.snapshot.graph_state)),
                 output_message_id=assistant_message.id if runtime_result.output_text else None,
+                runtime_result_asset_sha256=(projection_asset.asset_sha256
+                    if projection_asset is not None else None),
             )
 
         for attempt in range(3):
@@ -2797,6 +2864,8 @@ class SessionService:
 
             metadata = deepcopy(latest_session.metadata)
             metadata["pending_turn"] = runtime_result.pending_turn
+            if framework_asset is not None:
+                metadata["framework_transcript_asset"] = framework_asset
             control = metadata.get("control")
             control = dict(control) if isinstance(control, dict) else {}
             control.update(
@@ -2818,7 +2887,7 @@ class SessionService:
                     "total_tokens": int(turn_usage.get("total_tokens") or 0),
                     "context_window": int(runtime_result.state.get("model_context_window") or 0),
                     "turn_id": str(runtime_result.state.get("turn_id") or ""),
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "updated_at": (projection_at or datetime.utcnow()).isoformat(),
                 }
             if verification_results:
                 existing_results = metadata.get("verification_results", [])

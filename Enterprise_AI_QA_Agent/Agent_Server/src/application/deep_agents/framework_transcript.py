@@ -34,3 +34,20 @@ def deserialize_messages(value: Any) -> list[Any]:
     ):
         raise ValueError("framework transcript must contain LangChain message dictionaries")
     return messages_from_dict(value)
+
+
+def append_turn_input(
+    framework_messages: list[dict[str, Any]],
+    content: str,
+    turn_id: str,
+) -> list[dict[str, Any]]:
+    """Append the new user message without converting prior native messages."""
+    messages = list(framework_messages)
+    if not str(content or "").strip():
+        return messages
+    from langchain_core.messages import HumanMessage, messages_to_dict
+
+    messages.extend(messages_to_dict([
+        HumanMessage(content=content, id=f"framework-input:{turn_id}"),
+    ]))
+    return messages
