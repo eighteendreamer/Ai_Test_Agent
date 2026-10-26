@@ -956,3 +956,31 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 ### 保留边界
 
 本阶段没有用私有属性强行接入 Anthropic；没有执行真实 Anthropic/Gemini 供应商、真实 RustFS、全量系统、前端构建或部署验收。Gemini 的应用层 SDK 客户端和 wire HTTP 客户端分别由官方模型与观察层持有，结束调用时关闭观察客户端；对象存储和账本仍是分开提交。首次 message 安全恢复、活动执行时间、跨 Turn transcript、未知外部副作用、受控 AgentCase 图和逐模式 Harness 继续未完成。
+
+## 32. 附件复核与剩余实施契约（2026-10-26）
+
+对照干净代码基线 `b8ebb12d6`，重新读取用户附件、方案和 §25–31 实施记录，沿 Session 输入、v2 任务领取、模型账本、adapter、原生消息、checkpoint owner 与审批恢复核对实际入口。本轮为方案复核及补全，仅修改本记录和接入方案，没有新增实现、依赖、配置或数据库迁移。
+
+### 结论与修订
+
+- 六类架构风险成立；附件关于“仍只有批量桥接”“checkpoint 无 owner 保护”“本地未安装 Deep Agents”的现状已过时。v2、legacy 和未来受控 LangGraph 分开判定；当前 Worker 只接已实现的 Deep Agents v2 操作，不把目标架构当现状。
+- 保持人的决定、交付 receipt、ToolJob 三维事实；不采纳统一线性状态机。局部同事务 proof 和已知结果恢复不代表外部 exactly-once 或任意中断均可恢复。
+- 更新方案 §1.3、§7.3，纳入已经实现的应用请求/响应资产、迟到观察与 OpenAI/Gemini 图内 wire；保留 Anthropic 图内 wire、多次 retry 独立证据、摘要 wire、对象孤儿/保留策略及真实 RustFS 出口。固定 ChatAnthropic 的公开模型字段无 HTTP client 注入项，本次未改用私有属性。
+- 新增方案 §14：首次 message 先做只读事实诊断，再建立阶段准入、持久逻辑调用/尝试与安全后继；按六个提交窗口规定故障 Harness，当前不能仅凭 checkpoint 存在或账本缺行自动重跑。模型 ready/invoking/unknown/已存响应、图完成待投影分别处理。
+- 补齐活动时长口径、跨 Turn 档案导入、真实 Token 事件、未知效果的目标查询/人工对账、领域 Runner 权限与租约、制品冻结/双环境部署和逐模式验收顺序。上述均标明待实施；不以诊断建议宣称已具备恢复端口或人工处理入口。
+- 复核本地《Agent轨迹与协议鲁棒性》§7 与《Agent测试专项》的轨迹、计划依赖、Schema 漂移、异常恢复和成本要求，继续保持公共运行时 Harness 与模式执行/裁决 Harness 分工。正式项目、固定用例版本、终态 RunItem 与新失败回归运行的业务链不变。
+
+在线重新核对官方 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 和 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)。页面已含新流接口，未据此升级固定依赖或把新示例当当前运行能力。实际 importlib.metadata 检查九个直接包仍为方案所列固定版本；HITL 构造签名包含 interrupt_mode。
+
+### 本次实际验证
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS = '1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+```
+
+结果 **51 passed，226.88 秒，无 skip**。使用隔离 PostgreSQL 表/checkpoint schema、Redis、官方 Deep Agents/LangGraph、fake model 与受控工具；包含旧 owner checkpoint/pending writes 拒绝、namespace/DeltaChannel、逐项原生身份，以及工具/native 结果保存后、对账提交前/提交后 ACK 前的三个独立 Worker 强杀参数。B 外部 Redis 计数保持一次，A 决定最终应用，原终态 task/attempt 保留。此结果不能证明首次 message、未知目标效果或真实供应商恢复已通过，也不与 §31 或历史结果累加。
+
+文档检查：方案全部本地 Markdown 链接目标存在，代码围栏成对，新增 §14 六个子节齐备；`git diff --check` 通过。未运行全量系统、前端构建、独立 lint/typecheck、真实供应商、真实 RustFS/浏览器/领域 Runner 或双制品部署验收；本轮只修订方案，未将这些尚缺实现或环境的出口计为通过。整体迁移及 P1/P2.3/P3–P5 继续未完成，默认路由保持原状态。

@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `7b72f5590` 及实施记录 §25 的本轮变更。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、5.3、7.3、8、10.3 节反映当前实施边界；后续实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。
+初稿日期：2026-10-25；最近复核：2026-10-26，对照代码基线 `b8ebb12d6` 及实施记录 §31。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新当前实施边界与剩余实施顺序；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。第 14 节为本次附件复核的增补契约，不代表已实现其中的待办。
 
 ## 1. 结论与本次修订
 
@@ -51,7 +51,7 @@
 | F1 逐项审批桥接必须整体改 | 官方 per-call、原子受理、调用身份投影、指定决定/None 继续及原生结果 proof 已接通 Runtime/Session、Dispatcher、HTTP/outbox/v2 Worker；支持 `message`、`approval_resume`、`framework_reconcile`、`approval_recover`。持久进度按最新原始/后继审批任务投影，见实施记录 §12–23 | 已知结果强杀窗口已验证 B 不重执行、另一 Worker 应用 A 的拒绝决定并闭合 Turn；其它故障窗口与真实浏览器/供应商仍待验收。批量旧路径和专用领域审批继续保留 |
 | F2 checkpoint/业务/副作用不在一个事务 | owner、官方 pending writes 与 delivery proof 共事务；决定/receipt/任务/outbox 共事务；原生结果与 applied proof 共业务投影事务。已知结果对账在单个业务事务中保存 proof、后继/outbox 和对账完成状态；对账运行失租可建立新对账，提交前/后强杀已验证，见 §24 | 多个事务及外部效果之间仍有窗口；未知副作用阻止自动后继，确定性拒绝/返回数据库错误不自动重试；不承诺外部 exactly-once |
 | F3 checkpoint 缺失租约隔离 | v2 owner-bound saver 已保护 checkpoint/pending writes；现有中断事务即时撤销 owner；同步 ToolJob 的领取、派发准入、输出、结算及附件写入校验捕获 owner，迟到响应保存非权威观察；已知结果审批的独立 Worker 接管见实施记录 §21–23 | 无绑定旧试点仍用原 saver。同步工具的校验不能撤销已准入外部请求；领域 Runner 独立执行权及其余跨进程窗口仍未完成 |
-| F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要及 owner 作用域内 DTO 请求共用根模型策略；bootstrap、带预算的 v2 受理、Worker 检查、bound adapter 与前置语义分类 owner 接线已接通，见 §7.3 与实施记录 §25–28 | 自动生成绑定/预算的新 Turn 路由、完整动态参数/超时/错误策略、活动时间和响应资产仍待实现。生产组装有端口不代表已放量；无 owner 的 legacy/其它领域请求不因此获得根预算 |
+| F4 模型对象不会自动继承调用策略 | 四传输官方模型、主/具名子代理/摘要及 owner 作用域内 DTO 请求共用根模型策略；受理预算、Worker 检查与前置语义分类已接线。应用层请求/响应资产、迟到观察及 OpenAI Chat/Responses、Gemini 图内 wire 注入已有局部验证，见 §7.3 与实施记录 §25–31 | 自动生成绑定/预算及版本实物、活动时间、完整动态参数/错误/显式重试、Anthropic 图内 wire、多次 HTTP attempt 独立证据、真实对象存储/供应商仍待验收。资产保存不证明首次 message 可重放；无 owner 的调用不自动纳入根预算 |
 | F5 完整消息必须覆盖跨 Turn | `framework_transcript.py` 已使用官方消息序列化，Runtime 保存 `framework_messages`；事件资源已移出图状态 | 完整的跨 Turn 导入、摘要覆盖范围、版本实物校验及供应商真实签名恢复仍未验收；序列化函数通过不等于上下文管道完成 |
 | F6 版本识别不等于旧环境存在 | 已有 v2 schema、独立 stream/CLI、绑定复核与 lock 摘要能力校验，另有 legacy manifest | 真实双制品部署、存量审批继续、排空与回滚未验收；lock 文件哈希不证明运行环境已安装正确依赖 |
 
@@ -348,7 +348,7 @@ checkpoint 写入适配器的单次数据库操作：
 
 模型已发出而失联，不能承诺供应商端“只调用一次”。应用账本需保留不确定尝试，保证预算和审计不将其遗漏。
 
-### 7.3 已实现的账本、请求策略与受理接线（实施记录 §25–28）
+### 7.3 已实现的账本、请求策略与受理接线（实施记录 §25–31）
 
 `PostgresFrameworkModelCalls` 与 `framework_model_call.py` 提供根预算及尝试存储端口，复用 Session → owner 的事务锁与数据库时钟。`FrameworkModelCallPolicy` 已连接官方 Deep Agents 主代理、现有具名只读子代理、自动摘要及 owner 作用域内 `ModelRuntimeService.invoke`；bootstrap 初始化账本并把同一策略注入模型服务和 bound adapter。`submit_v2(..., model_budget=...)` 可在首次任务受理事务中冻结显式预算。受控 AgentCase 图、自动生成绑定/预算并路由新 Turn 仍未接线；此阶段不能据此自动恢复首次消息或开放生产路由。
 
@@ -357,7 +357,7 @@ checkpoint 写入适配器的单次数据库操作：
 - `prepare` 原子占用根额度；`start` 只向原执行 owner 发放一次发送许可，并再次检查时限及实际用量超估后的根余额。重放相同 attempt 不能重新发送；事务异常回滚保留原状态。此许可是应用发送意图，不是供应商端幂等保证。
 - `ready → invoking → completed / unknown` 是本阶段尝试生命周期。缺 usage 的 completed 与 unknown 都保留原 Token 预留；实际 usage 可超过估算，必须真实入账，并阻止已超额后新增或尚未发送的调用。`actual_tokens=0` 不代表费用为零，应同时读取 charged_tokens、unmeasured_calls 和 unknown_calls。
 - 同一 branch/logical_call 不允许换 attempt 暗中重跑。显式重试仅接受同请求的唯一 unknown 前驱，新增 call 和 Token 预留；存储端口不自行触发重试，也不代替后续恢复策略授权。
-- 失租 owner 不得修改账本；新的有效 owner 可将旧 invoking 分类为 unknown，不能冒充原请求的响应观察者。尚未发送的旧 owner 预留保持占额，不能由后继直接发送。本阶段不释放这类预留，也不覆盖迟到模型响应的非权威资产归档。
+- 失租 owner 不得推进尝试阶段或结算 usage；新的有效 owner 可将旧 invoking 分类为 unknown，不能冒充原请求的响应观察者。尚未发送的旧 owner 预留保持占额，不能由后继直接发送。§29 新增的原观察者证据追加端口允许失租迟到返回归档，但不授予阶段、usage 或预算的修改权；旧预留释放仍未实现。
 
 新增 `<agent_task_table>_model_budget` 与 `_model_call` 两张表；bootstrap 在初始化既有任务/owner 表后调用账本 setup，沿用本项目 startup 初始化风格，不在请求中建表。真实部署库启动升级尚未验收。Token 准入使用“已知实际用量 + 未结算/缺失用量预留”，未知实际费用可能高于估算，不能声称这是供应商实际 Token 的绝对硬上限。
 
@@ -385,7 +385,14 @@ checkpoint 写入适配器的单次数据库操作：
 - 受治理主/子代理和摘要请求显式关闭本地 LangChain 模型缓存，以免缓存命中被记为新的物理请求。供应商 prompt cache 仍由其实际 usage 表达。
 - Deep Agents 0.7.13 的 profile 注册会合并 excluded_tools，不能按 Turn 更新全局排除集合。全局 profile 只保留禁用默认 GP 的不变配置；每次建图使用独立的官方工具排除中间件。该中间件是固定版本的私有导入兼容点，升级时必须验收。已有进程若注册过旧排除集合，应排空并重启，不能靠新注册清除旧集合。[官方 Profile 合并语义](https://docs.langchain.com/oss/python/deepagents/profiles#merge-semantics)
 
-后续必做：自动受理时生成/冻结完整绑定与预算、受控图接线、完整动态参数/超时/错误与应用重试策略、请求/响应不可变资产与迟到证据、已知失败及未发送尝试的结算策略、活动执行时长、真实供应商/其余流式故障验收。官方 [自定义 middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom) 提供 wrap 接入点；不能将当前 owner 作用域内路径外推为所有独立领域模型调用均受治理。
+模型资产与 wire 观察（实施记录 §29–31）：
+
+- `FrameworkModelEvidence` 使用既有 ArtifactStorageService 保存 canonical 请求和完整应用层响应；账本只挂 URI、SHA-256、长度与版本身份。原执行者可追加非权威迟到观察，不能用它改 usage、推进图或判测试通过。未启用 RustFS 时 bootstrap 不注入该证据服务；框架路由仍关闭，不能默认假设每条历史调用都有完整资产。
+- OpenAI Chat/Responses 通过官方模型公开客户端字段接入 wire，Gemini 使用公开 `HttpOptions.httpx_async_client` 和模型 `client` 字段。固定 Anthropic 集成缺少公开 per-instance HTTP 客户端字段，当前图内仅有应用层证据；普通 DTO 的传输能力与图内注入能力须分别验收。
+- HTTPX/HTTPX2 观察区分请求体、JSON/SSE 响应体、截断和完整标志，不保存认证头。多次 SDK retry 尚未逐次保存独立 wire 对象；大响应截断、断流对象不能用于完整恢复。摘要接入根预算不等于摘要 wire 已覆盖。
+- 对象存储与账本引用不是共同事务。对象或引用确认失败时保留不确定性，不重发；孤儿资产的发现、认领/清理及保留策略仍需实施。当前对应 Harness 使用对象存储替身、本机 HTTP 合成响应，不能替代真实 RustFS/供应商验收。
+
+后续必做：自动受理时生成/冻结完整绑定与预算、受控图接线、完整动态参数/超时/错误与应用重试策略、资产保留/孤儿对账与剩余 wire 能力、已知失败及未发送尝试的结算策略、活动执行时长、真实供应商/其余流式故障验收。官方 [自定义 middleware](https://docs.langchain.com/oss/python/langchain/middleware/custom) 提供 wrap 接入点；不能将当前 owner 作用域内路径外推为所有独立领域模型调用均受治理。
 
 ## 8. 新旧版本部署与数据迁移
 
@@ -620,3 +627,78 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 结果：**27 passed，68.71 秒，无 skip**。真实 PostgreSQL/Redis、官方 Deep Agents/LangGraph、fake model 验证决定 proof、pending writes、回滚、前缀增长及已有对账端口；不覆盖业务 v2 API、跨进程 kill、供应商模型或领域 Runner。通过 `importlib.metadata.version` 和实际 HITL 导入核对九个直接依赖均与第 10.1 节版本一致，签名包含 `interrupt_mode`；这不替代全新环境构建或供应商验收。
 
 本轮仅更新本方案和实施记录；未安装/升级依赖、修改业务代码或开放路由。未运行全量测试、独立 lint/type-check、前端构建、真实供应商和跨进程故障验收，原因是本轮交付为方案复核，且这些完整迁移出口尚未具备实现。
+
+## 14. 基线 b8ebb12d6：附件再次复核与剩余实施契约
+
+本节是对第 1.3、5、7、10 节的当前补充。附件评审适用于原方案形成时；当前已有 §12–31 的实现，必须按实际入口区分 legacy、显式绑定的 v2 和未来目标架构。此次交付为方案修订，下面标注“待实施”的动作均不能作为已有恢复能力。
+
+### 14.1 六项意见的处理决定
+
+| 附件意见 | 本次处理决定与当前依据 |
+| --- | --- |
+| 逐项审批改全链路 | 采纳。v2 已使用 per-call、短事务受理、串行 continuation 和稳定 link；旧 `_submit_approval_sync` 的 waiting_approval 限制与旧批量桥接仍存在，但不代表 v2 入口仍按旧方式运行。保持三维事实：人的决定、交付 receipt、ToolJob 结果；不采用附件的统一线性生命周期。见 `framework_approval_submission.py`、`framework_approval_continuation.py` 和 `runtime_adapter.py` |
+| checkpoint 与业务写入一致性 | 采纳。已建立局部事务与 proof，并未建立外部共同事务。`FrameworkApprovalRecovery` 仅为已知结果的审批执行和规定的失租对账创建后继，不能恢复首次 message，也不能把迟到观察升级为权威结果 |
+| checkpoint 所有权隔离 | 采纳。`FencedPostgresSaver._write_transaction` 在同一数据库事务持有 owner 锁，再委托官方 saver；put/pending writes 都校验捕获的原 owner。物理 namespace 映射和 DeltaChannel 重建不可省略。无绑定旧试点、独立领域 Runner 的能力另计 |
+| 官方模型对象共享治理 | 采纳。`FrameworkModelCallPolicy` 已接主/具名子代理/摘要和 owner 内 DTO，不能把工厂本身视为治理。附件的 max_tokens 描述只适用于原 DTO 适配入口；当前官方工厂使用 extra_body 保留显式 Chat 字段，已有 wire 用例。每条入口/配置分别验收，不能从旧入口的拒绝推断新工厂也拒绝 |
+| 完整消息跨 Turn | 采纳且仍是放量前出口。`framework_transcript.py` 无损序列化和 Runtime 的 framework_messages 保存已存在；初始状态仍将其设为空，不能据此声称下一 Turn 已导入完整档案。展示消息、checkpoint、跨 Turn 原生档案各有职责 |
+| 版本与部署 | 采纳且仍是放量前出口。`FrameworkWorkerCapabilities` 只接受已支持 kind/version/schema/lock/operation；实际仅有 Deep Agents v2，`runtime_kind=langgraph` 不能执行。独立 CLI/stream 和 lock 摘要不能证明旧 Worker 制品、实际依赖和回滚已验证 |
+
+官方依据：本次重新核对 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 的 per-call 及恢复时 when 重算约束、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) 的 LangGraph interrupt 实现基础、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 的节点从头重入、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 的 pending writes 与 sync durability、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 的 thread/store 分工。在线文档已有新流接口示例，不将其直接移植到固定版本；以本地已安装版本签名和 Harness 为准。
+
+### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（待实施）
+
+当前事实：`submit_v2` 已同事务保存原始输入、用户消息、binding、显式预算和 outbox。`execute_claimed_message` 从输入编排起设置 owner 作用域；但编排结果、初始上下文实物及每个前置调用的恢复位置尚未形成持久协议。`_run_owned_submission_locked` 清空 pending_turn 后才执行 Runtime；框架尝试目前使用 UUID4，DTO 缺省调用身份也不构成可重放证明。单凭“没有 checkpoint/ToolJob”不能证明没有发送过模型或发生过外部效果。
+
+实施拆为两步，每步独立验收：
+
+1. **先提供只读事实诊断**。定位原 task/attempt/binding，联合输出输入准入、owner/租约、模型尝试、最新 checkpoint/pending writes、ToolJob 和现有投影的证据及缺口。诊断不调用模型/图/工具、不发 outbox，不修改终态或补造 usage。未知/缺失事实明确显示 recovery_required 的原因。
+2. **再建立阶段准入与安全后继**。在可能发生前置模型调用之前冻结来源清单、阶段身份及输入摘要；编排完成后冻结 ExecutionRequest/上下文资产及版本。以 binding、业务阶段、分支和持久逻辑调用位置为身份，先保存不可变 attempt，再发发送许可。请求 hash 用于校验相同身份下输入没有变化，不能让输入漂移自动变成一次新调用。重投找到原 attempt；显式新尝试必须记录前驱、授权和新增预算。确切表结构/DTO/operation 通过独立实现 diff 与契约评审冻结，本方案不臆造已存在端口。
+
+| 观察到的事实 | 恢复判定 |
+| --- | --- |
+| 仅原始输入存在，尚无 checkpoint | 当前保持 recovery_required。只有新增准入协议能证明尚未越过任何发送/工具派发边界、且输入与版本可还原时，未来才允许创建新后继；“没有账本行”本身不足以证明安全 |
+| 模型 ready，未发发送许可 | 保留原预留及身份；后继不能冒用旧 owner 发送。未发送预留的释放/转移须单独实现和验证，不通过重建预算绕过 |
+| 模型 invoking/unknown，缺响应或 usage | 禁止自动重发。HTTP 已发送与 start 后尚未发送无法仅从账本区分；即使没有业务副作用也可能重复计费 |
+| 完整响应已保存，checkpoint 尚未接收结果 | 先对账原尝试、资产身份、完整性和官方任务位置。非权威观察不自动变成任务输出；在结果导入协议通过故障 Harness 前保持需对账，不重发 |
+| checkpoint 存在 | 必须核对实际待运行节点、原生结果、模型尝试与 ToolJob。checkpoint 存在不等于可以无条件 ainvoke(None)，部分节点可能从头执行 |
+| checkpoint 完成，Session/UI 尚未完成 | 按原稳定消息/事件身份补投影；不再调用模型、重导入历史或新建工具操作 |
+
+首轮红测固定覆盖：输入已入库但无 checkpoint；前置语义调用后崩溃；start 提交后崩溃；HTTP 已发但响应/usage 未保存；响应资产写后账本确认丢失；图完成后 Session 保存失败。Redis 重投及独立 Worker 接管必须核对实际 HTTP 次数、ToolJob 效果次数与原终态保留。历史缺少新准入事实的 Turn 不反向认定安全。
+
+### 14.3 活动时间、资产与跨 Turn 输入（待实施部分）
+
+- **时间预算**：现有账本有绝对 deadline，没有持久活动执行时间。增加按 owner/task/attempt 的活动片段，使用数据库时钟和已有租约约束结算；并行分支的根活动时长按时间并集计，不能把并发耗时相加当 wall time。另需统计各调用耗时。审批排队/等待不计活动时间，崩溃片段须有明确保守上界，重新领取不能重新获得完整时长。冻结该口径和故障用例后再扩展预算 DTO。
+- **资产完整性**：应用响应、wire、usage、任务结果分别记录。Anthropic 图内 wire、摘要 wire、多次 HTTP retry 独立对象、大响应截断和孤儿对象对账均需单列能力；任何缺失都不得显示“完整可重放”。模型资产保留周期覆盖未结 Turn/审批/对账，清理前检查引用；真实 RustFS 必过验收。
+- **跨 Turn**：在 Session 快照已有 framework_messages 基础上定义可检索的原生档案入口和版本封套，首次新 Turn 明确导入，原 Turn 恢复只读 checkpoint。测试完整 AI/tool 组、摘要覆盖范围、子代理隔离、消息去重、Gemini thought signature/Anthropic 内容块及模型切换。Memory store 只保存选择的长期事实，不充当完整 transcript。
+- **真实流式**：SDK 的 stream/usage 测试不等于前端 Token 流。本基线 Runtime 仍在 adapter 完成后调用 on_model_chunk(result.output_text)。后续单独接官方 chunk 到事件投影，覆盖最终答复、子代理/摘要流隔离、断流、取消、TTFT 和终止；不以结束后的一次回调宣称通过。
+
+### 14.4 未知工具效果与领域 Runner（待实施）
+
+复用治理/ToolJob/领域执行身份，不在 Deep Agents 内再建持久业务 Worker。对不同工具在现有注册契约上明确结果查询及幂等支持：
+
+- 可查询目标：使用原操作身份只读查询，并记录目标证据与时间；匹配后经受治理对账形成权威结果，再补图/业务投影。
+- 有幂等契约：只在目标明确保证的范围和有效期内复用原键；重试仍是新尝试，保留原未知历史。
+- 目标不可查询且没有幂等保证：转人工确认，记录操作者、证据和处理结论；保持原任务终态，未证明前不派发原动作。
+
+Runner 领取/heartbeat/结果结算须与自身领域租约及 framework owner 建立可验证引用。框架取消只撤销本系统权威写入，不能声称远端浏览器、压测或扫描已经停止。资源退租、实际取消与结果查询各自返回事实；领域终态 RunItem 不得重置重领。人工对账的公共入口及权限仍待设计，不能把当前没有自动后继称为已经具备人工处理能力。
+
+### 14.5 余下阶段的实施顺序与出口
+
+继续沿第 10 节阶段，不把已有能力重做一遍：
+
+| 顺序 | 交付边界 | 必须看到的验收证据 |
+| --- | --- | --- |
+| A：首次 message 与活动时间 | §14.2–14.3；只读诊断先行，再做安全后继、阶段/尝试身份和时间预算 | 上述六个崩溃窗口；HTTP 不盲重发、原预算/终态不重置、旧 owner 写入拒绝、等待不耗活动时长 |
+| B：原生上下文与制品冻结 | 跨 Turn 档案导入、Prompt/Skill/工具/模型及实际运行制品 manifest；补齐剩余资产契约 | 真实供应商消息往返、完整工具组/签名、漂移拒绝、历史缺资产可解释阻塞 |
+| C：P2.3 剩余恢复出口 | 未知目标查询/人工对账、领域 Runner 所有权、其余提交窗口 | 真正的独立 Worker kill、旧 Worker 延迟返回、一次目标效果与可核验证据；不能只造终态记录 |
+| D：P3 代码审查 | 接现有 PromptAssembly/项目/Memory/SkillRegistry，文件只读、受限子代理、真实流事件 | 固定仓库/提交样本的发现和行证据、目录边界、原根预算、审批/取消/恢复、真实浏览器展示 |
+| E：P4 受控图与模式 | AgentCase 的模型循环进入 LangGraph；第 9 节每个非占位模式分别接领域 Harness | 原固定用例/套件/RunItem 链、实际 Runner、Verification/Evaluation、无证据不通过及新回归运行 |
+| F：P5 部署与收敛 | 双制品/双队列、兼容数据库升级、存量回合结清、回滚和旧代码移除 | 旧 Worker 不能领新操作；新路由回滚后已有 v2 checkpoint 仍由兼容制品结清；无未知执行遗留 |
+
+D 的本地开发可以在 A–C 期间推进；开启任何生产新 Turn 前须满足其相关 P0–P3 出口。E 中各模式独立验收与开关，不因代码审查通过自动切换。默认协作/代码审查不天然形成测试结果；API/UI/安全/性能/冒烟/兼容性的执行与裁决继续使用第 9 节领域服务。六个占位模式仍不计功能完成。
+
+公共 Harness 负责模型协议、工具轨迹、审批与所有权、预算、上下文和故障恢复；模式 Harness 负责该模式输入、Runner、断言、证据、评价和清理。每个模式记录可复现入口、fixture/环境、实际依赖版本、必过命令和失败样本，报告通过/失败/skip/未执行；不以模块名、harness_key 或通用测试绿灯代替模式验收。此口径沿用本地《Agent轨迹与协议鲁棒性》§7 的轨迹、Schema 漂移、异常注入和成本要求。
+
+### 14.6 本次验证的记录方式
+
+本次重新核对九个固定包实际安装版本与 HITL 构造签名，确认包含 interrupt_mode；同时确认固定 ChatAnthropic 的公开模型字段没有 HTTP client 注入项。测试命令与最终结果记录在[实施记录 §32](framework-integration-progress-2026-10-25.md#32-附件复核与剩余实施契约2026-10-26)。当前只修改方案及记录，没有修改运行代码、依赖、数据库结构或开关；未把历史回归通过数累计为本次结果。
