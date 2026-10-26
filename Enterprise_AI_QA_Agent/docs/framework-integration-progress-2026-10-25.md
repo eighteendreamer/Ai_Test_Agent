@@ -2,6 +2,8 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
+2026-10-26 附件再复核见 §37；以下已完成实现快照仍截至 §36。工作区 orchestrated 恢复候选尚未验收，不纳入该快照。
+
 **全系统迁移尚未完成。当前快照更新至 §36：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted 安全后继和未发送模型预留的显式转移端口已局部落实。自动生成绑定及预算、已开始编排的恢复调用方、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
@@ -1166,3 +1168,54 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 6 个涉及的 Python 源码/测试文件执行 `compileall` 全部通过；两份文档围栏与本地文件链接检查、`git diff --check` 通过。本轮没有前端实现变更，未重复运行前端检查。
 
 仍未完成：冻结外部编排资产、已开始 message 的阶段恢复准入与转移调用方、响应导入、活动时间、跨 Turn、受控 AgentCase 图和各模式 Harness。未运行真实供应商/RustFS、完整系统/前端/浏览器/领域 Runner、独立后端 lint/typecheck 或双制品部署；本轮不开放生产路由、不把此账本前置端口视为 A 阶段或整体迁移完成。
+
+## 37. 附件再复核、执行契约及发布出口（2026-10-26）
+
+本轮按用户要求验证所贴原方案及附件意见，更新方案 §15 和本记录。以已提交 `d0a4662cc` 为能力基线；开始时工作区已有 SessionService、message recovery/stages 和阶段 Schema 四个源码文件改动，以及被忽略的 orchestrated 候选测试。本轮未修改、暂存或提交这些实现，不把候选当作已完成阶段。
+
+### 核验依据与方案补全
+
+- 重新读取附件全文、v2 方案、已有阶段记录，以及原生 HITL adapter、fenced saver、审批受理、原生消息序列化、Runtime 初始状态、版本能力路由和候选恢复测试。六项问题在原方案形成时均成立；当前须分别判断 legacy、已绑定 v2 和目标能力。
+- 官方 [Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) 确认审批建立在 LangGraph interrupt 上；[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 确认恢复节点重入；[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 区分 thread checkpoint 和跨 thread store。LangChain HITL 网页抓取失败后，核对[官方文档仓库原文](https://github.com/langchain-ai/docs/blob/main/src/oss/langchain/human-in-the-loop.mdx)，并实际运行固定包中的 per-call。
+- 补全审批三组事实、阶段恢复准入、代码制品与各持久 JSON 格式的兼容范围，区分运行 Harness 与测试 Harness。当前 Worker 检查 runtime/state/lock/operation，不足以证明未来 message-stage/model-call/proof 格式的代码读兼容；新增格式的发布必须绑定兼容制品或排空/隔离队列。
+- 官方 [Checkpointers conformance](https://docs.langchain.com/oss/python/langgraph/checkpointers#testing-with-the-conformance-suite) 提供存储契约测试，方案增列其兼容性核验及隔离测试要求。实际 metadata 查询确认本环境未安装 `langgraph-checkpoint-conformance`；本轮未安装依赖或声称运行了该套件。既有租约/审批测试不能自动替代完整 saver 契约验收。
+- 仍保持 §14.5/15.5 的 A–F 实施顺序、各模式独立 Harness、固定版本用例与终态保护。生产 v2 默认路由保持关闭。
+
+### 本次实际验证
+
+仓库根目录执行既有官方离线契约脚本：
+
+```powershell
+.\.venv-framework-v2\Scripts\python.exe docs/verify_framework_contracts_2026_10_25.py --candidate --dependency-dir .venv-framework-v2/Lib/site-packages
+```
+
+exit 0。九个实际依赖版本与锁定选择一致。**4 组官方 per-call 场景通过**：剩余项 approve/reject 与相同/不同参数交叉；先批准 B 只执行 B，A 保持等待；无新决定继续不重复 B；同进程重建 Harness 后完成 A，最终工具结果 ID 完整匹配。这是 fake model + 内存 saver + 同进程重建，不是跨进程重启或真实供应商验收。
+
+在 Agent_Server 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_dependencies.py tests/test_framework_approval_receipts.py -q -x -rs --tb=short
+```
+
+结果 **37 passed，82.73 秒，无 skip**。包括直接依赖声明/锁和 legacy 制品引用，真实 PostgreSQL 的原生 resume 写入/receipt、事务回滚、位置前缀及 owner 替换；框架模型仍为替身，不累计历史测试数字，也不把它记为全系统通过。
+
+接续前一执行者尚在运行的候选测试，而未重新启动该命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_orchestrated_message_recovery.py -q -x -rs --tb=short
+```
+
+实际结束为 **1 failed、3 passed，20.03 秒**，因 -x 未执行剩余项：
+
+```text
+test_frozen_phase_alone_does_not_override_changed_or_unknown_facts[input]
+tests/test_framework_orchestrated_message_recovery.py:104
+assert await h.tasks.get(original.id) == terminal and ...
+AssertionError
+```
+
+源码核对显示该参数先故意改变原 input_payload，然后比较整个 task 与改变前 terminal；前一条“ensure_framework_message_recovery 返回 None”断言已通过。本轮只标记候选未验收，未顺带修改测试或实现；不能从这条失败推断重复副作用，也不能忽略失败宣称全绿。独立 Worker 完成语义调用后强杀、二次失租、诊断及既有 Schema 测试仍须后续闭合。
+
+两份文档执行本地文件链接/代码围栏检查及 scoped `git diff --check`，结果通过。未运行全量测试、lint/typecheck、前端、官方 conformance、真实供应商/RustFS/领域 Runner 或双制品部署；原因是本轮交付为方案复核，且相应完整出口尚未具备验收条件。没有修改依赖、数据库、运行时接口或开关。

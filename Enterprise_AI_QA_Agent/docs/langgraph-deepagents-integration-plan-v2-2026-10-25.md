@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，本次实现从代码基线 `bb12f3a77` 继续，记录至实施记录 §36。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新当前实施边界与剩余实施顺序；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、编排尚未开始时的安全后继及未发送模型预留的显式转移端口已局部落实，其余恢复及迁移出口仍未完成。
+初稿日期：2026-10-25；最近复核：2026-10-26，已提交能力基线 `d0a4662cc`，核验记录至实施记录 §37。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出本次附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、编排尚未开始时的安全后继及未发送模型预留的显式转移端口已局部落实；工作区中的 orchestrated 恢复改动尚未验收，其余恢复及迁移出口仍未完成。
 
 ## 1. 结论与本次修订
 
@@ -756,3 +756,77 @@ Worker 重投原终态或观察原执行失租后可提交后继；不为一般�
 - 只读诊断投影当前 owner、原预留 owner 和转移次数，不暴露 observer 哈希/租约凭据，不改变 automatic_replay_allowed=false。请求实物完整性仍由资产读取校验承担；本端口保留引用，不宣称已核验 RustFS 实物。
 
 验收包含真实 PostgreSQL 并发与回滚、普通 DTO/官方 LangChain SDK 本地 HTTP 的原位置复用，以及独立端口消费者在转移提交后强杀、重建 store 后按原快照对账。这个独立进程场景在同一仍有效的执行租约内验证 ACK 丢失，不是已开始编排的 Worker 换租恢复。最终命令和结果见[实施记录 §36](framework-integration-progress-2026-10-25.md#36-未发送模型预留的显式转移2026-10-26)。下一出口仍为冻结外部编排资产、阶段恢复准入、响应导入及原六个窗口的完整 Worker 验收。
+
+## 15. 附件复核后的执行契约与发布出口（2026-10-26）
+
+本节汇总本次用户所贴原方案与附件的处理决定。已提交能力以 `d0a4662cc` 为基线；工作区另有 orchestrated 恢复候选及尚未全绿的测试，不能纳入已通过能力。本轮只修订两份文档，未继续修改该候选实现。
+
+### 15.1 选型及六项评审的最终处理
+
+**保持分层组合，不把 LangGraph 和 Deep Agents 当成二选一。** Deep Agents 使用 LangGraph 执行机制；自主探索采用其认知 Harness，正式 AgentCase 使用直接构建的受控图，领域 Runner 仍拥有实际测试执行和证据。LangGraph 原生 interrupt 提供暂停/继续，Deep Agents 的审批中间件建立在该机制之上；项目的审批权限、任务投递、ToolJob、业务结果和恢复证明仍由平台持有。[官方 Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)、[官方 Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)
+
+| 附件问题 | 最终处理 | 当前验收边界 |
+| --- | --- | --- |
+| F1 审批桥接全链路 | 采纳逐项、按 interrupt ID 恢复、同 thread 串行；审批受理按活跃 Turn 判断，可在 sibling 执行时提交 | v2 已有 API/Worker/框架局部验收；legacy 批量路径与专用领域入口分别保留，不用旧入口判断 v2 |
+| F2 checkpoint 与业务状态 | 采纳恢复协议；按真实 pending writes、receipt、ToolJob 对账；只把明确同连接同事务的部分写入视为原子 | 已知结果审批恢复已有局部验收；未知外部效果、首次 message 全窗口仍未闭合 |
+| F3 checkpoint 所有权 | 采纳数据库行锁加 epoch；同一事务核验捕获 owner 并执行官方 saver 写入，覆盖 pending writes | v2 saver 和同步治理工具已接线；独立 Runner 的执行权及真实目标取消另行验收 |
+| F4 模型调用共享治理 | 采纳每次真实请求的策略、根预算和证据；主代理、子代理、摘要、前置语义调用分别核对 | 官方模型工厂和账本已有实现；真实供应商、完整重试尝试证据和活动时间尚未验收 |
+| F5 消息跨 Turn | 采纳原生档案、展示投影、checkpoint 三种职责；新 Turn 导入档案，同 Turn 恢复不重拼历史 | 已有官方序列化与保存；下一 Turn 的完整导入仍未验收 |
+| F6 旧回合版本环境 | 采纳双制品/双队列与能力路由；保留旧运行制品到其回合结清 | 已有绑定、stream、CLI、lock 检查；实际双制品部署与回滚仍未验收 |
+
+附件“未安装 Deep Agents、仅 dry-run”是历史快照。本次实际运行的独立环境中九项直接版本均与 §10.1 相同。版本保持锁定；在线文档的新流 API 示例不自动构成本项目升级依据。
+
+### 15.2 审批三组事实及继续执行条件
+
+不采用附件建议的统一线性链 `待决定 → 决定应用 → 工具结算`。拒绝不执行工具，批准后也可能被最新权限阻止，三组事实必须分别保存：
+
+| 事实 | 保存内容 | 何时可以推进 |
+| --- | --- | --- |
+| 人的决定 | pending / approved / denied、操作者、决定身份及范围 | 有效待决定审批在短事务中受理；同决定返回原回执，相反决定冲突 |
+| 决定交付与业务应用 | queued / sending / delivered；独立 applied_at 及原生结果 proof | sending 不是收到证明；delivered 要匹配实际原生 resume 写入；applied 要匹配拒绝/治理阻止/工具结果 |
+| 工具执行 | 原 ToolJob 状态、结果、证据与待对账事实 | 批准不等于成功；未知效果不自动重试；终态结果按原调用身份回放 |
+
+审批身份同时绑定 binding、Turn、namespace、源 AI 消息、原 tool_call_id 与原生任务/interrupt；参数和范围摘要用于验证，不单独充当唯一调用身份。同名同参数的两次调用仍是两个审批。
+
+每个 continuation 只提交一个 interrupt 的决定；如果原生事实证明已消费，按 §5 的对账结果选择无新输入继续，不能重发原决定。其余独立工具可继续等待；一批工具结果齐备后才允许下一次模型调用。有业务先后关系的操作拆成条件边或领域计划，不靠批准顺序排序。
+
+审批门控在恢复中保持稳定，最新权限在治理包装器重验。仅开放 approve/reject，业务 denied 映射框架 reject；不使用 respond 表示拒绝。官方说明 respond 会作为成功的工具响应处理。[官方 HITL 文档源码](https://github.com/langchain-ai/docs/blob/main/src/oss/langchain/human-in-the-loop.mdx)
+
+### 15.3 首次 message 的恢复出口必须按阶段验收
+
+checkpoint 保存图内位置，不能代替图外输入编排的恢复资产。恢复节点还可能从头执行，因此“数据库里有 checkpoint”不构成通用重试许可。[官方节点重入约束](https://docs.langchain.com/oss/python/langgraph/interrupts#resuming-interrupts)
+
+| 阶段 | 当前基线/候选状态 | 下一次独立交付的通过条件 |
+| --- | --- | --- |
+| submitted | 已提交安全后继，见 §14.9 | 保持原输入、用户消息、预算和终态；排除矛盾事实，不重建 Turn |
+| orchestrating | 尚无完整应用恢复调用方；transfer_ready 只是账本端口 | 先冻结实际语义输入及 Prompt/Skill/Memory 来源实物；仅对证明未发送的原预留显式转移，已完成响应有验证后的导入协议，invoking/unknown 不自动重发 |
+| orchestrated | 工作区候选保存冻结 ExecutionRequest 并尝试跳过重编排，尚未验收 | 同事务复核来源、模型事实与执行身份；发布/领取/提交前漂移拒绝；完成语义调用后独立进程 kill、二次失租与旧 owner 拒绝；诊断/Schema/既有测试同步 |
+| runtime_submitted | 仍需结合真实图状态与调用账本逐项判定 | 模型 start 后未发送、HTTP 已发结果未知、响应资产保存未确认等窗口均有明确不重发/对账/导入规则 |
+| 图完成、业务未投影 | 补偿出口尚未验收 | 使用原消息/事件身份补投影，不再次调用图、模型或工具；等待审批的 projected 不能当作 Turn 完成 |
+
+本次接续得到的候选测试为 **3 passed、1 failed，随后因 -x 停止**。失败位于故意修改 input_payload 后仍比较完整原任务对象相等的断言；此前“拒绝创建后继”的断言已经通过。该失败不能证明生产发生重复执行，也不能算该候选已通过。候选测试必须先修正比较口径并完成剩余故障验收，才能更新能力声明。
+
+### 15.4 版本兼容应覆盖实际代码与持久化格式
+
+`FrameworkWorkerCapabilities.require()` 目前检查 runtime kind/version、state schema、lock 和 operation；其 lock 来自文件摘要。当前恢复阶段 JSON 已演进，模型预留 JSON 也有自己的格式版本，不能由统一的 state_schema_version 或未变化的依赖锁推出代码读兼容。
+
+发布前补齐以下契约，这是待实现/验收要求，不是现有 manifest 已具备的字段：
+
+1. 每个 Worker 制品声明代码制品身份、实际安装依赖和可读写的 command、binding、message-stage、model-call、receipt/proof 格式范围。
+2. 新增持久格式或改变恢复语义时，升级应用运行时契约/部署能力声明；使用真实历史样本测试解析与继续，不能只改版本字符串。
+3. 旧 Worker 在 claim 前拒绝不支持的任务；无法安全区分消费者时先排空或隔离对应队列，不能让旧代码先领取再失败。
+4. 回滚仅改变新 Turn 路由；已有 v2 记录继续交兼容制品。数据库升级向旧运行制品兼容，清理前检查全部未结绑定及资产引用。
+
+具体字段和 Schema 变更实施前须同步所有消费者；本次不修改公共契约或部署。
+
+### 15.5 Harness 分工和发布的必过证据
+
+Deep Agents 的 **运行 Harness** 管理模型工具循环、认知委派和上下文；平台的 **测试 Harness** 控制 fixture、真实依赖、故障注入、断言、证据和清理。采用前者不能代替后者。
+
+- **公共契约 Harness**：四传输实际请求/流/工具/原生消息、根预算、逐项审批、owner、checkpoint/pending writes、跨 Turn、版本和故障矩阵。mock、进程内内存 saver、真实 PG/Redis、独立 Worker、真实供应商分别标识证据等级。
+- **模式 Harness**：沿 §9 为代码审查、API、UI、安全、性能、冒烟、兼容性逐项验收实际领域服务与裁决。公共测试通过不等于某模式通过；六个占位模式保持占位。
+- **Saver 契约验收**：现有 fence 用例之外，增加官方基础接口与 DeltaChannel 历史一致性验证。官方提供 `langgraph-checkpoint-conformance`；本环境未安装。后续先核对与固定版本的兼容性，在隔离测试环境使用，不在本次自动增加或升级依赖。自定义 owner fixture 应保持有效租约，公开禁用的管理删除能力在契约中明确，不为跑测试开放运行时权限。[官方 conformance 指引](https://docs.langchain.com/oss/python/langgraph/checkpointers#testing-with-the-conformance-suite)
+
+保持 §14.5 的实施顺序：**首次 message/活动时间 → 原生上下文/制品冻结 → 剩余恢复/Runner 执行权 → 代码审查 → 受控 AgentCase/逐模式 → 双制品发布与收敛**。每项独立给出真实失败样本、修复、最终命令和结果；skip/缺环境/只有替身均不能替代其必过出口。
+
+放量前必须补齐：真实供应商配置、真实证据存储、跨 Turn 原生消息、未知工具效果处理、相应 Runner 故障链及双制品部署。保留原固定用例版本、套件冻结、RunItem 原子领取与终态保护；失败产生新回归运行。当前仍不开放生产 v2 默认路由。
