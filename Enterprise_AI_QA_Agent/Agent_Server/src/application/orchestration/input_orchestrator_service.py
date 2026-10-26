@@ -1,6 +1,6 @@
 ﻿from __future__ import annotations
 
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 import logging
 from uuid import uuid4
 
@@ -17,6 +17,7 @@ from src.application.testing.router_service import QATaskRouterService
 from src.core.request_context import get_request_context
 from src.runtime.execution_context import current_framework_owner
 from src.schemas.intent import IntentDecision
+from src.schemas.semantic_input import PreparedSemanticInput
 from src.schemas.session import (
     ExecutionRequest,
     InputAttachment,
@@ -56,6 +57,7 @@ class InputOrchestratorService:
         *,
         turn_id: str | None = None,
         trace_id: str | None = None,
+        record_semantic_input: Callable[[PreparedSemanticInput], Awaitable[PreparedSemanticInput]] | None = None,
     ) -> ExecutionRequest:
         request_context = get_request_context()
         resolved_turn_id = str(turn_id or uuid4())
@@ -63,13 +65,13 @@ class InputOrchestratorService:
             trace_id or (request_context.trace_id if request_context else "") or uuid4()
         )
         intent_override = None
-        if self._semantic_intent_service is not None:
+        if self._semantic_intent_service is not None or record_semantic_input is not None:
             normalized_input = " ".join(str(payload.content or "").split())
             baseline = self._intent_recognition_service.recognize(
                 message=normalized_input,
                 context=self._recognition_context(session, payload),
             )
-            intent_override = await self._semantic_intent_service.enrich(
+            arguments = dict(
                 message=normalized_input,
                 baseline=baseline,
                 model_key=payload.model_key or session.preferred_model,
@@ -85,6 +87,15 @@ class InputOrchestratorService:
                         if current_framework_owner() is not None else {}),
                 },
             )
+            if record_semantic_input is None:
+                intent_override = await self._semantic_intent_service.enrich(**arguments)
+            else:
+                prepared = (self._semantic_intent_service.prepare(**arguments, freeze_runtime=True)
+                    if self._semantic_intent_service is not None else
+                    PreparedSemanticInput(baseline=baseline, skip_reason="service_unavailable"))
+                prepared = await record_semantic_input(prepared)
+                intent_override = (await self._semantic_intent_service.enrich_prepared(prepared)
+                    if self._semantic_intent_service is not None else prepared.baseline)
         execution = self.orchestrate(
             session,
             payload,

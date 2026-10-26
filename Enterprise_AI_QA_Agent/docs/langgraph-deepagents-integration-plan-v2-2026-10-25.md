@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近实施：2026-10-26，本轮从 `bc08011e1` 继续，记录至实施记录 §38。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、submitted 与 orchestrated 的安全后继及未发送模型预留的显式转移端口已局部落实；编排中的恢复、响应导入及其余迁移出口仍未完成。
+初稿日期：2026-10-25；最近实施：2026-10-26，本轮从 `0dd9b7462` 继续，记录至实施记录 §39。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、submitted 与 orchestrated 的安全后继、语义分类实际输入冻结及未发送模型预留的显式转移端口已局部落实；编排中的恢复调用方、响应导入及其余迁移出口仍未完成。
 
 ## 1. 结论与本次修订
 
@@ -773,6 +773,18 @@ Worker 重投原终态或观察原执行失租后可提交后继；不为一般�
 
 最终命令与结果见[实施记录 §38](framework-integration-progress-2026-10-25.md#38-冻结输入编排结果的首次消息安全后继2026-10-26)。下一出口仍包括 orchestrating 中语义输入/响应资产及 transfer_ready 调用方、模型响应导入、活动时间、跨 Turn 和各模式 Harness；本轮不开放生产路由，不将该单窗口视为 A 或 P1/P2 全部完成。
 
+### 14.12 图外语义分类的实际输入冻结（2026-10-26）
+
+为接通 §14.2 的 orchestrating 恢复，先在既有阶段记录中保存真正被消费的语义输入，而不只保存来源摘要。`SemanticIntentService.prepare` 生成版本化 `PreparedSemanticInput`：确定性 baseline、实际 system Prompt 与 user DTO、固定模型 key、原调用位置及 Trace、非秘密调用参数、SDK/适配器运行参数和显式零重试传输设置；不调用或服务未装配时保存明确的 skip 原因及 baseline。
+
+`SessionService` 通过显式 `record_semantic_input` 端口连接 `FrameworkMessageStages.freeze_semantic_input`，无需新调度器或模型循环。原 owner 事务内，仅允许在 orchestrating 且模型账本尚无调用时第一次写入 `source_manifest.semantic_input`，更新整个来源摘要。相同输入可重复确认，不改变时间戳；改变已冻结输入、错误的 Session/Turn/Trace/调用位置或失租 owner 被拒绝。原用户消息、预算及执行身份不变。
+
+执行从阶段保存后返回的 JSON 构建 DTO，不重新选择模型或重建 Prompt；每次实际调用仍进入共享模型策略。模型和 SDK/运行设置在调用前及 `ModelRuntimeService.invoke` 内检查。冻结输入路径的异常保持可见，避免账本或资产故障被转换成“语义失败、继续 baseline”；实际非 ok 响应和不合法分类输出仍按既有规则记录后回退。无 recorder 的旧入口保留原 baseline 对象及既有 fallback 行为。
+
+该资产是 PostgreSQL 中的实际语义输入，含原输入正文，不只是摘要，也不写入日志。模型密钥/请求头/地址不复制到资产，复用原参数白名单和相应摘要；日志只记录阶段、身份、来源摘要和 skip 原因。顶层 message-stage 继续使用 schema 3，嵌套语义输入有自己的 schema 1；没有新增 DDL/HTTP/operation。新写入标记 semantic_input_required，后续冻结 ExecutionRequest 时不得缺失；旧记录仍按历史读取，不补造过去的语义输入。部署仍须统一兼容 Worker，不能据此跳过 §15.4 制品验证。
+
+本轮没有开放 orchestrating 的自动后继，也没有接入 transfer_ready 或导入响应。模式注册表仍只有摘要，解析/合并与确定性路由代码版本实物、图初始状态及其真正读取的 PromptRegistry/Skill/Memory 资产仍需冻结；语义分类准备阶段没有读取后三者，不能伪造其快照。最终故障与协议测试结果见[实施记录 §39](framework-integration-progress-2026-10-25.md#39-图外语义分类实际输入冻结2026-10-26)。
+
 ## 15. 附件复核后的执行契约与发布出口（2026-10-26）
 
 本节汇总 §37 时点用户所贴原方案与附件的处理决定，当时基线为 `d0a4662cc`，仅提交两份文档。后续 §38 已推进 orchestrated 恢复候选，最新边界见 §14.11；本节的实施要求仍须分别验收，不因单一恢复窗口通过而整体标记完成。
@@ -815,7 +827,7 @@ checkpoint 保存图内位置，不能代替图外输入编排的恢复资产。
 | 阶段 | 当前基线/候选状态 | 下一次独立交付的通过条件 |
 | --- | --- | --- |
 | submitted | 已提交安全后继，见 §14.9 | 保持原输入、用户消息、预算和终态；排除矛盾事实，不重建 Turn |
-| orchestrating | 尚无完整应用恢复调用方；transfer_ready 只是账本端口 | 先冻结实际语义输入及 Prompt/Skill/Memory 来源实物；仅对证明未发送的原预留显式转移，已完成响应有验证后的导入协议，invoking/unknown 不自动重发 |
+| orchestrating | §14.12 已冻结实际语义输入及调用/跳过决定；尚无完整应用恢复调用方，transfer_ready 仍只是账本端口 | 补齐确定性路由/解析合并制品与图实际读取的 Prompt/Skill/Memory；仅对证明未发送的原预留显式转移，已完成响应有验证后的导入协议，invoking/unknown 不自动重发 |
 | orchestrated | §14.11/实施记录 §38 已接通冻结 ExecutionRequest 的后继，跳过重编排；有独立进程 kill 和二次失租验证 | 保持同事务复核来源、模型事实与执行身份；真实供应商、完整初始图资产及后续运行阶段分别验收，不能据此恢复 orchestrating |
 | runtime_submitted | 仍需结合真实图状态与调用账本逐项判定 | 模型 start 后未发送、HTTP 已发结果未知、响应资产保存未确认等窗口均有明确不重发/对账/导入规则 |
 | 图完成、业务未投影 | 补偿出口尚未验收 | 使用原消息/事件身份补投影，不再次调用图、模型或工具；等待审批的 projected 不能当作 Turn 完成 |

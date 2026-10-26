@@ -7,7 +7,8 @@ from typing import Any
 
 from src.core.request_context import new_id
 from src.schemas.intent import IntentDecision, SemanticIntentCandidate
-from src.schemas.model_config import ModelInvocationRequest
+from src.schemas.model_config import ModelInvocationRequest, model_invocation_parameters
+from src.schemas.semantic_input import PreparedSemanticInput
 from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
 
 logger = logging.getLogger(__name__)
@@ -62,11 +63,21 @@ class SemanticIntentService:
         model_key: str | None,
         trace_context: dict[str, str] | None = None,
     ) -> IntentDecision:
+        prepared = self.prepare(message=message, baseline=baseline, model_key=model_key, trace_context=trace_context)
+        decision = await self.enrich_prepared(prepared)
+        return baseline if decision == prepared.baseline else decision
+
+    def prepare(self, *, message: str, baseline: IntentDecision, model_key: str | None,
+                trace_context: dict[str, str] | None = None, freeze_runtime: bool = False) -> PreparedSemanticInput:
+        # No upstream counterpart (checked: InputOrchestratorService,
+        # FrameworkMessageStages, LangGraph persistence): enrichment runs before
+        # the graph. Persist its actual input instead of rebuilding a prompt.
+        baseline = baseline.model_copy(deep=True)
         if not self._should_invoke(message, baseline):
-            return baseline
+            return PreparedSemanticInput(baseline=baseline, skip_reason="deterministic")
         resolved_model_key = self._resolve_model_key(model_key)
         if not resolved_model_key:
-            return baseline
+            return PreparedSemanticInput(baseline=baseline, skip_reason="model_unavailable")
 
         call_context = dict(trace_context or {})
         call_context.setdefault("agent_key", "semantic-intent-classifier")
@@ -89,6 +100,40 @@ class SemanticIntentService:
             tools=[],
             trace_context=call_context,
         )
+        settings = {}
+        if freeze_runtime:
+            config = self._model_runtime_service.get_model_config(resolved_model_key)
+            if config is None:
+                return PreparedSemanticInput(baseline=baseline, skip_reason="model_unavailable")
+            transport = self._model_runtime_service.governed_transport_options()
+            settings = {"invocation_parameters": model_invocation_parameters(config),
+                "runtime_parameters": self._model_runtime_service.get_invocation_runtime_parameters(
+                    resolved_model_key, transport_options=transport), "transport_options": transport}
+        return PreparedSemanticInput.model_validate(PreparedSemanticInput(baseline=baseline,
+            model_key=resolved_model_key, request=request, **settings).model_dump(mode="json"))
+
+    async def enrich_prepared(self, prepared: PreparedSemanticInput) -> IntentDecision:
+        prepared = PreparedSemanticInput.model_validate_json(prepared.model_dump_json())
+        baseline = prepared.baseline
+        if prepared.request is None:
+            return baseline
+        request, resolved_model_key = prepared.request, prepared.model_key
+        call_context = request.trace_context
+        message_length = len(json.loads(request.messages[0]["content"])["user_input"])
+        options = {}
+        if prepared.invocation_parameters is not None:
+            config = self._model_runtime_service.get_model_config(resolved_model_key)
+            if config is None or model_invocation_parameters(config) != prepared.invocation_parameters:
+                logger.warning("semantic_intent_input_changed", extra={"model_key": resolved_model_key,
+                    "turn_id": call_context.get("turn_id", ""), "changed_input": "model_configuration"})
+                raise ValueError("Frozen semantic model configuration changed")
+            if self._model_runtime_service.get_invocation_runtime_parameters(resolved_model_key,
+                transport_options=prepared.transport_options) != prepared.runtime_parameters:
+                logger.warning("semantic_intent_input_changed", extra={"model_key": resolved_model_key,
+                    "turn_id": call_context.get("turn_id", ""), "changed_input": "runtime_configuration"})
+                raise ValueError("Frozen semantic runtime configuration changed")
+            options = {"expected_parameters": prepared.invocation_parameters,
+                "expected_runtime_parameters": prepared.runtime_parameters, "transport_options": prepared.transport_options}
         logger.info("semantic_intent_enrichment_started", extra={
             "model_key": resolved_model_key,
             "logical_call_id": call_context["logical_call_id"],
@@ -97,7 +142,7 @@ class SemanticIntentService:
             "session_id": call_context.get("session_id", ""),
         })
         try:
-            result = await self._model_runtime_service.invoke(resolved_model_key, request)
+            result = await self._model_runtime_service.invoke(resolved_model_key, request, **options)
             summary = getattr(result, "response_summary", {}) or {}
             response_mode = str(summary.get("mode") or "ok")
             if response_mode != "ok":
@@ -110,7 +155,7 @@ class SemanticIntentService:
                         "turn_id": call_context.get("turn_id", ""),
                         "error_type": response_mode,
                         "status_code": summary.get("status_code"),
-                        "message_length": len(message),
+                        "message_length": message_length,
                     },
                 )
                 return baseline
@@ -131,9 +176,11 @@ class SemanticIntentService:
                     "turn_id": call_context.get("turn_id", ""),
                     "error_type": type(exc).__name__,
                     "status_code": getattr(exc, "status_code", None),
-                    "message_length": len(message),
+                    "message_length": message_length,
                 },
             )
+            if prepared.invocation_parameters is not None:
+                raise
             return baseline
         if candidate is None:
             logger.warning(

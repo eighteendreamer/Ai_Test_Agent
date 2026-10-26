@@ -301,6 +301,11 @@ async def test_independent_worker_kill_and_redis_redelivery_keep_original_admiss
             before = await h.calls.snapshot(h.binding)
             frozen_stage = await stage(h, task)
             assert frozen_stage.phase == "orchestrating"
+            semantic_input = frozen_stage.source_manifest["semantic_input"]
+            assert semantic_input["request"]["system_prompt"]
+            assert semantic_input["request"]["trace_context"]["logical_call_id"] == "input_orchestration:semantic_intent:v1"
+            assert semantic_input["invocation_parameters"]["transport"] == "openai_chat_completions"
+            assert semantic_input["transport_options"]["max_retries"] == 0
             assert before.calls[0].phase == phase and len(requests) == http_count
             assert process.is_alive()
             process.terminate()

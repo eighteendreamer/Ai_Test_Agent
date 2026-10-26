@@ -80,6 +80,9 @@ class ModelRuntimeService:
         except KeyError:
             return None
 
+    def governed_transport_options(self) -> ModelTransportOptions:
+        return ModelTransportOptions(timeout_seconds=self._settings.model.llm_request_timeout_seconds, max_retries=0)
+
     def get_invocation_runtime_parameters(self, model_key: str, *,
         transport_options: ModelTransportOptions | None = None) -> dict[str, Any]:
         config = self.get_model_config(model_key)
@@ -138,9 +141,7 @@ class ModelRuntimeService:
                 raise RuntimeError("Owner-bound DTO model invocation requires the framework model policy")
             if transport_options is not None and transport_options.max_retries != 0:
                 raise ValueError("Owner-bound model retries require explicit accounted attempts")
-            transport_options = ModelTransportOptions(
-                timeout_seconds=(transport_options.timeout_seconds if transport_options else
-                    self._settings.model.llm_request_timeout_seconds), max_retries=0)
+            transport_options = transport_options or self.governed_transport_options()
         trace_context = dict(request.trace_context)
         if owner is not None and not (trace_context.get("logical_call_id") or trace_context.get("call_id")):
             raise ValueError("Owner-bound model invocation requires a durable call position")

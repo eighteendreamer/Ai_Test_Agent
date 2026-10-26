@@ -2,9 +2,9 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-2026-10-26 附件再复核见 §37；最新冻结请求恢复实现和验证见 §38。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
+2026-10-26 附件再复核见 §37；冻结请求恢复实现和验证见 §38，语义分类实际输入冻结见 §39。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**全系统迁移尚未完成。当前快照更新至 §38：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继和未发送模型预留的显式转移端口已局部落实。自动生成绑定及预算、orchestrating 阶段恢复与模型转移调用方、响应导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §39：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义分类实际输入冻结和未发送模型预留的显式转移端口已局部落实。自动生成绑定及预算、orchestrating 阶段恢复与模型转移调用方、响应导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1269,3 +1269,50 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 结果 **87 passed，103.64 秒，无 skip**，包含新文件最终 19 项及 Worker、预算受理、Session 执行权；两组结果有重叠，不累计为互不重复的覆盖数。10 个涉及的 Python 源码/测试执行 compileall 通过；两份文档本地链接与围栏、git diff --check / cached check 通过。
 
 仍未完成：orchestrating 中实际语义输入/响应资产及 transfer_ready 应用调用方、已发送/未知模型响应导入、图完成待业务投影补偿、活动时间、跨 Turn、受控 AgentCase 图和各模式 Harness。未运行全量测试、独立后端 lint/typecheck、前端、官方 conformance、真实供应商/RustFS/浏览器/领域 Runner 或双制品部署。本轮不开放生产默认路由，整体目标继续。
+
+## 39. 图外语义分类实际输入冻结（2026-10-26）
+
+从 `0dd9b7462` 继续方案 A。上一轮闭合的是编排完成后的冻结请求恢复；本轮为 orchestrating 中的恢复保存实际语义输入，不把保存资产等同于自动恢复授权。
+
+### 依据与实现
+
+先沿 SessionService → InputOrchestratorService → SemanticIntentService → ModelRuntimeService → 模型策略/账本阅读现有实现，并复用阶段事务、模型参数白名单及 expected_parameters/expected_runtime_parameters。现有调用发生在图外，官方 checkpoint 不能替代其应用阶段记录。测试口径对齐本地《Agent轨迹与协议鲁棒性》§7.2–7.3：协议和业务错误分别断言，验证身份、重复确认、故障轨迹及版本变化。
+
+- 新增 `PreparedSemanticInput` schema 1，区分实际请求与明确 skip；完整保存确定性 baseline、system Prompt、user JSON、Trace/稳定调用位置、解析后的模型 key、非秘密模型参数、SDK/运行参数和零重试传输选项。校验请求 baseline 配对、工具为空、选择模型一致、设置完整及版本；不复制模型凭据、原始头和地址。
+- `prepare` 与 `enrich_prepared` 分离准备及消费。消费从保存后的 DTO 恢复，不再调用 Prompt 构造或模型选择；冻结配置在发送前及既有 invoke 内核对。prepared 路径的执行异常不隐藏为 baseline，实际失败 DTO/不合法分类输出仍沿原规则记录后回退；旧 enrich 入口保持原 baseline 对象及 fallback 契约。
+- 输入编排新增显式 record_semantic_input 回调，SessionService 将其连接原阶段服务。阶段仍为 orchestrating、原 owner 有效且账本尚无模型调用时，才可第一次写入 source_manifest.semantic_input 并更新来源摘要；重复确认相同资产返回原记录，变化、错误身份及旧 owner 被拒绝。新入口声明 semantic_input_required，漏接回调不能继续冻结 ExecutionRequest/调用 Runtime。
+- 复用 PostgreSQL JSONB，不新增表、公开 API、任务 operation、依赖或生产开关。顶层阶段 schema 3 不变，嵌套输入单独版本化。旧记录可读，不反向生成历史准备数据；部署仍要求兼容 Worker，不宣称完成制品/滚动升级验证。正文只保存在既有业务存储，日志只输出身份、来源摘要与 skip 原因。
+
+语义阶段没有读取 PromptRegistry、Memory 或 Skill 内容；本轮保存的是此处真正使用的内置语义 Prompt。模式注册表仍是摘要，解析/合并与确定性路由代码制品、后续 Runtime 实际使用的外部资产仍待冻结。
+
+### TDD 与实际故障
+
+首轮红测 **1 failed，6.21 秒**：SemanticIntentService 尚无 prepare，先明确“保存后消费、不能重建”的端口契约。接入时又以模型预留钩子读取阶段，实际 **1 failed、5 deselected，7.09 秒**：阶段缺 semantic_input，原宽泛 fallback 将钩子异常变成 baseline，HTTP=0。随后接通保存回调，并让冻结路径的异常保持可见。
+
+既有回归 **1 failed、115 passed，16.30 秒**，暴露旧 fallback 要求返回原 baseline 对象，拆分准备时改变了引用身份；在旧 enrich 包装入口恢复原契约。数据库约束故障测试首次 **1 failed、6 passed，10.62 秒**，实际失败写入已回滚，但 Harness 错误期待裸 psycopg.CheckViolation；项目 SQLAlchemy 边界返回 IntegrityError，现同时核对包装异常和 orig 类型，不改生产来迎合断言。
+
+新 Harness 覆盖保存后修改 Prompt 构造/选择器仍消费原 DTO、模型/SDK参数漂移拒绝、显式 skip、冻结异常上抛、快照结构矛盾、四传输实际官方 SDK 请求、真实 PG 写入回滚、并列身份/重复确认/失租、预留后不能补造输入及缺少必需回调不能触达 Runtime。模型预留前读阶段，并逐一比较冻结的 system/user 文本与真正 HTTP 请求；仅本地合成供应商，不冒充真实付费服务。
+
+既有独立进程三窗口 Harness 增加实际语义输入断言：start 前、start 后未发 HTTP、HTTP 返回待结算处强杀原 Redis Worker，替代 Worker 回收投递后 HTTP 保持 0/0/1，原阶段与完整准备资产不变；仍保持 recovery_required，不因此重入编排。编排已冻结的安全后继强杀 Harness 也纳入本轮回归。
+
+### 最终验证
+
+在 Agent_Server 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_semantic_input.py tests/test_intent_safety_routing.py tests/test_semantic_intent_failure_visibility.py tests/test_framework_model_dto.py tests/test_semantic_intent_trace_http.py -q -x -rs --tb=short
+```
+
+结果 **167 passed，118.63 秒，无 skip**。包含最终生产源码；启动后新增的缺少必需回调用例另行执行并记录于下文。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_stages.py tests/test_framework_orchestrated_message_recovery.py tests/test_framework_message_recovery.py tests/test_framework_message_diagnostics.py -q -x -rs --tb=short
+```
+
+结果 **74 passed，212.33 秒，无 skip**。含实际 PostgreSQL、Redis、独立 Worker、官方 SDK 及原冻结请求的官方 Deep Agents/saver 恢复。前期 152/43 项通过仅作中间结果，不累计为最终额外覆盖。
+
+启动后新增的漏接必需回调用例执行 `-m pytest tests/test_framework_semantic_input.py -k bypass_required -q -x -rs --tb=short`，结果 **1 passed、20 deselected，10.31 秒**。8 个涉及 Python 文件执行 compileall 通过；方案/记录分别检查 36/1 个本地文件链接及代码围栏，通过；`git diff --check` 通过。
+
+下一出口仍为 orchestrating 的安全恢复调用方、transfer_ready 应用接线、原响应导入、完整初始图资产及代码制品、活动时间和跨 Turn。未运行全量、独立 lint/typecheck、前端、官方 conformance、真实供应商/RustFS/浏览器/领域 Runner 或双制品部署；本阶段不具备相应完整验收条件。生产默认 v2 路由保持关闭，整体目标未完成。

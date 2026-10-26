@@ -14,6 +14,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction, runtime_owner_table
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_message_stage import FrameworkMessageStage
+from src.schemas.semantic_input import PreparedSemanticInput
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +46,13 @@ def validate_message_stage(record):
         if (required and (payload is None or digest != approval_value_hash(payload))) or (
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
+    manifest = stage.source_manifest or {}
+    if "semantic_input" in manifest:
+        semantic = PreparedSemanticInput.model_validate(manifest["semantic_input"])
+        if semantic.request is not None and semantic.invocation_parameters is None:
+            raise FrameworkMessageStageRecoveryRequired("Persisted semantic input has no invocation contract")
+    elif manifest.get("semantic_input_required") and stage.phase != "orchestrating":
+        raise FrameworkMessageStageRecoveryRequired("Execution was frozen without its prepared semantic input")
     return stage
 
 
@@ -100,7 +108,7 @@ def mode_registry_hash(modes):
     return approval_value_hash([mode.model_dump(mode="json") for mode in modes])
 
 
-def message_source_manifest(session, binding, payload, *, modes=None):
+def message_source_manifest(session, binding, payload, *, modes=None, semantic_input_required=False):
     """Freeze references/digests, excluding leases and raw message contents.
 
     This manifest describes inputs observed at admission. It is not an archive
@@ -121,6 +129,8 @@ def message_source_manifest(session, binding, payload, *, modes=None):
     if len(users) == 1 and modes is not None:
         value.update(runtime_source_sha256=message_runtime_source_hash(session, users[0]),
             mode_registry_sha256=mode_registry_hash(modes))
+    if semantic_input_required:
+        value["semantic_input_required"] = True
     return value
 
 
@@ -155,6 +165,15 @@ class FrameworkMessageStages:
         return await self._advance(owner, expected="orchestrating", phase="orchestrated",
             values={"execution_request": payload, "execution_sha256": approval_value_hash(payload)})
 
+    async def freeze_semantic_input(self, owner, prepared):
+        prepared = PreparedSemanticInput.model_validate_json(prepared.model_dump_json())
+        saved = await self._advance(owner, expected="orchestrating", phase="orchestrating", values={},
+            semantic_input=prepared.model_dump(mode="json"))
+        logger.info("framework_semantic_input_frozen", extra={"task_id": owner.task_id,
+            "binding_id": owner.binding.binding_id, "source_sha256": saved.source_sha256,
+            "model_key": prepared.model_key, "skip_reason": prepared.skip_reason})
+        return PreparedSemanticInput.model_validate(saved.source_manifest["semantic_input"])
+
     async def submit_runtime(self, owner):
         return await self._advance(owner, expected="orchestrated", phase="runtime_submitted", values={})
 
@@ -167,7 +186,7 @@ class FrameworkMessageStages:
         return await self._advance(owner, expected="runtime_submitted", phase="projected",
             values={"result_reference": reference})
 
-    async def _advance(self, owner, *, expected, phase, values, recovery_modes_sha256=None):
+    async def _advance(self, owner, *, expected, phase, values, recovery_modes_sha256=None, semantic_input=None):
         # Snapshot mutable caller dictionaries before crossing the thread boundary.
         values = json.loads(json.dumps(values, ensure_ascii=False, allow_nan=False))
 
@@ -191,6 +210,26 @@ class FrameworkMessageStages:
                 if original.phase != expected or (expected != "submitted" and recovery_modes_sha256 is None and (
                     original.owner_epoch != owner.owner_epoch or original.owner_attempt_id != owner.attempt_id)):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage has already started; reconcile its origin")
+                if semantic_input is not None:
+                    prepared = PreparedSemanticInput.model_validate(semantic_input)
+                    if prepared.request is not None:
+                        context = prepared.request.trace_context
+                        if (context.get("session_id") != owner.binding.session_id
+                            or context.get("turn_id") != owner.binding.turn_id
+                            or context.get("trace_id") != task["trace_id"]
+                            or context.get("logical_call_id") != "input_orchestration:semantic_intent:v1"):
+                            raise FrameworkMessageStageRecoveryRequired("Semantic input differs from its admitted message identity")
+                    manifest = dict(original.source_manifest)
+                    if "semantic_input" in manifest:
+                        if manifest["semantic_input"] != semantic_input:
+                            raise FrameworkMessageStageRecoveryRequired("Prepared semantic input is immutable")
+                        return original
+                    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+                    if PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding.binding_id).calls:
+                        raise FrameworkMessageStageRecoveryRequired("Semantic input must be frozen before model reservation")
+                    manifest["semantic_input"] = semantic_input
+                    values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
                 resuming_frozen = (task["operation"] == "message_recover" and original.recoveries
                     and original.recoveries[-1].resume_phase == "orchestrated")
                 if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated"):

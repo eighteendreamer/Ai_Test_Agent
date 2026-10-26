@@ -208,12 +208,17 @@ class SessionService:
                     if frozen is None:
                         if stages is not None:
                             await stages.begin(task.runtime_owner,
-                                message_source_manifest(session, task.runtime_binding, payload, modes=self._mode_registry.list()))
+                                message_source_manifest(session, task.runtime_binding, payload,
+                                    modes=self._mode_registry.list(), semantic_input_required=True))
+                        async def record_semantic_input(prepared):
+                            return await stages.freeze_semantic_input(task.runtime_owner, prepared)
+
                         request = await self._input_orchestrator_service.orchestrate_async(
                             session,
                             payload,
                             turn_id=str(task.turn_id),
                             trace_id=str(task.trace_id),
+                            **({"record_semantic_input": record_semantic_input} if stages is not None else {}),
                         )
                         request.runtime_binding = task.runtime_binding
                     else:
