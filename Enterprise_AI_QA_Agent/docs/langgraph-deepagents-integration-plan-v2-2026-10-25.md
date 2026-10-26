@@ -645,13 +645,13 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 
 官方依据：本次重新核对 [LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop) 的 per-call 及恢复时 when 重算约束、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop) 的 LangGraph interrupt 实现基础、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 的节点从头重入、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 的 pending writes 与 sync durability、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 的 thread/store 分工。在线文档已有新流接口示例，不将其直接移植到固定版本；以本地已安装版本签名和 Harness 为准。
 
-### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（待实施）
+### 14.2 首次 message 的恢复必须补输入准入，而非重调整个 Turn（只读诊断已实现；安全后继待实施）
 
 当前事实：`submit_v2` 已同事务保存原始输入、用户消息、binding、显式预算和 outbox。`execute_claimed_message` 从输入编排起设置 owner 作用域；但编排结果、初始上下文实物及每个前置调用的恢复位置尚未形成持久协议。`_run_owned_submission_locked` 清空 pending_turn 后才执行 Runtime；框架尝试目前使用 UUID4，DTO 缺省调用身份也不构成可重放证明。单凭“没有 checkpoint/ToolJob”不能证明没有发送过模型或发生过外部效果。
 
 实施拆为两步，每步独立验收：
 
-1. **先提供只读事实诊断**。定位原 task/attempt/binding，联合输出输入准入、owner/租约、模型尝试、最新 checkpoint/pending writes、ToolJob 和现有投影的证据及缺口。诊断不调用模型/图/工具、不发 outbox，不修改终态或补造 usage。未知/缺失事实明确显示 recovery_required 的原因。
+1. **先提供只读事实诊断（已实现内部端口，见 §14.7）**。定位原 task/attempt/binding，联合输出输入准入、owner/租约、模型尝试、最新 checkpoint/pending writes、ToolJob 和现有投影的证据及缺口。诊断不调用模型/图/工具、不发 outbox，不修改终态或补造 usage。未知/缺失事实明确显示 recovery_required 的原因。
 2. **再建立阶段准入与安全后继**。在可能发生前置模型调用之前冻结来源清单、阶段身份及输入摘要；编排完成后冻结 ExecutionRequest/上下文资产及版本。以 binding、业务阶段、分支和持久逻辑调用位置为身份，先保存不可变 attempt，再发发送许可。请求 hash 用于校验相同身份下输入没有变化，不能让输入漂移自动变成一次新调用。重投找到原 attempt；显式新尝试必须记录前驱、授权和新增预算。确切表结构/DTO/operation 通过独立实现 diff 与契约评审冻结，本方案不臆造已存在端口。
 
 | 观察到的事实 | 恢复判定 |
@@ -702,3 +702,15 @@ D 的本地开发可以在 A–C 期间推进；开启任何生产新 Turn 前�
 ### 14.6 本次验证的记录方式
 
 本次重新核对九个固定包实际安装版本与 HITL 构造签名，确认包含 interrupt_mode；同时确认固定 ChatAnthropic 的公开模型字段没有 HTTP client 注入项。测试命令与最终结果记录在[实施记录 §32](framework-integration-progress-2026-10-25.md#32-附件复核与剩余实施契约2026-10-26)。当前只修改方案及记录，没有修改运行代码、依赖、数据库结构或开关；未把历史回归通过数累计为本次结果。
+
+### 14.7 首次 message 只读诊断端口（2026-10-26）
+
+`PostgresAgentTaskStore.diagnose_framework_message(task_id, session_id=...)` 提供内部只读端口，由 `FrameworkMessageDiagnostics` 联合读取，不接入原审批恢复分支。调用方提供已经限定权限的 Session；不增加 HTTP 路由、Worker 自动恢复或人工操作入口。无绑定或非首次 message 的任务明确拒绝，Session 不匹配按任务不存在处理；task 与 binding 的 Session/Turn 身份矛盾时，在读取账本/checkpoint 前报错，禁止损坏记录将诊断重定向到另一 Turn。
+
+- 同一 PostgreSQL 连接先设置 `REPEATABLE READ READ ONLY`，在一个 MVCC 快照读取 task/attempt、原输入及用户消息、owner/租约、模型账本、官方 checkpoint/pending writes、ToolJob、原 Turn 的 SessionSnapshot 和 pending_turn。返回数据库时间与快照标识；它们用于解释本次读取，不能作为之后执行的授权。遵循 [PostgreSQL 事务特征](https://www.postgresql.org/docs/current/sql-set-transaction.html)，不取得 owner 行锁，不调用会执行 setup 的 checkpoint provider。
+- 模型账本保持 ready/invoking/completed/unknown 和原预算；响应与 wire 资产仅返回原有引用及非权威/截断/完整性标记，不读取对象正文或补造 usage。缺表、缺预算及坏记录分别列出；账本无法完整解析时调用数和 Token 汇总返回未知，而非零。`evidence_objects_verified=false` 明示本次没有核验 RustFS 实物。
+- 输入摘要复用 v2 准入的同一个计算入口，包含 binding fingerprint 与准入时的可选冻结预算；同时识别历史无预算准入。无法重建摘要时报告校验缺口，不改写原摘要。展示消息检查身份和内容一致性，但不返回正文。
+- checkpoint 只读指定 thread 与确切物理 namespace/子 namespace 的最新身份、父 checkpoint、step 及 pending write 身份/channel；不解码 Prompt 或工具内容，也不推断图已完成或可以 `ainvoke(None)`。ToolJob 返回状态、执行 task/attempt/epoch 和结果存在性，保留未知执行待对账；SessionSnapshot 按原 Turn 选择，不把另一 Turn 的最新投影当原执行结果。
+- 返回的 `recovery_status=recovery_required` 和 `automatic_replay_allowed=false` 是本端口对自动重放的判定，不修改任务实际状态。始终标记 `stage_admission_unavailable`：阶段准入、持久逻辑调用位置、活动时间和安全后继仍待后续独立实现。完整消息位置重建及资产验真也不由这个只读端口完成。
+
+新增 Harness 和本次联合回归见[实施记录 §33](framework-integration-progress-2026-10-25.md#33-首次-message-只读事实诊断2026-10-26)。六个真实崩溃窗口与 Redis 重投的供应商 HTTP 次数验证仍属于 §14.2 第二步，不能用诊断测试替代。

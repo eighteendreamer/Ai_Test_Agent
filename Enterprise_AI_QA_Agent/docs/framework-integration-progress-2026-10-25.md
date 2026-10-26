@@ -984,3 +984,37 @@ $env:RUN_LIVE_POSTGRES_TESTS = '1'
 结果 **51 passed，226.88 秒，无 skip**。使用隔离 PostgreSQL 表/checkpoint schema、Redis、官方 Deep Agents/LangGraph、fake model 与受控工具；包含旧 owner checkpoint/pending writes 拒绝、namespace/DeltaChannel、逐项原生身份，以及工具/native 结果保存后、对账提交前/提交后 ACK 前的三个独立 Worker 强杀参数。B 外部 Redis 计数保持一次，A 决定最终应用，原终态 task/attempt 保留。此结果不能证明首次 message、未知目标效果或真实供应商恢复已通过，也不与 §31 或历史结果累加。
 
 文档检查：方案全部本地 Markdown 链接目标存在，代码围栏成对，新增 §14 六个子节齐备；`git diff --check` 通过。未运行全量系统、前端构建、独立 lint/typecheck、真实供应商、真实 RustFS/浏览器/领域 Runner 或双制品部署验收；本轮只修订方案，未将这些尚缺实现或环境的出口计为通过。整体迁移及 P1/P2.3/P3–P5 继续未完成，默认路由保持原状态。
+
+## 33. 首次 message 只读事实诊断（2026-10-26）
+
+从干净基线 `4c84a2f82` 继续方案 §14.2 的第一步。此次是首次 message 恢复协议缺少诊断事实的问题，不把原审批恢复器加条件扩展成首次消息重跑器。
+
+### 依据与实现边界
+
+- 复核用户评审附件、方案 §14、当前 task/attempt/owner、模型账本、Session 和官方 checkpoint 表；确认 `DeepAgentCheckpointProvider.open()` 包含 schema/setup，不能作为只读诊断入口。重新核对官方 [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 以及 [PostgreSQL SET TRANSACTION](https://www.postgresql.org/docs/current/sql-set-transaction.html) 和 [隔离级别](https://www.postgresql.org/docs/current/transaction-iso.html)。checkpoint 及 interrupt 不证明平台前置调用可以安全重发。
+- 新增 `framework_message_diagnostic.py`：只读 DTO 明确区分实际任务状态与自动恢复判定，允许返回缺失预算/账本汇总的未知值；不返回 Prompt、工具输入/输出正文、owner token 或 HTTP headers。模型应用响应和 wire 观察保留非权威标志、资产引用与截断/完整性限制；没有读取 RustFS 实物，不宣称已验真。
+- 新增 `FrameworkMessageDiagnostics`：在一个 `REPEATABLE READ READ ONLY` 事务读取原输入准入、用户消息、执行 attempt、owner/租约、模型预算/尝试、最新物理 namespace checkpoint/pending writes、ToolJob 及原 Turn 投影。返回 DB observed_at 和 MVCC snapshot_id；不取得执行权，不初始化缺失表/池，不执行模型、图、工具、恢复任务或 outbox。读取失败日志只记录身份与异常类型。
+- `PostgresAgentTaskStore.diagnose_framework_message(task_id, session_id=...)` 作为内部消费端口，Session 不匹配返回不存在；只接受显式绑定的首次 message。尚未接 HTTP/UI，不代替调用方已有的身份认证。抽取原有 `_v2_input_hash` 给准入和诊断共同使用，保持原 hash 算法与可选预算语义；历史无预算准入也可识别。
+- 原 task/attempt、冻结预算和结果没有更新。报告始终保留 `automatic_replay_allowed=false` 与 `stage_admission_unavailable`；这不把 queued/运行中的任务改为 recovery_required。没有 checkpoint/账本行不作为未发送的证明，迟到观察不作为权威响应。首次 message 的阶段准入、安全后继和六个真实提交窗口仍待下一步。
+
+### TDD 与实际验证
+
+先新增 `tests/test_framework_message_diagnostics.py` 并实际运行红测：`1 failed`，缺少 `diagnose_framework_message` 导致 AttributeError。实现后的首轮失败发现 v2 输入 hash 同时包含 binding fingerprint 和可选冻结预算；改为复用现有准入 hash，未更改历史输入或绕过校验。新增 wire 诊断字段的红测也实际触发缺字段失败，随后实现白名单投影。提交前新增根身份损坏的实际红测，出现 `DID NOT RAISE ValueError`，证实记录可将读取重定向到另一 Turn；现已在所有绑定账本/checkpoint 查询之前拒绝该身份矛盾。
+
+新 Harness 共 17 个测试，使用隔离 PostgreSQL 表/namespace、Redis、官方 LangGraph/Deep Agents 和 fake model。覆盖无 checkpoint 输入、四种模型阶段及原预算、坏账本未知汇总、非权威响应/wire 引用与敏感字段排除、Session 范围、根绑定身份损坏、用户消息缺失/输入漂移、失租原 attempt 保留、原生 pending writes/子 namespace 和近似前缀排除、真实原生审批 ToolJob 及已领取执行身份、指定 Turn 投影。并发测试在读到 task 之前提交另一连接的新预算，诊断仍读取旧预算；同时实际核对连接为 `transaction_read_only=on`、`repeatable read`。
+
+在 `Agent_Server` 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_diagnostics.py tests/test_framework_model_admission.py tests/test_runtime_binding_persistence.py tests/test_framework_checkpoint_fencing.py -q -x -rs --tb=short
+```
+
+结果 **53 passed，159.98 秒，无 skip**。这是此次联合回归的最终结果，包含最后的根身份修复；不与前面的 10/14/52 项开发中测试或历史结果累计。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src/runtime/framework_message_diagnostics.py src/runtime/postgres_agent_task_store.py src/schemas/framework_message_diagnostic.py tests/test_framework_message_diagnostics.py
+git diff --check
+```
+
+均 exit 0。没有增加依赖、数据库迁移或启用生产路由；测试文件受仓库既有忽略规则影响，交付时显式纳入本次提交。未执行独立 lint/typecheck、全系统/前端、真实供应商/真实 RustFS/浏览器/Runner 或双制品部署；本步没有这些执行链路。没有完成模型发送阶段身份、首次 message 安全后继、活动时间或真实崩溃重投验收，不能将本步报告为全系统迁移完成。

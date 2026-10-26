@@ -172,6 +172,12 @@ class PostgresAgentTaskStore:
 
         return await asyncio.to_thread(FrameworkApprovalRecovery(self).ensure, task_id)
 
+    async def diagnose_framework_message(self, task_id: str, *, session_id: str):
+        """Read recovery facts only; callers must supply their scoped Session."""
+        from src.runtime.framework_message_diagnostics import FrameworkMessageDiagnostics
+
+        return await asyncio.to_thread(FrameworkMessageDiagnostics(self).inspect, task_id, session_id)
+
     async def list_session(
         self,
         session_id: str,
@@ -382,11 +388,9 @@ class PostgresAgentTaskStore:
             raise ValueError("v2 message submission supports only message agent_turn commands")
         serialized = payload.model_dump(mode="json")
         binding = command.runtime_binding
-        identity = {"payload": serialized, "runtime_binding_fingerprint": binding.fingerprint}
         if model_budget is not None:
             model_budget = FrameworkModelBudget.model_validate(model_budget.model_dump())
-            identity["model_budget"] = model_budget.model_dump(mode="json")
-        content_hash = self._input_hash("message_v2", identity)
+        content_hash = self._v2_input_hash(serialized, binding, model_budget)
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             row = self._submit_message_in_transaction(
@@ -859,6 +863,13 @@ class PostgresAgentTaskStore:
     def _idempotency_key(operation: str, value: str) -> str:
         normalized = value.strip()
         return normalized if operation == "message" else f"{operation}:{normalized}"
+
+    @staticmethod
+    def _v2_input_hash(payload, binding, model_budget=None):
+        identity = {"payload": payload, "runtime_binding_fingerprint": binding.fingerprint}
+        if model_budget is not None:
+            identity["model_budget"] = model_budget.model_dump(mode="json")
+        return PostgresAgentTaskStore._input_hash("message_v2", identity)
 
     @staticmethod
     def _input_hash(operation: str, payload: dict, *, reference_id: str | None = None) -> str:
