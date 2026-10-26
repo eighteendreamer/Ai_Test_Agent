@@ -118,34 +118,22 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
             _reject("Frozen orchestration has unresolved model attempts")
         proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
             model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
-    else:
-        # A runtime submission may only be recovered after the application
-        # snapshot has committed. The snapshot is the business projection;
-        # a native LangGraph checkpoint alone is not sufficient to rebuild
-        # SessionService's transcript, approvals, verification and memory
-        # projections. This branch never grants permission to invoke a graph.
-        _require_frozen_sources(cur, tasks, session, stage)
+    application_commit = None
+    if stage.phase == "runtime_submitted":
+        # Normal finalization legitimately changes messages and metadata.
+        # Validate its atomic commit, not the pre-runtime Session projection.
+        # This branch grants no permission to invoke the graph or Memory.
+        from src.runtime.framework_application_projection import require_application_commit
+
         request = ExecutionRequest.model_validate(stage.execution_request)
         if (request.runtime_binding != binding or request.session_id != binding.session_id
             or request.turn_id != binding.turn_id):
             _reject("Runtime submission request differs from its original binding")
-        if any(call.phase != "completed" or call.settled_response_id is None
-            for call in snapshot.calls):
-            _reject("Runtime submission has unsettled model facts")
-        table = tasks._settings.database.postgres_snapshot_table
-        cur.execute(f"SELECT id, graph_state FROM {table} WHERE session_id=%s "
-            "AND graph_state->>'turn_id'=%s ORDER BY version DESC LIMIT 1",
-            (binding.session_id, binding.turn_id))
-        projection = cur.fetchone()
-        if projection is None:
-            _reject("Runtime submission has no committed application projection")
-        graph_state = projection["graph_state"] or {}
-        context_binding = (graph_state.get("context_bundle") or {}).get("runtime_binding")
-        if context_binding != binding.model_dump(mode="json"):
-            _reject("Runtime projection binding differs from its original binding")
+        application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
         proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
             model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]),
-            result_reference=str(projection["id"]), result_sha256=approval_value_hash(graph_state))
+            result_reference=application_commit.snapshot_id,
+            result_sha256=approval_value_hash(application_commit.model_dump(mode="json")))
     cur.execute(f"SELECT role,content,metadata FROM {tasks._settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s", (stage.user_message_id, binding.session_id))
     message = cur.fetchone()
@@ -161,11 +149,12 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
         candidates.append((sql.Identifier(tasks._settings.deep_agents.checkpoint_schema, name).as_string(),
             "thread_id=%s AND (checkpoint_ns=%s OR left(checkpoint_ns,length(%s))=%s)",
             (binding.thread_id, binding.checkpoint_namespace, prefix, prefix)))
-    for table, where, parameters in candidates:
-        if _exists(cur, table):
-            cur.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", parameters)
-            if cur.fetchone() is not None:
-                _reject("Pre-runtime message has tool or checkpoint execution facts")
+    if application_commit is None:
+        for table, where, parameters in candidates:
+            if _exists(cur, table):
+                cur.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", parameters)
+                if cur.fetchone() is not None:
+                    _reject("Pre-runtime message has tool or checkpoint execution facts")
     return budget, proof
 
 

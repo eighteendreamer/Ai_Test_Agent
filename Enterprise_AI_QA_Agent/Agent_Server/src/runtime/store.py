@@ -4,7 +4,10 @@ import asyncio
 from collections import defaultdict
 from copy import deepcopy
 from datetime import UTC, datetime, timedelta
-from typing import Callable, Protocol
+from typing import TYPE_CHECKING, Callable, Protocol
+
+if TYPE_CHECKING:
+    from src.runtime.framework_application_projection import FrameworkProjectionWrite
 
 from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.storage_utils import ensure_utc_datetime
@@ -158,6 +161,7 @@ class SessionStore(Protocol):
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> SessionRecord: ...
     async def import_session_bundles(
         self, bundles: list[SessionImportBundle]
@@ -422,7 +426,10 @@ class InMemorySessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> SessionRecord:
+        if framework_projection is not None:
+            raise ValueError("Framework application commits require a PostgreSQL owner transaction")
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:
                 self._assert_continuation_lease_locked(

@@ -57,6 +57,8 @@ from src.schemas.session import (
 )
 from src.schemas.case_execution import AgentCaseExecutionContext
 from src.schemas.agent_task import AgentTaskAccepted
+from src.runtime.framework_application_projection import FrameworkProjectionWrite
+from src.schemas.framework_approval import approval_value_hash
 
 
 DEFAULT_EVENT_HISTORY_LIMIT = 500
@@ -258,6 +260,7 @@ class SessionService:
                         allow_interrupted=True,
                         turn_lease_token=task.lease_token,
                         user_message_id=task.user_message_id,
+                        projection_owner=task.runtime_owner,
                         on_graph_input=(
                             (lambda asset: stages.record_graph_input(task.runtime_owner, asset))
                             if stages is not None else None
@@ -281,36 +284,24 @@ class SessionService:
     async def _recover_projected_framework_message(self, *, session, task, stage, stages):
         """Advance a committed application projection without re-running the graph.
 
-        ``runtime_submitted`` is deliberately recoverable only when the
-        SessionSnapshot was already committed. Native LangGraph checkpoints
-        and model ledger rows do not contain the application's transcript,
-        approval, verification and memory projection contract, so they never
-        authorize a new model/tool invocation here.
+        The receipt proves the Session/messages/completion-events transaction.
+        It does not claim Memory or cleanup completed. No graph is invoked.
         """
-        snapshot = await self._store.get_latest_snapshot(session.id)
+        from src.runtime.framework_application_projection import load_committed_projection
+
+        commit, snapshot, assistant = await load_committed_projection(self._agent_task_store._settings, task.runtime_owner)
         binding = task.runtime_binding
-        if (snapshot is None or snapshot.graph_state.get("turn_id") != binding.turn_id
-            or (snapshot.graph_state.get("context_bundle") or {}).get("runtime_binding")
-                != binding.model_dump(mode="json")):
-            raise RuntimeError("Runtime submission has no matching committed application projection")
-        assistant = next(
-            (message for message in reversed(session.messages)
-             if message.role == MessageRole.assistant
-             and message.metadata.get("turn_id") == binding.turn_id),
-            None,
-        )
         if assistant is None:
-            # A waiting-approval or empty-output turn may legitimately have
-            # no assistant transcript message. Preserve the response DTO
-            # contract without writing a new transcript row during recovery.
+            # Empty output has no persisted assistant row. Keep the stable
+            # snapshot identity without inventing a new transcript message.
             assistant = ChatMessage(
-                id=str(snapshot.graph_state.get("assistant_message_id") or snapshot.id),
+                id=commit.snapshot_id,
                 role=MessageRole.assistant,
-                content=str(snapshot.graph_state.get("final_response") or ""),
+                content="",
                 created_at=snapshot.created_at,
                 metadata={"turn_id": binding.turn_id, "recovered_projection": True},
             )
-        reference = assistant.id if assistant is not None else snapshot.id
+        reference = commit.output_message_id or commit.snapshot_id
         await stages.projected(task.runtime_owner, reference)
         refreshed = await self._require_session(session.id)
         events = await self._store.list_events(session.id, limit=RECENT_CONVERSATION_EVENT_LIMIT)
@@ -1795,6 +1786,7 @@ class SessionService:
         user_message_id: str | None = None,
         capture_snapshot: bool = False,
         on_graph_input: Callable[[dict], Awaitable[None]] | None = None,
+        projection_owner=None,
     ) -> ConversationResponse | SessionSnapshot:
         session_id = session.id
         turn_fenced_write = {"turn_lease_token": turn_lease_token}
@@ -2072,6 +2064,7 @@ class SessionService:
                 assistant_message_id=assistant_message_id,
                 user_message_override=payload.content,
                 turn_lease_token=turn_lease_token,
+                projection_owner=projection_owner,
             )
             return runtime_result.snapshot.model_copy(deep=True) if capture_snapshot else response
         except ContinuationLeaseLostError:
@@ -2561,6 +2554,7 @@ class SessionService:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        projection_owner=None,
     ) -> ConversationResponse:
         session_id = session.id
         fenced_write = {
@@ -2697,7 +2691,8 @@ class SessionService:
         )
 
         assistant_message = ChatMessage(
-            id=assistant_message_id,
+            id=(runtime_result.snapshot.id if projection_owner is not None and not runtime_result.output_text
+                else assistant_message_id),
             role=MessageRole.assistant,
             content=runtime_result.output_text,
             created_at=datetime.utcnow(),
@@ -2756,6 +2751,22 @@ class SessionService:
             },
         )
         completion_events.append(completion_event)
+
+        framework_projection = None
+        binding_data = (runtime_result.state.get("context_bundle") or {}).get("runtime_binding")
+        if projection_owner is not None and self._control_state_from_runtime_result(runtime_result) == "completed":
+            from src.schemas.runtime_binding import RuntimeBinding
+            from src.infrastructure.storage_utils import make_json_safe
+
+            binding = RuntimeBinding.model_validate(binding_data)
+            if projection_owner != current_framework_owner() or projection_owner.binding != binding:
+                raise RuntimeError("Framework application projection owner does not match runtime binding")
+            framework_projection = FrameworkProjectionWrite(
+                owner=projection_owner,
+                snapshot_id=runtime_result.snapshot.id,
+                snapshot_sha256=approval_value_hash(make_json_safe(runtime_result.snapshot.graph_state)),
+                output_message_id=assistant_message.id if runtime_result.output_text else None,
+            )
 
         for attempt in range(3):
             latest_session = await self._require_session(session_id)
@@ -2829,7 +2840,9 @@ class SessionService:
             completion_event.payload["snapshot_count"] = session.snapshot_count
 
             try:
-                await self._store.save_session_with_events(session, completion_events, **fenced_write)
+                await self._store.save_session_with_events(session, completion_events,
+                    **({"framework_projection": framework_projection} if framework_projection is not None else {}),
+                    **fenced_write)
                 break
             except SessionWriteConflictError:
                 if attempt == 2:

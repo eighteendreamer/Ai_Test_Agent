@@ -70,6 +70,8 @@ class Runtime:
         self.entered.set()
         if self.finish is not None:
             await self.finish.wait()
+        context = ({"runtime_binding": request.runtime_binding.model_dump(mode="json")}
+            if request.runtime_binding is not None else {})
         return RuntimeTurnResult(
             output_text="worker-result",
             events=[],
@@ -82,9 +84,9 @@ class Runtime:
                 version=len(self.calls),
                 stage="completed",
                 created_at=datetime.now(timezone.utc),
-                graph_state={"turn_id": request.turn_id},
+                graph_state={"turn_id": request.turn_id, "context_bundle": context},
             ),
-            state={"turn_id": request.turn_id, "trace_id": "test-trace", "selected_agent_key": "default",
+            state={"turn_id": request.turn_id, "context_bundle": context, "trace_id": "test-trace", "selected_agent_key": "default",
                 "selected_agent_name": "Default", "selected_model_key": "test", "selected_model_name": "Test",
                 "termination_reason": "interrupted" if self.interrupted else "completed"})
 

@@ -5,7 +5,10 @@ import json
 import logging
 from copy import deepcopy
 from datetime import datetime
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from src.runtime.framework_application_projection import FrameworkProjectionWrite
 
 from src.core.config import Settings
 from src.core.request_context import get_request_context
@@ -81,6 +84,7 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> SessionRecord:
         inserted = await asyncio.to_thread(
             self._save_session_with_events_sync,
@@ -89,9 +93,14 @@ class PostgresSessionStore:
             continuation_approval_id,
             continuation_lease_token,
             turn_lease_token,
+            framework_projection,
         )
         for event in inserted:
             await self._publish_hot_event(session.id, event)
+        if framework_projection is not None:
+            LOGGER.info("framework_application_projection_committed", extra={"session_id": session.id,
+                "binding_id": framework_projection.owner.binding.binding_id,
+                "task_id": framework_projection.owner.task_id, "snapshot_id": framework_projection.snapshot_id})
         return session
 
     async def import_session_bundles(
@@ -935,11 +944,17 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> list[ExecutionEvent]:
         candidate = deepcopy(session)
         inserted: list[ExecutionEvent] = []
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
+                if framework_projection is not None:
+                    from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction, assert_runtime_owner
+
+                    configure_runtime_owner_transaction(cur, self._settings)
+                    assert_runtime_owner(cur, self._settings, framework_projection.owner)
                 self._save_session_in_transaction(
                     cur, candidate, continuation_approval_id,
                     continuation_lease_token, turn_lease_token,
@@ -952,6 +967,10 @@ class PostgresSessionStore:
                         continuation_lease_token, turn_lease_token,
                     ):
                         inserted.append(event)
+                if framework_projection is not None:
+                    from src.runtime.framework_application_projection import record_application_commit
+
+                    record_application_commit(cur, self._settings, candidate, events, framework_projection)
         session.event_count = candidate.event_count + len(inserted)
         session.snapshot_count = candidate.snapshot_count
         session.metadata = candidate.metadata

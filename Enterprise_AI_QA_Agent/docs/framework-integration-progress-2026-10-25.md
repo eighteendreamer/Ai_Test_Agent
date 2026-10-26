@@ -1432,3 +1432,46 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 ```
 
 结果 **117 passed，173.05 秒，无 skip**；随后修正资产变更测试为使用合法新摘要并单独复跑 **6 passed，7.80 秒**。源码与测试 `compileall`、`git diff --check` 通过。未执行全量测试、图内模型结果导入、runtime_submitted 故障恢复、真实供应商/对象存储、领域 Runner、跨 Turn 或双制品部署；下一出口是以该资产和 checkpoint/模型账本事实为依据闭合图内发送、已结算导入及完成后业务投影补偿。
+
+## 45. 应用原子提交凭证与阶段 ACK 恢复（2026-10-26）
+
+按 v3 §12.1/§15 和 TDD 继续 A1。原 runtime_submitted 恢复把图前执行事实禁令用于图后；仅有 snapshot 又不能证明最终 Session/messages/events 已提交。现复用既有最终事务，写入有明确 scope 的 `FrameworkProjectionCommit`；不是简单删除 checkpoint/ToolJob guard。
+
+### 实现及真实边界
+
+- message 首次执行和安全后继的最终提交传入不可变 owner/结果引用；Session/messages/completion events 和凭证在同事务、同所有权锁中落库。已有凭证不可替换为不同结果，无新表。记录进入 message stage Schema 6，旧严格读者不兼容；默认开关保持关闭，不代表可滚动发布。
+- 证明绑定原输入、task/attempt/epoch、精确快照和 assistant 消息、完成事件、完整已完成模型账本、终态 ToolJob 与 Verification；只读恢复在受理/claim/读取/阶段推进事务重新核对。只恢复该 Turn 已提交的生命周期，不覆盖 Session 其他并发属性，不重建消息/事件或运行图。
+- 对历史 completed 且缺 settled_response_id 的账本，只对原事实做摘要。这里读取的是已提交应用输出，不消费模型响应，不补造原响应或授权图推进。ready/invoking/unknown 仍拒绝；模型原结果导入继续要求唯一响应与原资产，联合回归保护该边界。v3 §15 解释了与早先过强建议的区别。
+- 非空 ToolJob 行统一转 dict 计算摘要，并纳入 attempt、结果元数据及时间；空应用输出仍为空，使用原快照身份，不从 graph_state 文本猜测。裸 snapshot 不授予恢复资格，Memory/资源清理/外部副作用明确不在证明 scope。
+
+### TDD 与故障证据
+
+接续回归先得到 **1 failed、37 passed，130.74 秒**：新凭证把可选模型原响应绑定错误地加入最终提交前提。正式新用例又以真实 PostgreSQL 非空 ToolJob 复现 RowMapping 序列化错误，**1 failed，8.58 秒**；修复行规范化后暴露原 fixture/DB updated_at 差异，改用真实持久事实比较，随后 completed 无响应绑定用例真实变红（1 failed、1 passed），再修正端口权限边界。
+
+新空输出红测复现恢复从 snapshot.final_response 取错文本（1 failed、1 passed，9.60 秒），已改为返回原空输出。claim 拒绝的现有契约返回 recovery_required 而非 None，测试改为检查真实终态/attempt_no=0，没有修改生产调度。期间启动的旧测试进程仍使用启动时源代码，旧失败不作为最终版本结果。
+
+独立进程 Harness 实际使用官方 Deep Agents、SDK、PostgreSQL saver 和 Redis Worker，在应用最终事务提交后、阶段 ACK 前阻塞并强杀；新 Worker 从 receipt 接管，HTTP 请求保持一次、消息两条、完成事件一次、旧 task 终态不变。单独首次运行 **1 passed、18 deselected，13.53 秒**；最终文件继续加入其它负例，不累计为额外覆盖。
+
+### 验证与下一出口
+
+在 Agent_Server 使用独立解释器、RUN_LIVE_POSTGRES_TESTS=1 实际执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_application_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py tests/test_framework_model_result_import.py -q -x -rs --tb=short
+```
+
+结果 **110 passed，360.01 秒，无 skip**。联合运行启动后新加的“读取后、阶段 ACK 事务前漂移”用例先独立执行 **1 passed、24 deselected，7.16 秒**；最终整个新文件再次执行 **25 passed，79.02 秒，无 skip**。以上有重叠，不累计为不同用例数。此前不含模型导入及后加故障测试的中间联合回归 **77 passed，220.15 秒**，只作中间证据。11 个 Python 文件 compileall、暂存索引 Python 语法检查和 git diff --check 通过；文档本地链接及围栏检查通过。
+
+上述运行使用当前工作区，含保留的跨 Turn 草稿，不标记为纯 HEAD 制品验收。额外暂存索引导出验证单独记录，不重置或覆盖用户工作区。
+
+后续再补快照头部漂移红测：只改 version 而保持 graph_state 不变，旧摘要仍允许恢复（**1 failed、25 deselected，14.15 秒**）。已将凭证快照摘要改为数据库实际保存的 id/session/version/created_at/stage/graph_state 全记录；调用方的预期 graph_state 摘要仍独立校验，兼容保存时合法重分配 version 的既有行为。
+
+最后源码的新文件完整回归为 **26 passed，112.72 秒，无 skip**（含快照头部漂移）；先前 110/25 项记录为其变更前的回归，不冒充最终全部源码的联合验收。最终 11 个涉及 Python 文件 compileall 通过。
+
+暂存索引独立导出验证首轮缺少必需配置，setup 阶段 1 error；未作为功能失败或通过，配置仅经子进程环境传递、不复制认证配置文件。配置补齐后的运行 **1 failed、24 passed，130.64 秒**，暴露原 1 秒资源租约在隔离制品冷启动中先于故障注入点丢失。Harness 改为执行时使用 30 秒租约，确认提交后强杀，再由已捕获的真实资源租约通过既有 renew 缩短至 1 秒并等待过期；没有改生产调度或绕过所有权检查。首轮 Pydantic 诊断包含配置输入片段，未复述/写入仓库；后续诊断在内存捕获并遮蔽 input_value 后输出。
+
+修正后从**暂存索引导出的独立源码**执行新文件、既有独立 Worker 编排恢复用例、历史 completed observation 不升格用例，最终 **28 passed，124.87 秒，无 skip**。导出目录不包含未提交 transcript 源码修改；逐字节验证其变更 Python 源码与暂存索引一致。此结果验证本轮代码不依赖草稿，不代表完整发布制品或双制品部署验收。
+
+另实际执行 Session 事件/所有权/值契约回归：`-m pytest tests/test_session_event_delivery.py tests/test_session_execution_ownership.py tests/test_session_store_value_contract.py -q -x -rs --tb=short`。首次漏设 live 开关，结果 71 passed、72 skipped，不作为真实集成通过；明确设置 RUN_LIVE_POSTGRES_TESTS=1 后为 **141 passed、2 skipped，43.84 秒**。剩余两项是仅 PostgreSQL 有意义的事务排序/跨进程用例在 InMemory 参数下主动跳过，对应 PostgreSQL 参数已运行。
+
+范围仍未完成：原最终事务提交前的应用结果资产和部分投影补偿、stage projected 后 Worker 任务结算前的出口、Memory/清理分项事实、图内模型原结果导入、活动时间、完整跨 Turn 和逐模式 Harness。A1 不能替代这些出口。未跑全量、独立 lint/typecheck、前端、官方 saver conformance、真实付费模型/对象存储/浏览器/压测/扫描 Runner 或双制品部署。生产默认关闭，整体 goal 保持 active；下一步继续 A2/A3，而不是重复升级依赖或重新造调度器。

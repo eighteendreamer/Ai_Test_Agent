@@ -51,6 +51,12 @@ def validate_message_stage(record):
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
     manifest = stage.source_manifest or {}
+    if "application_projection_commit" in manifest:
+        from src.schemas.framework_projection_commit import FrameworkProjectionCommit
+
+        if stage.schema_version < 6 or stage.phase not in {"runtime_submitted", "projected"}:
+            raise FrameworkMessageStageRecoveryRequired("Application commit has no matching message stage format")
+        FrameworkProjectionCommit.model_validate(manifest["application_projection_commit"])
     if "semantic_input" in manifest:
         semantic = PreparedSemanticInput.model_validate(manifest["semantic_input"])
         if semantic.request is not None and semantic.invocation_parameters is None:
@@ -285,6 +291,16 @@ class FrameworkMessageStages:
                     session = self._tasks._lock_session(cur, owner.binding.session_id)
                     require_message_recovery_claim(cur, self._tasks, session, owner.binding, task,
                         {"task_id": owner.task_id, "attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch})
+                    if resuming_projected and phase == "projected":
+                        from src.runtime.framework_application_projection import require_application_commit
+
+                        commit = require_application_commit(cur, self._settings, session, owner.binding, original)
+                        if values.get("result_reference") != (commit.output_message_id or commit.snapshot_id):
+                            raise FrameworkMessageStageRecoveryRequired("Recovered application result reference changed")
+                        cur.execute(f"UPDATE {self._settings.database.postgres_session_table} SET status='completed', "
+                            "metadata=jsonb_set(metadata,'{control}',COALESCE(metadata->'control','{}'::jsonb) || %s::jsonb), "
+                            "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
+                            (json.dumps(commit.control), owner.binding.session_id))
                 if resuming_prepared and phase in {"orchestrated", "runtime_submitted"}:
                     from src.runtime.framework_message_recovery import _require_frozen_sources, prepared_model_call
                     from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls

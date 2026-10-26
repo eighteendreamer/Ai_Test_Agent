@@ -265,7 +265,7 @@ async def test_runtime_submitted_without_committed_projection_is_not_replayed(ad
 
 
 @pytest.mark.asyncio
-async def test_runtime_submitted_with_committed_projection_only_advances_stage(admission):
+async def test_historical_snapshot_without_commit_receipt_requires_reconciliation(admission):
     from datetime import datetime, timezone
     from src.schemas.session import SessionSnapshot
 
@@ -282,16 +282,9 @@ async def test_runtime_submitted_with_committed_projection_only_advances_stage(a
     terminal = await h.tasks.claim(original.id, worker_id="expiry", expected_binding=h.binding)
     assert terminal.status == "recovery_required"
     successor = await h.tasks.ensure_framework_message_recovery(original.id)
-    assert successor is not None
-    assert (await stage(h, original)).recoveries[-1].resume_phase == "runtime_submitted"
-    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
-
-    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True))
-    await h.dispatcher.handle_v2(QueuedTask("runtime-projection", outbox(h, successor.id)["payload"]),
-        worker_id="runtime-projection")
-    assert (await h.tasks.get(successor.id)).status == "completed"
+    assert successor is None
     saved = await stage(h, original)
-    assert saved.phase == "projected" and saved.result_reference == snapshot.id
+    assert saved.phase == "runtime_submitted" and saved.recoveries == []
     assert h.runtime.calls == []
 
 

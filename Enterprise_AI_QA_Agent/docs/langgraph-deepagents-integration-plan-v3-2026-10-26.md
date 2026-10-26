@@ -1,6 +1,6 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。第 1–13 节续核基线为 `de175ecab`；第 14 节再次核验基线为 `64d0c9ff2` 及其当前未提交工作区。交付只更新本方案，不修改或提交运行时代码，不调整依赖、数据库结构或默认开关。未提交草稿只作为风险核验对象，不能视为已发布制品。
+日期：2026-10-26。第 1–13 节续核基线为 `de175ecab`；第 14 节再次核验基线为 `64d0c9ff2` 及其当时未提交工作区。上述复核交付只更新方案；第 15 节记录 `fd4fc97a` 后继续 A1 的实际实现与验证，不把实现进展写回历史结论。未提交跨 Turn 草稿仍不能视为已发布制品，默认开关不变。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
@@ -469,3 +469,34 @@ A1 不代表 A2/A3；审批强杀通过不代表首次 message 完成投影通�
 它们不覆盖或消除第 14.2 节的失败。数据库/队列为真实 PostgreSQL/Redis，模型为替身或官方 SDK 加本地合成 HTTP，工具为受控测试工具；不是付费供应商或真实领域 Runner 验收。所有测试针对当前未提交工作区，不标记为纯 HEAD 或可发布制品验证。另已实际导入九项固定依赖、检查 HITL 签名及运行 RowMapping 序列化探针，未安装依赖。
 
 本轮仅更新该方案；未修改、暂存或提交已有运行时代码/测试草稿，未安装或升级依赖。全量、独立 lint/typecheck、前端、官方 saver conformance、真实付费供应商/对象存储/领域 Runner、跨 Turn 实际签名及双制品部署未执行。Deep Agents 默认开关保持关闭，整体开发 goal 不标完成。
+
+## 15. A1 开发续接：原子应用提交证明，不等同于模型结果导入
+
+本节在 `fd4fc97a` 后继续用户 active goal 的 TDD 开发，不能将第 14 节的“仅文档”范围套用到本节。实现复用既有 Session/messages/events 最终事务、阶段 journal、owner 与任务谱系；不新增第二套调度或审批表。
+
+### 15.1 对第 14.2 节修复方向的进一步澄清
+
+进一步沿真实失败调用链核对后，必须区分两个恢复权限：
+
+| 端口 | 所需证明 | 绝不允许 |
+| --- | --- | --- |
+| 读取原已结算模型响应、推进图内位置 | 原冻结请求、唯一 settled_response_id、完整可读响应及格式/用量/当前 owner 校验 | 将历史无绑定 observation 升格为模型结果，或未知发送重试 |
+| 确认**已经原子提交的应用结果**、补阶段 ACK | 同事务保存的应用提交证明、精确输出/快照引用及原消息/事件/完整模型账本/ToolJob/Verification 一致；所有模型调用已 completed | 调用图/模型/工具、构造新的响应资产或重新执行应用投影 |
+
+第二个端口不消费模型响应，更不重放模型节点。因而第 14.2 节“所有此类恢复都必须有唯一响应资产”的建议过强；不能把第一个端口的准入条件套给第二个端口。A1 保留 completed 账本的原样摘要，即使历史结算没有 settled_response_id，也不会补造该字段或改变原账本；ready/invoking/unknown 继续拒绝。**这不是开放缺证据的图恢复**：后者的强校验及历史观察不升格规则原样保留，并加入联合回归。
+
+对将来需要模型/图结果导入的新版绑定，首次发送前检查持久证据能力的要求不变。A2/A3 的原结果导入和部分投影仍需独立设计与验收，不能用 A1 的较小权限替代整个迁移目标。
+
+### 15.2 本阶段实现与测试边界
+
+- `FrameworkProjectionCommit` 同 Session/messages/completion events 实际数据库事务提交；凭证绑定原 task/attempt/epoch、输入资产及精确结果，拒绝替换已有不同结果。scope 限定本 Turn 的应用生命周期/消息/完成事件，不证明全部可变 Session 属性、Memory、清理、对象原件或外部效果。
+- `runtime_submitted` 只按有效凭证恢复，不再套用图前禁止 checkpoint/ToolJob 的检查；submitted/orchestrating/orchestrated 保留原保护。裸 snapshot 仍不足以恢复。
+- 领取前、读取原结果时、阶段 ACK 事务内重复核对原事实。后继只恢复已提交的 completed 生命周期，保留其他 Session 元数据；原终态、用户消息、根预算和任务谱系不重置。
+- ToolJob 行转成 dict 后序列化，摘要覆盖调用、状态、attempt、输入输出、结果元数据/时间；完成结果不重执行。空输出按原空字符串返回，使用原 snapshot ID，不从 snapshot 文本猜输出，不创建 assistant 行。
+- 新 message stage Schema 6 包含凭证；无新 DDL 也不代表旧严格读者兼容。生产默认仍关闭，发布仍受第 9/12.4 节兼容 Worker 与格式能力验收约束。
+
+正式红测分别复现了：非空真实 PostgreSQL ToolJob 的 RowMapping 序列化失败；completed 无响应绑定导致最终事务回滚；空输出被 snapshot 文本错误替代。另有两次 Harness 修正：保存 Job 后数据库 updated_at 与原 fixture 不同，改为对比真实保存事实；claim 拒绝按既有契约返回 recovery_required 记录而非 None，断言改为核对终态与 attempt_no=0，未修改生产 claim 来迎合测试。
+
+新 Harness 包含真实 LangGraph/owner-bound saver、PostgreSQL/Redis 的提交回滚、精确结果读取、消息/事件/模型/工具/验证/凭证漂移、claim 后再次校验、旧 owner、二次失租、重复投递和空输出。另有**官方 Deep Agents/SDK + 本地合成 HTTP + 独立 Worker 进程**：最终事务提交后、阶段 ACK 前强杀；替代 Worker 接管，只确认原输出，HTTP 请求仍为一次、完成事件一次、原 task 终态不变。该进程 Harness 尚非真实付费供应商或浏览器/压测/扫描 Runner。
+
+最终运行结果与剩余出口记录于实施记录 §45。A1 不覆盖最终事务之前的缺失投影、图内原结算导入、Memory/清理补偿或跨 Turn 完整消息；下一步继续 A2/A3/B，不将整体 goal 标为完成。
