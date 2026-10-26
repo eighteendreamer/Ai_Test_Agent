@@ -1506,4 +1506,17 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 
 首次独立 Worker 测试还曾得到 **1 failed、15 passed，65.57 秒**：测试把 `tasks.get()` 返回值的 runtime_owner=None 当成可用执行权。该读取接口有意不发放 owner；测试已改为只读阶段资产，不重建或伪造执行 capability。其后资产文件 **18 passed，67.20 秒**；新补测试均以较晚回归为准，不叠加计数。
 
+## 47. A2-2 Runtime 边界回调（2026-10-26）
+
+A2-1 的 finalizer 前置保存仍无法覆盖“图已返回、SessionService 尚未拿到返回值”的窗口。先写红测要求 `RuntimeService.execute_turn(..., on_runtime_result=...)` 在对上层返回前等待回调，旧实现实际报 `TypeError: RuntimeService.execute_turn() got an unexpected keyword argument 'on_runtime_result'`。实现后 RuntimeService 在 `_execute_turn` 返回与自身返回之间执行回调；SessionService 绑定同一结果资产准备逻辑，并保留旧/替身 Runtime 的单次 fallback。
+
+实际运行（独立 v2 解释器、真实 PostgreSQL/Redis）:
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_deep_agent_runtime_adapter.py::test_runtime_result_callback_runs_before_execute_turn_returns -q -x -rs --tb=short
+```
+
+结果 **53 passed，156.74 秒，无 skip**。本次只证明 Runtime 边界回调契约和现有资产/投影竞态防护；未证明图终态到回调内部的任意进程强杀均可恢复，也未开放生产默认开关。下一出口仍是 A2-2 的真实 Deep Agents 独立 Worker 强杀与结果材料完备性核验。
+
 上述测试不等于真实付费模型、真实对象存储、领域 Runner、官方 saver conformance、完整跨 Turn 请求或双制品滚动部署通过；图终态到资产前空窗、失租后部分投影补偿、projected 后任务结算及 Memory/清理仍未完成。生产默认开关保持关闭，整体 goal 继续 active。

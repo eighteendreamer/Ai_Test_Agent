@@ -625,3 +625,19 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 下一子步须沿既有 message_recover/owner/stage 接入缺失投影补偿，按 snapshot、观察、Verification 和最终事务的实际回执校验复用，并测试中途再次失租/强杀；不能只给 finalizer 增加一个资产参数就宣称可以重入。图终态到资产前的空窗仍按 §12.1 A2-2 核验原材料完备性和精确 checkpoint；projected 后 finish 前仍按 A2-3；Memory、清理和未知外部效果仍归 A3。跨 Turn 草稿没有被本次资产归档“顺便完成”。
 
 测试和独立暂存源码导出结果见[实施记录 §46](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)。本子步不代表全量、真实供应商、对象存储、领域 Runner、官方 saver conformance 或双制品部署通过，整体目标保持 active。
+
+## 18. A2-2 续接：把原结果保存点前移到 Runtime 边界
+
+A2-1 之后仍有一个明确空窗：`RuntimeService._execute_turn()` 已获得图终态，但若调用方在 `execute_turn()` 返回前被杀，SessionService 的旧“返回后再 freeze”不会留下资产。仅扩大 A2-1 finalizer 不能解决这个时序问题。
+
+### 18.1 实现契约
+
+- `RuntimeService.execute_turn` 新增可选 `on_runtime_result` 回调。在 `_execute_turn` 返回后、`execute_turn` 对上层返回前等待该回调完成；回调异常阻止 Runtime 返回，保留 owner/阶段错误，不伪造完成。
+- `SessionService` 将同一个 `_prepare_framework_runtime_result` 绑定到该回调。生产 Runtime 因而在图终态之后立即保存原结果资产，随后 finalizer 只消费回调捕获的资产。为兼容仍未升级的替身/旧 Runtime，保留一次性返回后 fallback；生产实现走前置回调，不重复 freeze（资产本身幂等）。
+- 回调只保存 `completed` 结果；waiting approval、取消、超时和失败继续走原 pending/对账协议。它不代表 checkpoint 已完成、模型响应可导入或外部效果 exactly-once；图终态前的强杀仍属于 A2-2 后续材料完备性出口。
+
+### 18.2 TDD 与验证
+
+先添加回调契约红测，旧 RuntimeService 报 `TypeError: ... unexpected keyword argument 'on_runtime_result'`；实现后该契约 **1 passed**。随后真实 PostgreSQL/Redis 的资产与 A1 投影联合回归 **53 passed，156.74 秒，无 skip**，覆盖原资产、最终事务前事实漂移和提交后恢复。该组使用受控/本地合成模型，不能标为付费供应商或领域 Runner 验收。
+
+下一步必须用独立 Worker 在真正 Deep Agents 图终态到回调持久化之间注入强杀，并验证 checkpoint/原生消息/模型和 ToolJob 事实是否足够重建资产；若任一事实只在进程内，返回 `recovery_required`，不能凭最后 assistant 文本猜测。A2-3、A3、跨 Turn 完整链路和双制品兼容部署仍未完成。

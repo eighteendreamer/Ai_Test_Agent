@@ -28,6 +28,7 @@ from src.application.runtime.tool_governance_service import (
     ToolGovernanceService,
 )
 from src.application.runtime.runtime_service import RuntimeService
+from src.application.runtime.runtime_service import RuntimeTurnResult
 from src.application.runtime.state_persistence import build_pending_turn
 from src.schemas.framework_transcript import framework_transcript_asset
 from src.application.sessions.session_service import SessionService
@@ -43,6 +44,7 @@ from src.schemas.session import (
     RuntimeMode,
     SessionMode,
     SessionStatus,
+    SessionSnapshot,
 )
 from src.schemas.session import MessageKind
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
@@ -1789,6 +1791,39 @@ def test_new_deep_agent_turn_rehydrates_lossless_framework_transcript_asset():
     assert state["framework_messages"][1]["data"]["additional_kwargs"]["provider_signature"] == "sig-1"
     assert state["framework_messages"][-1]["type"] == "human"
     assert state["framework_messages"][-1]["data"]["content"] == "Review the evidence."
+
+
+@pytest.mark.asyncio
+async def test_runtime_result_callback_runs_before_execute_turn_returns(monkeypatch):
+    session = _runtime_session("session-boundary")
+    request = _runtime_request(session.id, "turn-boundary")
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+    )
+    result = RuntimeTurnResult(
+        output_text="result",
+        events=[],
+        snapshot=SessionSnapshot(
+            id="snapshot-boundary", session_id=session.id, version=1, stage="completed",
+            created_at=datetime.now(UTC), graph_state={"turn_id": request.turn_id},
+        ),
+        approvals=[], state={"turn_id": request.turn_id}, tool_messages=[], pending_turn={},
+    )
+    observed = []
+
+    async def fake_execute(*args, **kwargs):
+        return result
+
+    async def on_result(value):
+        observed.append(value)
+
+    monkeypatch.setattr(runtime, "_execute_turn", fake_execute)
+    assert await runtime.execute_turn(session, request, on_runtime_result=on_result) is result
+    assert observed == [result]
 
 
 def test_framework_transcript_asset_rejects_tampered_native_payload():

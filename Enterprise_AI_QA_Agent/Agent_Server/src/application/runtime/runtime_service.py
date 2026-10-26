@@ -186,12 +186,20 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
         on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        on_runtime_result: Callable[[RuntimeTurnResult], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
         with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
-            return await self._execute_turn(
+            result = await self._execute_turn(
                 session, request, on_model_chunk=on_model_chunk, event_queue=event_queue,
                 on_graph_input=on_graph_input,
             )
+            # The result callback is part of the runtime boundary: callers can
+            # persist the exact terminal result before this method returns.
+            # This closes the graph-terminal -> application-asset gap without
+            # replaying the graph or inventing a second finalizer.
+            if on_runtime_result is not None:
+                await on_runtime_result(result)
+            return result
 
     async def _execute_turn(
         self,

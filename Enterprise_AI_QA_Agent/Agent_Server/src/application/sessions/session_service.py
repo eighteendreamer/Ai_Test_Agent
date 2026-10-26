@@ -2051,6 +2051,15 @@ class SessionService:
             turn_lease_token=turn_lease_token,
         )
         try:
+            projection_asset_holder = {}
+
+            async def on_runtime_result(result):
+                asset = await self._prepare_framework_runtime_result(
+                    projection_owner, result, assistant_message_id, payload.content,
+                )
+                if asset is not None:
+                    projection_asset_holder["asset"] = asset
+
             runtime_result = await stream_chunk_handler.run(
                 self._event_sink(session_id, **turn_fenced_write).run,
                 self._runtime_service.execute_turn,
@@ -2058,10 +2067,16 @@ class SessionService:
                 execution_request,
                 on_model_chunk=stream_chunk_handler,
                 on_graph_input=on_graph_input,
+                on_runtime_result=on_runtime_result,
             )
-            projection_asset = await self._prepare_framework_runtime_result(
-                projection_owner, runtime_result, assistant_message_id, payload.content,
-            )
+            projection_asset = projection_asset_holder.get("asset")
+            # Legacy/test RuntimeService implementations may not expose the
+            # optional boundary callback yet. Keep their behavior compatible;
+            # the production RuntimeService persists before returning.
+            if projection_asset is None:
+                projection_asset = await self._prepare_framework_runtime_result(
+                    projection_owner, runtime_result, assistant_message_id, payload.content,
+                )
             response = await self._finalize_runtime_result(
                 session=session,
                 runtime_result=runtime_result,
