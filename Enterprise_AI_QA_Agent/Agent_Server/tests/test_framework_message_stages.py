@@ -57,6 +57,10 @@ def worker_paused_in_message(settings_data, config_data, prefix, gate, window):
 
         if window in {"before_start", "after_start"}:
             calls.start = pause
+        elif window == "after_orchestration":
+            from src.runtime.framework_message_stages import FrameworkMessageStages
+
+            FrameworkMessageStages.submit_runtime = pause
         else:
             calls.complete = pause
         dispatcher = AgentTaskDispatcher(settings, tasks, sessions, resources, framework_model_calls=calls,

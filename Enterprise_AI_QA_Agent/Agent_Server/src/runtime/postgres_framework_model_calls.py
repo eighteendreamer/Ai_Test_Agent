@@ -483,9 +483,9 @@ class PostgresFrameworkModelCalls:
 
     def _snapshot(self, cur, binding_id):
         policy = self._policy(cur, binding_id)
-        cur.execute(f"SELECT record FROM {self.calls_table} WHERE binding_id=%s "
+        cur.execute(f"SELECT attempt_id,record FROM {self.calls_table} WHERE binding_id=%s "
             "ORDER BY record->>'created_at', attempt_id", (binding_id,))
-        calls = [FrameworkModelCallRecord.model_validate(row["record"]) for row in cur.fetchall()]
+        calls = [self._decode_call(row["record"], binding_id, row["attempt_id"]) for row in cur.fetchall()]
         return FrameworkModelBudgetSnapshot(policy=policy, calls=calls)
 
     def _call(self, cur, binding_id, attempt_id):
@@ -494,7 +494,14 @@ class PostgresFrameworkModelCalls:
         row = cur.fetchone()
         if row is None:
             raise KeyError("Model call attempt does not exist in this Turn")
-        return FrameworkModelCallRecord.model_validate(row["record"])
+        return self._decode_call(row["record"], binding_id, attempt_id)
+
+    @staticmethod
+    def _decode_call(value, binding_id, attempt_id):
+        record = FrameworkModelCallRecord.model_validate(value)
+        if record.binding_id != binding_id or record.intent.attempt_id != attempt_id:
+            raise FrameworkModelRecoveryRequired("ledger_identity_mismatch", record)
+        return record
 
     def _write(self, cur, record, *, insert=False):
         record = FrameworkModelCallRecord.model_validate(record.model_dump())

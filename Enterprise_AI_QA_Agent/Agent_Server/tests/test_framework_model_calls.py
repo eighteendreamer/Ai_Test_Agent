@@ -67,6 +67,29 @@ def usage(total=70):
         total_tokens=total)
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("field", ["binding_id", "attempt_id"])
+async def test_corrupt_durable_identity_cannot_grant_model_send_permission(model_calls_harness, field):
+    from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
+
+    h = model_calls_harness
+    await h.calls.freeze(h.owner, policy(h))
+    await begin(h)
+    record = await h.calls.prepare_initial(h.owner, intent(position_version=1))
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        path = ["binding_id"] if field == "binding_id" else ["intent", "attempt_id"]
+        cur.execute(f"UPDATE {h.calls.calls_table} SET record=jsonb_set(record,%s,%s::jsonb) WHERE binding_id=%s",
+            (path, json.dumps("foreign-identity"), h.binding.binding_id))
+    with pytest.raises(FrameworkModelRecoveryRequired, match="ledger_identity_mismatch"):
+        await h.calls.snapshot(h.binding)
+    with pytest.raises(FrameworkModelRecoveryRequired, match="ledger_identity_mismatch"):
+        await h.calls.start(h.owner, record.intent.attempt_id)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT record->>'phase' AS phase FROM {h.calls.calls_table} WHERE binding_id=%s",
+            (h.binding.binding_id,))
+        assert cur.fetchone()["phase"] == "ready"
+
+
 async def begin(h):
     await h.tasks.begin(h.task, resource_id="model-call-test", fencing_token=1)
 

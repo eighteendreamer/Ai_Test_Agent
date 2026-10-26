@@ -2,9 +2,9 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-2026-10-26 附件再复核见 §37；以下已完成实现快照仍截至 §36。工作区 orchestrated 恢复候选尚未验收，不纳入该快照。
+2026-10-26 附件再复核见 §37；最新冻结请求恢复实现和验证见 §38。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**全系统迁移尚未完成。当前快照更新至 §36：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted 安全后继和未发送模型预留的显式转移端口已局部落实。自动生成绑定及预算、已开始编排的恢复调用方、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §38：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继和未发送模型预留的显式转移端口已局部落实。自动生成绑定及预算、orchestrating 阶段恢复与模型转移调用方、响应导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1219,3 +1219,53 @@ AssertionError
 源码核对显示该参数先故意改变原 input_payload，然后比较整个 task 与改变前 terminal；前一条“ensure_framework_message_recovery 返回 None”断言已通过。本轮只标记候选未验收，未顺带修改测试或实现；不能从这条失败推断重复副作用，也不能忽略失败宣称全绿。独立 Worker 完成语义调用后强杀、二次失租、诊断及既有 Schema 测试仍须后续闭合。
 
 两份文档执行本地文件链接/代码围栏检查及 scoped `git diff --check`，结果通过。未运行全量测试、lint/typecheck、前端、官方 conformance、真实供应商/RustFS/领域 Runner 或双制品部署；原因是本轮交付为方案复核，且相应完整出口尚未具备验收条件。没有修改依赖、数据库、运行时接口或开关。
+
+## 38. 冻结输入编排结果的首次消息安全后继（2026-10-26）
+
+继续方案 §14.2/A 和已复核基线 `bc08011e1`，接续工作区中的 orchestrated 恢复候选。本轮闭合“输入编排及语义调用已结束、ExecutionRequest 已冻结、Runtime 尚未准入”的窗口，复用原 `FrameworkMessageRecovery`、阶段行、message_recover、outbox 和 owner 协议；没有新增外层循环或重置原任务。本节结果不等于 A 阶段或全系统迁移完成。
+
+### 依据、实现与兼容范围
+
+重新沿 SessionService → InputOrchestratorService/SemanticIntentService → 模型策略/账本 → Runtime 的实际链路阅读，并核对原 submitted 恢复、诊断、阶段 Schema 和 owner 锁。方案 §15.3 及官方 Interrupts/Persistence 已说明图 checkpoint 不能代替图外输入编排恢复；本阶段不更换九个锁定框架依赖。
+
+- source manifest 增加运行输入和 ModeRegistry 摘要。运行输入覆盖 Session 核心设置、业务 metadata 与可见消息；只忽略已知租约/失租控制投影、当前 user 消息 delivery_status，并排除未领取 queued 输入。环境、权限相关 metadata 和消息内容发生变化会拒绝恢复；摘要不含明文正文，不冒充外部 Prompt/Memory/Skill 实物快照。
+- 原阶段为 orchestrated 且冻结 ExecutionRequest 身份/摘要正确时，可为因失租进入 recovery_required 的原 message/message_recover 建立后继。原用户输入、冻结预算及 task/attempt 终态保持；新增 link 保存 resume_phase、source/execution/model_calls proof。受理、领取和真正提交 Runtime 前复核，后继只从原 JSON 构造请求，不重复 orchestrate_async。
+- 模型事实只允许显式位置的 completed root/agent 调用；ready/invoking/unknown 阻止此恢复，完成的语义请求和用量不重发、不改写。同 Turn 的 ToolJob/checkpoint/pending writes 矛盾检查保留；未开始 Runtime 的阶段因果事实才是本窗口的准入依据。
+- 真正恢复冻结阶段后更新当前 owner epoch/attempt；恢复再次失租可以建立第二后继，连续谱系保持，旧 owner 不能推进阶段。诊断同步将 submitted/orchestrated 报为 stage_recovery_requires_admission，automatic_replay_allowed 仍为 false。
+- 新阶段写 schema_version=3，旧 1/2 可读；旧 link 缺新增字段默认 submitted。历史 orchestrated 缺新来源证明时不补造资格。本轮无 DDL、公开 HTTP/operation、依赖或开关变化，但扩展 JSON 不能由旧严格解析器读取，同一 v2 stream 必须统一兼容制品；未验收滚动/双制品发布。
+
+### TDD 与根因处理
+
+先修正 §37 的失败测试口径：故意改变 input_payload 后，以注入后的持久行作为“不再变化”的比较基线，并独立断言原终态/attempt 不变，没有修改生产代码去迎合错误快照。
+
+新增诊断红测实际 **1 failed、10 passed，29.66 秒**：orchestrated 仍报告 not_implemented，随后同步内部诊断契约。新增坏模型身份红测实际 **1 failed、12 deselected，7.01 秒**：JSON binding 与数据库键不一致的 completed 记录仍能创建恢复后继。根因在模型账本的通用读取，只验证 DTO 格式而未验证数据库身份。现由 `_decode_call` 统一核对 binding/attempt，供 `_snapshot` 与 `_call` 使用；矛盾记录不能获得发送许可。恢复器将该明确错误转换为阶段需对账，保留拒绝日志，不吞任意数据库故障。
+
+受影响回归实际 **1 failed、15 passed，38.91 秒**，暴露 submitted 后继第一次正常完成编排时也被要求匹配 orchestrated 恢复 proof。现按持久 link 的 resume_phase 区分“从 submitted 开始编排”和“消费原冻结结果”，不按瞬时 phase 单独判断。旧 schema 升级测试实际 **1 failed、24 deselected，6.73 秒**，随后将新写入断言同步为 3，保留旧格式读取验证。
+
+独立 Worker 首次测试实际 **1 failed、15 passed，81.43 秒**，未到达冻结门闩，日志显示资源失租和模型结算被拒绝。一秒资源槽位无法覆盖冷 SDK 的同步初始化；只调整该 Harness 的原 Worker 槽位为十秒，保持心跳，在强杀后等待真实 TTL 再回收，后继使用正常 300 秒。修正后独立用例 **1 passed、15 deselected，31.52 秒**；没有修改生产租约设施绕过失租。
+
+### 实际 Harness 和独立进程轨迹
+
+新增 `test_framework_orchestrated_message_recovery.py` 最终 19 项，覆盖并发唯一后继、冻结请求原样执行且编排必抛、来源/原消息/输入/缺 proof/执行身份/ready/unknown 拒绝、发布后及 Runtime 提交前漂移、只读诊断、模式注册表漂移、坏模型 binding/attempt、执行/模型/proof 版本变化、二次失租与旧 owner，以及独立进程强杀。模型账本既有测试另加两项，直接验证坏身份快照和 start 都拒绝，phase 保持 ready。
+
+独立进程复用实际 Redis Worker、PostgreSQL、官方模型 SDK 和根模型策略，强制进行成功的语义分类，在 freeze_execution 后、submit_runtime 前写门闩。父进程确认 running/orchestrated、HTTP=1、completed 用量=10 及子进程存活后 terminate/join；再回收 PEL，使原 task/attempt 保持 recovery_required，由后继领取新 owner。替代执行将 orchestrate_async 设为必抛，并实际进入官方 Deep Agents/PostgreSQL saver；最终 HTTP=2（原语义 1 + 图模型 1）、根预算仍为原对象、调用槽位 2、实际用量 20、原语义记录完全不变。重复投递保持请求 2，Session 只有原 user 和 assistant。供应商是本地合成 HTTP，不是实际付费供应商；最终图未用领域 Runtime 替身冒充。
+
+### 最终验证
+
+在 Agent_Server 执行恢复/账本联合命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_orchestrated_message_recovery.py tests/test_framework_message_recovery.py tests/test_framework_message_stages.py tests/test_framework_message_diagnostics.py tests/test_framework_model_calls.py tests/test_framework_model_reservation_transfer.py -q -x -rs --tb=short
+```
+
+结果 **112 passed，309.56 秒，无 skip**。包含最终生产源码、独立进程及模型读取修复；运行启动后又添加了三项 proof 漂移用例，单独执行为 **3 passed、16 deselected，13.75 秒**，并纳入以下最终联合回归：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_orchestrated_message_recovery.py tests/test_agent_v2_worker_contract.py tests/test_framework_model_admission.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+```
+
+结果 **87 passed，103.64 秒，无 skip**，包含新文件最终 19 项及 Worker、预算受理、Session 执行权；两组结果有重叠，不累计为互不重复的覆盖数。10 个涉及的 Python 源码/测试执行 compileall 通过；两份文档本地链接与围栏、git diff --check / cached check 通过。
+
+仍未完成：orchestrating 中实际语义输入/响应资产及 transfer_ready 应用调用方、已发送/未知模型响应导入、图完成待业务投影补偿、活动时间、跨 Turn、受控 AgentCase 图和各模式 Harness。未运行全量测试、独立后端 lint/typecheck、前端、官方 conformance、真实供应商/RustFS/浏览器/领域 Runner 或双制品部署。本轮不开放生产默认路由，整体目标继续。

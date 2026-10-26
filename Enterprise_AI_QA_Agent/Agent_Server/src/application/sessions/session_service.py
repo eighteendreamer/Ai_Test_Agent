@@ -200,16 +200,27 @@ class SessionService:
                         from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
 
                         stages = FrameworkMessageStages(self._agent_task_store)
-                        await stages.begin(task.runtime_owner, message_source_manifest(session, task.runtime_binding, payload))
-                    request = await self._input_orchestrator_service.orchestrate_async(
-                        session,
-                        payload,
-                        turn_id=str(task.turn_id),
-                        trace_id=str(task.trace_id),
-                    )
-                    request.runtime_binding = task.runtime_binding
+                    frozen = None
+                    if stages is not None and task.operation == "message_recover":
+                        existing = await self._agent_task_store.get_framework_message_stage(task.id, session_id=task.session_id)
+                        if existing is not None and existing.phase == "orchestrated":
+                            frozen = await stages.resume_orchestrated(task.runtime_owner, modes=self._mode_registry.list())
+                    if frozen is None:
+                        if stages is not None:
+                            await stages.begin(task.runtime_owner,
+                                message_source_manifest(session, task.runtime_binding, payload, modes=self._mode_registry.list()))
+                        request = await self._input_orchestrator_service.orchestrate_async(
+                            session,
+                            payload,
+                            turn_id=str(task.turn_id),
+                            trace_id=str(task.trace_id),
+                        )
+                        request.runtime_binding = task.runtime_binding
+                    else:
+                        request = ExecutionRequest.model_validate(frozen.execution_request)
                     if stages is not None:
-                        frozen = await stages.freeze_execution(task.runtime_owner, request)
+                        if frozen is None:
+                            frozen = await stages.freeze_execution(task.runtime_owner, request)
                         request = ExecutionRequest.model_validate(frozen.execution_request)
                         await stages.submit_runtime(task.runtime_owner)
                     result = await self._run_owned_submission_locked(

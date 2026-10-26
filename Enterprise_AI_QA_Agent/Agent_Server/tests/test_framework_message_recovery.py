@@ -416,7 +416,7 @@ async def test_v1_stage_is_read_compatibly_and_recovery_explicitly_upgrades_its_
     assert (await stage(h, original)).schema_version == 1
     successor = await h.tasks.ensure_framework_message_recovery(original.id)
     saved = await stage(h, original)
-    assert saved.schema_version == 2 and saved.current_task_id == successor.id
+    assert saved.schema_version == 3 and saved.current_task_id == successor.id
 
 
 @pytest.mark.asyncio

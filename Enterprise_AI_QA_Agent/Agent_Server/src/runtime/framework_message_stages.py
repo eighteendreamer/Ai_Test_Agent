@@ -31,6 +31,10 @@ def validate_message_stage(record):
     for link in stage.recoveries:
         if link.predecessor_task_id != predecessor or link.task_id in identities:
             raise FrameworkMessageStageRecoveryRequired("Initial message stage recovery lineage is invalid")
+        assets = (link.source_sha256, link.execution_sha256, link.model_calls_sha256)
+        if ((link.resume_phase == "orchestrated" and (stage.schema_version < 3 or not all(assets)))
+            or (link.resume_phase == "submitted" and any(assets))):
+            raise FrameworkMessageStageRecoveryRequired("Message recovery phase has no matching frozen proof")
         predecessor = link.task_id
         identities.add(link.task_id)
     expected_assets = {"source_manifest": stage.phase != "submitted",
@@ -66,7 +70,37 @@ def admit_message_stage(cur, settings, task):
         (record.task_id, record.binding_id, record.model_dump_json()))
 
 
-def message_source_manifest(session, binding, payload):
+def message_runtime_source_hash(session, user_message_id):
+    """Compare runtime inputs while allowing only recorded lease/lifecycle changes.
+
+    No upstream counterpart (checked: Session ownership/status projections,
+    plan §14.2): a checkpoint cannot validate inputs that precede the graph.
+    Only the current user message's delivery status is transport bookkeeping.
+    """
+    metadata = {key: value for key, value in session.metadata.items()
+        if not key.startswith(("turn_lease_", "continuation_lease_")) and key != "control"}
+    control = {key: value for key, value in (session.metadata.get("control") or {}).items()
+        if key not in {"control_state", "is_interrupted", "preserve_resources"}}
+    if control:
+        metadata["control"] = control
+    messages = []
+    for message in session.messages:
+        if message.metadata.get("delivery_status") == "queued" and message.id != user_message_id:
+            continue
+        value = message.model_dump(mode="json")
+        if message.id == user_message_id:
+            value["metadata"].pop("delivery_status", None)
+        messages.append(value)
+    return approval_value_hash({"session": {name: getattr(session, name) for name in
+        ("id", "title", "project_id", "mode_key", "selected_agent", "preferred_model", "session_mode", "runtime_mode")},
+        "metadata": metadata, "messages": messages})
+
+
+def mode_registry_hash(modes):
+    return approval_value_hash([mode.model_dump(mode="json") for mode in modes])
+
+
+def message_source_manifest(session, binding, payload, *, modes=None):
     """Freeze references/digests, excluding leases and raw message contents.
 
     This manifest describes inputs observed at admission. It is not an archive
@@ -74,7 +108,7 @@ def message_source_manifest(session, binding, payload):
     """
     metadata = {key: value for key, value in session.metadata.items()
         if not key.startswith(("turn_lease_", "continuation_lease_"))}
-    return {"binding_fingerprint": binding.fingerprint, "session_revision": session.state_revision,
+    value = {"binding_fingerprint": binding.fingerprint, "session_revision": session.state_revision,
         "payload_sha256": approval_value_hash(payload.model_dump(mode="json")),
         "project_id": session.project_id, "mode_key": session.mode_key,
         "selected_agent": session.selected_agent, "preferred_model": session.preferred_model,
@@ -82,6 +116,12 @@ def message_source_manifest(session, binding, payload):
         "metadata_sha256": approval_value_hash(metadata),
         "message_sources": [{"message_id": message.id, "sha256": approval_value_hash(message.model_dump(mode="json"))}
             for message in session.messages]}
+    users = [message.id for message in session.messages
+        if message.role.value == "user" and message.metadata.get("turn_id") == binding.turn_id]
+    if len(users) == 1 and modes is not None:
+        value.update(runtime_source_sha256=message_runtime_source_hash(session, users[0]),
+            mode_registry_sha256=mode_registry_hash(modes))
+    return value
 
 
 class FrameworkMessageStages:
@@ -118,11 +158,16 @@ class FrameworkMessageStages:
     async def submit_runtime(self, owner):
         return await self._advance(owner, expected="orchestrated", phase="runtime_submitted", values={})
 
+    async def resume_orchestrated(self, owner, *, modes):
+        return await self._advance(owner, expected="orchestrated", phase="orchestrated",
+            values={"owner_epoch": owner.owner_epoch, "owner_attempt_id": owner.attempt_id},
+            recovery_modes_sha256=mode_registry_hash(modes))
+
     async def projected(self, owner, reference):
         return await self._advance(owner, expected="runtime_submitted", phase="projected",
             values={"result_reference": reference})
 
-    async def _advance(self, owner, *, expected, phase, values):
+    async def _advance(self, owner, *, expected, phase, values, recovery_modes_sha256=None):
         # Snapshot mutable caller dictionaries before crossing the thread boundary.
         values = json.loads(json.dumps(values, ensure_ascii=False, allow_nan=False))
 
@@ -143,9 +188,20 @@ class FrameworkMessageStages:
                     or original.binding_id != owner.binding.binding_id or original.input_sha256 != task["input_hash"]
                     or original.user_message_id != task["user_message_id"] or original.current_task_id != owner.task_id):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage identity differs from its origin")
-                if original.phase != expected or (expected != "submitted" and (
+                if original.phase != expected or (expected != "submitted" and recovery_modes_sha256 is None and (
                     original.owner_epoch != owner.owner_epoch or original.owner_attempt_id != owner.attempt_id)):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage has already started; reconcile its origin")
+                resuming_frozen = (task["operation"] == "message_recover" and original.recoveries
+                    and original.recoveries[-1].resume_phase == "orchestrated")
+                if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated"):
+                    from src.runtime.framework_message_recovery import require_message_recovery_claim
+
+                    if (task["operation"] != "message_recover" or (recovery_modes_sha256 is not None
+                        and (original.source_manifest or {}).get("mode_registry_sha256") != recovery_modes_sha256)):
+                        raise FrameworkMessageStageRecoveryRequired("Frozen message mode sources changed")
+                    session = self._tasks._lock_session(cur, owner.binding.session_id)
+                    require_message_recovery_claim(cur, self._tasks, session, owner.binding, task,
+                        {"task_id": owner.task_id, "attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch})
                 if expected == "submitted":
                     if task["operation"] == "message_recover":
                         from src.runtime.framework_message_recovery import require_message_recovery_claim
@@ -156,7 +212,7 @@ class FrameworkMessageStages:
                     self._require_input(cur, owner, task, values["source_manifest"])
                 cur.execute("SELECT clock_timestamp() AS now")
                 saved = validate_message_stage(original.model_copy(update={**values,
-                    "schema_version": 2, "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
+                    "schema_version": 3, "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
                 cur.execute(f"UPDATE {self._table} SET record=%s::jsonb WHERE task_id=%s", (saved.model_dump_json(), original.task_id))
                 return saved
 

@@ -1,6 +1,6 @@
 # LangGraph 与 Deep Agents 全系统接入方案 v2
 
-初稿日期：2026-10-25；最近复核：2026-10-26，已提交能力基线 `d0a4662cc`，核验记录至实施记录 §37。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出本次附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、编排尚未开始时的安全后继及未发送模型预留的显式转移端口已局部落实；工作区中的 orchestrated 恢复改动尚未验收，其余恢复及迁移出口仍未完成。
+初稿日期：2026-10-25；最近实施：2026-10-26，本轮从 `bc08011e1` 继续，记录至实施记录 §38。性质：经代码、官方源码和局部运行验证后的迁移设计。第 11–13 节保留此前研究与复核记录，第 1.3、7.3、14 节更新实施边界与剩余顺序，第 15 节给出附件复核的执行契约和发布出口；实际代码与依赖改动、通过结果和待验收项见[迁移实施记录](framework-integration-progress-2026-10-25.md)，不能将设计目标视为已经实现。阶段准入、调用位置、submitted 与 orchestrated 的安全后继及未发送模型预留的显式转移端口已局部落实；编排中的恢复、响应导入及其余迁移出口仍未完成。
 
 ## 1. 结论与本次修订
 
@@ -757,9 +757,25 @@ Worker 重投原终态或观察原执行失租后可提交后继；不为一般�
 
 验收包含真实 PostgreSQL 并发与回滚、普通 DTO/官方 LangChain SDK 本地 HTTP 的原位置复用，以及独立端口消费者在转移提交后强杀、重建 store 后按原快照对账。这个独立进程场景在同一仍有效的执行租约内验证 ACK 丢失，不是已开始编排的 Worker 换租恢复。最终命令和结果见[实施记录 §36](framework-integration-progress-2026-10-25.md#36-未发送模型预留的显式转移2026-10-26)。下一出口仍为冻结外部编排资产、阶段恢复准入、响应导入及原六个窗口的完整 Worker 验收。
 
+### 14.11 输入编排完成、Runtime 提交前的冻结请求恢复（2026-10-26）
+
+沿用 `FrameworkMessageRecovery`、原阶段行及 `message_recover` 谱系，不增加另一套调度或模型循环。已接通 phase=orchestrated 的安全后继：原执行因失租进入 recovery_required，完整 ExecutionRequest 已冻结，Runtime 尚未准入；新 owner 跳过 `orchestrate_async`，从原 JSON 恢复请求，再沿既有 Runtime 路径提交。
+
+- 原输入、用户消息、项目、冻结预算、binding、前驱 task/attempt 及显式中断规则保持。原任务/attempt 不重置；submitted 后继仍从编排开始，不能把它首次完成编排误判为消费 orchestrated 恢复 proof。
+- 编排开始时补入运行输入摘要：Session 核心设置、业务 metadata、原可见消息及模式注册表摘要。仅排除租约/已知失租控制投影和当前用户消息的 delivery_status；未领取 queued 消息不属于原运行输入。原 Runtime 来源变更或缺来源证明时不自动继续；摘要不包含正文，也不是外部 Prompt/Memory/Skill 实物归档。
+- 新恢复 link 冻结 resume_phase、source/execution/model_calls 三个摘要及原预算摘要。受理、领取、resume_orchestrated 和提交 Runtime 前重新核对原事实。模式注册表在 resume 时比较；Session/消息、模型与执行 proof 在受理后发生漂移会拒绝。真正取得恢复准入后才在原 owner 事务更新阶段的当前执行代次。
+- 允许原编排已完成的 root/agent、显式 position_version=1 模型事实；ready/invoking/unknown 等未结尝试阻止该恢复。完成的语义请求与用量保持原记录，不经新 owner 重新发送。模型账本读取同时核对 JSON binding/attempt 与实际数据库键；矛盾记录既不能用于预算快照，也不能获得 start 许可。
+- 同 Turn 出现 ToolJob、checkpoint 或孤立 pending write 等与“尚未提交 Runtime”矛盾的事实时仍阻止后继。该因果准入不能推广为任意 checkpoint 的自动继续；runtime_submitted 后仍需要其自己的对账/导入出口。
+- 新阶段写入 schema_version=3，link 保存冻结恢复 proof；旧 schema 1/2 可读，旧 submitted 谱系缺新字段时默认 submitted。缺新来源资产的历史 orchestrated 不反向补造恢复资格。没有新增 DDL/HTTP/operation 或依赖，但旧严格解析器不能读取新 JSON；同一 v2 stream 的 Worker 必须统一部署兼容制品，本轮未验收滚动发布。
+- 后继恢复阶段后再次失租，可保留其终态并创建下一后继，仍使用原执行请求和预算。旧 owner 的阶段写入被拒绝；诊断对 submitted/orchestrated 都只报告 requires_admission，automatic_replay_allowed 保持 false。
+
+独立进程场景使用真实 Redis Worker、PostgreSQL、官方 DTO SDK、Deep Agents 与 saver：成功的语义分类已完成并冻结请求后强杀原 Worker；替代 Worker 回收 PEL、创建后继，输入编排被设为必抛以证明没有重跑，随后实际执行官方图。HTTP 总数为 **2（语义分类 1 + 图模型 1）**，原语义模型记录不变、根调用槽位 2、实际 Token 20；重复投递不增加请求。供应商为本地合成 HTTP，未宣称真实付费模型验收。
+
+最终命令与结果见[实施记录 §38](framework-integration-progress-2026-10-25.md#38-冻结输入编排结果的首次消息安全后继2026-10-26)。下一出口仍包括 orchestrating 中语义输入/响应资产及 transfer_ready 调用方、模型响应导入、活动时间、跨 Turn 和各模式 Harness；本轮不开放生产路由，不将该单窗口视为 A 或 P1/P2 全部完成。
+
 ## 15. 附件复核后的执行契约与发布出口（2026-10-26）
 
-本节汇总本次用户所贴原方案与附件的处理决定。已提交能力以 `d0a4662cc` 为基线；工作区另有 orchestrated 恢复候选及尚未全绿的测试，不能纳入已通过能力。本轮只修订两份文档，未继续修改该候选实现。
+本节汇总 §37 时点用户所贴原方案与附件的处理决定，当时基线为 `d0a4662cc`，仅提交两份文档。后续 §38 已推进 orchestrated 恢复候选，最新边界见 §14.11；本节的实施要求仍须分别验收，不因单一恢复窗口通过而整体标记完成。
 
 ### 15.1 选型及六项评审的最终处理
 
@@ -800,11 +816,11 @@ checkpoint 保存图内位置，不能代替图外输入编排的恢复资产。
 | --- | --- | --- |
 | submitted | 已提交安全后继，见 §14.9 | 保持原输入、用户消息、预算和终态；排除矛盾事实，不重建 Turn |
 | orchestrating | 尚无完整应用恢复调用方；transfer_ready 只是账本端口 | 先冻结实际语义输入及 Prompt/Skill/Memory 来源实物；仅对证明未发送的原预留显式转移，已完成响应有验证后的导入协议，invoking/unknown 不自动重发 |
-| orchestrated | 工作区候选保存冻结 ExecutionRequest 并尝试跳过重编排，尚未验收 | 同事务复核来源、模型事实与执行身份；发布/领取/提交前漂移拒绝；完成语义调用后独立进程 kill、二次失租与旧 owner 拒绝；诊断/Schema/既有测试同步 |
+| orchestrated | §14.11/实施记录 §38 已接通冻结 ExecutionRequest 的后继，跳过重编排；有独立进程 kill 和二次失租验证 | 保持同事务复核来源、模型事实与执行身份；真实供应商、完整初始图资产及后续运行阶段分别验收，不能据此恢复 orchestrating |
 | runtime_submitted | 仍需结合真实图状态与调用账本逐项判定 | 模型 start 后未发送、HTTP 已发结果未知、响应资产保存未确认等窗口均有明确不重发/对账/导入规则 |
 | 图完成、业务未投影 | 补偿出口尚未验收 | 使用原消息/事件身份补投影，不再次调用图、模型或工具；等待审批的 projected 不能当作 Turn 完成 |
 
-本次接续得到的候选测试为 **3 passed、1 failed，随后因 -x 停止**。失败位于故意修改 input_payload 后仍比较完整原任务对象相等的断言；此前“拒绝创建后继”的断言已经通过。该失败不能证明生产发生重复执行，也不能算该候选已通过。候选测试必须先修正比较口径并完成剩余故障验收，才能更新能力声明。
+§37 时点接续的候选测试为 **3 passed、1 failed，随后因 -x 停止**。失败位于故意修改 input_payload 后仍比较完整原任务对象相等的断言；此前“拒绝创建后继”的断言已经通过。§38 按注入后的持久事实修正比较，随后完成诊断、模型身份矛盾红测及冻结阶段的独立 Worker 验收；该历史失败不证明生产发生重复执行，也不以其余路径的通过掩盖未完成出口。
 
 ### 15.4 版本兼容应覆盖实际代码与持久化格式
 

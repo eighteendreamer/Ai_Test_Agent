@@ -1,4 +1,4 @@
-"""Recover an admitted message only before any orchestration has started.
+"""Recover admitted inputs before orchestration or from a frozen request.
 
 No upstream counterpart (checked: FrameworkApprovalRecovery, owner/stage
 journals, LangGraph interrupts/persistence, plan §14.2): a graph cannot restore
@@ -16,14 +16,17 @@ from pydantic import ValidationError
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_message_stages import (
-    FrameworkMessageStageRecoveryRequired, message_stage_table, validate_message_stage,
+    FrameworkMessageStageRecoveryRequired, message_stage_table, validate_message_stage, message_runtime_source_hash,
 )
-from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls, FrameworkModelBudgetMissing
+from src.runtime.postgres_framework_model_calls import (
+    PostgresFrameworkModelCalls, FrameworkModelBudgetMissing, FrameworkModelRecoveryRequired,
+)
 from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction, lock_owner_row
 from src.schemas.agent_task import AgentTaskCommandV2
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_message_stage import FrameworkMessageRecoveryLink
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.session import ExecutionRequest
 
 
 logger = logging.getLogger(__name__)
@@ -66,9 +69,9 @@ def _same_input(stage, origin, row, binding):
         _reject("Message recovery differs from its admitted input")
 
 
-def _unstarted(cur, tasks, session, binding, stage, origin):
-    if stage.phase != "submitted":
-        _reject("Message orchestration already started; its result requires reconciliation")
+def _recoverable(cur, tasks, session, binding, stage, origin):
+    if stage.phase not in {"submitted", "orchestrated"}:
+        _reject("Message phase has no admitted continuation; its result requires reconciliation")
     if (session["project_id"] != origin["project_id"] or session["id"] != binding.session_id
         or origin["turn_id"] != binding.turn_id or stage.binding_id != binding.binding_id):
         _reject("Message recovery Session or project changed")
@@ -89,9 +92,25 @@ def _unstarted(cur, tasks, session, binding, stage, origin):
         _reject("Initial message model budget is unavailable")
     if tasks._v2_input_hash(origin["input_payload"], binding, budget) != stage.input_sha256:
         _reject("Message recovery budget or input digest differs from admission")
-    cur.execute(f"SELECT attempt_id FROM {ledger.calls_table} WHERE binding_id=%s LIMIT 1", (binding.binding_id,))
-    if cur.fetchone() is not None:
-        _reject("Submitted message has model execution facts")
+    try:
+        snapshot = ledger._snapshot(cur, binding.binding_id)
+    except FrameworkModelRecoveryRequired as exc:
+        raise FrameworkMessageStageRecoveryRequired("Message model facts require reconciliation") from exc
+    proof = {"resume_phase": stage.phase}
+    if stage.phase == "submitted":
+        if snapshot.calls:
+            _reject("Submitted message has model execution facts")
+    else:
+        _require_frozen_sources(cur, tasks, session, stage)
+        request = ExecutionRequest.model_validate(stage.execution_request)
+        if (request.runtime_binding != binding or request.session_id != binding.session_id
+            or request.turn_id != binding.turn_id):
+            _reject("Frozen execution request differs from its original binding")
+        if any(call.phase != "completed" or call.intent.position_version != 1
+            or call.intent.branch_id != "root" or call.intent.purpose != "agent" for call in snapshot.calls):
+            _reject("Frozen orchestration has unresolved model attempts")
+        proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
+            model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
     cur.execute(f"SELECT role,content,metadata FROM {tasks._settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s", (stage.user_message_id, binding.session_id))
     message = cur.fetchone()
@@ -111,8 +130,21 @@ def _unstarted(cur, tasks, session, binding, stage, origin):
         if _exists(cur, table):
             cur.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", parameters)
             if cur.fetchone() is not None:
-                _reject("Submitted message has tool or checkpoint execution facts")
-    return budget
+                _reject("Pre-runtime message has tool or checkpoint execution facts")
+    return budget, proof
+
+
+def _require_frozen_sources(cur, tasks, session, stage):
+    from src.runtime.postgres_session_store import _session_from_row, _message_from_row
+
+    manifest = stage.source_manifest or {}
+    if not manifest.get("runtime_source_sha256") or not manifest.get("mode_registry_sha256"):
+        _reject("Frozen orchestration is missing runtime source admission")
+    cur.execute(f"SELECT * FROM {tasks._settings.database.postgres_message_table} "
+        "WHERE session_id=%s ORDER BY created_at ASC", (session["id"],))
+    current = _session_from_row(session, [_message_from_row(row) for row in cur.fetchall()])
+    if message_runtime_source_hash(current, stage.user_message_id) != manifest["runtime_source_sha256"]:
+        _reject("Frozen message runtime sources changed")
 
 
 def require_message_recovery_claim(cur, tasks, session, binding, row, owner):
@@ -133,7 +165,9 @@ def require_message_recovery_claim(cur, tasks, session, binding, row, owner):
         or (owner["task_id"] == predecessor["id"] and (owner["attempt_id"] != predecessor["attempt_id"]
             or owner["owner_epoch"] != link.predecessor_owner_epoch))):
         _reject("Message recovery execution owner changed")
-    budget = _unstarted(cur, tasks, session, binding, stage, origin)
+    budget, proof = _recoverable(cur, tasks, session, binding, stage, origin)
+    if any(getattr(link, key) != value for key, value in proof.items()):
+        _reject("Message successor no longer matches its frozen continuation proof")
     if approval_value_hash(budget.model_dump(mode="json")) != link.budget_sha256:
         _reject("Message successor no longer matches its admitted budget")
     return stage
@@ -186,7 +220,7 @@ class FrameworkMessageRecovery:
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (stage.task_id,))
             origin = cur.fetchone()
             _same_input(stage, origin, predecessor, binding)
-            budget = _unstarted(cur, tasks, session, binding, stage, origin)
+            budget, proof = _recoverable(cur, tasks, session, binding, stage, origin)
             new_id = str(uuid5(NAMESPACE_URL, f"framework:message_recover:{task_id}:{predecessor['attempt_id']}"))
             command = AgentTaskCommandV2(task_id=new_id, operation="message_recover", runtime_binding=binding,
                 reference_id=origin["id"], parent_task_id=task_id, **{name: origin[name] for name in
@@ -204,8 +238,8 @@ class FrameworkMessageRecovery:
             now = cur.fetchone()["now"]
             link = FrameworkMessageRecoveryLink(task_id=new_id, predecessor_task_id=task_id,
                 predecessor_attempt_id=predecessor["attempt_id"], predecessor_owner_epoch=owner["owner_epoch"],
-                budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now)
-            updated = validate_message_stage(stage.model_copy(update={"schema_version": 2, "recoveries": [*stage.recoveries, link],
+                budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now, **proof)
+            updated = validate_message_stage(stage.model_copy(update={"schema_version": 3, "recoveries": [*stage.recoveries, link],
                 "updated_at": now}).model_dump())
             cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
                 (updated.model_dump_json(), origin["id"]))
