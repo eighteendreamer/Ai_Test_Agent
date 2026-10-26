@@ -1,10 +1,10 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。复核基线：`4d19b2f4a` 加本次开始时已有的工作区改动。本轮交付为方案文档，不实施运行时迁移、不调整依赖或默认开关。已有未提交实现只作为当前工作区证据，不能视为已发布制品。
+日期：2026-10-26。本次续核基线：`de175ecab`，另有开始时已存在的五个跨 Turn transcript 草稿文件。交付只更新本方案，不修改或提交这些运行时代码，不调整依赖、数据库结构或默认开关。未提交草稿只作为风险核验对象，不能视为已发布制品。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
-后续开发快照更新至实施记录 §42：模型/语义服务及 InputOrchestrator 已有原结算和冻结语义输入的显式消费入口，完整 orchestrating 后继与 Session 恢复调用方仍待接通；下文“本轮复核”保留原文档交付时的证据范围，不能代替后续实施记录。
+后续开发已到实施记录 §44：orchestrating 的安全后继及 Session 调用方、图输入资产冻结已经接通；HEAD 另有 runtime_submitted 的受限只读投影入口。**后者仍被本次探针证实的准入条件限制，不能认定真实框架回合的完成补偿已闭环。** 第 11 节保留原文档交付时的历史验证，第 12–13 节是本次续核新增的契约和证据；发生时点差异时，以本次明确限定的结论为准。
 
 ## 1. 结论及附件意见的处理
 
@@ -18,7 +18,7 @@ LangGraph 的 `interrupt` 是暂停/恢复原语；Deep Agents 的 HITL 使用�
 | F2 三类持久化不自动原子 | 成立。当前若干局部事务已合并，但业务受理、图推进、ToolJob/外部副作用仍不能整体原子提交 | §5：逐窗口对账；不承诺任意外部效果 exactly-once |
 | F3 租约不自动保护 checkpoint | 原试点成立；v2 已由 owner-bound saver 在同连接事务内加锁校验并保存 checkpoint/pending writes | §6：验证旧 owner 延迟写入；独立 Runner 另补执行权协议 |
 | F4 官方模型对象绕过原调用策略 | 原风险成立；当前已显式接入主代理、具名子代理、摘要及 owner 作用域中的 DTO 调用 | §7：区分调用入口，补活动时间、真实配置、重试尝试及供应商验收 |
-| F5 仅保存 checkpoint 不足以跨 Turn | 成立；现有官方消息序列化已实现，但新 Turn 初始状态仍将 framework_messages 置空，完整导入链未闭合 | §3：分开档案、checkpoint、展示投影；完整跨 Turn 作为独立出口 |
+| F5 仅保存 checkpoint 不足以跨 Turn | 成立；已提交代码有官方消息序列化和图输入资产；工作区草稿开始从 Session metadata 导入原生历史，但覆盖范围、未完成调用及私有资产保护仍不完整 | §3、§12.2：保留完整跨 Turn 独立出口，不以 helper 测试代替链路验收 |
 | F6 runtime_version 不等于保留旧环境 | 成立；已有独立 stream、Worker 能力校验、legacy manifest，尚无真实双制品部署的完整验收 | §9：制品和持久格式能力路由，保留兼容 Worker |
 
 附件另有两处需要修正：
@@ -57,7 +57,7 @@ LangGraph 的 `interrupt` 是暂停/恢复原语；Deep Agents 的 HITL 使用�
 5. Harness 维护本分支模型/工具消息；调用前校验 owner、配置、根预算、工具集合，通过共享策略预留稳定调用位置并保存实际输入。
 6. 官方模型对象发原生协议请求；保存响应资产、结算用量，再投影展示内容。失败和未知发送状态保持可检索，不以空文本伪装完成。
 
-这是目标契约。当前 Deep Agents Runtime 仍使用独立 code review pilot system prompt；尚未证明已复用完整 PromptAssembly/Memory 管道。图外语义实际输入已冻结，完整图输入资产与代码制品仍待补齐。
+这是目标契约。当前 Deep Agents Runtime 仍使用独立 code review pilot system prompt；尚未证明已复用完整 PromptAssembly/Memory 管道。图外语义实际输入、编排代码指纹和适配器入口的 FrameworkGraphInputAsset 已冻结；指纹不是代码归档，入口资产也不等于每次物理模型请求、工具完整 schema 或可恢复的制品实物。后续接统一 Prompt 时必须复用同一装配结果生成资产和实际请求，避免两处独立拼装产生漂移。
 
 ### 3.2 三种消息存储
 
@@ -125,12 +125,12 @@ checkpointer、业务库和目标系统不构成天然分布式事务。`durabil
 | 阶段 | 当前范围 | 下一出口 |
 | --- | --- | --- |
 | submitted | 已有未开始编排的安全后继 | 保持原输入、根预算、原 task/attempt 终态 |
-| orchestrating | 已有实际语义输入冻结；未发送预留转移、模型/语义服务的已结算 DTO 消费入口；InputOrchestrator 可从冻结准备完成应用投影 | 接入完整后继准入及 Session 恢复调用方；冻结确定性解析/合并制品；不能重跑整个 orchestrate_async |
-| orchestrated | 已有冻结 ExecutionRequest 的后继，跳过重新编排 | 补完整初始图资产和版本实物；不能推广到其它阶段 |
-| runtime_submitted | 图内模型发送/资产/结算各窗口尚需完整闭合 | 用调用账本与图 pending writes 判定继续、导入或对账 |
-| 图完成待业务投影 | 完整补偿出口未验收 | 使用原结果补投影，不调用模型/工具 |
+| orchestrating | 已有安全后继准入、编排指纹及 Session 冻结输入消费；ready 转移、completed 只读读取、unknown 拒绝重发 | 继续核验制品实物与实际环境；不能重跑整个 orchestrate_async |
+| orchestrated | 已有冻结 ExecutionRequest 的后继，跳过重新编排；适配器入口图输入资产已落库 | 补版本实物及统一 Prompt；不能推广到其它阶段 |
+| runtime_submitted | 新增“已有业务快照”的只读入口；当前准入仍拒绝该 Turn 的 checkpoint/ToolJob 事实，见 §12.1 | 按执行阶段重新设计准入；用账本、图 pending writes 与投影提交证明判定继续、导入或对账 |
+| 图完成待业务投影 | 原结果到完整业务提交的补偿出口未闭合；已有快照不证明消息、Session、验证和 Memory 均已提交 | 持久化原应用结果及幂等投影提交事实，只补缺失部分，不调用模型/工具 |
 
-当前工作区新增的 `settled_response_id` 将已完成调用绑定到唯一响应观察；`restore_completed_dto` 校验冻结输入、响应内容/格式/用量，并在异步对象读取后再次校验 owner。这与用户附带摘要相关，但只证明**原已结算 DTO 的只读读取**：不补造历史结算、不把任意 observation 升格为结果、不代表 orchestrating 调用方或图内结果导入已接通。
+已提交的 `settled_response_id` 将已完成调用绑定到唯一响应观察；`restore_completed_dto` 校验冻结输入、响应内容/格式/用量，并在异步对象读取后再次校验 owner。模型、语义服务和 orchestrating 的应用调用方已接通该只读消费；它不补造历史结算、不把任意 observation 升格为结果，**也不代表图内模型结果导入或全部业务投影补偿已接通**。
 
 取消、超时、用户暂停、Worker 崩溃分别建恢复资格。审批可恢复不等于任意取消可恢复；显式取消不能被租约回收器重新执行。恢复建立后继 task/attempt 谱系，不重置原终态记录。
 
@@ -198,9 +198,9 @@ Deep Agents 的运行 Harness 管模型工具循环与认知上下文；测试 H
 
 | 顺序 | 依据 → 做法 | 主要改动位置 | 通过条件 |
 | --- | --- | --- | --- |
-| A | 当前首次 message 阶段日志 → 接通 orchestrating 恢复调用方，补活动时间 | Session/InputOrchestrator/SemanticIntent、模型策略/账本、message recovery | 未发送显式转移、completed 只读导入、unknown 不重发；原输入/预算/终态不变 |
-| B | transcript 与实际输入尚未贯通 → 冻结图资产、接统一 Prompt、完成跨 Turn | PromptAssembly/context、Runtime、framework_transcript、binding/制品 | 原生块/签名及工具结果完整；恢复不重拼；下一 Turn 实际请求可验证 |
-| C | 已有审批恢复 → 补其余窗口和 Runner 执行权 | saver/journal、ToolJob、领域 Runner、业务投影 | 旧 owner 延迟写拒绝；未知效果可核对；图完成仅补投影 |
+| A | 图前恢复已有实现，图后准入仍有错位 → 先闭合 §12.1，保留未知发送拒绝 | Session/Runtime、message recovery、结果资产/业务投影 | 真实 checkpoint 与已提交投影共存可恢复；未提交部分补齐；模型/工具调用不增加；原终态不变 |
+| B | 图入口资产已有实现，跨 Turn 仍不完整 → 接统一 Prompt，按 §12.2 完成消息所有权 | PromptAssembly/context、Runtime、framework_transcript、binding/制品 | legacy 夹层不丢失、当前用户不重复、等待调用不发布、资产不可由 API 改写、实际请求块/工具配对正确 |
+| C | 已有审批恢复与模型账本 → 补其余故障窗口、活动时间与 Runner 执行权 | saver/journal、模型策略、ToolJob、领域 Runner | 旧 owner 延迟写拒绝；未知效果可核对；根活动预算跨接管不归零；独立 Runner 不被盲重派 |
 | D | 当前独立 pilot → 代码审查真实链路 | code review、只读 backend、Skills、事件/UI | 实际评测集、真实文件、Token 流式、取消/超时、完整恢复 |
 | E | 公共契约稳定 → 受控 AgentCase、逐模式迁移 | graph、TestRun/Verification、各模式 | 每模式独立 Harness 通过；无断言/证据不能判通过 |
 | F | 版本绑定与兼容读者 → 双制品切换、排空、回滚及收敛 | Worker capabilities、部署、数据库迁移/保留策略 | 旧等待回合恢复、新旧任务不串领；演练后再移除旧循环/摘要/审批代码 |
@@ -209,7 +209,7 @@ A/B/C 都是架构边界补齐，不能在入口加几层 try/except 当作完�
 
 ## 11. 本轮证据、验证和限制
 
-### 11.1 Evidence → Finding → Path
+### 11.1 Evidence → Finding → Path（原文档交付时的历史快照）
 
 | Evidence：本轮读取的实现 | Finding：可据此确认 | Path：实施去向 |
 | --- | --- | --- |
@@ -223,7 +223,7 @@ A/B/C 都是架构边界补齐，不能在入口加几层 try/except 当作完�
 
 复现方式：在本仓库读取上述符号，按下列命令运行本轮选定测试；在线文档检索日为 2026-10-26。安装版本与签名也使用 `.venv-framework-v2/Scripts/python.exe` 实际导入核对，未安装新依赖。
 
-### 11.2 本轮实际验证
+### 11.2 原文档交付时实际验证（不计入第 13 节本次运行）
 
 工作目录为 `Agent_Server`，解释器为仓库独立 v2 环境。实际执行第一组：
 
@@ -264,3 +264,131 @@ HTTP 用例在 B 工具被阻塞时，通过 ASGI 请求提交 A 拒绝，2 秒�
 - 真正外部依赖：真实供应商、证据对象存储、相应浏览器/压测/扫描 Runner、双制品部署。模拟 HTTP 和内存存储替身不能标为这些集成已通过。
 
 本轮不声称全量测试、前端、lint/typecheck、官方 conformance、全部领域模式或生产发布通过。方案补全和局部测试通过，仅构成下一阶段实施依据。
+
+## 12. 本次补全：必须先闭合的应用契约
+
+本节是应用设计，不是新增的框架 API，也不表示已经完成实现。依据是当前代码、下述运行探针及官方固定版本行为；复用已有阶段/账本/任务体系，不建立第二套调度器。
+
+### 12.1 按阶段准入，不能沿用“图前不得有执行事实”的统一条件
+
+**本次新增发现 F10：只读投影入口已存在，但真实 checkpoint 会阻止它被领取。**
+
+[FrameworkMessageRecovery 的 `_recoverable`](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_recovery.py) 在 runtime_submitted 分支读取业务快照后，仍进入函数末尾的统一检查：只要该 Turn 有 ToolJob、checkpoint 或 pending writes，就以 `Pre-runtime message has tool or checkpoint execution facts` 拒绝后继。这一条件适用于图前阶段，不能作为图已执行阶段的完成准入。本次用官方 LangGraph、owner-bound PostgreSQL saver 跑完单节点图，再保存匹配绑定的 completed 快照，确实得到上述拒绝；不是推测已发生生产故障。
+
+**同时存在 F11：业务快照提交不等于整个应用收尾已经提交。** [SessionService 的 `_finalize_runtime_result`](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/sessions/session_service.py) 先 `save_snapshot`，后续才保存 Session、消息和最终事件等；`_recover_projected_framework_message` 只读快照并推进 projected，不能据此证明其余步骤齐备。现有成功用例注入的是精简快照，没有制造真实 checkpoint，也没有覆盖完整收尾中途强杀。
+
+采用以下分支，而不是简单删除所有保护：
+
+| 持久事实 | 准入与动作 |
+| --- | --- |
+| submitted / orchestrating / orchestrated | 保留当前图前执行事实检查，执行事实矛盾时不自动重新启动图 |
+| runtime_submitted，图未完成或存在待审批 | 读取原 checkpoint/interrupt/ToolJob，走对应运行中或审批恢复协议；不能当成完成投影 |
+| 图已完成，原应用结果资产已保存，部分业务投影未提交 | 校验绑定、原消息/工具配对、模型结算、结果摘要与所有权；按原结果只补缺失投影 |
+| 完整业务提交已有凭证，阶段 ACK 未保存 | 核对原提交引用，只推进阶段；模型、工具、消息和事件均不重建 |
+| 模型发送/工具副作用未知，或原结果/证明缺失 | 进入明确对账状态；不从展示文本猜结果、不重新 invoke 图 |
+
+实施边界：
+
+1. Runtime 导出可序列化的原应用结果资产，足以重建 RuntimeTurnResult 的业务投影；checkpoint 不是这份资产的替代物。资产绑定 Turn、运行时/格式、原调用结果和内容摘要。
+2. 复用当前 Session 收尾逻辑为唯一投影所有者。支持正常执行和原结果恢复两个入口，不复制一份审批、消息、验证或 Memory 写入规则。
+3. 将数据库内的 Session/消息/事件/结果引用尽可能纳入现有 fenced 事务；无法同事务的 Memory/外部投影使用稳定操作身份、分项完成事实和补偿。**提交凭证只能证明其明确列出的提交范围**，不能用 snapshot.saved 代称“全部完成”。
+4. waiting_approval 是合法业务投影，不是最终完成。它继续保留原 pending_turn 与审批身份；拒绝、取消、超时和完成分别判定。
+5. 后继保持原 user_message_id、Turn、根预算和任务谱系。旧 task/attempt 不重置，正式 RunItem 不重领；回归仍建立新运行。
+
+开发先补正式红测：把现有 `test_runtime_submitted_with_committed_projection_only_advances_stage` 扩展为真实 saver/图及完整应用提交；再分别在快照后、消息提交前、提交后 ACK 前强杀。断言缺失投影补齐、已有投影不重复、模型/工具计数不增加。单纯放宽 guard 而不补提交证明不是根因修复。
+
+### 12.2 跨 Turn transcript 的所有权、覆盖锚点和上下文导入
+
+当前未提交草稿新增 `FrameworkTranscriptAsset`、`append_turn_input`、Runtime 初始读取和 Session metadata 写回。它证明开始接线，**不证明跨 Turn 已闭环**。本次只审阅，不修改或提交草稿。
+
+| 草稿的真实边界 | 必须补入的契约 |
+| --- | --- |
+| 读取旧原生序列后只追加当前输入；adapter 优先选择该序列，忽略文本 runtime_messages | 资产必须记录所覆盖的稳定业务消息锚点/序列。保留原生前缀，追加锚点之后的合法业务消息，再加入当前用户输入；不能丢失中间 legacy Turn |
+| 资产没有来源业务消息映射 | 保存 source_message_id/turn_id 与覆盖区间；当前用户已入库时引用原身份，内部无已落消息入口才建立确定性输入身份，不能按文本相等去重 |
+| 非空 framework_messages 即可发布，未限定完成态 | 跨 Turn 可导入资产只发布已完成且协议闭合的消息范围。未决工具和审批停留于本 Turn checkpoint；若需保留部分完成历史，必须明确完整边界而非任意切片 |
+| 新 metadata key 尚未加入服务端保护/内部隐藏集合 | 原生资产由服务端生成；Create/Update 拒绝写入，SessionDetail 默认不展示，快照/导出也检查权限。SHA256 只能检测内容一致性，不能证明来源可信 |
+| 只有 runtime_version，没有模型/协议身份 | 绑定 provider、transport、模型语义配置和 serializer/格式版本。兼容性未经验证时明确不支持，不能悄悄丢签名或改写成文本继续 |
+| 独立原生前缀绕开旧 context_summary | 摘要必须有稳定消息覆盖范围，与资产锚点对齐；同一段消息只有一个摘要所有者，禁止重复摘要、重复导入或拆散工具调用/结果 |
+
+对应依据：[transcript 序列化与追加](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/framework_transcript.py)、[草稿资产格式](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_transcript.py)、[Runtime 初始组装](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)、[Session metadata 边界](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/sessions/session_service.py)、[既有上下文资格规则](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/context/transcript_hygiene_service.py)。schema 文件为当前未跟踪草稿，不是已提交公共契约。
+
+建议将资产发布、覆盖锚点及导入放在一个应用 transcript 服务内，Runtime 只请求上下文投影，Session 只调用发布端口；不要在二者继续散落 provider/去重/摘要特判。无原生资产的历史维持旧文本管道，不伪造历史 provider 消息。读取不可用资产应返回明确的不兼容/需迁移状态，不静默降级导致上下文丢失。
+
+新 Turn 的目标组装顺序：
+
+```text
+原生资产及其覆盖锚点
+  + 锚点之后、截至当前已受理输入的 context_eligible 业务消息
+  + 当前输入的稳定身份（只出现一次）
+  → 按完整工具配对/摘要边界选择上下文
+  → 当前冻结 Prompt / Skills / 项目及检索资产
+  → FrameworkGraphInputAsset
+  → 官方 Harness / 共享模型调用策略 / 原生 API
+```
+
+同 Turn resume 不走这条导入链，仍从 checkpoint 读取，提交一个指定决定或经证据允许的 None 继续。新 Turn 不导入尚在排队、`context_eligible=False` 或将来的用户输入。不能为了跨 Turn 省事把 thread_id 改为 session_id，否则改变审批、预算与绑定隔离语义。
+
+必过 Harness：完成框架 Turn → 持久落库 → 重建服务 → legacy 中间 Turn → 新框架 Turn；检查实际模型输入包含中间消息、当前用户恰好一次、原生块及工具配对完整。另测等待审批不发布、伪造 metadata 被拒绝、摘要截断边界、跨供应商不兼容显式报错及并发后续消息不被覆盖。供应商真实签名恢复必须单独验收，合成签名往返不算通过。
+
+### 12.3 审批、所有权、模型治理的剩余边界
+
+- **逐项审批**：继续沿用当前 v2 原子受理和串行恢复，不退回整批 decisions。人的决定、框架交付/应用、ToolJob 三组事实分开；已批准但最新权限失效可以被治理拒绝，不能伪造执行成功。官方也提示多个回答混发时可能出现部分工具已执行而其它答案失败，因此本系统坚持逐项交付并按原生事实对账。[官方 per-call 与中间件顺序](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)
+- **执行所有权**：保持 owner 行锁与 saver 原生 checkpoint/pending writes 同连接短事务。领域 Runner 的 execution_id、代次、资源租约、远端查询/停止回执和未知效果对账另行接通；协程 cancel、ToolJob fence 和图 checkpoint 均不能证明外部进程已停止。
+- **模型策略**：不重新建设一套模型入口。复用已提交主代理/具名子代理/摘要/图外分类的调用账本，补图内原结算导入、每次物理 HTTP attempt、错误/流式 usage 和真实配置组合。当前 `max_tokens` 新工厂映射存在，不能把旧入口的拒绝当成新入口仍缺失。
+- **活动时间**：区分整体截止时间、根 Turn 实际活动时间和模型耗时。活动片段按稳定 owner/区间持久化，排队/审批等待单独统计，接管不重新给予完整预算；并发子分支调用/Token 累计到根，墙钟活动区间不能直接把重叠分支耗时相加。崩溃尾段的计量策略需明确并有测试，不能按恢复时刻猜零。
+- **流式与取消**：当前仍有结束后整段回调；子代理事件流不等于 Token 实时流。补事件关联、Token/usage 汇总和客户端断线重连投影；客户端断线不自行撤销任务。显式取消、超时、暂停和崩溃分别定义准入，取消的任务不被自动后继重启。
+
+### 12.4 版本化部署与各模式发布门
+
+当前独立 v2 环境的九项版本已经实际导入核对，不需要重做依赖升级。保留双制品/独立队列方案，并补以下发布约束：
+
+1. Worker claim 前声明并校验实际可读写的 binding/command/stage/model-call/receipt/transcript 格式；当前能力检查只覆盖部分字段/operation，不等于已经支持全部格式。旧严格模型遇到新 JSON 字段也可能拒绝。
+2. 不可变发布物保存代码、实际安装清单、Prompt/Skill/工具 schema/Memory 检索资产或可读取不可变引用。锁摘要、源码指纹不替代制品本身，凭据和实时授权不冻结为旧权限。
+3. 真实演练旧等待审批回合继续、新旧任务不串领、回滚只影响新 Turn、旧绑定仍有兼容 Worker。checkpoint、业务库及对象资产按一致的恢复点和保留策略备份，禁止独立回滚其中一份。
+4. 公共契约先通过，再用代码审查做首个真实模式闭环，随后逐模式推进第 8 节 Harness。正式 AgentCase 的回边迁入图后，再移除新路径外层循环；不要先删历史回合需要的代码。
+5. 模式 Harness 必须同时有环境/资源、冻结输入、工具轨迹、状态断言、证据裁决和清理。存在 harness_key、Prompt 或 Deep Agents 运行循环都不足以代表模式可发布。占位模式保持占位，代码审查结论也不能代替领域测试通过。
+
+这是架构缺口的收敛顺序，不授权扩大到占位功能开发、测试引擎重写或外部 OpenAI 兼容网关。
+
+## 13. 本次续核证据与实际验证
+
+### 13.1 查证范围
+
+重新读取附件六项评审、现有 v2/v3/实施记录、审批受理/恢复、owner saver、适配器/模型策略、消息管道、Session 收尾、能力路由及相关测试；另读本地《Agent轨迹与协议鲁棒性》《评测工程化与CICD》关于工具轨迹、权限/幂等和版本化质量门的段落。课程示例阈值不是本项目默认验收阈值，正式基线应另行冻结。
+
+在线核验：[LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)、[Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)、[Customization](https://docs.langchain.com/oss/python/deepagents/customization)。在线页面可能包含更新 API；实际行为仍以本地固定版本和运行测试为准，不照抄新版示例升级依赖。同步持久化不能使业务表、checkpoint 和外部副作用天然成为一个事务。
+
+实际导入独立解释器并检查 HumanInTheLoopMiddleware 签名：deepagents 0.7.13、langchain 1.4.6、langchain-core 1.6.10、langgraph 1.2.12、langchain-openai 1.6.2、langchain-anthropic 1.7.1、langchain-google-genai 4.4.0、langgraph-checkpoint-postgres 3.1.2、psycopg-pool 3.3.1；签名包含默认 batched 的 interrupt_mode 参数。本次未安装任何依赖。
+
+### 13.2 本次公共契约回归
+
+在 Agent_Server 使用独立解释器实际执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+& ../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_dependencies.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_approval_submission.py tests/test_framework_chat_models.py tests/test_framework_graph_input_asset.py -q -x -rs --tb=short
+```
+
+结果 **109 passed，161.35 秒，无 skip**。覆盖固定依赖、checkpoint/pending writes fence、原生逐项 interrupt、审批受理、官方模型配置/协议的合成 HTTP 验证及图输入资产。使用真实 PostgreSQL/Redis、固定官方依赖；模型为受控替身或官方 SDK 加合成 HTTP，不代表真实供应商验收。运行时含开始时已有的未提交草稿，不能标记为纯 HEAD 制品的发布测试。
+
+首次命令误引用不存在的 `tests/test_framework_message_projection.py`，pytest 报 file not found、没有运行测试；核对实际文件后执行上面命令。该失败不计入通过数量。
+
+另实际执行并发审批与独立 Worker 强杀回归：
+
+```powershell
+& ../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling tests/test_framework_approval_http.py -k 'separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling or http_accepts_sibling_decision_while_session_is_executing' -q -x -rs --tb=short
+```
+
+结果 **4 passed、10 deselected，80.93 秒，无 skip**。三个强杀参数验证已知工具/native 结果后的接管，以及对账提交前/提交后 ACK 前窗口；另一个用例验证同 Turn 正在执行时仍可受理兄弟审批。它们是既有受控工具/真实进程与数据库 Harness，不是浏览器或真实供应商验收，也不覆盖 §12.1 新发现的 message 完成投影窗口。
+
+### 13.3 新增限制的临时运行探针
+
+在系统临时目录创建 review probe，不写入仓库实现或正式测试。复用现有 admission/Session Harness，步骤为：受理并推进 runtime_submitted → 以捕获 owner 的官方 saver 完成单节点 LangGraph，确认 next 为空 → 保存匹配绑定的 completed 业务快照 → 失租 → 请求 message recovery。
+
+结果 **1 passed，7.14 秒**，断言当前后继为 None，日志原因正是 §12.1 的 pre-runtime guard。这里的“通过”表示成功复现限制，**不是恢复功能通过**。图使用官方 LangGraph/真实 PostgreSQL，但业务快照仍为受控精简输入；未证明真实 Deep Agents 全部业务收尾已经完成。正式修复前需要把该场景纳入仓库红测，并补完整 Session 投影及强杀窗口。
+
+该探针和静态读取共同支持 F10/F11 的方案补充，不据此声称发生过生产数据丢失。未提交 transcript 的其余风险来自代码路径审阅，未执行其跨 Turn 真实供应商端到端验收。
+
+### 13.4 交付边界
+
+本次仅更新本文件，保留原有五个实现草稿原状且不纳入提交。仍未执行全量测试、前端、独立 lint/typecheck、官方 saver conformance、真实模型/对象存储/浏览器/压测/扫描 Runner、双制品部署、跨 Turn 供应商签名验收。默认 Deep Agents/checkpoint 开关保持关闭；方案补全和局部测试通过不构成生产切流许可。
