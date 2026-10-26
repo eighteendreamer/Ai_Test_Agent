@@ -136,14 +136,22 @@ def record_memory_projection(cur, settings, write, stage, asset, point):
     _save_stage(cur, settings, stage, {COMMITS_KEY: proof.model_dump(mode="json")})
 
 
-def require_observation_projections(cur, settings, stage, binding, result_sha256):
+def require_existing_observation_projections(cur, settings, stage, binding, result_sha256):
+    """A partial batch may resume, but no receipt may mask a missing/drifted row."""
     asset = observation_asset(stage, binding, result_sha256)
     proof = observation_commits(stage, asset)
     identities = [item.id for item in asset.observations]
-    _require(set(identities) == set(proof.row_hashes), "Observation projections are incomplete")
+    _require(set(proof.row_hashes).issubset(identities), "Observation receipt has an unknown identity")
     if identities:
         cur.execute(f"SELECT {MEMORY_COLUMNS} FROM {settings.database.postgres_memory_table} "
             "WHERE session_id=%s AND id=ANY(%s) ORDER BY id FOR UPDATE", (binding.session_id, identities))
         _require({row["id"]: _hash(dict(row)) for row in cur.fetchall()} == proof.row_hashes,
             "Original observation rows changed or disappeared before application commit")
+    return asset
+
+
+def require_observation_projections(cur, settings, stage, binding, result_sha256):
+    asset = require_existing_observation_projections(cur, settings, stage, binding, result_sha256)
+    _require({item.id for item in asset.observations} == set(observation_commits(stage, asset).row_hashes),
+        "Observation projections are incomplete")
     return asset

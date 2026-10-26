@@ -77,7 +77,14 @@ async def test_orchestrating_successor_uses_original_preparation_and_budget(admi
             assert final.calls[0].intent == before.calls[0].intent
             assert len(final.calls[0].reservation_transfers) == 1
         assert len(h.runtime.calls) == 1
-        assert (await stage(h, original)).source_manifest == frozen.source_manifest
+        from src.runtime.framework_runtime_results import runtime_result_source
+
+        saved = await stage(h, original)
+        # Immutable orchestration inputs are unchanged; successful finalization
+        # legitimately appends original-result and projection receipts.
+        assert runtime_result_source(saved) == frozen.source_manifest
+        assert saved.source_manifest["runtime_result_asset"]["source_sha256"] == frozen.source_sha256
+        assert "application_projection_commit" in saved.source_manifest
         await h.dispatcher.handle_v2(QueuedTask("duplicate", outbox(h, successor.id)["payload"]), worker_id="duplicate")
         assert len(h.runtime.calls) == 1 and len(requests) == (0 if window == "skip" else 1)
 

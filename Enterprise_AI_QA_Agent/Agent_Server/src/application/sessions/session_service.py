@@ -283,12 +283,27 @@ class SessionService:
                 await self._stop_lease_heartbeat(task.session_id, stop, heartbeat)
 
     async def _recover_projected_framework_message(self, *, session, task, stage, stages):
-        """Advance a committed application projection without re-running the graph.
+        """Finish or acknowledge an original application result, never its graph.
 
         The receipt proves the Session/messages/completion-events transaction.
         It does not claim Memory or cleanup completed. No graph is invoked.
         """
-        from src.runtime.framework_application_projection import load_committed_projection
+        from src.runtime.framework_application_projection import COMMIT_KEY, load_committed_projection
+
+        if COMMIT_KEY not in (stage.source_manifest or {}):
+            from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+            await stages.resume_finalizing(task.runtime_owner)
+            asset = await FrameworkRuntimeResults(self._agent_task_store).load(task.runtime_owner)
+            logger.info("framework_message_finalization_resuming", extra={"session_id": session.id,
+                "binding_id": task.runtime_binding.binding_id, "task_id": task.id,
+                "origin_result_task_id": asset.task_id, "runtime_result_asset_sha256": asset.asset_sha256})
+            response = await self._finalize_runtime_result(session=session,
+                runtime_result=asset.runtime_result.restore(), assistant_message_id=asset.assistant_message_id,
+                user_message_override=asset.user_message, turn_lease_token=task.lease_token,
+                projection_owner=task.runtime_owner, projection_asset=asset)
+            await stages.projected(task.runtime_owner, response.output.id)
+            return response
 
         commit, snapshot, assistant = await load_committed_projection(self._agent_task_store._settings, task.runtime_owner)
         binding = task.runtime_binding

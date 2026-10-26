@@ -2,8 +2,9 @@
 
 No upstream counterpart (checked: framework message stages/application commits,
 LangGraph persistence, integration plan v3 §12.1 A2-1): native graph checkpoints
-do not retain our RuntimeTurnResult or Verification identities. This asset does
-not admit a successor, prove an application commit, or authorize graph replay.
+do not retain our RuntimeTurnResult or Verification identities. This asset alone
+does not admit a successor: message recovery must validate its lineage and all
+existing parts. It never proves an application commit or permits graph replay.
 """
 from __future__ import annotations
 
@@ -62,19 +63,24 @@ def runtime_result_source(stage):
 
 
 def validate_runtime_result(cur, settings, owner, stage, task, raw):
+    return validate_runtime_result_binding(cur, settings, owner.binding, stage, task, raw)
+
+
+def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
+    """Read original facts before claim too; this grants no execution ownership."""
     asset = FrameworkRuntimeResultAsset.model_validate(raw)
     lineage = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
         *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
             for link in stage.recoveries)}
-    _require(asset.binding == owner.binding and asset.input_sha256 == stage.input_sha256
+    _require(asset.binding == binding and asset.input_sha256 == stage.input_sha256
         and asset.execution_sha256 == stage.execution_sha256
         and asset.source_sha256 == approval_value_hash(runtime_result_source(stage))
         and asset.user_message == task["input_payload"].get("content", "")
         and asset.assistant_message_id != task["user_message_id"]
         and (asset.task_id, asset.attempt_id, asset.owner_epoch) in lineage,
         "Runtime result identity or frozen input changed")
-    _require(asset.model_calls_sha256 == _model_hash(cur, settings, owner.binding)
-        and asset.tool_jobs_sha256 == _tool_hash(cur, settings, owner.binding),
+    _require(asset.model_calls_sha256 == _model_hash(cur, settings, binding)
+        and asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
         "Runtime result execution facts changed")
     return asset
 
@@ -148,7 +154,14 @@ class FrameworkRuntimeResults:
                 stage, task = self._locked_stage(cur, owner)
                 raw = (stage.source_manifest or {}).get(RESULT_KEY)
                 _require(raw is not None, "Original runtime result asset is missing")
-                return self._validate(cur, owner, stage, task, raw)
+                asset = self._validate(cur, owner, stage, task, raw)
+                if stage.recoveries and stage.recoveries[-1].resume_phase == "finalizing":
+                    from src.runtime.framework_finalization_projection import require_partial_finalization
+
+                    cur.execute(f"SELECT metadata FROM {self._settings.database.postgres_session_table} WHERE id=%s",
+                        (owner.binding.session_id,))
+                    require_partial_finalization(cur, self._settings, cur.fetchone()["metadata"] or {}, stage, asset)
+                return asset
 
         try:
             return await asyncio.to_thread(read)

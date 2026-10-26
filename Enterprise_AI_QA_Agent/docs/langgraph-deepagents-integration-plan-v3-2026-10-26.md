@@ -1,10 +1,10 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–21 节记录 A2 原结果资产、Runtime 回调、快照、事件及观察分项回执。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
+日期：2026-10-26 起，最近续接 2026-10-27。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–23 节记录 A2 原结果资产、Runtime 回调、分项回执、最终原意图校验和部分投影后继。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
-当前实施见[实施记录 §46–50](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 已有原结果资产和正常 finalizer 消费，新增快照、事件、观察分项的同事务回执及重入校验。A1 只承认有效原子提交凭证；A2-1 资产及分项回执也不自动授予后继或图恢复权。**A2 的完整部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
+当前实施见[实施记录 §46–52](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 原结果资产、快照/事件/观察回执及最终消息/Verification 校验已接入唯一 finalizer，新增有证明的部分投影后继。后继复核原输入、谱系、已知模型/工具结果和实际分项，只补缺失应用投影；资产单独存在仍不授予图恢复权。**A2-2 图终态到资产空窗、A2-3 projected 后任务结算，以及 A3、完整跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
 
 ## 1. 结论及附件意见的处理
 
@@ -133,7 +133,7 @@ checkpointer、业务库和目标系统不构成天然分布式事务。`durabil
 | checkpoint 已推进，业务 applied/事件未落库 | 补业务投影；保持原消息和事件身份 | 重发已消费决定 |
 | 工具已派发，效果未知 | 查询目标操作 ID/Runner journal，必要时人工对账 | 盲目重试外部请求 |
 | 同步响应迟到、原 owner 已丢失 | 保存非权威观察，由新 owner 校验证明后处理 | 旧 owner 改写权威结果 |
-| 图完成、原应用结果资产已保存，Session/Turn 尚未完整投影（A2-1 资产已实现，后继补偿待实现） | 目标：校验原结果和分项事实，复用唯一收尾入口补缺失投影；目前失租后仍要求对账 | 再次运行图；将 waiting_approval 当完成 |
+| 图完成、原应用结果资产已保存，Session/Turn 尚未完整投影（A2-1） | 校验原结果、谱系及现有分项，创建 finalizing 后继，经唯一 finalizer 补缺失投影；缺证据/冲突继续对账 | 再次运行图；将 waiting_approval 当完成 |
 | 应用最终事务已提交、阶段 ACK 丢失（A1，已实现） | 校验原子提交凭证及精确结果引用，只补 ACK | 重建消息/事件，或借此获得模型/图重放权限 |
 | projected 已保存、AgentTask 尚未 finish（A2，待实现） | 核对应用提交与阶段事实，只补任务收尾 | 重置原 task/attempt，或再次执行图 |
 
@@ -148,7 +148,7 @@ checkpointer、业务库和目标系统不构成天然分布式事务。`durabil
 | 框架 resume 交付 proof | 确认指定 interrupt 决定已写入原生任务 | 推断工具成功，或再次发送同决定 |
 | ToolJob 原调用终态/结果 | 校验后复用该工具结果 | 推断未知外部操作未发生，或裁定整个 TestRun 通过 |
 | 唯一结算模型响应及原请求资产 | 按原调用位置校验、只读导入原响应 | 重发 invoking/unknown，或将未绑定 observation 升格 |
-| 原应用结果资产（A2-1 已保存） | 当前 owner 读取同一业务投影输入用于正常 finalizer；后继补缺失投影仍需独立准入 | 推断应用数据库已完成提交，或仅凭资产给失租任务创建后继 |
+| 原应用结果资产及部分投影准入（A2-1） | 合法 owner 读取同一业务投影输入；后继经输入/谱系/分项证明准入，只补缺失应用投影 | 推断应用数据库已完成提交，或仅凭资产给失租任务创建后继；图/模型重放 |
 | application_projection_commit（A1） | 确认明确 scope 内的原子提交，补阶段 ACK | 推进图/模型、补造模型资产，或证明 Memory/清理已完成 |
 
 因此，历史 completed 账本没有 settled_response_id，不会阻止 A1 确认已经提交的答案；但它仍不具备读取原模型结果并推进图的资格。不要把为某个端口增加的条件偷偷变成所有正常收尾的全局门禁。
@@ -160,8 +160,8 @@ checkpointer、业务库和目标系统不构成天然分布式事务。`durabil
 | submitted | 已有未开始编排的安全后继 | 保持原输入、根预算、原 task/attempt 终态 |
 | orchestrating | 已有安全后继准入、编排指纹及 Session 冻结输入消费；ready 转移、completed 只读读取、unknown 拒绝重发 | 继续核验制品实物与实际环境；不能重跑整个 orchestrate_async |
 | orchestrated | 已有冻结 ExecutionRequest 的后继，跳过重新编排；适配器入口图输入资产已落库 | 补版本实物及统一 Prompt；不能推广到其它阶段 |
-| runtime_submitted | A1 已实现：有效 application_projection_commit 可与真实 checkpoint/ToolJob 共存；只确认已提交 completed 应用结果 | 无凭证/未完成图继续按对应协议对账，不从裸快照授予恢复权；A2 另补最终事务之前的出口 |
-| 图完成待业务投影 | 原结果到完整业务提交的补偿出口未闭合；save_snapshot 不证明 Session/messages/events/Verification 均已提交 | A2 持久化原结果及稳定投影身份；A3 另记 Memory/清理。不得通过 A1 跳过缺失收尾 |
+| runtime_submitted | A1 仅确认已提交应用结果；A2-1 验证原结果及部分投影后准入 finalizing 后继，不重新执行图 | 无原结果/凭证或未完成图仍按对应协议对账，不从裸快照授予恢复权 |
+| 图完成待业务投影 | 原结果已保存时可通过唯一 finalizer 补缺失投影；save_snapshot 单独不证明完整提交 | A2-2 继续闭合图终态→原资产空窗；A3 另记派生 Memory/清理。不得通过 A1 跳过缺失收尾 |
 | projected 待任务结算 | 当前阶段后继不接受 projected，Dispatcher 的 finish 是另一后续写入 | A2 补只结算任务的后继证明/准入；不回退阶段，不再次执行 runtime |
 
 已提交的 `settled_response_id` 将已完成调用绑定到唯一响应观察；`restore_completed_dto` 校验冻结输入、响应内容/格式/用量，并在异步对象读取后再次校验 owner。模型、语义服务和 orchestrating 的应用调用方已接通该只读消费；它不补造历史结算、不把任意 observation 升格为结果，**也不代表图内模型结果导入或全部业务投影补偿已接通**。
@@ -233,7 +233,7 @@ Deep Agents 的运行 Harness 管模型工具循环与认知上下文；测试 H
 | 顺序 | 依据 → 做法 | 主要改动位置 | 通过条件 |
 | --- | --- | --- | --- |
 | A1（已有实现） | 复用 Session/messages/events 同事务提交凭证 → 仅确认应用已提交结果 | framework_application_projection、SessionStore、message recovery/stages | checkpoint/ToolJob 可共存，凭证/结果漂移拒绝，ACK 恢复不增加模型/工具/消息/事件；不能替代 A2/A3 |
-| A2（待实现） | 最终事务前及阶段后窗口 → 按 §12.1 冻结原结果、幂等投影并补任务收尾 | Runtime 结果资产、唯一 Session finalizer、message recovery/stages、Dispatcher | 图完成后、资产前后、快照后、最终事务前后、projected 后分别强杀；补缺不重执，原终态不变 |
+| A2（进行中） | 原结果及分项回执已支持唯一 finalizer 的后继补偿；图终态到资产空窗、projected 后任务结算继续按 §12.1 实施 | Runtime 结果资产、唯一 Session finalizer、message recovery/stages、Dispatcher | 图完成后、资产前后、快照后、最终事务前后、projected 后分别强杀；补缺不重执，原终态不变 |
 | A3（待实现） | A1 scope 不含外部派生效果 → 对 Memory/清理/Runner 分项核对 | 既有 Memory/资源服务、ToolJob/Runner journal | 必需业务事实与可补偿派生数据分开；未知效果不重派，清理失败不篡改原测试结果 |
 | B | 图入口资产已有实现，跨 Turn 仍不完整 → 接统一 Prompt，按 §12.2 完成消息所有权 | PromptAssembly/context、Runtime、framework_transcript、binding/制品 | legacy 夹层不丢失、当前用户不重复、等待调用不发布、资产不可由 API 改写、实际请求块/工具配对正确 |
 | C | 已有审批恢复与模型账本 → 补其余故障窗口、活动时间与 Runner 执行权 | saver/journal、模型策略、ToolJob、领域 Runner | 旧 owner 延迟写拒绝；未知效果可核对；根活动预算跨接管不归零；独立 Runner 不被盲重派 |
@@ -723,3 +723,17 @@ A2-1 之后仍有一个明确空窗：`RuntimeService._execute_turn()` 已获得
 最终四投影文件 108 项、共享恢复/调度/审批投影 149 项、原资产/A1/执行验证 74 项通过；不将重叠范围相加。独立进程使用实际 Deep Agents/SDK 和本地合成 HTTP，工具消息/Verification 是受控注入且状态 not_run，不冒称领域测试通过。保留早期 fixture 错误和另组 6 项 LIVE skip 的事实。
 
 这是原意图与实际行的一致性补齐，**不是新的恢复授权**；当前资产存在而应用事务未提交仍不自动创建后继。下一步正式接入 message_recover，仅复用原资产补缺失投影；A1 已提交走 ACK-only。A2-2 图终态→资产、A2-3 projected→finish、A3 及其余全系统出口继续独立实施。生产默认关闭、依赖不变，整体目标未完成。
+
+## 23. A2-1：既有 message_recover 接入部分投影补偿（2026-10-27）
+
+基线 `f77d646d6`。原资产/快照/事件/观察/Verification/消息规则已具备，正式红测仍无法在最终事务前失租后创建后继（1 failed，10.59 秒）。本次沿原任务、owner、stage 和 outbox 增加 finalizing 恢复身份，不新建调度器或第二套 finalizer。
+
+- 准入、领取、接管收尾和读取资产时复核原输入/预算/任务谱系、completed 模型账本、已知 ToolJob 与已有分项实际行。缺失部分允许补齐；冲突、无回执裸行、未知模型/工具效果、显式中断、后续已开始执行的 Turn 不自动恢复。
+- 采用原结果资产的 source/result 摘要作为稳定恢复证明，不用会追加分项回执的整个 manifest 摘要；现有 A1 证明形状不改变。收尾接管先验证恢复证明，再原子记录当前投影 owner；不把旧结果 owner 强改成当前 owner，也不放宽提交事务的 owner 校验。
+- SessionService 在未完整提交时消费原资产进入唯一 finalizer；原消息/Verification/快照/事件/观察身份和时间保留，观察批次只补缺失行。完整提交已存在时仍只补 ACK，不再校验或补写派生 Memory；不从该权限导入模型结果或重新 invoke 图。
+- 新 finalizing 链接使用 message-stage **11**，reader 支持 1–11、Worker 能力同步。reader 10 必须在 claim 前拒领 11；11 不能读取未来 12。原 1–10 正常可读；无 DDL 不代表已完成兼容部署。
+- 原 user 正文按既有受理 `.strip()` 契约校验，资产仍保留 raw 输入；正常和恢复两条路径覆盖首尾空白。Dispatcher 对实际 `FrameworkMessageStageRecoveryRequired` 保留 `recovery_required`，不误记普通失败；未知程序异常仍为 failed。此对账状态不允许自动创建失租后继，后者仍严格要求 `execution_owner_expired`，避免错误恢复循环。
+
+实际红绿、扩展回归、独立 Worker 六个强杀窗口及已知限制见实施记录 §52。初始 Worker 使用实际 Deep Agents/官方 SDK、本地合成 HTTP、真实 PostgreSQL/Redis；替代进程禁止图/模型/分类/验证再执行。工具/观察/Verification 中的投影样本仍属受控注入，不将 not_run 改称领域测试通过，也不将本地 HTTP 计数当成真实供应商验收。
+
+本节不覆盖没有原结果资产的 A2-2、projected 后尚未 finish 的 A2-3、完整 Memory/资源/Runner 未知效果对账的 A3，也不替代统一上下文、跨 Turn、流式/取消、AgentCase、逐模式 Harness 和双制品部署。默认开关、依赖和公开审批 API 不变；整体目标继续 active。

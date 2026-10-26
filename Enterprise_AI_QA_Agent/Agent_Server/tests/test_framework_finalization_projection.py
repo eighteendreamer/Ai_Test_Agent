@@ -45,6 +45,8 @@ async def test_finalizer_does_not_sign_a_different_message_under_original_identi
 async def finalization_result(projection, monkeypatch, request):
     h = projection
     options = getattr(request, "param", {})
+    if options.get("user_whitespace"):
+        h.payload = h.payload.model_copy(update={"content": "  " + h.payload.content + "\n"})
     if options.get("empty"):
         h.output_text = ""
     execute = h.runtime.execute_turn
@@ -389,7 +391,8 @@ async def test_official_worker_kill_does_not_publish_uncommitted_finalization(ad
             assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
             terminal = await h.tasks.claim(original.id, worker_id="expiry", expected_binding=h.binding)
             assert terminal.status == "recovery_required"
-            assert await h.tasks.ensure_framework_message_recovery(original.id) is None
+            successor = await h.tasks.ensure_framework_message_recovery(original.id)
+            assert successor is not None
             after = await stage(h, original)
             assert after.source_manifest == before.source_manifest
             assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
@@ -399,6 +402,18 @@ async def test_official_worker_kill_does_not_publish_uncommitted_finalization(ad
             assert not any(e.type == "turn.completed" for e in events)
             event, = [e for e in events if e.type == "verification.completed"]
             assert event.id == asset.event_id("verification.completed")
+            from tests.test_framework_partial_projection_recovery import complete_in_new_process
+
+            terminal_record = await h.tasks.get(original.id)
+            await complete_in_new_process(h, successor)
+            assert await h.tasks.get(original.id) == terminal_record
+            assert (await h.tasks.get(successor.id)).status == "completed"
+            saved = await h.store.get_session(h.session_id)
+            assert len(saved.messages) == 3
+            assert saved.metadata["verification_results"] == [item.model_dump(mode="json") for item in asset.verification_results]
+            assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
+            assert len([e for e in await h.store.list_events(h.session_id) if e.type == "verification.completed"]) == 1
+            assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
     finally:
         if process is not None and process.is_alive():
             process.terminate()

@@ -126,6 +126,20 @@ def require_snapshot_projection(cur, settings, stage, binding, asset_sha256, sna
     return receipt
 
 
+def existing_snapshot_projection(cur, settings, stage, binding, asset):
+    """Validate existing parts without requiring a new owner or writing a row."""
+    cur.execute(f"SELECT id,session_id,version,created_at,graph_state,stage FROM {settings.database.postgres_snapshot_table} "
+        "WHERE id=%s FOR UPDATE", (asset.runtime_result.snapshot.id,))
+    row = cur.fetchone()
+    existing = dict(row) if row is not None else None
+    if SNAPSHOT_COMMIT_KEY in (stage.source_manifest or {}):
+        _require(existing is not None, "Original runtime result snapshot is missing")
+        require_snapshot_projection(cur, settings, stage, binding, asset.asset_sha256, existing)
+    else:
+        _require(existing is None, "Existing runtime result snapshot has no atomic projection receipt")
+    return existing
+
+
 def prepare_snapshot_projection(cur, settings, write, snapshot):
     """Fence and validate BEFORE the snapshot UPSERT, in its own transaction.
 
@@ -146,15 +160,7 @@ def prepare_snapshot_projection(cur, settings, write, snapshot):
         and snapshot.model_dump(mode="json") == asset.runtime_result.snapshot.model_dump(mode="json")
         and write.snapshot_sha256 == _hash(snapshot.graph_state),
         "Runtime result snapshot differs from its original write intent")
-    cur.execute(f"SELECT id,session_id,version,created_at,graph_state,stage FROM {settings.database.postgres_snapshot_table} "
-        "WHERE id=%s FOR UPDATE", (snapshot.id,))
-    existing = cur.fetchone()
-    if SNAPSHOT_COMMIT_KEY in manifest:
-        _require(existing is not None, "Original runtime result snapshot is missing")
-        require_snapshot_projection(cur, settings, stage, binding, asset.asset_sha256, dict(existing))
-    else:
-        _require(existing is None, "Existing runtime result snapshot has no atomic projection receipt")
-    return stage, dict(existing) if existing is not None else None
+    return stage, existing_snapshot_projection(cur, settings, stage, binding, asset)
 
 
 def record_snapshot_projection(cur, settings, write, stage):

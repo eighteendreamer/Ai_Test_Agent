@@ -2,7 +2,7 @@
 
 日期：2026-10-25 起。当前实施依据：[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)；[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子任务：A2-1 消息/Verification 原意图校验（§51）。已有原结果资产、快照/事件/观察回执，以及最终事务内原消息与 Verification 校验；尚未开放资产存在但最终事务未提交时的自动后继。下一步接既有 message_recover 的部分投影准入。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
+**当前子任务：A2-1 有证明的部分投影后继（§52）。原结果、分项回执及消息/Verification 原意图校验已接入既有 message_recover；finalizing 后继只补缺失应用投影，不执行图/模型/业务工具，完整提交后走 A1 ACK-only。下一步继续 A2-2 图终态→资产空窗与 A2-3 projected→任务结算。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -1710,3 +1710,50 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 独立 Worker 在最终 Session 事务前及事务内提交前强杀，实际 Deep Agents/SDK、本地合成 HTTP、真实 PostgreSQL/Redis。工具消息及 not_run Verification 是图返回后注入的受控投影样本，**不是领域 Runner 执行/通过验收**。两窗口保留原资产及已提交分项，没有发布未提交答案/Verification/turn.completed；本阶段仍不开放自动后继。
 
 未跑全量、前端、独立 lint/typecheck、真实供应商/对象存储/领域 Runner、官方 saver conformance 或双制品部署；本阶段未发付费请求。A2-2、A2-3、A3、完整跨 Turn、统一上下文、流式/取消和逐模式迁移仍未完成。下一步沿既有 message_recover 授予仅补缺失应用投影的权限，不重新 invoke 图、模型或业务工具。
+
+## 52. A2-1：有证明的部分投影后继与唯一收尾（2026-10-27）
+
+基线 `f77d646d6`。原资产和各分项虽已落库，最终事务前失租仍无后继；真实红测 **1 failed，10.59 秒（successor is None）**。本次只沿原 message_recover、owner、stage 和 outbox 接入原结果收尾，不新增调度器或公开恢复 API。完整目标仍依第 12 节逐项实施，不缩为当前子步。
+
+### 实现与根因验证
+
+- 新 `finalizing` 恢复证明绑定原输入、根预算、谱系、原结果/来源、模型/ToolJob。准入、claim、应用投影 owner 接管、资产读取及提交前分别复核；只补缺项，已存在实际行必须与原意图/原回执一致。未知模型、running/cancelled ToolJob、裸行、缺行、漂移、取消及后续已执行 Turn 拒绝自动恢复。
+- 收尾继续调用唯一 `_finalize_runtime_result`，不运行图、模型、语义分类或 Verification builder。使用原消息/快照/事件/验证/观察身份和时间；部分观察只补缺失行，已完成原 task/attempt 不重置。Session rebase 保留后续排队消息及无关偏好。
+- 初版后继遇到 A1 当前 owner 检查，真实 **1 failed，8.40 秒**。修复为验证后原子接管应用投影 owner，原资产保留原 owner，不放宽写入权检查；单项随后 **1 passed，6.72 秒**。恢复证明使用不变的原资产摘要，不 hash 会追加回执的 manifest。
+- A1 已提交继续 ACK-only；即使由 finalizing 后继提交，也不要求当前派生 Memory 仍存在。新 stage 格式 **11** 与能力上限同步；旧 1–10 可读，reader10 拒领11，reader11拒领未来12，不据此宣称旧制品部署兼容。
+- 空白输入真实红测 **1 failed，7.35 秒（Admitted message differs from the original input）**：受理正文已 `.strip()`，资产保留 raw 请求。校验恢复既有规范化契约，正常/恢复各有用例，不改原输入资产或忽略其他字段。
+- 补完整 Dispatcher 红测，claim 后实际 Verification 漂移被误记 failed：**1 failed，30 deselected，7.72 秒**。根因是任务结算丢失已定义的对账异常语义；只对 bound `FrameworkMessageStageRecoveryRequired` 结算为 recovery_required，未知程序错误仍 failed。双用例 **2 passed，30 deselected，11.34 秒**；重复投递不重跑、不派新后继。自动失租后继仍要求 error_code=execution_owner_expired，不能据 recovery_required 泛化为可重试。
+
+### 已取回的实际测试结果
+
+以下从 Agent_Server 使用独立 `.venv-framework-v2`；数据库组显式设置 `RUN_LIVE_POSTGRES_TESTS=1` 和 `PYTHONIOENCODING=utf-8`。续接先轮询原 handle61690/73984，均已终态，没有重启或猜测结果。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 191 passed，633.50 秒；早于空白输入最终修正与新 Dispatcher 用例
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_finalization_projection.py -q -x -rs --tb=short
+# 61 passed，193.56 秒；包含空白输入修正，早于新 Dispatcher 用例
+```
+
+上轮执行记录另有共享恢复/调度/诊断/审批/值契约 **166 passed，286.13 秒**，图前/图输入/fencing/native interrupt **87 passed，244.59 秒**。本次未重新取得这两组原 handle 输出，不凭摘要重建其确切文件列表或命令；最终源码回归另行记录，不以早期记录替代最终改动验证。上述范围有重叠，不累计为独立覆盖数。
+
+最终源码（包含空白输入及 Dispatcher 异常分类）：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_finalization_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py tests/test_framework_approval_projection.py -q -x -rs --tb=short
+# 137 passed，425.72 秒，无 skip
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 132 passed，418.00 秒，无 skip
+```
+
+项目根 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过。两份文档全部本地链接（v3 共29处、进度2处）与代码围栏检查通过。独立环境 `find_spec` 确认 ruff/mypy 均未安装，未新增工具，不声称 lint/typecheck 通过。再次读取官方 Persistence/Interrupts，保留 checkpoint/store、业务事务与恢复权限的区别；没有因在线新流接口示例更改锁定版本。
+
+### 中间失败与证据等级
+
+第一轮共享组 **1 failed、10 passed，41.43 秒**：独立 Worker 的 before_start 用例 run_once 返回0而非1；单独复跑 **1 passed，14.12 秒**，随后完整组166通过。未查明根因，未改生产队列迎合测试，也不声称已修复队列问题。
+
+第一轮七文件 **1 failed、52 passed，215.49 秒**：rollback 旧断言仍期待无后继，已按新恢复契约改为验证完成。扩展图前组 **1 failed、19 passed，77.01 秒**：旧断言将追加回执后的 manifest 与原输入整体比较；改为精确比较 `runtime_result_source(saved)`、原资产 source hash 及已签 A1，不放宽冻结输入。随后87项通过。
+
+六个独立 Worker 强杀窗口先单独验证 **6 passed、28 deselected，98.66 秒**：原资产后、快照后、快照事件后、最终事务前、最终事务内提交前、第一条观察行/回执后。实际 Deep Agents/SDK、本地合成 HTTP、PostgreSQL/Redis；确认原进程死亡后，沿既有 Redis 资源租约过期/reap，再启动独立替代进程。替代进程禁止图/模型/分类/验证再执行；重复投递完成、原身份/结果不变、HTTP仍一次、缺失观察补齐。工具/观察/Verification 为受控投影样本，不冒称领域 Runner 或真实付费供应商验收。
+
+A2-2 图终态→资产空窗、A2-3 projected→任务finish、A3 Memory/清理/未知外部效果、完整跨 Turn、统一上下文、流式取消、AgentCase、逐模式 Harness、官方 saver conformance 与双制品部署仍独立验收。生产默认关闭，无依赖升级或新增付费请求；全量、前端、独立 lint/typecheck、真实对象存储/供应商/领域 Runner 未验收，整体 goal 继续 active。

@@ -71,7 +71,7 @@ def _same_input(stage, origin, row, binding):
         _reject("Message recovery differs from its admitted input")
 
 
-def _recoverable(cur, tasks, session, binding, stage, origin):
+def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=False):
     if stage.phase not in {"submitted", "orchestrating", "orchestrated", "runtime_submitted"}:
         _reject("Message phase has no admitted continuation; its result requires reconciliation")
     if (session["project_id"] != origin["project_id"] or session["id"] != binding.session_id
@@ -119,21 +119,43 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
         proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
             model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
     application_commit = None
+    runtime_result = None
     if stage.phase == "runtime_submitted":
-        # Normal finalization legitimately changes messages and metadata.
-        # Validate its atomic commit, not the pre-runtime Session projection.
-        # This branch grants no permission to invoke the graph or Memory.
+        # Finalization changes messages and metadata. A1 validates a completed
+        # transaction; A2 validates original inputs and existing parts instead
+        # of the pre-runtime Session. Neither branch invokes the graph.
         from src.runtime.framework_application_projection import require_application_commit
 
         request = ExecutionRequest.model_validate(stage.execution_request)
         if (request.runtime_binding != binding or request.session_id != binding.session_id
             or request.turn_id != binding.turn_id):
             _reject("Runtime submission request differs from its original binding")
-        application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
-        proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
-            model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]),
-            result_reference=application_commit.snapshot_id,
-            result_sha256=approval_value_hash(application_commit.model_dump(mode="json")))
+        from src.runtime.framework_application_projection import COMMIT_KEY
+        if finalizing or COMMIT_KEY not in (stage.source_manifest or {}):
+            from src.runtime.framework_runtime_results import RESULT_KEY, validate_runtime_result_binding
+            from src.runtime.framework_finalization_projection import require_partial_finalization
+
+            raw = (stage.source_manifest or {}).get(RESULT_KEY)
+            if raw is None:
+                _reject("Runtime submission has no original result or application commit proof")
+            runtime_result = validate_runtime_result_binding(cur, tasks._settings, binding, stage, origin, raw)
+            # Original result/source remain stable as the finalizer adds part
+            # receipts and then the application commit. Never hash that evolving
+            # manifest into the immutable successor proof.
+            if COMMIT_KEY in (stage.source_manifest or {}):
+                application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
+            else:
+                require_partial_finalization(cur, tasks._settings, metadata, stage, runtime_result)
+            proof.update(resume_phase="finalizing", source_sha256=runtime_result.source_sha256,
+                execution_sha256=stage.execution_sha256, result_reference=runtime_result.runtime_result.snapshot.id,
+                result_sha256=runtime_result.asset_sha256,
+                model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
+        else:
+            application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
+            proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
+                model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]),
+                result_reference=application_commit.snapshot_id,
+                result_sha256=approval_value_hash(application_commit.model_dump(mode="json")))
     cur.execute(f"SELECT role,content,metadata FROM {tasks._settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s", (stage.user_message_id, binding.session_id))
     message = cur.fetchone()
@@ -149,7 +171,7 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
         candidates.append((sql.Identifier(tasks._settings.deep_agents.checkpoint_schema, name).as_string(),
             "thread_id=%s AND (checkpoint_ns=%s OR left(checkpoint_ns,length(%s))=%s)",
             (binding.thread_id, binding.checkpoint_namespace, prefix, prefix)))
-    if application_commit is None:
+    if application_commit is None and runtime_result is None:
         for table, where, parameters in candidates:
             if _exists(cur, table):
                 cur.execute(f"SELECT 1 FROM {table} WHERE {where} LIMIT 1", parameters)
@@ -238,7 +260,8 @@ def require_message_recovery_claim(cur, tasks, session, binding, row, owner):
         or (owner["task_id"] == predecessor["id"] and (owner["attempt_id"] != predecessor["attempt_id"]
             or owner["owner_epoch"] != link.predecessor_owner_epoch))):
         _reject("Message recovery execution owner changed")
-    budget, proof = _recoverable(cur, tasks, session, binding, stage, origin)
+    budget, proof = _recoverable(cur, tasks, session, binding, stage, origin,
+        finalizing=link.resume_phase == "finalizing")
     if any(getattr(link, key) != value for key, value in proof.items()):
         _reject("Message successor no longer matches its frozen continuation proof")
     if approval_value_hash(budget.model_dump(mode="json")) != link.budget_sha256:
@@ -313,7 +336,8 @@ class FrameworkMessageRecovery:
                 predecessor_attempt_id=predecessor["attempt_id"], predecessor_owner_epoch=owner["owner_epoch"],
                 budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now, **proof)
             updated = validate_message_stage(stage.model_copy(update={"schema_version": max(stage.schema_version,
-                5 if stage.phase == "runtime_submitted" else (4 if stage.phase == "orchestrating" else 3)),
+                11 if proof["resume_phase"] == "finalizing" else (
+                    5 if stage.phase == "runtime_submitted" else (4 if stage.phase == "orchestrating" else 3))),
                 "recoveries": [*stage.recoveries, link],
                 "updated_at": now}).model_dump())
             cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
@@ -323,5 +347,6 @@ class FrameworkMessageRecovery:
                     command.model_dump_json()))
             tasks._event(cur, created, "framework.message_recover_queued", {"origin_task_id": origin["id"],
                 "predecessor_task_id": task_id, "predecessor_attempt_id": predecessor["attempt_id"],
-                "binding_id": binding.binding_id})
+                "binding_id": binding.binding_id, "resume_phase": proof["resume_phase"],
+                "result_reference": proof.get("result_reference")})
             return tasks._record(created)

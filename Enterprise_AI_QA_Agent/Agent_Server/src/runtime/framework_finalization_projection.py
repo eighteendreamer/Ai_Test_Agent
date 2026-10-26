@@ -58,6 +58,53 @@ def _validate_verifications(metadata, asset):
     _require(len(merged) == len(existing), "Original verification is missing from finalization")
 
 
+def _existing_messages(cur, settings, asset):
+    originals = original_messages(asset)
+    cur.execute(f"SELECT id,session_id,role,content,created_at,metadata FROM {settings.database.postgres_message_table} "
+        "WHERE id=ANY(%s) ORDER BY id FOR UPDATE", ([item.id for item in originals],))
+    expected = {item.id: _message_value(item) for item in originals}
+    for row in cur.fetchall():
+        value = dict(row)
+        _require(value.pop("session_id") == asset.binding.session_id and _hash(value) == _hash(expected[row["id"]]),
+            "Message conflicts with an existing original identity")
+    return originals
+
+
+def require_partial_finalization(cur, settings, metadata, stage, asset):
+    """Validate already-written parts; absent parts are work, not success proof.
+
+    No upstream counterpart (checked: existing part receipts, message recovery,
+    LangGraph persistence/interrupts, plan v3 §12.1): this authorizes only the
+    original application finalizer, never graph/model/tool replay.
+    """
+    from src.runtime.framework_application_projection import (
+        EVENT_COMMITS_KEY, _event_commits, _event_row, _require_event_intent,
+        existing_snapshot_projection, require_event_projections,
+    )
+    from src.runtime.framework_observation_projection import ASSET_KEY, require_existing_observation_projections
+
+    binding, manifest = asset.binding, stage.source_manifest or {}
+    existing_snapshot_projection(cur, settings, stage, binding, asset)
+    originals = _existing_messages(cur, settings, asset)
+    _require(stage.user_message_id not in {item.id for item in originals},
+        "Original message collides with the admitted input")
+    merge_original_verifications(metadata.get("verification_results", []), asset)
+    receipt = _event_commits(stage, binding, asset.asset_sha256)
+    if EVENT_COMMITS_KEY in manifest:
+        require_event_projections(cur, settings, stage, binding, asset.asset_sha256)
+    for event in asset.runtime_result.events:
+        row = _event_row(cur, settings, event.id)
+        if row is not None:
+            _require_event_intent(row, event)
+    for name in ("snapshot.saved", "verification.completed", "observations.persisted",
+        "assistant.stream.completed", "assistant.response_generated", "turn.completed"):
+        row = _event_row(cur, settings, asset.event_id(name))
+        _require(row is None or (receipt is not None and row["id"] in receipt.event_hashes),
+            "Existing finalization event has no atomic projection receipt")
+    if ASSET_KEY in manifest:
+        require_existing_observation_projections(cur, settings, stage, binding, asset.asset_sha256)
+
+
 def prepare_finalization_projection(cur, settings, write, candidate):
     """Before Session/message UPSERT, with the Session/owner/stage locks held."""
     stage, task = lock_runtime_result_stage(cur, settings, write.owner)
@@ -70,16 +117,9 @@ def prepare_finalization_projection(cur, settings, write, candidate):
         "Finalization differs from its original output identity")
     _validate_messages(candidate.messages, asset)
     _validate_verifications(candidate.metadata, asset)
-    originals = original_messages(asset)
+    originals = _existing_messages(cur, settings, asset)
     _require(stage.user_message_id not in {item.id for item in originals},
         "Original message collides with the admitted input")
-    cur.execute(f"SELECT id,session_id,role,content,created_at,metadata FROM {settings.database.postgres_message_table} "
-        "WHERE id=ANY(%s) ORDER BY id FOR UPDATE", ([item.id for item in originals],))
-    expected = {item.id: _message_value(item) for item in originals}
-    for row in cur.fetchall():
-        value = dict(row)
-        _require(value.pop("session_id") == asset.binding.session_id and _hash(value) == _hash(expected[row["id"]]),
-            "Message conflicts with an existing original identity")
     if asset.verification_results:
         cur.execute(f"SELECT metadata FROM {settings.database.postgres_session_table} WHERE id=%s", (asset.binding.session_id,))
         merge_original_verifications((cur.fetchone()["metadata"] or {}).get("verification_results", []), asset)
@@ -87,12 +127,14 @@ def prepare_finalization_projection(cur, settings, write, candidate):
     cur.execute(f"SELECT role,content,metadata FROM {settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s FOR UPDATE", (stage.user_message_id, asset.binding.session_id))
     user = cur.fetchone()
-    _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message
+    # AgentTaskDispatcher and Session submission persist content.strip(); the
+    # asset intentionally retains the raw admitted request for other consumers.
+    _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message.strip()
         and (user["metadata"] or {}).get("turn_id") == asset.binding.turn_id,
         "Admitted message differs from the original input")
     candidates = [item for item in candidate.messages if item.id == stage.user_message_id]
     _require(len(candidates) == 1 and candidates[0].role.value == "user"
-        and candidates[0].content == asset.user_message
+        and candidates[0].content == asset.user_message.strip()
         and candidates[0].metadata.get("turn_id") == asset.binding.turn_id,
         "Admitted message is missing or changed in finalization")
     return {item.id for item in originals} | {stage.user_message_id}
@@ -109,7 +151,7 @@ def require_finalization_projection(cur, settings, session, asset, user_message_
     cur.execute(f"SELECT role,content,metadata FROM {settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s", (user_message_id, asset.binding.session_id))
     user = cur.fetchone()
-    _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message
+    _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message.strip()
         and (user["metadata"] or {}).get("turn_id") == asset.binding.turn_id,
         "Admitted message differs from the original input after finalization")
     cur.execute(f"SELECT metadata FROM {settings.database.postgres_session_table} WHERE id=%s", (asset.binding.session_id,))

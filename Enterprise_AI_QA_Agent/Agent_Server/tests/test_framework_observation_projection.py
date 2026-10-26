@@ -497,13 +497,26 @@ async def test_official_worker_killed_after_first_observation_retains_atomic_rec
             assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
             terminal = await h.tasks.claim(original.id, worker_id="expiry", expected_binding=h.binding)
             assert terminal.status == "recovery_required"
-            assert await h.tasks.ensure_framework_message_recovery(original.id) is None
+            successor = await h.tasks.ensure_framework_message_recovery(original.id)
+            assert successor is not None
             after = await stage(h, original)
             assert after.source_manifest[ASSET_KEY] == before.source_manifest[ASSET_KEY]
             assert after.source_manifest[COMMITS_KEY] == proof
             assert memory_rows(h) == rows
             assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
             assert not any(e.type in {"observations.persisted", "turn.completed"} for e in await h.store.list_events(h.session_id))
+            from tests.test_framework_partial_projection_recovery import complete_in_new_process
+
+            terminal_record = await h.tasks.get(original.id)
+            await complete_in_new_process(h, successor, with_memory=True)
+            assert await h.tasks.get(original.id) == terminal_record
+            assert (await h.tasks.get(successor.id)).status == "completed"
+            completed_rows = memory_rows(h)
+            assert len(completed_rows) == 2 and next(item for item in completed_rows if item["id"] == rows[0]["id"]) == rows[0]
+            assert (await stage(h, original)).source_manifest[ASSET_KEY] == before.source_manifest[ASSET_KEY]
+            assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
+            assert len([e for e in await h.store.list_events(h.session_id) if e.type == "observations.persisted"]) == 1
+            assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
     finally:
         if process is not None and process.is_alive():
             process.terminate()

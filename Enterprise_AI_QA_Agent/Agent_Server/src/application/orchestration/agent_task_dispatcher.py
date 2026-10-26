@@ -19,6 +19,7 @@ from src.runtime.resource_lease_manager import ResourceUnavailable
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 from src.runtime.postgres_framework_model_calls import FrameworkModelBudgetMissing
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.agent_task import (
@@ -877,7 +878,11 @@ class AgentTaskDispatcher:
                             fencing_token=task.fencing_token,
                             payload=notification,
                         )
-                failure_status = "recovery_required" if task.operation == "framework_reconcile" else "failed"
+                requires_reconciliation = task.operation == "framework_reconcile" or (
+                    task.runtime_binding is not None
+                    and isinstance(exc, FrameworkMessageStageRecoveryRequired)
+                )
+                failure_status = "recovery_required" if requires_reconciliation else "failed"
                 await self._tasks.finish(task, status=failure_status, error_code=type(exc).__name__)
                 finished_status = failure_status
                 if notification is not None:

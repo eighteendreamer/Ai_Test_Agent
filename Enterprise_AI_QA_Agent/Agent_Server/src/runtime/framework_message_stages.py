@@ -38,6 +38,9 @@ def validate_message_stage(record):
                 or not link.source_sha256 or not link.model_calls_sha256 or link.execution_sha256 is not None))
             or (link.resume_phase == "runtime_submitted" and (stage.schema_version < 5
                 or not all(assets) or not link.result_reference or not link.result_sha256))
+            or (link.resume_phase == "finalizing" and (stage.schema_version < 11
+                or not all(assets) or not link.result_reference or not link.result_sha256
+                or "runtime_result_asset" not in (stage.source_manifest or {})))
             or (link.resume_phase == "submitted" and any(assets))):
             raise FrameworkMessageStageRecoveryRequired("Message recovery phase has no matching frozen proof")
         predecessor = link.task_id
@@ -242,6 +245,11 @@ class FrameworkMessageStages:
         return await self._advance(owner, expected="runtime_submitted", phase="projected",
             values={"result_reference": reference})
 
+    async def resume_finalizing(self, owner):
+        """Adopt only application writes after checking the successor's proof."""
+        return await self._advance(owner, expected="runtime_submitted", phase="runtime_submitted",
+            values={"owner_epoch": owner.owner_epoch, "owner_attempt_id": owner.attempt_id})
+
     async def record_graph_input(self, owner, asset):
         from src.schemas.framework_graph_input import FrameworkGraphInputAsset
 
@@ -270,7 +278,7 @@ class FrameworkMessageStages:
                 resuming_prepared = (task["operation"] == "message_recover" and original.recoveries
                     and original.recoveries[-1].resume_phase == "orchestrating")
                 resuming_projected = (task["operation"] == "message_recover" and original.recoveries
-                    and original.recoveries[-1].resume_phase == "runtime_submitted")
+                    and original.recoveries[-1].resume_phase in {"runtime_submitted", "finalizing"})
                 if (task is None or task["operation"] not in {"message", "message_recover"} or task["status"] != "running"
                     or task["runtime_binding"] != owner.binding.model_dump(mode="json")
                     or task["attempt_id"] != owner.attempt_id or task["lease_token"] != owner.owner_token

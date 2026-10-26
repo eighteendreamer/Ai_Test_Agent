@@ -351,7 +351,17 @@ async def test_receipt_failure_rolls_back_session_messages_and_completion_events
         assert cur.fetchone()["n"] == 1
     assert await h.store.renew_turn_execution(h.session_id, task.lease_token, 0)
     await h.tasks.claim(task.id, worker_id="rollback-expiry", expected_binding=h.binding)
-    assert await h.tasks.ensure_framework_message_recovery(task.id) is None
+    # A rolled-back final transaction is not an A1 proof. The separately
+    # frozen original result now authorizes A2 finalization, not graph replay.
+    successor = await h.tasks.ensure_framework_message_recovery(task.id)
+    assert successor is not None
+    assert (await stage(h, task)).recoveries[-1].resume_phase == "finalizing"
+    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True))
+    await h.dispatcher.handle_v2(QueuedTask("rollback-finalization", outbox(h, successor.id)["payload"]),
+        worker_id="rollback-successor")
+    assert (await h.tasks.get(successor.id)).status == "completed"
+    assert h.native_runs == 1 and len(h.runtime.calls) == 1
+    assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
 
 
 @pytest.mark.asyncio

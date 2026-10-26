@@ -89,11 +89,13 @@ async def test_asset_round_trip_restores_every_runtime_result_field_without_runn
     assert await h.calls.snapshot(h.binding) == before
     assert (await stage(h, h.task)).schema_version == 7
     assert "application_projection_commit" not in (await stage(h, h.task)).source_manifest
-    # Asset existence alone does not yet grant a successor or graph replay.
+    # A validated original result grants finalization only, never graph replay.
     assert await h.store.renew_turn_execution(h.session_id, h.task.lease_token, 0)
     terminal = await h.tasks.claim(h.task.id, worker_id="expiry", expected_binding=h.binding)
     assert terminal.status == "recovery_required"
-    assert await h.tasks.ensure_framework_message_recovery(h.task.id) is None
+    successor = await h.tasks.ensure_framework_message_recovery(h.task.id)
+    assert successor is not None
+    assert (await stage(h, h.task)).recoveries[-1].resume_phase == "finalizing"
 
 
 @pytest.mark.asyncio
@@ -332,12 +334,24 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
             assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
             terminal = await h.tasks.claim(original.id, worker_id="expiry", expected_binding=h.binding)
             assert terminal.status == "recovery_required"
-            assert await h.tasks.ensure_framework_message_recovery(original.id) is None
+            successor = await h.tasks.ensure_framework_message_recovery(original.id)
+            assert successor is not None
             assert (await stage(h, original)).source_manifest["runtime_result_asset"] == before.source_manifest["runtime_result_asset"]
             assert (await stage(h, original)).source_manifest.get("snapshot_projection_commit") == before.source_manifest.get("snapshot_projection_commit")
             assert (await stage(h, original)).source_manifest.get("event_projection_commits") == before.source_manifest.get("event_projection_commits")
             assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
             assert not any(e.type == "turn.completed" for e in await h.store.list_events(h.session_id))
+            from tests.test_framework_partial_projection_recovery import complete_in_new_process
+
+            terminal_record = await h.tasks.get(original.id)
+            await complete_in_new_process(h, successor)
+            assert await h.tasks.get(original.id) == terminal_record
+            assert (await h.tasks.get(successor.id)).status == "completed"
+            saved = await h.store.get_session(h.session_id)
+            assert len(saved.messages) == 2 and saved.messages[-1].id == asset.assistant_message_id
+            assert saved.messages[-1].content == asset.runtime_result.output_text
+            assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
+            assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
     finally:
         if process is not None and process.is_alive():
             process.terminate()
