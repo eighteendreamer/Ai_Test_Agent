@@ -201,11 +201,27 @@ class SessionService:
 
                         stages = FrameworkMessageStages(self._agent_task_store)
                     frozen = None
+                    prepared_stage = None
                     if stages is not None and task.operation == "message_recover":
                         existing = await self._agent_task_store.get_framework_message_stage(task.id, session_id=task.session_id)
                         if existing is not None and existing.phase == "orchestrated":
                             frozen = await stages.resume_orchestrated(task.runtime_owner, modes=self._mode_registry.list())
-                    if frozen is None:
+                        elif existing is not None and existing.phase == "orchestrating":
+                            prepared_stage = await stages.resume_orchestrating(task.runtime_owner, modes=self._mode_registry.list())
+                    if prepared_stage is not None:
+                        from src.runtime.framework_message_recovery import prepared_model_call
+                        from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+                        calls = PostgresFrameworkModelCalls(self._agent_task_store._settings)
+                        prepared, call = prepared_model_call(prepared_stage, task.runtime_binding,
+                            await calls.snapshot(task.runtime_binding))
+                        if call is not None and call.phase == "ready":
+                            await calls.transfer_ready(task.runtime_owner, expected=call)
+                        request = await self._input_orchestrator_service.orchestrate_prepared(session, payload, prepared,
+                            turn_id=str(task.turn_id), trace_id=str(task.trace_id),
+                            **({"completed_call": call} if call is not None and call.phase == "completed" else {}))
+                        request.runtime_binding = task.runtime_binding
+                    elif frozen is None:
                         if stages is not None:
                             await stages.begin(task.runtime_owner,
                                 message_source_manifest(session, task.runtime_binding, payload,

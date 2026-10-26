@@ -324,7 +324,19 @@ async def test_independent_worker_kill_and_redis_redelivery_keep_original_admiss
             assert final.status == "recovery_required" and final.attempt_id == original.attempt_id
             assert final.attempt_no == original.attempt_no and h.runtime.calls == []
             assert len(requests) == http_count and await h.calls.snapshot(h.binding) == before
-            assert await stage(h, task) == frozen_stage
+            saved = await stage(h, task)
+            successors = [item for item in await h.tasks.list_session(h.session_id) if item.operation == "message_recover"]
+            if window == "before_start":
+                # A frozen, provably unsent reservation now admits a queued
+                # successor. Publication itself must not send or transfer it.
+                assert len(successors) == 1 and successors[0].status == "queued"
+                assert saved.schema_version == 4 and saved.current_task_id == successors[0].id
+                assert len(saved.recoveries) == 1 and saved.recoveries[0].resume_phase == "orchestrating"
+                assert saved.source_manifest == frozen_stage.source_manifest
+                assert saved.phase == frozen_stage.phase and saved.owner_epoch == frozen_stage.owner_epoch
+                assert saved.owner_attempt_id == frozen_stage.owner_attempt_id
+            else:
+                assert saved == frozen_stage and successors == []
         finally:
             if process.is_alive():
                 process.terminate()

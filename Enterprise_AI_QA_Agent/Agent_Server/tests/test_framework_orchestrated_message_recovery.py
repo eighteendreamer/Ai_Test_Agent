@@ -337,16 +337,20 @@ async def test_killed_worker_after_semantic_completion_recovers_frozen_input_thr
                     raise
 
             worker = RedisTaskWorker(queue, consumer="frozen-replacement", handler=handle, block_ms=0, reclaim_idle_ms=1)
-            assert await worker.run_once() == 1
+            processed = await worker.run_once()
+            if errors:
+                raise errors[0]
+            assert processed == 1
             terminal = await h.tasks.get(task.id)
             assert terminal.status == "recovery_required" and terminal.attempt_id == original.attempt_id
             successor = await h.tasks.ensure_framework_message_recovery(task.id)
             assert successor is not None and len(requests) == 1
             assert await h.calls.snapshot(h.binding) == before
             assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
-            assert await worker.run_once() == 1
+            processed = await worker.run_once()
             if errors:
                 raise errors[0]
+            assert processed == 1
             assert (await h.tasks.get(successor.id)).status == "completed"
             final = await h.calls.snapshot(h.binding)
             assert final.policy == h.budget and final.reserved_calls == 2 and final.actual_tokens == 20

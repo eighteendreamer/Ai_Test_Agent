@@ -2,9 +2,9 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
+2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**全系统迁移尚未完成。当前快照更新至 §41：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入及语义服务消费入口已局部落实。自动生成绑定及预算、orchestrating 阶段完整恢复调用方、图结果导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §43：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口及 orchestrating 阶段的有证明后继已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1384,3 +1384,30 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 结果 **210 passed，216.53 秒，无 skip**；新文件 20 项。四传输实际使用官方 SDK 与本地合成 HTTP，重建服务后两次消费原结算，ExecutionRequest 与首次结果相同，HTTP 请求始终只有 1 次，原调用账本/预算不变。另覆盖原 skip 不重算、禁止重识别/重建准备、身份/内容/冻结配置缺失拒绝，以及语义失败不得进入应用投影。PostgreSQL/Redis 为真实服务，对象存储仍为内存 RustFS client 替身，不代表真实供应商或对象存储验收。
 
 源码与新测试 `compileall` 通过，`git diff --check` 通过。未执行全量、独立 lint/typecheck、浏览器/压测/扫描 Runner、真实模型/对象存储或双制品部署。下一步按 TDD 冻结并验证确定性解析/合并/路由代码制品，接入完整 orchestrating 后继准入与 Session 恢复调用方，区分未预留、未发送、已发送未知及已结算窗口；原 task/attempt、用户消息与根预算保持原身份。
+
+## 43. orchestrating 阶段的安全后继与编排代码制品指纹（2026-10-26）
+
+本阶段沿 v3 §5.1/A 接通“语义输入已实际冻结、图尚未准入”的恢复窗口。该窗口不能依赖 LangGraph checkpoint，因为语义分类和确定性编排仍在图外；恢复依据是应用阶段事实、模型账本和不可变部署制品证明。生产 v2 路由仍关闭。
+
+### 实现与边界
+
+- 新增 `OrchestrationArtifact`，记录编排边界源码、根 `uv.lock`、Python 及 pydantic 版本的 SHA256/版本指纹。`message_source_manifest(semantic_input_required=True)` 在首次语义准备前保存指纹；恢复受理、阶段推进和运行前重新核对。它只证明当前发布代码一致，不是代码归档，也不支持热修改已导入模块。
+- `FrameworkMessageRecoveryLink.resume_phase` 增加 `orchestrating`，阶段 Schema 升至 4（旧 1/2/3 仍可读）。后继证明包含来源和模型调用摘要，不包含 ExecutionRequest；历史缺制品或语义输入证明时不补造资格。正常 submitted/orchestrated 恢复路径保持原语义。
+- `dto_call_contract` 统一初次发送和恢复准入的请求字节、传输选项与稳定逻辑调用位置。`prepared_model_call` 只接受一个已冻结语义请求：未预留允许首次发送，ready 只转移原预留，completed 只读原 `settled_response_id`；invoking/unknown/身份、参数、所有者或请求哈希矛盾均拒绝自动继续。显式 skip 不产生模型调用。
+- `SessionService` 对 orchestrating 后继消费 `PreparedSemanticInput` 和原结算 DTO，调用 `orchestrate_prepared`，不重新执行 `orchestrate_async`、Prompt 构造或模型选择；ready 通过既有 `transfer_ready` 转移预留。随后再次冻结 ExecutionRequest、提交 Runtime 并投影，原 task/attempt、用户消息和根预算身份不变。
+- 诊断只读地将 orchestrating 标为 `stage_recovery_requires_admission`，`automatic_replay_allowed` 仍为 false。发布事务失败回滚阶段后继和 outbox；claim/运行前的制品、输入、模型结算和 Schema 证明漂移拒绝且不创建新 attempt。
+
+### TDD 与实际验证
+
+先以红测验证缺模块、缺恢复后继和诊断仍误报 `stage_recovery_not_implemented`，再实现生产接线。期间联合强杀 Harness 首次出现 `run_once()==0`，单跑通过但不足以覆盖联合污染；补入 v2 stream 隔离并重新执行，未修改 Worker 生产调度来掩盖结果。旧强杀用例中“before_start”现按新契约断言有证明的 queued 后继；after_start/after_response 仍断言未知发送不重发。
+
+在 `Agent_Server` 使用真实 PostgreSQL/Redis、官方 SDK 与本地合成 HTTP 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_orchestrating_recovery.py tests/test_framework_orchestration_artifact.py tests/test_framework_message_diagnostics.py -q -x -rs --tb=short
+```
+
+结果 **63 passed，161.62 秒，无 skip**。覆盖 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Gemini GenerateContent 四种语义请求的恢复，completed/ready/unreserved/skip 四窗口，制品/输入/请求/所有者/结算/Schema 漂移，发布事务回滚、重复投递、二次失租、只读诊断及独立 Worker 相关契约。另执行旧阶段与强杀回归：新阶段集成测试 **46 passed，126.82 秒**；此前联合窗口中发生的单次不稳定 `run_once()==0` 已重新跑通，不能将那次失败计入通过证据。
+
+源码和测试 `compileall`、`git diff --check` 通过。未执行全量测试、独立 lint/typecheck、真实供应商/对象存储、图内模型结果导入、领域 Runner、双制品滚动部署或跨 Turn；因此本节不宣称完整迁移。下一出口是冻结完整图输入/结果资产，接通 runtime_submitted 和图完成投影补偿，并为各模式建立正式 Harness。

@@ -7,6 +7,7 @@ an application phase that has never entered it. Never reset a terminal task.
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 from uuid import NAMESPACE_URL, uuid5
@@ -27,6 +28,7 @@ from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_message_stage import FrameworkMessageRecoveryLink
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ExecutionRequest
+from src.schemas.semantic_input import PreparedSemanticInput
 
 
 logger = logging.getLogger(__name__)
@@ -70,7 +72,7 @@ def _same_input(stage, origin, row, binding):
 
 
 def _recoverable(cur, tasks, session, binding, stage, origin):
-    if stage.phase not in {"submitted", "orchestrated"}:
+    if stage.phase not in {"submitted", "orchestrating", "orchestrated"}:
         _reject("Message phase has no admitted continuation; its result requires reconciliation")
     if (session["project_id"] != origin["project_id"] or session["id"] != binding.session_id
         or origin["turn_id"] != binding.turn_id or stage.binding_id != binding.binding_id):
@@ -100,6 +102,11 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
     if stage.phase == "submitted":
         if snapshot.calls:
             _reject("Submitted message has model execution facts")
+    elif stage.phase == "orchestrating":
+        _require_frozen_sources(cur, tasks, session, stage)
+        prepared_model_call(stage, binding, snapshot)
+        proof.update(source_sha256=stage.source_sha256,
+            model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
     else:
         _require_frozen_sources(cur, tasks, session, stage)
         request = ExecutionRequest.model_validate(stage.execution_request)
@@ -132,6 +139,55 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
             if cur.fetchone() is not None:
                 _reject("Pre-runtime message has tool or checkpoint execution facts")
     return budget, proof
+
+
+def prepared_model_call(stage, binding, snapshot):
+    """Prove which single semantic request may be sent or read, never infer a retry."""
+    from src.application.models.framework_model_call_policy import canonical_model_input, dto_call_contract
+    from src.runtime.framework_orchestration_artifact import require_orchestration_artifact
+
+    manifest = stage.source_manifest or {}
+    try:
+        require_orchestration_artifact(manifest.get("orchestration_artifact"))
+        prepared = PreparedSemanticInput.model_validate(manifest.get("semantic_input"))
+        if prepared.request is None:
+            if snapshot.calls:
+                _reject("Saved semantic skip has model execution facts")
+            return prepared, None
+        if prepared.invocation_parameters is None:
+            _reject("Semantic recovery is missing its frozen invocation contract")
+        context = prepared.request.trace_context
+        if context.get("logical_call_id") != "input_orchestration:semantic_intent:v1":
+            _reject("Semantic recovery has no admitted request position")
+        fingerprint = hashlib.sha256(canonical_model_input(prepared.invocation_parameters)).hexdigest()
+        options = {"transport_options": prepared.transport_options.model_dump(mode="json"),
+            "streaming": False, "langchain_adapter": prepared.runtime_parameters["langchain_model_adapter_enabled"]}
+        envelope, logical = dto_call_contract(binding, fingerprint, prepared.request, options)
+        if not snapshot.calls:
+            return prepared, None
+        if len(snapshot.calls) != 1:
+            _reject("Pre-graph orchestration has more than its single semantic request")
+        call, = snapshot.calls
+        intent = call.intent
+        owners = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
+            *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
+                for link in stage.recoveries)}
+        if ((call.owner_task_id, call.owner_attempt_id, call.owner_epoch) not in owners
+            or intent.position_version != 1 or intent.logical_call_id != logical or intent.branch_id != "root"
+            or intent.purpose != "agent" or intent.parent_branch_id is not None or intent.retry_of_attempt_id is not None
+            or intent.model_key != prepared.model_key or intent.model_config_fingerprint != fingerprint
+            or intent.transport != prepared.invocation_parameters["transport"]
+            or intent.reserved_input_tokens != len(envelope) + 1024
+            or intent.reserved_output_tokens != prepared.invocation_parameters["max_output_tokens"]
+            or intent.request_sha256 != hashlib.sha256(envelope).hexdigest()):
+            _reject("Semantic model facts differ from the original prepared request")
+        if call.phase == "ready":
+            PostgresFrameworkModelCalls._require_unsent_reservation(call)
+        elif call.phase != "completed" or call.settled_response_id is None:
+            _reject("Semantic request has an unknown or unbound result; reconcile without resending")
+        return prepared, call
+    except (ValueError, KeyError, FrameworkModelRecoveryRequired) as exc:
+        raise FrameworkMessageStageRecoveryRequired("Frozen semantic input or artifact requires reconciliation") from exc
 
 
 def _require_frozen_sources(cur, tasks, session, stage):
@@ -239,7 +295,8 @@ class FrameworkMessageRecovery:
             link = FrameworkMessageRecoveryLink(task_id=new_id, predecessor_task_id=task_id,
                 predecessor_attempt_id=predecessor["attempt_id"], predecessor_owner_epoch=owner["owner_epoch"],
                 budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now, **proof)
-            updated = validate_message_stage(stage.model_copy(update={"schema_version": 3, "recoveries": [*stage.recoveries, link],
+            updated = validate_message_stage(stage.model_copy(update={"schema_version": max(stage.schema_version,
+                4 if stage.phase == "orchestrating" else 3), "recoveries": [*stage.recoveries, link],
                 "updated_at": now}).model_dump())
             cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
                 (updated.model_dump_json(), origin["id"]))

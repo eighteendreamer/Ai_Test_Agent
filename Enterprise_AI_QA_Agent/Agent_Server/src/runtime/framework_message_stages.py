@@ -34,6 +34,8 @@ def validate_message_stage(record):
             raise FrameworkMessageStageRecoveryRequired("Initial message stage recovery lineage is invalid")
         assets = (link.source_sha256, link.execution_sha256, link.model_calls_sha256)
         if ((link.resume_phase == "orchestrated" and (stage.schema_version < 3 or not all(assets)))
+            or (link.resume_phase == "orchestrating" and (stage.schema_version < 4
+                or not link.source_sha256 or not link.model_calls_sha256 or link.execution_sha256 is not None))
             or (link.resume_phase == "submitted" and any(assets))):
             raise FrameworkMessageStageRecoveryRequired("Message recovery phase has no matching frozen proof")
         predecessor = link.task_id
@@ -130,7 +132,10 @@ def message_source_manifest(session, binding, payload, *, modes=None, semantic_i
         value.update(runtime_source_sha256=message_runtime_source_hash(session, users[0]),
             mode_registry_sha256=mode_registry_hash(modes))
     if semantic_input_required:
+        from src.runtime.framework_orchestration_artifact import orchestration_artifact
+
         value["semantic_input_required"] = True
+        value["orchestration_artifact"] = orchestration_artifact().model_dump(mode="json")
     return value
 
 
@@ -182,6 +187,11 @@ class FrameworkMessageStages:
             values={"owner_epoch": owner.owner_epoch, "owner_attempt_id": owner.attempt_id},
             recovery_modes_sha256=mode_registry_hash(modes))
 
+    async def resume_orchestrating(self, owner, *, modes):
+        return await self._advance(owner, expected="orchestrating", phase="orchestrating",
+            values={"owner_epoch": owner.owner_epoch, "owner_attempt_id": owner.attempt_id},
+            recovery_modes_sha256=mode_registry_hash(modes))
+
     async def projected(self, owner, reference):
         return await self._advance(owner, expected="runtime_submitted", phase="projected",
             values={"result_reference": reference})
@@ -210,6 +220,10 @@ class FrameworkMessageStages:
                 if original.phase != expected or (expected != "submitted" and recovery_modes_sha256 is None and (
                     original.owner_epoch != owner.owner_epoch or original.owner_attempt_id != owner.attempt_id)):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage has already started; reconcile its origin")
+                if expected == "orchestrating" and "orchestration_artifact" in (original.source_manifest or {}):
+                    from src.runtime.framework_orchestration_artifact import require_orchestration_artifact
+
+                    require_orchestration_artifact(original.source_manifest["orchestration_artifact"])
                 if semantic_input is not None:
                     prepared = PreparedSemanticInput.model_validate(semantic_input)
                     if prepared.request is not None:
@@ -232,6 +246,8 @@ class FrameworkMessageStages:
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
                 resuming_frozen = (task["operation"] == "message_recover" and original.recoveries
                     and original.recoveries[-1].resume_phase == "orchestrated")
+                resuming_prepared = (task["operation"] == "message_recover" and original.recoveries
+                    and original.recoveries[-1].resume_phase == "orchestrating")
                 if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated"):
                     from src.runtime.framework_message_recovery import require_message_recovery_claim
 
@@ -241,6 +257,16 @@ class FrameworkMessageStages:
                     session = self._tasks._lock_session(cur, owner.binding.session_id)
                     require_message_recovery_claim(cur, self._tasks, session, owner.binding, task,
                         {"task_id": owner.task_id, "attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch})
+                if resuming_prepared and phase in {"orchestrated", "runtime_submitted"}:
+                    from src.runtime.framework_message_recovery import _require_frozen_sources, prepared_model_call
+                    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+                    session = self._tasks._lock_session(cur, owner.binding.session_id)
+                    _require_frozen_sources(cur, self._tasks, session, original)
+                    prepared, call = prepared_model_call(original, owner.binding,
+                        PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding.binding_id))
+                    if prepared.request is not None and (call is None or call.phase != "completed"):
+                        raise FrameworkMessageStageRecoveryRequired("Recovered semantic input has no settled result")
                 if expected == "submitted":
                     if task["operation"] == "message_recover":
                         from src.runtime.framework_message_recovery import require_message_recovery_claim
@@ -251,7 +277,7 @@ class FrameworkMessageStages:
                     self._require_input(cur, owner, task, values["source_manifest"])
                 cur.execute("SELECT clock_timestamp() AS now")
                 saved = validate_message_stage(original.model_copy(update={**values,
-                    "schema_version": 3, "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
+                    "schema_version": max(3, original.schema_version), "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
                 cur.execute(f"UPDATE {self._table} SET record=%s::jsonb WHERE task_id=%s", (saved.model_dump_json(), original.task_id))
                 return saved
 

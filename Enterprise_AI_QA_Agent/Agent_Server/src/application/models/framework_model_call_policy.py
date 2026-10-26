@@ -29,6 +29,20 @@ def model_config_fingerprint(config: ModelConfigRecord) -> str:
     return hashlib.sha256(canonical_model_input(model_invocation_parameters(config))).hexdigest()
 
 
+def dto_call_contract(binding, fingerprint, request, options):
+    """The same frozen input/position for initial sends and recovery admission."""
+    for field, identity in (("session_id", binding.session_id), ("turn_id", binding.turn_id)):
+        if request.trace_context.get(field, identity) != identity:
+            raise ValueError("Governed DTO model identity does not match the captured owner")
+    position = request.trace_context.get("logical_call_id")
+    if not position:
+        raise ValueError("Governed DTO model invocation requires a durable call position")
+    envelope = canonical_model_input({"request": request.model_dump(mode="json", exclude={"trace_context"}),
+        "options": options, "configuration_fingerprint": fingerprint})
+    logical = hashlib.sha256(canonical_model_input(["dto-position-v1", binding.binding_id, position])).hexdigest()
+    return envelope, logical
+
+
 def model_usage(value) -> FrameworkModelUsage | None:
     # ModelResponse may include a structured-output ToolMessage. Only the
     # provider's AI messages carry usage; never infer usage from display text.
@@ -134,16 +148,8 @@ class FrameworkModelCallPolicy:
         fingerprint = model_config_fingerprint(config)
         if current is None or model_config_fingerprint(current) != fingerprint:
             raise ValueError("Model configuration changed before the DTO request was sent")
-        for field, identity in (("session_id", owner.binding.session_id), ("turn_id", owner.binding.turn_id)):
-            if request.trace_context.get(field, identity) != identity:
-                raise ValueError("Governed DTO model identity does not match the captured owner")
-        envelope = canonical_model_input({"request": request.model_dump(mode="json", exclude={"trace_context"}),
-            "options": options, "configuration_fingerprint": fingerprint})
+        envelope, logical = dto_call_contract(owner.binding, fingerprint, request, options)
         request_sha256 = hashlib.sha256(envelope).hexdigest()
-        position = request.trace_context.get("logical_call_id")
-        if not position:
-            raise ValueError("Governed DTO model invocation requires a durable call position")
-        logical = hashlib.sha256(canonical_model_input(["dto-position-v1", owner.binding.binding_id, position])).hexdigest()
         intent = FrameworkModelCallIntent(position_version=1, attempt_id=uuid4().hex, logical_call_id=logical,
             branch_id="root", purpose="agent", model_key=config.key, model_config_fingerprint=fingerprint,
             transport=config.transport, request_sha256=request_sha256,

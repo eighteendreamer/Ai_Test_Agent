@@ -115,7 +115,7 @@ class FrameworkMessageDiagnostics:
                 else:
                     if (stage.task_id == task["id"] and stage.binding_id == binding.binding_id
                         and stage.input_sha256 == task["input_hash"] and stage.user_message_id == task["user_message_id"]):
-                        issues.append("stage_recovery_requires_admission" if stage.phase in {"submitted", "orchestrated"}
+                        issues.append("stage_recovery_requires_admission" if stage.phase in {"submitted", "orchestrating", "orchestrated"}
                             else "stage_recovery_not_implemented")
                         return MessageStageFact(**stage.model_dump(include=set(MessageStageFact.model_fields)),
                             execution_task_id=stage.current_task_id, recovery_count=len(stage.recoveries))
