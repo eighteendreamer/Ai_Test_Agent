@@ -1,6 +1,6 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。本次续核基线：`de175ecab`，另有开始时已存在的五个跨 Turn transcript 草稿文件。交付只更新本方案，不修改或提交这些运行时代码，不调整依赖、数据库结构或默认开关。未提交草稿只作为风险核验对象，不能视为已发布制品。
+日期：2026-10-26。第 1–13 节续核基线为 `de175ecab`；第 14 节再次核验基线为 `64d0c9ff2` 及其当前未提交工作区。交付只更新本方案，不修改或提交运行时代码，不调整依赖、数据库结构或默认开关。未提交草稿只作为风险核验对象，不能视为已发布制品。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
@@ -392,3 +392,80 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 ### 13.4 交付边界
 
 本次仅更新本文件，保留原有五个实现草稿原状且不纳入提交。仍未执行全量测试、前端、独立 lint/typecheck、官方 saver conformance、真实模型/对象存储/浏览器/压测/扫描 Runner、双制品部署、跨 Turn 供应商签名验收。默认 Deep Agents/checkpoint 开关保持关闭；方案补全和局部测试通过不构成生产切流许可。
+
+## 14. 再次核验：已实现的边界、工作区失败与最终实施门
+
+本节响应用户再次提供的评审附件与接续摘要。前文的历史测试仍保留；本节只记录这次实际观察，不把历史通过数累计为新的覆盖数。开发 goal 尚未完成；本次按用户要求只做方案核验，不继续修复工作区实现。
+
+### 14.1 六项意见的最终判定
+
+附件的六项**架构风险均成立，但它们描述的早期代码现状不能直接套用到现在的 v2**：
+
+1. **审批桥接**：legacy 仍是批量语义；v2 的 `FrameworkApprovalSubmission` 已按有效 Turn 受理，允许 Session 为 running/waiting_approval。adapter 已替换为单个 per_call HITL，恢复发送按 interrupt ID 的决定。后续工作是补齐故障与部署验收，不是再造一套审批服务。
+2. **一致性**：审批受理/任务/outbox、resume journal/pending writes 分别已有局部原子边界；它们与工具外部效果、Session 收尾仍非整体事务。第 12.1 节的原结果资产和部分投影补偿仍是必需出口。
+3. **执行权**：v2 `FencedPostgresSaver` 已捕获不可变 owner，并在同连接事务中验证租约、写 checkpoint/pending writes。旧 `ThreadedPostgresSaver` 不代表 v2。独立 Runner 的远端执行权和停止回执仍不能由 saver 推导。
+4. **模型治理**：当前 `FrameworkModelCallMiddleware`、摘要模型包装和 DTO 策略已有显式接线。仍需真实协议配置、物理请求 attempt、图内结算读取及活动时间验收；模型工厂构造成功不是这些能力通过的证明。
+5. **消息与状态**：官方序列化和图输入资产已存在，主图仍 `compile()`、未绑定 checkpointer；跨 Turn 草稿不足以证明完整应用链路。继续执行第 12.2 节锚点、权限、供应商兼容与摘要所有权契约。
+6. **版本部署**：独立环境、v2 stream 和 Worker binding 能力校验已存在；尚未覆盖所有 stage/model-call/receipt/transcript 格式。仅保存 runtime_version 不构成旧制品环境，双制品演练仍待验收。
+
+本次实际导入的九项版本仍与初版锁定组合一致，`HumanInTheLoopMiddleware` 签名确含 `interrupt_mode`，默认值仍为 batched，项目必须显式选择 per_call。在线文档确认 per_call 要求 langchain>=1.4.6；Deep Agents 的审批依赖 LangGraph interrupt，**不是替代平台审批、租约和授权的第二套控制平面**。[LangChain HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Deep Agents HITL](https://docs.langchain.com/oss/python/deepagents/human-in-the-loop)
+
+同 thread 恢复必须复用 thread_id，节点会从头重入；checkpoint 保存图内游标，store 保存跨 thread 数据。它们不会自动完成本项目跨 Turn transcript 导入、业务事务或外部幂等。[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)
+
+### 14.2 当前提交凭证草稿：方向正确，但不能计为通过
+
+工作区新增 `FrameworkProjectionCommit` / `framework_application_projection.py`，在 `save_session_with_events` 的同一事务中保存凭证，意图闭合“业务已提交、阶段 ACK 丢失”的窗口。它仅声明 `session_messages_completion_events`，不包含 Memory、清理或外部效果；这是正确的范围限制。**阶段 Schema 6 尚未提交，不能按已发布协议使用。**
+
+本次接续取得真实回归结果：
+
+```powershell
+# 工作目录 Agent_Server；真实 PostgreSQL/Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+& ../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_application_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py -q -x -rs --tb=short
+```
+
+结果 **1 failed、37 passed，130.74 秒**。失败为 `test_independent_worker_kill_before_orchestration_recovers_through_official_graph_once`，新凭证 `_model_hash` 抛出：
+
+```text
+FrameworkMessageStageRecoveryRequired: Application projection has unsettled model facts
+```
+
+依据不是“官方恢复失效”，而是**新增提交前置条件与现有模型证据能力契约错位**：该 Harness 的官方 Deep Agents/SDK 真实请求通过 `FrameworkModelCallPolicy` 结算，但没有注入可选 evidence 服务；当前策略允许 completed 且 settled_response_id 为空。新凭证把“所有 completed 必须有可读原响应”变为正常 Session 最终事务的必需条件，因此使原可完成路径回滚。失败发生在本地合成供应商，并非真实付费端点。
+
+应采用的根因方案，而非删除检查或修改 fixture 掩盖失败：
+
+- **先冻结能力契约，再决定准入**。需要自动恢复的新版绑定，在首次模型发送前检查证据服务及对象资产能力，确保每个请求/唯一结算响应均可持久读取。没有这种能力的历史记录不补造证明。
+- **区分业务正常提交与安全自动恢复资格**。对已有允许无证据结算的绑定，明确保留旧兼容行为及“不具备自动恢复资格”的原因，或经版本化迁移拒绝新任务准入；不能在模型/工具已执行后才把未声明的新条件加入最终提交。
+- **恢复要求不放宽**。invoking/unknown、缺少唯一响应或缺原结果资产仍进入对账；不能因为需要兼容正常完成路径，就允许缺证据的历史图自动重跑。
+- **测试使用两类配置**：无 evidence 的历史兼容模式，以及有持久 evidence 的新恢复模式；后者补真实对象存储及完整图内模型/工具链，不能用零模型单节点图替代。
+
+另已复现序列化缺陷：`_tool_hash` 把 `cur.fetchall()` 的 RowMapping 直接传入 `_hash`，而 `make_json_safe` 只转换 dict/list 等，不转换 RowMapping。使用 SQLAlchemy 内存 SQLite 查询得到真实 RowMapping 后，`_hash([row])` 报 `TypeError: Object of type RowMapping is not JSON serializable`；同一行转换 dict 后可计算摘要。此探针无目标系统请求、不写仓库文件，证明的是序列化缺陷，**还不是完整真实 ToolJob 恢复测试**。后续应在统一行规范化边界修复，并添加非空真实 ToolJob 样本。
+
+静态核对还确认 `VerificationResult` 确有 turn_id 字段，不能把此处标成“字段可能不存在”。仍须补：空输出、取消/拒绝/失败工具、事件/消息角色关联、摘要漂移、提交事务回滚、二次失租与 claim 后再检查。ToolJob 的 cancelled 状态不是 completed，更不是“外部效果确定未发生”；其恢复资格必须依靠事实，不扩大终态白名单了事。
+
+### 14.3 补全后的交付切分与不可越过的门
+
+保留“Deep Agents 认知 Harness + 受控 LangGraph + 平台业务控制平面”的选型。不是全系统一律套 Deep Agents，也不是把每个 Runner 再包成一个图。接下来按以下可独立验证的交付推进：
+
+| 交付 | 复用依据与做法 | 必过验收；未过不得宣称完成 |
+| --- | --- | --- |
+| A1：能力契约与原子提交凭证 | 复用模型账本/证据服务、Session 事件事务；明确凭证作用域和格式能力 | 本节失败回归转绿；有模型及非空 ToolJob；无凭证裸快照不恢复；旧 owner 不能提交；事务失败整体回滚 |
+| A2：原结果资产与部分投影补偿 | 复用唯一 Session 收尾规则；保存可导入 RuntimeTurnResult，不从最后 assistant 或最新快照猜结果 | 图完成后、快照后、最终提交前、提交后 ACK 前分别强杀；缺失投影补齐，已有消息/验证/事件不重复，HTTP/工具次数不增加 |
+| A3：完整收尾与未知副作用 | 用稳定操作身份记录 Memory/清理/领域 Runner 的分项事实，复用 ToolJob 对账 | 明确哪些项目影响业务完成、哪些只影响资源回收；未知效果不重派，取消不自动重启，根预算与原终态不改写 |
+| B：统一上下文与跨 Turn | 复用 PromptAssembly、SkillRegistry、Memory 检索、完整 transcript 和覆盖锚点 | 完成框架 Turn→重建服务→legacy 中间 Turn→新框架 Turn；实际请求不漏历史、不重复输入，待审批不发布，私有资产不可由 API 写入 |
+| C：运行完整性与代码审查首个闭环 | 复用既有 per_call、saver fence、模型策略；补活动片段和真实流式/取消；接项目已有 Prompt | 两待审工具，任意先批一项→执行→强杀→新 Worker 处理另一项；工具不重执、旧 owner 写入拒绝、工具消息配对、共享预算；代码审查正式评测集通过 |
+| D：受控 AgentCase 与逐模式 Harness | 回边移入 LangGraph，领域 Runner/Verification 保持裁决权；沿第 8 节每模式独立迁移 | 用例固定版本、原子领取、证据与断言、终态不可重领；真实对应 Runner 验收后才开放该模式；六占位模式仍不实现 |
+| E：兼容部署与收敛 | 独立制品/队列，claim 前校验全部持久格式能力；先兼容读者后新写者 | 真实旧等待回合恢复、不串领、回滚演练及备份恢复通过；再移除不再被活跃绑定需要的旧循环/摘要/审批代码 |
+
+A1 不代表 A2/A3；审批强杀通过不代表首次 message 完成投影通过；公共 Harness 通过不代表每个领域 Runner 通过。每项独立红测、实现、回归和提交，失败保持可见，不通过增加并行运行时或散落 try/except 解决。
+
+### 14.4 本次额外回归与交付范围
+
+本次重新运行第 13.2 节的两条命令（均显式设置 RUN_LIVE_POSTGRES_TESTS=1），实际结果分别为：
+
+- 公共契约六文件：**109 passed，193.16 秒，无 skip**。
+- 并发审批/独立 Worker 强杀：**4 passed、10 deselected，97.00 秒，无 skip**。
+
+它们不覆盖或消除第 14.2 节的失败。数据库/队列为真实 PostgreSQL/Redis，模型为替身或官方 SDK 加本地合成 HTTP，工具为受控测试工具；不是付费供应商或真实领域 Runner 验收。所有测试针对当前未提交工作区，不标记为纯 HEAD 或可发布制品验证。另已实际导入九项固定依赖、检查 HITL 签名及运行 RowMapping 序列化探针，未安装依赖。
+
+本轮仅更新该方案；未修改、暂存或提交已有运行时代码/测试草稿，未安装或升级依赖。全量、独立 lint/typecheck、前端、官方 saver conformance、真实付费供应商/对象存储/领域 Runner、跨 Turn 实际签名及双制品部署未执行。Deep Agents 默认开关保持关闭，整体开发 goal 不标完成。
