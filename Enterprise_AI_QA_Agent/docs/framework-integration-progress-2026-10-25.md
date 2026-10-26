@@ -1485,7 +1485,7 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 - 新增 `FrameworkRuntimeResult` / `FrameworkRuntimeResultAsset` 与 `FrameworkRuntimeResults`。资产保存完整 `RuntimeTurnResult` 七字段、绑定/输入/执行摘要、任务谱系、Verification、assistant 身份和固定投影时间；通过现有 message-stage JSONB 与 owner 事务保存，禁止 Python 进程对象进入资产。
 - `SessionService` 在首次 finalizer 前冻结资产，随后只从持久原件重建并调用原有 `_finalize_runtime_result`；Verification、assistant、完成事件使用资产中的稳定身份和时间。`FrameworkProjectionWrite` 在最终应用事务内再次核对资产身份、模型/ToolJob 摘要，防止异步投影阶段发生事实漂移。
 - message-stage schema 升至 7；应用提交凭证写入时保留更高 schema，避免带原结果资产的阶段被降回 6。没有新增队列、任务类型、DDL 或默认开关。
-- 原有跨 Turn transcript 草稿继续保留在工作区，不纳入本次提交；原生框架消息作为 RuntimeTurnResult.state 的一部分保存，不代表跨 Turn 完整链路已经接通。
+- 提交事实更正：原跨 Turn transcript 的五个相关文件实际已随 `73530febe` 提交，并非留在工作区未提交；早期隔离索引测试不含它们的记录只说明对应测试时点。原生框架消息作为 RuntimeTurnResult.state 的一部分保存，不代表跨 Turn 完整链路已经接通。
 
 ### TDD 与验证
 
@@ -1520,3 +1520,53 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 结果 **53 passed，156.74 秒，无 skip**。本次只证明 Runtime 边界回调契约和现有资产/投影竞态防护；未证明图终态到回调内部的任意进程强杀均可恢复，也未开放生产默认开关。下一出口仍是 A2-2 的真实 Deep Agents 独立 Worker 强杀与结果材料完备性核验。
 
 上述测试不等于真实付费模型、真实对象存储、领域 Runner、官方 saver conformance、完整跨 Turn 请求或双制品滚动部署通过；图终态到资产前空窗、失租后部分投影补偿、projected 后任务结算及 Memory/清理仍未完成。生产默认开关保持关闭，整体 goal 继续 active。
+
+
+## 48. A2-1 快照分项回执与重入校验（2026-10-26）
+
+本轮基线 `d698e194a`，用户新目标附件重新纳入完整 v3 开发范围；先读取目标、当前源码和现有测试，再按 TDD 推进 A2-1 的快照分项。不重新安装依赖，不新增调度器，不打开生产开关，不把本子步标为整个 A2 或整体目标完成。
+
+### 依据与实现
+
+官方 Persistence/Interrupts 在线复核；本地《Agent轨迹与协议鲁棒性》关于重复执行、幂等与恢复的测试原则，以及现有 A1 owner/Session 事务作为模板。实现契约见方案 §19。
+
+- `FrameworkSnapshotProjectionCommit` 和 message-stage schema **8**：快照插入、原资产绑定、实际整行摘要和 snapshot_count 同事务。使用原 JSONB journal，无 DDL。
+- `PostgresSessionStore.save_snapshot` 对框架资产路径先验证原意图和 owner；已有匹配回执只读复用，冲突或缺失转对账。首次插入使用 DO NOTHING 并检查 rowcount，不通过 UPSERT 覆盖检查后出现的同 ID 行。旧非框架路径保留原行为。
+- 返回实际分配版本的快照供唯一 finalizer 发布事件；最终应用事务再次核对快照回执和实际整行。复用原结果验证函数，避免另写一套资产验证规则。
+- 同步 SessionStore Protocol/PostgreSQL/InMemory 签名；内存实现不伪造 owner 事务能力。新增成功/拒绝日志，不记录正文或凭据。
+- Worker 在 message/message_recover claim 前按原始格式号检查可读范围，不先解析未知格式。默认读者支持 1–8；测试声明 max=7 的读者及未来 schema 9，任务保持 attempt_no=0。这不是实际旧镜像/双制品部署演练。
+- 修正文档提交事实：五个跨 Turn 草稿相关文件已随 `73530febe` 提交，不代表跨 Turn 链路验收。Runtime 回调源码注释改为“缩小空窗”，不再声称关闭图终态→资产窗口。
+
+### 真实红测与回归
+
+1. 首次 finalizer 快照后、最终事务前失败；修改 graph_state 后再次 finalizer，旧实现覆盖漂移：**1 failed，9.91 秒，DID NOT RAISE**。修复后另覆盖 version/created_at 漂移、实际版本分配、并发相同写入、缺行/回执、格式及事务回滚。
+2. 不支持的新格式仍调用 claim：**1 failed，8.81 秒，Unsupported format must be deferred before claim**。增加读取原始版本的能力检查，不通过领取后失败替代。
+3. 在快照检查与插入之间注入同 ID 行，仍被 UPSERT 覆盖：**1 failed，7.30 秒，DID NOT RAISE**。改为不覆盖式插入并检查实际写入行数；该注入与被测写入同事务，用于稳定复现这一 SQL 窗口，不冒充真实跨 Session 进程竞争测试。
+
+联合回归曾 **1 failed、39 passed，126.78 秒**：已有 asset_removed 故障样本现在形成“快照回执存在但原资产缺失”的非法阶段，测试在事后调用严格 reader 自己失败。改为检查原始数据库记录没有提交凭证，保留生产严格校验，没有放宽缺资产准入。之后中间三文件回归 **68 passed，229.86 秒，无 skip**；此结果早于同 ID 竞争修复，不代替最终源码验证。
+
+在 Agent_Server，使用独立 v2 解释器，以下均显式设置 `$env:RUN_LIVE_POSTGRES_TESTS='1'`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_snapshot_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py tests/test_session_store_value_contract.py -q -x -rs --tb=short
+```
+
+结果 **150 passed，229.84 秒，无 skip**。命令启动后新增加的读者 max=7 参数由下面最终新文件回归补验，不把它计入此 150 项。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py -q -x -rs --tb=short
+```
+
+结果 **53 passed，164.45 秒，无 skip**。包含官方 Deep Agents/SDK、本地合成 HTTP、真实 PostgreSQL/Redis、独立 Worker 的快照事务后强杀和原 A1 提交后 ACK 前恢复；并非真实付费供应商/领域 Runner 验收。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_snapshot_projection.py -q -x -rs --tb=short
+```
+
+最终新增文件 **17 passed，45.05 秒，无 skip**，包括 schema 9/读者 8 和 schema 8/读者 7 的 claim 前拒领。上述测试重叠，不累计为不同覆盖数。另从项目根执行 `.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 通过；独立环境无 ruff/mypy，未安装，不声称 lint/typecheck 通过。
+
+### 边界与下一步
+
+快照事务后的独立 Worker 强杀证明原资产和实际快照回执均保留，HTTP 请求为一次；仍断言没有最终应用提交凭证、没有 completed 事件、失租后不开放自动后继。不能将该负断言当成完整恢复成功。
+
+后续继续原事件冲突校验、观察稳定身份及实际回执、Verification/消息分项复用与 message_recover 准入，再验收部分投影补偿。图终态到资产前空窗、projected→finish、Memory/清理、完整跨 Turn、统一 Prompt/Skills/Memory、流式/取消、受控 AgentCase、逐模式 Harness 和兼容部署仍未完成。未跑全量、前端、官方 saver conformance、真实付费供应商/对象存储/领域 Runner 或双制品滚动/回滚演练。schema 8 发布仍须先部署兼容读者或隔离消费者；本次 claim 前检查不能 retroactively 改造既有旧镜像。默认开关保持关闭，整体 goal 维持 active。

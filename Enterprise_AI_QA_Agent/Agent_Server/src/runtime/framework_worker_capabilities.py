@@ -22,6 +22,7 @@ class FrameworkWorkerCapabilities:
     dependency_lock_sha256: str
     deepagents_available: bool
     runtime_version: str = FRAMEWORK_RUNTIME_VERSION
+    message_stage_max_version: int = 8
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -51,3 +52,8 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_deepagents_unavailable")
         if operation not in {"message", "approval_resume", "framework_reconcile", "approval_recover", "message_recover"}:
             raise TaskDeferred("framework_operation_unavailable")
+
+    def require_message_stage(self, schema_version: int | None) -> None:
+        if schema_version is not None and (type(schema_version) is not int
+            or not 1 <= schema_version <= self.message_stage_max_version):
+            raise TaskDeferred("framework_message_stage_unavailable")

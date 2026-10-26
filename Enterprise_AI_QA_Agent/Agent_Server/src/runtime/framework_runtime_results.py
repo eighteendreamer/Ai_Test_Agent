@@ -30,51 +30,61 @@ def _require(condition, message):
         raise FrameworkMessageStageRecoveryRequired(message)
 
 
+def lock_runtime_result_stage(cur, settings, owner):
+    """Share the same owner/stage admission with transactional part writers."""
+    configure_runtime_owner_transaction(cur, settings)
+    assert_runtime_owner(cur, settings, owner)
+    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (owner.task_id,))
+    task = cur.fetchone()
+    cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE",
+        (owner.binding.binding_id,))
+    row = cur.fetchone()
+    _require(row is not None, "Runtime result has no message stage")
+    stage = validate_message_stage(row["record"])
+    _require(task is not None and task["status"] == "running"
+        and task["operation"] in {"message", "message_recover"}
+        and task["attempt_id"] == owner.attempt_id
+        and task["runtime_binding"] == owner.binding.model_dump(mode="json")
+        and stage.current_task_id == owner.task_id and stage.phase == "runtime_submitted",
+        "Runtime result has no matching active message owner")
+    return stage, task
+
+
+def runtime_result_source(stage):
+    source = dict(stage.source_manifest or {})
+    source.pop(RESULT_KEY, None)
+    source.pop(COMMIT_KEY, None)
+    source.pop("snapshot_projection_commit", None)
+    return source
+
+
+def validate_runtime_result(cur, settings, owner, stage, task, raw):
+    asset = FrameworkRuntimeResultAsset.model_validate(raw)
+    lineage = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
+        *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
+            for link in stage.recoveries)}
+    _require(asset.binding == owner.binding and asset.input_sha256 == stage.input_sha256
+        and asset.execution_sha256 == stage.execution_sha256
+        and asset.source_sha256 == approval_value_hash(runtime_result_source(stage))
+        and asset.user_message == task["input_payload"].get("content", "")
+        and asset.assistant_message_id != task["user_message_id"]
+        and (asset.task_id, asset.attempt_id, asset.owner_epoch) in lineage,
+        "Runtime result identity or frozen input changed")
+    _require(asset.model_calls_sha256 == _model_hash(cur, settings, owner.binding)
+        and asset.tool_jobs_sha256 == _tool_hash(cur, settings, owner.binding),
+        "Runtime result execution facts changed")
+    return asset
+
+
 class FrameworkRuntimeResults:
     def __init__(self, tasks):
         self._tasks, self._settings = tasks, tasks._settings
 
     def _locked_stage(self, cur, owner):
-        configure_runtime_owner_transaction(cur, self._settings)
-        assert_runtime_owner(cur, self._settings, owner)
-        cur.execute(f"SELECT * FROM {self._tasks._tasks} WHERE id=%s FOR UPDATE", (owner.task_id,))
-        task = cur.fetchone()
-        cur.execute(f"SELECT record FROM {message_stage_table(self._settings)} WHERE binding_id=%s FOR UPDATE",
-            (owner.binding.binding_id,))
-        row = cur.fetchone()
-        _require(row is not None, "Runtime result has no message stage")
-        stage = validate_message_stage(row["record"])
-        _require(task is not None and task["status"] == "running"
-            and task["operation"] in {"message", "message_recover"}
-            and task["attempt_id"] == owner.attempt_id
-            and task["runtime_binding"] == owner.binding.model_dump(mode="json")
-            and stage.current_task_id == owner.task_id and stage.phase == "runtime_submitted",
-            "Runtime result has no matching active message owner")
-        return stage, task
-
-    @staticmethod
-    def _source(stage):
-        source = dict(stage.source_manifest or {})
-        source.pop(RESULT_KEY, None)
-        source.pop(COMMIT_KEY, None)
-        return source
+        return lock_runtime_result_stage(cur, self._settings, owner)
 
     def _validate(self, cur, owner, stage, task, raw):
-        asset = FrameworkRuntimeResultAsset.model_validate(raw)
-        lineage = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
-            *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
-                for link in stage.recoveries)}
-        _require(asset.binding == owner.binding and asset.input_sha256 == stage.input_sha256
-            and asset.execution_sha256 == stage.execution_sha256
-            and asset.source_sha256 == approval_value_hash(self._source(stage))
-            and asset.user_message == task["input_payload"].get("content", "")
-            and asset.assistant_message_id != task["user_message_id"]
-            and (asset.task_id, asset.attempt_id, asset.owner_epoch) in lineage,
-            "Runtime result identity or frozen input changed")
-        _require(asset.model_calls_sha256 == _model_hash(cur, self._settings, owner.binding)
-            and asset.tool_jobs_sha256 == _tool_hash(cur, self._settings, owner.binding),
-            "Runtime result execution facts changed")
-        return asset
+        return validate_runtime_result(cur, self._settings, owner, stage, task, raw)
 
     async def freeze(self, owner, *, runtime_result, assistant_message_id, user_message, verification_results):
         # Snapshot all mutable caller values before entering the synchronous DB
@@ -103,7 +113,7 @@ class FrameworkRuntimeResults:
                     return asset
                 values = dict(binding=owner.binding.model_dump(mode="json"), task_id=owner.task_id,
                     attempt_id=owner.attempt_id, owner_epoch=owner.owner_epoch, input_sha256=stage.input_sha256,
-                    source_sha256=approval_value_hash(self._source(stage)), execution_sha256=stage.execution_sha256,
+                    source_sha256=approval_value_hash(runtime_result_source(stage)), execution_sha256=stage.execution_sha256,
                     model_calls_sha256=_model_hash(cur, self._settings, owner.binding),
                     tool_jobs_sha256=_tool_hash(cur, self._settings, owner.binding), runtime_result=result,
                     assistant_message_id=assistant_message_id, user_message=user_message,

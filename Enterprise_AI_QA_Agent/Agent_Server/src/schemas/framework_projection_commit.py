@@ -7,6 +7,18 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
+class FrameworkSnapshotProjectionCommit(BaseModel):
+    """The actual saved row, not the caller's requested version/header."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["runtime_result_snapshot"] = "runtime_result_snapshot"
+    binding_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_result_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    snapshot_id: str = Field(min_length=1)
+    snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
 class FrameworkProjectionCommit(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

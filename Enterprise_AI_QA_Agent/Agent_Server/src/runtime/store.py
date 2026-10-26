@@ -234,7 +234,8 @@ class SessionStore(Protocol):
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
-    ) -> None: ...
+        framework_projection: FrameworkProjectionWrite | None = None,
+    ) -> SessionSnapshot | None: ...
     async def update_metadata_and_append_event(
         self,
         session_id: str,
@@ -808,7 +809,10 @@ class InMemorySessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
-    ) -> None:
+        framework_projection: FrameworkProjectionWrite | None = None,
+    ) -> SessionSnapshot | None:
+        if framework_projection is not None:
+            raise ValueError("Framework snapshot receipts require a PostgreSQL owner transaction")
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:
                 self._assert_continuation_lease_locked(

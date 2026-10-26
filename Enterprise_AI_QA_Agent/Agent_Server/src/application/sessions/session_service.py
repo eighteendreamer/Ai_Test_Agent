@@ -2693,9 +2693,32 @@ class SessionService:
                 **fenced_write,
             )
 
-        await self._store.save_snapshot(
-            session_id, runtime_result.snapshot, **fenced_write
+        framework_projection = None
+        if projection_owner is not None and self._control_state_from_runtime_result(runtime_result) == "completed":
+            from src.schemas.runtime_binding import RuntimeBinding
+            from src.infrastructure.storage_utils import make_json_safe
+
+            binding_data = (runtime_result.state.get("context_bundle") or {}).get("runtime_binding")
+            binding = RuntimeBinding.model_validate(binding_data)
+            if projection_owner != current_framework_owner() or projection_owner.binding != binding:
+                raise RuntimeError("Framework application projection owner does not match runtime binding")
+            framework_projection = FrameworkProjectionWrite(
+                owner=projection_owner,
+                snapshot_id=runtime_result.snapshot.id,
+                snapshot_sha256=approval_value_hash(make_json_safe(runtime_result.snapshot.graph_state)),
+                output_message_id=assistant_message_id if runtime_result.output_text else None,
+                runtime_result_asset_sha256=(projection_asset.asset_sha256
+                    if projection_asset is not None else None),
+            )
+        saved_snapshot = await self._store.save_snapshot(
+            session_id, runtime_result.snapshot,
+            **({"framework_projection": framework_projection} if projection_asset is not None else {}),
+            **fenced_write,
         )
+        if projection_asset is not None:
+            # The store may allocate a different version under its Session
+            # lock. Preserve the immutable intent, but publish the actual row.
+            runtime_result.snapshot = saved_snapshot
         session.metadata["pending_turn"] = runtime_result.pending_turn
         await self._store.append_event(
             session_id,
@@ -2831,24 +2854,6 @@ class SessionService:
             },
         )
         completion_events.append(completion_event)
-
-        framework_projection = None
-        binding_data = (runtime_result.state.get("context_bundle") or {}).get("runtime_binding")
-        if projection_owner is not None and self._control_state_from_runtime_result(runtime_result) == "completed":
-            from src.schemas.runtime_binding import RuntimeBinding
-            from src.infrastructure.storage_utils import make_json_safe
-
-            binding = RuntimeBinding.model_validate(binding_data)
-            if projection_owner != current_framework_owner() or projection_owner.binding != binding:
-                raise RuntimeError("Framework application projection owner does not match runtime binding")
-            framework_projection = FrameworkProjectionWrite(
-                owner=projection_owner,
-                snapshot_id=runtime_result.snapshot.id,
-                snapshot_sha256=approval_value_hash(make_json_safe(runtime_result.snapshot.graph_state)),
-                output_message_id=assistant_message.id if runtime_result.output_text else None,
-                runtime_result_asset_sha256=(projection_asset.asset_sha256
-                    if projection_asset is not None else None),
-            )
 
         for attempt in range(3):
             latest_session = await self._require_session(session_id)

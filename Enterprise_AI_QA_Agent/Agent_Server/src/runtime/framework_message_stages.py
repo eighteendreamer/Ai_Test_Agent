@@ -51,6 +51,13 @@ def validate_message_stage(record):
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
     manifest = stage.source_manifest or {}
+    if "snapshot_projection_commit" in manifest:
+        from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit
+
+        if (stage.schema_version < 8 or stage.phase not in {"runtime_submitted", "projected"}
+            or "runtime_result_asset" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Snapshot projection has no matching message stage format")
+        FrameworkSnapshotProjectionCommit.model_validate(manifest["snapshot_projection_commit"])
     if "runtime_result_asset" in manifest:
         from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
 
@@ -158,7 +165,7 @@ class FrameworkMessageStages:
         self._tasks, self._settings = tasks, tasks._settings
         self._table = message_stage_table(self._settings)
 
-    def get(self, task_id, session_id):
+    def _get_record(self, task_id, session_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT stage.record FROM {self._tasks._tasks} task LEFT JOIN {self._table} stage "
                 "ON stage.binding_id=task.runtime_binding->>'binding_id' "
@@ -169,7 +176,16 @@ class FrameworkMessageStages:
             row = cur.fetchone()
             if row is None:
                 raise KeyError(task_id)
-            return validate_message_stage(row["record"]) if row["record"] else None
+            return row["record"]
+
+    def get(self, task_id, session_id):
+        record = self._get_record(task_id, session_id)
+        return validate_message_stage(record) if record else None
+
+    def get_version(self, task_id, session_id):
+        # Capability admission must not first parse a future strict schema.
+        record = self._get_record(task_id, session_id)
+        return record.get("schema_version", 3) if record is not None else None
 
     async def begin(self, owner, sources):
         return await self._advance(owner, expected="submitted", phase="orchestrating",

@@ -1,10 +1,10 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17 节记录本次 A2-1 原结果资产与正常收尾子步；原有五个跨 Turn 草稿文件继续保留、不纳入提交。默认开关不变。
+日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–19 节记录 A2 原结果资产、Runtime 回调和快照分项回执。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
-当前实施见[实施记录 §46](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；本次新增 A2-1 原结果资产和正常 finalizer 消费。A1 只承认有效原子提交凭证；A2-1 资产也不自动授予后继或图恢复权。**A2 的部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
+当前实施见[实施记录 §46–48](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 已有原结果资产和正常 finalizer 消费，新增快照分项的同事务回执及重入校验。A1 只承认有效原子提交凭证；A2-1 资产及快照回执也不自动授予后继或图恢复权。**A2 的完整部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
 
 ## 1. 结论及附件意见的处理
 
@@ -18,7 +18,7 @@ LangGraph 的 `interrupt` 是暂停/恢复原语；Deep Agents 的 HITL 使用�
 | F2 三类持久化不自动原子 | 成立。已有审批受理事务、resume 交付事务及 A1 应用最终提交凭证；图推进与外部副作用仍非整体事务，最终提交前的补偿仍未闭合 | §5/§12.1：按证明授予不同恢复权限；不承诺任意外部效果 exactly-once |
 | F3 租约不自动保护 checkpoint | 原试点成立；v2 已由 owner-bound saver 在同连接事务内加锁校验并保存 checkpoint/pending writes | §6：验证旧 owner 延迟写入；独立 Runner 另补执行权协议 |
 | F4 官方模型对象绕过原调用策略 | 原风险成立；当前已显式接入主代理、具名子代理、摘要及 owner 作用域中的 DTO 调用 | §7：区分调用入口，补活动时间、真实配置、重试尝试及供应商验收 |
-| F5 仅保存 checkpoint 不足以跨 Turn | 成立；已提交代码有官方消息序列化和图输入资产；工作区草稿开始从 Session metadata 导入原生历史，但覆盖范围、未完成调用及私有资产保护仍不完整 | §3、§12.2：保留完整跨 Turn 独立出口，不以 helper 测试代替链路验收 |
+| F5 仅保存 checkpoint 不足以跨 Turn | 成立；官方消息序列化、图输入资产和初步 Session metadata 历史导入均已提交；覆盖范围、未完成调用及私有资产保护仍不完整 | §3、§12.2：保留完整跨 Turn 独立出口，不以 helper 测试代替链路验收 |
 | F6 runtime_version 不等于保留旧环境 | 成立；已有独立 stream、Worker 能力校验、legacy manifest，尚无真实双制品部署的完整验收 | §9：制品和持久格式能力路由，保留兼容 Worker |
 
 附件另有两处需要修正：
@@ -354,7 +354,7 @@ A2/A3 的红测分别在图终态后资产前、资产后、快照后、Verifica
 
 ### 12.2 跨 Turn transcript 的所有权、覆盖锚点和上下文导入
 
-当前未提交草稿新增 `FrameworkTranscriptAsset`、`append_turn_input`、Runtime 初始读取和 Session metadata 写回。它证明开始接线，**不证明跨 Turn 已闭环**。本次只审阅，不修改或提交草稿。
+本节原审阅时的草稿新增 `FrameworkTranscriptAsset`、`append_turn_input`、Runtime 初始读取和 Session metadata 写回；相关五个文件随后实际已随 `73530febe` 提交。它证明开始接线，**不证明跨 Turn 已闭环**。下表保留其边界分析，不再把这些文件当作未提交工作区变更。
 
 | 草稿的真实边界 | 必须补入的契约 |
 | --- | --- |
@@ -365,7 +365,7 @@ A2/A3 的红测分别在图终态后资产前、资产后、快照后、Verifica
 | 只有 runtime_version，没有模型/协议身份 | 绑定 provider、transport、模型语义配置和 serializer/格式版本。兼容性未经验证时明确不支持，不能悄悄丢签名或改写成文本继续 |
 | 独立原生前缀绕开旧 context_summary | 摘要必须有稳定消息覆盖范围，与资产锚点对齐；同一段消息只有一个摘要所有者，禁止重复摘要、重复导入或拆散工具调用/结果 |
 
-对应依据：[transcript 序列化与追加](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/framework_transcript.py)、[草稿资产格式](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_transcript.py)、[Runtime 初始组装](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)、[Session metadata 边界](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/sessions/session_service.py)、[既有上下文资格规则](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/context/transcript_hygiene_service.py)。schema 文件为当前未跟踪草稿，不是已提交公共契约。
+对应依据：[transcript 序列化与追加](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/framework_transcript.py)、[初步资产格式](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_transcript.py)、[Runtime 初始组装](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)、[Session metadata 边界](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/sessions/session_service.py)、[既有上下文资格规则](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/context/transcript_hygiene_service.py)。schema 文件已提交，但不是完整跨 Turn 发布契约已经验收的证明。
 
 建议将资产发布、覆盖锚点及导入放在一个应用 transcript 服务内，Runtime 只请求上下文投影，Session 只调用发布端口；不要在二者继续散落 provider/去重/摘要特判。无原生资产的历史维持旧文本管道，不伪造历史 provider 消息。读取不可用资产应返回明确的不兼容/需迁移状态，不静默降级导致上下文丢失。
 
@@ -634,10 +634,39 @@ A2-1 之后仍有一个明确空窗：`RuntimeService._execute_turn()` 已获得
 
 - `RuntimeService.execute_turn` 新增可选 `on_runtime_result` 回调。在 `_execute_turn` 返回后、`execute_turn` 对上层返回前等待该回调完成；回调异常阻止 Runtime 返回，保留 owner/阶段错误，不伪造完成。
 - `SessionService` 将同一个 `_prepare_framework_runtime_result` 绑定到该回调。生产 Runtime 因而在图终态之后立即保存原结果资产，随后 finalizer 只消费回调捕获的资产。为兼容仍未升级的替身/旧 Runtime，保留一次性返回后 fallback；生产实现走前置回调，不重复 freeze（资产本身幂等）。
-- 回调只保存 `completed` 结果；waiting approval、取消、超时和失败继续走原 pending/对账协议。它不代表 checkpoint 已完成、模型响应可导入或外部效果 exactly-once；图终态前的强杀仍属于 A2-2 后续材料完备性出口。
+- 回调只保存 `completed` 结果；waiting approval、取消、超时和失败继续走原 pending/对账协议。它不代表 checkpoint 已完成、模型响应可导入或外部效果 exactly-once；**图终态之后、回调持久化之前仍存在空窗**，仍属于 A2-2 后续材料完备性出口。
 
 ### 18.2 TDD 与验证
 
 先添加回调契约红测，旧 RuntimeService 报 `TypeError: ... unexpected keyword argument 'on_runtime_result'`；实现后该契约 **1 passed**。随后真实 PostgreSQL/Redis 的资产与 A1 投影联合回归 **53 passed，156.74 秒，无 skip**，覆盖原资产、最终事务前事实漂移和提交后恢复。该组使用受控/本地合成模型，不能标为付费供应商或领域 Runner 验收。
 
 下一步必须用独立 Worker 在真正 Deep Agents 图终态到回调持久化之间注入强杀，并验证 checkpoint/原生消息/模型和 ToolJob 事实是否足够重建资产；若任一事实只在进程内，返回 `recovery_required`，不能凭最后 assistant 文本猜测。A2-3、A3、跨 Turn 完整链路和双制品兼容部署仍未完成。
+
+
+## 19. A2-1 续接：快照分项回执与安全重入（2026-10-26）
+
+本轮基线为 `d698e194a`。沿第 12.1 节继续开发；先处理打开后继之前必需的快照分项幂等性，不把本子步替代完整 A2-1。原结果已保存但最终事务未提交时，message recovery 仍不开放自动后继。
+
+### 19.1 根因与采用做法
+
+真实 PostgreSQL 回归先复现：首次 finalizer 保存快照后、最终 Session 事务前失败；改变已保存快照的 graph_state，再进入相同 finalizer，旧 UPSERT 直接覆盖漂移，测试报 `DID NOT RAISE`（1 failed，9.91 秒）。这不是缺少一个异常捕获，而是写入意图与实际持久化行缺少分项提交契约。
+
+依据既有 SessionStore 的 Session 行锁、版本分配及 A1 同事务回执，新增 `FrameworkSnapshotProjectionCommit`；仍使用原 message-stage JSONB，不建新表/队列/调度器。官方 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 的图状态/跨线程 store 和 [Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts) 的节点重入原语均不能代替此业务行回执；这是应用侧扩展，不是框架原生承诺。
+
+### 19.2 实际契约
+
+- 正常 finalizer 继续唯一拥有投影规则。使用已有 `FrameworkProjectionWrite` 将 owner 和原资产摘要传到 snapshot 事务；输入必须等于原资产内的写入意图。
+- 首次快照插入、实际数据库行回执和 snapshot_count 在同连接事务提交。摘要包含 id/session_id/version/created_at/stage/graph_state，记录的是数据库合法分配后的实际行，不用调用方原版本号冒充回执。
+- 已存在且回执匹配则只读复用，不再次 UPSERT；缺行、缺回执、行头或内容漂移均转对账。仅框架资产路径改为 `INSERT ... ON CONFLICT DO NOTHING`，并检查实际插入行数，防止检查后出现同 ID 行仍被覆盖；旧非框架路径保留既有行为。
+- 返回实际保存的 SessionSnapshot 给原 finalizer，snapshot.saved 事件据此描述真实版本。最终 Session 事务锁内再次校验回执与整行，不能只在初次读取时校验。
+- 原资产来源摘要明确排除新分项回执；原资产本身不变，最终应用提交凭证仍覆盖含回执的完整 source manifest。
+- message-stage 新写入格式为 **8**，旧 1–7 仍可读取。同步 SessionStore Protocol/PostgreSQL/InMemory 契约；InMemory 明确拒绝需要 owner 事务的回执，不伪造集成能力。
+- Worker 对 message/message_recover 在 claim 前读取原始格式号、检查声明的可读范围，避免先严格解析未来格式才失败。此检查不替代全部格式兼容性或真实双制品发布；既有未部署该检查的旧镜像仍须隔离/先部署兼容读者。
+
+### 19.3 证据与剩余出口
+
+另有真实失败样本：未来格式任务仍进入 claim（1 failed，8.81 秒），以及检查与插入之间注入同 ID 行被覆盖（1 failed，7.30 秒）。均先红后修。版本不兼容时任务保持未领取；快照/回执中途异常整体回滚。
+
+实际回归及强杀窗口见实施记录 §48。官方 Deep Agents/SDK + 合成本地 HTTP + 真实 PostgreSQL/Redis 的独立 Worker 已增加“快照事务后、finalizer 收到返回值前”的强杀点；只证明原结果和快照回执保留，不把负断言（仍拒绝自动后继）称为补偿已完成。
+
+后续仍须补原事件冲突校验、观察的稳定身份/实际写入回执、Verification/消息分项复用，再沿既有 message_recover 打开部分投影补偿；A1 已有完整提交凭证时只补 ACK。图终态到资产的空窗、projected→finish、Memory/清理、完整跨 Turn、逐模式 Harness 和真实兼容部署依旧独立验收。生产默认开关不变，整体目标未完成。

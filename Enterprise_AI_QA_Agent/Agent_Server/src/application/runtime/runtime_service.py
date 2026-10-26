@@ -195,8 +195,8 @@ class RuntimeService:
             )
             # The result callback is part of the runtime boundary: callers can
             # persist the exact terminal result before this method returns.
-            # This closes the graph-terminal -> application-asset gap without
-            # replaying the graph or inventing a second finalizer.
+            # This narrows, but does not close, the terminal-checkpoint -> asset
+            # crash window. Recovery still needs durable original-result facts.
             if on_runtime_result is not None:
                 await on_runtime_result(result)
             return result

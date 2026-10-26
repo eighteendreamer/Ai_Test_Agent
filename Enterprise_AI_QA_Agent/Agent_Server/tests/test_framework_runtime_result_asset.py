@@ -252,7 +252,8 @@ async def test_mutated_in_memory_finalization_asset_is_rejected_before_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_official_worker_hard_kill_before_finalization_retains_result_not_commit(admission):
+@pytest.mark.parametrize("window", ["before_finalization", "after_snapshot"])
+async def test_official_worker_hard_kill_before_finalization_retains_result_not_commit(admission, window):
     from redis.asyncio import Redis
     from src.application.models.framework_model_call_policy import model_config_fingerprint
     from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -279,10 +280,11 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
             assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
             gate = h.prefix + ":runtime-result-frozen"
             process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
-                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate, "before_finalization"))
+                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate, window))
             process.start()
             reached = await waiting.blpop(gate, timeout=40)
-            assert reached is not None and reached[1] == "runtime-result-frozen", f"worker exit code: {process.exitcode}"
+            marker = "runtime-result-frozen" if window == "before_finalization" else "snapshot-committed"
+            assert reached is not None and reached[1] == marker, f"worker exit code: {process.exitcode}"
             active = await h.tasks.get(original.id)
             # A task read intentionally does not hand out a live execution
             # capability. Inspect the durable asset, not an invented owner.
@@ -294,7 +296,18 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
             assert asset.verification_results == []
             assert before.source_manifest["runtime_result_asset"] == asset.model_dump(mode="json")
             assert "application_projection_commit" not in before.source_manifest
-            assert await h.store.get_latest_snapshot(h.session_id) is None
+            snapshot = await h.store.get_latest_snapshot(h.session_id)
+            if window == "before_finalization":
+                assert snapshot is None
+                assert "snapshot_projection_commit" not in before.source_manifest
+            else:
+                from src.runtime.framework_application_projection import _hash
+
+                assert snapshot.id == asset.runtime_result.snapshot.id
+                receipt = before.source_manifest["snapshot_projection_commit"]
+                assert receipt["runtime_result_asset_sha256"] == asset.asset_sha256
+                assert receipt["snapshot_sha256"] == _hash(snapshot.model_dump(mode="python"))
+                assert before.schema_version == 8
             assert len((await h.store.get_session(h.session_id)).messages) == 1
             assert len(requests) == 1 and process.is_alive()
             budget = await h.calls.snapshot(h.binding)
@@ -306,6 +319,7 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
             assert terminal.status == "recovery_required"
             assert await h.tasks.ensure_framework_message_recovery(original.id) is None
             assert (await stage(h, original)).source_manifest["runtime_result_asset"] == before.source_manifest["runtime_result_asset"]
+            assert (await stage(h, original)).source_manifest.get("snapshot_projection_commit") == before.source_manifest.get("snapshot_projection_commit")
             assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
             assert not any(e.type == "turn.completed" for e in await h.store.list_events(h.session_id))
     finally:
@@ -446,7 +460,7 @@ async def test_application_commit_keeps_original_asset_and_prevents_refreeze(pro
     asset = await results.load(task.runtime_owner)
     assert asset == captured["projection_asset"]
     assert "application_projection_commit" in (await stage(h, task)).source_manifest
-    assert (await stage(h, task)).schema_version == 7
+    assert (await stage(h, task)).schema_version == 8
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="after application commit"):
         await results.freeze(task.runtime_owner, runtime_result=captured["runtime_result"],
             assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
@@ -486,7 +500,11 @@ async def test_final_transaction_rechecks_original_asset_after_async_projection_
     monkeypatch.setattr(h.store, "save_session_with_events", change_before_transaction)
     with pytest.raises(FrameworkMessageStageRecoveryRequired):
         await run(h, task)
-    assert "application_projection_commit" not in (await stage(h, task)).source_manifest
+    # This failure sample may deliberately leave an invalid stage (a snapshot
+    # receipt without its asset). Inspect raw storage, not its strict reader.
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT record FROM {message_stage_table(h.settings)} WHERE task_id=%s", (task.id,))
+        assert "application_projection_commit" not in cur.fetchone()["record"]["source_manifest"]
     assert len((await h.store.get_session(h.session_id)).messages) == 1
     assert await h.store.get_latest_snapshot(h.session_id) is not None
     assert not any(e.type == "turn.completed" for e in await h.store.list_events(h.session_id))

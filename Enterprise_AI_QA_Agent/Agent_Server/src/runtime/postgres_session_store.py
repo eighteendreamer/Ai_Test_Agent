@@ -244,15 +244,33 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
-    ) -> None:
-        await asyncio.to_thread(
-            self._save_snapshot_sync,
-            session_id,
-            snapshot,
-            continuation_approval_id,
-            continuation_lease_token,
-            turn_lease_token,
-        )
+        framework_projection: FrameworkProjectionWrite | None = None,
+    ) -> SessionSnapshot | None:
+        try:
+            actual = await asyncio.to_thread(
+                self._save_snapshot_sync,
+                session_id,
+                snapshot,
+                continuation_approval_id,
+                continuation_lease_token,
+                turn_lease_token,
+                framework_projection,
+            )
+            if framework_projection is not None:
+                LOGGER.info("framework_snapshot_projection_saved", extra={
+                    "session_id": session_id, "snapshot_id": actual.id, "snapshot_version": actual.version,
+                    "binding_id": framework_projection.owner.binding.binding_id,
+                    "task_id": framework_projection.owner.task_id,
+                })
+            return actual
+        except Exception:
+            if framework_projection is not None:
+                LOGGER.warning("framework_snapshot_projection_rejected", extra={
+                    "session_id": session_id, "snapshot_id": snapshot.id,
+                    "binding_id": framework_projection.owner.binding.binding_id,
+                    "task_id": framework_projection.owner.task_id,
+                })
+            raise
 
     async def list_snapshots(
         self,
@@ -1635,7 +1653,8 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
-    ) -> None:
+        framework_projection: FrameworkProjectionWrite | None = None,
+    ) -> SessionSnapshot | None:
         now = datetime.utcnow()
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1643,6 +1662,16 @@ class PostgresSessionStore:
                     cur, session_id, continuation_approval_id, continuation_lease_token
                 )
                 self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
+                projection_stage = None
+                if framework_projection is not None:
+                    from src.runtime.framework_application_projection import prepare_snapshot_projection
+
+                    if framework_projection.owner.binding.session_id != session_id:
+                        raise ValueError("Snapshot projection belongs to another Session")
+                    projection_stage, existing = prepare_snapshot_projection(
+                        cur, self._settings, framework_projection, snapshot)
+                    if existing is not None:
+                        return _snapshot_from_row(existing)
                 # Serialize each session BEFORE trusting the caller's version: the
                 # caller derived it from an in-memory snapshot_count, so two writers
                 # can pick the same value and collide on (session_id, version).
@@ -1667,17 +1696,20 @@ class PostgresSessionStore:
                     )
                     version = int((cur.fetchone() or {})["next"])
                     snapshot = snapshot.model_copy(update={"version": version})
-                cur.execute(
-                    f"""
-                    INSERT INTO {self._settings.database.postgres_snapshot_table} (
-                        id, session_id, version, stage, created_at, graph_state
-                    ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                conflict_clause = "ON CONFLICT (id) DO NOTHING" if framework_projection is not None else """
                     ON CONFLICT (id) DO UPDATE SET
                         session_id = EXCLUDED.session_id,
                         version = EXCLUDED.version,
                         stage = EXCLUDED.stage,
                         created_at = EXCLUDED.created_at,
                         graph_state = EXCLUDED.graph_state
+                    """
+                cur.execute(
+                    f"""
+                    INSERT INTO {self._settings.database.postgres_snapshot_table} (
+                        id, session_id, version, stage, created_at, graph_state
+                    ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                    {conflict_clause}
                     """,
                     (
                         snapshot.id,
@@ -1688,6 +1720,10 @@ class PostgresSessionStore:
                         json.dumps(make_json_safe(snapshot.graph_state), ensure_ascii=False),
                     ),
                 )
+                if framework_projection is not None and cur.rowcount != 1:
+                    from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+                    raise FrameworkMessageStageRecoveryRequired("Runtime result snapshot appeared after its intent check")
                 cur.execute(
                     f"""
                     UPDATE {self._settings.database.postgres_session_table}
@@ -1697,6 +1733,11 @@ class PostgresSessionStore:
                     """,
                     (snapshot.version, now, session_id),
                 )
+                if framework_projection is not None:
+                    from src.runtime.framework_application_projection import record_snapshot_projection
+
+                    actual = record_snapshot_projection(cur, self._settings, framework_projection, projection_stage)
+                    return _snapshot_from_row(actual)
 
     def _assert_continuation_lease_sync(
         self,

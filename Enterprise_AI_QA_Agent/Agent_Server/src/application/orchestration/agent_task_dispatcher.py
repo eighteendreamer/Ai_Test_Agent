@@ -617,6 +617,10 @@ class AgentTaskDispatcher:
                 if self._framework_capabilities is None:
                     raise TaskDeferred("framework_worker_capabilities_unavailable")
                 self._framework_capabilities.require(runtime_binding, operation=command.operation)
+                if command.operation in {"message", "message_recover"}:
+                    self._framework_capabilities.require_message_stage(
+                        await self._tasks.get_framework_message_stage_version(
+                            command.task_id, session_id=command.session_id))
                 if (self._framework_model_calls is not None
                     and stored.status not in TERMINAL_AGENT_TASK_STATUSES
                     and command.operation != "framework_reconcile"):

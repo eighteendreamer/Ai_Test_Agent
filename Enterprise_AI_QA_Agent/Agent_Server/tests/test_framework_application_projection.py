@@ -72,11 +72,22 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
         _, tasks, sessions, _ = build_services(settings, runtime, resources)
 
         async def pause(*args, **kwargs):
-            await redis.rpush(gate, "runtime-result-frozen" if window == "before_finalization" else "application-committed")
+            marker = {"before_finalization": "runtime-result-frozen", "after_snapshot": "snapshot-committed",
+                "after_commit": "application-committed"}[window]
+            await redis.rpush(gate, marker)
             await asyncio.Event().wait()
 
         if window == "before_finalization":
             sessions._finalize_runtime_result = pause
+        elif window == "after_snapshot":
+            save_snapshot = sessions._store.save_snapshot
+
+            async def save_and_pause(*args, **kwargs):
+                actual = await save_snapshot(*args, **kwargs)
+                await pause()
+                return actual
+
+            sessions._store.save_snapshot = save_and_pause
         elif window == "after_commit":
             FrameworkMessageStages.projected = pause
         else:
@@ -198,7 +209,7 @@ async def test_native_checkpoint_and_committed_application_recover_without_reexe
     assert (await h.tasks.get(successor.id)).status == "completed"
     assert await h.tasks.get(original.id) == terminal
     saved = await stage(h, original)
-    assert saved.phase == "projected" and saved.schema_version == 7
+    assert saved.phase == "projected" and saved.schema_version == 8
     after = await h.store.get_session(h.session_id)
     assert after.status.value == "completed" and after.metadata["control"]["control_state"] == "completed"
     def transcript(messages):

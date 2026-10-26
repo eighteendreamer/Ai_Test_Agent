@@ -23,6 +23,7 @@ from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 
 COMMIT_KEY = "application_projection_commit"
+SNAPSHOT_COMMIT_KEY = "snapshot_projection_commit"
 CONTROL_KEYS = frozenset({"control_state", "is_interrupted", "is_resumable", "preserve_resources",
     "replay_available", "last_snapshot_stage", "last_turn_id"})
 
@@ -110,6 +111,68 @@ def _snapshot(cur, settings, binding, snapshot_id):
     return dict(row)
 
 
+def require_snapshot_projection(cur, settings, stage, binding, asset_sha256, snapshot):
+    """Validate the exact original saved row, including allocated row headers."""
+    from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit
+
+    raw = (stage.source_manifest or {}).get(SNAPSHOT_COMMIT_KEY)
+    _require(raw is not None, "Runtime result snapshot has no atomic projection receipt")
+    receipt = FrameworkSnapshotProjectionCommit.model_validate(raw)
+    _require(receipt.binding_fingerprint == binding.fingerprint
+        and receipt.runtime_result_asset_sha256 == asset_sha256
+        and receipt.snapshot_id == snapshot["id"] and receipt.snapshot_sha256 == _hash(snapshot),
+        "Runtime result snapshot differs from its original projection receipt")
+    return receipt
+
+
+def prepare_snapshot_projection(cur, settings, write, snapshot):
+    """Fence and validate BEFORE the snapshot UPSERT, in its own transaction.
+
+    No upstream counterpart (checked: SessionStore version allocation,
+    LangGraph persistence, integration plan v3 §12.1 A2-1): a native checkpoint
+    is not a receipt for the platform's separately allocated snapshot row.
+    """
+    from src.runtime.framework_runtime_results import lock_runtime_result_stage, validate_runtime_result, RESULT_KEY
+
+    owner, binding = write.owner, write.owner.binding
+    stage, task = lock_runtime_result_stage(cur, settings, owner)
+    manifest = stage.source_manifest or {}
+    _require(COMMIT_KEY not in manifest, "Committed application snapshot must use ACK recovery")
+    _require(manifest.get(RESULT_KEY) is not None, "Runtime result snapshot has no original asset")
+    asset = validate_runtime_result(cur, settings, owner, stage, task, manifest[RESULT_KEY])
+    _require(write.runtime_result_asset_sha256 == asset.asset_sha256
+        and write.snapshot_id == snapshot.id
+        and snapshot.model_dump(mode="json") == asset.runtime_result.snapshot.model_dump(mode="json")
+        and write.snapshot_sha256 == _hash(snapshot.graph_state),
+        "Runtime result snapshot differs from its original write intent")
+    cur.execute(f"SELECT id,session_id,version,created_at,graph_state,stage FROM {settings.database.postgres_snapshot_table} "
+        "WHERE id=%s FOR UPDATE", (snapshot.id,))
+    existing = cur.fetchone()
+    if SNAPSHOT_COMMIT_KEY in manifest:
+        _require(existing is not None, "Original runtime result snapshot is missing")
+        require_snapshot_projection(cur, settings, stage, binding, asset.asset_sha256, dict(existing))
+    else:
+        _require(existing is None, "Existing runtime result snapshot has no atomic projection receipt")
+    return stage, dict(existing) if existing is not None else None
+
+
+def record_snapshot_projection(cur, settings, write, stage):
+    """Called after INSERT, before commit; receipt and actual row commit together."""
+    from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit
+
+    snapshot = _snapshot(cur, settings, write.owner.binding, write.snapshot_id)
+    receipt = FrameworkSnapshotProjectionCommit(binding_fingerprint=write.owner.binding.fingerprint,
+        runtime_result_asset_sha256=write.runtime_result_asset_sha256,
+        snapshot_id=write.snapshot_id, snapshot_sha256=_hash(snapshot))
+    manifest = dict(stage.source_manifest or {})
+    manifest[SNAPSHOT_COMMIT_KEY] = receipt.model_dump(mode="json")
+    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(8, stage.schema_version),
+        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
+    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
+        (updated.model_dump_json(), stage.task_id))
+    return snapshot
+
+
 def record_application_commit(cur, settings, session, events, write):
     """Called only inside save_session_with_events, after its actual row writes."""
     owner, binding = write.owner, write.owner.binding
@@ -147,6 +210,8 @@ def record_application_commit(cur, settings, session, events, write):
         "Application commit requires a completed, non-pending Session")
     snapshot = _snapshot(cur, settings, binding, write.snapshot_id)
     _require(_hash(snapshot["graph_state"]) == write.snapshot_sha256, "Application commit snapshot changed before finalization")
+    if write.runtime_result_asset_sha256 is not None:
+        require_snapshot_projection(cur, settings, stage, binding, write.runtime_result_asset_sha256, snapshot)
     completed = [event for event in events if event.type == "turn.completed" and event.payload.get("turn_id") == binding.turn_id]
     _require(len(completed) == 1 and completed[0].payload.get("session_status") == "completed"
         and all(event.payload.get("turn_id") == binding.turn_id for event in events),
