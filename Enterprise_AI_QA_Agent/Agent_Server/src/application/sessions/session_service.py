@@ -6,7 +6,7 @@ from datetime import datetime
 import logging
 import os
 import socket
-from typing import Any
+from typing import Any, Awaitable, Callable
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
@@ -251,6 +251,10 @@ class SessionService:
                         allow_interrupted=True,
                         turn_lease_token=task.lease_token,
                         user_message_id=task.user_message_id,
+                        on_graph_input=(
+                            (lambda asset: stages.record_graph_input(task.runtime_owner, asset))
+                            if stages is not None else None
+                        ),
                     )
                     if stages is not None:
                         await stages.projected(task.runtime_owner,
@@ -1745,6 +1749,7 @@ class SessionService:
         turn_lease_token: str,
         user_message_id: str | None = None,
         capture_snapshot: bool = False,
+        on_graph_input: Callable[[dict], Awaitable[None]] | None = None,
     ) -> ConversationResponse | SessionSnapshot:
         session_id = session.id
         turn_fenced_write = {"turn_lease_token": turn_lease_token}
@@ -2014,6 +2019,7 @@ class SessionService:
                 session,
                 execution_request,
                 on_model_chunk=stream_chunk_handler,
+                on_graph_input=on_graph_input,
             )
             response = await self._finalize_runtime_result(
                 session=session,

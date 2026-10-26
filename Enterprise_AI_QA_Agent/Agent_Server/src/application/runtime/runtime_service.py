@@ -183,10 +183,12 @@ class RuntimeService:
         request: ExecutionRequest,
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
+        on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
         with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             return await self._execute_turn(
                 session, request, on_model_chunk=on_model_chunk, event_queue=event_queue,
+                on_graph_input=on_graph_input,
             )
 
     async def _execute_turn(
@@ -195,6 +197,7 @@ class RuntimeService:
         request: ExecutionRequest,
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
+        on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
@@ -219,6 +222,7 @@ class RuntimeService:
                     state=state,
                     pilot_stage=pilot_stage,
                     on_model_chunk=on_model_chunk,
+                    on_graph_input=on_graph_input,
                 ),
             )
         compaction_info = None
@@ -303,6 +307,7 @@ class RuntimeService:
         state: dict[str, Any],
         pilot_stage: str,
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
+        on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         continuation_plan: FrameworkContinuationPlan | None = None,
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
@@ -339,6 +344,36 @@ class RuntimeService:
             state=state,
             tool_records=tool_records,
         )
+        if on_graph_input is not None:
+            from src.schemas.framework_graph_input import graph_input_asset
+
+            await on_graph_input(graph_input_asset(
+                session_id=session.id,
+                turn_id=request.turn_id,
+                trace_id=state["trace_id"],
+                model_key=state["selected_model_key"],
+                checkpoint_namespace=str(
+                    state.get("context_bundle", {}).get("checkpoint_namespace") or ""
+                ) or None,
+                system_prompt=(
+                    "You are the Enterprise AI QA Agent code review pilot. "
+                    "Return evidence-grounded review guidance. Use only the "
+                    "read-only project and selected skill capabilities exposed "
+                    "by the current pilot stage. Business tools visible to you are "
+                    "governed by the application's permission and approval controls."
+                ),
+                messages=list(state["runtime_messages"]),
+                framework_messages=list(state.get("framework_messages") or []),
+                context=dict(state.get("context_bundle") or {}),
+                business_tool_keys=list(state.get("model_visible_tool_keys") or []),
+                interrupt_tool_keys=sorted(str(key) for key in interrupt_on),
+                feature_flags={
+                    "read_only_filesystem": self._deep_agent_read_only_filesystem_enabled,
+                    "cognitive_planning": self._deep_agent_cognitive_planning_enabled,
+                    "cognitive_subagents": self._deep_agent_cognitive_subagents_enabled,
+                    "governed_tools": self._deep_agent_governed_tools_enabled,
+                },
+            ).model_dump(mode="json"))
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
             else self._deep_agent_runtime_adapter)
         execution_task = asyncio.create_task(

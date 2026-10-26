@@ -196,7 +196,15 @@ class FrameworkMessageStages:
         return await self._advance(owner, expected="runtime_submitted", phase="projected",
             values={"result_reference": reference})
 
-    async def _advance(self, owner, *, expected, phase, values, recovery_modes_sha256=None, semantic_input=None):
+    async def record_graph_input(self, owner, asset):
+        from src.schemas.framework_graph_input import FrameworkGraphInputAsset
+
+        frozen = FrameworkGraphInputAsset.model_validate(asset)
+        return await self._advance(owner, expected="runtime_submitted", phase="runtime_submitted", values={},
+            graph_input_asset=frozen.model_dump(mode="json"))
+
+    async def _advance(self, owner, *, expected, phase, values, recovery_modes_sha256=None,
+        semantic_input=None, graph_input_asset=None):
         # Snapshot mutable caller dictionaries before crossing the thread boundary.
         values = json.loads(json.dumps(values, ensure_ascii=False, allow_nan=False))
 
@@ -243,6 +251,21 @@ class FrameworkMessageStages:
                     if PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding.binding_id).calls:
                         raise FrameworkMessageStageRecoveryRequired("Semantic input must be frozen before model reservation")
                     manifest["semantic_input"] = semantic_input
+                    values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
+                if graph_input_asset is not None:
+                    from src.schemas.framework_graph_input import FrameworkGraphInputAsset
+
+                    asset = FrameworkGraphInputAsset.model_validate(graph_input_asset)
+                    if (asset.session_id != owner.binding.session_id
+                        or asset.turn_id != owner.binding.turn_id
+                        or asset.checkpoint_namespace != owner.binding.checkpoint_namespace):
+                        raise FrameworkMessageStageRecoveryRequired("Graph input asset differs from its runtime binding")
+                    manifest = dict(original.source_manifest or {})
+                    if "graph_input_asset" in manifest:
+                        if manifest["graph_input_asset"] != graph_input_asset:
+                            raise FrameworkMessageStageRecoveryRequired("Graph input asset is immutable")
+                        return original
+                    manifest["graph_input_asset"] = graph_input_asset
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
                 resuming_frozen = (task["operation"] == "message_recover" and original.recoveries
                     and original.recoveries[-1].resume_phase == "orchestrated")

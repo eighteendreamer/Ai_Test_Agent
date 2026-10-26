@@ -1577,6 +1577,42 @@ async def test_da_e3_runtime_maps_todos_to_existing_plan_event():
 
 
 @pytest.mark.asyncio
+async def test_deep_agent_runtime_emits_frozen_graph_input_asset_before_adapter_call():
+    captured = []
+
+    async def capture(asset):
+        captured.append(asset)
+
+    class AdapterStub:
+        async def execute(self, request):
+            assert captured and captured[0]["model_key"] == "test-model"
+            assert captured[0]["messages"] == []
+            return DeepAgentRuntimeResult(output_text="GRAPH_INPUT_ASSET_OK")
+
+    runtime = RuntimeService(
+        graph=None,
+        model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(),
+        tool_registry=ToolRegistry(),
+        runtime_control=RuntimeControlRegistry(),
+        deep_agent_runtime_adapter=AdapterStub(),
+        deep_agent_enabled=True,
+        deep_agent_pilot_mode_keys=["code_review"],
+    )
+    session = _runtime_session("session-graph-input-asset")
+    request = _runtime_request(session.id, "turn-graph-input-asset")
+    result = await runtime.execute_turn(session, request, on_graph_input=capture)
+    assert result.output_text == "GRAPH_INPUT_ASSET_OK"
+    assert captured[0]["asset_sha256"]
+    assert captured[0]["feature_flags"] == {
+        "read_only_filesystem": False,
+        "cognitive_planning": False,
+        "cognitive_subagents": False,
+        "governed_tools": False,
+    }
+
+
+@pytest.mark.asyncio
 async def test_da_e3_runtime_projects_subagent_events_without_worker_dispatch():
     class AdapterStub:
         async def execute(self, request):

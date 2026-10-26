@@ -2,9 +2,9 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
+2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**全系统迁移尚未完成。当前快照更新至 §43：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口及 orchestrating 阶段的有证明后继已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §44：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口、orchestrating 阶段的有证明后继及 Deep Agents 图输入资产已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1411,3 +1411,24 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 结果 **63 passed，161.62 秒，无 skip**。覆盖 OpenAI Chat Completions、OpenAI Responses、Anthropic Messages、Gemini GenerateContent 四种语义请求的恢复，completed/ready/unreserved/skip 四窗口，制品/输入/请求/所有者/结算/Schema 漂移，发布事务回滚、重复投递、二次失租、只读诊断及独立 Worker 相关契约。另执行旧阶段与强杀回归：新阶段集成测试 **46 passed，126.82 秒**；此前联合窗口中发生的单次不稳定 `run_once()==0` 已重新跑通，不能将那次失败计入通过证据。
 
 源码和测试 `compileall`、`git diff --check` 通过。未执行全量测试、独立 lint/typecheck、真实供应商/对象存储、图内模型结果导入、领域 Runner、双制品滚动部署或跨 Turn；因此本节不宣称完整迁移。下一出口是冻结完整图输入/结果资产，接通 runtime_submitted 和图完成投影补偿，并为各模式建立正式 Harness。
+
+## 44. Deep Agents 图输入资产冻结（2026-10-26）
+
+本阶段沿 v3 §3.1/§5.1 接通图外应用阶段与官方 Deep Agents 图之间缺失的输入证明。此前 `thread_id=turn_id`、原生 transcript 和 checkpoint 已存在，但应用阶段没有保存图实际接收的 Prompt、消息、治理工具集合和能力开关；仅有 checkpoint 不能证明图启动前的输入一致。
+
+### 实现与边界
+
+- 新增 `FrameworkGraphInputAsset`（Schema 1），保存 Deep Agents 运行的 session/turn/trace/model/checkpoint namespace、system prompt、显示消息、完整框架消息序列、运行上下文、业务工具 key、审批工具 key 和能力开关，并对除摘要字段外的完整 JSON 内容计算 SHA256。非 JSON 值直接拒绝，不将任意对象字符串化。
+- `RuntimeService._execute_deep_agent_turn` 在调用适配器前生成资产；通过可选回调写入应用阶段。`SessionService` 只为绑定运行传入阶段写入回调，legacy/未绑定路径不改变。`FrameworkMessageStages.record_graph_input` 在 `runtime_submitted` 阶段同 owner 事务中保存资产，重复相同资产幂等，绑定、内容或摘要变化拒绝。
+- 资产保存的是实际适配器入口契约，不包含模型凭据或工具处理对象；仍需由官方 checkpointer 保存图内状态和原生消息。当前尚未把 runtime_submitted 的 checkpoint/模型结果导入恢复做成自动后继，也未宣称外部副作用 exactly-once。
+
+### TDD 与实际验证
+
+首条红测为缺少 `framework_graph_input` 模块（1 failed）；实现后先通过资产往返/摘要篡改 5 项，再补真实 PostgreSQL 阶段记录、同资产幂等和变更拒绝，最终 6 项通过。新增 RuntimeService 测试验证资产在适配器调用前生成；相关阶段、适配器和编排恢复联合回归实际结果：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_graph_input_asset.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_message_stages.py tests/test_framework_orchestrating_recovery.py -q -x -rs --tb=short
+```
+
+结果 **117 passed，173.05 秒，无 skip**；随后修正资产变更测试为使用合法新摘要并单独复跑 **6 passed，7.80 秒**。源码与测试 `compileall`、`git diff --check` 通过。未执行全量测试、图内模型结果导入、runtime_submitted 故障恢复、真实供应商/对象存储、领域 Runner、跨 Turn 或双制品部署；下一出口是以该资产和 checkpoint/模型账本事实为依据闭合图内发送、已结算导入及完成后业务投影补偿。
