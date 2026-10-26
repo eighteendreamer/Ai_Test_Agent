@@ -7,6 +7,7 @@ from typing import Any
 
 from src.core.request_context import new_id
 from src.schemas.intent import IntentDecision, SemanticIntentCandidate
+from src.schemas.framework_model_call import FrameworkModelCallRecord
 from src.schemas.model_config import ModelInvocationRequest, model_invocation_parameters
 from src.schemas.semantic_input import PreparedSemanticInput
 from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
@@ -112,8 +113,11 @@ class SemanticIntentService:
         return PreparedSemanticInput.model_validate(PreparedSemanticInput(baseline=baseline,
             model_key=resolved_model_key, request=request, **settings).model_dump(mode="json"))
 
-    async def enrich_prepared(self, prepared: PreparedSemanticInput) -> IntentDecision:
+    async def enrich_prepared(self, prepared: PreparedSemanticInput, *,
+                              completed_call: FrameworkModelCallRecord | None = None) -> IntentDecision:
         prepared = PreparedSemanticInput.model_validate_json(prepared.model_dump_json())
+        if completed_call is not None and (prepared.request is None or prepared.invocation_parameters is None):
+            raise ValueError("Frozen semantic request is required to consume a completed model result")
         baseline = prepared.baseline
         if prepared.request is None:
             return baseline
@@ -142,7 +146,15 @@ class SemanticIntentService:
             "session_id": call_context.get("session_id", ""),
         })
         try:
-            result = await self._model_runtime_service.invoke(resolved_model_key, request, **options)
+            if completed_call is None:
+                result = await self._model_runtime_service.invoke(resolved_model_key, request, **options)
+            else:
+                result = await self._model_runtime_service.restore_completed(
+                    resolved_model_key, request, expected=completed_call, **options)
+                logger.info("semantic_intent_completed_result_consumed", extra={"model_key": resolved_model_key,
+                    "logical_call_id": call_context["logical_call_id"], "turn_id": call_context.get("turn_id", ""),
+                    "model_attempt_id": completed_call.intent.attempt_id,
+                    "settled_response_id": completed_call.settled_response_id})
             summary = getattr(result, "response_summary", {}) or {}
             response_mode = str(summary.get("mode") or "ok")
             if response_mode != "ok":

@@ -1,5 +1,6 @@
 ﻿from __future__ import annotations
 
+import asyncio
 import contextvars
 import importlib.metadata
 import json
@@ -28,6 +29,7 @@ from src.core.config import Settings
 from src.registry.models import ModelRegistry
 from src.runtime.execution_logging import summarize_messages, truncate_text
 from src.runtime.execution_context import current_framework_owner
+from src.schemas.framework_model_call import FrameworkModelCallRecord
 from src.schemas.model_config import (
     ContentPart,
     ModelConfigRecord,
@@ -126,6 +128,51 @@ class ModelRuntimeService:
         # object. It is non-secret metadata, never a provider request parameter.
         return model.model_copy(update={"metadata": {**(model.metadata or {}),
             "qa_model_config_fingerprint": model_config_fingerprint(config)}})
+
+    async def restore_completed(
+        self,
+        model_key: str,
+        request: ModelInvocationRequest,
+        *,
+        expected: FrameworkModelCallRecord,
+        expected_parameters: dict[str, Any] | None,
+        expected_runtime_parameters: dict[str, Any] | None,
+        transport_options: ModelTransportOptions | None,
+    ) -> ModelInvocationResult:
+        """Consume a proven application DTO; never authenticate, send or emit tokens.
+
+        No upstream counterpart (checked: FrameworkModelCallPolicy, prepared
+        semantic input, LangGraph persistence, v3 section 5.1): this request ran
+        before graph admission. Its original settlement owns the response.
+        """
+        try:
+            owner = current_framework_owner()
+            if owner is None or self._framework_model_call_policy is None:
+                raise RuntimeError("Completed model restoration requires an owner and framework model policy")
+            if expected_parameters is None or expected_runtime_parameters is None or transport_options is None:
+                raise ValueError("Completed model restoration requires its full frozen invocation contract")
+            if transport_options.max_retries != 0:
+                raise ValueError("Completed model restoration cannot authorize retries")
+            config = self.get_model_config(model_key)
+            if config is None or model_invocation_parameters(config) != expected_parameters:
+                raise ValueError("Frozen completed model configuration changed")
+            if self.get_invocation_runtime_parameters(model_key,
+                transport_options=transport_options) != expected_runtime_parameters:
+                raise ValueError("Frozen completed model runtime configuration changed")
+            return await self._framework_model_call_policy.restore_completed_dto(
+                owner=owner, expected=expected, config=config, request=request,
+                options=self._framework_invocation_options(config, transport_options))
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("model_completed_result_rejected", extra={"model_key": model_key,
+                "logical_call_id": request.trace_context.get("logical_call_id", ""),
+                "error_type": type(exc).__name__})
+            raise
+
+    def _framework_invocation_options(self, config, transport_options):
+        # Sending and reading must compare the same provider-affecting options.
+        return {"transport_options": transport_options.model_dump(mode="json"),
+            "streaming": _stream_handler_var.get() is not None,
+            "langchain_adapter": self._uses_langchain(config)}
 
     async def invoke(
         self,
@@ -258,9 +305,7 @@ class ModelRuntimeService:
                     result = await send()
                 else:
                     result = await self._framework_model_call_policy.invoke_dto(owner=owner, config=config,
-                        request=request, options={"transport_options": transport_options.model_dump(mode="json"),
-                            "streaming": _stream_handler_var.get() is not None,
-                            "langchain_adapter": self._uses_langchain(config)}, send=send)
+                        request=request, options=self._framework_invocation_options(config, transport_options), send=send)
             except ProviderClientError as exc:
                 result = self._http_error_result(config, request, exc)
         result.response_summary["logical_call_id"] = logical_call_id

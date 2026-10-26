@@ -2,9 +2,9 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
+2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**全系统迁移尚未完成。当前快照更新至 §40：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移及已结算 DTO 响应只读导入端口已局部落实。自动生成绑定及预算、orchestrating 阶段恢复调用方、图结果导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**全系统迁移尚未完成。当前快照更新至 §41：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入及语义服务消费入口已局部落实。自动生成绑定及预算、orchestrating 阶段完整恢复调用方、图结果导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1331,3 +1331,31 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 结果 **84 passed，262.58 秒，无 skip**。此前 v3 复核的 111 项含本功能部分测试，两次有重叠，不累计覆盖数。测试覆盖提交前/提交后 ACK 丢失后重建存储对象读取，未结算观察拒绝，新 owner 只读，原资产错误/身份漂移、重复结算和旧 schema 摘要兼容。真实 PostgreSQL/Redis、官方 SDK 与本地合成供应商；对象存储使用内存 RustFS client 替身，未验真实付费供应商/对象存储。
 
 此端口不代表语义分类调用方、orchestrating 后继或图内结果导入已接通。下一步按 TDD 接入语义服务对原结算结果的消费，并复用现有解析/安全合并；其首条红测已暴露 enrich_prepared 不接受 completed_call，**1 failed、16 deselected，13.42 秒**。测试文件尚不属于本阶段提交。生产路由保持关闭，整体目标继续。
+
+## 41. 语义服务消费原已结算响应（2026-10-26）
+
+从 `d356f66d2` 继续 v3 §5.1/A。原底层只读端口已有，但 SemanticIntentService 无法消费已结算输出，重新 enrich_prepared 会进入正常模型调用。因此在原服务上增加明确 completed_call 分支，使用 ModelRuntimeService.restore_completed；普通入口不自动查账本、不自动重放。未引入第二套分类解析或合并策略。
+
+### 实现与边界
+
+- 新读取入口要求当前有效 owner、共享调用策略、原冻结参数/运行参数及零重试传输契约，重新核对模型配置/SDK/超时/适配器；再委托已有底层端口核对完整结算、原请求/响应资产和用量。不解析凭据，不发供应商请求，不发送流式回调，不变更原预算或调用次数。
+- 发送和读取使用同一个 `_framework_invocation_options`，防止流式、适配器和传输参数分别拼装产生漂移。结构化日志记录读取拒绝或已消费的原 attempt/settled_response_id，不输出正文或凭据。
+- enrich_prepared 的已完成分支必须提供完整冻结请求；保存的 skip 或无运行参数请求不能附带 completed_call。返回结果复用同一段 response mode、候选解析和保护性合并；不合法的原语义输出仍按既有规则回退 baseline，资产/身份/执行权异常明确上抛，不以 baseline 吞掉恢复错误。
+- 新建模型/语义服务对象后仍读取持久原资产；不重建 Prompt、模型选择或原调用位置。接口为内部兼容新增，无 DDL、公开 HTTP/任务 operation 或默认开关变化。
+
+### TDD 与验证
+
+首条红测见 §40：不支持 completed_call，1 failed。实现后的新文件首次执行 **19 passed、1 failed，76.38 秒**；失败为测试构造 ModelTransportOptions 时漏掉必需 timeout_seconds。已改为从原冻结值复制后修改 retries，没有修改生产校验迎合错误 fixture。随后增加重建服务及原流式结果读取检查。
+
+最终在 Agent_Server 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_dto.py tests/test_intent_safety_routing.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py -q -x -rs --tb=short
+```
+
+结果 **190 passed，207.24 秒，无 skip**，新文件最终 22 项。覆盖四传输真实官方 SDK/合成 HTTP 的原分类消费及重复读取、无效候选 fallback、保护安全意图、原输入/模型/运行配置漂移、缺资产/失租/非已结算事实拒绝、缺 owner/策略/契约/模型及非零重试拒绝，以及 native/官方 LangChain 两种原流式 DTO 的无 Token 重发读取。数据库为真实 PostgreSQL/Redis，响应对象存储仍为内存 RustFS client 替身，不冒充付费供应商或真实对象存储。
+
+两个源码和新测试执行 compileall 通过，文档链接/围栏及 scoped diff check 通过。没有执行全量、独立 lint/typecheck、前端、官方 conformance、真实供应商/对象存储/领域 Runner 或双制品部署；这些不属于本次已闭合的端口验收范围。
+
+下一步仍需将冻结语义消费连接完整 orchestrating 后继准入及 Session/InputOrchestrator，冻结确定性路由/解析合并代码制品，接通 transfer_ready 的应用调用方和相关故障出口。本阶段不创建这类后继、不推进图/阶段、不开放 v2 默认路由；图内结果导入、活动时间、跨 Turn 及后续各模式目标保持未完成。

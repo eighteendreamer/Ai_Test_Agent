@@ -4,6 +4,8 @@
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
+后续开发快照更新至实施记录 §41：模型/语义服务已能显式消费原已结算 DTO，完整 orchestrating 后继与编排恢复调用方仍待接通；下文“本轮复核”保留原文档交付时的证据范围，不能代替后续实施记录。
+
 ## 1. 结论及附件意见的处理
 
 **分层组合继续采用：Deep Agents 管自主认知过程，直接构建的 LangGraph 管受控 Agent 工作流，平台管业务执行权和测试事实。附件六类问题均应进入实施契约，但其中部分已有实现。**
@@ -123,7 +125,7 @@ checkpointer、业务库和目标系统不构成天然分布式事务。`durabil
 | 阶段 | 当前范围 | 下一出口 |
 | --- | --- | --- |
 | submitted | 已有未开始编排的安全后继 | 保持原输入、根预算、原 task/attempt 终态 |
-| orchestrating | 已有实际语义输入冻结；未发送预留转移、已结算 DTO 读取有独立端口 | 接入应用恢复调用方；冻结确定性解析/合并制品；不能重跑整个 orchestrate |
+| orchestrating | 已有实际语义输入冻结；未发送预留转移、模型/语义服务的已结算 DTO 消费入口 | 接入完整后继准入及 Session/InputOrchestrator 恢复调用方；冻结确定性解析/合并制品；不能重跑整个 orchestrate |
 | orchestrated | 已有冻结 ExecutionRequest 的后继，跳过重新编排 | 补完整初始图资产和版本实物；不能推广到其它阶段 |
 | runtime_submitted | 图内模型发送/资产/结算各窗口尚需完整闭合 | 用调用账本与图 pending writes 判定继续、导入或对账 |
 | 图完成待业务投影 | 完整补偿出口未验收 | 使用原结果补投影，不调用模型/工具 |
