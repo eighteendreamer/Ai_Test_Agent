@@ -208,6 +208,13 @@ class SessionService:
                             frozen = await stages.resume_orchestrated(task.runtime_owner, modes=self._mode_registry.list())
                         elif existing is not None and existing.phase == "orchestrating":
                             prepared_stage = await stages.resume_orchestrating(task.runtime_owner, modes=self._mode_registry.list())
+                        elif existing is not None and existing.phase == "runtime_submitted":
+                            return await self._recover_projected_framework_message(
+                                session=session,
+                                task=task,
+                                stage=existing,
+                                stages=stages,
+                            )
                     if prepared_stage is not None:
                         from src.runtime.framework_message_recovery import prepared_model_call
                         from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
@@ -270,6 +277,44 @@ class SessionService:
                 )
             finally:
                 await self._stop_lease_heartbeat(task.session_id, stop, heartbeat)
+
+    async def _recover_projected_framework_message(self, *, session, task, stage, stages):
+        """Advance a committed application projection without re-running the graph.
+
+        ``runtime_submitted`` is deliberately recoverable only when the
+        SessionSnapshot was already committed. Native LangGraph checkpoints
+        and model ledger rows do not contain the application's transcript,
+        approval, verification and memory projection contract, so they never
+        authorize a new model/tool invocation here.
+        """
+        snapshot = await self._store.get_latest_snapshot(session.id)
+        binding = task.runtime_binding
+        if (snapshot is None or snapshot.graph_state.get("turn_id") != binding.turn_id
+            or (snapshot.graph_state.get("context_bundle") or {}).get("runtime_binding")
+                != binding.model_dump(mode="json")):
+            raise RuntimeError("Runtime submission has no matching committed application projection")
+        assistant = next(
+            (message for message in reversed(session.messages)
+             if message.role == MessageRole.assistant
+             and message.metadata.get("turn_id") == binding.turn_id),
+            None,
+        )
+        if assistant is None:
+            # A waiting-approval or empty-output turn may legitimately have
+            # no assistant transcript message. Preserve the response DTO
+            # contract without writing a new transcript row during recovery.
+            assistant = ChatMessage(
+                id=str(snapshot.graph_state.get("assistant_message_id") or snapshot.id),
+                role=MessageRole.assistant,
+                content=str(snapshot.graph_state.get("final_response") or ""),
+                created_at=snapshot.created_at,
+                metadata={"turn_id": binding.turn_id, "recovered_projection": True},
+            )
+        reference = assistant.id if assistant is not None else snapshot.id
+        await stages.projected(task.runtime_owner, reference)
+        refreshed = await self._require_session(session.id)
+        events = await self._store.list_events(session.id, limit=RECENT_CONVERSATION_EVENT_LIMIT)
+        return ConversationResponse(session=await self._to_detail(refreshed), output=assistant, events=events)
 
     async def execute_claimed_resume(
         self,

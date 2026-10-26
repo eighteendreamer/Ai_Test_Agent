@@ -72,7 +72,7 @@ def _same_input(stage, origin, row, binding):
 
 
 def _recoverable(cur, tasks, session, binding, stage, origin):
-    if stage.phase not in {"submitted", "orchestrating", "orchestrated"}:
+    if stage.phase not in {"submitted", "orchestrating", "orchestrated", "runtime_submitted"}:
         _reject("Message phase has no admitted continuation; its result requires reconciliation")
     if (session["project_id"] != origin["project_id"] or session["id"] != binding.session_id
         or origin["turn_id"] != binding.turn_id or stage.binding_id != binding.binding_id):
@@ -107,7 +107,7 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
         prepared_model_call(stage, binding, snapshot)
         proof.update(source_sha256=stage.source_sha256,
             model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
-    else:
+    elif stage.phase == "orchestrated":
         _require_frozen_sources(cur, tasks, session, stage)
         request = ExecutionRequest.model_validate(stage.execution_request)
         if (request.runtime_binding != binding or request.session_id != binding.session_id
@@ -118,6 +118,34 @@ def _recoverable(cur, tasks, session, binding, stage, origin):
             _reject("Frozen orchestration has unresolved model attempts")
         proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
             model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
+    else:
+        # A runtime submission may only be recovered after the application
+        # snapshot has committed. The snapshot is the business projection;
+        # a native LangGraph checkpoint alone is not sufficient to rebuild
+        # SessionService's transcript, approvals, verification and memory
+        # projections. This branch never grants permission to invoke a graph.
+        _require_frozen_sources(cur, tasks, session, stage)
+        request = ExecutionRequest.model_validate(stage.execution_request)
+        if (request.runtime_binding != binding or request.session_id != binding.session_id
+            or request.turn_id != binding.turn_id):
+            _reject("Runtime submission request differs from its original binding")
+        if any(call.phase != "completed" or call.settled_response_id is None
+            for call in snapshot.calls):
+            _reject("Runtime submission has unsettled model facts")
+        table = tasks._settings.database.postgres_snapshot_table
+        cur.execute(f"SELECT id, graph_state FROM {table} WHERE session_id=%s "
+            "AND graph_state->>'turn_id'=%s ORDER BY version DESC LIMIT 1",
+            (binding.session_id, binding.turn_id))
+        projection = cur.fetchone()
+        if projection is None:
+            _reject("Runtime submission has no committed application projection")
+        graph_state = projection["graph_state"] or {}
+        context_binding = (graph_state.get("context_bundle") or {}).get("runtime_binding")
+        if context_binding != binding.model_dump(mode="json"):
+            _reject("Runtime projection binding differs from its original binding")
+        proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
+            model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]),
+            result_reference=str(projection["id"]), result_sha256=approval_value_hash(graph_state))
     cur.execute(f"SELECT role,content,metadata FROM {tasks._settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s", (stage.user_message_id, binding.session_id))
     message = cur.fetchone()
@@ -296,7 +324,8 @@ class FrameworkMessageRecovery:
                 predecessor_attempt_id=predecessor["attempt_id"], predecessor_owner_epoch=owner["owner_epoch"],
                 budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now, **proof)
             updated = validate_message_stage(stage.model_copy(update={"schema_version": max(stage.schema_version,
-                4 if stage.phase == "orchestrating" else 3), "recoveries": [*stage.recoveries, link],
+                5 if stage.phase == "runtime_submitted" else (4 if stage.phase == "orchestrating" else 3)),
+                "recoveries": [*stage.recoveries, link],
                 "updated_at": now}).model_dump())
             cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
                 (updated.model_dump_json(), origin["id"]))

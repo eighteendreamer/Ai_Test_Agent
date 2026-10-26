@@ -16,16 +16,18 @@ class FrameworkMessageRecoveryLink(BaseModel):
     predecessor_owner_epoch: int = Field(ge=1)
     budget_sha256: str = Field(min_length=1)
     admitted_at: datetime
-    resume_phase: Literal["submitted", "orchestrating", "orchestrated"] = "submitted"
+    resume_phase: Literal["submitted", "orchestrating", "orchestrated", "runtime_submitted"] = "submitted"
     source_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     execution_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     model_calls_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
+    result_reference: str | None = Field(default=None, min_length=1)
+    result_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
 class FrameworkMessageStage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1, 2, 3, 4] = 3
+    schema_version: Literal[1, 2, 3, 4, 5] = 3
     task_id: str
     binding_id: str
     input_sha256: str

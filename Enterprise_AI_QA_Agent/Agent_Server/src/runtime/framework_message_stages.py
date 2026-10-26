@@ -36,6 +36,8 @@ def validate_message_stage(record):
         if ((link.resume_phase == "orchestrated" and (stage.schema_version < 3 or not all(assets)))
             or (link.resume_phase == "orchestrating" and (stage.schema_version < 4
                 or not link.source_sha256 or not link.model_calls_sha256 or link.execution_sha256 is not None))
+            or (link.resume_phase == "runtime_submitted" and (stage.schema_version < 5
+                or not all(assets) or not link.result_reference or not link.result_sha256))
             or (link.resume_phase == "submitted" and any(assets))):
             raise FrameworkMessageStageRecoveryRequired("Message recovery phase has no matching frozen proof")
         predecessor = link.task_id
@@ -219,13 +221,20 @@ class FrameworkMessageStages:
                 if row is None:
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage admission is missing")
                 original = validate_message_stage(row["record"])
+                resuming_frozen = (task["operation"] == "message_recover" and original.recoveries
+                    and original.recoveries[-1].resume_phase == "orchestrated")
+                resuming_prepared = (task["operation"] == "message_recover" and original.recoveries
+                    and original.recoveries[-1].resume_phase == "orchestrating")
+                resuming_projected = (task["operation"] == "message_recover" and original.recoveries
+                    and original.recoveries[-1].resume_phase == "runtime_submitted")
                 if (task is None or task["operation"] not in {"message", "message_recover"} or task["status"] != "running"
                     or task["runtime_binding"] != owner.binding.model_dump(mode="json")
                     or task["attempt_id"] != owner.attempt_id or task["lease_token"] != owner.owner_token
                     or original.binding_id != owner.binding.binding_id or original.input_sha256 != task["input_hash"]
                     or original.user_message_id != task["user_message_id"] or original.current_task_id != owner.task_id):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage identity differs from its origin")
-                if original.phase != expected or (expected != "submitted" and recovery_modes_sha256 is None and (
+                if original.phase != expected or (expected != "submitted" and recovery_modes_sha256 is None
+                    and not resuming_projected and (
                     original.owner_epoch != owner.owner_epoch or original.owner_attempt_id != owner.attempt_id)):
                     raise FrameworkMessageStageRecoveryRequired("Initial message stage has already started; reconcile its origin")
                 if expected == "orchestrating" and "orchestration_artifact" in (original.source_manifest or {}):
@@ -267,11 +276,7 @@ class FrameworkMessageStages:
                         return original
                     manifest["graph_input_asset"] = graph_input_asset
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
-                resuming_frozen = (task["operation"] == "message_recover" and original.recoveries
-                    and original.recoveries[-1].resume_phase == "orchestrated")
-                resuming_prepared = (task["operation"] == "message_recover" and original.recoveries
-                    and original.recoveries[-1].resume_phase == "orchestrating")
-                if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated"):
+                if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated") or resuming_projected:
                     from src.runtime.framework_message_recovery import require_message_recovery_claim
 
                     if (task["operation"] != "message_recover" or (recovery_modes_sha256 is not None

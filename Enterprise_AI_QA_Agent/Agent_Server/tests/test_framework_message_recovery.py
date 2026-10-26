@@ -19,6 +19,26 @@ from tests.test_framework_model_admission import admission, submit
 from tests.test_framework_message_stages import selected, stage
 
 
+async def runtime_submitted(h):
+    from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
+    from src.schemas.session import ExecutionRequest
+
+    task = await selected(h)
+    stages = FrameworkMessageStages(h.tasks)
+    session = await h.store.get_session(h.session_id)
+    await stages.begin(task.runtime_owner, message_source_manifest(
+        session, h.binding, h.payload, modes=h.sessions._mode_registry.list(),
+    ))
+    request = ExecutionRequest(
+        turn_id=h.binding.turn_id, trace_id=task.trace_id, session_id=h.session_id,
+        user_message=h.payload.content, normalized_input=h.payload.content,
+        mode_key="default", model_key="primary", runtime_binding=h.binding,
+    )
+    await stages.freeze_execution(task.runtime_owner, request)
+    await stages.submit_runtime(task.runtime_owner)
+    return task
+
+
 def worker_before_message_stage(settings_data, prefix, gate):
     from redis.asyncio import Redis
     from src.core.config import Settings
@@ -228,6 +248,51 @@ async def test_recovery_precedes_queued_later_input_without_duplicate_user_messa
     claimed = await h.tasks.claim(successor.id, worker_id="recovery-first", expected_binding=h.binding)
     assert claimed.status == "claimed" and claimed.runtime_owner.binding == h.binding
     assert len((await h.store.get_session(h.session_id)).messages) == 2
+
+
+@pytest.mark.asyncio
+async def test_runtime_submitted_without_committed_projection_is_not_replayed(admission):
+    h = admission
+    original = await runtime_submitted(h)
+    assert await h.store.renew_turn_execution(h.session_id, original.lease_token, 0)
+    terminal = await h.tasks.claim(original.id, worker_id="expiry", expected_binding=h.binding)
+    assert terminal.status == "recovery_required"
+    before = await stage(h, original)
+    assert before.phase == "runtime_submitted"
+    assert await h.tasks.ensure_framework_message_recovery(original.id) is None
+    assert len(await h.tasks.list_session(h.session_id)) == 1
+    assert await stage(h, original) == before and h.runtime.calls == []
+
+
+@pytest.mark.asyncio
+async def test_runtime_submitted_with_committed_projection_only_advances_stage(admission):
+    from datetime import datetime, timezone
+    from src.schemas.session import SessionSnapshot
+
+    h = admission
+    original = await runtime_submitted(h)
+    snapshot = SessionSnapshot(
+        id="runtime-projection-snapshot", session_id=h.session_id, version=1,
+        stage="completed", created_at=datetime.now(timezone.utc),
+        graph_state={"turn_id": h.binding.turn_id,
+            "context_bundle": {"runtime_binding": h.binding.model_dump(mode="json")}},
+    )
+    await h.store.save_snapshot(h.session_id, snapshot, turn_lease_token=original.lease_token)
+    assert await h.store.renew_turn_execution(h.session_id, original.lease_token, 0)
+    terminal = await h.tasks.claim(original.id, worker_id="expiry", expected_binding=h.binding)
+    assert terminal.status == "recovery_required"
+    successor = await h.tasks.ensure_framework_message_recovery(original.id)
+    assert successor is not None
+    assert (await stage(h, original)).recoveries[-1].resume_phase == "runtime_submitted"
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+
+    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True))
+    await h.dispatcher.handle_v2(QueuedTask("runtime-projection", outbox(h, successor.id)["payload"]),
+        worker_id="runtime-projection")
+    assert (await h.tasks.get(successor.id)).status == "completed"
+    saved = await stage(h, original)
+    assert saved.phase == "projected" and saved.result_reference == snapshot.id
+    assert h.runtime.calls == []
 
 
 @pytest.mark.asyncio
