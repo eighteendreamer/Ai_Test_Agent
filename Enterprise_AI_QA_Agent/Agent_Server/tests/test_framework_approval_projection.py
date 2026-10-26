@@ -194,7 +194,8 @@ async def test_session_finalization_does_not_overwrite_decision_after_native_pro
         tool_job_service=h.jobs, framework_approval_projection=projector(h))
     proposal = await projector(h).project(h.owner.runtime_owner, prepare(h))
     session = await h.store.get_session(h.session_id)
-    result = await h.runtime.execute_turn(session, SimpleNamespace(turn_id=h.binding.turn_id))
+    result = await h.runtime.execute_turn(session, SimpleNamespace(turn_id=h.binding.turn_id,
+        runtime_binding=h.binding))
     result.approvals = [proposal.approval.model_dump(mode="python")]
     result.state["context_bundle"] = {"runtime_binding": h.binding.model_dump(mode="json")}
     result.state["termination_reason"] = "waiting_approval"

@@ -51,6 +51,13 @@ def validate_message_stage(record):
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
     manifest = stage.source_manifest or {}
+    if "event_projection_commits" in manifest:
+        from src.schemas.framework_projection_commit import FrameworkEventProjectionCommits
+
+        if (stage.schema_version < 9 or stage.phase not in {"runtime_submitted", "projected"}
+            or "runtime_result_asset" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Event projection has no matching message stage format")
+        FrameworkEventProjectionCommits.model_validate(manifest["event_projection_commits"])
     if "snapshot_projection_commit" in manifest:
         from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit
 

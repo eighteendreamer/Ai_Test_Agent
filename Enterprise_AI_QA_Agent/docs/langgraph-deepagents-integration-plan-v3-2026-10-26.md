@@ -1,10 +1,10 @@
 # LangGraph / Deep Agents 接入方案 v3：附件复核与实施契约
 
-日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–19 节记录 A2 原结果资产、Runtime 回调和快照分项回执。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
+日期：2026-10-26。方案续核基线为 `1e1468fa4`；其后 `b67940b2d` 已提交第 16 节的方案复核。第 1–10 节及第 12 节是方案/目标契约；第 11、13–16 节保留历史证据，不将过去的失败或待实现描述当作当前状态。第 17–20 节记录 A2 原结果资产、Runtime 回调、快照及事件分项回执。五个跨 Turn 草稿相关文件实际已随 `73530febe` 提交，先前“不纳入提交”的描述不符合最终提交事实；这不代表跨 Turn 完整验收已通过。默认开关不变。
 
 本文件是对用户所贴初版的集中修订；[v2 详细方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v2-2026-10-25.md)及[实施记录](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)保留历史，不把其中不同时点的“待实现”相加作为当前缺口。
 
-当前实施见[实施记录 §46–48](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 已有原结果资产和正常 finalizer 消费，新增快照分项的同事务回执及重入校验。A1 只承认有效原子提交凭证；A2-1 资产及快照回执也不自动授予后继或图恢复权。**A2 的完整部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
+当前实施见[实施记录 §46–49](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/framework-integration-progress-2026-10-25.md)：图前安全后继、图输入冻结及 **A1「应用最终事务已提交、阶段 ACK 丢失」** 已有实现；A2-1 已有原结果资产和正常 finalizer 消费，新增快照、事件分项的同事务回执及重入校验。A1 只承认有效原子提交凭证；A2-1 资产及分项回执也不自动授予后继或图恢复权。**A2 的完整部分投影补偿、图终态到资产空窗、projected 后任务结算，以及 A3、跨 Turn 和实际兼容部署仍是独立出口。** 下文明确区分已实现、目标和历史。
 
 ## 1. 结论及附件意见的处理
 
@@ -670,3 +670,24 @@ A2-1 之后仍有一个明确空窗：`RuntimeService._execute_turn()` 已获得
 实际回归及强杀窗口见实施记录 §48。官方 Deep Agents/SDK + 合成本地 HTTP + 真实 PostgreSQL/Redis 的独立 Worker 已增加“快照事务后、finalizer 收到返回值前”的强杀点；只证明原结果和快照回执保留，不把负断言（仍拒绝自动后继）称为补偿已完成。
 
 后续仍须补原事件冲突校验、观察的稳定身份/实际写入回执、Verification/消息分项复用，再沿既有 message_recover 打开部分投影补偿；A1 已有完整提交凭证时只补 ACK。图终态到资产的空窗、projected→finish、Memory/清理、完整跨 Turn、逐模式 Harness 和真实兼容部署依旧独立验收。生产默认开关不变，整体目标未完成。
+
+## 20. A2-1 续接：原事件与生成事件的同事务回执（2026-10-26）
+
+本子步基线 `025428255`。沿 §12.1 和 §19 处理事件分项，复用原 owner、message-stage JSONB、Session/outbox 事务及唯一 finalizer；没有新队列/调度器、公开 API 或依赖升级。用户要求暂停时已暂停；收到继续指令后读取目标及实际工作区，接续尚未完成的事件接线。
+
+### 20.1 根因与实际契约
+
+- 旧事件写入的 `ON CONFLICT (id) DO NOTHING` 只防重复行，不能证明同 ID 仍是同一业务事实。新增 `FrameworkEventProjectionCommits`，绑定原结果资产，回执保存实际 `id/type/timestamp/payload` 摘要，包括 sink 补充的 `_harness_context`。Session 身份在写入时验证，后续按原 Session 查询。
+- Runtime 流式事件可能先于资产冻结落库；首次收录必须等于资产内的原事件，匹配业务内容、时间及显式关联字段。未指定的自动关联以原存储行保留，不能换成新 Worker/attempt；首次收录不声称能追溯证明此前未记录的自动 enrichment。收录后按实际整行检验漂移。
+- `snapshot.saved`、`verification.completed` 及 completion events 使用原资产派生的身份/时间。它们不是预先流式写入的 Runtime 事件，已存在却无对应原子回执必须转对账；检查与插入之间才出现同 ID 行，也不能仅因内容相同就补造生成事件的回执。
+- 插入/收录事件与回执在同一事务；重复合法行不再增加 event_count、不再投递 outbox 或热事件。回执/事件缺失、内容漂移、错误 owner 或资产均拒绝。新增结构化成功/拒绝日志，不记录正文和凭据。
+- finalizer 在首次事件 flush 前构造原 `FrameworkProjectionWrite`，为 Runtime 事件、快照事件及验证事件显式传递。最终 Session 事务为 completion events 同事务记账，并再次检查必需事件及全部已收录事件。A1 读取新增容器时也校验原 Runtime 事件，不能只检查完成事件。
+- 观察仍走原服务，尚未纳入这套回执；不将受限的事件参数误传给观察写入。旧非框架事件路径保持原重复语义。Protocol/PostgreSQL/InMemory 已同步，内存实现明确拒绝 owner 事务回执。
+
+### 20.2 验证与部署边界
+
+新增 message-stage **9**；新读者支持 1–9，保留旧 1–8 格式读取，默认能力上限同步为 9。Harness 验证历史 6/7/8 格式形状能执行 ACK-only 后继，以及 reader 8 对 stage 9、reader 9 对未来 stage 10 的 claim 前拒领。这不等于真实旧制品、滚动部署或回滚演练；新写者上线前仍须兼容读者先行或隔离消费者。
+
+真实数据库红测、完整命令、最终结果及中间 Harness 修正见实施记录 §49。官方 Deep Agents/SDK、本地合成 HTTP、真实 PostgreSQL/Redis 的独立 Worker 在 `snapshot.saved` 事务提交后被强杀，原结果和实际事件回执保留、HTTP 不重复；仍无最终应用凭证，后继仍拒绝。此负断言不算完整部分投影恢复。
+
+本子步不关闭观察/Verification/消息的完整重入、A2-2 图终态→资产空窗、A2-3 projected→finish、A3 Memory/清理、跨 Turn、统一 Prompt/Skills、真实流式/取消、受控 AgentCase、逐模式 Harness 或双制品部署出口。生产开关保持关闭，完整开发目标继续 active。

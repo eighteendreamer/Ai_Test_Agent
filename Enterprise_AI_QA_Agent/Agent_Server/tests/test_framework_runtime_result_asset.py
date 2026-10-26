@@ -252,7 +252,7 @@ async def test_mutated_in_memory_finalization_asset_is_rejected_before_snapshot(
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("window", ["before_finalization", "after_snapshot"])
+@pytest.mark.parametrize("window", ["before_finalization", "after_snapshot", "after_snapshot_event"])
 async def test_official_worker_hard_kill_before_finalization_retains_result_not_commit(admission, window):
     from redis.asyncio import Redis
     from src.application.models.framework_model_call_policy import model_config_fingerprint
@@ -283,7 +283,8 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
                 args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate, window))
             process.start()
             reached = await waiting.blpop(gate, timeout=40)
-            marker = "runtime-result-frozen" if window == "before_finalization" else "snapshot-committed"
+            marker = {"before_finalization": "runtime-result-frozen", "after_snapshot": "snapshot-committed",
+                "after_snapshot_event": "snapshot-event-committed"}[window]
             assert reached is not None and reached[1] == marker, f"worker exit code: {process.exitcode}"
             active = await h.tasks.get(original.id)
             # A task read intentionally does not hand out a live execution
@@ -307,7 +308,21 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
                 receipt = before.source_manifest["snapshot_projection_commit"]
                 assert receipt["runtime_result_asset_sha256"] == asset.asset_sha256
                 assert receipt["snapshot_sha256"] == _hash(snapshot.model_dump(mode="python"))
-                assert before.schema_version == 8
+                if window == "after_snapshot_event":
+                    # API projections extract _harness_context into top-level
+                    # fields. The receipt covers the full actual stored row.
+                    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                        cur.execute(f"SELECT id,type,timestamp,payload FROM {h.settings.database.postgres_event_table} "
+                            "WHERE session_id=%s", (h.session_id,))
+                        events = {row["id"]: dict(row) for row in cur.fetchall()}
+                    event_receipts = before.source_manifest["event_projection_commits"]
+                    assert event_receipts["runtime_result_asset_sha256"] == asset.asset_sha256
+                    assert asset.event_id("snapshot.saved") in event_receipts["event_hashes"]
+                    for identity, digest in event_receipts["event_hashes"].items():
+                        assert digest == _hash(events[identity])
+                    assert before.schema_version == 9
+                else:
+                    assert before.schema_version == (9 if asset.runtime_result.events else 8)
             assert len((await h.store.get_session(h.session_id)).messages) == 1
             assert len(requests) == 1 and process.is_alive()
             budget = await h.calls.snapshot(h.binding)
@@ -320,6 +335,7 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
             assert await h.tasks.ensure_framework_message_recovery(original.id) is None
             assert (await stage(h, original)).source_manifest["runtime_result_asset"] == before.source_manifest["runtime_result_asset"]
             assert (await stage(h, original)).source_manifest.get("snapshot_projection_commit") == before.source_manifest.get("snapshot_projection_commit")
+            assert (await stage(h, original)).source_manifest.get("event_projection_commits") == before.source_manifest.get("event_projection_commits")
             assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
             assert not any(e.type == "turn.completed" for e in await h.store.list_events(h.session_id))
     finally:
@@ -460,7 +476,7 @@ async def test_application_commit_keeps_original_asset_and_prevents_refreeze(pro
     asset = await results.load(task.runtime_owner)
     assert asset == captured["projection_asset"]
     assert "application_projection_commit" in (await stage(h, task)).source_manifest
-    assert (await stage(h, task)).schema_version == 8
+    assert (await stage(h, task)).schema_version == 9
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="after application commit"):
         await results.freeze(task.runtime_owner, runtime_result=captured["runtime_result"],
             assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,

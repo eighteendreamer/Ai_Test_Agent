@@ -218,6 +218,7 @@ class SessionStore(Protocol):
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> None: ...
     async def list_events(
         self,
@@ -720,7 +721,10 @@ class InMemorySessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> None:
+        if framework_projection is not None:
+            raise ValueError("Framework event receipts require a PostgreSQL owner transaction")
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:
                 self._assert_continuation_lease_locked(

@@ -19,6 +19,16 @@ class FrameworkSnapshotProjectionCommit(BaseModel):
     snapshot_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+class FrameworkEventProjectionCommits(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["runtime_result_events"] = "runtime_result_events"
+    binding_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_result_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    event_hashes: dict[str, str] = Field(min_length=1)
+
+
 class FrameworkProjectionCommit(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 

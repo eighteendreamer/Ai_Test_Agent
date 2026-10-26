@@ -197,15 +197,28 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> None:
-        inserted = await asyncio.to_thread(
-            self._append_event_sync,
-            session_id,
-            event,
-            continuation_approval_id,
-            continuation_lease_token,
-            turn_lease_token,
-        )
+        try:
+            inserted = await asyncio.to_thread(
+                self._append_event_sync,
+                session_id,
+                event,
+                continuation_approval_id,
+                continuation_lease_token,
+                turn_lease_token,
+                framework_projection,
+            )
+        except Exception as exc:
+            if framework_projection is not None:
+                LOGGER.warning("framework_event_projection_rejected", extra={"session_id": session_id,
+                    "binding_id": framework_projection.owner.binding.binding_id, "event_id": event.id,
+                    "event_type": event.type, "error_type": type(exc).__name__})
+            raise
+        if framework_projection is not None:
+            LOGGER.info("framework_event_projection_saved", extra={"session_id": session_id,
+                "binding_id": framework_projection.owner.binding.binding_id, "event_id": event.id,
+                "event_type": event.type, "reused": not inserted})
         if not inserted:
             return
         await self._publish_hot_event(session_id, event)
@@ -983,6 +996,8 @@ class PostgresSessionStore:
                     if self.append_event_in_transaction(
                         cur, session.id, event, continuation_approval_id,
                         continuation_lease_token, turn_lease_token,
+                        framework_projection=(framework_projection if framework_projection is not None
+                            and framework_projection.runtime_result_asset_sha256 is not None else None),
                     ):
                         inserted.append(event)
                 if framework_projection is not None:
@@ -1447,12 +1462,14 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
                 return self.append_event_in_transaction(
                     cur, session_id, event, continuation_approval_id,
                     continuation_lease_token, turn_lease_token,
+                    framework_projection,
                 )
 
     def append_event_in_transaction(
@@ -1460,12 +1477,20 @@ class PostgresSessionStore:
         continuation_approval_id: str | None = None,
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
+        framework_projection: FrameworkProjectionWrite | None = None,
     ) -> bool:
         """Append an event and derived outbox facts in the caller's transaction."""
         self._assert_continuation_lease_sync(
             cur, session_id, continuation_approval_id, continuation_lease_token
         )
         self._assert_turn_lease_sync(cur, session_id, turn_lease_token)
+        projection_stage = None
+        if framework_projection is not None:
+            from src.runtime.framework_application_projection import prepare_event_projection
+
+            if framework_projection.owner.binding.session_id != session_id:
+                raise ValueError("Event projection belongs to another Session")
+            projection_stage = prepare_event_projection(cur, self._settings, framework_projection, event)
         # Serialize each session BEFORE allocating its sequence value.
         # A bare sequence does not guarantee transaction commit order.
         cur.execute(
@@ -1521,7 +1546,12 @@ class PostgresSessionStore:
                 json.dumps(make_json_safe(event_payload), ensure_ascii=False),
             ),
         )
-        if cur.fetchone() is None:
+        inserted = cur.fetchone() is not None
+        if framework_projection is not None:
+            from src.runtime.framework_application_projection import record_event_projection
+
+            record_event_projection(cur, self._settings, framework_projection, event, projection_stage, inserted=inserted)
+        if not inserted:
             return False
         cur.execute(
             f"""

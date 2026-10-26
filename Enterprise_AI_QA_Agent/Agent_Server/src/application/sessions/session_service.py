@@ -2646,6 +2646,26 @@ class SessionService:
             "continuation_lease_token": continuation_lease_token,
             "turn_lease_token": turn_lease_token,
         }
+        framework_projection = None
+        if projection_owner is not None and self._control_state_from_runtime_result(runtime_result) == "completed":
+            from src.schemas.runtime_binding import RuntimeBinding
+            from src.infrastructure.storage_utils import make_json_safe
+
+            binding_data = (runtime_result.state.get("context_bundle") or {}).get("runtime_binding")
+            binding = RuntimeBinding.model_validate(binding_data)
+            if projection_owner != current_framework_owner() or projection_owner.binding != binding:
+                raise RuntimeError("Framework application projection owner does not match runtime binding")
+            framework_projection = FrameworkProjectionWrite(
+                owner=projection_owner,
+                snapshot_id=runtime_result.snapshot.id,
+                snapshot_sha256=approval_value_hash(make_json_safe(runtime_result.snapshot.graph_state)),
+                output_message_id=assistant_message_id if runtime_result.output_text else None,
+                runtime_result_asset_sha256=(projection_asset.asset_sha256
+                    if projection_asset is not None else None),
+            )
+        event_fenced_write = dict(fenced_write)
+        if projection_asset is not None:
+            event_fenced_write["framework_projection"] = framework_projection
         model_response_summary = runtime_result.state.get("model_response_summary", {})
         response_mode = str(model_response_summary.get("mode") or "ok")
         framework_asset = self._build_framework_transcript_asset(session_id, runtime_result.state)
@@ -2655,7 +2675,7 @@ class SessionService:
             await self._store.append_event(
                 session_id,
                 event,
-                **fenced_write,
+                **event_fenced_write,
             )
 
         for tool_message in runtime_result.tool_messages:
@@ -2693,23 +2713,6 @@ class SessionService:
                 **fenced_write,
             )
 
-        framework_projection = None
-        if projection_owner is not None and self._control_state_from_runtime_result(runtime_result) == "completed":
-            from src.schemas.runtime_binding import RuntimeBinding
-            from src.infrastructure.storage_utils import make_json_safe
-
-            binding_data = (runtime_result.state.get("context_bundle") or {}).get("runtime_binding")
-            binding = RuntimeBinding.model_validate(binding_data)
-            if projection_owner != current_framework_owner() or projection_owner.binding != binding:
-                raise RuntimeError("Framework application projection owner does not match runtime binding")
-            framework_projection = FrameworkProjectionWrite(
-                owner=projection_owner,
-                snapshot_id=runtime_result.snapshot.id,
-                snapshot_sha256=approval_value_hash(make_json_safe(runtime_result.snapshot.graph_state)),
-                output_message_id=assistant_message_id if runtime_result.output_text else None,
-                runtime_result_asset_sha256=(projection_asset.asset_sha256
-                    if projection_asset is not None else None),
-            )
         saved_snapshot = await self._store.save_snapshot(
             session_id, runtime_result.snapshot,
             **({"framework_projection": framework_projection} if projection_asset is not None else {}),
@@ -2733,7 +2736,7 @@ class SessionService:
                     "snapshot_stage": runtime_result.snapshot.stage,
                 },
             ),
-            **fenced_write,
+            **event_fenced_write,
         )
 
         control = self._ensure_control_metadata(session)
@@ -2782,7 +2785,7 @@ class SessionService:
                         "failed_count": sum(1 for item in verification_results if item.status.value == "failed"),
                     },
                 ),
-                **fenced_write,
+                **event_fenced_write,
             )
         await self._persist_tool_observations(
             session=session,

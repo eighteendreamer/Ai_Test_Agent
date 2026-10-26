@@ -154,7 +154,8 @@ async def test_inconsistent_snapshot_projection_requires_reconciliation(frozen_r
                 cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=%s::jsonb WHERE task_id=%s",
                     (json.dumps(record), h.task.id))
     with framework_owner_scope(h.task.runtime_owner):
-        with pytest.raises(FrameworkMessageStageRecoveryRequired, match="[Ss]napshot"):
+        with pytest.raises(FrameworkMessageStageRecoveryRequired,
+            match="[Ee]vent" if changed == "stage_format" else "[Ss]napshot"):
             await h.sessions._finalize_runtime_result(**h.result_values)
     assert len((await h.store.get_session(h.session_id)).messages) == 1
 
@@ -190,7 +191,7 @@ async def test_expired_owner_cannot_create_snapshot_receipt(frozen_result):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage_version,reader_version", [(9, 8), (8, 7)])
+@pytest.mark.parametrize("stage_version,reader_version", [(10, 9), (9, 8), (8, 7)])
 async def test_future_message_stage_is_deferred_before_claim(frozen_result, monkeypatch, stage_version, reader_version):
     from src.infrastructure.redis_task_queue import QueuedTask
     from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities

@@ -24,6 +24,7 @@ from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 COMMIT_KEY = "application_projection_commit"
 SNAPSHOT_COMMIT_KEY = "snapshot_projection_commit"
+EVENT_COMMITS_KEY = "event_projection_commits"
 CONTROL_KEYS = frozenset({"control_state", "is_interrupted", "is_resumable", "preserve_resources",
     "replay_available", "last_snapshot_stage", "last_turn_id"})
 
@@ -173,6 +174,117 @@ def record_snapshot_projection(cur, settings, write, stage):
     return snapshot
 
 
+def _event_row(cur, settings, event_id):
+    cur.execute(f"SELECT id,session_id,type,timestamp,payload FROM {settings.database.postgres_event_table} "
+        "WHERE id=%s FOR UPDATE", (event_id,))
+    row = cur.fetchone()
+    return dict(row) if row is not None else None
+
+
+def _event_row_hash(row):
+    return _hash({name: row[name] for name in ("id", "type", "timestamp", "payload")})
+
+
+def _require_event_intent(row, event):
+    _require(row is not None, "Original event projection is missing")
+    payload = dict(row["payload"] or {})
+    context = payload.pop("_harness_context", {})
+    _require(row["id"] == event.id and row["session_id"] == event.session_id
+        and row["type"] == event.type and _hash(row["timestamp"]) == _hash(event.timestamp)
+        and _hash(payload) == _hash(event.payload), "Event projection differs from its original intent")
+    # The sink enriches unspecified correlation fields at first insertion.
+    # A replacement worker must retain that original enrichment, not replace
+    # it with its own delivery context. Explicit event fields still must match.
+    _require(isinstance(context, dict) and all(context.get(name) == getattr(event, name)
+        for name in ("request_id", "trace_id", "turn_id", "run_id", "run_item_id", "attempt_id", "worker_id", "resource_id")
+        if getattr(event, name) is not None), "Event projection correlation differs from its original intent")
+
+
+def _event_commits(stage, binding, asset_sha256):
+    from src.schemas.framework_projection_commit import FrameworkEventProjectionCommits
+
+    raw = (stage.source_manifest or {}).get(EVENT_COMMITS_KEY)
+    if raw is None:
+        return None
+    proof = FrameworkEventProjectionCommits.model_validate(raw)
+    _require(proof.binding_fingerprint == binding.fingerprint
+        and proof.runtime_result_asset_sha256 == asset_sha256, "Event projection result identity changed")
+    return proof
+
+
+def prepare_event_projection(cur, settings, write, event):
+    """Validate original intent before accepting a duplicate event ID.
+
+    No upstream counterpart (checked: Session event/outbox transaction,
+    LangGraph persistence/interrupts, plan v3 §12.1 A2-1): event delivery IDs
+    alone do not prove that the original application projection is unchanged.
+    """
+    from src.runtime.framework_runtime_results import lock_runtime_result_stage, validate_runtime_result, RESULT_KEY
+
+    owner, binding = write.owner, write.owner.binding
+    stage, task = lock_runtime_result_stage(cur, settings, owner)
+    manifest = stage.source_manifest or {}
+    _require(COMMIT_KEY not in manifest, "Committed application events must use ACK recovery")
+    _require(manifest.get(RESULT_KEY) is not None, "Event projection has no original runtime result")
+    asset = validate_runtime_result(cur, settings, owner, stage, task, manifest[RESULT_KEY])
+    _require(write.runtime_result_asset_sha256 == asset.asset_sha256 and event.session_id == binding.session_id,
+        "Event projection differs from its runtime result")
+    originals = [item for item in asset.runtime_result.events if item.id == event.id]
+    if originals:
+        _require(all(_hash(item) == _hash(event) for item in originals), "Event differs from the frozen runtime event")
+    else:
+        _require(event.type in {"snapshot.saved", "verification.completed", "assistant.stream.completed",
+            "assistant.response_generated", "turn.completed"}
+            and event.id == asset.event_id(event.type) and _hash(event.timestamp) == _hash(asset.projection_at)
+            and event.payload.get("turn_id") == binding.turn_id,
+            "Event is not an original runtime or finalization event")
+    receipt = _event_commits(stage, binding, asset.asset_sha256)
+    row = _event_row(cur, settings, event.id)
+    if receipt is not None and event.id in receipt.event_hashes:
+        _require(row is not None and _event_row_hash(row) == receipt.event_hashes[event.id],
+            "Original event projection changed or disappeared")
+    elif row is not None:
+        # Runtime events may predate result freezing because they stream live.
+        # Generated finalization events never do: their row and receipt must
+        # have committed together. Do not promote an unproved generated row.
+        _require(bool(originals), "Existing generated event has no atomic projection receipt")
+    if row is not None:
+        _require_event_intent(row, event)
+    return stage
+
+
+def record_event_projection(cur, settings, write, event, stage, *, inserted):
+    """The event row and its full stored-row receipt commit in one transaction."""
+    from src.schemas.framework_projection_commit import FrameworkEventProjectionCommits
+
+    row = _event_row(cur, settings, event.id)
+    _require_event_intent(row, event)
+    previous = _event_commits(stage, write.owner.binding, write.runtime_result_asset_sha256)
+    hashes = dict(previous.event_hashes) if previous is not None else {}
+    _require(inserted or event.id in hashes or any(item["id"] == event.id
+        for item in stage.source_manifest["runtime_result_asset"]["runtime_result"]["events"]),
+        "Existing generated event has no atomic projection receipt")
+    digest = _event_row_hash(row)
+    _require(event.id not in hashes or hashes[event.id] == digest, "Original event projection changed during write")
+    hashes[event.id] = digest
+    receipt = FrameworkEventProjectionCommits(binding_fingerprint=write.owner.binding.fingerprint,
+        runtime_result_asset_sha256=write.runtime_result_asset_sha256, event_hashes=hashes)
+    manifest = dict(stage.source_manifest or {})
+    manifest[EVENT_COMMITS_KEY] = receipt.model_dump(mode="json")
+    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(9, stage.schema_version),
+        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
+    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
+        (updated.model_dump_json(), stage.task_id))
+
+
+def require_event_projections(cur, settings, stage, binding, asset_sha256, required_ids=()):
+    receipt = _event_commits(stage, binding, asset_sha256)
+    _require(receipt is not None and set(required_ids).issubset(receipt.event_hashes),
+        "Application projection has incomplete event receipts")
+    _require(_event_hashes(cur, settings, binding.session_id, receipt.event_hashes) == receipt.event_hashes,
+        "Original event projections changed or disappeared before application commit")
+
+
 def record_application_commit(cur, settings, session, events, write):
     """Called only inside save_session_with_events, after its actual row writes."""
     owner, binding = write.owner, write.owner.binding
@@ -212,6 +324,12 @@ def record_application_commit(cur, settings, session, events, write):
     _require(_hash(snapshot["graph_state"]) == write.snapshot_sha256, "Application commit snapshot changed before finalization")
     if write.runtime_result_asset_sha256 is not None:
         require_snapshot_projection(cur, settings, stage, binding, write.runtime_result_asset_sha256, snapshot)
+        required_events = {item.id for item in result_asset.runtime_result.events}
+        required_events.update(item.id for item in events)
+        required_events.add(result_asset.event_id("snapshot.saved"))
+        if result_asset.verification_results:
+            required_events.add(result_asset.event_id("verification.completed"))
+        require_event_projections(cur, settings, stage, binding, result_asset.asset_sha256, required_events)
     completed = [event for event in events if event.type == "turn.completed" and event.payload.get("turn_id") == binding.turn_id]
     _require(len(completed) == 1 and completed[0].payload.get("session_status") == "completed"
         and all(event.payload.get("turn_id") == binding.turn_id for event in events),
@@ -267,6 +385,8 @@ def require_application_commit(cur, settings, session, binding, stage):
         "Committed application transcript changed")
     _require(_event_hashes(cur, settings, binding.session_id, proof.event_hashes) == proof.event_hashes,
         "Committed application events changed")
+    if EVENT_COMMITS_KEY in manifest:
+        require_event_projections(cur, settings, stage, binding, manifest["runtime_result_asset"]["asset_sha256"])
     _require(_model_hash(cur, settings, binding) == proof.model_calls_sha256
         and _tool_hash(cur, settings, binding) == proof.tool_jobs_sha256,
         "Committed application execution results changed")

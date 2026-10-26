@@ -1,10 +1,12 @@
 # LangGraph / Deep Agents 迁移实施记录
 
-日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
+日期：2026-10-25 起。当前实施依据：[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)；[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
+
+**当前子任务：A2-1 事件投影安全重入（§49）。已有原结果资产、快照与事件分项回执；尚未开放资产存在但最终事务未提交时的自动后继。下一步是观察稳定身份/实际回执、Verification/消息分项复用，再接既有 message_recover。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
-**全系统迁移尚未完成。当前快照更新至 §44：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口、orchestrating 阶段的有证明后继及 Deep Agents 图输入资产已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
+**历史快照（截至 §44，不代替最新 §49）：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入、语义服务消费入口、orchestrating 阶段的有证明后继及 Deep Agents 图输入资产已局部落实。自动生成绑定及预算、图结果导入、活动时间计量、跨 Turn 上下文、完整图内故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
 ## 1. 阶段与现状
 
@@ -1570,3 +1572,55 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 快照事务后的独立 Worker 强杀证明原资产和实际快照回执均保留，HTTP 请求为一次；仍断言没有最终应用提交凭证、没有 completed 事件、失租后不开放自动后继。不能将该负断言当成完整恢复成功。
 
 后续继续原事件冲突校验、观察稳定身份及实际回执、Verification/消息分项复用与 message_recover 准入，再验收部分投影补偿。图终态到资产前空窗、projected→finish、Memory/清理、完整跨 Turn、统一 Prompt/Skills/Memory、流式/取消、受控 AgentCase、逐模式 Harness 和兼容部署仍未完成。未跑全量、前端、官方 saver conformance、真实付费供应商/对象存储/领域 Runner 或双制品滚动/回滚演练。schema 8 发布仍须先部署兼容读者或隔离消费者；本次 claim 前检查不能 retroactively 改造既有旧镜像。默认开关保持关闭，整体 goal 维持 active。
+
+## 49. A2-1 事件分项回执、最终复核与强杀窗口（2026-10-26）
+
+基线 `025428255`。接续暂停前未提交的事件草稿；用户要求暂停时已将 goal 设为 paused，收到继续指令后核对 goal 已 active，再读取目标附件、规则、实际工作区和方案。实施范围是 §12.1 A2-1 的事件分项，不把局部绿色测试改写为全系统迁移完成。
+
+### 依据与实现
+
+重新在线查阅 [LangGraph Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)、[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)，并读取本地 Agent 轨迹课程的幂等/补偿原则。checkpointer 管图状态，store 管跨线程应用数据；节点重入并不替应用 Session 事务提供事件行证明。本次沿已有 Session/owner/message-stage/A1 事务实现，不新增调度层或升级框架。详细契约见 v3 §20。
+
+- 新增 `FrameworkEventProjectionCommits`，使用原 message-stage JSONB。事件行和完整存储行摘要在同一事务，包含 `_harness_context`；合法重复不重计数、不重发 outbox/热事件。业务意图校验与存储整行摘要分开，保留首次自动 enrichment，显式原关联仍须匹配。
+- Runtime 已流式持久化的事件允许按冻结原意图首次收录；生成的收尾事件不得凭裸行补造回执。新增行碰撞在插入后再次核对，即使后来出现相同内容的生成事件行，也不能把它当本事务的首次插入。
+- 唯一 finalizer 在事件 flush 前构造原投影参数，接通 Runtime、snapshot.saved、verification.completed；completion events 在既有 Session 最终事务内记账。最终事务和 A1 ACK-only 读取复核已收录事件，包含原 Runtime 事件，不只检查最后三条完成事件。
+- Protocol/PostgreSQL/InMemory 同步可选参数；InMemory 明确拒绝需要 owner 事务的回执，legacy 普通事件保留原语义。成功/拒绝使用现有结构化日志设施，不打印事件正文、凭据或 lease token。
+- 新写入格式为 **message-stage 9**，新 reader 支持 1–9。原结果来源摘要排除新增回执，A1 凭证仍包含带回执的完整来源。历史 6/7/8 格式形状实际走完 ACK-only 后继；stage 9/reader 8、未来 stage 10/reader 9 在 claim 前拒领。格式 Harness 不等于真实双制品部署，兼容读者仍须先行或隔离消费者。
+
+### 红测与中间修正
+
+- 接续前已有真实数据库事件内容漂移红测，旧 `ON CONFLICT DO NOTHING` 静默接受同 ID 的变化。接线后首轮 **4 passed，14.66 秒**，覆盖 payload/type/timestamp/context。
+- 本轮再补“生成事件已存在但回执丢失”用例，实际 **1 failed，6.98 秒，DID NOT RAISE FrameworkMessageStageRecoveryRequired**。修复的是生成/流式事件的提交来源契约，而非增加重试或异常吞噬；最终测试另覆盖检查后同 ID 相同/不同内容碰撞、缺行、摘要/绑定/资产/格式漂移、owner 失效、并发收录、事务回滚及最终事务前漂移。
+- 中间联合回归 **1 failed、34 passed，106.95 秒**：新增强杀断言用 API 事件投影计算整行摘要，遗漏 API 已拆到顶层字段的 `_harness_context`。改为读取真实数据库整行，与生产回执保持同一证据层，不放宽生产校验。
+- 扩展旧格式完整 ACK 验收时 **1 failed，6.75 秒**：拿失租 claim 从原行拼装的返回值当完整终态快照比较；沿既有 Harness，在 claim 后重新读持久终态，再确认后继不改变它。
+- 扩展公共/审批回归 **1 failed、140 passed，190.72 秒**：既有审批测试的 `SimpleNamespace` 漏传替身 Runtime 已要求的 `runtime_binding`。修正测试调用方，保留原“原生投影后人的拒绝不被收尾覆盖”断言，不给生产代码加宽松 fallback。
+
+### 最终验证（不是把中间结果累加）
+
+以下均在 Agent_Server，使用独立 `.venv-framework-v2` 解释器，并设置 `$env:RUN_LIVE_POSTGRES_TESTS='1'`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_event_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py -q -x -rs --tb=short
+```
+
+**101 passed，274.72 秒，无 skip**。覆盖事件、快照、原结果资产、A1 提交及实际进程边界。此后旧格式测试补强为执行后继并核对持久原终态，使用下面第二组重新验收。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_event_projection.py tests/test_framework_approval_projection.py -q -x -rs --tb=short
+```
+
+**44 passed，111.10 秒，无 skip**。包括最新 29 项事件用例、旧格式实际 ACK-only 和修正后的原生审批投影 Harness；与上组事件测试重叠，不累计为独立覆盖数。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_task_dispatch.py tests/test_session_store_value_contract.py -q -x -rs --tb=short
+```
+
+**134 passed，172.77 秒，无 skip**。覆盖共享 message stage、恢复/调度及 PostgreSQL/InMemory 普通值契约。另项目根 `python -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 通过；环境未安装 ruff/mypy，PATH 也无对应命令，未安装新工具，不声称 lint/typecheck 已通过。
+
+### 证据等级、限制与下一步
+
+强杀沿既有独立 Worker Helper 新增 `after_snapshot_event`：真实官方 Deep Agents/SDK、本地合成 HTTP、PostgreSQL/Redis，snapshot.saved 事务已提交且 finalizer 尚未完成。检查实际数据库事件行与回执，强杀后原资产、快照及事件回执保持不变，HTTP 请求为一次，模型预算不重置。没有最终应用凭证、没有 turn.completed，现阶段仍不创建失租后继；这是保留原事实与拒绝不安全恢复的验证，不是完整补偿成功。
+
+普通事件故障样本复用真实 PostgreSQL 和单节点 LangGraph/替身 Runtime；插入竞争用同事务稳定注入，不冒充真实跨 Session 进程竞争。历史格式用形状 fixture，不冒充旧二进制部署；上下文切换用 bind_request_context，不冒充已经开放接管。
+
+下一步仍需观察稳定身份/原内容及实际写入回执、Verification/消息分项复用，再沿既有 message_recover 开放部分投影后继。A2-2 图终态到资产空窗、A2-3 projected→finish、A3 Memory/清理、跨 Turn、统一 Prompt/Skills/Memory、流式/取消、受控 AgentCase、逐模式 Harness 与真实兼容发布均未完成。本轮未跑全量、前端、真实付费供应商/对象存储/领域 Runner、官方 saver conformance、双制品滚动/回滚；生产默认关闭，完整目标继续 active。
