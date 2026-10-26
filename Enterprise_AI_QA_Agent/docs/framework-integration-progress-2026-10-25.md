@@ -2,7 +2,7 @@
 
 日期：2026-10-25。实施依据：[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)。
 
-2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
+2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
 **全系统迁移尚未完成。当前快照更新至 §41：已有 P0 基础、RuntimeBinding/版本化任务、owner/checkpoint 事务保护、原生决定交付和业务应用证明、v2 审批 API/Worker/逐项前端、已知结果审批/对账自身失租的后继与独立进程强杀恢复，以及根模型账本、主代理/具名子代理/摘要和 owner 作用域内 DTO 请求策略、前置语义分类与预算受理/Worker/生产组装接线、应用层与 HTTP wire 模型证据（OpenAI/Gemini 图内客户端注入）。首次消息阶段准入/只读诊断、submitted/orchestrated 安全后继、语义输入冻结、未发送预留显式转移、已结算 DTO 响应只读导入及语义服务消费入口已局部落实。自动生成绑定及预算、orchestrating 阶段完整恢复调用方、图结果导入、活动时间计量、跨 Turn 上下文、完整故障恢复、真实发布与逐模式验收仍未完成；后文各节的验证结论仅适用于其阶段。**
 
@@ -1359,3 +1359,28 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 两个源码和新测试执行 compileall 通过，文档链接/围栏及 scoped diff check 通过。没有执行全量、独立 lint/typecheck、前端、官方 conformance、真实供应商/对象存储/领域 Runner 或双制品部署；这些不属于本次已闭合的端口验收范围。
 
 下一步仍需将冻结语义消费连接完整 orchestrating 后继准入及 Session/InputOrchestrator，冻结确定性路由/解析合并代码制品，接通 transfer_ready 的应用调用方和相关故障出口。本阶段不创建这类后继、不推进图/阶段、不开放 v2 默认路由；图内结果导入、活动时间、跨 Turn 及后续各模式目标保持未完成。
+
+## 42. 冻结语义输入的应用编排消费（2026-10-26）
+
+在 `ae6551635` 后沿 v3 §5.1/A 继续开发。调用链确认：SessionService 对 message_recover 仅消费 orchestrated 阶段的冻结 ExecutionRequest；orchestrating 尚无后继准入，InputOrchestratorService 也没有跳过重新识别/准备的应用入口。本阶段闭合后一个边界，为后继接线复用原编排提供基础，不开放前一个边界。
+
+### 实现与边界
+
+- 新增内部 `InputOrchestratorService.orchestrate_prepared`，要求明确的原 Turn/trace 身份；实际模型请求还需核对 Session、Turn、trace、原归一化输入及完整冻结参数。请求需要原语义服务；服务不可用、身份或冻结契约缺失时显式报错。
+- 持久化的三种 skip 原样使用其 baseline，无论当前服务是否启用/可用，都不重新选择模型。已结算请求显式传入 completed_call，委托 §41 的只读消费，不重新调用 orchestrate_async、识别 baseline 或构造 Prompt。
+- 正常首次冻结路径也使用同一入口。通过共享 `_orchestrate_with_intent` 保持原有安全评估、模式选择、领域路由、ExecutionRequest 组装与分类日志；未复制一套解析/合并/路由。恢复错误不得转为 baseline 后继续投影，新增结构化拒绝及消费日志。
+- 此入口不独立证明完整 payload、Session 上下文、模式表或代码制品与原 admission 一致。它们仍由下一阶段的恢复准入/阶段事实负责。当前安全评估仍使用既有逻辑，包括当前授权有效期检查；没有把原语义结果当成授权。
+- 无 DDL、公开 API、任务 operation、阶段状态机或默认开关变化。当前 Session 的正常冻结调用已使用新入口；orchestrating 后继的 Session 接线与 transfer_ready 调用方仍待完成，不能宣称完整恢复。
+
+### TDD 与实际验证
+
+新测试首条红测：`AttributeError: 'InputOrchestratorService' object has no attribute 'orchestrate_prepared'`，**1 failed，8.01 秒**。实现首次回归又暴露遗漏 json import，**1 failed，5.94 秒**，补齐后联合回归 **173 passed，119.97 秒，无 skip**。增加服务不可用时的原 skip 和错误不投影覆盖，并合入模型 DTO 回归后，在 Agent_Server 执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_prepared_orchestration.py tests/test_framework_semantic_input.py tests/test_framework_semantic_result_import.py tests/test_intent_safety_routing.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_framework_model_dto.py -q -x -rs --tb=short
+```
+
+结果 **210 passed，216.53 秒，无 skip**；新文件 20 项。四传输实际使用官方 SDK 与本地合成 HTTP，重建服务后两次消费原结算，ExecutionRequest 与首次结果相同，HTTP 请求始终只有 1 次，原调用账本/预算不变。另覆盖原 skip 不重算、禁止重识别/重建准备、身份/内容/冻结配置缺失拒绝，以及语义失败不得进入应用投影。PostgreSQL/Redis 为真实服务，对象存储仍为内存 RustFS client 替身，不代表真实供应商或对象存储验收。
+
+源码与新测试 `compileall` 通过，`git diff --check` 通过。未执行全量、独立 lint/typecheck、浏览器/压测/扫描 Runner、真实模型/对象存储或双制品部署。下一步按 TDD 冻结并验证确定性解析/合并/路由代码制品，接入完整 orchestrating 后继准入与 Session 恢复调用方，区分未预留、未发送、已发送未知及已结算窗口；原 task/attempt、用户消息与根预算保持原身份。

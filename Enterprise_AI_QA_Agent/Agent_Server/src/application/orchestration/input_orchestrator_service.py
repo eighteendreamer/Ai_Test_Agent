@@ -1,6 +1,7 @@
 ﻿from __future__ import annotations
 
 from collections.abc import Awaitable, Callable, Iterable
+import json
 import logging
 from uuid import uuid4
 
@@ -16,6 +17,7 @@ from src.application.testing.mode_intent_service import TestModeIntentService
 from src.application.testing.router_service import QATaskRouterService
 from src.core.request_context import get_request_context
 from src.runtime.execution_context import current_framework_owner
+from src.schemas.framework_model_call import FrameworkModelCallRecord
 from src.schemas.intent import IntentDecision
 from src.schemas.semantic_input import PreparedSemanticInput
 from src.schemas.session import (
@@ -94,14 +96,65 @@ class InputOrchestratorService:
                     if self._semantic_intent_service is not None else
                     PreparedSemanticInput(baseline=baseline, skip_reason="service_unavailable"))
                 prepared = await record_semantic_input(prepared)
-                intent_override = (await self._semantic_intent_service.enrich_prepared(prepared)
-                    if self._semantic_intent_service is not None else prepared.baseline)
+                return await self.orchestrate_prepared(session, payload, prepared,
+                    turn_id=resolved_turn_id, trace_id=resolved_trace_id)
+        return self._orchestrate_with_intent(session, payload, intent_override=intent_override,
+            turn_id=resolved_turn_id, trace_id=resolved_trace_id)
+
+    async def orchestrate_prepared(
+        self,
+        session: SessionRecord,
+        payload: SendMessageRequest,
+        prepared: PreparedSemanticInput,
+        *,
+        turn_id: str,
+        trace_id: str,
+        completed_call: FrameworkModelCallRecord | None = None,
+    ) -> ExecutionRequest:
+        """Finish admitted preparation using the existing semantic/routing rules.
+
+        No upstream counterpart (checked: FrameworkMessageStages, prepared
+        semantic input, v3 section 5.1/A): this phase precedes the graph.
+        Recovery admission and source compatibility remain the caller's duty;
+        reading a completed result never grants permission to replay a send.
+        """
+        try:
+            prepared = PreparedSemanticInput.model_validate_json(prepared.model_dump_json())
+            if not turn_id or not trace_id:
+                raise ValueError("Prepared orchestration requires its original Turn and trace identity")
+            if prepared.request is None:
+                if completed_call is not None:
+                    raise ValueError("A saved semantic skip cannot consume a model settlement")
+                intent = prepared.baseline
+            else:
+                context = prepared.request.trace_context
+                body = json.loads(prepared.request.messages[0]["content"])
+                if (any(context.get(key) != value for key, value in
+                    (("session_id", session.id), ("turn_id", turn_id), ("trace_id", trace_id)))
+                    or body["user_input"] != " ".join(str(payload.content or "").split())):
+                    raise ValueError("Prepared orchestration differs from its original input identity")
+                if prepared.invocation_parameters is None or self._semantic_intent_service is None:
+                    raise ValueError("Prepared orchestration requires its frozen contract and semantic service")
+                intent = await self._semantic_intent_service.enrich_prepared(prepared,
+                    **({"completed_call": completed_call} if completed_call is not None else {}))
+            execution = self._orchestrate_with_intent(session, payload, intent_override=intent,
+                turn_id=turn_id, trace_id=trace_id)
+        except Exception as exc:
+            logger.warning("input_prepared_orchestration_rejected", extra={"session_id": session.id,
+                "turn_id": turn_id, "trace_id": trace_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("input_prepared_orchestration_consumed", extra={"session_id": session.id,
+            "turn_id": turn_id, "trace_id": trace_id, "skip_reason": prepared.skip_reason,
+            "settled_response_id": completed_call.settled_response_id if completed_call is not None else None})
+        return execution
+
+    def _orchestrate_with_intent(self, session, payload, *, intent_override, turn_id, trace_id):
         execution = self.orchestrate(
             session,
             payload,
             intent_override=intent_override,
-            turn_id=resolved_turn_id,
-            trace_id=resolved_trace_id,
+            turn_id=turn_id,
+            trace_id=trace_id,
         )
         intent = execution.context.get("intent_decision") or {}
         evidence = intent.get("evidence") or []
