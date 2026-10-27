@@ -263,6 +263,41 @@ async def test_existing_preparation_identity_is_selected_before_stream_handler(p
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_applied_tool_original_is_readable_after_owner_settlement_without_new_authority(prepared_approval_runtime, decision):
+    from src.runtime.store import ContinuationLeaseLostError
+
+    h = prepared_approval_runtime
+    task = await claim_decision(h, decision=decision)
+    monitor = asyncio.create_task(asyncio.Event().wait())
+    try:
+        response = await h.sessions.execute_claimed_approval(task, ownership_monitor=monitor)
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+    await h.tasks.finish(task, status="completed", result_status="waiting_approval")
+    before = h.stages.get(h.initial_task_id, h.session_id)
+    events = await h.store.list_events(h.session_id)
+    applied = receipt(h)
+    continuation = service(h)
+    with pytest.raises(ContinuationLeaseLostError):
+        await continuation.read_tool_projection(task.runtime_owner, task.reference_id, task.input["decision_id"])
+    reader = getattr(continuation, "read_applied_tool_projection_in_transaction", None)
+    assert callable(reader), "Original applied materials need a read-only port independent of current execution ownership"
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        material = reader(cur, h.binding, task.id)
+        assert reader(cur, h.binding, task.id) == material
+        for binding, task_id in ((h.binding, "unknown-task"), (h.binding, h.initial_task_id),
+            (h.binding.model_copy(update={"runtime_version": "foreign"}), task.id)):
+            with pytest.raises(FrameworkApprovalRecoveryRequired, match="original.*task"):
+                reader(cur, binding, task_id)
+    message, = [item for item in response.session.messages if item.metadata.get("tool_call_id")]
+    assert material.message == message and material.record.status == ("completed" if decision == "approved" else "denied")
+    assert h.stages.get(h.initial_task_id, h.session_id) == before
+    assert await h.store.list_events(h.session_id) == events and receipt(h) == applied
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decision", ["approved", "denied"])
 async def test_approval_result_before_finalization_is_read_only_reproducible(prepared_approval_runtime, decision, monkeypatch):
     from deepagents import create_deep_agent
     from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
@@ -272,10 +307,8 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
     from src.application.runtime.turn_projection import (
         completed_deep_agent_state, project_completed_turn, project_deep_agent_callback_facts, project_runtime_snapshot,
     )
-    from src.runtime.framework_approval_journal import FrameworkApprovalJournal
     from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
     from src.schemas.framework_runtime_result import FrameworkRuntimeResult
-    from src.schemas.framework_tool_projection import FrameworkToolProjection, parse_tool_projection, TOOL_PROJECTION_KEY
     from src.schemas.session import ExecutionEvent
     from tests.test_framework_tool_bridge import Model
 
@@ -342,26 +375,8 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
             # not from the comparison oracle, today's renderer or a new clock.
             materials = {}
             with postgres_connect(h.settings) as connection, connection.cursor() as cur:
-                journal = FrameworkApprovalJournal(h.settings)
                 for task in (b, a):
-                    cur.execute(f"SELECT * FROM {h.settings.database.postgres_approval_table} WHERE id=%s", (task.reference_id,))
-                    link = journal.require_link_in_transaction(cur, h.binding, task.reference_id, cur.fetchone())
-                    applied = journal.get_receipt_in_transaction(cur, task.reference_id)
-                    assert applied.applied_at is not None
-                    native_message, evidence = journal.require_tool_result_in_transaction(cur, h.binding, link)
-                    continuation = service(h)
-                    cur.execute(f"SELECT * FROM {h.settings.database.postgres_agent_task_table} WHERE id=%s", (task.id,))
-                    plan, consumed = continuation.inspect_decision_in_transaction(cur, h.binding, cur.fetchone())
-                    assert consumed
-                    expected = continuation._application_evidence(h.binding, plan, plan.job, native_message, evidence)
-                    if applied.decision["type"] == "reject":
-                        material = parse_tool_projection(applied.proof["application"][TOOL_PROJECTION_KEY])
-                        expected = continuation._rejection_projection_evidence(h.binding, plan, plan.job,
-                            native_message, expected, material.model_dump(mode="json"))
-                    else:
-                        material = FrameworkToolProjection.from_tool_message(native_message, binding=h.binding, source=link)
-                    assert applied.proof["application"] == expected
-                    material.require_binding(h.binding, link)
+                    material = service(h).read_applied_tool_projection_in_transaction(cur, h.binding, task.id)
                     materials[material.record.call_id] = material
             records = [materials[item["call_id"]].record.model_dump(mode="python")
                 for item in preparation.initial_state["tool_results"]]

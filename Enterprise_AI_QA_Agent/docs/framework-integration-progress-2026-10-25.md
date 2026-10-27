@@ -2639,3 +2639,34 @@ Runtime组5个skip为既有test_runtime_input_paths.py的独立真实PostgreSQL�
 项目根compileall和diff检查实际通过；实施记录历史仅追加、§67唯一、代码围栏配对及29处绝对本地链接均实际检查通过。固定环境再次确认ruff／mypy均未安装，不安装新工具、不声称lint／typecheck通过。新增材料链路使用官方Deep Agents／LangGraph、替身模型、真实PG／Redis与同进程故障；扩大回归含既有独立Worker强杀链路，最高范围E2，不据此宣称新增审批材料已经完成独立进程故障验收。全量、前端、真实供应商／RustFS／领域Runner的E3、制品／部署／备份恢复的E4均未验收。没有服务启停、生产路由切换、依赖升级或付费请求。
 
 本轮代码／测试、测试文件忽略例外和本节归入同一中文提交，主题 `【feat】冻结审批续跑的原应用准备材料`，ID以Git历史／交付为准。下一步继续A2-2的完整材料消费与窄权限恢复准入，补审批资产前独立Worker故障及原结果资产／唯一收尾契约；不能直接放开message-only资产写权。A2-3／A3／B/C/D/E/F仍未完成，整体goal保持active。
+
+## 68. A2-2：结算后只读复用原审批工具投影，不重新取得执行权（2026-10-27）
+
+续接基线 `e40e4aad5` 与 §67。工作区已有的审批图输入草稿包含一个真实缺口：owner 结算后，原 `read_tool_projection` 仍要求当前执行 owner；失租或任务完成后，恢复材料消费者无法读取已经原子保存的 applied 原始工具投影。此次只补齐历史材料读取端口，不改变恢复准入，不把可读性升格为图、模型、工具或结果资产写入权。用户保留的 v3 草稿修改未混入本节提交。
+
+### TDD 红测、根因与依据
+
+- 先读取已有真实红测 `.codex-logs/framework-approval-applied-reader-red-2026-10-27.txt`：`test_applied_tool_original_is_readable_after_owner_settlement_without_new_authority[approved]` 为 **1 failed，11.03 秒**，审批已经完成并结算，但 continuation 实例没有独立的历史读取端口；失败断言明确落在 `read_applied_tool_projection_in_transaction` 不存在，不是数据库连接或材料内容错误。
+- 根因是执行读取器 `_read_tool_projection` 复用了 `_owned_plan_in_transaction`，该路径必须校验 running task、lease token、worker 和当前 owner。owner 结算后这些执行条件应失效，但已应用 receipt、原生 ToolMessage、ToolJob 和任务身份仍是可核验历史事实；强行续租或重建 owner 会错误扩大执行权。
+- 依据为 v4 §8.1、§9.2、§9.4、§10.2 及既有 `FrameworkApprovalJournal`／`inspect_decision_in_transaction`：历史读取应加载数据库原 task，在同一事务锁定并核对 session/turn/binding、决定、receipt、native link、ToolJob 与 applied proof，再复用唯一投影函数。没有引入新表、队列、恢复 finalizer 或公开 API。
+
+### 实现、权限与兼容边界
+
+- `FrameworkApprovalContinuation.read_applied_tool_projection_in_transaction` 从 PostgreSQL 读取原 `approval_resume`／`approval_recover` task，校验原 RuntimeBinding、session、turn、attempt 和任务身份，然后调用既有 `inspect_decision_in_transaction` 与 `_applied_tool_projection_in_transaction`。它不调用 `assert_runtime_owner`，不获取新 owner，不发送决定，不执行图／模型／工具。
+- 原执行读取器改为共享 `_applied_tool_projection_in_transaction`，正常 owner-bound 路径和历史只读路径使用同一 applied evidence、reject projection、ToolMessage 解析与 binding 校验。任何缺失/漂移/非 applied 状态仍返回 `FrameworkApprovalRecoveryRequired`；只读端口的事务由调用方持有，不能替代恢复任务的准入与收尾。
+- `test_framework_approval_graph_input.py` 新增批准／拒绝双分支：owner 结算后历史投影可重复读取；旧 owner-bound 读取明确抛 `ContinuationLeaseLostError`；未知 task、原始 task、foreign binding 均拒绝；阶段、事件和 receipt 不发生写入。原有审批结果重建测试改用该共享端口，未删除消息、身份或原生状态断言。
+
+### 实际验证与提交归属
+
+工作目录为 `Agent_Server`，使用 `.venv-framework-v2`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。当前草稿实际运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py tests/test_framework_application_projection.py -q -x -rs --tb=short
+# 142 passed，593.23 秒，无 skip
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均通过；仅有 Git 报告的 LF→CRLF 提示
+```
+
+定向绿测日志 `.codex-logs/framework-approval-applied-reader-first-2026-10-27.txt` 与 `...-recheck-2026-10-27.txt` 均为 12 passed；前述红测保留未覆盖。最高证据范围为 E2（真实 PostgreSQL、官方框架 fixture 与本地受控工具），未执行真实供应商、RustFS、领域 Runner、全量、部署或 E4 验收；ruff/mypy/conformance 工具仍未安装，未声称通过。当前代码、测试及本节应归入同一中文提交；v3 方案文件的既有未提交修改继续保留，不纳入该提交。A2-2 完整无资产恢复、A2-3、A3、B/C/D/E/F 仍未完成。

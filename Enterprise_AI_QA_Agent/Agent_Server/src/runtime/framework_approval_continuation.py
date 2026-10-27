@@ -273,22 +273,53 @@ class FrameworkApprovalContinuation:
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             plan, consumed, _ = self._owned_plan_in_transaction(cur, owner, approval_id, decision_id)
-            if not consumed or plan.receipt.applied_at is None:
-                raise FrameworkApprovalRecoveryRequired("Original tool projection requires its applied approval")
-            message, evidence = self._journal.require_tool_result_in_transaction(cur, owner.binding, plan.link)
-            applied = (plan.receipt.proof or {}).get("application")
-            expected = self._application_evidence(owner.binding, plan, plan.job, message, evidence)
+            return self._applied_tool_projection_in_transaction(cur, owner.binding, plan, consumed)
+
+    def read_applied_tool_projection_in_transaction(self, cur, binding, task_id):
+        """Read historical originals; never acquire or reuse an execution owner.
+
+        No upstream counterpart (checked: owned projection reader, approval
+        receipt journal, LangGraph 1.2.12 persistence, v4 §9.2/§10.2): an
+        expired producer cannot execute again just to read its known result.
+        Load the original task from the same database; caller dictionaries or
+        hashes are not source authority. Caller still owns access control,
+        transaction lifetime and any separate recovery admission.
+        """
+        try:
+            configure_runtime_owner_transaction(cur, self._settings)
+            cur.execute(f"SELECT * FROM {self._settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))
+            task = cur.fetchone()
+            if (task is None or task["operation"] not in {"approval_resume", "approval_recover"}
+                or task["session_id"] != binding.session_id or task["turn_id"] != binding.turn_id
+                or task["runtime_binding"] != binding.model_dump(mode="json") or not task["attempt_id"]):
+                raise FrameworkApprovalRecoveryRequired("Applied projection has no matching original approval task")
+            plan, consumed = self.inspect_decision_in_transaction(cur, binding, task)
+            material = self._applied_tool_projection_in_transaction(cur, binding, plan, consumed)
+        except Exception as exc:
+            logger.warning("framework_applied_tool_projection_read_rejected", extra={"task_id": task_id,
+                "binding_id": binding.binding_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_applied_tool_projection_read", extra={"task_id": task_id,
+            "binding_id": binding.binding_id, "material_sha256": material.sha256})
+        return material
+
+    def _applied_tool_projection_in_transaction(self, cur, binding, plan, consumed):
+        if not consumed or plan.receipt.applied_at is None:
+            raise FrameworkApprovalRecoveryRequired("Original tool projection requires its applied approval")
+        message, evidence = self._journal.require_tool_result_in_transaction(cur, binding, plan.link)
+        applied = (plan.receipt.proof or {}).get("application")
+        expected = self._application_evidence(binding, plan, plan.job, message, evidence)
+        if plan.receipt.decision["type"] == "reject":
+            raw = (applied or {}).get(TOOL_PROJECTION_KEY)
+            expected = self._rejection_projection_evidence(binding, plan, plan.job, message, expected, raw)
+        if applied != expected:
+            raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its applied native result")
+        try:
             if plan.receipt.decision["type"] == "reject":
-                raw = (applied or {}).get(TOOL_PROJECTION_KEY)
-                expected = self._rejection_projection_evidence(owner.binding, plan, plan.job, message, expected, raw)
-            if applied != expected:
-                raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its applied native result")
-            try:
-                if plan.receipt.decision["type"] == "reject":
-                    return parse_tool_projection(raw).require_binding(owner.binding, plan.link)
-                return FrameworkToolProjection.from_tool_message(message, binding=owner.binding, source=plan.link)
-            except ValueError as exc:
-                raise FrameworkApprovalRecoveryRequired("Original approved tool projection requires reconciliation") from exc
+                return parse_tool_projection(raw).require_binding(binding, plan.link)
+            return FrameworkToolProjection.from_tool_message(message, binding=binding, source=plan.link)
+        except ValueError as exc:
+            raise FrameworkApprovalRecoveryRequired("Original approved tool projection requires reconciliation") from exc
 
     def _owned_plan_in_transaction(self, cur, owner, approval_id, decision_id):
         binding = owner.binding
