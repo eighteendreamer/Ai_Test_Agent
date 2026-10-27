@@ -215,7 +215,7 @@ async def test_previously_admitted_parent_value_is_not_silently_replaced_on_reco
             execution_attempt_id=attempt.id, session_id=str(uuid4()), turn_id=str(uuid4()), phase='admitted')
         await store.save_checkpoint(claimed.id, attempt.lease_token, CHECKPOINT_KEY, checkpoint.model_dump(mode='json'), 1, now)
         before = await store.get_latest_attempt(claimed.id)
-        runs = SimpleNamespace(get=store.get_run, get_item=store.get_item, get_latest_attempt=store.get_latest_attempt)
+        runs = SimpleNamespace(get_execution_detail=store.get_execution_detail)
         adapter = AgentCaseExecutionAdapter(run_service=runs, session_service=None, session_store=None, tool_job_service=None)
         with pytest.raises(ValueError, match='完整上下文不一致'):
             await adapter._load(run=detail.run, item=claimed, version=version, attempt_id=attempt.id)

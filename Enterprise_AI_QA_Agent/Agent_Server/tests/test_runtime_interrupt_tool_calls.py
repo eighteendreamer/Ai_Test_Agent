@@ -200,7 +200,10 @@ async def test_runtime_control_scope_releases_all_entry_points(monkeypatch, entr
     handler, events = object(), object()
 
     async def execute(*args, **kwargs):
-        assert kwargs == {"on_model_chunk": handler, "event_queue": events}
+        expected = {"on_model_chunk": handler, "event_queue": events}
+        if entry == "execute_turn":
+            expected.update(on_graph_input=None, projection_identity=None)
+        assert kwargs == expected
         runtime.request_interrupt(session.id, "scope interrupt")
         await asyncio.sleep(0)
         assert control.get_interrupt_reason(session.id) == "scope interrupt"
@@ -229,6 +232,50 @@ async def test_runtime_control_scope_releases_all_entry_points(monkeypatch, entr
     # state or become a stop request for the next execution.
     runtime.request_interrupt(session.id, "delayed request")
     assert not control.is_interrupt_requested(session.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("outcome", ["success", "error", "cancelled"])
+async def test_prepared_execution_callbacks_keep_original_identity_and_release_control_scope(monkeypatch, outcome):
+    """Wrapper contract only; no provider, checkpoint or recovery authority."""
+    control = RuntimeControlRegistry()
+    runtime = RuntimeService(graph=None, model_runtime_service=_ModelRuntimeStub(), tool_runtime_service=object(),
+        tool_registry=ToolRegistry(), runtime_control=control)
+    session = _session("prepared-scope")
+    request = _request(session.id)
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+    from tests.test_runtime_binding_persistence import make_binding
+
+    identity = FrameworkProjectionIdentity(binding=make_binding(session.id, request.turn_id),
+        assistant_message_id="original-assistant", snapshot_id="original-snapshot", snapshot_version=1,
+        snapshot_created_at=datetime(2026, 10, 27))
+    handler, events, sentinel = object(), object(), object()
+    callbacks = []
+    async def graph_input(asset):
+        callbacks.append(("input", asset))
+    async def execute(*args, **kwargs):
+        assert kwargs == {"on_model_chunk": handler, "event_queue": events,
+            "on_graph_input": graph_input, "projection_identity": identity}
+        runtime.request_interrupt(session.id, "active prepared invocation")
+        await kwargs["on_graph_input"]({"original": True})
+        return sentinel
+    async def result_callback(result):
+        assert result is sentinel and control.is_interrupt_requested(session.id)
+        callbacks.append(("result", result))
+        if outcome == "error":
+            raise RuntimeError("controlled result callback failure")
+        if outcome == "cancelled":
+            raise asyncio.CancelledError
+    monkeypatch.setattr(runtime, "_execute_turn", execute)
+    invocation = runtime.execute_turn(session, request, on_model_chunk=handler, event_queue=events,
+        on_graph_input=graph_input, projection_identity=identity, on_runtime_result=result_callback)
+    if outcome == "success":
+        assert await invocation is sentinel
+    else:
+        with pytest.raises(RuntimeError if outcome == "error" else asyncio.CancelledError):
+            await invocation
+    assert callbacks == [("input", {"original": True}), ("result", sentinel)]
+    assert control._execution_owners == {} and control._interrupt_reasons == {}
 
 
 def test_overlapping_control_owner_cannot_clear_running_execution():

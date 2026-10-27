@@ -166,6 +166,26 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 assert projected.framework_messages == serialize_messages(snapshot.values["messages"])
                 assert projected.metadata["native_terminal"] == proof.model_dump(mode="json")
                 assert projected.todos == [] and projected.subagent_events == []
+                from src.application.runtime.turn_projection import (
+                    completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
+                )
+                from src.schemas.framework_graph_input import parse_graph_input_asset
+                from src.schemas.session import ExecutionEvent
+
+                preparation = parse_graph_input_asset(prepared).runtime_preparation
+                projected_state = completed_deep_agent_state(preparation.initial_state, projected,
+                    tool_records=[], binding=h.binding, pilot_stage="DA-E1")
+                projected_state["event_log"] = read.event_log
+                projected_snapshot = project_runtime_snapshot(session_id=h.session_id, state=projected_state,
+                    snapshot_id=preparation.identity.snapshot_id, version=preparation.identity.snapshot_version,
+                    created_at=preparation.identity.snapshot_created_at)
+                projected_turn = project_completed_turn(state=projected_state, snapshot=projected_snapshot,
+                    events=[ExecutionEvent(session_id=h.session_id, **entry) for entry in read.event_log], tool_messages=[])
+                assert projected_turn.output_text == "fixture answer"
+                assert projected_turn.snapshot.id == identity["snapshot_id"]
+                assert [event.id for event in projected_turn.events] == [entry["id"] for entry in read.event_log]
+                assert projected_turn.state["framework_messages"] == projected.framework_messages
+                assert await h.store.get_latest_snapshot(h.session_id) is None
                 assert "runtime_result_asset" not in (await stage(h, original)).source_manifest
             else:
                 with pytest.raises(FrameworkMessageStageRecoveryRequired, match="missing"):
@@ -266,6 +286,37 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
             assert [item.event_id for item in read.completion.events] == [item.id for item in result.runtime_result.events]
             assert read.completion.returned_event_offset == 0
             assert completions[0].id not in {item.id for item in result.runtime_result.events}
+            from src.application.deep_agents.result_projection import project_deep_agent_result
+            from src.application.runtime.turn_projection import (
+                completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
+            )
+            from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+            from src.schemas.session import ExecutionEvent
+
+            proof = NativeTerminalProof.model_validate(result.runtime_result.state["model_response_summary"]["native_terminal"])
+            provider = DeepAgentCheckpointProvider(h.settings)
+            try:
+                async with provider.open() as saver:
+                    selected = {"configurable": {"thread_id": h.binding.thread_id,
+                        "checkpoint_ns": h.binding.checkpoint_namespace, "checkpoint_id": proof.checkpoint_id,
+                        CONFIG_KEY_CHECKPOINTER: saver}}
+                    graph = create_deep_agent(model=Model(responses=[]), tools=[], checkpointer=saver)
+                    native = await saver.aget_tuple(selected)
+                    restored = await graph.aget_state(selected)
+                    assert _native_hash(saver.serde, native.checkpoint) == proof.checkpoint_sha256
+                    assert _native_hash(saver.serde, restored.values) == proof.state_sha256
+                projected = project_deep_agent_result(restored.values, stage="DA-E1", subagent_events=[],
+                    native_terminal=proof.model_dump(mode="json"))
+                state = completed_deep_agent_state(initial, projected, tool_records=[], binding=h.binding, pilot_stage="DA-E1")
+                state["event_log"] = read.event_log
+                projected_snapshot = project_runtime_snapshot(session_id=h.session_id, state=state,
+                    snapshot_id=identity.snapshot_id, version=identity.snapshot_version, created_at=identity.snapshot_created_at)
+                projected_turn = project_completed_turn(state=state, snapshot=projected_snapshot, tool_messages=[],
+                    events=[ExecutionEvent(session_id=h.session_id, **entry)
+                        for entry in read.event_log[read.completion.returned_event_offset:]])
+                assert FrameworkRuntimeResult.from_result(projected_turn).model_dump(mode="json") == result.runtime_result.model_dump(mode="json")
+            finally:
+                await provider.close()
             assert len(requests) == 1
             assert len([event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]) == 1
     finally:

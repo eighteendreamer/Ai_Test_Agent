@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import nullcontext
-from dataclasses import dataclass
 from datetime import datetime, timezone
 import json
 import logging
@@ -27,6 +26,10 @@ from src.application.runtime.tool_child_wait import park_tool_wait, waiting_tool
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
 from src.application.runtime.tool_messages import build_tool_message, build_chat_tool_messages, build_rejected_tool_projection
+from src.application.runtime.turn_projection import (
+    RuntimeTurnResult, completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
+    snapshot_stage_for_state,
+)
 from src.application.runtime.tool_governance_service import (
     GovernedToolCallContext,
     GovernedToolCallResult,
@@ -72,17 +75,6 @@ from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequ
 
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class RuntimeTurnResult:
-    output_text: str
-    events: list[ExecutionEvent]
-    snapshot: SessionSnapshot
-    approvals: list[dict]
-    state: dict
-    tool_messages: list[ChatMessage]
-    pending_turn: dict
 
 
 class RuntimeService:
@@ -543,7 +535,6 @@ class RuntimeService:
                     previous_messages=session.messages, event_log=state["event_log"], original_materials=original_tool_materials),
                 pending_turn=state["pending_turn"],
             )
-        state["cognitive_subagent_events"] = list(result.subagent_events)
         if result.todos:
             await append_graph_event_durable(
                 state,
@@ -556,16 +547,8 @@ class RuntimeService:
                 plan_outline=" | ".join(item["content"] for item in result.todos),
                 todos=result.todos,
             )
-        state["model_response_text"] = result.output_text
-        state["model_response_summary"] = {
-            "mode": "ok",
-            "harness": "deepagents",
-            "pilot_stage": pilot_stage,
-            **result.metadata,
-        }
-        state["final_response"] = result.output_text
-        state["termination_reason"] = "completed"
-        state["control_state"] = "completed"
+        state.update(completed_deep_agent_state(state, result, tool_records=tool_records,
+            binding=request.runtime_binding, pilot_stage=pilot_stage))
         if on_model_chunk is not None:
             await on_model_chunk(result.output_text)
         await append_graph_event_durable(
@@ -581,16 +564,13 @@ class RuntimeService:
             await complete_graph_event_log(state, result.metadata["native_terminal"],
                 returned_event_offset=returned_event_offset)
         snapshot = self._build_snapshot(session, state, session.snapshot_count + 1, identity=projection_identity)
-        return RuntimeTurnResult(
-            output_text=result.output_text,
+        return project_completed_turn(
+            state=state,
             events=self._events_from_log(session.id, state["event_log"]),
             snapshot=snapshot,
-            approvals=[],
-            state=state,
             tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
                 binding_id=request.runtime_binding.binding_id if request.runtime_binding else None,
                 previous_messages=session.messages, event_log=state["event_log"], original_materials=original_tool_materials),
-            pending_turn={},
         )
 
     async def _build_deep_agent_interrupted_result(
@@ -2453,82 +2433,13 @@ class RuntimeService:
         self, session: SessionRecord, state: dict[str, Any], version: int,
         *, identity: FrameworkProjectionIdentity | None = None,
     ) -> SessionSnapshot:
-        graph_state = {
-            "turn_id": state["turn_id"],
-            "trace_id": state["trace_id"],
-            "user_message": state["user_message"],
-            "normalized_input": state["normalized_input"],
-            "session_mode": state["session_mode"],
-            "runtime_mode": state["runtime_mode"],
-            "mode_key": state["mode_key"],
-            "selected_agent_key": state["selected_agent_key"],
-            "selected_agent_name": state["selected_agent_name"],
-            "selected_model_key": state["selected_model_key"],
-            "selected_model_name": state["selected_model_name"],
-            "selected_model_provider": state["selected_model_provider"],
-            "requested_skill_keys": state["requested_skill_keys"],
-            "resolved_skill_keys": state["resolved_skill_keys"],
-            "skill_prompt_blocks": state["skill_prompt_blocks"],
-            "memory_hits": state["memory_hits"],
-            "memory_prompt_blocks": state["memory_prompt_blocks"],
-            "test_case_hits": state.get("test_case_hits", []),
-            "test_case_prompt_blocks": state.get("test_case_prompt_blocks", []),
-            "observation_hits": state["observation_hits"],
-            "observation_prompt_blocks": state["observation_prompt_blocks"],
-            "active_mcp_servers": state["active_mcp_servers"],
-            "mcp_prompt_blocks": state["mcp_prompt_blocks"],
-            "available_tool_keys": state["available_tool_keys"],
-            "deferred_tool_keys": state["deferred_tool_keys"],
-            "model_visible_tool_keys": state["model_visible_tool_keys"],
-            "allowed_tool_keys": state["allowed_tool_keys"],
-            "approval_required_tool_keys": state["approval_required_tool_keys"],
-            "denied_tool_keys": state["denied_tool_keys"],
-            "permission_decisions": state["permission_decisions"],
-            "pending_approvals": state["pending_approvals"],
-            "plan_steps": state["plan_steps"],
-            "system_prompt_sections": state["system_prompt_sections"],
-            "runtime_message_sections": state["runtime_message_sections"],
-            "system_prompt": state["system_prompt"],
-            "runtime_messages": state["runtime_messages"],
-            "framework_messages": list(state.get("framework_messages") or []),
-            "model_request_payload": state["model_request_payload"],
-            "model_response_summary": state["model_response_summary"],
-            "model_response_text": state["model_response_text"],
-            **persisted_turn_budget(state),
-            "assistant_tool_call_message": state["assistant_tool_call_message"],
-            "model_tool_calls": state["model_tool_calls"],
-            "tool_results": state["tool_results"],
-            "tool_messages": state["tool_messages"],
-            "worker_dispatches": state["worker_dispatches"],
-            "context_bundle": state["context_bundle"],
-            "event_log": state["event_log"],
-            "pending_turn": state["pending_turn"],
-            "control_state": state["control_state"],
-            "loop_iteration": state["loop_iteration"],
-            "max_iterations": state["max_iterations"],
-            "continue_loop": state["continue_loop"],
-            "termination_reason": state["termination_reason"],
-            "final_response": state["final_response"],
-        }
-        return SessionSnapshot(
-            id=identity.snapshot_id if identity is not None else str(uuid4()),
-            session_id=session.id,
+        return project_runtime_snapshot(session_id=session.id, state=state,
+            snapshot_id=identity.snapshot_id if identity is not None else str(uuid4()),
             version=identity.snapshot_version if identity is not None else version,
-            stage=self._snapshot_stage_for_state(state),
-            created_at=identity.snapshot_created_at if identity is not None else datetime.utcnow(),
-            graph_state=graph_state,
-        )
+            created_at=identity.snapshot_created_at if identity is not None else datetime.utcnow())
 
     def _snapshot_stage_for_state(self, state: dict[str, Any]) -> str:
-        if state["termination_reason"] == "interrupted":
-            return "interrupted"
-        if state["pending_approvals"]:
-            return "waiting_approval"
-        if state["pending_turn"]:
-            return "resumable"
-        if state["termination_reason"] == "failed":
-            return "failed"
-        return "completed"
+        return snapshot_stage_for_state(state)
 
     def _build_pending_turn(self, state: dict[str, Any], stage: str) -> dict[str, Any]:
         return build_pending_turn(state, stage)

@@ -2356,3 +2356,67 @@ $env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framew
 实际查询独立环境ruff／mypy仍未安装，未新增依赖；不把compileall当作lint／类型检查。未运行后端／前端全量、前端构建或本轮前端typecheck、官方saver conformance、真实供应商／RustFS／领域Runner以及双制品／备份恢复／回滚E4。最高证据为E2：使用实际官方框架／PostgreSQL／Redis与独立Worker，模型HTTP为本地合成服务，跨进程对象后端不是实际RustFS。未启动服务、升级依赖、新增付费调用或开启生产路由。
 
 本节与代码／测试同一小步提交；交付报告commit id，不把当前小步或A2-2当作全系统完成。
+
+
+## 63. A2-2：共享完成态状态／快照／Runtime结果投影，保留原工具消息字符串（2026-10-27）
+
+基线 `61ab9cc70`，续接§62。上一轮已提交且验证，本轮推进同一确定性投影链，不重复P0／A1或§52实现。用户原有v3文档改动继续保留、排除于提交；整体目标保持，A2-2尚未达到全部恢复验收出口。
+
+### 失败样本、根因与依据
+
+- 新反例先实际执行官方Deep Agents＋PostgreSQL，再只使用图前准备资产、精确官方物化state和原完成事件集合，要求输出整个 `RuntimeTurnResult` 与正常结果完全相同。首次 **1 failed，13.46秒**：尚无共享完成态投影模块；正常运行／材料读取已经成功，不是外部依赖或收集失败。抽取后初批 **4 passed，15.52秒**；扩展快照／suffix／独立Worker样本后 **21 passed，58.41秒**，均不是最终源码回归的替代。
+- 第二个明确反例 **1 failed、20 deselected，7.53秒**：原ToolRecord输出为 `zz→a`，JSONB等价对象往返后为 `a→zz`；重新调用 `build_tool_message` 会改变原应用工具消息的content字符串，包括嵌套键顺序。不能忽略该字段、把SDK的 `model_content` 当作同一种应用消息，或用重新生成的字符串冒充原件。
+- 根因处理：共享完成态投影只消费应用状态中的原工具消息槽位，保持原字符串，并核对槽位数量、role、call ID、tool key和content类型与记录对应；缺原槽位明确报告缺材料，不按record重造。正常执行先沿既有业务路径生成槽位，再进入共享投影；没有给旧正常路径增加新的恢复证据要求。未来无资产恢复若拿不到这些原槽位，必须先补可靠落点，不能靠当前函数“补出来”。
+- 扩展回归另发现旧生命周期测试与已存在的入口契约脱节：**1 failed、190 passed，48.49秒**，旧断言只接受两个关键字参数，实际 `execute_turn` 已转发 `on_graph_input`／`projection_identity`。AST比较证明该入口与本轮基线完全一致；同步精确参数断言，并新增非空准备参数、结果回调成功／异常／取消仍释放控制作用域的测试，不改生产入口迎合旧断言。单文件随后 **15 passed，7.58秒**。
+- 续接收取原会话72604时，扩展组为 **1 failed、207 passed、4 skipped，64.59秒**：`test_previously_admitted_parent_value_is_not_silently_replaced_on_recovery[False]` 的旧 `SimpleNamespace`没有 `get_execution_detail`，尚未触及原上下文漂移断言。提交 `31a64dc18` 已把正式加载端口改为按固定运行／条目／attempt读取，当前生产加载器无本轮改动；仅将该替身接到真实内存store的同名端口，保留完整上下文不一致的精确拒绝和checkpoint未改断言。该文件随后 **5 passed、5 skipped，15.71秒**，外部存储分支未启用，未以skip冒充通过。
+- 直接依据为原 `RuntimeService` 的快照字段选择、stage优先级、完成态赋值、返回结构及现有工具原件投影。AST核对证明 `RuntimeTurnResult`字段、快照字段映射与stage优先级原样保留。固定安装源码再次核对 `deepagents==0.7.13`、`langgraph==1.2.12`、`langchain-core==1.6.10`，沿 `Pregel.aget_state`、现有 `collect_native_terminal` 与官方消息序列化读取，不拼Delta、不删除messages比较。
+- 本地成熟参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py` 的 `RunResult`／结果装配 → 采用执行事实与结果表达分离，不移植其从展示事件推导文本的做法作为恢复证明。本地[Agent轨迹与协议鲁棒性课程](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html)的结果＋轨迹评估、异常注入与幂等回归 → 同时断言原消息、checkpoint／事件不变、原时间身份、HTTP次数与不新增应用资产，不只检查最终文本。
+
+### 实现与边界
+
+- 新 [turn_projection.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/turn_projection.py) 承载原 `RuntimeTurnResult`类型及三项共享职责：`completed_deep_agent_state`、`project_runtime_snapshot`、`project_completed_turn`。原 `runtime_service.RuntimeTurnResult`导入继续重导出同一类型；未改返回字段或数据库序列化结构。
+- [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py) 正常完成直接使用共享状态规则与结果装配；所有快照仍由原 `_build_snapshot`入口调用同一字段投影。只有外层原入口分配legacy的UUID／时间；只读投影必须由调用方提供原snapshot身份、版本与时间，不读取恢复时钟或重新分配身份。等待审批、取消、超时及其他领域入口保留原业务流程和stage规则。
+- 完成态保留原应用上下文、根预算、原会话消息及扩展字段；原生framework_messages不覆盖legacy runtime_messages。完成后清空pending字段，写入原模型输出／todo／callback及完成状态。原输入、快照、事件、工具消息和返回结果的嵌套对象隔离，消费方不能通过修改投影反向改写原准备材料。
+- 结果装配消费调用方已经核验的原事件区间和原ChatMessage；完整event_log仍保存在state／snapshot中，审批返回suffix不被替换成整Turn事件。它拒绝已知的等待／中断、非完成snapshot或跨Session／Turn矛盾，不自行认证来源、不申请owner、不执行或持久化结果，更不授予恢复权。
+- [新Harness](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_turn_projection.py) 实际验证普通与write_todos两种官方框架结果：以原准备资产＋官方native state＋原事件集合重新组装全部Runtime字段，精确比较完整序列化结果；禁止模型／图／adapter执行和UUID分配，核对原checkpoint／事件／准备资产未变、snapshot未落库。单元反例覆盖预算／会话保持、五种快照stage、原工具字符串／JSONB键顺序、原槽位缺失／漂移、结果suffix、嵌套引用隔离及确定性跨scope／非终态矛盾。
+- [跨进程Harness](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_terminal_gap.py) 在DA-E1原事件封口后、资产前真实强杀窗口，用原准备身份／state、官方终态及原事件清单生成完整只读Runtime结果；原snapshot／结果资产／后继仍不创建，模型请求不增加。另将独立正常Worker已冻结的完整结果作为oracle，与另一进程上下文从原材料重投影的完整结果逐字段比较。该fixture没有子代理／治理工具，不冒称这些模式的全部材料都已齐备。
+- 本轮没有新表、队列、调度层、finalizer、恢复API、格式或能力版本；graph-input schema2、工具marker2、message-stage14不变。新模块是原职责共享与纯投影，不是新恢复准入。六个占位模式、真实目标或生产路由均未扩张。
+
+### v4对应与剩余出口
+
+| v4阶段／条款／Harness | 本轮实现与测试 | 剩余出口 |
+| --- | --- | --- |
+| A2-2，§8.3／§9.1–2，H05 | 共享完成态、快照及全Runtime结果装配；普通／todo精确往返、独立进程oracle与资产前强杀只读投影 | 所有治理工具原应用消息槽位、原stage／callback及审批多次续跑材料仍须完整持久化、核对和消费；无资产恢复准入仍关闭 |
+| A1／A2-1，§9.4 | 原资产／快照／事件／观察／唯一finalizer回归 | 不替代A2-3任务finish或A3派生／清理验收 |
+| §7–8，H02／H07／H12相关子契约 | 原审批、工具治理、fencing、原生中断和Delta顺序回归 | 不扩张未知副作用恢复或证明权限；官方saver conformance另验 |
+| §4–5／§11，H09／H10相关子契约 | 原预算／会话字段保持、stage优先级、入口准备参数与回调生命周期 | 不是完整跨Turn、根预算、Token实时流或资源取消全链路验收 |
+| §13–14／§16 | 序列化字段与旧导入消费方核对、原格式不变 | 真实供应商／RustFS／领域Runner与双制品E4仍待验收 |
+
+完整A2-2还要求把“能接收原材料的纯投影”对接到每项经过核验的可靠来源，并完成合法恢复准入及全部强杀窗口。尤其原应用model工具消息不等于SDK model_content；原工具记录存在也不代表原字符串可重建。审批续跑的原snapshot／assistant身份时间、不同stage与callback事实不能从当前默认配置或最后文本猜测。下一步优先闭合这些材料，再沿既有任务体系接入无原结果资产恢复，不新增平行收尾。A2-3／A3／B/C/D/E/F的完整范围继续保留。
+
+### 实际验证与提交归属
+
+补齐工具原字符串后的中间三文件组 **79 passed，224.82秒**；启动后另补一个非法槽位类型反例，故该批不替代最终源码验证。续接先取回原cell524／session72604／43583的输出，确认原应用组88795仍活跃，不因观察超时重复启动，最终取得exit0。旧生命周期和加载端口替身同步后，只重跑已终态的Runtime组。
+
+以下命令工作目录均为 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，使用固定独立环境；最终源码结果逐组登记，不累计重叠测试数。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_turn_projection.py tests/test_framework_result_projection.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_graph_input_asset.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_turn_budget_persistence.py tests/test_runtime_interrupt_tool_calls.py tests/test_runtime_input_paths.py tests/test_runtime_import_isolation.py tests/test_approval_model_budget.py tests/test_tool_message_budget.py tests/test_approval_checkpoint_consistency.py tests/test_intent_safety_routing.py tests/test_agent_case_context.py -q -x -rs --tb=short
+# 337 passed，12 skipped，67.85秒；原会话73628，exit0。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_tool_bridge.py tests/test_framework_tool_authority.py tests/test_framework_checkpoint_fencing.py tests/test_framework_delta_replay_order.py tests/test_framework_native_interrupts.py -q -x -rs --tb=short
+# 140 passed，478.65秒，无skip；原会话43583，exit0。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_terminal_gap.py tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_event_completion.py tests/test_framework_live_event_persistence.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 310 passed，1211.41秒，无skip；原会话88795，exit0。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest 'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling' tests/test_framework_native_terminal.py -q -x -rs --tb=short
+# 33 passed，244.62秒，无skip；原会话88955，exit0。
+```
+
+12个skip均明确保留：`test_runtime_input_paths.py`的5个、`test_approval_model_budget.py`的3个、`test_agent_case_context.py`的3个真实PostgreSQL/MySQL/RustFS分支未开启，另1个配置实际模型／真实存储分支未运行。没有扩大skip或用这些结果授权领域链路。三组原始日志分别位于项目根 `.codex-logs/framework-turn-projection-runtime-verified-2026-10-27.txt`、`.codex-logs/framework-turn-projection-approval-final-2026-10-27.txt`、`.codex-logs/framework-turn-projection-application-final-2026-10-27.txt`；P0样本／终态组在 `.codex-logs/framework-turn-projection-p0-current-2026-10-27.txt`，早期失败日志另行保留。
+
+P0原样本在§60已扩展为“批准／拒绝×三个对账强杀点”。本轮先用§54历史单参数nodeid选取，返回exit4／no tests ran；随后一次从项目根collect因缺少`src`导入路径失败。两次都属于选择／工作目录错误，不计生产红测。纠正为Agent_Server工作目录和当前整组参数后，六个独立Worker强杀样本及27个原生终态契约全部通过；完整消息比较未删除、未将结果按内容排序。最终四组会话73628／43583／88795／88955均已取回真实终态，本轮无遗留运行中的pytest。
+
+项目根实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均通过；AST再次确认 `execute_turn`入口与基线一致，返回类型字段、快照映射和stage优先级完全一致。检查§63唯一、全文代码围栏配对及本节绝对本地链接目标均通过。固定环境 `find_spec`确认ruff／mypy未安装，未安装新工具，不声称lint／typecheck通过。再次核对官方[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)的checkpoint／store职责边界，不借其托管Server说明扩大本项目恢复权限。
+
+本轮最高证据范围仍为E2；本地合成HTTP、受控工具及跨进程对象后端不是实际供应商、浏览器、压测／扫描Runner或RustFS。全量、前端、独立lint／typecheck、E3真实依赖和E4部署演练未验收。A2-2无资产恢复、A2-3／A3／B/C/D/E/F仍未完成，整体goal继续active；无依赖升级、付费调用、服务启停或生产路由变更。
+
+本节及本轮八个相关文件归入同一中文提交，主题 `【refactor】共享完整回合结果投影并保留原工具消息`，具体ID以Git历史／交付输出为准；用户v3文档仍保持原15增2删，未纳入提交。
