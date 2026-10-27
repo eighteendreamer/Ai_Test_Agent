@@ -294,8 +294,8 @@ async def test_official_large_result_offload_preserves_private_original_material
     assert FrameworkToolProjection.from_tool_message(evicted, binding=binding, source=source) == material
 
 
-def worker_paused_before_application_tool_result(settings_raw, owner_raw, request_raw, identity_raw, gate):
-    """Real SDK/PG tool callback in a process that never exports a Runtime result."""
+def worker_paused_before_application_tool_result(settings_raw, owner_raw, request_raw, identity_raw, gate, after_seal=False):
+    """Real SDK/PG tool callback; an optional result oracle is never read input."""
     from redis.asyncio import Redis
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
     from src.application.runtime.tool_job_service import ToolJobService
@@ -341,7 +341,20 @@ def worker_paused_before_application_tool_result(settings_raw, owner_raw, reques
             await redis.rpush(gate, json.dumps(result.metadata["native_terminal"]))
             await asyncio.Event().wait()
 
-        adapter.execute = pause
+        if after_seal:
+            execute_runtime = h.runtime._execute_deep_agent_turn
+
+            async def sealed(*args, **kwargs):
+                from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+                result = await execute_runtime(*args, **kwargs)
+                await redis.set(gate + ":oracle", FrameworkRuntimeResult.from_result(result).model_dump_json())
+                await redis.set(gate + ":effects", json.dumps(h.effects))
+                await redis.rpush(gate, json.dumps(result.state["model_response_summary"]["native_terminal"]))
+                await asyncio.Event().wait()
+
+            h.runtime._execute_deep_agent_turn = sealed
+        else:
+            adapter.execute = pause
         sink = SessionEventSink(store, request.session_id, capacity=1, fence={}, runtime_owner=owner)
 
         async def freeze(raw):
@@ -359,7 +372,8 @@ def worker_paused_before_application_tool_result(settings_raw, owner_raw, reques
 
 
 @pytest.mark.asyncio
-async def test_independent_process_kill_retains_original_tool_material_without_runtime_result(fresh_runtime_harness):
+@pytest.mark.parametrize("after_seal", [False, True])
+async def test_independent_process_kill_retains_original_tool_material_without_runtime_result(fresh_runtime_harness, after_seal):
     from deepagents import create_deep_agent
     from redis.asyncio import Redis
     from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
@@ -384,7 +398,7 @@ async def test_independent_process_kill_retains_original_tool_material_without_r
     gate = h.prefix + ":native-tool-material"
     process = multiprocessing.get_context("spawn").Process(target=worker_paused_before_application_tool_result,
         args=(h.settings.model_dump(mode="json"), h.owner.runtime_owner.model_dump(mode="json"),
-            request.model_dump(mode="json"), identity.model_dump(mode="json"), gate))
+            request.model_dump(mode="json"), identity.model_dump(mode="json"), gate, after_seal))
     waiting = Redis.from_url(h.settings.database.redis_url, decode_responses=True, socket_timeout=50)
     try:
         process.start()
@@ -426,7 +440,23 @@ async def test_independent_process_kill_retains_original_tool_material_without_r
         assert slots == [material.runtime_message]
         assert len(await h.jobs.list_jobs(session_id=h.session_id)) == 1
         assert await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id) == before
-        # Read-only material retrieval is not full RuntimeTurnResult recovery.
+        if after_seal:
+            from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+            from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+            from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+            from tests.test_framework_approval_recovery import expire
+
+            terminal = await expire(h, h.owner)
+            adapter = DeepAgentRuntimeAdapter(model_resolver=None, checkpointer_factory=h.provider.open)
+            read = await FrameworkRuntimeResults(h.tasks).read_completed_message(h.binding, h.owner.id,
+                native_reader=adapter.open_native_reader)
+            oracle = FrameworkRuntimeResult.model_validate_json(await h.redis.get(gate + ":oracle"))
+            assert read.runtime_result.model_dump(mode="json") == oracle.model_dump(mode="json")
+            assert read.runtime_result.tool_messages == [material.message]
+            assert await h.tasks.get(h.owner.id) == terminal
+            assert await h.tasks.ensure_framework_message_recovery(h.owner.id) is None
+            assert len(await h.jobs.list_jobs(session_id=h.session_id)) == 1
+        # Material reading/assembly still does not save an asset or finalize.
         assert await h.store.get_latest_snapshot(h.session_id) is None
     finally:
         await waiting.aclose()

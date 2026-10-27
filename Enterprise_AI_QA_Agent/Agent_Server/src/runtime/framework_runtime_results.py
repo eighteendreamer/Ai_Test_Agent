@@ -234,6 +234,12 @@ class FrameworkRuntimeResults:
     def __init__(self, tasks):
         self._tasks, self._settings = tasks, tasks._settings
 
+    async def read_completed_message(self, binding, task_id, *, native_reader):
+        """Read the original ordinary message; no asset or successor is saved."""
+        from src.runtime.framework_message_result_reader import read_completed_message
+
+        return await read_completed_message(self._tasks, binding, task_id, native_reader=native_reader)
+
     async def read_completed_approval(self, binding, task_id, *, continuation, agent=None, saver=None, native_reader=None):
         """Assemble original output only; never freeze, admit or finalize it.
 

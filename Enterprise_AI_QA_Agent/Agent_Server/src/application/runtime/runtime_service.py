@@ -672,6 +672,16 @@ class RuntimeService:
             pending_turn={},
         )
 
+    async def read_completed_framework_message(self, binding, task_id, *, tasks):
+        """Source-only ordinary result read, not execution or recovery admission."""
+        from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+        from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+        if self._deep_agent_bound_runtime_adapter is None:
+            raise FrameworkMessageStageRecoveryRequired("Original message native reader is unavailable")
+        return await FrameworkRuntimeResults(tasks).read_completed_message(binding, task_id,
+            native_reader=self._deep_agent_bound_runtime_adapter.open_native_reader)
+
     async def read_completed_framework_approval(self, binding, task_id, *, tasks):
         """Read original completion only; never execute or admit a successor."""
         from src.runtime.framework_runtime_results import FrameworkRuntimeResults

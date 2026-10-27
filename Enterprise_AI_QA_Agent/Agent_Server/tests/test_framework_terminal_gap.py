@@ -345,6 +345,19 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
             assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
             expired = await h.tasks.claim(task.id, worker_id="callback-expiry", expected_binding=h.binding)
             assert expired.status == "recovery_required" and await h.tasks.ensure_framework_message_recovery(task.id) is None
+            from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+            events_before_read = await h.store.list_events(h.session_id)
+            reader = DeepAgentRuntimeAdapter(model_resolver=forbidden, skill_registry=SkillRegistry(),
+                checkpointer_factory=provider.open)
+            reconstructed = await FrameworkRuntimeResults(h.tasks).read_completed_message(h.binding, task.id,
+                native_reader=reader.open_native_reader)
+            assert reconstructed.runtime_result.model_dump(mode="json") == oracle.model_dump(mode="json")
+            assert reconstructed.source.attempt_id == active.attempt_id
+            assert len(requests) == 3 and await h.calls.snapshot(h.binding) == budget
+            assert await h.store.list_events(h.session_id) == events_before_read
+            assert await h.store.get_latest_snapshot(h.session_id) is None
+            assert (await stage(h, task)).source_manifest == before.source_manifest
     finally:
         if process is not None and process.is_alive():
             process.terminate()

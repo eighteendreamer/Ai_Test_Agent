@@ -149,6 +149,29 @@ def project_completed_turn(
         tool_messages=deepcopy(tool_messages), pending_turn={})
 
 
+def project_original_completed_turn(*, preparation, result, binding, facts, event_log, returned_event_offset, materials):
+    """Use the same original slots/identity for ordinary and approval reads.
+
+    All inputs must already be verified by their scoped readers. This is only
+    composition of the existing pure projections, never admission or writes.
+    """
+    from src.application.runtime.tool_messages import build_chat_tool_messages, build_runtime_tool_messages
+
+    initial = deepcopy(preparation.initial_state)
+    records = [item.record.model_dump(mode="python") for item in materials]
+    initial["tool_messages"] = build_runtime_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
+        original_materials=materials, require_original=True)
+    state = completed_deep_agent_state(initial, result, tool_records=records, binding=binding, pilot_stage=facts.pilot_stage)
+    state["event_log"] = event_log
+    identity = preparation.identity
+    snapshot = project_runtime_snapshot(session_id=binding.session_id, state=state, snapshot_id=identity.snapshot_id,
+        version=identity.snapshot_version, created_at=identity.snapshot_created_at)
+    return project_completed_turn(state=state, snapshot=snapshot,
+        events=[ExecutionEvent(session_id=binding.session_id, **item) for item in event_log[returned_event_offset:]],
+        tool_messages=build_chat_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
+            hygiene_metadata={}, original_materials=materials))
+
+
 def project_runtime_snapshot(
     *, session_id: str, state: dict[str, Any], snapshot_id: str, version: int, created_at: datetime,
 ) -> SessionSnapshot:

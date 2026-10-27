@@ -3048,3 +3048,61 @@ git diff --check
 仅提交本步9个生产文件、10个测试文件、`.gitignore`中新测试例外及本节；原v3草稿、测试日志和其他本地数据不提交。实际运行 `python -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`；提交前核对完整diff、所有协议／reader／stage写入引用、暂存范围和本节仅追加／唯一／围栏／绝对链接。没有DDL、依赖升级、生产开关或公开API破坏性变更，没有启停Docker／测试服务、新增付费调用、推送或建PR。新持久协议要求兼容reader20先行部署；本步本地合同不代替真实旧／新部署制品演练。
 
 提交名 `【feat】封存审批原结果并原子发布仅收尾后继`；本节与实现／测试同一提交，具体ID以Git历史及交付输出为准。本步仅支持原始完整事件资格、审批原件完备且已封口后的无资产空窗；普通消息无资产封存、图返回到事件封口前的空窗及全部材料组合仍需继续实施。A2-2未整体完成，A2-3、A3及B/C/D/E/F也未完成，完整目标保持active，不将当前子步当作全系统接入完成。
+
+## 77. A2-2：普通消息资产前只读装配原结果，审批与普通读取复用纯投影（2026-10-28）
+
+基线 `83d5e50b1`，续接§76后的普通消息原件读取草稿。先核对当前完整v4目标、Git状态、原件读取及正常执行调用链，取回已启动测试的实际终态，再补本节和提交；回归期间未改变生产源码或测试。§54的Delta顺序修复及§76的审批封存／finalizer-only后继均复用，不重复修复、不忽略messages。原v3方案未提交草稿单独保留，不覆盖、不混入本步提交。
+
+### 依据 → 做法、代码与契约
+
+根因是普通消息缺少从已持久原件装配完整应用结果的生产只读端口，并非再次缺少审批journal。审批的准备及授权只适用于审批调用，不能复制为普通消息恢复分支；本步共享结果投影语义，但不共享或扩大恢复授权。
+
+| v4阶段／条款与依据 | 本步实现及测试 | 权限与剩余边界 |
+| --- | --- | --- |
+| A2-2，§8.2／§9.2；§73–75审批source-only读取及现有消息准入原输入检查 | 新[普通消息reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_result_reader.py)在两次短事务中核对正式message／message_recover producer、Session／project／binding、原task／attempt／epoch、runtime_submitted且无资产／commit的stage、原图前准备、完整事件封口／前缀、原根预算与已结算模型／ToolJob事实 | 原生I/O位于两次事务之间；通过既有open_native_reader构建原冻结官方schema，只读精确checkpoint，并在读后完整比较原件。source不携带lease token，不冒充当前执行owner |
+| §8.3／§9.2；既有v2 ToolMessage.artifact、ToolJob及原application ordinal | 从当前原生ToolMessage取原应用record／展示消息／runtime slot，与原ToolJob逐项核对binding、call／job、工具、状态、输入输出、summary、trace、原时间及无approval_id；按原应用ordinal排序，不按原生task或消息顺序猜顺序 | 缺材料、旧无slot格式、冲突ordinal、额外／遗漏Job均拒绝。外来历史材料只有与原冻结framework_messages中的原消息全字段完全相等才允许保留，不计为当前工具结果。ToolJob表未初始化沿既有_tool_hash可选store合同读取并记录debug；真实工具材料仍必须有匹配Job，不凭空表省略执行事实 |
+| §8.3／§9.1–9.4；§63、§73及正常执行既有纯投影 | [turn_projection](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/turn_projection.py)提取project_original_completed_turn组合，普通及[审批reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_result_reader.py)共用原工具槽位、completed state、snapshot和RuntimeTurnResult投影；正常执行继续消费相同的既有底层纯投影 | 保留完整原生messages、原身份／时间／事件及工具JSON字符串。审批原件选择、读后复核和恢复授权仍在原端口，不因组合提取而改变 |
+| §9.2 Verification原规则；§74既有固定准备与builder | 只有原context中存在Verification preparation时才按原输入和固定规则build_results，保留完整非空api-tester验证结果；缺原准备返回None | None不是空验证结论；不调用当前prepare_projection，不让模型重新评分，不freeze／finalize |
+| §10.1–10.2；既有RuntimeService／结果资产服务端口 | [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)与[FrameworkRuntimeResults](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_runtime_results.py)增加source-only普通消息读取门面；补成功及拒绝的结构化日志 | 不新增HTTP路由／调度层，不写资产、不建后继、不执行图／模型／业务工具。ensure_framework_message_recovery对无资产空窗仍返回None；读取对象不是封存或准入证明 |
+
+本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的结果＋轨迹、权限、幂等及超时方法 → 本步完整结果、原件漂移、执行次数和独立Worker强杀断言。本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果／事件分层 → 沿本项目原件与既有结果端口装配，不复制其他SDK的恢复或版本行为。直接实现依据为本项目已有原生终态reader、固定规则、ToolJob与纯投影，没有新增依赖或自建调度器。
+
+### TDD、真实失败与修复过程
+
+全部原日志保留在项目 `.codex-logs/`，前缀 `framework-message-original-read-`、日期2026-10-28。中间组仅作诊断，不代表最终源码完整验收：
+
+- `red`：**1 failed，5 deselected，9.04秒**，无工具普通消息缺生产reader；`tools-valid-red`：**1 failed，7.64秒**，修正fixture后业务工具样本同样缺reader，均为有效目标红测。此前`tools-red` **1 error，6.88秒**是fixture只写_tools而旧dynamic ask descriptor优先，不算生产缺陷；按既有register_dynamic契约修正。
+- `first`：**2 passed，1 error，13.97秒**，api-tester为static tool，不能动态覆盖；该项改用测试monkeypatch隔离_tools，其他动态工具仍用register_dynamic，未改生产Registry。`fixture-final`早期正例子集 **7 passed，25.23秒**，不冒称覆盖后来新增的全部正例。
+- `history-red`：**1 failed，7.70秒**，精确冻结的旧Turn工具材料被误按当前binding拒绝；改为只允许与原冻结历史全字段完全相等的消息，不泛化放行外来材料。`boundary-first`：**18 passed，58.38秒**，包含完整八组正例、四类读后漂移、四类工具原件拒绝、原生消息反序及精确历史边界。
+- `worker-red`：**1 failed，13.83秒**，真实普通Worker无业务工具时ToolJob表尚未初始化，reader无条件SELECT导致UndefinedTable。根因修复对齐既有_tool_hash可选store契约，而非创建空表或吞SQL异常；后续所有真实工具仍必须与原Job匹配。
+- `workers-first`：**1 failed，13.94秒**，新增测试误将读后事件与expire前saved_events比较，差一条合法agent_task.recovery_required。仅将读取前快照放在expire之后，保留该事件及读取前后完整相等断言；没有删除或忽略事件字段。
+- `target-final`：**21 passed，82.45秒，exit0，会话78780**，包含18项新合同、真实官方子代理资产前Worker强杀1项、普通工具Worker强杀2组合。原生工具／子代理消息、RuntimeResult全字段及非空Verification均严格比较，不向reader提供oracle，不以简化文本替代原件。
+
+### 最终源码验证与证据范围
+
+固定解释器 `.venv-framework-v2/Scripts/python.exe`，工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。以下三组均实际取得exit0；完整stdout＋stderr以 `2>&1 | Tee-Object`留档并返回原 `$LASTEXITCODE`。续等原会话而非重新启动同一测试；组间有重叠，不累计为独立覆盖总数：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+# 225 passed，1311.21秒，无skip，会话13917。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_terminal_gap.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 211 passed，740.80秒，无skip，会话96004。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_framework_model_budget_projection.py tests/test_framework_model_policy.py tests/test_framework_tool_bridge.py tests/test_framework_message_stages.py tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py tests/test_runtime_import_isolation.py tests/test_runtime_input_paths.py tests/test_framework_task_control.py tests/test_runtime_binding_persistence.py -q -x -rs --tb=short
+# 500 passed，5 skipped，516.47秒，会话63815。
+```
+
+日志分别为 `framework-message-original-read-approval-final-2026-10-28.txt`、`...-projection-final-2026-10-28.txt`、`...-consumers-final-2026-10-28.txt`。5个skip仍为test_runtime_input_paths.py:48两项、:172两项、:189一项，需要额外隔离的真实PostgreSQL／MySQL／RustFS，不算通过。
+
+新增[完整重建合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_message_result_reconstruction.py)使用真实官方框架、PG及受控模型／业务工具；[工具强杀合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_tool_projection.py)保留封口前原路径并增加封口后只读重建；[子代理强杀合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_terminal_gap.py)实际派发官方子代理、经过3个本地HTTP模型请求，读取前后请求数、预算、事件、stage和无snapshot／资产状态不变。Worker的Redis结果oracle仅用于父进程全字段断言，绝不作为reader输入或替代原件资产。重复读取不增加效果，缺失／漂移不fallback到执行。
+
+证据等级为E1／E2子集：独立进程、官方框架及PG／Redis是真实链路；普通工具模型为替身，子代理模型是本地HTTP合成服务，不是真实供应商。对象后端替身不是RustFS验收，工具效果计数不是领域Runner验收。E3真实供应商／RustFS／Runner、E4部署／双制品／回滚／备份恢复、全量、前端、wheel及官方saver conformance未执行。ruff／mypy实查未安装，未擅自安装，不声称lint或typecheck通过。
+
+### 提交、兼容性与剩余出口
+
+本步仅5个生产文件、3个测试文件、`.gitignore`新测试例外及本节，共10文件；提交前实际执行compileall、git diff --check，核对新增门面及共享投影所有引用、完整diff与暂存范围，并检查本节仅追加／唯一／围栏／绝对链接。不提交原v3草稿、测试日志或本地数据，不推送、不建PR。
+
+没有新持久格式／DDL／依赖升级／生产开关或破坏性公开API变更，沿用stage20／reader20；没有启停既有Docker／数据库等基础设施，没有新增付费调用。本地HTTP合成服务只由既有测试fixture管理。本步只读原件装配已验证，不等于普通消息自动恢复已接入。
+
+下一依赖子步是普通消息原件复核、窄权限封存及finalizer-only后继准入。现有FrameworkMessageRecovery.ensure的同步事务没有审批分支的live reconciler owner，不能在持锁事务内做原生I/O，也不能把本步读取对象当作写入授权；须沿既有task／owner／asset／唯一finalizer链路补齐并用真实强杀及再次接管验证，不能复制审批分支或另造调度层。图返回到事件封口前的空窗也仍待实现。A2-2、A2-3、A3及B/C/D/E/F未整体完成，完整goal保持active。
+
+提交名 `【feat】只读装配普通消息原结果并复用统一投影`；本节与代码／测试同一提交，具体ID以Git历史和交付输出为准。

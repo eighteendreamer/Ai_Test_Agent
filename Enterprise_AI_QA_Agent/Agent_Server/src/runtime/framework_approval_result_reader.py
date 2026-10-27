@@ -9,7 +9,6 @@ This port returns no recovery proof, result asset or write rights.
 from __future__ import annotations
 
 import asyncio
-from copy import deepcopy
 from dataclasses import dataclass, field
 import logging
 
@@ -18,9 +17,8 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from src.application.deep_agents.native_terminal import collect_native_terminal
 from src.application.deep_agents.result_projection import project_deep_agent_result
 from src.application.models.framework_model_budget_projection import read_model_budget_material
-from src.application.runtime.tool_messages import build_chat_tool_messages, build_runtime_tool_messages
 from src.application.runtime.turn_projection import (
-    completed_deep_agent_state, project_completed_turn, project_deep_agent_callback_facts, project_runtime_snapshot,
+    project_original_completed_turn, project_deep_agent_callback_facts,
 )
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_application_projection import COMMIT_KEY, _model_hash, _tool_hash
@@ -31,7 +29,7 @@ from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCal
 from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction
 from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
 from src.schemas.framework_runtime_result import FrameworkRuntimeResult
-from src.schemas.session import ExecutionEvent, VerificationResult
+from src.schemas.session import VerificationResult
 from src.schemas.runtime_binding import RuntimeCheckpointSource
 
 
@@ -161,20 +159,12 @@ async def read_completed_approval(tasks, binding, task_id, *, continuation, agen
         result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
             native_terminal=native.proof.model_dump(mode="json"),
             root_model_budget=read.event_log[-1]["payload"].get("root_model_budget"))
-        initial = deepcopy(preparation.graph_input_asset.runtime_preparation.initial_state)
-        records = [materials[item["call_id"]].record.model_dump(mode="python") for item in initial["tool_results"]]
-        initial["tool_messages"] = build_runtime_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
-            original_materials=materials.values(), require_original=True)
-        state = completed_deep_agent_state(initial, result, tool_records=records, binding=binding, pilot_stage=facts.pilot_stage)
-        state["event_log"] = read.event_log
-        identity = preparation.graph_input_asset.runtime_preparation.identity
-        snapshot = project_runtime_snapshot(session_id=binding.session_id, state=state, snapshot_id=identity.snapshot_id,
-            version=identity.snapshot_version, created_at=identity.snapshot_created_at)
-        projected = project_completed_turn(state=state, snapshot=snapshot,
-            events=[ExecutionEvent(session_id=binding.session_id, **item)
-                for item in read.event_log[read.completion.returned_event_offset:]],
-            tool_messages=build_chat_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
-                hygiene_metadata={}, original_materials=materials.values()))
+        initial = preparation.graph_input_asset.runtime_preparation.initial_state
+        projected = project_original_completed_turn(preparation=preparation.graph_input_asset.runtime_preparation,
+            result=result, binding=binding, facts=facts, event_log=read.event_log,
+            returned_event_offset=read.completion.returned_event_offset,
+            materials=[materials[item["call_id"]] for item in initial["tool_results"]])
+        state, records = projected.state, projected.state["tool_results"]
         from src.application.testing.verification_service import VerificationService
         from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
 
