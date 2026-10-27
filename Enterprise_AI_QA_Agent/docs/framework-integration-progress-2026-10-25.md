@@ -2298,3 +2298,61 @@ $env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framew
 根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，文档围栏／绝对本地链接及§61唯一性检查通过；交付前再次核对。未运行后端／前端全量、前端构建、后端 lint／类型检查、官方 saver conformance、真实供应商／RustFS／领域 Runner、双制品／备份恢复／回滚E4。缺失的检查工具与真实环境验收缺口不以局部绿色结果替代。
 
 本节代码／测试／实施记录归属同一提交，主题 `【feat】持久化完整运行事件清单及原生终态绑定`，实际 commit ID以 Git历史及交付输出为准。整体 goal保持 active；下一步推进正常／恢复共享完整确定性结果投影，逐项核对准备资产、原生终态、原模型结算、完整工具材料与本节事件清单的消费，材料和准入完整前不开放无原结果资产恢复。
+
+
+## 62. A2-2：正常执行与只读原生状态共用适配器结果投影（2026-10-27）
+
+基线 `8d3b7d6f5`，续接§61，而不是重新实施§52或把P0历史失败当成当前未修复事实。本轮只补齐确定性投影链中的适配器输出边界；用户原有v3文档未提交改动保留并排除于提交。整体v4目标继续，A2-2尚未完成。
+
+### 红测、依据与采用方式
+
+- 新契约先运行真实官方Deep Agents／PostgreSQL正常执行，再经官方通道读取精确终态，要求同一投影函数在不运行图／模型／工具的条件下生成完全相同的 `DeepAgentRuntimeResult`。首次实际 **1 failed，13.92秒**：缺少共享结果投影模块；不是外部依赖缺失或测试收集失败。实现后首批 **8 passed，14.92秒**，后续新增负例和独立Worker验证计入最终回归。
+- 既有 `runtime_adapter.py` 中的消息规范化、todo规范化、文本投影及结果装配 → 原规则整体迁入独立纯投影模块，正常入口直接调用；不为恢复复制第二套“找最后文本”算法。原生消息仍沿官方lossless格式，不从规范化展示消息重建。
+- 实际安装版本核对：`deepagents==0.7.13`、`langgraph==1.2.12`、`langchain-core==1.6.10`。读取独立环境 `langgraph/pregel/main.py` 的 `Pregel.aget_state`（1436行起）、`langchain_core/messages/base.py` 的 `messages_to_dict`（488行起）及 `deepagents/graph.py` 的 `create_deep_agent` 签名；沿官方通道物化读取，继续保留原精确终态比较，不拼Delta或忽略messages。
+- 再核对[官方Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)与[Deep Agents概览](https://docs.langchain.com/oss/python/deepagents/overview)。在线文档用于职责说明，版本行为以以上固定安装源码及实际回归为准，不依在线新示例升级依赖。
+- 本地成熟参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py` 的 `RunResult`、`Session.run`：通知／事件收集与SDK结果投影分离。本项目采用这一职责分离，不复制其从展示事件提取最终文本的逻辑作为checkpoint恢复依据，也不新增子进程运行时或调度器。
+
+### 实现、消费方与事实边界
+
+- [result_projection.py](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/result_projection.py) 提供唯一 `project_deep_agent_result`，同时承载原 `DeepAgentRuntimeResult`／`DeepAgentRuntimeError`；原 `runtime_adapter` 与package导入路径继续重导出同一类型。适配器不再保留另一份结果构造和规范化规则。
+- 函数只消费调用方提供的原values、stage、子代理callback事实、原生interrupt身份及可选terminal材料；不查询时钟、不生成身份、不调用图／模型／工具／收尾服务，不写数据库。stage与callback事实是必需显式输入，不能把checkpoint没有该字段理解为原调用无子代理。
+- 完整 `framework_messages` 保留工具调用／结果、原生内容块、signature、response／usage metadata和ToolMessage.artifact；展示messages与todos继续原兼容语义。输出的嵌套消息、callback、interrupt及terminal元数据与原输入隔离，修改投影不会反向污染同一个原生状态或callback集合。
+- 等待审批仍输出空文本并保留原interrupt身份，不挪用前序assistant文字，也不允许同一输入同时标注等待interrupt与原生terminal。沿原协议保留无完成依据的空结果失败；v4§9.3合法结构化空输出仍待独立对齐，不能据此宣称已经实现。
+- 新 [投影Harness](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_result_projection.py) 对官方框架实际普通／write_todos结果进行精确往返；读取阶段禁止图／模型调用，断言checkpoint、Session事件和原values均不变，重复投影相等。另测工具artifact／嵌套参数／签名、显式callback、等待interrupt、无完成依据、legacy role字典不升级为原生消息及嵌套引用隔离。
+- [独立Worker强杀Harness](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_terminal_gap.py) 在原事件集合封口后、结果资产前强杀的既有窗口，实际消费保留的官方物化state和精确proof生成适配器输出。该fixture明确为DA-E1能力配置、无callback子分支；不是所有模式／审批续跑已能重建完整结果。原有断言继续要求没有新结果资产、snapshot或恢复后继，模型HTTP仍一次。
+- 没有新增数据库格式、消息stage、恢复API、调度层或finalizer。graph-input仍schema2，工具marker2、message-stage14及历史无marker正常路径不变；无原结果资产恢复准入继续关闭。`.gitignore`仅增加新测试源文件例外。
+
+### v4对应与剩余出口
+
+| v4阶段／条款／Harness | 本轮实现与验证 | 剩余出口 |
+| --- | --- | --- |
+| A2-2，§8.3／§9.1–2 | 正常adapter与只读原生values共用唯一结果投影；普通／认知todo精确往返 | 完整RuntimeTurnResult的正常／恢复共享投影及原准备资产、模型结算、工具材料、完整事件消费尚未闭环 |
+| §5／§8，H01／H11／H12相关子契约 | 原生消息与metadata、ToolMessage.artifact完整保存，精确状态比较保留 | 不代表完整跨Turn、摘要／子代理各合法分支、官方saver conformance通过 |
+| §7，H02／H07 | 原interrupt身份、等待输出和owner-bound审批回归 | 不扩张审批或未知副作用恢复权 |
+| A1／A2-1／A2-2，H05 | 既有资产／投影回归及资产前强杀只读适配器投影 | 不是完整结果资产导出，不开放无资产后继，H05全部窗口仍按原验收要求推进 |
+| §9.3／§13 | 保持当前空结果边界并明确未实现项 | 合法结构化无文本完成、完整模式链路及E3／E4独立验收 |
+
+下个依赖步骤仍是完整确定性Runtime结果投影：继续审计原stage与callback事实、工具材料／完成事件suffix、审批多次续跑的原身份／时间与上下文，不能假定初始准备资产包含所有续跑完成材料。正常与恢复必须共用规则，但恢复必须另外满足原事实核验和准入契约。A2-3／A3／B/C/D/E/F及各模式Harness保持完整范围，不以本子步替代。
+
+### 实际验证与提交归属
+
+最终源码从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 使用独立解释器，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，沿既有UUID隔离PostgreSQL／Redis fixtures执行。完整stdout／stderr经Tee保存至 `.codex-logs/framework-result-projection-*-final-2026-10-27.txt`；红测／首批绿测另存，不覆盖历史日志。以下四组均已取回终态、退出0，没有skip／deselect；组间同机并发耗时不作为性能基线。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_result_projection.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py tests/test_framework_terminal_gap.py tests/test_framework_chat_models.py tests/test_framework_graph_input_asset.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py -q -x -rs --tb=short
+# 227 passed，193.12秒。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_tool_bridge.py tests/test_framework_tool_authority.py tests/test_framework_checkpoint_fencing.py -q -x -rs --tb=short
+# 119 passed，389.24秒。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_event_completion.py -q -x -rs --tb=short
+# 152 passed，569.78秒。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_delta_replay_order.py tests/test_framework_native_interrupts.py -q -x -rs --tb=short
+# 21 passed，61.47秒。
+```
+
+原会话56752／44299／13706／79676全部终态；9453红测、58093首批绿测也已终态，没有观察超时后重启测试或遗留本轮测试进程。第一组启动后仅移除adapter尾部多余空行，无生产逻辑／测试变化；其余最终组未再修改代码或测试。
+
+根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`。AST核对证明两类型及三个原规范化函数与HEAD原实现一致，改变仅在共享装配、输入隔离及已测矛盾输入边界。文档自检首次因能力标签未明确写为DA-E1失败（AssertionError），更正与证据等级E1混淆的措辞后，§62唯一性、标签、围栏及绝对本地链接检查通过；早期diff检查发现adapter尾部多余空行，也已移除并重检。
+
+实际查询独立环境ruff／mypy仍未安装，未新增依赖；不把compileall当作lint／类型检查。未运行后端／前端全量、前端构建或本轮前端typecheck、官方saver conformance、真实供应商／RustFS／领域Runner以及双制品／备份恢复／回滚E4。最高证据为E2：使用实际官方框架／PostgreSQL／Redis与独立Worker，模型HTTP为本地合成服务，跨进程对象后端不是实际RustFS。未启动服务、升级依赖、新增付费调用或开启生产路由。
+
+本节与代码／测试同一小步提交；交付报告commit id，不把当前小步或A2-2当作全系统完成。

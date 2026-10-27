@@ -152,6 +152,21 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 assert read.event_log[0] == initial["event_log"][0]
                 assert [item["type"] for item in read.event_log] == ["runtime.turn_started", "runtime.turn_completed"]
                 assert all(item["type"] != "runtime.event_log_completed" for item in read.event_log)
+                from src.application.deep_agents.result_projection import project_deep_agent_result
+                from src.application.deep_agents.framework_transcript import serialize_messages
+
+                # This producer is explicitly E1 with no callback branches. The
+                # stage/callback inputs are not reconstructed from display text
+                # and do not claim a generic RuntimeTurnResult recovery port.
+                assert not any(prepared["feature_flags"][key] for key in (
+                    "read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"))
+                projected = project_deep_agent_result(snapshot.values, stage="DA-E1", subagent_events=[],
+                    native_terminal=proof.model_dump(mode="json"))
+                assert projected.output_text == "fixture answer"
+                assert projected.framework_messages == serialize_messages(snapshot.values["messages"])
+                assert projected.metadata["native_terminal"] == proof.model_dump(mode="json")
+                assert projected.todos == [] and projected.subagent_events == []
+                assert "runtime_result_asset" not in (await stage(h, original)).source_manifest
             else:
                 with pytest.raises(FrameworkMessageStageRecoveryRequired, match="missing"):
                     await h.store.read_runtime_event_completion(h.binding, proof.model_dump(mode="json"))
