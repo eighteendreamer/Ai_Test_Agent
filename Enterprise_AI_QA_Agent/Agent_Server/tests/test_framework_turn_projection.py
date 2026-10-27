@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from dataclasses import replace
 from datetime import datetime
 import json
 from types import SimpleNamespace
@@ -27,9 +28,10 @@ from tests.test_framework_native_terminal import Model
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("planning", [False, True])
+@pytest.mark.parametrize("planning,subagents,redacted,governed_empty", [(False, False, False, False), (True, False, False, False),
+    (False, True, False, False), (False, True, True, False), (False, False, False, True)])
 async def test_completed_runtime_is_identical_from_original_preparation_native_and_event_materials(
-    checkpoint_harness, monkeypatch, planning,
+    checkpoint_harness, monkeypatch, tmp_path, planning, subagents, redacted, governed_empty,
 ):
     h = checkpoint_harness
     await start(h)
@@ -38,6 +40,10 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
     if planning:
         responses.insert(0, AIMessage(id="plan", content="", tool_calls=[{"id": "todo", "name": "write_todos",
             "args": {"todos": [{"content": "inspect", "status": "completed"}]}, "type": "tool_call"}]))
+    if subagents:
+        responses[:0] = [AIMessage(id="delegate", content="", tool_calls=[{"id": "child", "name": "task",
+            "args": {"description": "Inspect the controlled project", "subagent_type": "code-review-researcher"},
+            "type": "tool_call"}]), AIMessage(content="controlled child evidence")]
     model = Model(responses=responses)
     async def resolve(key):
         return model
@@ -50,10 +56,21 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
     adapter = DeepAgentRuntimeAdapter(model_resolver=resolve,
         checkpointer_factory=lambda: h.provider.open(owner=h.owner.runtime_owner))
     monkeypatch.setattr(adapter, "_resolve_factory", lambda: factory)
+    if redacted:
+        execute = adapter.execute
+        async def private_callback_label(request):
+            original_callback = request.on_subagent_event
+            async def callback(item):
+                item["name"] = "password=synthetic-test-marker"
+                await original_callback(item)
+            return await execute(replace(request, on_subagent_event=callback))
+        monkeypatch.setattr(adapter, "execute", private_callback_label)
     runtime = RuntimeService(graph=None,
         model_runtime_service=SimpleNamespace(get_model_config=lambda key: None, get_default_model_config=lambda: None),
         tool_runtime_service=object(), tool_registry=ToolRegistry(), runtime_control=RuntimeControlRegistry(),
-        deep_agent_runtime_adapter=adapter, deep_agent_enabled=True, deep_agent_cognitive_planning_enabled=planning)
+        deep_agent_runtime_adapter=adapter, deep_agent_enabled=True, deep_agent_cognitive_planning_enabled=planning,
+        deep_agent_read_only_filesystem_enabled=subagents, deep_agent_cognitive_subagents_enabled=subagents,
+        deep_agent_governed_tools_enabled=governed_empty)
     session = await h.store.get_session(h.session_id)
     identity = FrameworkProjectionIdentity(binding=h.binding, assistant_message_id="reserved-assistant",
         snapshot_id="reserved-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27, 0, 1))
@@ -61,7 +78,7 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
     with framework_owner_scope(h.owner.runtime_owner):
         original = await runtime.execute_turn(session, ExecutionRequest(session_id=h.session_id,
             turn_id=h.binding.turn_id, trace_id="projection", user_message="inspect", normalized_input="inspect",
-            mode_key="code_review", model_key="fixture", runtime_binding=h.binding),
+            mode_key="code_review", model_key="fixture", context={"project_root": str(tmp_path)}, runtime_binding=h.binding),
             event_queue=sink, projection_identity=identity, on_graph_input=remember)
     prepared, = captured
     graph, = graphs
@@ -81,13 +98,37 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
     monkeypatch.setattr("src.application.runtime.runtime_service.uuid4", forbidden)
     # Consume original channels and explicit producer facts, not a saved final
     # Runtime result or a display-text reconstruction. No admission is granted.
-    native_result = project_deep_agent_result(terminal.values, stage="DA-E3" if planning else "DA-E1",
-        native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=[])
     from src.application.runtime.turn_projection import (
-        completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
+        completed_deep_agent_state, project_completed_turn, project_runtime_snapshot, project_deep_agent_callback_facts,
     )
+    if redacted:
+        # Redaction intentionally cannot reconstruct raw callback text. Normal
+        # completion must remain valid; only original-material reuse is denied.
+        assert original.output_text == "original answer"
+        assert original.state["cognitive_subagent_events"][0]["name"] == "password=synthetic-test-marker"
+        persisted = [entry["payload"]["subagent_event"] for entry in completion.event_log
+            if entry["type"].startswith("graph.subagent_")]
+        assert all(item["name"] == "password=[REDACTED]" for item in persisted)
+        with pytest.raises(ValueError, match="declared original digest"):
+            project_deep_agent_callback_facts(completion.event_log, turn_id=h.binding.turn_id,
+                returned_event_offset=completion.completion.returned_event_offset)
+        assert await h.store.list_events(h.session_id) == saved_events
+        async with h.provider.open(owner=h.owner.runtime_owner) as saver:
+            assert await saver.aget_tuple(config(h)) == checkpoint
+        assert await h.store.get_latest_snapshot(h.session_id) is None
+        return
+    facts = project_deep_agent_callback_facts(completion.event_log, turn_id=h.binding.turn_id,
+        returned_event_offset=completion.completion.returned_event_offset)
+    assert facts.adapter_stage == ("DA-E3" if planning or subagents else "DA-E1")
+    assert facts.pilot_stage == ("DA-E4" if governed_empty else facts.adapter_stage)
+    assert bool(facts.subagent_events) is subagents
+    if subagents:
+        assert [item["type"] for item in facts.subagent_events] == ["started", "completed"]
+        assert facts.subagent_events[0]["run_id"] == facts.subagent_events[1]["run_id"]
+    native_result = project_deep_agent_result(terminal.values, stage=facts.adapter_stage,
+        native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=facts.subagent_events)
     state = completed_deep_agent_state(prepared.runtime_preparation.initial_state, native_result,
-        tool_records=[], binding=h.binding, pilot_stage="DA-E3" if planning else "DA-E1")
+        tool_records=[], binding=h.binding, pilot_stage=facts.pilot_stage)
     state["event_log"] = completion.event_log
     snapshot = project_runtime_snapshot(session_id=h.session_id, state=state,
         snapshot_id=identity.snapshot_id, version=identity.snapshot_version, created_at=identity.snapshot_created_at)
@@ -103,6 +144,76 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
     async with h.provider.open(owner=h.owner.runtime_owner) as saver:
         assert await saver.aget_tuple(config(h)) == checkpoint
     assert await h.store.get_latest_snapshot(h.session_id) is None
+
+
+def callback_collection():
+    from src.schemas.framework_approval import approval_value_hash
+
+    callbacks = [{"type": kind, "name": "reader", "run_id": run, "parent_run_id": "root"}
+        for kind, run in (("started", "prior"), ("completed", "prior"), ("started", "new"), ("completed", "new"))]
+    events = [{"id": str(index), "type": "graph.subagent_" + item["type"],
+        "payload": {"turn_id": "turn", "subagent_event": deepcopy(item)}} for index, item in enumerate(callbacks)]
+    events.append({"id": "complete", "type": "runtime.turn_completed", "payload": {"turn_id": "turn",
+        "pilot_stage": "DA-E4", "adapter_stage": "DA-E3", "callback_events_sha256": approval_value_hash(callbacks[2:])}})
+    return events, callbacks[2:]
+
+
+@pytest.mark.parametrize("offset", [2, 3, 4])
+def test_callback_source_consumes_only_original_invocation_suffix_and_keeps_distinct_stages(offset):
+    from src.application.runtime.turn_projection import project_deep_agent_callback_facts
+    from src.schemas.framework_approval import approval_value_hash
+
+    events, expected = callback_collection()
+    expected = expected[offset - 2:]
+    events[-1]["payload"]["callback_events_sha256"] = approval_value_hash(expected)
+    before = deepcopy(events)
+    facts = project_deep_agent_callback_facts(events, turn_id="turn", returned_event_offset=offset)
+    assert facts.pilot_stage == "DA-E4" and facts.adapter_stage == "DA-E3"
+    assert facts.subagent_events == expected
+    if facts.subagent_events:
+        facts.subagent_events[0]["name"] = "changed consumer copy"
+    assert events == before
+
+
+@pytest.mark.parametrize("changed", ["offset", "boolean_offset", "prefix", "boundary", "turn", "pilot_stage",
+    "adapter_stage", "stage_type", "missing_stage", "missing_raw", "future", "unknown_field", "type", "value", "digest", "missing_digest"])
+def test_callback_source_rejects_missing_changed_or_unsupported_originals(changed):
+    from src.application.runtime.turn_projection import project_deep_agent_callback_facts
+
+    events, _ = callback_collection()
+    offset = 2
+    if changed == "offset":
+        offset = len(events)
+    elif changed == "boolean_offset":
+        offset = True
+    elif changed == "prefix":
+        offset = 0
+    elif changed == "boundary":
+        events.pop()
+    elif changed == "turn":
+        events[2]["payload"]["turn_id"] = "other"
+    elif changed in {"pilot_stage", "adapter_stage"}:
+        events[-1]["payload"][changed] = "future"
+    elif changed == "stage_type":
+        events[-1]["payload"]["adapter_stage"] = {"future": "unsupported"}
+    elif changed == "missing_stage":
+        events[-1]["payload"].pop("adapter_stage")
+    elif changed == "missing_raw":
+        events[2]["payload"].pop("subagent_event")
+    elif changed == "future":
+        events[2]["type"] = "graph.subagent_future"
+    elif changed == "unknown_field":
+        events[2]["payload"]["subagent_event"]["future"] = "unknown"
+    elif changed == "type":
+        events[2]["payload"]["subagent_event"]["type"] = "completed"
+    elif changed == "value":
+        events[2]["payload"]["subagent_event"]["run_id"] = None
+    elif changed == "digest":
+        events[2]["payload"]["subagent_event"]["run_id"] = "changed"
+    elif changed == "missing_digest":
+        events[-1]["payload"].pop("callback_events_sha256")
+    with pytest.raises(ValueError, match="Original Deep Agents callback"):
+        project_deep_agent_callback_facts(events, turn_id="turn", returned_event_offset=offset)
 
 
 def test_completion_state_preserves_original_context_budget_and_conversation_without_aliasing():

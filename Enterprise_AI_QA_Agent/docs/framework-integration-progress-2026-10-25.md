@@ -2478,3 +2478,55 @@ P0原样本在§60已扩展为“批准／拒绝×三个对账强杀点”。本
 最高证据范围仍为E2：官方框架、合成HTTP／受控工具、真实PostgreSQL／Redis及独立Worker强杀，不是实际供应商、RustFS、浏览器、压测／扫描Runner或部署E4。本轮未执行前端、全量、独立lint／typecheck、E3真实依赖或E4演练。完整A2-2仍缺原stage／callback、根预算更新和审批多次续跑assistant／snapshot身份时间等可靠来源及恢复准入；无资产自动恢复继续关闭。A2-3／A3／B/C/D/E/F仍在完整目标内，整体goal保持active。无付费调用、依赖升级、服务启停或生产路由变更。
 
 本节及本轮14个代码／测试文件归入同一中文提交，主题 `【feat】持久化原应用工具消息并统一槽位消费`，具体ID以Git历史／交付输出为准；用户v3文档仍为15增2删，未纳入本轮提交。
+
+## 65. A2-2：从原事件封口材料读取双stage与本次子代理callback（2026-10-27）
+
+基线 `611d7711c`，续接§64。上一轮实际完成工具原槽位代码、回归与提交，属于progress。本轮只闭合stage／callback的原材料端口；完整A2-2、无资产恢复准入和整体目标仍未完成。用户v3文档原15增2删保留，不纳入本轮提交。
+
+### 真实红测、根因与来源
+
+- §62–64的投影器要求显式提供原stage与callback，但只读Harness仍手填 `DA-E1`／空列表；仅有原生checkpoint不能重建图外callback。新增真实官方子代理＋PostgreSQL测试，先运行完整正常回合、读取独立持久事件集合，再要求消费原事实，首次 **1 failed，14.70秒**：缺少 `project_deep_agent_callback_facts` 端口，而非框架调用失败。接线后普通／todo／官方子代理三分支先为 **3 passed，15.48秒**。
+- 原Runtime的 `pilot_stage` 与适配器的 `stage` 不是同一来源：治理开关开启但实际无业务工具时，合法值分别为DA-E4／DA-E1。不能把二者合并或从当前配置推算。新增真实官方框架正例精确比较完整Runtime结果，同时保留两个原值。
+- 本轮新增边界反例把stage设置成对象，真实 **1 failed，10.04秒**，原集合成员检查抛出unhashable TypeError；在这个材料端口明确字符串格式后按不支持材料返回ValueError，不泛化为允许任意stage。首次合同组 **46 passed，30.35秒** 早于此反例及新增正例，不代表最终源码结果。
+- 固定 `langchain-core==1.6.10` 的 `Runnable.astream_events`（安装源码base.py:1369）的v2 run_id／parent_ids和on_tool_start/end → 继续使用既有 `_invoke_with_subagent_events` 四字符串投影，原ID不重建、不排序、不从文本推断。官方[Streaming](https://docs.langchain.com/oss/python/langchain/streaming)区分状态更新、Token与自定义事件 → 本轮仅关闭应用事实来源缺口，不宣称实现了实时Token流，也不切换在线文档建议的新事件API。
+- 本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py` 的RunResult独立保存events／notifications → 采用结果表达与事件事实分离，不把最后文本当callback原件。本地[Agent轨迹与协议鲁棒性](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html) → 同时验证原轨迹、原结果、请求次数、失租及禁止副作用，不只比较答案。
+
+### 实现及边界
+
+- [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)在原 `runtime.turn_completed` 事件上，对带原生终态的完成回合追加原adapter_stage及 `callback_events_sha256`。摘要对象明确为本次适配器原callback列表；不是事件全集摘要、原生state摘要、来源授权或恢复证明。原pilot_stage与四字段callback沿既有可等待事件事务保存，再由原RuntimeEventCompletion封口，无新表／新队列／新结果资产或finalizer。
+- [共享投影模块](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/turn_projection.py)新增纯材料读者与 `DeepAgentCallbackFacts`：调用方先经原 `read_runtime_event_completion` 校验来源／原行／顺序／精确终态，再按其 `returned_event_offset` 读取本次调用的callback。保留双stage、原四字段与顺序，深复制返回；旧前缀不重复计入，合法单个completed后缀或空列表不因缺started而被误杀。原件缺失、类型／事件名／stage／摘要漂移及未知callback字段明确不可消费，不静默补空列表。
+- 原生消息仍由既有官方通道恢复；新事实直接送入原 `project_deep_agent_result` → `completed_deep_agent_state` → snapshot／完整Runtime投影，未新增另一套结果构造规则。正常执行仍消费适配器的真实返回，不因恢复材料不足而改变合法完成结论。
+- 审计脱敏可能合法改变callback标签。新真实官方框架反例验证：正常回合仍完成，审计事件保留脱敏结果，原callback摘要不等时只读材料端口拒绝将脱敏文本冒充原件。没有为恢复跳过脱敏，也不放宽来源检查；这类原件缺失仍保留待资料／对账，不能据正常执行成功授予无资产恢复权。
+- 本轮仅追加既有开放event payload的两个字段，不改外层事件／RuntimeEventCompletion／graph-input／ToolProjection格式或claim要求；stage仍15、工具marker仍3、历史业务与结果读者不变。旧封口集合仍可沿既有读者读取，但缺少新声明不能获得新callback材料。实际双制品兼容部署、备份恢复与排空仍待E4验收。
+
+### Harness与v4逐项对应
+
+| v4阶段／条款／Harness | 本轮代码与验证 | 剩余出口 |
+| --- | --- | --- |
+| A2-2，§8.3／§9.2，H05 | 普通／todo／真实官方子代理及双stage不等的正常oracle；原生终态＋原事件原件重投影全部Runtime字段 | 原根预算更新、审批多次续跑assistant／snapshot身份时间及完整恢复准入仍须闭合 |
+| §7／§9.2，H02／H09相关子契约 | 两项审批最后续跑从原封口offset消费本次事实；后缀／单项／空callback、旧前缀与摘要反例 | 不代表所有子代理／摘要预算、图内任意崩溃或未知效果已可恢复 |
+| §9.2／§13，H05／H11 | 官方子代理＋官方OpenAI SDK／合成HTTP＋真实PG／Redis／独立Worker，资产前强杀后只读精确重投影；原请求仍3次 | 本地跨进程对象后端非RustFS，受控子代理非真实领域Runner，不授予后继 |
+| §5.2／§8.3，H11 | 脱敏保留、原摘要不等拒绝复用、正常输出不受恢复材料门禁影响 | 更广隐私／导出／跨Turn及E3供应商签名边界仍待验收 |
+
+### 实际验证与提交归属
+
+最终局部合同／逐项审批组 **58 passed，62.69秒**，无skip；命令为 `../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_turn_projection.py tests/test_framework_approval_runtime.py::test_initial_runtime_and_session_continuations_share_the_official_harness -q -x -rs --tb=short`，原会话77340。官方子代理独立Worker资产前强杀首次 **1 passed，27.21秒**，原会话16519；读取原封口事实并与测试专用正常结果oracle逐字段比较，原模型／checkpoint／事件／结果资产不增加。oracle只作测试断言，不是恢复输入。强杀后租约回收仍为recovery_required且不创建后继。
+
+三组最终回归均已从原会话取回exit0；没有因为观察等待重复启动。以下从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 运行，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，固定环境及生产源码一致。与局部组有重叠，不累计独立覆盖数。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_deep_agent_runtime_adapter.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py tests/test_runtime_interrupt_tool_calls.py tests/test_runtime_input_paths.py tests/test_runtime_import_isolation.py tests/test_turn_budget_persistence.py tests/test_framework_graph_input_asset.py -q -x -rs --tb=short
+# 180 passed，5 skipped，60.09秒；原会话62262，exit0。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_terminal_gap.py tests/test_framework_event_completion.py tests/test_framework_live_event_persistence.py tests/test_framework_application_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 139 passed，720.53秒；原会话16149，exit0，无skip。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 195 passed，898.84秒；原会话11197，exit0，无skip。
+```
+
+5个skip均为 `test_runtime_input_paths.py` 第48行两分支、第172行两分支及第189行一个独立真实PostgreSQL／MySQL／RustFS链路，未启用，不冒称通过。未新增skip，真实框架／PG／Redis／独立Worker的本轮应用与审批组无skip。三组最终日志分别为项目根 `.codex-logs/framework-callback-facts-runtime-final-2026-10-27.txt`、`.codex-logs/framework-callback-facts-application-final-2026-10-27.txt`、`.codex-logs/framework-callback-facts-approval-final-2026-10-27.txt`；局部58项在 `.codex-logs/framework-callback-facts-expanded-2026-10-27.txt`。初始端口红测、stage类型反例及首个强杀分别保留于 `.codex-logs/framework-callback-facts-red-2026-10-27.txt`、`.codex-logs/framework-callback-facts-stage-type-red-2026-10-27.txt`、`.codex-logs/framework-callback-facts-kill-first-2026-10-27.txt`。
+
+项目根实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 均通过。全局核对新事实读者、原stage字段、事件来源及审批offset消费；检查§65唯一、全文围栏配对、绝对本地链接存在及原历史仅追加。固定环境ruff／mypy未安装，未安装新工具，不声称lint／typecheck通过。全部本轮测试会话均已终态，没有遗留运行中的pytest。
+
+最高证据范围E2，未执行全量、前端、独立lint／typecheck、E3真实供应商／RustFS／领域Runner或E4双制品／备份恢复演练。没有依赖升级、付费请求、服务启停或生产路由变更。正常stage／callback来源与受限只读消费有证据，不意味着无资产恢复开放；根预算与多次审批续跑身份时间等原材料、完整A2-2及A2-3／A3／B/C/D/E/F仍未结清，整体goal继续active。
+
+本节及本轮六个代码／测试文件归入同一中文提交，主题 `【feat】保存原阶段与子代理回调的可核验材料`，具体ID以Git历史／交付输出为准；用户v3文档原15增2删不纳入提交。

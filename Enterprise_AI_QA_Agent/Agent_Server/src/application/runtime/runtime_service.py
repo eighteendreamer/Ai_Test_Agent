@@ -66,7 +66,7 @@ from src.schemas.session import (
     SessionSnapshot,
 )
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
-from src.schemas.framework_approval import FrameworkContinuationPlan
+from src.schemas.framework_approval import FrameworkContinuationPlan, approval_value_hash
 from src.schemas.framework_transcript import FrameworkTranscriptAsset
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
@@ -566,6 +566,9 @@ class RuntimeService:
             harness="deepagents",
             pilot_stage=pilot_stage,
             final_response_length=len(result.output_text),
+            **({"adapter_stage": result.metadata.get("stage"),
+                "callback_events_sha256": approval_value_hash(result.subagent_events)}
+                if result.metadata.get("native_terminal") is not None else {}),
         )
         if result.metadata.get("native_terminal") is not None:
             await complete_graph_event_log(state, result.metadata["native_terminal"],

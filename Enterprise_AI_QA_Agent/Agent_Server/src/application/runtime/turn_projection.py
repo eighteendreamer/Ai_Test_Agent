@@ -13,6 +13,7 @@ from typing import Any
 
 from src.application.deep_agents.result_projection import DeepAgentRuntimeResult
 from src.application.runtime.state_persistence import persisted_turn_budget
+from src.schemas.framework_approval import approval_value_hash
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ChatMessage, ExecutionEvent, SessionSnapshot
 
@@ -26,6 +27,61 @@ class RuntimeTurnResult:
     state: dict
     tool_messages: list[ChatMessage]
     pending_turn: dict
+
+
+@dataclass(frozen=True)
+class DeepAgentCallbackFacts:
+    pilot_stage: str
+    adapter_stage: str
+    subagent_events: list[dict[str, Any]]
+
+
+def project_deep_agent_callback_facts(
+    event_log: list[dict[str, Any]], *, turn_id: str, returned_event_offset: int,
+) -> DeepAgentCallbackFacts:
+    """Consume original invocation facts from an already verified collection.
+
+    No upstream counterpart (checked: core 1.6.10 Runnable.astream_events v2,
+    RuntimeEventCompletion, v4 §9.2): the SDK does not define application stages
+    or which callback suffix belongs to an approval invocation.
+    The event-completion reader owns provenance, ordering and completeness.
+    Approval invocations return only their own callback suffix, not callbacks
+    accumulated by earlier invocations. Runtime and adapter stages can differ
+    (e.g. governance enabled with no visible tools); preserve both originals.
+    Older collections without adapter_stage remain missing material, never a
+    reason to infer it from today's configuration or native display messages.
+    Audit redaction may legitimately remove original callback text. Its digest
+    must still match before read-only reuse; this never rejects normal output
+    merely because recovery materials are unavailable. The digest is not source
+    authority; the existing event-completion reader supplies that verification.
+    This pure port grants no recovery or execution permission.
+    """
+    if (type(returned_event_offset) is not int or not 0 <= returned_event_offset < len(event_log)
+        or event_log[-1].get("type") != "runtime.turn_completed"):
+        raise ValueError("Original Deep Agents callback collection has no completed invocation boundary")
+    suffix = event_log[returned_event_offset:]
+    if any(item.get("payload", {}).get("turn_id") != turn_id for item in suffix):
+        raise ValueError("Original Deep Agents callback collection differs from its Turn")
+    completed = event_log[-1]["payload"]
+    stages = {"DA-E1", "DA-E2", "DA-E3", "DA-E4"}
+    if any(not isinstance(completed.get(key), str) or completed[key] not in stages
+        for key in ("pilot_stage", "adapter_stage")):
+        raise ValueError("Original Deep Agents callback collection has no supported original stages")
+    callbacks = []
+    for item in suffix:
+        event_type = item.get("type", "")
+        if not event_type.startswith("graph.subagent_"):
+            continue
+        raw = item["payload"].get("subagent_event")
+        if (event_type not in {"graph.subagent_started", "graph.subagent_completed"}
+            or not isinstance(raw, dict) or set(raw) != {"type", "name", "run_id", "parent_run_id"}
+            or any(not isinstance(value, str) for value in raw.values())
+            or raw["type"] != event_type.removeprefix("graph.subagent_")):
+            raise ValueError("Original Deep Agents callback material is missing or has an unsupported format")
+        callbacks.append(deepcopy(raw))
+    if completed.get("callback_events_sha256") != approval_value_hash(callbacks):
+        raise ValueError("Original Deep Agents callback material differs from its declared original digest")
+    return DeepAgentCallbackFacts(completed["pilot_stage"], completed["adapter_stage"], callbacks)
 
 
 def completed_deep_agent_state(

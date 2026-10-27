@@ -77,8 +77,8 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
         runtime = RuntimeService(graph=None, model_runtime_service=models, tool_runtime_service=object(),
             tool_registry=ToolRegistry(), runtime_control=RuntimeControlRegistry(), deep_agent_enabled=True,
             deep_agent_bound_runtime_adapter=adapter,
-            deep_agent_read_only_filesystem_enabled=window == "after_graph_events",
-            deep_agent_cognitive_subagents_enabled=window == "after_graph_events")
+            deep_agent_read_only_filesystem_enabled=window in {"after_graph_events", "after_subagent_event_completion"},
+            deep_agent_cognitive_subagents_enabled=window in {"after_graph_events", "after_subagent_event_completion"})
         _, tasks, sessions, _ = build_services(settings, runtime, resources)
         if window == "after_graph_events":
             sessions._event_buffer_capacity = 1
@@ -126,10 +126,13 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                         signal.rpush(gate, "finalization-uncommitted")
                     threading.Event().wait()
                 projections.record_application_commit = record_and_pause
-        elif window == "after_event_completion":
+        elif window in {"after_event_completion", "after_subagent_event_completion"}:
             execute_runtime = runtime._execute_deep_agent_turn
             async def collection_completed(*args, **kwargs):
                 result = await execute_runtime(*args, **kwargs)
+                if window == "after_subagent_event_completion":
+                    from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+                    await redis.set(gate + ":oracle", FrameworkRuntimeResult.from_result(result).model_dump_json())
                 await redis.rpush(gate, json.dumps(result.state["model_response_summary"]["native_terminal"]))
                 await asyncio.Event().wait()
             runtime._execute_deep_agent_turn = collection_completed

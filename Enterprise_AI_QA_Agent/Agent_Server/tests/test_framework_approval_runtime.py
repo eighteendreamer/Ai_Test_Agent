@@ -605,6 +605,10 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         assert read.completion.returned_event_offset == prefix_length
         assert read.completion.task_id == a.id and read.completion.attempt_id == a.attempt_id
         assert read.event_log[prefix_length]["type"] == "turn.resumed"
+        from src.application.runtime.turn_projection import project_deep_agent_callback_facts
+        facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
+            returned_event_offset=read.completion.returned_event_offset)
+        assert facts.pilot_stage == facts.adapter_stage == "DA-E4" and facts.subagent_events == []
     if prepared:
         from langchain_core.messages import ToolMessage
         from src.application.deep_agents.framework_transcript import deserialize_messages

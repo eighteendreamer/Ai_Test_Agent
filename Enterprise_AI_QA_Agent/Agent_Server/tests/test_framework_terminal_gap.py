@@ -155,12 +155,14 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 from src.application.deep_agents.result_projection import project_deep_agent_result
                 from src.application.deep_agents.framework_transcript import serialize_messages
 
-                # This producer is explicitly E1 with no callback branches. The
-                # stage/callback inputs are not reconstructed from display text
-                # and do not claim a generic RuntimeTurnResult recovery port.
+                # Stage/callback facts come from the verified complete event
+                # collection, not caller defaults or native display text.
                 assert not any(prepared["feature_flags"][key] for key in (
                     "read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"))
-                projected = project_deep_agent_result(snapshot.values, stage="DA-E1", subagent_events=[],
+                from src.application.runtime.turn_projection import project_deep_agent_callback_facts
+                facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
+                    returned_event_offset=read.completion.returned_event_offset)
+                projected = project_deep_agent_result(snapshot.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
                     native_terminal=proof.model_dump(mode="json"))
                 assert projected.output_text == "fixture answer"
                 assert projected.framework_messages == serialize_messages(snapshot.values["messages"])
@@ -174,7 +176,7 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
 
                 preparation = parse_graph_input_asset(prepared).runtime_preparation
                 projected_state = completed_deep_agent_state(preparation.initial_state, projected,
-                    tool_records=[], binding=h.binding, pilot_stage="DA-E1")
+                    tool_records=[], binding=h.binding, pilot_stage=facts.pilot_stage)
                 projected_state["event_log"] = read.event_log
                 projected_snapshot = project_runtime_snapshot(session_id=h.session_id, state=projected_state,
                     snapshot_id=preparation.identity.snapshot_id, version=preparation.identity.snapshot_version,
@@ -222,6 +224,120 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 retained = await saver.aget_tuple(selected)
                 assert _native_hash(saver.serde, retained.checkpoint) == proof.checkpoint_sha256
             assert not [event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]
+    finally:
+        if process is not None and process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+        await waiting.aclose()
+        await provider.close()
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP SCHEMA IF EXISTS {h.settings.deep_agents.checkpoint_schema} CASCADE")
+
+
+@pytest.mark.asyncio
+async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap_kill(admission, tmp_path, monkeypatch):
+    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.application.deep_agents.model_call_middleware import configure_model_policy
+    from src.application.deep_agents.result_projection import project_deep_agent_result
+    from src.application.runtime.turn_projection import (
+        completed_deep_agent_state, project_completed_turn, project_runtime_snapshot, project_deep_agent_callback_facts,
+    )
+    from src.registry.skills import SkillRegistry
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+    from src.schemas.session import ExecutionEvent
+    from tests.test_framework_chat_models import _tool_reply
+
+    h = admission
+    h.settings.orchestration.resource_default_lease_seconds = 30
+    waiting = Redis.from_url(h.settings.database.redis_url, decode_responses=True, socket_timeout=90)
+    provider, process = DeepAgentCheckpointProvider(h.settings), None
+    reply = _tool_reply("openai_chat_completions")
+    reply["choices"][0]["message"]["tool_calls"][0]["function"] = {"name": "task", "arguments": json.dumps({
+        "description": "Inspect the controlled project", "subagent_type": "code-review-researcher"})}
+    try:
+        with _provider("openai_chat_completions", first_reply=reply) as (url, requests):
+            config = _config("openai_chat_completions", url)
+            h.binding = h.binding.model_copy(update={"model_config_fingerprint": model_config_fingerprint(config)})
+            h.command = make_command(h, h.binding)
+            h.payload = h.payload.model_copy(update={"model_key": config.key, "mode_key": "code_review",
+                "context": {**h.payload.context, "project_root": str(tmp_path)}})
+            h.budget = h.budget.model_copy(update={"model_config_fingerprints": {config.key: h.binding.model_config_fingerprint}})
+            task = await submit(h)
+            queue = RedisTaskQueue(h.settings.database.redis_url, stream=h.settings.orchestration.agent_task_v2_stream,
+                group="callback-material", client=h.redis)
+            await queue.connect()
+            assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+            gate = h.prefix + ":callback-completed"
+            process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
+                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate,
+                    "after_subagent_event_completion", str(tmp_path)))
+            process.start()
+            reached = await waiting.blpop(gate, timeout=70)
+            assert reached is not None, f"worker exit code: {process.exitcode}"
+            proof = NativeTerminalProof.model_validate_json(reached[1])
+            # The oracle is a test-only observation of the normal Runtime result,
+            # never a recovery input or a replacement application result asset.
+            oracle = FrameworkRuntimeResult.model_validate_json(await waiting.get(gate + ":oracle"))
+            active, before = await h.tasks.get(task.id), await stage(h, task)
+            assert before.phase == "runtime_submitted" and "runtime_result_asset" not in before.source_manifest
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+            assert not process.is_alive() and process.exitcode != 0
+            prepared = parse_graph_input_asset(before.source_manifest["graph_input_asset"])
+            read = await h.store.read_runtime_event_completion(h.binding, proof.model_dump(mode="json"))
+            facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
+                returned_event_offset=read.completion.returned_event_offset)
+            assert facts.pilot_stage == facts.adapter_stage == "DA-E3"
+            assert [item["type"] for item in facts.subagent_events] == ["started", "completed"]
+            assert facts.subagent_events[0]["run_id"] == facts.subagent_events[1]["run_id"]
+            assert facts.subagent_events == oracle.state["cognitive_subagent_events"]
+            budget, saved_events = await h.calls.snapshot(h.binding), await h.store.list_events(h.session_id)
+            assert len(requests) == len(budget.calls) == 3 and all(call.phase == "completed" for call in budget.calls)
+            model = Model(responses=[])
+            adapter = DeepAgentRuntimeAdapter(model_resolver=None, skill_registry=SkillRegistry())
+            kwargs, cleanup = adapter._configure_harness(model, read_only_filesystem_enabled=True,
+                cognitive_subagents_enabled=True, read_only_max_file_size_mb=10, context=prepared.context)
+            kwargs = configure_model_policy(kwargs, policy=None, owner=active.runtime_owner, model=model, model_key=config.key)
+            selected = {"configurable": {"thread_id": h.binding.thread_id, "checkpoint_ns": h.binding.checkpoint_namespace,
+                "checkpoint_id": proof.checkpoint_id}}
+            try:
+                async with provider.open() as saver:
+                    graph = create_deep_agent(model=model, tools=[], checkpointer=saver, **kwargs)
+                    native = await saver.aget_tuple(selected)
+                    restored = await graph.aget_state({"configurable": {**selected["configurable"], CONFIG_KEY_CHECKPOINTER: saver}})
+                    assert _native_hash(saver.serde, native.checkpoint) == proof.checkpoint_sha256
+                    assert _native_hash(saver.serde, restored.values) == proof.state_sha256
+                    def forbidden(*args, **kwargs):
+                        pytest.fail("Original callback consumption cannot execute a model or graph")
+                    monkeypatch.setattr(graph, "ainvoke", forbidden)
+                    monkeypatch.setattr(graph, "astream_events", forbidden)
+                    monkeypatch.setattr(model, "_generate", forbidden)
+                    projected = project_deep_agent_result(restored.values, stage=facts.adapter_stage,
+                        subagent_events=facts.subagent_events, native_terminal=proof.model_dump(mode="json"))
+                    preparation = prepared.runtime_preparation
+                    state = completed_deep_agent_state(preparation.initial_state, projected, tool_records=[],
+                        binding=h.binding, pilot_stage=facts.pilot_stage)
+                    state["event_log"] = read.event_log
+                    identity = preparation.identity
+                    snapshot = project_runtime_snapshot(session_id=h.session_id, state=state, snapshot_id=identity.snapshot_id,
+                        version=identity.snapshot_version, created_at=identity.snapshot_created_at)
+                    result = project_completed_turn(state=state, snapshot=snapshot, tool_messages=[],
+                        events=[ExecutionEvent(session_id=h.session_id, **entry)
+                            for entry in read.event_log[read.completion.returned_event_offset:]])
+                    assert FrameworkRuntimeResult.from_result(result).model_dump(mode="json") == oracle.model_dump(mode="json")
+                    assert await saver.aget_tuple(selected) == native
+            finally:
+                if cleanup is not None:
+                    cleanup()
+            assert len(requests) == 3 and await h.calls.snapshot(h.binding) == budget
+            assert await h.store.list_events(h.session_id) == saved_events
+            assert await h.store.get_latest_snapshot(h.session_id) is None
+            assert (await stage(h, task)).source_manifest == before.source_manifest
+            assert not [item for item in saved_events if item.type == "turn.completed"]
+            assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
+            expired = await h.tasks.claim(task.id, worker_id="callback-expiry", expected_binding=h.binding)
+            assert expired.status == "recovery_required" and await h.tasks.ensure_framework_message_recovery(task.id) is None
     finally:
         if process is not None and process.is_alive():
             process.terminate()
@@ -305,9 +421,12 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
                     restored = await graph.aget_state(selected)
                     assert _native_hash(saver.serde, native.checkpoint) == proof.checkpoint_sha256
                     assert _native_hash(saver.serde, restored.values) == proof.state_sha256
-                projected = project_deep_agent_result(restored.values, stage="DA-E1", subagent_events=[],
+                from src.application.runtime.turn_projection import project_deep_agent_callback_facts
+                facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
+                    returned_event_offset=read.completion.returned_event_offset)
+                projected = project_deep_agent_result(restored.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
                     native_terminal=proof.model_dump(mode="json"))
-                state = completed_deep_agent_state(initial, projected, tool_records=[], binding=h.binding, pilot_stage="DA-E1")
+                state = completed_deep_agent_state(initial, projected, tool_records=[], binding=h.binding, pilot_stage=facts.pilot_stage)
                 state["event_log"] = read.event_log
                 projected_snapshot = project_runtime_snapshot(session_id=h.session_id, state=state,
                     snapshot_id=identity.snapshot_id, version=identity.snapshot_version, created_at=identity.snapshot_created_at)
