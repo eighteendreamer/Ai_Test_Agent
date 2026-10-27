@@ -43,7 +43,7 @@ def test_prepared_graph_input_round_trip_and_nested_copy():
     assert copied.schema_version == 2
 
 
-@pytest.mark.parametrize("flag,marker", [(True, 1), (3, 3), ("1", 1), (None, 1), (1, None), (1, True), (2, 1), (1, 2)])
+@pytest.mark.parametrize("flag,marker", [(True, 1), (4, 4), ("1", 1), (None, 1), (1, None), (1, True), (2, 1), (1, 2), (3, 2)])
 def test_graph_tool_material_format_cannot_drift_from_prepared_runtime(flag, marker):
     from src.schemas.framework_approval import approval_value_hash
     from src.schemas.framework_graph_input import parse_graph_input_asset
@@ -127,7 +127,7 @@ def test_graph_input_asset_rejects_post_freeze_mutation(field):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("tool_projection_version", [None, 1, 2])
+@pytest.mark.parametrize("tool_projection_version", [None, 1, 2, 3])
 async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_projection_version):
     from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
     from src.schemas.framework_graph_input import graph_input_asset
@@ -174,6 +174,8 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
         expected_version = 12 + tool_projection_version
         assert saved.schema_version == asset.required_message_stage_version == expected_version
         FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(saved.schema_version)
+        with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(16)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired

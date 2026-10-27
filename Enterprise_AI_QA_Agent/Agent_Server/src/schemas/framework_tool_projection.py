@@ -7,7 +7,9 @@ not a ToolJob, ownership, application-commit or recovery-admission proof.
 """
 from __future__ import annotations
 
-from typing import Literal
+from copy import deepcopy
+import json
+from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -64,13 +66,40 @@ class FrameworkToolProjection(BaseModel):
             raise ValueError("Original governed tool result has no matching projection material")
         # Offload may replace content with a file preview. The original content
         # belongs to this envelope, not to the SDK's current display string.
-        return cls.model_validate(artifact[TOOL_PROJECTION_KEY]).require_binding(binding, source)
+        return parse_tool_projection(artifact[TOOL_PROJECTION_KEY]).require_binding(binding, source)
 
     @classmethod
-    def capture(cls, *, binding, source, record, message, model_content):
+    def capture(cls, *, binding, source, record, message, model_content, runtime_message=None):
         payload = {"schema_version": 1, "scope": "tool_projection_material_only",
             "binding_fingerprint": binding.fingerprint,
             "source": source.model_dump(mode="json", include=set(FrameworkToolCallIdentity.model_fields)),
             "record": record.model_dump(mode="json"), "message": message.model_dump(mode="json"),
             "model_content": model_content}
-        return cls.model_validate({**payload, "sha256": approval_value_hash(payload)}).require_binding(binding, source)
+        if runtime_message is not None:
+            payload.update(schema_version=2, runtime_message=deepcopy(runtime_message))
+        return parse_tool_projection({**payload, "sha256": approval_value_hash(payload)}).require_binding(binding, source)
+
+
+class FrameworkRuntimeToolProjection(FrameworkToolProjection):
+    """v2 adds the original application state slot, not the SDK tool content."""
+    schema_version: Literal[2] = 2
+    runtime_message: dict[str, Any]
+
+    @model_validator(mode="after")
+    def verify_runtime_message(self):
+        slot = self.runtime_message
+        if (set(slot) != {"role", "tool_call_id", "name", "content"}
+            or slot.get("role") != "tool" or slot.get("tool_call_id") != self.record.call_id
+            or slot.get("name") != self.record.tool_key or not isinstance(slot.get("content"), str)):
+            raise ValueError("Original runtime tool message differs from its application record slot")
+        return self
+
+
+def parse_tool_projection(value) -> FrameworkToolProjection:
+    """Keep v1 wire/digest unchanged; a v2 slot must never be invented for it."""
+    if isinstance(value, FrameworkToolProjection):
+        value = value.model_dump(mode="json")
+    if isinstance(value, (str, bytes)):
+        value = json.loads(value)
+    selected = FrameworkRuntimeToolProjection if isinstance(value, dict) and value.get("schema_version") == 2 else FrameworkToolProjection
+    return selected.model_validate(value)

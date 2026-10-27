@@ -15,6 +15,7 @@ from src.application.models.model_runtime_service import ModelRuntimeService
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.execution_context import framework_owner_scope
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.framework_model_call import FrameworkModelBudget
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_chat_models import TRANSPORTS, _config, _provider, _tool_reply
@@ -316,13 +317,17 @@ async def test_response_visibility_window_preserves_uncertainty(harness, monkeyp
                 else:
                     assert await h.store.renew_turn_execution(h.session_id, h.owner.lease_token, 0)
                     release.set()
-                    with pytest.raises(DeepAgentRuntimeError):
+                    with pytest.raises(ContinuationLeaseLostError, match="owner is no longer active"):
                         await task
                 snapshot = await h.calls.snapshot(h.binding)
                 call, = snapshot.calls
                 assert call.phase == ("unknown" if failure == "cancelled" else "invoking")
                 assert call.usage is None and snapshot.charged_tokens == call.intent.reserved_tokens
                 assert len(requests) == 1
+                if failure == "owner_lost":
+                    with pytest.raises(ContinuationLeaseLostError):
+                        await execute(h, replace(h.request, continue_from_checkpoint=True))
+                    assert len(requests) == 1 and await h.calls.snapshot(h.binding) == snapshot
             finally:
                 release.set()
                 if not task.done():

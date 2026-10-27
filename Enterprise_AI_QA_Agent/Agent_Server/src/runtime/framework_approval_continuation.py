@@ -22,7 +22,7 @@ from src.schemas.framework_approval import (
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
 from src.schemas.tool_job import ToolJobStatus
-from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY, parse_tool_projection
 
 
 logger = logging.getLogger(__name__)
@@ -116,8 +116,7 @@ class FrameworkApprovalContinuation:
     @staticmethod
     def _rejection_projection_evidence(binding, plan, job, native, evidence, material):
         try:
-            original = (FrameworkToolProjection.model_validate_json(material.model_dump_json())
-                if isinstance(material, FrameworkToolProjection) else FrameworkToolProjection.model_validate(material))
+            original = parse_tool_projection(material)
             original.require_binding(binding, plan.link)
         except ValueError as exc:
             raise FrameworkApprovalRecoveryRequired("Original rejection projection requires reconciliation") from exc
@@ -219,7 +218,7 @@ class FrameworkApprovalContinuation:
                 raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its applied native result")
             try:
                 if plan.receipt.decision["type"] == "reject":
-                    return FrameworkToolProjection.model_validate(raw).require_binding(owner.binding, plan.link)
+                    return parse_tool_projection(raw).require_binding(owner.binding, plan.link)
                 return FrameworkToolProjection.from_tool_message(message, binding=owner.binding, source=plan.link)
             except ValueError as exc:
                 raise FrameworkApprovalRecoveryRequired("Original approved tool projection requires reconciliation") from exc

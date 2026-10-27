@@ -25,7 +25,9 @@ from src.application.runtime.state_persistence import build_pending_turn, persis
 from src.application.runtime.tool_child_wait import park_tool_wait, waiting_tool_checkpoints
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
-from src.application.runtime.tool_messages import build_tool_message, build_chat_tool_messages, build_rejected_tool_projection
+from src.application.runtime.tool_messages import (
+    build_tool_message, build_chat_tool_messages, build_rejected_tool_projection, build_runtime_tool_messages,
+)
 from src.application.runtime.turn_projection import (
     RuntimeTurnResult, completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
     snapshot_stage_for_state,
@@ -216,7 +218,7 @@ class RuntimeService:
             # cannot upgrade a historical or unprepared graph invocation.
             state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
             if projection_identity is not None:
-                state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 2
+                state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 3
             prepare_graph_event_log(state)
             self._prepare_deep_agent_governed_tools(session, request, state)
             await append_graph_event_durable(
@@ -364,10 +366,12 @@ class RuntimeService:
             )
         approvals: list[dict[str, Any]] = []
         tool_records: list[dict[str, Any]] = list(state.get("tool_results") or [])
+        original_tool_materials = []
         business_tools, interrupt_on = await self._build_deep_agent_business_tools(
             state=state,
             tool_records=tool_records,
             previous_messages=session.messages,
+            original_materials=original_tool_materials,
         )
         adapter_request = DeepAgentRuntimeRequest(
             session_id=session.id,
@@ -467,11 +471,10 @@ class RuntimeService:
             )
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
-        original_tool_materials = []
         if continuation_plan is not None:
             version = state["context_bundle"].get(TOOL_PROJECTION_VERSION_KEY)
             settlement = {}
-            if version == 2 and continuation_plan.receipt.decision["type"] == "reject":
+            if version in {2, 3} and continuation_plan.receipt.decision["type"] == "reject":
                 call_id = continuation_plan.job.call_id
                 ordinal = next((index for index, item in enumerate(tool_records, start=1)
                     if item["call_id"] == call_id), None)
@@ -481,10 +484,10 @@ class RuntimeService:
                 settlement["rejection_projector"] = lambda job, native: build_rejected_tool_projection(
                     binding=request.runtime_binding, source=continuation_plan.link, job=job,
                     approval_id=continuation_plan.approval.id, ordinal=ordinal, hygiene_metadata=hygiene,
-                    model_content=native.content)
+                    model_content=native.content, include_runtime_message=version == 3)
             settled = await self._framework_approval_continuation.settle(
                 current_framework_owner(), continuation_plan.approval.id, continuation_plan.receipt.decision_id, **settlement)
-            if version == 2 or (version == 1 and settled.receipt.decision["type"] == "approve"):
+            if version in {2, 3} or (version == 1 and settled.receipt.decision["type"] == "approve"):
                 material = await self._framework_approval_continuation.read_tool_projection(
                     current_framework_owner(), settled.approval.id, settled.receipt.decision_id)
                 original_tool_materials.append(material)
@@ -501,8 +504,12 @@ class RuntimeService:
         elif request.runtime_binding is not None:
             state["context_bundle"]["deep_agent_approval_batch"] = []
         state["plan_steps"] = [item["content"] for item in result.todos]
+        state["tool_messages"] = build_runtime_tool_messages(state["turn_id"], tool_records,
+            binding_id=request.runtime_binding.binding_id if request.runtime_binding else None,
+            previous_records=state["tool_results"], previous_messages=state["tool_messages"],
+            original_materials=original_tool_materials,
+            require_original=state["context_bundle"].get(TOOL_PROJECTION_VERSION_KEY) == 3)
         state["tool_results"] = tool_records
-        state["tool_messages"] = [self._build_tool_message(ToolExecutionRecord.model_validate(item)) for item in tool_records]
         state["pending_approvals"] = approvals
         if approvals:
             state["context_bundle"] = {
@@ -1407,6 +1414,7 @@ class RuntimeService:
         state: dict[str, Any],
         tool_records: list[dict[str, Any]],
         previous_messages=(),
+        original_materials=None,
     ) -> tuple[list[Any], dict[str, Any]]:
         if not self._deep_agent_governed_tools_enabled or self._tool_governance_service is None:
             return [], {}
@@ -1421,7 +1429,7 @@ class RuntimeService:
         bound = state.get("context_bundle", {}).get("runtime_binding")
         binding = RuntimeBinding.model_validate(bound) if bound is not None else None
         projection_version = state.get("context_bundle", {}).get(TOOL_PROJECTION_VERSION_KEY)
-        if projection_version is not None and (binding is None or type(projection_version) is not int or projection_version not in {1, 2}):
+        if projection_version is not None and (binding is None or type(projection_version) is not int or projection_version not in {1, 2, 3}):
             raise FrameworkApprovalRecoveryRequired("Governed tool projection material format is unavailable")
         owner = current_framework_owner()
         gates = frozenset()
@@ -1512,7 +1520,10 @@ class RuntimeService:
                 binding_id=binding.binding_id, previous_messages=previous_messages, event_log=state["event_log"])
                 if message.metadata["tool_call_id"] == call_id)
             material = FrameworkToolProjection.capture(binding=binding, source=identity, record=result.record,
-                message=message, model_content=content)
+                message=message, model_content=content,
+                runtime_message=self._build_tool_message(result.record) if projection_version == 3 else None)
+            if original_materials is not None:
+                original_materials.append(material)
             logger.info("framework_tool_projection_captured", extra={"binding_id": binding.binding_id,
                 "call_id": call_id, "tool_key": descriptor.key, "material_sha256": material.sha256})
             return ToolMessage(content=content, name=descriptor.key, tool_call_id=tool_runtime.tool_call_id,

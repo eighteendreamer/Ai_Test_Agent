@@ -220,13 +220,19 @@ async def test_original_tool_material_read_is_bound_to_current_applied_facts(run
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("failure", ["rollback", "after_commit"])
-async def test_rejection_material_and_applied_share_one_transaction_and_replay_original(runtime_harness, monkeypatch, failure):
-    from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+@pytest.mark.parametrize("projection_version", [2, 3])
+async def test_rejection_material_and_applied_share_one_transaction_and_replay_original(runtime_harness, monkeypatch, failure, projection_version):
+    from src.application.runtime.tool_messages import build_tool_message
+    from src.schemas.framework_tool_projection import parse_tool_projection, TOOL_PROJECTION_KEY
+    from src.schemas.tool_runtime import ToolExecutionRecord
 
     h = runtime_harness
     session = await h.store.get_session(h.session_id)
     for state in (session.metadata["pending_turn"], session.metadata["pending_turn"]["graph_state"]):
-        state["context_bundle"]["framework_tool_projection_version"] = 2
+        state["context_bundle"]["framework_tool_projection_version"] = projection_version
+        if projection_version == 3:
+            state["tool_messages"] = [build_tool_message(ToolExecutionRecord.model_validate(record))
+                for record in state["tool_results"]]
     await h.store.save_session(session)
     task = await claim_decision(h, decision="denied")
     continuation = h.runtime._framework_approval_continuation
@@ -257,7 +263,7 @@ async def test_rejection_material_and_applied_share_one_transaction_and_replay_o
         monkeypatch.setattr(h.store, "append_event_in_transaction", append)
     else:
         assert saved.applied_at is not None and job.status.value == "denied"
-        original = FrameworkToolProjection.model_validate(saved.proof["application"][TOOL_PROJECTION_KEY])
+        original = parse_tool_projection(saved.proof["application"][TOOL_PROJECTION_KEY])
         assert original.record.completed_at == original.message.created_at == job.completed_at
         monkeypatch.setattr(continuation, "read_tool_projection", read)
 
@@ -267,8 +273,12 @@ async def test_rejection_material_and_applied_share_one_transaction_and_replay_o
         monkeypatch.setattr("src.application.runtime.runtime_service.build_rejected_tool_projection", forbidden)
     result = await resume(h, task)
     assert h.adapter_requests[-1].continue_from_checkpoint and h.adapter_requests[-1].resume is None
-    material = FrameworkToolProjection.model_validate(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
+    material = parse_tool_projection(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
     assert result.tool_messages == [material.message] and h.effects == []
+    if projection_version == 3:
+        assert material.schema_version == 2
+        assert next(slot for slot in result.state["tool_messages"]
+            if slot["tool_call_id"] == material.record.call_id) == material.runtime_message
     if failure == "after_commit":
         assert material == original and receipt(h) == saved
     events = await h.store.list_events(h.session_id)
@@ -507,6 +517,12 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     build_runtime(h, responses=[AIMessage(id="runtime-source", content="", tool_calls=[
         {"name": "inspect_value", "args": {"value": key}, "id": key, "type": "tool_call"}
         for key in ("A", "B")]), AIMessage(content="finished")])
+    if prepared:
+        async def nested_output(arguments, context):
+            h.effects.append((arguments["value"], context.tool_job_id))
+            return {"status": "completed", "summary": "runtime evidence", "z": {"z": 1, "a": 2},
+                "a": arguments["value"]}
+        h.runtime._tool_runtime_service._handlers["inspect_value"] = nested_output
     session = await h.store.get_session(h.session_id)
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="runtime-trace",
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
@@ -592,23 +608,27 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     if prepared:
         from langchain_core.messages import ToolMessage
         from src.application.deep_agents.framework_transcript import deserialize_messages
-        from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+        from src.schemas.framework_tool_projection import parse_tool_projection, TOOL_PROJECTION_KEY
 
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
-        assert inputs[0]["feature_flags"]["tool_projection_version"] == 2
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 14
+        assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 15
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
-        material = [FrameworkToolProjection.model_validate(message.artifact[TOOL_PROJECTION_KEY])
+        material = [parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])
             for message in native if isinstance(message, ToolMessage) and message.status == "success"]
         if decision == "denied":
             rejected, = [message for message in native if isinstance(message, ToolMessage) and message.status == "error"]
             assert rejected.artifact is None
-            original = FrameworkToolProjection.model_validate(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
+            original = parse_tool_projection(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
             assert original.model_content == rejected.content and original.record.started_at is None
             material.append(original)
         assert len(material) == 2
+        assert all(item.schema_version == 2 for item in material)
+        by_call = {item.record.call_id: item.runtime_message for item in material}
+        assert snapshot.graph_state["tool_messages"] == [by_call[item["call_id"]]
+            for item in snapshot.graph_state["tool_results"]]
         published = {message.id: message for message in saved.messages}
         assert all(published[item.message.id] == item.message for item in material)
 
@@ -658,7 +678,8 @@ async def test_jobless_governance_refusal_projects_original_acknowledged_event_t
 @pytest.mark.asyncio
 @pytest.mark.parametrize("denied", [False, True])
 @pytest.mark.parametrize("prepared", [False, True])
-async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_asset(fresh_runtime_harness, denied, prepared):
+@pytest.mark.parametrize("offloaded", [False, True])
+async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_asset(fresh_runtime_harness, denied, prepared, offloaded, monkeypatch):
     from datetime import datetime
     from deepagents import create_deep_agent
     from langchain_core.messages import ToolMessage
@@ -672,6 +693,14 @@ async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_
         "name": "inspect_value", "args": {"value": "original"}, "id": "original-call", "type": "tool_call"}]),
         AIMessage(content="finished")])
     adapter = h.runtime._deep_agent_bound_runtime_adapter
+    if offloaded:
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        def factory(**kwargs):
+            return create_deep_agent(**{**kwargs, "middleware": [*kwargs.get("middleware", []),
+                FilesystemMiddleware(tool_token_limit_before_evict=1)]})
+
+        monkeypatch.setattr(adapter, "_resolve_factory", lambda: factory)
     execute = adapter.execute
 
     async def revoke_after_exposure(request):
@@ -709,13 +738,15 @@ async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_
     assert isinstance(native.artifact, dict), "governed callback loses the complete application projection before checkpoint"
     projection = native.artifact["enterprise_qa_tool_projection"]
     from src.schemas.tool_runtime import ToolExecutionRecord
+    assert projection["schema_version"] == 2
+    assert projection["runtime_message"] == result.state["tool_messages"][0]
     assert projection["record"] == ToolExecutionRecord.model_validate(result.state["tool_results"][0]).model_dump(mode="json")
     assert projection["message"] == result.tool_messages[0].model_dump(mode="json")
-    assert projection["model_content"] == native.content
+    assert (projection["model_content"] != native.content) is offloaded
     assert projection["source"]["source_message_id"] == "projection-source"
     assert projection["source"]["tool_call_id"] == "original-call"
     assert projection["binding_fingerprint"] == h.binding.fingerprint
-    assert inputs[0]["feature_flags"]["tool_projection_version"] == 2
+    assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
     restored, = [message for message in deserialize_messages(result.state["framework_messages"]) if isinstance(message, ToolMessage)]
     assert restored == native
     assert await h.store.get_latest_snapshot(h.session_id) is None
@@ -723,7 +754,7 @@ async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage_version,reader_version", [(13, 12), (14, 13)])
+@pytest.mark.parametrize("stage_version,reader_version", [(13, 12), (14, 13), (15, 14)])
 async def test_old_reader_defers_new_tool_material_approval_before_claim(runtime_harness, monkeypatch, stage_version, reader_version):
     from src.infrastructure.postgres_runtime import postgres_connect
     from src.infrastructure.redis_task_queue import QueuedTask

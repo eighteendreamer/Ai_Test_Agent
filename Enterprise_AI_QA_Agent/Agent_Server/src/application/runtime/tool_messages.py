@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import logging
+from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 from uuid import NAMESPACE_URL, uuid4, uuid5
@@ -16,7 +17,8 @@ from src.schemas.tool_runtime import ToolExecutionRecord
 logger = logging.getLogger(__name__)
 
 
-def build_rejected_tool_projection(*, binding, source, job, approval_id, ordinal, hygiene_metadata, model_content):
+def build_rejected_tool_projection(*, binding, source, job, approval_id, ordinal, hygiene_metadata, model_content,
+                                  include_runtime_message=False):
     """Project a human refusal, not executed-tool output or artifact evidence.
 
     Called synchronously inside the existing denial/applied transaction. The
@@ -33,7 +35,64 @@ def build_rejected_tool_projection(*, binding, source, job, approval_id, ordinal
         binding_id=binding.binding_id, hygiene_metadata=hygiene_metadata)
     message = message.model_copy(update={"metadata": {**message.metadata, "ordinal": ordinal}})
     return FrameworkToolProjection.capture(binding=binding, source=source, record=record,
-        message=message, model_content=model_content)
+        message=message, model_content=model_content,
+        runtime_message=build_tool_message(record) if include_runtime_message else None)
+
+
+def _original_tool_materials(values):
+    from src.schemas.framework_tool_projection import parse_tool_projection
+
+    originals = {}
+    for value in values:
+        material = parse_tool_projection(value)
+        call_id = material.record.call_id
+        if call_id in originals and originals[call_id] != material:
+            raise FrameworkApprovalRecoveryRequired("Original tool projection material has conflicting contents")
+        originals[call_id] = material
+    return originals
+
+
+def build_runtime_tool_messages(turn_id: str, tool_results: list[dict], *, binding_id: str | None = None,
+                                previous_records=(), previous_messages=(), original_materials=(),
+                                require_original=False) -> list[dict]:
+    """Consume original state slots; JSONB objects cannot reproduce their strings.
+
+    New prepared Turns use v2 materials for freshly settled tools and retain
+    unchanged slots from the previous application checkpoint. Waiting slots
+    are first produced here, before application persistence. Legacy formats
+    retain their previous rendering rule, never acquiring fabricated originals.
+    Sources must already be authorized by the material/checkpoint reader.
+    """
+    from src.schemas.framework_tool_projection import FrameworkRuntimeToolProjection
+
+    originals = _original_tool_materials(original_materials)
+    if require_original and len(previous_records) != len(previous_messages):
+        raise FrameworkApprovalRecoveryRequired("Original runtime tool message slots are incomplete")
+    previous = {record["call_id"]: (record, slot) for record, slot in zip(previous_records, previous_messages)}
+    messages = []
+    for index, item in enumerate(tool_results, start=1):
+        record = ToolExecutionRecord.model_validate(item)
+        original = originals.get(record.call_id)
+        if isinstance(original, FrameworkRuntimeToolProjection):
+            if (binding_id is None or original.record != record
+                or original.message.id != str(uuid5(NAMESPACE_URL, f"framework-tool:{binding_id}:{record.call_id}"))
+                or original.message.metadata.get("turn_id") != turn_id
+                or original.message.metadata.get("ordinal") != index):
+                raise FrameworkApprovalRecoveryRequired("Original runtime tool projection differs from its result or slot")
+            slot = original.runtime_message
+        elif require_original and record.call_id in previous and ToolExecutionRecord.model_validate(
+            previous[record.call_id][0]) == record:
+            slot = previous[record.call_id][1]
+            if (not isinstance(slot, dict) or slot.get("role") != "tool"
+                or slot.get("tool_call_id") != record.call_id or slot.get("name") != record.tool_key
+                or not isinstance(slot.get("content"), str)):
+                raise FrameworkApprovalRecoveryRequired("Original runtime tool message slot differs from its record")
+        elif require_original and record.status != "waiting_approval":
+            raise FrameworkApprovalRecoveryRequired("Original runtime tool projection material is missing")
+        else:
+            slot = build_tool_message(record)
+        messages.append(deepcopy(slot))
+    return messages
 
 
 def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_metadata: dict,
@@ -50,15 +109,7 @@ def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_
     never let them hide a record, ordinal, or published-message conflict.
     This pure projector neither creates facts nor grants graph recovery rights.
     """
-    from src.schemas.framework_tool_projection import FrameworkToolProjection
-
-    originals = {}
-    for value in original_materials:
-        material = FrameworkToolProjection.model_validate_json(value.model_dump_json())
-        call_id = material.record.call_id
-        if call_id in originals and originals[call_id] != material:
-            raise FrameworkApprovalRecoveryRequired("Original tool projection material has conflicting contents")
-        originals[call_id] = material
+    originals = _original_tool_materials(original_materials)
     previous = {}
     if binding_id is not None:
         identities = {str(uuid5(NAMESPACE_URL, f"framework-tool:{binding_id}:{item['call_id']}"))

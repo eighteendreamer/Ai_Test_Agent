@@ -2420,3 +2420,61 @@ P0原样本在§60已扩展为“批准／拒绝×三个对账强杀点”。本
 本轮最高证据范围仍为E2；本地合成HTTP、受控工具及跨进程对象后端不是实际供应商、浏览器、压测／扫描Runner或RustFS。全量、前端、独立lint／typecheck、E3真实依赖和E4部署演练未验收。A2-2无资产恢复、A2-3／A3／B/C/D/E/F仍未完成，整体goal继续active；无依赖升级、付费调用、服务启停或生产路由变更。
 
 本节及本轮八个相关文件归入同一中文提交，主题 `【refactor】共享完整回合结果投影并保留原工具消息`，具体ID以Git历史／交付输出为准；用户v3文档仍保持原15增2删，未纳入提交。
+
+## 64. A2-2：原应用工具消息随治理结果持久化，正常与审批续跑消费原槽位（2026-10-27）
+
+基线 `7a375cd1e`，续接§63。上一轮有实际代码、回归与提交，属于progress；本轮补齐§63明确缺失的工具消息来源，不重做P0／A1或§52。用户v3文档原15增2删保持、不纳入本轮提交。无原结果资产的自动恢复仍关闭；本子步不替代整个A2-2出口。
+
+### 失败样本、根因与依据
+
+- §63已验证原应用 `tool_messages[].content` 与SDK的 `model_content`、展示 `ChatMessage.content` 是三种不同字符串。原工具record经PostgreSQL JSONB后对象键顺序可以变化，重新调用 `build_tool_message` 不能恢复原字符串。旧工具材料虽含record、展示消息和SDK内容，仍没有应用状态的原消息槽位。
+- 新原件往返测试首次 **1 failed，8.92秒**：捕获端口不接受 `runtime_message`。实现后 **1 passed，6.10秒**；测试实际使用JSONB，确认record键顺序变化、重新渲染与原字符串不相同，随后禁止渲染器，要求原件消费精确相等和深层隔离。原生SDK序列化／offload预览不覆盖该原件。
+- 正常生产路径红测先运行真实官方Deep Agents＋PostgreSQL，再读取新连接的原生state，**1 failed、2 passed，12.95秒**：新准备Turn仍产出材料v1，不能满足原应用槽位契约。接线后覆盖正常工具、当前治理拒绝（无Job）和未准备旧路径，未通过伪造record或绕过治理获得结果。
+- 第一组扩展 **1 failed、32 passed，27.41秒** 为强杀Harness旧断言期待stage14，实际新格式已为15；同步精确断言并保留旧marker1／2的回归，不降为任意版本。额外原子拒绝测试首次 **1 failed、2 passed，22.43秒** 为测试函数漏导入 `ToolExecutionRecord`；补齐后原子拒绝／官方offload组 **6 passed，23.90秒**。这两类测试契约／fixture问题不计为生产缺陷修复。
+- 固定SDK `langchain_core/messages/tool.py` 的 `ToolMessage.artifact`、官方[Messages](https://docs.langchain.com/oss/python/langchain/messages)区分传给模型的content和应用可读artifact → 沿现有私有artifact保存原件，不改变SDK消息身份、content或provider协议；当前固定版本没有定义本项目应用槽位格式。固定Deep Agents `FilesystemMiddleware._aintercept_large_tool_result` → 继续验证实际offload保留私有材料，不把文件预览当原输出。
+- 本地成熟参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py` 的 `RunResult`／运行结果分离 → 继续将材料表达、执行权及应用收尾分开；未找到本项目原工具槽位的上游对应，不照搬展示文本恢复。测试依据仍为本地[Agent轨迹与协议鲁棒性](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html)的结果＋轨迹、异常注入与幂等验证。
+
+### 实现与兼容边界
+
+- [工具材料schema](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_tool_projection.py)保留v1类和wire原样；新增继承的v2材料和显式 `parse_tool_projection`，v2必含原 `runtime_message`，摘要覆盖原字符串。校验确定的role、应用call ID、工具名、content类型和已知字段集合；缺槽位、漂移、未知格式或降级均不静默忽略。不将v1升级或补造为有原槽位的v2。
+- [工具消息端口](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/tool_messages.py)新增共享 `build_runtime_tool_messages`：新已结算工具直接消费v2材料；旧等待快照中record未变化的槽位原样复用；首次等待槽位仍由正常业务生成并沿原pending/snapshot持久化。缺少新终态原材料必须明确对账，不按record重新渲染。历史格式继续原渲染语义，不获得新恢复资格。展示消息与应用槽位共用版本化材料解析及重复冲突检查。
+- [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)的治理callback首次产出record时同时产生原应用槽位，随原 `ToolMessage.artifact`进入官方checkpoint；进程内列表仅将同一原件交给正常结果投影，不当作可靠落点。正常／等待／逐项续跑共用上述消费端口。新槽位不由SDK内容、当前时间或最后文本推导。
+- 人工拒绝沿原denied/applied同连接事务保存v2材料，原Job、展示身份时间及应用槽位一起纳入原决定proof；批准仍读取原生工具写入材料。`FrameworkApprovalContinuation`的新旧读者共用版本解析，owner、原生消费、applied、ToolJob与proof核对不放宽；已applied拒绝不再调用projector，提交后读失败可以只消费原件。
+- 仅新准备回合使用工具marker3；marker1／2、未准备及未绑定路径保持原契约，用户传入context不能升级旧Turn。graph-input仍为schema2，新增marker3要求message-stage15；阶段schema与Worker能力同步到15，旧1–14仍可读，reader14在claim前拒领15，reader15拒领未来16。新格式未部署，不据单元／数据库能力检查宣称双制品兼容部署完成。
+- 本轮没有新表、队列、调度器、最终收尾链或公开恢复API；不改依赖、生产默认路由、领域Runner或测试裁决。保存原件只是材料契约，不授予无资产恢复、工具重执行或模型重发权限。
+
+### Harness与v4逐项对应
+
+| v4阶段／条款／Harness | 本轮代码与测试 | 剩余出口 |
+| --- | --- | --- |
+| A2-2，§8.3／§9.2，H05 | 原应用工具槽位v2；实际JSONB／SDK往返；渲染器禁用的原件消费；独立进程在adapter返回后强杀并从原生材料读取槽位 | 原stage／callback、根预算更新及审批多次续跑身份时间仍须有可靠材料；完整结果投影、恢复准入和全部强杀窗口另验 |
+| §7／§9.4，H02／H07 | 新准备回合经真实治理批准／拒绝、先B后A、嵌套输出、原槽位与展示精确保持；拒绝applied事务回滚／提交后丢读／重复继续 | 不代表未知工具副作用、真实浏览器／压测／扫描已可恢复 |
+| §13–14／§16，H12 | v1 wire和digest保留、v2必需字段／漂移负例、marker1／2历史回归、marker3→stage15，旧reader领取前拒绝和未来16拒绝 | 官方saver conformance、实际双制品／备份恢复／排空E4仍待验收 |
+| A1／A2-1，§9.4 | 原结果资产／观察／唯一收尾及旧消息恢复回归 | A2-3／A3／B/C/D/E/F保持原全范围，未因本子步完成而结清 |
+
+### 实际验证与提交归属
+
+生产源码接线后，工具材料／输入格式组 **72 passed，27.66秒**；随后仅扩展拒绝事务／offload参数化测试。真实初始Turn→Session审批续跑组 **8 passed，34.91秒**，覆盖prepared／unprepared、批准／拒绝、可等待事件sink／普通回调；prepared样本增加嵌套非字典序输出，并精确比较最终原槽位及原已发布消息，不只比较最终文本。
+
+续接按原会话取回终态，不因观察等待重复启动：38863为 **234 passed，420.68秒**，27190为 **129 passed，501.06秒**。恢复组94872为 **1 failed、163 passed，425.41秒**，失败是 `test_response_visibility_window_preserves_uncertainty[owner_lost]` 仍期待 `DeepAgentRuntimeError`。提交 `2c70dfc81` 已明确让适配器原样抛出 `ContinuationLeaseLostError`；本轮没有修改该适配器或模型策略。按既有契约同步精确异常类型及message，并补充失租后再次继续必须拒绝、HTTP次数仍为1、账本快照不变的断言，不包回旧异常迁就测试。原取消／失租两分支先单独取得 **2 passed，13.15秒**，随后整组重跑29644取得 **164 passed，427.58秒**。
+
+以下命令均从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 运行，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，使用既有固定环境。前两组启动后生产源码未再修改，仅扩展拒绝事务／offload测试；这些新增参数另由最后14项在当前源码实际验收。分组覆盖存在重叠，不累计为独立测试数。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_tool_bridge.py tests/test_framework_tool_authority.py tests/test_framework_tool_projection.py tests/test_framework_graph_input_asset.py tests/test_framework_tool_messages.py tests/test_framework_turn_projection.py -q -x -rs --tb=short
+# 234 passed，420.68秒；原会话38863，exit0，无skip。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_terminal_gap.py tests/test_framework_runtime_result_asset.py tests/test_framework_observation_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 129 passed，501.06秒；原会话27190，exit0，无skip。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_deep_agent_runtime_adapter.py tests/test_framework_result_projection.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_framework_approval_recovery.py tests/test_framework_model_policy.py -q -x -rs --tb=short
+# 164 passed，427.58秒；原会话29644，exit0，无skip，包含旧异常断言修正。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_runtime.py::test_prepared_turn_checkpoints_complete_tool_projection_before_result_asset tests/test_framework_approval_runtime.py::test_rejection_material_and_applied_share_one_transaction_and_replay_original tests/test_framework_tool_projection.py::test_official_large_result_offload_preserves_private_original_material -q -x -rs --tb=short
+# 14 passed，57.82秒；本次续接会话38685，exit0，无skip。
+```
+
+前三组最终原始日志分别为项目根 `.codex-logs/framework-runtime-tool-material-contract-final-2026-10-27.txt`、`.codex-logs/framework-runtime-tool-material-application-final-2026-10-27.txt`、`.codex-logs/framework-runtime-tool-material-recovery-verified-2026-10-27.txt`。旧断言失败保留在 `.codex-logs/framework-runtime-tool-material-recovery-final-2026-10-27.txt`。最后14项的前次 **14 passed，46.86秒** 保留于 `.codex-logs/framework-runtime-tool-offload-wire-verified-2026-10-27.txt`，本次重验为 `.codex-logs/framework-runtime-tool-offload-wire-final-2026-10-27.txt`，不将两次相加。全部上述会话均已取回真实终态，无遗留运行中的pytest。
+
+项目根实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 均通过。再次读取固定 `ToolMessage.artifact`／Deep Agents异步offload源码和官方Messages文档，核对本地成熟参考的RunResult与课程的轨迹／幂等要求；未凭最新版文档升级依赖。全局核对工具材料读者、格式marker、graph-input、stage及claim能力消费方；AST确认v1类字段、默认值与model_config与HEAD完全一致。检查本节唯一、全文围栏配对、本节绝对本地链接存在及历史内容只追加。固定环境仍未安装ruff／mypy，不安装新工具，不声称lint或typecheck通过。
+
+最高证据范围仍为E2：官方框架、合成HTTP／受控工具、真实PostgreSQL／Redis及独立Worker强杀，不是实际供应商、RustFS、浏览器、压测／扫描Runner或部署E4。本轮未执行前端、全量、独立lint／typecheck、E3真实依赖或E4演练。完整A2-2仍缺原stage／callback、根预算更新和审批多次续跑assistant／snapshot身份时间等可靠来源及恢复准入；无资产自动恢复继续关闭。A2-3／A3／B/C/D/E/F仍在完整目标内，整体goal保持active。无付费调用、依赖升级、服务启停或生产路由变更。
+
+本节及本轮14个代码／测试文件归入同一中文提交，主题 `【feat】持久化原应用工具消息并统一槽位消费`，具体ID以Git历史／交付输出为准；用户v3文档仍为15增2删，未纳入本轮提交。
