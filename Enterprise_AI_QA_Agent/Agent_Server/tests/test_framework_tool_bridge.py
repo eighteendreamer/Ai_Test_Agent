@@ -148,6 +148,9 @@ async def test_bound_bridge_loads_current_decision_without_batch_and_executes_or
     assert (await h.jobs.get_job(selected.job.id)).status.value == "completed"
     assert len(await h.jobs.list_jobs(session_id=h.session_id)) == (3 if reuse_provider_id else 2)
     assert records[0]["call_id"] == selected.job.call_id and records[0]["approval_id"] == selected.approval.id
+    settled = await h.jobs.get_job(selected.job.id)
+    assert records[0]["started_at"] == settled.started_at
+    assert records[0]["completed_at"] == settled.completed_at
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
         delivered = FrameworkApprovalJournal(h.settings).get_receipt_in_transaction(cur, selected.approval.id)
         assert delivered.state == "delivered" and delivered.applied_at is None

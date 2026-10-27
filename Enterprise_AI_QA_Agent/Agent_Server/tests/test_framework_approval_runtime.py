@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import timezone
+import json
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -15,6 +17,7 @@ from src.application.runtime.tool_runtime_service import ToolRuntimeService
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_context import framework_owner_scope
 from src.runtime.execution_context import current_framework_owner
+from src.runtime.session_event_sink import SessionEventSink
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.session import ExecutionRequest, SessionStatus
@@ -100,14 +103,17 @@ async def test_runtime_settles_selected_result_and_preserves_sibling_identity(ru
 
 
 @pytest.mark.asyncio
-async def test_runtime_replay_then_successor_preserves_results_and_transcript_ids(runtime_harness):
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_runtime_replay_then_successor_preserves_results_and_transcript_ids(runtime_harness, decision):
     h = runtime_harness
-    b = await claim_decision(h)
+    b = await claim_decision(h, decision=decision)
     first = await resume(h, b)
     replay = await resume(h, b)
     assert h.adapter_requests[-1].continue_from_checkpoint and h.adapter_requests[-1].resume is None
-    assert [m.id for m in replay.tool_messages] == [m.id for m in first.tool_messages]
-    assert len(replay.state["tool_results"]) == 2 and h.effects == [("B", h.proposals["B"].job.id)]
+    assert replay.tool_messages == first.tool_messages
+    assert len(replay.state["tool_results"]) == 2
+    expected_effects = [("B", h.proposals["B"].job.id)] if decision == "approved" else []
+    assert h.effects == expected_effects
 
     def persist(metadata, status):
         metadata["pending_turn"] = replay.pending_turn
@@ -121,8 +127,8 @@ async def test_runtime_replay_then_successor_preserves_results_and_transcript_id
     assert final.pending_turn == {} and final.output_text == "finished"
     assert final.state["context_bundle"]["deep_agent_approval_batch"] == []
     assert len(final.state["tool_results"]) == 2 and len(final.tool_messages) == 2
-    assert first.tool_messages[0].id in {m.id for m in final.tool_messages}
-    assert h.effects == [("B", h.proposals["B"].job.id), ("A", h.proposals["A"].job.id)]
+    assert first.tool_messages[0] == next(m for m in final.tool_messages if m.id == first.tool_messages[0].id)
+    assert h.effects == expected_effects + [("A", h.proposals["A"].job.id)]
     assert receipt(h, "A").applied_at is not None
 
 
@@ -282,8 +288,8 @@ async def test_claimed_framework_approval_rejects_missing_authority_before_runti
     assert h.adapter_requests == [] and receipt(h).state == "queued"
 
 
-@pytest.mark.asyncio
-async def test_initial_runtime_and_session_continuations_share_the_official_harness(projection_harness):
+@pytest_asyncio.fixture
+async def fresh_runtime_harness(projection_harness):
     h = projection_harness
     # The resource fixture also observes an independent native graph. Start a
     # fresh bound Turn so this test imports input only through RuntimeService.
@@ -297,6 +303,12 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     h.owner = await h.tasks.claim(submitted.id, worker_id="initial-runtime", expected_binding=h.binding)
     await h.tasks.begin(h.owner, resource_id="runtime-test", fencing_token=3)
     h.effects = []
+    return h
+
+
+@pytest.mark.asyncio
+async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness):
+    h = fresh_runtime_harness
     build_runtime(h, responses=[AIMessage(id="runtime-source", content="", tool_calls=[
         {"name": "inspect_value", "args": {"value": key}, "id": key, "type": "tool_call"}
         for key in ("A", "B")]), AIMessage(content="finished")])
@@ -325,6 +337,8 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         partial = await h.sessions.execute_claimed_approval(b, ownership_monitor=monitor)
         assert partial.session.status.value == "waiting_approval"
         assert len(h.effects) == 1 and h.effects[0][0] == "B"
+        published = await h.store.get_session(h.session_id)
+        original_tool, = [message for message in published.messages if message.metadata.get("tool_call_id")]
         await h.tasks.finish(b, status="completed", result_status="waiting_approval")
         a = await claim_decision(h, key="A")
         final = await h.sessions.execute_claimed_approval(a, ownership_monitor=monitor)
@@ -336,3 +350,46 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     saved = await h.store.get_session(h.session_id)
     assert saved.metadata["pending_turn"] == {}
     assert len([message for message in saved.messages if message.metadata.get("tool_call_id")]) == 2
+    assert next(message for message in saved.messages if message.id == original_tool.id) == original_tool
+
+
+@pytest.mark.asyncio
+async def test_jobless_governance_refusal_projects_original_acknowledged_event_time(fresh_runtime_harness):
+    h = fresh_runtime_harness
+    build_runtime(h, responses=[AIMessage(id="refusal-source", content="", tool_calls=[
+        {"name": "inspect_value", "args": {"value": "denied"}, "id": "refused", "type": "tool_call"}]),
+        AIMessage(content="refused by current policy")])
+    adapter = h.runtime._deep_agent_bound_runtime_adapter
+    execute = adapter.execute
+
+    async def revoke_after_exposure(request):
+        # A real policy change after tool exposure but before invocation. Do not
+        # replace governance with a mock or create a fake denial ToolJob.
+        h.registry.get("inspect_value").permission_level = "restricted"
+        return await execute(request)
+
+    adapter.execute = revoke_after_exposure
+    session = await h.store.get_session(h.session_id)
+    request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="refusal-trace",
+        user_message="Inspect", normalized_input="Inspect", mode_key="default", agent_key="coordinator",
+        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"]})
+    sink = SessionEventSink(h.store, h.session_id, capacity=1, fence={}, runtime_owner=h.owner.runtime_owner)
+    with framework_owner_scope(h.owner.runtime_owner):
+        result = await sink.run(h.runtime.execute_turn, session, request)
+    item, = result.state["tool_results"]
+    assert item["status"] == "denied" and item["job_id"] is None and item["completed_at"] is None
+    assert h.effects == [] and await h.jobs.list_jobs(session_id=h.session_id) == []
+    saved = await h.store.list_events(h.session_id)
+    event, = [event for event in saved if event.type == "tool.execution_denied"]
+    message, = result.tool_messages
+    timestamp = event.timestamp
+    if timestamp.tzinfo is not None:
+        timestamp = timestamp.astimezone(timezone.utc).replace(tzinfo=None)
+    assert message.created_at == timestamp
+    # The app has not frozen a Runtime result or written display messages. A
+    # read-only projection from original records/events uses no graph/tool call.
+    assert await h.store.get_latest_snapshot(h.session_id) is None
+    serialized = json.loads(json.dumps(result.state["tool_results"]))
+    assert h.runtime._to_chat_messages(h.binding.turn_id, serialized, binding_id=h.binding.binding_id,
+        event_log=[event.model_dump(mode="json") for event in saved]) == result.tool_messages
+    assert len(h.adapter_requests) == 1 and h.effects == []

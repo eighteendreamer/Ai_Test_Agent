@@ -544,8 +544,9 @@ class ToolRuntimeService:
         if handler is None:
             summary = f"No runtime handler is registered for tool '{tool.key}'."
             job_id = context.tool_job_id or None
+            failed_job = None
             if job_id is not None and self._tool_job_service is not None:
-                await self._tool_job_service.mark_failed(
+                failed_job = await self._tool_job_service.mark_failed(
                     job_id,
                     summary=summary,
                     error_message=summary,
@@ -561,8 +562,8 @@ class ToolRuntimeService:
                 job_id=job_id,
                 input=call.arguments,
                 output={"error": summary},
-                started_at=started_at,
-                completed_at=datetime.utcnow(),
+                started_at=failed_job.started_at if failed_job is not None else started_at,
+                completed_at=(failed_job.completed_at or failed_job.updated_at) if failed_job is not None else datetime.utcnow(),
             )
 
         try:
@@ -725,6 +726,7 @@ class ToolRuntimeService:
             result, _, _ = self._output_safety_policy.sanitize_tool_output(result)
             resolved_status = self._resolve_result_status(result)
             summary = str(result.get("summary", f"Tool '{tool.key}' completed."))
+            settled = None
             if job is not None and self._tool_job_service is not None:
                 if observed_output:
                     settled = await self._tool_job_service.finish_output_processing(job.id,
@@ -734,7 +736,7 @@ class ToolRuntimeService:
                         return await self.record_from_job(settled)
                     result, resolved_status, summary = settled.output_payload, settled.status.value, settled.summary
                 elif resolved_status == "failed":
-                    await self._tool_job_service.mark_failed(
+                    settled = await self._tool_job_service.mark_failed(
                         job.id,
                         summary=summary,
                         error_message=str(result.get("error") or summary),
@@ -742,7 +744,7 @@ class ToolRuntimeService:
                         artifacts=result.get("artifacts", []) if isinstance(result, dict) else [],
                     )
                 elif resolved_status == "partial":
-                    await self._tool_job_service.mark_partial(
+                    settled = await self._tool_job_service.mark_partial(
                         job.id,
                         summary=summary,
                         output_payload=result,
@@ -773,13 +775,13 @@ class ToolRuntimeService:
                             return await self.record_from_job(latest)
                         raise RuntimeError("Original child-wait checkpoint could not be committed")
                 elif resolved_status == "denied":
-                    await self._tool_job_service.mark_denied(
+                    settled = await self._tool_job_service.mark_denied(
                         job.id,
                         summary=summary,
                         output_payload=result,
                     )
                 else:
-                    await self._tool_job_service.mark_completed(
+                    settled = await self._tool_job_service.mark_completed(
                         job.id,
                         summary=summary,
                         output_payload=result,
@@ -808,8 +810,11 @@ class ToolRuntimeService:
                 job_id=job.id if job is not None else None,
                 input=call.arguments,
                 output=record_output,
-                started_at=started_at,
-                completed_at=None if resolved_status == "waiting_children" else datetime.utcnow(),
+                # First delivery and replay describe the same persisted operation,
+                # not the local dispatch/projection clock. Do not reread artifacts.
+                started_at=settled.started_at if settled is not None else started_at,
+                completed_at=((settled.completed_at or settled.updated_at) if settled is not None
+                    else None if resolved_status == "waiting_children" else datetime.utcnow()),
             )
         except ContinuationLeaseLostError:
             logger.warning("framework_tool_execution_authority_lost", extra={"tool_key": tool.key,
@@ -845,6 +850,7 @@ class ToolRuntimeService:
                 raise FrameworkApprovalRecoveryRequired("Framework tool has no reliable returned output; reconcile before retry") from exc
             sanitized_error, _ = self._output_safety_policy.sanitize_text(str(exc))
             failure_summary = f"Tool '{tool.key}' failed: {sanitized_error}"
+            failed_job = None
             if job is not None and self._tool_job_service is not None:
                 recovered = await self._tool_job_service.recover_observed_output(job.id, reason=sanitized_error)
                 if recovered is not None and recovered.status in {
@@ -858,8 +864,9 @@ class ToolRuntimeService:
                         status="denied" if recovered.status == ToolJobStatus.cancelled else recovered.status.value,
                         summary=recovered.summary, trace_id=context.trace_id, job_id=job.id,
                         input=call.arguments, output={**self._compact_tool_output_for_model(tool.key, recovered.output_payload),
-                            "output_processing_error": sanitized_error}, started_at=started_at, completed_at=recovered.completed_at)
-                await self._tool_job_service.mark_failed(
+                            "output_processing_error": sanitized_error}, started_at=recovered.started_at,
+                        completed_at=recovered.completed_at or recovered.updated_at)
+                failed_job = await self._tool_job_service.mark_failed(
                     job.id,
                     summary=failure_summary,
                     error_message=sanitized_error,
@@ -875,8 +882,8 @@ class ToolRuntimeService:
                 job_id=job.id if job is not None else None,
                 input=call.arguments,
                 output={"error": sanitized_error},
-                started_at=started_at,
-                completed_at=datetime.utcnow(),
+                started_at=failed_job.started_at if failed_job is not None else started_at,
+                completed_at=(failed_job.completed_at or failed_job.updated_at) if failed_job is not None else datetime.utcnow(),
             )
         finally:
             if job_heartbeat_stop is not None and job_heartbeat_task is not None:

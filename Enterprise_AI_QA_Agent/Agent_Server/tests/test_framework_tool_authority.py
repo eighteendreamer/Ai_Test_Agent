@@ -108,7 +108,7 @@ async def test_native_tool_return_after_interrupt_is_append_only_evidence(runtim
         await asyncio.wait_for(entered.wait(), 10)
         assert (await interrupt(h)).status_code == 200
         release.set()
-        with pytest.raises(DeepAgentRuntimeError, match="ContinuationLeaseLostError"):
+        with pytest.raises(ContinuationLeaseLostError, match="owner is no longer active"):
             await running
     finally:
         release.set()
@@ -162,7 +162,7 @@ async def test_revocation_between_governance_claim_and_dispatch_does_not_enter_h
         await asyncio.wait_for(entered.wait(), 10)
         assert (await interrupt(h)).status_code == 200
         release.set()
-        with pytest.raises(DeepAgentRuntimeError, match="ContinuationLeaseLostError"):
+        with pytest.raises(ContinuationLeaseLostError, match="owner is no longer active"):
             await running
     finally:
         release.set()
@@ -245,7 +245,7 @@ async def test_observed_output_is_not_settled_by_a_revoked_worker(runtime_harnes
         assert known.metadata["tool_output_observation"]["status"] == "completed"
         assert (await interrupt(h)).status_code == 200
         release.set()
-        with pytest.raises(DeepAgentRuntimeError, match="ContinuationLeaseLostError"):
+        with pytest.raises(ContinuationLeaseLostError, match="owner is no longer active"):
             await pending
     finally:
         release.set()

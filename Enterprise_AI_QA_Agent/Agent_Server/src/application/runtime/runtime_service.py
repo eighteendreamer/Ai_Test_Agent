@@ -9,7 +9,7 @@ import logging
 import re
 from typing import Any, Awaitable, Callable
 from urllib.parse import urlparse
-from uuid import NAMESPACE_URL, uuid4, uuid5
+from uuid import uuid4
 
 from pydantic import ValidationError
 
@@ -26,7 +26,7 @@ from src.application.runtime.state_persistence import build_pending_turn, persis
 from src.application.runtime.tool_child_wait import park_tool_wait, waiting_tool_checkpoints
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
-from src.application.runtime.tool_messages import build_tool_message
+from src.application.runtime.tool_messages import build_tool_message, build_chat_tool_messages
 from src.application.runtime.tool_governance_service import (
     GovernedToolCallContext,
     GovernedToolCallResult,
@@ -54,7 +54,6 @@ from src.schemas.session import (
     ExecutionEvent,
     ExecutionRequest,
     MessageKind,
-    MessageRole,
     RuntimeMode,
     SessionMode,
     SessionSnapshot,
@@ -504,7 +503,8 @@ class RuntimeService:
                 approvals=approvals,
                 state=state,
                 tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
-                    binding_id=request.runtime_binding.binding_id if request.runtime_binding else None),
+                    binding_id=request.runtime_binding.binding_id if request.runtime_binding else None,
+                    previous_messages=session.messages, event_log=state["event_log"]),
                 pending_turn=state["pending_turn"],
             )
         state["cognitive_subagent_events"] = list(result.subagent_events)
@@ -549,7 +549,8 @@ class RuntimeService:
             approvals=[],
             state=state,
             tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
-                binding_id=request.runtime_binding.binding_id if request.runtime_binding else None),
+                binding_id=request.runtime_binding.binding_id if request.runtime_binding else None,
+                previous_messages=session.messages, event_log=state["event_log"]),
             pending_turn={},
         )
 
@@ -1459,8 +1460,12 @@ class RuntimeService:
                             output_payload=result.record.output,
                         )
             payload = result.record.model_dump(mode="python")
-            tool_records[:] = [item for item in tool_records if item.get("call_id") != call_id]
-            tool_records.append(payload)
+            if binding is not None:
+                self._merge_tool_records(tool_records, [payload])
+            else:
+                # The unbound pilot retains its historical latest-result order.
+                tool_records[:] = [item for item in tool_records if item.get("call_id") != call_id]
+                tool_records.append(payload)
             event_type = {
                 "completed": "tool.execution_completed",
                 "denied": "tool.execution_denied",
@@ -2489,37 +2494,11 @@ class RuntimeService:
         by_call.update({item["call_id"]: item for item in updates})
         records[:] = list(by_call.values())
 
-    def _to_chat_messages(self, turn_id: str, tool_results: list[dict], *, binding_id: str | None = None) -> list[ChatMessage]:
-        messages: list[ChatMessage] = []
-        for index, item in enumerate(tool_results, start=1):
-            if item.get("status") == "waiting_approval":
-                continue
-            content = (
-                f"{item.get('tool_name', item.get('tool_key', 'tool'))}\n"
-                f"status: {item.get('status', 'unknown')}\n"
-                f"summary: {item.get('summary', '')}\n\n"
-                f"{json.dumps(make_json_safe(item.get('output', {})), ensure_ascii=False, indent=2)}"
-            ).strip()
-            messages.append(
-                ChatMessage(
-                    id=(str(uuid5(NAMESPACE_URL, f"framework-tool:{binding_id}:{item['call_id']}"))
-                        if binding_id is not None else str(uuid4())),
-                    role=MessageRole.tool,
-                    content=content,
-                    created_at=datetime.utcnow(),
-                    metadata={
-                        "turn_id": turn_id,
-                        "tool_key": item.get("tool_key", ""),
-                        "tool_name": item.get("tool_name", ""),
-                        "tool_call_id": item.get("call_id", ""),
-                        "status": item.get("status", ""),
-                        "trace_id": item.get("trace_id", ""),
-                        "ordinal": index,
-                    }
-                    | self._transcript_hygiene_service.tool_message_metadata(),
-                )
-            )
-        return messages
+    def _to_chat_messages(self, turn_id: str, tool_results: list[dict], *, binding_id: str | None = None,
+                          previous_messages=(), event_log=()) -> list[ChatMessage]:
+        return build_chat_tool_messages(turn_id, tool_results, binding_id=binding_id,
+            previous_messages=previous_messages, event_log=event_log,
+            hygiene_metadata=self._transcript_hygiene_service.tool_message_metadata())
 
     def _build_tool_message(self, record: ToolExecutionRecord) -> dict[str, Any]:
         return build_tool_message(record)
