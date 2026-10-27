@@ -30,7 +30,7 @@ async def wait_gate(redis, key, timeout):
                 return value
 
 
-def framework_worker_process(settings, prefix, binding, pause_at):
+def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=None):
     """A real v2 Redis Worker with official graph/storage and a counted fake tool."""
     from redis.asyncio import Redis
     from redis import Redis as SyncRedis
@@ -65,6 +65,8 @@ def framework_worker_process(settings, prefix, binding, pause_at):
         settle = h.runtime._framework_approval_continuation.settle
         reconcile = h.runtime.reconcile_framework_task
         append_event = tasks._event
+        adapter = h.runtime._deep_agent_bound_runtime_adapter
+        execute_adapter = adapter.execute
 
         async def pause():
             # A killed child may retain a multiprocessing.Event semaphore. Redis
@@ -111,6 +113,35 @@ def framework_worker_process(settings, prefix, binding, pause_at):
                 await pause()
             return result
 
+        async def counted_adapter(*args, **kwargs):
+            await redis.incr(f"{prefix}:framework-adapter-calls")
+            return await execute_adapter(*args, **kwargs)
+
+        adapter.execute = counted_adapter
+        if recovery_mode is not None:
+            def forbidden(*args, **kwargs):
+                raise AssertionError("Finalization-only Worker cannot rerun graph/model/tool/verification/orchestration")
+
+            h.runtime.execute_turn = h.runtime.resume_framework_approval = forbidden
+            adapter.execute = forbidden
+            sessions._input_orchestrator_service.orchestrate_async = forbidden
+            sessions._verification_service.build_results = forbidden
+            if recovery_mode in {"ack", "drain"}:
+                sessions._finalize_runtime_result = forbidden
+        if pause_at == "after_asset":
+            async def before_finalization(**kwargs):
+                await pause()
+                raise AssertionError("Asset fault Worker must be killed before finalization")
+            sessions._finalize_runtime_result = before_finalization
+        elif pause_at in {"after_snapshot", "after_application_commit"}:
+            method = "save_snapshot" if pause_at == "after_snapshot" else "save_session_with_events"
+            save = getattr(sessions._store, method)
+            async def save_and_pause(*args, **kwargs):
+                result = await save(*args, **kwargs)
+                await pause()
+                return result
+            setattr(sessions._store, method, save_and_pause)
+
         h.runtime._framework_approval_continuation.prepare = prepare_with_pause
         h.runtime._framework_approval_continuation.settle = settle_with_pause
         h.runtime.reconcile_framework_task = reconcile_with_pause
@@ -121,10 +152,16 @@ def framework_worker_process(settings, prefix, binding, pause_at):
         await queue.connect()
         try:
             worker = RedisTaskWorker(queue, consumer="separate-framework-worker",
-                handler=lambda delivery: dispatcher.handle_v2(delivery, worker_id="separate-framework-worker"), block_ms=1)
+                handler=lambda delivery: dispatcher.handle_v2(delivery, worker_id="separate-framework-worker"), block_ms=1,
+                batch_size=100 if recovery_mode == "drain" else 1,
+                reclaim_idle_ms=1 if recovery_mode == "drain" else 120000)
             # Revocation fences the old attempt, so its delivery remains pending
             # (TaskDeferred). A later terminal redelivery will ACK without work.
-            assert await worker.run_once() == (0 if pause_at == "before_prepare" else 1)
+            processed = await worker.run_once()
+            if recovery_mode == "drain":
+                assert processed >= 1
+            else:
+                assert processed == (0 if pause_at == "before_prepare" else 1)
         finally:
             await h.provider.close()
             await queue.close()

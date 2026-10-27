@@ -18,6 +18,7 @@ from src.runtime.framework_message_stages import (
 )
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, parse_graph_input_asset
+from src.schemas.runtime_binding import RuntimeExecutionOwner
 from src.schemas.session import ExecutionRequest, SendMessageRequest
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_checkpoint_fencing import checkpoint_harness
@@ -788,6 +789,163 @@ async def test_independent_worker_consumes_only_the_original_approval_asset(froz
     stage = h.stages.get(h.initial_task_id, h.session_id)
     assert stage.phase == "projected" and stage.source_manifest["runtime_result_asset"] == h.result_asset.model_dump(mode="json")
     assert h.adapter_requests == requests and h.effects == effects
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("point,takeover_point", [
+    ("after_asset", None), ("after_snapshot", None), ("after_application_commit", None),
+    ("after_asset", "after_snapshot"), ("after_asset", "after_application_commit"),
+])
+async def test_original_approval_worker_hard_kill_recovers_only_original_projections(prepared_approval_runtime, point, takeover_point):
+    import multiprocessing
+    from src.infrastructure.redis_task_queue import RedisTaskQueue
+    from src.runtime.framework_application_projection import COMMIT_KEY, require_application_commit
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+    from src.runtime.store import ContinuationLeaseLostError
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+    from src.schemas.session import ApprovalDecisionRequest
+    from tests.test_framework_approval_recovery import expire, run_delivery
+    from tests.test_framework_partial_projection_recovery import reap_dead_worker_resources
+    from tests.test_framework_task_control import framework_worker_process, wait_gate
+
+    h = prepared_approval_runtime
+    monitor = asyncio.create_task(asyncio.Event().wait())
+    try:
+        b = await claim_decision(h)
+        await h.sessions.execute_claimed_approval(b, ownership_monitor=monitor)
+        await h.tasks.finish(b, status="completed", result_status="waiting_approval")
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+    # A fresh stream isolates the last approval from old fixture outbox rows.
+    h.settings.orchestration.agent_task_v2_stream = f"{h.prefix}:asset-kill:v2"
+    h.settings.orchestration.resource_default_lease_seconds = 3
+    queue = RedisTaskQueue(h.settings.database.redis_url, stream=h.settings.orchestration.agent_task_v2_stream,
+        group="control-v2", client=h.redis)
+    await queue.connect()
+    accepted = await h.dispatcher.submit_approval(h.session_id, h.proposals["A"].approval.id,
+        ApprovalDecisionRequest(decision="approved"))
+    assert await h.outbox.relay_once(queue) == 1
+    processes = []
+
+    async def worker(pause_at, recovery_mode=None):
+        process = multiprocessing.get_context("spawn").Process(target=framework_worker_process,
+            args=(h.settings, h.prefix, h.binding, pause_at, recovery_mode))
+        processes.append(process)
+        process.start()
+        if pause_at == "none":
+            await asyncio.to_thread(process.join, 45)
+            assert not process.is_alive() and process.exitcode == 0
+        else:
+            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 30)
+            assert phase[1] == pause_at, f"Worker exited {process.exitcode} before reaching {pause_at}"
+        return process
+
+    try:
+        original_process = await worker(point)
+        original = await h.tasks.get(accepted.task.id)
+        assert original.status == "running"
+        stages_before = h.stages.get(h.initial_task_id, h.session_id)
+        asset = FrameworkRuntimeResultAsset.model_validate(stages_before.source_manifest["runtime_result_asset"])
+        assert asset.task_id == original.id and asset.attempt_id == original.attempt_id
+        old_owner = RuntimeExecutionOwner(binding=h.binding, task_id=original.id, attempt_id=original.attempt_id,
+            owner_epoch=asset.owner_epoch, owner_token=original.lease_token, worker_id=original.worker_id)
+        assert stages_before.phase == "runtime_submitted"
+        assert (COMMIT_KEY in stages_before.source_manifest) is (point == "after_application_commit")
+        snapshot_before = await h.store.get_latest_snapshot(h.session_id)
+        events_before = await h.store.list_events(h.session_id)
+        budget_before = await h.calls.snapshot(h.binding)
+        job_before = await h.jobs.get_job(h.proposals["A"].job.id)
+        receipt_before = receipt(h, "A")
+        assert await h.redis.get(f"{h.prefix}:framework-adapter-calls") == "1"
+        assert await h.redis.get(f"{h.prefix}:framework-effects") == "1"
+        original_process.terminate()
+        await asyncio.to_thread(original_process.join, 10)
+        assert not original_process.is_alive() and original_process.exitcode != 0
+        terminal = await expire(h, original)
+        with pytest.raises(ContinuationLeaseLostError):
+            await FrameworkRuntimeResults(h.tasks).load(old_owner)
+        await reap_dead_worker_resources(h)
+        await run_delivery(h, original.id)
+        reconciler = next(item for item in await h.tasks.list_session(h.session_id)
+            if item.operation == "framework_reconcile" and item.reference_id == original.id)
+        assert await h.outbox.relay_once(queue) == 1
+        await worker("none", "finalize")
+        reconciled = await h.tasks.get(reconciler.id)
+        assert reconciled.status == "completed"
+        successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
+        assert successor.input["recovery_proof"]["scope"] == "application_finalization"
+        assert await h.outbox.relay_once(queue) == 1
+        takeover_terminal = None
+        if takeover_point is not None:
+            takeover = await worker(takeover_point, "finalize")
+            interrupted_task = await h.tasks.get(successor.id)
+            assert interrupted_task.status == "running"
+            snapshot_before = await h.store.get_latest_snapshot(h.session_id)
+            events_before = await h.store.list_events(h.session_id)
+            takeover.terminate()
+            await asyncio.to_thread(takeover.join, 10)
+            assert not takeover.is_alive() and takeover.exitcode != 0
+            takeover_terminal = await expire(h, interrupted_task)
+            await reap_dead_worker_resources(h)
+            await run_delivery(h, interrupted_task.id)
+            reconciler = next(item for item in await h.tasks.list_session(h.session_id)
+                if item.operation == "framework_reconcile" and item.reference_id == interrupted_task.id)
+            assert await h.outbox.relay_once(queue) == 1
+            await worker("none", "finalize")
+            reconciled = await h.tasks.get(reconciler.id)
+            assert reconciled.status == "completed"
+            successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
+            assert await h.outbox.relay_once(queue) == 1
+        committed_at = takeover_point or point
+        await worker("none", "ack" if committed_at == "after_application_commit" else "finalize")
+        completed = await h.tasks.get(successor.id)
+        assert completed.status == "completed"
+        saved = h.stages.get(h.initial_task_id, h.session_id)
+        assert saved.phase == "projected" and saved.source_manifest["runtime_result_asset"] == asset.model_dump(mode="json")
+        assert saved.source_manifest["approval_graph_inputs"] == stages_before.source_manifest["approval_graph_inputs"]
+        assert len(saved.approval_finalizations) == (2 if takeover_point is not None else 1)
+        snapshot = await h.store.get_latest_snapshot(h.session_id)
+        if committed_at != "after_asset":
+            assert snapshot == snapshot_before
+        assert snapshot.id == asset.runtime_result.snapshot.id
+        session = await h.store.get_session(h.session_id)
+        assert next(item for item in session.messages if item.id == asset.assistant_message_id).content == asset.runtime_result.output_text
+        assert await h.jobs.get_job(job_before.id) == job_before and receipt(h, "A") == receipt_before
+        assert await h.calls.snapshot(h.binding) == budget_before
+        assert await h.tasks.get(original.id) == terminal
+        if takeover_terminal is not None:
+            assert await h.tasks.get(takeover_terminal.id) == takeover_terminal
+        assert await h.redis.get(f"{h.prefix}:framework-adapter-calls") == "1"
+        assert await h.redis.get(f"{h.prefix}:framework-effects") == "1"
+        events = await h.store.list_events(h.session_id)
+        for event in events_before:
+            assert next(item for item in events if item.id == event.id) == event
+        assert len([event for event in events if event.type == "turn.completed"
+            and event.payload.get("session_status") == "completed"]) == 1
+        with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+            cur.execute(f"SELECT * FROM {h.settings.database.postgres_session_table} WHERE id=%s", (h.session_id,))
+            commit = require_application_commit(cur, h.settings, cur.fetchone(), h.binding, saved)
+        commit_owner = (takeover_terminal.id if takeover_point == "after_application_commit" else
+            original.id if point == "after_application_commit" else successor.id)
+        assert commit.task_id == commit_owner
+        # Redeliver via Redis after task completion, not merely a local method.
+        from tests.test_framework_approval_recovery import outbox
+        await queue.enqueue(outbox(h, successor.id)["payload"])
+        await worker("none", "drain")
+        assert await queue.pending() == []
+        assert await h.tasks.get(successor.id) == completed
+        assert await h.store.list_events(h.session_id) == events
+        assert h.stages.get(h.initial_task_id, h.session_id) == saved
+        with pytest.raises(ContinuationLeaseLostError):
+            await FrameworkRuntimeResults(h.tasks).load(old_owner)
+    finally:
+        await h.redis.rpush(f"{h.prefix}:control:release", "continue")
+        for process in processes:
+            if process.is_alive():
+                process.terminate()
+            await asyncio.to_thread(process.join, 10)
+        await queue.close()
 
 
 @pytest.mark.asyncio

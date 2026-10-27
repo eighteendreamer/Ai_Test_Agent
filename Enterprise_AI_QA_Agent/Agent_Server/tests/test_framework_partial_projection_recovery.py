@@ -83,12 +83,12 @@ def worker_complete_projection(settings_data, prefix, command, with_memory=False
     asyncio.run(work())
 
 
-async def complete_in_new_process(h, successor, *, with_memory=False):
+async def reap_dead_worker_resources(h):
     from datetime import datetime, timezone
     from src.runtime.resource_lease_manager import ResourceLease
 
-    # The original process is already confirmed dead by each fault test.
-    # Reap its actual resource lease using the existing lease protocol.
+    # Callers have stopped original work (a confirmed killed process or a
+    # returned injected failure). Reap only its real fixture resource leases.
     leases = [item for item in await h.resources.list_active() if item["session_id"] == h.session_id]
     for data in leases:
         lease = ResourceLease(**{key: value for key, value in data.items()
@@ -97,6 +97,10 @@ async def complete_in_new_process(h, successor, *, with_memory=False):
     if leases:
         await asyncio.sleep(1.1)
         await h.resources.reap_expired()
+
+
+async def complete_in_new_process(h, successor, *, with_memory=False):
+    await reap_dead_worker_resources(h)
     process = multiprocessing.get_context("spawn").Process(target=worker_complete_projection,
         args=(h.settings.model_dump(mode="json"), h.prefix, outbox(h, successor.id)["payload"], with_memory))
     process.start()

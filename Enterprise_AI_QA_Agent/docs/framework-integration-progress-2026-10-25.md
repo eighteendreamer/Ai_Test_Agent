@@ -2816,3 +2816,41 @@ git diff --check
 ```
 
 日志 `...-compat-approval-2026-10-27.txt`、`...-compat-projection-2026-10-27.txt`；覆盖两种位置参数及现有全部内部消费入口，其他无关源码未再修改。提交前再次检查stage18消费方、完整diff、仅追加实施记录、§71唯一、围栏与绝对链接；仅暂存本步16个代码／测试／记录文件，不含日志和原v3草稿。本节归入 `【feat】审批结果后继仅复用原资产完成应用收尾`，具体ID以Git历史／交付为准；下一步继续原producer资产后独立强杀验收，不把此子步当全系统完成。
+
+## 72. A2-2：原审批Worker资产后强杀、再次接管与Redis旧投递ACK验收（2026-10-27）
+
+续接 `e8880d98e`，对应 v4 §9.4／§10.2、H05／H07；本步扩大§71已有生产链路的E2证据，不改业务执行、proof权限、stage18、公共API、依赖或路由。先核对Git工作区（仅原v3草稿）、v4矩阵、§52／54／69–71及既有故障Worker；Docker容器只读查询已运行，没有启停服务。本步不是无资产恢复或A2-3结算实现，完整目标保持active。
+
+### 采用依据、测试设施与实际失败
+
+- 本项目 `test_framework_task_control.py::framework_worker_process` 已有官方图＋真实PG／Redis Worker、工具效果计数、Redis gate和 `Process.terminate`／join断言；`test_framework_application_projection.py::worker_waiting_after_application_commit` 已有asset／snapshot／应用事务之后的故障注入端口。本步扩展原Worker相同端口，不另建调度器、不以ConnectionError代替强杀。
+- 本地 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 对轨迹、权限、幂等和超时的分布式测试方法 → 同时核对原task／attempt终态、实际工具效果、原资产／事件／快照及重投递，而不是只看输出文本。原生消息序列完整比较继续由已有正常／只读重建及Delta回放合同执行，没有删除或忽略messages。
+- 首次新增验收 **1 failed，16.33秒**：测试通过 `tasks.get` 读取的task没有claim现场的 `runtime_owner`，将None传入旧owner fence检查。修正测试为在原Worker活跃时，使用已落库资产的原epoch及该task的实际attempt／token／worker身份捕获旧ownerDTO；不改生产get语义、不从新attempt倒填原owner。随后 **1 failed，14.32秒** 是该DTO导入位置错误，已修正到模块导入。日志 `.codex-logs/framework-approval-asset-kill-first-2026-10-27.txt`、`...-contract-2026-10-27.txt`。两次均为测试脚手架失败，**不冒称生产行为红测或生产缺陷修复**。
+- 三个原Worker故障出口修正后 **3 passed，88.37秒**；追加接管Worker再次强杀与Redis pending drain后 **5 passed，166.00秒**。日志 `...-recheck-2026-10-27.txt`、`...-takeover-2026-10-27.txt`。最后又增加原准备材料／lineage长度及最终旧owner拒写断言，完整受影响文件另跑最终验收，不沿用这5项代表最后源码。
+
+### 新增合同与证据边界
+
+| v4条款 | 代码／验收 | 证明范围 |
+| --- | --- | --- |
+| §9.4／H05 | [审批合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_graph_input.py)先让B审批按原Session链完成，再通过正式审批受理→outbox relay→Redis Worker执行A。在asset已提交、snapshot已提交、应用事务已提交三个位置gate→terminate→join，确认原任务仍running后租约过期为原终态 | 原producer真实独立进程被强杀；不是原故障同进程替身 |
+| §10.2／H05 | [既有Worker](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_task_control.py)的替换进程只通过Redis消费正式reconciler与scoped successor；Runtime／adapter／编排／Verification入口设forbidden，应用commit已存在时finalizer也设forbidden | 已有应用提交只读ACK；其他出口复用唯一finalizer补缺；未取得native执行权 |
+| §8.1／H07 | 两个额外组合在原asset后杀原Worker，再在接管Worker的snapshot后／应用commit后强杀；第二次对账／后继再次沿outbox与独立Redis Worker消费 | 原task和首后继各自终态保留，原asset／preparation不覆盖，lineage为两代；有commit时第三Worker不跑finalizer |
+| H05／H07 | 原ToolJob及receipt保持精确相等；Redis adapter计数与A工具实际效果均为1；原根预算相等；资产内所有字段、快照身份与已写快照整行、原事件逐项不变；最终完成事件一次；旧owner在失租后及收尾后均拒绝 | 模型为受控fake model，adapter计数不是供应商wire调用／Token计量；领域Runner未执行 |
+| §10.2／H07 | 最终重复命令真实重新进入Redis；只读drain Worker沿现有reclaim／ACK机制确认已被强杀的旧pending投递和新重复投递，pending变空、任务／事件／stage均不再变化 | 不仅是直接调用Dispatcher的重复提交；Redis所有权不代替PG业务事实 |
+
+[原部分投影helper](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_partial_projection_recovery.py)仅抽出共享的fixture资源租约回收函数，保持既有 `complete_in_new_process` 位置参数和行为。只在调用方已确认工作停止后按现有协议回收该UUID fixture的租约，不操作生产任务／资源。旧四参数Worker调用仍默认原路径；新增recovery_mode只用于测试禁止越权与最终pending确认，未改变生产Worker计时或重试配置。
+
+### 验证与剩余出口
+
+工作目录 `Agent_Server`，固定 `.venv-framework-v2`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`；最终两组均取得真实exit0、无skip：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_recovery.py tests/test_framework_task_control.py -q -x -rs --tb=short
+# 93 passed，685.17秒，会话89741；包含最后新增的完整五组合、旧Worker四参数消费方与原生审批强杀。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_finalization_projection.py tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py -q -x -rs --tb=short
+# 130 passed，459.31秒，会话25778；包含共享资源回收helper的全部原消费文件。
+```
+
+日志 `.codex-logs/framework-approval-asset-kill-approval-final-2026-10-27.txt`、`...-projection-final-2026-10-27.txt`；输出均保存stdout＋stderr并返回pytest退出码。早期3项／5项与最终组重叠，不累计为独立覆盖数。最后compileall、diff、§72仅追加／唯一、围栏和绝对链接检查通过；ruff／mypy未安装，未声称lint／typecheck／官方saver conformance通过。只提交三个测试文件和本节，不含原v3草稿／日志；提交名 `【test】验证审批资产后强杀与多次接管只收尾`，具体ID以Git历史／交付为准。
+
+本步新证据E2限于官方框架＋受控模型／工具＋真实PG／Redis＋原与后继独立进程强杀；真实供应商／RustFS／领域Runner的E3、部署／备份恢复的E4、前端和全量未执行。无资产的图终态重建／合法准入、projected后finish的A2-3、A3及B/C/D/E/F仍未完成；未新增付费调用、依赖或生产开关变更，整体goal保持active。
