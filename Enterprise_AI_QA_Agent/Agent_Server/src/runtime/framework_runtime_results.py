@@ -20,6 +20,7 @@ from src.runtime.framework_message_stages import (
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_runtime_result import FrameworkRuntimeResult, FrameworkRuntimeResultAsset
+from src.schemas.session import ExecutionEvent
 
 
 logger = logging.getLogger(__name__)
@@ -117,18 +118,20 @@ def validate_runtime_result(cur, settings, owner, stage, task, raw):
     return validate_runtime_result_binding(cur, settings, owner.binding, stage, task, raw)
 
 
-def _require_prepared_identity(stage, task, asset):
-    """Compare original application intent, not database-assigned row headers."""
+def _prepared_graph_input(stage, task):
     from src.schemas.framework_graph_input import parse_graph_input_asset
 
     raw = (stage.source_manifest or {}).get("graph_input_asset")
     if task["operation"] in APPROVAL_TASK_OPERATIONS:
         preparation = _approval_preparation(stage, task)
         raw = preparation.graph_input_asset.model_dump(mode="json") if preparation is not None else None
-    if raw is None:
-        return
-    prepared = parse_graph_input_asset(raw)
-    if prepared.schema_version == 1:
+    return parse_graph_input_asset(raw) if raw is not None else None
+
+
+def _require_prepared_identity(stage, task, asset):
+    """Compare original application intent, not database-assigned row headers."""
+    prepared = _prepared_graph_input(stage, task)
+    if prepared is None or prepared.schema_version == 1:
         return
     identity = prepared.runtime_preparation.identity
     snapshot = asset.runtime_result.snapshot
@@ -162,6 +165,68 @@ def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
         and asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
         "Runtime result execution facts changed")
     _require_prepared_identity(stage, task, asset)
+    prepared = _prepared_graph_input(stage, task)
+    if prepared is not None and "result_projection_version" in prepared.feature_flags:
+        expected_time = _result_projection_at(cur, settings, binding, stage, task,
+            (asset.task_id, asset.attempt_id, asset.owner_epoch), asset.runtime_result.model_dump(mode="json"))
+        _require(asset.model_dump(mode="json")["projection_at"] == expected_time,
+            "Runtime result original projection time changed")
+    return asset
+
+
+def _result_projection_at(cur, settings, binding, stage, task, producer, result):
+    prepared = _prepared_graph_input(stage, task)
+    if prepared is None or "result_projection_version" not in prepared.feature_flags:
+        # Historical assets keep their original normal-execution allocation;
+        # this absence never grants asset-gap sealing permission.
+        return datetime.utcnow().isoformat()
+    from src.runtime.framework_event_completion import read_completion
+
+    terminal = (result["state"].get("model_response_summary") or {}).get("native_terminal")
+    read = read_completion(cur, settings, binding, terminal)
+    _require((read.completion.task_id, read.completion.attempt_id, read.completion.owner_epoch)
+        == producer
+        and read.event_log == result["state"].get("event_log"),
+        "Runtime result differs from its original durable completion boundary")
+    # Use the existing event JSON codec, including timezone representation.
+    # This denotes graph-log completion, not a fabricated asset commit time.
+    return ExecutionEvent(session_id=binding.session_id, **read.event_log[-1]).model_dump(mode="json")["timestamp"]
+
+
+def _freeze_runtime_result(cur, settings, binding, stage, task, *, owner_epoch, result,
+    assistant_message_id, user_message, verifications):
+    """One asset builder for normal execution and separately authorized sealing.
+
+    Callers must hold their own live-owner/admission locks. This helper neither
+    authorizes a producer nor changes the result's original producer identity.
+    """
+    manifest = dict(stage.source_manifest or {})
+    _require(COMMIT_KEY not in manifest, "Runtime result cannot be replaced after application commit")
+    _require(user_message == _task_user_message(stage, task) and assistant_message_id != stage.user_message_id,
+        "Runtime result differs from its admitted user input")
+    if RESULT_KEY in manifest:
+        asset = validate_runtime_result_binding(cur, settings, binding, stage, task, manifest[RESULT_KEY])
+        _require(asset.runtime_result.model_dump(mode="json") == result
+            and asset.assistant_message_id == assistant_message_id and asset.user_message == user_message,
+            "Runtime result asset is immutable")
+        return asset
+    values = dict(binding=binding.model_dump(mode="json"), task_id=task["id"],
+        attempt_id=task["attempt_id"], owner_epoch=owner_epoch, input_sha256=stage.input_sha256,
+        source_sha256=approval_value_hash(runtime_result_source(stage)), execution_sha256=stage.execution_sha256,
+        model_calls_sha256=_model_hash(cur, settings, binding), tool_jobs_sha256=_tool_hash(cur, settings, binding),
+        runtime_result=result, assistant_message_id=assistant_message_id, user_message=user_message,
+        verification_results=verifications,
+        projection_at=_result_projection_at(cur, settings, binding, stage, task,
+            (task["id"], task["attempt_id"], owner_epoch), result),
+        schema_version=1, scope="completed_message_finalization_input")
+    asset = FrameworkRuntimeResultAsset(**values, asset_sha256=approval_value_hash(values))
+    _require_prepared_identity(stage, task, asset)
+    manifest[RESULT_KEY] = asset.model_dump(mode="json")
+    result_version = 17 if task["operation"] in APPROVAL_TASK_OPERATIONS else 7
+    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(result_version, stage.schema_version),
+        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
+    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
+        (updated.model_dump_json(), stage.task_id))
     return asset
 
 
@@ -197,36 +262,9 @@ class FrameworkRuntimeResults:
         def write():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 stage, task = self._locked_stage(cur, owner)
-                manifest = dict(stage.source_manifest or {})
-                _require(COMMIT_KEY not in manifest, "Runtime result cannot be replaced after application commit")
-                _require(user_message == _task_user_message(stage, task)
-                    and assistant_message_id != stage.user_message_id,
-                    "Runtime result differs from its admitted user input")
-                if RESULT_KEY in manifest:
-                    asset = self._validate(cur, owner, stage, task, manifest[RESULT_KEY])
-                    _require(asset.runtime_result.model_dump(mode="json") == result
-                        and asset.assistant_message_id == assistant_message_id and asset.user_message == user_message,
-                        "Runtime result asset is immutable")
-                    # Preparation can allocate random IDs. Only the original
-                    # saved preparation wins; a retry never replaces it.
-                    return asset
-                values = dict(binding=owner.binding.model_dump(mode="json"), task_id=owner.task_id,
-                    attempt_id=owner.attempt_id, owner_epoch=owner.owner_epoch, input_sha256=stage.input_sha256,
-                    source_sha256=approval_value_hash(runtime_result_source(stage)), execution_sha256=stage.execution_sha256,
-                    model_calls_sha256=_model_hash(cur, self._settings, owner.binding),
-                    tool_jobs_sha256=_tool_hash(cur, self._settings, owner.binding), runtime_result=result,
-                    assistant_message_id=assistant_message_id, user_message=user_message,
-                    verification_results=verifications, projection_at=datetime.utcnow().isoformat(),
-                    schema_version=1, scope="completed_message_finalization_input")
-                asset = FrameworkRuntimeResultAsset(**values, asset_sha256=approval_value_hash(values))
-                _require_prepared_identity(stage, task, asset)
-                manifest[RESULT_KEY] = asset.model_dump(mode="json")
-                result_version = 17 if task["operation"] in APPROVAL_TASK_OPERATIONS else 7
-                updated = validate_message_stage(stage.model_copy(update={"schema_version": max(result_version, stage.schema_version),
-                    "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
-                cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
-                    (updated.model_dump_json(), stage.task_id))
-                return asset
+                return _freeze_runtime_result(cur, self._settings, owner.binding, stage, task,
+                    owner_epoch=owner.owner_epoch, result=result, assistant_message_id=assistant_message_id,
+                    user_message=user_message, verifications=verifications)
 
         try:
             asset = await asyncio.to_thread(write)

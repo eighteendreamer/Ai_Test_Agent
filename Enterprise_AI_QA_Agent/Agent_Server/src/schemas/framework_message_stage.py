@@ -44,7 +44,7 @@ class FrameworkApprovalFinalizationProof(BaseModel):
 class FrameworkMessageStage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19] = 3
+    schema_version: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20] = 3
     task_id: str
     binding_id: str
     input_sha256: str

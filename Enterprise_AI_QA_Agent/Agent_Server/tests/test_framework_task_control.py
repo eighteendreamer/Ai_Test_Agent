@@ -124,11 +124,27 @@ def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=
 
             h.runtime.execute_turn = h.runtime.resume_framework_approval = forbidden
             adapter.execute = forbidden
+            adapter._model_resolver = forbidden
+            h.runtime._tool_runtime_service.record_from_job = forbidden
             sessions._input_orchestrator_service.orchestrate_async = forbidden
             sessions._verification_service.build_results = forbidden
             if recovery_mode in {"ack", "drain"}:
                 sessions._finalize_runtime_result = forbidden
-        if pause_at == "after_asset":
+        if pause_at == "before_asset":
+            import json
+            from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+            from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+
+            async def before_asset(self, owner, **kwargs):
+                # Durable comparison oracle only; never supplied to recovery.
+                await redis.set(f"{prefix}:asset-gap-oracle", json.dumps({
+                    "runtime_result": FrameworkRuntimeResult.from_result(kwargs["runtime_result"]).model_dump(mode="json"),
+                    "verification_results": [item.model_dump(mode="json") for item in kwargs["verification_results"]]}))
+                await pause()
+                raise AssertionError("Original Worker must be killed before asset persistence")
+
+            FrameworkRuntimeResults.freeze = before_asset
+        elif pause_at == "after_asset":
             async def before_finalization(**kwargs):
                 await pause()
                 raise AssertionError("Asset fault Worker must be killed before finalization")

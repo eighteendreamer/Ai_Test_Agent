@@ -612,7 +612,8 @@ async def fresh_runtime_harness(projection_harness):
 @pytest.mark.parametrize("acknowledged", [False, True])
 async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared, decision, acknowledged, monkeypatch):
     from datetime import datetime
-    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity, RESULT_PROJECTION_VERSION_KEY
+    from src.runtime.execution_logging import GRAPH_EVENT_LOG_VERSION_KEY
 
     h = fresh_runtime_harness
     build_runtime(h, responses=[AIMessage(id="runtime-source", content="", tool_calls=[
@@ -627,7 +628,8 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     session = await h.store.get_session(h.session_id)
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="runtime-trace",
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
-        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"]})
+        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"],
+            RESULT_PROJECTION_VERSION_KEY: 999, GRAPH_EVENT_LOG_VERSION_KEY: 1})
     inputs = []
     initial_task_id = h.owner.id
     if prepared:
@@ -657,6 +659,9 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
             first = await h.runtime.execute_turn(session, request, on_graph_input=freeze,
                 projection_identity=identity if prepared else None)
     assert len(first.approvals) == 2 and h.effects == []
+    result_version = 1 if prepared and acknowledged else None
+    assert inputs[0]["feature_flags"].get("result_projection_version") == result_version
+    assert first.state["context_bundle"].get(RESULT_PROJECTION_VERSION_KEY) == result_version
     assert not [item for item in await h.store.list_events(h.session_id) if item.type == "runtime.event_log_completed"]
     if prepared:
         async def forbidden(*args, **kwargs):
@@ -707,6 +712,9 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         last = approval_inputs[a.id]
         assert last["decision_id"] == a.input["decision_id"] and last["attempt_id"] == a.attempt_id
         frozen = parse_graph_input_asset(last["graph_input_asset"])
+        # A later acknowledged suffix cannot upgrade a no-sink original prefix.
+        assert frozen.feature_flags.get("result_projection_version") == result_version
+        assert frozen.runtime_preparation.initial_state["context_bundle"].get(RESULT_PROJECTION_VERSION_KEY) == result_version
         latest_snapshot = await h.store.get_latest_snapshot(h.session_id)
         identity = frozen.runtime_preparation.identity
         assert final.output.id == identity.assistant_message_id
@@ -746,7 +754,7 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
         assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 19
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == (20 if acknowledged else 19)
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
         material = [parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])

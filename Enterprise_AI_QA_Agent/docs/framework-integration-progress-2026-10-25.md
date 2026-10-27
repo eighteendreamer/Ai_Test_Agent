@@ -2998,3 +2998,53 @@ git diff --check
 本步不写新持久格式，stage仍19；没有DDL／依赖升级／生产开关改动，没有启停服务或新增付费调用。资产projection_at的原时间分配、原件复核＋窄权限封存＋finalizer-only后继发布同事务、资产前独立Worker强杀及再次接管仍待后续接入；不允许缺材料时fallback重跑原生图。A2-2、A2-3、A3及B/C/D/E/F均未整体完成，完整goal保持active。
 
 最终再次执行compileall、git diff --check和本节仅追加／唯一／围栏／绝对链接检查，提交前检查完整diff、跨层调用与暂存范围；只提交本步8个生产文件、2个对应测试及本节，不混入原v3草稿或测试日志。提交名 `【feat】按原拓扑只读装配审批原生终态`，具体ID以Git历史与交付输出为准，不推送、不建PR。
+
+## 76. A2-2：审批资产前原件封存、原子发布仅收尾后继及无确认前缀契约（2026-10-28）
+
+基线 `32c294b8e`，续接§73–75及其后未提交的资产前恢复草稿。上一轮只读核对项目与日志，没有修改代码或提交；本轮先实际复现审批正常路径回归，再修复、运行最终源码回归并提交。原v3文档草稿单独保留，不覆盖、不混入本步提交。§54已修复的Delta消息顺序问题复用现有实现与严格比较，不重新制造另一套回放或忽略messages。
+
+### v4条款 → 代码与合同
+
+| v4阶段／依据 | 本步实现与测试 | 权限与边界 |
+| --- | --- | --- |
+| A2-2，§8.1–8.3／§9.2；§75 source-only reader与既有短事务owner检查 | [审批恢复](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_recovery.py)先在owned短事务预检，事务外读取原精确checkpoint，再在当前reconciler持有owner的短事务中复核原件、封存原资产、保存finalizer-only proof／link／task／outbox并结算reconciler | 不持有跨原生I/O长事务，不伪造旧owner token；资产仍归属原producer task／attempt／epoch。事务前后原件或当前owner漂移均拒绝，封存和后继发布不能部分提交 |
+| §8.3／§9.1–9.4；原Runtime结果资产构造与唯一Session finalizer | [结果资产](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_runtime_results.py)提取正常与恢复共用的资产构造；[原件读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_result_reader.py)提取可在既有事务内复核的完整材料读取，读取对象携带不进入repr的原件tuple | 只读返回对象本身不授予写入权；最终事务重新核对准备、封口、原预算、模型／ToolJob事实及来源摘要。后继仍调用唯一_finalize_runtime_result，不新增恢复finalizer，不运行图、模型、业务工具或当前Verification规则 |
+| §9.2时间来源／§14格式兼容 | 新私有result_projection_version=1与context标记成对保存；新资产projection_at明确取原持久runtime.turn_completed事件时间，经既有ExecutionEvent JSON codec序列化。原无协议格式维持正常执行旧时间分配与既有资产语义 | 这是原图事件完成时间，不倒填为资产提交发生时间；旧无资产材料可只读，但不凭恢复时的现在发明原时间。stage20及Worker reader20同步；reader19拒20、reader20拒21，审批输入不得丢弃或改变原协议 |
+| §8.3正常与恢复授权不同；execution_logging.prepare_graph_event_log／complete_graph_event_log的既有no-sink合同 | [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)在首次入口清除外部结果标记，只在原始已声明完整事件资格且有应用准备时启用新协议；审批继承原冻结选择。结构化准备日志增加实际结果／事件协议选择 | 修复根因是原始材料资格错位，不是catch缺封口异常。合法无确认前缀仍正常完成并保留stage19；后来的sink不追补升级。已启用新协议但封口缺失仍严格拒绝，不削弱读者合同 |
+| §10.1–10.2窄权限与未知状态 | 同Turn存在封口声明或持久runtime.turn_completed时，不再发native续跑权限；缺失／错误封口不回退到图执行。已有原资产继续走既有finalizer-only准入 | 原生终态证明不扩权，旧任务终态不重置，未知工具效果仍待对账；完整应用提交仍仅ACK，不补派生Memory |
+| A2-2出口／H05–H07；既有独立Worker与PG／Redis Harness | [新增资产空窗合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_asset_gap_recovery.py)覆盖25项；复用[原审批强杀合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_graph_input.py)扩展资产前、封存事务提交前／后、收尾再次失租、Redis pending drain及重复ACK | 原结果比较覆盖完整RuntimeResult、原生messages及非空Verification；比较oracle只用于断言，绝不供给恢复。独立进程禁止图／模型resolver／业务工具重执行，效果与预算不增加 |
+
+本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的结果＋轨迹、幂等、权限与超时方法 → 本步完整原件、执行次数、协议漂移、强杀及再次接管断言；本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果／事件事实分层 → 沿既有端口保留原结果与持久事件，不复制其他SDK的调度、恢复或版本行为。核心修复直接依据本项目已有原始事件资格与唯一资产／finalizer实现，没有新增调度层、重试fallback或依赖。
+
+### 真实红测与根因修复
+
+日志全部保留在项目 `.codex-logs/`。以下较早草稿运行仅作为历史诊断，不替代下方最终源码验收；前缀统一为 `framework-approval-asset-gap-`，日期均为2026-10-28：
+
+- `valid-red`：**2 failed，14.26秒**，原时间不确定、无资产恢复错误发出native而非application_finalization证明；`boundary-red`：**9 failed，3 deselected，16.76秒**，新格式与读后漂移未被校验；`format-red`：**1 failed，17 deselected，8.61秒**，审批可丢弃原结果协议；`original-boundary-red`：**2 failed，23 deselected，12.93秒**，重散列时间漂移与丢失封口声明曾未拒绝。均按上表原件／事务／版本边界修复，保留缺材料拒绝、完整消息和旧格式断言。
+- 草稿目标组曾 **25 passed，273.97秒**、投影组 **211 passed，768.26秒**、消费方组 **499 passed，5 skipped，501.81秒**。审批组随后在 `approval-recheck-final` 暴露真实正常路径回归：**1 failed，116 passed，634.02秒**，错误是Original Runtime event completion is missing，不能用先前绿色代表全组通过。
+- 本轮 `noack-resume-red` 实际重跑原nodeid `test_initial_runtime_and_session_continuations_share_the_official_harness[False-approved-True]`：**1 failed，9.27秒**。decorator顺序明确为acknowledged=False、decision=approved、prepared=True；原首次没有acknowledged sink是合法前缀，后续审批虽有sink，complete_graph_event_log按既有合同不追补完整前缀声明。无条件设置新结果标记误将“应用准备”当成“具完整封口资格”，是协议接入根因，不是丢事件或PG故障。
+- `noack-contract-red`：加强同一真实样本及其unprepared组合，外部context携带未来结果标记999和事件标记1，要求服务端自行选择：**2 failed，10.23秒**，分别实证错误opt-in与外部标记污染。首次入口清理并依据已有服务端事件资格选择后，`noack-green`原8个组合 **8 passed，38.24秒**；批准／拒绝、prepared／unprepared、ack／no-ack均正常。原completion数量、工具效果、完整原生消息和只消费原件的断言没有放宽；stage20断言仅按真实opt-in条件区分旧19路径。
+- 中间测试适配遗漏另行保留：`consumers-final` **1 failed，290 passed，274.80秒**，新写入stage20而旧断言仍19；`approval-final` **1 failed，75 passed，527.92秒**，历史native-proof发行器fixture未模拟新增预检。只同步新格式消费者、在构造历史证明时显式模拟旧发行器；当前claim拒绝断言保留，`legacy-issuer-recheck` **1 passed，52 deselected，9.50秒**。曾照旧nodeid筛选导致exit4/no tests的`resume-red`不是生产红测；正确P0筛选`p0-recheck` **2 passed，26 deselected，49.97秒**，最终完整审批组又覆盖该文件，不据deselect宣称完整通过。
+
+### 最终源码验证
+
+工作目录 `Agent_Server`，固定解释器 `.venv-framework-v2/Scripts/python.exe`；设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。以下三组均取得真实exit0，完整stdout＋stderr经 `2>&1 | Tee-Object`保存并返回原 `$LASTEXITCODE`。运行期间未再改变生产代码或测试，组间有重叠，不累计为独立覆盖总数：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+# 207 passed，1188.41秒，无skip，会话46379。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_terminal_gap.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 211 passed，701.69秒，无skip，会话67107。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_framework_model_budget_projection.py tests/test_framework_model_policy.py tests/test_framework_tool_bridge.py tests/test_framework_message_stages.py tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py tests/test_runtime_import_isolation.py tests/test_runtime_input_paths.py tests/test_framework_task_control.py tests/test_runtime_binding_persistence.py -q -x -rs --tb=short
+# 499 passed，5 skipped，474.27秒，会话42721。
+```
+
+日志分别为 `framework-approval-asset-gap-noack-approval-final-2026-10-28.txt`、`...-noack-projection-final-2026-10-28.txt`、`...-noack-consumers-final-2026-10-28.txt`。5个skip为 `test_runtime_input_paths.py:48` 两项、`:172` 两项、`:189` 一项，需要额外隔离的真实PostgreSQL／MySQL／RustFS，不计入通过。所有会话已结束，随后进程检查无遗留pytest；没有用输出观察超时推断进程失败或重启同一测试。
+
+证据等级为E1／E2子集：本步真实官方框架、PG／Redis、独立Worker强杀，模型与业务工具仍为受控替身。效果计数不是供应商wire请求计量，不是领域Runner验收。真实供应商／RustFS／Runner的E3、双制品／部署／回滚／备份恢复的E4、全量、前端、wheel及官方saver conformance未执行；ruff／mypy实查未安装，不擅自安装，不声称lint或typecheck通过。
+
+### 提交与剩余出口
+
+仅提交本步9个生产文件、10个测试文件、`.gitignore`中新测试例外及本节；原v3草稿、测试日志和其他本地数据不提交。实际运行 `python -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`；提交前核对完整diff、所有协议／reader／stage写入引用、暂存范围和本节仅追加／唯一／围栏／绝对链接。没有DDL、依赖升级、生产开关或公开API破坏性变更，没有启停Docker／测试服务、新增付费调用、推送或建PR。新持久协议要求兼容reader20先行部署；本步本地合同不代替真实旧／新部署制品演练。
+
+提交名 `【feat】封存审批原结果并原子发布仅收尾后继`；本节与实现／测试同一提交，具体ID以Git历史及交付输出为准。本步仅支持原始完整事件资格、审批原件完备且已封口后的无资产空窗；普通消息无资产封存、图返回到事件封口前的空窗及全部材料组合仍需继续实施。A2-2未整体完成，A2-3、A3及B/C/D/E/F也未完成，完整目标保持active，不将当前子步当作全系统接入完成。

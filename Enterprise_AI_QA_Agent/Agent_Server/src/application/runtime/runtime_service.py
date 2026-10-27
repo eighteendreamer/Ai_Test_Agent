@@ -53,7 +53,8 @@ from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_context import graph_event_scope, current_framework_owner
 from src.runtime.execution_logging import (
-    append_graph_event, append_graph_event_durable, complete_graph_event_log, prepare_graph_event_log, truncate_text,
+    GRAPH_EVENT_LOG_VERSION_KEY, append_graph_event, append_graph_event_durable,
+    complete_graph_event_log, prepare_graph_event_log, truncate_text,
 )
 from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
@@ -69,7 +70,7 @@ from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.framework_approval import FrameworkContinuationPlan, approval_value_hash
 from src.schemas.framework_transcript import FrameworkTranscriptAsset
 from src.schemas.runtime_binding import RuntimeBinding
-from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
+from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation, RESULT_PROJECTION_VERSION_KEY
 from src.schemas.framework_tool_projection import (
     FrameworkToolProjection, TOOL_PROJECTION_KEY, TOOL_PROJECTION_VERSION_KEY,
 )
@@ -217,6 +218,7 @@ class RuntimeService:
             # Only newly prepared application Turns opt in. Request context
             # cannot upgrade a historical or unprepared graph invocation.
             state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
+            state["context_bundle"].pop(RESULT_PROJECTION_VERSION_KEY, None)
             if projection_identity is not None:
                 state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 3
             prepare_graph_event_log(state)
@@ -418,10 +420,16 @@ class RuntimeService:
                 # continuations retain only the original persisted selection.
                 original_verification = VerificationService.prepare_projection(projection_identity, trace_id=state["trace_id"])
                 state["context_bundle"][VERIFICATION_PREPARATION_KEY] = original_verification
+                # Only the original acknowledged prefix can promise a complete
+                # event boundary. A later approval sink cannot upgrade it.
+                if state["context_bundle"].get(GRAPH_EVENT_LOG_VERSION_KEY) == 1:
+                    state["context_bundle"][RESULT_PROJECTION_VERSION_KEY] = 1
                 logger.info("framework_verification_projection_prepared", extra={
                     "binding_id": projection_identity.binding.binding_id,
                     "rules_version": original_verification["rules_version"],
-                    "preparation_sha256": original_verification["sha256"]})
+                    "preparation_sha256": original_verification["sha256"],
+                    "result_projection_version": state["context_bundle"].get(RESULT_PROJECTION_VERSION_KEY),
+                    "event_log_version": state["context_bundle"].get(GRAPH_EVENT_LOG_VERSION_KEY)})
 
             await on_graph_input(graph_input_asset(
                 session_id=adapter_request.session_id,
@@ -444,6 +452,8 @@ class RuntimeService:
                         if TOOL_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
                     **({"verification_projection_version": 1}
                         if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else {}),
+                    **({"result_projection_version": state["context_bundle"][RESULT_PROJECTION_VERSION_KEY]}
+                        if RESULT_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
                 },
                 runtime_preparation=(FrameworkRuntimePreparation(identity=projection_identity, initial_state=state)
                     if projection_identity is not None else None),
@@ -675,7 +685,9 @@ class RuntimeService:
     async def reconcile_framework_task(self, task, *, tasks):
         from src.runtime.framework_approval_recovery import FrameworkApprovalRecovery
 
-        return await FrameworkApprovalRecovery(tasks, self._framework_approval_continuation).apply(task)
+        adapter = self._deep_agent_bound_runtime_adapter
+        return await FrameworkApprovalRecovery(tasks, self._framework_approval_continuation,
+            native_reader=adapter.open_native_reader if adapter is not None else None).apply(task)
 
     async def resume_framework_approval(
         self,

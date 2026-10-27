@@ -32,7 +32,7 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
     h = fresh_runtime_harness
     selected = getattr(request, "param", "inspect_value")
     tool_key = selected.get("tool_key", "inspect_value") if isinstance(selected, dict) else selected
-    if isinstance(selected, dict) and selected.get("legacy_verification"):
+    if isinstance(selected, dict) and (selected.get("legacy_verification") or selected.get("legacy_result")):
         from src.schemas import framework_graph_input as graph_inputs
 
         capture = graph_inputs.graph_input_asset
@@ -40,8 +40,11 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
         def legacy_input(**kwargs):
             # Simulate old preparation at the original boundary, before any
             # graph runs; do not remove material from a completed result.
-            kwargs["feature_flags"].pop("verification_projection_version", None)
-            kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_verification_preparation", None)
+            kwargs["feature_flags"].pop("result_projection_version", None)
+            kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_result_projection_version", None)
+            if selected.get("legacy_verification"):
+                kwargs["feature_flags"].pop("verification_projection_version", None)
+                kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_verification_preparation", None)
             return capture(**kwargs)
 
         monkeypatch.setattr(graph_inputs, "graph_input_asset", legacy_input)
@@ -124,7 +127,7 @@ async def test_approval_input_is_frozen_before_adapter_and_cannot_be_replaced(pr
     async def inspect_before_graph(request):
         stage = h.stages.get(task.id, h.session_id, include_continuations=True)
         saved = stage.source_manifest["approval_graph_inputs"][task.id]
-        assert stage.schema_version == 19 and saved["attempt_id"] == task.attempt_id
+        assert stage.schema_version == 20 and saved["attempt_id"] == task.attempt_id
         assert saved["owner_epoch"] == task.runtime_owner.owner_epoch
         assert (await h.jobs.get_job(h.proposals["B"].job.id)).status.value == "waiting_approval"
         raw = saved["graph_input_asset"]
@@ -240,6 +243,8 @@ async def test_stage16_reads_original_inputs_but_never_grants_message_write_auth
     graphs = [manifest["graph_input_asset"],
         *[item["graph_input_asset"] for item in manifest["approval_graph_inputs"].values()]]
     for graph in graphs:
+        graph["feature_flags"].pop("result_projection_version", None)
+        graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_result_projection_version", None)
         graph["feature_flags"].pop("verification_projection_version", None)
         graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_verification_preparation", None)
         rehash(graph)
@@ -390,7 +395,7 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
     from src.runtime.framework_runtime_results import FrameworkRuntimeResults
 
     results = FrameworkRuntimeResults(h.tasks)
-    assert saved.schema_version == 19
+    assert saved.schema_version == 20
     assert await results.load(a.runtime_owner) == asset
     assert await results.freeze(a.runtime_owner, runtime_result=asset.runtime_result.restore(),
         assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
@@ -549,7 +554,7 @@ async def test_stage17_does_not_serialize_new_finalization_fields(frozen_approva
 
     h = frozen_approval_result
     stage = h.stages.get(h.initial_task_id, h.session_id)
-    assert stage.schema_version == 19
+    assert stage.schema_version == 20
     assert stage.model_dump(mode="json")["approval_finalizations"] == []
     legacy = stage.model_copy(update={"schema_version": 17})
     assert "approval_finalizations" not in legacy.model_dump(mode="json")
@@ -839,7 +844,9 @@ async def test_independent_worker_consumes_only_the_original_approval_asset(froz
     ("after_asset", None), ("after_snapshot", None), ("after_application_commit", None),
     ("after_asset", "after_snapshot"), ("after_asset", "after_application_commit"),
 ])
-async def test_original_approval_worker_hard_kill_recovers_only_original_projections(prepared_approval_runtime, point, takeover_point):
+async def test_original_approval_worker_hard_kill_recovers_only_original_projections(
+    prepared_approval_runtime, point, takeover_point, reconcile_point="none",
+):
     import multiprocessing
     from src.infrastructure.redis_task_queue import RedisTaskQueue
     from src.runtime.framework_application_projection import COMMIT_KEY, require_application_commit
@@ -889,10 +896,14 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         original = await h.tasks.get(accepted.task.id)
         assert original.status == "running"
         stages_before = h.stages.get(h.initial_task_id, h.session_id)
-        asset = FrameworkRuntimeResultAsset.model_validate(stages_before.source_manifest["runtime_result_asset"])
-        assert asset.task_id == original.id and asset.attempt_id == original.attempt_id
+        raw = stages_before.source_manifest.get("runtime_result_asset")
+        assert (raw is None) is (point == "before_asset")
+        asset = FrameworkRuntimeResultAsset.model_validate(raw) if raw is not None else None
+        preparation = stages_before.source_manifest["approval_graph_inputs"][original.id]
+        if asset is not None:
+            assert asset.task_id == original.id and asset.attempt_id == original.attempt_id
         old_owner = RuntimeExecutionOwner(binding=h.binding, task_id=original.id, attempt_id=original.attempt_id,
-            owner_epoch=asset.owner_epoch, owner_token=original.lease_token, worker_id=original.worker_id)
+            owner_epoch=preparation["owner_epoch"], owner_token=original.lease_token, worker_id=original.worker_id)
         assert stages_before.phase == "runtime_submitted"
         assert (COMMIT_KEY in stages_before.source_manifest) is (point == "after_application_commit")
         snapshot_before = await h.store.get_latest_snapshot(h.session_id)
@@ -913,11 +924,49 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         reconciler = next(item for item in await h.tasks.list_session(h.session_id)
             if item.operation == "framework_reconcile" and item.reference_id == original.id)
         assert await h.outbox.relay_once(queue) == 1
-        await worker("none", "finalize")
+        reconciler_terminal = None
+        if reconcile_point != "none":
+            reconciling_worker = await worker(reconcile_point, "finalize")
+            during = await h.tasks.get(reconciler.id)
+            if reconcile_point == "reconcile_before_commit":
+                assert during.status == "running"
+                # Asset, proof and outbox remain invisible until the one commit.
+                assert h.stages.get(h.initial_task_id, h.session_id) == stages_before
+            else:
+                assert during.status == "completed" and during.result_status == "reconciled"
+            reconciling_worker.terminate()
+            await asyncio.to_thread(reconciling_worker.join, 10)
+            assert not reconciling_worker.is_alive() and reconciling_worker.exitcode != 0
+            if reconcile_point == "reconcile_before_commit":
+                assert h.stages.get(h.initial_task_id, h.session_id) == stages_before
+                assert not [item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == reconciler.id]
+                reconciler_terminal = await expire(h, during)
+                await reap_dead_worker_resources(h)
+                await run_delivery(h, reconciler.id)
+                reconciler = next(item for item in await h.tasks.list_session(h.session_id)
+                    if item.operation == "framework_reconcile" and item.parent_task_id == reconciler.id)
+                assert await h.outbox.relay_once(queue) == 1
+                await worker("none", "finalize")
+        else:
+            await worker("none", "finalize")
         reconciled = await h.tasks.get(reconciler.id)
         assert reconciled.status == "completed"
         successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
         assert successor.input["recovery_proof"]["scope"] == "application_finalization"
+        sealed = FrameworkRuntimeResultAsset.model_validate(
+            h.stages.get(h.initial_task_id, h.session_id).source_manifest["runtime_result_asset"])
+        if asset is None:
+            import json
+
+            oracle = json.loads(await h.redis.get(f"{h.prefix}:asset-gap-oracle"))
+            assert sealed.runtime_result.model_dump(mode="json") == oracle["runtime_result"]
+            assert [item.model_dump(mode="json") for item in sealed.verification_results] == oracle["verification_results"]
+            completion, = [event for event in events_before if event.type == "runtime.event_log_completed"]
+            assert sealed.projection_at == datetime.fromisoformat(completion.payload["completion"]["events"][-1]["timestamp"])
+            assert (sealed.task_id, sealed.attempt_id, sealed.owner_epoch) == (original.id, original.attempt_id, preparation["owner_epoch"])
+            asset = sealed
+        else:
+            assert sealed == asset
         assert await h.outbox.relay_once(queue) == 1
         takeover_terminal = None
         if takeover_point is not None:
@@ -949,7 +998,7 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         assert saved.source_manifest["approval_graph_inputs"] == stages_before.source_manifest["approval_graph_inputs"]
         assert len(saved.approval_finalizations) == (2 if takeover_point is not None else 1)
         snapshot = await h.store.get_latest_snapshot(h.session_id)
-        if committed_at != "after_asset":
+        if committed_at not in {"before_asset", "after_asset"}:
             assert snapshot == snapshot_before
         assert snapshot.id == asset.runtime_result.snapshot.id
         session = await h.store.get_session(h.session_id)
@@ -959,6 +1008,8 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         assert await h.tasks.get(original.id) == terminal
         if takeover_terminal is not None:
             assert await h.tasks.get(takeover_terminal.id) == takeover_terminal
+        if reconciler_terminal is not None:
+            assert await h.tasks.get(reconciler_terminal.id) == reconciler_terminal
         assert await h.redis.get(f"{h.prefix}:framework-adapter-calls") == "1"
         assert await h.redis.get(f"{h.prefix}:framework-effects") == "1"
         events = await h.store.list_events(h.session_id)
@@ -1041,7 +1092,7 @@ async def test_approval_asset_successor_only_finalizes_the_original_result(froze
     completed = await h.tasks.get(successor_id)
     assert completed.status == "completed", completed.error_code
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.phase == "projected" and saved.schema_version == 19
+    assert saved.phase == "projected" and saved.schema_version == 20
     assert saved.source_manifest["runtime_result_asset"] == original.source_manifest["runtime_result_asset"]
     assert saved.source_manifest["approval_graph_inputs"] == original.source_manifest["approval_graph_inputs"]
     snapshot = await h.store.get_latest_snapshot(h.session_id)
@@ -1109,6 +1160,9 @@ async def test_previously_queued_native_successor_cannot_claim_a_frozen_result(f
     # Reproduce a queued proof issued by the preceding implementation, using
     # its real publication transaction rather than inventing task/proof rows.
     with monkeypatch.context() as patch:
+        # The old issuer had no terminal-to-asset read preflight. Reproduce
+        # that historical publication only; current claim checks stay intact.
+        patch.setattr(recovery.FrameworkApprovalRecovery, "_completed_origin", lambda *args: None)
         patch.setattr(recovery, "require_native_recovery_scope", lambda *args: None, raising=False)
         import src.runtime.framework_approval_finalization as finalization
         patch.setattr(finalization, "prepare_approval_finalization", lambda *args: None)

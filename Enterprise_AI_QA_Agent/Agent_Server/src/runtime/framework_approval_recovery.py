@@ -142,14 +142,28 @@ def require_native_recovery_scope(cur, settings, binding):
         (binding.binding_id,))
     row = cur.fetchone()
     manifest = ((row["record"] if row is not None else {}).get("source_manifest") or {})
-    if "runtime_result_asset" in manifest or "application_projection_commit" in manifest:
+    if ("runtime_result_asset" in manifest or "application_projection_commit" in manifest
+        or _has_completed_boundary(cur, settings, binding)):
         raise FrameworkApprovalRecoveryRequired(
             "Original application result requires finalization-only proof, not native continuation")
 
 
+def _has_completed_boundary(cur, settings, binding):
+    from src.runtime.framework_event_completion import completion_event_id
+
+    # A durable typed completion event is enough to forbid native replay, not
+    # enough to seal a result. Missing/invalid declarations still fail the
+    # shared exact-original reader; absence never falls back to graph execution.
+    cur.execute(f"SELECT id FROM {settings.database.postgres_event_table} WHERE session_id=%s AND "
+        "(id=%s OR (type='runtime.turn_completed' AND payload->>'turn_id'=%s)) LIMIT 1",
+        (binding.session_id, completion_event_id(binding), binding.turn_id))
+    return cur.fetchone() is not None
+
+
 class FrameworkApprovalRecovery:
-    def __init__(self, tasks, continuation=None):
+    def __init__(self, tasks, continuation=None, *, native_reader=None):
         self._tasks, self._settings, self._continuation = tasks, tasks._settings, continuation
+        self._native_reader = native_reader
 
     def _publish(self, cur, origin, *, operation, reference_id, parent_id, input_payload):
         tasks = self._tasks
@@ -223,33 +237,80 @@ class FrameworkApprovalRecovery:
 
     async def apply(self, task):
         try:
-            result = await asyncio.to_thread(self._apply, task)
+            origin_id = await asyncio.to_thread(self._completed_origin, task)
+            original = None
+            if origin_id is not None:
+                from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+                if self._native_reader is None:
+                    raise FrameworkApprovalRecoveryRequired("Completed approval requires its source-only native reader")
+                original = await FrameworkRuntimeResults(self._tasks).read_completed_approval(task.runtime_binding, origin_id,
+                    continuation=self._continuation, native_reader=self._native_reader)
+            result = await asyncio.to_thread(self._apply, task, original)
         except Exception as exc:
             logger.warning("framework_reconciliation_rejected", extra={"task_id": task.id,
                 "origin_task_id": task.reference_id, "error_type": type(exc).__name__})
             raise
-        logger.info("framework_reconciliation_succeeded", extra={"task_id": task.id, "successor_task_id": result.id})
+        logger.info("framework_reconciliation_succeeded", extra={"task_id": task.id, "successor_task_id": result.id,
+            "binding_id": task.runtime_binding.binding_id, "origin_task_id": task.reference_id,
+            "result_asset_sealed": original is not None, "scope": result.input["recovery_proof"].get("scope", "native_decision")})
         return result
 
-    def _apply(self, task):
+    def _owned_origin(self, cur, task):
         if self._continuation is None or task.runtime_owner is None:
             raise FrameworkApprovalRecoveryRequired("Reconciliation requires its owned native continuation service")
         tasks, owner = self._tasks, task.runtime_owner
+        configure_runtime_owner_transaction(cur, self._settings)
+        assert_runtime_owner(cur, self._settings, owner)
+        session = tasks._lock_session(cur, task.session_id)
+        cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (task.id,))
+        row = cur.fetchone()
+        if (row is None or row["operation"] != "framework_reconcile" or row["status"] != "running"
+            or row["attempt_id"] != owner.attempt_id or row["lease_token"] != owner.owner_token
+            or row["runtime_binding"] != owner.binding.model_dump(mode="json")):
+            raise FrameworkApprovalRecoveryRequired("Reconciliation differs from its owned task")
+        origin = require_reconciliation_claim(cur, tasks, session, owner.binding, row,
+            {"task_id": task.id, "attempt_id": owner.attempt_id})
+        return session, row, origin
+
+    def _completed_origin(self, task):
+        from src.runtime.framework_approval_finalization import prepare_approval_finalization
+
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
-            configure_runtime_owner_transaction(cur, self._settings)
-            assert_runtime_owner(cur, self._settings, owner)
-            session = tasks._lock_session(cur, task.session_id)
-            cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (task.id,))
-            row = cur.fetchone()
-            if (row is None or row["operation"] != "framework_reconcile" or row["status"] != "running"
-                or row["attempt_id"] != owner.attempt_id or row["lease_token"] != owner.owner_token
-                or row["runtime_binding"] != owner.binding.model_dump(mode="json")):
-                raise FrameworkApprovalRecoveryRequired("Reconciliation differs from its owned task")
-            origin = require_reconciliation_claim(cur, tasks, session, owner.binding, row,
-                {"task_id": task.id, "attempt_id": owner.attempt_id})
+            session, _, origin = self._owned_origin(cur, task)
+            if prepare_approval_finalization(cur, self._settings, session, task.runtime_binding, origin) is not None:
+                return None
+            return origin["id"] if _has_completed_boundary(cur, self._settings, task.runtime_binding) else None
+
+    def _seal_original(self, cur, binding, origin, original):
+        from src.runtime.framework_approval_result_reader import read_approval_originals
+        from src.runtime.framework_approval_finalization import _stage
+        from src.runtime.framework_runtime_results import _freeze_runtime_result
+
+        current = read_approval_originals(cur, self._tasks, binding, origin["id"], self._continuation)
+        if current != original.originals:
+            raise FrameworkApprovalRecoveryRequired("Original approval materials changed before owned sealing")
+        preparation = original.preparation
+        if (preparation.task_id != origin["id"] or preparation.attempt_id != origin["attempt_id"]
+            or preparation.graph_input_asset.feature_flags.get("result_projection_version") != 1
+            or original.verification_results is None):
+            raise FrameworkApprovalRecoveryRequired("Original approval lacks its deterministic result preparation")
+        initial = preparation.graph_input_asset.runtime_preparation
+        _freeze_runtime_result(cur, self._settings, binding, _stage(cur, self._settings, binding), origin,
+            owner_epoch=preparation.owner_epoch, result=original.runtime_result.model_dump(mode="json"),
+            assistant_message_id=initial.identity.assistant_message_id,
+            user_message=initial.initial_state["user_message"],
+            verifications=[item.model_dump(mode="json") for item in original.verification_results])
+
+    def _apply(self, task, original=None):
+        tasks, owner = self._tasks, task.runtime_owner
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            session, row, origin = self._owned_origin(cur, task)
             from src.runtime.framework_approval_finalization import prepare_approval_finalization, _save
             from src.schemas.framework_message_stage import FrameworkApprovalFinalizationLink, FrameworkApprovalFinalizationProof
 
+            if original is not None:
+                self._seal_original(cur, owner.binding, origin, original)
             prepared = prepare_approval_finalization(cur, self._settings, session, owner.binding, origin)
             if prepared is None:
                 require_native_recovery_scope(cur, self._settings, owner.binding)

@@ -17,6 +17,9 @@ from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_tool_projection import TOOL_PROJECTION_VERSION_KEY
 
 
+RESULT_PROJECTION_VERSION_KEY = "framework_result_projection_version"
+
+
 class FrameworkProjectionIdentity(BaseModel):
     """Reserved before invocation, not a claim about graph completion time."""
     model_config = ConfigDict(extra="forbid", frozen=True)
@@ -68,11 +71,17 @@ class _FrameworkGraphInputFields(BaseModel):
             type(self.feature_flags["verification_projection_version"]) is not int
             or self.feature_flags["verification_projection_version"] != 1 or self.schema_version != 2):
             raise ValueError("Verification preparation requires its supported prepared graph format")
+        if "result_projection_version" in self.feature_flags and (
+            type(self.feature_flags["result_projection_version"]) is not int
+            or self.feature_flags["result_projection_version"] != 1 or self.schema_version != 2):
+            raise ValueError("Result projection requires its supported prepared graph format")
         return self
 
     @property
     def required_message_stage_version(self):
         version = self.feature_flags.get("tool_projection_version")
+        if "result_projection_version" in self.feature_flags:
+            return 20
         if "verification_projection_version" in self.feature_flags:
             return 19
         return {1: 13, 2: 14, 3: 15}.get(version, 12 if self.schema_version == 2 else 1)
@@ -102,6 +111,11 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
         from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
 
         context = state.get("context_bundle") or {}
+        result_version = context.get(RESULT_PROJECTION_VERSION_KEY)
+        if RESULT_PROJECTION_VERSION_KEY in context or "result_projection_version" in self.feature_flags:
+            if (type(result_version) is not int or result_version != 1
+                or self.feature_flags.get("result_projection_version") != result_version):
+                raise ValueError("Result projection differs from its original graph format")
         if VERIFICATION_PREPARATION_KEY in context or "verification_projection_version" in self.feature_flags:
             if self.feature_flags.get("verification_projection_version") != 1 or VERIFICATION_PREPARATION_KEY not in context:
                 raise ValueError("Verification preparation differs from its original graph format")

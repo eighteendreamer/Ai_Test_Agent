@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 import logging
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
@@ -45,84 +45,90 @@ class FrameworkApprovalResultRead:
     runtime_result: FrameworkRuntimeResult
     model_calls_sha256: str
     tool_jobs_sha256: str
+    originals: tuple = field(repr=False)
     verification_results: list[VerificationResult] | None = None
 
 
 def _originals(tasks, binding, task_id, continuation):
+    with postgres_connect(tasks._settings) as connection, connection.cursor() as cur:
+        configure_runtime_owner_transaction(cur, tasks._settings)
+        return read_approval_originals(cur, tasks, binding, task_id, continuation)
+
+
+def read_approval_originals(cur, tasks, binding, task_id, continuation):
+    """Share exact material verification with the owned sealing transaction."""
     settings = tasks._settings
     _require(continuation._settings == settings, "Approval result reader requires its shared material store")
-    with postgres_connect(settings) as connection, connection.cursor() as cur:
-        configure_runtime_owner_transaction(cur, settings)
-        cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE",
-            (binding.session_id,))
-        session = cur.fetchone()
-        cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))
-        task = cur.fetchone()
-        _require(session is not None and task is not None
-            and task["operation"] in {"approval_resume", "approval_recover"}
-            and task["session_id"] == binding.session_id and task["turn_id"] == binding.turn_id
-            and task["runtime_binding"] == binding.model_dump(mode="json")
-            and task["project_id"] == session["project_id"], "Approval result has no matching original task")
-        cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE",
-            (binding.binding_id,))
-        row = cur.fetchone()
-        _require(row is not None, "Approval result original message stage is missing")
-        stage = validate_message_stage(row["record"])
-        manifest = stage.source_manifest or {}
-        _require(stage.phase == "runtime_submitted" and RESULT_KEY not in manifest and COMMIT_KEY not in manifest,
-            "Approval result reader requires the original unprojected asset gap")
-        preparation = _approval_preparation(stage, task)
-        _require(preparation is not None, "Approval result original preparation is missing")
-        cur.execute(f"SELECT payload FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
-            (binding.session_id, completion_event_id(binding)))
-        declaration = cur.fetchone()
-        _require(declaration is not None, "Approval result original event completion is missing")
-        material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
-        _require((material.task_id, material.attempt_id, material.owner_epoch)
-            == (task_id, preparation.attempt_id, preparation.owner_epoch),
-            "Approval result event completion belongs to another original producer")
-        read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
-        initial = preparation.graph_input_asset.runtime_preparation.initial_state
-        prefix = initial["event_log"]
-        _require(read.event_log[:len(prefix)] == prefix and material.returned_event_offset == len(prefix) - 1,
-            "Approval result preparation differs from its original invocation event boundary")
-        ledger = PostgresFrameworkModelCalls(settings)
-        ledger._require_binding(cur, binding)
-        budget = ledger._snapshot(cur, binding.binding_id)
-        cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (stage.task_id,))
-        root = cur.fetchone()
-        _require(root is not None and root["runtime_binding"] == binding.model_dump(mode="json")
-            and root["project_id"] == task["project_id"] and root["input_hash"] == stage.input_sha256
-            and tasks._v2_input_hash(root["input_payload"], binding, budget.policy) == stage.input_sha256,
-            "Approval result differs from its original admitted root input or budget")
-        original_budget = read.event_log[-1]["payload"].get("root_model_budget")
-        if original_budget is not None:
-            _require(read_model_budget_material(binding, original_budget) == budget,
-                "Approval result original root model budget differs from its ledger")
-        else:
-            # Preserve historical no-policy output exactly, not a fabricated
-            # budget in its result summary. This is NOT automatic admission;
-            # nonempty ledgers still require original captured material.
-            _require(not budget.calls, "Approval result original root model budget material is missing")
-        materials = {}
-        for record in initial["tool_results"]:
-            candidates = [raw["task_id"] for raw in manifest["approval_graph_inputs"].values()
-                if raw["approval_id"] == record.get("approval_id")]
-            _require(bool(candidates), "Approval result original tool preparation is missing")
-            for candidate in candidates:
-                original = continuation.read_applied_tool_projection_in_transaction(cur, binding, candidate)
-                _require(original.record.call_id == record["call_id"] and original.record.job_id == record["job_id"]
-                    and (record["call_id"] not in materials or materials[record["call_id"]] == original),
-                    "Approval result original tool materials conflict with their prepared slots")
-                materials[record["call_id"]] = original
-        cur.execute(f"SELECT id,call_id FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s AND turn_id=%s",
-            (binding.session_id, binding.turn_id))
-        jobs = {(row["id"], row["call_id"]) for row in cur.fetchall()}
-        _require(len(materials) == len(initial["tool_results"])
-            and jobs == {(value.record.job_id, value.record.call_id) for value in materials.values()},
-            "Approval result has an unprepared business tool or missing original job")
-        return (preparation, read, materials, budget.model_dump(mode="json"),
-            _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
+    cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE",
+        (binding.session_id,))
+    session = cur.fetchone()
+    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))
+    task = cur.fetchone()
+    _require(session is not None and task is not None
+        and task["operation"] in {"approval_resume", "approval_recover"}
+        and task["session_id"] == binding.session_id and task["turn_id"] == binding.turn_id
+        and task["runtime_binding"] == binding.model_dump(mode="json")
+        and task["project_id"] == session["project_id"], "Approval result has no matching original task")
+    cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE",
+        (binding.binding_id,))
+    row = cur.fetchone()
+    _require(row is not None, "Approval result original message stage is missing")
+    stage = validate_message_stage(row["record"])
+    manifest = stage.source_manifest or {}
+    _require(stage.phase == "runtime_submitted" and RESULT_KEY not in manifest and COMMIT_KEY not in manifest,
+        "Approval result reader requires the original unprojected asset gap")
+    preparation = _approval_preparation(stage, task)
+    _require(preparation is not None, "Approval result original preparation is missing")
+    cur.execute(f"SELECT payload FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
+        (binding.session_id, completion_event_id(binding)))
+    declaration = cur.fetchone()
+    _require(declaration is not None, "Approval result original event completion is missing")
+    material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
+    _require((material.task_id, material.attempt_id, material.owner_epoch)
+        == (task_id, preparation.attempt_id, preparation.owner_epoch),
+        "Approval result event completion belongs to another original producer")
+    read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
+    initial = preparation.graph_input_asset.runtime_preparation.initial_state
+    prefix = initial["event_log"]
+    _require(read.event_log[:len(prefix)] == prefix and material.returned_event_offset == len(prefix) - 1,
+        "Approval result preparation differs from its original invocation event boundary")
+    ledger = PostgresFrameworkModelCalls(settings)
+    ledger._require_binding(cur, binding)
+    budget = ledger._snapshot(cur, binding.binding_id)
+    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (stage.task_id,))
+    root = cur.fetchone()
+    _require(root is not None and root["runtime_binding"] == binding.model_dump(mode="json")
+        and root["project_id"] == task["project_id"] and root["input_hash"] == stage.input_sha256
+        and tasks._v2_input_hash(root["input_payload"], binding, budget.policy) == stage.input_sha256,
+        "Approval result differs from its original admitted root input or budget")
+    original_budget = read.event_log[-1]["payload"].get("root_model_budget")
+    if original_budget is not None:
+        _require(read_model_budget_material(binding, original_budget) == budget,
+            "Approval result original root model budget differs from its ledger")
+    else:
+        # Preserve historical no-policy output exactly, not a fabricated
+        # budget in its result summary. This is NOT automatic admission;
+        # nonempty ledgers still require original captured material.
+        _require(not budget.calls, "Approval result original root model budget material is missing")
+    materials = {}
+    for record in initial["tool_results"]:
+        candidates = [raw["task_id"] for raw in manifest["approval_graph_inputs"].values()
+            if raw["approval_id"] == record.get("approval_id")]
+        _require(bool(candidates), "Approval result original tool preparation is missing")
+        for candidate in candidates:
+            original = continuation.read_applied_tool_projection_in_transaction(cur, binding, candidate)
+            _require(original.record.call_id == record["call_id"] and original.record.job_id == record["job_id"]
+                and (record["call_id"] not in materials or materials[record["call_id"]] == original),
+                "Approval result original tool materials conflict with their prepared slots")
+            materials[record["call_id"]] = original
+    cur.execute(f"SELECT id,call_id FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s AND turn_id=%s",
+        (binding.session_id, binding.turn_id))
+    jobs = {(row["id"], row["call_id"]) for row in cur.fetchall()}
+    _require(len(materials) == len(initial["tool_results"])
+        and jobs == {(value.record.job_id, value.record.call_id) for value in materials.values()},
+        "Approval result has an unprepared business tool or missing original job")
+    return (preparation, read, materials, budget.model_dump(mode="json"),
+        _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
 
 
 async def _read_native(agent, saver, source, completion):
@@ -178,7 +184,7 @@ async def read_completed_approval(tasks, binding, task_id, *, continuation, agen
             trace_id=state["trace_id"], tool_results=records, context_bundle=state["context_bundle"])
             if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
         assembled = FrameworkApprovalResultRead(preparation, read.completion, FrameworkRuntimeResult.from_result(projected),
-            model_hash, tool_hash, verifications)
+            model_hash, tool_hash, before, verifications)
     except Exception as exc:
         logger.warning("framework_approval_original_result_read_rejected", extra={"binding_id": binding.binding_id,
             "task_id": task_id, "error_type": type(exc).__name__})
