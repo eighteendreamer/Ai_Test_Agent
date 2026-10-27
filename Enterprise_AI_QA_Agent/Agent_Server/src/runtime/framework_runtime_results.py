@@ -169,6 +169,18 @@ class FrameworkRuntimeResults:
     def __init__(self, tasks):
         self._tasks, self._settings = tasks, tasks._settings
 
+    async def read_completed_approval(self, binding, task_id, *, agent, saver, continuation):
+        """Assemble original output only; never freeze, admit or finalize it.
+
+        The caller supplies the pinned official graph schema and bound saver,
+        not a native proof or replacement input. Execution/recovery admission
+        and Verification preparation remain separate from this historical read.
+        """
+        from src.runtime.framework_approval_result_reader import read_completed_approval
+
+        return await read_completed_approval(self._tasks, binding, task_id,
+            agent=agent, saver=saver, continuation=continuation)
+
     def _locked_stage(self, cur, owner):
         return lock_runtime_result_stage(cur, self._settings, owner)
 
