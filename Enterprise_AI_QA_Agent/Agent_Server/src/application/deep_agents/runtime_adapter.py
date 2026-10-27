@@ -151,6 +151,7 @@ class DeepAgentRuntimeAdapter:
 
         stage = _pilot_stage(request)
         native_terminal = None
+        native_checkpoint_timestamp = None
         root_model_budget = None
         try:
             model = await self._model_resolver(request.model_key)
@@ -262,6 +263,7 @@ class DeepAgentRuntimeAdapter:
 
                         terminal = await collect_native_terminal(agent, checkpointer, invoke_config, returned_values=result)
                         native_terminal = terminal.proof.model_dump(mode="json")
+                        native_checkpoint_timestamp = terminal.checkpoint_timestamp
                 if self._model_call_policy is not None:
                     root_model_budget = await self._model_call_policy.capture_root_budget(execution_owner.binding)
             finally:
@@ -281,6 +283,7 @@ class DeepAgentRuntimeAdapter:
             subagent_events=subagent_events,
             native_interrupts=native_interrupts,
             native_terminal=native_terminal,
+            native_checkpoint_timestamp=native_checkpoint_timestamp,
             root_model_budget=root_model_budget,
         )
 

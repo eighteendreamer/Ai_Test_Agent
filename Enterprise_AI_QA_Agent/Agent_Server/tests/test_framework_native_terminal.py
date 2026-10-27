@@ -36,13 +36,50 @@ async def test_reads_exact_native_terminal_twice_without_invoking_graph(checkpoi
         monkeypatch.setattr(agent, "ainvoke", forbidden)
         first = await collect_native_terminal(agent, saver, config(h), returned_values=result)
         second = await collect_native_terminal(agent, saver, config(h))
+        original = await saver.aget_tuple((await agent.aget_state(config(h))).config)
         assert first == second
+        assert first.checkpoint_timestamp == second.checkpoint_timestamp == original.checkpoint["ts"]
+        assert "checkpoint_timestamp" not in first.proof.model_dump(mode="json")
+        assert await saver.aget_tuple(original.config) == original
         assert first.proof.scope == "native_graph_terminal_only"
         assert first.proof.binding_fingerprint == h.binding.fingerprint
         assert first.proof.thread_id == h.binding.thread_id and first.proof.checkpoint_namespace == ""
         assert first.proof.checkpoint_id == (await agent.aget_state(config(h))).config["configurable"]["checkpoint_id"]
         assert first.values["messages"][-1].content == "original answer"
         assert h.owner.runtime_owner.owner_token not in first.proof.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_timestamp_survives_source_only_reopen_after_owner_expiry(checkpoint_harness, monkeypatch):
+    from src.application.deep_agents.native_terminal import collect_native_terminal
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+    h = checkpoint_harness
+    await start(h)
+    async with h.provider.open(owner=h.owner.runtime_owner) as saver:
+        agent, result = await finished(h, saver)
+        original = await collect_native_terminal(agent, saver, config(h), returned_values=result)
+        exact = (await agent.aget_state(config(h))).config
+        checkpoint = await saver.aget_tuple(exact)
+    source = RuntimeCheckpointSource.model_validate(h.owner.runtime_owner.model_dump(exclude={"owner_token"}))
+    await h.provider.close()
+    assert await h.store.renew_turn_execution(h.session_id, h.owner.lease_token, 0)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Reading original checkpoint time must not execute a graph or model")
+
+    model = Model(responses=[AIMessage(content="must not be generated")])
+    monkeypatch.setattr(model, "_generate", forbidden)
+    async with h.provider.open(source=source) as reader:
+        assert not hasattr(reader, "runtime_owner") and reader.runtime_source == source
+        graph = create_deep_agent(model=model, tools=[], checkpointer=reader)
+        monkeypatch.setattr(graph, "ainvoke", forbidden)
+        monkeypatch.setattr(graph, "astream_events", forbidden)
+        restored = await collect_native_terminal(graph, reader, exact)
+        assert restored == original
+        assert restored.checkpoint_timestamp == checkpoint.checkpoint["ts"]
+        assert await reader.aget_tuple(exact) == checkpoint
+        assert "checkpoint_timestamp" not in restored.proof.model_dump(mode="json")
 
 
 @pytest.mark.asyncio
@@ -142,6 +179,10 @@ async def test_bound_adapter_attaches_native_terminal_reference(checkpoint_harne
         checkpoint_namespace=h.binding.checkpoint_namespace, cognitive_planning_enabled=planning))
     assert result.metadata["native_terminal"]["scope"] == "native_graph_terminal_only"
     assert result.metadata["native_terminal"]["binding_fingerprint"] == h.binding.fingerprint
+    async with h.provider.open(owner=h.owner.runtime_owner) as saver:
+        original = await saver.aget_tuple(config(h))
+    assert result.native_checkpoint_timestamp == original.checkpoint["ts"]
+    assert "native_checkpoint_timestamp" not in result.metadata
     assert result.output_text == "adapter answer"
     assert bool(result.todos) == planning
 

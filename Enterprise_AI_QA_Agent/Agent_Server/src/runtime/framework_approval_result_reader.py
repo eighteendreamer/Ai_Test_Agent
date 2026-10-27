@@ -158,6 +158,7 @@ async def read_completed_approval(tasks, binding, task_id, *, continuation, agen
             returned_event_offset=read.completion.returned_event_offset)
         result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
             native_terminal=native.proof.model_dump(mode="json"),
+            native_checkpoint_timestamp=native.checkpoint_timestamp,
             root_model_budget=read.event_log[-1]["payload"].get("root_model_budget"))
         initial = preparation.graph_input_asset.runtime_preparation.initial_state
         projected = project_original_completed_turn(preparation=preparation.graph_input_asset.runtime_preparation,

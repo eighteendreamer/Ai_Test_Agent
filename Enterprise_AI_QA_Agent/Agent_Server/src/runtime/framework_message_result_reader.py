@@ -164,7 +164,8 @@ async def read_completed_message(tasks, binding, task_id, *, native_reader):
         materials = _tool_materials(original, binding, native.values.get("messages", []), jobs)
         facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id, returned_event_offset=0)
         result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
-            native_terminal=native.proof.model_dump(mode="json"), root_model_budget=read.event_log[-1]["payload"].get("root_model_budget"))
+            native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
+            root_model_budget=read.event_log[-1]["payload"].get("root_model_budget"))
         projected = project_original_completed_turn(preparation=original.runtime_preparation, result=result,
             binding=binding, facts=facts, event_log=read.event_log, returned_event_offset=0, materials=materials)
         state = projected.state

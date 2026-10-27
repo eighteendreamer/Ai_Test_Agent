@@ -41,6 +41,9 @@ class NativeTerminalProof(BaseModel):
 class NativeTerminalRead:
     proof: NativeTerminalProof
     values: dict[str, Any]
+    # Exact checkpoint creation time, not an application completion receipt.
+    # Keep this read material outside the persisted schema-1 proof.
+    checkpoint_timestamp: str | None = None
 
 
 def _require(condition, message):
@@ -141,4 +144,4 @@ async def collect_native_terminal(agent, saver, config, *, returned_values=None)
         raise
     logger.info("framework_native_terminal_read", extra={"binding_id": binding.binding_id,
         "checkpoint_id": proof.checkpoint_id})
-    return NativeTerminalRead(proof=proof, values=values)
+    return NativeTerminalRead(proof=proof, values=values, checkpoint_timestamp=original.checkpoint.get("ts"))

@@ -65,15 +65,33 @@ async def test_same_projection_consumes_official_terminal_without_running_graph(
         from src.application.deep_agents.result_projection import project_deep_agent_result
 
         projected = project_deep_agent_result(terminal.values, stage=result.metadata["stage"],
-            native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=[])
+            native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=[],
+            native_checkpoint_timestamp=terminal.checkpoint_timestamp)
         assert projected == result
+        assert result.native_checkpoint_timestamp == original_checkpoint.checkpoint["ts"]
         assert projected.framework_messages == messages_to_dict(terminal.values["messages"])
         assert projected.output_text == "original answer" and bool(projected.todos) == planning
         assert await saver.aget_tuple(config(h)) == original_checkpoint
         assert await h.store.list_events(h.session_id) == original_events
         assert terminal.values == original_values
         assert project_deep_agent_result(terminal.values, stage=result.metadata["stage"],
-            native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=[]) == projected
+            native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=[],
+            native_checkpoint_timestamp=terminal.checkpoint_timestamp) == projected
+
+
+def test_checkpoint_timestamp_is_explicit_projection_material_not_persisted_result_metadata():
+    from src.application.deep_agents.result_projection import project_deep_agent_result
+
+    values = {"messages": [AIMessage(id="answer", content="done")]}
+    original = deepcopy(values)
+    timestamp = "2026-10-27T00:01:02.123456+00:00"
+    result = project_deep_agent_result(values, stage="DA-E1", subagent_events=[],
+        native_terminal={"scope": "native_graph_terminal_only"}, native_checkpoint_timestamp=timestamp)
+    assert result.native_checkpoint_timestamp == timestamp
+    assert result.metadata == {"harness": "deepagents", "stage": "DA-E1", "message_count": 1,
+        "native_terminal": {"scope": "native_graph_terminal_only"}}
+    assert values == original
+    assert project_deep_agent_result(values, stage="DA-E1", subagent_events=[]).native_checkpoint_timestamp is None
 
 
 def test_projection_preserves_native_tool_artifact_metadata_and_explicit_callback_facts():

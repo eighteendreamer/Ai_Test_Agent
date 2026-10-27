@@ -29,6 +29,7 @@ class DeepAgentRuntimeResult:
     subagent_events: list[dict[str, Any]] = field(default_factory=list)
     interrupts: list[dict[str, Any]] = field(default_factory=list)
     native_interrupts: list[NativeToolInterrupt] = field(default_factory=list)
+    native_checkpoint_timestamp: str | None = None
 
 
 def project_deep_agent_result(
@@ -38,6 +39,7 @@ def project_deep_agent_result(
     subagent_events: list[dict[str, Any]],
     native_interrupts: list[NativeToolInterrupt] | None = None,
     native_terminal: dict[str, Any] | None = None,
+    native_checkpoint_timestamp: str | None = None,
     root_model_budget: dict[str, Any] | None = None,
 ) -> DeepAgentRuntimeResult:
     """Project verified invocation/native values using one existing rule set.
@@ -70,6 +72,7 @@ def project_deep_agent_result(
         subagent_events=deepcopy(subagent_events),
         interrupts=deepcopy(interrupts),
         native_interrupts=deepcopy(native_interrupts or []),
+        native_checkpoint_timestamp=native_checkpoint_timestamp,
     )
 
 

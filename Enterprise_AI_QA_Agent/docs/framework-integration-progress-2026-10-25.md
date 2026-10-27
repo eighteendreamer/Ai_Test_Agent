@@ -3223,3 +3223,39 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 ```
 
 这一步只把必要子代理审计ACK前移到执行路径，尚未保存图后plan/completed事件的全部原身份、时间与完整边界。图返回到事件封口前的完整空窗仍需继续前移或确定性准备材料，再接入原件复核／窄权限封存；禁止仅凭本步可阻塞callback就推断所有事件齐备并重建结果。其他故障状态／材料组合、A2-3、A3及B/C/D/E/F未完成，完整goal保持active。
+
+## 80. A2-2：精确checkpoint时间作为只读投影材料贯穿正常与原件读取（2026-10-28）
+
+基线 `6fcd937aa`，承接§79。续接核对完整v4目标、§52及后续实施记录、最新提交与工作区；原v3草稿SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F。此前尝试把Runtime图后组装搬进adapter callback的试验已撤回，Git确认runtime_service.py和test_framework_terminal_gap.py无内容差异；这些试验的测试不计本步验收。搬动函数边界不能消除SDK checkpoint提交到callback之间的空窗，还会改变应用组装的timeout／cancel边界，本步不再沿该路线修补。
+
+### 依据 → 做法与边界
+
+- v4 §9.2要求可派生时间有真实来源，不能用恢复时的当前时间或图前准备时间冒充完成时间。实际读取固定安装版 `langgraph.checkpoint.base.create_checkpoint`／`Checkpoint` 源码：官方在创建checkpoint时用UTC时钟写入ISO8601的ts；ts表示checkpoint创建时间，不是应用完成、资产提交或数据库落盘回执。
+- [原生终态读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/native_terminal.py)已按精确snapshot.config读取原checkpoint。本步在既有NativeTerminalRead增加可选checkpoint_timestamp，直接传递该原件的ts，不新增I/O、不解码UUID猜时间、不读取新时钟；没有时间时仍是缺材料，不补造时间，也不新增正常执行门禁。
+- [适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/runtime_adapter.py)与[纯结果投影](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/result_projection.py)用可选内存字段native_checkpoint_timestamp传递原值；无原生终态的调用保持None。普通消息和审批的只读reader同步传入，正常返回与原生重读仍复用唯一project_deep_agent_result。
+- 不把时间塞进metadata／state／snapshot，不改NativeTerminalProof schema1、完成声明schema1、stage20／reader20、结果资产格式、事件时间语义或恢复准入。内部dataclass新字段有默认None、投影参数为可选关键字，保留旧构造方式；原生证明的全部严格比较不变。既有framework_native_terminal_read日志与checkpoint身份仍保留；本步没有新状态流转、授权或fallback。
+
+### TDD、实际验证与证据范围
+
+先扩展真实官方图／PG的原件读取与adapter合同，并增加纯投影参数合同；`framework-terminal-timestamp-red-2026-10-28.log`实际 **4 failed，15.96秒，exit1，会话69676**：分别为NativeTerminalRead缺字段、两种规划配置下adapter结果缺字段，以及纯投影缺关键字参数，不是环境或断言误写。补齐传递后四文件初组 **167 passed，89.15秒，exit0，会话85825**。
+
+随后增加source-only重开合同：关闭并重开checkpoint provider、使原owner租约过期，使用不含执行token的RuntimeCheckpointSource与同构官方只读图；禁止ainvoke／astream_events／模型执行，验证完整原生读取相等、时间严格等于原checkpoint的ts、checkpoint原件未改写且时间未加入proof。本地provider关闭／重开不是启停数据库或其他基础设施。新增测试按本地课程Agent轨迹与协议鲁棒性.html的状态／权限／重入边界验收，不将只读材料等同执行权。
+
+固定 `.venv-framework-v2/Scripts/python.exe`，工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`；pytest完整stdout＋stderr通过 `2>&1 | Tee-Object`保存至项目 `.codex-logs/` 的唯一日志，返回原 `$LASTEXITCODE`。本轮所有pytest进程均已取回终态；最终两组如下，范围不重叠，不沿用§79的历史绿色结果代表本步验收：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_native_terminal.py tests/test_framework_result_projection.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_turn_projection.py -q -x -rs --tb=short
+# framework-terminal-timestamp-target-final-2026-10-28.log：168 passed，89.55秒，exit0，会话51410。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py -q -x -rs --tb=short
+# framework-terminal-timestamp-consumers-2026-10-28.log：71 passed，228.58秒，exit0，会话29954。
+```
+
+两组均无skip。覆盖正常／规划／子代理、原生严格比较、真实PG只读装配、审批与普通消息消费方、owner-bound与source-only checkpoint读写隔离；E1／E2子集，不是E3真实供应商、RustFS或领域Runner验收。未运行全量、独立Worker强杀全矩阵、前端、wheel、官方saver conformance或E4部署／双制品／回滚／备份恢复；本步没有改动这些端口。find_spec实际确认ruff／mypy均未安装，未安装工具，不声称lint／typecheck通过。
+
+### 提交与剩余出口
+
+本步5个生产文件、2个测试文件及本节，共8文件；v3草稿、日志和无内容差异的试验残留标记均排除。提交前检查Git status／完整diff／暂存清单，并在项目根运行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check`；均须exit0。本节仅追加，既有章节不重写。另更正§79命令围栏的工作目录笔误：从项目根执行compileall时应为 `./.venv-framework-v2/Scripts/python.exe`，不能用该节围栏中的父目录路径；不全局替换历史命令。
+
+提交名 `【feat】传递精确原生checkpoint时间作为投影材料`；本节与代码／测试同一提交，ID以Git历史和交付输出为准，不推送、不建PR。不升级依赖、不改变生产开关／公开路由，不启停共享基础设施，不新增付费调用。
+
+本步只补齐确定性终态事件所需的真实时间来源，尚未冻结／写入新的事件投影规则，不声称已能补造缺失事件或封口。后续仍须先红测并冻结版本化事件身份／时间来源／payload规则，兼容reader先行，证明正常与只读投影全字段一致，再单独接入缺封口时的原件复核及窄权限封存；已发生callback仍必须复用原ACK原件。图返回至事件封口前空窗、A2-2其他故障／材料组合、A2-3、A3及B/C/D/E/F均未整体完成，完整goal继续active。
