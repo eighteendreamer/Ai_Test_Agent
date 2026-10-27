@@ -64,13 +64,14 @@ def _seconds_since(value: datetime | None) -> float:
 class AgentTaskDispatcher:
     def __init__(self, settings, tasks, sessions, resources, *,
                  framework_capabilities: FrameworkWorkerCapabilities | None = None,
-                 framework_model_calls=None):
+                 framework_model_calls=None, framework_native_reader=None):
         self._settings = settings
         self._tasks = tasks
         self._sessions = sessions
         self._resources = resources
         self._framework_capabilities = framework_capabilities
         self._framework_model_calls = framework_model_calls
+        self._framework_native_reader = framework_native_reader
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -645,7 +646,7 @@ class AgentTaskDispatcher:
             task = await self._tasks.claim(command.task_id, worker_id=worker_id)
         if task.status in TERMINAL_AGENT_TASK_STATUSES:
             if task.runtime_binding is not None and task.operation in {"message", "message_recover"}:
-                await self._tasks.ensure_framework_message_recovery(task.id)
+                await self._tasks.ensure_framework_message_recovery(task.id, native_reader=self._framework_native_reader)
             if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
             return
@@ -683,7 +684,7 @@ class AgentTaskDispatcher:
         ):
             await self._execute(task)
             if task.runtime_binding is not None and task.operation in {"message", "message_recover"}:
-                await self._tasks.ensure_framework_message_recovery(task.id)
+                await self._tasks.ensure_framework_message_recovery(task.id, native_reader=self._framework_native_reader)
             if task.runtime_binding is not None and task.operation in {"approval_resume", "approval_recover", "framework_reconcile"}:
                 await self._tasks.ensure_framework_reconciliation(task.id)
 

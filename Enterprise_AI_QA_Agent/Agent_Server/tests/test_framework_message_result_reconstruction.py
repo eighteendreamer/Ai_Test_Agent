@@ -96,6 +96,12 @@ async def message_asset_gap(fresh_runtime_harness, monkeypatch, request):
             turn_lease_token=h.owner.lease_token)
         session = await h.store.get_session(h.session_id)
     h.initial_task_id = h.owner.id
+    if selected == "recovered":
+        h.pre_graph_terminal = await expire(h, h.owner)
+        successor = await h.tasks.ensure_framework_message_recovery(h.owner.id)
+        assert successor is not None
+        h.owner = await h.tasks.claim(successor.id, worker_id="original-recovered-runtime", expected_binding=h.binding)
+        await h.tasks.begin(h.owner, resource_id="original-recovered-runtime", fencing_token=4)
     h.stages = FrameworkMessageStages(h.tasks)
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id=h.owner.trace_id,
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",

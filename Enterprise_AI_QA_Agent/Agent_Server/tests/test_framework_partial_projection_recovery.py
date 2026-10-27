@@ -48,7 +48,7 @@ async def dispatch(h, successor):
         worker_id="partial-replacement")
 
 
-def worker_complete_projection(settings_data, prefix, command, with_memory=False):
+def worker_complete_projection(settings_data, prefix, command, with_memory=False, pause_at=None, gate=None, read_original=False):
     """Replacement process has no permission to run a graph/model/verification."""
     from redis.asyncio import Redis
     from src.core.config import Settings
@@ -62,6 +62,37 @@ def worker_complete_projection(settings_data, prefix, command, with_memory=False
         await resources.connect()
         runtime = Runtime()
         store, tasks, sessions, dispatcher = build_services(settings, runtime, resources)
+        provider = None
+        if read_original:
+            from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
+            from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+
+            provider = DeepAgentCheckpointProvider(settings)
+            adapter = DeepAgentRuntimeAdapter(model_resolver=None, checkpointer_factory=provider.open)
+            dispatcher._framework_native_reader = adapter.open_native_reader
+
+        async def pause(*args, **kwargs):
+            await redis.rpush(gate, pause_at)
+            await asyncio.Event().wait()
+
+        if pause_at == "admission_before_commit":
+            event = tasks._event
+
+            def before_commit(cur, row, name, payload):
+                if name == "framework.message_recover_queued":
+                    import threading
+                    from redis import Redis as SyncRedis
+
+                    with SyncRedis.from_url(settings.database.redis_url) as signal:
+                        signal.rpush(gate, pause_at)
+                    threading.Event().wait()
+                return event(cur, row, name, payload)
+
+            tasks._event = before_commit
+        elif pause_at == "before_application_commit":
+            store.save_session_with_events = pause
+        elif pause_at == "after_application_commit":
+            FrameworkMessageStages.projected = pause
         def forbidden(*args, **kwargs):
             raise AssertionError("Recovery must not call graph/model/orchestration/verification")
         runtime.execute_turn = runtime.resume_turn = runtime.resume_after_approval = forbidden
@@ -77,8 +108,12 @@ def worker_complete_projection(settings_data, prefix, command, with_memory=False
         dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True))
         for delivery in ("replacement", "duplicate"):
             await dispatcher.handle_v2(QueuedTask(delivery, command), worker_id="independent-projection")
-        assert (await tasks.get(command["task_id"])).status == "completed"
+            if pause_at == "admission_after_commit":
+                await pause()
+        assert (await tasks.get(command["task_id"])).status == ("recovery_required" if read_original else "completed")
         assert runtime.calls == []
+        if provider is not None:
+            await provider.close()
         await redis.aclose()
     asyncio.run(work())
 

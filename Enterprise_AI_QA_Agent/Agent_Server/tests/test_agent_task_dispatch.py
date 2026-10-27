@@ -176,6 +176,7 @@ async def harness():
     tables.append(f"{settings.database.postgres_agent_task_table}_message_stage")
     prefix = f"agent_test_{suffix}"
     settings.orchestration.agent_task_stream = f"{prefix}:tasks:agent"
+    settings.orchestration.agent_task_v2_stream = f"{prefix}:tasks:agent:v2"
     settings.orchestration.agent_task_control_poll_seconds = .05
     redis = Redis.from_url(settings.database.redis_url, decode_responses=True)
     resources = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, client=redis)

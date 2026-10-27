@@ -372,8 +372,10 @@ def worker_paused_before_application_tool_result(settings_raw, owner_raw, reques
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("after_seal", [False, True])
-async def test_independent_process_kill_retains_original_tool_material_without_runtime_result(fresh_runtime_harness, after_seal):
+@pytest.mark.parametrize(("after_seal", "recovery_point"), [(False, None), (True, None),
+    (True, "admission_before_commit"), (True, "admission_after_commit"),
+    (True, "before_application_commit"), (True, "after_application_commit")])
+async def test_independent_process_kill_retains_original_tool_material_without_runtime_result(fresh_runtime_harness, after_seal, recovery_point):
     from deepagents import create_deep_agent
     from redis.asyncio import Redis
     from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
@@ -456,8 +458,57 @@ async def test_independent_process_kill_retains_original_tool_material_without_r
             assert await h.tasks.get(h.owner.id) == terminal
             assert await h.tasks.ensure_framework_message_recovery(h.owner.id) is None
             assert len(await h.jobs.list_jobs(session_id=h.session_id)) == 1
-        # Material reading/assembly still does not save an asset or finalize.
-        assert await h.store.get_latest_snapshot(h.session_id) is None
+            assert await h.store.get_latest_snapshot(h.session_id) is None
+            from tests.test_framework_partial_projection_recovery import (
+                worker_complete_projection, reap_dead_worker_resources, complete_in_new_process,
+            )
+            from tests.test_framework_approval_recovery import outbox
+            from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+            if recovery_point in {"admission_before_commit", "admission_after_commit"}:
+                process = multiprocessing.get_context("spawn").Process(target=worker_complete_projection,
+                    args=(h.settings.model_dump(mode="json"), h.prefix, outbox(h, h.owner.id)["payload"],
+                        False, recovery_point, gate, True))
+                process.start()
+                assert await waiting.blpop(gate, timeout=45) is not None
+                process.terminate()
+                await asyncio.to_thread(process.join, 10)
+                assert not process.is_alive() and process.exitcode != 0
+                if recovery_point == "admission_before_commit":
+                    assert await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id) == before
+                    assert not [item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == h.owner.id]
+            successor = await h.tasks.ensure_framework_message_recovery(h.owner.id, native_reader=adapter.open_native_reader)
+            assert successor is not None
+            asset = FrameworkRuntimeResultAsset.model_validate(
+                (await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)).source_manifest["runtime_result_asset"])
+            assert asset.runtime_result.model_dump(mode="json") == oracle.model_dump(mode="json")
+            budget = await h.calls.snapshot(h.binding)
+            first_terminal = None
+            if recovery_point in {"before_application_commit", "after_application_commit"}:
+                await reap_dead_worker_resources(h)
+                process = multiprocessing.get_context("spawn").Process(target=worker_complete_projection,
+                    args=(h.settings.model_dump(mode="json"), h.prefix, outbox(h, successor.id)["payload"], False, recovery_point, gate))
+                process.start()
+                assert await waiting.blpop(gate, timeout=45) is not None
+                process.terminate()
+                await asyncio.to_thread(process.join, 10)
+                assert not process.is_alive() and process.exitcode != 0
+                first_terminal = await expire(h, await h.tasks.get(successor.id))
+                successor = await h.tasks.ensure_framework_message_recovery(successor.id)
+                assert successor is not None
+            await complete_in_new_process(h, successor)
+            assert (await h.tasks.get(successor.id)).status == "completed"
+            final = await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)
+            assert final.phase == "projected" and final.source_manifest["runtime_result_asset"] == asset.model_dump(mode="json")
+            assert await h.tasks.get(h.owner.id) == terminal
+            if first_terminal is not None:
+                assert await h.tasks.get(first_terminal.id) == first_terminal
+            assert await h.calls.snapshot(h.binding) == budget
+            assert await h.jobs.list_jobs(session_id=h.session_id) == jobs
+            assert json.loads(await h.redis.get(gate + ":effects")) == [["original", job.id]]
+            assert len([event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]) == 1
+        else:
+            assert await h.store.get_latest_snapshot(h.session_id) is None
     finally:
         await waiting.aclose()
         if process.is_alive():

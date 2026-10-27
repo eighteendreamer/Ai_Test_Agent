@@ -889,6 +889,8 @@ async def _initialize_lifespan_resources(
     app.state.agent_task_dispatcher = AgentTaskDispatcher(
         settings, agent_task_store, session_service, resource_lease_manager,
         framework_model_calls=framework_model_calls,
+        framework_native_reader=(deep_agent_bound_runtime_adapter.open_native_reader
+            if deep_agent_bound_runtime_adapter is not None else None),
     )
     cleanup.push_async_callback(
         _close_lifespan_resource, "agent_task_child_reaper", app.state.agent_task_dispatcher.stop_child_reaper,

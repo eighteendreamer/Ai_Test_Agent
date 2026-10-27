@@ -188,10 +188,10 @@ class PostgresAgentTaskStore:
 
         return await asyncio.to_thread(FrameworkMessageStages(self).get_version, task_id, session_id)
 
-    async def ensure_framework_message_recovery(self, task_id: str):
+    async def ensure_framework_message_recovery(self, task_id: str, *, native_reader=None):
         from src.runtime.framework_message_recovery import FrameworkMessageRecovery
 
-        return await FrameworkMessageRecovery(self).ensure(task_id)
+        return await FrameworkMessageRecovery(self).ensure(task_id, native_reader=native_reader)
 
     async def list_session(
         self,

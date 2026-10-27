@@ -26,7 +26,7 @@ from src.runtime.postgres_runtime_owner import configure_runtime_owner_transacti
 from src.schemas.agent_task import AgentTaskCommandV2
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_message_stage import FrameworkMessageRecoveryLink
-from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.runtime_binding import RuntimeBinding, RuntimeCheckpointSource
 from src.schemas.session import ExecutionRequest
 from src.schemas.semantic_input import PreparedSemanticInput
 
@@ -71,7 +71,7 @@ def _same_input(stage, origin, row, binding):
         _reject("Message recovery differs from its admitted input")
 
 
-def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=False):
+def _require_recoverable_turn(cur, tasks, session, binding, stage, origin):
     if stage.phase not in {"submitted", "orchestrating", "orchestrated", "runtime_submitted"}:
         _reject("Message phase has no admitted continuation; its result requires reconciliation")
     if (session["project_id"] != origin["project_id"] or session["id"] != binding.session_id
@@ -85,6 +85,11 @@ def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=Fals
         (binding.session_id, binding.turn_id, binding.turn_id, origin["sequence"]))
     if cur.fetchone() is not None:
         _reject("Message Turn was interrupted or a later input already acquired execution")
+
+
+def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=False):
+    _require_recoverable_turn(cur, tasks, session, binding, stage, origin)
+    metadata = session["metadata"] or {}
     ledger = PostgresFrameworkModelCalls(tasks._settings)
     if not _exists(cur, ledger.budgets_table) or not _exists(cur, ledger.calls_table):
         _reject("Initial message model admission store is unavailable")
@@ -273,19 +278,68 @@ class FrameworkMessageRecovery:
     def __init__(self, tasks):
         self._tasks, self._settings = tasks, tasks._settings
 
-    async def ensure(self, task_id):
+    async def ensure(self, task_id, *, native_reader=None):
+        original = None
+        reading_original = False
         try:
-            result = await asyncio.to_thread(self._ensure, task_id)
+            result = await asyncio.to_thread(self._ensure, task_id, inspect_original=native_reader is not None)
+            if isinstance(result, RuntimeCheckpointSource):
+                from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+                reading_original = True
+                original = await FrameworkRuntimeResults(self._tasks).read_completed_message(
+                    result.binding, task_id, native_reader=native_reader)
+                result = await asyncio.to_thread(self._ensure, task_id, original=original)
         except (FrameworkMessageStageRecoveryRequired, ValidationError) as exc:
-            logger.info("framework_message_recovery_not_admitted", extra={"task_id": task_id,
-                "reason": str(exc) if isinstance(exc, FrameworkMessageStageRecoveryRequired) else type(exc).__name__})
-            return None
+            # Another admission can commit while a source-only reader is in
+            # flight. Re-read only its durable existing link; this path may
+            # never seal, retry native I/O, or create a different successor.
+            result = (await asyncio.to_thread(self._ensure, task_id, existing_only=True)
+                if reading_original else None)
+            if result is None:
+                logger.info("framework_message_recovery_not_admitted", extra={"task_id": task_id,
+                    "reason": str(exc) if isinstance(exc, FrameworkMessageStageRecoveryRequired) else type(exc).__name__})
+                return None
         if result is not None:
             logger.info("framework_message_recovery_admitted", extra={"predecessor_task_id": task_id,
-                "task_id": result.id, "binding_id": result.runtime_binding.binding_id})
+                "task_id": result.id, "binding_id": result.runtime_binding.binding_id,
+                "original_result_read": original is not None})
         return result
 
-    def _ensure(self, task_id):
+    def _seal_original(self, cur, binding, stage, predecessor, owner, original):
+        """Admission locks, not the read object, authorize this immutable seal.
+
+        No upstream counterpart (checked: existing message-recovery admission,
+        _freeze_runtime_result live-owner/admission contract, v4 §8.1/§9.4):
+        the inactive original owner cannot mint a token or write again. The
+        control plane may seal only while it still holds that exact expired
+        owner and Session, revalidates all originals, and publishes the narrow
+        finalizer successor in this same transaction. No graph rights transfer.
+        """
+        from src.runtime.framework_message_result_reader import read_message_originals
+        from src.runtime.framework_runtime_results import _freeze_runtime_result
+
+        current = read_message_originals(cur, self._tasks, binding, predecessor["id"])
+        if current != original.originals:
+            _reject("Original message materials changed before admission sealing")
+        source, prepared = original.source, original.graph_input_asset
+        cur.execute("SELECT clock_timestamp() AS now")
+        now = cur.fetchone()["now"]
+        if ((source.task_id, source.attempt_id, source.owner_epoch)
+            != (predecessor["id"], predecessor["attempt_id"], owner["owner_epoch"])
+            or source.worker_id != owner["worker_id"] or owner["execution_state"] != "recovery_required"
+            or owner["expires_at"] is None or owner["expires_at"] > now
+            or prepared.feature_flags.get("result_projection_version") != 1
+            or original.verification_results is None):
+            _reject("Original message lacks its deterministic result preparation")
+        initial = prepared.runtime_preparation
+        _freeze_runtime_result(cur, self._settings, binding, stage, predecessor,
+            owner_epoch=source.owner_epoch, result=original.runtime_result.model_dump(mode="json"),
+            assistant_message_id=initial.identity.assistant_message_id,
+            user_message=initial.initial_state["user_message"],
+            verifications=[item.model_dump(mode="json") for item in original.verification_results])
+
+    def _ensure(self, task_id, *, inspect_original=False, original=None, existing_only=False):
         tasks = self._tasks
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
@@ -302,9 +356,11 @@ class FrameworkMessageRecovery:
             predecessor = cur.fetchone()
             if not _expired(predecessor):
                 return None
-            stage = _stage(cur, tasks, binding)
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE operation='message_recover' AND parent_task_id=%s", (task_id,))
             existing = cur.fetchone()
+            if existing_only and existing is None:
+                return None
+            stage = _stage(cur, tasks, binding)
             if existing is not None:
                 if not any(link.task_id == existing["id"] and link.predecessor_task_id == task_id
                     and link.predecessor_attempt_id == predecessor["attempt_id"] for link in stage.recoveries):
@@ -316,6 +372,18 @@ class FrameworkMessageRecovery:
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (stage.task_id,))
             origin = cur.fetchone()
             _same_input(stage, origin, predecessor, binding)
+            _require_recoverable_turn(cur, tasks, session, binding, stage, origin)
+            if original is not None:
+                self._seal_original(cur, binding, stage, predecessor, owner, original)
+                stage = _stage(cur, tasks, binding)
+            elif inspect_original and stage.phase == "runtime_submitted":
+                from src.runtime.framework_runtime_results import RESULT_KEY
+                from src.runtime.framework_application_projection import COMMIT_KEY
+
+                if not {RESULT_KEY, COMMIT_KEY}.intersection(stage.source_manifest or {}):
+                    return RuntimeCheckpointSource(binding=binding, task_id=task_id,
+                        attempt_id=predecessor["attempt_id"], owner_epoch=owner["owner_epoch"],
+                        worker_id=owner["worker_id"])
             budget, proof = _recoverable(cur, tasks, session, binding, stage, origin)
             new_id = str(uuid5(NAMESPACE_URL, f"framework:message_recover:{task_id}:{predecessor['attempt_id']}"))
             command = AgentTaskCommandV2(task_id=new_id, operation="message_recover", runtime_binding=binding,

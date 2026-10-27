@@ -3106,3 +3106,71 @@ git diff --check
 下一依赖子步是普通消息原件复核、窄权限封存及finalizer-only后继准入。现有FrameworkMessageRecovery.ensure的同步事务没有审批分支的live reconciler owner，不能在持锁事务内做原生I/O，也不能把本步读取对象当作写入授权；须沿既有task／owner／asset／唯一finalizer链路补齐并用真实强杀及再次接管验证，不能复制审批分支或另造调度层。图返回到事件封口前的空窗也仍待实现。A2-2、A2-3、A3及B/C/D/E/F未整体完成，完整goal保持active。
 
 提交名 `【feat】只读装配普通消息原结果并复用统一投影`；本节与代码／测试同一提交，具体ID以Git历史和交付输出为准。
+
+## 78. A2-2：普通消息原件复核、准入事务封存及原子发布仅收尾后继（2026-10-28）
+
+基线 `2e5f42700`，承接§77的source-only普通消息reader。上一轮是实际进展（验证并提交只读装配），本轮继续其依赖链路，不新建／缩小目标，不重复§54的P0修复。原v3草稿完整保留，不覆盖、不混入提交。
+
+### 依据 → 做法、授权与跨层合同
+
+普通消息没有审批的live reconciler；根因是只读原件与消息后继准入之间缺少独立的封存授权，而不是再缺一个审批journal或调度器。采用现有消息准入事务的Session／owner锁与原失租条件，原生I/O完全在事务外，最终事务重查全部事实，再同时封存原结果和发布既有finalizing后继；不伪造原owner token，不让读取对象自己成为授权。
+
+| v4阶段／条款与既有依据 | 本步实现及测试 | 权限／兼容边界 |
+| --- | --- | --- |
+| A2-2，§8.1–8.3／§9.2；现有FrameworkMessageRecovery准入锁及_freeze_runtime_result的live-owner／admission契约 | [消息恢复](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_recovery.py)预检原producer已因execution_owner_expired终态、Session无活跃租约、stage与原输入一致；事务外调用§77 reader；最终准入事务再次锁Session／owner／原task／stage并逐项复核原件 | 最终owner必须仍是原task／attempt／epoch／worker，execution_state=recovery_required且原期限已过；取消、pending审批、后续已领取Turn或输入漂移均拒绝。只读取精确原生终态，不invoke／Command／模型／业务工具 |
+| §8.3／§9.2原件复核；§73–77两次短事务读取 | [普通reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_result_reader.py)提取read_message_originals供既有读取和最终准入事务共用；本轮AST比较确认原事务材料核验体逐句未改 | 图前准备、完整封口／事件、模型结算／根预算、ToolJob与source摘要必须等于读前原件；缺原result_projection_version=1或固定Verification preparation不封存，不发明恢复时的时间或空验证结论 |
+| §9.1–9.4／§10.2；既有原结果资产构造、_recoverable与唯一Session finalizer | 最终事务调用同一资产builder，资产继续归属原producer，随后沿现有消息准入核验完整资产与已有分项，再原子保存原finalizing link、message_recover task和outbox | 不新增恢复finalizer／阶段／task operation／调度层；封存、后继、outbox不能部分提交。后继领取后由原应用owner fence保护，缺失投影补齐；原结果、时间、Verification及旧task／attempt终态不重置 |
+| §10.1并发／重入；现有deterministic successor ID和stage lineage | 并发读者只发布一个资产／后继；原生读取期间另一准入已提交时，仅重新查找已有持久link并返回同一后继 | existing_only分支不再读取原生图、不封存、不造另一任务，不把材料失败变为fallback执行；普通程序／数据库异常仍向上报告 |
+| §16跨层装配；现有TaskStore、Dispatcher和main组合根 | [TaskStore](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_agent_task_store.py)增加可选native_reader参数；[Dispatcher](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/orchestration/agent_task_dispatcher.py)在原终态投递及执行后的既有恢复入口传递；[main](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/main.py)只注入已有bound adapter的open_native_reader | 无reader时仍保留旧的安全拒绝；已有资产或commit继续原finalizing／ACK路径，不需原生读取。没有新HTTP路由、持久格式、DDL或依赖变更，stage20／reader20保持原合同 |
+
+本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的结果＋轨迹、权限、幂等与超时方法 → 完整RuntimeResult／messages、固定Verification、效果／预算、强杀、再次失租及实际ACK断言。本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果／事件分层 → 保持本项目原件、资产、事件与任务权责分离，不复制其他SDK恢复行为。实际授权实现依据是本项目既有消息准入事务和资产builder，不借用审批恢复权限。
+
+### TDD、实际失败与Harness修正
+
+本轮日志保留在项目 `.codex-logs/`，前缀 `framework-message-asset-gap-`、日期2026-10-28。中间组只作真实诊断，不替代最终源码回归：
+
+- `red`：**1 failed，8.86秒**，api-tester普通消息原件完备，但真实终态投递未封存／发布后继。随后`first` **1 failed，8.04秒**是提取共同Turn检查时遗漏metadata局部变量导致NameError，已恢复局部变量，不算另一项目标红测；`positive`早期八组 **8 passed，39.22秒**。
+- `owner-red`：**2 failed，19 deselected，10.49秒**，实证只核对task／attempt／epoch还不够：worker漂移或owner仍为running／期限未过时曾错误封存。修复为最终事务精确核对原worker、失租状态和数据库当前时钟，不弱化原件比较。
+- `concurrent-red`：**1 failed，7.48秒**，另一个准入已提交后，迟到原件读者返回None而非同一后继；增加仅查询已有link的冲突读取，不重试原生I/O或执行。`boundary-first` **1 failed，18 passed，72.39秒**为新增后续Turn fixture未用既有queued提交模式；只修fixture。`boundary-final`中间版本 **44 passed，146.02秒**。
+- `workers-first`：**6 passed，47 deselected，99.26秒**，为独立进程选定子集，不冒称完整工具文件通过。覆盖封口前保持拒绝、原Worker封口后资产前强杀、封存事务提交前／后强杀、应用最终事务前／后再次失租；后续进程只准原收尾或ACK，禁止图／模型／编排／当前Verification执行。
+- `target-final`：**1 failed，44 passed，171.40秒**，子代理新增断言误把失租接口返回的即时行视图当成完整持久原件；改为失租后立即get原task并与恢复后完整记录比较，不删除字段或仅比status。新增测试曾被插到同函数较早的同名上下文处，执行前审阅已纠正，未把未执行的编辑错误记作生产失败。
+- `target-recheck-final`：**1 failed，27 passed，115.45秒**，真实Redis ACK用例读到不属于当前隔离PG表的历史task而KeyError。根因是共享Harness只给旧stream分配UUID，v2 stream仍沿默认值；在[Harness](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_agent_task_dispatch.py)根部同步隔离v2 stream，不在生产队列堆特判。首次失败在任务执行前拒绝，Redis走既有错误转交路径；未删除共享流／消息。只读检查该首次测试消费组ordinary-asset-gap为1个consumer、pending=0、entries-read=1；没有擅自清理该共享流上的历史或转交记录。后续新ACK测试显式断言stream属于fixture UUID前缀，随fixture清理自身资源。
+- `target-isolated-final`：**53 passed，286.49秒，exit0，会话38715**，最终目标组包含新封存合同28项、原只读合同18项、真实官方子代理强杀后完整封存／收尾1项、普通工具独立进程6组合。正例含无工具、业务工具、非空api-tester验证、工具失败、大输出、预算、规划、历史及原producer本身为图前message_recover；对原消息、原投影身份／时间、Verification和所有终态task保持全字段比较。
+- `consumers-final`：**1 failed，412 passed，498.92秒，exit1，会话65759**。真实跨层回归发现[test_agent_v2_worker_contract](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_agent_v2_worker_contract.py)中的_Tasks测试替身未同步新增native_reader关键字参数，TypeError发生在既有执行后的恢复入口；生产TaskStore签名已经同步。没有为兼容陈旧替身在生产Dispatcher增加fallback。先补正常执行后／终态投递两入口与有／无reader的4项传递合同，`consumer-contract-red` **1 failed，5.30秒，exit1**，确认同一签名失败；再同步替身并记录reader身份，`consumer-contract-green`完整文件 **67 passed，14.34秒，exit0，会话91883**。修正后的完整26文件回归见下，不用这67项替代。
+- 静态复核脚本的首轮AST比较误把保留在wrapper的事务初始化算入提取体、首轮历史前缀比较误把HEAD的LF与工作区CRLF当成内容变更；均为检查器边界错误，不是生产红测。调整比较边界后确认核验语句逐句保留、初始化仍在wrapper、§1–77归一化内容完全一致，Git文档diff为仅追加；没有因此修改生产逻辑或历史章节。
+
+### 最终回归状态与证据范围
+
+固定 `.venv-framework-v2/Scripts/python.exe`，工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。所有pytest完整stdout＋stderr经 `2>&1 | Tee-Object`保存，并返回原 `$LASTEXITCODE`。本轮启动的pytest均已取回真实终态，没有遗留运行中的测试；以下分别报告最终组与中间组，不累计重叠范围：
+
+- 消息准入／部分投影旧组：`admission-final`，**117 passed，348.44秒，exit0，会话64756**；该组早于Harness的v2 stream隔离修正，最终消费方组已再次包含其全部五个文件，不用较早结果代表修改后的fixture验收。
+- 完整消费方26文件：旧组65759的真实失败与修复见上，修正后`consumers-isolated-final` **667 passed，5 skipped，1008.85秒，exit0，会话41993**；原24文件另加framework_orchestrating_recovery与framework_orchestrated_message_recovery，专门复验共用Turn检查在图前恢复中的既有语义。
+- `approval-final`：**207 passed，1208.02秒，exit0，会话51987**；启动早于Harness隔离修正，只作中间证据。新fixture复验审批六文件`approval-isolated-final` **207 passed，1246.28秒，exit0，会话59215**，无skip，才是修正隔离后的审批验收。
+- 完整投影八文件：`projection-final` **211 passed，770.24秒，exit0，会话72182**，无skip；正式结果／应用／最终收尾／部分投影／观察／终态空窗／snapshot／事件投影均实际回归。
+
+最终组的pytest选择命令如下，各组分别保存到上述前缀、组名与日期的唯一日志，不覆盖旧证据，也不累计重叠组：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_message_asset_gap_recovery.py tests/test_framework_message_result_reconstruction.py tests/test_framework_terminal_gap.py::test_official_subagent_original_callbacks_and_stages_survive_asset_gap_kill tests/test_framework_tool_projection.py::test_independent_process_kill_retains_original_tool_material_without_runtime_result -q -x -rs --tb=short
+# target-isolated-final：53 passed，286.49秒，exit0，会话38715。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+# approval-isolated-final：207 passed，1246.28秒，exit0，会话59215。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_terminal_gap.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# projection-final：211 passed，770.24秒，exit0，会话72182。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_framework_model_budget_projection.py tests/test_framework_model_policy.py tests/test_framework_tool_bridge.py tests/test_framework_message_stages.py tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py tests/test_runtime_import_isolation.py tests/test_runtime_input_paths.py tests/test_framework_task_control.py tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_framework_message_recovery.py tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_orchestrating_recovery.py tests/test_framework_orchestrated_message_recovery.py -q -x -rs --tb=short
+# consumers-isolated-final：667 passed，5 skipped，1008.85秒，exit0，会话41993。
+```
+
+5项skip均为test_runtime_input_paths.py:48两项、:172两项、:189一项，原因为requires isolated real PostgreSQL/MySQL/RustFS；本轮没有为此启停或修改共享基础设施，skip不计通过。目标组53项、审批207项、投影211项均无skip。
+
+新增[封存合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_message_asset_gap_recovery.py)同时验证读后event／preparation／Job／producer／owner／租约／取消／后续Turn漂移、固定准备缺失、同事务回滚、并发与迟到读取、事务外原生I/O的独立锁探针及真实Redis ACK／重复投递。既有[部分投影进程helper](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_partial_projection_recovery.py)扩展可选故障点与source-only依赖，默认路径保留；[工具强杀合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_tool_projection.py)和[子代理合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_terminal_gap.py)实际完成资产前崩溃到原应用收尾。Redis oracle只供断言，不作为reader输入；子代理3个本地HTTP模型请求、原预算与工具效果均不增加。
+
+证据等级仍为E1／E2子集：真实官方框架、PG／Redis、独立进程及本地HTTP合成模型；业务工具与普通工具模型为受控替身，本地对象后端不是RustFS。E3真实供应商／RustFS／领域Runner、E4部署／双制品／灰度回滚／备份恢复、全量、前端、wheel及官方saver conformance未执行。ruff／mypy未安装，未擅自安装，不声称lint或typecheck通过。
+
+### 提交边界与剩余出口
+
+本步仅5个生产文件、7个测试文件、`.gitignore`新测试例外及本节，共14文件；原v3草稿、测试日志、本地数据均不提交。根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均exit0；最终提交前再次核对完整diff、跨层引用、敏感数据与14文件暂存范围，本节仅追加／唯一标题／围栏／绝对本地链接检查通过，原v3的SHA256保持37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F。
+
+提交名 `【feat】原子封存普通消息原结果并发布仅收尾后继`；本节与代码／测试同一提交，具体ID以Git历史和交付输出为准，不推送、不建PR。
+
+不改生产开关／公开路由，不升级依赖，不启停既有Docker／数据库基础设施，不新增付费调用；本地HTTP合成服务只由测试fixture管理。当前接入仅覆盖具原固定准备、完整事件封口、原生终态和结算事实的execution_owner_expired普通消息。图返回到事件封口前的空窗、其他故障状态及全部材料组合仍需继续实施；A2-2尚未整体完成，A2-3、A3及B/C/D/E/F也未完成，完整目标保持active，不把当前封存子步当作全系统完成。

@@ -54,65 +54,70 @@ def _originals(tasks, binding, task_id):
     settings = tasks._settings
     with postgres_connect(settings) as connection, connection.cursor() as cur:
         configure_runtime_owner_transaction(cur, settings)
-        cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE", (binding.session_id,))
-        session = cur.fetchone()
-        cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))
-        task = cur.fetchone()
-        _require(session is not None and task is not None and task["operation"] in MESSAGE_EXECUTIONS
-            and task["session_id"] == binding.session_id and task["turn_id"] == binding.turn_id
-            and task["runtime_binding"] == binding.model_dump(mode="json") and task["project_id"] == session["project_id"],
-            "Message result has no matching original producer")
-        cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE", (binding.binding_id,))
-        row = cur.fetchone()
-        _require(row is not None, "Message result original stage is missing")
-        stage = validate_message_stage(row["record"])
-        manifest = stage.source_manifest or {}
-        _require(stage.phase == "runtime_submitted" and RESULT_KEY not in manifest and COMMIT_KEY not in manifest
-            and stage.current_task_id == task_id, "Message result reader requires its original unprojected asset gap")
-        original = parse_graph_input_asset(manifest.get("graph_input_asset"))
-        _require(isinstance(original, FrameworkPreparedGraphInputAsset)
-            and original.runtime_preparation.identity.binding == binding,
-            "Message result original application preparation is missing or foreign")
-        initial = original.runtime_preparation.initial_state
-        _require(not initial["tool_results"] and not initial["pending_approvals"],
-            "Message result cannot replace an approval invocation preparation")
-        cur.execute(f"SELECT payload FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
-            (binding.session_id, completion_event_id(binding)))
-        declaration = cur.fetchone()
-        _require(declaration is not None, "Message result original event completion is missing")
-        material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
-        _require((material.task_id, material.attempt_id, material.owner_epoch)
-            == (task_id, task["attempt_id"], stage.owner_epoch) and stage.owner_attempt_id == task["attempt_id"],
-            "Message result event completion belongs to another original producer")
-        read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
-        _require(read.event_log[:len(initial["event_log"])] == initial["event_log"] and material.returned_event_offset == 0,
-            "Message result original preparation differs from its invocation event boundary")
-        ledger = PostgresFrameworkModelCalls(settings)
-        ledger._require_binding(cur, binding)
-        budget = ledger._snapshot(cur, binding.binding_id)
-        cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (stage.task_id,))
-        root = cur.fetchone()
-        _same_input(stage, root, task, binding)
-        _require(tasks._v2_input_hash(root["input_payload"], binding, budget.policy) == stage.input_sha256,
-            "Message result original input or budget changed")
-        original_budget = read.event_log[-1]["payload"].get("root_model_budget")
-        _require(read_model_budget_material(binding, original_budget) == budget if original_budget is not None else not budget.calls,
-            "Message result original root model budget differs from its ledger or is missing")
-        jobs = []
-        if _exists(cur, settings.database.postgres_tool_job_table):
-            cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s AND turn_id=%s ORDER BY id",
-                (binding.session_id, binding.turn_id))
-            jobs = [_job_from_row(row) for row in cur.fetchall()]
-        else:
-            # Same optional-store contract as _tool_hash. Native business tool
-            # material still requires a matching settled Job below, never []
-            # as permission to omit an execution that actually happened.
-            logger.debug("framework_message_original_tool_store_absent", extra={"binding_id": binding.binding_id,
-                "task_id": task_id})
-        source = RuntimeCheckpointSource(binding=binding, task_id=task_id, attempt_id=task["attempt_id"],
-            owner_epoch=material.owner_epoch, worker_id=material.worker_id)
-        return (original, source, read, jobs, _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
+        return read_message_originals(cur, tasks, binding, task_id)
 
+
+def read_message_originals(cur, tasks, binding, task_id):
+    """Share exact material verification with the separate admission transaction."""
+    settings = tasks._settings
+    cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE", (binding.session_id,))
+    session = cur.fetchone()
+    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))
+    task = cur.fetchone()
+    _require(session is not None and task is not None and task["operation"] in MESSAGE_EXECUTIONS
+        and task["session_id"] == binding.session_id and task["turn_id"] == binding.turn_id
+        and task["runtime_binding"] == binding.model_dump(mode="json") and task["project_id"] == session["project_id"],
+        "Message result has no matching original producer")
+    cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE", (binding.binding_id,))
+    row = cur.fetchone()
+    _require(row is not None, "Message result original stage is missing")
+    stage = validate_message_stage(row["record"])
+    manifest = stage.source_manifest or {}
+    _require(stage.phase == "runtime_submitted" and RESULT_KEY not in manifest and COMMIT_KEY not in manifest
+        and stage.current_task_id == task_id, "Message result reader requires its original unprojected asset gap")
+    original = parse_graph_input_asset(manifest.get("graph_input_asset"))
+    _require(isinstance(original, FrameworkPreparedGraphInputAsset)
+        and original.runtime_preparation.identity.binding == binding,
+        "Message result original application preparation is missing or foreign")
+    initial = original.runtime_preparation.initial_state
+    _require(not initial["tool_results"] and not initial["pending_approvals"],
+        "Message result cannot replace an approval invocation preparation")
+    cur.execute(f"SELECT payload FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
+        (binding.session_id, completion_event_id(binding)))
+    declaration = cur.fetchone()
+    _require(declaration is not None, "Message result original event completion is missing")
+    material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
+    _require((material.task_id, material.attempt_id, material.owner_epoch)
+        == (task_id, task["attempt_id"], stage.owner_epoch) and stage.owner_attempt_id == task["attempt_id"],
+        "Message result event completion belongs to another original producer")
+    read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
+    _require(read.event_log[:len(initial["event_log"])] == initial["event_log"] and material.returned_event_offset == 0,
+        "Message result original preparation differs from its invocation event boundary")
+    ledger = PostgresFrameworkModelCalls(settings)
+    ledger._require_binding(cur, binding)
+    budget = ledger._snapshot(cur, binding.binding_id)
+    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (stage.task_id,))
+    root = cur.fetchone()
+    _same_input(stage, root, task, binding)
+    _require(tasks._v2_input_hash(root["input_payload"], binding, budget.policy) == stage.input_sha256,
+        "Message result original input or budget changed")
+    original_budget = read.event_log[-1]["payload"].get("root_model_budget")
+    _require(read_model_budget_material(binding, original_budget) == budget if original_budget is not None else not budget.calls,
+        "Message result original root model budget differs from its ledger or is missing")
+    jobs = []
+    if _exists(cur, settings.database.postgres_tool_job_table):
+        cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s AND turn_id=%s ORDER BY id",
+            (binding.session_id, binding.turn_id))
+        jobs = [_job_from_row(row) for row in cur.fetchall()]
+    else:
+        # Same optional-store contract as _tool_hash. Native business tool
+        # material still requires a matching settled Job below, never []
+        # as permission to omit an execution that actually happened.
+        logger.debug("framework_message_original_tool_store_absent", extra={"binding_id": binding.binding_id,
+            "task_id": task_id})
+    source = RuntimeCheckpointSource(binding=binding, task_id=task_id, attempt_id=task["attempt_id"],
+        owner_epoch=material.owner_epoch, worker_id=material.worker_id)
+    return (original, source, read, jobs, _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
 
 def _tool_materials(original, binding, messages, jobs):
     # Original application ordinal is completion order, not native task-path

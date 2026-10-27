@@ -58,6 +58,7 @@ class _Tasks:
     def __init__(self, stored):
         self.stored = stored
         self.claimed = []
+        self.message_recoveries = []
 
     async def get(self, task_id):
         assert task_id == self.stored.id
@@ -73,8 +74,9 @@ class _Tasks:
         self.claimed.append(worker_id)
         return self.stored
 
-    async def ensure_framework_message_recovery(self, task_id):
+    async def ensure_framework_message_recovery(self, task_id, *, native_reader=None):
         assert task_id == self.stored.id
+        self.message_recoveries.append((task_id, native_reader))
         return None
 
     async def ensure_framework_reconciliation(self, task_id):
@@ -136,6 +138,30 @@ async def test_v2_dispatcher_requires_persisted_binding_and_executes_once():
 
     assert tasks.claimed == ["v2-worker"]
     assert executions == [("task-1", runtime_binding)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["claimed", "recovery_required"])
+@pytest.mark.parametrize("native_reader", [None, object()])
+async def test_v2_dispatcher_forwards_native_reader_at_existing_recovery_entries(status, native_reader):
+    selected = binding()
+    task = stored_task(selected)
+    task.status = status
+    tasks = _Tasks(task)
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None,
+        framework_capabilities=FrameworkWorkerCapabilities("a" * 64, True),
+        framework_native_reader=native_reader)
+    executions = []
+
+    async def execute(received):
+        executions.append(received.id)
+
+    dispatcher._execute = execute
+    delivery = QueuedTask("message-1", command(selected).model_dump(mode="json"))
+    await dispatcher.handle_v2(delivery, worker_id="v2-worker")
+
+    assert tasks.message_recoveries == [(task.id, native_reader)]
+    assert executions == ([task.id] if status == "claimed" else [])
 
 
 @pytest.mark.asyncio
