@@ -602,6 +602,176 @@ async def test_da_e3_official_sync_subagent_is_read_only_and_emits_typed_events(
     )
 
 
+def subagent_audit_fixture(tmp_path, on_event, *, before_model=None, delegations=1):
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.outputs import ChatGeneration, ChatResult
+
+    calls = []
+
+    class Model(BaseChatModel):
+        @property
+        def _llm_type(self):
+            return "subagent-audit-barrier-fixture"
+
+        def bind_tools(self, tools, **kwargs):
+            return self
+
+        def _generate(self, *args, **kwargs):
+            raise AssertionError("Fixture must use the asynchronous SDK model path")
+
+        async def _agenerate(self, messages, **kwargs):
+            calls.append(list(messages))
+            number = len(calls)
+            if before_model is not None:
+                await before_model(number)
+            reply = (AIMessage(content="", tool_calls=[{"name": "task", "args": {
+                "description": "Inspect the bounded fixture", "subagent_type": "code-review-researcher"},
+                "id": "audit-barrier-task-" + str(index), "type": "tool_call"} for index in range(delegations)]) if number == 1
+                else AIMessage(content="child evidence" if number <= delegations + 1 else "parent answer"))
+            return ChatResult(generations=[ChatGeneration(message=reply)])
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda key: _async_value(Model()))
+    request = DeepAgentRuntimeRequest(
+        session_id="audit-session", turn_id="audit-turn", trace_id="audit-trace", model_key="fixture",
+        system_prompt="Delegate one read-only task", messages=[{"role": "user", "content": "inspect"}],
+        context={"project_root": str(tmp_path)}, read_only_filesystem_enabled=True,
+        cognitive_subagents_enabled=True, max_subagent_calls_per_turn=delegations, on_subagent_event=on_event)
+    return adapter, request, calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_event", ["started", "completed"])
+async def test_subagent_audit_ack_blocks_the_sdk_before_the_next_model(tmp_path, blocked_event):
+    callback_entered, release_callback = asyncio.Event(), asyncio.Event()
+    next_model_entered, release_model = asyncio.Event(), asyncio.Event()
+    observed = []
+    next_call = 2 if blocked_event == "started" else 3
+
+    async def before_model(number):
+        if number == next_call:
+            next_model_entered.set()
+            await release_model.wait()
+
+    async def persist(item):
+        if item["type"] == blocked_event:
+            callback_entered.set()
+            await release_callback.wait()
+        observed.append(item)
+
+    adapter, request, calls = subagent_audit_fixture(tmp_path, persist, before_model=before_model)
+    running = asyncio.create_task(adapter.execute(request))
+    try:
+        await asyncio.wait_for(callback_entered.wait(), 10)
+        try:
+            await asyncio.wait_for(next_model_entered.wait(), 1)
+            advanced_without_ack = True
+        except TimeoutError:
+            advanced_without_ack = False
+        assert len(calls) == next_call - 1, "SDK advanced while its original audit ACK was still blocked"
+        assert not advanced_without_ack
+    finally:
+        release_callback.set()
+        release_model.set()
+        result = await asyncio.wait_for(running, 10)
+    assert len(calls) == 3 and result.output_text == "parent answer"
+    assert [item["type"] for item in observed] == ["started", "completed"]
+    assert result.subagent_events == observed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failed_event", ["started", "completed"])
+@pytest.mark.parametrize("error_type", ["owner", "io"])
+async def test_official_subagent_audit_failure_stops_execution_and_preserves_error(tmp_path, failed_event, error_type):
+    from src.application.deep_agents.result_projection import DeepAgentRuntimeError
+    from src.runtime.store import ContinuationLeaseLostError
+
+    error = (ContinuationLeaseLostError("injected subagent audit lost owner") if error_type == "owner"
+        else ConnectionError("injected subagent audit database unavailable"))
+
+    async def persist(item):
+        if item["type"] == failed_event:
+            raise error
+
+    adapter, request, calls = subagent_audit_fixture(tmp_path, persist)
+    if error_type == "owner":
+        with pytest.raises(ContinuationLeaseLostError) as caught:
+            await adapter.execute(request)
+        assert caught.value is error
+    else:
+        with pytest.raises(DeepAgentRuntimeError, match="ConnectionError") as caught:
+            await adapter.execute(request)
+        assert caught.value.__cause__ is error
+    assert len(calls) == (1 if failed_event == "started" else 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("delegations", [1, 2])
+async def test_execution_side_audit_keeps_original_sdk_hierarchy_once(tmp_path, monkeypatch, delegations):
+    import deepagents
+
+    create = deepagents.create_deep_agent
+    raw, observed = [], []
+
+    def factory(**kwargs):
+        graph = create(**kwargs)
+        stream = graph.astream_events
+
+        async def observe(*args, **kwargs):
+            async for event in stream(*args, **kwargs):
+                if event.get("name") == "task" and event.get("event") in {"on_tool_start", "on_tool_end"}:
+                    raw.append(event)
+                yield event
+
+        graph.astream_events = observe
+        return graph
+
+    monkeypatch.setattr(deepagents, "create_deep_agent", factory)
+
+    async def persist(item):
+        await asyncio.sleep(0)
+        observed.append(dict(item))
+
+    adapter, request, calls = subagent_audit_fixture(tmp_path, persist, delegations=delegations)
+    result = await adapter.execute(request)
+    by_run = {}
+    expected = []
+    for event in raw:
+        run_id = str(event["run_id"])
+        if event["event"] == "on_tool_start":
+            by_run[run_id] = event["data"]["input"]["subagent_type"]
+        expected.append({"type": "started" if event["event"] == "on_tool_start" else "completed",
+            "name": by_run[run_id], "run_id": run_id, "parent_run_id": event["parent_ids"][-1]})
+    assert len(raw) == len(observed) == delegations * 2
+    assert len(by_run) == delegations and len(calls) == delegations + 2
+    assert observed == result.subagent_events == expected
+    assert result.output_text == "parent answer"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_event", ["started", "completed"])
+async def test_cancelling_blocked_audit_closes_sdk_before_releasing_execution(tmp_path, blocked_event):
+    entered, closed = asyncio.Event(), asyncio.Event()
+
+    async def persist(item):
+        if item["type"] == blocked_event:
+            try:
+                entered.set()
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+
+    adapter, request, calls = subagent_audit_fixture(tmp_path, persist)
+    running = asyncio.create_task(adapter.execute(request))
+    try:
+        await asyncio.wait_for(entered.wait(), 10)
+    finally:
+        running.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(running, 10)
+    assert closed.is_set()
+    assert len(calls) == (1 if blocked_event == "started" else 2)
+
+
 @pytest.mark.asyncio
 async def test_da_e4_business_tool_callback_is_wrapped_and_approval_stops_agent(tmp_path: Path):
     pytest.importorskip("deepagents")
@@ -1711,8 +1881,12 @@ async def test_failed_subagent_event_write_closes_stream_and_preserves_lost_owne
     class Agent:
         async def astream_events(self, *args, **kwargs):
             try:
-                yield {"event": "on_tool_start", "name": "task", "run_id": "child",
-                    "data": {"input": {"subagent_type": "code-review-researcher"}}, "parent_ids": ["parent"]}
+                from langchain_core.runnables.config import get_async_callback_manager_for_config
+
+                callbacks = get_async_callback_manager_for_config(kwargs["config"])
+                await callbacks.on_tool_start({"name": "task"}, "inspect",
+                    inputs={"subagent_type": "code-review-researcher"})
+                yield {"event": "unexpected_after_failed_callback"}
                 raise AssertionError("Failed durable callback must stop consuming the graph")
             finally:
                 closed.set()

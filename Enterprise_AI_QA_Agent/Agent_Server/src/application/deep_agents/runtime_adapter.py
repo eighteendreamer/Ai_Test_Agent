@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from contextlib import aclosing, asynccontextmanager, nullcontext
 import inspect
+import logging
 from pathlib import Path
 import shutil
 import tempfile
@@ -50,6 +51,7 @@ class DeepAgentRuntimeRequest:
 ModelResolver = Callable[[str], Awaitable[Any]]
 AgentFactory = Callable[..., Any]
 DEEP_AGENT_RUN_NAME = "enterprise_ai_qa_agent.deep_agent_turn"
+logger = logging.getLogger(__name__)
 
 
 class DeepAgentRuntimeAdapter:
@@ -591,14 +593,62 @@ async def _invoke_with_subagent_events(
     on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None,
     persistence_options: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
-    """Project LangGraph v2 events into a stable, framework-neutral subset."""
+    """ACK audit callbacks inside SDK execution; use v2 only for graph output.
+
+    The event stream is a queued observer, not execution backpressure. The
+    pinned core AsyncCallbackManager and BaseTool.arun await these handlers
+    before starting a task or returning its result to the parent graph.
+    """
+    from langchain_core.callbacks import AsyncCallbackHandler
+    from langchain_core.runnables.config import merge_configs
+
     result: dict[str, Any] | None = None
     projected: list[dict[str, Any]] = []
     active_runs: dict[str, str] = {}
     interrupts: dict[str, Any] = {}
+    context = invoke_config.get("metadata") or {}
+    audit_scope = {"session_id": context.get("session_id"), "turn_id": context.get("turn_id"),
+        "event_source": "sdk_execution_callbacks"}
+    logger.info("deep_agent_subagent_audit_bound", extra={**audit_scope,
+        "ack_required": on_event is not None, "durability": persistence_options.get("durability", "none")})
+
+    class SubagentAuditCallbacks(AsyncCallbackHandler):
+        raise_error = True
+        run_inline = True
+
+        async def emit(self, event_type, run_id, parent_run_id):
+            item = {"type": event_type, "name": active_runs[str(run_id)], "run_id": str(run_id),
+                "parent_run_id": str(parent_run_id or "")}
+            try:
+                if on_event is not None:
+                    pending = on_event(item)
+                    if inspect.isawaitable(pending):
+                        await pending
+            except Exception as exc:
+                logger.warning("deep_agent_subagent_audit_rejected", extra={**audit_scope,
+                    "event_type": event_type, "run_id": item["run_id"], "parent_run_id": item["parent_run_id"],
+                    "error_type": type(exc).__name__})
+                raise
+            projected.append(item)
+            logger.debug("deep_agent_subagent_audit_acked", extra={**audit_scope,
+                "event_type": event_type, "run_id": item["run_id"], "parent_run_id": item["parent_run_id"]})
+
+        async def on_tool_start(self, serialized, input_str, *, run_id, parent_run_id=None, inputs=None, **kwargs):
+            if (kwargs.get("name") or (serialized or {}).get("name")) != "task":
+                return
+            active_runs[str(run_id)] = (str(inputs.get("subagent_type") or "").strip()
+                if isinstance(inputs, dict) else "")
+            await self.emit("started", run_id, parent_run_id)
+
+        async def on_tool_end(self, output, *, run_id, parent_run_id=None, **kwargs):
+            if str(run_id) in active_runs:
+                await self.emit("completed", run_id, parent_run_id)
+                active_runs.pop(str(run_id))
+
+    config = merge_configs(invoke_config, {"callbacks": [SubagentAuditCallbacks()]})
     async with aclosing(agent.astream_events(
         invoke_input,
-        config=invoke_config,
+        config=config,
         version="v2",
         stream_mode=["updates", "values"],
         **persistence_options,
@@ -606,39 +656,7 @@ async def _invoke_with_subagent_events(
         async for event in events:
             event_type = str(event.get("event") or "")
             event_name = str(event.get("name") or "").strip()
-            run_id = str(event.get("run_id") or "").strip()
             data = event.get("data") or {}
-            tool_input = data.get("input") or {}
-            if event_name == "task" and event_type == "on_tool_start" and run_id:
-                agent_name = (
-                    str(tool_input.get("subagent_type") or "").strip()
-                    if isinstance(tool_input, dict)
-                    else ""
-                )
-                active_runs[run_id] = agent_name
-                item = {
-                    "type": "started",
-                    "name": agent_name,
-                    "run_id": run_id,
-                    "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
-                }
-                projected.append(item)
-                if on_event is not None:
-                    pending = on_event(item)
-                    if inspect.isawaitable(pending):
-                        await pending
-            elif event_name == "task" and event_type == "on_tool_end" and run_id in active_runs:
-                item = {
-                    "type": "completed",
-                    "name": active_runs.pop(run_id),
-                    "run_id": run_id,
-                    "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
-                }
-                projected.append(item)
-                if on_event is not None:
-                    pending = on_event(item)
-                    if inspect.isawaitable(pending):
-                        await pending
             if event_type == "on_chain_stream" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
                 chunk = data.get("chunk")
                 if isinstance(chunk, tuple) and len(chunk) == 2:

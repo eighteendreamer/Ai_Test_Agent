@@ -317,8 +317,12 @@ async def test_killed_worker_after_semantic_completion_recovers_frozen_input_thr
             assert await h.store.renew_turn_execution(h.session_id, original.lease_token, 0)
             # Use the actual TTL: cold SDK setup can block this fixture's event
             # loop longer than a one-second slot, before renewals can run.
-            await asyncio.sleep(10.1)
-            await h.resources.reap_expired()
+            deadline = asyncio.get_running_loop().time() + 30
+            while await h.resources.list_active() and asyncio.get_running_loop().time() < deadline:
+                await h.resources.reap_expired()
+                if await h.resources.list_active():
+                    await asyncio.sleep(.25)
+            assert not await h.resources.list_active(), "Killed worker resource lease did not expire"
             h.settings.orchestration.resource_default_lease_seconds = 300
 
             async def never_reorchestrate(*args, **kwargs):

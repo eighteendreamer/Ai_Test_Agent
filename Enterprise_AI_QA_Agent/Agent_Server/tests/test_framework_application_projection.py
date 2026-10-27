@@ -30,7 +30,8 @@ from tests.test_framework_message_stages import run, selected, stage
 from tests.test_framework_model_calls import intent, usage
 
 
-def worker_waiting_after_application_commit(settings_data, config_data, prefix, gate, window="after_commit", evidence_root=None):
+def worker_waiting_after_application_commit(settings_data, config_data, prefix, gate, window="after_commit", evidence_root=None,
+    audit_event=None):
     """Real SDK/Deep Agents Worker paused at an explicit application boundary."""
     from redis.asyncio import Redis
     from src.core.config import Settings
@@ -80,6 +81,18 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             deep_agent_read_only_filesystem_enabled=window in {"after_graph_events", "after_subagent_event_completion"},
             deep_agent_cognitive_subagents_enabled=window in {"after_graph_events", "after_subagent_event_completion"})
         _, tasks, sessions, _ = build_services(settings, runtime, resources)
+        if audit_event is not None:
+            from src.runtime.session_event_sink import SessionEventSink
+
+            persist = SessionEventSink.persist
+
+            async def pause_audit(sink, event):
+                if event.type == "graph.subagent_" + audit_event:
+                    await redis.rpush(gate + ":audit", event.model_dump_json())
+                    assert await redis.blpop(gate + ":audit-release", timeout=60), "Audit ACK gate was not released"
+                await persist(sink, event)
+
+            SessionEventSink.persist = pause_audit
         if window == "after_graph_events":
             sessions._event_buffer_capacity = 1
 

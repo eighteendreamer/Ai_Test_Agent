@@ -3174,3 +3174,52 @@ git diff --check
 提交名 `【feat】原子封存普通消息原结果并发布仅收尾后继`；本节与代码／测试同一提交，具体ID以Git历史和交付输出为准，不推送、不建PR。
 
 不改生产开关／公开路由，不升级依赖，不启停既有Docker／数据库基础设施，不新增付费调用；本地HTTP合成服务只由测试fixture管理。当前接入仅覆盖具原固定准备、完整事件封口、原生终态和结算事实的execution_owner_expired普通消息。图返回到事件封口前的空窗、其他故障状态及全部材料组合仍需继续实施；A2-2尚未整体完成，A2-3、A3及B/C/D/E/F也未完成，完整目标保持active，不把当前封存子步当作全系统完成。
+
+## 79. A2-2：子代理审计ACK进入SDK执行侧，阻止原生图越过未持久回调（2026-10-28）
+
+基线 `b5827a088`，承接§78。上一goal turn为实际进展（普通消息封存／仅收尾后继的代码、回归及提交），不是无进展或阻塞。本轮不重新实现§54的P0，不覆盖原v3草稿，不新建或缩小完整目标。开始核对图返回到事件封口前的空窗时，先发现更早的执行／审计顺序错位；本步修复该前置条件，不把它当作全部空窗已恢复。
+
+### 根因、依据 → 做法与权限边界
+
+旧的_invoke_with_subagent_events在astream_events消费端await on_subagent_event；这只暂停观察者，SDK生产者仍可运行子代理、继续父模型乃至写完checkpoint。因而§56的单事件ACK虽真实存在，不能证明图执行会等待它，不能据此为后续“图结束前准备完成材料”建立可靠前缀。这是观察通道与执行通道的架构错位，不是再加重试或缩短封口间隔能解决的。
+
+| v4条款／查证依据 | 本步采用方式／代码与测试 | 不授予的权限 |
+| --- | --- | --- |
+| §9.2必要callback产生时可靠保存；固定langchain-core 1.6.10的tracers/event_stream.py::_astream_events_implementation_v2另起consume_astream任务，consumer不能施加执行屏障 | 真实官方框架红测分别阻塞started／completed审计，原实现仍进入第2／3次模型，确认不是纸面推断 | 不根据“观察者还在等待”认定图未推进，更不把缺事件当可重执证明 |
+| 固定core callbacks/base.py::AsyncCallbackHandler、callbacks/manager.py::ahandle_event及tools/base.py::BaseTool.arun在工具启动／返回处实际await | [适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/runtime_adapter.py)通过SDK处理器接收task生命周期，run_inline=True、raise_error=True，等待既有on_subagent_event／SessionEventSink ACK后才记录投影；移除消费端的第二份子代理投影 | 不新增图节点、middleware状态、恢复分支、调度器、DDL或持久格式；不改原checkpoint拓扑，不令callback本身成为终态／封存授权 |
+| 固定core runnables/config.py::merge_configs的callbacks列表／manager合并，以及原astream_events输出／interrupt协议 | 使用官方合并保留配置；v2流仍只解析原values／updates／root end及interrupt，不再负责业务callback ACK；单个和并行两个子代理的type/name/run_id/parent_run_id与真实SDK原事件逐项相同且仅一次 | 不重新分配原生run身份，不从消息文字猜父子关系；同步／异步on_event既有形式均保留 |
+| §8.1／H05/H07超时、权限和轨迹；既有owner-bound事件写入、异常及关闭机制 | [适配器合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_deep_agent_runtime_adapter.py)验证ACK前不启动下一模型、失租／I/O异常保留原错误或既有cause、取消会关闭SDK及回调；新增bound／acked／rejected结构化日志，只记作用域、run身份、错误类型和durability | 不吞事件失败，不把普通I/O错改成成功或自动重跑；completed ACK失败前子代理已经发生的效果仍保留原事实，不能据此推断无副作用 |
+| 本地课程Agent轨迹与协议鲁棒性.html的结果＋轨迹／权限／超时方法；既有独立Worker强杀Harness | [真实Worker合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_terminal_gap.py)在写入started／completed之前阻塞：物理HTTP请求分别停在1／2，原根图仍有next/tasks；强杀、失租后不补造未写事件／封口／结果，不发布完成；原完整子代理封存／finalizer合同继续回归 | read-only native schema来源取原stage epoch与task attempt/worker，不从查询结果伪造RuntimeExecutionOwner；未完成图仍不得自动执行或制造完成 |
+
+本地Agent参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果／事件分层 → 保留本项目结果资产、原审计事件和执行权的区分；真正的ACK屏障依据是本项目SessionEventSink与固定官方SDK执行点，而非照搬其他SDK恢复规则。[进程helper](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_application_projection.py)仅增加可选audit_event故障点，默认路径不变，进程终止与UUID资源清理由原fixture负责。
+
+### TDD与实际中间结果
+
+日志位于项目 `.codex-logs/`，统一前缀 `framework-subagent-audit-barrier-`、日期2026-10-28；中间文件名即使带final也不代表最终源码验收：
+
+- `red`：**2 failed，4.72秒，exit1**。started ACK未完成已进入第2次模型，completed ACK未完成已进入第3次模型；均为真实官方Deep Agents＋受控异步模型，不是只验证调用顺序的替身图。
+- `first`：**1 failed，53 passed，7.14秒，exit1**。已有失败关闭合同的Fake Agent只发送stream观察事件，未模拟新的SDK执行回调；同步为调用官方get_async_callback_manager_for_config及on_tool_start，仍严格验证原失租异常对象和流关闭，不在生产保留第二套stream fallback。
+- `unit-final`：**75 passed，7.38秒，exit0**；增加原SDK层级与并行身份合同后，`unit-complete` **77 passed，7.38秒，exit0**。均为后续扩展前的中间证据。
+- `worker-first`：**1 failed，4 passed，52.85秒，exit1，会话3512**。新增测试误把PostgresAgentTaskStore.get返回的持久行当成claim时含runtime_owner的对象；改为使用原stage.owner_epoch与持久task attempt/worker构造只读source，不伪造执行token。原始拒绝与完整恢复断言均保留。
+- `target-final`：**162 passed，502.07秒，exit0，会话59415**；包含当时适配器77项、完整终态文件7项、普通消息封存28项及审批两组。该组启动早于最后的结构化日志与2项取消合同，不能冒称最终源码完整验收。
+- `unit-lifecycle-final`：**79 passed，8.05秒，exit0，会话51965**；覆盖本轮完整适配器文件，包括两阶段取消合同，生产源码已为最终版。
+
+### 最终回归状态、证据范围与待补出口
+
+固定 `.venv-framework-v2/Scripts/python.exe`，工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`；完整stdout＋stderr通过 `2>&1 | Tee-Object`保存到唯一日志，并返回原 `$LASTEXITCODE`。两组最终回归均已取回真实终态，日志不覆盖旧证据，各组不累计重叠结果：
+
+- `consumers-recheck`会话49530：**677 passed，5 skipped，1110.61秒，exit0**；覆盖26个消费方文件。5个skip为 `tests/test_runtime_input_paths.py:48` 两项、`:172` 两项、`:189` 一项，均需隔离的真实PostgreSQL／MySQL／RustFS，未启停共享基础设施。
+- `integration-recheck`会话67584：**321 passed，1422.69秒，exit0**；覆盖最终适配器、terminal_gap、普通消息封存及审批六文件。
+
+此前 `consumers-final` 会话75324在 **674 passed、5 skipped** 后暴露 `resource_type:agent` 失败；根因是强杀Worker测试的固定TTL在隔离制品冷启动期间竞态过期，不是生产资源互斥逻辑。Harness改为轮询当前测试自身UUID资源直到 `list_active()` 为空（30秒上限），不放宽生产租约或所有权检查；修正后的目标用例实际 **1 passed，24.51秒**，随后纳入上述 `consumers-recheck` 完整回归。
+
+证据等级仅E1／E2子集：官方框架／SDK、真实PG／Redis与独立进程；模型为受控本地模型或本地HTTP合成服务，不是真实供应商。对象后端仍是原测试替身，不是RustFS验收；没有领域Runner／生产目标验证。E3真实供应商／RustFS／领域Runner、E4部署／双制品／灰度回滚／备份恢复、全量、前端、wheel及官方saver conformance未执行。ruff／mypy未安装，未擅自安装，不声称lint或typecheck通过。
+
+本步实际提交1个生产文件、4个测试文件及本节，共6文件；原v3草稿、日志、本地数据均排除。没有依赖、公共DTO、原生schema、stage20／reader20或生产开关变化，没有启停既有基础设施或新增付费调用。提交前实际执行的最终检查命令：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
+```
+
+这一步只把必要子代理审计ACK前移到执行路径，尚未保存图后plan/completed事件的全部原身份、时间与完整边界。图返回到事件封口前的完整空窗仍需继续前移或确定性准备材料，再接入原件复核／窄权限封存；禁止仅凭本步可阻塞callback就推断所有事件齐备并重建结果。其他故障状态／材料组合、A2-3、A3及B/C/D/E/F未完成，完整goal保持active。

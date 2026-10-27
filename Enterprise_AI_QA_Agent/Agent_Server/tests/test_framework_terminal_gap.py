@@ -383,6 +383,89 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("blocked_event", ["started", "completed"])
+async def test_original_subagent_audit_ack_precedes_native_progress_and_survives_worker_kill(admission, tmp_path, blocked_event):
+    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.registry.skills import SkillRegistry
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+    from tests.test_framework_chat_models import _tool_reply
+
+    h = admission
+    h.settings.orchestration.resource_default_lease_seconds = 30
+    waiting = Redis.from_url(h.settings.database.redis_url, decode_responses=True, socket_timeout=90)
+    provider, process = DeepAgentCheckpointProvider(h.settings), None
+    reply = _tool_reply("openai_chat_completions")
+    reply["choices"][0]["message"]["tool_calls"][0]["function"] = {"name": "task", "arguments": json.dumps({
+        "description": "Inspect the controlled project", "subagent_type": "code-review-researcher"})}
+    try:
+        with _provider("openai_chat_completions", first_reply=reply) as (url, requests):
+            config = _config("openai_chat_completions", url)
+            h.binding = h.binding.model_copy(update={"model_config_fingerprint": model_config_fingerprint(config)})
+            h.command = make_command(h, h.binding)
+            h.payload = h.payload.model_copy(update={"model_key": config.key, "mode_key": "code_review",
+                "context": {**h.payload.context, "project_root": str(tmp_path)}})
+            h.budget = h.budget.model_copy(update={"model_config_fingerprints": {config.key: h.binding.model_config_fingerprint}})
+            task = await submit(h)
+            queue = RedisTaskQueue(h.settings.database.redis_url, stream=h.settings.orchestration.agent_task_v2_stream,
+                group="callback-ack-barrier", client=h.redis)
+            await queue.connect()
+            assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+            gate = h.prefix + ":callback-ack-barrier"
+            process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
+                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate,
+                    "after_subagent_event_completion", str(tmp_path), blocked_event))
+            process.start()
+            reached = await waiting.blpop(gate + ":audit", timeout=60)
+            assert reached is not None, f"worker exit code: {process.exitcode}"
+            blocked = json.loads(reached[1])
+            expected_calls = 1 if blocked_event == "started" else 2
+            try:
+                async with asyncio.timeout(1):
+                    while len(requests) == expected_calls:
+                        await asyncio.sleep(.02)
+            except TimeoutError:
+                pass
+            assert len(requests) == expected_calls, "Native execution passed an uncommitted original audit callback"
+            active, before = await h.tasks.get(task.id), await stage(h, task)
+            budget = await h.calls.snapshot(h.binding)
+            assert len(budget.calls) == expected_calls and all(call.phase == "completed" for call in budget.calls)
+            events = await h.store.list_events(h.session_id)
+            assert not any(event.id == blocked["id"] for event in events)
+            assert [event.type for event in events if event.type.startswith("graph.subagent_")] == (
+                [] if blocked_event == "started" else ["graph.subagent_started"])
+            source = RuntimeCheckpointSource(binding=h.binding, task_id=active.id, attempt_id=active.attempt_id,
+                owner_epoch=before.owner_epoch, worker_id=active.worker_id)
+            reader = DeepAgentRuntimeAdapter(model_resolver=None, skill_registry=SkillRegistry(), checkpointer_factory=provider.open)
+            async with reader.open_native_reader(before.source_manifest["graph_input_asset"], source=source) as (graph, saver):
+                original = await graph.aget_state({"configurable": {"thread_id": h.binding.thread_id,
+                    CONFIG_KEY_CHECKPOINTER: saver}})
+                assert original.next or original.tasks, "A graph cannot be terminal before its callback ACK"
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+            assert not process.is_alive() and process.exitcode != 0
+            assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
+            expired = await h.tasks.claim(task.id, worker_id="audit-barrier-expiry", expected_binding=h.binding)
+            assert expired.status == "recovery_required"
+            terminal = await h.tasks.get(task.id)
+            assert await h.tasks.ensure_framework_message_recovery(task.id, native_reader=reader.open_native_reader) is None
+            assert await h.tasks.get(task.id) == terminal
+            assert (await stage(h, task)).source_manifest == before.source_manifest
+            assert await h.calls.snapshot(h.binding) == budget and len(requests) == expected_calls
+            saved = await h.store.list_events(h.session_id)
+            assert not any(event.id == blocked["id"] or event.type in {"runtime.event_log_completed", "turn.completed"}
+                for event in saved)
+            assert await h.store.get_latest_snapshot(h.session_id) is None
+    finally:
+        if process is not None and process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+        await waiting.aclose()
+        await provider.close()
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP SCHEMA IF EXISTS {h.settings.deep_agents.checkpoint_schema} CASCADE")
+
+
+@pytest.mark.asyncio
 async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(admission, tmp_path):
     from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
     from src.schemas.framework_graph_input import parse_graph_input_asset
