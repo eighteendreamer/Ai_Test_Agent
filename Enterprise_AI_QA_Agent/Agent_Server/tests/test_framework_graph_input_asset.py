@@ -43,6 +43,48 @@ def test_prepared_graph_input_round_trip_and_nested_copy():
     assert copied.schema_version == 2
 
 
+@pytest.mark.parametrize("changed", [None, "approval", "decision", "mode", "epoch", "event", "bad_log", "bad_event", "bad_payload", "unknown", "digest"])
+def test_approval_graph_preparation_has_an_exact_invocation_boundary(changed):
+    from src.schemas.framework_approval import approval_value_hash
+    from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
+    from tests.test_runtime_binding_persistence import make_binding
+
+    raw = prepared_graph_input(make_binding("session-1", "turn-1"), "trace-1").model_dump(mode="json")
+    raw["runtime_preparation"]["initial_state"]["event_log"].append({"type": "turn.resumed", "payload": {
+        "approval_id": "approval-1", "decision_id": "decision-1", "continue_from_checkpoint": False}})
+    raw["asset_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "asset_sha256"})
+    value = dict(task_id="approval-task", attempt_id="attempt-1", owner_epoch=1,
+        approval_id="approval-1", decision_id="decision-1", continue_from_checkpoint=False, graph_input_asset=raw)
+    if changed in {"approval", "decision"}:
+        value[changed + "_id"] = "foreign"
+    elif changed == "mode":
+        value["continue_from_checkpoint"] = 0
+    elif changed == "epoch":
+        value["owner_epoch"] = True
+    elif changed == "unknown":
+        value["future"] = True
+    elif changed == "event":
+        raw["runtime_preparation"]["initial_state"]["event_log"][-1]["type"] = "turn.completed"
+        raw["asset_sha256"] = approval_value_hash({key: item for key, item in raw.items() if key != "asset_sha256"})
+    elif changed in {"bad_log", "bad_event", "bad_payload"}:
+        events = raw["runtime_preparation"]["initial_state"]["event_log"]
+        if changed == "bad_log":
+            raw["runtime_preparation"]["initial_state"]["event_log"] = "invalid"
+        elif changed == "bad_event":
+            events[-1] = "invalid"
+        else:
+            events[-1]["payload"] = "invalid"
+        raw["asset_sha256"] = approval_value_hash({key: item for key, item in raw.items() if key != "asset_sha256"})
+    elif changed == "digest":
+        raw["system_prompt"] = "mutated"
+    if changed is None:
+        parsed = FrameworkApprovalGraphInput.model_validate(value)
+        assert parsed.model_dump(mode="json") == value
+    else:
+        with pytest.raises(ValueError):
+            FrameworkApprovalGraphInput.model_validate(value)
+
+
 @pytest.mark.parametrize("flag,marker", [(True, 1), (4, 4), ("1", 1), (None, 1), (1, None), (1, True), (2, 1), (1, 2), (3, 2)])
 def test_graph_tool_material_format_cannot_drift_from_prepared_runtime(flag, marker):
     from src.schemas.framework_approval import approval_value_hash
@@ -175,7 +217,7 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
         assert saved.schema_version == asset.required_message_stage_version == expected_version
         FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(saved.schema_version)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(16)
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(17)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired

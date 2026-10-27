@@ -2583,3 +2583,59 @@ Runtime组5个skip为既有test_runtime_input_paths.py的独立真实PostgreSQL�
 三组均已从原会话取得终态exit0，并再次核对落盘日志，没有遗留运行中的pytest。项目根实际compileall／diff检查、§66唯一、历史仅追加、全文围栏及20处绝对本地链接检查已通过；固定环境ruff／mypy未安装，不安装新工具、不声称lint／typecheck通过。最高证据范围E2；全量、前端、E3真实供应商／RustFS／领域Runner及E4部署／备份恢复未验收。本轮没有依赖升级、付费请求、生产路由或服务启停。
 
 本轮代码／测试、测试文件忽略例外及本节归入同一中文提交，主题 `【feat】保存并复用原根模型预算材料`，具体ID以Git历史／交付输出为准。无资产自动恢复仍关闭；审批多次续跑身份与时间、完整A2-2、A2-3／A3／B/C/D/E/F仍未结清，整体goal保持active。
+
+## 67. A2-2：审批续跑前保存本次原应用准备材料与投影身份（2026-10-27）
+
+续接基线 `65c6a6d59`、承接§66。先核对工作区九个框架草稿文件、原红测日志及最新提交，再继续实现；上一轮仅调整提示词，不计开发进展。本步补齐审批调用的图前材料，不开放无资产自动恢复，不将本步当作完整A2-2或全系统完成。用户v3文档原15增2删保留，独立应用表单提交不属于本轮范围。
+
+### 有效红测、根因与依据
+
+- 原有效红测日志 `framework-approval-preparation-red-valid-2026-10-27.txt` 已实际读取：**1 failed，11.78秒**，完成两项审批后没有 `approval_graph_inputs`。首次Turn已有schema2的原应用准备，审批却重新随机分配assistant／snapshot身份，且没有保存本次initial_state；原生checkpoint不能补出这些图外事实。原日志位于项目根 `.codex-logs/`。
+- 新增事务反例先运行 `test_recording_requires_original_prepared_binding[missing_original]`：真实 **1 failed，11.26秒**，缺原prepared输入仍可写入审批材料。沿原stage检查完整原绑定和来源指纹，拒绝用新材料冒充旧Turn原件；没有放宽历史正常审批入口。日志 `.codex-logs/framework-approval-preparation-binding-red-2026-10-27.txt`。
+- 畸形边界反例真实 **1 failed，5.05秒**：字符串payload触发AttributeError，而非明确的材料校验错误。将本次调用边界的list／dict形状放到新schema校验；未知字段、模式与epoch类型、决定／审批不匹配仍明确拒绝。日志 `.codex-logs/framework-approval-preparation-shape-red-2026-10-27.txt`。
+- 项目已有 `FrameworkRuntimePreparation`、`FrameworkProjectionIdentity`、message-stage私有source、审批continuation事务与owner fence → 扩展原材料端口，不新增表、队列、恢复finalizer或公开API。原message-only结果资产写权不扩大给审批。
+- 固定安装源码 `langgraph==1.2.12` 的 `types.py` 中Command／interrupt，以及 `langchain==1.4.6` 的 `human_in_the_loop.py` 中per_call → 延续原逐项决定交付。官方[Interrupts](https://docs.langchain.com/oss/python/langgraph/interrupts)的同thread继续／节点重入约束、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)的图内checkpoint与图外数据职责 → 本步只冻结应用材料，不把材料当作决定已消费、工具成功或可自动恢复的证明。未采用在线文档的新流接口替换锁定SDK。
+- 本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py` 的RunResult／events事实分离，不提供本项目审批投影身份持久契约 → 只借鉴分层，不照搬其调度或请求预算。测试工程依本地Agent轨迹／协议鲁棒性、Agent测试专项课程，核对结果、状态、轨迹与效果次数，不只断言最终文本。
+
+### 实现与兼容性边界
+
+- [新材料schema](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_graph_input.py) `FrameworkApprovalGraphInput` 记录原task／attempt／epoch、approval／decision、Command或None继续方式，以及完整prepared graph input；校验initial_state最后的原turn.resumed边界。它是材料，不是执行／恢复授权。
+- [SessionService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/sessions/session_service.py)只在原Turn已保存schema2准备材料时分配本次身份；同task已有身份则读取原件。先确定身份，再构建stream handler，避免handler与最终assistant分属两个ID。历史未prepared路径不倒填原件、不额外传新参数；仍走原审批处理。
+- [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)在原turn.resumed事件之后，沿已有graph-input回调冻结本次初始应用状态、模型／工具输入及身份，再调用真实adapter。原returned_event_offset、逐项审批、根预算和唯一Session finalizer保持不变。
+- [审批continuation](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_continuation.py)复用 `_owned_plan_in_transaction` 核对当前owner／任务／决定／原生交付／ToolJob；锁原stage，核对完整prepared绑定和source指纹，再向私有 `source_manifest.approval_graph_inputs[task_id]` 追加。本task相同原件幂等，任何替换拒绝；写前再次复核owner，不修改原初task或其owner材料。成功／拒绝日志只含关联身份、摘要和错误类型，不输出Prompt或完整state。
+- [message-stage读取](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_stages.py)复用原capability查询，增加显式只读 `include_continuations=True`；默认get和 `_advance` 的message-only权限不变。审批材料仅允许在相应阶段、原prepared绑定及内容摘要一致时读取，不以可读材料授权结果资产写入。
+- 新增审批材料时stage升为 **16**；初始prepared Turn仍按原工具marker使用12–15，没有批量改写历史。worker读者上限同步16，reader15拒领16、reader16拒未来17，消息／审批继续／审批后继／对账均在claim前检查。graph-input自身仍schema2、工具marker仍3；没有DDL或依赖升级。部署写入stage16前仍须先部署兼容读者或隔离消费者，本地合同测试不冒充E4滚动部署通过。
+
+### Harness与逐项对应
+
+| v4阶段／条款／Harness | 本步代码与实际验证 | 剩余出口 |
+| --- | --- | --- |
+| A2-2，§7／§9.2，H02／H05 | [审批运行时矩阵](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_runtime.py)：prepared／历史×批准／拒绝×事件持久化开关，保留原B工具消息、原初prepared身份、本次assistant／snapshot身份及完整原生消息检查 | 不代表所有中断类型或审批结果资产已经接通 |
+| §8.3／§9.2，H05 | [新合同Harness](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_graph_input.py)：adapter调用前材料已持久化；审批最终收尾前注入故障，批准／混合拒绝均从原stage、已验证原生终态、事件封口、receipt／link／ToolJob材料重建完整RuntimeTurnResult，与正常结果精确相等 | 新增故障是同进程注入，不冒充审批材料的独立Worker强杀；不创建自动后继、不运行图／模型／工具／finalizer |
+| §8.1／§9.2，H05／H07／H11 | 同task原件幂等、替换拒绝；foreign owner／attempt／decision、有效但foreign原绑定、缺原prepared、来源指纹漂移、未知字段／摘要／边界类型负例；失租拒写；只读审批引用不获得message写权 | 完整多次接管和最终无资产恢复准入仍须联合验收 |
+| §14.1，H11／H12 | [graph-input合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_graph_input_asset.py)及[Worker合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_agent_v2_worker_contract.py)：旧格式继续可读，16不能降标15，未知17在claim前拒领 | 实际新旧制品、官方saver conformance及备份恢复仍未验收 |
+
+只读重建的比较oracle仅用于最后断言，不参与恢复输入；重建不读取oracle或adapter请求内存。两项原工具材料先核对durable link、receipt、原生结果和现存ToolJob，再交给原共享投影函数；checkpoint／stage／事件集合／已有snapshot不改变，实际工具效果次数不增加。
+
+### 中间失败与实际回归
+
+- 续接首测真实 **1 failed，16.60秒**：新增字典变量遮蔽原捕获输入list，旧断言 `inputs[0]` 报KeyError。改名approval_inputs，保留全部旧断言；八参数矩阵随后 **8 passed，36.52秒**。不是通过删除原断言取得绿色。日志分别为 `.codex-logs/framework-approval-preparation-first-2026-10-27.txt`、`framework-approval-preparation-matrix-2026-10-27.txt`。
+- 新合同首组 **1 failed、2 passed，14.69秒**：foreign binding反例只修改版本而未更新原指纹，先被既有RuntimeBinding校验拒绝；改用model_copy生成有效foreign绑定，继续验证完整绑定比较，不放宽生产指纹规则。第二组 **1 failed、51 passed，33.87秒**：新增审批Worker正例的_Tasks替身缺既有结算后reconciliation方法，补齐同类替身端口，生产Dispatcher未修改。日志分别为 `.codex-logs/framework-approval-preparation-contract-first-2026-10-27.txt`、`framework-approval-preparation-contract-final-2026-10-27.txt`。
+- 初版完整投影Harness **1 failed，9.16秒**：初始调用未使用durable SessionEventSink，无法读取完整事件封口。改成与生产同类的原事件事务路径，未伪造缺失事件。对应日志 `.codex-logs/framework-approval-preparation-projection-first-2026-10-27.txt`。随后三文件 **74 passed，56.64秒**；再补畸形边界和stage内负例，最终局部组 **77 passed，50.65秒**，会话21826终态exit0；日志 `.codex-logs/framework-approval-preparation-contract-verified-2026-10-27.txt`。局部结果与下列扩大回归重叠，不累计覆盖数。
+
+以下均从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 使用独立 `.venv-framework-v2`，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`；三组均已取回原会话终态，未用日志尾部猜测进程结束。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 255 passed，672.46秒；会话83450，exit0，无skip。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_terminal_gap.py tests/test_framework_event_completion.py tests/test_framework_live_event_persistence.py tests/test_framework_application_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_observation_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_finalization_projection.py -q -x -rs --tb=short
+# 202 passed，655.50秒；会话14222，exit0，无skip。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_deep_agent_runtime_adapter.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py tests/test_runtime_interrupt_tool_calls.py tests/test_runtime_input_paths.py tests/test_runtime_import_isolation.py tests/test_approval_checkpoint_consistency.py tests/test_approval_model_budget.py tests/test_session_execution_ownership.py tests/test_session_event_delivery.py tests/test_session_flow_projection.py tests/test_session_lock_retention.py -q -x -rs --tb=short
+# 234 passed，10 skipped，55.02秒；会话49339，exit0。
+```
+
+运行时组10个skip：runtime_input_paths的5个和approval_model_budget的3个独立真实PostgreSQL／MySQL／RustFS链路未启用，session_event_delivery的2个事务排序／跨进程用例未使用其要求的PostgreSQL后端；不算通过、未新增skip。三组原日志分别为项目根 `.codex-logs/framework-approval-preparation-approval-final-2026-10-27.txt`、`framework-approval-preparation-application-final-2026-10-27.txt`、`framework-approval-preparation-runtime-final-2026-10-27.txt`。
+
+项目根compileall和diff检查实际通过；实施记录历史仅追加、§67唯一、代码围栏配对及29处绝对本地链接均实际检查通过。固定环境再次确认ruff／mypy均未安装，不安装新工具、不声称lint／typecheck通过。新增材料链路使用官方Deep Agents／LangGraph、替身模型、真实PG／Redis与同进程故障；扩大回归含既有独立Worker强杀链路，最高范围E2，不据此宣称新增审批材料已经完成独立进程故障验收。全量、前端、真实供应商／RustFS／领域Runner的E3、制品／部署／备份恢复的E4均未验收。没有服务启停、生产路由切换、依赖升级或付费请求。
+
+本轮代码／测试、测试文件忽略例外和本节归入同一中文提交，主题 `【feat】冻结审批续跑的原应用准备材料`，ID以Git历史／交付为准。下一步继续A2-2的完整材料消费与窄权限恢复准入，补审批资产前独立Worker故障及原结果资产／唯一收尾契约；不能直接放开message-only资产写权。A2-3／A3／B/C/D/E/F仍未完成，整体goal保持active。

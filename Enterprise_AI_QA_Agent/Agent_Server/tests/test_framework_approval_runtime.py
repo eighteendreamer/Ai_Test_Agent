@@ -613,6 +613,7 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
         model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"]})
     inputs = []
+    initial_task_id = h.owner.id
     if prepared:
         from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
         from src.schemas.session import SendMessageRequest
@@ -680,6 +681,22 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     assert saved.metadata["pending_turn"] == {}
     assert len([message for message in saved.messages if message.metadata.get("tool_call_id")]) == 2
     assert next(message for message in saved.messages if message.id == original_tool.id) == original_tool
+    if prepared:
+        from src.schemas.framework_graph_input import parse_graph_input_asset
+
+        original_stage = stages.get(initial_task_id, h.session_id)
+        approval_inputs = original_stage.source_manifest.get("approval_graph_inputs")
+        assert approval_inputs is not None, "Approval invocations lose their original application preparation before graph execution"
+        assert set(approval_inputs) == {b.id, a.id}
+        last = approval_inputs[a.id]
+        assert last["decision_id"] == a.input["decision_id"] and last["attempt_id"] == a.attempt_id
+        frozen = parse_graph_input_asset(last["graph_input_asset"])
+        latest_snapshot = await h.store.get_latest_snapshot(h.session_id)
+        identity = frozen.runtime_preparation.identity
+        assert final.output.id == identity.assistant_message_id
+        assert latest_snapshot.id == identity.snapshot_id
+        assert frozen.runtime_preparation.initial_state["event_log"][-1]["type"] == "turn.resumed"
+        assert original_stage.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]["snapshot_id"] == "prepared-snapshot"
     completions = [item for item in await h.store.list_events(h.session_id) if item.type == "runtime.event_log_completed"]
     assert len(completions) == int(acknowledged)
     if acknowledged:
@@ -702,7 +719,7 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
         assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 15
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 16
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
         material = [parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])

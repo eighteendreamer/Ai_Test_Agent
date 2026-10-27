@@ -54,6 +54,22 @@ def validate_message_stage(record):
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
     manifest = stage.source_manifest or {}
+    if "approval_graph_inputs" in manifest:
+        from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
+
+        originals = manifest["approval_graph_inputs"]
+        if (stage.schema_version < 16 or stage.phase not in {"runtime_submitted", "projected"}
+            or not isinstance(originals, dict) or not originals or "graph_input_asset" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Approval graph input has no compatible message stage format")
+        initial = parse_graph_input_asset(manifest["graph_input_asset"])
+        if (initial.schema_version != 2 or initial.runtime_preparation.identity.binding.binding_id != stage.binding_id
+            or manifest.get("binding_fingerprint") != initial.runtime_preparation.identity.binding.fingerprint):
+            raise FrameworkMessageStageRecoveryRequired("Approval graph input has no original prepared binding")
+        for task_id, raw in originals.items():
+            original = FrameworkApprovalGraphInput.model_validate(raw)
+            if (original.task_id != task_id
+                or original.graph_input_asset.runtime_preparation.identity.binding != initial.runtime_preparation.identity.binding):
+                raise FrameworkMessageStageRecoveryRequired("Approval graph input differs from its original task or binding")
     if "graph_input_asset" in manifest:
         from src.schemas.framework_graph_input import parse_graph_input_asset
 
@@ -208,8 +224,10 @@ class FrameworkMessageStages:
                 raise KeyError(task_id)
             return row["record"]
 
-    def get(self, task_id, session_id):
-        record = self._get_record(task_id, session_id)
+    def get(self, task_id, session_id, *, include_continuations=False):
+        # Read-only material access; accepting a continuation reference here
+        # never changes _advance's message-only write authority.
+        record = self._get_record(task_id, session_id, for_capability=include_continuations)
         return validate_message_stage(record) if record else None
 
     def get_version(self, task_id, session_id):

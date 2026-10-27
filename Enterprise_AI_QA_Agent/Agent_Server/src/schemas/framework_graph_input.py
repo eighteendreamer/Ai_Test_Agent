@@ -96,6 +96,32 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
         return self
 
 
+class FrameworkApprovalGraphInput(BaseModel):
+    """Original per-invocation preparation, not a decision or recovery proof."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    task_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    owner_epoch: int = Field(ge=1, strict=True)
+    approval_id: str = Field(min_length=1)
+    decision_id: str = Field(min_length=1)
+    continue_from_checkpoint: bool = Field(strict=True)
+    graph_input_asset: FrameworkPreparedGraphInputAsset
+
+    @model_validator(mode="after")
+    def verify_invocation_boundary(self):
+        events = self.graph_input_asset.runtime_preparation.initial_state.get("event_log", [])
+        if not isinstance(events, list) or not events or not isinstance(events[-1], dict):
+            raise ValueError("Approval graph preparation has no original invocation boundary")
+        event = events[-1]
+        payload = event.get("payload", {})
+        if (not isinstance(payload, dict) or event.get("type") != "turn.resumed" or payload.get("approval_id") != self.approval_id
+            or payload.get("decision_id") != self.decision_id
+            or payload.get("continue_from_checkpoint") is not self.continue_from_checkpoint):
+            raise ValueError("Approval graph preparation differs from its original invocation boundary")
+        return self
+
+
 def parse_graph_input_asset(value) -> FrameworkGraphInputAsset | FrameworkPreparedGraphInputAsset:
     if isinstance(value, _FrameworkGraphInputFields):
         value = value.model_dump(mode="json")

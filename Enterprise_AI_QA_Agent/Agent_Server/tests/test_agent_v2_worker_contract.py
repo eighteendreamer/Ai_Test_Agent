@@ -77,6 +77,10 @@ class _Tasks:
         assert task_id == self.stored.id
         return None
 
+    async def ensure_framework_reconciliation(self, task_id):
+        assert task_id == self.stored.id
+        return None
+
 
 def stored_task(runtime_binding):
     return SimpleNamespace(
@@ -132,6 +136,40 @@ async def test_v2_dispatcher_requires_persisted_binding_and_executes_once():
 
     assert tasks.claimed == ["v2-worker"]
     assert executions == [("task-1", runtime_binding)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["message", "approval_resume", "approval_recover", "framework_reconcile"])
+@pytest.mark.parametrize("reader,format_version", [(15, 16), (16, 17), (16, 16)])
+async def test_approval_preparation_format_is_checked_before_claim(operation, reader, format_version):
+    selected = binding()
+    task = stored_task(selected)
+    task.operation = operation
+    task.reference_id = "approval-1" if operation != "message" else None
+    tasks = _Tasks(task)
+
+    async def version(task_id, *, session_id):
+        assert task_id == task.id and session_id == task.session_id
+        return format_version
+
+    tasks.get_framework_message_stage_version = version
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None,
+        framework_capabilities=FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=reader))
+    executions = []
+
+    async def execute(received):
+        executions.append(received.id)
+
+    dispatcher._execute = execute
+    envelope = command(selected).model_copy(update={"operation": operation, "reference_id": task.reference_id})
+    delivery = QueuedTask("message-1", envelope.model_dump(mode="json"))
+    if format_version > reader:
+        with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
+            await dispatcher.handle_v2(delivery, worker_id="v2-worker")
+        assert tasks.claimed == executions == []
+    else:
+        await dispatcher.handle_v2(delivery, worker_id="v2-worker")
+        assert tasks.claimed == ["v2-worker"] and executions == [task.id]
 
 
 @pytest.mark.asyncio

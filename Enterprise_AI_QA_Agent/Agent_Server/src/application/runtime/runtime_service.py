@@ -659,11 +659,13 @@ class RuntimeService:
         decision_id: str,
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
+        projection_identity: FrameworkProjectionIdentity | None = None,
     ) -> RuntimeTurnResult:
         """Continue the owned native decision without rebuilding checkpoint history."""
         with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             return await self._resume_framework_approval(
-                session, approval_id, decision_id, on_model_chunk=on_model_chunk)
+                session, approval_id, decision_id, on_model_chunk=on_model_chunk,
+                projection_identity=projection_identity)
 
     async def _resume_framework_approval(
         self,
@@ -672,6 +674,7 @@ class RuntimeService:
         decision_id: str,
         *,
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
+        projection_identity: FrameworkProjectionIdentity | None = None,
     ) -> RuntimeTurnResult:
         owner = current_framework_owner()
         pending = dict(session.metadata.get("pending_turn") or {})
@@ -700,10 +703,14 @@ class RuntimeService:
         state.update(pending_turn={}, termination_reason="", control_state="resuming")
         await append_graph_event_durable(state, "turn.resumed", "deepagents.hitl", "Owned native approval continuation started.",
             approval_id=approval_id, decision_id=decision_id, continue_from_checkpoint=plan.continue_from_checkpoint)
+        async def freeze_graph_input(raw):
+            await self._framework_approval_continuation.record_graph_input(owner, approval_id, decision_id, raw)
+
         result = await self._execute_observed(session, request, state,
             lambda: self._execute_deep_agent_turn(session, request, state=state,
                 pilot_stage=self._deep_agent_pilot_stage(), on_model_chunk=on_model_chunk, continuation_plan=plan,
-                returned_event_offset=persisted_events))
+                returned_event_offset=persisted_events, projection_identity=projection_identity,
+                on_graph_input=freeze_graph_input if projection_identity is not None else None))
         result.events = result.events[persisted_events:]
         return result
 

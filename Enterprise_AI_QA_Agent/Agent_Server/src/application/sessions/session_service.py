@@ -1215,12 +1215,6 @@ class SessionService:
                 framework_task=framework_task,
             )
         )
-        stream_chunk_handler = self._build_stream_chunk_handler(
-            session_id=session_id,
-            turn_id=turn_id,
-            assistant_message_id=assistant_message_id,
-            turn_lease_token=turn_lease_token,
-        )
         def mark_approval_resuming(metadata: dict, current_status: SessionStatus) -> None:
             control = metadata.get("control")
             control = dict(control) if isinstance(control, dict) else {}
@@ -1245,12 +1239,34 @@ class SessionService:
         session = await self._require_session(session_id)
         settled = False
         try:
+            continuation_options = {}
             if framework_task is not None:
+                from src.runtime.framework_message_stages import FrameworkMessageStages
+                from src.schemas.framework_graph_input import parse_graph_input_asset, FrameworkApprovalGraphInput
+
+                stage = await asyncio.to_thread(FrameworkMessageStages(self._agent_task_store).get,
+                    framework_task.id, session_id, include_continuations=True)
+                source = (stage.source_manifest or {}) if stage is not None else {}
+                original_input = source.get("graph_input_asset")
+                if original_input is not None and parse_graph_input_asset(original_input).schema_version == 2:
+                    previous = source.get("approval_graph_inputs", {}).get(framework_task.id)
+                    identity = (FrameworkApprovalGraphInput.model_validate(previous).graph_input_asset.runtime_preparation.identity
+                        if previous is not None else FrameworkProjectionIdentity(binding=framework_task.runtime_binding,
+                            assistant_message_id=assistant_message_id, snapshot_id=str(uuid4()),
+                            snapshot_version=session.snapshot_count + 1, snapshot_created_at=datetime.utcnow()))
+                    assistant_message_id = identity.assistant_message_id
+                    continuation_options["projection_identity"] = identity
                 continuation_method = self._runtime_service.resume_framework_approval
                 continuation_args = (session, approval.id, framework_task.input["decision_id"])
             else:
                 continuation_method = self._runtime_service.resume_after_approval
                 continuation_args = (session, approval.model_dump(mode="python"))
+            stream_chunk_handler = self._build_stream_chunk_handler(
+                session_id=session_id,
+                turn_id=turn_id,
+                assistant_message_id=assistant_message_id,
+                turn_lease_token=turn_lease_token,
+            )
             continuation = await self._await_owned_execution(
                 session_id,
                 heartbeat_task,
@@ -1259,6 +1275,7 @@ class SessionService:
                 continuation_method,
                 *continuation_args,
                 on_model_chunk=stream_chunk_handler,
+                **continuation_options,
                 ownership_monitors=ownership_monitors,
             )
             if continuation is None:

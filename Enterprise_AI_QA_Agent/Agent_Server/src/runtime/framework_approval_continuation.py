@@ -50,6 +50,73 @@ class FrameworkApprovalContinuation:
             "receipt_state": plan.receipt.state, "continue_from_checkpoint": plan.continue_from_checkpoint})
         return plan
 
+    async def record_graph_input(self, owner, approval_id, decision_id, raw):
+        """Freeze per-task application inputs before invoking Command/None.
+
+        No upstream counterpart (checked: prepared graph input, approval
+        journal, LangGraph 1.2.12 persistence): a graph checkpoint does not own
+        the assistant/snapshot preparation. Extend the private original stage,
+        not public audit payloads or the immutable business decision.
+        """
+        from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset, FrameworkApprovalGraphInput, parse_graph_input_asset
+        from src.runtime.framework_message_stages import message_stage_table, validate_message_stage
+
+        asset = FrameworkPreparedGraphInputAsset.model_validate(raw)
+
+        def save():
+            with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+                configure_runtime_owner_transaction(cur, self._settings)
+                plan, _, _ = self._owned_plan_in_transaction(cur, owner, approval_id, decision_id)
+                if asset.runtime_preparation.identity.binding != owner.binding:
+                    raise FrameworkApprovalRecoveryRequired("Approval graph input differs from its captured binding")
+                original = FrameworkApprovalGraphInput(task_id=owner.task_id, attempt_id=owner.attempt_id,
+                    owner_epoch=owner.owner_epoch, approval_id=approval_id, decision_id=decision_id,
+                    continue_from_checkpoint=plan.continue_from_checkpoint, graph_input_asset=asset)
+                table = message_stage_table(self._settings)
+                cur.execute(f"SELECT record FROM {table} WHERE binding_id=%s FOR UPDATE", (owner.binding.binding_id,))
+                row = cur.fetchone()
+                if row is None:
+                    raise FrameworkApprovalRecoveryRequired("Approval graph input has no original message stage")
+                stage = validate_message_stage(row["record"])
+                manifest = dict(stage.source_manifest or {})
+                original_input = manifest.get("graph_input_asset")
+                initial = parse_graph_input_asset(original_input) if original_input is not None else None
+                if initial is None or initial.schema_version != 2:
+                    raise FrameworkApprovalRecoveryRequired("Approval graph input has no original prepared input")
+                initial_binding = initial.runtime_preparation.identity.binding
+                if (stage.binding_id != owner.binding.binding_id or initial_binding != owner.binding
+                    or manifest.get("binding_fingerprint") != owner.binding.fingerprint):
+                    raise FrameworkApprovalRecoveryRequired("Approval graph input differs from its original prepared binding")
+                if stage.phase != "runtime_submitted" or "runtime_result_asset" in manifest:
+                    raise FrameworkApprovalRecoveryRequired("Approval graph input cannot change a completed application source")
+                inputs = dict(manifest.get("approval_graph_inputs", {}))
+                payload = original.model_dump(mode="json")
+                if owner.task_id in inputs:
+                    if inputs[owner.task_id] != payload:
+                        raise FrameworkApprovalRecoveryRequired("Original approval graph input is immutable")
+                    return original
+                inputs[owner.task_id] = payload
+                manifest["approval_graph_inputs"] = inputs
+                cur.execute("SELECT clock_timestamp() AS now")
+                saved = validate_message_stage(stage.model_copy(update={"schema_version": 16,
+                    "source_manifest": manifest, "source_sha256": approval_value_hash(manifest),
+                    "updated_at": cur.fetchone()["now"]}).model_dump(mode="json"))
+                assert_runtime_owner(cur, self._settings, owner)
+                cur.execute(f"UPDATE {table} SET record=%s::jsonb WHERE binding_id=%s",
+                    (saved.model_dump_json(), owner.binding.binding_id))
+                return original
+
+        try:
+            saved = await asyncio.to_thread(save)
+        except Exception as exc:
+            logger.warning("framework_approval_graph_input_rejected", extra={"task_id": owner.task_id,
+                "binding_id": owner.binding.binding_id, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_approval_graph_input_frozen", extra={"task_id": owner.task_id,
+            "binding_id": owner.binding.binding_id, "owner_epoch": owner.owner_epoch,
+            "asset_sha256": saved.graph_input_asset.asset_sha256})
+        return saved
+
     async def settle(self, owner, approval_id, decision_id, *, rejection_projector=None):
         """Commit denial material beside applied, using a pure synchronous projector.
 
