@@ -26,7 +26,7 @@ from src.application.runtime.state_persistence import build_pending_turn, persis
 from src.application.runtime.tool_child_wait import park_tool_wait, waiting_tool_checkpoints
 from src.application.runtime.tool_runtime_service import ToolExecutionContext, ToolRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
-from src.application.runtime.tool_messages import build_tool_message, build_chat_tool_messages
+from src.application.runtime.tool_messages import build_tool_message, build_chat_tool_messages, build_rejected_tool_projection
 from src.application.runtime.tool_governance_service import (
     GovernedToolCallContext,
     GovernedToolCallResult,
@@ -222,7 +222,7 @@ class RuntimeService:
             # cannot upgrade a historical or unprepared graph invocation.
             state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
             if projection_identity is not None:
-                state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 1
+                state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 2
             self._prepare_deep_agent_governed_tools(session, request, state)
             await append_graph_event_durable(
                 state,
@@ -473,17 +473,28 @@ class RuntimeService:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
         original_tool_materials = []
         if continuation_plan is not None:
+            version = state["context_bundle"].get(TOOL_PROJECTION_VERSION_KEY)
+            settlement = {}
+            if version == 2 and continuation_plan.receipt.decision["type"] == "reject":
+                call_id = continuation_plan.job.call_id
+                ordinal = next((index for index, item in enumerate(tool_records, start=1)
+                    if item["call_id"] == call_id), None)
+                if ordinal is None:
+                    raise FrameworkApprovalRecoveryRequired("Original rejection has no application tool slot")
+                hygiene = self._transcript_hygiene_service.tool_message_metadata()
+                settlement["rejection_projector"] = lambda job, native: build_rejected_tool_projection(
+                    binding=request.runtime_binding, source=continuation_plan.link, job=job,
+                    approval_id=continuation_plan.approval.id, ordinal=ordinal, hygiene_metadata=hygiene,
+                    model_content=native.content)
             settled = await self._framework_approval_continuation.settle(
-                current_framework_owner(), continuation_plan.approval.id, continuation_plan.receipt.decision_id)
-            if (state["context_bundle"].get(TOOL_PROJECTION_VERSION_KEY) == 1
-                and settled.receipt.decision["type"] == "approve"):
+                current_framework_owner(), continuation_plan.approval.id, continuation_plan.receipt.decision_id, **settlement)
+            if version == 2 or (version == 1 and settled.receipt.decision["type"] == "approve"):
                 material = await self._framework_approval_continuation.read_tool_projection(
                     current_framework_owner(), settled.approval.id, settled.receipt.decision_id)
                 original_tool_materials.append(material)
                 record = material.record
             else:
-                # Historical Turns have no envelope; native reject never
-                # enters the business callback. Do not fabricate its artifact.
+                # Historical Turns retain their original projection contract.
                 record = await self._tool_runtime_service.record_from_job(settled.job)
                 record.approval_id = settled.approval.id
             self._merge_tool_records(tool_records, [record.model_dump(mode="python")])
@@ -1422,7 +1433,7 @@ class RuntimeService:
         bound = state.get("context_bundle", {}).get("runtime_binding")
         binding = RuntimeBinding.model_validate(bound) if bound is not None else None
         projection_version = state.get("context_bundle", {}).get(TOOL_PROJECTION_VERSION_KEY)
-        if projection_version is not None and (binding is None or type(projection_version) is not int or projection_version != 1):
+        if projection_version is not None and (binding is None or type(projection_version) is not int or projection_version not in {1, 2}):
             raise FrameworkApprovalRecoveryRequired("Governed tool projection material format is unavailable")
         owner = current_framework_owner()
         gates = frozenset()

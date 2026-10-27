@@ -22,6 +22,7 @@ from src.schemas.framework_approval import (
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ExecutionEvent, ToolApprovalRequest
 from src.schemas.tool_job import ToolJobStatus
+from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
 
 
 logger = logging.getLogger(__name__)
@@ -49,9 +50,15 @@ class FrameworkApprovalContinuation:
             "receipt_state": plan.receipt.state, "continue_from_checkpoint": plan.continue_from_checkpoint})
         return plan
 
-    async def settle(self, owner, approval_id, decision_id):
+    async def settle(self, owner, approval_id, decision_id, *, rejection_projector=None):
+        """Commit denial material beside applied, using a pure synchronous projector.
+
+        The callback may only adapt already locked facts to application display
+        policy. It must not perform I/O, mutate a graph or execute a tool.
+        Historical callers without it retain the original receipt contract.
+        """
         try:
-            plan = await asyncio.to_thread(self._settle, owner, approval_id, decision_id)
+            plan = await asyncio.to_thread(self._settle, owner, approval_id, decision_id, rejection_projector)
         except Exception as exc:
             logger.warning("framework_continuation_settlement_rejected", extra={
                 "binding_id": owner.binding.binding_id, "task_id": owner.task_id,
@@ -59,10 +66,12 @@ class FrameworkApprovalContinuation:
             raise
         logger.info("framework_continuation_settled", extra={"binding_id": owner.binding.binding_id,
             "task_id": owner.task_id, "approval_id": approval_id, "decision_id": decision_id,
-            "tool_job_id": plan.job.id, "tool_job_status": plan.job.status.value})
+            "tool_job_id": plan.job.id, "tool_job_status": plan.job.status.value,
+            "tool_projection_sha256": ((plan.receipt.proof or {}).get("application", {})
+                .get(TOOL_PROJECTION_KEY, {}).get("sha256"))})
         return plan
 
-    def _settle(self, owner, approval_id, decision_id):
+    def _settle(self, owner, approval_id, decision_id, rejection_projector=None):
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             plan = self._prepare_in_transaction(cur, owner, approval_id, decision_id)
@@ -80,6 +89,20 @@ class FrameworkApprovalContinuation:
                     job.updated_at = job.completed_at = datetime.utcnow()
                     job = self._jobs.save_job_in_transaction(cur, job, framework_owner=owner)
             evidence = self._application_evidence(owner.binding, plan, job, message, evidence)
+            if plan.approval.status.value == "denied":
+                applied = (plan.receipt.proof or {}).get("application", {})
+                if TOOL_PROJECTION_KEY in applied or rejection_projector is not None:
+                    # The projector is pure application policy. Run it only on
+                    # first settlement, under the same owner/Job/receipt locks.
+                    # A missing original after applied is not permission to
+                    # regenerate it with current code, metadata or clock.
+                    if plan.receipt.applied_at is not None and TOOL_PROJECTION_KEY not in applied:
+                        raise FrameworkApprovalRecoveryRequired("Applied rejection has no original projection material")
+                    if plan.receipt.applied_at is None and TOOL_PROJECTION_KEY in applied:
+                        raise FrameworkApprovalRecoveryRequired("Rejection projection has no applied timestamp")
+                    material = (applied[TOOL_PROJECTION_KEY] if plan.receipt.applied_at is not None
+                        else rejection_projector(job, message))
+                    evidence = self._rejection_projection_evidence(owner.binding, plan, job, message, evidence, material)
             receipt = self._journal.record_application_in_transaction(cur, plan.receipt, evidence)
             self._sessions.append_event_in_transaction(cur, owner.binding.session_id, ExecutionEvent(
                 id=f"framework-decision:{decision_id}:applied", session_id=owner.binding.session_id,
@@ -91,6 +114,28 @@ class FrameworkApprovalContinuation:
             return FrameworkContinuationPlan(approval=plan.approval, job=job, link=plan.link, receipt=receipt)
 
     @staticmethod
+    def _rejection_projection_evidence(binding, plan, job, native, evidence, material):
+        try:
+            original = (FrameworkToolProjection.model_validate_json(material.model_dump_json())
+                if isinstance(material, FrameworkToolProjection) else FrameworkToolProjection.model_validate(material))
+            original.require_binding(binding, plan.link)
+        except ValueError as exc:
+            raise FrameworkApprovalRecoveryRequired("Original rejection projection requires reconciliation") from exc
+        record = original.record
+        if (job.status != ToolJobStatus.denied or job.started_at is not None or job.completed_at is None
+            or job.summary != native.content or job.output_payload != {"status": "denied",
+                "approval_id": plan.approval.id, "native_feedback": native.content, "instruction_authority": "none"}
+            or record.job_id != job.id or record.approval_id != plan.approval.id or record.status != "denied"
+            or record.tool_name != job.tool_name or record.summary != job.summary
+            or record.input != job.input_payload or record.output != job.output_payload
+            or record.trace_id != (job.trace_id or "") or record.started_at is not None
+            or record.completed_at != job.completed_at or original.message.created_at != job.completed_at
+            or original.model_content != native.content):
+            raise FrameworkApprovalRecoveryRequired("Original rejection projection differs from its denied ToolJob")
+        return {**evidence, TOOL_PROJECTION_KEY: original.model_dump(mode="json"),
+            "projection_job_sha256": approval_value_hash(job.model_dump(mode="json"))}
+
+    @staticmethod
     def _application_evidence(binding, plan, job, message, evidence):
         if plan.approval.status.value == "denied":
             if message.status != "error" or not isinstance(message.content, str) or not message.content:
@@ -98,8 +143,6 @@ class FrameworkApprovalContinuation:
             outcome = "human_rejected"
         else:
             content = message.content
-            from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
-
             if isinstance(message.artifact, dict) and TOOL_PROJECTION_KEY in message.artifact:
                 try:
                     material = FrameworkToolProjection.from_tool_message(message, binding=binding, source=plan.link)
@@ -161,17 +204,22 @@ class FrameworkApprovalContinuation:
         return material
 
     def _read_tool_projection(self, owner, approval_id, decision_id):
-        from src.schemas.framework_tool_projection import FrameworkToolProjection
-
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             configure_runtime_owner_transaction(cur, self._settings)
             plan, consumed, _ = self._owned_plan_in_transaction(cur, owner, approval_id, decision_id)
-            if not consumed or plan.receipt.applied_at is None or plan.receipt.decision["type"] != "approve":
+            if not consumed or plan.receipt.applied_at is None:
                 raise FrameworkApprovalRecoveryRequired("Original tool projection requires its applied approval")
             message, evidence = self._journal.require_tool_result_in_transaction(cur, owner.binding, plan.link)
-            if (plan.receipt.proof or {}).get("application") != self._application_evidence(owner.binding, plan, plan.job, message, evidence):
+            applied = (plan.receipt.proof or {}).get("application")
+            expected = self._application_evidence(owner.binding, plan, plan.job, message, evidence)
+            if plan.receipt.decision["type"] == "reject":
+                raw = (applied or {}).get(TOOL_PROJECTION_KEY)
+                expected = self._rejection_projection_evidence(owner.binding, plan, plan.job, message, expected, raw)
+            if applied != expected:
                 raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its applied native result")
             try:
+                if plan.receipt.decision["type"] == "reject":
+                    return FrameworkToolProjection.model_validate(raw).require_binding(owner.binding, plan.link)
                 return FrameworkToolProjection.from_tool_message(message, binding=owner.binding, source=plan.link)
             except ValueError as exc:
                 raise FrameworkApprovalRecoveryRequired("Original approved tool projection requires reconciliation") from exc

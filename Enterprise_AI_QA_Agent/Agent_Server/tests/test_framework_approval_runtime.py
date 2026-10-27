@@ -184,16 +184,17 @@ async def test_prepared_approval_consumes_original_tool_material_without_reproce
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("changed", ["before_applied", "native", "job", "owner", "approval"])
-async def test_original_tool_material_read_is_bound_to_current_applied_facts(runtime_harness, changed):
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_original_tool_material_read_is_bound_to_current_applied_facts(runtime_harness, changed, decision):
     from src.infrastructure.postgres_runtime import postgres_connect
 
     h = runtime_harness
     session = await h.store.get_session(h.session_id)
     pending = session.metadata["pending_turn"]
-    pending["context_bundle"]["framework_tool_projection_version"] = 1
-    pending["graph_state"]["context_bundle"]["framework_tool_projection_version"] = 1
+    pending["context_bundle"]["framework_tool_projection_version"] = 2
+    pending["graph_state"]["context_bundle"]["framework_tool_projection_version"] = 2
     await h.store.save_session(session)
-    task = await claim_decision(h)
+    task = await claim_decision(h, decision=decision)
     if changed != "before_applied":
         await resume(h, task)
     proposal = h.proposals["B"]
@@ -214,7 +215,110 @@ async def test_original_tool_material_read_is_bound_to_current_applied_facts(run
         await h.runtime._framework_approval_continuation.read_tool_projection(task.runtime_owner,
             h.proposals["A"].approval.id if changed == "approval" else task.reference_id, task.input["decision_id"])
     assert receipt(h) == original_receipt and await h.store.list_events(h.session_id) == events
-    assert h.effects == ([] if changed == "before_applied" else [("B", proposal.job.id)])
+    assert h.effects == ([] if changed == "before_applied" or decision == "denied" else [("B", proposal.job.id)])
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["rollback", "after_commit"])
+async def test_rejection_material_and_applied_share_one_transaction_and_replay_original(runtime_harness, monkeypatch, failure):
+    from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+
+    h = runtime_harness
+    session = await h.store.get_session(h.session_id)
+    for state in (session.metadata["pending_turn"], session.metadata["pending_turn"]["graph_state"]):
+        state["context_bundle"]["framework_tool_projection_version"] = 2
+    await h.store.save_session(session)
+    task = await claim_decision(h, decision="denied")
+    continuation = h.runtime._framework_approval_continuation
+    if failure == "rollback":
+        append = h.store.append_event_in_transaction
+
+        def fail(cur, session_id, event, **kwargs):
+            if event.type == "approval.decision_applied":
+                raise ConnectionError("injected rejection application rollback")
+            return append(cur, session_id, event, **kwargs)
+
+        monkeypatch.setattr(h.store, "append_event_in_transaction", fail)
+    else:
+        read = continuation.read_tool_projection
+
+        async def fail(*args):
+            raise ConnectionError("injected after rejection application commit")
+
+        monkeypatch.setattr(continuation, "read_tool_projection", fail)
+    with pytest.raises(ConnectionError, match="injected"):
+        await resume(h, task)
+    saved = receipt(h)
+    job = await h.jobs.get_job(h.proposals["B"].job.id)
+    assert saved.state == "delivered" and h.effects == []
+    if failure == "rollback":
+        assert saved.applied_at is None and "application" not in saved.proof
+        assert job.status.value == "waiting_approval" and job.completed_at is None
+        monkeypatch.setattr(h.store, "append_event_in_transaction", append)
+    else:
+        assert saved.applied_at is not None and job.status.value == "denied"
+        original = FrameworkToolProjection.model_validate(saved.proof["application"][TOOL_PROJECTION_KEY])
+        assert original.record.completed_at == original.message.created_at == job.completed_at
+        monkeypatch.setattr(continuation, "read_tool_projection", read)
+
+        def forbidden(*args, **kwargs):
+            pytest.fail("an applied rejection must read its original material, not project again")
+
+        monkeypatch.setattr("src.application.runtime.runtime_service.build_rejected_tool_projection", forbidden)
+    result = await resume(h, task)
+    assert h.adapter_requests[-1].continue_from_checkpoint and h.adapter_requests[-1].resume is None
+    material = FrameworkToolProjection.model_validate(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
+    assert result.tool_messages == [material.message] and h.effects == []
+    if failure == "after_commit":
+        assert material == original and receipt(h) == saved
+    events = await h.store.list_events(h.session_id)
+    assert len([event for event in events if event.type == "approval.decision_applied"]) == 1
+    replay = await resume(h, task)
+    assert replay.tool_messages == result.tool_messages and await h.store.list_events(h.session_id) == events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["digest", "source", "record", "job", "missing"])
+async def test_applied_rejection_material_cannot_be_substituted_or_regenerated(runtime_harness, monkeypatch, changed):
+    from src.infrastructure.postgres_runtime import postgres_connect
+    from src.schemas.framework_approval import approval_value_hash
+    from src.schemas.framework_tool_projection import TOOL_PROJECTION_KEY
+
+    h = runtime_harness
+    session = await h.store.get_session(h.session_id)
+    for state in (session.metadata["pending_turn"], session.metadata["pending_turn"]["graph_state"]):
+        state["context_bundle"]["framework_tool_projection_version"] = 2
+    await h.store.save_session(session)
+    task = await claim_decision(h, decision="denied")
+    await resume(h, task)
+    proof = receipt(h).model_dump(mode="json")["proof"]
+    application = proof["application"]
+    material = application[TOOL_PROJECTION_KEY]
+    if changed == "missing":
+        application.pop(TOOL_PROJECTION_KEY)
+    elif changed == "job":
+        application["projection_job_sha256"] = "0" * 64
+    else:
+        if changed == "digest":
+            material["message"]["content"] += "drift"
+        elif changed == "source":
+            material["source"]["source_message_id"] = "another-ai"
+        else:
+            material["record"]["summary"] = "another-result"
+        if changed != "digest":
+            material["sha256"] = approval_value_hash({k: v for k, v in material.items() if k != "sha256"})
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {h.settings.database.postgres_agent_task_table}_decision SET proof=%s::jsonb WHERE approval_id=%s",
+            (json.dumps(proof), task.reference_id))
+    before, events = receipt(h), await h.store.list_events(h.session_id)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("missing/corrupt original material is not authority to regenerate")
+
+    monkeypatch.setattr("src.application.runtime.runtime_service.build_rejected_tool_projection", forbidden)
+    with pytest.raises(FrameworkApprovalRecoveryRequired, match="projection|native tool result|native result"):
+        await resume(h, task)
+    assert receipt(h) == before and await h.store.list_events(h.session_id) == events and h.effects == []
 
 
 @pytest.mark.asyncio
@@ -393,7 +497,8 @@ async def fresh_runtime_harness(projection_harness):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prepared", [False, True])
-async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared, monkeypatch):
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared, decision, monkeypatch):
     from datetime import datetime
     from src.schemas.framework_graph_input import FrameworkProjectionIdentity
 
@@ -447,10 +552,10 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     h.sessions._runtime_service = h.runtime
     monitor = asyncio.create_task(asyncio.Event().wait())
     try:
-        b = await claim_decision(h)
+        b = await claim_decision(h, decision=decision)
         partial = await h.sessions.execute_claimed_approval(b, ownership_monitor=monitor)
         assert partial.session.status.value == "waiting_approval"
-        assert len(h.effects) == 1 and h.effects[0][0] == "B"
+        assert [value for value, job in h.effects] == (["B"] if decision == "approved" else [])
         published = await h.store.get_session(h.session_id)
         original_tool, = [message for message in published.messages if message.metadata.get("tool_call_id")]
         await h.tasks.finish(b, status="completed", result_status="waiting_approval")
@@ -460,7 +565,7 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         monitor.cancel()
         await asyncio.gather(monitor, return_exceptions=True)
     assert final.output.content == "finished" and final.session.status.value == "completed"
-    assert [value for value, job in h.effects] == ["B", "A"]
+    assert [value for value, job in h.effects] == (["B", "A"] if decision == "approved" else ["A"])
     saved = await h.store.get_session(h.session_id)
     assert saved.metadata["pending_turn"] == {}
     assert len([message for message in saved.messages if message.metadata.get("tool_call_id")]) == 2
@@ -472,12 +577,18 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
 
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
-        assert inputs[0]["feature_flags"]["tool_projection_version"] == 1
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 13
+        assert inputs[0]["feature_flags"]["tool_projection_version"] == 2
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 14
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
         material = [FrameworkToolProjection.model_validate(message.artifact[TOOL_PROJECTION_KEY])
-            for message in native if isinstance(message, ToolMessage)]
+            for message in native if isinstance(message, ToolMessage) and message.status == "success"]
+        if decision == "denied":
+            rejected, = [message for message in native if isinstance(message, ToolMessage) and message.status == "error"]
+            assert rejected.artifact is None
+            original = FrameworkToolProjection.model_validate(receipt(h).proof["application"][TOOL_PROJECTION_KEY])
+            assert original.model_content == rejected.content and original.record.started_at is None
+            material.append(original)
         assert len(material) == 2
         published = {message.id: message for message in saved.messages}
         assert all(published[item.message.id] == item.message for item in material)
@@ -585,7 +696,7 @@ async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_
     assert projection["source"]["source_message_id"] == "projection-source"
     assert projection["source"]["tool_call_id"] == "original-call"
     assert projection["binding_fingerprint"] == h.binding.fingerprint
-    assert inputs[0]["feature_flags"]["tool_projection_version"] == 1
+    assert inputs[0]["feature_flags"]["tool_projection_version"] == 2
     restored, = [message for message in deserialize_messages(result.state["framework_messages"]) if isinstance(message, ToolMessage)]
     assert restored == native
     assert await h.store.get_latest_snapshot(h.session_id) is None
@@ -593,7 +704,8 @@ async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_
 
 
 @pytest.mark.asyncio
-async def test_old_reader_defers_new_tool_material_approval_before_claim(runtime_harness, monkeypatch):
+@pytest.mark.parametrize("stage_version,reader_version", [(13, 12), (14, 13)])
+async def test_old_reader_defers_new_tool_material_approval_before_claim(runtime_harness, monkeypatch, stage_version, reader_version):
     from src.infrastructure.postgres_runtime import postgres_connect
     from src.infrastructure.redis_task_queue import QueuedTask
     from src.runtime.framework_message_stages import message_stage_table
@@ -610,14 +722,14 @@ async def test_old_reader_defers_new_tool_material_approval_before_claim(runtime
     # The format reader must inspect the original message's binding, not look
     # for a message-stage row owned by this separate approval task.
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
-        cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=jsonb_set(record,'{{schema_version}}','13') "
-            "WHERE binding_id=%s", (h.binding.binding_id,))
+        cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=jsonb_set(record,'{{schema_version}}',%s::jsonb) "
+            "WHERE binding_id=%s", (json.dumps(stage_version), h.binding.binding_id))
 
     async def forbidden(*args, **kwargs):
         pytest.fail("old format capability must defer before claiming the approval")
 
     monkeypatch.setattr(h.tasks, "claim", forbidden)
-    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=12))
+    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=reader_version))
     wire = AgentTaskCommandV2.model_validate(command.model_dump(mode="json"))
     with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
         await h.dispatcher.handle_v2(QueuedTask("old-reader", wire.model_dump(mode="json")), worker_id="old-reader")

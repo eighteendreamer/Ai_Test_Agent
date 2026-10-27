@@ -2160,3 +2160,71 @@ $env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framew
 最终会话23935／93114／42645／82260均已取回退出码0，早期及红测也已取回终态，没有遗留本轮运行中的测试；未因观察超时重新启动。根目录实际运行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`及 v4／实施记录的围栏和绝对文件链接检查均通过；最终文档补齐后再次核对。源码检索覆盖新读端口、共用证据校验及消息投影的所有生产消费方；公共 API／前端契约没有变化。ruff／mypy／官方 saver conformance仍未安装，不声称这些检查通过。未运行全量、前端、真实供应商／RustFS／领域 Runner及 E4部署演练；隔离 PG／Redis／独立进程回归最高 E2，模型和工具仍为受控样本，不累计早期／重叠批次冒充覆盖率。
 
 本节代码／测试／记录归属同一提交，主题 `【fix】从原生材料投影审批工具结果`，实际 commit ID 以 Git 历史及交付输出为准。整体 goal 保持 active；下一步补拒绝分支的原应用材料、完整事件完成边界及共享确定性结果投影，不把本节批准工具的材料消费等同完整 A2-2 恢复。
+
+## 60. A2-2：原生拒绝材料与 applied 原子保存，后继消费原件（2026-10-27）
+
+基线 `8b8818eec`。上一轮仅调整开发提示词，没有实施进展。本轮重新核对 v4、§52–59、Git 与实际调用链后续接；P0 顺序根因已在 §54 修复，不按 v4 旧快照重复实现。原 v3 文档未提交修改保留并排除于本轮提交。Docker／既有服务已在运行，本轮未启停服务、升级依赖、修改 DDL／生产路由或新增付费／真实目标调用。
+
+### 有效红测、根因与依据
+
+- 将原真实 Session 双审批 Harness 扩展为 B批准／拒绝 × 新准备／旧入口。新准备拒绝先取得 **1 failed、30 deselected，10.28秒**：Runtime 487行仍调用 `record_from_job`，触发禁止二次加工的断言。拒绝跳过业务 callback，没有原生 artifact，不能假造批准分支的工具材料。
+- 固定版本实际查询：Deep Agents 0.7.13、LangGraph 1.2.12、LangChain 1.4.6、core 1.6.10、Postgres saver 3.1.2。核对安装版 HITL 模块函数 `_answer_message` 与 `HumanInTheLoopMiddleware.awrap_tool_call`，以及官方 [HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)、[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)：拒绝直接返回 error ToolMessage，checkpoint 不代替应用拒绝／展示事实。最初误按类方法读取 `_answer_message` 得到 AttributeError，随后定位真实模块函数；不计为功能红测。
+- 本地参考 `G:\Code_Warehouse\DeepAgent-Studio\借鉴\codex\codex-rs\rollout\src\recorder.rs::persist/flush` → 保存确认后消费原事实 → 本项目沿既有 PostgreSQL 审批 journal／applied 事务完成，不搬 JSONL／队列。课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的结果＋轨迹、幂等和协议异常要求用于原生拒绝、零副作用和强杀验证。
+
+### 实现与事实边界
+
+- Runtime 只向新版本拒绝结算提供同步纯投影函数，职责仍在应用层；Continuation 在原 owner／Job／receipt 锁与短事务内，保存 denied Job、完整材料、applied 和原 applied 事件。投影函数不执行 I/O、不读取 artifacts、不运行工具或图；不在数据库事务中等待模型。
+- 材料复用 `FrameworkToolProjection` schema1，保存于既有 `receipt.proof.application.enterprise_qa_tool_projection`，并绑定原 Job 完整摘要。未新增存储、结果资产、队列、调度器或 finalizer。正常和后继继续共用同一结算、材料读端口及 `build_chat_tool_messages`。
+- 拒绝记录表达人的拒绝事实：原输入、原拒绝正文、标准拒绝输出、原 Job／approval／source 身份及原槽位；不调用执行结果专属压缩器，也不把 case-operation／下载等执行证据伪装成拒绝结果。`completed_at` 是原业务拒绝首次成功结算时间，展示时间同值，不声称它是工具执行时间或原生 checkpoint 时间。事务回滚的时间从未成为已提交事实；已提交材料不再换时钟、元数据或字符串。
+- 重入首先读取原 application 材料；当前 callback 不得重新运行。对完整原材料、原生 task writes、决定消费、applied、当前 owner、绑定、原参数、Job 内容／时间和完整摘要逐项核对。缺失、损坏、漂移转对账；不静默重生成、不放宽 application proof 完整相等，不增加 delivery proof 的忽略字段。
+- 原生拒绝 ToolMessage 保持官方 error 内容与无 artifact，不改 checkpoint 或 transcript。材料 scope 仍是 `tool_projection_material_only`；其摘要不是认证签名，也不授予图恢复、工具执行或应用提交权限。capture 只归一化共同 source 身份字段，派生审批 link 的额外字段不塞进基础 schema，不放宽 `extra=forbid`。
+
+### 格式与兼容部署
+
+- 新准备 Turn 的服务端 marker／冻结 feature flag 为 `tool_projection_version=2`，要求 message-stage **14**，Worker reader 上界同步14。原 graph-input schema2／材料 envelope schema1不变；拒绝材料是既有 application proof 的新消费契约，不能因没有 DDL 就忽略兼容性。
+- 历史无 marker、marker1／stage13及 prepared schema2／stage12继续按原契约读取，不补造历史拒绝材料、不升级已 applied 的旧记录。新 flag 与准备 state 不一致、未知 flag／stage、格式降级均明确拒绝。
+- Dispatcher 继续在 claim 前查询绑定原 message-stage；测试验证 reader12拒领13、reader13拒领14，审批任务 attempt保持0。**该测试是在当前 Dispatcher 模拟能力范围，不是双真实制品 E4 验收。** 新格式写者上线前，仍必须部署兼容读者或隔离旧消费者；更早没有绑定级检查的二进制不能靠 stage14自动获得保护。本轮未切生产写入。
+
+### 中间验证与故障注入
+
+- 原真实 Session 四分支转绿：**4 passed、27 deselected，21.93秒**。独立拒绝读者新增未 applied／错审批／缺原生写／Job 漂移／失租等负例；applied 材料新增摘要损坏、重算摘要后 source／record替换、Job绑定摘要变化、材料缺失等负例。
+- 原子性 Harness 在 applied 事件写入时抛出故障，验证 denied Job、material、applied与事件共同回滚；在 applied 提交后、Runtime材料读取前抛出故障，验证后续不调用投影函数，原完整消息／record／时间复用且事件一次。
+- 首轮材料组 **1 failed、15 passed、26 deselected，60.76秒**：测试正则遗漏既有 `Applied native tool result identity changed` 文案；源码已正确拒绝 Job摘要漂移。修正测试的错误文案匹配，保留精确异常类型、完整事实不变及禁止重生成断言，不改生产判断。四文件扩展组随后 **114 passed，233.24秒**；早于最后日志与纯函数参数整理，不替代最终源码回归。
+- 既有 Redis Worker Harness 增加 applied 后暂停点；真实子进程在拒绝材料提交后被终止，再经原租约过期／对账／outbox／独立替代 Worker继续。分别覆盖对账正常、对账事务提交前再强杀、对账提交后再强杀：**3 passed、25 deselected，95.21秒**。原 task终态不重置、原 receipt与Job不变、原展示字符串／时间相同、业务工具次数为0，兄弟审批继续闭合。模型与工具为受控样本，不冒称真实供应商或领域 Runner。
+
+### v4 对应与剩余出口
+
+| v4 阶段／条款 | 本节代码与测试 | 已实现范围／剩余出口 |
+| --- | --- | --- |
+| A2-2，§9.2／§9.4，H05/H11 | tool_messages、approval_continuation、Runtime、tool_projection／approval_runtime | 原生拒绝首次应用材料与 applied 原子保存，正常／后继共享原件；不是完整 RuntimeTurnResult导出 |
+| §7–8，H02/H03/H07/H12 | 真实 Session混合审批、原恢复强杀／Delta／fencing回归 | 拒绝无业务派发、原生消息不变、严格 application证据与既有后继；不泛化恢复权限 |
+| §14／§16，H11/H12 | graph-input flag2、stage14、Worker／Dispatcher及历史格式测试 | 绑定格式领取前检查；真实双制品、备份恢复与滚动部署另验 |
+| A1／A2-1，§9.4 | 原结果资产、分项投影与唯一finalizer回归 | 继续复用既有收尾，不增加平行结果／恢复链 |
+
+**A2-2仍未完成。** 完整事件清单／完成边界与精确终态绑定、正常／恢复共用的完整确定性结果投影器，以及无原结果资产的独立 Worker恢复准入仍待实施，本节不提前开放。A2-3／A3／B/C/D/E/F及逐模式验收保持完整范围。
+
+### 最终源码验证与提交归属
+
+以下均从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 使用独立解释器执行，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。四组按既有 UUID 隔离资源同时运行，均取得实际退出码0；启动后生产源码／测试没有再改。耗时受同机并行负载影响，不作为性能基线；不累计早期或重叠批次冒充覆盖率。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_tool_projection.py tests/test_framework_tool_messages.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_tool_bridge.py tests/test_framework_chat_models.py tests/test_framework_graph_input_asset.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 312 passed，405.44秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_receipts.py tests/test_framework_delta_replay_order.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_tool_authority.py tests/test_framework_live_event_persistence.py tests/test_framework_task_control.py -q -x -rs --tb=short
+# 139 passed，664.88秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 118 passed，479.50秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_framework_terminal_gap.py -q -x -rs --tb=short
+# 130 passed，560.87秒，无 skip。
+$env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framework-rejection-' + [guid]::NewGuid().ToString('N'))
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_tool_message_evidence.py tests/test_tool_runtime_heartbeat.py tests/test_tool_child_wait.py tests/test_tool_wait_batch.py tests/test_tool_operation_observation.py tests/test_approval_checkpoint_consistency.py -q -x -rs --tb=short
+# 39 passed，11 skipped，34.98秒。
+```
+
+四组最终会话93016／97313／79496／1281与旧领域94125均退出0；早期／红测也已终态，没有以观察超时重启测试。完整 stdout／stderr 保留在 `.codex-logs/framework-rejection-material-*-final-2026-10-27.txt`；红测、中间失败和早期日志另存，不覆盖。旧领域11项是实际 PostgreSQL／MySQL／RustFS和 child-wait专用隔离环境未开启，不能计通过；未为扩大数字擅自打开其他 live标志或复用未知 Redis资源。
+
+根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，并检查 v4／实施记录代码围栏和全部绝对本地链接；文档补齐后再次执行。检索所有 marker／flag、stage版本读写、Worker能力、settle消费者、材料读写和展示消费方，核对领取前检查与历史分支；仅同步真实新准备 Worker 的精确 stage14／flag2断言，旧格式13／1、12及legacy用例保留，未改成宽泛版本比较。内部 settle纯投影参数的 Worker故障注入包装同步接受关键字；公共审批 API、前端和原生消息协议未变。
+
+实际查询 ruff／mypy／官方 saver conformance仍未安装，不安装工具、不把 compileall当 lint／类型检查。未运行全量、前端、真实供应商／RustFS／领域 Runner或E4双制品／备份恢复／回滚。最高证据仍为E2；本节不宣称全部模式或全系统验收通过。
+
+本节代码／测试／记录归属同一提交，主题 `【feat】原子保存审批拒绝的原始投影材料`，实际 commit ID以 Git历史及交付输出为准。整体 goal保持 active；下一步沿既有事件设施补完整清单／完成边界与精确原生终态绑定，再推进共享完整结果投影及无原资产恢复准入，不新增平行恢复链。

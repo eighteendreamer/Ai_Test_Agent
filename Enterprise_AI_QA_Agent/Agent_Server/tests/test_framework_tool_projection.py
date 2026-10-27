@@ -51,6 +51,19 @@ def test_original_material_survives_official_native_serialization_and_does_not_m
     assert material == original and material.scope == "tool_projection_material_only"
 
 
+def test_capture_normalizes_interrupt_source_without_relaxing_the_identity_schema():
+    from src.schemas.framework_approval import NativeToolInterrupt
+
+    binding, source, material = sample()
+    interrupt = NativeToolInterrupt(**source.model_dump(mode="python"), checkpoint_id="original-checkpoint",
+        graph_task_id="original-task", task_path="original-path", interrupt_id="original-interrupt", resume_index=0)
+    copied = FrameworkToolProjection.capture(binding=binding, source=interrupt, record=material.record,
+        message=material.message, model_content=material.model_content)
+    assert copied == material
+    with pytest.raises(ValueError):
+        FrameworkToolCallIdentity.model_validate(interrupt.model_dump(mode="json"))
+
+
 @pytest.mark.parametrize("changed", ["binding", "source", "call", "tool", "message", "role", "turn", "status", "ordinal", "digest", "future", "scope"])
 def test_material_rejects_corruption_or_wrong_bound_source_even_after_rehash(changed):
     binding, source, material = sample()
@@ -261,7 +274,7 @@ async def test_independent_process_kill_retains_original_tool_material_without_r
         await asyncio.to_thread(process.join, 10)
         assert not process.is_alive() and process.exitcode != 0
         saved_stage = await h.tasks.get_framework_message_stage_version(h.owner.id, session_id=h.session_id)
-        assert saved_stage == 13
+        assert saved_stage == 14
         before = await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)
         assert "runtime_result_asset" not in before.source_manifest
         assert await h.store.get_latest_snapshot(h.session_id) is None

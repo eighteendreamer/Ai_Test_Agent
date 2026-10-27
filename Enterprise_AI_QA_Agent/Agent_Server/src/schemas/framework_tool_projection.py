@@ -1,4 +1,4 @@
-"""Original application tool materials carried by a native ToolMessage.
+"""Original application tool materials, not authority to execute or recover.
 
 No upstream counterpart (checked: ToolMessage.artifact in core 1.6.10,
 RuntimeTurnResult, v4 §9.2): the framework stores arbitrary artifacts but does
@@ -69,7 +69,8 @@ class FrameworkToolProjection(BaseModel):
     @classmethod
     def capture(cls, *, binding, source, record, message, model_content):
         payload = {"schema_version": 1, "scope": "tool_projection_material_only",
-            "binding_fingerprint": binding.fingerprint, "source": source.model_dump(mode="json"),
+            "binding_fingerprint": binding.fingerprint,
+            "source": source.model_dump(mode="json", include=set(FrameworkToolCallIdentity.model_fields)),
             "record": record.model_dump(mode="json"), "message": message.model_dump(mode="json"),
             "model_content": model_content}
         return cls.model_validate({**payload, "sha256": approval_value_hash(payload)}).require_binding(binding, source)

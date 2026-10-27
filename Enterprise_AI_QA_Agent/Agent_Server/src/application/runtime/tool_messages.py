@@ -16,6 +16,26 @@ from src.schemas.tool_runtime import ToolExecutionRecord
 logger = logging.getLogger(__name__)
 
 
+def build_rejected_tool_projection(*, binding, source, job, approval_id, ordinal, hygiene_metadata, model_content):
+    """Project a human refusal, not executed-tool output or artifact evidence.
+
+    Called synchronously inside the existing denial/applied transaction. The
+    completion time is that first business settlement, not native execution
+    time. No artifact lookup, tool-specific compaction or external I/O occurs.
+    """
+    from src.schemas.framework_tool_projection import FrameworkToolProjection
+
+    record = ToolExecutionRecord(call_id=job.call_id, job_id=job.id, tool_key=job.tool_key,
+        tool_name=job.tool_name, status="denied", summary=job.summary, trace_id=job.trace_id or "",
+        input=job.input_payload, output=job.output_payload, approval_id=approval_id,
+        started_at=job.started_at, completed_at=job.completed_at)
+    message, = build_chat_tool_messages(binding.turn_id, [record.model_dump(mode="python")],
+        binding_id=binding.binding_id, hygiene_metadata=hygiene_metadata)
+    message = message.model_copy(update={"metadata": {**message.metadata, "ordinal": ordinal}})
+    return FrameworkToolProjection.capture(binding=binding, source=source, record=record,
+        message=message, model_content=model_content)
+
+
 def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_metadata: dict,
                              binding_id: str | None = None, previous_messages=(), event_log=(),
                              original_materials=()) -> list[ChatMessage]:

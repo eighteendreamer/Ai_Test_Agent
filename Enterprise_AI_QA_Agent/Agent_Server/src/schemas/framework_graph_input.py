@@ -62,13 +62,14 @@ class _FrameworkGraphInputFields(BaseModel):
             raise ValueError("Graph input asset digest does not match its frozen contents")
         version = self.feature_flags.get("tool_projection_version")
         if "tool_projection_version" in self.feature_flags and (
-            type(version) is not int or version != 1 or self.schema_version != 2):
+            type(version) is not int or version not in {1, 2} or self.schema_version != 2):
             raise ValueError("Tool projection material requires its supported prepared graph format")
         return self
 
     @property
     def required_message_stage_version(self):
-        return 13 if "tool_projection_version" in self.feature_flags else (12 if self.schema_version == 2 else 1)
+        version = self.feature_flags.get("tool_projection_version")
+        return {1: 13, 2: 14}.get(version, 12 if self.schema_version == 2 else 1)
 
 
 class FrameworkGraphInputAsset(_FrameworkGraphInputFields):

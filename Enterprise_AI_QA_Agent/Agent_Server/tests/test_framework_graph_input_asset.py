@@ -43,7 +43,7 @@ def test_prepared_graph_input_round_trip_and_nested_copy():
     assert copied.schema_version == 2
 
 
-@pytest.mark.parametrize("flag,marker", [(True, 1), (2, 2), ("1", 1), (None, 1), (1, None), (1, True)])
+@pytest.mark.parametrize("flag,marker", [(True, 1), (3, 3), ("1", 1), (None, 1), (1, None), (1, True), (2, 1), (1, 2)])
 def test_graph_tool_material_format_cannot_drift_from_prepared_runtime(flag, marker):
     from src.schemas.framework_approval import approval_value_hash
     from src.schemas.framework_graph_input import parse_graph_input_asset
@@ -127,8 +127,8 @@ def test_graph_input_asset_rejects_post_freeze_mutation(field):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("with_tool_projection", [False, True])
-async def test_runtime_submitted_stage_records_graph_asset_once(admission, with_tool_projection):
+@pytest.mark.parametrize("tool_projection_version", [None, 1, 2])
+async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_projection_version):
     from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
     from src.schemas.framework_graph_input import graph_input_asset
     from src.schemas.session import ExecutionRequest
@@ -147,36 +147,38 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, with_
     )
     await stages.freeze_execution(task.runtime_owner, request)
     await stages.submit_runtime(task.runtime_owner)
-    if with_tool_projection:
+    if tool_projection_version is not None:
         from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
 
         identity = FrameworkProjectionIdentity(binding=h.binding, assistant_message_id="prepared-assistant",
             snapshot_id="prepared-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27))
         preparation = FrameworkRuntimePreparation(identity=identity, initial_state={"session_id": h.session_id,
             "turn_id": h.binding.turn_id, "trace_id": task.trace_id, "selected_model_key": "primary",
-            "context_bundle": {"runtime_binding": h.binding.model_dump(mode="json"), "framework_tool_projection_version": 1}})
+            "context_bundle": {"runtime_binding": h.binding.model_dump(mode="json"),
+                "framework_tool_projection_version": tool_projection_version}})
     asset = graph_input_asset(
         session_id=h.session_id, turn_id=h.binding.turn_id, trace_id=task.trace_id,
         model_key="primary", checkpoint_namespace=h.binding.checkpoint_namespace,
         system_prompt="system", messages=[{"role": "user", "content": "inspect"}],
         framework_messages=[], context={"mode_key": "default"}, business_tool_keys=[],
-        interrupt_tool_keys=[], feature_flags={"tool_projection_version": 1} if with_tool_projection else {},
-        runtime_preparation=preparation if with_tool_projection else None,
+        interrupt_tool_keys=[], feature_flags={"tool_projection_version": tool_projection_version} if tool_projection_version else {},
+        runtime_preparation=preparation if tool_projection_version else None,
     )
     saved = await stages.record_graph_input(task.runtime_owner, asset)
     assert saved.phase == "runtime_submitted"
     assert saved.source_manifest["graph_input_asset"] == asset.model_dump(mode="json")
-    if with_tool_projection:
+    if tool_projection_version is not None:
         from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
         from src.runtime.task_deferred import TaskDeferred
 
-        assert saved.schema_version == asset.required_message_stage_version == 13
+        expected_version = 12 + tool_projection_version
+        assert saved.schema_version == asset.required_message_stage_version == expected_version
         FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(saved.schema_version)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
-            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=12).require_message_stage(saved.schema_version)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired
         downgraded = saved.model_dump(mode="json")
-        downgraded["schema_version"] = 12
+        downgraded["schema_version"] = expected_version - 1
         with pytest.raises(FrameworkMessageStageRecoveryRequired, match="compatible message stage"):
             validate_message_stage(downgraded)
     assert await stages.record_graph_input(task.runtime_owner, asset) == saved

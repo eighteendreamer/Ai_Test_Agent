@@ -413,15 +413,21 @@ async def test_explicit_interrupt_revokes_reconciler_before_publication(runtime_
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reconcile_pause", ["none", "reconcile_before_commit", "reconcile_after_commit"])
-async def test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling(runtime_harness, reconcile_pause):
+@pytest.mark.parametrize("decision,pause_at", [("approved", "after_native"), ("denied", "after_applied")])
+async def test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling(runtime_harness, reconcile_pause, decision, pause_at):
     h = runtime_harness
+    if decision == "denied":
+        session = await h.store.get_session(h.session_id)
+        for state in (session.metadata["pending_turn"], session.metadata["pending_turn"]["graph_state"]):
+            state["context_bundle"]["framework_tool_projection_version"] = 2
+        await h.store.save_session(session)
     h.settings.orchestration.agent_task_v2_stream = f"{h.prefix}:recovery:v2"
     h.settings.orchestration.resource_default_lease_seconds = 3
     queue = RedisTaskQueue(h.settings.database.redis_url, stream=h.settings.orchestration.agent_task_v2_stream,
         group="control-v2", client=h.redis)
     await queue.connect()
     accepted = await h.dispatcher.submit_approval(h.session_id, h.proposals["B"].approval.id,
-        ApprovalDecisionRequest(decision="approved"))
+        ApprovalDecisionRequest(decision=decision))
     assert await h.outbox.relay_once(queue) == 1
     ctx = multiprocessing.get_context("spawn")
     processes = []
@@ -441,14 +447,24 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
         await asyncio.to_thread(process.join, 20)
         assert process.exitcode == 0
 
-    process = ctx.Process(target=framework_worker_process, args=(h.settings, h.prefix, h.binding, "after_native"))
+    process = ctx.Process(target=framework_worker_process, args=(h.settings, h.prefix, h.binding, pause_at))
     processes.append(process)
     try:
         process.start()
         phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20)
-        assert phase[1] == "after_native", f"worker exit code: {process.exitcode}"
-        assert (await h.jobs.get_job(h.proposals["B"].job.id)).status.value == "completed"
-        assert receipt(h).state == "delivered" and receipt(h).applied_at is None
+        assert phase[1] == pause_at, f"worker exit code: {process.exitcode}"
+        job = await h.jobs.get_job(h.proposals["B"].job.id)
+        assert job.status.value == ("completed" if decision == "approved" else "denied")
+        original_receipt = receipt(h)
+        assert original_receipt.state == "delivered"
+        assert (original_receipt.applied_at is None) is (decision == "approved")
+        if decision == "denied":
+            from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+
+            material = FrameworkToolProjection.model_validate(original_receipt.proof["application"][TOOL_PROJECTION_KEY])
+            material.require_binding(h.binding, h.proposals["B"].link)
+            assert material.message.created_at == material.record.completed_at == job.completed_at
+            assert job.started_at is None
         process.terminate()
         await asyncio.to_thread(process.join, 10)
         assert process.exitcode is not None and process.exitcode != 0
@@ -475,14 +491,20 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
         assert recovered.status == "completed" and recovered.result_status == "reconciled"
         await replacement()
         assert (await h.tasks.get(recovered.result_payload["successor_task_id"])).status == "completed"
-        assert receipt(h).applied_at is not None and await h.redis.get(f"{h.prefix}:framework-effects") == "1"
+        expected_effects = "1" if decision == "approved" else None
+        assert receipt(h).applied_at is not None and await h.redis.get(f"{h.prefix}:framework-effects") == expected_effects
+        if decision == "denied":
+            assert receipt(h) == original_receipt
+            assert await h.jobs.get_job(job.id) == job
+            saved = await h.store.get_session(h.session_id)
+            assert next(message for message in saved.messages if message.id == material.message.id) == material.message
         a = await h.dispatcher.submit_approval(h.session_id, h.proposals["A"].approval.id,
             ApprovalDecisionRequest(decision="denied"))
         await replacement()
         assert (await h.tasks.get(a.task.id)).status == "completed" and receipt(h, "A").applied_at is not None
         assert (await h.store.get_session(h.session_id)).metadata.get("pending_turn") == {}
         assert await h.tasks.get(accepted.task.id) == original
-        assert await h.redis.get(f"{h.prefix}:framework-effects") == "1"
+        assert await h.redis.get(f"{h.prefix}:framework-effects") == expected_effects
     finally:
         await h.redis.rpush(f"{h.prefix}:control:release", "continue")
         for child in processes:

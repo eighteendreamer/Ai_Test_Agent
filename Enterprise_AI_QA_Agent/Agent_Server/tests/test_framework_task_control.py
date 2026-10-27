@@ -83,10 +83,13 @@ def framework_worker_process(settings, prefix, binding, pause_at):
                 await pause()
             return {"status": "completed", "summary": "cross-process tool evidence", "value": arguments["value"]}
 
-        async def settle_with_pause(*args):
+        async def settle_with_pause(*args, **kwargs):
             if pause_at == "after_native":
                 await pause()
-            return await settle(*args)
+            result = await settle(*args, **kwargs)
+            if pause_at == "after_applied":
+                await pause()
+            return result
 
         def event_with_pause(cur, row, event_type, payload):
             append_event(cur, row, event_type, payload)
