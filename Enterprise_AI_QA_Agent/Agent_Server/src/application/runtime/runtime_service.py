@@ -471,11 +471,21 @@ class RuntimeService:
             )
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
+        original_tool_materials = []
         if continuation_plan is not None:
             settled = await self._framework_approval_continuation.settle(
                 current_framework_owner(), continuation_plan.approval.id, continuation_plan.receipt.decision_id)
-            record = await self._tool_runtime_service.record_from_job(settled.job)
-            record.approval_id = settled.approval.id
+            if (state["context_bundle"].get(TOOL_PROJECTION_VERSION_KEY) == 1
+                and settled.receipt.decision["type"] == "approve"):
+                material = await self._framework_approval_continuation.read_tool_projection(
+                    current_framework_owner(), settled.approval.id, settled.receipt.decision_id)
+                original_tool_materials.append(material)
+                record = material.record
+            else:
+                # Historical Turns have no envelope; native reject never
+                # enters the business callback. Do not fabricate its artifact.
+                record = await self._tool_runtime_service.record_from_job(settled.job)
+                record.approval_id = settled.approval.id
             self._merge_tool_records(tool_records, [record.model_dump(mode="python")])
         state["framework_messages"] = list(result.framework_messages or [])
         if result.interrupts:
@@ -515,7 +525,7 @@ class RuntimeService:
                 state=state,
                 tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
                     binding_id=request.runtime_binding.binding_id if request.runtime_binding else None,
-                    previous_messages=session.messages, event_log=state["event_log"]),
+                    previous_messages=session.messages, event_log=state["event_log"], original_materials=original_tool_materials),
                 pending_turn=state["pending_turn"],
             )
         state["cognitive_subagent_events"] = list(result.subagent_events)
@@ -561,7 +571,7 @@ class RuntimeService:
             state=state,
             tool_messages=self._to_chat_messages(state["turn_id"], tool_records,
                 binding_id=request.runtime_binding.binding_id if request.runtime_binding else None,
-                previous_messages=session.messages, event_log=state["event_log"]),
+                previous_messages=session.messages, event_log=state["event_log"], original_materials=original_tool_materials),
             pending_turn={},
         )
 
@@ -2523,9 +2533,9 @@ class RuntimeService:
         records[:] = list(by_call.values())
 
     def _to_chat_messages(self, turn_id: str, tool_results: list[dict], *, binding_id: str | None = None,
-                          previous_messages=(), event_log=()) -> list[ChatMessage]:
+                          previous_messages=(), event_log=(), original_materials=()) -> list[ChatMessage]:
         return build_chat_tool_messages(turn_id, tool_results, binding_id=binding_id,
-            previous_messages=previous_messages, event_log=event_log,
+            previous_messages=previous_messages, event_log=event_log, original_materials=original_materials,
             hygiene_metadata=self._transcript_hygiene_service.tool_message_metadata())
 
     def _build_tool_message(self, record: ToolExecutionRecord) -> dict[str, Any]:

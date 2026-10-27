@@ -91,6 +91,58 @@ async def test_jsonb_key_reordering_preserves_original_display_string_and_model_
     # The JSON object order is not a safe source for re-rendering the original
     # strings. Preserve both strings instead of weakening display equality.
     assert list(restored.record.output) != list(material.record.output)
+    # The normal application consumer must use the preserved string too; a
+    # material saved successfully but ignored during rendering is insufficient.
+    projected = build_chat_tool_messages(binding.turn_id, [restored.record.model_dump(mode="python")],
+        binding_id=binding.binding_id, hygiene_metadata=TranscriptHygieneService().tool_message_metadata(),
+        original_materials=[restored])
+    assert projected == [material.message]
+
+
+@pytest.mark.parametrize("changed", ["record", "ordinal", "published", "duplicate", "unbound"])
+def test_original_material_consumer_does_not_hide_record_slot_or_published_conflicts(changed):
+    from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+
+    binding, source, material = sample()
+    record = material.record.model_dump(mode="python")
+    materials, previous = [material], []
+    if changed == "record":
+        record["output"]["new"] = "changed"
+    elif changed == "ordinal":
+        record = [dict(record, call_id="pending", status="waiting_approval"), record]
+    elif changed == "published":
+        previous = [material.message.model_copy(update={"content": "changed"})]
+    elif changed == "duplicate":
+        other = material.model_dump(mode="json")
+        other["model_content"] += "changed"
+        other["sha256"] = approval_value_hash({key: value for key, value in other.items() if key != "sha256"})
+        materials.append(FrameworkToolProjection.model_validate(other))
+    with pytest.raises(FrameworkApprovalRecoveryRequired, match="Original tool projection"):
+        build_chat_tool_messages(binding.turn_id, record if isinstance(record, list) else [record],
+            binding_id=None if changed == "unbound" else binding.binding_id,
+            hygiene_metadata=TranscriptHygieneService().tool_message_metadata(),
+            previous_messages=previous, original_materials=materials)
+
+
+@pytest.mark.parametrize("changed", ["call", "name", "status", "missing", "future", "source"])
+def test_native_material_reader_rejects_wrong_native_identity_or_missing_format(changed):
+    binding, source, material = sample()
+    message = ToolMessage(content=material.model_content, name=source.tool_name, tool_call_id=source.tool_call_id,
+        artifact={TOOL_PROJECTION_KEY: material.model_dump(mode="json")})
+    if changed == "call":
+        message.tool_call_id = "other-call"
+    elif changed == "name":
+        message.name = "other-tool"
+    elif changed == "status":
+        message.status = "error"
+    elif changed == "missing":
+        message.artifact = None
+    elif changed == "future":
+        message.artifact[TOOL_PROJECTION_KEY]["schema_version"] = 2
+    else:
+        source = source.model_copy(update={"source_message_id": "other-ai"})
+    with pytest.raises(ValueError):
+        FrameworkToolProjection.from_tool_message(message, binding=binding, source=source)
 
 
 @pytest.mark.asyncio
@@ -105,7 +157,7 @@ async def test_official_large_result_offload_preserves_private_original_material
     middleware = FilesystemMiddleware(backend=backend, tool_token_limit_before_evict=1)
     evicted = await middleware._aintercept_large_tool_result(message)
     assert evicted.content != message.content and evicted.tool_call_id == message.tool_call_id
-    assert FrameworkToolProjection.model_validate(evicted.artifact[TOOL_PROJECTION_KEY]).require_binding(binding, source) == material
+    assert FrameworkToolProjection.from_tool_message(evicted, binding=binding, source=source) == material
 
 
 def worker_paused_before_application_tool_result(settings_raw, owner_raw, request_raw, identity_raw, gate):

@@ -133,6 +133,91 @@ async def test_runtime_replay_then_successor_preserves_results_and_transcript_id
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("offloaded", [False, True])
+async def test_prepared_approval_consumes_original_tool_material_without_reprocessing_output(runtime_harness, monkeypatch, offloaded):
+    from langchain_core.messages import ToolMessage
+    from src.application.deep_agents.framework_transcript import deserialize_messages
+    from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+    from src.schemas.tool_runtime import ToolExecutionRecord
+
+    h = runtime_harness
+    if offloaded:
+        from deepagents import create_deep_agent
+        from deepagents.middleware.filesystem import FilesystemMiddleware
+
+        def factory(**kwargs):
+            return create_deep_agent(**{**kwargs, "middleware": [*kwargs.get("middleware", []),
+                FilesystemMiddleware(tool_token_limit_before_evict=1)]})
+
+        monkeypatch.setattr(h.runtime._deep_agent_bound_runtime_adapter, "_resolve_factory", lambda: factory)
+    session = await h.store.get_session(h.session_id)
+    pending = session.metadata["pending_turn"]
+    # Exercise the prepared material contract on the existing real approval
+    # harness, without changing its source AI/interrupt/Job identities.
+    pending["context_bundle"]["framework_tool_projection_version"] = 1
+    pending["graph_state"]["context_bundle"]["framework_tool_projection_version"] = 1
+    await h.store.save_session(session)
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("settled output was processed again instead of consuming its original native material")
+
+    monkeypatch.setattr(h.runtime._tool_runtime_service, "record_from_job", forbidden)
+    task = await claim_decision(h)
+    result = await resume(h, task)
+    native, = [message for message in deserialize_messages(result.state["framework_messages"])
+        if isinstance(message, ToolMessage)]
+    material = FrameworkToolProjection.model_validate(native.artifact[TOOL_PROJECTION_KEY])
+    assert (native.content != material.model_content) is offloaded
+    assert result.tool_messages == [material.message]
+    record, = [item for item in result.state["tool_results"] if item["status"] != "waiting_approval"]
+    assert ToolExecutionRecord.model_validate(record) == material.record
+    assert h.effects == [("B", h.proposals["B"].job.id)] and receipt(h).applied_at is not None
+    replay = await resume(h, task)
+    assert replay.tool_messages == result.tool_messages and h.effects == [("B", h.proposals["B"].job.id)]
+    events, original_receipt = await h.store.list_events(h.session_id), receipt(h)
+    with framework_owner_scope(task.runtime_owner):
+        read = await h.runtime._framework_approval_continuation.read_tool_projection(
+            task.runtime_owner, task.reference_id, task.input["decision_id"])
+    assert read == material and receipt(h) == original_receipt
+    assert await h.store.list_events(h.session_id) == events
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["before_applied", "native", "job", "owner", "approval"])
+async def test_original_tool_material_read_is_bound_to_current_applied_facts(runtime_harness, changed):
+    from src.infrastructure.postgres_runtime import postgres_connect
+
+    h = runtime_harness
+    session = await h.store.get_session(h.session_id)
+    pending = session.metadata["pending_turn"]
+    pending["context_bundle"]["framework_tool_projection_version"] = 1
+    pending["graph_state"]["context_bundle"]["framework_tool_projection_version"] = 1
+    await h.store.save_session(session)
+    task = await claim_decision(h)
+    if changed != "before_applied":
+        await resume(h, task)
+    proposal = h.proposals["B"]
+    if changed == "owner":
+        assert await h.store.renew_turn_execution(h.session_id, task.lease_token, 0)
+    elif changed in {"native", "job"}:
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            if changed == "native":
+                cur.execute(f"DELETE FROM {h.settings.deep_agents.checkpoint_schema}.checkpoint_writes "
+                    "WHERE thread_id=%s AND checkpoint_id=%s AND task_id=%s AND channel='messages'",
+                    (h.binding.thread_id, proposal.link.checkpoint_id, proposal.link.graph_task_id))
+            else:
+                cur.execute(f"UPDATE {h.settings.database.postgres_tool_job_table} SET output_payload=%s::jsonb WHERE id=%s",
+                    ('{"evidence":"changed after settlement"}', proposal.job.id))
+    original_receipt, events = receipt(h), await h.store.list_events(h.session_id)
+    with framework_owner_scope(task.runtime_owner), pytest.raises(
+        ContinuationLeaseLostError if changed == "owner" else FrameworkApprovalRecoveryRequired):
+        await h.runtime._framework_approval_continuation.read_tool_projection(task.runtime_owner,
+            h.proposals["A"].approval.id if changed == "approval" else task.reference_id, task.input["decision_id"])
+    assert receipt(h) == original_receipt and await h.store.list_events(h.session_id) == events
+    assert h.effects == ([] if changed == "before_applied" else [("B", proposal.job.id)])
+
+
+@pytest.mark.asyncio
 async def test_runtime_unknown_effect_stops_before_adapter(runtime_harness):
     h = runtime_harness
     task = await claim_decision(h)
@@ -308,7 +393,7 @@ async def fresh_runtime_harness(projection_harness):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prepared", [False, True])
-async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared):
+async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared, monkeypatch):
     from datetime import datetime
     from src.schemas.framework_graph_input import FrameworkProjectionIdentity
 
@@ -343,6 +428,11 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         first = await h.runtime.execute_turn(session, request, on_graph_input=freeze,
             projection_identity=identity if prepared else None)
     assert len(first.approvals) == 2 and h.effects == []
+    if prepared:
+        async def forbidden(*args, **kwargs):
+            pytest.fail("prepared approval must consume original output without processing ToolJob again")
+
+        monkeypatch.setattr(h.runtime._tool_runtime_service, "record_from_job", forbidden)
     assert len(first.state["tool_results"]) == 2
     by_call = {item["metadata"]["call_id"]: item for item in first.approvals}
     h.proposals = {key: SimpleNamespace(approval=SimpleNamespace(id=value["id"])) for key, value in by_call.items()}

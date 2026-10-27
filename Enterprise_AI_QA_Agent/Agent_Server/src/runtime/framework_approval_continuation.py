@@ -79,28 +79,46 @@ class FrameworkApprovalContinuation:
                         "native_feedback": message.content, "instruction_authority": "none"}
                     job.updated_at = job.completed_at = datetime.utcnow()
                     job = self._jobs.save_job_in_transaction(cur, job, framework_owner=owner)
-                outcome = "human_rejected"
-            else:
-                try:
-                    payload = json.loads(message.content) if isinstance(message.content, str) else None
-                except (TypeError, ValueError) as exc:
-                    raise FrameworkApprovalRecoveryRequired("Native governed result is not a valid tool response") from exc
-                expected_status = "denied" if job.status == ToolJobStatus.cancelled else job.status.value
-                if (message.status != "success" or not isinstance(payload, dict)
-                    or payload.get("status") != expected_status or payload.get("instruction_authority") != "none"):
-                    raise FrameworkApprovalRecoveryRequired("Native governed result differs from its terminal ToolJob")
-                outcome = "governance_denied" if job.status == ToolJobStatus.denied and job.started_at is None else "tool_result"
-            evidence.update(decision_hash=plan.receipt.decision_hash, tool_job_id=job.id,
-                tool_job_status=job.status.value, tool_output_hash=approval_value_hash(job.output_payload), outcome=outcome)
+            evidence = self._application_evidence(owner.binding, plan, job, message, evidence)
             receipt = self._journal.record_application_in_transaction(cur, plan.receipt, evidence)
             self._sessions.append_event_in_transaction(cur, owner.binding.session_id, ExecutionEvent(
                 id=f"framework-decision:{decision_id}:applied", session_id=owner.binding.session_id,
                 type="approval.decision_applied", timestamp=receipt.applied_at, turn_id=owner.binding.turn_id,
                 trace_id=job.trace_id, attempt_id=owner.attempt_id, worker_id=owner.worker_id,
                 payload={"task_id": owner.task_id, "turn_id": owner.binding.turn_id, "approval_id": approval_id,
-                    "decision_id": decision_id, "tool_job_id": job.id, "status": job.status.value, "outcome": outcome}),
+                    "decision_id": decision_id, "tool_job_id": job.id, "status": job.status.value, "outcome": evidence["outcome"]}),
                 turn_lease_token=owner.owner_token)
             return FrameworkContinuationPlan(approval=plan.approval, job=job, link=plan.link, receipt=receipt)
+
+    @staticmethod
+    def _application_evidence(binding, plan, job, message, evidence):
+        if plan.approval.status.value == "denied":
+            if message.status != "error" or not isinstance(message.content, str) or not message.content:
+                raise FrameworkApprovalRecoveryRequired("Native rejection result requires reconciliation")
+            outcome = "human_rejected"
+        else:
+            content = message.content
+            from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+
+            if isinstance(message.artifact, dict) and TOOL_PROJECTION_KEY in message.artifact:
+                try:
+                    material = FrameworkToolProjection.from_tool_message(message, binding=binding, source=plan.link)
+                except ValueError as exc:
+                    raise FrameworkApprovalRecoveryRequired("Original approved tool projection requires reconciliation") from exc
+                if material.record.job_id != job.id or material.record.approval_id != plan.approval.id:
+                    raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its approved ToolJob")
+                content = material.model_content
+            try:
+                payload = json.loads(content) if isinstance(content, str) else None
+            except (TypeError, ValueError) as exc:
+                raise FrameworkApprovalRecoveryRequired("Native governed result is not a valid tool response") from exc
+            expected_status = "denied" if job.status == ToolJobStatus.cancelled else job.status.value
+            if (message.status != "success" or not isinstance(payload, dict)
+                or payload.get("status") != expected_status or payload.get("instruction_authority") != "none"):
+                raise FrameworkApprovalRecoveryRequired("Native governed result differs from its terminal ToolJob")
+            outcome = "governance_denied" if job.status == ToolJobStatus.denied and job.started_at is None else "tool_result"
+        return {**evidence, "decision_hash": plan.receipt.decision_hash, "tool_job_id": job.id,
+            "tool_job_status": job.status.value, "tool_output_hash": approval_value_hash(job.output_payload), "outcome": outcome}
 
     def _prepare(self, owner, approval_id, decision_id):
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
@@ -108,6 +126,57 @@ class FrameworkApprovalContinuation:
             return self._prepare_in_transaction(cur, owner, approval_id, decision_id)
 
     def _prepare_in_transaction(self, cur, owner, approval_id, decision_id):
+        plan, consumed, task = self._owned_plan_in_transaction(cur, owner, approval_id, decision_id)
+        binding = owner.binding
+        if consumed:
+            receipt = self._journal.reconcile_delivery_in_transaction(cur, owner, approval_id)
+            event = ExecutionEvent(id=f"framework-decision:{decision_id}:delivered", session_id=binding.session_id,
+                type="approval.decision_delivered", timestamp=receipt.delivered_at,
+                turn_id=binding.turn_id, trace_id=task["trace_id"], request_id=task["request_id"],
+                attempt_id=owner.attempt_id, worker_id=owner.worker_id,
+                payload={"task_id": owner.task_id, "turn_id": binding.turn_id, "approval_id": approval_id,
+                    "decision_id": decision_id, "tool_job_id": plan.job.id, "interrupt_id": plan.link.interrupt_id})
+            self._sessions.append_event_in_transaction(cur, binding.session_id, event,
+                turn_lease_token=owner.owner_token)
+        else:
+            receipt = self._journal.mark_sending_in_transaction(cur, approval_id)
+        return plan.model_copy(update={"receipt": receipt})
+
+    async def read_tool_projection(self, owner, approval_id, decision_id):
+        """Read original material, not a fresh ToolJob output transformation.
+
+        This neither settles a decision nor grants recovery/execution rights.
+        Retained native task writes survive message summarization and carry
+        the exact artifact even if the current transcript no longer does.
+        """
+        try:
+            material = await asyncio.to_thread(self._read_tool_projection, owner, approval_id, decision_id)
+        except Exception as exc:
+            logger.warning("framework_tool_projection_read_rejected", extra={
+                "binding_id": owner.binding.binding_id, "approval_id": approval_id,
+                "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_tool_projection_read", extra={"binding_id": owner.binding.binding_id,
+            "approval_id": approval_id, "material_sha256": material.sha256})
+        return material
+
+    def _read_tool_projection(self, owner, approval_id, decision_id):
+        from src.schemas.framework_tool_projection import FrameworkToolProjection
+
+        with postgres_connect(self._settings) as connection, connection.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            plan, consumed, _ = self._owned_plan_in_transaction(cur, owner, approval_id, decision_id)
+            if not consumed or plan.receipt.applied_at is None or plan.receipt.decision["type"] != "approve":
+                raise FrameworkApprovalRecoveryRequired("Original tool projection requires its applied approval")
+            message, evidence = self._journal.require_tool_result_in_transaction(cur, owner.binding, plan.link)
+            if (plan.receipt.proof or {}).get("application") != self._application_evidence(owner.binding, plan, plan.job, message, evidence):
+                raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its applied native result")
+            try:
+                return FrameworkToolProjection.from_tool_message(message, binding=owner.binding, source=plan.link)
+            except ValueError as exc:
+                raise FrameworkApprovalRecoveryRequired("Original approved tool projection requires reconciliation") from exc
+
+    def _owned_plan_in_transaction(self, cur, owner, approval_id, decision_id):
         binding = owner.binding
         assert_runtime_owner(cur, self._settings, owner)
         cur.execute(f"SELECT * FROM {self._settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE",
@@ -130,19 +199,7 @@ class FrameworkApprovalContinuation:
 
             require_successor_proof(cur, self._settings, task)
         plan, consumed = self.inspect_decision_in_transaction(cur, binding, task)
-        if consumed:
-            receipt = self._journal.reconcile_delivery_in_transaction(cur, owner, approval_id)
-            event = ExecutionEvent(id=f"framework-decision:{decision_id}:delivered", session_id=binding.session_id,
-                type="approval.decision_delivered", timestamp=receipt.delivered_at,
-                turn_id=binding.turn_id, trace_id=task["trace_id"], request_id=task["request_id"],
-                attempt_id=owner.attempt_id, worker_id=owner.worker_id,
-                payload={"task_id": owner.task_id, "turn_id": binding.turn_id, "approval_id": approval_id,
-                    "decision_id": decision_id, "tool_job_id": plan.job.id, "interrupt_id": plan.link.interrupt_id})
-            self._sessions.append_event_in_transaction(cur, binding.session_id, event,
-                turn_lease_token=owner.owner_token)
-        else:
-            receipt = self._journal.mark_sending_in_transaction(cur, approval_id)
-        return plan.model_copy(update={"receipt": receipt})
+        return plan, consumed, task
 
     def inspect_decision_in_transaction(self, cur, binding, task):
         """Read frozen decision/native/Job facts under the caller's owner locks.

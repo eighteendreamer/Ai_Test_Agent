@@ -17,15 +17,28 @@ logger = logging.getLogger(__name__)
 
 
 def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_metadata: dict,
-                             binding_id: str | None = None, previous_messages=(), event_log=()) -> list[ChatMessage]:
+                             binding_id: str | None = None, previous_messages=(), event_log=(),
+                             original_materials=()) -> list[ChatMessage]:
     """Project original facts without assigning a new clock on bound replay.
 
     Existing published messages retain their original time (including older
     pending Turns). Otherwise use the persisted operation's completion time.
     Pre-execution governance refusals legitimately have no Job: their existing
     acknowledged completion event is the time source, not a fabricated Job.
+    Original materials have already been source-checked by their reader. Reuse
+    their exact display strings (JSONB can reorder record output objects), but
+    never let them hide a record, ordinal, or published-message conflict.
     This pure projector neither creates facts nor grants graph recovery rights.
     """
+    from src.schemas.framework_tool_projection import FrameworkToolProjection
+
+    originals = {}
+    for value in original_materials:
+        material = FrameworkToolProjection.model_validate_json(value.model_dump_json())
+        call_id = material.record.call_id
+        if call_id in originals and originals[call_id] != material:
+            raise FrameworkApprovalRecoveryRequired("Original tool projection material has conflicting contents")
+        originals[call_id] = material
     previous = {}
     if binding_id is not None:
         identities = {str(uuid5(NAMESPACE_URL, f"framework-tool:{binding_id}:{item['call_id']}"))
@@ -42,6 +55,17 @@ def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_
             continue
         identity = (str(uuid5(NAMESPACE_URL, f"framework-tool:{binding_id}:{item['call_id']}"))
             if binding_id is not None else str(uuid4()))
+        original = originals.get(item["call_id"])
+        if original is not None:
+            message = original.message
+            if (binding_id is None or original.record != ToolExecutionRecord.model_validate(item)
+                or message.id != identity or message.role != MessageRole.tool
+                or message.metadata.get("turn_id") != turn_id or message.metadata.get("tool_call_id") != item["call_id"]
+                or message.metadata.get("ordinal") != index
+                or (identity in previous and previous[identity] != message)):
+                raise FrameworkApprovalRecoveryRequired("Original tool projection differs from its result or published message")
+            messages.append(message.model_copy(deep=True))
+            continue
         content = (
             f"{item.get('tool_name', item.get('tool_key', 'tool'))}\n"
             f"status: {item.get('status', 'unknown')}\n"

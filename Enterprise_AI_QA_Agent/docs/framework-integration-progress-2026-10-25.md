@@ -2109,3 +2109,54 @@ $env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framew
 续接直接核对六组原日志终态，确认 finalization 最终组为 **118 passed，479.57秒**，修正上面的运行中占位；没有重启已通过测试。当前进程清单无 pytest。根目录再次实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均通过；v4（12个围栏／30处绝对文件链接）、实施记录（156个围栏／1处绝对文件链接）结构及本地目标存在检查通过。生产调用及格式消费者检索覆盖 tool_projection marker／flag、graph-input parser、message-stage、Worker capability 与 Dispatcher；固定源码复核 `_format_output` 和 `_build_evicted_tool_message`。再次确认 ruff／mypy／官方 conformance 未安装，未宣称通过这些检查。
 
 本节代码／测试／记录归属同一提交，主题 `【feat】在原生工具消息中保存完整投影材料`，实际 commit ID 以 Git 历史及交付输出为准。整体目标保持 active；下一步补未进入 callback 的材料、完整事件完成边界和共享确定性结果投影，不凭本节局部材料扩大恢复权。
+
+## 59. A2-2：审批工具结果消费原生材料，兼容官方大输出 offload（2026-10-27）
+
+基线 `bd85c2a4d`。续接核对 v4、§52–58、实际 Git 和六组原日志，先将 §58 完整代码／测试提交；原 v3 文档修改继续保留且排除于本节提交。§54 已有 P0 根因修复，不根据 v4 的旧快照重复实现排序器。当前沿已运行的 UUID 隔离 PG／Redis Harness 开发，没有启动／停止服务、修改依赖／DDL／生产路由或新增付费调用。
+
+### 有效红测、根因与依据
+
+1. 检查原生拒绝路径确认官方 HITL `reject` 不进入工具 callback，不能假造同样的 artifact。追查共同投影链时发现更前置的问题：§58 虽保存原材料，批准后的 Runtime 仍调用 `record_from_job` 二次加工输出，再覆盖 callback record。给真实审批链增加“禁止第二次加工”断言，取得 **1 failed、22 deselected，12.75秒**，失败点为 Runtime 477行的第二次 `record_from_job`，不是导入或 fixture 错误。
+2. 固定版本官方 FilesystemMiddleware 把大输出正文替换为文件预览，但保留 artifact。将同一个真实审批用例接入官方 `tool_token_limit_before_evict=1` 路径后，结算还在对预览执行 `json.loads`：**1 failed、28 deselected，9.99秒**，`JSONDecodeError` 被正确上报为 `FrameworkApprovalRecoveryRequired`。根因是原模型内容与 SDK 当前展示内容职责混用，不能靠放行未知正文或删掉原生比较解决。
+3. 查证固定 core 1.6.10 `tools/base.py::_format_output`、Deep Agents 0.7.13 `_message_eviction.py::_build_evicted_tool_message`／FilesystemMiddleware 与 LangChain 1.4.6 HITL `_answer_message`／`awrap_tool_call`；官方 [Messages](https://docs.langchain.com/oss/python/langchain/messages#tool-message)明确 artifact 是应用侧非模型数据，官方 [HITL](https://docs.langchain.com/oss/python/langchain/human-in-the-loop)区分 approve 执行与 reject 跳过工具。使用固定版本机制，不升级 SDK、不修改 site-packages。
+4. 本地参考 `G:\Code_Warehouse\DeepAgent-Studio\借鉴\codex\codex-rs\rollout\src\recorder.rs::persist/flush`，只借鉴“先确认保存、再消费原事实”的边界；本项目继续使用原生 task writes 和既有审批 journal，不搬 JSONL／队列。课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html`用于同时检查结果、轨迹、重复副作用及协议错误；读取时一次终端 GBK 编码错误已通过仅设置 `PYTHONIOENCODING=utf-8`解决，不计功能红测。
+
+### 实现与边界
+
+- 在现有 `FrameworkApprovalContinuation` 内抽出共享的 owned-plan 事实校验，prepare 继续负责原发送／交付投影。新 `read_tool_projection` 只读取：重新核对当前 owner／task／Session／绑定、原决定消费及 applied 事实，读取原调用保留的原生 task writes，完整核对 application evidence，再解析原材料。它不标记 sending、不补 applied、不开图、不创建后继或新存储。
+- 原生 task writes 不依赖当前 transcript 是否还保留完整旧工具正文；本节使用已有 journal 的精确 namespace／checkpoint／task／call 读取，不按最后文本或 provider ID 单独猜匹配。材料读者核对 source／工具／call、schema、摘要与 binding；材料 scope 不变，仍不提供执行或恢复许可。
+- 结算和只读消费共用 `_application_evidence`：保留原生 result hash、实际 Job 输出 hash、决定／调用及 outcome 证明。存在已验证材料时，模型语义内容取原 `model_content`；当前预览仍是原生消息的一部分，继续参与精确原件比较及 hash。无材料历史分支保持原内容契约，不静默把任意字符串当成功结果。
+- 只对 marker1 且 approve 的新材料路径，Runtime 使用原 record，不再重取／重加工 ToolJob artifacts。共享 `build_chat_tool_messages`消费同一原材料的完整 ChatMessage，保留原身份、正文、时间、metadata。先核对完整 record、当前槽位及已发布消息；冲突仍明确对账，不从 JSONB 重排后的字典重新渲染原字符串，不靠排序输出或弱化全文比较通过。
+- 测试覆盖真实 stage13 图前准备、两个独立审批任务、B先A后、重复续跑、官方 offload、只读读取不增加事件／回执写入；另覆盖未 applied、错误审批引用、原生结果缺失、Job 漂移及失租。原消息范围／循环／摘要／finalizer 不变，无新增持久字段或格式号。
+
+### v4 对应与剩余出口
+
+| v4 阶段／条款 | 本节代码与测试 | 已实现范围／剩余出口 |
+| --- | --- | --- |
+| A2-2，§9.2／§9.4，H05/H11 | approval_continuation、Runtime、tool_messages、tool_projection／approval_runtime | 新批准工具的正常消费及只读原材料校验，避免重复输出加工；不是完整 RuntimeTurnResult 导出或无资产恢复 |
+| P0／审批，§7–8，H02/H03/H12 | 共用 application evidence、官方 offload 与审批回归 | 原模型内容／SDK预览分别保留，严格原生比较不豁免；旧没有原材料的输出 offload 不据此宣称已可恢复 |
+| A1／A2-1，§9.4 | 原应用投影与收尾回归 | 沿原结果资产和唯一 finalizer，不新增平行投影链或扩大 ACK 权限 |
+| 格式兼容，§14／§16 | 原 marker1／stage13 消费者及旧无 marker 分支 | 无新序列化字段／DDL；§58新写者上线前兼容读者或隔离旧消费者要求不变，E4另验 |
+
+**A2-2仍未完成。** 本节没有为原生 HITL reject 保存完整原应用展示材料；拒绝仍沿既有 ToolJob／receipt／continuation 分支生成，不伪造 callback artifact。完整事件完成边界和终态精确绑定、正常／恢复共享完整结果投影、无原结果资产的独立 Worker 恢复准入仍待实施；也没有声称已覆盖任意摘要后的整套结果重建。A2-3／A3／B/C/D/E/F保持完整范围。
+
+### 最终源码验证与提交归属
+
+首个消费红测修复后 **1 passed、22 deselected，8.60秒**。增加真实 offload 后两项 **2 passed、27 deselected，13.28秒**。早期工具材料／消息／审批 Runtime／continuation 组 **100 passed，169.37秒**；该组早于最后的 offload 证据修正和真实 prepared 双审批禁重加工断言，不以它替代最终回归。
+
+以下在 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server`，使用独立解释器，设置 `RUN_LIVE_POSTGRES_TESTS=1`／`PYTHONIOENCODING=utf-8`。最终生产源码及测试没有再修改；完整 stdout／stderr 保留为 `.codex-logs/framework-tool-material-consumer-*-final-2026-10-27.txt`，红测／早期日志不覆盖。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_tool_projection.py tests/test_framework_tool_messages.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_tool_bridge.py tests/test_framework_chat_models.py tests/test_framework_graph_input_asset.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py -q -x -rs --tb=short
+# 274 passed，325.06秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_receipts.py tests/test_framework_delta_replay_order.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_tool_authority.py tests/test_framework_live_event_persistence.py -q -x -rs --tb=short
+# 124 passed，483.86秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 118 passed，458.88秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_framework_terminal_gap.py -q -x -rs --tb=short
+# 130 passed，526.78秒，无 skip。
+```
+
+最终会话23935／93114／42645／82260均已取回退出码0，早期及红测也已取回终态，没有遗留本轮运行中的测试；未因观察超时重新启动。根目录实际运行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`及 v4／实施记录的围栏和绝对文件链接检查均通过；最终文档补齐后再次核对。源码检索覆盖新读端口、共用证据校验及消息投影的所有生产消费方；公共 API／前端契约没有变化。ruff／mypy／官方 saver conformance仍未安装，不声称这些检查通过。未运行全量、前端、真实供应商／RustFS／领域 Runner及 E4部署演练；隔离 PG／Redis／独立进程回归最高 E2，模型和工具仍为受控样本，不累计早期／重叠批次冒充覆盖率。
+
+本节代码／测试／记录归属同一提交，主题 `【fix】从原生材料投影审批工具结果`，实际 commit ID 以 Git 历史及交付输出为准。整体 goal 保持 active；下一步补拒绝分支的原应用材料、完整事件完成边界及共享确定性结果投影，不把本节批准工具的材料消费等同完整 A2-2 恢复。

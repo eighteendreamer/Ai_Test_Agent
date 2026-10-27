@@ -56,6 +56,17 @@ class FrameworkToolProjection(BaseModel):
         return self
 
     @classmethod
+    def from_tool_message(cls, message, *, binding, source):
+        artifact = message.artifact
+        if (message.tool_call_id != source.tool_call_id or message.name != source.tool_name
+            or message.status != "success" or not isinstance(artifact, dict)
+            or TOOL_PROJECTION_KEY not in artifact):
+            raise ValueError("Original governed tool result has no matching projection material")
+        # Offload may replace content with a file preview. The original content
+        # belongs to this envelope, not to the SDK's current display string.
+        return cls.model_validate(artifact[TOOL_PROJECTION_KEY]).require_binding(binding, source)
+
+    @classmethod
     def capture(cls, *, binding, source, record, message, model_content):
         payload = {"schema_version": 1, "scope": "tool_projection_material_only",
             "binding_fingerprint": binding.fingerprint, "source": source.model_dump(mode="json"),
