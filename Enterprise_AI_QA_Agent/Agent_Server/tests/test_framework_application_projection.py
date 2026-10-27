@@ -30,7 +30,7 @@ from tests.test_framework_message_stages import run, selected, stage
 from tests.test_framework_model_calls import intent, usage
 
 
-def worker_waiting_after_application_commit(settings_data, config_data, prefix, gate, window="after_commit"):
+def worker_waiting_after_application_commit(settings_data, config_data, prefix, gate, window="after_commit", evidence_root=None):
     """Real SDK/Deep Agents Worker paused at an explicit application boundary."""
     from redis.asyncio import Redis
     from src.core.config import Settings
@@ -63,9 +63,15 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
         calls = PostgresFrameworkModelCalls(settings)
         models = ModelRuntimeService(Registry(), settings)
         provider = DeepAgentCheckpointProvider(settings)
+        evidence = None
+        if evidence_root is not None:
+            from src.application.models.framework_model_evidence import FrameworkModelEvidence
+            from tests.test_framework_terminal_gap import LocalModelObjects
+
+            evidence = FrameworkModelEvidence(objects=LocalModelObjects(evidence_root))
         adapter = DeepAgentRuntimeAdapter(model_resolver=models.resolve_langchain_chat_model,
             checkpointer_factory=provider.open,
-            model_call_policy=FrameworkModelCallPolicy(calls=calls, model_config_resolver=models.get_model_config))
+            model_call_policy=FrameworkModelCallPolicy(calls=calls, model_config_resolver=models.get_model_config, evidence=evidence))
         runtime = RuntimeService(graph=None, model_runtime_service=models, tool_runtime_service=object(),
             tool_registry=ToolRegistry(), runtime_control=RuntimeControlRegistry(), deep_agent_enabled=True,
             deep_agent_bound_runtime_adapter=adapter)
@@ -114,6 +120,13 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                         signal.rpush(gate, "finalization-uncommitted")
                     threading.Event().wait()
                 projections.record_application_commit = record_and_pause
+        elif window == "after_graph_return":
+            execute = adapter.execute
+            async def graph_returned(*args, **kwargs):
+                result = await execute(*args, **kwargs)
+                await redis.rpush(gate, json.dumps(result.metadata["native_terminal"]))
+                await asyncio.Event().wait()
+            adapter.execute = graph_returned
         elif window == "before_finalization":
             sessions._finalize_runtime_result = pause
         elif window == "after_snapshot":

@@ -15,6 +15,7 @@ from src.application.deep_agents.framework_transcript import (
     serialize_messages,
 )
 from src.schemas.framework_approval import NativeToolInterrupt
+from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 
 
 class DeepAgentRuntimeError(RuntimeError):
@@ -119,6 +120,7 @@ class DeepAgentRuntimeAdapter:
                 raise DeepAgentRuntimeError("Checkpoint owner does not match the runtime request binding.")
 
         stage = _pilot_stage(request)
+        native_terminal = None
         try:
             model = await self._model_resolver(request.model_key)
             cleanup = None
@@ -224,10 +226,15 @@ class DeepAgentRuntimeAdapter:
                     reported_ids = {item.id for item in result.get("__interrupt__", [])}
                     if {item.interrupt_id for item in native_interrupts} != reported_ids:
                         raise DeepAgentRuntimeError("Returned interrupts disagree with pending native tasks.")
+                    if not native_interrupts:
+                        from src.application.deep_agents.native_terminal import collect_native_terminal
+
+                        terminal = await collect_native_terminal(agent, checkpointer, invoke_config, returned_values=result)
+                        native_terminal = terminal.proof.model_dump(mode="json")
             finally:
                 if cleanup is not None:
                     cleanup()
-        except DeepAgentRuntimeError:
+        except (DeepAgentRuntimeError, FrameworkMessageStageRecoveryRequired):
             raise
         except Exception as exc:
             raise DeepAgentRuntimeError(
@@ -253,6 +260,7 @@ class DeepAgentRuntimeAdapter:
                 "harness": "deepagents",
                 "stage": stage,
                 "message_count": len(messages),
+                **({"native_terminal": native_terminal} if native_terminal is not None else {}),
             },
             messages=messages,
             framework_messages=framework_messages,

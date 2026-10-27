@@ -13,6 +13,7 @@ from contextlib import contextmanager, closing
 from langgraph.checkpoint.postgres import PostgresSaver
 
 from src.application.deep_agents.threaded_postgres_saver import ThreadedPostgresSaver
+from src.application.deep_agents.path_ordered_postgres_saver import PathOrderedPostgresSaver
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.framework_approval_journal import FrameworkApprovalJournal
@@ -93,7 +94,7 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
                     storage_config, [("__resume__", resume)] if resume is not None else writes, task_id, task_path)
 
     def get_tuple(self, config):
-        return self._graph_tuple(PostgresSaver(self.conn, serde=self.serde).get_tuple(self._storage_config(config)))
+        return self._graph_tuple(PathOrderedPostgresSaver(self.conn, serde=self.serde).get_tuple(self._storage_config(config)))
 
     def get_interrupt_task(self, config, task_id):
         storage_config = self._storage_config(config)
@@ -112,7 +113,7 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
         if limit == 0:
             return
         count = 0
-        with closing(PostgresSaver(self.conn, serde=self.serde).list(
+        with closing(PathOrderedPostgresSaver(self.conn, serde=self.serde).list(
             storage_config, filter=filter,
             before=self._storage_config(before) if before is not None else None,
             limit=None if all_namespaces else limit)) as iterator:
@@ -127,7 +128,7 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
                     return
 
     def get_delta_channel_history(self, *, config, channels):
-        return PostgresSaver(self.conn, serde=self.serde).get_delta_channel_history(
+        return PathOrderedPostgresSaver(self.conn, serde=self.serde).get_delta_channel_history(
             config=self._storage_config(config), channels=channels)
 
     async def aget_delta_channel_history(self, *, config, channels):

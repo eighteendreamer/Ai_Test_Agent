@@ -1,8 +1,8 @@
 # LangGraph / Deep Agents 迁移实施记录
 
-日期：2026-10-25 起。当前实施依据：[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)；[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
+日期：2026-10-25 起。当前实施依据：[完整 v4 方案](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/docs/langgraph-deepagents-integration-plan-v4-2026-10-27.md)；[v3 方案](langgraph-deepagents-integration-plan-v3-2026-10-26.md)及[v2 方案](langgraph-deepagents-integration-plan-v2-2026-10-25.md)保留历史。
 
-**当前子任务：A2-1 有证明的部分投影后继（§52）。原结果、分项回执及消息/Verification 原意图校验已接入既有 message_recover；finalizing 后继只补缺失应用投影，不执行图/模型/业务工具，完整提交后走 A1 ACK-only。下一步继续 A2-2 图终态→资产空窗与 A2-3 projected→任务结算。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
+**当前子步：v4 P0 的原生消息比较失败收敛（§54），承接 §52 已提交实现和 §53 原生终态草稿。已复现并修正固定版本 Delta 回放排序根因，保留消息严格比较；只读终态证明不授予应用恢复权。无原结果资产的自动恢复仍未开放；下一步按 §53 材料清单冻结应用投影输入并复用确定性投影器，再闭合 A2-3 projected→任务结算。完整 A2/A3/B/C/D/E/F 均不得用本子步替代；生产默认关闭。**
 
 2026-10-26 附件再复核见 §37；冻结请求恢复见 §38，语义输入冻结见 §39，结算响应绑定及已结算 DTO 只读导入见 §40，语义服务消费原结算见 §41，冻结语义输入的应用编排消费见 §42，orchestrating 安全后继与代码制品指纹见 §43，Deep Agents 图输入资产见 §44。各阶段记录保留当时结果，以本页顶部快照及最新阶段的限定范围为准。
 
@@ -1757,3 +1757,96 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 六个独立 Worker 强杀窗口先单独验证 **6 passed、28 deselected，98.66 秒**：原资产后、快照后、快照事件后、最终事务前、最终事务内提交前、第一条观察行/回执后。实际 Deep Agents/SDK、本地合成 HTTP、PostgreSQL/Redis；确认原进程死亡后，沿既有 Redis 资源租约过期/reap，再启动独立替代进程。替代进程禁止图/模型/分类/验证再执行；重复投递完成、原身份/结果不变、HTTP仍一次、缺失观察补齐。工具/观察/Verification 为受控投影样本，不冒称领域 Runner 或真实付费供应商验收。
 
 A2-2 图终态→资产空窗、A2-3 projected→任务finish、A3 Memory/清理/未知外部效果、完整跨 Turn、统一上下文、流式取消、AgentCase、逐模式 Harness、官方 saver conformance 与双制品部署仍独立验收。生产默认关闭，无依赖升级或新增付费请求；全量、前端、独立 lint/typecheck、真实对象存储/供应商/领域 Runner 未验收，整体 goal 继续 active。
+
+## 53. A2-2：原生终态只读证据与图返回后强杀审计（2026-10-27）
+
+基线 `9fc8daefe`，续接核对工作区干净及完整目标附件。上一轮已有实际代码、回归和提交，属于 progress；本轮继续完整第 12.1 节 A2-2，而非把原资产后继作为全部故障恢复完成。
+
+### 依据与实现
+
+核对现有 native_interrupts、FencedPostgresSaver、Runtime、Session 的调用链，以及安装版 Pregel.aget_state、ToolCallLimitState、UntrackedValue 源码；在线读取官方 [Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers) 中 StateSnapshot、DeltaChannel、精确 checkpoint 和 pending writes 说明。不按最新版示例升级依赖，不再为业务调度另加图或队列。
+
+- `native_terminal.py` 提供只读原生证据：绑定 fingerprint/thread/逻辑根 namespace/精确 checkpoint，验证 loop 来源、无 next/tasks/interrupts、精确原件无 pending writes、完整原生工具配对。按真实官方 codec 对 checkpoint 与物化 state 取摘要；模型/ToolJob/应用事务证明仍各自独立。NativeTerminalRead 的 values 为普通内存映射，不能因 dataclass frozen 就声称深层不可变，后续消费仍须按证明复核原件。
+- bound adapter 完成时核对原生持久输出并附 metadata.native_terminal；等待审批不签证明、旧未绑定试点不变。异常保留 FrameworkMessageStageRecoveryRequired，让 Dispatcher 维持对账分类。没有新任务类型、schema/DDL、生产开关或恢复准入；message-stage 仍为11。
+- 运行计数的官方 UntrackedValue 不进 checkpoint；证明记录实际 graph schema 的 uncheckpointed_channels，而非硬编码计数名或悄悄丢失字段。只有这些明确非持久通道不与恢复 state 比较；原生消息、其他持久字段和未知输出仍必须一致。它不声称已恢复全部回合预算/限额，根账本另验。
+- 工具协议按每个 AI source 的未决调用批次核对，拒绝缺失/重复/orphan/invalid 调用，允许不同闭合批次复用 provider call ID。真实逐项审批先拒绝A、仍等待B、再批准B后才产生原生终态，受控效果只执行B。
+
+### 真实强杀样本及材料审计
+
+新增 `test_framework_terminal_gap.py`，延用原独立 Worker Helper，断点位于实际 adapter 完成之后、Runtime 尚未应用输出/创建 snapshot 之前。实际 Deep Agents/官方 OpenAI SDK、本地合成 HTTP、PostgreSQL/Redis；模型请求/响应通过 FrameworkModelEvidence 保存到跨进程本地受控对象后端，账本有 request 和唯一 settled_response_id。该后端明确不是实际 RustFS，不能算对象存储验收。
+
+独立进程终止且 exitcode 非0后，重新读取原 checkpoint、原对象和预算；HTTP一次、无应用 snapshot/Runtime结果资产/turn.completed，失租任务保持 recovery_required，不创建无原结果的后继。测试 parent 没有伪造 execution owner，也没有调用图或模型；读取官方 DeltaChannel 时仅在 Harness 使用已核对安装版源码的内部 checkpointer config override，按物理 namespace 只读。原生 checkpoint 和完整 state 摘要与 Worker 捕获证据相同。
+
+| 必需材料 | 当前证据与后续动作 |
+| --- | --- |
+| 原生完整消息、checkpoint/pending writes | 可经官方通道物化并取得精确原生证据；不能直接索引原 checkpoint 的 messages |
+| 原模型请求与被结算的唯一响应 | 本地受控对象后端/真实PG账本强杀后仍可读；真实RustFS/供应商另验，不据此自动导入 |
+| 初始应用状态/实际投影输入 | graph_input_asset 仍主要是 adapter 输入；所需 Runtime 状态、原模型展示配置等尚未统一冻结 |
+| 完整事件清单、子代理 callback | live sink 能保存前缀，但队满后的后缀仅在 Runtime event_log；callback 元数据也未证明能从原生子图等价重建 |
+| assistant/snapshot/工具展示身份与时间 | Session 的 assistant UUID 在调用前分配；snapshot UUID/时间、工具展示时间随后生成，当前未全部进入可恢复准备资产 |
+| 运行计数 | 官方 UntrackedValue 明确不持久化；不能把原生终态当成全部根预算/运行限额证明 |
+
+因此 A2-2 **未完成**。下一步在首次产生处冻结必要材料、以精确原生终态与原账本作为输入，使正常/恢复复用同一个确定性投影器。保留唯一 finalizer，不另写靠最后文本猜输出的恢复分支，也不通过放开 ensure 假装空窗已闭合。
+
+### TDD 与中间失败
+
+先让真实官方图和PG跑到终态，再导入新读取端口，得到 **1 failed，7.34秒，ModuleNotFoundError**；实现后能够读取精确原生证据。adapter 接线前 **1 failed，6.68秒，KeyError: native_terminal**；异常保留前 **1 failed，6.39秒**，原对账异常被包装为 DeepAgentRuntimeError；均补实现后继续回归。
+
+强杀审计第一次 **1 failed，11.98秒，KeyError: messages**，暴露测试把 DeltaChannel 当直接 channel_values 的错误假设。改为官方通道物化，不修改生产 checkpoint；随后 **1 passed，13.24秒**。
+
+首轮扩展组分别 **1 failed、97 passed，69.99秒** 和 **1 failed、15 passed，50.40秒**；合法审批完成/认知子代理的 run_tool_call_count 是 UntrackedValue，不能要求它出现在恢复 state。按官方通道 schema 区分并显式记录，目标三项 **3 passed，12.54秒**。随后新用例误以为每个最小 Harness 都配置工具限额，**1 failed、16 passed，35.96秒**；改为显式安装官方 ToolCallLimitMiddleware 的独立正例，未为迎合断言修改生产配置。早期一次用例访问 task.owner_token 而非 task.runtime_owner.owner_token 的 AttributeError 亦已修正，不计为生产缺陷。
+
+最终源码回归结果在完成后记录。全量、前端、独立 lint/typecheck、真实供应商/RustFS/领域 Runner、官方 saver conformance、双制品部署未验收；无新增付费请求、依赖或生产路由。A2-3、A3、统一上下文、完整跨 Turn、流式/取消、AgentCase、逐模式 Harness 等全目标继续 active。
+
+## 54. v4 P0：修正并行任务的 Delta 回放顺序，保留原生终态严格比较（2026-10-27）
+
+续接基线 `52e858cbf`（v4 文档）／`9fc8daefe`（§52 代码）。重新阅读 v4、§52–53、当前工作区、固定版本源码及相关 Harness；上一轮提示词调整没有实施进展，本轮实际恢复开发。检查时 Docker／PostgreSQL／Redis 已在运行，本轮没有启动、停止或重启容器。现有 fixture 用 UUID 专用表、checkpoint schema 和 Redis 前缀隔离资源，清理只涉及 fixture 自建数据。
+
+### 真实红测、根因与依据
+
+1. 原独立 Worker 失败样本重新运行：`test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[reconcile_after_commit]`，**1 failed，31.53 秒**。A 的拒绝任务被结算为 `recovery_required`。诊断为 `messages.count:5:5`，第 2、3 条的 content/id/status/tool_call_id 不同；不是缺少消息，而是两个工具结果的顺序反转。
+2. 安装版 LangGraph 1.2.12 的 `pregel/_algo.py::apply_writes` 按 `task_path_str(task.path[:3])` 合并并行写；Postgres 3.1.2 的 `_build_delta_channels_writes_history` 按 `(task_id, idx)` 排序。任务 ID 是路径的散列，不能代替任务路径顺序。Deep Agents 的消息 reducer 保持写入顺序，故返回结果与恢复结果发生真实漂移；不能在比较器中将两者判成等价。
+3. 官方 [issue #8382](https://github.com/langchain-ai/langgraph/issues/8382)／[修复 PR #8544](https://github.com/langchain-ai/langgraph/pull/8544)确认相同原因。采用其按 `(task_path, task_id, idx)` 读取的规则；不升级锁定依赖、不修改 site-packages、不在应用自行拼接 Delta。官方 [Checkpointers](https://docs.langchain.com/oss/python/langgraph/checkpointers)及安装版 `BaseCheckpointSaver.get_delta_channel_history` 提供沿 parent_config、读取种子和原生 pending writes 的公共默认实现。
+4. 补充确定性回归，让 task ID 与路径故意反序；修复前 **1 failed，9.62 秒**，实际返回 `[['second'], ['first']]` 而非 `[['first'], ['second']]`。这不是导入失败或测试脚手架异常。
+
+### 实现与边界
+
+- `path_ordered_postgres_saver.py` 只扩展固定版官方 SELECT 的读取行形状，带出数据库已有的 task_path／idx，在 Python 按上游规则排序后交回官方反序列化。避免依赖数据库 collation，索引按数字而非字符串排序。单测显式核对固定 SELECT 行形状；升级时必须同步重验，不能无痕继续套用。
+- Delta 历史使用官方 BaseCheckpointSaver 默认祖先遍历，不再走固定版本中独立按 ID 排序的优化查询。官方 reducer、分支祖先、逐通道 seed、目标 checkpoint 的 pending-write 排除语义继续复用，没有第二套 Delta 算法。
+- ThreadedPostgresSaver 和 FencedPostgresSaver 的 get_tuple/list/history 共用该读取规则；异步仍经线程桥接。写入、owner 锁、同连接事务、审批 receipt/proof 全部保留原实现。provider 就绪日志明确记录排序规则与历史读取器。
+- §53 的 native_terminal／adapter／强杀 Harness 草稿经审阅和本轮回归纳入本子步；等待审批不签终态证明，异常保留对账类型。消息顺序、身份、内容块、签名字段、response_metadata 和 usage_metadata 均未豁免。新增不透明签名字段的合成正／负例不等于真实供应商签名验收。
+- 保留 UntrackedValue 的显式非持久通道范围；根预算另验。终态证明仍为 `native_graph_terminal_only`，不创建后继、不调用图／模型／工具、不自动重建应用结果。message-stage 仍为 11，无 DDL、依赖、公开审批 API 或生产开关变更。
+- 兼容代价：默认祖先遍历比官方优化 SQL 多查询；性能基线及官方 conformance 完整验收仍待完成。后续获准升级到修正版依赖时，须通过相同回放／恢复测试后移除此兼容适配。它不声称能自动纠正旧执行已经固化到后续快照中的错误顺序，也不替存量绑定迁移与双制品演练。
+
+### 实际验证
+
+以下工作目录为 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server`，解释器为独立 `.venv-framework-v2`，数据库组设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。输出依据本轮实际终端会话，不累计重叠范围，不把历史绿色结果充作当前验收。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_delta_replay_order.py 'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[reconcile_after_commit]' -q -x -rs --tb=short
+# 初次修复后：6 passed，43.75 秒；早于后续快照／list／metadata 扩展。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_delta_replay_order.py tests/test_framework_native_terminal.py tests/test_framework_terminal_gap.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py -q -x -rs --tb=short
+# 126 passed，181.14 秒，无 skip；包含反序审批与五类消息漂移负例。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_delta_replay_order.py -q -x -rs --tb=short
+# 最终扩展源码：7 passed，21.66 秒，无 skip；补齐 list、快照 seed 和旁支排除。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_receipts.py tests/test_framework_approval_runtime.py tests/test_approval_checkpoint_consistency.py -q -x -rs --tb=short
+# 43 passed，172.04 秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_policy.py tests/test_framework_approval_recovery.py tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py -q -x -rs --tb=short
+# 106 passed，515.72 秒，无 skip；包含实际摘要／子代理策略、独立 Worker 审批强杀、A1 及 A2-1 投影恢复。
+```
+
+第一组终端会话 16860、确定性最终组 3012、receipt／Runtime 组 57011、完整审批恢复／应用投影组 96371 均取得真实退出码 0；本轮所有实际启动的 pytest 已取回终态，无遗留运行中的测试。原失败会话 68367 和确定性红测 51664 的失败不删除，分别保留上述真实红测记录。
+
+根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均通过。`find_spec` 确认 ruff、mypy、官方 conformance 包未安装；未新增工具，不声称 lint/typecheck/conformance 通过。全量、前端、真实供应商／RustFS／领域 Runner、部署构建与 E4 未执行；测试最高证据范围为 E2，真实强杀链路使用本地合成 HTTP／受控工具和本地对象后端。
+
+### v4 对应与剩余出口
+
+| v4 阶段／条款 | 记录与代码／测试 | 本轮状态／剩余出口 |
+| --- | --- | --- |
+| P0，§8.3，H02/H03/H11 | §53–54；native_terminal、path_ordered_postgres_saver、adapter 与严格消息／审批恢复测试 | 原失败已复现并根因修正；反序审批和字段漂移保留严格验证，不把单个绿色用例代表完整审批验收 |
+| A1／A2-1，§9.4 | §52 原提交；本轮应用提交／部分投影回归 | 复用原唯一 finalizer，不扩张 ACK-only 或结果恢复权限 |
+| A2-2，§8–9，H05 | §53 材料审计与 terminal_gap 强杀 Harness | 只读原生材料可验证；无原结果资产的自动恢复仍未开放，下一步前移应用输入／身份／事件材料并构造同一确定性投影器 |
+| H12，§14 | Delta 专用回归、真实 PG、连接重建／命名空间／旁支测试 | 仅局部验证；官方 conformance、长链性能、备份恢复、旧记录与双制品仍待验收 |
+| A2-3／A3／B/C/D/E/F | v4 §15 完整目标 | 待实现／按依赖逐项验收，整体 goal 保持 active |
+
+本节与审阅后的 §53 相关代码／测试归入同一中文提交，提交主题为 `【fix】按任务路径恢复原生终态消息顺序`，具体 ID 以本节 Git 历史和交付输出为准。原有 v3 文档草稿不纳入本次提交，不覆盖或丢弃。

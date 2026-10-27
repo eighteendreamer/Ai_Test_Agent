@@ -78,7 +78,9 @@ class DeepAgentCheckpointProvider:
                 self._saver = saver
                 logger.info(
                     "deep_agent_checkpoint_ready",
-                    extra={"schema": config.checkpoint_schema},
+                    extra={"schema": config.checkpoint_schema,
+                        "delta_replay_order": "task_path_task_id_idx",
+                        "delta_history_reader": "official_base_ancestor_walk"},
                 )
         execution_owner = owner if owner is not None else current_framework_owner()
         if execution_owner is None:

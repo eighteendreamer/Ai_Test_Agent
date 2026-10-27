@@ -2,15 +2,16 @@ from __future__ import annotations
 
 import asyncio
 
-from langgraph.checkpoint.postgres import PostgresSaver
+from src.application.deep_agents.path_ordered_postgres_saver import PathOrderedPostgresSaver
 
 
-class ThreadedPostgresSaver(PostgresSaver):
+class ThreadedPostgresSaver(PathOrderedPostgresSaver):
     """Expose official sync persistence without changing Windows' event loop.
 
     Psycopg AsyncConnection rejects ProactorEventLoop. Match the existing
     PostgresSessionStore's asyncio.to_thread bridge; all storage semantics,
-    schemas, serialization and versioning remain owned by PostgresSaver.
+    schemas, serialization and versioning remain owned by PostgresSaver;
+    pending-write replay order follows the upstream compatibility adapter.
     """
 
     async def aget_tuple(self, config):
@@ -21,6 +22,9 @@ class ThreadedPostgresSaver(PostgresSaver):
 
     async def aput_writes(self, config, writes, task_id, task_path=""):
         await asyncio.to_thread(self.put_writes, config, writes, task_id, task_path)
+
+    async def aget_delta_channel_history(self, *, config, channels):
+        return await asyncio.to_thread(self.get_delta_channel_history, config=config, channels=channels)
 
     async def alist(self, config, *, filter=None, before=None, limit=None):
         iterator = self.list(config, filter=filter, before=before, limit=limit)
