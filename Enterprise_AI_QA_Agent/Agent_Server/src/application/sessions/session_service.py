@@ -1656,7 +1656,8 @@ class SessionService:
                         "session_id": session_id, "approval_id": approval_id, "run_item_id": context.run_item_id})
 
     def _event_sink(self, session_id: str, **fence) -> SessionEventSink:
-        return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity, fence=fence)
+        return SessionEventSink(self._store, session_id, capacity=self._event_buffer_capacity,
+            fence=fence, runtime_owner=current_framework_owner())
 
     async def _await_owned_execution(
         self,

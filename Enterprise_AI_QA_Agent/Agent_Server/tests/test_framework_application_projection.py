@@ -41,6 +41,7 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
     from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
     from src.application.runtime.runtime_service import RuntimeService
     from src.registry.tools import ToolRegistry
+    from src.registry.skills import SkillRegistry
     from src.runtime.control import RuntimeControlRegistry
     from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
     from src.runtime.redis_task_worker import RedisTaskWorker
@@ -71,11 +72,16 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             evidence = FrameworkModelEvidence(objects=LocalModelObjects(evidence_root))
         adapter = DeepAgentRuntimeAdapter(model_resolver=models.resolve_langchain_chat_model,
             checkpointer_factory=provider.open,
+            skill_registry=SkillRegistry(),
             model_call_policy=FrameworkModelCallPolicy(calls=calls, model_config_resolver=models.get_model_config, evidence=evidence))
         runtime = RuntimeService(graph=None, model_runtime_service=models, tool_runtime_service=object(),
             tool_registry=ToolRegistry(), runtime_control=RuntimeControlRegistry(), deep_agent_enabled=True,
-            deep_agent_bound_runtime_adapter=adapter)
+            deep_agent_bound_runtime_adapter=adapter,
+            deep_agent_read_only_filesystem_enabled=window == "after_graph_events",
+            deep_agent_cognitive_subagents_enabled=window == "after_graph_events")
         _, tasks, sessions, _ = build_services(settings, runtime, resources)
+        if window == "after_graph_events":
+            sessions._event_buffer_capacity = 1
 
         async def pause(*args, **kwargs):
             marker = {"before_finalization": "runtime-result-frozen", "after_snapshot": "snapshot-committed",
@@ -120,10 +126,32 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                         signal.rpush(gate, "finalization-uncommitted")
                     threading.Event().wait()
                 projections.record_application_commit = record_and_pause
-        elif window == "after_graph_return":
+        elif window in {"after_graph_return", "after_graph_events"}:
+            captured = {}
+            if window == "after_graph_events":
+                execute_turn = runtime._execute_deep_agent_turn
+                async def capture_state(*args, **kwargs):
+                    captured["state"] = kwargs["state"]
+                    return await execute_turn(*args, **kwargs)
+                runtime._execute_deep_agent_turn = capture_state
             execute = adapter.execute
             async def graph_returned(*args, **kwargs):
                 result = await execute(*args, **kwargs)
+                if window == "after_graph_events":
+                    import inspect
+
+                    # Controlled callback burst AFTER the real graph returns;
+                    # not proof that eight real subagents ran. No await between
+                    # callbacks in the old sync path: it overflows capacity1.
+                    request = args[0]
+                    for number in range(4):
+                        for event_type in ("started", "completed"):
+                            item = {"type": event_type, "name": "code-review-researcher",
+                                "run_id": "controlled-child-" + str(number), "parent_run_id": "controlled-parent"}
+                            pending = request.on_subagent_event(item)
+                            if inspect.isawaitable(pending):
+                                await pending
+                    await redis.set(gate + ":event-log", json.dumps(captured["state"]["event_log"]))
                 await redis.rpush(gate, json.dumps(result.metadata["native_terminal"]))
                 await asyncio.Event().wait()
             adapter.execute = graph_returned

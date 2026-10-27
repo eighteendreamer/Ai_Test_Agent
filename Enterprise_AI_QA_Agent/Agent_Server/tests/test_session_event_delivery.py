@@ -191,10 +191,10 @@ async def test_final_response_transaction_rolls_back_when_second_event_fails(sto
     if isinstance(writer, PostgresSessionStore):
         original_append = writer.append_event_in_transaction
 
-        def append_with_failure(cur, sid, value, *fence):
+        def append_with_failure(cur, sid, value, *fence, **kwargs):
             if value.id == final_events[1].id:
                 raise RuntimeError("injected second event failure")
-            return original_append(cur, sid, value, *fence)
+            return original_append(cur, sid, value, *fence, **kwargs)
 
         monkeypatch.setattr(writer, "append_event_in_transaction", append_with_failure)
     else:

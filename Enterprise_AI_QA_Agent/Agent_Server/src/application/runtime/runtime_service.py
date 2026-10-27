@@ -47,7 +47,7 @@ from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_context import graph_event_scope, current_framework_owner
-from src.runtime.execution_logging import append_graph_event, truncate_text
+from src.runtime.execution_logging import append_graph_event, append_graph_event_durable, truncate_text
 from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
     ChatMessage,
@@ -217,7 +217,7 @@ class RuntimeService:
             pilot_stage = self._deep_agent_pilot_stage()
             state = self._build_initial_state(session, request, include_framework_transcript=True)
             self._prepare_deep_agent_governed_tools(session, request, state)
-            append_graph_event(
+            await append_graph_event_durable(
                 state,
                 "runtime.turn_started",
                 "runtime",
@@ -246,7 +246,7 @@ class RuntimeService:
         initial_state = self._build_initial_state(session, request)
         await self._attach_session_resources(initial_state)
         if compaction_info:
-            append_graph_event(
+            await append_graph_event_durable(
                 initial_state,
                 "runtime.context_compacted",
                 "runtime",
@@ -255,7 +255,7 @@ class RuntimeService:
                 compacted_message_count=compaction_info.get("compacted_message_count", 0),
                 summary_length=compaction_info.get("summary_length", 0),
             )
-        append_graph_event(
+        await append_graph_event_durable(
             initial_state,
             "runtime.turn_started",
             "runtime",
@@ -335,9 +335,9 @@ class RuntimeService:
             projection_identity.binding != request.runtime_binding or on_graph_input is None
         ):
             raise ValueError("Projection identity requires its bound graph-input persistence callback")
-        def on_subagent_event(item: dict[str, Any]) -> None:
+        async def on_subagent_event(item: dict[str, Any]) -> None:
             event_type = str(item.get("type") or "")
-            append_graph_event(
+            await append_graph_event_durable(
                 state,
                 (
                     "graph.subagent_started"
@@ -352,6 +352,7 @@ class RuntimeService:
                 ),
                 harness="deepagents",
                 pilot_stage=pilot_stage,
+                subagent_event=dict(item),
                 subagent_name=str(item.get("name") or ""),
                 subagent_run_id=str(item.get("run_id") or ""),
                 parent_run_id=str(item.get("parent_run_id") or ""),
@@ -433,7 +434,7 @@ class RuntimeService:
             async with asyncio.timeout(self._deep_agent_turn_timeout_seconds):
                 result = await execution_task
         except TimeoutError:
-            return self._build_deep_agent_interrupted_result(
+            return await self._build_deep_agent_interrupted_result(
                 session,
                 state,
                 pilot_stage=pilot_stage,
@@ -447,7 +448,7 @@ class RuntimeService:
         except asyncio.CancelledError:
             if not self._runtime_control.is_interrupt_requested(session.id):
                 raise
-            return self._build_deep_agent_interrupted_result(
+            return await self._build_deep_agent_interrupted_result(
                 session,
                 state,
                 pilot_stage=pilot_stage,
@@ -485,7 +486,7 @@ class RuntimeService:
             state["termination_reason"] = "waiting_approval"
             state["final_response"] = ""
             state["runtime_messages"] = result.messages
-            append_graph_event(
+            await append_graph_event_durable(
                 state,
                 "graph.waiting_for_approval",
                 "deepagents.tool_governance",
@@ -508,7 +509,7 @@ class RuntimeService:
             )
         state["cognitive_subagent_events"] = list(result.subagent_events)
         if result.todos:
-            append_graph_event(
+            await append_graph_event_durable(
                 state,
                 "graph.plan_built",
                 "deepagents.todo",
@@ -531,7 +532,7 @@ class RuntimeService:
         state["control_state"] = "completed"
         if on_model_chunk is not None:
             await on_model_chunk(result.output_text)
-        append_graph_event(
+        await append_graph_event_durable(
             state,
             "runtime.turn_completed",
             "runtime",
@@ -552,7 +553,7 @@ class RuntimeService:
             pending_turn={},
         )
 
-    def _build_deep_agent_interrupted_result(
+    async def _build_deep_agent_interrupted_result(
         self,
         session: SessionRecord,
         state: dict[str, Any],
@@ -590,7 +591,7 @@ class RuntimeService:
         state["interrupt_requested"] = cause == "interrupt"
         state["interrupt_reason"] = reason
         state["pending_turn"] = {}
-        append_graph_event(
+        await append_graph_event_durable(
             state,
             "runtime.turn_timed_out" if cause == "timeout" else "runtime.interrupt_applied",
             "deepagents",
@@ -662,7 +663,7 @@ class RuntimeService:
         plan = await self._framework_approval_continuation.prepare(owner, approval_id, decision_id)
         persisted_events = len(state["event_log"])
         state.update(pending_turn={}, termination_reason="", control_state="resuming")
-        append_graph_event(state, "turn.resumed", "deepagents.hitl", "Owned native approval continuation started.",
+        await append_graph_event_durable(state, "turn.resumed", "deepagents.hitl", "Owned native approval continuation started.",
             approval_id=approval_id, decision_id=decision_id, continue_from_checkpoint=plan.continue_from_checkpoint)
         result = await self._execute_observed(session, request, state,
             lambda: self._execute_deep_agent_turn(session, request, state=state,
@@ -1089,7 +1090,7 @@ class RuntimeService:
                     context_bundle = dict(state.get("context_bundle") or {})
                     context_bundle["langsmith_trace"] = trace_reference
                     state["context_bundle"] = context_bundle
-                    append_graph_event(
+                    await append_graph_event_durable(
                         state,
                         "observability.trace_linked",
                         "observability",
@@ -1433,7 +1434,7 @@ class RuntimeService:
                 if call_id in gates and saved is None:
                     raise FrameworkApprovalRecoveryRequired("Native tool approval disappeared after gate restoration")
                 approved = saved.model_dump(mode="python") if saved is not None else None
-            append_graph_event(
+            await append_graph_event_durable(
                 state, "tool.execution_requested", "deepagents.tool_governance",
                 "Deep Agents requested a governed business tool.",
                 tool_key=descriptor.key, call_id=call_id, harness="deepagents",
@@ -1464,7 +1465,7 @@ class RuntimeService:
                 "completed": "tool.execution_completed",
                 "denied": "tool.execution_denied",
             }.get(result.record.status, "tool.execution_failed")
-            append_graph_event(
+            await append_graph_event_durable(
                 state, event_type, "deepagents.tool_governance", result.record.summary,
                 tool_key=result.record.tool_key, call_id=call_id,
                 tool_job_id=result.record.job_id, approval_id=result.record.approval_id,
@@ -1565,7 +1566,7 @@ class RuntimeService:
                 })
                 approvals.append(prepared.approval)
                 records.append(prepared.record.model_dump(mode="python"))
-                append_graph_event(
+                await append_graph_event_durable(
                     state, "tool.execution_blocked", "deepagents.hitl",
                     prepared.record.summary, tool_key=matched["name"], call_id=matched["id"],
                     approval_id=prepared.approval["id"], tool_job_id=prepared.record.job_id,

@@ -8,6 +8,7 @@ from typing import TYPE_CHECKING, Callable, Protocol
 
 if TYPE_CHECKING:
     from src.runtime.framework_application_projection import FrameworkProjectionWrite
+    from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.storage_utils import ensure_utc_datetime
@@ -219,6 +220,7 @@ class SessionStore(Protocol):
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
         framework_projection: FrameworkProjectionWrite | None = None,
+        runtime_owner: RuntimeExecutionOwner | None = None,
     ) -> None: ...
     async def list_events(
         self,
@@ -722,8 +724,9 @@ class InMemorySessionStore:
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
         framework_projection: FrameworkProjectionWrite | None = None,
+        runtime_owner: RuntimeExecutionOwner | None = None,
     ) -> None:
-        if framework_projection is not None:
+        if framework_projection is not None or runtime_owner is not None:
             raise ValueError("Framework event receipts require a PostgreSQL owner transaction")
         async with self._lock:
             if continuation_approval_id or continuation_lease_token:

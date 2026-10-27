@@ -513,8 +513,9 @@ async def test_da_e3_official_todo_state_is_returned(tmp_path: Path):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("async_callback", [False, True])
 async def test_da_e3_official_sync_subagent_is_read_only_and_emits_typed_events(
-    tmp_path: Path,
+    tmp_path: Path, async_callback,
 ):
     pytest.importorskip("deepagents")
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -558,6 +559,11 @@ async def test_da_e3_official_sync_subagent_is_read_only_and_emits_typed_events(
     )
     adapter = DeepAgentRuntimeAdapter(model_resolver=lambda _key: _async_value(model))
     streamed_events: list[dict] = []
+
+    async def persist_event(item):
+        await asyncio.sleep(0)
+        streamed_events.append(item)
+
     result = await adapter.execute(
         DeepAgentRuntimeRequest(
             session_id="session-e3-subagent",
@@ -569,7 +575,7 @@ async def test_da_e3_official_sync_subagent_is_read_only_and_emits_typed_events(
             context={"project_root": str(tmp_path)},
             read_only_filesystem_enabled=True,
             cognitive_subagents_enabled=True,
-            on_subagent_event=streamed_events.append,
+            on_subagent_event=persist_event if async_callback else streamed_events.append,
         )
     )
 
@@ -1656,8 +1662,8 @@ async def test_da_e3_runtime_projects_subagent_events_without_worker_dispatch():
                 "parent_run_id": "task-run",
             }
             completed = {**started, "type": "completed"}
-            request.on_subagent_event(started)
-            request.on_subagent_event(completed)
+            await request.on_subagent_event(started)
+            await request.on_subagent_event(completed)
             return DeepAgentRuntimeResult(
                 output_text="SUBAGENT_RUNTIME_OK",
                 metadata={"stage": "DA-E3"},
@@ -1693,6 +1699,36 @@ async def test_da_e3_runtime_projects_subagent_events_without_worker_dispatch():
         for event in result.events
         if event.type.startswith("graph.subagent_")
     )
+
+
+@pytest.mark.asyncio
+async def test_failed_subagent_event_write_closes_stream_and_preserves_lost_owner():
+    from src.runtime.store import ContinuationLeaseLostError
+
+    closed = asyncio.Event()
+    lost = ContinuationLeaseLostError("injected subagent event lost owner")
+
+    class Agent:
+        async def astream_events(self, *args, **kwargs):
+            try:
+                yield {"event": "on_tool_start", "name": "task", "run_id": "child",
+                    "data": {"input": {"subagent_type": "code-review-researcher"}}, "parent_ids": ["parent"]}
+                raise AssertionError("Failed durable callback must stop consuming the graph")
+            finally:
+                closed.set()
+
+    async def fail(item):
+        await asyncio.sleep(0)
+        raise lost
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=lambda key: _resolved_model(),
+        agent_factory=lambda **kwargs: Agent())
+    with pytest.raises(ContinuationLeaseLostError) as caught:
+        await adapter.execute(DeepAgentRuntimeRequest(session_id="session", turn_id="turn", trace_id="trace",
+            model_key="model", system_prompt="system", messages=[], cognitive_subagents_enabled=True,
+            on_subagent_event=fail))
+    assert caught.value is lost
+    assert closed.is_set(), "SDK event stream must close before releasing execution ownership"
 
 
 @pytest.mark.asyncio

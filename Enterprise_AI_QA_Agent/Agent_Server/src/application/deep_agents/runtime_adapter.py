@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from contextlib import nullcontext
+from contextlib import aclosing, nullcontext
+import inspect
 from pathlib import Path
 import shutil
 import tempfile
@@ -16,6 +17,7 @@ from src.application.deep_agents.framework_transcript import (
 )
 from src.schemas.framework_approval import NativeToolInterrupt
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+from src.runtime.store import ContinuationLeaseLostError
 
 
 class DeepAgentRuntimeError(RuntimeError):
@@ -41,7 +43,7 @@ class DeepAgentRuntimeRequest:
     max_subagent_calls_per_turn: int = 1
     subagent_model_call_limit: int = 6
     subagent_tool_call_limit: int = 12
-    on_subagent_event: Callable[[dict[str, Any]], None] | None = None
+    on_subagent_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None = None
     business_tools: list[Any] = field(default_factory=list)
     interrupt_on: dict[str, Any] = field(default_factory=dict)
     resume: dict[str, Any] | None = None
@@ -234,7 +236,7 @@ class DeepAgentRuntimeAdapter:
             finally:
                 if cleanup is not None:
                     cleanup()
-        except (DeepAgentRuntimeError, FrameworkMessageStageRecoveryRequired):
+        except (DeepAgentRuntimeError, FrameworkMessageStageRecoveryRequired, ContinuationLeaseLostError):
             raise
         except Exception as exc:
             raise DeepAgentRuntimeError(
@@ -547,7 +549,7 @@ async def _invoke_with_subagent_events(
     invoke_input: Any,
     invoke_config: dict[str, Any],
     *,
-    on_event: Callable[[dict[str, Any]], None] | None,
+    on_event: Callable[[dict[str, Any]], Awaitable[None] | None] | None,
     persistence_options: dict[str, Any],
 ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
     """Project LangGraph v2 events into a stable, framework-neutral subset."""
@@ -555,57 +557,62 @@ async def _invoke_with_subagent_events(
     projected: list[dict[str, Any]] = []
     active_runs: dict[str, str] = {}
     interrupts: dict[str, Any] = {}
-    async for event in agent.astream_events(
+    async with aclosing(agent.astream_events(
         invoke_input,
         config=invoke_config,
         version="v2",
         stream_mode=["updates", "values"],
         **persistence_options,
-    ):
-        event_type = str(event.get("event") or "")
-        event_name = str(event.get("name") or "").strip()
-        run_id = str(event.get("run_id") or "").strip()
-        data = event.get("data") or {}
-        tool_input = data.get("input") or {}
-        if event_name == "task" and event_type == "on_tool_start" and run_id:
-            agent_name = (
-                str(tool_input.get("subagent_type") or "").strip()
-                if isinstance(tool_input, dict)
-                else ""
-            )
-            active_runs[run_id] = agent_name
-            item = {
-                "type": "started",
-                "name": agent_name,
-                "run_id": run_id,
-                "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
-            }
-            projected.append(item)
-            if on_event is not None:
-                on_event(item)
-        elif event_name == "task" and event_type == "on_tool_end" and run_id in active_runs:
-            item = {
-                "type": "completed",
-                "name": active_runs.pop(run_id),
-                "run_id": run_id,
-                "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
-            }
-            projected.append(item)
-            if on_event is not None:
-                on_event(item)
-        if event_type == "on_chain_stream" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
-            chunk = data.get("chunk")
-            if isinstance(chunk, tuple) and len(chunk) == 2:
-                mode, payload = chunk
-                if mode == "values" and isinstance(payload, dict):
-                    result = payload
-                elif mode == "updates" and isinstance(payload, dict):
-                    for interruption in payload.get("__interrupt__", []):
-                        interrupts[interruption.id] = interruption
-        if event_type == "on_chain_end" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
-            output = (event.get("data") or {}).get("output")
-            if isinstance(output, dict):
-                result = output
+    )) as events:
+        async for event in events:
+            event_type = str(event.get("event") or "")
+            event_name = str(event.get("name") or "").strip()
+            run_id = str(event.get("run_id") or "").strip()
+            data = event.get("data") or {}
+            tool_input = data.get("input") or {}
+            if event_name == "task" and event_type == "on_tool_start" and run_id:
+                agent_name = (
+                    str(tool_input.get("subagent_type") or "").strip()
+                    if isinstance(tool_input, dict)
+                    else ""
+                )
+                active_runs[run_id] = agent_name
+                item = {
+                    "type": "started",
+                    "name": agent_name,
+                    "run_id": run_id,
+                    "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
+                }
+                projected.append(item)
+                if on_event is not None:
+                    pending = on_event(item)
+                    if inspect.isawaitable(pending):
+                        await pending
+            elif event_name == "task" and event_type == "on_tool_end" and run_id in active_runs:
+                item = {
+                    "type": "completed",
+                    "name": active_runs.pop(run_id),
+                    "run_id": run_id,
+                    "parent_run_id": str((event.get("parent_ids") or [""])[-1]),
+                }
+                projected.append(item)
+                if on_event is not None:
+                    pending = on_event(item)
+                    if inspect.isawaitable(pending):
+                        await pending
+            if event_type == "on_chain_stream" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
+                chunk = data.get("chunk")
+                if isinstance(chunk, tuple) and len(chunk) == 2:
+                    mode, payload = chunk
+                    if mode == "values" and isinstance(payload, dict):
+                        result = payload
+                    elif mode == "updates" and isinstance(payload, dict):
+                        for interruption in payload.get("__interrupt__", []):
+                            interrupts[interruption.id] = interruption
+            if event_type == "on_chain_end" and event_name == DEEP_AGENT_RUN_NAME and not event.get("parent_ids"):
+                output = (event.get("data") or {}).get("output")
+                if isinstance(output, dict):
+                    result = output
     if result is None:
         raise DeepAgentRuntimeError(
             "Deep Agents subagent event stream ended without a final graph state."

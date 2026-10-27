@@ -1908,3 +1908,64 @@ A2-2 图终态→资产空窗、A2-3 projected→任务finish、A3 Memory/清理
 **A2-2仍未完成。** 必需事件溢出后缀／子代理 callback 事实、工具展示身份与时间、正常与恢复共用的完整确定性结果投影器及相应无原资产恢复准入仍待实施。A2-3／A3／B/C/D/E/F 保持 v4 完整范围，不用本准备子步代替阶段完成。生产默认关闭，无依赖升级、付费请求或真实目标测试；全量、前端、独立 lint/typecheck、真实供应商／RustFS／领域 Runner、官方 conformance 与 E4 未验收。实际 find_spec 确认 ruff、mypy、官方 conformance 包未安装，未新增工具。
 
 本节代码／测试与记录归属同一提交，主题为 `【feat】前置冻结框架回合的投影身份与初始状态`，实际 commit ID 以本节 Git 历史和交付输出为准。整体目标继续 active；下一步沿现有事件设施补可靠事实，不新增平行恢复链路，也不提前开放无原资产自动恢复。
+
+## 56. A2-2：必需事件的可等待持久化与子代理事实保存（2026-10-27）
+
+基线 `bd9e6abeb`，续接 §52–55 与 v4；§54 已提交的 Delta task_path 顺序根因修复继续回归，不重新忽略 messages。上一轮仅交付开发提示词；本轮恢复代码实施。接续时两份强杀测试草稿保留并审阅，原 v3 文档草稿不修改、不纳入提交。测试依赖原已运行，本轮没有启动、停止或重启 Docker／服务；数据库与 Redis 使用既有 UUID fixture 隔离。
+
+### 根因、依据与实现边界
+
+- 旧同步事件接口只保证入有界队列。容量耗尽后后缀留在 Runtime.event_log，依赖最终结果刷盘；图返回后、结果冻结前强杀会永久丢失这部分正式事实。这是持久化确认边界缺失，不通过加大队列、补随机身份或新建事件日志修补。
+- 沿现有 SessionEventSink 增加 owner-bound 可等待写入，Session 创建 sink 时捕获原 owner；同一 sink 串行确认事件。Runtime 的新框架启动、可观察性、子代理、治理工具、审批等待／继续、完成及停止路径等待既有 PostgreSQL append_event 事务。legacy 同步队列／溢出最终刷盘保留原契约；bound sink 不接受会丢确认的 put_nowait。独立 Runtime 无 Session sink 的测试不据此取得数据库持久化保证。
+- SessionStore 协议、Postgres 实现及内存实现同步可选 runtime_owner 参数。沿已有 Session→owner 锁顺序与短事务复核 epoch／token／task／attempt／worker／租约及 Session／Turn 范围，保留原 turn/continuation fence。复用原事件表、序号、计数、outbox 和 Redis 热投影，不新增表、队列、调度器或 finalizer。内存 store 明确拒绝冒充 owner 事务。
+- bound 写入复用原事件意图校验：重复 ID 仅在身份、类型、时间、正文和显式 correlation 一致时幂等；首次补充的投递上下文保留，不被新 delivery 覆盖。事务内校验失败回滚，不以 ON CONFLICT DO NOTHING 掩盖漂移。实时事实与结果投影分别使用自己的既有写入权限，不据实时事件授予恢复权。
+- Deep Agents callback 同时兼容同步返回和 awaitable；Runtime callback 等待事件确认，并在既有审计 payload 保存四字段 subagent_event（type/name/run_id/parent_run_id），保留原展示字段及审计脱敏策略。adapter 在错误时关闭原生事件流并原样传播失租异常。to_thread 写入的 await 被取消不代表 SQL 已停止，sink 遵循已有重复取消收尾模式，等在途事务结束后才允许执行租约收尾。
+
+依据：v4 §8.1／§9.2／§11／§16、现有 SessionEventSink／事件投影／owner 事务；核对固定 langchain-core 1.6.10 的 `runnables/base.py` 与 `tracers/event_stream.py` 中 v2 AsyncIterator、aclosing 和 consume task 关闭语义，未照在线新流接口升级依赖。官方 [Streaming](https://docs.langchain.com/oss/python/langchain/streaming) 与 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence) 用于核对流展示、图状态与应用数据职责，不把流事件自动等同应用可靠落库。
+
+本地参考 `G:\Code_Warehouse\DeepAgent-Studio\借鉴\codex\codex-rs\rollout\src\recorder.rs` 的 persist／flush 等待 writer ACK：借鉴“入队不等于持久化确认”，不搬运其 JSONL、重试或第二日志系统。本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹、重复执行、部分成功与异常恢复测试用于制定本步反例，不把课程示例指标当本项目门槛。
+
+### TDD 与中间失败
+
+1. 原会话61060取回 **1 failed，51.01秒**，失败为 SkillRegistry 缺失，尚未触达目标行为。前一续接已有只读能力 fixture 缺失；本轮补齐真实 SkillRegistry／受控项目根后又遇到 E1 读图 schema 与 E3 producer 不一致，以及测试漏传已有必需参数。这些均为 fixture 维护错误，不计目标红测；读者按 producer 的实际中间件 schema 重建，只读比较完整终态，没有删字段或弱化原生 messages 比较。
+2. 有效强杀红测：真实官方图／SDK 返回后注入4对受控 callback，容量1，结果冻结前强杀，**1 failed，15.55秒**，明确失败为 `Emitted audit suffix disappeared before result freezing`。这是8条受控事件，不是8个真实子代理。修复后校验原9条事件的身份、顺序、时间及正文；仍断言无原结果资产不能建立自动恢复后继，模型请求仍一次，原 checkpoint／账本不变。
+3. 新事件失败／流关闭反例 **1 failed，7.54秒**：callback 失租后原生迭代器没有在 adapter 返回前关闭。增加 aclosing，保留原失租异常实例，不只包装成通用运行失败。
+4. 初次生产修复后 **1 failed、1 passed，29.01秒**，暴露测试直接比较 PG 无时区 UTC 与原带时区时间；改用既有严格 event-intent 规范比较，不忽略实际时间、正文或身份。扩展组又有 **1 failed、93 passed，90.08秒**：老故障注入 wrapper 不接受已存在的 framework_projection 关键字；同步 wrapper 的透传签名，仍在第二条事件处注入失败并验证事务回滚。
+
+补充覆盖：容量1的逐项确认及并发 producer 顺序、四种同 ID 漂移、跨 Session／Turn、显式 turn 冲突、旧 token／epoch、过期与真实替代 owner、重复取消等待真实 to_thread SQL、事务失败回滚、内存伪持久化拒绝。另以真实官方具名子代理、假模型和 PostgreSQL saver 验证 started/completed 原四字段实际入库；这与强杀场景的受控 callback 注入分开登记。
+
+### v4 对应与剩余出口
+
+| v4 阶段／条款 | 本节代码与测试 | 已实现范围／仍不授予 |
+| --- | --- | --- |
+| A2-2，§9.2，H05/H11 | execution_logging、SessionEventSink、Runtime／adapter、live_event_persistence／terminal_gap | 应用已观察并产生的正式事件逐项确认；子代理 selected metadata 原件可靠保存；不证明 SDK 尚未送达的事件已经保存，不开放无原资产恢复 |
+| §8.1，H07 | PostgresSessionStore、SessionStore、owner／重复取消反例 | owner 与 event intent 同事务验证；旧 sink 不能采用新上下文 owner；不是外部操作停止证明 |
+| A2-1／P0，H02/H03/H05/H12 | 原审批／Delta／部分投影／finalizer 回归 | 沿唯一结果资产、分项回执和 finalizer 保持严格原意图比较，不重执模型或工具 |
+| §11／§16，H10 | adapter 回调、流关闭及 Session SSE／assistant-stream 回归 | 保留同步 callback、legacy 溢出契约、旧事件展示字段；不声明实时 Token／取消／暂停的全量恢复已完成 |
+
+本步最高证据仍为 E2：官方 Deep Agents／SDK、真实 PostgreSQL／Redis、独立 Worker 与强杀；模型为本地 HTTP／假模型，业务工具为受控样本，本地跨进程对象后端不是 RustFS。前端 ExecutionEvent.payload 已为 JsonObject，既有展示字段保留；检索 callback、停止结果构造、存储协议和事务调用消费方完成接线核对，本轮没有前端实现变更。
+
+**A2-2仍未完成。** 完整事件清单／完成边界与终态绑定、工具展示身份及时间、正常与恢复共用的完整确定性结果投影器及无原资产恢复准入仍待实现／验收；本步不能将“已观察事件可靠写入”升格为“所有原生中断均可自动恢复”。A2-3／A3／B/C/D/E/F 保持完整范围，生产默认关闭，无依赖升级、新付费调用或真实目标测试。全量、前端、真实供应商／RustFS／领域 Runner、官方 conformance 与 E4 未验收；实际 find_spec 确认 ruff／mypy／官方 conformance 未安装，未安装新工具。
+
+### 最终验证与提交归属
+
+以下在 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 使用独立 `.venv-framework-v2`，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。四组均在最后一次主源码改动后启动并取得退出码0，不累加为独立覆盖数：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_live_event_persistence.py tests/test_framework_terminal_gap.py tests/test_deep_agent_runtime_adapter.py tests/test_session_event_delivery.py -q -x -rs --tb=short
+# 118 passed，2 skipped，113.99秒。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 147 passed，588.72秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_receipts.py tests/test_framework_approval_runtime.py tests/test_framework_delta_replay_order.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py -q -x -rs --tb=short
+# 99 passed，429.60秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_graph_input_asset.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py tests/test_framework_message_stages.py tests/test_assistant_stream_persistence.py tests/test_session_execution_ownership.py -q -x -rs --tb=short
+# 136 passed，1 skipped，1 warning，345.15秒。
+```
+
+三项 skip 均为混合 memory/postgres fixture 的 **memory 参数**：事务排序、跨进程 HTTP／SSE、Postgres＋Redis 同源投影；对应 postgres 参数均实际通过，并非环境缺失或必需集成项跳过。warning 为现有 Starlette TestClient 使用 anyio BlockingPortal 旧别名的弃用提示，本步未修改第三方或无关测试设施。
+
+四组收集后又仅增强两处测试断言：live_event 增加并发 producer 的原顺序，terminal_gap 增加强杀后的数据库原顺序。对最终测试文件重新运行 `tests/test_framework_live_event_persistence.py`：**16 passed，54.23秒**；`tests/test_framework_terminal_gap.py`：**3 passed，42.55秒**。真实具名子代理持久化用例先前单独为 **1 passed，12.09秒**；这些不重复计入覆盖数。
+
+最终会话49810／55796／17775／67776／79449／89634均取回终态；早期及失败批次也已结束，没有因观察超时重启测试。根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；v4／实施记录的代码围栏和绝对本地链接检查通过。父仓库默认忽略 tests，沿本项目 `.gitignore` 白名单纳入新回归文件，不强制添加无关文件。
+
+本节代码／测试与记录归属同一提交，主题为 `【fix】确认框架事件持久化后再继续执行`，实际 commit ID 以 Git 历史及交付输出为准。整体目标保持 active；下一步继续 A2-2 的完整材料／完成边界与确定性结果投影，不以本步绿色测试代替阶段出口。

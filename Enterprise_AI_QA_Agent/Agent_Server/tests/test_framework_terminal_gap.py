@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+import json
 from pathlib import Path
 from uuid import uuid4
 
@@ -46,7 +47,8 @@ class LocalModelObjects:
 
 
 @pytest.mark.asyncio
-async def test_native_terminal_and_settled_response_survive_kill_but_do_not_invent_application_result(admission, tmp_path):
+@pytest.mark.parametrize("window", ["after_graph_return", "after_graph_events"])
+async def test_native_terminal_and_settled_response_survive_kill_but_do_not_invent_application_result(admission, tmp_path, window):
     h = admission
     h.settings.orchestration.resource_default_lease_seconds = 30
     waiting = Redis.from_url(h.settings.database.redis_url, decode_responses=True, socket_timeout=45)
@@ -58,6 +60,8 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             h.binding = h.binding.model_copy(update={"model_config_fingerprint": model_config_fingerprint(config)})
             h.command = make_command(h, h.binding)
             h.payload = h.payload.model_copy(update={"model_key": config.key, "mode_key": "code_review"})
+            if window == "after_graph_events":
+                h.payload = h.payload.model_copy(update={"context": {**h.payload.context, "project_root": str(tmp_path)}})
             h.budget = h.budget.model_copy(update={"model_config_fingerprints": {config.key: h.binding.model_config_fingerprint}})
             original = await submit(h)
             queue = RedisTaskQueue(h.settings.database.redis_url, stream=h.settings.orchestration.agent_task_v2_stream,
@@ -67,7 +71,7 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             gate = h.prefix + ":native-graph-returned"
             process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
                 args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate,
-                    "after_graph_return", str(tmp_path)))
+                    window, str(tmp_path)))
             process.start()
             reached = await waiting.blpop(gate, timeout=40)
             assert reached is not None, f"worker exit code: {process.exitcode}"
@@ -92,9 +96,29 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 # through its channel implementation, not channel_values or
                 # guessed message deltas. The pinned config override selects
                 # the physical namespace without treating it as a subgraph.
-                graph = create_deep_agent(model=Model(responses=[]), tools=[], checkpointer=saver)
-                snapshot = await graph.aget_state({"configurable": {
-                    **selected["configurable"], CONFIG_KEY_CHECKPOINTER: saver}})
+                model = Model(responses=[])
+                harness_kwargs, cleanup = {}, None
+                if window == "after_graph_events":
+                    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+                    from src.application.deep_agents.model_call_middleware import configure_model_policy
+                    from src.registry.skills import SkillRegistry
+
+                    # Rebuild the producer's channel schema, not the E1 graph:
+                    # Skills/subagent middleware contributes additional state.
+                    adapter = DeepAgentRuntimeAdapter(model_resolver=None, skill_registry=SkillRegistry())
+                    harness_kwargs, cleanup = adapter._configure_harness(model,
+                        read_only_filesystem_enabled=True, cognitive_subagents_enabled=True,
+                        read_only_max_file_size_mb=10,
+                        context=before.source_manifest["graph_input_asset"]["context"])
+                    harness_kwargs = configure_model_policy(harness_kwargs,
+                        policy=None, owner=active.runtime_owner, model=model, model_key=config.key)
+                try:
+                    graph = create_deep_agent(model=model, tools=[], checkpointer=saver, **harness_kwargs)
+                    snapshot = await graph.aget_state({"configurable": {
+                        **selected["configurable"], CONFIG_KEY_CHECKPOINTER: saver}})
+                finally:
+                    if cleanup is not None:
+                        cleanup()
                 assert not snapshot.next and not snapshot.tasks and not snapshot.interrupts
                 assert _native_hash(saver.serde, snapshot.values) == proof.state_sha256
                 assert snapshot.values["messages"][-1].content == "fixture answer"
@@ -119,6 +143,24 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             process.terminate()
             await asyncio.to_thread(process.join, 10)
             assert not process.is_alive() and process.exitcode != 0
+            if window == "after_graph_events":
+                from src.schemas.session import ExecutionEvent
+                from src.runtime.framework_application_projection import _require_event_intent
+
+                expected = json.loads(await waiting.get(gate + ":event-log"))
+                actual = {item.id: item for item in await h.store.list_events(h.session_id)}
+                assert len(expected) == 9
+                assert all(item["id"] in actual for item in expected), "Emitted audit suffix disappeared before result freezing"
+                expected_ids = [item["id"] for item in expected]
+                assert [identity for identity in actual if identity in expected_ids] == expected_ids
+                for raw in expected:
+                    event = ExecutionEvent(session_id=h.session_id, **{k: v for k, v in raw.items() if k in {"id", "type", "timestamp", "payload"}})
+                    saved = actual[event.id]
+                    # Use the same exact intent comparison as finalization:
+                    # PG stores UTC timestamps without timezone and enriches
+                    # delivery context separately from the original payload.
+                    _require_event_intent(saved.model_dump(), event)
+                assert [item["payload"]["subagent_event"]["type"] for item in expected[1:]] == ["started", "completed"] * 4
             assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
             terminal = await h.tasks.claim(original.id, worker_id="terminal-gap-expiry", expected_binding=h.binding)
             assert terminal.status == "recovery_required"

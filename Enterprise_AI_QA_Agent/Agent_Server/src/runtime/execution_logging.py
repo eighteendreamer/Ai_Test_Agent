@@ -40,6 +40,31 @@ def append_graph_event(
     message: str,
     **payload: Any,
 ) -> None:
+    event = _build_graph_event(state, event_type, phase, message, **payload)
+    _enqueue_graph_event(event)
+
+
+async def append_graph_event_durable(
+    state: AgentGraphState,
+    event_type: str,
+    phase: str,
+    message: str,
+    **payload: Any,
+) -> None:
+    """Owner-bound producers wait for the existing event transaction, not enqueue.
+
+    Legacy graphs retain their synchronous queue/final-flush contract. This
+    acknowledgement is an event fact, never graph/application completion proof.
+    """
+    event = _build_graph_event(state, event_type, phase, message, **payload)
+    sink = current_graph_event_sink()
+    if isinstance(sink, SessionEventSink) and sink.runtime_owner is not None:
+        await sink.persist(event)
+    else:
+        _enqueue_graph_event(event)
+
+
+def _build_graph_event(state, event_type, phase, message, **payload) -> ExecutionEvent:
     event_log = state.setdefault("event_log", [])
     event_payload: dict[str, Any] = {
         "step": len(event_log) + 1,
@@ -55,7 +80,10 @@ def append_graph_event(
         timestamp=datetime.now(timezone.utc), payload=event_payload)
     event_log.append({"id": event.id, "timestamp": event.timestamp.isoformat(),
                       "type": event_type, "payload": event_payload})
+    return event
 
+
+def _enqueue_graph_event(event: ExecutionEvent) -> None:
     # The bounded sink persists a live prefix; finalization appends any
     # overflow suffix with the same IDs before the turn is settled.
     event_queue = current_graph_event_sink()

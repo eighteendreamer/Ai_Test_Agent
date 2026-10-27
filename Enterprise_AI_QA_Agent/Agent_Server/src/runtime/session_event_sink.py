@@ -6,25 +6,38 @@ import asyncio
 import logging
 from collections import deque
 
+from src.schemas.runtime_binding import RuntimeExecutionOwner
+
 LOGGER = logging.getLogger(__name__)
 
 
 class SessionEventSink:
-    """Bounded producer adapter for append_graph_event's synchronous interface."""
+    """Legacy bounded queue plus acknowledged owner-bound event writes."""
 
-    def __init__(self, store, session_id: str, *, capacity: int, fence: dict) -> None:
+    def __init__(self, store, session_id: str, *, capacity: int, fence: dict,
+                 runtime_owner: RuntimeExecutionOwner | None = None) -> None:
+        if runtime_owner is not None and runtime_owner.binding.session_id != session_id:
+            raise ValueError("Session event owner belongs to another Session")
         self._store, self._session_id = store, session_id
         self._capacity, self._fence = capacity, fence
+        self._runtime_owner = runtime_owner
+        self._write_lock = asyncio.Lock()
         self._pending = deque()
         self._ready = asyncio.Event()
         self._closed = False
         self._deferred_to_final_flush = False
 
     @property
+    def runtime_owner(self) -> RuntimeExecutionOwner | None:
+        return self._runtime_owner
+
+    @property
     def deferred_to_final_flush(self) -> bool:
         return self._deferred_to_final_flush
 
     def put_nowait(self, event) -> None:
+        if self.runtime_owner is not None:
+            raise RuntimeError("Owner-bound graph events require awaited persistence")
         if self._closed:
             raise RuntimeError("Session event writer is closed")
         if event.session_id != self._session_id:
@@ -42,6 +55,41 @@ class SessionEventSink:
             raise asyncio.QueueFull
         self._pending.append(event)
         self._ready.set()
+
+    async def persist(self, event) -> None:
+        """Serialize and settle a write before cancellation releases the lease.
+
+        Like run() cleanup, repeated cancellation waits for the in-flight
+        to_thread transaction; cancelling its await cannot cancel PostgreSQL.
+        """
+        if self.runtime_owner is None:
+            raise ValueError("Acknowledged graph events require a captured runtime owner")
+        if self._closed:
+            raise RuntimeError("Session event writer is closed")
+        if event.session_id != self._session_id:
+            raise ValueError("Session event cannot cross its execution scope")
+
+        async def write():
+            async with self._write_lock:
+                try:
+                    await self._store.append_event(self._session_id, event,
+                        **self._fence, runtime_owner=self.runtime_owner)
+                except Exception:
+                    LOGGER.exception("session_event_persistence_failed", extra={
+                        "session_id": self._session_id, "event_id": event.id,
+                        "binding_id": self.runtime_owner.binding.binding_id})
+                    raise
+
+        pending = asyncio.create_task(write())
+        cancelled = False
+        while not pending.done():
+            try:
+                await asyncio.shield(pending)
+            except asyncio.CancelledError:
+                cancelled = True
+        await pending
+        if cancelled:
+            raise asyncio.CancelledError
 
     async def _write(self) -> None:
         try:

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Callable
 
 if TYPE_CHECKING:
     from src.runtime.framework_application_projection import FrameworkProjectionWrite
+    from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 from src.core.config import Settings
 from src.core.request_context import get_request_context
@@ -205,6 +206,7 @@ class PostgresSessionStore:
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
         framework_projection: FrameworkProjectionWrite | None = None,
+        runtime_owner: RuntimeExecutionOwner | None = None,
     ) -> None:
         try:
             inserted = await asyncio.to_thread(
@@ -215,8 +217,13 @@ class PostgresSessionStore:
                 continuation_lease_token,
                 turn_lease_token,
                 framework_projection,
+                runtime_owner,
             )
         except Exception as exc:
+            if runtime_owner is not None:
+                LOGGER.warning("framework_live_event_rejected", extra={"session_id": session_id,
+                    "binding_id": runtime_owner.binding.binding_id, "event_id": event.id,
+                    "event_type": event.type, "error_type": type(exc).__name__})
             if framework_projection is not None:
                 LOGGER.warning("framework_event_projection_rejected", extra={"session_id": session_id,
                     "binding_id": framework_projection.owner.binding.binding_id, "event_id": event.id,
@@ -225,6 +232,10 @@ class PostgresSessionStore:
         if framework_projection is not None:
             LOGGER.info("framework_event_projection_saved", extra={"session_id": session_id,
                 "binding_id": framework_projection.owner.binding.binding_id, "event_id": event.id,
+                "event_type": event.type, "reused": not inserted})
+        if runtime_owner is not None:
+            LOGGER.debug("framework_live_event_saved", extra={"session_id": session_id,
+                "binding_id": runtime_owner.binding.binding_id, "event_id": event.id,
                 "event_type": event.type, "reused": not inserted})
         if not inserted:
             return
@@ -1484,6 +1495,7 @@ class PostgresSessionStore:
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
         framework_projection: FrameworkProjectionWrite | None = None,
+        runtime_owner: RuntimeExecutionOwner | None = None,
     ) -> bool:
         with postgres_connect(self._settings) as conn:
             with conn.cursor() as cur:
@@ -1491,6 +1503,7 @@ class PostgresSessionStore:
                     cur, session_id, event, continuation_approval_id,
                     continuation_lease_token, turn_lease_token,
                     framework_projection,
+                    runtime_owner,
                 )
 
     def append_event_in_transaction(
@@ -1499,8 +1512,20 @@ class PostgresSessionStore:
         continuation_lease_token: str | None = None,
         turn_lease_token: str | None = None,
         framework_projection: FrameworkProjectionWrite | None = None,
+        runtime_owner: RuntimeExecutionOwner | None = None,
     ) -> bool:
         """Append an event and derived outbox facts in the caller's transaction."""
+        if runtime_owner is not None:
+            from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
+
+            if framework_projection is not None:
+                raise ValueError("Live event authority and result projection must use separate writes")
+            if (runtime_owner.binding.session_id != session_id or event.session_id != session_id
+                or event.payload.get("turn_id") != runtime_owner.binding.turn_id
+                or event.turn_id not in (None, runtime_owner.binding.turn_id)):
+                raise ValueError("Live event differs from its runtime owner scope")
+            configure_runtime_owner_transaction(cur, self._settings)
+            assert_runtime_owner(cur, self._settings, runtime_owner)
         self._assert_continuation_lease_sync(
             cur, session_id, continuation_approval_id, continuation_lease_token
         )
@@ -1568,6 +1593,10 @@ class PostgresSessionStore:
             ),
         )
         inserted = cur.fetchone() is not None
+        if runtime_owner is not None:
+            from src.runtime.framework_application_projection import _event_row, _require_event_intent
+
+            _require_event_intent(_event_row(cur, self._settings, event.id), event)
         if framework_projection is not None:
             from src.runtime.framework_application_projection import record_event_projection
 
