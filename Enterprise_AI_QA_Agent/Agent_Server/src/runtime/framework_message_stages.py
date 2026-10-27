@@ -54,6 +54,13 @@ def validate_message_stage(record):
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
     manifest = stage.source_manifest or {}
+    if "graph_input_asset" in manifest:
+        from src.schemas.framework_graph_input import parse_graph_input_asset
+
+        graph_input = parse_graph_input_asset(manifest["graph_input_asset"])
+        if graph_input.schema_version == 2 and (stage.schema_version < 12
+            or graph_input.runtime_preparation.identity.binding.binding_id != stage.binding_id):
+            raise FrameworkMessageStageRecoveryRequired("Prepared graph input has no compatible message stage binding")
     observation_keys = {"observation_projection_asset", "observation_projection_commits"}
     if observation_keys.intersection(manifest):
         from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
@@ -251,11 +258,16 @@ class FrameworkMessageStages:
             values={"owner_epoch": owner.owner_epoch, "owner_attempt_id": owner.attempt_id})
 
     async def record_graph_input(self, owner, asset):
-        from src.schemas.framework_graph_input import FrameworkGraphInputAsset
+        from src.schemas.framework_graph_input import parse_graph_input_asset
 
-        frozen = FrameworkGraphInputAsset.model_validate(asset)
-        return await self._advance(owner, expected="runtime_submitted", phase="runtime_submitted", values={},
+        frozen = parse_graph_input_asset(asset)
+        saved = await self._advance(owner, expected="runtime_submitted", phase="runtime_submitted", values={},
             graph_input_asset=frozen.model_dump(mode="json"))
+        logger.info("framework_graph_input_frozen", extra={"task_id": owner.task_id,
+            "binding_id": owner.binding.binding_id, "owner_epoch": owner.owner_epoch,
+            "graph_input_schema_version": frozen.schema_version, "message_stage_schema_version": saved.schema_version,
+            "asset_sha256": frozen.asset_sha256})
+        return saved
 
     async def _advance(self, owner, *, expected, phase, values, recovery_modes_sha256=None,
         semantic_input=None, graph_input_asset=None):
@@ -314,12 +326,14 @@ class FrameworkMessageStages:
                     manifest["semantic_input"] = semantic_input
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
                 if graph_input_asset is not None:
-                    from src.schemas.framework_graph_input import FrameworkGraphInputAsset
+                    from src.schemas.framework_graph_input import parse_graph_input_asset
 
-                    asset = FrameworkGraphInputAsset.model_validate(graph_input_asset)
+                    asset = parse_graph_input_asset(graph_input_asset)
                     if (asset.session_id != owner.binding.session_id
                         or asset.turn_id != owner.binding.turn_id
-                        or asset.checkpoint_namespace != owner.binding.checkpoint_namespace):
+                        or asset.trace_id != task["trace_id"]
+                        or asset.checkpoint_namespace != owner.binding.checkpoint_namespace
+                        or (asset.schema_version == 2 and asset.runtime_preparation.identity.binding != owner.binding)):
                         raise FrameworkMessageStageRecoveryRequired("Graph input asset differs from its runtime binding")
                     manifest = dict(original.source_manifest or {})
                     if "graph_input_asset" in manifest:
@@ -328,6 +342,8 @@ class FrameworkMessageStages:
                         return original
                     manifest["graph_input_asset"] = graph_input_asset
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
+                    if asset.schema_version == 2:
+                        values["schema_version"] = max(12, original.schema_version)
                 if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated") or resuming_projected:
                     from src.runtime.framework_message_recovery import require_message_recovery_claim
 
@@ -367,7 +383,8 @@ class FrameworkMessageStages:
                     self._require_input(cur, owner, task, values["source_manifest"])
                 cur.execute("SELECT clock_timestamp() AS now")
                 saved = validate_message_stage(original.model_copy(update={**values,
-                    "schema_version": max(3, original.schema_version), "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
+                    "schema_version": max(values.get("schema_version", 3), original.schema_version),
+                    "phase": phase, "updated_at": cur.fetchone()["now"]}).model_dump())
                 cur.execute(f"UPDATE {self._table} SET record=%s::jsonb WHERE task_id=%s", (saved.model_dump_json(), original.task_id))
                 return saved
 

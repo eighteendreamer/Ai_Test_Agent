@@ -191,7 +191,7 @@ async def test_expired_owner_cannot_create_snapshot_receipt(frozen_result):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("stage_version,reader_version", [(12, 11), (11, 10), (10, 9), (9, 8), (8, 7)])
+@pytest.mark.parametrize("stage_version,reader_version", [(13, 12), (12, 11), (11, 10), (10, 9), (9, 8), (8, 7)])
 async def test_future_message_stage_is_deferred_before_claim(frozen_result, monkeypatch, stage_version, reader_version):
     from src.infrastructure.redis_task_queue import QueuedTask
     from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities

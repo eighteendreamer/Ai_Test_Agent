@@ -1850,3 +1850,61 @@ A2-2 图终态→资产空窗、A2-3 projected→任务finish、A3 Memory/清理
 | A2-3／A3／B/C/D/E/F | v4 §15 完整目标 | 待实现／按依赖逐项验收，整体 goal 保持 active |
 
 本节与审阅后的 §53 相关代码／测试归入同一中文提交，提交主题为 `【fix】按任务路径恢复原生终态消息顺序`，具体 ID 以本节 Git 历史和交付输出为准。原有 v3 文档草稿不纳入本次提交，不覆盖或丢弃。
+
+## 55. A2-2：图调用前保存投影身份与初始应用状态（2026-10-27）
+
+基线 `449746190`。上一轮仅调整开发提示词，没有实现进展；本轮恢复代码开发，先核对 §52–54、v4 以及六个代码／测试草稿。Docker 与测试依赖已有运行环境，本轮没有启动、停止或重启容器；数据库／Redis 测试仍由已有 UUID fixture 隔离。原 v3 文档草稿保留，不归入本次提交。
+
+### 根因、依据与变更范围
+
+- Runtime 冻结的 context 原先来自应用 context_bundle，真正传给 adapter 的却是 request.context 加 skill_keys；二者不是同一个输入。改为只构建一次 DeepAgentRuntimeRequest，现有冻结字段从该对象读取，随后执行同一对象。测试在实际 adapter 入口精确比较 context、原生消息、Prompt 和 namespace，并验证后续嵌套修改不污染已冻结 JSON；持久化回调失败时不得启动 adapter。
+- 图终态前没有保存应用初始状态，也没有保存 Session 预分配的 assistant ID；snapshot 身份与时间在图返回后才分配。现在由 bound message 的 Session 在调用前预留 assistant／snapshot ID、snapshot version 意图及准备时间，Runtime 将初始状态和绑定一同保存为 graph_input_asset v2。正常完成、等待审批、超时和取消的初次 Runtime snapshot 沿用本次预留值。时间表示准备时刻，不能冒称图完成时刻；后续审批执行仍走其原有独立投影契约，不据此宣称工具展示时间已稳定。
+- 扩展现有输入资产与阶段日志，不新增存储表、调度器、结果资产种类或第二套 finalizer。v1 与 v2 共用字段／摘要验证，分别保持严格版本及字段契约，统一 parser 选择读者；JSON 往返切断调用方嵌套引用，读取时仍重新校验摘要，不声称 Pydantic frozen 可以使所有嵌套容器不可变。
+- `FrameworkRuntimeResults.freeze` 原先将阶段硬写回7，会抹去12格式的能力要求；改为保留已有较高版本。新资产冻结与既有资产加载共用准备身份校验，核对原 binding、assistant ID、snapshot ID／version／created_at。仅校验原投影意图，不混淆数据库实际分配的行头；原 snapshot／event／observation 回执验证继续保留。旧 v1／无准备资产的结果仍按原契约处理。
+- 新准备输入要求 message-stage12；Worker 上限同步12。reader11拒12、reader12拒13均在 claim 前判定，原1–11读取契约保留；这只是代码／测试兼容证据，不能代替旧／新真实制品并存部署。新增日志只记绑定、owner、资产摘要和格式版本，不记录上下文正文或凭据。
+
+依据为 v4 §9.2／§14／§16、现有 graph_input／Runtime／Session／结果资产及唯一收尾实现；核对固定版 SDK `langgraph/checkpoint/base/__init__.py` 的图状态／metadata 边界，并重新读取官方 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)：图 checkpoint、跨线程 store 和本项目应用投影材料职责不相同。未据在线新版文档升级依赖。
+
+本地参考 `G:\Code_Warehouse\DeepAgent-Studio\借鉴\codex\codex-rs\rollout\src\recorder.rs` 的 SessionMeta 初始身份／时间与 persist／flush 确认边界：借鉴“初始元数据与持久化确认分开”的职责，不移植其 JSONL、内存队列或重试器。本项目继续等待既有 owner 事务确认后再启动图；该参考不证明本项目事件已全部可靠落地。
+
+### TDD 与中间失败
+
+实际行为红测均在本轮取得终态：
+
+1. `test_framework_terminal_gap.py`：官方图返回后、Runtime 尚未生成结果时强杀，输入应有准备材料，实际仍为1，**1 failed，21.92秒**。完成 Session 接线后才具备 v2；没有用原生 checkpoint 冒充应用状态。
+2. `test_prepared_result_freeze_preserves_newer_stage_and_original_identity`：原 freeze 把阶段12写回7，新准备资产校验拒绝，**1 failed，7.27秒**。根因修复为保留阶段版本，而不是删除新格式要求。
+3. `test_prepared_result_rejects_identity_drift[load-assistant]`：即使所有摘要均按漂移后的数据重算，原加载仍接受非原 assistant ID，**1 failed，8.40秒（DID NOT RAISE）**。新增冻结／加载共用校验，并覆盖 assistant、snapshot ID、version 和准备时间八项负例。
+
+早期输入／adapter／终态组 **82 passed，33.00秒**，结果／快照／阶段组 **71 passed，311.51秒**，输入／终态／恢复／调度组 **61 passed，213.58秒**，审批／Delta／fencing组 **99 passed，429.33秒**。这些批次不累计为独立覆盖数，最终源码回归另列。
+
+扩展回归中的旧真实 Worker 断言仍固定为阶段9／10，分别出现 **1 failed、39 passed，134.87秒** 与 **1 failed、146 passed，581.22秒**。只对实际写入新准备资产的链路改为精确校验12，并增加原预留身份比对；旧替身／无准备资产的7／9／10／11断言保留。一次修改缩进导致收集错误、一次观察测试误引用未定义 asset 导致 **1 failed、28 passed，124.70秒**，均为测试维护错误，不计为目标红测或生产修复；已纠正后重新验证。长测试始终续接原 handle，未因等待超时重启。
+
+### 最终源码验证
+
+以下命令在 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 使用独立 `.venv-framework-v2`，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。v1／v2共用字段抽取、日志及测试维护修正后重新启动最终批次，均取得退出码0，无 skip，不累计为全系统覆盖数：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_deep_agent_runtime_adapter.py tests/test_framework_graph_input_asset.py tests/test_framework_terminal_gap.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py tests/test_framework_message_stages.py -q -x -rs --tb=short
+# 153 passed，328.84秒。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 147 passed，568.13秒。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_receipts.py tests/test_framework_approval_runtime.py tests/test_framework_delta_replay_order.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py -q -x -rs --tb=short
+# 99 passed，419.92秒。
+```
+
+最终批次终端会话9231／79516／91125均取回真实终态；早期及失败批次也全部结束，无遗留运行中的测试。根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；v4／实施记录的本地链接与代码围栏检查通过。全局检索新准备类型、parser、Runtime可选参数、阶段版本写入和资产读取端，核对 Session／Runtime／结果加载／能力读者同步。
+
+### v4 对应与剩余出口
+
+| v4 阶段／条款 | 本节代码与测试 | 已实现范围／剩余出口 |
+| --- | --- | --- |
+| A2-2，§9.2，H05/H11 | graph_input schema、Runtime／Session、terminal_gap 与输入资产测试 | 初始应用状态及 assistant／snapshot 投影意图前移；官方图、PG／Redis、独立 Worker 的准备资产持久性及正常身份复用验收；不授予无原结果后继 |
+| A2-1，§9.4 | runtime_results 与原投影／部分恢复测试 | 新旧格式沿原资产与唯一 finalizer 收尾，准备身份冻结／读取一致，不重执图或模型工具 |
+| 格式兼容，§14／§16，H11 | stage12、Worker capability 与 claim 前版本反例 | 保留旧格式读者并拒领未来格式；上线前仍须先部署兼容读者、制品归档及能力路由，双制品／回滚另验 |
+| P0，§8.3，H02/H03/H12 | 原审批强杀、Delta、fencing 回归 | 维持 §54 的严格原生比较，不忽略消息顺序、身份、块或元数据；官方 conformance／长链性能另验 |
+
+本步最高证据为 E2：真实官方 Deep Agents／SDK、PostgreSQL／Redis、独立 Worker 和强杀；模型为本地 HTTP，工具为受控样本，跨进程本地对象后端不是 RustFS。正常 Worker 测试还核对应用结果与准备身份一致、HTTP一次、turn.completed一次；图返回前后材料强杀测试确认没有 Runtime 结果时仍不创建自动恢复后继。
+
+**A2-2仍未完成。** 必需事件溢出后缀／子代理 callback 事实、工具展示身份与时间、正常与恢复共用的完整确定性结果投影器及相应无原资产恢复准入仍待实施。A2-3／A3／B/C/D/E/F 保持 v4 完整范围，不用本准备子步代替阶段完成。生产默认关闭，无依赖升级、付费请求或真实目标测试；全量、前端、独立 lint/typecheck、真实供应商／RustFS／领域 Runner、官方 conformance 与 E4 未验收。实际 find_spec 确认 ruff、mypy、官方 conformance 包未安装，未新增工具。
+
+本节代码／测试与记录归属同一提交，主题为 `【feat】前置冻结框架回合的投影身份与初始状态`，实际 commit ID 以本节 Git 历史和交付输出为准。整体目标继续 active；下一步沿现有事件设施补可靠事实，不新增平行恢复链路，也不提前开放无原资产自动恢复。

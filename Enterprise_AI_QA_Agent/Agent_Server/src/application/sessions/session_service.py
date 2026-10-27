@@ -60,6 +60,7 @@ from src.schemas.agent_task import AgentTaskAccepted
 from src.schemas.framework_transcript import framework_transcript_asset
 from src.runtime.framework_application_projection import FrameworkProjectionWrite
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_graph_input import FrameworkProjectionIdentity
 
 
 DEFAULT_EVENT_HISTORY_LIMIT = 500
@@ -2065,6 +2066,14 @@ class SessionService:
             assistant_message_id=assistant_message_id,
             turn_lease_token=turn_lease_token,
         )
+        # Reserve projection identities before invoking the bound graph. This
+        # timestamp describes snapshot preparation, not graph completion.
+        projection_identity = (
+            FrameworkProjectionIdentity(binding=projection_owner.binding,
+                assistant_message_id=assistant_message_id, snapshot_id=str(uuid4()),
+                snapshot_version=session.snapshot_count + 1, snapshot_created_at=datetime.utcnow())
+            if projection_owner is not None else None
+        )
         try:
             projection_asset_holder = {}
 
@@ -2083,6 +2092,7 @@ class SessionService:
                 on_model_chunk=stream_chunk_handler,
                 on_graph_input=on_graph_input,
                 on_runtime_result=on_runtime_result,
+                **({"projection_identity": projection_identity} if projection_identity is not None else {}),
             )
             projection_asset = projection_asset_holder.get("asset")
             # Legacy/test RuntimeService implementations may not expose the

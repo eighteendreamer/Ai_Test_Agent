@@ -63,6 +63,7 @@ from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
 from src.schemas.framework_approval import FrameworkContinuationPlan
 from src.schemas.framework_transcript import FrameworkTranscriptAsset
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 
 
@@ -187,11 +188,13 @@ class RuntimeService:
         event_queue: asyncio.Queue | None = None,
         on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         on_runtime_result: Callable[[RuntimeTurnResult], Awaitable[None]] | None = None,
+        projection_identity: FrameworkProjectionIdentity | None = None,
     ) -> RuntimeTurnResult:
         with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             result = await self._execute_turn(
                 session, request, on_model_chunk=on_model_chunk, event_queue=event_queue,
                 on_graph_input=on_graph_input,
+                projection_identity=projection_identity,
             )
             # The result callback is part of the runtime boundary: callers can
             # persist the exact terminal result before this method returns.
@@ -208,6 +211,7 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
         on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
+        projection_identity: FrameworkProjectionIdentity | None = None,
     ) -> RuntimeTurnResult:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
@@ -233,6 +237,7 @@ class RuntimeService:
                     pilot_stage=pilot_stage,
                     on_model_chunk=on_model_chunk,
                     on_graph_input=on_graph_input,
+                    projection_identity=projection_identity,
                 ),
             )
         compaction_info = None
@@ -319,12 +324,17 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
         on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         continuation_plan: FrameworkContinuationPlan | None = None,
+        projection_identity: FrameworkProjectionIdentity | None = None,
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
         if request.runtime_binding is not None:
             owner = current_framework_owner()
             if owner is None or owner.binding != request.runtime_binding:
                 raise RuntimeError("Bound runtime requires its captured execution owner")
+        if projection_identity is not None and (
+            projection_identity.binding != request.runtime_binding or on_graph_input is None
+        ):
+            raise ValueError("Projection identity requires its bound graph-input persistence callback")
         def on_subagent_event(item: dict[str, Any]) -> None:
             event_type = str(item.get("type") or "")
             append_graph_event(
@@ -354,79 +364,68 @@ class RuntimeService:
             state=state,
             tool_records=tool_records,
         )
+        adapter_request = DeepAgentRuntimeRequest(
+            session_id=session.id,
+            turn_id=request.turn_id,
+            trace_id=state["trace_id"],
+            model_key=state["selected_model_key"],
+            checkpoint_namespace=str(
+                state.get("context_bundle", {}).get("checkpoint_namespace") or ""
+            ) or None,
+            system_prompt=(
+                "You are the Enterprise AI QA Agent code review pilot. "
+                "Return evidence-grounded review guidance. Use only the "
+                "read-only project and selected skill capabilities exposed "
+                "by the current pilot stage. Business tools visible to you are "
+                "governed by the application's permission and approval controls."
+            ),
+            messages=list(state["runtime_messages"]),
+            framework_messages=list(state.get("framework_messages") or []),
+            context={**dict(request.context), "skill_keys": list(request.skill_keys)},
+            read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
+            read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
+            read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
+            cognitive_planning_enabled=self._deep_agent_cognitive_planning_enabled,
+            cognitive_subagents_enabled=self._deep_agent_cognitive_subagents_enabled,
+            max_subagent_calls_per_turn=self._deep_agent_max_subagent_calls_per_turn,
+            subagent_model_call_limit=self._deep_agent_subagent_model_call_limit,
+            subagent_tool_call_limit=self._deep_agent_subagent_tool_call_limit,
+            on_subagent_event=on_subagent_event if self._deep_agent_cognitive_subagents_enabled else None,
+            business_tools=business_tools,
+            interrupt_on=interrupt_on,
+            resume=(continuation_plan.resume if continuation_plan is not None
+                else state.pop("_deep_agent_resume", None)),
+            continue_from_checkpoint=(continuation_plan.continue_from_checkpoint
+                if continuation_plan is not None else False),
+        )
         if on_graph_input is not None:
             from src.schemas.framework_graph_input import graph_input_asset
 
             await on_graph_input(graph_input_asset(
-                session_id=session.id,
-                turn_id=request.turn_id,
-                trace_id=state["trace_id"],
-                model_key=state["selected_model_key"],
-                checkpoint_namespace=str(
-                    state.get("context_bundle", {}).get("checkpoint_namespace") or ""
-                ) or None,
-                system_prompt=(
-                    "You are the Enterprise AI QA Agent code review pilot. "
-                    "Return evidence-grounded review guidance. Use only the "
-                    "read-only project and selected skill capabilities exposed "
-                    "by the current pilot stage. Business tools visible to you are "
-                    "governed by the application's permission and approval controls."
-                ),
-                messages=list(state["runtime_messages"]),
-                framework_messages=list(state.get("framework_messages") or []),
-                context=dict(state.get("context_bundle") or {}),
+                session_id=adapter_request.session_id,
+                turn_id=adapter_request.turn_id,
+                trace_id=adapter_request.trace_id,
+                model_key=adapter_request.model_key,
+                checkpoint_namespace=adapter_request.checkpoint_namespace,
+                system_prompt=adapter_request.system_prompt,
+                messages=adapter_request.messages,
+                framework_messages=adapter_request.framework_messages or [],
+                context=adapter_request.context,
                 business_tool_keys=list(state.get("model_visible_tool_keys") or []),
-                interrupt_tool_keys=sorted(str(key) for key in interrupt_on),
+                interrupt_tool_keys=sorted(str(key) for key in adapter_request.interrupt_on),
                 feature_flags={
-                    "read_only_filesystem": self._deep_agent_read_only_filesystem_enabled,
-                    "cognitive_planning": self._deep_agent_cognitive_planning_enabled,
-                    "cognitive_subagents": self._deep_agent_cognitive_subagents_enabled,
+                    "read_only_filesystem": adapter_request.read_only_filesystem_enabled,
+                    "cognitive_planning": adapter_request.cognitive_planning_enabled,
+                    "cognitive_subagents": adapter_request.cognitive_subagents_enabled,
                     "governed_tools": self._deep_agent_governed_tools_enabled,
                 },
+                runtime_preparation=(FrameworkRuntimePreparation(identity=projection_identity, initial_state=state)
+                    if projection_identity is not None else None),
             ).model_dump(mode="json"))
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
             else self._deep_agent_runtime_adapter)
         execution_task = asyncio.create_task(
-            adapter.execute(
-                DeepAgentRuntimeRequest(
-                    session_id=session.id,
-                    turn_id=request.turn_id,
-                    trace_id=state["trace_id"],
-                    model_key=state["selected_model_key"],
-                    system_prompt=(
-                        "You are the Enterprise AI QA Agent code review pilot. "
-                        "Return evidence-grounded review guidance. Use only the "
-                        "read-only project and selected skill capabilities exposed "
-                        "by the current pilot stage. Business tools visible to you are "
-                        "governed by the application's permission and approval controls."
-                    ),
-                    messages=list(state["runtime_messages"]),
-                    framework_messages=list(state.get("framework_messages") or []),
-                    checkpoint_namespace=str(
-                        state.get("context_bundle", {}).get("checkpoint_namespace") or ""
-                    ) or None,
-                    context={**dict(request.context), "skill_keys": list(request.skill_keys)},
-                    read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
-                    read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
-                    read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
-                    cognitive_planning_enabled=self._deep_agent_cognitive_planning_enabled,
-                    cognitive_subagents_enabled=self._deep_agent_cognitive_subagents_enabled,
-                    max_subagent_calls_per_turn=self._deep_agent_max_subagent_calls_per_turn,
-                    subagent_model_call_limit=self._deep_agent_subagent_model_call_limit,
-                    subagent_tool_call_limit=self._deep_agent_subagent_tool_call_limit,
-                    on_subagent_event=(
-                        on_subagent_event
-                        if self._deep_agent_cognitive_subagents_enabled
-                        else None
-                    ),
-                    business_tools=business_tools,
-                    interrupt_on=interrupt_on,
-                    resume=(continuation_plan.resume if continuation_plan is not None
-                        else state.pop("_deep_agent_resume", None)),
-                    continue_from_checkpoint=(continuation_plan.continue_from_checkpoint
-                        if continuation_plan is not None else False),
-                )
-            ),
+            adapter.execute(adapter_request),
             name=f"deep-agent-turn:{session.id}:{request.turn_id}",
         )
         self._runtime_control.register_interruptible_task(session.id, execution_task)
@@ -443,6 +442,7 @@ class RuntimeService:
                     f"{self._deep_agent_turn_timeout_seconds:g} second limit."
                 ),
                 cause="timeout",
+                projection_identity=projection_identity,
             )
         except asyncio.CancelledError:
             if not self._runtime_control.is_interrupt_requested(session.id):
@@ -456,6 +456,7 @@ class RuntimeService:
                     or "Deep Agents cognitive turn was interrupted."
                 ),
                 cause="interrupt",
+                projection_identity=projection_identity,
             )
         finally:
             self._runtime_control.unregister_interruptible_task(session.id, execution_task)
@@ -494,7 +495,7 @@ class RuntimeService:
                 harness="deepagents",
             )
             state["pending_turn"] = self._build_pending_turn(state, stage="waiting_approval")
-            snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
+            snapshot = self._build_snapshot(session, state, session.snapshot_count + 1, identity=projection_identity)
             return RuntimeTurnResult(
                 output_text="",
                 events=self._events_from_log(session.id, state["event_log"]),
@@ -539,7 +540,7 @@ class RuntimeService:
             pilot_stage=pilot_stage,
             final_response_length=len(result.output_text),
         )
-        snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
+        snapshot = self._build_snapshot(session, state, session.snapshot_count + 1, identity=projection_identity)
         return RuntimeTurnResult(
             output_text=result.output_text,
             events=self._events_from_log(session.id, state["event_log"]),
@@ -559,6 +560,7 @@ class RuntimeService:
         pilot_stage: str,
         reason: str,
         cause: str,
+        projection_identity: FrameworkProjectionIdentity | None = None,
     ) -> RuntimeTurnResult:
         """Map a bounded Deep Agents stop to existing terminal runtime contracts.
 
@@ -598,7 +600,7 @@ class RuntimeService:
             cause=cause,
             resumable=False,
         )
-        snapshot = self._build_snapshot(session, state, session.snapshot_count + 1)
+        snapshot = self._build_snapshot(session, state, session.snapshot_count + 1, identity=projection_identity)
         return RuntimeTurnResult(
             output_text="",
             events=self._events_from_log(session.id, state["event_log"]),
@@ -2384,7 +2386,10 @@ class RuntimeService:
         state["pending_turn"] = self._build_pending_turn(state, stage="interrupted")
         return state
 
-    def _build_snapshot(self, session: SessionRecord, state: dict[str, Any], version: int) -> SessionSnapshot:
+    def _build_snapshot(
+        self, session: SessionRecord, state: dict[str, Any], version: int,
+        *, identity: FrameworkProjectionIdentity | None = None,
+    ) -> SessionSnapshot:
         graph_state = {
             "turn_id": state["turn_id"],
             "trace_id": state["trace_id"],
@@ -2443,11 +2448,11 @@ class RuntimeService:
             "final_response": state["final_response"],
         }
         return SessionSnapshot(
-            id=str(uuid4()),
+            id=identity.snapshot_id if identity is not None else str(uuid4()),
             session_id=session.id,
-            version=version,
+            version=identity.snapshot_version if identity is not None else version,
             stage=self._snapshot_stage_for_state(state),
-            created_at=datetime.utcnow(),
+            created_at=identity.snapshot_created_at if identity is not None else datetime.utcnow(),
             graph_state=graph_state,
         )
 

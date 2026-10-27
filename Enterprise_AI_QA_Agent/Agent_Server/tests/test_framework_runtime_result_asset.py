@@ -26,6 +26,79 @@ from tests.test_framework_application_projection import projection, projection_j
 from tests.test_framework_message_stages import selected, run, stage
 
 
+def install_preparation(h, *, keep_result=False):
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+    from tests.test_framework_graph_input_asset import prepared_graph_input
+
+    snapshot = h.asset.runtime_result.snapshot
+    identity = FrameworkProjectionIdentity(binding=h.binding, assistant_message_id=h.asset.assistant_message_id,
+        snapshot_id=snapshot.id, snapshot_version=snapshot.version, snapshot_created_at=snapshot.created_at)
+    prepared = prepared_graph_input(h.binding, h.task.trace_id, identity=identity)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT record FROM {message_stage_table(h.settings)} WHERE task_id=%s", (h.task.id,))
+        record = cur.fetchone()["record"]
+        manifest = record["source_manifest"]
+        manifest.pop("runtime_result_asset")
+        manifest["graph_input_asset"] = prepared.model_dump(mode="json")
+        if keep_result:
+            result = h.asset.model_dump(mode="json", exclude={"asset_sha256"})
+            result["source_sha256"] = approval_value_hash(manifest)
+            manifest["runtime_result_asset"] = {**result, "asset_sha256": approval_value_hash(result)}
+        record.update(schema_version=12, source_manifest=manifest, source_sha256=approval_value_hash(manifest))
+        cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=%s::jsonb WHERE task_id=%s",
+            (json.dumps(record), h.task.id))
+    return identity
+
+
+@pytest.mark.asyncio
+async def test_prepared_result_freeze_preserves_newer_stage_and_original_identity(frozen_result):
+    h = frozen_result
+    identity = install_preparation(h)
+    asset = await h.results.freeze(h.task.runtime_owner,
+        runtime_result=h.result_values["runtime_result"], assistant_message_id=identity.assistant_message_id,
+        user_message=h.asset.user_message, verification_results=[])
+    assert (await stage(h, h.task)).schema_version == 12
+    assert await h.results.load(h.task.runtime_owner) == asset
+    assert asset.runtime_result.snapshot == h.asset.runtime_result.snapshot
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["assistant", "snapshot_id", "snapshot_version", "snapshot_created_at"])
+@pytest.mark.parametrize("operation", ["freeze", "load"])
+async def test_prepared_result_rejects_identity_drift(frozen_result, changed, operation):
+    from datetime import timedelta
+
+    h = frozen_result
+    install_preparation(h, keep_result=operation == "load")
+    result = h.asset.runtime_result.restore()
+    assistant = h.asset.assistant_message_id
+    if changed == "assistant":
+        assistant += "-foreign"
+    else:
+        field = changed.removeprefix("snapshot_")
+        old = getattr(result.snapshot, field)
+        new = old + timedelta(seconds=1) if field == "created_at" else (old + 1 if field == "version" else old + "-foreign")
+        result.snapshot = result.snapshot.model_copy(update={field: new})
+    if operation == "load":
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"SELECT record FROM {message_stage_table(h.settings)} WHERE task_id=%s", (h.task.id,))
+            record = cur.fetchone()["record"]
+            raw = record["source_manifest"]["runtime_result_asset"]
+            raw.update(assistant_message_id=assistant, runtime_result=type(h.asset.runtime_result).from_result(result).model_dump(mode="json"))
+            raw["asset_sha256"] = approval_value_hash({k: v for k, v in raw.items() if k != "asset_sha256"})
+            record["source_sha256"] = approval_value_hash(record["source_manifest"])
+            cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=%s::jsonb WHERE task_id=%s",
+                (json.dumps(record), h.task.id))
+        with pytest.raises(FrameworkMessageStageRecoveryRequired, match="prepar"):
+            await h.results.load(h.task.runtime_owner)
+    else:
+        before = await stage(h, h.task)
+        with pytest.raises(FrameworkMessageStageRecoveryRequired, match="prepar"):
+            await h.results.freeze(h.task.runtime_owner, runtime_result=result, assistant_message_id=assistant,
+                user_message=h.asset.user_message, verification_results=[])
+        assert await stage(h, h.task) == before
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("output", ["worker-result", ""])
 async def test_original_runtime_result_is_durable_before_finalizer(projection, monkeypatch, output):
@@ -322,9 +395,10 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
                     assert asset.event_id("snapshot.saved") in event_receipts["event_hashes"]
                     for identity, digest in event_receipts["event_hashes"].items():
                         assert digest == _hash(events[identity])
-                    assert before.schema_version == 9
-                else:
-                    assert before.schema_version == (9 if asset.runtime_result.events else 8)
+            assert before.schema_version == 12
+            identity = before.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]
+            assert identity["snapshot_id"] == asset.runtime_result.snapshot.id
+            assert identity["assistant_message_id"] == asset.assistant_message_id
             assert len((await h.store.get_session(h.session_id)).messages) == 1
             assert len(requests) == 1 and process.is_alive()
             budget = await h.calls.snapshot(h.binding)

@@ -1590,6 +1590,14 @@ async def test_deep_agent_runtime_emits_frozen_graph_input_asset_before_adapter_
         async def execute(self, request):
             assert captured and captured[0]["model_key"] == "test-model"
             assert captured[0]["messages"] == []
+            assert captured[0]["context"] == request.context
+            assert captured[0]["context"]["skill_keys"] == ["fixture-skill"]
+            assert captured[0]["framework_messages"] == request.framework_messages
+            assert captured[0]["system_prompt"] == request.system_prompt
+            assert captured[0]["checkpoint_namespace"] == request.checkpoint_namespace
+            # Actual execution may mutate its nested input; the frozen JSON
+            # asset must retain the original input, not a shallow reference.
+            request.context["nested"]["value"] = "changed during adapter execution"
             return DeepAgentRuntimeResult(output_text="GRAPH_INPUT_ASSET_OK")
 
     runtime = RuntimeService(
@@ -1604,15 +1612,36 @@ async def test_deep_agent_runtime_emits_frozen_graph_input_asset_before_adapter_
     )
     session = _runtime_session("session-graph-input-asset")
     request = _runtime_request(session.id, "turn-graph-input-asset")
+    request.context["nested"] = {"value": "original"}
+    request.skill_keys = ["fixture-skill"]
     result = await runtime.execute_turn(session, request, on_graph_input=capture)
     assert result.output_text == "GRAPH_INPUT_ASSET_OK"
     assert captured[0]["asset_sha256"]
+    assert captured[0]["context"]["nested"] == {"value": "original"}
     assert captured[0]["feature_flags"] == {
         "read_only_filesystem": False,
         "cognitive_planning": False,
         "cognitive_subagents": False,
         "governed_tools": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_graph_input_persistence_failure_prevents_adapter_execution():
+    class AdapterStub:
+        async def execute(self, request):
+            raise AssertionError("Graph must not run before input persistence succeeds")
+
+    async def fail(asset):
+        raise ConnectionError("injected graph input write failure")
+
+    runtime = RuntimeService(graph=None, model_runtime_service=_ModelRuntimeStub(),
+        tool_runtime_service=object(), tool_registry=ToolRegistry(), runtime_control=RuntimeControlRegistry(),
+        deep_agent_runtime_adapter=AdapterStub(), deep_agent_enabled=True,
+        deep_agent_pilot_mode_keys=["code_review"])
+    session = _runtime_session("session-input-write-failure")
+    with pytest.raises(ConnectionError, match="graph input write failure"):
+        await runtime.execute_turn(session, _runtime_request(session.id, "turn-input-write-failure"), on_graph_input=fail)
 
 
 @pytest.mark.asyncio

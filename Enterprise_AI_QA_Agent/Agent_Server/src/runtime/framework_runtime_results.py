@@ -66,6 +66,24 @@ def validate_runtime_result(cur, settings, owner, stage, task, raw):
     return validate_runtime_result_binding(cur, settings, owner.binding, stage, task, raw)
 
 
+def _require_prepared_identity(stage, asset):
+    """Compare original application intent, not database-assigned row headers."""
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+
+    raw = (stage.source_manifest or {}).get("graph_input_asset")
+    if raw is None:
+        return
+    prepared = parse_graph_input_asset(raw)
+    if prepared.schema_version == 1:
+        return
+    identity = prepared.runtime_preparation.identity
+    snapshot = asset.runtime_result.snapshot
+    _require(identity.binding == asset.binding and identity.assistant_message_id == asset.assistant_message_id
+        and identity.snapshot_id == snapshot.id and identity.snapshot_version == snapshot.version
+        and identity.snapshot_created_at == snapshot.created_at,
+        "Runtime result differs from its original preparation identity")
+
+
 def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
     """Read original facts before claim too; this grants no execution ownership."""
     asset = FrameworkRuntimeResultAsset.model_validate(raw)
@@ -82,6 +100,7 @@ def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
     _require(asset.model_calls_sha256 == _model_hash(cur, settings, binding)
         and asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
         "Runtime result execution facts changed")
+    _require_prepared_identity(stage, asset)
     return asset
 
 
@@ -129,8 +148,9 @@ class FrameworkRuntimeResults:
                     verification_results=verifications, projection_at=datetime.utcnow().isoformat(),
                     schema_version=1, scope="completed_message_finalization_input")
                 asset = FrameworkRuntimeResultAsset(**values, asset_sha256=approval_value_hash(values))
+                _require_prepared_identity(stage, asset)
                 manifest[RESULT_KEY] = asset.model_dump(mode="json")
-                updated = validate_message_stage(stage.model_copy(update={"schema_version": 7,
+                updated = validate_message_stage(stage.model_copy(update={"schema_version": max(7, stage.schema_version),
                     "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
                 cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
                     (updated.model_dump_json(), stage.task_id))

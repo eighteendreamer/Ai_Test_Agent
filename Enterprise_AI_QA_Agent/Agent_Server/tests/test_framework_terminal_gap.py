@@ -99,10 +99,22 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 assert _native_hash(saver.serde, snapshot.values) == proof.state_sha256
                 assert snapshot.values["messages"][-1].content == "fixture answer"
             assert before.phase == "runtime_submitted" and "graph_input_asset" in before.source_manifest
+            prepared = before.source_manifest["graph_input_asset"]
+            assert prepared["schema_version"] == 2
+            assert before.schema_version >= 12
+            identity = prepared["runtime_preparation"]["identity"]
+            assert identity["binding"]["binding_id"] == h.binding.binding_id
+            assert identity["assistant_message_id"] and identity["snapshot_id"]
+            assert identity["snapshot_created_at"] and identity["snapshot_version"] == 1
+            initial = prepared["runtime_preparation"]["initial_state"]
+            assert initial["session_id"] == h.session_id and initial["turn_id"] == h.binding.turn_id
+            assert initial["selected_model_key"] == config.key
+            assert initial["context_bundle"]["runtime_binding"] == h.binding.model_dump(mode="json")
+            assert initial["event_log"][0]["type"] == "runtime.turn_started"
             assert "runtime_result_asset" not in before.source_manifest
-            # Current input records adapter inputs, not the application runtime
-            # event log, result identities, or callback-only subagent metadata.
-            assert "event_log" not in before.source_manifest["graph_input_asset"]
+            # Preparation retains the initial event only, not all later events
+            # or callback-only subagent facts. It does not admit gap recovery.
+            assert len(initial["event_log"]) == 1
             assert await h.store.get_latest_snapshot(h.session_id) is None
             process.terminate()
             await asyncio.to_thread(process.join, 10)
@@ -114,6 +126,7 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             assert await h.tasks.ensure_framework_message_recovery(original.id) is None
             assert await h.tasks.get(original.id) == terminal_record
             assert (await stage(h, original)).source_manifest == before.source_manifest
+            assert (await stage(h, original)).source_manifest["graph_input_asset"] == prepared
             assert await h.calls.snapshot(h.binding) == budget and len(requests) == 1
             assert await evidence.read_response(h.binding, call.intent, response.response) == saved_response
             async with provider.open() as saver:
@@ -126,5 +139,59 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             await asyncio.to_thread(process.join, 10)
         await waiting.aclose()
         await provider.close()
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP SCHEMA IF EXISTS {h.settings.deep_agents.checkpoint_schema} CASCADE")
+
+
+@pytest.mark.asyncio
+async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(admission, tmp_path):
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+
+    h = admission
+    process = None
+    try:
+        with _provider("openai_chat_completions") as (url, requests):
+            config = _config("openai_chat_completions", url)
+            h.binding = h.binding.model_copy(update={"model_config_fingerprint": model_config_fingerprint(config)})
+            h.command = make_command(h, h.binding)
+            h.payload = h.payload.model_copy(update={"model_key": config.key, "mode_key": "code_review"})
+            h.budget = h.budget.model_copy(update={"model_config_fingerprints": {config.key: h.binding.model_config_fingerprint}})
+            task = await submit(h)
+            queue = RedisTaskQueue(h.settings.database.redis_url, stream=h.settings.orchestration.agent_task_v2_stream,
+                group="projection-kill", client=h.redis)
+            await queue.connect()
+            assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+            process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
+                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix,
+                    h.prefix + ":normal-completion", "complete", str(tmp_path)))
+            process.start()
+            await asyncio.to_thread(process.join, 45)
+            assert not process.is_alive() and process.exitcode == 0
+            assert (await h.tasks.get(task.id)).status == "completed"
+            saved = await stage(h, task)
+            assert saved.phase == "projected" and saved.schema_version == 12
+            graph_input = parse_graph_input_asset(saved.source_manifest["graph_input_asset"])
+            result = FrameworkRuntimeResultAsset.model_validate(saved.source_manifest["runtime_result_asset"])
+            identity = graph_input.runtime_preparation.identity
+            assert result.binding == identity.binding == h.binding
+            assert result.assistant_message_id == identity.assistant_message_id
+            snapshot = result.runtime_result.snapshot
+            assert (snapshot.id, snapshot.version, snapshot.created_at) == (
+                identity.snapshot_id, identity.snapshot_version, identity.snapshot_created_at)
+            assert (await h.store.get_session(h.session_id)).messages[-1].id == identity.assistant_message_id
+            assert (await h.store.get_latest_snapshot(h.session_id)).id == identity.snapshot_id
+            initial = graph_input.runtime_preparation.initial_state
+            assert initial["selected_model_key"] == config.key
+            assert initial["selected_model_name"] == config.name
+            assert initial["selected_model_provider"] == config.provider
+            assert len(initial["event_log"]) == 1 and initial["final_response"] == ""
+            assert len(result.runtime_result.events) > 1 and result.runtime_result.output_text == "fixture answer"
+            assert len(requests) == 1
+            assert len([event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]) == 1
+    finally:
+        if process is not None and process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
             cur.execute(f"DROP SCHEMA IF EXISTS {h.settings.deep_agents.checkpoint_schema} CASCADE")

@@ -173,6 +173,8 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             memory.write = write_and_pause
         elif window == "after_commit":
             FrameworkMessageStages.projected = pause
+        elif window == "complete":
+            pass  # Normal Worker path: no fault or projection sample injected.
         else:
             raise ValueError(f"Unknown application fault window: {window}")
         dispatcher = AgentTaskDispatcher(settings, tasks, sessions, resources, framework_model_calls=calls,

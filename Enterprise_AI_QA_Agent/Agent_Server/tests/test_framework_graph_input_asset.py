@@ -1,11 +1,70 @@
 """Contract tests for the immutable Deep Agents graph input asset."""
 from __future__ import annotations
 
+from datetime import datetime
+
 import pytest
 
 from tests.test_framework_model_admission import admission
 from tests.test_framework_message_stages import selected
 from tests.test_agent_task_dispatch import harness
+
+
+def prepared_graph_input(binding, trace_id, *, identity=None, initial_state=None):
+    from src.schemas.framework_graph_input import (
+        FrameworkProjectionIdentity, FrameworkRuntimePreparation, graph_input_asset,
+    )
+
+    identity = identity or FrameworkProjectionIdentity(binding=binding, assistant_message_id="prepared-assistant",
+        snapshot_id="prepared-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27))
+    state = initial_state if initial_state is not None else {
+        "session_id": binding.session_id, "turn_id": binding.turn_id, "trace_id": trace_id,
+        "selected_model_key": "primary", "selected_model_name": "Original display name",
+        "context_bundle": {"runtime_binding": binding.model_dump(mode="json")},
+        "event_log": [{"type": "runtime.turn_started", "payload": {"message": "original"}}],
+    }
+    return graph_input_asset(session_id=binding.session_id, turn_id=binding.turn_id, trace_id=trace_id,
+        model_key="primary", checkpoint_namespace=binding.checkpoint_namespace, system_prompt="system",
+        messages=[], framework_messages=[], context={"skill_keys": ["original-skill"]}, business_tool_keys=[],
+        interrupt_tool_keys=[], feature_flags={},
+        runtime_preparation=FrameworkRuntimePreparation(identity=identity, initial_state=state))
+
+
+def test_prepared_graph_input_round_trip_and_nested_copy():
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from tests.test_runtime_binding_persistence import make_binding
+
+    asset = prepared_graph_input(make_binding("session-1", "turn-1"), "trace-1")
+    state = asset.runtime_preparation.initial_state
+    copied = prepared_graph_input(asset.runtime_preparation.identity.binding, "trace-1", initial_state=state)
+    state["event_log"][0]["payload"]["message"] = "mutated after freeze"
+    assert copied.runtime_preparation.initial_state["event_log"][0]["payload"]["message"] == "original"
+    assert parse_graph_input_asset(copied.model_dump(mode="json")) == copied
+    assert copied.schema_version == 2
+
+
+@pytest.mark.parametrize("changed", ["binding", "trace", "model", "state", "digest", "future"])
+def test_prepared_graph_input_rejects_drift_even_with_rehashed_envelope(changed):
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from src.schemas.framework_approval import approval_value_hash
+    from tests.test_runtime_binding_persistence import make_binding
+
+    asset = prepared_graph_input(make_binding("session-1", "turn-1"), "trace-1")
+    raw = asset.model_dump(mode="json")
+    if changed == "binding":
+        raw["runtime_preparation"]["identity"]["binding"]["turn_id"] = "other-turn"
+    elif changed in {"trace", "model"}:
+        raw["trace_id" if changed == "trace" else "model_key"] = "other"
+    elif changed == "state":
+        raw["runtime_preparation"]["initial_state"]["context_bundle"] = {}
+    elif changed == "future":
+        raw["schema_version"] = 3
+    if changed == "digest":
+        raw["runtime_preparation"]["initial_state"]["selected_model_name"] = "changed"
+    else:
+        raw["asset_sha256"] = approval_value_hash({k: v for k, v in raw.items() if k != "asset_sha256"})
+    with pytest.raises(ValueError):
+        parse_graph_input_asset(raw)
 
 
 def test_graph_input_asset_round_trips_and_binds_its_digest():
