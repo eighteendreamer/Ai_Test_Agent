@@ -47,7 +47,7 @@ class LocalModelObjects:
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("window", ["after_graph_return", "after_graph_events"])
+@pytest.mark.parametrize("window", ["after_graph_return", "after_graph_events", "after_event_completion"])
 async def test_native_terminal_and_settled_response_survive_kill_but_do_not_invent_application_result(admission, tmp_path, window):
     h = admission
     h.settings.orchestration.resource_default_lease_seconds = 30
@@ -143,6 +143,18 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             process.terminate()
             await asyncio.to_thread(process.join, 10)
             assert not process.is_alive() and process.exitcode != 0
+            from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+            if window == "after_event_completion":
+                read = await h.store.read_runtime_event_completion(h.binding, proof.model_dump(mode="json"))
+                assert read.completion.task_id == active.id and read.completion.attempt_id == active.attempt_id
+                assert read.completion.returned_event_offset == 0
+                assert read.event_log[0] == initial["event_log"][0]
+                assert [item["type"] for item in read.event_log] == ["runtime.turn_started", "runtime.turn_completed"]
+                assert all(item["type"] != "runtime.event_log_completed" for item in read.event_log)
+            else:
+                with pytest.raises(FrameworkMessageStageRecoveryRequired, match="missing"):
+                    await h.store.read_runtime_event_completion(h.binding, proof.model_dump(mode="json"))
             if window == "after_graph_events":
                 from src.schemas.session import ExecutionEvent
                 from src.runtime.framework_application_projection import _require_event_intent
@@ -213,6 +225,9 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
             assert (await h.tasks.get(task.id)).status == "completed"
             saved = await stage(h, task)
             assert saved.phase == "projected" and saved.schema_version == 14
+            completions = [event for event in await h.store.list_events(h.session_id)
+                if event.type == "runtime.event_log_completed"]
+            assert len(completions) == 1, "A persisted prefix is not a completed Runtime event collection"
             graph_input = parse_graph_input_asset(saved.source_manifest["graph_input_asset"])
             assert graph_input.feature_flags["tool_projection_version"] == 2
             result = FrameworkRuntimeResultAsset.model_validate(saved.source_manifest["runtime_result_asset"])
@@ -230,6 +245,12 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
             assert initial["selected_model_provider"] == config.provider
             assert len(initial["event_log"]) == 1 and initial["final_response"] == ""
             assert len(result.runtime_result.events) > 1 and result.runtime_result.output_text == "fixture answer"
+            read = await h.store.read_runtime_event_completion(h.binding,
+                result.runtime_result.state["model_response_summary"]["native_terminal"])
+            assert read.event_log == result.runtime_result.state["event_log"]
+            assert [item.event_id for item in read.completion.events] == [item.id for item in result.runtime_result.events]
+            assert read.completion.returned_event_offset == 0
+            assert completions[0].id not in {item.id for item in result.runtime_result.events}
             assert len(requests) == 1
             assert len([event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]) == 1
     finally:

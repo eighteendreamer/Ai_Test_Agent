@@ -1487,6 +1487,46 @@ class PostgresSessionStore:
                     queued += max(0, int(cur.rowcount or 0))
         return queued
 
+    async def complete_runtime_events(self, session_id, event_log, *, runtime_owner, native_terminal,
+                                      returned_event_offset=0, **fence):
+        """Declare the acknowledged graph collection in the existing event transaction."""
+        from src.runtime.framework_event_completion import completion_event
+        from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
+
+        if runtime_owner.binding.session_id != session_id:
+            raise ValueError("Runtime event completion belongs to another Session")
+        # Own JSON originals before crossing to_thread, not mutable Runtime state.
+        event_log = json.loads(json.dumps(event_log, ensure_ascii=False, allow_nan=False))
+        native_terminal = json.loads(json.dumps(native_terminal, ensure_ascii=False, allow_nan=False))
+
+        def write():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                configure_runtime_owner_transaction(cur, self._settings)
+                assert_runtime_owner(cur, self._settings, runtime_owner)
+                event = completion_event(cur, self._settings, runtime_owner, event_log,
+                    native_terminal, returned_event_offset)
+                self.append_event_in_transaction(cur, session_id, event, runtime_owner=runtime_owner, **fence)
+                return event
+
+        return await asyncio.to_thread(write)
+
+    async def read_runtime_event_completion(self, binding, native_terminal):
+        """Verify original material without granting execution or recovery authority."""
+        from src.runtime.framework_event_completion import read_completion
+        from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction
+
+        native_terminal = json.loads(json.dumps(native_terminal, ensure_ascii=False, allow_nan=False))
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                configure_runtime_owner_transaction(cur, self._settings)
+                # Follow Session-first lock order shared by all event writers.
+                # A reader never acquires an execution owner or changes a lease.
+                cur.execute(f"SELECT id FROM {self._settings.database.postgres_session_table} WHERE id=%s FOR SHARE",
+                    (binding.session_id,))
+                return read_completion(cur, self._settings, binding, native_terminal)
+
+        return await asyncio.to_thread(read)
+
     def _append_event_sync(
         self,
         session_id: str,

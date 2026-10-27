@@ -126,6 +126,13 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                         signal.rpush(gate, "finalization-uncommitted")
                     threading.Event().wait()
                 projections.record_application_commit = record_and_pause
+        elif window == "after_event_completion":
+            execute_runtime = runtime._execute_deep_agent_turn
+            async def collection_completed(*args, **kwargs):
+                result = await execute_runtime(*args, **kwargs)
+                await redis.rpush(gate, json.dumps(result.state["model_response_summary"]["native_terminal"]))
+                await asyncio.Event().wait()
+            runtime._execute_deep_agent_turn = collection_completed
         elif window in {"after_graph_return", "after_graph_events"}:
             captured = {}
             if window == "after_graph_events":

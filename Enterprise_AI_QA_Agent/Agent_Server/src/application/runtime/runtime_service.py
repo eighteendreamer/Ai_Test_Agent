@@ -47,7 +47,9 @@ from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_context import graph_event_scope, current_framework_owner
-from src.runtime.execution_logging import append_graph_event, append_graph_event_durable, truncate_text
+from src.runtime.execution_logging import (
+    append_graph_event, append_graph_event_durable, complete_graph_event_log, prepare_graph_event_log, truncate_text,
+)
 from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
     ChatMessage,
@@ -223,6 +225,7 @@ class RuntimeService:
             state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
             if projection_identity is not None:
                 state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 2
+            prepare_graph_event_log(state)
             self._prepare_deep_agent_governed_tools(session, request, state)
             await append_graph_event_durable(
                 state,
@@ -332,6 +335,7 @@ class RuntimeService:
         on_graph_input: Callable[[dict[str, Any]], Awaitable[None]] | None = None,
         continuation_plan: FrameworkContinuationPlan | None = None,
         projection_identity: FrameworkProjectionIdentity | None = None,
+        returned_event_offset: int = 0,
     ) -> RuntimeTurnResult:
         """Run the staged Deep Agents pilot while preserving result contracts."""
         if request.runtime_binding is not None:
@@ -573,6 +577,9 @@ class RuntimeService:
             pilot_stage=pilot_stage,
             final_response_length=len(result.output_text),
         )
+        if result.metadata.get("native_terminal") is not None:
+            await complete_graph_event_log(state, result.metadata["native_terminal"],
+                returned_event_offset=returned_event_offset)
         snapshot = self._build_snapshot(session, state, session.snapshot_count + 1, identity=projection_identity)
         return RuntimeTurnResult(
             output_text=result.output_text,
@@ -700,7 +707,8 @@ class RuntimeService:
             approval_id=approval_id, decision_id=decision_id, continue_from_checkpoint=plan.continue_from_checkpoint)
         result = await self._execute_observed(session, request, state,
             lambda: self._execute_deep_agent_turn(session, request, state=state,
-                pilot_stage=self._deep_agent_pilot_stage(), on_model_chunk=on_model_chunk, continuation_plan=plan))
+                pilot_stage=self._deep_agent_pilot_stage(), on_model_chunk=on_model_chunk, continuation_plan=plan,
+                returned_event_offset=persisted_events))
         result.events = result.events[persisted_events:]
         return result
 

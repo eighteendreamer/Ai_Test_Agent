@@ -498,7 +498,8 @@ async def fresh_runtime_harness(projection_harness):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("prepared", [False, True])
 @pytest.mark.parametrize("decision", ["approved", "denied"])
-async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared, decision, monkeypatch):
+@pytest.mark.parametrize("acknowledged", [False, True])
+async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared, decision, acknowledged, monkeypatch):
     from datetime import datetime
     from src.schemas.framework_graph_input import FrameworkProjectionIdentity
 
@@ -530,9 +531,15 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     identity = FrameworkProjectionIdentity(binding=h.binding, assistant_message_id="prepared-assistant",
         snapshot_id="prepared-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27))
     with framework_owner_scope(h.owner.runtime_owner):
-        first = await h.runtime.execute_turn(session, request, on_graph_input=freeze,
-            projection_identity=identity if prepared else None)
+        if acknowledged:
+            sink = SessionEventSink(h.store, h.session_id, capacity=1, fence={}, runtime_owner=h.owner.runtime_owner)
+            first = await sink.run(h.runtime.execute_turn, session, request, on_graph_input=freeze,
+                projection_identity=identity if prepared else None)
+        else:
+            first = await h.runtime.execute_turn(session, request, on_graph_input=freeze,
+                projection_identity=identity if prepared else None)
     assert len(first.approvals) == 2 and h.effects == []
+    assert not [item for item in await h.store.list_events(h.session_id) if item.type == "runtime.event_log_completed"]
     if prepared:
         async def forbidden(*args, **kwargs):
             pytest.fail("prepared approval must consume original output without processing ToolJob again")
@@ -557,6 +564,8 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         assert partial.session.status.value == "waiting_approval"
         assert [value for value, job in h.effects] == (["B"] if decision == "approved" else [])
         published = await h.store.get_session(h.session_id)
+        prefix_length = len(published.metadata["pending_turn"]["graph_state"]["event_log"])
+        assert not [item for item in await h.store.list_events(h.session_id) if item.type == "runtime.event_log_completed"]
         original_tool, = [message for message in published.messages if message.metadata.get("tool_call_id")]
         await h.tasks.finish(b, status="completed", result_status="waiting_approval")
         a = await claim_decision(h, key="A")
@@ -570,6 +579,16 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     assert saved.metadata["pending_turn"] == {}
     assert len([message for message in saved.messages if message.metadata.get("tool_call_id")]) == 2
     assert next(message for message in saved.messages if message.id == original_tool.id) == original_tool
+    completions = [item for item in await h.store.list_events(h.session_id) if item.type == "runtime.event_log_completed"]
+    assert len(completions) == int(acknowledged)
+    if acknowledged:
+        snapshot = await h.store.get_latest_snapshot(h.session_id)
+        read = await h.store.read_runtime_event_completion(h.binding,
+            snapshot.graph_state["model_response_summary"]["native_terminal"])
+        assert read.event_log == snapshot.graph_state["event_log"]
+        assert read.completion.returned_event_offset == prefix_length
+        assert read.completion.task_id == a.id and read.completion.attempt_id == a.attempt_id
+        assert read.event_log[prefix_length]["type"] == "turn.resumed"
     if prepared:
         from langchain_core.messages import ToolMessage
         from src.application.deep_agents.framework_transcript import deserialize_messages

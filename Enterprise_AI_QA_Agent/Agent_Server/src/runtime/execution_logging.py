@@ -16,6 +16,25 @@ from src.runtime.execution_context import current_graph_event_sink
 from src.schemas.session import ExecutionEvent
 
 
+GRAPH_EVENT_LOG_VERSION_KEY = "framework_event_log_version"
+
+
+def prepare_graph_event_log(state):
+    """Only a new Turn with acknowledged events may opt into completion material.
+
+    Historical/no-sink prefixes remain legal normal paths; their later durable
+    suffix cannot retroactively prove the entire original collection.
+    """
+    context = state["context_bundle"]
+    context.pop(GRAPH_EVENT_LOG_VERSION_KEY, None)
+    sink = current_graph_event_sink()
+    if isinstance(sink, SessionEventSink) and sink.runtime_owner is not None:
+        binding = sink.runtime_owner.binding
+        if state.get("session_id") != binding.session_id or state.get("turn_id") != binding.turn_id:
+            raise ValueError("Runtime graph collection differs from its event sink scope")
+        context[GRAPH_EVENT_LOG_VERSION_KEY] = 1
+
+
 def truncate_text(value: str, limit: int = 180) -> str:
     normalized = " ".join(value.split())
     if len(normalized) <= limit:
@@ -62,6 +81,23 @@ async def append_graph_event_durable(
         await sink.persist(event)
     else:
         _enqueue_graph_event(event)
+
+
+async def complete_graph_event_log(state, native_terminal, *, returned_event_offset=0):
+    """Optional material on an owner-bound acknowledged sink, never recovery authority.
+
+    Legacy/no-sink calls retain their existing result contract; they cannot
+    claim a persisted complete collection using this port.
+    """
+    if state.get("context_bundle", {}).get(GRAPH_EVENT_LOG_VERSION_KEY) != 1:
+        return
+    sink = current_graph_event_sink()
+    if isinstance(sink, SessionEventSink) and sink.runtime_owner is not None:
+        binding = sink.runtime_owner.binding
+        if state.get("session_id") != binding.session_id or state.get("turn_id") != binding.turn_id:
+            raise ValueError("Runtime graph collection differs from its event sink scope")
+        await sink.complete_runtime_events(state["event_log"], native_terminal,
+            returned_event_offset=returned_event_offset)
 
 
 def _build_graph_event(state, event_type, phase, message, **payload) -> ExecutionEvent:

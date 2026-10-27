@@ -25,6 +25,7 @@ class SessionEventSink:
         self._pending = deque()
         self._ready = asyncio.Event()
         self._closed = False
+        self._runtime_events_completed = False
         self._deferred_to_final_flush = False
 
     @property
@@ -71,6 +72,8 @@ class SessionEventSink:
 
         async def write():
             async with self._write_lock:
+                if self._runtime_events_completed:
+                    raise RuntimeError("Runtime graph event collection is already completed")
                 try:
                     await self._store.append_event(self._session_id, event,
                         **self._fence, runtime_owner=self.runtime_owner)
@@ -80,16 +83,50 @@ class SessionEventSink:
                         "binding_id": self.runtime_owner.binding.binding_id})
                     raise
 
-        pending = asyncio.create_task(write())
+        await self._settle_write(write())
+
+    async def complete_runtime_events(self, event_log, native_terminal, *, returned_event_offset=0):
+        """A completion ACK is separate from individual event ACKs and finalization.
+
+        Only this captured producer may close its graph collection. Other
+        Session event producers/finalizers continue on their existing ports.
+        """
+        if self.runtime_owner is None:
+            raise ValueError("Runtime event completion requires a captured runtime owner")
+        if self._closed:
+            raise RuntimeError("Session event writer is closed")
+
+        async def write():
+            async with self._write_lock:
+                try:
+                    event = await self._store.complete_runtime_events(self._session_id, event_log,
+                        runtime_owner=self.runtime_owner, native_terminal=native_terminal,
+                        returned_event_offset=returned_event_offset, **self._fence)
+                    self._runtime_events_completed = True
+                    LOGGER.info("runtime_graph_events_completed", extra={"session_id": self._session_id,
+                        "binding_id": self.runtime_owner.binding.binding_id, "event_id": event.id,
+                        "event_count": len(event_log), "returned_event_offset": returned_event_offset})
+                    return event
+                except Exception:
+                    LOGGER.exception("runtime_graph_event_completion_failed", extra={"session_id": self._session_id,
+                        "binding_id": self.runtime_owner.binding.binding_id})
+                    raise
+
+        return await self._settle_write(write())
+
+    @staticmethod
+    async def _settle_write(operation):
+        pending = asyncio.create_task(operation)
         cancelled = False
         while not pending.done():
             try:
                 await asyncio.shield(pending)
             except asyncio.CancelledError:
                 cancelled = True
-        await pending
+        result = await pending
         if cancelled:
             raise asyncio.CancelledError
+        return result
 
     async def _write(self) -> None:
         try:

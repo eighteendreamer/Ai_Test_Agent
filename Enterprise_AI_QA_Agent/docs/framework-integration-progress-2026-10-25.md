@@ -2228,3 +2228,73 @@ $env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framew
 实际查询 ruff／mypy／官方 saver conformance仍未安装，不安装工具、不把 compileall当 lint／类型检查。未运行全量、前端、真实供应商／RustFS／领域 Runner或E4双制品／备份恢复／回滚。最高证据仍为E2；本节不宣称全部模式或全系统验收通过。
 
 本节代码／测试／记录归属同一提交，主题 `【feat】原子保存审批拒绝的原始投影材料`，实际 commit ID以 Git历史及交付输出为准。整体 goal保持 active；下一步沿既有事件设施补完整清单／完成边界与精确原生终态绑定，再推进共享完整结果投影及无原资产恢复准入，不新增平行恢复链。
+
+## 61. A2-2：沿既有事件事务确认完整 Runtime 事件集合，精确绑定原生终态（2026-10-27）
+
+基线 `409f5f8c1`。上一轮只核对文档／Git并调整开发提示词，没有开发进展。本轮读取 v4、§52及后续实现与记录后继续；§54已修复原 P0 顺序问题，不按 v4历史快照重复实现。原 v3文档的用户修改保留，排除于本轮提交。使用既有隔离测试服务，未启停 Docker／服务、升级依赖、修改 DDL／生产开关或新增付费／真实目标请求。
+
+### 红测、根因与依据
+
+- 在真实 SDK／Deep Agents／PG／Redis的独立 Worker正常完成 Harness中，先要求存在完整 Runtime事件集合声明。真实红测 **1 failed、2 deselected，23.56秒**：任务和原结果已完成，但 `runtime.event_log_completed`为0。单条事件 ACK、数据库前缀和 `runtime.turn_completed`都不证明整个生产者集合已确认。
+- 沿既有 `SessionEventSink.persist`、`PostgresSessionStore.append_event_in_transaction`、`framework_application_projection._require_event_intent`核对：事件表会分配 `event_sequence`并在 payload中保存首次 `_harness_context`；声明必须绑定原意图及实际行，不能把两者当成字面相同 JSON。
+- 核对固定版本 Deep Agents0.7.13、LangGraph1.2.12、core1.6.10、PG saver3.1.2，读取安装版 `Pregel.aget_state`及既有 `collect_native_terminal`。官方 [Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)说明 checkpoint与应用数据各有职责；本项目精确原生终态不证明 callback事件或应用事务完整，不照在线新例升级 SDK。
+- 本地参考 `G:\Code_Warehouse\DeepAgent-Studio\借鉴\codex\codex-rs\rollout\src\recorder.rs::persist/flush`的保存确认边界 → 本项目复用现有事件事务／ACK，不搬 JSONL、队列或调度器。课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html`用于轨迹顺序、重复效果、协议负例及独立进程强杀断言。
+
+### 实现与权限边界
+
+- `framework_event_completion.py`定义 schema1、scope=`runtime_graph_event_log_only`的材料：精确完整 `NativeTerminalProof`、原生产 task／attempt／epoch／worker、有序事件 ID／原 timestamp表达／原意图摘要／实际行摘要／实际序号，以及当前续跑返回的 `returned_event_offset`。
+- 沿现有 Session事件表保存一个 `runtime.event_log_completed`声明；身份由 binding fingerprint确定，每个绑定仅一个声明。声明自身排除于 Runtime graph event_log，避免递归；它不是“所有 Session事件完成”，不涵盖后续 finalizer、审批 journal、任务事件或领域裁决。声明时间沿原最后事件时间，表达原集合边界，不冒称独立的 checkpoint／提交时间。
+- 新 Turn进入图前，只有匹配 owner的 acknowledged sink能写入服务端可选 marker `framework_event_log_version=1`；清除请求上下文同名值。marker保存在既有 context／准备资产／pending state，不从单个后续 durable suffix倒推历史 prefix可靠。
+- Runtime在所有已等待的 callback／认知计划和最后 `runtime.turn_completed`之后确认清单，再构造 snapshot／原结果；审批续跑传入恢复前完整 event_log长度，清单始终覆盖全 Turn，原返回仍只交付本次 suffix。等待审批、取消／超时及旧无 marker／无 sink路径不生成完成材料，也不因此否定合法正常结果。
+- Sink沿原写锁串行确认完成，等待实际 PostgreSQL事务结束；重复取消不提前释放在途写入。确认后该 producer不得再追加 graph事件。Session其他生产者及唯一 finalizer仍沿原端口运行，不新增存储、调度层或平行结果链。
+- 在原 Session／owner锁和短事务内核对全部原事件存在、完整意图、严格顺序、唯一身份及最后完成边界，再复用 `append_event_in_transaction`保存声明。重复声明只复用完全相同意图；丢行、漂移、换终态、换 source／offset明确失败，不修补历史或重新派工具。
+- 第二个有效红测 **1 failed、19 passed，61.08秒**：改写 source并重算摘要后，读端仍接受。补上原任务／attempt及现有 `agent_task.claimed`事件的 binding／epoch／worker／先后关系核对，禁止把哈希当来源授权。不是另建全局恢复门卫；读端仅核对该材料来源。
+- 只读端口按 Session-first锁顺序读取、校验每个原行（含首次 enrichment）、完整原意图和预期精确 native proof，导出原 event_log而不重分配身份／时间。native状态仍须由调用方经官方通道独立核验；材料读取不获取执行 owner、不创建结果资产／后继，也不授予模型／图／工具或恢复权限。
+
+### 兼容性、消费者与 Harness
+
+- 本节新增的是**可选事件材料**，不是旧读者必须执行的新阶段／结果／审批契约；message-stage仍14，graph-input schema2、工具 marker2及既有审批语义不变。旧无 marker／无 sink前缀继续原正常路径，不补造清单；未知材料版本拒绝只读导出。未来把本材料列为恢复准入必需条件时，仍需独立版本、能力与部署验收，不能据本节跳过。
+- 新事件沿既有字符串事件类型／JSON payload消费。核对 Session SSE／重连、后端 flow投影、应用 event回执、前端 `types.ts`、Session store、ExecutionTrace和 EventConsole；没有将本事件解释为应用完成或测试通过。新增前端回归证明材料完成仍显示处理中，直到原 `turn.completed`契约到达。
+- `.gitignore`仅增加新回归源文件的例外，不提交忽略的日志或生成物。原图／审批／模型协议、唯一 finalizer及无原结果资产恢复开关未变。
+- Harness覆盖：原意图／实际行／enrichment／顺序／缺行／时间／外来 Turn／重复与递归身份、待审批伪完成、非法返回偏移、精确终态漂移、未知格式、重算摘要后的 task／attempt／epoch／worker伪造、事务回滚、重复取消、重复确认及只读无写入。真实 Session双审批覆盖批准／拒绝 × prepared／旧入口 × 初始 acknowledged／无 sink；剩余审批时不封口，最终封口保存原完整集合与最后续跑 offset，旧无 sink正常链不误封口。
+- 独立 Worker新增封口 ACK后、Runtime结果回调前强杀；新进程上下文只读核对完整集合、原 native checkpoint／状态及唯一结算模型响应。没有原结果资产／snapshot时，原恢复机制仍不创建后继；原模型／工具／图不重跑。封口前两个旧强杀窗口继续缺材料且不得猜测补造。
+
+### v4 对应与剩余出口
+
+| v4 阶段／条款／Harness | 本节实现与测试 | 已完成范围／剩余出口 |
+| --- | --- | --- |
+| A2-2，§9.2，H05/H11 | event_completion、Sink、Session store、Runtime及新事件 Harness | 明确完整 Runtime事件集合、源身份、顺序／原意图／实际行、精确 native绑定与审批 suffix偏移；不是完整 RuntimeTurnResult导出 |
+| §7–8，H02/H03/H07/H12 | 原审批 Session／恢复／fencing回归 | 等待不封口、任意先批／拒绝及历史入口保留；不扩大审批或副作用恢复权限 |
+| A1／A2-1，§9.4 | 既有原结果资产与应用分项投影回归 | 复用既有唯一 finalizer；新材料不是应用提交，也不改变 ACK-only权限 |
+| §11／§13，H05/H10/H11 | 封口事务回滚／取消及独立 Worker强杀；前端轨迹回归 | 正式事件保存确认不因重复取消丢失；未将其冒称完整 Token流、取消／资源停止或领域验收 |
+| §14／§16 | 可选 marker／事件及旧无材料路径核对 | 没有新必需阶段格式或领取权；双真实制品与未来恢复消费者兼容另验 |
+
+**A2-2仍未完成。** 本节补齐已到达 Runtime封口点的原集合材料，不宣称 adapter返回前／封口前的全部空窗已经闭合。正常／恢复共享的完整确定性结果投影、相关材料的完整消费和无原结果资产的独立 Worker恢复准入仍待实施；该准入继续关闭。A2-3／A3／B/C/D/E/F及逐模式真实验收保持完整范围，不以本子步替代全系统目标。
+
+### 验证与提交归属
+
+最初真实 Worker红测修复后 **1 passed、2 deselected，20.24秒**。增加来源负例并修复后的四文件重点组 **91 passed，349.90秒**，无 skip；该批早于最后材料模型字段约束整理与新增 source参数展开，不替代最终源码回归。
+
+前端从 `agent_web`实际执行 `npm run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/components/chat/ApprovalPanel.progress.test.ts`，**2文件、4项通过，9.95秒**；`npm run typecheck`退出0。无前端生产代码变更，未运行前端全量测试／构建。实际查询 ruff／mypy／官方 saver conformance仍未安装，不新增工具，不把 compileall当作 lint／类型检查。
+
+最终源码在 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server`使用独立解释器，设置 `RUN_LIVE_POSTGRES_TESTS=1`／`PYTHONIOENCODING=utf-8`，沿既有 UUID隔离 fixtures运行。三组启动后生产源码及测试未再修改；同机并发耗时不作为性能基线，不累计早期／重叠批次冒充覆盖率。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_live_event_persistence.py tests/test_framework_terminal_gap.py tests/test_framework_approval_runtime.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_graph_input_asset.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_execution_event_context.py tests/test_session_event_delivery.py -q -x -rs --tb=short
+# 276 passed，2 skipped，400.64秒。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_receipts.py tests/test_framework_delta_replay_order.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_tool_authority.py tests/test_framework_task_control.py tests/test_framework_approval_continuation.py tests/test_framework_tool_bridge.py -q -x -rs --tb=short
+# 159 passed，657.68秒，无 skip。
+```
+
+前两组会话78996／77199已取回退出码0。第一组两项 skip是 `test_session_event_delivery.py`中仅适用于 PostgreSQL的事务顺序／跨进程用例在 memory fixture参数下不适用；对应 postgres参数已实际执行通过。不将 skip计为通过，也不以它豁免任何 PostgreSQL必需验收。完整 stdout／stderr保存在 `.codex-logs/framework-event-completion-*-final-2026-10-27.txt`；红测与中间日志另存，不覆盖。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_framework_native_terminal.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 291 passed，981.18秒，无 skip。
+```
+
+最终应用投影／资产组原会话71472已取回退出码0；三组全部终态，没有因观察超时重启测试。早期14051／71831／10346／41157、前端49425／71913也已终态，无本轮遗留运行中的测试。最高证据仍为E2：模型／工具为受控样本，独立进程对象后端不是实际 RustFS，不等于真实供应商或领域 Runner验收。
+
+根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，文档围栏／绝对本地链接及§61唯一性检查通过；交付前再次核对。未运行后端／前端全量、前端构建、后端 lint／类型检查、官方 saver conformance、真实供应商／RustFS／领域 Runner、双制品／备份恢复／回滚E4。缺失的检查工具与真实环境验收缺口不以局部绿色结果替代。
+
+本节代码／测试／实施记录归属同一提交，主题 `【feat】持久化完整运行事件清单及原生终态绑定`，实际 commit ID以 Git历史及交付输出为准。整体 goal保持 active；下一步推进正常／恢复共享完整确定性结果投影，逐项核对准备资产、原生终态、原模型结算、完整工具材料与本节事件清单的消费，材料和准入完整前不开放无原结果资产恢复。
