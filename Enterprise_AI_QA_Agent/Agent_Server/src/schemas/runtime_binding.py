@@ -92,3 +92,14 @@ class RuntimeExecutionOwner(BaseModel):
     task_id: str
     attempt_id: str
     worker_id: str
+
+
+class RuntimeCheckpointSource(BaseModel):
+    """Original producer identity for reads only; deliberately has no lease token."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True)
+    binding: RuntimeBinding
+    owner_epoch: int = Field(ge=1, strict=True)
+    task_id: str = Field(min_length=1)
+    attempt_id: str = Field(min_length=1)
+    worker_id: str = Field(min_length=1)

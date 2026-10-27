@@ -17,21 +17,22 @@ from src.application.deep_agents.path_ordered_postgres_saver import PathOrderedP
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.framework_approval_journal import FrameworkApprovalJournal
+from src.schemas.runtime_binding import RuntimeCheckpointSource
 
 
 logger = logging.getLogger(__name__)
 
 
-class FencedPostgresSaver(ThreadedPostgresSaver):
-    def __init__(self, pool, *, settings, owner, serde=None):
+class BoundPostgresReader(ThreadedPostgresSaver):
+    """Share official reads and physical namespace mapping, never owner authority."""
+
+    def __init__(self, pool, *, source, serde=None):
         super().__init__(pool, serde=serde)
-        self.runtime_owner = owner  # Immutable snapshot, never read a new token from context.
-        self._settings = settings
-        self._approval_journal = FrameworkApprovalJournal(settings, serde=self.serde)
+        self.runtime_source = RuntimeCheckpointSource.model_validate(source)
 
     def _storage_config(self, config):
         configurable = dict((config or {}).get("configurable", {}))
-        binding = self.runtime_owner.binding
+        binding = self.runtime_source.binding
         if configurable.get("thread_id", binding.thread_id) != binding.thread_id:
             raise ValueError("Checkpoint thread does not match the runtime owner")
         namespace = configurable.get("checkpoint_ns", "")
@@ -45,7 +46,7 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
         if config is None:
             return None
         configurable = dict(config["configurable"])
-        prefix = self.runtime_owner.binding.checkpoint_namespace
+        prefix = self.runtime_source.binding.checkpoint_namespace
         namespace = configurable["checkpoint_ns"]
         if namespace != prefix and not namespace.startswith(prefix + "|"):
             raise ValueError("Stored checkpoint namespace is outside the runtime binding")
@@ -55,6 +56,69 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
     def _graph_tuple(self, value):
         return value._replace(config=self._graph_config(value.config),
             parent_config=self._graph_config(value.parent_config)) if value is not None else None
+
+    def put(self, config, checkpoint, metadata, new_versions):
+        self._reject_write("put")
+
+    def put_writes(self, config, writes, task_id, task_path=""):
+        self._reject_write("put_writes")
+
+    def get_tuple(self, config):
+        return self._graph_tuple(PathOrderedPostgresSaver(self.conn, serde=self.serde).get_tuple(self._storage_config(config)))
+
+    def get_interrupt_task(self, config, task_id):
+        self._reject_write("get_interrupt_task")
+
+    async def aget_interrupt_task(self, config, task_id):
+        return await asyncio.to_thread(self.get_interrupt_task, config, task_id)
+
+    def list(self, config, *, filter=None, before=None, limit=None):
+        storage_config = self._storage_config(config)
+        all_namespaces = "checkpoint_ns" not in (config or {}).get("configurable", {})
+        if all_namespaces:
+            storage_config["configurable"].pop("checkpoint_ns")
+        if limit == 0:
+            return
+        count = 0
+        with closing(PathOrderedPostgresSaver(self.conn, serde=self.serde).list(
+            storage_config, filter=filter,
+            before=self._storage_config(before) if before is not None else None,
+            limit=None if all_namespaces else limit)) as iterator:
+            for value in iterator:
+                namespace = value.config["configurable"]["checkpoint_ns"]
+                prefix = self.runtime_source.binding.checkpoint_namespace
+                if namespace != prefix and not namespace.startswith(prefix + "|"):
+                    continue
+                yield self._graph_tuple(value)
+                count += 1
+                if limit is not None and count >= limit:
+                    return
+
+    def get_delta_channel_history(self, *, config, channels):
+        return PathOrderedPostgresSaver(self.conn, serde=self.serde).get_delta_channel_history(
+            config=self._storage_config(config), channels=channels)
+
+    async def aget_delta_channel_history(self, *, config, channels):
+        return await asyncio.to_thread(self.get_delta_channel_history, config=config, channels=channels)
+
+    def setup(self):
+        raise PermissionError("Checkpoint setup belongs to deployment initialization")
+
+    def delete_thread(self, thread_id):
+        raise PermissionError("Runtime owners cannot delete checkpoint threads")
+
+    def _reject_write(self, operation):
+        logger.warning("framework_checkpoint_readonly_write_rejected", extra={"operation": operation,
+            "binding_id": self.runtime_source.binding.binding_id, "task_id": self.runtime_source.task_id})
+        raise PermissionError("A source-only checkpoint reader cannot write or consume approvals")
+
+
+class FencedPostgresSaver(BoundPostgresReader):
+    def __init__(self, pool, *, settings, owner, serde=None):
+        super().__init__(pool, source=owner.model_dump(exclude={"owner_token"}), serde=serde)
+        self.runtime_owner = owner  # Immutable snapshot, never read a new token from context.
+        self._settings = settings
+        self._approval_journal = FrameworkApprovalJournal(settings, serde=self.serde)
 
     @contextmanager
     def _write_transaction(self, operation):
@@ -93,49 +157,8 @@ class FencedPostgresSaver(ThreadedPostgresSaver):
                 self._approval_journal.record_delivery_in_transaction(cur, self.runtime_owner,
                     storage_config, [("__resume__", resume)] if resume is not None else writes, task_id, task_path)
 
-    def get_tuple(self, config):
-        return self._graph_tuple(PathOrderedPostgresSaver(self.conn, serde=self.serde).get_tuple(self._storage_config(config)))
-
     def get_interrupt_task(self, config, task_id):
         storage_config = self._storage_config(config)
         with self._write_transaction("read_interrupt_task") as saver, saver.conn.cursor() as cur:
             return self._approval_journal.pending_task_in_transaction(
                 cur, self.runtime_owner.binding, storage_config, task_id)
-
-    async def aget_interrupt_task(self, config, task_id):
-        return await asyncio.to_thread(self.get_interrupt_task, config, task_id)
-
-    def list(self, config, *, filter=None, before=None, limit=None):
-        storage_config = self._storage_config(config)
-        all_namespaces = "checkpoint_ns" not in (config or {}).get("configurable", {})
-        if all_namespaces:
-            storage_config["configurable"].pop("checkpoint_ns")
-        if limit == 0:
-            return
-        count = 0
-        with closing(PathOrderedPostgresSaver(self.conn, serde=self.serde).list(
-            storage_config, filter=filter,
-            before=self._storage_config(before) if before is not None else None,
-            limit=None if all_namespaces else limit)) as iterator:
-            for value in iterator:
-                namespace = value.config["configurable"]["checkpoint_ns"]
-                prefix = self.runtime_owner.binding.checkpoint_namespace
-                if namespace != prefix and not namespace.startswith(prefix + "|"):
-                    continue
-                yield self._graph_tuple(value)
-                count += 1
-                if limit is not None and count >= limit:
-                    return
-
-    def get_delta_channel_history(self, *, config, channels):
-        return PathOrderedPostgresSaver(self.conn, serde=self.serde).get_delta_channel_history(
-            config=self._storage_config(config), channels=channels)
-
-    async def aget_delta_channel_history(self, *, config, channels):
-        return await asyncio.to_thread(self.get_delta_channel_history, config=config, channels=channels)
-
-    def setup(self):
-        raise PermissionError("Checkpoint setup belongs to deployment initialization")
-
-    def delete_thread(self, thread_id):
-        raise PermissionError("Runtime owners cannot delete checkpoint threads")

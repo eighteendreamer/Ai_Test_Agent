@@ -662,6 +662,16 @@ class RuntimeService:
             pending_turn={},
         )
 
+    async def read_completed_framework_approval(self, binding, task_id, *, tasks):
+        """Read original completion only; never execute or admit a successor."""
+        from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+        if self._deep_agent_bound_runtime_adapter is None or self._framework_approval_continuation is None:
+            raise FrameworkApprovalRecoveryRequired("Original approval native reader is unavailable")
+        return await FrameworkRuntimeResults(tasks).read_completed_approval(binding, task_id,
+            continuation=self._framework_approval_continuation,
+            native_reader=self._deep_agent_bound_runtime_adapter.open_native_reader)
+
     async def reconcile_framework_task(self, task, *, tasks):
         from src.runtime.framework_approval_recovery import FrameworkApprovalRecovery
 

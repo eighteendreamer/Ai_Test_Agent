@@ -2949,3 +2949,52 @@ git diff --check
 本步新正例是官方框架＋受控模型／工具＋真实PG、同进程资产前故障与真实失租的E2子集；最终回归还重跑既有PG／Redis／独立Worker强杀与接管合同，**不是新无资产自动恢复准入已通过**。未执行真实供应商／RustFS／领域Runner的E3、部署／备份恢复的E4、全量及前端。无资产窄权限封存／准入及其资产前独立Worker强杀仍待接入；A2-3、A3及B/C/D/E/F未完成，整体goal保持active。
 
 最终源码 `python -m compileall -q Agent_Server/src Agent_Server/tests` 实际exit0；ruff／mypy实查未安装，不声称lint、typecheck、wheel构建或官方saver conformance通过。提交前检查完整diff、跨层引用、stage写入单调性、本节仅追加／唯一、Markdown围栏与新增绝对文件链接，并运行git diff --check；仅提交本步生产代码、对应测试和本节。没有DDL／依赖升级／生产开关变更，没有启停服务或新增付费调用；新持久格式需要兼容reader19先行部署。提交名 `【feat】冻结原验证规则并确定性重建审批验证`，具体ID以Git历史及交付为准，不推送、不建PR。
+
+## 75. A2-2：按原冻结拓扑构建官方只读schema，读取来源身份不冒充执行owner（2026-10-28）
+
+续接 `1d19d1491` 与§73–74。上一goal轮只读梳理，没有开发进展；本步实际补齐资产前自动恢复的必要读取端口，不把已有只读结果dataclass或摘要当作写入授权。§73需要调用方手工构建官方graph并提供原producer的owner-bound saver；生产恢复不能为读checkpoint伪造过期owner token，也不能重新解析当前模型、项目目录或Skill内容。原v3草稿保持不动，不纳入提交；Docker仅查看现有状态，没有启停服务。
+
+### 依据 → 做法与跨层契约
+
+| v4阶段／条款与依据 | 本步实现 | 权限与剩余边界 |
+| --- | --- | --- |
+| A2-2，§8.2／§9.2；既有FencedPostgresSaver的逻辑／物理namespace映射、PathOrderedPostgresSaver及官方祖先遍历 | [绑定读取器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/fenced_postgres_saver.py)提取共用BoundPostgresReader，原执行saver继承相同get/list/Delta读取；[来源身份](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/runtime_binding.py)RuntimeCheckpointSource只有binding／task／attempt／epoch／worker，明确拒绝owner_token | source不携带、也不产生执行权；只读实例没有runtime_owner，拒绝put、pending writes、审批消费、setup及删除。原执行写入仍锁真实live owner、沿同连接短事务与原审批journal，不放宽fence |
+| §8.2／§14；原provider连接池和部署setup边界 | [checkpoint provider](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/checkpoint_provider.py)新增显式source读取，和显式owner互斥；source不借用当前context owner，首次读／重开只连接而不执行CREATE SCHEMA或setup，后续真正writer仍完成原初始化 | 无DDL／持久格式改动。没有新数据库账号或外部访问控制；这是受信Python端口的职责分离，不声称能限制任意本机Python访问底层连接 |
+| §8.3／§9.2；固定Deep Agents 0.7.13 graph.py按middleware.state_schema合成官方图；FilesystemMiddleware按backend种类选择schema、SkillsMiddleware声明原状态通道 | [adapter.open_native_reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/runtime_adapter.py)使用原graph input的能力flags与Skill选择，复用_configure_harness的同一middleware拓扑和官方create_deep_agent；只读schema使用禁止生成／工具绑定的BaseChatModel及无文件实现的官方BackendProtocol，不解析当前模型、不查当前项目／SkillRegistry、不复制Skill | 原模型／工具调用限额数值不在此重新执行；此处只构造相同通道。未知／缺失／非布尔拓扑明确拒绝，原asset格式校验保留。正式模型策略middleware没有额外持久schema，新增组合测试对全部通道类型、完整TypedDict字段／metadata和必需性逐项比较，不凭记忆假设相同 |
+| §8.2–8.3／§10.2；§73原件读取与读后复核、§74固定Verification | [Runtime只读端口](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)接入[原结果reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_result_reader.py)；reader从原准备／封口生成来源身份，官方aget_state只取原精确checkpoint。原手工graph＋saver调用仍兼容，新factory与手工选择不能混用 | 两次短事务完整复核仍保留；原native proof、messages、原Verification和完整RuntimeResult逐项不变。不调用Runtime execute/resume、模型resolver、业务工具或finalizer，不freeze、不签恢复proof、不发布后继；新Turn路由关闭也不改变原只读语义 |
+
+本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的结果＋轨迹、权限、幂等及协议漂移方法 → 本步重复读取、禁止新执行、原件读后漂移、未知schema、无DDL及写入拒绝合同。本地Agent参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 仅用于核对结果与事件的分层边界；未照抄其子进程调度或其他SDK版本机制。
+
+### 真实红测、根因与中间验证
+
+日志均保留于项目 `.codex-logs/`，不以绿色覆盖失败：
+
+- `framework-native-readonly-source-red-2026-10-28.txt`：两条有效合同 **2 failed，15.65秒**，分别缺官方schema读取端口和无token的来源身份。正式审批fixture已完成原图、在事件封口后首次freeze前故障并实际失租；oracle只作完整比较，不作为读取输入。
+- `framework-native-readonly-source-first-2026-10-28.txt`：首轮接线 **2 passed，13.31秒**。正式Runtime读回非空api-tester Verification与完整原结果，重复读取不改task／stage／事件／预算／工具效果；来源实例在失租后重开，保留原nested namespace与pending writes，写入仍明确拒绝。
+- `framework-native-readonly-schema-contract-2026-10-28.txt`：**1 failed，15 passed，70.51秒**，真实文件能力正例的state_sha256不同。依据安装版filesystem.py的_uses_state_backend／state_schema选择定位：StateBackend会额外声明files通道，原项目FilesystemBackend／Skill Composite则不存文件到state。修复为无文件实现的官方BackendProtocol，未删除files、messages或放宽原proof。`framework-native-readonly-schema-backend-fix-2026-10-28.txt`：**9 passed，16 deselected，21.53秒**。
+- `framework-native-readonly-approval-final-2026-10-28.txt`：追加全部channel对照后 **1 failed，13 passed，64.87秒**。这是测试表示问题：官方create_agent为每张图分配新的InputSchema类，直接比较类对象身份不同，但字段相同。对TypedDict比较全部get_type_hints(include_extras=True)、required／optional键；没有删除任何通道、字段、metadata或原生消息断言，生产读取规则没有因此改变。
+
+组合正例实际执行官方框架与受控模型：无文件、规划、物理文件、认知子代理拓扑以及Skills五组；读取前关闭自身provider池、使原owner失租并修改原Skill文件，禁止项目路径解析、模型resolver、SkillRegistry、临时目录、文件复制及setup，仍须逐字节codec proof相同。认知子代理在本新增组合中只验证拓扑及通道，没有实际派发子代理调用；既有子代理／模型策略执行验收另由回归组覆盖，不扩大证据等级。
+
+### 最终源码验证、提交与剩余出口
+
+工作目录 `Agent_Server`，固定 `.venv-framework-v2`；设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，以下均实际运行并取回exit0，stdout＋stderr以 `2>&1 | Tee-Object` 留档，返回原 `$LASTEXITCODE`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+# 182 passed，942.62秒，无skip，会话58828。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py -q -x -rs --tb=short
+# 216 passed，235.21秒，无skip，会话88272。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_terminal_gap.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 211 passed，744.14秒，无skip，会话32926。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_checkpoint_fencing.py tests/test_runtime_binding_persistence.py tests/test_runtime_import_isolation.py tests/test_framework_model_policy.py tests/test_framework_tool_bridge.py -q -x -rs --tb=short
+# 68 passed，178.14秒，无skip，会话43637。
+```
+
+对应日志为 `framework-native-readonly-approval-recheck-final-2026-10-28.txt`、`...-native-final-2026-10-28.txt`、`...-projection-final-2026-10-28.txt`、`...-consumers-final-2026-10-28.txt`。组间有重叠，不累计为独立覆盖数。原生组启动后补充的reader-first无DDL及来源拒绝token合同，已由消费者组完整重跑最终fencing文件覆盖，不将先前216项冒称包含这些后补断言。编辑后发现一处新测试被插入旧测试函数中部，已在执行该版前审阅并纠正，没有将未执行的编辑错误记作生产红测。所有本步pytest会话已结束，没有遗留运行中的测试。
+
+实际证据范围为E1／E2子集：新增读取使用真实官方框架、PostgreSQL及受控模型／工具；既有回归包含Redis与独立Worker强杀，但没有新增无资产自动恢复准入，也没有本步资产前独立Worker强杀到成功封存的验收。真实供应商／RustFS／领域Runner的E3、部署／备份恢复的E4、全量、前端、wheel构建和官方saver conformance未执行；ruff／mypy实查未安装，未擅自安装，不声称lint或typecheck通过。
+
+本步不写新持久格式，stage仍19；没有DDL／依赖升级／生产开关改动，没有启停服务或新增付费调用。资产projection_at的原时间分配、原件复核＋窄权限封存＋finalizer-only后继发布同事务、资产前独立Worker强杀及再次接管仍待后续接入；不允许缺材料时fallback重跑原生图。A2-2、A2-3、A3及B/C/D/E/F均未整体完成，完整goal保持active。
+
+最终再次执行compileall、git diff --check和本节仅追加／唯一／围栏／绝对链接检查，提交前检查完整diff、跨层调用与暂存范围；只提交本步8个生产文件、2个对应测试及本节，不混入原v3草稿或测试日志。提交名 `【feat】按原拓扑只读装配审批原生终态`，具体ID以Git历史与交付输出为准，不推送、不建PR。

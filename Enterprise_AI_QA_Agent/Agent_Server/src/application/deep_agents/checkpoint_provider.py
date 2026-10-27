@@ -23,14 +23,20 @@ class DeepAgentCheckpointProvider:
         self._settings = settings
         self._pool: Any = None
         self._saver: Any = None
+        self._initialized = False
         self._lock = asyncio.Lock()
 
     @asynccontextmanager
-    async def open(self, *, owner=None) -> AsyncIterator[Any]:
+    async def open(self, *, owner=None, source=None) -> AsyncIterator[Any]:
+        if source is not None:
+            from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+            if owner is not None:
+                raise ValueError("A checkpoint reader cannot also request execution ownership")
+            source = RuntimeCheckpointSource.model_validate(source)
         async with self._lock:
             if self._saver is None:
                 from src.application.deep_agents.threaded_postgres_saver import ThreadedPostgresSaver
-                from psycopg import sql
                 from psycopg.conninfo import make_conninfo
                 from psycopg.rows import dict_row
                 from psycopg_pool import ConnectionPool
@@ -60,13 +66,6 @@ class DeepAgentCheckpointProvider:
 
                 def initialize():
                     pool.open()
-                    with pool.connection() as connection:
-                        connection.execute(
-                            sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(
-                                sql.Identifier(config.checkpoint_schema)
-                            )
-                        )
-                    saver.setup()
 
                 try:
                     await asyncio.to_thread(initialize)
@@ -76,12 +75,36 @@ class DeepAgentCheckpointProvider:
                     raise
                 self._pool = pool
                 self._saver = saver
+            if source is None and not self._initialized:
+                from psycopg import sql
+
+                def setup():
+                    with self._pool.connection() as connection:
+                        connection.execute(sql.SQL("CREATE SCHEMA IF NOT EXISTS {}").format(
+                            sql.Identifier(self._settings.deep_agents.checkpoint_schema)))
+                    self._saver.setup()
+
+                try:
+                    await asyncio.to_thread(setup)
+                except BaseException:
+                    await asyncio.to_thread(self._pool.close)
+                    self._pool = self._saver = None
+                    logger.exception("deep_agent_checkpoint_initialization_failed")
+                    raise
+                self._initialized = True
                 logger.info(
                     "deep_agent_checkpoint_ready",
-                    extra={"schema": config.checkpoint_schema,
+                    extra={"schema": self._settings.deep_agents.checkpoint_schema,
                         "delta_replay_order": "task_path_task_id_idx",
                         "delta_history_reader": "official_base_ancestor_walk"},
                 )
+        if source is not None:
+            from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
+
+            logger.info("framework_checkpoint_readonly_opened", extra={"binding_id": source.binding.binding_id,
+                "task_id": source.task_id, "owner_epoch": source.owner_epoch})
+            yield BoundPostgresReader(self._pool, source=source, serde=self._saver.serde)
+            return
         execution_owner = owner if owner is not None else current_framework_owner()
         if execution_owner is None:
             yield self._saver
@@ -96,4 +119,5 @@ class DeepAgentCheckpointProvider:
             await asyncio.to_thread(self._pool.close)
             self._pool = None
             self._saver = None
+            self._initialized = False
             logger.info("deep_agent_checkpoint_closed")

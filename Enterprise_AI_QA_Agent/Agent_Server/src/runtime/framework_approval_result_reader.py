@@ -32,6 +32,7 @@ from src.runtime.postgres_runtime_owner import configure_runtime_owner_transacti
 from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
 from src.schemas.framework_runtime_result import FrameworkRuntimeResult
 from src.schemas.session import ExecutionEvent, VerificationResult
+from src.schemas.runtime_binding import RuntimeCheckpointSource
 
 
 logger = logging.getLogger(__name__)
@@ -124,19 +125,28 @@ def _originals(tasks, binding, task_id, continuation):
             _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
 
 
-async def read_completed_approval(tasks, binding, task_id, *, agent, saver, continuation):
+async def _read_native(agent, saver, source, completion):
+    _require(getattr(saver, "runtime_source", None) == source,
+        "Approval result native reader differs from its original bound producer")
+    config = {"configurable": {"thread_id": source.binding.thread_id,
+        "checkpoint_id": completion.native_terminal.checkpoint_id, CONFIG_KEY_CHECKPOINTER: saver}}
+    return await collect_native_terminal(agent, saver, config)
+
+
+async def read_completed_approval(tasks, binding, task_id, *, continuation, agent=None, saver=None, native_reader=None):
     """No long transaction across native I/O; recheck original facts afterwards."""
     try:
         before = await asyncio.to_thread(_originals, tasks, binding, task_id, continuation)
         preparation, read, materials, _, model_hash, tool_hash, _ = before
-        owner = getattr(saver, "runtime_owner", None)
-        _require(owner is not None and owner.binding == binding
-            and (owner.task_id, owner.attempt_id, owner.owner_epoch, owner.worker_id)
-            == (task_id, preparation.attempt_id, preparation.owner_epoch, read.completion.worker_id),
-            "Approval result native reader differs from its original bound producer")
-        config = {"configurable": {"thread_id": binding.thread_id,
-            "checkpoint_id": read.completion.native_terminal.checkpoint_id, CONFIG_KEY_CHECKPOINTER: saver}}
-        native = await collect_native_terminal(agent, saver, config)
+        source = RuntimeCheckpointSource(binding=binding, task_id=task_id, attempt_id=preparation.attempt_id,
+            owner_epoch=preparation.owner_epoch, worker_id=read.completion.worker_id)
+        if native_reader is None:
+            _require(agent is not None and saver is not None, "Approval result requires its original native reader")
+            native = await _read_native(agent, saver, source, read.completion)
+        else:
+            _require(agent is None and saver is None, "Approval result native reader selection is ambiguous")
+            async with native_reader(preparation.graph_input_asset, source=source) as (agent, saver):
+                native = await _read_native(agent, saver, source, read.completion)
         _require(native.proof == read.completion.native_terminal, "Approval result native terminal changed")
         after = await asyncio.to_thread(_originals, tasks, binding, task_id, continuation)
         _require(after == before, "Approval result original materials changed during native read")

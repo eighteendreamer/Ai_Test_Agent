@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from contextlib import aclosing, nullcontext
+from contextlib import aclosing, asynccontextmanager, nullcontext
 import inspect
 from pathlib import Path
 import shutil
@@ -90,6 +90,47 @@ class DeepAgentRuntimeAdapter:
         )
         async with checkpoint_context as checkpointer:
             return await self._execute(request, checkpointer=checkpointer)
+
+    @asynccontextmanager
+    async def open_native_reader(self, graph_input, *, source):
+        """Build only the pinned official schema from original frozen topology.
+
+        No upstream counterpart (checked: Deep Agents 0.7.13 graph.py schema
+        composition, shared _configure_harness, v4 §8.2/§9.2): aget_state needs
+        the original middleware channels, but no current model, files or Skills.
+        Neither this source identity nor the returned reader grants execution.
+        """
+        from deepagents import create_deep_agent
+        from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset
+        from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+        original = FrameworkPreparedGraphInputAsset.model_validate(graph_input)
+        source = RuntimeCheckpointSource.model_validate(source)
+        if original.runtime_preparation.identity.binding != source.binding:
+            raise DeepAgentRuntimeError("Native reader schema differs from its original source binding")
+        flags = original.feature_flags
+        topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
+        if (set(flags) - topology - {"tool_projection_version", "verification_projection_version"}
+            or any(type(flags.get(key)) is not bool for key in topology)):
+            raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
+        if self._checkpointer_factory is None:
+            raise DeepAgentRuntimeError("Native reader requires its source-only checkpoint provider")
+        model = _native_schema_model()
+        options, _ = self._configure_harness(model,
+            read_only_filesystem_enabled=flags["read_only_filesystem"], read_only_max_file_size_mb=10,
+            context=original.context, cognitive_planning_enabled=flags["cognitive_planning"],
+            cognitive_subagents_enabled=flags["cognitive_subagents"], _schema_only=True)
+        from langchain.agents.middleware import HumanInTheLoopMiddleware
+
+        interrupt_on = {key: {"allowed_decisions": ["approve", "reject"]} for key in original.interrupt_tool_keys}
+        if interrupt_on:
+            options["middleware"].append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on, interrupt_mode="per_call"))
+        async with self._checkpointer_factory(source=source) as saver:
+            # Use the same official graph builder, not a projection of channel
+            # names or a second Delta/reducer implementation. Model methods fail
+            # closed and the source-only saver rejects every write.
+            yield create_deep_agent(model=model, tools=[], system_prompt=original.system_prompt,
+                checkpointer=saver, interrupt_on=interrupt_on or None, **options), saver
 
     async def _execute(
         self, request: DeepAgentRuntimeRequest, *, checkpointer: Any
@@ -266,6 +307,7 @@ class DeepAgentRuntimeAdapter:
         max_subagent_calls_per_turn: int = 1,
         subagent_model_call_limit: int = 6,
         subagent_tool_call_limit: int = 12,
+        _schema_only: bool = False,
     ) -> tuple[dict[str, Any], Any | None]:
         """Configure the official harness without bypassing project governance.
 
@@ -348,21 +390,22 @@ class DeepAgentRuntimeAdapter:
         if not read_only_filesystem_enabled:
             return ({"middleware": planning_middleware} if planning_middleware else {}), None
 
-        project_root = _project_root_from_context(context)
-        if not project_root:
-            raise DeepAgentRuntimeError(
-                "DA-E2 read-only filesystem requires an explicit local project_root."
-            )
-        try:
-            root = Path(project_root).expanduser().resolve(strict=True)
-        except (OSError, RuntimeError) as exc:
-            raise DeepAgentRuntimeError(
-                f"DA-E2 project_root is not a readable local directory: {project_root}"
-            ) from exc
-        if not root.is_dir():
-            raise DeepAgentRuntimeError(
-                f"DA-E2 project_root is not a directory: {root}"
-            )
+        if not _schema_only:
+            project_root = _project_root_from_context(context)
+            if not project_root:
+                raise DeepAgentRuntimeError(
+                    "DA-E2 read-only filesystem requires an explicit local project_root."
+                )
+            try:
+                root = Path(project_root).expanduser().resolve(strict=True)
+            except (OSError, RuntimeError) as exc:
+                raise DeepAgentRuntimeError(
+                    f"DA-E2 project_root is not a readable local directory: {project_root}"
+                ) from exc
+            if not root.is_dir():
+                raise DeepAgentRuntimeError(
+                    f"DA-E2 project_root is not a directory: {root}"
+                )
 
         try:
             from deepagents.backends import CompositeBackend, FilesystemBackend
@@ -377,11 +420,20 @@ class DeepAgentRuntimeAdapter:
                 "DA-E2 read-only filesystem requires Deep Agents filesystem APIs."
             ) from exc
 
-        project_backend = build_read_only_filesystem_backend(
-            root,
-            max_file_size_mb=read_only_max_file_size_mb,
-            max_output_chars=read_only_max_output_chars,
-        )
+        if _schema_only:
+            from deepagents.backends.protocol import BackendProtocol
+
+            # FilesystemMiddleware selects FilesystemState only for StateBackend
+            # (or a Composite containing one). Original project/Skills backends
+            # are physical, so an inert base protocol preserves AgentState and
+            # exposes no file implementation. StateBackend would add a channel.
+            project_backend = BackendProtocol()
+        else:
+            project_backend = build_read_only_filesystem_backend(
+                root,
+                max_file_size_mb=read_only_max_file_size_mb,
+                max_output_chars=read_only_max_output_chars,
+            )
         permissions = [
             FilesystemPermission(
                 operations=["read", "write"],
@@ -445,35 +497,37 @@ class DeepAgentRuntimeAdapter:
         cleanup = None
         skill_keys = context.get("skill_keys")
         if skill_keys:
-            if self._skill_registry is None:
-                raise DeepAgentRuntimeError(
-                    "DA-E2 skill_keys were supplied but no SkillRegistry is configured."
-                )
-            selected_keys = [str(item).strip() for item in skill_keys if str(item).strip()]
-            selected = self._skill_registry.get_many(selected_keys)
-            if len(selected) != len(set(selected_keys)):
-                raise DeepAgentRuntimeError(
-                    "DA-E2 skill_keys contain an unknown or disabled SkillRegistry key."
-                )
-            staging = tempfile.TemporaryDirectory(prefix="deepagents-skills-")
-            staging_root = Path(staging.name)
-            for descriptor in selected:
-                source = (self._skill_registry.skills_root / descriptor.key).resolve()
-                if not source.is_dir() or not (source / "SKILL.md").is_file():
-                    staging.cleanup()
+            if not _schema_only:
+                if self._skill_registry is None:
                     raise DeepAgentRuntimeError(
-                        f"DA-E2 SkillRegistry entry has no valid SKILL.md: {descriptor.key}"
+                        "DA-E2 skill_keys were supplied but no SkillRegistry is configured."
                     )
-                shutil.copytree(source, staging_root / descriptor.key)
-            skill_backend = FilesystemBackend(
-                root_dir=staging_root,
-                virtual_mode=True,
-                max_file_size_mb=read_only_max_file_size_mb,
-            )
-            backend = CompositeBackend(
-                default=project_backend,
-                routes={"/skills/": skill_backend},
-            )
+                selected_keys = [str(item).strip() for item in skill_keys if str(item).strip()]
+                selected = self._skill_registry.get_many(selected_keys)
+                if len(selected) != len(set(selected_keys)):
+                    raise DeepAgentRuntimeError(
+                        "DA-E2 skill_keys contain an unknown or disabled SkillRegistry key."
+                    )
+                staging = tempfile.TemporaryDirectory(prefix="deepagents-skills-")
+                staging_root = Path(staging.name)
+                for descriptor in selected:
+                    source = (self._skill_registry.skills_root / descriptor.key).resolve()
+                    if not source.is_dir() or not (source / "SKILL.md").is_file():
+                        staging.cleanup()
+                        raise DeepAgentRuntimeError(
+                            f"DA-E2 SkillRegistry entry has no valid SKILL.md: {descriptor.key}"
+                        )
+                    shutil.copytree(source, staging_root / descriptor.key)
+                skill_backend = FilesystemBackend(
+                    root_dir=staging_root,
+                    virtual_mode=True,
+                    max_file_size_mb=read_only_max_file_size_mb,
+                )
+                backend = CompositeBackend(
+                    default=project_backend,
+                    routes={"/skills/": skill_backend},
+                )
+                cleanup = staging.cleanup
             middleware = [
                 *planning_middleware,
                 FilesystemMiddleware(
@@ -483,12 +537,28 @@ class DeepAgentRuntimeAdapter:
                 ),
                 SkillsMiddleware(backend=backend, sources=["/skills/"]),
             ]
-            cleanup = staging.cleanup
         return {
             "backend": backend,
             "middleware": middleware,
             **subagent_kwargs,
         }, cleanup
+
+
+def _native_schema_model():
+    from langchain_core.language_models.chat_models import BaseChatModel
+
+    class NativeSchemaModel(BaseChatModel):
+        @property
+        def _llm_type(self):
+            return "checkpoint-schema-only"
+
+        def _generate(self, *args, **kwargs):
+            raise PermissionError("Native checkpoint schema models cannot generate responses")
+
+        def bind_tools(self, *args, **kwargs):
+            raise PermissionError("Native checkpoint schema models cannot execute tools")
+
+    return NativeSchemaModel()
 
 
 def _project_root_from_context(context: dict[str, Any]) -> str:

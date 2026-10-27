@@ -84,9 +84,9 @@ async def collect_native_terminal(agent, saver, config, *, returned_values=None)
     create successors, prove external effects, or sign an application commit.
     Hashes use the pinned official saver codec, not display serialization.
     """
-    owner = getattr(saver, "runtime_owner", None)
-    _require(owner is not None, "Native terminal inspection requires a bound saver")
-    binding = owner.binding
+    source = getattr(saver, "runtime_source", None)
+    _require(source is not None, "Native terminal inspection requires a bound saver")
+    binding = source.binding
     try:
         location = (config or {}).get("configurable", {})
         _require(location.get("thread_id") == binding.thread_id and not location.get("checkpoint_ns"),

@@ -54,6 +54,79 @@ async def start(h, owner=None):
 
 
 @pytest.mark.asyncio
+async def test_source_only_reader_reopens_without_owner_or_setup_and_rejects_all_writes(checkpoint_harness, monkeypatch):
+    from src.schemas import runtime_binding
+
+    h = checkpoint_harness
+    source_type = getattr(runtime_binding, "RuntimeCheckpointSource", None)
+    assert source_type is not None, "A checkpoint producer identity must not impersonate an execution owner"
+    source = source_type.model_validate(h.owner.runtime_owner.model_dump(exclude={"owner_token"}))
+    assert "owner_token" not in source.model_dump() and not hasattr(source, "owner_token")
+    with pytest.raises(ValueError, match="owner_token"):
+        source_type.model_validate(h.owner.runtime_owner.model_dump())
+    await start(h)
+    async with h.provider.open(owner=h.owner.runtime_owner) as writer:
+        saved = await writer.aput(config(h, "tools:child|nested:task"), empty_checkpoint(), {}, {})
+        await writer.aput_writes(saved, [("result", "original")], "child")
+        original = await writer.aget_tuple(saved)
+    await h.provider.close()
+    assert await h.store.renew_turn_execution(h.session_id, h.owner.lease_token, 0)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Opening a source-only checkpoint reader performed deployment setup")
+
+    monkeypatch.setattr(PostgresSaver, "setup", forbidden)
+    async with h.provider.open(source=source) as reader:
+        assert reader.runtime_source == source and getattr(reader, "runtime_owner", None) is None
+        assert await reader.aget_tuple(saved) == original
+        assert [item async for item in reader.alist(None)] == [original]
+        with pytest.raises(ValueError, match="thread"):
+            await reader.aget_tuple({"configurable": {"thread_id": "foreign"}})
+        for operation in (lambda: reader.put(saved, empty_checkpoint(), {}, {}),
+            lambda: reader.put_writes(saved, [("result", "forbidden")], "child"),
+            lambda: reader.setup(), lambda: reader.delete_thread(h.binding.thread_id),
+            lambda: reader.get_interrupt_task(saved, "child")):
+            with pytest.raises(PermissionError):
+                operation()
+        with pytest.raises(PermissionError):
+            await reader.aput(saved, empty_checkpoint(), {}, {})
+        with pytest.raises(PermissionError):
+            await reader.aput_writes(saved, [("result", "forbidden")], "child")
+        with pytest.raises(PermissionError):
+            await reader.adelete_thread(h.binding.thread_id)
+        assert await reader.aget_tuple(saved) == original
+
+
+@pytest.mark.asyncio
+async def test_reader_first_open_has_no_ddl_and_does_not_suppress_later_writer_setup(checkpoint_harness):
+    from src.runtime.execution_context import framework_owner_scope
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+    h = checkpoint_harness
+    source = RuntimeCheckpointSource.model_validate(h.owner.runtime_owner.model_dump(exclude={"owner_token"}))
+
+    def schema_exists():
+        with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+            cur.execute("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname=%s) AS found",
+                (h.settings.deep_agents.checkpoint_schema,))
+            return cur.fetchone()["found"]
+
+    assert not schema_exists()
+    with framework_owner_scope(h.owner.runtime_owner):
+        async with h.provider.open(source=source) as reader:
+            assert reader.runtime_source == source and not hasattr(reader, "runtime_owner")
+            assert not schema_exists()
+    assert not schema_exists()
+    with pytest.raises(ValueError, match="ownership"):
+        async with h.provider.open(owner=h.owner.runtime_owner, source=source):
+            pytest.fail("A read source was accepted as execution authority")
+    await start(h)
+    async with h.provider.open(owner=h.owner.runtime_owner) as writer:
+        saved = await writer.aput(config(h), empty_checkpoint(), {}, {})
+        assert schema_exists() and (await writer.aget_tuple(saved)).config == saved
+
+
+@pytest.mark.asyncio
 async def test_expired_owner_cannot_write_checkpoint_or_pending_writes(checkpoint_harness):
     h = checkpoint_harness
     await start(h)

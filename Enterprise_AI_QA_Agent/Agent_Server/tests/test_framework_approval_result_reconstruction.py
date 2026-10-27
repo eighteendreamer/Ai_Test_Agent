@@ -173,7 +173,8 @@ async def test_assetless_reader_refuses_changed_original_material(approval_asset
 
 
 @pytest.mark.asyncio
-async def test_assetless_reader_rechecks_material_after_native_io(approval_asset_gap, monkeypatch):
+@pytest.mark.parametrize("reader_kind", ["provided", "production"])
+async def test_assetless_reader_rechecks_material_after_native_io(approval_asset_gap, monkeypatch, reader_kind):
     from src.runtime import framework_approval_result_reader as reader
     from src.schemas.framework_approval import approval_value_hash
 
@@ -192,7 +193,10 @@ async def test_assetless_reader_rechecks_material_after_native_io(approval_asset
 
     monkeypatch.setattr(reader, "collect_native_terminal", read_then_change)
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="changed during native read"):
-        await read_original(h, monkeypatch)
+        if reader_kind == "production":
+            await h.runtime.read_completed_framework_approval(h.binding, h.a.id, tasks=h.tasks)
+        else:
+            await read_original(h, monkeypatch)
     assert await h.tasks.get(h.a.id) == h.expired
 
 
@@ -202,6 +206,183 @@ async def test_assetless_reader_requires_exact_original_native_producer(approval
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="original bound producer"):
         await read_original(h, monkeypatch, owner=h.b.runtime_owner)
     assert await h.tasks.get(h.a.id) == h.expired
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prepared_approval_runtime", ["api-tester"], indirect=True)
+async def test_production_native_reader_rebuilds_original_without_current_execution_inputs(approval_asset_gap, monkeypatch):
+    from src.application.deep_agents import runtime_adapter as module
+
+    h = approval_asset_gap
+    adapter = h.runtime._deep_agent_bound_runtime_adapter
+    native_reader = getattr(adapter, "open_native_reader", None)
+    assert callable(native_reader), "Production reconstruction needs its own non-executing official-schema reader"
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Native reconstruction consulted current execution inputs or executed a runtime port")
+
+    monkeypatch.setattr(adapter, "execute", forbidden)
+    monkeypatch.setattr(adapter, "_model_resolver", forbidden)
+    monkeypatch.setattr(module, "_project_root_from_context", forbidden)
+    monkeypatch.setattr(module, "build_read_only_filesystem_backend", forbidden)
+    monkeypatch.setattr(module.shutil, "copytree", forbidden)
+    monkeypatch.setattr(h.sessions, "_finalize_runtime_result", forbidden)
+    monkeypatch.setattr(h.runtime._tool_runtime_service, "record_from_job", forbidden)
+    h.runtime._deep_agent_enabled = False  # New-Turn routing cannot change original read semantics.
+    before = h.stages.get(h.initial_task_id, h.session_id)
+    events, budget = await h.store.list_events(h.session_id), await h.calls.snapshot(h.binding)
+    effects, calls = deepcopy(h.effects), len(h.adapter_requests)
+    result = await h.runtime.read_completed_framework_approval(h.binding, h.a.id, tasks=h.tasks)
+    assert result.runtime_result.model_dump(mode="json") == h.oracle.model_dump(mode="json")
+    assert result.verification_results == h.verification_oracle and result.verification_results
+    assert await h.runtime.read_completed_framework_approval(h.binding, h.a.id, tasks=h.tasks) == result
+    assert h.stages.get(h.initial_task_id, h.session_id) == before
+    assert await h.store.list_events(h.session_id) == events
+    assert await h.calls.snapshot(h.binding) == budget
+    assert await h.tasks.get(h.a.id) == h.expired
+    assert h.effects == effects and len(h.adapter_requests) == calls
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("filesystem,planning,subagents,skills", [
+    (False, False, False, False), (False, True, False, False),
+    (True, False, False, False), (True, True, True, False), (True, True, True, True)])
+async def test_native_schema_reader_preserves_official_channels_without_live_project_or_skills(
+    checkpoint_harness, tmp_path, monkeypatch, filesystem, planning, subagents, skills):
+    from langchain_core.messages import AIMessage
+    from langgraph.checkpoint.postgres import PostgresSaver
+    from src.application.deep_agents import runtime_adapter as module
+    from src.application.deep_agents.native_terminal import collect_native_terminal
+    from src.registry.skills import SkillRegistry
+    from src.runtime.execution_context import framework_owner_scope
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+    from tests.test_framework_checkpoint_fencing import start
+    from tests.test_framework_graph_input_asset import prepared_graph_input
+    from tests.test_framework_approval_graph_input import rehash
+
+    h = checkpoint_harness
+    context = {"project_root": str(tmp_path)}
+    skill_root = tmp_path / "original-skills"
+    skill_file = skill_root / "fixture-skill" / "SKILL.md"
+    if skills:
+        skill_file.parent.mkdir(parents=True)
+        skill_file.write_text("---\nname: fixture-skill\ndescription: Original schema fixture\n---\nOriginal instructions", encoding="utf-8")
+        context["skill_keys"] = ["fixture-skill"]
+    responses = [AIMessage(id="schema-final", content="original completed output")]
+    if planning:
+        responses.insert(0, AIMessage(id="schema-plan", content="", tool_calls=[{
+            "name": "write_todos", "id": "schema-todo", "type": "tool_call",
+            "args": {"todos": [{"content": "Read original evidence", "status": "completed"}]}}]))
+    model = Model(responses=responses)
+
+    async def resolve(key):
+        return model
+
+    adapter = module.DeepAgentRuntimeAdapter(model_resolver=resolve, checkpointer_factory=h.provider.open,
+        skill_registry=SkillRegistry(skills_root=skill_root) if skills else None)
+    await start(h)
+    with framework_owner_scope(h.owner.runtime_owner):
+        result = await adapter.execute(module.DeepAgentRuntimeRequest(session_id=h.session_id,
+            turn_id=h.binding.turn_id, trace_id=h.owner.trace_id, model_key="primary", system_prompt="original",
+            messages=[{"role": "user", "content": "Read original evidence"}],
+            checkpoint_namespace=h.binding.checkpoint_namespace, context=context,
+            read_only_filesystem_enabled=filesystem, cognitive_planning_enabled=planning,
+            cognitive_subagents_enabled=subagents))
+    proof = result.metadata["native_terminal"]
+    from src.application.deep_agents.model_call_middleware import configure_model_policy
+    from typing import get_type_hints
+    from typing_extensions import is_typeddict
+
+    def channel_type(value):
+        # create_agent allocates a new InputSchema class per graph. Compare all
+        # typed fields/metadata and requiredness, not process-local class IDs.
+        return ((get_type_hints(value, include_extras=True), value.__required_keys__, value.__optional_keys__)
+            if is_typeddict(value) else value)
+
+    def channel_schema(graph):
+        return {key: (type(channel), channel_type(channel.ValueType), channel_type(channel.UpdateType))
+            for key, channel in graph.channels.items()}
+
+    # Independently compare the real governed middleware schema. No policy is
+    # executed here: its request/budget semantics have their existing suites.
+    options, cleanup = adapter._configure_harness(model, read_only_filesystem_enabled=filesystem,
+        read_only_max_file_size_mb=10, context=context, cognitive_planning_enabled=planning,
+        cognitive_subagents_enabled=subagents)
+    try:
+        governed = create_deep_agent(model=model, tools=[], **configure_model_policy(options,
+            policy=object(), owner=h.owner.runtime_owner, model=model, model_key="primary"))
+        governed_channels = channel_schema(governed)
+    finally:
+        if cleanup is not None:
+            cleanup()
+    raw = prepared_graph_input(h.binding, h.owner.trace_id).model_dump(mode="json")
+    raw.update(context=context, feature_flags={"read_only_filesystem": filesystem, "cognitive_planning": planning,
+        "cognitive_subagents": subagents, "governed_tools": False})
+    raw = rehash(raw)
+    source = RuntimeCheckpointSource.model_validate(h.owner.runtime_owner.model_dump(exclude={"owner_token"}))
+    await h.provider.close()
+    assert await h.store.renew_turn_execution(h.session_id, h.owner.lease_token, 0)
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Schema-only read resolved current execution material or performed checkpoint setup")
+
+    monkeypatch.setattr(adapter, "_model_resolver", forbidden)
+    monkeypatch.setattr(module, "_project_root_from_context", forbidden)
+    monkeypatch.setattr(module, "build_read_only_filesystem_backend", forbidden)
+    monkeypatch.setattr(module.shutil, "copytree", forbidden)
+    monkeypatch.setattr(module.tempfile, "TemporaryDirectory", forbidden)
+    monkeypatch.setattr(PostgresSaver, "setup", forbidden)
+    if skills:
+        monkeypatch.setattr(adapter._skill_registry, "get_many", forbidden)
+        skill_file.write_text("Current instructions must not replace originals", encoding="utf-8")
+    with framework_owner_scope(h.owner.runtime_owner):
+        async with adapter.open_native_reader(raw, source=source) as (graph, saver):
+            assert channel_schema(graph) == governed_channels
+            config = {"configurable": {"thread_id": h.binding.thread_id, "checkpoint_id": proof["checkpoint_id"]}}
+            original = await saver.aget_tuple(config)
+            native = await collect_native_terminal(graph, saver, config)
+            assert native.proof.model_dump(mode="json") == proof
+            if planning:
+                assert native.values["todos"] == [{"content": "Read original evidence", "status": "completed"}]
+            if skills:
+                assert native.values["skills_metadata"][0]["description"] == "Original schema fixture"
+            assert not hasattr(saver, "runtime_owner")
+            with pytest.raises(PermissionError):
+                await graph.ainvoke(None, config=config, durability="sync")
+            assert await saver.aget_tuple(config) == original
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["unknown", "nonboolean", "missing", "foreign"])
+async def test_native_schema_reader_rejects_unknown_topology_before_opening_any_store(changed):
+    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter, DeepAgentRuntimeError
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+    from tests.test_framework_graph_input_asset import prepared_graph_input
+    from tests.test_runtime_binding_persistence import make_binding
+    from tests.test_framework_approval_graph_input import rehash
+
+    binding = make_binding("schema-session", "schema-turn")
+    source = RuntimeCheckpointSource(binding=binding, task_id="original", attempt_id="original-attempt",
+        worker_id="original-worker", owner_epoch=1)
+    raw = prepared_graph_input(binding, "schema-trace").model_dump(mode="json")
+    raw["feature_flags"] = {"read_only_filesystem": False, "cognitive_planning": False,
+        "cognitive_subagents": False, "governed_tools": False}
+    if changed == "unknown":
+        raw["feature_flags"]["unknown_stateful_middleware"] = True
+    elif changed == "nonboolean":
+        raw["feature_flags"]["cognitive_subagents"] = "false"
+    elif changed == "missing":
+        raw["feature_flags"].pop("cognitive_planning")
+    else:
+        source = source.model_copy(update={"binding": make_binding("foreign-session", "foreign-turn")})
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unknown native schemas must be rejected before model or checkpoint I/O")
+
+    adapter = DeepAgentRuntimeAdapter(model_resolver=forbidden, checkpointer_factory=forbidden)
+    with pytest.raises(DeepAgentRuntimeError, match="schema"):
+        async with adapter.open_native_reader(rehash(raw), source=source):
+            pytest.fail("Unsupported native schema was accepted")
 
 
 @pytest.mark.asyncio
