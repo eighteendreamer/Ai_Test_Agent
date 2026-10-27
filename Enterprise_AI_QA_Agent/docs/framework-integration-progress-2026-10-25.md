@@ -2729,3 +2729,38 @@ git diff --check
 固定环境 compileall 与 diff 检查实际通过；ruff／mypy 未安装，不声称 lint／typecheck 通过。最高新增证据 E2：官方框架＋真实PG／Redis＋受控工具；扩大回归包含既有独立Worker强杀，但不表示新增审批资产后恢复已经独立进程验收。全量、前端、真实供应商／RustFS／领域Runner 的 E3、部署／恢复的 E4 均未验收；没有服务启停、依赖升级、付费调用或生产开关切换。
 
 本节与相关代码／测试归入 `【feat】审批续跑冻结原结果并复用统一收尾`，具体ID以Git历史／交付为准。下一出口是资产已存在后的独立 proof 准入与 finalizer-only 消费；不得先重入图、发送Command或重算Verification。资产前原生终态重建与合法 successor 准入、新链路独立Worker强杀、A2-3、A3及B/C/D/E/F仍未完成，整体goal保持active。
+
+
+## 70. A2-2：原审批结果存在后，原生续跑证明不再授予图执行权（2026-10-27）
+
+续接 `c3e81299b` 与§69。核对下一恢复出口时发现真实越界，不是最终结果内容问题：原 `FrameworkApprovalRecovery._apply` 在结果已冻结后仍可用“决定已消费、工具效果已知”的 native proof 创建 approval_recover，并走普通图继续路径。材料已存在不能自动升级为 finalizer-only 权限。本步先固定原生恢复 proof 的权限边界，**尚未实现审批资产后的只收尾 successor**，不能把拒绝重跑称作恢复成功。
+
+### TDD 与根因依据
+
+- 新测试使用§69的完整真实审批链：B审批完成→A续跑完成→原结果已落PG→唯一 finalizer 前注入故障→租约到期→原任务终态投递→正式对账。有效红测 **1 failed，9.23秒**：本应拒绝 native replay，但 reconciler 返回 completed 并真实发布了带 native proof 的 successor。日志 `.codex-logs/framework-approval-result-no-replay-red-2026-10-27.txt`。
+- 另一红测 **1 failed，8.59秒**：用前一实现的真实发布事务复现“旧 native proof 已排队”，当前领取仍分配了 attempt（1而非0）并调用原生续跑入口。测试把该入口设为显式 forbidden，因此在入口立即失败，未实际重跑模型／图／工具。日志 `.codex-logs/framework-approval-result-stale-proof-red-2026-10-27.txt`。
+- 根因是审批 proof 没有表达原生继续与图后应用收尾的权限边界；工具效果已知并不证明可以重新进入图。依据为 v4 §9.4／§10.2 的窄权限、现有 message recovery 的 `finalizing` 分流和已有 `require_successor_proof` 的发布／领取／执行多点校验。此处修复既有 proof 的范围，未新建全局恢复门卫、调度器、fallback或第二个 finalizer。
+
+### 实现与边界
+
+- [审批恢复](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_recovery.py)新增共享 `require_native_recovery_scope`：在原短事务锁绑定的 message-stage；一旦已有 `runtime_result_asset` 或 `application_projection_commit`，原生 proof 明确抛出 `FrameworkApprovalRecoveryRequired`，要求独立 finalization-only 准入。无资产历史路径沿原规则继续，不倒填资产、不重置 task/attempt。
+- `_apply` 在发布 approval_recover 前检查相同范围；`require_successor_proof` 在验证原 parent／result／task／decision 后复核。其既有消费方 `assert_claimable_approval` 在 claim 前拒绝旧排队 proof，`_owned_plan_in_transaction` 在实际执行时再次复核；没有修改这两个消费方的外部合同。沿现有对账拒绝／领取拒绝日志及任务错误码记录，未吞错。
+- [回归合同](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_graph_input.py)检查：不发布越界后继；旧排队proof在attempt0拒领；原终态、原stage／结果资产、adapter调用和实际工具效果不变；安全拒绝不自动创建重试链。另有既有图前失败 successor 正例，防止误拒合法原生恢复。
+- 不改stage17、binding、公共API、依赖或DDL；没有历史数据迁移。新旧 Worker 混跑仍须既有兼容制品与路由策略，本地 proof 回归不等于部署验收。最终 finalizer-only successor、应用commit后ACK、projected后结算仍须各自证明与独立进程故障验收。
+
+### 实际验证与剩余出口
+
+工作目录 `Agent_Server`，独立 `.venv-framework-v2`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。定向三项（新两项负例＋既有图前恢复正例）**3 passed，19.92秒，会话33434，exit0**；日志 `.codex-logs/framework-approval-result-no-replay-green-2026-10-27.txt`。两组扩大回归均已从原会话取回终态exit0、无skip；没有通过日志尾部猜测结束：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_application_projection.py tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 201 passed，445.40秒；会话41012，exit0。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_recovery.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py -q -x -rs --tb=short
+# 102 passed，415.11秒；会话22535，exit0。
+```
+
+原日志 `.codex-logs/framework-approval-native-scope-contract-final-2026-10-27.txt`、`...-recovery-final-2026-10-27.txt`。这两组也重新覆盖§69原组合的全部文件（含修正兼容消费方后的graph-input全文件），不是沿用当时225项后的失败结果。定向3项与扩大组重叠，不累计覆盖数。
+
+最终 compileall、diff 检查、原实施记录仅追加、§70唯一、围栏配对和绝对本地链接检查实际通过；ruff／mypy未安装，未声称lint／typecheck通过；官方saver conformance未执行。无遗留pytest进程；原v3草稿保持未暂存。
+
+最高新增证据E2：官方框架、真实PG／Redis、受控模型／工具、同进程故障。扩大回归中的既有独立Worker强杀不代表本步已经新增资产后独立恢复；真实供应商／RustFS／领域Runner的E3、部署／备份恢复的E4、全量和前端未执行。本节与相关代码／测试归入 `【fix】限制审批原生恢复证明的执行范围`，具体ID以Git历史／交付为准；仅报告边界修复；A2-2整体及A2-3／A3／B/C/D/E/F仍未完成，goal保持active。

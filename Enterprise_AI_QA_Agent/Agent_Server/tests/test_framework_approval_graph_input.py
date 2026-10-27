@@ -502,6 +502,65 @@ async def test_original_approval_result_is_fenced_after_owner_expiry(frozen_appr
 
 
 @pytest.mark.asyncio
+async def test_frozen_approval_result_never_receives_a_native_replay_successor(frozen_approval_result):
+    from tests.test_framework_approval_recovery import expire, run_delivery
+
+    h = frozen_approval_result
+    task = h.result_task
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    terminal = await expire(h, task)
+    # Actual terminal delivery must reconcile, but its native-decision proof
+    # has no authority to turn an already-frozen result into another graph run.
+    await run_delivery(h, task.id)
+    reconciliation = next(item for item in await h.tasks.list_session(h.session_id)
+        if item.operation == "framework_reconcile" and item.reference_id == task.id)
+    await run_delivery(h, reconciliation.id)
+    rejected = await h.tasks.get(reconciliation.id)
+    assert rejected.status == "recovery_required", rejected.result_payload
+    assert rejected.error_code == "FrameworkApprovalRecoveryRequired"
+    assert rejected.result_payload is None
+    assert not [item for item in await h.tasks.list_session(h.session_id)
+        if item.operation == "approval_recover"]
+    assert await h.tasks.get(task.id) == terminal
+    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert h.adapter_requests == requests and h.effects == effects
+    # Safety rejection is not a retry instruction or permission to invent a
+    # second reconciliation lineage.
+    assert await h.tasks.ensure_framework_reconciliation(reconciliation.id) is None
+
+
+@pytest.mark.asyncio
+async def test_previously_queued_native_successor_cannot_claim_a_frozen_result(frozen_approval_result, monkeypatch):
+    import src.runtime.framework_approval_recovery as recovery
+    from tests.test_framework_approval_recovery import expire, run_delivery
+
+    h = frozen_approval_result
+    terminal = await expire(h, h.result_task)
+    reconciliation = await h.tasks.ensure_framework_reconciliation(h.result_task.id)
+    # Reproduce a queued proof issued by the preceding implementation, using
+    # its real publication transaction rather than inventing task/proof rows.
+    with monkeypatch.context() as patch:
+        patch.setattr(recovery, "require_native_recovery_scope", lambda *args: None, raising=False)
+        await run_delivery(h, reconciliation.id)
+    successor_id = (await h.tasks.get(reconciliation.id)).result_payload["successor_task_id"]
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    requests, effects = list(h.adapter_requests), list(h.effects)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("A frozen result cannot enter native continuation")
+
+    monkeypatch.setattr(h.runtime, "resume_framework_approval", forbidden)
+    await run_delivery(h, successor_id)
+    rejected = await h.tasks.get(successor_id)
+    assert rejected.attempt_no == 0, "Native proof must be rejected before acquiring execution"
+    assert rejected.status == "recovery_required" and rejected.error_code == "approval_continuation_changed"
+    assert await h.tasks.get(h.result_task.id) == terminal
+    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert h.adapter_requests == requests and h.effects == effects
+
+
+@pytest.mark.asyncio
 async def test_recovered_approval_freezes_its_invocation_without_replacing_original_identity(prepared_approval_runtime, monkeypatch):
     from tests.test_framework_approval_recovery import run_delivery
     from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset

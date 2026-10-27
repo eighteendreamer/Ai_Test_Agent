@@ -109,6 +109,26 @@ def require_successor_proof(cur, settings, row):
         or proof.get("origin_attempt_id") != payload.get("origin_attempt_id")
         or proof.get("decision_id") != payload.get("decision_id")):
         raise FrameworkApprovalRecoveryRequired("Recovery successor has no matching durable reconciliation proof")
+    require_native_recovery_scope(cur, settings, RuntimeBinding.model_validate(row["runtime_binding"]))
+
+
+def require_native_recovery_scope(cur, settings, binding):
+    """A native-decision proof cannot authorize application-result recovery.
+
+    No upstream counterpart (checked: message recovery finalizing proof,
+    approval reconciliation, v4 §9.4/§10.2): after the result boundary, only
+    a separately admitted finalizer-only continuation may consume the asset.
+    Recheck both before publication and before claiming an older queued proof.
+    """
+    from src.runtime.framework_message_stages import message_stage_table
+
+    cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE",
+        (binding.binding_id,))
+    row = cur.fetchone()
+    manifest = ((row["record"] if row is not None else {}).get("source_manifest") or {})
+    if "runtime_result_asset" in manifest or "application_projection_commit" in manifest:
+        raise FrameworkApprovalRecoveryRequired(
+            "Original application result requires finalization-only proof, not native continuation")
 
 
 class FrameworkApprovalRecovery:
@@ -211,6 +231,7 @@ class FrameworkApprovalRecovery:
                 raise FrameworkApprovalRecoveryRequired("Reconciliation differs from its owned task")
             origin = require_reconciliation_claim(cur, tasks, session, owner.binding, row,
                 {"task_id": task.id, "attempt_id": owner.attempt_id})
+            require_native_recovery_scope(cur, self._settings, owner.binding)
             plan, consumed = self._continuation.inspect_decision_in_transaction(cur, owner.binding, origin)
             cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} "
                 "WHERE session_id=%s AND turn_id=%s ORDER BY id FOR UPDATE", (task.session_id, task.turn_id))
