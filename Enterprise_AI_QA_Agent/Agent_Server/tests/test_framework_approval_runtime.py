@@ -14,6 +14,7 @@ from src.application.deep_agents import DeepAgentRuntimeAdapter
 from src.application.permissions.permission_service import PermissionService
 from src.application.runtime.runtime_service import RuntimeService
 from src.application.runtime.tool_runtime_service import ToolRuntimeService
+from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_context import framework_owner_scope
 from src.runtime.execution_context import current_framework_owner
@@ -574,6 +575,10 @@ async def test_claimed_framework_approval_rejects_missing_authority_before_runti
 
 @pytest_asyncio.fixture
 async def fresh_runtime_harness(projection_harness):
+    from datetime import datetime, timedelta
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from src.schemas.framework_model_call import FrameworkModelBudget
+
     h = projection_harness
     # The resource fixture also observes an independent native graph. Start a
     # fresh bound Turn so this test imports input only through RuntimeService.
@@ -582,8 +587,19 @@ async def fresh_runtime_harness(projection_harness):
     session.status = SessionStatus.idle
     await h.store.save_session(session)
     h.binding = make_binding(h.session_id, f"runtime-turn-{uuid4().hex}")
-    submitted = await h.tasks.submit_v2(make_command(h, h.binding), make_payload(),
-        make_message(h, h.binding), idempotency_key=uuid4().hex)
+    h.calls = PostgresFrameworkModelCalls(h.settings)
+    await h.calls.initialize()
+    h.tables.extend([h.calls.budgets_table, h.calls.calls_table])
+    # Mirror application admission, not a late ledger invented at finalization.
+    # Model itself remains controlled; these tests do not measure provider usage.
+    budget = FrameworkModelBudget(max_calls=8, max_tokens=500_000,
+        deadline_at=datetime.now(timezone.utc) + timedelta(minutes=10),
+        model_config_fingerprints={"fake": h.binding.model_config_fingerprint})
+    submitted = await h.tasks.submit_v2(make_command(h, h.binding),
+        make_payload().model_copy(update={"content": "Inspect A/B", "model_key": "fake",
+            "context": {"requested_tool_keys": ["inspect_value"]}}),
+        make_message(h, h.binding).model_copy(update={"content": "Inspect A/B"}),
+        idempotency_key=uuid4().hex, model_budget=budget)
     h.owner = await h.tasks.claim(submitted.id, worker_id="initial-runtime", expected_binding=h.binding)
     await h.tasks.begin(h.owner, resource_id="runtime-test", fencing_token=3)
     h.effects = []
@@ -695,6 +711,17 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         identity = frozen.runtime_preparation.identity
         assert final.output.id == identity.assistant_message_id
         assert latest_snapshot.id == identity.snapshot_id
+        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+        from src.runtime.framework_application_projection import require_application_commit
+
+        result_asset = FrameworkRuntimeResultAsset.model_validate(original_stage.source_manifest["runtime_result_asset"])
+        assert result_asset.task_id == a.id and result_asset.attempt_id == a.attempt_id
+        assert result_asset.assistant_message_id == final.output.id
+        assert result_asset.runtime_result.snapshot.id == latest_snapshot.id
+        with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+            cur.execute(f"SELECT * FROM {h.settings.database.postgres_session_table} WHERE id=%s", (h.session_id,))
+            commit = require_application_commit(cur, h.settings, cur.fetchone(), h.binding, original_stage)
+        assert commit.task_id == a.id and commit.output_message_id == final.output.id
         assert frozen.runtime_preparation.initial_state["event_log"][-1]["type"] == "turn.resumed"
         assert original_stage.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]["snapshot_id"] == "prepared-snapshot"
     completions = [item for item in await h.store.list_events(h.session_id) if item.type == "runtime.event_log_completed"]
@@ -719,7 +746,7 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
         assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 16
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 17
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
         material = [parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])

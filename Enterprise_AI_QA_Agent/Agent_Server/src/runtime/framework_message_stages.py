@@ -107,7 +107,9 @@ def validate_message_stage(record):
 
         if stage.schema_version < 7 or stage.phase not in {"runtime_submitted", "projected"}:
             raise FrameworkMessageStageRecoveryRequired("Runtime result has no matching message stage format")
-        FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        if result.task_id in manifest.get("approval_graph_inputs", {}) and stage.schema_version < 17:
+            raise FrameworkMessageStageRecoveryRequired("Approval runtime result has no compatible message stage format")
     if "application_projection_commit" in manifest:
         from src.schemas.framework_projection_commit import FrameworkProjectionCommit
 

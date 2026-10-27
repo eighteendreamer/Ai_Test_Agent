@@ -140,7 +140,7 @@ async def test_v2_dispatcher_requires_persisted_binding_and_executes_once():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["message", "approval_resume", "approval_recover", "framework_reconcile"])
-@pytest.mark.parametrize("reader,format_version", [(15, 16), (16, 17), (16, 16)])
+@pytest.mark.parametrize("reader,format_version", [(15, 16), (16, 17), (16, 16), (17, 17), (17, 18)])
 async def test_approval_preparation_format_is_checked_before_claim(operation, reader, format_version):
     selected = binding()
     task = stored_task(selected)

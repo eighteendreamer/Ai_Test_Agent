@@ -217,7 +217,9 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
         assert saved.schema_version == asset.required_message_stage_version == expected_version
         FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(saved.schema_version)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(17)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=16).require_message_stage(17)
+        with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(18)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired

@@ -1,4 +1,4 @@
-"""Freeze finalization input under the original message owner, before writes.
+"""Freeze finalization input under its original execution owner, before writes.
 
 No upstream counterpart (checked: framework message stages/application commits,
 LangGraph persistence, integration plan v3 §12.1 A2-1): native graph checkpoints
@@ -24,11 +24,47 @@ from src.schemas.framework_runtime_result import FrameworkRuntimeResult, Framewo
 
 logger = logging.getLogger(__name__)
 RESULT_KEY = "runtime_result_asset"
+APPROVAL_TASK_OPERATIONS = frozenset({"approval_resume", "approval_recover"})
 
 
 def _require(condition, message):
     if not condition:
         raise FrameworkMessageStageRecoveryRequired(message)
+
+
+def _approval_preparation(stage, task):
+    from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
+
+    inputs = (stage.source_manifest or {}).get("approval_graph_inputs") or {}
+    raw = inputs.get(task["id"])
+    if raw is None:
+        return None
+    preparation = FrameworkApprovalGraphInput.model_validate(raw)
+    _require(preparation.task_id == task["id"] and preparation.attempt_id == task["attempt_id"]
+        and preparation.approval_id == task["reference_id"]
+        and preparation.decision_id == (task["input_payload"] or {}).get("decision_id")
+        and preparation.graph_input_asset.runtime_preparation.identity.binding.model_dump(mode="json") == task["runtime_binding"],
+        "Runtime result preparation differs from its original approval task")
+    return preparation
+
+
+def runtime_result_lineage(stage, task):
+    """An approval's original preparation never authorizes a sibling or message."""
+    if task["operation"] in APPROVAL_TASK_OPERATIONS:
+        preparation = _approval_preparation(stage, task)
+        _require(preparation is not None, "Runtime result has no original approval preparation")
+        return {(preparation.task_id, preparation.attempt_id, preparation.owner_epoch)}
+    return {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
+        *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
+            for link in stage.recoveries)}
+
+
+def _task_user_message(stage, task):
+    if task["operation"] in APPROVAL_TASK_OPERATIONS:
+        preparation = _approval_preparation(stage, task)
+        _require(preparation is not None, "Runtime result has no original approval preparation")
+        return str((preparation.graph_input_asset.runtime_preparation.initial_state or {}).get("user_message") or "")
+    return task["input_payload"].get("content", "")
 
 
 def lock_runtime_result_stage(cur, settings, owner):
@@ -43,11 +79,16 @@ def lock_runtime_result_stage(cur, settings, owner):
     _require(row is not None, "Runtime result has no message stage")
     stage = validate_message_stage(row["record"])
     _require(task is not None and task["status"] == "running"
-        and task["operation"] in {"message", "message_recover"}
         and task["attempt_id"] == owner.attempt_id
         and task["runtime_binding"] == owner.binding.model_dump(mode="json")
-        and stage.current_task_id == owner.task_id and stage.phase == "runtime_submitted",
-        "Runtime result has no matching active message owner")
+        and task["session_id"] == owner.binding.session_id and task["turn_id"] == owner.binding.turn_id
+        and stage.phase == "runtime_submitted", "Runtime result has no matching active execution owner")
+    message_owner = (task["operation"] in {"message", "message_recover"}
+        and stage.current_task_id == owner.task_id
+        and stage.owner_attempt_id == owner.attempt_id and stage.owner_epoch == owner.owner_epoch)
+    preparation = _approval_preparation(stage, task) if task["operation"] in APPROVAL_TASK_OPERATIONS else None
+    approval_owner = (preparation is not None and preparation.owner_epoch == owner.owner_epoch)
+    _require(message_owner or approval_owner, "Runtime result has no matching active message or approval owner")
     return stage, task
 
 
@@ -66,11 +107,14 @@ def validate_runtime_result(cur, settings, owner, stage, task, raw):
     return validate_runtime_result_binding(cur, settings, owner.binding, stage, task, raw)
 
 
-def _require_prepared_identity(stage, asset):
+def _require_prepared_identity(stage, task, asset):
     """Compare original application intent, not database-assigned row headers."""
     from src.schemas.framework_graph_input import parse_graph_input_asset
 
     raw = (stage.source_manifest or {}).get("graph_input_asset")
+    if task["operation"] in APPROVAL_TASK_OPERATIONS:
+        preparation = _approval_preparation(stage, task)
+        raw = preparation.graph_input_asset.model_dump(mode="json") if preparation is not None else None
     if raw is None:
         return
     prepared = parse_graph_input_asset(raw)
@@ -87,20 +131,18 @@ def _require_prepared_identity(stage, asset):
 def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
     """Read original facts before claim too; this grants no execution ownership."""
     asset = FrameworkRuntimeResultAsset.model_validate(raw)
-    lineage = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
-        *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch)
-            for link in stage.recoveries)}
+    lineage = runtime_result_lineage(stage, task)
     _require(asset.binding == binding and asset.input_sha256 == stage.input_sha256
         and asset.execution_sha256 == stage.execution_sha256
         and asset.source_sha256 == approval_value_hash(runtime_result_source(stage))
-        and asset.user_message == task["input_payload"].get("content", "")
-        and asset.assistant_message_id != task["user_message_id"]
+        and asset.user_message == _task_user_message(stage, task)
+        and asset.assistant_message_id != stage.user_message_id
         and (asset.task_id, asset.attempt_id, asset.owner_epoch) in lineage,
         "Runtime result identity or frozen input changed")
     _require(asset.model_calls_sha256 == _model_hash(cur, settings, binding)
         and asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
         "Runtime result execution facts changed")
-    _require_prepared_identity(stage, asset)
+    _require_prepared_identity(stage, task, asset)
     return asset
 
 
@@ -124,12 +166,10 @@ class FrameworkRuntimeResults:
         def write():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 stage, task = self._locked_stage(cur, owner)
-                _require(stage.owner_epoch == owner.owner_epoch and stage.owner_attempt_id == owner.attempt_id,
-                    "Runtime result freeze differs from its runtime submission")
                 manifest = dict(stage.source_manifest or {})
                 _require(COMMIT_KEY not in manifest, "Runtime result cannot be replaced after application commit")
-                _require(user_message == task["input_payload"].get("content", "")
-                    and assistant_message_id != task["user_message_id"],
+                _require(user_message == _task_user_message(stage, task)
+                    and assistant_message_id != stage.user_message_id,
                     "Runtime result differs from its admitted user input")
                 if RESULT_KEY in manifest:
                     asset = self._validate(cur, owner, stage, task, manifest[RESULT_KEY])
@@ -148,9 +188,10 @@ class FrameworkRuntimeResults:
                     verification_results=verifications, projection_at=datetime.utcnow().isoformat(),
                     schema_version=1, scope="completed_message_finalization_input")
                 asset = FrameworkRuntimeResultAsset(**values, asset_sha256=approval_value_hash(values))
-                _require_prepared_identity(stage, asset)
+                _require_prepared_identity(stage, task, asset)
                 manifest[RESULT_KEY] = asset.model_dump(mode="json")
-                updated = validate_message_stage(stage.model_copy(update={"schema_version": max(7, stage.schema_version),
+                result_version = 17 if task["operation"] in APPROVAL_TASK_OPERATIONS else 7
+                updated = validate_message_stage(stage.model_copy(update={"schema_version": max(result_version, stage.schema_version),
                     "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
                 cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",
                     (updated.model_dump_json(), stage.task_id))

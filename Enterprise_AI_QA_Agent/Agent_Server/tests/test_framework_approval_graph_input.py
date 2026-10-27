@@ -13,7 +13,9 @@ from langchain_core.messages import AIMessage
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.execution_context import framework_owner_scope
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
-from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest, validate_message_stage
+from src.runtime.framework_message_stages import (
+    FrameworkMessageStages, FrameworkMessageStageRecoveryRequired, message_source_manifest, validate_message_stage,
+)
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, parse_graph_input_asset
 from src.schemas.session import ExecutionRequest, SendMessageRequest
@@ -334,9 +336,23 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
         await asyncio.gather(monitor, return_exceptions=True)
 
     saved = h.stages.get(a.id, h.session_id, include_continuations=True)
-    assert "runtime_result_asset" not in saved.source_manifest
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
     original = FrameworkApprovalGraphInput.model_validate(saved.source_manifest["approval_graph_inputs"][a.id])
+    asset = FrameworkRuntimeResultAsset.model_validate(saved.source_manifest["runtime_result_asset"])
+    assert asset.task_id == a.id and asset.attempt_id == a.attempt_id
+    assert asset.assistant_message_id == original.graph_input_asset.runtime_preparation.identity.assistant_message_id
+    assert saved.phase == "runtime_submitted"
     assert original.attempt_id == a.attempt_id and original.owner_epoch == a.runtime_owner.owner_epoch
+    assert asset.runtime_result.model_dump(mode="json") == oracle[0]
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+    results = FrameworkRuntimeResults(h.tasks)
+    assert saved.schema_version == 17
+    assert await results.load(a.runtime_owner) == asset
+    assert await results.freeze(a.runtime_owner, runtime_result=asset.runtime_result.restore(),
+        assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
+        verification_results=asset.verification_results) == asset
     preparation = original.graph_input_asset.runtime_preparation
     before_events = await h.store.list_events(h.session_id)
     declaration, = [event for event in before_events if event.type == "runtime.event_log_completed"]
@@ -403,3 +419,175 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
     assert (await h.store.get_latest_snapshot(h.session_id)).id == partial.session.last_snapshot.id
     assert h.effects == ([("B", h.proposals["B"].job.id), ("A", h.proposals["A"].job.id)]
         if decision == "approved" else [("A", h.proposals["A"].job.id)])
+
+
+@pytest_asyncio.fixture
+async def frozen_approval_result(prepared_approval_runtime, monkeypatch):
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+    h = prepared_approval_runtime
+    monitor = asyncio.create_task(asyncio.Event().wait())
+    try:
+        b = await claim_decision(h)
+        await h.sessions.execute_claimed_approval(b, ownership_monitor=monitor)
+        await h.tasks.finish(b, status="completed", result_status="waiting_approval")
+        h.result_task = await claim_decision(h, key="A")
+
+        async def pause(**kwargs):
+            raise ConnectionError("injected before original approval finalization")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(h.sessions, "_finalize_runtime_result", pause)
+            with pytest.raises(ConnectionError, match="before original approval finalization"):
+                await h.sessions.execute_claimed_approval(h.result_task, ownership_monitor=monitor)
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+    h.results = FrameworkRuntimeResults(h.tasks)
+    h.result_asset = await h.results.load(h.result_task.runtime_owner)
+    return h
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["task", "attempt", "epoch", "assistant", "snapshot", "decision", "format"])
+async def test_original_approval_result_rejects_rehashed_identity_drift(frozen_approval_result, changed):
+    h = frozen_approval_result
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    record = stage.model_dump(mode="json")
+    manifest = record["source_manifest"]
+    raw = manifest["runtime_result_asset"]
+    if changed == "task":
+        raw["task_id"] = h.initial_task_id
+    elif changed == "attempt":
+        raw["attempt_id"] += "-foreign"
+    elif changed == "epoch":
+        raw["owner_epoch"] += 1
+    elif changed == "assistant":
+        raw["assistant_message_id"] += "-foreign"
+    elif changed == "snapshot":
+        raw["runtime_result"]["snapshot"]["id"] += "-foreign"
+    elif changed == "decision":
+        preparation = manifest["approval_graph_inputs"][h.result_task.id]
+        preparation["decision_id"] += "-foreign"
+        graph = preparation["graph_input_asset"]
+        graph["runtime_preparation"]["initial_state"]["event_log"][-1]["payload"]["decision_id"] = preparation["decision_id"]
+        graph["asset_sha256"] = approval_value_hash({key: value for key, value in graph.items() if key != "asset_sha256"})
+    else:
+        record["schema_version"] = 16
+    raw["asset_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "asset_sha256"})
+    record["source_sha256"] = approval_value_hash(manifest)
+    replace_stage(h, record)
+    with pytest.raises((FrameworkMessageStageRecoveryRequired, ValueError)):
+        await h.results.load(h.result_task.runtime_owner)
+    # No finalizer ran and no original output was replaced on rejection.
+    assert (await h.store.get_latest_snapshot(h.session_id)).stage == "waiting_approval"
+    assert h.stages._get_record(h.initial_task_id, h.session_id) == record
+
+
+@pytest.mark.asyncio
+async def test_original_approval_result_is_fenced_after_owner_expiry(frozen_approval_result):
+    from src.runtime.store import ContinuationLeaseLostError
+
+    h = frozen_approval_result
+    task, asset = h.result_task, h.result_asset
+    before = h.stages.get(h.initial_task_id, h.session_id)
+    assert await h.store.renew_turn_execution(h.session_id, task.lease_token, 0)
+    with pytest.raises(ContinuationLeaseLostError):
+        await h.results.load(task.runtime_owner)
+    with pytest.raises(ContinuationLeaseLostError):
+        await h.results.freeze(task.runtime_owner, runtime_result=asset.runtime_result.restore(),
+            assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
+            verification_results=asset.verification_results)
+    assert h.stages.get(h.initial_task_id, h.session_id) == before
+
+
+@pytest.mark.asyncio
+async def test_recovered_approval_freezes_its_invocation_without_replacing_original_identity(prepared_approval_runtime, monkeypatch):
+    from tests.test_framework_approval_recovery import run_delivery
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+    h = prepared_approval_runtime
+    monitor = asyncio.create_task(asyncio.Event().wait())
+    try:
+        b = await claim_decision(h)
+        await h.sessions.execute_claimed_approval(b, ownership_monitor=monitor)
+        await h.tasks.finish(b, status="completed", result_status="waiting_approval")
+        a = await claim_decision(h, key="A")
+        continuation = h.runtime._framework_approval_continuation
+        record = continuation.record_graph_input
+
+        async def fail_after_preparation(*args, **kwargs):
+            await record(*args, **kwargs)
+            raise ConnectionError("injected after approval preparation before graph")
+
+        with monkeypatch.context() as patch:
+            patch.setattr(continuation, "record_graph_input", fail_after_preparation)
+            with pytest.raises(ConnectionError, match="before graph"):
+                await h.sessions.execute_claimed_approval(a, ownership_monitor=monitor)
+        original = h.stages.get(h.initial_task_id, h.session_id).source_manifest["approval_graph_inputs"][a.id]
+        await h.tasks.finish(a, status="failed", result_status="failed")
+        failed = await h.tasks.get(a.id)
+        reconciler = await h.tasks.ensure_framework_reconciliation(a.id)
+        await run_delivery(h, reconciler.id)
+        successor_id = (await h.tasks.get(reconciler.id)).result_payload["successor_task_id"]
+        await run_delivery(h, successor_id)
+        successor = await h.tasks.get(successor_id)
+        assert successor.status == "completed", successor.error_message
+        before = h.stages.get(h.initial_task_id, h.session_id)
+        asset = FrameworkRuntimeResultAsset.model_validate(before.source_manifest["runtime_result_asset"])
+        assert asset.task_id == successor_id and asset.attempt_id == successor.attempt_id
+        assert before.source_manifest["approval_graph_inputs"][a.id] == original
+        assert before.source_manifest["approval_graph_inputs"][successor_id]["attempt_id"] == successor.attempt_id
+        identity = parse_graph_input_asset(original["graph_input_asset"]).runtime_preparation.identity
+        assert asset.assistant_message_id == identity.assistant_message_id
+        assert asset.runtime_result.snapshot.id == identity.snapshot_id
+        requests = list(h.adapter_requests)
+        events = await h.store.list_events(h.session_id)
+        await run_delivery(h, successor_id)
+        assert h.stages.get(h.initial_task_id, h.session_id) == before
+        assert h.adapter_requests == requests and await h.store.list_events(h.session_id) == events
+        assert await h.tasks.get(a.id) == failed
+        assert h.effects == [("B", h.proposals["B"].job.id), ("A", h.proposals["A"].job.id)]
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_claimed_message_and_approval_share_the_original_turn_projection(fresh_runtime_harness):
+    from src.runtime.framework_application_projection import require_application_commit
+
+    h = fresh_runtime_harness
+    build_runtime(h, responses=[AIMessage(id="worker-source", content="", tool_calls=[
+        {"name": "inspect_value", "args": {"value": key}, "id": key, "type": "tool_call"}
+        for key in ("A", "B")]), AIMessage(id="worker-final", content="finished")])
+    h.sessions._runtime_service = h.runtime
+    h.stages = FrameworkMessageStages(h.tasks)
+    initial = h.owner
+    monitor = asyncio.create_task(asyncio.Event().wait())
+    try:
+        first = await h.sessions.execute_claimed_message(initial, ownership_monitor=monitor)
+        assert first.session.status.value == "waiting_approval"
+        waiting = h.stages.get(initial.id, h.session_id)
+        assert waiting.phase == "runtime_submitted", "Waiting for decisions is not a completed Turn projection"
+        assert "runtime_result_asset" not in waiting.source_manifest
+        with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+            cur.execute(f"SELECT id,metadata FROM {h.settings.database.postgres_approval_table} WHERE session_id=%s", (h.session_id,))
+            h.proposals = {row["metadata"]["call_id"]: SimpleNamespace(approval=SimpleNamespace(id=row["id"]))
+                for row in cur.fetchall()}
+        await h.tasks.finish(initial, status="completed", result_status="waiting_approval")
+        for key in ("B", "A"):
+            task = await claim_decision(h, key=key)
+            final = await h.sessions.execute_claimed_approval(task, ownership_monitor=monitor)
+            await h.tasks.finish(task, status="completed", result_status=final.session.status.value)
+        assert final.session.status.value == "completed" and final.output.content == "finished"
+        stage = h.stages.get(initial.id, h.session_id)
+        with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+            cur.execute(f"SELECT * FROM {h.settings.database.postgres_session_table} WHERE id=%s", (h.session_id,))
+            commit = require_application_commit(cur, h.settings, cur.fetchone(), h.binding, stage)
+        assert commit.task_id == task.id and commit.output_message_id == final.output.id
+        assert stage.source_manifest["runtime_result_asset"]["task_id"] == task.id
+        assert [value for value, job_id in h.effects] == ["B", "A"]
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)

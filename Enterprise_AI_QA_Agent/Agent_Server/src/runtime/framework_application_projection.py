@@ -300,32 +300,17 @@ def require_event_projections(cur, settings, stage, binding, asset_sha256, requi
 
 def record_application_commit(cur, settings, session, events, write):
     """Called only inside save_session_with_events, after its actual row writes."""
+    from src.runtime.framework_runtime_results import lock_runtime_result_stage, validate_runtime_result
+
     owner, binding = write.owner, write.owner.binding
-    assert_runtime_owner(cur, settings, owner)
-    cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (owner.task_id,))
-    task = cur.fetchone()
-    _require(task is not None and task["operation"] in {"message", "message_recover"}
-        and task["status"] == "running" and task["attempt_id"] == owner.attempt_id
-        and task["runtime_binding"] == binding.model_dump(mode="json"), "Application commit has no active message task")
-    cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE", (binding.binding_id,))
-    row = cur.fetchone()
-    _require(row is not None, "Application commit has no message stage")
-    stage = validate_message_stage(row["record"])
-    _require(stage.phase == "runtime_submitted" and stage.current_task_id == owner.task_id
-        and stage.owner_epoch == owner.owner_epoch and stage.owner_attempt_id == owner.attempt_id,
-        "Application commit differs from its runtime submission")
+    stage, task = lock_runtime_result_stage(cur, settings, owner)
     raw_result = (stage.source_manifest or {}).get("runtime_result_asset")
     _require((raw_result is None) == (write.runtime_result_asset_sha256 is None),
         "Application commit result asset disappeared or was not captured")
     if raw_result is not None:
-        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
-
-        result_asset = FrameworkRuntimeResultAsset.model_validate(raw_result)
+        result_asset = validate_runtime_result(cur, settings, owner, stage, task, raw_result)
         _require(write.runtime_result_asset_sha256 == result_asset.asset_sha256,
             "Application commit result asset changed before finalization")
-        _require(result_asset.model_calls_sha256 == _model_hash(cur, settings, binding)
-            and result_asset.tool_jobs_sha256 == _tool_hash(cur, settings, binding),
-            "Application commit result execution facts changed")
         from src.runtime.framework_finalization_projection import require_finalization_projection
 
         require_finalization_projection(cur, settings, session, result_asset, stage.user_message_id)
@@ -397,6 +382,18 @@ def require_application_commit(cur, settings, session, binding, stage):
     proof = FrameworkProjectionCommit.model_validate(raw)
     owners = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
         *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch) for link in stage.recoveries)}
+    if proof.task_id in manifest.get("approval_graph_inputs", {}):
+        from src.runtime.framework_runtime_results import validate_runtime_result_binding, runtime_result_lineage
+
+        cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (proof.task_id,))
+        task = cur.fetchone()
+        _require(task is not None and task["operation"] in {"approval_resume", "approval_recover"}
+            and task["runtime_binding"] == binding.model_dump(mode="json"),
+            "Application commit has no matching original approval task")
+        asset = validate_runtime_result_binding(cur, settings, binding, stage, task, manifest.get("runtime_result_asset"))
+        _require((proof.task_id, proof.attempt_id, proof.owner_epoch) == (asset.task_id, asset.attempt_id, asset.owner_epoch),
+            "Application commit differs from its original approval result")
+        owners.update(runtime_result_lineage(stage, task))
     _require(proof.binding_fingerprint == binding.fingerprint and proof.execution_sha256 == stage.execution_sha256
         and proof.source_sha256 == approval_value_hash(manifest)
         and (proof.task_id, proof.attempt_id, proof.owner_epoch) in owners,

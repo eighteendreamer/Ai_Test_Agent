@@ -660,12 +660,13 @@ class RuntimeService:
         on_model_chunk: Callable[[str], Awaitable[None]] | None = None,
         event_queue: asyncio.Queue | None = None,
         projection_identity: FrameworkProjectionIdentity | None = None,
+        on_runtime_result: Callable[[RuntimeTurnResult], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
         """Continue the owned native decision without rebuilding checkpoint history."""
         with self._runtime_control.execution_scope(session.id), graph_event_scope(event_queue):
             return await self._resume_framework_approval(
                 session, approval_id, decision_id, on_model_chunk=on_model_chunk,
-                projection_identity=projection_identity)
+                projection_identity=projection_identity, on_runtime_result=on_runtime_result)
 
     async def _resume_framework_approval(
         self,
@@ -675,6 +676,7 @@ class RuntimeService:
         *,
         on_model_chunk: Callable[[str], Awaitable[None]] | None,
         projection_identity: FrameworkProjectionIdentity | None = None,
+        on_runtime_result: Callable[[RuntimeTurnResult], Awaitable[None]] | None = None,
     ) -> RuntimeTurnResult:
         owner = current_framework_owner()
         pending = dict(session.metadata.get("pending_turn") or {})
@@ -712,6 +714,8 @@ class RuntimeService:
                 returned_event_offset=persisted_events, projection_identity=projection_identity,
                 on_graph_input=freeze_graph_input if projection_identity is not None else None))
         result.events = result.events[persisted_events:]
+        if on_runtime_result is not None:
+            await on_runtime_result(result)
         return result
 
     async def resume_after_approval(

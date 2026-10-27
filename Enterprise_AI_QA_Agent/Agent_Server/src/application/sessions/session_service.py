@@ -269,8 +269,16 @@ class SessionService:
                         ),
                     )
                     if stages is not None:
-                        await stages.projected(task.runtime_owner,
-                            result.id if isinstance(result, SessionSnapshot) else result.output.id)
+                        projection_status = (result.stage if isinstance(result, SessionSnapshot)
+                            else result.session.status.value)
+                        if projection_status == "completed":
+                            await stages.projected(task.runtime_owner,
+                                result.id if isinstance(result, SessionSnapshot) else result.output.id)
+                        else:
+                            # A waiting/interrupted response is a durable partial
+                            # projection, not the completed Turn's application ACK.
+                            logger.info("framework_message_projection_pending", extra={"task_id": task.id,
+                                "binding_id": task.runtime_binding.binding_id, "result_status": projection_status})
                     return result
 
             try:
@@ -1240,6 +1248,8 @@ class SessionService:
         settled = False
         try:
             continuation_options = {}
+            projection_asset_holder = {}
+            projection_owner = None
             if framework_task is not None:
                 from src.runtime.framework_message_stages import FrameworkMessageStages
                 from src.schemas.framework_graph_input import parse_graph_input_asset, FrameworkApprovalGraphInput
@@ -1249,7 +1259,11 @@ class SessionService:
                 source = (stage.source_manifest or {}) if stage is not None else {}
                 original_input = source.get("graph_input_asset")
                 if original_input is not None and parse_graph_input_asset(original_input).schema_version == 2:
-                    previous = source.get("approval_graph_inputs", {}).get(framework_task.id)
+                    projection_owner = framework_task.runtime_owner
+                    originals = source.get("approval_graph_inputs", {})
+                    previous = originals.get(framework_task.id)
+                    if previous is None and framework_task.operation == "approval_recover":
+                        previous = originals.get(framework_task.input.get("origin_task_id"))
                     identity = (FrameworkApprovalGraphInput.model_validate(previous).graph_input_asset.runtime_preparation.identity
                         if previous is not None else FrameworkProjectionIdentity(binding=framework_task.runtime_binding,
                             assistant_message_id=assistant_message_id, snapshot_id=str(uuid4()),
@@ -1258,6 +1272,19 @@ class SessionService:
                     continuation_options["projection_identity"] = identity
                 continuation_method = self._runtime_service.resume_framework_approval
                 continuation_args = (session, approval.id, framework_task.input["decision_id"])
+
+                async def on_runtime_result(result):
+                    asset = await self._prepare_framework_runtime_result(
+                        framework_task.runtime_owner, result, assistant_message_id,
+                        str(result.state.get("user_message", "")),
+                    )
+                    if asset is not None:
+                        projection_asset_holder["asset"] = asset
+
+                # Historical invocations without original preparation retain
+                # their execution contract; they gain no result-recovery right.
+                if projection_owner is not None:
+                    continuation_options["on_runtime_result"] = on_runtime_result
             else:
                 continuation_method = self._runtime_service.resume_after_approval
                 continuation_args = (session, approval.model_dump(mode="python"))
@@ -1291,6 +1318,12 @@ class SessionService:
                     ),
                     events=await self._store.list_events(session_id, limit=RECENT_CONVERSATION_EVENT_LIMIT),
                 )
+            projection_asset = projection_asset_holder.get("asset")
+            if projection_owner is not None and projection_asset is None:
+                projection_asset = await self._prepare_framework_runtime_result(
+                    framework_task.runtime_owner, continuation, assistant_message_id,
+                    str(continuation.state.get("user_message", "")),
+                )
             response = await self._await_owned_execution(
                 session_id,
                 heartbeat_task,
@@ -1300,6 +1333,8 @@ class SessionService:
                 assistant_message_id=assistant_message_id,
                 user_message_override=str(continuation.state.get("user_message", "")),
                 turn_lease_token=turn_lease_token,
+                projection_owner=projection_owner,
+                **({"projection_asset": projection_asset} if projection_asset is not None else {}),
                 ownership_monitors=ownership_monitors,
             )
             settled = True
