@@ -90,6 +90,17 @@ class FrameworkModelCallPolicy:
         self._model_config_resolver = model_config_resolver
         self._evidence = evidence
 
+    async def capture_root_budget(self, binding) -> dict:
+        """Read the existing root ledger without new reservations or settlement."""
+        from src.application.models.framework_model_budget_projection import capture_model_budget_material
+
+        snapshot = await self._calls.snapshot(binding)
+        material = capture_model_budget_material(binding, snapshot)
+        logger.info("framework_model_root_budget_captured", extra={"binding_id": binding.binding_id,
+            "reserved_calls": snapshot.reserved_calls, "charged_tokens": snapshot.charged_tokens,
+            "unknown_calls": snapshot.unknown_calls, "unmeasured_calls": snapshot.unmeasured_calls})
+        return material
+
     async def invoke(self, *, owner, model, model_key: str, execution_info, branch_name: str | None,
                      purpose: str, messages: list, tools: list, options: dict,
                      send: Callable[[], Awaitable[Any]]) -> Any:

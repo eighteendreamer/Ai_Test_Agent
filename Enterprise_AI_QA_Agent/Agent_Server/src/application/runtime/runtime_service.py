@@ -512,6 +512,9 @@ class RuntimeService:
         state["tool_results"] = tool_records
         state["pending_approvals"] = approvals
         if approvals:
+            if "root_model_budget" in result.metadata:
+                state["model_response_summary"] = {**state["model_response_summary"],
+                    "root_model_budget": result.metadata["root_model_budget"]}
             state["context_bundle"] = {
                 **dict(state.get("context_bundle") or {}),
                 "deep_agent_harness": "deepagents",
@@ -566,6 +569,8 @@ class RuntimeService:
             harness="deepagents",
             pilot_stage=pilot_stage,
             final_response_length=len(result.output_text),
+            **({"root_model_budget": result.metadata["root_model_budget"]}
+                if "root_model_budget" in result.metadata else {}),
             **({"adapter_stage": result.metadata.get("stage"),
                 "callback_events_sha256": approval_value_hash(result.subagent_events)}
                 if result.metadata.get("native_terminal") is not None else {}),

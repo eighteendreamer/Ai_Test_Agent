@@ -86,6 +86,11 @@ async def test_actual_official_deep_agent_request_reserves_and_settles(harness, 
             assert result.output_text == "fixture answer" and len(requests) == 1
             snapshot = await h.calls.snapshot(h.binding)
             assert snapshot.reserved_calls == 1 and snapshot.actual_tokens == snapshot.charged_tokens == 10
+            material = result.metadata.get("root_model_budget")
+            assert material is not None, "Native completion loses its original root budget before the application result asset"
+            from src.application.models.framework_model_budget_projection import read_model_budget_material
+            original = read_model_budget_material(h.binding, material)
+            assert original == snapshot
             call, = snapshot.calls
             assert call.phase == "completed" and call.intent.transport == transport
             assert call.intent.purpose == "agent" and call.intent.branch_id == "root"
@@ -116,6 +121,9 @@ async def test_unknown_request_is_charged_once_and_checkpoint_replay_cannot_rese
             snapshot = await h.calls.snapshot(h.binding)
             assert snapshot.reserved_calls == snapshot.unknown_calls == 1 and len(requests) == 1
             assert snapshot.charged_tokens == snapshot.calls[0].intent.reserved_tokens
+            from src.application.models.framework_model_budget_projection import read_model_budget_material
+            original = await h.policy.capture_root_budget(h.binding)
+            assert read_model_budget_material(h.binding, original) == snapshot
             with pytest.raises(DeepAgentRuntimeError, match="retry"):
                 await execute(h, replace(h.request, continue_from_checkpoint=True))
             assert len(requests) == 1 and await h.calls.snapshot(h.binding) == snapshot
@@ -150,6 +158,8 @@ async def test_automatic_summary_and_main_request_share_root_ledger(harness, mon
             assert [call.intent.purpose for call in snapshot.calls] == ["summary", "agent"]
             assert snapshot.actual_tokens == 20 and {call.intent.branch_id for call in snapshot.calls} == {"root"}
             assert all(call.phase == "completed" for call in snapshot.calls)
+            from src.application.models.framework_model_budget_projection import read_model_budget_material
+            assert read_model_budget_material(h.binding, result.metadata["root_model_budget"]) == snapshot
 
 
 @pytest.mark.asyncio
@@ -186,6 +196,25 @@ async def test_named_subagent_uses_explicit_root_policy(harness, tmp_path):
             child, = [call for call in snapshot.calls if call.intent.purpose == "subagent"]
             assert child.intent.parent_branch_id == "root" and child.intent.branch_id != "root"
             assert all(call.phase == "completed" for call in snapshot.calls)
+            from src.application.models.framework_model_budget_projection import read_model_budget_material
+            assert read_model_budget_material(h.binding, result.metadata["root_model_budget"]) == snapshot
+
+
+@pytest.mark.asyncio
+async def test_completed_response_without_usage_preserves_original_reservation_material(harness):
+    from src.application.models.framework_model_budget_projection import read_model_budget_material
+    from tests.test_framework_chat_models import _reply
+
+    reply = _reply("openai_chat_completions")
+    reply.pop("usage")
+    with _provider("openai_chat_completions", first_reply=reply) as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            result = await execute(h)
+            original = read_model_budget_material(h.binding, result.metadata["root_model_budget"])
+            assert original == await h.calls.snapshot(h.binding)
+            assert len(requests) == original.unmeasured_calls == 1 and original.unknown_calls == 0
+            assert original.actual_tokens == 0 and original.calls[0].usage is None
+            assert original.charged_tokens == original.calls[0].intent.reserved_tokens > 0
 
 
 @pytest.mark.asyncio

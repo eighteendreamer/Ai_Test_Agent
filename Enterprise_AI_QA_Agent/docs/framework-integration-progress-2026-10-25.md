@@ -2530,3 +2530,56 @@ P0原样本在§60已扩展为“批准／拒绝×三个对账强杀点”。本
 最高证据范围E2，未执行全量、前端、独立lint／typecheck、E3真实供应商／RustFS／领域Runner或E4双制品／备份恢复演练。没有依赖升级、付费请求、服务启停或生产路由变更。正常stage／callback来源与受限只读消费有证据，不意味着无资产恢复开放；根预算与多次审批续跑身份时间等原材料、完整A2-2及A2-3／A3／B/C/D/E/F仍未结清，整体goal继续active。
 
 本节及本轮六个代码／测试文件归入同一中文提交，主题 `【feat】保存原阶段与子代理回调的可核验材料`，具体ID以Git历史／交付输出为准；用户v3文档原15增2删不纳入提交。
+
+## 66. A2-2：保存原根模型预算材料，审批与资产前只读投影消费原账本事实（2026-10-27）
+
+框架续接基线 `d86887c75`、承接§65。上一轮只调整开发提示词，没有推动实现；本轮重新核对工作区已有红测，再实际闭合根预算的原材料端口。完整A2-2及全系统接入仍未完成，无资产自动恢复继续关闭。用户v3文档原15增2删保留；工作期间出现的独立应用表单提交不属于本轮框架修改。
+
+### 有效红测、根因与依据
+
+- 重新运行既有 `test_actual_official_deep_agent_request_reserves_and_settles[False-openai_chat_completions]`，真实 **1 failed，10.88秒**：官方模型已经完成、根账本已结算，但适配器 `metadata.root_model_budget` 为None。不是请求协议失败，而是应用结果生成前没有携带原根预算，原生checkpoint的运行计数不能补出这项图外事实。原日志 `.codex-logs/framework-root-budget-material-red-revalidated-2026-10-27.txt`。
+- 项目已有 `FrameworkModelCallPolicy._calls`、`PostgresFrameworkModelCalls.snapshot` 和 `FrameworkModelBudgetSnapshot` → 在原策略增加只读捕获端口，复用原账本，不再给Runtime注入第二套预算服务。snapshot先核对完整持久绑定，不reserve、不settle；它不是当前owner认证，后续写入仍依赖既有owner fence。
+- 固定 `langchain==1.4.6` 安装源码 `agents/middleware/model_call_limit.py:34` 把 `run_model_call_count` 声明为UntrackedValue → 不以新invoke的运行计数重建根账本。官方[Persistence](https://docs.langchain.com/oss/python/langgraph/persistence)区分图内checkpoint与图外应用事实 → 本轮只保存根预算材料，不扩大checkpoint证明权限。
+- 实际环境 `pydantic==2.13.5` 的 `BaseModel.model_dump`（安装源码main.py:427）及[官方序列化接口](https://docs.pydantic.dev/latest/api/base_model/#pydantic.BaseModel.model_dump)、现有ToolProjection声明字段序列化 → 仅序列化BudgetSnapshot的声明字段policy／calls，避免computed totals被extra=forbid读者当额外字段；保留原CallRecord v1／v2／v3 serializer，不改变旧账本wire。
+- 本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py` 仅提供单请求max_tokens及独立RunResult／events，没有对应本项目根预算持久事实协议 → 不照搬请求上限，不另造根账本。测试工程继续遵循本地Agent轨迹／协议课程，核对真实请求、状态与副作用，不只比较最后答案。
+
+### 实现与权限边界
+
+- [根预算纯投影模块](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/models/framework_model_budget_projection.py)提供捕获／读取原材料端口：材料schema1、窄scope、binding_id／绑定指纹、原policy／calls和内容摘要。校验原声明字段往返、唯一attempt、根policy与绑定、每条call所属绑定；缺失／漂移／未知格式不推测。摘要只检查内容一致，不认证来源或授予恢复权限；调用方先验证原结果或完整事件来源。
+- 原未知调用保留预留，usage缺失仍为None；actual_tokens仅表示已知用量之和，不把它解释为未知请求免费。computed totals沿原Snapshot属性计算。旧CallRecord的settled_response_id省略规则保留；不重结算、不重置deadline或原额度，也不改变legacy model_call_count／turn_token_usage语义。
+- [适配器](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/runtime_adapter.py)在原执行／cleanup边界内，于官方返回／原生终态读取后，经共享策略捕获根账本。[共享结果投影](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/result_projection.py)接收显式可选材料并深复制。无policy的历史／测试路径不凭空多出预算字段。
+- [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)将等待审批的预算材料保存于原model_response_summary，沿现有pending graph_state／snapshot保存；完成结果沿原completed_deep_agent_state保存。原runtime.turn_completed事件追加同一预算材料，沿既有事件事务／封口持久化，没有另造队列、表、结果资产、finalizer或恢复API。
+- 只读Harness先校验既有RuntimeEventCompletion的来源／原行／精确终态，再读取原完成事件预算，将其送入同一结果投影链。正常模型调用、主／子代理与摘要继续走原共享策略。材料完整不等于可自动创建后继，未知调用也不因材料可读而可重发。
+- 本轮只扩展既有开放metadata／event payload，不改变外层graph-input、MessageStage或ToolProjection协议；stage仍15、工具marker仍3。历史缺材料仍可沿旧路径读取，但不能被冒充为已保存新预算原件；实际兼容部署仍待E4。
+
+### Harness、真实失败与逐项对应
+
+| v4阶段／条款／Harness | 本轮实现与证据 | 剩余出口 |
+| --- | --- | --- |
+| A2-2，§6.3／§9.2，H05／H09 | 四传输×普通invoke／事件流，原根policy／calls精确往返；主代理、摘要和具名子代理累计 | 活动时间、图内所有恢复计数和完整A2-2仍未验收 |
+| §7／§6.3，H02／H09 | 官方SDK＋本地HTTP＋真实PG，两项审批依次续跑、混合拒绝；等待snapshot／pending预算不丢，最后模型累计两次 | 审批多次续跑assistant／snapshot原身份与时间准备仍须闭合 |
+| §8.3／§9.2，H05 | 官方子代理＋独立Worker资产前强杀；从原封口事件消费根预算，与正常完整Runtime oracle精确相等；请求／账本／checkpoint／事件不增加 | 不授予无资产后继，真实RustFS／供应商／领域Runner仍待E3 |
+| §6.2／§13，H09／H11 | 真503未知请求保留原预留；成功缺usage不归零；空账本合法，缺件／摘要／绑定／未知字段／类型归一化／重复attempt负例 | 不代表未知发送／外部效果已经可恢复 |
+
+新增审批测试最初 **1 failed、18 passed，14.29秒**：复用的fixture绑定指纹不属于测试新增模型，原freeze正确拒绝；修正为调用前创建匹配绑定，不放宽生产校验。第二次 **1 failed、18 passed，12.09秒**：FakeMessagesListChatModel的响应游标随治理中间件model_copy重置，重复发工具调用直至原8次上限拒绝；改用官方SDK＋本地HTTP固定响应，不修改生产预算或cache策略迎合替身。失败日志分别保留在 `.codex-logs/framework-root-budget-material-focused-2026-10-27.txt` 与 `.codex-logs/framework-root-budget-material-focused-final-2026-10-27.txt`。
+
+初始纯合同 **17 passed，6.70秒**、首轮模型策略 **23 passed，86.32秒**，均早于后续新增反例与审批矩阵。官方SDK替换后的局部合同／审批／强杀 **20 passed，22.43秒**（会话69850），早于新增混合拒绝与空账本反例；不把这些早期结果当最终源码全部验收。
+
+### 最终验证与提交归属
+
+三组均从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 使用独立 `.venv-framework-v2`，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。以下选择与早期局部组重叠，不累计独立覆盖数。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_model_policy.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_result_projection.py tests/test_framework_turn_projection.py tests/test_runtime_interrupt_tool_calls.py tests/test_runtime_input_paths.py tests/test_runtime_import_isolation.py tests/test_turn_budget_persistence.py tests/test_framework_graph_input_asset.py -q -x -rs --tb=short
+# 223 passed，5 skipped，150.86秒；会话26631，exit0。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_terminal_gap.py tests/test_framework_event_completion.py tests/test_framework_live_event_persistence.py tests/test_framework_application_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+# 139 passed，608.48秒；会话26353，exit0，无skip。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+# 197 passed，796.01秒；会话9499，exit0，无skip。
+```
+
+Runtime组5个skip为既有test_runtime_input_paths.py的独立真实PostgreSQL／MySQL／RustFS链路未启用，不算通过，未新增skip。三组日志分别为项目根 `.codex-logs/framework-root-budget-runtime-final-2026-10-27.txt`、`.codex-logs/framework-root-budget-application-final-2026-10-27.txt`、`.codex-logs/framework-root-budget-approval-final-2026-10-27.txt`。
+
+三组均已从原会话取得终态exit0，并再次核对落盘日志，没有遗留运行中的pytest。项目根实际compileall／diff检查、§66唯一、历史仅追加、全文围栏及20处绝对本地链接检查已通过；固定环境ruff／mypy未安装，不安装新工具、不声称lint／typecheck通过。最高证据范围E2；全量、前端、E3真实供应商／RustFS／领域Runner及E4部署／备份恢复未验收。本轮没有依赖升级、付费请求、生产路由或服务启停。
+
+本轮代码／测试、测试文件忽略例外及本节归入同一中文提交，主题 `【feat】保存并复用原根模型预算材料`，具体ID以Git历史／交付输出为准。无资产自动恢复仍关闭；审批多次续跑身份与时间、完整A2-2、A2-3／A3／B/C/D/E/F仍未结清，整体goal保持active。

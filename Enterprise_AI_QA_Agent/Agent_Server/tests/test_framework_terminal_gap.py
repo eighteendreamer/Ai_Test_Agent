@@ -15,6 +15,7 @@ from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
 from src.application.deep_agents.native_terminal import NativeTerminalProof, _native_hash
 from src.application.models.framework_model_call_policy import model_config_fingerprint
+from src.application.models.framework_model_budget_projection import read_model_budget_material
 from src.application.models.framework_model_evidence import FrameworkModelEvidence
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -162,8 +163,10 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 from src.application.runtime.turn_projection import project_deep_agent_callback_facts
                 facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
                     returned_event_offset=read.completion.returned_event_offset)
+                original_budget = read.event_log[-1]["payload"]["root_model_budget"]
+                assert read_model_budget_material(h.binding, original_budget) == await h.calls.snapshot(h.binding)
                 projected = project_deep_agent_result(snapshot.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
-                    native_terminal=proof.model_dump(mode="json"))
+                    native_terminal=proof.model_dump(mode="json"), root_model_budget=original_budget)
                 assert projected.output_text == "fixture answer"
                 assert projected.framework_messages == serialize_messages(snapshot.values["messages"])
                 assert projected.metadata["native_terminal"] == proof.model_dump(mode="json")
@@ -293,6 +296,9 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
             assert facts.subagent_events[0]["run_id"] == facts.subagent_events[1]["run_id"]
             assert facts.subagent_events == oracle.state["cognitive_subagent_events"]
             budget, saved_events = await h.calls.snapshot(h.binding), await h.store.list_events(h.session_id)
+            original_budget = read.event_log[-1]["payload"]["root_model_budget"]
+            assert read_model_budget_material(h.binding, original_budget) == budget
+            assert oracle.state["model_response_summary"]["root_model_budget"] == original_budget
             assert len(requests) == len(budget.calls) == 3 and all(call.phase == "completed" for call in budget.calls)
             model = Model(responses=[])
             adapter = DeepAgentRuntimeAdapter(model_resolver=None, skill_registry=SkillRegistry())
@@ -314,7 +320,8 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
                     monkeypatch.setattr(graph, "astream_events", forbidden)
                     monkeypatch.setattr(model, "_generate", forbidden)
                     projected = project_deep_agent_result(restored.values, stage=facts.adapter_stage,
-                        subagent_events=facts.subagent_events, native_terminal=proof.model_dump(mode="json"))
+                        subagent_events=facts.subagent_events, native_terminal=proof.model_dump(mode="json"),
+                        root_model_budget=original_budget)
                     preparation = prepared.runtime_preparation
                     state = completed_deep_agent_state(preparation.initial_state, projected, tool_records=[],
                         binding=h.binding, pilot_stage=facts.pilot_stage)
@@ -424,8 +431,10 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
                 from src.application.runtime.turn_projection import project_deep_agent_callback_facts
                 facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
                     returned_event_offset=read.completion.returned_event_offset)
+                original_budget = read.event_log[-1]["payload"]["root_model_budget"]
+                assert read_model_budget_material(h.binding, original_budget) == await h.calls.snapshot(h.binding)
                 projected = project_deep_agent_result(restored.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
-                    native_terminal=proof.model_dump(mode="json"))
+                    native_terminal=proof.model_dump(mode="json"), root_model_budget=original_budget)
                 state = completed_deep_agent_state(initial, projected, tool_records=[], binding=h.binding, pilot_stage=facts.pilot_stage)
                 state["event_log"] = read.event_log
                 projected_snapshot = project_runtime_snapshot(session_id=h.session_id, state=state,

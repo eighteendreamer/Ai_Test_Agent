@@ -108,6 +108,7 @@ class DeepAgentRuntimeAdapter:
 
         stage = _pilot_stage(request)
         native_terminal = None
+        root_model_budget = None
         try:
             model = await self._model_resolver(request.model_key)
             cleanup = None
@@ -218,6 +219,8 @@ class DeepAgentRuntimeAdapter:
 
                         terminal = await collect_native_terminal(agent, checkpointer, invoke_config, returned_values=result)
                         native_terminal = terminal.proof.model_dump(mode="json")
+                if self._model_call_policy is not None:
+                    root_model_budget = await self._model_call_policy.capture_root_budget(execution_owner.binding)
             finally:
                 if cleanup is not None:
                     cleanup()
@@ -235,6 +238,7 @@ class DeepAgentRuntimeAdapter:
             subagent_events=subagent_events,
             native_interrupts=native_interrupts,
             native_terminal=native_terminal,
+            root_model_budget=root_model_budget,
         )
 
     def _resolve_factory(self) -> AgentFactory:

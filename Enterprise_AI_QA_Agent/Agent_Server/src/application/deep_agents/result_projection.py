@@ -38,6 +38,7 @@ def project_deep_agent_result(
     subagent_events: list[dict[str, Any]],
     native_interrupts: list[NativeToolInterrupt] | None = None,
     native_terminal: dict[str, Any] | None = None,
+    root_model_budget: dict[str, Any] | None = None,
 ) -> DeepAgentRuntimeResult:
     """Project verified invocation/native values using one existing rule set.
 
@@ -61,6 +62,7 @@ def project_deep_agent_result(
     return DeepAgentRuntimeResult(
         output_text=output_text,
         metadata={"harness": "deepagents", "stage": stage, "message_count": len(messages),
+            **({"root_model_budget": deepcopy(root_model_budget)} if root_model_budget is not None else {}),
             **({"native_terminal": deepcopy(native_terminal)} if native_terminal is not None else {})},
         messages=deepcopy(messages),
         framework_messages=deepcopy(serialize_messages(raw_messages)),

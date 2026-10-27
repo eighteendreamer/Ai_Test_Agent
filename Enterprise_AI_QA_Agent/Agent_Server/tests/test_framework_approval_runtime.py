@@ -29,7 +29,7 @@ from tests.test_framework_tool_bridge import Model, state_for
 from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
 
 
-def build_runtime(h, *, responses=None):
+def build_runtime(h, *, responses=None, model_call_policy=None):
     tools = ToolRuntimeService(tool_job_service=h.jobs)
 
     async def handle(arguments, context):
@@ -54,7 +54,8 @@ def build_runtime(h, *, responses=None):
         tool_runtime_service=tools, tool_registry=h.registry, runtime_control=RuntimeControlRegistry(),
         permission_service=PermissionService(), tool_job_service=h.jobs,
         framework_approval_projection=projector(h), framework_approval_continuation=service(h),
-        deep_agent_runtime_adapter=Adapter(model_resolver=resolve_model, checkpointer_factory=h.provider.open),
+        deep_agent_runtime_adapter=Adapter(model_resolver=resolve_model, checkpointer_factory=h.provider.open,
+            model_call_policy=model_call_policy),
         deep_agent_enabled=True, deep_agent_governed_tools_enabled=True)
 
 
@@ -81,6 +82,90 @@ async def resume(h, task):
     with framework_owner_scope(task.runtime_owner):
         return await h.runtime.resume_framework_approval(await h.store.get_session(h.session_id),
             task.reference_id, task.input["decision_id"])
+
+
+@pytest.fixture
+def root_budget_provider():
+    from tests.test_framework_chat_models import _provider, _tool_reply
+
+    reply = _tool_reply("openai_chat_completions")
+    reply["choices"][0]["message"]["tool_calls"] = [{"id": key, "type": "function", "function": {
+        "name": "inspect_value", "arguments": json.dumps({"value": key})}} for key in ("A", "B")]
+    with _provider("openai_chat_completions", first_reply=reply) as provider:
+        yield provider
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_waiting_and_completed_invocations_preserve_the_same_root_budget(projection_harness, root_budget_provider, decision):
+    from datetime import datetime, timedelta
+    from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy, model_config_fingerprint
+    from src.application.models.framework_model_budget_projection import read_model_budget_material
+    from src.application.models.model_runtime_service import ModelRuntimeService
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from src.infrastructure.postgres_runtime import postgres_connect
+    from src.schemas.framework_model_call import FrameworkModelBudget
+    from tests.test_framework_chat_models import _config
+
+    h = projection_harness
+    url, requests = root_budget_provider
+    config = _config("openai_chat_completions", url, key="fake")
+    fingerprint = model_config_fingerprint(config)
+    await h.tasks.finish(h.owner, status="completed", result_status="completed")
+    session = await h.store.get_session(h.session_id)
+    session.status = SessionStatus.idle
+    await h.store.save_session(session)
+    h.binding = make_binding(h.session_id, f"budget-turn-{uuid4().hex}", model_config_fingerprint=fingerprint)
+    submitted = await h.tasks.submit_v2(make_command(h, h.binding), make_payload(), make_message(h, h.binding),
+        idempotency_key=uuid4().hex)
+    h.owner = await h.tasks.claim(submitted.id, worker_id="root-budget-runtime", expected_binding=h.binding)
+    await h.tasks.begin(h.owner, resource_id="runtime-test", fencing_token=3)
+    h.effects = []
+    calls = PostgresFrameworkModelCalls(h.settings)
+    await calls.initialize()
+    try:
+        await calls.freeze(h.owner.runtime_owner, FrameworkModelBudget(max_calls=8, max_tokens=500_000,
+            deadline_at=datetime.now(timezone.utc) + timedelta(minutes=5), model_config_fingerprints={"fake": fingerprint}))
+        policy = FrameworkModelCallPolicy(calls=calls, model_config_resolver=lambda key: config)
+        build_runtime(h, model_call_policy=policy)
+        models = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config), h.settings)
+        h.runtime._model_runtime_service = models
+        adapter = h.runtime._deep_agent_bound_runtime_adapter
+        adapter._model_resolver = models.resolve_langchain_chat_model
+        request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="budget-trace",
+            user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
+            model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"]})
+        with framework_owner_scope(h.owner.runtime_owner):
+            first = await h.runtime.execute_turn(await h.store.get_session(h.session_id), request)
+        expected = await calls.snapshot(h.binding)
+        assert len(first.approvals) == 2 and expected.reserved_calls == 1
+        by_call = {item["metadata"]["call_id"]: item for item in first.approvals}
+        h.proposals = {key: SimpleNamespace(approval=SimpleNamespace(id=item["id"])) for key, item in by_call.items()}
+        for key, previous in (("B", first), ("A", None)):
+            if previous is not None:
+                pending = previous.pending_turn
+            assert read_model_budget_material(h.binding, pending["graph_state"]["model_response_summary"]["root_model_budget"]) == expected
+            assert previous is None or previous.snapshot.graph_state["model_response_summary"]["root_model_budget"] == pending["graph_state"]["model_response_summary"]["root_model_budget"]
+            await h.store.update_status_and_mutate_metadata(h.session_id, status=None,
+                mutate=lambda metadata, status: metadata.update(pending_turn=pending), turn_lease_token=h.owner.lease_token)
+            await h.tasks.finish(h.owner, status="completed", result_status="waiting_approval")
+            h.owner = await claim_decision(h, key=key, decision=decision if key == "B" else "approved")
+            result = await resume(h, h.owner)
+            if key == "B":
+                pending = result.pending_turn
+                assert await calls.snapshot(h.binding) == expected
+            else:
+                final = await calls.snapshot(h.binding)
+                assert len(requests) == final.reserved_calls == 2
+                assert final.actual_tokens == 20 and final.unmeasured_calls == 0
+                assert read_model_budget_material(h.binding, result.state["model_response_summary"]["root_model_budget"]) == final
+                assert read_model_budget_material(h.binding, first.state["model_response_summary"]["root_model_budget"]) == expected
+        assert [value for value, job in h.effects] == (["B", "A"] if decision == "approved" else ["A"])
+        assert result.output_text == "fixture answer"
+    finally:
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {calls.calls_table}")
+            cur.execute(f"DROP TABLE {calls.budgets_table}")
 
 
 @pytest.mark.asyncio
