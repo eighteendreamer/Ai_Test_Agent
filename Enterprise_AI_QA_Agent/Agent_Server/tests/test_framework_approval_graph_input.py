@@ -502,6 +502,374 @@ async def test_original_approval_result_is_fenced_after_owner_expiry(frozen_appr
 
 
 @pytest.mark.asyncio
+async def test_stage17_does_not_serialize_new_finalization_fields(frozen_approval_result):
+    import json
+
+    h = frozen_approval_result
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    assert stage.schema_version == 17
+    assert "approval_finalizations" not in stage.model_dump(mode="json")
+    assert "approval_finalizations" not in json.loads(stage.model_dump_json())
+
+
+async def queue_approval_finalization(h):
+    from tests.test_framework_approval_recovery import expire, run_delivery
+
+    terminal = await expire(h, h.result_task)
+    reconciler = await h.tasks.ensure_framework_reconciliation(h.result_task.id)
+    assert reconciler is not None
+    await run_delivery(h, reconciler.id)
+    reconciled = await h.tasks.get(reconciler.id)
+    assert reconciled.status == "completed", reconciled.error_code
+    return terminal, await h.tasks.get(reconciled.result_payload["successor_task_id"])
+
+
+@pytest.mark.asyncio
+async def test_finalization_proof_cannot_be_used_at_the_native_runtime_port(frozen_approval_result):
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    task = await h.tasks.claim(successor.id, worker_id="narrow-proof", expected_binding=h.binding)
+    await h.tasks.begin(task, resource_id="finalization-only", fencing_token=7)
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    with framework_owner_scope(task.runtime_owner), pytest.raises(FrameworkApprovalRecoveryRequired):
+        await h.runtime.resume_framework_approval(await h.store.get_session(h.session_id),
+            task.reference_id, task.input["decision_id"])
+    assert h.adapter_requests == requests and h.effects == effects
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+async def test_finalization_proof_rejects_unknown_authority_before_claim(frozen_approval_result):
+    import json
+    from tests.test_framework_approval_recovery import run_delivery
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    proof = {**successor.input["recovery_proof"], "native_consumed": True}
+    # Preserve parent/child equality to exercise the scoped format contract,
+    # not merely the durable-parent comparison.
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        payload = {**successor.input, "recovery_proof": proof}
+        cur.execute(f"UPDATE {h.tasks._tasks} SET input_payload=%s::jsonb,input_hash=%s WHERE id=%s",
+            (json.dumps(payload), approval_value_hash(payload), successor.id))
+        cur.execute(f"UPDATE {h.tasks._tasks} SET result_payload=jsonb_set(result_payload,'{{proof}}',%s::jsonb) WHERE id=%s",
+            (json.dumps(proof), successor.parent_task_id))
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    await run_delivery(h, successor.id)
+    rejected = await h.tasks.get(successor.id)
+    assert rejected.status == "recovery_required" and rejected.attempt_no == 0
+    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert h.adapter_requests == requests and h.effects == effects
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["project_id", "trace_id", "approval", "input_hash"])
+async def test_finalization_successor_preserves_the_original_task_envelope(frozen_approval_result, changed):
+    import json
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        if changed == "approval":
+            payload = deepcopy(successor.input)
+            payload["approval"]["reason"] = "not the original approval"
+            cur.execute(f"UPDATE {h.tasks._tasks} SET input_payload=%s::jsonb,input_hash=%s WHERE id=%s",
+                (json.dumps(payload), approval_value_hash(payload), successor.id))
+        elif changed == "input_hash":
+            cur.execute(f"UPDATE {h.tasks._tasks} SET input_hash=%s WHERE id=%s", ("0" * 64, successor.id))
+        else:
+            cur.execute(f"UPDATE {h.tasks._tasks} SET {changed}=%s WHERE id=%s", ("foreign-envelope", successor.id))
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    # Also cover direct claim callers; a matching outbox command is checked
+    # separately by the existing dispatcher contract.
+    rejected = await h.tasks.claim(successor.id, worker_id="envelope-check", expected_binding=h.binding)
+    assert rejected.status == "recovery_required" and rejected.attempt_no == 0
+    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert h.adapter_requests == requests and h.effects == effects
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+async def test_finalization_cannot_overtake_an_explicit_interrupt(frozen_approval_result):
+    from tests.test_framework_approval_recovery import run_delivery
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    await h.store.update_status_and_mutate_metadata(h.session_id, status=None,
+        mutate=lambda metadata, status: metadata.setdefault("control", {}).update(last_interrupt_binding_id=h.binding.binding_id))
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    await run_delivery(h, successor.id)
+    rejected = await h.tasks.get(successor.id)
+    assert rejected.status == "recovery_required" and rejected.attempt_no == 0
+    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert h.adapter_requests == requests and h.effects == effects
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+async def test_finalization_rejects_a_later_claim_before_publication(frozen_approval_result):
+    from tests.test_framework_approval_recovery import expire
+    from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
+
+    h = frozen_approval_result
+    terminal = await expire(h, h.result_task)
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    # Simulate a Session advanced by another entry point; the later task
+    # itself is submitted/claimed normally, not an invented task row.
+    await h.store.update_status_and_mutate_metadata(h.session_id, status="completed",
+        mutate=lambda metadata, status: metadata.pop("pending_turn", None))
+    binding = make_binding(h.session_id, "later-claimed-turn")
+    later = await h.tasks.submit_v2(make_command(h, binding), make_payload().model_copy(update={"submit_mode": "queued"}),
+        make_message(h, binding), idempotency_key="later-claimed-turn")
+    later = await h.tasks.claim(later.id, worker_id="later-owner", expected_binding=binding)
+    assert later.status == "claimed"
+    await h.tasks.finish(later, status="completed", result_status="completed")
+    assert await h.tasks.ensure_framework_reconciliation(h.result_task.id) is None
+    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+async def test_finalization_commit_stays_readable_after_a_later_turn_claim(frozen_approval_result):
+    from src.runtime.framework_application_projection import require_application_commit
+    from tests.test_framework_approval_recovery import run_delivery
+    from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    await run_delivery(h, successor.id)
+    completed = await h.tasks.get(successor.id)
+    assert completed.status == "completed"
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    binding = make_binding(h.session_id, "later-history-turn")
+    later = await h.tasks.submit_v2(make_command(h, binding), make_payload(), make_message(h, binding),
+        idempotency_key="later-history-turn")
+    later = await h.tasks.claim(later.id, worker_id="later-history-owner", expected_binding=binding)
+    assert later.status == "claimed"
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"SELECT * FROM {h.settings.database.postgres_session_table} WHERE id=%s", (h.session_id,))
+        proof = require_application_commit(cur, h.settings, cur.fetchone(), h.binding, stage)
+    assert proof.task_id == successor.id and proof.output_message_id == h.result_asset.assistant_message_id
+    assert h.stages.get(h.initial_task_id, h.session_id) == stage
+    assert await h.tasks.get(successor.id) == completed
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["result", "attempt", "epoch", "budget", "format", "owner", "pending"])
+async def test_finalization_admission_drift_is_rejected_before_claim(frozen_approval_result, changed):
+    from tests.test_framework_approval_recovery import run_delivery
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    record = stage.model_dump(mode="json")
+    link = record["approval_finalizations"][-1]
+    if changed == "result":
+        link["result_sha256"] = "0" * 64
+    elif changed == "attempt":
+        link["predecessor_attempt_id"] += "-foreign"
+    elif changed == "epoch":
+        link["predecessor_owner_epoch"] += 1
+    elif changed == "budget":
+        link["budget_sha256"] = "0" * 64
+    elif changed == "format":
+        record["schema_version"] = 17
+    elif changed == "owner":
+        link["owner_attempt_id"], link["owner_epoch"] = "foreign-attempt", 99
+    else:
+        await h.store.update_status_and_mutate_metadata(h.session_id, status=None,
+            mutate=lambda metadata, status: metadata.update(pending_turn={"turn_id": "foreign-turn"}))
+    replace_stage(h, record)
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    await run_delivery(h, successor.id)
+    rejected = await h.tasks.get(successor.id)
+    assert rejected.status == "recovery_required" and rejected.attempt_no == 0
+    assert h.stages._get_record(h.initial_task_id, h.session_id) == record
+    assert h.adapter_requests == requests and h.effects == effects
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+async def test_finalization_repeated_expiry_keeps_each_original_attempt(frozen_approval_result, monkeypatch):
+    from tests.test_framework_approval_recovery import expire, run_delivery
+    from src.runtime.store import ContinuationLeaseLostError
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    history = [terminal]
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    for index in range(3):
+        task = await h.tasks.claim(successor.id, worker_id=f"lost-finalizer-{index}", expected_binding=h.binding)
+        await h.tasks.begin(task, resource_id="missing-projection", fencing_token=index + 7)
+        assert await h.results.load(task.runtime_owner) == h.result_asset
+        history.append(await expire(h, task))
+        with pytest.raises(ContinuationLeaseLostError):
+            await h.results.load(task.runtime_owner)
+        reconciler = await h.tasks.ensure_framework_reconciliation(task.id)
+        assert reconciler is not None
+        await run_delivery(h, reconciler.id)
+        reconciled = await h.tasks.get(reconciler.id)
+        assert reconciled.status == "completed", reconciled.error_code
+        successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Repeated takeover cannot rerun native execution or verification")
+    monkeypatch.setattr(h.runtime, "resume_framework_approval", forbidden)
+    monkeypatch.setattr(h.sessions._verification_service, "build_results", forbidden)
+    await run_delivery(h, successor.id)
+    assert (await h.tasks.get(successor.id)).status == "completed"
+    for original in history:
+        assert await h.tasks.get(original.id) == original
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    assert len(stage.approval_finalizations) == 4 and stage.phase == "projected"
+    assert stage.source_manifest["runtime_result_asset"] == h.result_asset.model_dump(mode="json")
+    assert h.adapter_requests == requests and h.effects == effects
+
+
+@pytest.mark.asyncio
+async def test_finalization_resource_deferral_reclaims_only_an_unstarted_attempt(frozen_approval_result):
+    from tests.test_framework_approval_recovery import run_delivery
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    first = await h.tasks.claim(successor.id, worker_id="waiting-finalizer", expected_binding=h.binding)
+    await h.tasks.defer(first, "controlled unavailable resource")
+    await run_delivery(h, successor.id)
+    completed = await h.tasks.get(successor.id)
+    assert completed.status == "completed" and completed.attempt_no == 2
+    assert completed.attempt_id != first.attempt_id
+    assert await h.tasks.get(h.result_task.id) == terminal
+    assert h.stages.get(h.initial_task_id, h.session_id).approval_finalizations[-1].owner_attempt_id == completed.attempt_id
+
+
+@pytest.mark.asyncio
+async def test_finalization_publication_rolls_back_its_stage_grant_and_outbox(frozen_approval_result, monkeypatch):
+    from tests.test_framework_approval_recovery import expire
+
+    h = frozen_approval_result
+    terminal = await expire(h, h.result_task)
+    reconciler = await h.tasks.ensure_framework_reconciliation(h.result_task.id)
+    task = await h.tasks.claim(reconciler.id, worker_id="atomic-finalizer", expected_binding=h.binding)
+    await h.tasks.begin(task, resource_id="atomic-publication", fencing_token=5)
+    before = h.stages.get(h.initial_task_id, h.session_id)
+    append = h.tasks._event
+
+    def fail(cur, row, event_type, payload):
+        if event_type == "framework.recovery_succeeded":
+            raise ConnectionError("injected finalization publication rollback")
+        return append(cur, row, event_type, payload)
+
+    with monkeypatch.context() as patch:
+        patch.setattr(h.tasks, "_event", fail)
+        with pytest.raises(ConnectionError, match="publication rollback"):
+            await h.runtime.reconcile_framework_task(task, tasks=h.tasks)
+    assert h.stages.get(h.initial_task_id, h.session_id) == before
+    assert not [item for item in await h.tasks.list_session(h.session_id) if item.operation == "approval_recover"]
+    assert (await h.tasks.get(task.id)).status == "running"
+    assert await h.tasks.get(h.result_task.id) == terminal
+
+
+@pytest.mark.asyncio
+async def test_independent_worker_consumes_only_the_original_approval_asset(frozen_approval_result):
+    from tests.test_framework_partial_projection_recovery import complete_in_new_process
+
+    h = frozen_approval_result
+    terminal, successor = await queue_approval_finalization(h)
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    await complete_in_new_process(h, successor)
+    completed = await h.tasks.get(successor.id)
+    assert completed.status == "completed"
+    assert await h.tasks.get(h.result_task.id) == terminal
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    assert stage.phase == "projected" and stage.source_manifest["runtime_result_asset"] == h.result_asset.model_dump(mode="json")
+    assert h.adapter_requests == requests and h.effects == effects
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("point", ["asset", "snapshot", "application_commit"])
+async def test_approval_asset_successor_only_finalizes_the_original_result(frozen_approval_result, monkeypatch, point):
+    from tests.test_framework_approval_recovery import expire, run_delivery
+    from src.runtime.framework_application_projection import require_application_commit
+
+    h = frozen_approval_result
+    asset = h.result_asset
+    original_snapshot = None
+    if point != "asset":
+        values = dict(session=await h.store.get_session(h.session_id), runtime_result=asset.runtime_result.restore(),
+            assistant_message_id=asset.assistant_message_id, user_message_override=asset.user_message,
+            turn_lease_token=h.result_task.lease_token, projection_owner=h.result_task.runtime_owner, projection_asset=asset)
+        with framework_owner_scope(h.result_task.runtime_owner), monkeypatch.context() as patch:
+            if point == "snapshot":
+                async def fail(*args, **kwargs):
+                    raise ConnectionError("injected before final Session transaction")
+                patch.setattr(h.store, "save_session_with_events", fail)
+                with pytest.raises(ConnectionError, match="before final Session transaction"):
+                    await h.sessions._finalize_runtime_result(**values)
+            else:
+                await h.sessions._finalize_runtime_result(**values)
+        original_snapshot = await h.store.get_latest_snapshot(h.session_id)
+    original = h.stages.get(h.initial_task_id, h.session_id)
+    requests, effects = list(h.adapter_requests), list(h.effects)
+    budget = await h.calls.snapshot(h.binding)
+    original_events = await h.store.list_events(h.session_id)
+    terminal = await expire(h, h.result_task)
+
+    async def forbidden(*args, **kwargs):
+        raise AssertionError("Original approval result cannot rerun graph/model/verification/orchestration")
+
+    monkeypatch.setattr(h.runtime, "resume_framework_approval", forbidden)
+    monkeypatch.setattr(h.runtime, "execute_turn", forbidden)
+    monkeypatch.setattr(h.sessions._verification_service, "build_results", forbidden)
+    monkeypatch.setattr(h.sessions._input_orchestrator_service, "orchestrate_async", forbidden)
+    if point == "application_commit":
+        monkeypatch.setattr(h.sessions, "_finalize_runtime_result", forbidden)
+    reconciliation = await h.tasks.ensure_framework_reconciliation(h.result_task.id)
+    assert reconciliation is not None
+    await run_delivery(h, reconciliation.id)
+    reconciled = await h.tasks.get(reconciliation.id)
+    assert reconciled.status == "completed", reconciled.error_code
+    successor_id = reconciled.result_payload["successor_task_id"]
+    successor = await h.tasks.get(successor_id)
+    assert successor.input["recovery_proof"]["scope"] == "application_finalization"
+    await run_delivery(h, successor_id)
+    completed = await h.tasks.get(successor_id)
+    assert completed.status == "completed", completed.error_code
+    saved = h.stages.get(h.initial_task_id, h.session_id)
+    assert saved.phase == "projected" and saved.schema_version == 18
+    assert saved.source_manifest["runtime_result_asset"] == original.source_manifest["runtime_result_asset"]
+    assert saved.source_manifest["approval_graph_inputs"] == original.source_manifest["approval_graph_inputs"]
+    snapshot = await h.store.get_latest_snapshot(h.session_id)
+    session = await h.store.get_session(h.session_id)
+    assert snapshot.id == asset.runtime_result.snapshot.id and snapshot.stage == "completed"
+    if original_snapshot is not None:
+        assert snapshot == original_snapshot
+    assert next(item for item in session.messages if item.id == asset.assistant_message_id).content == asset.runtime_result.output_text
+    assert len({item.id for item in session.messages}) == len(session.messages)
+    assert await h.tasks.get(h.result_task.id) == terminal
+    assert await h.calls.snapshot(h.binding) == budget
+    assert h.adapter_requests == requests and h.effects == effects
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"SELECT * FROM {h.settings.database.postgres_session_table} WHERE id=%s", (h.session_id,))
+        commit = require_application_commit(cur, h.settings, cur.fetchone(), h.binding, saved)
+    assert commit.task_id == (h.result_task.id if point == "application_commit" else successor_id)
+    assert commit.output_message_id == asset.assistant_message_id
+    events = await h.store.list_events(h.session_id)
+    assert len([event for event in events if event.type == "turn.completed"
+        and event.payload.get("session_status") == "completed"]) == 1
+    for event in original_events:
+        assert next(item for item in events if item.id == event.id) == event
+    await run_delivery(h, successor_id)
+    assert h.stages.get(h.initial_task_id, h.session_id) == saved
+    assert await h.store.list_events(h.session_id) == events
+    assert await h.tasks.get(successor_id) == completed
+
+
+@pytest.mark.asyncio
 async def test_frozen_approval_result_never_receives_a_native_replay_successor(frozen_approval_result):
     from tests.test_framework_approval_recovery import expire, run_delivery
 
@@ -516,14 +884,13 @@ async def test_frozen_approval_result_never_receives_a_native_replay_successor(f
     reconciliation = next(item for item in await h.tasks.list_session(h.session_id)
         if item.operation == "framework_reconcile" and item.reference_id == task.id)
     await run_delivery(h, reconciliation.id)
-    rejected = await h.tasks.get(reconciliation.id)
-    assert rejected.status == "recovery_required", rejected.result_payload
-    assert rejected.error_code == "FrameworkApprovalRecoveryRequired"
-    assert rejected.result_payload is None
-    assert not [item for item in await h.tasks.list_session(h.session_id)
-        if item.operation == "approval_recover"]
+    reconciled = await h.tasks.get(reconciliation.id)
+    assert reconciled.status == "completed", reconciled.error_code
+    successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
+    assert successor.input["recovery_proof"]["scope"] == "application_finalization"
+    assert "native_consumed" not in successor.input["recovery_proof"]
     assert await h.tasks.get(task.id) == terminal
-    assert h.stages.get(h.initial_task_id, h.session_id) == original
+    assert h.stages.get(h.initial_task_id, h.session_id).source_manifest == original.source_manifest
     assert h.adapter_requests == requests and h.effects == effects
     # Safety rejection is not a retry instruction or permission to invent a
     # second reconciliation lineage.
@@ -542,6 +909,8 @@ async def test_previously_queued_native_successor_cannot_claim_a_frozen_result(f
     # its real publication transaction rather than inventing task/proof rows.
     with monkeypatch.context() as patch:
         patch.setattr(recovery, "require_native_recovery_scope", lambda *args: None, raising=False)
+        import src.runtime.framework_approval_finalization as finalization
+        patch.setattr(finalization, "prepare_approval_finalization", lambda *args: None)
         await run_delivery(h, reconciliation.id)
     successor_id = (await h.tasks.get(reconciliation.id)).result_payload["successor_task_id"]
     original = h.stages.get(h.initial_task_id, h.session_id)

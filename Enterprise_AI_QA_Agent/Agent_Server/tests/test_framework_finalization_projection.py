@@ -292,6 +292,29 @@ async def test_changed_admitted_input_is_not_signed_as_original_result(finalizat
 
 
 @pytest.mark.asyncio
+async def test_ack_only_reader_does_not_acquire_result_write_authority(finalization_result):
+    from src.runtime.framework_application_projection import load_committed_projection
+
+    h = finalization_result
+    with framework_owner_scope(h.task.runtime_owner):
+        await h.sessions._finalize_runtime_result(**h.result_values)
+    assert await h.store.renew_turn_execution(h.session_id, h.task.lease_token, 0)
+    assert (await h.tasks.claim(h.task.id, worker_id="read-expiry", expected_binding=h.binding)).status == "recovery_required"
+    successor = await h.tasks.ensure_framework_message_recovery(h.task.id)
+    assert successor is not None
+    task = await h.tasks.claim(successor.id, worker_id="ack-reader", expected_binding=h.binding)
+    await h.tasks.begin(task, resource_id="ack-read", fencing_token=9)
+    original = await stage(h, task)
+    assert original.recoveries[-1].resume_phase == "runtime_submitted"
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="owner"):
+        await FrameworkRuntimeResults(h.tasks).load(task.runtime_owner)
+    proof, snapshot, assistant = await load_committed_projection(h.settings, task.runtime_owner)
+    assert proof.snapshot_id == snapshot.id == h.asset.runtime_result.snapshot.id
+    assert assistant.id == h.asset.assistant_message_id
+    assert await stage(h, task) == original
+
+
+@pytest.mark.asyncio
 async def test_committed_verification_and_tool_messages_allow_ack_only_successor(finalization_result):
     from src.infrastructure.redis_task_queue import QueuedTask
     from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities

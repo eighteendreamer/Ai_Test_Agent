@@ -4,7 +4,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_serializer
 
 
 class FrameworkMessageRecoveryLink(BaseModel):
@@ -24,10 +24,27 @@ class FrameworkMessageRecoveryLink(BaseModel):
     result_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
 
 
+class FrameworkApprovalFinalizationLink(FrameworkMessageRecoveryLink):
+    resume_phase: Literal["finalizing"] = "finalizing"
+    owner_attempt_id: str | None = Field(default=None, min_length=1)
+    owner_epoch: int | None = Field(default=None, ge=1)
+
+
+class FrameworkApprovalFinalizationProof(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[2] = 2
+    scope: Literal["application_finalization"] = "application_finalization"
+    origin_task_id: str = Field(min_length=1)
+    origin_attempt_id: str = Field(min_length=1)
+    decision_id: str = Field(min_length=1)
+    finalization: FrameworkMessageRecoveryLink
+
+
 class FrameworkMessageStage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17] = 3
+    schema_version: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18] = 3
     task_id: str
     binding_id: str
     input_sha256: str
@@ -41,8 +58,16 @@ class FrameworkMessageStage(BaseModel):
     execution_sha256: str | None = None
     result_reference: str | None = None
     recoveries: list[FrameworkMessageRecoveryLink] = Field(default_factory=list)
+    approval_finalizations: list[FrameworkApprovalFinalizationLink] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_facts(self, handler):
+        value = handler(self)
+        if self.schema_version < 18 and not self.approval_finalizations:
+            value.pop("approval_finalizations", None)
+        return value
 
     @property
     def current_task_id(self):

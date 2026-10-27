@@ -26,7 +26,15 @@ APPROVAL_EXECUTIONS = frozenset({"approval_resume", "approval_recover"})
 RECOVERY_TASKS = APPROVAL_EXECUTIONS | {"framework_reconcile"}
 
 
+def _successor_task_id(operation, parent_id, attempt_id):
+    return str(uuid5(NAMESPACE_URL, f"framework:{operation}:{parent_id}:{attempt_id}"))
+
+
 def require_recovery_origin(cur, tasks, session, binding, origin):
+    from src.runtime.framework_approval_finalization import prepare_approval_finalization
+
+    if prepare_approval_finalization(cur, tasks._settings, session, binding, origin) is not None:
+        return
     pending = (session["metadata"] or {}).get("pending_turn") or {}
     control = (session["metadata"] or {}).get("control") or {}
     if (origin["operation"] not in APPROVAL_EXECUTIONS or origin["status"] not in {"failed", "recovery_required"}
@@ -109,7 +117,15 @@ def require_successor_proof(cur, settings, row):
         or proof.get("origin_attempt_id") != payload.get("origin_attempt_id")
         or proof.get("decision_id") != payload.get("decision_id")):
         raise FrameworkApprovalRecoveryRequired("Recovery successor has no matching durable reconciliation proof")
-    require_native_recovery_scope(cur, settings, RuntimeBinding.model_validate(row["runtime_binding"]))
+    if proof.get("scope") == "application_finalization":
+        from src.runtime.framework_approval_finalization import validate_finalization_link
+
+        validate_finalization_link(cur, settings, row)
+    else:
+        if proof.get("schema_version") != 1 or proof.get("scope") is not None:
+            raise FrameworkApprovalRecoveryRequired("Native recovery proof has an unsupported scope or format")
+        require_native_recovery_scope(cur, settings, RuntimeBinding.model_validate(row["runtime_binding"]))
+    return proof
 
 
 def require_native_recovery_scope(cur, settings, binding):
@@ -137,7 +153,7 @@ class FrameworkApprovalRecovery:
 
     def _publish(self, cur, origin, *, operation, reference_id, parent_id, input_payload):
         tasks = self._tasks
-        task_id = str(uuid5(NAMESPACE_URL, f"framework:{operation}:{parent_id}:{origin['attempt_id']}"))
+        task_id = _successor_task_id(operation, parent_id, origin["attempt_id"])
         command = AgentTaskCommandV2(task_id=task_id, operation=operation, session_id=origin["session_id"],
             turn_id=origin["turn_id"], project_id=origin["project_id"], request_id=origin["request_id"],
             trace_id=origin["trace_id"], run_id=origin["run_id"], run_item_id=origin["run_item_id"],
@@ -231,22 +247,43 @@ class FrameworkApprovalRecovery:
                 raise FrameworkApprovalRecoveryRequired("Reconciliation differs from its owned task")
             origin = require_reconciliation_claim(cur, tasks, session, owner.binding, row,
                 {"task_id": task.id, "attempt_id": owner.attempt_id})
-            require_native_recovery_scope(cur, self._settings, owner.binding)
-            plan, consumed = self._continuation.inspect_decision_in_transaction(cur, owner.binding, origin)
-            cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} "
-                "WHERE session_id=%s AND turn_id=%s ORDER BY id FOR UPDATE", (task.session_id, task.turn_id))
-            jobs = cur.fetchall()
-            from src.runtime.framework_approval_continuation import TERMINAL_JOBS
+            from src.runtime.framework_approval_finalization import prepare_approval_finalization, _save
+            from src.schemas.framework_message_stage import FrameworkApprovalFinalizationLink, FrameworkApprovalFinalizationProof
 
-            for job in jobs:
-                if (job["metadata"].get("framework_binding_id") != owner.binding.binding_id
-                    or (job["status"] not in TERMINAL_JOBS
-                        and not (job["status"] == "waiting_approval" and job["started_at"] is None))):
-                    raise FrameworkApprovalRecoveryRequired("Turn has unknown tool effects; reconciliation cannot dispatch")
-            proof = {"schema_version": 1, "origin_task_id": origin["id"], "origin_attempt_id": origin["attempt_id"],
-                "decision_id": plan.receipt.decision_id, "decision_hash": plan.receipt.decision_hash,
-                "native_consumed": consumed, "tool_job_id": plan.job.id, "tool_job_status": plan.job.status.value,
-                "tool_output_hash": approval_value_hash(plan.job.output_payload)}
+            prepared = prepare_approval_finalization(cur, self._settings, session, owner.binding, origin)
+            if prepared is None:
+                require_native_recovery_scope(cur, self._settings, owner.binding)
+                plan, consumed = self._continuation.inspect_decision_in_transaction(cur, owner.binding, origin)
+                cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} "
+                    "WHERE session_id=%s AND turn_id=%s ORDER BY id FOR UPDATE", (task.session_id, task.turn_id))
+                jobs = cur.fetchall()
+                from src.runtime.framework_approval_continuation import TERMINAL_JOBS
+
+                for job in jobs:
+                    if (job["metadata"].get("framework_binding_id") != owner.binding.binding_id
+                        or (job["status"] not in TERMINAL_JOBS
+                            and not (job["status"] == "waiting_approval" and job["started_at"] is None))):
+                        raise FrameworkApprovalRecoveryRequired("Turn has unknown tool effects; reconciliation cannot dispatch")
+                proof = {"schema_version": 1, "origin_task_id": origin["id"], "origin_attempt_id": origin["attempt_id"],
+                    "decision_id": plan.receipt.decision_id, "decision_hash": plan.receipt.decision_hash,
+                    "native_consumed": consumed, "tool_job_id": plan.job.id, "tool_job_status": plan.job.status.value,
+                    "tool_output_hash": approval_value_hash(plan.job.output_payload)}
+            else:
+                stage, asset, budget, predecessor_epoch = prepared
+                cur.execute("SELECT clock_timestamp() AS now")
+                now = cur.fetchone()["now"]
+                successor_id = _successor_task_id("approval_recover", task.id, origin["attempt_id"])
+                link = FrameworkApprovalFinalizationLink(task_id=successor_id, predecessor_task_id=origin["id"],
+                    predecessor_attempt_id=origin["attempt_id"], predecessor_owner_epoch=predecessor_epoch,
+                    budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now,
+                    source_sha256=asset.source_sha256, execution_sha256=asset.execution_sha256,
+                    model_calls_sha256=asset.model_calls_sha256, result_reference=asset.runtime_result.snapshot.id,
+                    result_sha256=asset.asset_sha256)
+                proof = FrameworkApprovalFinalizationProof(origin_task_id=origin["id"], origin_attempt_id=origin["attempt_id"],
+                    decision_id=origin["input_payload"]["decision_id"],
+                    finalization=link.model_dump(mode="json", exclude={"owner_attempt_id", "owner_epoch"})).model_dump(mode="json")
+                _save(cur, self._settings, stage.model_copy(update={"schema_version": 18,
+                    "approval_finalizations": [*stage.approval_finalizations, link], "updated_at": now}))
             successor = self._publish(cur, origin, operation="approval_recover", reference_id=origin["reference_id"],
                 parent_id=task.id, input_payload={**origin["input_payload"], "origin_task_id": origin["id"],
                     "origin_attempt_id": origin["attempt_id"], "reconciliation_task_id": task.id, "recovery_proof": proof})

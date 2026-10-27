@@ -110,6 +110,26 @@ def validate_message_stage(record):
         result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
         if result.task_id in manifest.get("approval_graph_inputs", {}) and stage.schema_version < 17:
             raise FrameworkMessageStageRecoveryRequired("Approval runtime result has no compatible message stage format")
+    if stage.approval_finalizations:
+        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+        if (stage.schema_version < 18 or "runtime_result_asset" not in manifest
+            or stage.phase not in {"runtime_submitted", "projected"}):
+            raise FrameworkMessageStageRecoveryRequired("Approval finalization has no compatible message stage format")
+        result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        if result.task_id not in manifest.get("approval_graph_inputs", {}):
+            raise FrameworkMessageStageRecoveryRequired("Approval finalization has no original approval result")
+        predecessor, attempt, epoch = result.task_id, result.attempt_id, result.owner_epoch
+        for link in stage.approval_finalizations:
+            if (link.predecessor_task_id != predecessor or link.predecessor_attempt_id != attempt
+                or link.predecessor_owner_epoch != epoch or link.task_id in identities
+                or link.source_sha256 != result.source_sha256 or link.execution_sha256 != stage.execution_sha256
+                or link.model_calls_sha256 != result.model_calls_sha256 or link.result_sha256 != result.asset_sha256
+                or link.result_reference != result.runtime_result.snapshot.id
+                or (link.owner_attempt_id is None) != (link.owner_epoch is None)):
+                raise FrameworkMessageStageRecoveryRequired("Approval finalization lineage differs from its original result")
+            predecessor, attempt, epoch = link.task_id, link.owner_attempt_id, link.owner_epoch
+            identities.add(link.task_id)
     if "application_projection_commit" in manifest:
         from src.schemas.framework_projection_commit import FrameworkProjectionCommit
 
@@ -276,6 +296,11 @@ class FrameworkMessageStages:
     async def projected(self, owner, reference):
         return await self._advance(owner, expected="runtime_submitted", phase="projected",
             values={"result_reference": reference})
+
+    async def projected_approval(self, owner, reference):
+        from src.runtime.framework_approval_finalization import acknowledge_finalization
+
+        return await asyncio.to_thread(acknowledge_finalization, self._settings, owner, reference)
 
     async def resume_finalizing(self, owner):
         """Adopt only application writes after checking the successor's proof."""

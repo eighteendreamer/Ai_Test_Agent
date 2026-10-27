@@ -1352,6 +1352,11 @@ class PostgresAgentTaskStore:
                 row = {**row, "runtime_owner": RuntimeExecutionOwner(
                     binding=saved_binding, owner_epoch=cur.fetchone()["owner_epoch"],
                     owner_token=token, task_id=task_id, attempt_id=attempt_id, worker_id=worker_id)}
+                if row["operation"] == "approval_recover":
+                    from src.runtime.framework_approval_finalization import is_finalization_task, adopt_finalization_owner
+
+                    if is_finalization_task(row):
+                        adopt_finalization_owner(cur, self._settings, row, row["runtime_owner"])
             self._event(cur, row, "agent_task.claimed", ({
                 "binding_id": saved_binding.binding_id,
                 "owner_epoch": row["runtime_owner"].owner_epoch,

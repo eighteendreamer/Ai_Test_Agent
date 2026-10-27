@@ -88,6 +88,16 @@ def lock_runtime_result_stage(cur, settings, owner):
         and stage.owner_attempt_id == owner.attempt_id and stage.owner_epoch == owner.owner_epoch)
     preparation = _approval_preparation(stage, task) if task["operation"] in APPROVAL_TASK_OPERATIONS else None
     approval_owner = (preparation is not None and preparation.owner_epoch == owner.owner_epoch)
+    if task["operation"] == "approval_recover" and stage.approval_finalizations:
+        from src.runtime.framework_approval_finalization import is_finalization_task, validate_finalization_link
+        from src.runtime.framework_approval_recovery import require_successor_proof
+
+        if is_finalization_task(task):
+            require_successor_proof(cur, settings, task)
+            validate_finalization_link(cur, settings, task, current=True)
+            link = stage.approval_finalizations[-1]
+            approval_owner = ((link.task_id, link.owner_attempt_id, link.owner_epoch)
+                == (owner.task_id, owner.attempt_id, owner.owner_epoch))
     _require(message_owner or approval_owner, "Runtime result has no matching active message or approval owner")
     return stage, task
 
@@ -130,6 +140,15 @@ def _require_prepared_identity(stage, task, asset):
 
 def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
     """Read original facts before claim too; this grants no execution ownership."""
+    from src.runtime.framework_approval_finalization import is_finalization_task, validate_finalization_link
+
+    if task["operation"] == "approval_recover" and is_finalization_task(task):
+        from src.runtime.framework_approval_recovery import require_successor_proof
+
+        require_successor_proof(cur, settings, task)
+        admitted, asset, producer, link, session = validate_finalization_link(cur, settings, task)
+        _require(raw == (admitted.source_manifest or {}).get(RESULT_KEY), "Approval finalization original asset changed")
+        return asset
     asset = FrameworkRuntimeResultAsset.model_validate(raw)
     lineage = runtime_result_lineage(stage, task)
     _require(asset.binding == binding and asset.input_sha256 == stage.input_sha256
@@ -216,7 +235,8 @@ class FrameworkRuntimeResults:
                 raw = (stage.source_manifest or {}).get(RESULT_KEY)
                 _require(raw is not None, "Original runtime result asset is missing")
                 asset = self._validate(cur, owner, stage, task, raw)
-                if stage.recoveries and stage.recoveries[-1].resume_phase == "finalizing":
+                if ((stage.recoveries and stage.recoveries[-1].resume_phase == "finalizing")
+                    or (stage.approval_finalizations and stage.approval_finalizations[-1].task_id == owner.task_id)):
                     from src.runtime.framework_finalization_projection import require_partial_finalization
 
                     cur.execute(f"SELECT metadata FROM {self._settings.database.postgres_session_table} WHERE id=%s",

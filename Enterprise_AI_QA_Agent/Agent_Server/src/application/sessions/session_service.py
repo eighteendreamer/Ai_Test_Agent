@@ -299,10 +299,13 @@ class SessionService:
         """
         from src.runtime.framework_application_projection import COMMIT_KEY, load_committed_projection
 
+        approval_finalization = task.operation == "approval_recover"
+        acknowledge = stages.projected_approval if approval_finalization else stages.projected
         if COMMIT_KEY not in (stage.source_manifest or {}):
             from src.runtime.framework_runtime_results import FrameworkRuntimeResults
 
-            await stages.resume_finalizing(task.runtime_owner)
+            if not approval_finalization:
+                await stages.resume_finalizing(task.runtime_owner)
             asset = await FrameworkRuntimeResults(self._agent_task_store).load(task.runtime_owner)
             logger.info("framework_message_finalization_resuming", extra={"session_id": session.id,
                 "binding_id": task.runtime_binding.binding_id, "task_id": task.id,
@@ -311,10 +314,10 @@ class SessionService:
                 runtime_result=asset.runtime_result.restore(), assistant_message_id=asset.assistant_message_id,
                 user_message_override=asset.user_message, turn_lease_token=task.lease_token,
                 projection_owner=task.runtime_owner, projection_asset=asset)
-            await stages.projected(task.runtime_owner, response.output.id)
+            await acknowledge(task.runtime_owner, response.output.id)
             return response
 
-        commit, snapshot, assistant = await load_committed_projection(self._agent_task_store._settings, task.runtime_owner)
+        commit, snapshot, assistant = await load_committed_projection(self._agent_task_store, task.runtime_owner)
         binding = task.runtime_binding
         if assistant is None:
             # Empty output has no persisted assistant row. Keep the stable
@@ -327,7 +330,7 @@ class SessionService:
                 metadata={"turn_id": binding.turn_id, "recovered_projection": True},
             )
         reference = commit.output_message_id or commit.snapshot_id
-        await stages.projected(task.runtime_owner, reference)
+        await acknowledge(task.runtime_owner, reference)
         refreshed = await self._require_session(session.id)
         events = await self._store.list_events(session.id, limit=RECENT_CONVERSATION_EVENT_LIMIT)
         return ConversationResponse(session=await self._to_detail(refreshed), output=assistant, events=events)
@@ -390,6 +393,22 @@ class SessionService:
             await self._store.assert_turn_execution(task.session_id, task.lease_token)
             session = await self._require_session(task.session_id)
             with framework_owner_scope(task.runtime_owner):
+                from src.runtime.framework_approval_finalization import is_finalization_task
+
+                if bound and task.operation == "approval_recover" and is_finalization_task({"input_payload": task.input}):
+                    from src.runtime.framework_message_stages import FrameworkMessageStages
+
+                    stages = FrameworkMessageStages(self._agent_task_store)
+                    stage = await asyncio.to_thread(stages.get, task.id, task.session_id, include_continuations=True)
+                    stop = asyncio.Event()
+                    heartbeat = asyncio.create_task(self._keep_turn_execution_alive(session_id=task.session_id,
+                        lease_token=task.lease_token, stop_event=stop, framework_task=task))
+                    try:
+                        return await self._await_owned_execution(task.session_id, heartbeat,
+                            self._recover_projected_framework_message, session=session, task=task, stage=stage, stages=stages,
+                            ownership_monitors=(ownership_monitor,))
+                    finally:
+                        await self._stop_lease_heartbeat(task.session_id, stop, heartbeat)
                 return await self._run_owned_approval_locked(
                     session=session,
                     approval=approval,

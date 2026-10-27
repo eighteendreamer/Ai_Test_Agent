@@ -340,9 +340,10 @@ class FrameworkApprovalContinuation:
         if session["project_id"] != task["project_id"]:
             raise FrameworkApprovalRecoveryRequired("Continuation project changed after claim")
         if task["operation"] == "approval_recover":
-            from src.runtime.framework_approval_recovery import require_successor_proof
+            from src.runtime.framework_approval_recovery import require_successor_proof, require_native_recovery_scope
 
             require_successor_proof(cur, self._settings, task)
+            require_native_recovery_scope(cur, self._settings, binding)
         plan, consumed = self.inspect_decision_in_transaction(cur, binding, task)
         return plan, consumed, task
 
