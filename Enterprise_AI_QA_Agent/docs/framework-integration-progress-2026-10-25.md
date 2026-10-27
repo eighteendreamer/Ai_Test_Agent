@@ -2034,3 +2034,78 @@ $env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framew
 全量、前端、真实供应商／RustFS／领域 Runner、官方 saver conformance、E4 双制品／回滚未验收；实际 find_spec 确认 ruff／mypy／官方 conformance 未安装，没有安装新工具，compileall 不冒充 lint／类型检查。旧领域11项环境跳过继续保留，不能据三组框架集成通过宣称这些领域条件已满足。
 
 本节代码／测试／记录归属同一提交，主题为 `【fix】稳定框架工具消息的时间与续跑顺序`，实际 commit ID 以 Git 历史及交付输出为准。整体目标继续 active；下一步沿既有事件／图前准备／ToolJob 事实补完整材料与完成边界、共享确定性结果投影，不增加平行恢复链，也不提前授予无原资产自动恢复权。
+
+## 58. A2-2：原生工具消息携带完整应用投影材料（2026-10-27）
+
+基线 `189d3881b`，核对 v4、§52–57、Git 和相关实现后续接。上一轮只调整开发提示词，没有新的代码实施进展。本轮保留原 v3 文档未提交修改，不覆盖、不纳入提交；未升级依赖、修改 DDL、启动／停止服务、开放生产路由、新增付费请求或测试真实业务目标。PG／Redis 使用既有 UUID 隔离 Harness，强杀仅针对测试创建的独立进程。
+
+### 依据、有效红测与根因
+
+- v4 §9.2 要求跨图返回空窗使用的工具记录、时间和展示映射在产生时保存。§57 已固定投影时间／槽位，但治理 callback 仍只向图返回 JSON 字符串，完整 ToolExecutionRecord 只在 Runtime 内存列表；ToolJob 不能代替全部输出加工和原展示字符串。
+- 使用真实官方 Deep Agents、owner-bound saver、PG／事件 sink 增加新准备 Turn 的往返测试，首先取得 **1 failed、16 deselected，12.10秒**：工具成功完成且图终态已保存，但新连接读取的 ToolMessage.artifact 为 None。失败点是材料缺失，不是环境或 import。
+- 固定 core 1.6.10 的 `tools/base.py::_format_output` 直接保留 ToolOutputMixin；LangGraph 1.2.12 ToolNode 接受 ToolMessage；Deep Agents 0.7.13 `_message_eviction.py::_build_evicted_tool_message` 显式保留 artifact。官方 [Messages / Tool message](https://docs.langchain.com/oss/python/langchain/messages#tool-message) 将 artifact 定义为可供应用使用而不发送给模型的数据。采用这个既有载体，不另建结果存储或恢复链；在线文档仅用于机制说明，API 与行为仍由固定源码及真实测试确认。
+- 增加旧能力 Worker 对新格式审批的领取前测试，取得 **1 failed、18 deselected，9.06秒**：原 Dispatcher 只对 message／message_recover 检查 message-stage，approval_resume 会继续 claim；原版本查询也只映射原消息／消息后继，不能读取审批任务所属绑定的格式。修复职责放在既有领取前能力检查，不放到工具执行后补拒绝。
+- 本地参考 `G:\Code_Warehouse\DeepAgent-Studio\借鉴\codex\codex-rs\rollout\src\recorder.rs::persist/flush`：借鉴原事实经存储确认再继续的边界，继续复用现有事件 ACK 和原生 sync durability，不搬 JSONL、队列或调度器。本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 用于同时验证轨迹、权限、重复执行和结果，而不只检查最终答案。
+
+### 实现与模块边界
+
+1. 新 `FrameworkToolProjection` 是版本1的**原应用材料格式**，scope 固定为 `tool_projection_material_only`。包含绑定指纹、原生 source AI／namespace／provider call 身份、完整 JSON 形态的 ToolExecutionRecord、完整原 ChatMessage、原模型可见 content 字符串及完整性摘要。核对派生业务 call ID、工具、展示身份、Turn／状态／trace／ordinal；NativeToolInterrupt／已持久 link 等子类型按共同 source 身份比较，不把它们的审批附加字段误当 source 漂移。
+2. 治理 callback 仍先经过既有权限／审批／ToolJob 执行和必需事件的持久化确认。随后复用 §57 的同一展示投影，捕获实际 record 和完整 ChatMessage，再返回带 artifact 的原生 ToolMessage。原模型 content 不变，原 provider tool_call_id 不变；不是另一个工具循环、结果资产或 finalizer。
+3. `LangChainToolAdapter` 只扩展 callback 返回类型为字符串或原生 ToolMessage，继续走官方 StructuredTool；不将 Registry handler 直接交给图，也不把 artifact 拼进文本、additional_kwargs 或供应商请求。原生终态全消息比较／hash 保持不变，artifact 也参与原件比较。
+4. 新准备 Turn 由服务端设置 `framework_tool_projection_version=1`，在图前资产 feature_flags 和 initial_state 中一致冻结；使用已有 graph-input schema2，要求 **message-stage13**。新消费者支持到13，未知／不一致格式明确拒绝。无准备的旧试点和历史 pending 不增 marker、不升级格式；新输入伪造相同 context key 会被清除。新 pending 保留自己的 marker，后续逐项审批继续使用同一材料格式。
+5. Dispatcher 对 message、审批继续／恢复和 reconcile 都在 claim 前读能力；只读版本查询可通过同 Session／完整绑定的原消息读取格式，不预先解析未知严格 schema，不改变普通 message-stage get 的任务归属，不授予新的恢复权限。旧能力对象 max12 在审批领取前 defer；原任务 attempt 不增加。
+6. 实际 PG JSONB 往返测试确认 output 对象键序会改变。这里保存**原展示字符串和原模型 content**，而不是从重排对象重新渲染它们；不靠 sort_keys 改旧输出，也不放宽全文相等断言。完整 JSON record 的对象语义、原消息身份／时间及字符串均往返一致。
+
+### 已取得的端到端证据及未覆盖边界
+
+- 新连接通过官方通道物化读取正常工具和无 Job 的治理拒绝，完整 record、ChatMessage、原模型 content 和原生 archive 都一致；没有先生成结果资产／snapshot。无 Job 拒绝继续采用原已确认事件时间，不补造 Job 或 completed_at。
+- 新准备 Turn 经真实图前资产／stage13、pending_turn 和两个独立审批任务，B先执行、A后执行；两个原生材料中的完整展示消息与实际发布消息一致，槽位及原时间不变。旧无 marker 分支也回归。桥接测试继续覆盖 provider 复用调用 ID、新 AI source 与审批归属，不重执已完成兄弟工具。
+- 独立进程在真实图／治理工具／PG checkpoint 完成、Runtime 尚未获得适配器结果时暂停；父进程杀掉子进程后，经另一 saver 连接、官方 Delta 通道只读取回原材料。原 ToolJob 和记录时间一致，副作用记录一次，stage 仍为 runtime_submitted13，无 Runtime 结果资产、snapshot 或应用收尾。该用例证明工具材料跨空窗存活，**不证明完整 RuntimeTurnResult 已恢复或准入自动后继**。
+- 四种传输各自用官方 SDK 和本地 HTTP 接收实际第二轮工具响应请求：artifact 标记不在 wire body，原工具文本、调用关联和原生签名仍在。另以官方大输出 offload 路径验证 content 变化时 artifact 完整保留。
+- **原生 HITL reject 不进入治理 callback，本步不伪造该分支的 artifact**；它继续依赖原审批／ToolJob／continuation 事实。材料不是 ToolJob 副作用证明、owner 证明、应用提交证明或恢复许可；摘要能校验完整性，不是认证签名。跨 Turn 的旧材料不能凭字符串或元数据升级成当前绑定的执行权。
+- 仅本步已覆盖的完整工具输出材料有可靠原生落点。完整事件清单／完成边界及终态精确绑定、未进入 callback 的应用材料、正常／恢复共用完整确定性结果投影器，以及无原资产恢复准入仍待实施。保留原强杀测试对“材料不足不得创建恢复后继”的约束。**A2-2仍未完成，A2-3／A3／B/C/D/E/F不收缩。**
+
+### 中间失败与 Harness 同步
+
+- 初次审批材料断言取得 **1 failed、4 passed，25.56秒**：reader 将包含额外审批字段的持久 link 与共同 source 类型直接作对象相等比较。修正为共同原生身份字段比较，保留 namespace／source AI／provider call／参数全部核对。
+- 扩大 Worker 回归先后取得 **1 failed、94 passed，139.27秒**和 **1 failed、132 passed，166.36秒**。两个旧真实 Worker fixture 没有当前必需的模型预算表／冻结预算；对照 HEAD 的 semantic-input 保存已调用预算 snapshot，并非本步新增查询。改用现有 admission fixture，以实际绑定冻结预算并沿 fixture 清理；不添加生产 fallback，不更改完成／过期／调用次数断言。简化任务替身同步领取前版本查询端口。
+- 独立进程测试准备阶段曾错误生成另一个带随机 client ID 的 payload；原输入校验正确拒绝，**1 failed、15 passed，14.99秒**。改为读取实际已受理的 owner.input。随后测试等待连接的默认 Redis socket timeout 短于 BLPOP，**1 failed、15 passed，19.48秒**；沿原强杀 Harness 建立专用长等待连接，不因观察超时重新运行副作用。最终该独立强杀用例为 **1 passed、15 deselected，16.30秒**，另纳入最终契约组。
+- 新测试还修正了误从 ConversationResponse 读取 snapshot、插入测试时把原 copied.schema_version 断言落到新函数的问题，分别为 **1 failed、15 passed，68.33秒**和 **1 failed、23 passed，83.35秒**；这些是本轮测试脚手架错误，不计有效功能红测，原断言保留在正确测试中。
+- 扩展投影组取得 **1 failed、146 passed，546.44秒**：真实新准备 Worker 已写 stage13，观察强杀旧断言仍要求12。逐项核对所有精确12断言，仅同步三个真实新准备 Worker 场景为13并要求 feature flag1；历史 prepared schema2／stage12 fixture 和旧 reader max12 断言保留。未改成宽泛 >= 断言或跳过。
+
+### v4 对应、兼容部署与剩余出口
+
+| v4 阶段／条款 | 本节代码与测试 | 已实现／仍待验收 |
+| --- | --- | --- |
+| A2-2，§9.2，H05/H11/H12 | FrameworkToolProjection、Runtime callback、tool_projection／approval_runtime／tool_bridge | 完整工具 record 与展示映射在原生消息生成时保存，真实 PG／独立进程强杀后只读获取；全结果导出和无资产恢复仍未开放 |
+| P0／审批，§7–8，H01/H02/H03 | 官方工具消息、四传输 wire、原生严格比较及逐项审批回归 | 模型 content／调用身份不变，材料不入供应商请求；不是 E3 供应商验收 |
+| A2-1，§9.4，H05/H07 | 原结果资产、snapshot／事件／观察与唯一 finalizer 回归 | 原结果仍复用原收尾，不增加第二套资产／投影链 |
+| §14／§16，H11/H12 | graph-input flag、stage13、raw version query、Dispatcher／Worker capabilities | 新旧准备／pending 格式区分，消息和审批领取前检查；实际双制品部署／备份恢复／回滚另验 |
+
+**部署限制：** 新格式写者上线前，必须先部署支持绑定级格式检查的兼容读者或隔离旧消费者。真正旧二进制对审批任务没有本节新检查，不能仅凭“stage13已设置”宣称它不会领取；本轮 max12 用例是在当前 Dispatcher 上模拟较低格式能力，不是两份真实制品的滚动演练。当前只做开发验证，未切路由，未批准生产写入新格式。无 DDL不等于已验证滚动兼容。
+
+### 最终源码验证与提交归属
+
+固定解释器实际查询仍为 Deep Agents 0.7.13、LangGraph 1.2.12、core 1.6.10、Postgres saver 3.1.2。以下后端命令均从 `G:\Code_Warehouse\Ai_Test_Agent\Enterprise_AI_QA_Agent\Agent_Server` 运行，使用 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`；各批次使用既有 UUID 隔离资源，不累计重叠范围冒充全系统覆盖。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_runtime.py tests/test_framework_graph_input_asset.py tests/test_framework_tool_bridge.py tests/test_framework_chat_models.py tests/test_framework_tool_projection.py tests/test_agent_v2_worker_contract.py tests/test_framework_terminal_gap.py tests/test_deep_agent_runtime_adapter.py -q -x -rs --tb=short
+# 206 passed，228.15秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_approval_recovery.py tests/test_framework_approval_receipts.py tests/test_framework_delta_replay_order.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_interrupts.py tests/test_framework_tool_authority.py tests/test_framework_native_terminal.py tests/test_framework_live_event_persistence.py -q -x -rs --tb=short
+# 151 passed，524.22秒，无 skip；此后仅同步测试 fixture／新 stage 断言，生产代码未再变。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_partial_projection_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 118 passed，479.57秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_snapshot_projection.py -q -x -rs --tb=short
+# 87 passed，386.78秒，无 skip。
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_message_stages.py tests/test_framework_message_recovery.py -q -x -rs --tb=short
+# 40 passed，174.62秒，无 skip。
+$env:QA_TOOL_WAIT_BATCH_DIR=Join-Path ([System.IO.Path]::GetTempPath()) ('framework-tool-projection-' + [guid]::NewGuid().ToString('N'))
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_tool_messages.py tests/test_tool_message_evidence.py tests/test_tool_runtime_heartbeat.py tests/test_tool_child_wait.py tests/test_tool_wait_batch.py tests/test_tool_operation_observation.py tests/test_approval_checkpoint_consistency.py -q -x -rs --tb=short
+# 65 passed，11 skipped，33.88秒。旧领域 PG/MySQL/RustFS／child-wait 专用环境未开启，不计通过。
+```
+
+各批完整 stdout／stderr 保留在项目 `.codex-logs/framework-tool-projection-*-2026-10-27.txt`；失败日志不覆盖为成功。新增测试沿 `.gitignore` 白名单纳入，不提交运行产物。真实供应商、真实 RustFS／领域 Runner、前端、全量、官方 saver conformance 和 E4 部署演练未验收；最高证据 E2，业务工具及模型仍为受控样本。ruff／mypy 实际未安装，不安装新工具，compileall 不冒充 lint／类型检查。
+
+续接直接核对六组原日志终态，确认 finalization 最终组为 **118 passed，479.57秒**，修正上面的运行中占位；没有重启已通过测试。当前进程清单无 pytest。根目录再次实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均通过；v4（12个围栏／30处绝对文件链接）、实施记录（156个围栏／1处绝对文件链接）结构及本地目标存在检查通过。生产调用及格式消费者检索覆盖 tool_projection marker／flag、graph-input parser、message-stage、Worker capability 与 Dispatcher；固定源码复核 `_format_output` 和 `_build_evicted_tool_message`。再次确认 ruff／mypy／官方 conformance 未安装，未宣称通过这些检查。
+
+本节代码／测试／记录归属同一提交，主题 `【feat】在原生工具消息中保存完整投影材料`，实际 commit ID 以 Git 历史及交付输出为准。整体目标保持 active；下一步补未进入 callback 的材料、完整事件完成边界和共享确定性结果投影，不凭本节局部材料扩大恢复权。

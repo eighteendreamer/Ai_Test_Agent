@@ -14,6 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_tool_projection import TOOL_PROJECTION_VERSION_KEY
 
 
 class FrameworkProjectionIdentity(BaseModel):
@@ -59,7 +60,15 @@ class _FrameworkGraphInputFields(BaseModel):
         payload = self.model_dump(mode="json", exclude={"asset_sha256"})
         if self.asset_sha256 != approval_value_hash(payload):
             raise ValueError("Graph input asset digest does not match its frozen contents")
+        version = self.feature_flags.get("tool_projection_version")
+        if "tool_projection_version" in self.feature_flags and (
+            type(version) is not int or version != 1 or self.schema_version != 2):
+            raise ValueError("Tool projection material requires its supported prepared graph format")
         return self
+
+    @property
+    def required_message_stage_version(self):
+        return 13 if "tool_projection_version" in self.feature_flags else (12 if self.schema_version == 2 else 1)
 
 
 class FrameworkGraphInputAsset(_FrameworkGraphInputFields):
@@ -80,6 +89,9 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
             or state.get("trace_id") != self.trace_id or state.get("selected_model_key") != self.model_key
             or (state.get("context_bundle") or {}).get("runtime_binding") != binding.model_dump(mode="json")):
             raise ValueError("Runtime preparation differs from its frozen graph binding or initial state")
+        version = (state.get("context_bundle") or {}).get(TOOL_PROJECTION_VERSION_KEY)
+        if version != self.feature_flags.get("tool_projection_version") or (version is not None and type(version) is not int):
+            raise ValueError("Tool projection material format differs from its frozen runtime preparation")
         return self
 
 

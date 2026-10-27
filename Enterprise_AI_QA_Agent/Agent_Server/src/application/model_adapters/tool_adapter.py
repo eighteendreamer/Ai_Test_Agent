@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
-from typing import Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable
 
 from langchain.tools import ToolRuntime
 from src.application.model_adapters.message_adapter import to_langchain_tools
 from src.schemas.agent import ToolDescriptor
 from src.schemas.tool_runtime import ModelToolCall
 from src.application.runtime.case_action_binding import action_input_schema
+
+if TYPE_CHECKING:
+    from langchain_core.messages import ToolMessage
 
 
 class LangChainToolAdapter:
@@ -52,7 +55,7 @@ class LangChainToolAdapter:
         self,
         tools: Iterable[ToolDescriptor],
         *,
-        invoke: Callable[[ToolDescriptor, ToolRuntime, dict[str, Any]], Awaitable[str]],
+        invoke: Callable[[ToolDescriptor, ToolRuntime, dict[str, Any]], Awaitable[str | ToolMessage]],
         context_bundle: dict[str, Any] | None = None,
     ) -> list[Any]:
         """Build LangChain tools whose execution callback is application-owned.

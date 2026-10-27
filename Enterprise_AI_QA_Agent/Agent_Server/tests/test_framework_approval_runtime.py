@@ -307,7 +307,11 @@ async def fresh_runtime_harness(projection_harness):
 
 
 @pytest.mark.asyncio
-async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness):
+@pytest.mark.parametrize("prepared", [False, True])
+async def test_initial_runtime_and_session_continuations_share_the_official_harness(fresh_runtime_harness, prepared):
+    from datetime import datetime
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+
     h = fresh_runtime_harness
     build_runtime(h, responses=[AIMessage(id="runtime-source", content="", tool_calls=[
         {"name": "inspect_value", "args": {"value": key}, "id": key, "type": "tool_call"}
@@ -316,8 +320,28 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="runtime-trace",
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
         model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"]})
+    inputs = []
+    if prepared:
+        from src.runtime.framework_message_stages import FrameworkMessageStages, message_source_manifest
+        from src.schemas.session import SendMessageRequest
+
+        request.trace_id = h.owner.trace_id
+        stages = FrameworkMessageStages(h.tasks)
+        await stages.begin(h.owner.runtime_owner, message_source_manifest(session, h.binding,
+            SendMessageRequest.model_validate(h.owner.input)))
+        await stages.freeze_execution(h.owner.runtime_owner, request)
+        await stages.submit_runtime(h.owner.runtime_owner)
+
+    async def freeze(raw):
+        inputs.append(raw)
+        if prepared:
+            await stages.record_graph_input(h.owner.runtime_owner, raw)
+
+    identity = FrameworkProjectionIdentity(binding=h.binding, assistant_message_id="prepared-assistant",
+        snapshot_id="prepared-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27))
     with framework_owner_scope(h.owner.runtime_owner):
-        first = await h.runtime.execute_turn(session, request)
+        first = await h.runtime.execute_turn(session, request, on_graph_input=freeze,
+            projection_identity=identity if prepared else None)
     assert len(first.approvals) == 2 and h.effects == []
     assert len(first.state["tool_results"]) == 2
     by_call = {item["metadata"]["call_id"]: item for item in first.approvals}
@@ -351,6 +375,22 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
     assert saved.metadata["pending_turn"] == {}
     assert len([message for message in saved.messages if message.metadata.get("tool_call_id")]) == 2
     assert next(message for message in saved.messages if message.id == original_tool.id) == original_tool
+    if prepared:
+        from langchain_core.messages import ToolMessage
+        from src.application.deep_agents.framework_transcript import deserialize_messages
+        from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+
+        # The server-owned feature survives pending_turn and separate approval
+        # tasks. Partial sibling results retain their original display slots.
+        assert inputs[0]["feature_flags"]["tool_projection_version"] == 1
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 13
+        snapshot = await h.store.get_latest_snapshot(h.session_id)
+        native = deserialize_messages(snapshot.graph_state["framework_messages"])
+        material = [FrameworkToolProjection.model_validate(message.artifact[TOOL_PROJECTION_KEY])
+            for message in native if isinstance(message, ToolMessage)]
+        assert len(material) == 2
+        published = {message.id: message for message in saved.messages}
+        assert all(published[item.message.id] == item.message for item in material)
 
 
 @pytest.mark.asyncio
@@ -393,3 +433,102 @@ async def test_jobless_governance_refusal_projects_original_acknowledged_event_t
     assert h.runtime._to_chat_messages(h.binding.turn_id, serialized, binding_id=h.binding.binding_id,
         event_log=[event.model_dump(mode="json") for event in saved]) == result.tool_messages
     assert len(h.adapter_requests) == 1 and h.effects == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("denied", [False, True])
+@pytest.mark.parametrize("prepared", [False, True])
+async def test_prepared_turn_checkpoints_complete_tool_projection_before_result_asset(fresh_runtime_harness, denied, prepared):
+    from datetime import datetime
+    from deepagents import create_deep_agent
+    from langchain_core.messages import ToolMessage
+    from src.application.deep_agents.framework_transcript import deserialize_messages
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+    from tests.test_framework_checkpoint_fencing import config
+
+    h = fresh_runtime_harness
+    h.registry.get("inspect_value").permission_level = "safe"
+    build_runtime(h, responses=[AIMessage(id="projection-source", content="", tool_calls=[{
+        "name": "inspect_value", "args": {"value": "original"}, "id": "original-call", "type": "tool_call"}]),
+        AIMessage(content="finished")])
+    adapter = h.runtime._deep_agent_bound_runtime_adapter
+    execute = adapter.execute
+
+    async def revoke_after_exposure(request):
+        if denied:
+            h.registry.get("inspect_value").permission_level = "restricted"
+        return await execute(request)
+
+    adapter.execute = revoke_after_exposure
+    session = await h.store.get_session(h.session_id)
+    request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="projection-trace",
+        user_message="Inspect", normalized_input="Inspect", mode_key="default", agent_key="coordinator",
+        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"],
+            "framework_tool_projection_version": 1})
+    identity = FrameworkProjectionIdentity(binding=h.binding, assistant_message_id="original-assistant",
+        snapshot_id="original-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27))
+    inputs = []
+
+    async def freeze(value):
+        inputs.append(value)
+
+    sink = SessionEventSink(h.store, h.session_id, capacity=1, fence={}, runtime_owner=h.owner.runtime_owner)
+    with framework_owner_scope(h.owner.runtime_owner):
+        result = await sink.run(h.runtime.execute_turn, session, request,
+            projection_identity=identity if prepared else None, on_graph_input=freeze)
+        async with h.provider.open(owner=h.owner.runtime_owner) as saver:
+            # Rebuild only for a read, using a fresh saver connection. No graph,
+            # model or tool invocation is used to recover the original material.
+            reader = create_deep_agent(model=Model(responses=[AIMessage(content="must not run")]), checkpointer=saver)
+            persisted = await reader.aget_state(config(h))
+    native, = [message for message in persisted.values["messages"] if isinstance(message, ToolMessage)]
+    if not prepared:
+        assert native.artifact is None and "tool_projection_version" not in inputs[0]["feature_flags"]
+        assert "framework_tool_projection_version" not in result.state["context_bundle"]
+        return
+    assert isinstance(native.artifact, dict), "governed callback loses the complete application projection before checkpoint"
+    projection = native.artifact["enterprise_qa_tool_projection"]
+    from src.schemas.tool_runtime import ToolExecutionRecord
+    assert projection["record"] == ToolExecutionRecord.model_validate(result.state["tool_results"][0]).model_dump(mode="json")
+    assert projection["message"] == result.tool_messages[0].model_dump(mode="json")
+    assert projection["model_content"] == native.content
+    assert projection["source"]["source_message_id"] == "projection-source"
+    assert projection["source"]["tool_call_id"] == "original-call"
+    assert projection["binding_fingerprint"] == h.binding.fingerprint
+    assert inputs[0]["feature_flags"]["tool_projection_version"] == 1
+    restored, = [message for message in deserialize_messages(result.state["framework_messages"]) if isinstance(message, ToolMessage)]
+    assert restored == native
+    assert await h.store.get_latest_snapshot(h.session_id) is None
+    assert len(h.adapter_requests) == 1 and len(h.effects) == (0 if denied else 1)
+
+
+@pytest.mark.asyncio
+async def test_old_reader_defers_new_tool_material_approval_before_claim(runtime_harness, monkeypatch):
+    from src.infrastructure.postgres_runtime import postgres_connect
+    from src.infrastructure.redis_task_queue import QueuedTask
+    from src.runtime.framework_message_stages import message_stage_table
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+    from src.runtime.task_deferred import TaskDeferred
+    from src.schemas.agent_task import AgentTaskCommandV2
+    from src.schemas.session import ApprovalDecisionRequest
+
+    h = runtime_harness
+    command = make_command(h, h.binding).model_copy(update={"operation": "approval_resume",
+        "reference_id": h.proposals["B"].approval.id})
+    queued = await h.tasks.submit_approval_v2(command, command.reference_id,
+        ApprovalDecisionRequest(decision="approved"))
+    # The format reader must inspect the original message's binding, not look
+    # for a message-stage row owned by this separate approval task.
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=jsonb_set(record,'{{schema_version}}','13') "
+            "WHERE binding_id=%s", (h.binding.binding_id,))
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("old format capability must defer before claiming the approval")
+
+    monkeypatch.setattr(h.tasks, "claim", forbidden)
+    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=12))
+    wire = AgentTaskCommandV2.model_validate(command.model_dump(mode="json"))
+    with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
+        await h.dispatcher.handle_v2(QueuedTask("old-reader", wire.model_dump(mode="json")), worker_id="old-reader")
+    assert (await h.tasks.get(queued.id)).attempt_no == 0

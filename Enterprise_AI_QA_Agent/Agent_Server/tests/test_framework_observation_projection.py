@@ -483,7 +483,8 @@ async def test_official_worker_killed_after_first_observation_retains_atomic_rec
             assert reached is not None and reached[1] == "observation-row-committed", f"worker exit code: {process.exitcode}"
             before = await stage(h, original)
             rows = memory_rows(h)
-            assert before.phase == "runtime_submitted" and before.schema_version == 12
+            assert before.phase == "runtime_submitted" and before.schema_version == 13
+            assert before.source_manifest["graph_input_asset"]["feature_flags"]["tool_projection_version"] == 1
             identity = before.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]
             result = before.source_manifest["runtime_result_asset"]
             assert identity["snapshot_id"] == result["runtime_result"]["snapshot"]["id"]

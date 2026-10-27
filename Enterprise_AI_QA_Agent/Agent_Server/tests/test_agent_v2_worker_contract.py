@@ -12,6 +12,7 @@ from src.schemas.agent_task import AgentTaskCommandV2
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.session import ChatMessage, MessageRole, SendMessageRequest
 from tests.test_agent_task_dispatch import harness
+from tests.test_framework_model_admission import admission
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.runtime.task_deferred import TaskDeferred
 
@@ -61,6 +62,10 @@ class _Tasks:
     async def get(self, task_id):
         assert task_id == self.stored.id
         return self.stored
+
+    async def get_framework_message_stage_version(self, task_id, *, session_id):
+        assert task_id == self.stored.id and session_id == self.stored.session_id
+        return None
 
     async def claim(self, task_id, *, worker_id, expected_binding=None):
         assert task_id == self.stored.id
@@ -233,13 +238,14 @@ async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypat
 
 
 @pytest.mark.asyncio
-async def test_v2_worker_executes_persisted_task_with_binding_context(harness):
+async def test_v2_worker_executes_persisted_task_with_binding_context(admission):
     """Real PG/outbox/Redis/dispatcher/SessionService; controlled runtime response."""
     from uuid import uuid4
 
     from src.infrastructure.redis_task_queue import RedisTaskQueue
     from src.runtime.redis_task_worker import RedisTaskWorker
 
+    harness = admission
     runtime_binding = binding(
         session_id=harness.session_id,
         turn_id=f"turn-{uuid4().hex}",
@@ -272,6 +278,8 @@ async def test_v2_worker_executes_persisted_task_with_binding_context(harness):
         payload,
         message,
         idempotency_key=f"client-{uuid4().hex}",
+        model_budget=harness.budget.model_copy(update={"model_config_fingerprints": {
+            "primary": runtime_binding.model_config_fingerprint}}),
     )
     with pytest.raises(ValueError, match="claim runtime binding"):
         await harness.tasks.claim(task.id, worker_id="legacy-cannot-claim")
@@ -438,15 +446,17 @@ async def test_bound_runtime_cannot_execute_without_a_captured_owner():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("started", [False, True])
-async def test_v2_expired_attempt_reuses_admission_only_before_execution(harness, started):
+async def test_v2_expired_attempt_reuses_admission_only_before_execution(admission, started):
     from src.runtime.store import ContinuationLeaseLostError
     from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
     from uuid import uuid4
 
+    harness = admission
     selected = make_binding(harness.session_id, f"turn-{uuid4().hex}")
     task_command = make_command(harness, selected)
     task = await harness.tasks.submit_v2(task_command, make_payload(), make_message(harness, selected),
-        idempotency_key=f"client-{uuid4().hex}")
+        idempotency_key=f"client-{uuid4().hex}", model_budget=harness.budget.model_copy(update={
+            "model_config_fingerprints": {"primary": selected.model_config_fingerprint}}))
     owner = await harness.tasks.claim(task.id, worker_id="expired-worker", expected_binding=selected)
     if started:
         await harness.tasks.begin(owner, resource_id=f"turn:{task.id}", fencing_token=1)

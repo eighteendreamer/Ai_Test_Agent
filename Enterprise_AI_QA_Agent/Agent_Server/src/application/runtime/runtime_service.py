@@ -63,6 +63,9 @@ from src.schemas.framework_approval import FrameworkContinuationPlan
 from src.schemas.framework_transcript import FrameworkTranscriptAsset
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
+from src.schemas.framework_tool_projection import (
+    FrameworkToolProjection, TOOL_PROJECTION_KEY, TOOL_PROJECTION_VERSION_KEY,
+)
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 
 
@@ -215,6 +218,11 @@ class RuntimeService:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
             state = self._build_initial_state(session, request, include_framework_transcript=True)
+            # Only newly prepared application Turns opt in. Request context
+            # cannot upgrade a historical or unprepared graph invocation.
+            state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
+            if projection_identity is not None:
+                state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 1
             self._prepare_deep_agent_governed_tools(session, request, state)
             await append_graph_event_durable(
                 state,
@@ -363,6 +371,7 @@ class RuntimeService:
         business_tools, interrupt_on = await self._build_deep_agent_business_tools(
             state=state,
             tool_records=tool_records,
+            previous_messages=session.messages,
         )
         adapter_request = DeepAgentRuntimeRequest(
             session_id=session.id,
@@ -418,6 +427,8 @@ class RuntimeService:
                     "cognitive_planning": adapter_request.cognitive_planning_enabled,
                     "cognitive_subagents": adapter_request.cognitive_subagents_enabled,
                     "governed_tools": self._deep_agent_governed_tools_enabled,
+                    **({"tool_projection_version": state["context_bundle"][TOOL_PROJECTION_VERSION_KEY]}
+                        if TOOL_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
                 },
                 runtime_preparation=(FrameworkRuntimePreparation(identity=projection_identity, initial_state=state)
                     if projection_identity is not None else None),
@@ -1386,6 +1397,7 @@ class RuntimeService:
         *,
         state: dict[str, Any],
         tool_records: list[dict[str, Any]],
+        previous_messages=(),
     ) -> tuple[list[Any], dict[str, Any]]:
         if not self._deep_agent_governed_tools_enabled or self._tool_governance_service is None:
             return [], {}
@@ -1399,6 +1411,9 @@ class RuntimeService:
 
         bound = state.get("context_bundle", {}).get("runtime_binding")
         binding = RuntimeBinding.model_validate(bound) if bound is not None else None
+        projection_version = state.get("context_bundle", {}).get(TOOL_PROJECTION_VERSION_KEY)
+        if projection_version is not None and (binding is None or type(projection_version) is not int or projection_version != 1):
+            raise FrameworkApprovalRecoveryRequired("Governed tool projection material format is unavailable")
         owner = current_framework_owner()
         gates = frozenset()
         if binding is not None:
@@ -1476,10 +1491,23 @@ class RuntimeService:
                 tool_job_id=result.record.job_id, approval_id=result.record.approval_id,
                 status=result.record.status, replayed=result.replayed, harness="deepagents",
             )
-            return json.dumps(make_json_safe({
+            content = json.dumps(make_json_safe({
                 "status": result.record.status, "summary": result.record.summary,
                 "output": result.record.output, "instruction_authority": "none",
             }), ensure_ascii=False)
+            if projection_version is None:
+                return content
+            from langchain_core.messages import ToolMessage
+
+            message = next(message for message in self._to_chat_messages(state["turn_id"], tool_records,
+                binding_id=binding.binding_id, previous_messages=previous_messages, event_log=state["event_log"])
+                if message.metadata["tool_call_id"] == call_id)
+            material = FrameworkToolProjection.capture(binding=binding, source=identity, record=result.record,
+                message=message, model_content=content)
+            logger.info("framework_tool_projection_captured", extra={"binding_id": binding.binding_id,
+                "call_id": call_id, "tool_key": descriptor.key, "material_sha256": material.sha256})
+            return ToolMessage(content=content, name=descriptor.key, tool_call_id=tool_runtime.tool_call_id,
+                artifact={TOOL_PROJECTION_KEY: material.model_dump(mode="json")})
 
         return LangChainToolAdapter().to_governed_tools(descriptors, invoke=invoke,
             context_bundle=state.get("context_bundle") or {}), {

@@ -58,6 +58,8 @@ def validate_message_stage(record):
         from src.schemas.framework_graph_input import parse_graph_input_asset
 
         graph_input = parse_graph_input_asset(manifest["graph_input_asset"])
+        if stage.schema_version < graph_input.required_message_stage_version:
+            raise FrameworkMessageStageRecoveryRequired("Graph tool material has no compatible message stage format")
         if graph_input.schema_version == 2 and (stage.schema_version < 12
             or graph_input.runtime_preparation.identity.binding.binding_id != stage.binding_id):
             raise FrameworkMessageStageRecoveryRequired("Prepared graph input has no compatible message stage binding")
@@ -191,14 +193,16 @@ class FrameworkMessageStages:
         self._tasks, self._settings = tasks, tasks._settings
         self._table = message_stage_table(self._settings)
 
-    def _get_record(self, task_id, session_id):
+    def _get_record(self, task_id, session_id, *, for_capability=False):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT stage.record FROM {self._tasks._tasks} task LEFT JOIN {self._table} stage "
                 "ON stage.binding_id=task.runtime_binding->>'binding_id' "
-                "AND (stage.task_id=task.id OR (task.operation='message_recover' AND task.reference_id=stage.task_id "
-                f"AND EXISTS(SELECT 1 FROM {self._tasks._tasks} origin "
-                "WHERE origin.id=stage.task_id AND origin.session_id=task.session_id))) "
-                "WHERE task.id=%s AND task.session_id=%s", (task_id, session_id))
+                f"AND EXISTS(SELECT 1 FROM {self._tasks._tasks} source "
+                "WHERE source.id=stage.task_id AND source.session_id=task.session_id "
+                "AND source.runtime_binding=task.runtime_binding) "
+                "AND (stage.task_id=task.id OR (task.operation='message_recover' AND task.reference_id=stage.task_id) "
+                "OR (%s AND task.operation IN ('approval_resume','approval_recover','framework_reconcile'))) "
+                "WHERE task.id=%s AND task.session_id=%s", (for_capability, task_id, session_id))
             row = cur.fetchone()
             if row is None:
                 raise KeyError(task_id)
@@ -209,8 +213,9 @@ class FrameworkMessageStages:
         return validate_message_stage(record) if record else None
 
     def get_version(self, task_id, session_id):
-        # Capability admission must not first parse a future strict schema.
-        record = self._get_record(task_id, session_id)
+        # Read the binding's original message format for continuations too;
+        # do not parse a future strict schema or grant its execution rights.
+        record = self._get_record(task_id, session_id, for_capability=True)
         return record.get("schema_version", 3) if record is not None else None
 
     async def begin(self, owner, sources):
@@ -343,7 +348,7 @@ class FrameworkMessageStages:
                     manifest["graph_input_asset"] = graph_input_asset
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
                     if asset.schema_version == 2:
-                        values["schema_version"] = max(12, original.schema_version)
+                        values["schema_version"] = max(asset.required_message_stage_version, original.schema_version)
                 if recovery_modes_sha256 is not None or (resuming_frozen and expected == "orchestrated") or resuming_projected:
                     from src.runtime.framework_message_recovery import require_message_recovery_claim
 

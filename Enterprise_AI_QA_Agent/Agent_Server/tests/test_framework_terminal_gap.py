@@ -212,8 +212,9 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
             assert not process.is_alive() and process.exitcode == 0
             assert (await h.tasks.get(task.id)).status == "completed"
             saved = await stage(h, task)
-            assert saved.phase == "projected" and saved.schema_version == 12
+            assert saved.phase == "projected" and saved.schema_version == 13
             graph_input = parse_graph_input_asset(saved.source_manifest["graph_input_asset"])
+            assert graph_input.feature_flags["tool_projection_version"] == 1
             result = FrameworkRuntimeResultAsset.model_validate(saved.source_manifest["runtime_result_asset"])
             identity = graph_input.runtime_preparation.identity
             assert result.binding == identity.binding == h.binding

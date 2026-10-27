@@ -84,7 +84,8 @@ async def test_framework_injected_tool_identity_matches_saved_interrupt(checkpoi
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("reuse_provider_id", [False, True])
-async def test_bound_bridge_loads_current_decision_without_batch_and_executes_original_job(projection_harness, reuse_provider_id):
+@pytest.mark.parametrize("projection_enabled", [False, True])
+async def test_bound_bridge_loads_current_decision_without_batch_and_executes_original_job(projection_harness, reuse_provider_id, projection_enabled):
     from deepagents import create_deep_agent
     from langchain.agents.middleware import HumanInTheLoopMiddleware
     from src.runtime.framework_approval_journal import FrameworkApprovalJournal
@@ -110,6 +111,8 @@ async def test_bound_bridge_loads_current_decision_without_batch_and_executes_or
         tool_registry=h.registry, runtime_control=RuntimeControlRegistry(), permission_service=PermissionService(),
         tool_job_service=h.jobs, framework_approval_projection=projector(h), deep_agent_governed_tools_enabled=True)
     state, records = state_for(h), []
+    if projection_enabled:
+        state["context_bundle"]["framework_tool_projection_version"] = 1
     model = Model(responses=([AIMessage(id="second-source", content="", tool_calls=[{
         "name": "inspect_value", "args": {"value": "second B"}, "id": "B", "type": "tool_call"}])]
         if reuse_provider_id else []) + [AIMessage(content="finished")])
@@ -156,6 +159,16 @@ async def test_bound_bridge_loads_current_decision_without_batch_and_executes_or
         assert delivered.state == "delivered" and delivered.applied_at is None
     b_task = next(task for task in native.tasks if task.id == selected.link.graph_task_id)
     assert any(isinstance(item, ToolMessage) and item.tool_call_id == "B" for item in b_task.result["messages"])
+    message, = b_task.result["messages"]
+    if projection_enabled:
+        from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+
+        material = FrameworkToolProjection.model_validate(message.artifact[TOOL_PROJECTION_KEY])
+        material.require_binding(h.binding, selected.link)
+        assert material.record.call_id == selected.job.call_id and material.record.approval_id == selected.approval.id
+        assert material.record.started_at == settled.started_at and material.record.completed_at == settled.completed_at
+    else:
+        assert message.artifact is None
 
 
 @pytest.mark.asyncio

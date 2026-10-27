@@ -272,7 +272,8 @@ def _tool_reply(transport):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("transport", TRANSPORTS)
-async def test_native_tool_call_and_signature_survive_archive_and_tool_result(transport):
+@pytest.mark.parametrize("with_artifact", [False, True])
+async def test_native_tool_call_and_signature_survive_archive_and_tool_result(transport, with_artifact):
     with _provider(transport, first_reply=_tool_reply(transport)) as (url, requests):
         model = OfficialChatModelFactory(timeout_seconds=5).build_model(_config(transport, url),
             "local-fixture-marker")
@@ -289,10 +290,17 @@ async def test_native_tool_call_and_signature_survive_archive_and_tool_result(tr
         assert call["name"] == "inspect_source" and call["args"] == {"path": "main.py"}
         restored, = messages_from_dict(messages_to_dict([first]))
         assert restored.model_dump() == first.model_dump()
-        result = await bound.ainvoke([user, restored, ToolMessage(
-            content="synthetic file", tool_call_id=call["id"], name=call["name"])])
+        material = {"enterprise_qa_tool_projection": {"application_only": "not-for-provider-projection-material"}}
+        tool_result = ToolMessage(content="synthetic file", tool_call_id=call["id"], name=call["name"],
+            artifact=material if with_artifact else None)
+        archived_tool, = messages_from_dict(messages_to_dict([tool_result]))
+        assert archived_tool == tool_result
+        result = await bound.ainvoke([user, restored, archived_tool])
         assert _text(result) == "fixture answer" and len(requests) == 2
         body = requests[1]["body"]
+        assert "not-for-provider-projection-material" not in json.dumps(body)
+        assert "enterprise_qa_tool_projection" not in json.dumps(body)
+        assert "synthetic file" in json.dumps(body)
         if transport == "openai_chat_completions":
             assert body["messages"][-1]["tool_call_id"] == call["id"]
         elif transport == "openai_responses":
