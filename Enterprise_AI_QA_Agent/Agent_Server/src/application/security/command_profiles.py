@@ -94,10 +94,15 @@ class SecurityCommandProfileRegistry:
         target: str,
         operator: str,
     ) -> str | None:
+        capabilities = self.verification_capabilities(profile_key)
+        return self.validate_capabilities(capabilities, kind=kind, target=target, operator=operator)
+
+    @staticmethod
+    def validate_capabilities(capabilities, *, kind, target, operator):
+        """Same assertion contract for live profiles and frozen original rules."""
         kind = str(kind or "").strip().lower()
         target = str(target or "").strip()
         operator = str(operator or "equals").strip().lower()
-        capabilities = self.verification_capabilities(profile_key)
         operators = capabilities["assertions"].get(kind)
         if operators is None:
             return "unsupported_assertion_kind"

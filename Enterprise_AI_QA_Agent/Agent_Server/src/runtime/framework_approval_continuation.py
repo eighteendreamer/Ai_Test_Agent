@@ -98,7 +98,8 @@ class FrameworkApprovalContinuation:
                 inputs[owner.task_id] = payload
                 manifest["approval_graph_inputs"] = inputs
                 cur.execute("SELECT clock_timestamp() AS now")
-                saved = validate_message_stage(stage.model_copy(update={"schema_version": 16,
+                saved = validate_message_stage(stage.model_copy(update={"schema_version": max(16, stage.schema_version,
+                    asset.required_message_stage_version),
                     "source_manifest": manifest, "source_sha256": approval_value_hash(manifest),
                     "updated_at": cur.fetchone()["now"]}).model_dump(mode="json"))
                 assert_runtime_owner(cur, self._settings, owner)

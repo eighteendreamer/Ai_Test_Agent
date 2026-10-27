@@ -67,6 +67,8 @@ def validate_message_stage(record):
             raise FrameworkMessageStageRecoveryRequired("Approval graph input has no original prepared binding")
         for task_id, raw in originals.items():
             original = FrameworkApprovalGraphInput.model_validate(raw)
+            if stage.schema_version < original.graph_input_asset.required_message_stage_version:
+                raise FrameworkMessageStageRecoveryRequired("Approval preparation has no compatible message stage format")
             if (original.task_id != task_id
                 or original.graph_input_asset.runtime_preparation.identity.binding != initial.runtime_preparation.identity.binding):
                 raise FrameworkMessageStageRecoveryRequired("Approval graph input differs from its original task or binding")

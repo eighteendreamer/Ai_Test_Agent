@@ -409,6 +409,19 @@ class RuntimeService:
         )
         if on_graph_input is not None:
             from src.schemas.framework_graph_input import graph_input_asset
+            from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
+
+            if projection_identity is not None and continuation_plan is None:
+                from src.application.testing.verification_service import VerificationService
+
+                # Overwrite external context on first admission. Approval
+                # continuations retain only the original persisted selection.
+                original_verification = VerificationService.prepare_projection(projection_identity, trace_id=state["trace_id"])
+                state["context_bundle"][VERIFICATION_PREPARATION_KEY] = original_verification
+                logger.info("framework_verification_projection_prepared", extra={
+                    "binding_id": projection_identity.binding.binding_id,
+                    "rules_version": original_verification["rules_version"],
+                    "preparation_sha256": original_verification["sha256"]})
 
             await on_graph_input(graph_input_asset(
                 session_id=adapter_request.session_id,
@@ -429,6 +442,8 @@ class RuntimeService:
                     "governed_tools": self._deep_agent_governed_tools_enabled,
                     **({"tool_projection_version": state["context_bundle"][TOOL_PROJECTION_VERSION_KEY]}
                         if TOOL_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
+                    **({"verification_projection_version": 1}
+                        if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else {}),
                 },
                 runtime_preparation=(FrameworkRuntimePreparation(identity=projection_identity, initial_state=state)
                     if projection_identity is not None else None),

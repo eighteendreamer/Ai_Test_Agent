@@ -282,7 +282,7 @@ class FrameworkApprovalRecovery:
                 proof = FrameworkApprovalFinalizationProof(origin_task_id=origin["id"], origin_attempt_id=origin["attempt_id"],
                     decision_id=origin["input_payload"]["decision_id"],
                     finalization=link.model_dump(mode="json", exclude={"owner_attempt_id", "owner_epoch"})).model_dump(mode="json")
-                _save(cur, self._settings, stage.model_copy(update={"schema_version": 18,
+                _save(cur, self._settings, stage.model_copy(update={"schema_version": max(18, stage.schema_version),
                     "approval_finalizations": [*stage.approval_finalizations, link], "updated_at": now}))
             successor = self._publish(cur, origin, operation="approval_recover", reference_id=origin["reference_id"],
                 parent_id=task.id, input_payload={**origin["input_payload"], "origin_task_id": origin["id"],

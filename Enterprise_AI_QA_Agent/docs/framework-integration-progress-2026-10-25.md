@@ -2897,3 +2897,55 @@ git diff --check
 日志分别为 `.codex-logs/framework-approval-result-reader-approval-final-2026-10-27.txt`、`...-material-final-2026-10-27.txt`、`...-contract-final-2026-10-27.txt`。5个skip为 `test_runtime_input_paths.py:48` 两项、`:172` 两项及`:189` 一项，需额外隔离的真实PostgreSQL／MySQL／RustFS环境，不计入通过。早期12项与审批最终组重叠，不累计。最终源码 `python -m compileall -q Agent_Server/src Agent_Server/tests` 实际exit0；ruff／mypy实查未安装，不声称lint、typecheck或官方saver conformance通过。
 
 提交前核对新端口全部引用、完整diff、Git状态、仅追加历史记录、§73唯一、Markdown围栏与新增绝对文件链接，`git diff --check`通过。仅提交两个生产源文件、新测试源、对应ignore例外与本节，原v3草稿和日志不纳入；提交名 `【feat】从原持久材料只读重建审批回合结果`，具体ID以Git历史／交付为准。后续继续原Verification准备与无资产窄权限封存／准入，不把本步或既有资产后强杀验收扩张成全系统完成。
+
+## 74. A2-2：首次图前保存原Verification规则与身份准备，正常／只读重建共用评分（2026-10-28）
+
+续接 `d21d3c607`／§73，对应 v4 §9.2、§8.3、§10.2 及 H05/H11。先核对 active 目标、v4、§52–73、Git和原失败日志，审阅已有未提交代码后继续；不重做§54的原生消息顺序修复。本步解决资产前Verification依赖随机UUID、恢复时钟和当前安全Profile的材料缺失，**不开放无资产自动准入、资产封存或图执行权，不代表A2-2或全系统完成**。跨午夜的早期日志保留原2026-10-27文件名；原v3草稿不覆盖、不暂存、不提交。
+
+### 依据 → 做法、代码与契约
+
+| v4条款／依据 | 本步实现与验收 | 权限／兼容边界 |
+| --- | --- | --- |
+| §9.2；原VerificationService九类评分、原图前投影身份 | [VerificationService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/testing/verification_service.py)在首次图执行前准备规则版本1、binding、trace、明确预留时间及安全评分能力快照；[原准备格式](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_verification_projection.py)校验摘要、版本和原Turn归属 | 不保存命令／凭据，不冻结永久执行授权；摘要不是来源授权。规则版本未知或布尔版本不降级 |
+| §9.2；原ToolJob记录与评分所用context | 正常与恢复仍调用同一九类评分函数；UUID5由原准备、原record与评分输入确定。created_at使用原completed_at，缺失时使用明确预留的allocation时间；缺省artifact／case证据身份带原ordinal | 不使用恢复时的now／UUID或当前Profile，不声称预留时间是实际完成时间；无新准备的旧正常路径保持原行为，显式无效准备不得回落随机旧逻辑 |
+| §9.2／§10.2；既有安全Profile能力校验 | [command_profiles](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/security/command_profiles.py)提取共享纯校验，live和frozen能力共用kind／operator／target规则，不复制第二套verifier | 仅固定评分所依赖的能力；工具执行仍走现有当前权限、审批和治理边界 |
+| §4.1／§9.2；原Runtime图输入冻结回调 | [RuntimeService](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)首次图前覆盖外部同名context并保存准备，审批只沿原持久材料继续，不拿当前配置替换；日志记录binding、rules_version与preparation_sha256 | 不给旧材料自动补造原准备；Session既有_runtime_verification_results直接消费相同context，无第二套Session评分链 |
+| §14.1／H11；原graph asset、stage与Worker能力协议 | [graph_input](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_graph_input.py)将新flag与原准备配对、严格校验整数版本和绑定；新材料要求stage19，schema／Worker reader同步支持19；reader18拒19、reader19拒未来20 | 旧无新键的graph wire及stage12可读；旧stage16原件与17 serializer合同保留。只是源码兼容读者，不声称双制品部署完成；上线前须先部署兼容reader |
+| §9.2／§10.2；§73生产只读装配端口 | [只读reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_result_reader.py)新增可选verification_results：具备原准备时用原规则重建；旧原件缺准备时明确返回None，而不是空数组或运行当前verifier | 仍不签恢复proof、不freeze、不创建后继或finalize；原异步读取前后材料复核与完整RuntimeResult比较保留 |
+| §9.4／H05；既有stage writer单调保留规则 | [approval_continuation](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_continuation.py)保存时取max(16,原stage,材料要求)；[approval_recovery](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_recovery.py)收尾时取max(18,原stage)，防止将19降回16／18 | 复用现有格式演进规则，不加忽略新材料或放行旧reader的兼容if；未改变messages比较、审批决定或原工具结果 |
+
+本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹、权限、幂等及超时方法 → 本步重复读取、反序记录、原身份／时间、禁止新执行、未知格式与来源漂移合同；课程只读提取首次因终端GBK输出失败，设置PYTHONIOENCODING=utf-8后正常读取，未修改课程文件或依赖。
+
+### 真实失败、诊断与修复记录
+
+日志目录为项目 `.codex-logs/`，以下历史均保留，不用最终绿色覆盖失败：
+
+- 有效TDD红测：`...-red-2026-10-27.txt` **1 failed，20 deselected，4.62秒**，缺首次原准备端口；`...-integration-red-2026-10-27.txt` **1 failed，12 deselected，11.29秒**，首次graph input没有原准备。接线后对完整结果做JSON规范表示比较，所有字段、原生messages及Verification原件均保留。
+- 表示诊断不是生产消息缺陷：`...-integration-first`、`...-representation`、`...-representation-direct`分别 **1 failed，9.01秒**、**1 failed，3 warnings，4.94秒**、**1 failed，9.00秒**（各12 deselected）；一次诊断patch未命中测试模块。直接诊断明确wire_equal=True、verification_equal=True，typed差异仅原工具时间的datetime／str表示；最终测试比较完整model_dump(mode="json")，没有删除／忽略字段，临时诊断已移除。
+- 两个额外有效边界红测：`...-time-red-2026-10-27.txt` **1 failed，21 deselected，4.42秒**，UTC .isoformat()与Pydantic JSON的+00:00／Z导致原准备摘要不一致，改用原identity JSON codec；`...-invalid-red-2026-10-27.txt` **1 failed，22 deselected，0.33秒**，显式None曾回落随机旧路径，改为只要键存在就校验。早期unit **21 passed，5.72秒**、reader＋unit **34 passed，56.86秒**、合同 **133 passed，79.69秒**，不是最终四组的替代物。
+- 有效生产红测：`...-finalization-valid-red-2026-10-28.txt` **1 failed，50 deselected，10.19秒**；续接复现 `...-finalization-resume-red-2026-10-28.txt` **1 failed，50 deselected，11.48秒**。调用链精确落在approval_recovery._apply把stage19写成18，validate_message_stage拒绝不兼容准备；按上表单调版本规则修复。针对三种收尾出口、旧格式及非空Verification的组合随后 **6 passed，60 deselected，36.41秒**。
+- 同一次stage19升级的消费者／样本同步遗漏，不当作新的生产缺陷，也不以异常兜底掩盖：旧reader默认拒19断言的合同组 **1 failed，55 passed，9.43秒**；将新19对象误当17 serializer的筛选组 **1 failed，2 passed，31 deselected，18.14秒**；外来binding样本没有同步嵌套准备，审批组 **1 failed，15 passed，81.98秒**。分别恢复显式reader18拒19／reader19拒20、专门构造旧17 serializer对象、重算外来原准备binding与摘要以继续命中原跨绑定拒绝断言；最后一项筛选 **4 passed，49 deselected，19.02秒**。
+- 全局核对遗漏的版本消费者：`...-approval-recheck-final-2026-10-28.txt` **1 failed，105 passed，588.19秒**，实际19而审批Runtime断言仍17；`...-consumers-final-2026-10-28.txt` **1 failed，303 passed，11 skipped，1 warning，110.25秒**，实际19而独立工具材料强杀断言仍15。仅将新生成stage的严格等值断言同步19；真正旧格式、旧reader拒绝、完整消息／原件与强杀断言未放宽，随后全组重新运行。
+
+上述省略前缀统一为 `framework-verification-preparation`；表示诊断、unit和合同早期日志为2026-10-27，其余明确日期如上。后补的原规则／缺省时间／真实旧格式reader两文件组 `...-legacy-final-2026-10-28.txt` **37 passed，70.77秒**：九类结果重复及反序稳定；同结果的多个无ID证据不冲突；禁止当前Profile、UUID及新时钟；非空api-tester两结果与原oracle精确相等。旧材料fixture在原graph序列化边界、执行前排除新字段，不在完成后删材料；旧路径已有非空Verification oracle，reader仍返回None并禁止当前builder，不能把缺材料误解为原来没有结果。这是受控历史格式样本，不是旧部署制品演练。
+
+### 最终源码验证与剩余出口
+
+工作目录 `Agent_Server`，固定 `.venv-framework-v2`；设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。以下四组均已取得真实exit0，完整stdout＋stderr经 `2>&1 | Tee-Object` 保存并返回 `$LASTEXITCODE`；不以较早测试结果代表当前源码：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+# 171 passed，969.99秒，无skip，会话81309。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_terminal_gap.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+# 211 passed，758.75秒，无skip，会话78151。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_case_execution_verification.py tests/test_security_profile_capabilities.py tests/test_api_tester_free_text_assertions.py tests/test_case_operation_verification.py tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py tests/test_runtime_import_isolation.py tests/test_runtime_input_paths.py tests/test_runtime_interrupt_tool_calls.py tests/test_framework_turn_projection.py tests/test_framework_result_projection.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_framework_model_budget_projection.py -q -x -rs --tb=short
+# 323 passed，11 skipped，1 warning，108.52秒，会话8171。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py -q -x -rs --tb=short
+# 155 passed，225.24秒，无skip，会话77191。
+```
+
+日志分别为 `framework-verification-preparation-approval-complete-final-2026-10-28.txt`、`...-projection-final-2026-10-28.txt`、`...-consumers-recheck-final-2026-10-28.txt`、`...-native-final-2026-10-28.txt`。11个skip为 `test_case_operation_verification.py:36` 四项、`:213`／`:273` 各一项，以及 `test_runtime_input_paths.py:48`／`:172` 各两项、`:189` 一项，需要额外隔离的真实PostgreSQL／MySQL／RustFS环境，不计入通过。warning为既有Starlette TestClient使用AnyIO弃用别名，本步不升级依赖或顺手改无关代码。早期组与最终组有重叠，不累计覆盖数。所有测试会话已取回终态，没有遗留pytest进程。
+
+本步新正例是官方框架＋受控模型／工具＋真实PG、同进程资产前故障与真实失租的E2子集；最终回归还重跑既有PG／Redis／独立Worker强杀与接管合同，**不是新无资产自动恢复准入已通过**。未执行真实供应商／RustFS／领域Runner的E3、部署／备份恢复的E4、全量及前端。无资产窄权限封存／准入及其资产前独立Worker强杀仍待接入；A2-3、A3及B/C/D/E/F未完成，整体goal保持active。
+
+最终源码 `python -m compileall -q Agent_Server/src Agent_Server/tests` 实际exit0；ruff／mypy实查未安装，不声称lint、typecheck、wheel构建或官方saver conformance通过。提交前检查完整diff、跨层引用、stage写入单调性、本节仅追加／唯一、Markdown围栏与新增绝对文件链接，并运行git diff --check；仅提交本步生产代码、对应测试和本节。没有DDL／依赖升级／生产开关变更，没有启停服务或新增付费调用；新持久格式需要兼容reader19先行部署。提交名 `【feat】冻结原验证规则并确定性重建审批验证`，具体ID以Git历史及交付为准，不推送、不建PR。

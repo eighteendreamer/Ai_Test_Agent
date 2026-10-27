@@ -28,17 +28,43 @@ from tests.test_framework_approval_continuation import claim_decision, service, 
 
 
 @pytest_asyncio.fixture
-async def prepared_approval_runtime(fresh_runtime_harness):
+async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch):
     h = fresh_runtime_harness
+    selected = getattr(request, "param", "inspect_value")
+    tool_key = selected.get("tool_key", "inspect_value") if isinstance(selected, dict) else selected
+    if isinstance(selected, dict) and selected.get("legacy_verification"):
+        from src.schemas import framework_graph_input as graph_inputs
+
+        capture = graph_inputs.graph_input_asset
+
+        def legacy_input(**kwargs):
+            # Simulate old preparation at the original boundary, before any
+            # graph runs; do not remove material from a completed result.
+            kwargs["feature_flags"].pop("verification_projection_version", None)
+            kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_verification_preparation", None)
+            return capture(**kwargs)
+
+        monkeypatch.setattr(graph_inputs, "graph_input_asset", legacy_input)
     build_runtime(h, responses=[AIMessage(id="prepared-source", content="", tool_calls=[
-        {"name": "inspect_value", "args": {"value": key}, "id": key, "type": "tool_call"}
+        {"name": tool_key, "args": {"value": key}, "id": key, "type": "tool_call"}
         for key in ("A", "B")]), AIMessage(id="prepared-final", content="finished")])
+    if tool_key != "inspect_value":
+        from src.registry.tools import ToolModule
+
+        descriptor = h.registry.get("inspect_value").model_copy(update={"key": tool_key})
+        h.registry._tools[tool_key] = ToolModule(descriptor, tool_key)
+        handle = h.runtime._tool_runtime_service._handlers["inspect_value"]
+
+        async def verified_handle(arguments, context):
+            return {**await handle(arguments, context), "checks": [{"passed": True}]}
+
+        h.runtime._tool_runtime_service._handlers[tool_key] = verified_handle
     session = await h.store.get_session(h.session_id)
     h.initial_task_id = h.owner.id
     h.stages = FrameworkMessageStages(h.tasks)
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id=h.owner.trace_id,
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
-        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": ["inspect_value"]})
+        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": [tool_key]})
     await h.stages.begin(h.owner.runtime_owner, message_source_manifest(session, h.binding,
         SendMessageRequest.model_validate(h.owner.input)))
     await h.stages.freeze_execution(h.owner.runtime_owner, request)
@@ -98,7 +124,7 @@ async def test_approval_input_is_frozen_before_adapter_and_cannot_be_replaced(pr
     async def inspect_before_graph(request):
         stage = h.stages.get(task.id, h.session_id, include_continuations=True)
         saved = stage.source_manifest["approval_graph_inputs"][task.id]
-        assert stage.schema_version == 16 and saved["attempt_id"] == task.attempt_id
+        assert stage.schema_version == 19 and saved["attempt_id"] == task.attempt_id
         assert saved["owner_epoch"] == task.runtime_owner.owner_epoch
         assert (await h.jobs.get_job(h.proposals["B"].job.id)).status.value == "waiting_approval"
         raw = saved["graph_input_asset"]
@@ -145,6 +171,9 @@ async def test_recording_requires_original_prepared_binding(prepared_approval_ru
         binding = h.binding.model_copy(update={"runtime_version": "foreign-runtime"}).model_dump(mode="json")
         original["runtime_preparation"]["identity"]["binding"] = deepcopy(binding)
         original["runtime_preparation"]["initial_state"]["context_bundle"]["runtime_binding"] = deepcopy(binding)
+        verification = original["runtime_preparation"]["initial_state"]["context_bundle"]["framework_verification_preparation"]
+        verification["binding"] = deepcopy(binding)
+        verification["sha256"] = approval_value_hash({key: value for key, value in verification.items() if key != "sha256"})
         rehash(original)
     elif changed == "source_binding":
         manifest["binding_fingerprint"] = "a" * 64
@@ -204,6 +233,18 @@ async def test_stage16_reads_original_inputs_but_never_grants_message_write_auth
     stage = h.stages.get(task.id, h.session_id, include_continuations=True)
     assert h.stages.get(task.id, h.session_id) is None
     assert stage == validate_message_stage(stage.model_dump(mode="json"))
+    legacy = stage.model_dump(mode="json")
+    legacy["schema_version"] = 16
+    legacy.pop("approval_finalizations", None)
+    manifest = legacy["source_manifest"]
+    graphs = [manifest["graph_input_asset"],
+        *[item["graph_input_asset"] for item in manifest["approval_graph_inputs"].values()]]
+    for graph in graphs:
+        graph["feature_flags"].pop("verification_projection_version", None)
+        graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_verification_preparation", None)
+        rehash(graph)
+    legacy["source_sha256"] = approval_value_hash(manifest)
+    assert validate_message_stage(legacy).schema_version == 16
     downgraded = stage.model_dump(mode="json")
     downgraded["schema_version"] = 15
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="compatible message stage"):
@@ -349,7 +390,7 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
     from src.runtime.framework_runtime_results import FrameworkRuntimeResults
 
     results = FrameworkRuntimeResults(h.tasks)
-    assert saved.schema_version == 17
+    assert saved.schema_version == 19
     assert await results.load(a.runtime_owner) == asset
     assert await results.freeze(a.runtime_owner, runtime_result=asset.runtime_result.restore(),
         assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
@@ -508,9 +549,11 @@ async def test_stage17_does_not_serialize_new_finalization_fields(frozen_approva
 
     h = frozen_approval_result
     stage = h.stages.get(h.initial_task_id, h.session_id)
-    assert stage.schema_version == 17
-    assert "approval_finalizations" not in stage.model_dump(mode="json")
-    assert "approval_finalizations" not in json.loads(stage.model_dump_json())
+    assert stage.schema_version == 19
+    assert stage.model_dump(mode="json")["approval_finalizations"] == []
+    legacy = stage.model_copy(update={"schema_version": 17})
+    assert "approval_finalizations" not in legacy.model_dump(mode="json")
+    assert "approval_finalizations" not in json.loads(legacy.model_dump_json())
 
 
 async def queue_approval_finalization(h):
@@ -998,7 +1041,7 @@ async def test_approval_asset_successor_only_finalizes_the_original_result(froze
     completed = await h.tasks.get(successor_id)
     assert completed.status == "completed", completed.error_code
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.phase == "projected" and saved.schema_version == 18
+    assert saved.phase == "projected" and saved.schema_version == 19
     assert saved.source_manifest["runtime_result_asset"] == original.source_manifest["runtime_result_asset"]
     assert saved.source_manifest["approval_graph_inputs"] == original.source_manifest["approval_graph_inputs"]
     snapshot = await h.store.get_latest_snapshot(h.session_id)

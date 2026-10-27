@@ -3,7 +3,8 @@
 No upstream counterpart (checked: Runtime event completion, applied tool
 reader, shared turn_projection, LangGraph 1.2.12 aget_state, v4 §9.2/§10.2):
 native state alone omits the application's preparation and original events.
-This port returns no recovery proof, result asset, Verification or write rights.
+Original Verification is projected only when its frozen rules are available.
+This port returns no recovery proof, result asset or write rights.
 """
 from __future__ import annotations
 
@@ -30,7 +31,7 @@ from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCal
 from src.runtime.postgres_runtime_owner import configure_runtime_owner_transaction
 from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
 from src.schemas.framework_runtime_result import FrameworkRuntimeResult
-from src.schemas.session import ExecutionEvent
+from src.schemas.session import ExecutionEvent, VerificationResult
 
 
 logger = logging.getLogger(__name__)
@@ -43,6 +44,7 @@ class FrameworkApprovalResultRead:
     runtime_result: FrameworkRuntimeResult
     model_calls_sha256: str
     tool_jobs_sha256: str
+    verification_results: list[VerificationResult] | None = None
 
 
 def _originals(tasks, binding, task_id, continuation):
@@ -157,8 +159,16 @@ async def read_completed_approval(tasks, binding, task_id, *, agent, saver, cont
                 for item in read.event_log[read.completion.returned_event_offset:]],
             tool_messages=build_chat_tool_messages(binding.turn_id, records, binding_id=binding.binding_id,
                 hygiene_metadata={}, original_materials=materials.values()))
+        from src.application.testing.verification_service import VerificationService
+        from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
+
+        # Older originals remain readable, but absence is not proof of an
+        # empty Verification set or permission to evaluate today's rules.
+        verifications = (VerificationService().build_results(session_id=binding.session_id, turn_id=binding.turn_id,
+            trace_id=state["trace_id"], tool_results=records, context_bundle=state["context_bundle"])
+            if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
         assembled = FrameworkApprovalResultRead(preparation, read.completion, FrameworkRuntimeResult.from_result(projected),
-            model_hash, tool_hash)
+            model_hash, tool_hash, verifications)
     except Exception as exc:
         logger.warning("framework_approval_original_result_read_rejected", extra={"binding_id": binding.binding_id,
             "task_id": task_id, "error_type": type(exc).__name__})

@@ -221,7 +221,9 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=17).require_message_stage(18)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(19)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=18).require_message_stage(19)
+        with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(20)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired
@@ -241,3 +243,33 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
 
     with pytest.raises(FrameworkMessageStageRecoveryRequired):
         await stages.record_graph_input(task.runtime_owner, changed)
+
+
+@pytest.mark.parametrize("changed", [None, "missing_flag", "unknown_flag", "bool_flag", "missing_material", "foreign_trace"])
+def test_graph_verification_preparation_requires_stage19_and_exact_original_format(changed):
+    from src.application.testing.verification_service import VerificationService
+    from src.schemas.framework_approval import approval_value_hash
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
+    from tests.test_runtime_binding_persistence import make_binding
+
+    legacy = prepared_graph_input(make_binding("session-1", "turn-1"), "trace-1")
+    raw = legacy.model_dump(mode="json")
+    assert parse_graph_input_asset(raw).model_dump(mode="json") == raw
+    assert legacy.required_message_stage_version == 12
+    context = raw["runtime_preparation"]["initial_state"]["context_bundle"]
+    context[VERIFICATION_PREPARATION_KEY] = VerificationService.prepare_projection(
+        legacy.runtime_preparation.identity, trace_id="foreign" if changed == "foreign_trace" else "trace-1")
+    raw["feature_flags"]["verification_projection_version"] = 1
+    if changed == "missing_flag":
+        raw["feature_flags"].pop("verification_projection_version")
+    elif changed in {"unknown_flag", "bool_flag"}:
+        raw["feature_flags"]["verification_projection_version"] = 2 if changed == "unknown_flag" else True
+    elif changed == "missing_material":
+        context.pop(VERIFICATION_PREPARATION_KEY)
+    raw["asset_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "asset_sha256"})
+    if changed is None:
+        assert parse_graph_input_asset(raw).required_message_stage_version == 19
+    else:
+        with pytest.raises(ValueError):
+            parse_graph_input_asset(raw)

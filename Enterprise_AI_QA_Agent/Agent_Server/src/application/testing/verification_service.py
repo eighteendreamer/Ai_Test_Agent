@@ -4,11 +4,37 @@ from datetime import datetime
 from typing import Any
 from uuid import uuid4
 
-from src.application.security.command_profiles import get_profile_registry
+from src.application.security.command_profiles import SecurityCommandProfileRegistry, get_profile_registry
 from src.schemas.session import VerificationEvidence, VerificationResult, VerificationStatus
+from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_verification_projection import (
+    FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY, VerificationProjectionIdentity,
+)
+
+
+def _result_id(projection):
+    return projection.result_id if projection is not None else str(uuid4())
+
+
+def _created_at(projection):
+    return projection.created_at if projection is not None else datetime.utcnow()
+
+
+def _evidence_id(projection, ordinal=0):
+    return projection.evidence_id(ordinal) if projection is not None else uuid4()
 
 
 class VerificationService:
+    @staticmethod
+    def prepare_projection(identity, *, trace_id):
+        registry = get_profile_registry()
+        capabilities = {profile.profile_key: registry.verification_capabilities(profile.profile_key)
+            for profile in registry.list_all()}
+        values = dict(schema_version=1, scope="verification_projection_preparation_only", rules_version=1,
+            binding=identity.binding.model_dump(mode="json"), trace_id=trace_id,
+            reserved_at=identity.model_dump(mode="json")["snapshot_created_at"], security_capabilities=capabilities)
+        return FrameworkVerificationPreparation(**values, sha256=approval_value_hash(values)).model_dump(mode="json")
+
     def build_results(
         self,
         session_id: str,
@@ -19,29 +45,35 @@ class VerificationService:
     ) -> list[VerificationResult]:
         results: list[VerificationResult] = []
         context_bundle = context_bundle or {}
+        raw = context_bundle.get(VERIFICATION_PREPARATION_KEY)
+        preparation = (FrameworkVerificationPreparation.model_validate(raw).require_context(context_bundle,
+            session_id=session_id, turn_id=turn_id, trace_id=trace_id)
+            if VERIFICATION_PREPARATION_KEY in context_bundle else None)
         for item in tool_results:
+            projection = (VerificationProjectionIdentity.for_record(preparation, item, context_bundle)
+                if preparation is not None else None)
             tool_key = str(item.get("tool_key") or "")
             output = item.get("output") if isinstance(item.get("output"), dict) else {}
             if tool_key == "api-tester":
-                results.append(self._from_api_tester(session_id, turn_id, trace_id, item, output, context_bundle))
+                results.append(self._from_api_tester(session_id, turn_id, trace_id, item, output, context_bundle, projection=projection))
                 continue
             if tool_key == "test-case-generator":
-                results.append(self._from_test_case_generator(session_id, turn_id, trace_id, item, output))
+                results.append(self._from_test_case_generator(session_id, turn_id, trace_id, item, output, projection=projection))
                 continue
             if tool_key == "browser-automation":
-                results.append(self._from_browser_automation(session_id, turn_id, trace_id, item, output))
+                results.append(self._from_browser_automation(session_id, turn_id, trace_id, item, output, projection=projection))
                 continue
             if tool_key == "smoke-suite-runner":
-                results.append(self._from_smoke_suite_runner(session_id, turn_id, trace_id, item, output))
+                results.append(self._from_smoke_suite_runner(session_id, turn_id, trace_id, item, output, projection=projection))
                 continue
             if tool_key == "api-test-runner":
-                results.append(self._from_api_test_runner(session_id, turn_id, trace_id, item, output))
+                results.append(self._from_api_test_runner(session_id, turn_id, trace_id, item, output, projection=projection))
                 continue
             if tool_key == "ui-automation-runner":
-                results.append(self._from_ui_automation_runner(session_id, turn_id, trace_id, item, output))
+                results.append(self._from_ui_automation_runner(session_id, turn_id, trace_id, item, output, projection=projection))
                 continue
             if tool_key == "compatibility-test-runner":
-                results.append(self._from_compatibility_test_runner(session_id, turn_id, trace_id, item, output))
+                results.append(self._from_compatibility_test_runner(session_id, turn_id, trace_id, item, output, projection=projection))
                 continue
             if tool_key == "performance-test-runner":
                 results.append(
@@ -52,6 +84,7 @@ class VerificationService:
                         item,
                         output,
                         context_bundle,
+                        projection=projection,
                     )
                 )
                 continue
@@ -64,6 +97,7 @@ class VerificationService:
                         item,
                         output,
                         context_bundle,
+                        projection=projection,
                     )
                 )
                 continue
@@ -77,6 +111,7 @@ class VerificationService:
         tool_result: dict[str, Any],
         output: dict[str, Any],
         context_bundle: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         """Evaluate only explicit reviewed assertions against Runner evidence."""
         test_case = (
@@ -96,9 +131,13 @@ class VerificationService:
         )
         findings = output.get("findings") if isinstance(output.get("findings"), list) else []
         profile_key = str(output.get("command_profile") or "").strip()
-        profile_registry = get_profile_registry()
+        profile_registry = get_profile_registry() if projection is None else None
+        capabilities = None
         try:
-            profile_registry.verification_capabilities(profile_key)
+            if projection is None:
+                capabilities = profile_registry.verification_capabilities(profile_key)
+            else:
+                capabilities = projection.preparation.security_capabilities[profile_key].model_dump(mode="json")
         except KeyError:
             profile_key = ""
         runner_ok = (
@@ -118,8 +157,8 @@ class VerificationService:
             operator = str(assertion.get("operator") or "equals").strip().lower()
             expected = assertion.get("expected")
             if profile_key:
-                validation_error = profile_registry.validate_assertion(
-                    profile_key,
+                validation_error = SecurityCommandProfileRegistry.validate_capabilities(
+                    capabilities,
                     kind=kind,
                     target=str(assertion.get("target") or ""),
                     operator=operator,
@@ -175,7 +214,7 @@ class VerificationService:
         else:
             status = VerificationStatus.not_run
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -195,7 +234,7 @@ class VerificationService:
                     source_id=str(
                         tool_result.get("job_id")
                         or tool_result.get("call_id")
-                        or uuid4()
+                        or _evidence_id(projection)
                     ),
                     label="security_runner_result",
                     detail=str(output.get("command_profile") or ""),
@@ -216,7 +255,7 @@ class VerificationService:
                 "unsupported_assertion_operators": sorted(set(unsupported_operators)),
                 "unsupported_assertion_targets": sorted(set(unsupported_targets)),
             },
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
 
@@ -284,6 +323,7 @@ class VerificationService:
         tool_result: dict[str, Any],
         output: dict[str, Any],
         context_bundle: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         """性能回归必须同时具备 Runner verdict、SLA 和引擎交叉验证证据。"""
         test_case = (
@@ -406,7 +446,7 @@ class VerificationService:
             if key in metrics
         }
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -426,7 +466,7 @@ class VerificationService:
                     source_id=str(
                         tool_result.get("job_id")
                         or tool_result.get("call_id")
-                        or uuid4()
+                        or _evidence_id(projection)
                     ),
                     label="performance_runner_verdict",
                     detail=str(output.get("run_id") or ""),
@@ -443,7 +483,7 @@ class VerificationService:
                 "sample_count": sample_count,
                 "has_pass_criterion": has_pass_criterion,
             },
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_api_test_runner(
@@ -453,6 +493,7 @@ class VerificationService:
         trace_id: str,
         tool_result: dict[str, Any],
         output: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         """从 API Runner 的真实断言或聚合验证结果投影统一 Verification。"""
         task_result = output.get("task_result") if isinstance(output.get("task_result"), dict) else {}
@@ -487,7 +528,7 @@ class VerificationService:
         else:
             status = VerificationStatus.not_run
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -505,14 +546,14 @@ class VerificationService:
             evidence=[
                 VerificationEvidence(
                     source_type="tool_job",
-                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or uuid4()),
+                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or _evidence_id(projection)),
                     label="api_runner_assertions",
                     detail=str(output.get("summary") or ""),
                     metadata={"task_id": task_result.get("task_id")},
                 )
             ],
             metadata={"tool_key": "api-test-runner", "task_status": task_result.get("status")},
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_ui_automation_runner(
@@ -522,6 +563,7 @@ class VerificationService:
         trace_id: str,
         tool_result: dict[str, Any],
         output: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         """UI 当前结构探索不等于用例断言通过；缺少执行证据时明确标记 not_run。"""
         raw = output.get("verification_result") if isinstance(output.get("verification_result"), dict) else {}
@@ -538,7 +580,7 @@ class VerificationService:
             status = VerificationStatus.not_run
         artifacts = output.get("artifacts") if isinstance(output.get("artifacts"), list) else []
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -555,7 +597,7 @@ class VerificationService:
             evidence=[
                 VerificationEvidence(
                     source_type="tool_job",
-                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or uuid4()),
+                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or _evidence_id(projection)),
                     label="ui_runner_assertions",
                     detail=str(raw.get("summary") or output.get("summary") or ""),
                     metadata={"tool_key": "ui-automation-runner"},
@@ -563,17 +605,17 @@ class VerificationService:
                 *[
                     VerificationEvidence(
                         source_type="artifact",
-                        source_id=str(item.get("path") or item.get("label") or uuid4()),
+                        source_id=str(item.get("path") or item.get("label") or _evidence_id(projection, index)),
                         label=str(item.get("label") or item.get("type") or "ui_artifact"),
                         detail=str(item.get("path") or ""),
                         metadata={"tool_key": "ui-automation-runner"},
                     )
-                    for item in artifacts
+                    for index, item in enumerate(artifacts)
                     if isinstance(item, dict)
                 ],
             ],
             metadata={"tool_key": "ui-automation-runner", "phase": output.get("phase")},
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_compatibility_test_runner(
@@ -583,6 +625,7 @@ class VerificationService:
         trace_id: str,
         tool_result: dict[str, Any],
         output: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         """兼容性入口只派发任务；仅在 Runner 汇总含终态计数时形成通过/失败结论。"""
         summary = output.get("runner_summary") if isinstance(output.get("runner_summary"), dict) else {}
@@ -604,7 +647,7 @@ class VerificationService:
         else:
             status = VerificationStatus.not_run
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -617,14 +660,14 @@ class VerificationService:
             evidence=[
                 VerificationEvidence(
                     source_type="tool_job",
-                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or uuid4()),
+                    source_id=str(tool_result.get("job_id") or tool_result.get("call_id") or _evidence_id(projection)),
                     label="compatibility_runner_summary",
                     detail=str(output.get("phase") or ""),
                     metadata={"runner_summary": summary},
                 )
             ],
             metadata={"tool_key": "compatibility-test-runner", "phase": output.get("phase")},
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_api_tester(
@@ -635,6 +678,7 @@ class VerificationService:
         tool_result: dict[str, Any],
         output: dict[str, Any],
         context_bundle: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         checks = output.get("checks") if isinstance(output.get("checks"), list) else []
         passed_count = sum(1 for item in checks if isinstance(item, dict) and item.get("passed") is True)
@@ -645,7 +689,7 @@ class VerificationService:
         evidence = [
             VerificationEvidence(
                 source_type="tool_result",
-                source_id=str(tool_result.get("call_id") or tool_result.get("job_id") or uuid4()),
+                source_id=str(tool_result.get("call_id") or tool_result.get("job_id") or _evidence_id(projection)),
                 label="api_checks",
                 detail=str(output.get("summary") or tool_result.get("summary") or ""),
                 metadata={
@@ -656,7 +700,7 @@ class VerificationService:
             )
         ]
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -668,7 +712,7 @@ class VerificationService:
             failed_count=failed_count,
             evidence=evidence,
             metadata={"tool_key": "api-tester", "tool_status": tool_result.get("status")},
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_test_case_generator(
@@ -678,10 +722,11 @@ class VerificationService:
         trace_id: str,
         tool_result: dict[str, Any],
         output: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         cases = output.get("cases") if isinstance(output.get("cases"), list) else []
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -694,14 +739,14 @@ class VerificationService:
             evidence=[
                 VerificationEvidence(
                     source_type="tool_result",
-                    source_id=str(tool_result.get("call_id") or uuid4()),
+                    source_id=str(tool_result.get("call_id") or _evidence_id(projection)),
                     label="planned_cases",
                     detail=str(tool_result.get("summary") or ""),
                     metadata={"case_count": len(cases)},
                 )
             ],
             metadata={"tool_key": "test-case-generator", "coverage": output.get("coverage", {})},
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_browser_automation(
@@ -711,6 +756,7 @@ class VerificationService:
         trace_id: str,
         tool_result: dict[str, Any],
         output: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         steps = output.get("steps") if isinstance(output.get("steps"), list) else []
         artifacts = output.get("artifacts") if isinstance(output.get("artifacts"), list) else []
@@ -718,16 +764,16 @@ class VerificationService:
         evidence = [
             VerificationEvidence(
                 source_type="artifact",
-                source_id=str(item.get("path") or item.get("label") or uuid4()),
+                source_id=str(item.get("path") or item.get("label") or _evidence_id(projection, index)),
                 label=str(item.get("label") or item.get("type") or "artifact"),
                 detail=str(item.get("path") or ""),
                 metadata={k: v for k, v in item.items() if k not in {"label", "path"}},
             )
-            for item in artifacts
+            for index, item in enumerate(artifacts)
             if isinstance(item, dict)
         ]
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -739,7 +785,7 @@ class VerificationService:
             failed_count=0 if status == VerificationStatus.passed else max(0, len(steps) - 1),
             evidence=evidence,
             metadata={"tool_key": "browser-automation", "artifact_count": len(artifacts)},
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )
 
     def _from_smoke_suite_runner(
@@ -749,6 +795,7 @@ class VerificationService:
         trace_id: str,
         tool_result: dict[str, Any],
         output: dict[str, Any],
+        projection=None,
     ) -> VerificationResult:
         run_result = output.get("run_result") if isinstance(output.get("run_result"), dict) else {}
         plan = output.get("plan") if isinstance(output.get("plan"), dict) else {}
@@ -784,13 +831,13 @@ class VerificationService:
                         metadata={"tool_key": "smoke-suite-runner"},
                     )
                 )
-        for case in case_results[:8]:
+        for index, case in enumerate(case_results[:8]):
             if not isinstance(case, dict):
                 continue
             evidence.append(
                 VerificationEvidence(
                     source_type="tool_result",
-                    source_id=str(case.get("case_id") or uuid4()),
+                    source_id=str(case.get("case_id") or _evidence_id(projection, index)),
                     label=str(case.get("status") or "smoke_case"),
                     detail=str(case.get("summary") or case.get("title") or ""),
                     metadata={
@@ -801,7 +848,7 @@ class VerificationService:
             )
 
         return VerificationResult(
-            id=str(uuid4()),
+            id=_result_id(projection),
             session_id=session_id,
             turn_id=turn_id,
             trace_id=trace_id,
@@ -823,5 +870,5 @@ class VerificationService:
                 "report_uri": output.get("report_uri"),
                 "approved_plan_uri": output.get("approved_plan_uri"),
             },
-            created_at=datetime.utcnow(),
+            created_at=_created_at(projection),
         )

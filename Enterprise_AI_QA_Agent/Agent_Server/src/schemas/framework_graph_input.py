@@ -64,11 +64,17 @@ class _FrameworkGraphInputFields(BaseModel):
         if "tool_projection_version" in self.feature_flags and (
             type(version) is not int or version not in {1, 2, 3} or self.schema_version != 2):
             raise ValueError("Tool projection material requires its supported prepared graph format")
+        if "verification_projection_version" in self.feature_flags and (
+            type(self.feature_flags["verification_projection_version"]) is not int
+            or self.feature_flags["verification_projection_version"] != 1 or self.schema_version != 2):
+            raise ValueError("Verification preparation requires its supported prepared graph format")
         return self
 
     @property
     def required_message_stage_version(self):
         version = self.feature_flags.get("tool_projection_version")
+        if "verification_projection_version" in self.feature_flags:
+            return 19
         return {1: 13, 2: 14, 3: 15}.get(version, 12 if self.schema_version == 2 else 1)
 
 
@@ -93,6 +99,14 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
         version = (state.get("context_bundle") or {}).get(TOOL_PROJECTION_VERSION_KEY)
         if version != self.feature_flags.get("tool_projection_version") or (version is not None and type(version) is not int):
             raise ValueError("Tool projection material format differs from its frozen runtime preparation")
+        from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
+
+        context = state.get("context_bundle") or {}
+        if VERIFICATION_PREPARATION_KEY in context or "verification_projection_version" in self.feature_flags:
+            if self.feature_flags.get("verification_projection_version") != 1 or VERIFICATION_PREPARATION_KEY not in context:
+                raise ValueError("Verification preparation differs from its original graph format")
+            FrameworkVerificationPreparation.model_validate(context[VERIFICATION_PREPARATION_KEY]).require_context(context,
+                session_id=self.session_id, turn_id=self.turn_id, trace_id=self.trace_id)
         return self
 
 

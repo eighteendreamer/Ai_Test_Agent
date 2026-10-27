@@ -746,7 +746,7 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
         assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 17
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 19
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
         material = [parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])

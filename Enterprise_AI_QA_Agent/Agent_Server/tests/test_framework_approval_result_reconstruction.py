@@ -44,11 +44,13 @@ async def approval_asset_gap(prepared_approval_runtime, monkeypatch, request):
         monkeypatch.setattr(h.runtime._deep_agent_bound_runtime_adapter, "execute", capture)
     monitor = asyncio.create_task(asyncio.Event().wait())
     captured = []
+    verifications = []
 
     async def fail_before_asset(self, owner, **kwargs):
         # Comparison oracle only. The reader receives neither this result nor
         # any caller-supplied proof, event collection or preparation.
         captured.append(FrameworkRuntimeResult.from_result(kwargs["runtime_result"]))
+        verifications.append(deepcopy(kwargs["verification_results"]))
         raise ConnectionError("injected after event seal before approval result asset")
 
     try:
@@ -64,6 +66,7 @@ async def approval_asset_gap(prepared_approval_runtime, monkeypatch, request):
         monitor.cancel()
         await asyncio.gather(monitor, return_exceptions=True)
     h.oracle, = captured
+    h.verification_oracle, = verifications
     h.expired = await expire(h, h.a)
     assert "runtime_result_asset" not in h.stages.get(h.initial_task_id, h.session_id).source_manifest
     h.result_reader = FrameworkRuntimeResults(h.tasks)
@@ -211,4 +214,51 @@ async def test_assetless_reader_cannot_omit_unprepared_business_job(approval_ass
     await h.jobs._store.save_job(extra)
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="unprepared business tool"):
         await read_original(h, monkeypatch)
+    assert await h.tasks.get(h.a.id) == h.expired
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prepared_approval_runtime", ["api-tester"], indirect=True)
+async def test_original_verifications_are_prepared_before_graph_and_rebuilt_without_new_decisions(approval_asset_gap, monkeypatch):
+    from src.application.testing import verification_service as module
+
+    h = approval_asset_gap
+    manifest = h.stages.get(h.initial_task_id, h.session_id).source_manifest
+    initial = manifest["graph_input_asset"]["runtime_preparation"]["initial_state"]["context_bundle"]
+    original = manifest["approval_graph_inputs"][h.a.id]["graph_input_asset"]["runtime_preparation"]["initial_state"]["context_bundle"]
+    key = "framework_verification_preparation"
+    assert key in initial, "Original Verification rule/identity preparation must precede the initial graph"
+    assert original[key] == initial[key] and h.verification_oracle
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Read-only verification used a new identity/clock or current security profiles")
+
+    monkeypatch.setattr(module, "uuid4", forbidden)
+    monkeypatch.setattr(module, "datetime", type("NoClock", (), {"utcnow": staticmethod(forbidden)}))
+    monkeypatch.setattr(module, "get_profile_registry", forbidden)
+    rebuilt = await read_original(h, monkeypatch)
+    assert rebuilt.runtime_result.model_dump(mode="json") == h.oracle.model_dump(mode="json")
+    assert rebuilt.verification_results == h.verification_oracle
+    assert len(rebuilt.verification_results) == 2
+    assert all(result.status.value == "passed" for result in rebuilt.verification_results)
+    assert await h.tasks.get(h.a.id) == h.expired
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prepared_approval_runtime", [{"tool_key": "api-tester", "legacy_verification": True}], indirect=True)
+async def test_legacy_original_without_verification_preparation_does_not_invent_empty_verdicts(approval_asset_gap, monkeypatch):
+    from src.application.testing.verification_service import VerificationService
+
+    h = approval_asset_gap
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    assert stage.schema_version == 16 and h.verification_oracle
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Legacy originals cannot reconstruct Verification with today's rules")
+
+    monkeypatch.setattr(VerificationService, "build_results", forbidden)
+    rebuilt = await read_original(h, monkeypatch)
+    assert rebuilt.verification_results is None
+    assert rebuilt.runtime_result.model_dump(mode="json") == h.oracle.model_dump(mode="json")
+    assert h.stages.get(h.initial_task_id, h.session_id) == stage
     assert await h.tasks.get(h.a.id) == h.expired

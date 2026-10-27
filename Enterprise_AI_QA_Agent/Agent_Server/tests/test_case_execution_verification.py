@@ -378,3 +378,87 @@ def test_performance_unknown_assertions_are_not_counted_as_passed():
     assert result.status.value == "passed"
     assert result.assertion_count == 2
     assert result.passed_count == 1
+
+
+def test_prepared_verification_reuses_original_rules_identities_and_times(monkeypatch):
+    from datetime import datetime
+    from src.application.testing import verification_service as module
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+    from tests.test_runtime_binding_persistence import make_binding
+
+    prepare = getattr(VerificationService, "prepare_projection", None)
+    assert callable(prepare), "Verification needs original versioned preparation before graph execution"
+    binding = make_binding("session-1", "turn-1")
+    reserved = datetime(2026, 10, 27, 12)
+    identity = FrameworkProjectionIdentity(binding=binding, assistant_message_id="original-assistant",
+        snapshot_id="original-snapshot", snapshot_version=1, snapshot_created_at=reserved)
+    preparation = prepare(identity, trace_id="trace-1")
+    context = {"runtime_binding": binding.model_dump(mode="json"),
+        "framework_verification_preparation": preparation,
+        **_security_context({"kind": "runner_success", "expected": True})}
+    outputs = {
+        "api-tester": {"checks": [{"passed": True}]},
+        "test-case-generator": {"cases": [{}]},
+        "browser-automation": {"steps": [{}], "artifacts": [{"type": "screen"}, {"type": "screen"}]},
+        "smoke-suite-runner": {"run_result": {"case_results": [{"status": "passed"}, {"status": "passed"}]}},
+        "api-test-runner": {"checks": [{"passed": True}]},
+        "ui-automation-runner": {"artifacts": [{"type": "screen"}, {"type": "screen"}]},
+        "compatibility-test-runner": {"runner_summary": {"completed": 1, "total": 1}},
+        "performance-test-runner": _performance_output(),
+        "security-scan-runner": _security_output(),
+    }
+    records = [{"call_id": key, "job_id": "job-" + key, "tool_key": key, "status": "completed",
+        "completed_at": "2026-10-27T13:00:00", "output": output} for key, output in outputs.items()]
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Prepared verification consulted a new clock, random identity or live rule registry")
+
+    monkeypatch.setattr(module, "uuid4", forbidden)
+    monkeypatch.setattr(module, "datetime", type("NoClock", (), {"utcnow": staticmethod(forbidden)}))
+    monkeypatch.setattr(module, "get_profile_registry", forbidden)
+    service = VerificationService()
+    kwargs = dict(session_id="session-1", turn_id="turn-1", trace_id="trace-1", context_bundle=context)
+    first = service.build_results(tool_results=records, **kwargs)
+    assert service.build_results(tool_results=records, **kwargs) == first
+    assert service.build_results(tool_results=list(reversed(records)), **kwargs) == list(reversed(first))
+    assert len(first) == len(outputs) and len({item.id for item in first}) == len(first)
+    assert all(item.created_at == datetime(2026, 10, 27, 13) for item in first)
+    for result in first:
+        assert len({item.source_id for item in result.evidence}) == len(result.evidence)
+    assert first[-1].status.value == "passed"
+    without_time = [{key: value for key, value in record.items() if key != "completed_at"} for record in records]
+    reserved_results = service.build_results(tool_results=without_time, **kwargs)
+    assert all(item.created_at == reserved for item in reserved_results)
+    assert service.build_results(tool_results=without_time, **kwargs) == reserved_results
+
+
+def test_verification_preparation_preserves_aware_allocation_time_and_strict_versions():
+    from copy import deepcopy
+    from datetime import datetime, timezone
+    import pytest
+    from src.schemas.framework_approval import approval_value_hash
+    from src.schemas.framework_graph_input import FrameworkProjectionIdentity
+    from src.schemas.framework_verification_projection import FrameworkVerificationPreparation
+    from tests.test_runtime_binding_persistence import make_binding
+
+    identity = FrameworkProjectionIdentity(binding=make_binding("session-1", "turn-1"),
+        assistant_message_id="assistant", snapshot_id="snapshot", snapshot_version=1,
+        snapshot_created_at=datetime(2026, 10, 27, tzinfo=timezone.utc))
+    raw = VerificationService.prepare_projection(identity, trace_id="trace-1")
+    assert FrameworkVerificationPreparation.model_validate(raw).reserved_at == identity.snapshot_created_at
+    for key in ("schema_version", "rules_version"):
+        for rehash in (False, True):
+            changed = deepcopy(raw)
+            changed[key] = True
+            if rehash:
+                changed["sha256"] = approval_value_hash({name: value for name, value in changed.items() if name != "sha256"})
+            with pytest.raises(ValueError):
+                FrameworkVerificationPreparation.model_validate(changed)
+
+
+def test_explicit_invalid_verification_preparation_never_falls_back_to_random_results():
+    import pytest
+
+    with pytest.raises(ValueError):
+        _verify("api-tester", {"checks": [{"passed": True}]},
+            context_bundle={"framework_verification_preparation": None})
