@@ -445,7 +445,15 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
             assert process.exitcode is not None and process.exitcode != 0
             return
         await asyncio.to_thread(process.join, 20)
-        assert process.exitcode == 0
+        exitcode = process.exitcode
+        if exitcode is None:
+            # Keep the original deadline, but preserve authoritative task
+            # phases before finally terminates the still-live test Worker.
+            phases = [(item.operation, item.status, item.result_status, item.error_code)
+                for item in await h.tasks.list_session(h.session_id)]
+            pytest.fail(f"Replacement Worker exceeded its 20-second deadline: pid={process.pid}, "
+                f"alive={process.is_alive()}, task_phases={phases}")
+        assert exitcode == 0
 
     process = ctx.Process(target=framework_worker_process, args=(h.settings, h.prefix, h.binding, pause_at))
     processes.append(process)

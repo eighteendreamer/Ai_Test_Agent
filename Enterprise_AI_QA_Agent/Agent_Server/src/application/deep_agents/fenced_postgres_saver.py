@@ -114,11 +114,12 @@ class BoundPostgresReader(ThreadedPostgresSaver):
 
 
 class FencedPostgresSaver(BoundPostgresReader):
-    def __init__(self, pool, *, settings, owner, serde=None):
+    def __init__(self, pool, *, settings, owner, serde=None, event_prefix=None):
         super().__init__(pool, source=owner.model_dump(exclude={"owner_token"}), serde=serde)
         self.runtime_owner = owner  # Immutable snapshot, never read a new token from context.
         self._settings = settings
         self._approval_journal = FrameworkApprovalJournal(settings, serde=self.serde)
+        self._event_prefix = event_prefix
 
     @contextmanager
     def _write_transaction(self, operation):
@@ -139,9 +140,43 @@ class FencedPostgresSaver(BoundPostgresReader):
             raise
 
     def put(self, config, checkpoint, metadata, new_versions):
+        from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY, checkpoint_event_prefix
+
+        # Only this captured writer may attach the server receipt. Never carry
+        # caller/config/ancestor metadata forward as a receipt for a new write.
+        discarded_sources = []
+        for name in ("metadata", "configurable"):
+            if CHECKPOINT_PREFIX_KEY in (config.get(name) or {}):
+                discarded_sources.append(name)
+        if CHECKPOINT_PREFIX_KEY in (metadata or {}):
+            discarded_sources.append("checkpoint_metadata")
+        if discarded_sources:
+            logger.debug("framework_checkpoint_event_prefix_metadata_discarded", extra={
+                "binding_id": self.runtime_owner.binding.binding_id,
+                "task_id": self.runtime_owner.task_id,
+                "metadata_sources": tuple(discarded_sources),
+            })
+        config = {**config, **{name: {key: value for key, value in (config.get(name) or {}).items()
+            if key != CHECKPOINT_PREFIX_KEY} for name in ("metadata", "configurable")}}
+        metadata = {key: value for key, value in metadata.items() if key != CHECKPOINT_PREFIX_KEY}
         storage_config = self._storage_config(config)
         with self._write_transaction("put") as saver:
+            captured = (self._event_prefix() if self._event_prefix is not None
+                and not config["configurable"].get("checkpoint_ns") else None)
             result = saver.put(storage_config, checkpoint, metadata, new_versions)
+            if captured is not None:
+                # Use the stored official codec: JSONB map order and blob
+                # reconstruction differ from the in-memory checkpoint input.
+                # Both official puts and the ACK audit are in this SAME owner
+                # transaction; any failure rolls back the first put as well.
+                original = saver.get_tuple(result)
+                with saver.conn.cursor() as cur:
+                    prefix = checkpoint_event_prefix(cur, self._settings, self.runtime_owner,
+                        *captured, checkpoint=original, serde=self.serde)
+                saver.put(storage_config, checkpoint, {**metadata, CHECKPOINT_PREFIX_KEY: prefix.model_dump(mode="json")}, {})
+                logger.debug("framework_checkpoint_event_prefix_bound", extra={
+                    "binding_id": self.runtime_owner.binding.binding_id, "checkpoint_id": checkpoint["id"],
+                    "task_id": self.runtime_owner.task_id, "event_count": len(prefix.events)})
         return self._graph_config(result)
 
     def put_writes(self, config, writes, task_id, task_path=""):

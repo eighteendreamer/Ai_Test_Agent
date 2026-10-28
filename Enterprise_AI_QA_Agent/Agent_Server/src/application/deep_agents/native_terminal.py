@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import logging
 from dataclasses import dataclass
+from copy import deepcopy
 from typing import Any, Literal
 
 from langchain_core.messages import AIMessage, BaseMessage, ToolMessage
@@ -44,6 +45,7 @@ class NativeTerminalRead:
     # Exact checkpoint creation time, not an application completion receipt.
     # Keep this read material outside the persisted schema-1 proof.
     checkpoint_timestamp: str | None = None
+    checkpoint_event_prefix: dict[str, Any] | None = None
 
 
 def _require(condition, message):
@@ -144,4 +146,7 @@ async def collect_native_terminal(agent, saver, config, *, returned_values=None)
         raise
     logger.info("framework_native_terminal_read", extra={"binding_id": binding.binding_id,
         "checkpoint_id": proof.checkpoint_id})
-    return NativeTerminalRead(proof=proof, values=values, checkpoint_timestamp=original.checkpoint.get("ts"))
+    from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY
+
+    return NativeTerminalRead(proof=proof, values=values, checkpoint_timestamp=original.checkpoint.get("ts"),
+        checkpoint_event_prefix=deepcopy(original.metadata.get(CHECKPOINT_PREFIX_KEY)))

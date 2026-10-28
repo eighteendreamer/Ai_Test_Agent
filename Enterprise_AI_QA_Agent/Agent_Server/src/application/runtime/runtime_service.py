@@ -481,6 +481,13 @@ class RuntimeService:
             )
             runtime_preparation = frozen_input.runtime_preparation if projection_identity is not None else None
             await on_graph_input(frozen_input.model_dump(mode="json"))
+            if TERMINAL_EVENT_PREPARATION_KEY in state["context_bundle"]:
+                from src.runtime.execution_context import current_graph_event_sink
+                from src.runtime.session_event_sink import SessionEventSink
+
+                sink = current_graph_event_sink()
+                if isinstance(sink, SessionEventSink):
+                    sink.bind_checkpoint_preparation(frozen_input)
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
             else self._deep_agent_runtime_adapter)
         execution_task = asyncio.create_task(

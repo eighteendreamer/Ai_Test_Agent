@@ -439,6 +439,17 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
             before_native = await saver.aget_tuple(selected)
             native = await collect_native_terminal(graph, saver, selected)
             assert native.proof == proof
+            from src.runtime.framework_event_completion import read_checkpoint_event_prefix
+            from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+            source = RuntimeCheckpointSource.model_validate(a.runtime_owner.model_dump(exclude={"owner_token"}))
+            with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+                prefix = read_checkpoint_event_prefix(cur, h.settings, source, original.graph_input_asset, native)
+            assert prefix == read.event_log[:-1]
+            assert prefix[:len(preparation.initial_state["event_log"])] == preparation.initial_state["event_log"]
+            assert native.checkpoint_event_prefix["returned_event_offset"] == read.completion.returned_event_offset
+            assert native.checkpoint_event_prefix["task_id"] == a.id
+            assert native.checkpoint_event_prefix["attempt_id"] == a.attempt_id
             facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
                 returned_event_offset=read.completion.returned_event_offset)
             result = project_deep_agent_result(native.values, stage=facts.adapter_stage,

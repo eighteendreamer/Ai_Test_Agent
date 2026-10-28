@@ -47,6 +47,27 @@ class LocalModelObjects:
         return {"content": target.read_bytes()}
 
 
+async def read_original_checkpoint_prefix(h, provider, before, active, proof):
+    from src.application.deep_agents.native_terminal import collect_native_terminal
+    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from src.runtime.framework_event_completion import read_checkpoint_event_prefix
+
+    prepared = parse_graph_input_asset(before.source_manifest["graph_input_asset"])
+    # Public task reads intentionally omit execution tokens/owners. Reuse the
+    # original task/attempt journal identity and the frozen stage's epoch.
+    source = RuntimeCheckpointSource(binding=h.binding, task_id=active.id, attempt_id=active.attempt_id,
+        owner_epoch=before.owner_epoch, worker_id=active.worker_id)
+    adapter = DeepAgentRuntimeAdapter(model_resolver=None, checkpointer_factory=provider.open)
+    async with adapter.open_native_reader(prepared, source=source) as (graph, saver):
+        native = await collect_native_terminal(graph, saver, {"configurable": {
+            "thread_id": h.binding.thread_id, "checkpoint_id": proof.checkpoint_id, CONFIG_KEY_CHECKPOINTER: saver}})
+        assert native.proof == proof
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        return read_checkpoint_event_prefix(cur, h.settings, source, prepared, native)
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("window", ["after_graph_return", "after_graph_events", "after_event_completion"])
 async def test_native_terminal_and_settled_response_survive_kill_but_do_not_invent_application_result(admission, tmp_path, window):
@@ -90,9 +111,14 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             assert saved_response["kind"] == "langchain_messages"
             selected = {"configurable": {"thread_id": h.binding.thread_id,
                 "checkpoint_ns": h.binding.checkpoint_namespace, "checkpoint_id": proof.checkpoint_id}}
+            checkpoint_prefix = await read_original_checkpoint_prefix(h, provider, before, active, proof)
+            assert checkpoint_prefix and all(item["type"] not in {"runtime.turn_completed", "graph.plan_built"}
+                for item in checkpoint_prefix)
             async with provider.open() as saver:
                 native = await saver.aget_tuple(selected)
                 assert native is not None and _native_hash(saver.serde, native.checkpoint) == proof.checkpoint_sha256
+                assert native.metadata.get("framework_checkpoint_event_prefix") is not None, (
+                    "Worker death before the Runtime seal loses the checkpoint-bound audit prefix")
                 # Messages use DeltaChannel in the pinned real graph. Read
                 # through its channel implementation, not channel_values or
                 # guessed message deltas. The pinned config override selects
@@ -289,6 +315,8 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
             assert not process.is_alive() and process.exitcode != 0
             prepared = parse_graph_input_asset(before.source_manifest["graph_input_asset"])
             read = await h.store.read_runtime_event_completion(h.binding, proof.model_dump(mode="json"))
+            checkpoint_prefix = await read_original_checkpoint_prefix(h, provider, before, active, proof)
+            assert checkpoint_prefix == read.event_log[:-1]
             facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
                 returned_event_offset=read.completion.returned_event_offset)
             assert facts.pilot_stage == facts.adapter_stage == "DA-E3"

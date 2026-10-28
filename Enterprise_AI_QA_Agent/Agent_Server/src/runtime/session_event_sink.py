@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
+from copy import deepcopy
 
 from src.schemas.runtime_binding import RuntimeExecutionOwner
 
@@ -27,6 +28,32 @@ class SessionEventSink:
         self._closed = False
         self._runtime_events_completed = False
         self._deferred_to_final_flush = False
+        self._checkpoint_preparation = None
+        self._acknowledged_events = []
+
+    def bind_checkpoint_preparation(self, preparation) -> None:
+        """Bind the already persisted input; this is not a completion declaration."""
+        from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset, parse_graph_input_asset
+
+        preparation = parse_graph_input_asset(preparation)
+        if (self.runtime_owner is None or not isinstance(preparation, FrameworkPreparedGraphInputAsset)
+            or preparation.runtime_preparation.identity.binding != self.runtime_owner.binding
+            or preparation.feature_flags.get("terminal_event_projection_version") != 1):
+            raise ValueError("Checkpoint event prefix requires its original prepared runtime owner")
+        if self._checkpoint_preparation is not None:
+            raise ValueError("Checkpoint event preparation is already bound")
+        self._checkpoint_preparation = deepcopy(preparation)
+        LOGGER.debug("framework_checkpoint_event_preparation_bound", extra={
+            "session_id": self._session_id, "binding_id": self.runtime_owner.binding.binding_id,
+            "task_id": self.runtime_owner.task_id, "attempt_id": self.runtime_owner.attempt_id})
+
+    def checkpoint_event_prefix(self):
+        # Called synchronously by the captured saver, including its DB thread.
+        # Entries are independent snapshots appended only after the SQL ACK;
+        # no awaiting, queue flush or new persistence happens in this accessor.
+        if self._checkpoint_preparation is None:
+            return None
+        return deepcopy((self._checkpoint_preparation, list(self._acknowledged_events)))
 
     @property
     def runtime_owner(self) -> RuntimeExecutionOwner | None:
@@ -77,6 +104,8 @@ class SessionEventSink:
                 try:
                     await self._store.append_event(self._session_id, event,
                         **self._fence, runtime_owner=self.runtime_owner)
+                    self._acknowledged_events.append(deepcopy({"id": event.id, "timestamp": event.timestamp.isoformat(),
+                        "type": event.type, "payload": event.payload}))
                 except Exception:
                     LOGGER.exception("session_event_persistence_failed", extra={
                         "session_id": self._session_id, "event_id": event.id,

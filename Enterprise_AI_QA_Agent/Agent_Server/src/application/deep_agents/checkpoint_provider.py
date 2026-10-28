@@ -110,9 +110,14 @@ class DeepAgentCheckpointProvider:
             yield self._saver
         else:
             from src.application.deep_agents.fenced_postgres_saver import FencedPostgresSaver
+            from src.runtime.execution_context import current_graph_event_sink
+            from src.runtime.session_event_sink import SessionEventSink
 
+            sink = current_graph_event_sink()
+            prefix = (sink.checkpoint_event_prefix if isinstance(sink, SessionEventSink)
+                and sink.runtime_owner == execution_owner else None)
             yield FencedPostgresSaver(self._pool, settings=self._settings,
-                owner=execution_owner, serde=self._saver.serde)
+                owner=execution_owner, serde=self._saver.serde, event_prefix=prefix)
 
     async def close(self) -> None:
         if self._pool is not None:

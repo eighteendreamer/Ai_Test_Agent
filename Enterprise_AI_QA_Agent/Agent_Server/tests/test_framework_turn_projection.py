@@ -88,6 +88,22 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
         completion = await h.store.read_runtime_event_completion(h.binding, terminal.proof.model_dump(mode="json"))
         assert original.state["event_log"] == completion.event_log
         checkpoint = await saver.aget_tuple(config(h))
+        assert checkpoint.metadata.get("framework_checkpoint_event_prefix") is not None, (
+            "The native checkpoint has no atomically bound original acknowledged audit prefix")
+        source = saver.runtime_source
+    from src.infrastructure.postgres_runtime import postgres_connect
+    from src.runtime.framework_event_completion import read_checkpoint_event_prefix
+
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        prefix = read_checkpoint_event_prefix(cur, h.settings, source, prepared, terminal)
+    terminal_count = 2 if planning else 1
+    assert prefix == completion.event_log[:-terminal_count]
+    receipt = terminal.checkpoint_event_prefix
+    assert receipt == checkpoint.metadata["framework_checkpoint_event_prefix"]
+    assert receipt["scope"] == "checkpoint_graph_event_prefix_only"
+    assert receipt["checkpoint_sha256"] == terminal.proof.checkpoint_sha256
+    assert receipt["graph_input_sha256"] == prepared.asset_sha256
+    assert "checkpoint_event_prefix" not in terminal.proof.model_dump()
     saved_events = await h.store.list_events(h.session_id)
     original_preparation = prepared.model_dump(mode="json")
     def forbidden(*args, **kwargs):

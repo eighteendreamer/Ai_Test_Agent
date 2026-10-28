@@ -3314,3 +3314,62 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 以上目标、读取、集成与消费方组均已取回真实终态；较早失败与中间组不替代最终证据。提交前实际从项目根执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，均exit0；实施记录追加性／唯一章节／代码围栏／本地链接、完整diff、明显凭据标记、暂存范围与v3哈希一并复核。本步10个生产文件、12个测试文件及本节，共23文件；v3草稿／日志／本地数据均排除。提交名 `【feat】冻结并复用确定性终态事件投影`，commit ID以Git历史和交付输出为准。不升级依赖、不启停共享基础设施、不改变生产开关或公开路由、不新增付费调用，不推送、不建PR。
 
 下一出口仍是缺封口时的原件复核、窄权限派生／封存及独立进程故障矩阵；不能invoke图补造事实，已有callback必须复用ACK原件。本步确定性事件材料不等于图返回到封口前空窗已经闭合，A2-2其他故障／材料组合、A2-3、A3及B/C/D/E/F仍未整体完成，完整goal保持active。
+
+## 82. A2-2：原checkpoint同事务绑定已ACK审计前缀，保留只读与完成权限边界（2026-10-28）
+
+基线 `c33e9488e`，承接§81后6个生产文件、2个测试文件的未提交草稿。先只读核对Git、完整v4、§52及后续记录、固定SDK与已有草稿日志；随后按完整active目标继续开发。§54已修正的Delta顺序及严格messages比较不重做、不削弱。原v3草稿SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F，独立保护，不修改、不提交。Docker清单显示现有服务正在运行，实际PG／Redis fixture可连接；本步不启动、停止或重启共享服务。
+
+### 根因、依据 → 做法与跨层合同
+
+§79单事件ACK能阻止SDK越过未持久callback，§81能确定性投影图后的plan/completed意图，但两者都不能单独证明某个精确checkpoint对应的原审计前缀。图返回后死亡且封口声明缺失时，不能把“当前看见的事件行”或原生消息数量当成完整原件。这里缺的是checkpoint与已确认应用前缀的原子绑定，不是再加一个恢复fallback或调度层。
+
+| v4条款／查证依据 | 本步代码／测试与采用方式 | 权限与兼容边界 |
+| --- | --- | --- |
+| §8.1／§9.2；既有owner短事务、SessionEventSink SQL ACK和§79执行侧callback barrier | [sink](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/session_event_sink.py)仅在持久ACK返回后收集独立事件意图；[Runtime](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)在原on_graph_input成功后绑定经完整重解析的冻结输入；getter同步深拷贝，不做I/O／flush／等待 | 每个sink仅绑定一次；与原owner完整相同的[provider](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/checkpoint_provider.py)才捕获getter，source-only分支不取得写能力，不搬动图执行、超时或取消边界 |
+| 固定langgraph-checkpoint-postgres 3.1.2的PostgresSaver.put／get_tuple、checkpoint.base.get_checkpoint_metadata与get_serializable_checkpoint_metadata源码；既有同连接pipeline回滚合同 | [fenced saver](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/fenced_postgres_saver.py)在同一原owner事务中调用官方put→官方get_tuple→核对原ACK行／producer claim→官方put增强metadata；第二put仍用同checkpoint／原parent配置且new_versions={} | 不直接操作SDK表或自写checkpoint codec。必须hash实际存储读回的checkpoint：JSONB键顺序及blob物化可能不同于输入对象。第二put失败会回滚首put及blob；代价是每个有材料的根checkpoint多一次精确读取、metadata upsert与前缀核验，尚无长链性能／官方conformance验收 |
+| §9.2／§10.2；原completion的事件引用、行摘要、intent比较与producer claim SQL | [event completion](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_event_completion.py)增加metadata键framework_checkpoint_event_prefix及独立schema1，scope=checkpoint_graph_event_prefix_only；绑定输入hash、原task／attempt／epoch／worker、精确checkpoint hash／ts、offset和有序原事件引用；复用既有查询与严格比较 | 只允许逻辑根namespace；先剔除调用者metadata／configurable／祖先的保留键再由原writer重新生成，并记录来源键名而非正文。业务表显式public前缀，避免checkpoint连接search_path误指。合并原冻结prefix与当前sink ACK重叠后缀，必须覆盖本次invocation边界；不得包含完成声明、plan或completed事件 |
+| §8.2／§9.2；§75原冻结官方schema的source-only读者 | [native read](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/native_terminal.py)从精确checkpoint.metadata取得独立副本，位于NativeTerminalRead可选字段，不写入NativeTerminalProof；read_checkpoint_event_prefix重解析实际输入、核对原来源／claim／checkpoint／原事件行与offset，记录成功或拒绝phase | 只读检查不invoke、不改原件、不签完成声明、不生成结果资产／后继。schema、输入、native来源、producer、事件行和调用边界的日志均不输出正文或owner token；重算自摘要不能替代原producer认证 |
+| §14.1／§16；既有stage21、旧stage20与正常／恢复独立资格 | 新metadata为可忽略的可选附加材料，仍写stage21，不引入stage22，不改变图schema、持久proof、结果资产或原封口格式；旧reader／旧checkpoint按原合同工作 | 缺新metadata的旧checkpoint不自动获得缺封口恢复资格。sealed completion仍要求原completed边界与各event_sequence早于声明行；本步不放宽任何资产前reader／恢复准入 |
+
+本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果与events／notifications分层 → 保持图内终态、原应用审计和结果资产分责，不移植其他SDK的恢复承诺。本地课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹／状态／权限／幂等测试 → 核验ACK窗口、只读失租、精确原件漂移、双写回滚与独立Worker强杀。没有引入新依赖或另一套图状态／日志／调度模型。
+
+### TDD、真实失败与修正
+
+原草稿日志framework-checkpoint-event-prefix-red-2026-10-28.log：真实官方Runtime五组合因缺metadata前缀而 **5 failed，34.39秒**；初步实现first日志 **106 passed，165.02秒**，启动早于后续加强的原件读取／强杀断言，不计最终验收。以下新日志均在项目.codex-logs，前缀framework-checkpoint-prefix-、日期2026-10-28：
+
+- helper-red：原after_graph_return强杀样本 **1 failed，25.37秒**，新增测试helper错误访问公开任务记录的runtime_owner=None；改为从原task／attempt journal和stage epoch构造不含执行token的RuntimeCheckpointSource，并补齐adapter必填model_resolver=None。不从checkpoint自行取得执行权，也不新增写setup。
+- rejection-red：**1 failed，15 passed，32 deselected，48.30秒**，单事件fixture直接reverse未产生乱序；补成两个不同sequence／id的倒序引用。rejection-recheck：**1 failed，20 passed，32 deselected，72.05秒**，fixture无原enrichment，jsonb_set嵌套路径实际未改变数据；增加原bind_request_context使原件真的带_harness_context。这两次是测试构造错误，不冒充生产漏洞。
+- input-drift-red：**1 failed，8.98秒**，嵌套context被修改但asset_sha256字符串未变，原reader误信旧摘要，是实际生产缺陷。reader与sink绑定均沿已有parse_graph_input_asset重解析实际冻结内容，不只比较摘要字符串；保留失败输入和严格原件断言。
+- atomic初组：**1 failed，1 passed，54 deselected，13.32秒**。第二次官方put故障已实际验证checkpoint／blob全部回滚；另一用例遗漏ExecutionEvent必填timestamp，补原事件时间后重跑完整组，不降低ACK边界断言。中间target组 **146 passed，318.03秒**，但启动后又加强来源漂移／sink归属和两次审批测试，只作中间证据。
+- approval专项：批准／拒绝、连续两次审批后，精确原checkpoint前缀与原封口去掉末尾completed完全一致，原offset、task／attempt身份保留，**2 passed，20.44秒**；该结果与下方完整reader组重叠，不累计。一次pytest命令误用根目录加父目录解释器路径，未启动pytest，不作为目标红测；后续命令均显式使用Agent_Server工作目录与原解释器。
+
+### 最终源码验证与证据范围
+
+固定解释器 `.venv-framework-v2/Scripts/python.exe`，工作目录Agent_Server，设置RUN_LIVE_POSTGRES_TESTS=1、PYTHONIOENCODING=utf-8；所有pytest完整stdout＋stderr通过 `2>&1 | Tee-Object`保存唯一日志并返回原$LASTEXITCODE。没有用观察等待超时推断测试终止或重启同一handle。
+
+- target-final，会话24583：**151 passed，360.43秒，exit0，无skip**。完整event_completion／turn_projection／checkpoint_fencing／terminal_gap四文件；涵盖schema／原件漂移、回滚、未ACK、深拷贝、source-only失租、namespace及三类真实Worker强杀窗口。
+- consumers-final，会话98267：**341 passed，2 skipped，293.40秒，exit0**。原生终态／Delta／SDK／原生interrupt／result投影／live ACK／graph input／stage／事件投递／import隔离／context／v2 Worker共12文件。2项为session_event_delivery.py:610及:645的memory参数，不适用PG事务顺序／跨进程合同；完整组已运行对应postgres参数，不能说成PG未验收。event-delivery-pg，会话83051：上述两个postgres nodeid另行复验 **2 passed，15.54秒，exit0，无skip**，与完整组重叠，不累计。
+- projection-final，会话9344：**206 passed，813.72秒，exit0，无skip**。完整结果资产、application／finalization／partial／observation／snapshot／event投影七文件；独立Worker与真实事务沿原Harness验证，没有把纯投影单测当收尾验收。
+- readers-final，会话94300：**1 failed，195 passed，1411.20秒，exit1**。七文件聚合组在approval_recovery的 `[approved-after_native-none]` 原样本失败：replacement Worker等待20秒后exitcode=None，尚未退出；前六文件已执行通过，不能把这个聚合组写成全绿。其finally已终止并join测试子进程，随后系统进程检查无残留。worker-timeout-repro，会话20984：不改变等待／生产逻辑，单独重跑同一nodeid **1 passed，53.84秒，exit0**，未稳定复现。尚无证据把失败归因于生产逻辑或单纯环境抖动，不宣称根因已修复。
+- 针对该真实失败，仅在原[审批恢复测试](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_recovery.py)增加超时诊断：保留原20秒deadline，先捕获exitcode；失败前记录当时task operation／status／result_status／error_code和子进程存活，不输出输入或token，不通过额外查询等待把已超时结果改判成功。完整该文件approval-recovery-recheck，会话20398：**28 passed，344.02秒，exit0，无skip**，包含原失败节点、原聚合组因-x未执行的后5项，以及§54原P0严格消息比较样本。原七文件组的前六文件已在本轮执行通过，末文件全部28项另行重验；不覆盖原失败日志，不将其改写为一次七文件聚合全绿。
+
+实际选择命令如下，均加 `-q -x -rs --tb=short`（单例诊断使用 `-vv -s -rs --tb=short`）；此前195 passed不是历史§81绿色，而是本轮同一生产逻辑的真实执行结果，但保留聚合失败及其覆盖缺口：
+
+```powershell
+# 工作目录Agent_Server；RUN_LIVE_POSTGRES_TESTS=1，PYTHONIOENCODING=utf-8
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_turn_projection.py tests/test_framework_checkpoint_fencing.py tests/test_framework_terminal_gap.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_result_projection.py tests/test_framework_live_event_persistence.py tests/test_framework_graph_input_asset.py tests/test_framework_message_stages.py tests/test_session_event_delivery.py tests/test_runtime_import_isolation.py tests/test_execution_event_context.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_message_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest 'tests/test_session_event_delivery.py::test_event_sequence_cannot_jump_an_uncommitted_writer[postgres]' 'tests/test_session_event_delivery.py::test_real_http_clients_receive_events_from_separate_worker_process[postgres]' -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest 'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[approved-after_native-none]' -vv -s -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+```
+
+证据仍限E1／E2子集：真实固定官方框架／PG／Redis／独立进程，模型是受控替身或本地HTTP／SSE合成服务，LocalModelObjects不是RustFS。真实供应商／RustFS／领域Runner的E3、双制品／部署／备份恢复／灰度回滚的E4、全量、前端、wheel、官方saver conformance与长链性能未执行。ruff／mypy实际find_spec均不存在，不安装工具，不声称lint或typecheck通过。reader组开始后只更新了event completion模块说明文字，没有改变该组所执行的生产逻辑；最后的超时诊断仅改变失败可见性，整份相关测试单独重验。
+
+### 提交范围与下一出口
+
+本步仅6个生产文件、5个测试文件及本节，共12文件；原v3草稿／测试日志／其他本地数据均排除。以上所有测试会话均已取回真实退出码，进程检查无遗留pytest；提交前核对Git status／完整diff／暂存清单、实施记录仅追加／唯一章节／围栏／本地绝对链接、明显凭据标记和v3 hash。根目录实际运行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 均exit0；ruff／mypy缺失的限制不由compileall替代。提交名 `【feat】原子绑定checkpoint审计前缀并复核原件`；本节与实现及测试同一提交，具体ID以Git历史和交付输出为准。不升级依赖、不改变生产开关或公开路由、不启停共享基础设施、不新增付费调用，不推送、不建PR。
+
+本步只完成同事务保存已确认前缀及只读原件复核，不表示“checkpoint前缀=完整Runtime事件封口”。下步仍须从精确原件与原账本派生缺失终态意图、校验已存在原事件，并在独立窄权限事务中封口／封存原结果／发布只收尾后继；不得invoke图补造事实，已有callback必须复用ACK原件。一次未稳定复现的Worker等待超时仍保留为Harness稳定性／诊断风险，不据此伪造根因或开放发布。A2-2其他故障／材料组合、A2-3、A3及B/C/D/E/F与E3/E4仍未整体完成，完整goal保持active。
