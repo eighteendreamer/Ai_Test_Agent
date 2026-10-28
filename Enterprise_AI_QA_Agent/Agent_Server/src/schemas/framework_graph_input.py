@@ -18,6 +18,24 @@ from src.schemas.framework_tool_projection import TOOL_PROJECTION_VERSION_KEY
 
 
 RESULT_PROJECTION_VERSION_KEY = "framework_result_projection_version"
+TERMINAL_EVENT_PREPARATION_KEY = "framework_terminal_event_preparation"
+
+
+class FrameworkTerminalEventPreparation(BaseModel):
+    """Frozen intent rules; checkpoint time is not an application commit time."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1]
+    timestamp_source: Literal["native_checkpoint.ts"]
+    pilot_stage: Literal["DA-E1", "DA-E2", "DA-E3", "DA-E4"]
+    adapter_stage: Literal["DA-E1", "DA-E2", "DA-E3", "DA-E4"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_version(cls, value):
+        if isinstance(value, dict) and type(value.get("schema_version")) is not int:
+            raise ValueError("Terminal event preparation requires its explicit integer version")
+        return value
 
 
 class FrameworkProjectionIdentity(BaseModel):
@@ -75,11 +93,17 @@ class _FrameworkGraphInputFields(BaseModel):
             type(self.feature_flags["result_projection_version"]) is not int
             or self.feature_flags["result_projection_version"] != 1 or self.schema_version != 2):
             raise ValueError("Result projection requires its supported prepared graph format")
+        if "terminal_event_projection_version" in self.feature_flags and (
+            type(self.feature_flags["terminal_event_projection_version"]) is not int
+            or self.feature_flags["terminal_event_projection_version"] != 1 or self.schema_version != 2):
+            raise ValueError("Terminal event projection requires its supported prepared graph format")
         return self
 
     @property
     def required_message_stage_version(self):
         version = self.feature_flags.get("tool_projection_version")
+        if "terminal_event_projection_version" in self.feature_flags:
+            return 21
         if "result_projection_version" in self.feature_flags:
             return 20
         if "verification_projection_version" in self.feature_flags:
@@ -121,6 +145,11 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
                 raise ValueError("Verification preparation differs from its original graph format")
             FrameworkVerificationPreparation.model_validate(context[VERIFICATION_PREPARATION_KEY]).require_context(context,
                 session_id=self.session_id, turn_id=self.turn_id, trace_id=self.trace_id)
+        if TERMINAL_EVENT_PREPARATION_KEY in context or "terminal_event_projection_version" in self.feature_flags:
+            if (self.feature_flags.get("terminal_event_projection_version") != 1
+                or TERMINAL_EVENT_PREPARATION_KEY not in context or result_version != 1):
+                raise ValueError("Terminal event preparation differs from its original graph format")
+            FrameworkTerminalEventPreparation.model_validate(context[TERMINAL_EVENT_PREPARATION_KEY])
         return self
 
 

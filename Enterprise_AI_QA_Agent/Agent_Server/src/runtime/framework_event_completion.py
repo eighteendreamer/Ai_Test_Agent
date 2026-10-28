@@ -138,8 +138,9 @@ def completion_event(cur, settings, owner, event_log, native_terminal, returned_
         events=references)
     material = RuntimeEventCompletion(**value, completion_sha256=approval_value_hash(value))
     _require_producer(cur, settings, binding, material)
-    # The event timestamp denotes the original graph-log boundary, not a new
-    # claim about commit/checkpoint time; repeat calls reuse that exact intent.
+    # Inherit the last original event's declared source: legacy graph-log
+    # boundary or versioned native checkpoint creation, never application commit.
+    # Repeat calls reuse that exact intent without upgrading historical records.
     return _declaration(binding, material, event_log[-1]["timestamp"])
 
 

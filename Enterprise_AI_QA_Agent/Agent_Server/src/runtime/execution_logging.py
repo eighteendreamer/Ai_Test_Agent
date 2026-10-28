@@ -76,6 +76,20 @@ async def append_graph_event_durable(
     acknowledgement is an event fact, never graph/application completion proof.
     """
     event = _build_graph_event(state, event_type, phase, message, **payload)
+    await _persist_graph_event_durable(event)
+
+
+async def append_graph_event_intent_durable(state, event: ExecutionEvent):
+    """Append a supplied intent using the same ordered owner-bound ACK port."""
+    if (event.session_id != state.get("session_id") or event.payload.get("turn_id") != state.get("turn_id")
+        or event.payload.get("trace_id") != state.get("trace_id", "")
+        or event.payload.get("step") != len(state.get("event_log", [])) + 1):
+        raise ValueError("Prepared graph event differs from its original scope or next step")
+    _record_graph_event(state, event)
+    await _persist_graph_event_durable(event)
+
+
+async def _persist_graph_event_durable(event):
     sink = current_graph_event_sink()
     if isinstance(sink, SessionEventSink) and sink.runtime_owner is not None:
         await sink.persist(event)
@@ -100,10 +114,9 @@ async def complete_graph_event_log(state, native_terminal, *, returned_event_off
             returned_event_offset=returned_event_offset)
 
 
-def _build_graph_event(state, event_type, phase, message, **payload) -> ExecutionEvent:
-    event_log = state.setdefault("event_log", [])
+def _graph_event_payload(state, phase, message, **payload):
     event_payload: dict[str, Any] = {
-        "step": len(event_log) + 1,
+        "step": len(state.get("event_log", [])) + 1,
         "phase": phase,
         "message": message,
         "turn_id": state.get("turn_id", ""),
@@ -112,11 +125,25 @@ def _build_graph_event(state, event_type, phase, message, **payload) -> Executio
     if event_payload["trace_id"]:
         event_payload["correlation_id"] = f"{event_payload['trace_id']}:{event_payload['step']}"
     event_payload.update(_AUDIT_OUTPUT_POLICY.sanitize_for_audit(payload))
+    return event_payload
+
+
+def build_graph_event_intent(state, event_type, phase, message, *, event_id, timestamp, **payload) -> ExecutionEvent:
+    """Pure audit projection: identity/time are supplied, not allocated here."""
+    return ExecutionEvent(id=event_id, type=event_type, session_id=state.get("session_id", ""),
+        timestamp=timestamp, payload=_graph_event_payload(state, phase, message, **payload))
+
+
+def _build_graph_event(state, event_type, phase, message, **payload) -> ExecutionEvent:
     event = ExecutionEvent(type=event_type, session_id=state.get("session_id", ""),
-        timestamp=datetime.now(timezone.utc), payload=event_payload)
-    event_log.append({"id": event.id, "timestamp": event.timestamp.isoformat(),
-                      "type": event_type, "payload": event_payload})
+        timestamp=datetime.now(timezone.utc), payload=_graph_event_payload(state, phase, message, **payload))
+    _record_graph_event(state, event)
     return event
+
+
+def _record_graph_event(state, event):
+    state.setdefault("event_log", []).append({"id": event.id, "timestamp": event.timestamp.isoformat(),
+        "type": event.type, "payload": event.payload})
 
 
 def _enqueue_graph_event(event: ExecutionEvent) -> None:

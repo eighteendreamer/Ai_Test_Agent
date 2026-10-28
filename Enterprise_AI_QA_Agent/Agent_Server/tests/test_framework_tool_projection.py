@@ -411,7 +411,7 @@ async def test_independent_process_kill_retains_original_tool_material_without_r
         await asyncio.to_thread(process.join, 10)
         assert not process.is_alive() and process.exitcode != 0
         saved_stage = await h.tasks.get_framework_message_stage_version(h.owner.id, session_id=h.session_id)
-        assert saved_stage == 20
+        assert saved_stage == 21
         before = await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)
         assert "runtime_result_asset" not in before.source_manifest
         assert await h.store.get_latest_snapshot(h.session_id) is None

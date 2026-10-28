@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from copy import deepcopy
 import threading
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -24,6 +25,52 @@ from tests.test_framework_checkpoint_fencing import checkpoint_harness, start
 def original_event(h):
     return ExecutionEvent(id=uuid4().hex, session_id=h.session_id, type="runtime.audit",
         timestamp=datetime.now(timezone.utc), payload={"turn_id": h.binding.turn_id, "fact": "original"})
+
+
+@pytest.mark.asyncio
+async def test_supplied_intents_keep_original_identity_time_redaction_and_owner_ack(checkpoint_harness, monkeypatch):
+    from src.runtime import execution_logging
+    from src.infrastructure.storage_utils import ensure_utc_datetime
+
+    h = checkpoint_harness
+    await start(h)
+    state = {"session_id": h.session_id, "turn_id": h.binding.turn_id, "trace_id": "original-trace", "event_log": []}
+    before = deepcopy(state)
+    stamp = datetime(2026, 10, 27, 0, 1, 2, tzinfo=timezone.utc)
+    def forbidden(*args, **kwargs):
+        pytest.fail("Supplied event intents must not read a new clock or generate a random identity")
+    monkeypatch.setattr("src.schemas.session.uuid4", forbidden)
+    monkeypatch.setattr(execution_logging, "datetime", type("NoClock", (), {"now": staticmethod(forbidden)}))
+    event = execution_logging.build_graph_event_intent(state, "runtime.audit", "runtime", "original intent",
+        event_id="original-event-intent", timestamp=stamp, detail="password=synthetic-test-marker")
+    assert state == before
+    sink = SessionEventSink(h.store, h.session_id, capacity=1, fence={}, runtime_owner=h.owner.runtime_owner)
+    with graph_event_scope(sink):
+        await execution_logging.append_graph_event_intent_durable(state, event)
+        saved = next(item for item in await h.store.list_events(h.session_id) if item.id == event.id)
+        assert event.timestamp == stamp and saved.timestamp == ensure_utc_datetime(stamp) and saved.type == event.type
+        assert all(saved.payload[key] == value for key, value in event.payload.items())
+        assert state["event_log"] == [{"id": event.id, "timestamp": stamp.isoformat(), "type": event.type, "payload": event.payload}]
+        assert saved.payload["detail"] == "password=[REDACTED]"
+        assert not sink._pending and not sink.deferred_to_final_flush
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["session", "turn", "trace", "step"])
+async def test_supplied_intent_cannot_cross_scope_or_reorder_the_original_log(changed):
+    from src.runtime.execution_logging import build_graph_event_intent, append_graph_event_intent_durable
+
+    state = {"session_id": "session", "turn_id": "turn", "trace_id": "trace", "event_log": []}
+    event = build_graph_event_intent(state, "runtime.audit", "runtime", "original", event_id="original-intent",
+        timestamp=datetime(2026, 10, 27, tzinfo=timezone.utc))
+    if changed == "session":
+        event.session_id = "foreign"
+    else:
+        event.payload[{"turn": "turn_id", "trace": "trace_id", "step": "step"}[changed]] = "foreign"
+    before = deepcopy(state)
+    with pytest.raises(ValueError, match="scope or next step"):
+        await append_graph_event_intent_durable(state, event)
+    assert state == before
 
 
 @pytest.mark.asyncio

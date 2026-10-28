@@ -81,6 +81,7 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
             mode_key="code_review", model_key="fixture", context={"project_root": str(tmp_path)}, runtime_binding=h.binding),
             event_queue=sink, projection_identity=identity, on_graph_input=remember)
     prepared, = captured
+    assert prepared.feature_flags.get("terminal_event_projection_version") == 1
     graph, = graphs
     async with h.provider.open(owner=h.owner.runtime_owner) as saver:
         terminal = await collect_native_terminal(graph, saver, config(h))
@@ -121,12 +122,26 @@ async def test_completed_runtime_is_identical_from_original_preparation_native_a
         returned_event_offset=completion.completion.returned_event_offset)
     assert facts.adapter_stage == ("DA-E3" if planning or subagents else "DA-E1")
     assert facts.pilot_stage == ("DA-E4" if governed_empty else facts.adapter_stage)
+    rules = prepared.runtime_preparation.initial_state["context_bundle"]["framework_terminal_event_preparation"]
+    assert rules["pilot_stage"] == facts.pilot_stage and rules["adapter_stage"] == facts.adapter_stage
     assert bool(facts.subagent_events) is subagents
     if subagents:
         assert [item["type"] for item in facts.subagent_events] == ["started", "completed"]
         assert facts.subagent_events[0]["run_id"] == facts.subagent_events[1]["run_id"]
     native_result = project_deep_agent_result(terminal.values, stage=facts.adapter_stage,
-        native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=facts.subagent_events)
+        native_terminal=terminal.proof.model_dump(mode="json"), subagent_events=facts.subagent_events,
+        native_checkpoint_timestamp=terminal.checkpoint_timestamp)
+    from src.application.runtime.turn_projection import project_deep_agent_terminal_events
+
+    terminal_count = 2 if native_result.todos else 1
+    prefix = completion.event_log[:-terminal_count]
+    monkeypatch.setattr("src.runtime.execution_logging.datetime", SimpleNamespace(now=forbidden))
+    intents = project_deep_agent_terminal_events(prepared.runtime_preparation, native_result, event_log=prefix)
+    reproduced = [{"id": item.id, "timestamp": item.timestamp.isoformat(), "type": item.type, "payload": item.payload}
+        for item in intents]
+    assert reproduced == completion.event_log[-terminal_count:]
+    assert all(item.timestamp.isoformat() == checkpoint.checkpoint["ts"] for item in intents)
+    assert all(item.payload["timestamp_source"] == "native_checkpoint.ts" for item in intents)
     state = completed_deep_agent_state(prepared.runtime_preparation.initial_state, native_result,
         tool_records=[], binding=h.binding, pilot_stage=facts.pilot_stage)
     state["event_log"] = completion.event_log
@@ -156,6 +171,118 @@ def callback_collection():
     events.append({"id": "complete", "type": "runtime.turn_completed", "payload": {"turn_id": "turn",
         "pilot_stage": "DA-E4", "adapter_stage": "DA-E3", "callback_events_sha256": approval_value_hash(callbacks[2:])}})
     return events, callbacks[2:]
+
+
+def terminal_inputs(*, planning=False):
+    from src.application.deep_agents.native_terminal import NativeTerminalProof
+    from src.schemas.framework_graph_input import FrameworkRuntimePreparation
+    from tests.test_runtime_binding_persistence import make_binding
+
+    binding = make_binding("session", "turn")
+    identity = FrameworkProjectionIdentity(binding=binding, assistant_message_id="reserved-assistant",
+        snapshot_id="reserved-snapshot", snapshot_version=1, snapshot_created_at=datetime(2026, 10, 27))
+    prefix = [{"id": "original-prefix", "timestamp": "2026-10-27T00:00:00+00:00", "type": "runtime.turn_started",
+        "payload": {"turn_id": "turn", "trace_id": "trace", "step": 1}}]
+    preparation = FrameworkRuntimePreparation(identity=identity, initial_state={"session_id": "session", "turn_id": "turn",
+        "trace_id": "trace", "event_log": deepcopy(prefix), "context_bundle": {
+            "runtime_binding": binding.model_dump(mode="json"), "framework_result_projection_version": 1,
+            "framework_terminal_event_preparation": {"schema_version": 1, "timestamp_source": "native_checkpoint.ts",
+                "pilot_stage": "DA-E4", "adapter_stage": "DA-E3"}}})
+    proof = NativeTerminalProof(binding_fingerprint=binding.fingerprint, thread_id=binding.thread_id,
+        checkpoint_namespace="", checkpoint_id="original-checkpoint", checkpoint_sha256="a" * 64,
+        state_sha256="b" * 64, serializer="fixture")
+    result = DeepAgentRuntimeResult(output_text="original answer", metadata={"stage": "DA-E3",
+        "native_terminal": proof.model_dump(mode="json"), "root_model_budget": {"original": {"calls": 3}}},
+        native_checkpoint_timestamp="2026-10-27T00:01:02.123456+00:00",
+        todos=[{"content": "password=synthetic-test-marker", "status": "completed"}] if planning else [])
+    return preparation, result, prefix
+
+
+@pytest.mark.parametrize("planning", [False, True])
+def test_terminal_intents_use_frozen_identity_checkpoint_time_and_shared_audit_rules(monkeypatch, planning):
+    from uuid import NAMESPACE_URL, uuid5
+    from src.application.runtime.turn_projection import project_deep_agent_terminal_events
+
+    preparation, result, prefix = terminal_inputs(planning=planning)
+    originals = deepcopy((preparation, result, prefix))
+    def forbidden(*args, **kwargs):
+        pytest.fail("Pure terminal intents cannot allocate random identity or read a current clock")
+    monkeypatch.setattr("src.schemas.session.uuid4", forbidden)
+    monkeypatch.setattr("src.runtime.execution_logging.datetime", SimpleNamespace(now=forbidden))
+    monkeypatch.setattr("src.application.runtime.turn_projection.datetime",
+        SimpleNamespace(fromisoformat=datetime.fromisoformat, now=forbidden))
+    events = project_deep_agent_terminal_events(preparation, result, event_log=prefix)
+    assert events == project_deep_agent_terminal_events(preparation, result, event_log=prefix)
+    assert [item.type for item in events] == (["graph.plan_built"] if planning else []) + ["runtime.turn_completed"]
+    for index, item in enumerate(events, start=2):
+        seed = json.dumps(["framework-terminal-event-v1", preparation.identity.binding.fingerprint,
+            "reserved-assistant", "reserved-snapshot", item.type], separators=(",", ":"))
+        assert item.id == str(uuid5(NAMESPACE_URL, seed))
+        assert item.timestamp.isoformat() == result.native_checkpoint_timestamp
+        assert item.payload["timestamp_source"] == "native_checkpoint.ts"
+        assert item.payload["native_checkpoint_id"] == "original-checkpoint"
+        assert item.payload["terminal_event_projection_version"] == 1
+        assert item.payload["step"] == index and item.payload["correlation_id"] == f"trace:{index}"
+        assert item.payload["pilot_stage"] == "DA-E4"
+    assert events[-1].payload["adapter_stage"] == "DA-E3"
+    assert events[-1].payload["root_model_budget"] == result.metadata["root_model_budget"]
+    if planning:
+        assert "synthetic-test-marker" not in str(events[0].payload)
+        assert events[0].payload["todos"][0]["content"] == "password=[REDACTED]"
+        events[0].payload["todos"][0]["content"] = "changed consumer copy"
+    assert (preparation, result, prefix) == originals
+
+
+@pytest.mark.parametrize("changed", ["timestamp_missing", "timestamp_invalid", "timestamp_naive", "stage", "binding",
+    "native_namespace", "interrupt", "prefix", "missing_rules", "future_rules"])
+def test_terminal_intents_reject_missing_or_contradictory_sources_without_mutating_them(changed):
+    from src.application.runtime.turn_projection import project_deep_agent_terminal_events
+
+    preparation, result, prefix = terminal_inputs()
+    if changed.startswith("timestamp_"):
+        result = replace(result, native_checkpoint_timestamp={"timestamp_missing": None, "timestamp_invalid": "bad",
+            "timestamp_naive": "2026-10-27T00:01:02"}[changed])
+    elif changed == "stage":
+        result.metadata["stage"] = "DA-E1"
+    elif changed == "binding":
+        result.metadata["native_terminal"]["binding_fingerprint"] = "f" * 64
+    elif changed == "native_namespace":
+        result.metadata["native_terminal"]["checkpoint_namespace"] = "tools:child"
+    elif changed == "interrupt":
+        result = replace(result, interrupts=[{"id": "pending"}])
+    elif changed == "prefix":
+        prefix[0]["id"] = "not original"
+    elif changed == "missing_rules":
+        preparation.initial_state["context_bundle"].pop("framework_terminal_event_preparation")
+    else:
+        preparation.initial_state["context_bundle"]["framework_terminal_event_preparation"]["schema_version"] = 2
+    originals = deepcopy((preparation, result, prefix))
+    with pytest.raises(ValueError):
+        project_deep_agent_terminal_events(preparation, result, event_log=prefix)
+    assert (preparation, result, prefix) == originals
+
+
+@pytest.mark.parametrize("changed", ["identity", "timestamp", "payload", "order"])
+def test_original_terminal_intents_are_compared_not_replaced_by_newly_projected_events(changed):
+    from src.application.runtime.turn_projection import project_deep_agent_terminal_events, project_original_completed_turn
+
+    preparation, result, prefix = terminal_inputs(planning=True)
+    intents = project_deep_agent_terminal_events(preparation, result, event_log=prefix)
+    events = prefix + [{"id": item.id, "timestamp": item.timestamp.isoformat(), "type": item.type, "payload": item.payload}
+        for item in intents]
+    if changed == "identity":
+        events[-1]["id"] = "different-original-identity"
+    elif changed == "timestamp":
+        events[-1]["timestamp"] = "2026-10-28T00:00:00+00:00"
+    elif changed == "payload":
+        events[-1]["payload"]["adapter_stage"] = "DA-E1"
+    else:
+        events[-2:] = list(reversed(events[-2:]))
+    before = deepcopy(events)
+    with pytest.raises(ValueError, match="Original terminal events"):
+        project_original_completed_turn(preparation=preparation, result=result, binding=preparation.identity.binding,
+            facts=SimpleNamespace(pilot_stage="DA-E4"), event_log=events, returned_event_offset=0, materials=[])
+    assert events == before
 
 
 @pytest.mark.parametrize("offset", [2, 3, 4])

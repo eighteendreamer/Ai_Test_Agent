@@ -14,6 +14,7 @@ from pydantic import ValidationError
 
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
+from src.application.deep_agents.runtime_adapter import _pilot_stage
 from src.application.deep_agents.framework_transcript import append_turn_input
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
@@ -31,6 +32,7 @@ from src.application.runtime.tool_messages import (
 from src.application.runtime.turn_projection import (
     RuntimeTurnResult, completed_deep_agent_state, project_completed_turn, project_runtime_snapshot,
     snapshot_stage_for_state,
+    deep_agent_terminal_event_specs, project_deep_agent_terminal_events,
 )
 from src.application.runtime.tool_governance_service import (
     GovernedToolCallContext,
@@ -54,7 +56,7 @@ from src.runtime.control import RuntimeControlRegistry
 from src.runtime.execution_context import graph_event_scope, current_framework_owner
 from src.runtime.execution_logging import (
     GRAPH_EVENT_LOG_VERSION_KEY, append_graph_event, append_graph_event_durable,
-    complete_graph_event_log, prepare_graph_event_log, truncate_text,
+    complete_graph_event_log, prepare_graph_event_log, truncate_text, append_graph_event_intent_durable,
 )
 from src.schemas.model_config import ModelConfigRecord, is_model_failure_summary
 from src.schemas.session import (
@@ -67,10 +69,13 @@ from src.schemas.session import (
     SessionSnapshot,
 )
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord
-from src.schemas.framework_approval import FrameworkContinuationPlan, approval_value_hash
+from src.schemas.framework_approval import FrameworkContinuationPlan
 from src.schemas.framework_transcript import FrameworkTranscriptAsset
 from src.schemas.runtime_binding import RuntimeBinding
-from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation, RESULT_PROJECTION_VERSION_KEY
+from src.schemas.framework_graph_input import (
+    FrameworkProjectionIdentity, FrameworkRuntimePreparation, RESULT_PROJECTION_VERSION_KEY,
+    FrameworkTerminalEventPreparation, TERMINAL_EVENT_PREPARATION_KEY,
+)
 from src.schemas.framework_tool_projection import (
     FrameworkToolProjection, TOOL_PROJECTION_KEY, TOOL_PROJECTION_VERSION_KEY,
 )
@@ -219,6 +224,7 @@ class RuntimeService:
             # cannot upgrade a historical or unprepared graph invocation.
             state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
             state["context_bundle"].pop(RESULT_PROJECTION_VERSION_KEY, None)
+            state["context_bundle"].pop(TERMINAL_EVENT_PREPARATION_KEY, None)
             if projection_identity is not None:
                 state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 3
             prepare_graph_event_log(state)
@@ -409,6 +415,7 @@ class RuntimeService:
             continue_from_checkpoint=(continuation_plan.continue_from_checkpoint
                 if continuation_plan is not None else False),
         )
+        runtime_preparation = None
         if on_graph_input is not None:
             from src.schemas.framework_graph_input import graph_input_asset
             from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
@@ -431,7 +438,19 @@ class RuntimeService:
                     "result_projection_version": state["context_bundle"].get(RESULT_PROJECTION_VERSION_KEY),
                     "event_log_version": state["context_bundle"].get(GRAPH_EVENT_LOG_VERSION_KEY)})
 
-            await on_graph_input(graph_input_asset(
+            if TERMINAL_EVENT_PREPARATION_KEY in state["context_bundle"]:
+                FrameworkTerminalEventPreparation.model_validate(state["context_bundle"][TERMINAL_EVENT_PREPARATION_KEY])
+            if projection_identity is not None and (
+                (continuation_plan is None and state["context_bundle"].get(RESULT_PROJECTION_VERSION_KEY) == 1)
+                or TERMINAL_EVENT_PREPARATION_KEY in state["context_bundle"]
+            ):
+                rules = FrameworkTerminalEventPreparation(schema_version=1, timestamp_source="native_checkpoint.ts",
+                    pilot_stage=pilot_stage, adapter_stage=_pilot_stage(adapter_request))
+                state["context_bundle"][TERMINAL_EVENT_PREPARATION_KEY] = rules.model_dump(mode="json")
+                logger.info("framework_terminal_events_prepared", extra={
+                    "binding_id": projection_identity.binding.binding_id, **rules.model_dump()})
+
+            frozen_input = graph_input_asset(
                 session_id=adapter_request.session_id,
                 turn_id=adapter_request.turn_id,
                 trace_id=adapter_request.trace_id,
@@ -454,10 +473,14 @@ class RuntimeService:
                         if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else {}),
                     **({"result_projection_version": state["context_bundle"][RESULT_PROJECTION_VERSION_KEY]}
                         if RESULT_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
+                    **({"terminal_event_projection_version": 1}
+                        if TERMINAL_EVENT_PREPARATION_KEY in state["context_bundle"] else {}),
                 },
                 runtime_preparation=(FrameworkRuntimePreparation(identity=projection_identity, initial_state=state)
                     if projection_identity is not None else None),
-            ).model_dump(mode="json"))
+            )
+            runtime_preparation = frozen_input.runtime_preparation if projection_identity is not None else None
+            await on_graph_input(frozen_input.model_dump(mode="json"))
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
             else self._deep_agent_runtime_adapter)
         execution_task = asyncio.create_task(
@@ -570,36 +593,31 @@ class RuntimeService:
                     previous_messages=session.messages, event_log=state["event_log"], original_materials=original_tool_materials),
                 pending_turn=state["pending_turn"],
             )
+        terminal_specs = deep_agent_terminal_event_specs(result, pilot_stage=pilot_stage)
+        terminal_events = None
+        if TERMINAL_EVENT_PREPARATION_KEY in state["context_bundle"]:
+            if runtime_preparation is None:
+                raise ValueError("Terminal event projection requires its original frozen runtime preparation")
+            terminal_events = project_deep_agent_terminal_events(runtime_preparation, result, event_log=state["event_log"])
+            logger.info("framework_terminal_event_intents_projected", extra={
+                "binding_id": projection_identity.binding.binding_id, "event_count": len(terminal_events),
+                "checkpoint_id": result.metadata["native_terminal"]["checkpoint_id"],
+                "timestamp_source": "native_checkpoint.ts"})
+
+        async def append_terminal_event(index):
+            if terminal_events is not None:
+                await append_graph_event_intent_durable(state, terminal_events[index])
+            else:
+                event_type, phase, message, payload = terminal_specs[index]
+                await append_graph_event_durable(state, event_type, phase, message, **payload)
+
         if result.todos:
-            await append_graph_event_durable(
-                state,
-                "graph.plan_built",
-                "deepagents.todo",
-                "Deep Agents cognitive plan has been synchronized for this turn.",
-                harness="deepagents",
-                pilot_stage=pilot_stage,
-                plan_step_count=len(result.todos),
-                plan_outline=" | ".join(item["content"] for item in result.todos),
-                todos=result.todos,
-            )
+            await append_terminal_event(0)
         state.update(completed_deep_agent_state(state, result, tool_records=tool_records,
             binding=request.runtime_binding, pilot_stage=pilot_stage))
         if on_model_chunk is not None:
             await on_model_chunk(result.output_text)
-        await append_graph_event_durable(
-            state,
-            "runtime.turn_completed",
-            "runtime",
-            "Deep Agents pilot execution finished for the current turn.",
-            harness="deepagents",
-            pilot_stage=pilot_stage,
-            final_response_length=len(result.output_text),
-            **({"root_model_budget": result.metadata["root_model_budget"]}
-                if "root_model_budget" in result.metadata else {}),
-            **({"adapter_stage": result.metadata.get("stage"),
-                "callback_events_sha256": approval_value_hash(result.subagent_events)}
-                if result.metadata.get("native_terminal") is not None else {}),
-        )
+        await append_terminal_event(-1)
         if result.metadata.get("native_terminal") is not None:
             await complete_graph_event_log(state, result.metadata["native_terminal"],
                 returned_event_offset=returned_event_offset)

@@ -32,16 +32,24 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
     h = fresh_runtime_harness
     selected = getattr(request, "param", "inspect_value")
     tool_key = selected.get("tool_key", "inspect_value") if isinstance(selected, dict) else selected
-    if isinstance(selected, dict) and (selected.get("legacy_verification") or selected.get("legacy_result")):
+    if isinstance(selected, dict) and (selected.get("legacy_verification") or selected.get("legacy_result") or selected.get("legacy_terminal")):
         from src.schemas import framework_graph_input as graph_inputs
 
         capture = graph_inputs.graph_input_asset
+        first_input = True
 
         def legacy_input(**kwargs):
+            nonlocal first_input
+            if selected.get("legacy_terminal") and not first_input:
+                return capture(**kwargs)
+            first_input = False
             # Simulate old preparation at the original boundary, before any
             # graph runs; do not remove material from a completed result.
-            kwargs["feature_flags"].pop("result_projection_version", None)
-            kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_result_projection_version", None)
+            if not selected.get("legacy_terminal"):
+                kwargs["feature_flags"].pop("result_projection_version", None)
+                kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_result_projection_version", None)
+            kwargs["feature_flags"].pop("terminal_event_projection_version", None)
+            kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_terminal_event_preparation", None)
             if selected.get("legacy_verification"):
                 kwargs["feature_flags"].pop("verification_projection_version", None)
                 kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_verification_preparation", None)
@@ -127,7 +135,7 @@ async def test_approval_input_is_frozen_before_adapter_and_cannot_be_replaced(pr
     async def inspect_before_graph(request):
         stage = h.stages.get(task.id, h.session_id, include_continuations=True)
         saved = stage.source_manifest["approval_graph_inputs"][task.id]
-        assert stage.schema_version == 20 and saved["attempt_id"] == task.attempt_id
+        assert stage.schema_version == 21 and saved["attempt_id"] == task.attempt_id
         assert saved["owner_epoch"] == task.runtime_owner.owner_epoch
         assert (await h.jobs.get_job(h.proposals["B"].job.id)).status.value == "waiting_approval"
         raw = saved["graph_input_asset"]
@@ -245,6 +253,8 @@ async def test_stage16_reads_original_inputs_but_never_grants_message_write_auth
     for graph in graphs:
         graph["feature_flags"].pop("result_projection_version", None)
         graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_result_projection_version", None)
+        graph["feature_flags"].pop("terminal_event_projection_version", None)
+        graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_terminal_event_preparation", None)
         graph["feature_flags"].pop("verification_projection_version", None)
         graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_verification_preparation", None)
         rehash(graph)
@@ -395,7 +405,7 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
     from src.runtime.framework_runtime_results import FrameworkRuntimeResults
 
     results = FrameworkRuntimeResults(h.tasks)
-    assert saved.schema_version == 20
+    assert saved.schema_version == 21
     assert await results.load(a.runtime_owner) == asset
     assert await results.freeze(a.runtime_owner, runtime_result=asset.runtime_result.restore(),
         assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
@@ -432,7 +442,14 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
             facts = project_deep_agent_callback_facts(read.event_log, turn_id=h.binding.turn_id,
                 returned_event_offset=read.completion.returned_event_offset)
             result = project_deep_agent_result(native.values, stage=facts.adapter_stage,
-                subagent_events=facts.subagent_events, native_terminal=proof.model_dump(mode="json"))
+                subagent_events=facts.subagent_events, native_terminal=proof.model_dump(mode="json"),
+                native_checkpoint_timestamp=native.checkpoint_timestamp)
+            from src.application.runtime.turn_projection import project_deep_agent_terminal_events
+
+            terminal_count = 2 if result.todos else 1
+            intents = project_deep_agent_terminal_events(preparation, result, event_log=read.event_log[:-terminal_count])
+            assert [{"id": item.id, "timestamp": item.timestamp.isoformat(), "type": item.type, "payload": item.payload}
+                for item in intents] == read.event_log[-terminal_count:]
 
             # Read the applied originals through their durable receipt/link,
             # not from the comparison oracle, today's renderer or a new clock.
@@ -554,11 +571,44 @@ async def test_stage17_does_not_serialize_new_finalization_fields(frozen_approva
 
     h = frozen_approval_result
     stage = h.stages.get(h.initial_task_id, h.session_id)
-    assert stage.schema_version == 20
+    assert stage.schema_version == 21
     assert stage.model_dump(mode="json")["approval_finalizations"] == []
     legacy = stage.model_copy(update={"schema_version": 17})
     assert "approval_finalizations" not in legacy.model_dump(mode="json")
     assert "approval_finalizations" not in json.loads(legacy.model_dump_json())
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prepared_approval_runtime", [{"legacy_terminal": True}], indirect=True)
+async def test_stage20_terminal_events_remain_original_and_continuations_cannot_upgrade_the_rules(frozen_approval_result):
+    from src.schemas.framework_graph_input import TERMINAL_EVENT_PREPARATION_KEY
+
+    h = frozen_approval_result
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    assert stage.schema_version == 20
+    manifest = stage.source_manifest
+    originals = [manifest["graph_input_asset"],
+        *[item["graph_input_asset"] for item in manifest["approval_graph_inputs"].values()]]
+    for original in originals:
+        assert original["feature_flags"]["result_projection_version"] == 1
+        assert "terminal_event_projection_version" not in original["feature_flags"]
+        assert TERMINAL_EVENT_PREPARATION_KEY not in original["runtime_preparation"]["initial_state"]["context_bundle"]
+    read = await h.results.load(h.result_task.runtime_owner)
+    assert read == h.result_asset
+    terminal_events = [event for event in read.runtime_result.events
+        if event.type in {"graph.plan_built", "runtime.turn_completed"}]
+    assert terminal_events and all("terminal_event_projection_version" not in event.payload for event in terminal_events)
+    changed = stage.model_dump(mode="json")
+    graph = changed["source_manifest"]["approval_graph_inputs"][h.result_task.id]["graph_input_asset"]
+    graph["feature_flags"]["terminal_event_projection_version"] = 1
+    graph["runtime_preparation"]["initial_state"]["context_bundle"][TERMINAL_EVENT_PREPARATION_KEY] = {
+        "schema_version": 1, "timestamp_source": "native_checkpoint.ts", "pilot_stage": "DA-E4", "adapter_stage": "DA-E4"}
+    rehash(graph)
+    changed["schema_version"] = 21
+    changed["source_sha256"] = approval_value_hash(changed["source_manifest"])
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="original terminal event projection"):
+        validate_message_stage(changed)
+    assert h.stages.get(h.initial_task_id, h.session_id) == stage
 
 
 async def queue_approval_finalization(h):
@@ -1092,7 +1142,7 @@ async def test_approval_asset_successor_only_finalizes_the_original_result(froze
     completed = await h.tasks.get(successor_id)
     assert completed.status == "completed", completed.error_code
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.phase == "projected" and saved.schema_version == 20
+    assert saved.phase == "projected" and saved.schema_version == 21
     assert saved.source_manifest["runtime_result_asset"] == original.source_manifest["runtime_result_asset"]
     assert saved.source_manifest["approval_graph_inputs"] == original.source_manifest["approval_graph_inputs"]
     snapshot = await h.store.get_latest_snapshot(h.session_id)

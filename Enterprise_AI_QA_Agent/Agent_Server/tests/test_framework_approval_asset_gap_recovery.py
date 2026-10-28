@@ -55,7 +55,9 @@ def test_result_time_contract_requires_prepared_stage20_without_changing_legacy(
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=19).require_message_stage(20)
         FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(20)
         with pytest.raises(TaskDeferred):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(21)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=20).require_message_stage(21)
+        with pytest.raises(TaskDeferred):
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(22)
 
 
 @pytest.mark.asyncio
@@ -70,7 +72,7 @@ async def test_new_result_time_is_the_original_durable_graph_boundary(frozen_app
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("prepared_approval_runtime", ["api-tester"], indirect=True)
+@pytest.mark.parametrize("prepared_approval_runtime", ["api-tester", {"tool_key": "api-tester", "legacy_terminal": True}], indirect=True)
 @pytest.mark.parametrize("approval_asset_gap", ["approved", "denied", {"decision": "approved", "capture_budget": True}], indirect=True)
 async def test_owned_reconciliation_seals_original_and_delivers_only_finalization(approval_asset_gap, monkeypatch):
     h = approval_asset_gap
@@ -134,18 +136,23 @@ async def test_owned_reconciliation_seals_original_and_delivers_only_finalizatio
 
 
 @pytest.mark.asyncio
-async def test_approval_cannot_drop_the_original_result_projection_contract(frozen_approval_result):
+@pytest.mark.parametrize("contract", ["result", "terminal_event"])
+async def test_approval_cannot_drop_the_original_result_projection_contract(frozen_approval_result, contract):
     from src.runtime.framework_message_stages import validate_message_stage
     from src.schemas.framework_approval import approval_value_hash
 
     h = frozen_approval_result
     stage = h.stages.get(h.initial_task_id, h.session_id).model_dump(mode="json")
     graph = stage["source_manifest"]["approval_graph_inputs"][h.result_task.id]["graph_input_asset"]
-    graph["feature_flags"].pop("result_projection_version")
-    graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_result_projection_version")
+    graph["feature_flags"].pop("terminal_event_projection_version")
+    graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_terminal_event_preparation")
+    if contract == "result":
+        graph["feature_flags"].pop("result_projection_version")
+        graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_result_projection_version")
     graph["asset_sha256"] = approval_value_hash({key: value for key, value in graph.items() if key != "asset_sha256"})
     stage["source_sha256"] = approval_value_hash(stage["source_manifest"])
-    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="original result projection"):
+    with pytest.raises(FrameworkMessageStageRecoveryRequired,
+        match="original " + ("result" if contract == "result" else "terminal event") + " projection"):
         validate_message_stage(stage)
 
 

@@ -9,7 +9,9 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
+import json
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from src.application.deep_agents.result_projection import DeepAgentRuntimeResult
 from src.application.runtime.state_persistence import persisted_turn_budget
@@ -34,6 +36,74 @@ class DeepAgentCallbackFacts:
     pilot_stage: str
     adapter_stage: str
     subagent_events: list[dict[str, Any]]
+
+
+def deep_agent_terminal_event_specs(result: DeepAgentRuntimeResult, *, pilot_stage: str):
+    """One payload rule for legacy emission and versioned pure intent projection."""
+    specs = []
+    if result.todos:
+        specs.append(("graph.plan_built", "deepagents.todo",
+            "Deep Agents cognitive plan has been synchronized for this turn.",
+            {"harness": "deepagents", "pilot_stage": pilot_stage, "plan_step_count": len(result.todos),
+                "plan_outline": " | ".join(item["content"] for item in result.todos), "todos": result.todos}))
+    specs.append(("runtime.turn_completed", "runtime",
+        "Deep Agents pilot execution finished for the current turn.",
+        {"harness": "deepagents", "pilot_stage": pilot_stage, "final_response_length": len(result.output_text),
+            **({"root_model_budget": result.metadata["root_model_budget"]} if "root_model_budget" in result.metadata else {}),
+            **({"adapter_stage": result.metadata.get("stage"),
+                "callback_events_sha256": approval_value_hash(result.subagent_events)}
+                if result.metadata.get("native_terminal") is not None else {})}))
+    return specs
+
+
+def project_deep_agent_terminal_events(preparation, result: DeepAgentRuntimeResult, *, event_log):
+    """Derive only not-yet-allocated terminal intents, never callback originals.
+
+    No upstream counterpart (checked: framework tool UUID5 identities, existing
+    graph event payload/ACK ports, pinned Checkpoint.ts, v4 §9.2): application
+    terminal-event identity rules must be frozen before native invocation.
+    The timestamp explicitly denotes the native checkpoint's creation, not an
+    application completion/commit time. All sources/prefixes must already be
+    authenticated by their readers; this pure function grants no sealing,
+    completion-declaration, recovery or execution authority.
+    """
+    from src.application.deep_agents.native_terminal import NativeTerminalProof
+    from src.runtime.execution_logging import build_graph_event_intent
+    from src.schemas.framework_graph_input import FrameworkTerminalEventPreparation, TERMINAL_EVENT_PREPARATION_KEY
+
+    state, identity = preparation.initial_state, preparation.identity
+    binding = identity.binding
+    rules = FrameworkTerminalEventPreparation.model_validate(state["context_bundle"].get(TERMINAL_EVENT_PREPARATION_KEY))
+    if (state.get("session_id") != binding.session_id or state.get("turn_id") != binding.turn_id
+        or state["context_bundle"].get("runtime_binding") != binding.model_dump(mode="json")
+        or result.metadata.get("stage") != rules.adapter_stage or result.interrupts or result.native_interrupts):
+        raise ValueError("Terminal event projection differs from its original scope, stage or completed result")
+    terminal = NativeTerminalProof.model_validate(result.metadata.get("native_terminal"))
+    if (terminal.binding_fingerprint != binding.fingerprint or terminal.thread_id != binding.thread_id
+        or terminal.checkpoint_namespace != ""):
+        raise ValueError("Terminal event projection differs from its original native checkpoint binding")
+    try:
+        timestamp = datetime.fromisoformat(result.native_checkpoint_timestamp)
+    except (TypeError, ValueError) as exc:
+        raise ValueError("Terminal event projection has no original checkpoint timestamp") from exc
+    if timestamp.utcoffset() is None:
+        raise ValueError("Terminal event projection requires an aware original checkpoint timestamp")
+    prefix = state.get("event_log", [])
+    if event_log[:len(prefix)] != prefix:
+        raise ValueError("Terminal event projection changed its original prepared event prefix")
+    projected_state = {**state, "event_log": list(event_log)}
+    events = []
+    for event_type, phase, message, payload in deep_agent_terminal_event_specs(result, pilot_stage=rules.pilot_stage):
+        seed = json.dumps(["framework-terminal-event-v1", binding.fingerprint,
+            identity.assistant_message_id, identity.snapshot_id, event_type], separators=(",", ":"))
+        event = build_graph_event_intent(projected_state, event_type, phase, message,
+            event_id=str(uuid5(NAMESPACE_URL, seed)), timestamp=timestamp,
+            timestamp_source=rules.timestamp_source, native_checkpoint_id=terminal.checkpoint_id,
+            terminal_event_projection_version=rules.schema_version, **payload)
+        events.append(event)
+        projected_state["event_log"].append({"id": event.id, "timestamp": event.timestamp.isoformat(),
+            "type": event.type, "payload": event.payload})
+    return events
 
 
 def project_deep_agent_callback_facts(
@@ -156,6 +226,15 @@ def project_original_completed_turn(*, preparation, result, binding, facts, even
     composition of the existing pure projections, never admission or writes.
     """
     from src.application.runtime.tool_messages import build_chat_tool_messages, build_runtime_tool_messages
+    from src.schemas.framework_graph_input import TERMINAL_EVENT_PREPARATION_KEY
+
+    if TERMINAL_EVENT_PREPARATION_KEY in preparation.initial_state.get("context_bundle", {}):
+        count = len(deep_agent_terminal_event_specs(result, pilot_stage=facts.pilot_stage))
+        intents = project_deep_agent_terminal_events(preparation, result, event_log=event_log[:-count])
+        expected = [{"id": item.id, "timestamp": item.timestamp.isoformat(), "type": item.type, "payload": item.payload}
+            for item in intents]
+        if event_log[-count:] != expected:
+            raise ValueError("Original terminal events differ from their frozen projection rules")
 
     initial = deepcopy(preparation.initial_state)
     records = [item.record.model_dump(mode="python") for item in materials]

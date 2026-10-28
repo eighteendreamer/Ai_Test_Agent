@@ -188,8 +188,9 @@ def _result_projection_at(cur, settings, binding, stage, task, producer, result)
         == producer
         and read.event_log == result["state"].get("event_log"),
         "Runtime result differs from its original durable completion boundary")
-    # Use the existing event JSON codec, including timezone representation.
-    # This denotes graph-log completion, not a fabricated asset commit time.
+    # Keep the original terminal event's declared time and JSON representation:
+    # legacy graph-log boundary, or versioned native checkpoint creation time.
+    # Neither is an asset/application commit timestamp.
     return ExecutionEvent(session_id=binding.session_id, **read.event_log[-1]).model_dump(mode="json")["timestamp"]
 
 

@@ -395,7 +395,7 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
                     assert asset.event_id("snapshot.saved") in event_receipts["event_hashes"]
                     for identity, digest in event_receipts["event_hashes"].items():
                         assert digest == _hash(events[identity])
-            assert before.schema_version == 20
+            assert before.schema_version == 21
             assert before.source_manifest["graph_input_asset"]["feature_flags"]["tool_projection_version"] == 3
             identity = before.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]
             assert identity["snapshot_id"] == asset.runtime_result.snapshot.id

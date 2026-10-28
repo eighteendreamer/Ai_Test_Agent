@@ -235,6 +235,8 @@ async def test_incomplete_originals_never_invent_time_verification_or_replay(mes
             if missing == "result_protocol":
                 graph["feature_flags"].pop("result_projection_version")
                 context.pop("framework_result_projection_version")
+                graph["feature_flags"].pop("terminal_event_projection_version")
+                context.pop("framework_terminal_event_preparation")
             else:
                 graph["feature_flags"].pop("verification_projection_version")
                 context.pop(VERIFICATION_PREPARATION_KEY)

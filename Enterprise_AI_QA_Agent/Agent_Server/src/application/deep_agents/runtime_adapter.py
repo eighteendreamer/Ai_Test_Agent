@@ -112,7 +112,8 @@ class DeepAgentRuntimeAdapter:
             raise DeepAgentRuntimeError("Native reader schema differs from its original source binding")
         flags = original.feature_flags
         topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
-        if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version"}
+        if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version",
+            "terminal_event_projection_version"}
             or any(type(flags.get(key)) is not bool for key in topology)):
             raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
         if self._checkpointer_factory is None:

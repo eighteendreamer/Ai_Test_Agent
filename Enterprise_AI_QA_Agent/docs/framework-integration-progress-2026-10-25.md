@@ -3259,3 +3259,58 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 提交名 `【feat】传递精确原生checkpoint时间作为投影材料`；本节与代码／测试同一提交，ID以Git历史和交付输出为准，不推送、不建PR。不升级依赖、不改变生产开关／公开路由，不启停共享基础设施，不新增付费调用。
 
 本步只补齐确定性终态事件所需的真实时间来源，尚未冻结／写入新的事件投影规则，不声称已能补造缺失事件或封口。后续仍须先红测并冻结版本化事件身份／时间来源／payload规则，兼容reader先行，证明正常与只读投影全字段一致，再单独接入缺封口时的原件复核及窄权限封存；已发生callback仍必须复用原ACK原件。图返回至事件封口前空窗、A2-2其他故障／材料组合、A2-3、A3及B/C/D/E/F均未整体完成，完整goal继续active。
+
+## 81. A2-2：图前冻结终态事件规则，正常执行与只读复核共用确定性意图（2026-10-28）
+
+基线 `716a8882c`，承接§79–80及本步未提交草稿。先只读核对项目、完整v4、实施记录、Git和已有测试会话；确认当前完整目标已为active后继续验收，不新建目标、不重做§54的Delta顺序修复。原v3草稿SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F，单独保留，不修改、不提交。本步解决原图后plan/completed事件依赖随机ID与当前时钟的问题；不把纯投影器当作缺封口时的恢复／写入授权。
+
+### 依据 → 做法、跨层合同与兼容边界
+
+| v4条款／查证依据 | 代码、测试与本步采用方式 | 不授予的权限 |
+| --- | --- | --- |
+| §9.2图后身份／时间须有原始或确定性来源；既有工具UUID5投影、§80精确checkpoint.ts和graph_input_asset的JSON独立副本 | [graph input](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_graph_input.py)在schema2＋result1下声明terminal_event_projection_version=1，图前冻结schema1规则、native_checkpoint.ts来源与本次Runtime／adapter双stage；Runtime清除初始外部伪造marker，审批仅继承原资格并冻结本次真实stage | 不用图前／恢复时钟冒充终态时间，不改变原生checkpoint／proof／metadata或图拓扑，不给历史调用追加新规则 |
+| §8.3／§9.1唯一投影语义；原Runtime plan/completed payload与原审计脱敏端口 | [turn projection](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/turn_projection.py)提取共用事件规格；纯意图由原binding fingerprint、assistant／snapshot身份和事件类型分配UUID5，时间严格来自原生根checkpoint.ts；payload明确timestamp_source、native_checkpoint_id和规则版本 | 不造callback，不读取新时钟或uuid4，不把checkpoint创建时间说成应用完成／资产提交时间，不替换已存在的原事件 |
+| §9.2必要事件可靠保存；既有owner-bound SessionEventSink单事件ACK | [execution logging](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/execution_logging.py)共用payload构造／脱敏与持久ACK；新增supplied-intent端口校验session／turn／trace／next step；[Runtime](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)仍按plan ACK→completed state→on_model_chunk→completed ACK→原封口执行 | 不搬动模型超时／取消或应用收尾边界，不新增封口、准入、后继、事件补写或执行权 |
+| §8.2–8.3原件复核与§10.2窄权限；审批／普通reader已共用project_original_completed_turn | 有新marker时同一纯投影器严格比较末尾原事件的ID／时间／type／payload／顺序；原读者传入§80精确时间。缺时间、naive时间、错绑定／namespace／stage、interrupt、前缀或规则不成立均拒绝；源对象不变 | 不用派生值覆盖漂移的原件，不放宽旧的无资产reader准入，不根据本步意图签发完成声明 |
+| §14.1兼容读者先行、§16全部消费方；既有stage1–20、能力路由与审批输入校验 | [message stages](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_stages.py)、schema Literal、worker capability上限及source-only schema allow-list同步21；reader20拒21、reader21拒22。新stage21与旧stage20分别经过真实审批／仅收尾后继验收，历史20初始及两次审批均不增flag／marker | 不做DDL或持久proof升级，不允许中途改变terminal规则有无；兼容读者代码与测试不等于双制品部署／上线验收 |
+
+时间注释同步至framework_runtime_results与framework_event_completion：projection_at／schema1完成声明继承末尾原事件声明的时间来源，旧格式为原graph-log边界，新规则为原checkpoint创建时间，均不是应用提交时间；不无版本地给旧声明增加字段。测试方法沿用本地课程Agent轨迹与协议鲁棒性.html的权限／状态／重复执行／轨迹验证，使用现有官方框架和隔离PG／Redis／Worker Harness，不新造执行调度器。
+
+### TDD、真实中间失败与修正
+
+本节日志均在项目 `.codex-logs/`，前缀framework-terminal-events-、日期2026-10-28；文件名带final也不替代真实终态和最终源码复核。完整stdout＋stderr用 `2>&1 | Tee-Object`保存并返回原 `$LASTEXITCODE`。
+
+- `red`：**14 failed，23.24秒**。9项规则合同未拒绝不支持材料／未要求reader21，5项真实Runtime组合未冻结终态规则，为目标红测；首轮实现`first` **59 passed，18.59秒**。
+- `pure-check`：**1 failed，11 passed，50 deselected，6.44秒**，发现漏拒非根native_namespace；纯投影器补齐原生根namespace严格检查，没有改图或放宽断言。
+- `target`：**1 failed，117 passed，30.58秒**，新增ACK测试错误直接比较原aware时间与PG返回的naive UTC；测试改为沿既有ensure_utc_datetime读取codec比较，仍严格断言意图保留原aware时间，生产时间处理未改。
+- `target-recheck`会话50725：**1 failed，259 passed，219.11秒**，遗漏一处审批断言仍预期20、实际为有新规则的21；同步为21，无原件／恢复准入变化。
+- `legacy20`会话75457：**1 failed，10.37秒**。测试误用已有资产fixture调用“原无资产空窗”reader，生产正确拒绝`Approval result reader requires the original unprojected asset gap`；改用原资产load端口比较原件，另扩展真实approval_asset_gap的批准／拒绝／budget矩阵覆盖旧20，不从完成结果伪造空窗，不放宽生产reader。
+- 原`readers`会话80667：**150 passed，995.82秒，exit0**，但启动早于最后的兼容fixture／测试修改，只作中间证据，不计当前源码的最终完整验收。
+- `consumers-final`会话87978：**1 failed，252 passed，262.14秒**，独立工具Worker合同仍断言新生成stage为20、实际为21。先全局检索生产／测试中的20与stage能力引用，逐项区分真实历史20、兼容读者边界、预算值与新生成阶段，仅同步该新生成断言；旧20合同不替换。完整23文件另存`consumers-recheck`重新验收，未覆盖旧失败日志。
+
+### 最终源码验证、证据范围与剩余出口
+
+固定 `.venv-framework-v2/Scripts/python.exe`，工作目录Agent_Server，设置RUN_LIVE_POSTGRES_TESTS=1、PYTHONIOENCODING=utf-8；各组单独报告，不累计重叠结果。
+
+- `target-final`会话90476：**281 passed，353.60秒，exit0，无skip**；完整turn_projection／graph_input_asset／live_event_persistence／worker_contract／approval_runtime五文件，另含旧stage20原资产复用及新旧stage的批准／拒绝／budget资产空窗封存六组合。
+- `readers-final`会话88839：**201 passed，1387.84秒，exit0，无skip**；完整审批graph_input／asset_gap／result_reconstruction、普通消息result_reconstruction／asset_gap及审批continuation／recovery七文件。
+- `integration-final`会话54164：**213 passed，844.41秒，exit0，无skip**；完整runtime_result_asset／application_projection／finalization_projection／partial_projection_recovery／observation_projection／terminal_gap／snapshot_projection／event_projection八文件，包含独立Worker强杀。
+- `consumers-recheck`会话44858：**498 passed，7 skipped，983.53秒，exit0**；完整原生schema／SDK／owner fence／工具／模型预算／旧日志消费方／消息恢复等23文件。5项skip为runtime_input_paths.py:48两项、:172两项、:189一项，均需隔离的真实PG／MySQL／RustFS；另2项为session_event_delivery.py:610和:645的memory参数，因数据库事务顺序／跨进程投递不适用于内存store而跳过，同一完整组已实际运行对应postgres参数，不把memory skip说成PG未验收。
+- `event-delivery-pg`会话25504：**2 passed，12.27秒，exit0，无skip**；另外单独复验上述两项的postgres参数，真实事务顺序与独立Worker／HTTP客户端投递均通过。此2项与完整消费方组重叠，不累加为新的总通过数。本轮全部pytest会话均已取得终态，无遗留运行中的测试。
+
+最终组实际pytest选择命令如下；消费者失败组与recheck使用同一23文件选择，分别保存旧失败与新结果，不覆盖日志：
+
+```powershell
+# 工作目录 Agent_Server；RUN_LIVE_POSTGRES_TESTS=1，PYTHONIOENCODING=utf-8
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_turn_projection.py tests/test_framework_graph_input_asset.py tests/test_framework_live_event_persistence.py tests/test_agent_v2_worker_contract.py tests/test_framework_approval_runtime.py tests/test_framework_approval_graph_input.py::test_stage20_terminal_events_remain_original_and_continuations_cannot_upgrade_the_rules tests/test_framework_approval_asset_gap_recovery.py::test_owned_reconciliation_seals_original_and_delivers_only_finalization -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_message_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py tests/test_framework_approval_continuation.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_terminal_gap.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_result_projection.py tests/test_framework_tool_messages.py tests/test_framework_tool_projection.py tests/test_framework_model_budget_projection.py tests/test_framework_model_policy.py tests/test_framework_tool_bridge.py tests/test_framework_message_stages.py tests/test_runtime_import_isolation.py tests/test_runtime_input_paths.py tests/test_framework_task_control.py tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_framework_message_recovery.py tests/test_framework_orchestrating_recovery.py tests/test_framework_orchestrated_message_recovery.py tests/test_execution_event_context.py tests/test_session_event_delivery.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest 'tests/test_session_event_delivery.py::test_event_sequence_cannot_jump_an_uncommitted_writer[postgres]' 'tests/test_session_event_delivery.py::test_real_http_clients_receive_events_from_separate_worker_process[postgres]' -q -x -rs --tb=short
+```
+
+本步仍为E1／E2子集：真实官方框架／SDK、PG／Redis和独立进程，模型为受控模型或本地HTTP合成服务；对象存储仍用原替身，不是真实供应商／RustFS／领域Runner验收。E3、E4部署／双制品／灰度回滚／备份恢复、全量、前端、wheel与官方saver conformance未执行。ruff／mypy实际find_spec均不存在，未擅自安装，不声称lint／typecheck通过。
+
+以上目标、读取、集成与消费方组均已取回真实终态；较早失败与中间组不替代最终证据。提交前实际从项目根执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，均exit0；实施记录追加性／唯一章节／代码围栏／本地链接、完整diff、明显凭据标记、暂存范围与v3哈希一并复核。本步10个生产文件、12个测试文件及本节，共23文件；v3草稿／日志／本地数据均排除。提交名 `【feat】冻结并复用确定性终态事件投影`，commit ID以Git历史和交付输出为准。不升级依赖、不启停共享基础设施、不改变生产开关或公开路由、不新增付费调用，不推送、不建PR。
+
+下一出口仍是缺封口时的原件复核、窄权限派生／封存及独立进程故障矩阵；不能invoke图补造事实，已有callback必须复用ACK原件。本步确定性事件材料不等于图返回到封口前空窗已经闭合，A2-2其他故障／材料组合、A2-3、A3及B/C/D/E/F仍未整体完成，完整goal保持active。

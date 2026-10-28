@@ -1,6 +1,7 @@
 """Contract tests for the immutable Deep Agents graph input asset."""
 from __future__ import annotations
 
+from copy import deepcopy
 from datetime import datetime
 
 import pytest
@@ -41,6 +42,62 @@ def test_prepared_graph_input_round_trip_and_nested_copy():
     assert copied.runtime_preparation.initial_state["event_log"][0]["payload"]["message"] == "original"
     assert parse_graph_input_asset(copied.model_dump(mode="json")) == copied
     assert copied.schema_version == 2
+
+
+@pytest.mark.parametrize("changed", [None, "missing_flag", "missing_marker", "bool_flag", "future_flag",
+    "future_schema", "bool_schema", "unknown_field", "bad_stage", "missing_stage", "missing_source", "future_source", "missing_result"])
+def test_terminal_event_rules_require_prepared_stage21_and_preserve_legacy(changed):
+    from src.schemas.framework_approval import approval_value_hash
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+    from src.runtime.task_deferred import TaskDeferred
+    from tests.test_runtime_binding_persistence import make_binding
+
+    legacy = prepared_graph_input(make_binding("session-1", "turn-1"), "trace-1")
+    raw = legacy.model_dump(mode="json")
+    assert parse_graph_input_asset(raw).model_dump(mode="json") == raw
+    context = raw["runtime_preparation"]["initial_state"]["context_bundle"]
+    raw["feature_flags"]["result_projection_version"] = 1
+    context["framework_result_projection_version"] = 1
+    stage20 = deepcopy(raw)
+    stage20["asset_sha256"] = approval_value_hash({key: value for key, value in stage20.items() if key != "asset_sha256"})
+    assert parse_graph_input_asset(stage20).required_message_stage_version == 20
+    raw["feature_flags"]["terminal_event_projection_version"] = 1
+    context["framework_terminal_event_preparation"] = {"schema_version": 1,
+        "timestamp_source": "native_checkpoint.ts", "pilot_stage": "DA-E4", "adapter_stage": "DA-E1"}
+    if changed == "missing_flag":
+        raw["feature_flags"].pop("terminal_event_projection_version")
+    elif changed == "missing_marker":
+        context.pop("framework_terminal_event_preparation")
+    elif changed in {"bool_flag", "future_flag"}:
+        raw["feature_flags"]["terminal_event_projection_version"] = True if changed == "bool_flag" else 2
+    elif changed in {"future_schema", "bool_schema"}:
+        context["framework_terminal_event_preparation"]["schema_version"] = 2 if changed == "future_schema" else True
+    elif changed == "unknown_field":
+        context["framework_terminal_event_preparation"]["future"] = True
+    elif changed == "bad_stage":
+        context["framework_terminal_event_preparation"]["adapter_stage"] = "future"
+    elif changed == "missing_stage":
+        context["framework_terminal_event_preparation"].pop("pilot_stage")
+    elif changed == "missing_source":
+        context["framework_terminal_event_preparation"].pop("timestamp_source")
+    elif changed == "future_source":
+        context["framework_terminal_event_preparation"]["timestamp_source"] = "application_commit"
+    elif changed == "missing_result":
+        context.pop("framework_result_projection_version")
+        raw["feature_flags"].pop("result_projection_version")
+    raw["asset_sha256"] = approval_value_hash({key: value for key, value in raw.items() if key != "asset_sha256"})
+    if changed is not None:
+        with pytest.raises(ValueError):
+            parse_graph_input_asset(raw)
+    else:
+        parsed = parse_graph_input_asset(raw)
+        assert parsed.model_dump(mode="json") == raw and parsed.required_message_stage_version == 21
+        with pytest.raises(TaskDeferred):
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=20).require_message_stage(21)
+        FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(21)
+        with pytest.raises(TaskDeferred):
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(22)
 
 
 @pytest.mark.parametrize("changed", [None, "approval", "decision", "mode", "epoch", "event", "bad_log", "bad_event", "bad_payload", "unknown", "digest"])
@@ -225,7 +282,9 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=19).require_message_stage(20)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(21)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=20).require_message_stage(21)
+        with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
+            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(22)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired
