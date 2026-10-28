@@ -3430,3 +3430,64 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 本步9个生产文件、5个测试文件（含新unsealed测试）、测试白名单及本节，共16文件；仅暂存这些文件，排除原v3草稿、日志和本地数据。提交前实际执行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，核对完整diff、明显凭据、暂存清单、实施记录仅追加／唯一章节／围栏／本地链接及v3 hash。提交名 `【feat】从原checkpoint材料只读重建未封口终态`，commit ID以Git历史和交付输出为准。不升级依赖、不启停共享设施、不改生产路由／开关、不发起真实供应商／目标调用，不推送、不建PR。
 
 下一子步沿现有消息准入／审批对账事务重新复核精确原件，原子补封缺失终态意图、封存原结果并发布仅收尾后继；读取材料不能自授该权限，现有缺封口恢复拒绝仍是明确待实现出口。还需该事务回滚／竞争／再次失租和真实独立Worker故障矩阵。A2-2未整体完成，A2-3、A3及B/C/D/E/F与E3/E4等完整目标继续保持active。
+
+## 84. A2-2：普通消息缺封口时同事务复核原件、封存原结果并发布仅收尾后继（2026-10-28）
+
+基线 `0e83db754`，承接§83后的普通消息准入草稿。先核对实际目标仍active、v4、§52及后续记录、Git状态、生产调用链和原测试handle；§54的Delta顺序根因与严格messages比较保持，不重复实现或删除校验。原v3文档草稿单独保护，SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F，不编辑、不提交。
+
+**本节只记录普通消息缺事件封口的原子准入子步，不代表A2-2或完整v4完成。** 审批缺封口准入继续拒绝。§83记录其提交时的只读权限边界，本节追加新能力，不重写历史。
+
+### 根因、依据 → 做法与跨层契约
+
+§83已能从精确checkpoint原ACK前缀、原生终态及根账本只读重建结果，但该读对象不拥有封口或发布权限。图返回即强杀后缺少completion，原准入仍拒绝；单独补事件或单独存资产又会引入新的中间空窗。这是既有准入事务缺少原件复核与原子提交职责，不通过重执图或增加恢复调度器解决。
+
+| v4阶段／条款及依据 | 代码／测试与本步采用方式 | 权限、兼容与事实边界 |
+| --- | --- | --- |
+| A2-2，§8.1／§8.2；既有SQLAlchemy应用游标、固定官方PostgresSaver读取接口 | [SQLAlchemy桥接](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/infrastructure/sqlalchemy_runtime.py)沿当前应用连接借出真实driver，SQLAlchemy管理savepoint；[原生复核](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/native_terminal.py)临时设置安全引用的checkpoint search_path，调用官方get_tuple／get_state重新物化Delta并比较原checkpoint、完整state、serializer、时间、prefix、终态及UntrackedValue集合 | 不创建第二连接或执行图，不提交／关闭外层连接；成功恢复search_path，SDK异常回滚savepoint。仅核对读对象自摘要不足以证明来源，必须重新物化 |
+| §9.2／§9.4／§10.2；既有终态事件纯投影、Session事件事务及message_recover | [事件封口](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_event_completion.py)在外层已授权并持锁时复用原材料读取，比较完整event_log，幂等补确定性尾部与原格式completion；[消息准入](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_recovery.py)再次复核原owner／attempt／epoch／失租状态、全部原件与完整结果及Verification，再沿原资产封存和outbox流程发布仅finalizing后继 | 事件、声明、资产、后继及outbox同事务；失败全回滚，既有尾行不覆盖，重复／并发不增发。事务内日志命名prepared，不提前声称已提交；读取材料不自授执行权 |
+| §8.3／§9.4；既有唯一结果投影器和Session finalizer | [普通消息reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_result_reader.py)提取共享纯结果／Verification投影，准入复用它比较完整内容；仅未封口读对象保留repr=False的native_read | 该字段不持久化、不作为owner；不以输入对象中的output或Verification直接封存。后继只消费原资产进入既有finalizer，不重编排、不调模型／工具、不重复生成Verification；原失败task／attempt不改为成功 |
+| §14.1／§16；固定官方schema、原stage21与source-only reader | [adapter](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/runtime_adapter.py)提供同步native_schema，异步只读和事务内复核共同构建相同惰性官方图；共享输入校验先于存储／模型I/O，未知拓扑或外绑定仍提前拒绝 | 不读取当前项目文件／Skills／模型配置，模型方法fail-closed；不新增公开路由、DDL、依赖或stage版本。schema2 prefix的旧部署读者兼容仍待E4，不能据无DDL称滚动升级已通过 |
+
+依据查证到固定安装版 `SQLAlchemy 2.0.53::Connection.begin_nested`／`PoolProxiedConnection.driver_connection`、`langgraph-checkpoint-postgres 3.1.2::_internal.get_connection`／`PostgresSaver._cursor`及本项目BoundPostgresReader：应用cursor实际是SQLAlchemyCursor，不能假定存在psycopg的connection属性。复用官方savepoint与读取，不改site-packages、不手写SDK表或第二套Delta算法。本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果／事件／通知分责 → 保持原生终态、审计、结果与应用提交各有权限；课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹／幂等／状态边界 → 验证完整oracle、事务回滚、重复／并发和真实Worker强杀，而非仅校验最终文字。
+
+### TDD、真实失败及处理
+
+原日志均在项目 `.codex-logs`，保留失败，不提交或覆盖：
+
+- admission-red：**1 failed，16.00秒**，目标缺封口消息无法获得后继。admission-first：**1 failed，14.41秒**，初实现误认应用游标，SQLAlchemyCursor没有connection；查证真实游标与SDK源码后使用上述同事务bridge。bridge中间单例 **1 passed，12.19秒**，不代替最终验收。
+- projection-red：**1 failed，12.64秒**，修改读对象output仍获准入；修复为共享纯投影再次比较完整Runtime结果与Verification，不只比较事件或摘要。native-state-red：**1 failed，15.28秒**，修改原生消息并重算state摘要未被拒绝；修复为事务内官方get_state重新物化并核对完整state，相关fix **2 passed，16.92秒**，后续另核对UntrackedValue集合。
+- 中间target的psycopg SQL.format把JSON路径花括号当模板字段，以及两次Verification fixture错误假定原列表非空，均保留为脚手架失败；前者改SQL片段组合，后者先断言原列表确为[]再注入正式VerificationResult负例，不删生产断言求绿。中间target-recheck会话61589实际取回 **86 passed，492.57秒，exit0**，早于最终重物化及新增负例，不作最终验收。
+- atomic-final会话19099实际取回 **87 passed，589.50秒，exit0**；core-final会话90498为 **1 failed，311 passed，567.02秒，exit1**，失败是tool_projection的 `[True-admission_after_commit]` 收尾子进程45秒内未退出，不能写成核心全绿。相同nodeid原期限独立复验tool-timeout-repro会话21309 **1 passed，53.76秒，exit0**，未稳定复现。仅沿原partial_projection_recovery helper增加超时任务阶段诊断：先冻结deadline时的exitcode，再查询operation／status／result_status／error_code，迟到退出不改判通过，原45秒期限与finally清理不变。§82另一次审批Worker20秒超时历史同样不据此宣称已修复根因。
+- readers-final会话13809为 **1 failed，73 passed，362.55秒，exit1**：native_schema提取把拓扑校验移到打开checkpoint之后，既有unknown-topology-before-store真实回归。根因修复为共享 `_native_schema_input`，异步入口在开存储前验证，同步构图也复用；原四类unknown／nonboolean／missing／foreign用例topology-fix会话91902 **4 passed，9.40秒，exit0**。没有放宽未知格式策略或改写原断言。
+- projection-final会话95139 **222 passed，844.21秒，exit0**，已取回真实退出码，但其启动早于上述拓扑修复，不冒充最终源码验证。readers-core-recheck会话89497后续handle缺失，日志仅有进度而无最终结果；同时实际进程清单无pytest，故该组未验收。确认原进程已不存在后另起独立最终组，不凭观察超时重启仍活跃测试。
+
+### 最终源码验证
+
+以下各组均启动于最终拓扑修复后。工作目录Agent_Server，解释器 `../.venv-framework-v2/Scripts/python.exe`，环境RUN_LIVE_POSTGRES_TESTS=1、PYTHONIOENCODING=utf-8；pytest统一使用 `-u -m pytest` 和末尾 `-q -x -rs --tb=short`。完整stdout＋stderr经 `2>&1 | Tee-Object`保存，立即捕获原$LASTEXITCODE并在日志追加PYTEST_EXIT_CODE，再返回同一退出码；不累计重叠的中间结果。
+
+| 最终选择／日志（均为2026-10-28） | 实际结果 | 验证范围 |
+| --- | --- | --- |
+| core-verified-final，会话99025 | **261 passed，297.02秒，exit0，无skip** | event_completion、checkpoint_fencing、native_terminal、delta_replay_order、deep_agent_runtime_adapter、runtime_import_isolation、turn_projection七文件；精确原件／正常路径／SDK及Delta合同 |
+| readers-verified-final，会话42681 | **109 passed，567.32秒，exit0，无skip** | message_result_reconstruction、runtime_result_asset、approval_result_reconstruction、approval_asset_gap_recovery四文件；原件装配、schema提前拒绝、资产及审批缺封口继续拒绝 |
+| admission-verified-final，会话63414 | **79 passed，257.19秒，exit0，无skip** | unsealed_result_reconstruction、message_asset_gap_recovery、sqlalchemy_cursor_result三文件；只读零写入、完整oracle、原子封口／封存／outbox、四处回滚、三并发、TOCTOU漂移、重算摘要伪造及savepoint／search_path恢复 |
+| finalization-verified-final，会话21723 | **169 passed，522.98秒，exit0，无skip** | application_projection、finalization_projection、partial_projection_recovery、observation_projection、snapshot_projection、event_projection六文件；唯一收尾、分项补缺／冲突、再次失租与提交边界 |
+| worker-verified-final，会话89555 | **61 passed，199.82秒，exit0，无skip** | terminal_gap、tool_projection两文件；原Worker强杀、三次调用原根账本不增、原工具材料不漂移、新Worker只收尾及原45秒超时样本所在完整文件 |
+
+上述日志全名均为 `framework-unsealed-message-<选择>-2026-10-28.log`，五个handle均实际取回exit0。没有将此前311 passed的失败组、较早222 passed或丢失handle的部分进度算作最终通过；原超时未稳定复现的诊断风险继续保留。精确测试选择如下，统一环境／参数及日志退出码处理见上文：
+
+```powershell
+# 工作目录Agent_Server；RUN_LIVE_POSTGRES_TESTS=1，PYTHONIOENCODING=utf-8
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_runtime_import_isolation.py tests/test_framework_turn_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_message_result_reconstruction.py tests/test_framework_runtime_result_asset.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_asset_gap_recovery.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py tests/test_sqlalchemy_cursor_result.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_terminal_gap.py tests/test_framework_tool_projection.py -q -x -rs --tb=short
+```
+
+### 提交范围、证据限制及后续出口
+
+本子步6个生产文件、5个测试文件及本节，共12文件；额外测试文件仅为原45秒超时诊断。原v3草稿、测试日志、本地数据均排除。提交前实际运行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check`，核对完整差异／暂存范围、实施记录仅追加／唯一章节／围栏／本地链接、明显凭据、v3 hash及无残留测试进程。ruff／mypy的find_spec均不存在，不安装，不称lint／typecheck通过。实现、测试及本节同一提交，提交名 `【feat】原子封存未封口普通消息并发布收尾后继`，具体ID以Git历史与交付输出为准。
+
+证据仍限E1／E2子集：固定官方框架／SDK、真实PostgreSQL／Redis及独立Worker，模型是受控替身或本地HTTP合成服务；LocalModelObjects不是RustFS。普通子代理graph-return强杀验证三次模型调用不增加、新Worker只收尾，但不代表真实供应商、RustFS或领域Runner的E3。E4双制品／部署／灰度回滚／备份恢复、官方saver conformance、长链查询／持锁性能、前端与全量尚未执行。同步官方物化在持锁短事务内只读，尚无性能基线支持扩大生产范围。
+
+下一出口仍包括审批缺封口的独立准入事务、A2-2其余故障／材料与再次接管矩阵，之后继续A2-3、A3、B/C/D/E/F和对应E3/E4；不把普通消息局部准入或本节当A2-2／完整目标完成。完整goal保持active，不升级依赖、不启停共享设施、不改生产路由／开关、不新增真实供应商／目标调用，不推送、不建PR。

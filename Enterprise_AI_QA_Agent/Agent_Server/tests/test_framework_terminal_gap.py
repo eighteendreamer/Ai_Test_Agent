@@ -398,8 +398,21 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
                 assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
                 expired = await h.tasks.claim(task.id, worker_id="unsealed-callback-expiry", expected_binding=h.binding)
                 assert expired.status == "recovery_required"
-                assert await h.tasks.ensure_framework_message_recovery(task.id, native_reader=reader.open_native_reader) is None
-                assert len(requests) == 3
+                expired = await h.tasks.get(task.id)
+                successor = await h.tasks.ensure_framework_message_recovery(task.id, native_reader=reader.open_native_reader)
+                assert successor is not None
+                from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+                from tests.test_framework_partial_projection_recovery import complete_in_new_process
+
+                sealed = FrameworkRuntimeResultAsset.model_validate((await stage(h, task)).source_manifest["runtime_result_asset"])
+                assert sealed.runtime_result == reconstructed.runtime_result
+                await complete_in_new_process(h, successor)
+                assert (await h.tasks.get(successor.id)).status == "completed"
+                assert (await stage(h, task)).phase == "projected"
+                assert await h.tasks.get(task.id) == expired
+                assert len(requests) == 3 and await h.calls.snapshot(h.binding) == budget
+                assert len([event for event in await h.store.list_events(h.session_id) if event.type == "runtime.event_log_completed"]) == 1
+                assert len([event for event in await h.store.list_events(h.session_id) if event.type == "turn.completed"]) == 1
                 return
             # The oracle is a test-only observation of the normal Runtime result,
             # never a recovery input or a replacement application result asset.

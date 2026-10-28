@@ -120,3 +120,38 @@ def test_mysql_insert_keeps_lastrowid():
         cursor.execute("INSERT INTO records (value) VALUES (1)")
         assert cursor.rowcount == 1
         assert cursor.lastrowid == 42
+
+
+@pytest.mark.parametrize("failing", [False, True])
+def test_postgres_driver_bridge_lends_same_connection_under_managed_savepoint(failing):
+    from contextlib import contextmanager
+
+    driver, calls = object(), []
+
+    @contextmanager
+    def savepoint():
+        calls.append("begin")
+        try:
+            yield
+        except ConnectionError:
+            calls.append("rollback_savepoint")
+            raise
+        else:
+            calls.append("release_savepoint")
+
+    connection = SimpleNamespace(begin_nested=savepoint, connection=SimpleNamespace(driver_connection=driver))
+    cursor = SQLAlchemyCursor(connection, "postgres")
+    if failing:
+        with pytest.raises(ConnectionError, match="SDK read failed"), cursor.postgres_driver_connection() as borrowed:
+            assert borrowed is driver
+            raise ConnectionError("SDK read failed")
+    else:
+        with cursor.postgres_driver_connection() as borrowed:
+            assert borrowed is driver
+    assert calls == ["begin", "rollback_savepoint" if failing else "release_savepoint"]
+
+
+def test_postgres_driver_bridge_does_not_accept_mysql_cursor():
+    with pytest.raises(ValueError, match="PostgreSQL cursor"):
+        with SQLAlchemyCursor(object(), "mysql").postgres_driver_connection():
+            pytest.fail("MySQL cursor lent a PostgreSQL connection")

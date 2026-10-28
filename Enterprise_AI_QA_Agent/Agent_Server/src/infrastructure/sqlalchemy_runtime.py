@@ -172,6 +172,20 @@ class SQLAlchemyCursor:
         self._set_result(result)
         return self
 
+    @contextmanager
+    def postgres_driver_connection(self):
+        """Lend the current driver in a SQLAlchemy-managed savepoint, no commit.
+
+        SQLAlchemy 2.x Connection.connection.driver_connection and
+        begin_nested keep SDK reads on the caller's existing transaction.
+        The borrower must not commit/rollback/close the outer connection.
+        """
+        if self._database != "postgres":
+            raise ValueError("PostgreSQL SDK reads require a PostgreSQL cursor")
+        self.close()
+        with self._connection.begin_nested():
+            yield self._connection.connection.driver_connection
+
     def fetchone(self):
         if self._mappings is None:
             return None

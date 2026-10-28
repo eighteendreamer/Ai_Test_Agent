@@ -82,6 +82,49 @@ def _native_hash(serde, value):
     return hashlib.sha256(kind.encode() + b"\0" + content).hexdigest()
 
 
+def require_native_terminal_original(cur, settings, source, native, preparation):
+    """Recheck the exact SDK original inside an existing admission transaction.
+
+    No upstream counterpart (checked: PostgresSaver.get_tuple, source-only
+    reader namespace mapping, v4 §8.1/§9.4): SDK reads do not bind application
+    admission locks. The caller owns those locks, not this read material.
+    """
+    from psycopg import sql
+    from psycopg.rows import dict_row
+    from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
+    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY
+
+    # Use the SAME application connection. A nested savepoint restores the
+    # transaction-local search_path even if an SDK query fails; no pool/setup,
+    # checkpoint-table mutation or second materialization algorithm is needed.
+    with cur.postgres_driver_connection() as connection, connection.cursor(row_factory=dict_row) as native_cur:
+        native_cur.execute("SELECT current_setting('search_path') AS path")
+        path = native_cur.fetchone()["path"]
+        native_cur.execute("SELECT set_config('search_path', %s, true)",
+            (sql.Identifier(settings.deep_agents.checkpoint_schema).as_string(connection),))
+        reader = BoundPostgresReader(connection, source=source)
+        config = {"configurable": {"thread_id": source.binding.thread_id,
+            "checkpoint_id": native.proof.checkpoint_id}}
+        checkpoint = reader.get_tuple(config)
+        graph = DeepAgentRuntimeAdapter(model_resolver=None).native_schema(preparation, source=source, saver=reader)
+        snapshot = graph.get_state(config, subgraphs=True)
+        native_cur.execute("SELECT set_config('search_path', %s, true)", (path,))
+    _require(checkpoint is not None and not checkpoint.pending_writes
+        and native.proof.serializer == type(reader.serde).__module__ + "." + type(reader.serde).__qualname__
+        and _native_hash(reader.serde, checkpoint.checkpoint) == native.proof.checkpoint_sha256
+        and _native_hash(reader.serde, native.values) == native.proof.state_sha256
+        and _native_hash(reader.serde, snapshot.values) == native.proof.state_sha256
+        and snapshot.config["configurable"]["checkpoint_id"] == native.proof.checkpoint_id
+        and not snapshot.next and not snapshot.tasks and not snapshot.interrupts
+        and snapshot.metadata.get("source") == "loop"
+        and tuple(sorted(key for key, channel in graph.channels.items()
+            if isinstance(channel, UntrackedValue))) == native.proof.uncheckpointed_channels
+        and checkpoint.checkpoint.get("ts") == native.checkpoint_timestamp
+        and checkpoint.metadata.get(CHECKPOINT_PREFIX_KEY) == native.checkpoint_event_prefix,
+        "Original native checkpoint, native state or bound prefix changed before admission sealing")
+
+
 async def collect_native_terminal(agent, saver, config, *, returned_values=None) -> NativeTerminalRead:
     """Read an exact root checkpoint. Never invoke/continue a graph or model.
 

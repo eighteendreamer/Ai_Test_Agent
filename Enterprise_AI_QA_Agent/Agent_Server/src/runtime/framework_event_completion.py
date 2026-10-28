@@ -366,6 +366,33 @@ def read_terminal_event_materials(cur, settings, source, preparation, native, bu
     return RuntimeTerminalEventRead(None, prefix, events, prefix.returned_event_offset)
 
 
+def seal_reconstructed_event_log(cur, tasks, source, preparation, native, budget, event_log):
+    """Only an already-authorized admission may call this on its own cursor.
+
+    No upstream counterpart (checked: Session append_event_in_transaction,
+    completion_event, message recovery admission, v4 §9.4): an expired producer
+    cannot write again. Admission rechecks SDK originals, then atomically saves
+    deterministic intents and their declaration with its asset and successor.
+    This helper obtains no lease and cannot publish or execute a successor.
+    """
+    from src.application.deep_agents.native_terminal import require_native_terminal_original
+
+    require_native_terminal_original(cur, tasks._settings, source, native, preparation)
+    read = read_terminal_event_materials(cur, tasks._settings, source, preparation, native, budget, None)
+    _require(read.event_log == event_log, "Reconstructed result differs from its original terminal event intents")
+    for item in read.event_log[len(read.checkpoint_event_prefix.events):]:
+        tasks._sessions.append_event_in_transaction(cur, source.binding.session_id,
+            ExecutionEvent(session_id=source.binding.session_id, **item))
+    declaration = completion_event(cur, tasks._settings, source, read.event_log,
+        native.proof.model_dump(mode="json"), read.returned_event_offset)
+    tasks._sessions.append_event_in_transaction(cur, source.binding.session_id, declaration)
+    read_completion(cur, tasks._settings, source.binding, native.proof.model_dump(mode="json"))
+    logger.info("framework_reconstructed_event_log_prepared", extra={"binding_id": source.binding.binding_id,
+        "original_task_id": source.task_id, "checkpoint_id": native.proof.checkpoint_id,
+        "terminal_intents": len(read.event_log) - len(read.checkpoint_event_prefix.events)})
+    return read
+
+
 def completion_event(cur, settings, owner, event_log, native_terminal, returned_event_offset):
     """Called under the existing Session/owner transaction locks, after all ACKs."""
     binding = owner.binding

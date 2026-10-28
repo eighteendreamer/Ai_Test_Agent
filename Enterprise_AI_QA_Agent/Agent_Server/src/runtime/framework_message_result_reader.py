@@ -11,6 +11,7 @@ import logging
 
 from langchain_core.messages import ToolMessage
 
+from src.application.deep_agents.native_terminal import NativeTerminalRead
 from src.application.deep_agents.result_projection import project_deep_agent_result
 from src.application.deep_agents.framework_transcript import deserialize_messages
 from src.application.models.framework_model_budget_projection import read_model_budget_material
@@ -52,6 +53,7 @@ class FrameworkMessageResultRead:
     originals: tuple = field(repr=False)
     verification_results: list[VerificationResult] | None = None
     checkpoint_event_prefix: RuntimeCheckpointEventPrefix | None = None
+    native_read: NativeTerminalRead | None = field(default=None, repr=False)
 
 
 def _originals(tasks, binding, task_id, *, native=None, expected=None):
@@ -164,6 +166,25 @@ def _tool_materials(original, binding, messages, jobs):
     return ordered
 
 
+def project_original_message_result(original, source, read, native, jobs):
+    """Same deterministic projection for a read and its owned admission recheck."""
+    binding = source.binding
+    materials = _tool_materials(original, binding, native.values.get("messages", []), jobs)
+    facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id, returned_event_offset=0)
+    root_model_budget = (read.event_log[-1]["payload"].get("root_model_budget")
+        if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
+    result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
+        native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
+        root_model_budget=root_model_budget)
+    projected = project_original_completed_turn(preparation=original.runtime_preparation, result=result,
+        binding=binding, facts=facts, event_log=read.event_log, returned_event_offset=0, materials=materials)
+    state = projected.state
+    verifications = (VerificationService().build_results(session_id=binding.session_id, turn_id=binding.turn_id,
+        trace_id=state["trace_id"], tool_results=state["tool_results"], context_bundle=state["context_bundle"])
+        if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
+    return FrameworkRuntimeResult.from_result(projected), verifications
+
+
 async def read_completed_message(tasks, binding, task_id, *, native_reader):
     try:
         before = await asyncio.to_thread(_originals, tasks, binding, task_id)
@@ -171,21 +192,10 @@ async def read_completed_message(tasks, binding, task_id, *, native_reader):
         async with native_reader(original, source=source) as (agent, saver):
             native = await _read_native(agent, saver, source, read.completion if read else None)
         read = await asyncio.to_thread(_originals, tasks, binding, task_id, native=native, expected=before)
-        materials = _tool_materials(original, binding, native.values.get("messages", []), jobs)
-        facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id, returned_event_offset=0)
-        root_model_budget = (read.event_log[-1]["payload"].get("root_model_budget")
-            if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
-        result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
-            native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
-            root_model_budget=root_model_budget)
-        projected = project_original_completed_turn(preparation=original.runtime_preparation, result=result,
-            binding=binding, facts=facts, event_log=read.event_log, returned_event_offset=0, materials=materials)
-        state = projected.state
-        verifications = (VerificationService().build_results(session_id=binding.session_id, turn_id=binding.turn_id,
-            trace_id=state["trace_id"], tool_results=state["tool_results"], context_bundle=state["context_bundle"])
-            if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
-        assembled = FrameworkMessageResultRead(original, source, read.completion, FrameworkRuntimeResult.from_result(projected),
-            model_hash, tool_hash, before, verifications, read.checkpoint_event_prefix)
+        projected, verifications = project_original_message_result(original, source, read, native, jobs)
+        assembled = FrameworkMessageResultRead(original, source, read.completion, projected,
+            model_hash, tool_hash, before, verifications, read.checkpoint_event_prefix,
+            native if read.completion is None else None)
     except Exception as exc:
         logger.warning("framework_message_original_result_read_rejected", extra={"binding_id": binding.binding_id,
             "task_id": task_id, "error_type": type(exc).__name__})

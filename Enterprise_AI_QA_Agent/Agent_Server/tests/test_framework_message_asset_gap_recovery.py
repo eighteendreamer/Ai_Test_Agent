@@ -217,7 +217,7 @@ async def test_a_late_material_reader_returns_the_already_committed_successor(me
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("missing", ["result_protocol", "verification", "completion"])
+@pytest.mark.parametrize("missing", ["result_protocol", "verification", "checkpoint_prefix"])
 async def test_incomplete_originals_never_invent_time_verification_or_replay(message_asset_gap, missing):
     from src.schemas.framework_approval import approval_value_hash
     from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
@@ -225,9 +225,15 @@ async def test_incomplete_originals_never_invent_time_verification_or_replay(mes
 
     h = message_asset_gap
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
-        if missing == "completion":
+        if missing == "checkpoint_prefix":
+            from psycopg import sql
+
             cur.execute(f"DELETE FROM {h.settings.database.postgres_event_table} WHERE id=%s AND session_id=%s",
                 (completion_event_id(h.binding), h.session_id))
+            # A missing declaration is recoverable only with authenticated
+            # checkpoint originals, never with just the currently visible rows.
+            cur.execute(sql.SQL("UPDATE {}.checkpoints SET metadata=metadata - 'framework_checkpoint_event_prefix' WHERE thread_id=%s").format(
+                sql.Identifier(h.settings.deep_agents.checkpoint_schema)).as_string(), (h.binding.thread_id,))
         else:
             stage = h.stages.get(h.initial_task_id, h.session_id).model_dump(mode="json")
             graph = stage["source_manifest"]["graph_input_asset"]

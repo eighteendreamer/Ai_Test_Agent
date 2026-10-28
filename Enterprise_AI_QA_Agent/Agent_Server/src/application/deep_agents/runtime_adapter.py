@@ -107,22 +107,21 @@ class DeepAgentRuntimeAdapter:
         the original middleware channels, but no current model, files or Skills.
         Neither this source identity nor the returned reader grants execution.
         """
-        from deepagents import create_deep_agent
-        from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset
         from src.schemas.runtime_binding import RuntimeCheckpointSource
 
-        original = FrameworkPreparedGraphInputAsset.model_validate(graph_input)
         source = RuntimeCheckpointSource.model_validate(source)
-        if original.runtime_preparation.identity.binding != source.binding:
-            raise DeepAgentRuntimeError("Native reader schema differs from its original source binding")
-        flags = original.feature_flags
-        topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
-        if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version",
-            "terminal_event_projection_version"}
-            or any(type(flags.get(key)) is not bool for key in topology)):
-            raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
+        original = _native_schema_input(graph_input, source)
         if self._checkpointer_factory is None:
             raise DeepAgentRuntimeError("Native reader requires its source-only checkpoint provider")
+        async with self._checkpointer_factory(source=source) as saver:
+            yield self.native_schema(original, source=source, saver=saver), saver
+
+    def native_schema(self, graph_input, *, source, saver):
+        """Same inert official schema for async inspection and atomic recheck."""
+        from deepagents import create_deep_agent
+
+        original = _native_schema_input(graph_input, source)
+        flags = original.feature_flags
         model = _native_schema_model()
         options, _ = self._configure_harness(model,
             read_only_filesystem_enabled=flags["read_only_filesystem"], read_only_max_file_size_mb=10,
@@ -133,12 +132,11 @@ class DeepAgentRuntimeAdapter:
         interrupt_on = {key: {"allowed_decisions": ["approve", "reject"]} for key in original.interrupt_tool_keys}
         if interrupt_on:
             options["middleware"].append(HumanInTheLoopMiddleware(interrupt_on=interrupt_on, interrupt_mode="per_call"))
-        async with self._checkpointer_factory(source=source) as saver:
-            # Use the same official graph builder, not a projection of channel
-            # names or a second Delta/reducer implementation. Model methods fail
-            # closed and the source-only saver rejects every write.
-            yield create_deep_agent(model=model, tools=[], system_prompt=original.system_prompt,
-                checkpointer=saver, interrupt_on=interrupt_on or None, **options), saver
+        # Use the same official graph builder, not a projection of channel
+        # names or a second Delta/reducer implementation. Model methods fail
+        # closed and the source-only saver rejects every write.
+        return create_deep_agent(model=model, tools=[], system_prompt=original.system_prompt,
+            checkpointer=saver, interrupt_on=interrupt_on or None, **options)
 
     async def _execute(
         self, request: DeepAgentRuntimeRequest, *, checkpointer: Any
@@ -553,6 +551,24 @@ class DeepAgentRuntimeAdapter:
             "middleware": middleware,
             **subagent_kwargs,
         }, cleanup
+
+
+def _native_schema_input(graph_input, source):
+    """Validate frozen topology before any source-only store or model I/O."""
+    from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+    original = FrameworkPreparedGraphInputAsset.model_validate(graph_input)
+    source = RuntimeCheckpointSource.model_validate(source)
+    if original.runtime_preparation.identity.binding != source.binding:
+        raise DeepAgentRuntimeError("Native reader schema differs from its original source binding")
+    flags = original.feature_flags
+    topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
+    if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version",
+        "terminal_event_projection_version"}
+        or any(type(flags.get(key)) is not bool for key in topology)):
+        raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
+    return original
 
 
 def _native_schema_model():

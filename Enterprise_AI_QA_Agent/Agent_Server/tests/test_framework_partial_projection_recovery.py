@@ -141,8 +141,15 @@ async def complete_in_new_process(h, successor, *, with_memory=False):
     process.start()
     try:
         await asyncio.to_thread(process.join, 45)
-        assert not process.is_alive(), "Replacement process did not finish"
-        assert process.exitcode == 0
+        exitcode = process.exitcode
+        if exitcode is None:
+            # Preserve the original deadline result before diagnostic queries;
+            # a late exit must not turn a timed-out Worker into a passing test.
+            phases = [(item.operation, item.status, item.result_status, item.error_code)
+                for item in await h.tasks.list_session(h.session_id)]
+            pytest.fail(f"Replacement Worker exceeded its 45-second deadline: pid={process.pid}, "
+                f"alive={process.is_alive()}, task_phases={phases}")
+        assert exitcode == 0
     finally:
         if process.is_alive():
             process.terminate()

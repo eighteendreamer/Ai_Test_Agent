@@ -319,7 +319,7 @@ class FrameworkMessageRecovery:
         from src.runtime.framework_message_result_reader import read_message_originals
         from src.runtime.framework_runtime_results import _freeze_runtime_result
 
-        current = read_message_originals(cur, self._tasks, binding, predecessor["id"])
+        current = read_message_originals(cur, self._tasks, binding, predecessor["id"], allow_unsealed=True)
         if current != original.originals:
             _reject("Original message materials changed before admission sealing")
         source, prepared = original.source, original.graph_input_asset
@@ -332,6 +332,17 @@ class FrameworkMessageRecovery:
             or prepared.feature_flags.get("result_projection_version") != 1
             or original.verification_results is None):
             _reject("Original message lacks its deterministic result preparation")
+        if original.completion is None:
+            from src.runtime.framework_event_completion import seal_reconstructed_event_log
+            from src.runtime.framework_message_result_reader import project_original_message_result
+
+            if original.native_read is None or original.native_read.checkpoint_event_prefix is None:
+                _reject("Original message lacks its exact native read material")
+            read = seal_reconstructed_event_log(cur, self._tasks, source, prepared, original.native_read,
+                current[-1], original.runtime_result.state["event_log"])
+            projected, verifications = project_original_message_result(prepared, source, read, original.native_read, current[3])
+            if projected != original.runtime_result or verifications != original.verification_results:
+                _reject("Original message projection changed before admission sealing")
         initial = prepared.runtime_preparation
         _freeze_runtime_result(cur, self._settings, binding, stage, predecessor,
             owner_epoch=source.owner_epoch, result=original.runtime_result.model_dump(mode="json"),

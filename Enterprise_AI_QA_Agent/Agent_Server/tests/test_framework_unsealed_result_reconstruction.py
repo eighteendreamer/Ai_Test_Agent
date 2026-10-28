@@ -42,6 +42,7 @@ async def test_unsealed_message_reuses_complete_original_projection_without_writ
     events = await h.store.list_events(h.session_id)
     budget = await h.calls.snapshot(h.binding)
     stage = h.stages.get(h.initial_task_id, h.session_id)
+    tasks = await h.tasks.list_session(h.session_id)
     effects, requests = deepcopy(h.effects), list(h.adapter_requests)
     result = await read_message(h)
     assert result.completion is None, "Read-only derivation must not fabricate an original completion declaration"
@@ -59,8 +60,244 @@ async def test_unsealed_message_reuses_complete_original_projection_without_writ
     assert h.stages.get(h.initial_task_id, h.session_id) == stage
     assert h.effects == effects and h.adapter_requests == requests
     assert await h.store.get_latest_snapshot(h.session_id) is None
+    assert await h.tasks.list_session(h.session_id) == tasks
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message_asset_gap", ["none", "tools", "planning"], indirect=True)
+@pytest.mark.parametrize("terminal_events", [False, True])
+async def test_unsealed_message_admission_seals_once_and_runs_only_existing_finalizer(message_asset_gap, monkeypatch, terminal_events):
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+    from tests.test_framework_approval_recovery import run_delivery
+
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=terminal_events)
+    budget, effects, requests = await h.calls.snapshot(h.binding), deepcopy(h.effects), list(h.adapter_requests)
+    reader = h.runtime._deep_agent_bound_runtime_adapter.open_native_reader
+    finalizations = []
+    finalize = h.sessions._finalize_runtime_result
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unsealed admission/finalization attempted graph/model/tool execution")
+
+    async def record_finalizer(**kwargs):
+        finalizations.append(kwargs)
+        return await finalize(**kwargs)
+
+    monkeypatch.setattr(h.runtime, "execute_turn", forbidden)
+    monkeypatch.setattr(h.runtime._deep_agent_bound_runtime_adapter, "execute", forbidden)
+    monkeypatch.setattr(h.runtime._deep_agent_bound_runtime_adapter, "_model_resolver", forbidden)
+    monkeypatch.setattr(h.sessions._input_orchestrator_service, "orchestrate_async", forbidden)
+    monkeypatch.setattr(h.sessions._verification_service, "build_results", forbidden)
+    monkeypatch.setattr(h.sessions, "_finalize_runtime_result", record_finalizer)
+    successor = await h.tasks.ensure_framework_message_recovery(h.owner.id, native_reader=reader)
+    assert successor is not None, "Complete checkpoint originals must atomically seal and admit only finalization"
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    asset = FrameworkRuntimeResultAsset.model_validate(stage.source_manifest["runtime_result_asset"])
+    assert asset.runtime_result.model_dump(mode="json") == h.oracle.model_dump(mode="json")
+    assert asset.verification_results == h.verification_oracle
+    link, = stage.recoveries
+    assert link.task_id == successor.id and link.resume_phase == "finalizing"
+    assert await h.store.get_latest_snapshot(h.session_id) is None and not finalizations
+    events = await h.store.list_events(h.session_id)
+    assert len([event for event in events if event.id == completion_event_id(h.binding)]) == 1
+    assert await h.tasks.ensure_framework_message_recovery(h.owner.id, native_reader=reader) == successor
+    assert await h.store.list_events(h.session_id) == events
+    await run_delivery(h, successor.id)
+    assert (await h.tasks.get(successor.id)).status == "completed" and len(finalizations) == 1
+    saved, events = h.stages.get(h.initial_task_id, h.session_id), await h.store.list_events(h.session_id)
+    assert saved.phase == "projected"
+    assert len([event for event in events if event.type == "turn.completed"]) == 1
+    await run_delivery(h, successor.id)
+    assert h.stages.get(h.initial_task_id, h.session_id) == saved
+    assert await h.store.list_events(h.session_id) == events and len(finalizations) == 1
+    assert await h.tasks.get(h.owner.id) == h.expired
+    assert await h.calls.snapshot(h.binding) == budget and h.effects == effects and h.adapter_requests == requests
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["terminal_event", "declaration", "asset", "publication"])
+async def test_unsealed_admission_rolls_back_suffix_seal_asset_and_outbox_together(message_asset_gap, monkeypatch, failure):
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    stage, events = h.stages.get(h.initial_task_id, h.session_id), await h.store.list_events(h.session_id)
+    tasks = await h.tasks.list_session(h.session_id)
+    append, publish = h.store.append_event_in_transaction, h.tasks._event
+    reader = h.runtime._deep_agent_bound_runtime_adapter.open_native_reader
+
+    def fail_append(cur, session_id, event, *args, **kwargs):
+        inserted = append(cur, session_id, event, *args, **kwargs)
+        if event.type == ("runtime.turn_completed" if failure == "terminal_event" else "runtime.event_log_completed"):
+            raise ConnectionError("injected unsealed transaction failure")
+        return inserted
+
+    def fail_publish(cur, row, name, payload):
+        if name == "framework.message_recover_queued":
+            raise ConnectionError("injected unsealed transaction failure")
+        return publish(cur, row, name, payload)
+
+    from src.runtime import framework_runtime_results as results
+    original_freeze = results._freeze_runtime_result
+
+    def fail_asset(*args, **kwargs):
+        original_freeze(*args, **kwargs)
+        raise ConnectionError("injected unsealed transaction failure")
+
+    with monkeypatch.context() as patch:
+        if failure in {"terminal_event", "declaration"}:
+            patch.setattr(h.store, "append_event_in_transaction", fail_append)
+        elif failure == "asset":
+            patch.setattr(results, "_freeze_runtime_result", fail_asset)
+        else:
+            patch.setattr(h.tasks, "_event", fail_publish)
+        with pytest.raises(ConnectionError, match="unsealed transaction failure"):
+            await h.tasks.ensure_framework_message_recovery(h.owner.id, native_reader=reader)
+    assert h.stages.get(h.initial_task_id, h.session_id) == stage
+    assert await h.store.list_events(h.session_id) == events
+    assert await h.tasks.list_session(h.session_id) == tasks
+    assert await h.store.get_latest_snapshot(h.session_id) is None
+    assert await h.tasks.ensure_framework_message_recovery(h.owner.id, native_reader=reader) is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["native", "prefix", "event", "owner", "result", "output", "verification"])
+async def test_unsealed_admission_rechecks_originals_after_source_only_read(message_asset_gap, monkeypatch, changed):
+    from psycopg import sql
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+    from src.runtime.postgres_runtime_owner import runtime_owner_table
+
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    before = h.stages.get(h.initial_task_id, h.session_id)
+    read = FrameworkRuntimeResults.read_completed_message
+
+    async def read_then_change(*args, **kwargs):
+        original = await read(*args, **kwargs)
+        if changed == "result":
+            original.runtime_result.state["event_log"][-1]["payload"]["output_length"] = 999
+            return original
+        if changed == "output":
+            return replace(original, runtime_result=original.runtime_result.model_copy(update={"output_text": "foreign output"}))
+        if changed == "verification":
+            from datetime import datetime
+            from src.schemas.session import VerificationResult
+
+            assert original.verification_results == []
+            forged = VerificationResult(id="foreign-verification", session_id=h.session_id, turn_id=h.binding.turn_id,
+                trace_id=h.owner.trace_id, verifier="foreign", status="passed", summary="foreign result", created_at=datetime(2026, 10, 28))
+            return replace(original, verification_results=[forged])
+        with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+            if changed in {"native", "prefix"}:
+                expression = ("checkpoint=jsonb_set(checkpoint,'{ts}','\"2020-01-01T00:00:00+00:00\"')"
+                    if changed == "native" else "metadata=metadata - 'framework_checkpoint_event_prefix'")
+                query = (sql.SQL("UPDATE {}.checkpoints SET ").format(sql.Identifier(h.settings.deep_agents.checkpoint_schema))
+                    + sql.SQL(expression) + sql.SQL(" WHERE thread_id=%s AND checkpoint_id=%s"))
+                cur.execute(query.as_string(), (h.binding.thread_id, original.native_read.proof.checkpoint_id))
+            elif changed == "event":
+                cur.execute(f"UPDATE {h.settings.database.postgres_event_table} SET payload=payload || '{{\"admission_drift\":true}}'::jsonb WHERE id=%s",
+                    (h.oracle.events[0].id,))
+            else:
+                cur.execute(f"UPDATE {runtime_owner_table(h.settings)} SET owner_epoch=owner_epoch+1 WHERE binding_id=%s", (h.binding.binding_id,))
+        return original
+
+    monkeypatch.setattr(FrameworkRuntimeResults, "read_completed_message", read_then_change)
     assert await h.tasks.ensure_framework_message_recovery(h.owner.id,
         native_reader=h.runtime._deep_agent_bound_runtime_adapter.open_native_reader) is None
+    assert h.stages.get(h.initial_task_id, h.session_id) == before
+    events = await h.store.list_events(h.session_id)
+    assert not [event for event in events if event.type in {"runtime.event_log_completed", "runtime.turn_completed"}]
+    assert not [task for task in await h.tasks.list_session(h.session_id) if task.parent_task_id == h.owner.id]
+
+
+@pytest.mark.asyncio
+async def test_unsealed_parallel_admissions_publish_one_seal_and_successor(message_asset_gap, monkeypatch):
+    import asyncio
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    read, count, ready = FrameworkRuntimeResults.read_completed_message, 0, asyncio.Event()
+
+    async def synchronized(*args, **kwargs):
+        nonlocal count
+        original = await read(*args, **kwargs)
+        count += 1
+        if count == 3:
+            ready.set()
+        await asyncio.wait_for(ready.wait(), 30)
+        return original
+
+    monkeypatch.setattr(FrameworkRuntimeResults, "read_completed_message", synchronized)
+    admitted = await asyncio.gather(*(h.tasks.ensure_framework_message_recovery(h.owner.id,
+        native_reader=h.runtime._deep_agent_bound_runtime_adapter.open_native_reader) for _ in range(3)))
+    assert all(item is not None for item in admitted) and len({item.id for item in admitted}) == 1
+    assert len(h.stages.get(h.initial_task_id, h.session_id).recoveries) == 1
+    events = await h.store.list_events(h.session_id)
+    assert len([event for event in events if event.type == "runtime.event_log_completed"]) == 1
+    assert len([event for event in events if event.type == "runtime.turn_completed"]) == 1
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("message_asset_gap", ["planning"], indirect=True)
+async def test_unsealed_admission_reuses_existing_plan_prefix_without_overwriting_its_row(message_asset_gap):
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=True)
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"DELETE FROM {h.settings.database.postgres_event_table} WHERE session_id=%s AND type='runtime.turn_completed'",
+            (h.session_id,))
+    before = await h.store.list_events(h.session_id)
+    plan, = [event for event in before if event.type == "graph.plan_built"]
+    successor = await h.tasks.ensure_framework_message_recovery(h.owner.id,
+        native_reader=h.runtime._deep_agent_bound_runtime_adapter.open_native_reader)
+    assert successor is not None
+    after = await h.store.list_events(h.session_id)
+    assert [event for event in after if event.type == "graph.plan_built"] == [plan]
+    assert [event for event in after if event.id in {item.id for item in before}] == before
+    assert [event.type for event in after if event.type in {"graph.plan_built", "runtime.turn_completed", "runtime.event_log_completed"}] == [
+        "graph.plan_built", "runtime.turn_completed", "runtime.event_log_completed"]
+
+
+@pytest.mark.asyncio
+async def test_native_admission_read_restores_search_path_and_leaves_outer_transaction_usable(message_asset_gap, monkeypatch):
+    from src.application.deep_agents.native_terminal import require_native_terminal_original
+    from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
+
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    original = await read_message(h)
+
+    def fail_read(*args, **kwargs):
+        raise ConnectionError("injected native original read failure")
+
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute("SELECT current_setting('search_path') AS path")
+        path = cur.fetchone()["path"]
+        with monkeypatch.context() as patch:
+            patch.setattr(BoundPostgresReader, "get_tuple", fail_read)
+            with pytest.raises(ConnectionError, match="native original read failure"):
+                require_native_terminal_original(cur, h.settings, original.source, original.native_read, original.graph_input_asset)
+        cur.execute("SELECT current_setting('search_path') AS path")
+        assert cur.fetchone()["path"] == path
+        require_native_terminal_original(cur, h.settings, original.source, original.native_read, original.graph_input_asset)
+        cur.execute("SELECT current_setting('search_path') AS path")
+        assert cur.fetchone()["path"] == path
+
+
+@pytest.mark.asyncio
+async def test_rehashed_read_object_cannot_substitute_materialized_native_messages(message_asset_gap):
+    from src.application.deep_agents.native_terminal import _native_hash, require_native_terminal_original
+    from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
+
+    h = message_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    original = await read_message(h)
+    native = deepcopy(original.native_read)
+    native.values["messages"][-1].content = "foreign"
+    serializer = BoundPostgresReader(None, source=original.source).serde
+    native = replace(native, proof=native.proof.model_copy(update={"state_sha256": _native_hash(serializer, native.values)}))
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        with pytest.raises(FrameworkMessageStageRecoveryRequired, match="native checkpoint|native state"):
+            require_native_terminal_original(cur, h.settings, original.source, native, original.graph_input_asset)
 
 
 @pytest.mark.asyncio
