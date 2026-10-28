@@ -391,7 +391,8 @@ def require_application_commit(cur, settings, session, binding, stage):
         _require(task is not None and task["operation"] in {"approval_resume", "approval_recover"}
             and task["runtime_binding"] == binding.model_dump(mode="json"),
             "Application commit has no matching original approval task")
-        asset = validate_runtime_result_binding(cur, settings, binding, stage, task, manifest.get("runtime_result_asset"))
+        asset = validate_runtime_result_binding(cur, settings, binding, stage, task, manifest.get("runtime_result_asset"),
+            committed=True)
         expected = ((finalizations[0].task_id, finalizations[0].owner_attempt_id, finalizations[0].owner_epoch)
             if finalizations else (asset.task_id, asset.attempt_id, asset.owner_epoch))
         _require((proof.task_id, proof.attempt_id, proof.owner_epoch) == expected,

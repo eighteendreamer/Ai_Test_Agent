@@ -58,7 +58,8 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
         monkeypatch.setattr(graph_inputs, "graph_input_asset", legacy_input)
     build_runtime(h, responses=[AIMessage(id="prepared-source", content="", tool_calls=[
         {"name": tool_key, "args": {"value": key}, "id": key, "type": "tool_call"}
-        for key in ("A", "B")]), AIMessage(id="prepared-final", content="finished")])
+        for key in ("A", "B")]), AIMessage(id="prepared-final",
+            content=selected.get("output_text", "finished") if isinstance(selected, dict) else "finished")])
     if tool_key != "inspect_value":
         from src.registry.tools import ToolModule
 
@@ -1298,7 +1299,7 @@ async def test_recovered_approval_freezes_its_invocation_without_replacing_origi
         successor_id = (await h.tasks.get(reconciler.id)).result_payload["successor_task_id"]
         await run_delivery(h, successor_id)
         successor = await h.tasks.get(successor_id)
-        assert successor.status == "completed", successor.error_message
+        assert successor.status == "completed", successor.error_code
         before = h.stages.get(h.initial_task_id, h.session_id)
         asset = FrameworkRuntimeResultAsset.model_validate(before.source_manifest["runtime_result_asset"])
         assert asset.task_id == successor_id and asset.attempt_id == successor.attempt_id

@@ -3621,3 +3621,85 @@ dispatch-complete-final会话9008已实际取回：**241 passed，630.04秒，ex
 approvals-final会话90584已实际取回：**260 passed，1654.62秒，exit0，无skip**；完整日志framework-projected-settlement-approvals-final-2026-10-28.log。四个最终组均已取得明确退出码；原审批、原生messages、普通收尾与原结果读者、预算、独立Worker和工具材料消费方均按上述实际选择回归，不以早期140项或单例复验替代。当前源码没有正在等待的测试handle，也不将历史20／45秒超时或本节一次资源占用视为已经根因修复。
 
 提交前复核完整生产差异、新测试及两个既有测试的必要扩展；记录仍仅追加，原v3 hash不变。仅暂存本节12文件，检查暂存diff／文件集合／明显凭据，不纳入v3草稿、.codex-logs或本地数据。代码、测试及本节同一提交，名称 `【feat】补齐普通消息已投影后的仅结算恢复`，具体commit ID以Git历史与交付输出为准。新内部格式22需要兼容读者先行，不据源码回归开放生产。审批projected结算、A2-2其他出口、A3及B/C/D/E/F和E3/E4等未验收范围仍保留，完整目标继续active，不推送、不建PR。
+
+## 87. A2-3：审批 projected 后仅结算，分离原生后继的谱系与再次执行权限（2026-10-28）
+
+基线 `d7d7e0192`，承接§52、§53–86和当前审批结算草稿。按用户恢复完整v4目标的要求继续TDD，不把v4文档编写时的暂停／Docker关闭快照当作当前状态。本轮复用已经运行且原回归正在使用的PostgreSQL／Redis；没有启停共享服务、升级依赖、改变生产开关或发起付费／真实目标调用。测试继续使用UUID隔离表、checkpoint schema和Redis前缀。
+
+接续时Git有19个跟踪文件改动和2个新文件。审批结算、schema／capabilities、Worker强杀helper和相关读者测试属于本节；原v3文档草稿保持独立，不覆盖、不提交，实际SHA256仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。已有进程按PID／真实日志复核，未因一次无输出或日志尚未创建就重启测试。前一只读梳理没有改代码；本节才恢复实际开发。
+
+### 依据 → 做法与权限边界
+
+- v4 §9.4／§10.1、§86普通消息settling实现 → 审批复用既有 `framework_reconcile → approval_recover`／outbox、owner和最终事务，不新建调度器。新增独立 `application_settlement` proof、`approval_settlements` 谱系和message-stage **23**；旧格式无新链接时仍保持原序列化形状。读者上界同步23，测试显式固定历史reader上界，不将旧reader断言偷偷改成放行。
+- `framework_approval_settlement` 复核原应用提交、原结果资产、精确输出引用、任务／attempt／owner、原输入、预算和已提交模型／ToolJob事实。结算链接放在不可变source manifest之外；先前终态task／attempt不重置。后继重新失租仍通过既有对账谱系发布后继，不能回退到图或finalizer。
+- 正常审批的 `_finalize_runtime_result` 返回后补写 `projected_approval` ACK，关闭“应用已提交却一直停在runtime_submitted”的状态缺口。Dispatcher识别settlement proof后只走资源续租和TaskStore结算；Session执行、原结果加载和再次projected写入不能借该证明重入。结算成功的结构化日志为 `framework_approval_projected_settled`。
+- 原 `require_successor_proof` 同时检查持久对账谱系和当前原生执行资格。真实消费方红测证明：合法原生后继已执行图、封存结果并提交后，finish再检查“结果资产不存在才能继续图”的资格，必然误杀。抽出仅核验原对账记录的 `require_successor_lineage`；执行端仍走原严格proof／native-scope校验，只有被原应用提交和producer身份绑定的finish校验原谱系，不授予第二次图执行权。
+- 新增真实PG红测进一步证明：原对账记录被改变后，原生producer仍能发布结算后继／后继仍能claim。准入、claim和finish现在分别重新检查原输入hash及原对账谱系；没有用免检旧proof或扩展终态白名单修复正常路径。
+- A1／仅结算消费原子应用提交证明及其覆盖的原资产和实际行，不反向要求独立保留的原生completion材料仍可读。`committed=True`仅用于此读取边界；结果冻结、重建和应用写入仍保留原生completion／原投影时间校验，不扩大为重建或重新执行许可。
+
+本步复用本项目现有finalization／settlement／TaskControl机制；不是官方框架提供跨存储exactly-once的声明。本地课程《Agent测试专项》的重复执行副作用检查及《Agent轨迹与协议鲁棒性》的L4半成功／幂等检查 → 在正式数据库、投递和独立Worker强杀窗口验证原事实不变，而非只看最终文本。
+
+### TDD、接续失败与测试契约纠正
+
+日志均留在 `.codex-logs`，不提交、不覆盖旧日志。以下早期绿色不替代最终源码综合回归：
+
+- 接续日志的normal-red为 **1 failed、33 deselected，18.85秒**，真实阶段是runtime_submitted而非projected；capability-red为 **1 failed、64 deselected，7.64秒**。对应正常ACK及格式23读者接线均纳入本节。workers-first **4 passed、34 deselected，178.21秒**只代表当时四个强杀参数，不称为完整回归。
+- 接续matrix-third **1 failed、28 passed、4 deselected，238.93秒**停在原生端口拒绝：已完成Turn已无活跃审批，因此先抛既有 `AgentSubmissionConflict`，不是获得了原生执行权。测试按真实端口的确定拒绝收紧预期，并继续单独检查native-scope拒绝、无写入和原阶段不变。
+- 接续dispatch-final为 **31 passed、1 error，260.99秒**。空串模型响应在真实adapter的非空assistant契约处被拒绝，未形成原结果资产；把它直接当作“已提交的合法空结构化结果”是fixture前提错误。新测试保留实际官方图／工具链，断言无结构化完成依据的空响应不得提交结果或completed事件；不伪造资产、不替换adapter来获取绿色。**v4 §9.3的合法结构化空结果正例仍未实现／验收，H11不能据此整体关闭。**
+- 接续approvals-final为 **1 failed、52 passed，559.51秒**；断言诊断误读不存在的 `error_message` 属性，遮住finish的真正拒绝。改为现有 `error_code` 后，本轮native-finish-red复现 **1 failed，13.69秒**，明确根因是把原生再次执行资格用于已提交producer的结算。拆分两种职责后native-finish-green **2 passed，17.37秒**，同时回归旧排队native proof不能领取已有结果。
+- native-lineage-red **1 failed，15.26秒**，改变原对账记录后仍可生成后继；native-claim-red **1 failed，18.10秒**，仍可claim。逐边界补齐后，lineage-empty-green **3 passed，27.12秒**是中间结果；最终三边界原谱系用例另在完整调度组执行。
+- dispatch-verified **1 failed、35 passed，332.26秒**：草稿先expire唯一task再要求已完成、无pending／queued任务的Session接受interrupt，实际HTTP 400。按TaskControl实际契约改为在原owner仍持有活跃task时取消，并新增“已完成且无活动任务的400不得改写结果／事件”正例；领取前queued后继必须精确为cancelled而不是扩大状态白名单。interrupt-contract **1 failed、1 passed，35.22秒**保留该旧断言失败；修正后tail-contracts **8 passed，71.38秒**，包含领取后取消、格式、重复失租和原子回滚。
+- 新增后续排队／已领取输入保护。later-input初次 **1 failed，13.08秒**，对比了submit返回的公开Record和get返回的完整Execution两个不同模型类型；在动作前通过同一get端口保存完整基线，继续精确比较全部字段，不删字段绕过。最终两参数在完整调度组执行。
+- P0首次直接使用历史单参数node，实际因当前已扩展多参数而 **no tests ran，exit4**，不记为通过。先collect确认当前六个官方Worker参数，再选择整个函数与Delta文件：p0-current **13 passed，247.62秒，exit0，无skip**。§54原根因为并行Delta按task ID而非task path回放；现有排序修复和严格messages比较保留，本步不重复实现、不忽略消息。
+
+### 验证选择与当前状态
+
+所有pytest从Agent_Server使用 `../.venv-framework-v2/Scripts/python.exe -u -m pytest`，显式 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，公共参数 `-q -x -rs --tb=short`；stdout＋stderr经 `2>&1 | Tee-Object` 保存，立即捕获并记录 `PYTEST_EXIT_CODE`，返回相同退出码。
+
+接续的projections-final进程PID36596／18708已取回真实日志终态：**338 passed，1472.83秒，exit0，无skip**，没有因为63%时长或先前日志静默而重启。其选择为runtime_result_asset、application_projection、finalization_projection、snapshot_projection、event_projection、observation_projection、message_result_reconstruction、message_asset_gap_recovery、approval_result_reconstruction、approval_asset_gap_recovery、graph_input_asset、sqlalchemy_cursor_result；它启动早于本轮原生producer结算职责拆分，不单独代表后者最终源码通过。
+
+本节写入时，最终调度选择 `tests/test_framework_approval_settlement.py tests/test_framework_projected_settlement.py tests/test_agent_v2_worker_contract.py`（会话90591，dispatch-final-verified）及审批综合选择（会话43520，approvals-verified）仍在执行；不把当前点数当作已通过。审批综合选择为approval_graph_input、approval_runtime、approval_continuation、approval_projection、approval_recovery、model_admission、task_control、terminal_gap、tool_projection，全部对应 `tests/test_framework_*.py`。实际最终退出码、源码检查、提交结果将在本节末追加。
+
+### v4 对应、未完成出口与提交边界
+
+| v4阶段／条款 | 实施记录 → 代码／测试 | 本节权限与剩余出口 |
+| --- | --- | --- |
+| A2-3，§9.4／10.1，H06／H07 | §86–87 → approval_settlement、recovery／submission、Session／Dispatcher／TaskStore及新测试 | 审批原结算和仅结算后继；最终综合结果待本节末补记，不宣称A3完成 |
+| H11／H12，§14.1 | §87 → stage23／proof3、schema／capabilities及实际claim测试 | reader22拒23、reader23拒未来24；完整proof／其他资产格式、旧真实制品和滚动／回滚仍待验收 |
+| P0，§8.3，H02／H03 | §54、§87 → 原Delta和六参数独立Worker回归 | 本轮13项通过，严格原生消息身份／顺序／metadata未放宽；非官方conformance或长链性能验收 |
+| §9.3，H11合法空结构化结果 | §87 → 无依据空响应负例；已有普通消息空输出资产测试 | 正式DeepAgents结构化空结果正例仍待实施，不把拒绝空响应等同该正例已支持 |
+| A3及B／C／D／E／F，E3／E4 | v4完整范围及§52–86后续事实 | 派生Memory／清理、统一上下文与跨Turn、图内未知效果／预算、流式停止、首模式／逐模式和兼容部署继续独立推进 |
+
+当前最高证据范围为E1／E2子集：固定官方框架／SDK、受控模型或本地合成HTTP、真实PostgreSQL／Redis及独立进程；工具／Verification的受控投影不冒称真实领域Runner通过，LocalModelObjects不等于RustFS。未新增E3付费／目标验收或E4生产演练。根目录compileall及diff检查已取得exit0；ruff／mypy未安装，未声称独立lint／typecheck通过；前端、全量、部署构建、官方saver conformance与长链性能本步未执行。
+
+生产源码固定后的相关文件与本节拟同一中文feat提交；提交前检查Git／完整差异／暂存集合／明显凭据，排除v3草稿、日志与本地数据。不推送、不建PR，不将本子步标为完整goal完成。
+
+### 最终消费方结果、测试端口根因与交付补记
+
+最终调度合组dispatch-final-verified（会话90591）真实 **1 failed、44 passed，317.40秒，exit1**，未以44项通过替代最终验收。剩余失败只在新加入的后续输入保护：claim返回含捕获owner capability的Execution，而get有意不重建该capability；两者不是相同端口快照。单例later-claimed-diagnostic再次 **1 failed，11.06秒，exit1**，确认实际差异为runtime_owner，task各持久字段没有被对账修改。改为动作前后均通过get保存／比较完整模型，并额外精确比较新Turn的实际owner数据库行，不忽略owner保护。later-reads-verified **2 passed，16.77秒，exit0**。
+
+为避免反复让大型合组止于fixture前提错误，最后将新结算文件、普通消息／Worker和审批综合分组取回；新结算与普通消息／Worker组不再使用 `-x`，完整收集各组失败／终态。生产源码未在这些最终组之间变化。最终结果如下，不累计重叠覆盖数：
+
+| 选择／日志（framework-approval-settlement-前缀，2026-10-28日期） | 实际结果 | 证据范围 |
+| --- | --- | --- |
+| only-final，会话84745 | **49 passed，435.09秒，exit0，无skip** | 审批原producer／finalizer、三处漂移及原对账谱系复核、正常projected ACK、取消、后续输入／owner保护、重复失租／投递、事务回滚、两代reader和四个独立Worker强杀组合 |
+| message-worker-final，会话12116 | **160 passed，246.21秒，exit0，无skip** | 普通消息仅结算／空输出资产、schema读者及v2 Worker／claim／投递消费方，保留§86行为 |
+| approvals-verified，会话43520 | **260 passed，1535.71秒，exit0，无skip** | 审批图输入／Runtime／continuation／projection／recovery、模型准入、TaskControl、图终态强杀与工具原件；包括被错误native资格误杀的合法producer结算回归 |
+| p0-current，会话88210 | **13 passed，247.62秒，exit0，无skip** | 完整Delta排序文件及当前六参数独立Worker审批恢复，保持严格原生messages比较；与审批综合存在重叠 |
+
+实际命令如下，工作目录／环境／stdout＋stderr／退出码处理同本节前述；后两组保留实际 `-x`，前两组无 `-x`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_settlement.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_projected_settlement.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_projection.py tests/test_framework_approval_recovery.py tests/test_framework_model_admission.py tests/test_framework_task_control.py tests/test_framework_terminal_gap.py tests/test_framework_tool_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_delta_replay_order.py tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling -q -x -rs --tb=short
+```
+
+生产源码固定后的 `framework_approval_recovery.py` SHA256为 `9A1E7A3D2678D61D5412CD04431AFD873611744188898F5C8D831655A7C60D02`，`framework_approval_settlement.py`为 `04849552A9F21D8B7823E2C8CA52CBCEF06888BE363F0B2A5C0F92A70450BF27`。日志不提交；诊断使用的租约身份均来自已清理的隔离测试，不含供应商／用户凭据，不将verbose诊断日志作为发布产物。
+
+最后只纳入本节21个相关文件，保留原v3草稿；代码／测试／本节同一提交，名称 `【feat】补齐审批已投影后的仅结算恢复`，具体ID以Git历史与交付输出为准。格式23仍要求兼容读者先行或消费者隔离，没有DDL不代表E4已验收。下一子步继续v4剩余结果语义／A3及其依赖；合法结构化空结果、未知外部效果、全量／前端／lint／typecheck、官方conformance、E3／E4和其余全系统出口仍保持未完成，不据本步绿色标记完整目标完成。
+
+交付前对最终源码与测试再次执行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check`，实际exit0／exit0，日志checks-delivery；本节只追加、章节唯一和代码围栏检查通过。有限明显凭据模式检查通过，不将其称为完整安全审计。全部本轮pytest handle已取得终态，未遗留待取回的运行结果。
+
+首个暂存核验脚本因自身正则转义误判章节数，实际exit1，未据此提交；改为逐行检查后，暂存21文件精确集合、本节只追加／唯一、代码围栏、v3草稿hash及有限凭据检查均实际exit0。没有改动历史记录来迎合校验器。

@@ -1278,6 +1278,7 @@ class PostgresAgentTaskStore:
             if framework_approval:
                 from src.runtime.framework_approval_submission import assert_claimable_approval
                 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+                from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 
                 if row["operation"] == "approval_resume":
                     cur.execute(f"SELECT id FROM {self._tasks} WHERE session_id=%s AND turn_id=%s "
@@ -1291,7 +1292,7 @@ class PostgresAgentTaskStore:
                     raise TaskDeferred("Framework Turn requires reconciliation before approval continuation")
                 try:
                     assert_claimable_approval(cur, self, session, saved_binding, row, binding_owner)
-                except (AgentSubmissionConflict, FrameworkApprovalRecoveryRequired, ValidationError) as exc:
+                except (AgentSubmissionConflict, FrameworkApprovalRecoveryRequired, FrameworkMessageStageRecoveryRequired, ValidationError) as exc:
                     obsolete = isinstance(exc, AgentSubmissionConflict)
                     status = "cancelled" if obsolete else "recovery_required"
                     self._update_status(cur, row, status, None, "approval_continuation_changed")
@@ -1354,9 +1355,12 @@ class PostgresAgentTaskStore:
                     owner_token=token, task_id=task_id, attempt_id=attempt_id, worker_id=worker_id)}
                 if row["operation"] == "approval_recover":
                     from src.runtime.framework_approval_finalization import is_finalization_task, adopt_finalization_owner
+                    from src.runtime.framework_approval_settlement import is_settlement_task, adopt_settlement_owner
 
                     if is_finalization_task(row):
                         adopt_finalization_owner(cur, self._settings, row, row["runtime_owner"])
+                    elif is_settlement_task(row):
+                        adopt_settlement_owner(cur, self._settings, row, row["runtime_owner"])
             self._event(cur, row, "agent_task.claimed", ({
                 "binding_id": saved_binding.binding_id,
                 "owner_epoch": row["runtime_owner"].owner_epoch,
@@ -1390,16 +1394,24 @@ class PostgresAgentTaskStore:
                 raise ContinuationLeaseLostError("Agent task attempt is already settled")
             if status in {"running", "waiting_resource"} and row["status"] != "claimed":
                 raise ValueError("Only a claimed task can start or wait for admission")
-            if (task.runtime_binding is not None and row["operation"] in {"message", "message_recover"}
+            if (task.runtime_binding is not None and row["operation"] in {"message", "message_recover", "approval_resume", "approval_recover"}
                 and status == "completed"):
                 from src.runtime.framework_message_recovery import _stage, require_projected_settlement
                 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 
-                stage = _stage(cur, self, task.runtime_binding)
-                if stage.phase == "projected":
+                approval_settlement = row["operation"] in {"approval_resume", "approval_recover"}
+                if approval_settlement:
+                    from src.runtime.framework_approval_finalization import _stage as approval_stage
+                    from src.runtime.framework_approval_settlement import require_projected_approval_settlement
+
+                    stage = approval_stage(cur, self._settings, task.runtime_binding)
+                else:
+                    stage = _stage(cur, self, task.runtime_binding)
+                if stage is not None and stage.phase == "projected":
                     if result_status != "completed":
                         raise FrameworkMessageStageRecoveryRequired("Projected settlement requires a completed result")
-                    settlement = require_projected_settlement(cur, self, session, row, task.runtime_owner, stage)
+                    settlement = (require_projected_approval_settlement(cur, self._settings, session, row, task.runtime_owner, stage)
+                        if approval_settlement else require_projected_settlement(cur, self, session, row, task.runtime_owner, stage))
                     cur.execute(f"UPDATE {self._session_table} SET status='completed', "
                         "metadata=jsonb_set(metadata,'{control}',COALESCE(metadata->'control','{}'::jsonb) || %s::jsonb), "
                         "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
@@ -1425,7 +1437,8 @@ class PostgresAgentTaskStore:
                 self._clear_lease(cur, row)
 
         if settlement is not None:
-            logger.info("framework_message_projected_settled", extra={"task_id": task.id,
+            logger.info("framework_approval_projected_settled" if approval_settlement else "framework_message_projected_settled",
+                extra={"task_id": task.id,
                 "attempt_id": task.attempt_id, "binding_id": task.runtime_binding.binding_id,
                 "origin_commit_task_id": settlement.task_id,
                 "result_reference": settlement.output_message_id or settlement.snapshot_id})

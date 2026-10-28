@@ -97,7 +97,7 @@ def test_terminal_event_rules_require_prepared_stage21_and_preserve_legacy(chang
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=20).require_message_stage(21)
         FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(21)
         with pytest.raises(TaskDeferred):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(22)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=21).require_message_stage(22)
 
 
 @pytest.mark.parametrize("changed", [None, "approval", "decision", "mode", "epoch", "event", "bad_log", "bad_event", "bad_payload", "unknown", "digest"])
@@ -284,7 +284,7 @@ async def test_runtime_submitted_stage_records_graph_asset_once(admission, tool_
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=20).require_message_stage(21)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(22)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=21).require_message_stage(22)
         with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=expected_version - 1).require_message_stage(saved.schema_version)
         from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired

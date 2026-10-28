@@ -141,7 +141,7 @@ def _require_prepared_identity(stage, task, asset):
         "Runtime result differs from its original preparation identity")
 
 
-def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
+def validate_runtime_result_binding(cur, settings, binding, stage, task, raw, *, committed=False):
     """Read original facts before claim too; this grants no execution ownership."""
     from src.runtime.framework_approval_finalization import is_finalization_task, validate_finalization_link
 
@@ -166,7 +166,11 @@ def validate_runtime_result_binding(cur, settings, binding, stage, task, raw):
         "Runtime result execution facts changed")
     _require_prepared_identity(stage, task, asset)
     prepared = _prepared_graph_input(stage, task)
-    if prepared is not None and "result_projection_version" in prepared.feature_flags:
+    # A1 / settlement rechecks the atomic commit and its original rows, not
+    # A2's independently retained native completion material. The commit hashes
+    # the entire original asset (including projection time); writes and result
+    # reconstruction retain the stronger completion-original comparison.
+    if not committed and prepared is not None and "result_projection_version" in prepared.feature_flags:
         expected_time = _result_projection_at(cur, settings, binding, stage, task,
             (asset.task_id, asset.attempt_id, asset.owner_epoch), asset.runtime_result.model_dump(mode="json"))
         _require(asset.model_dump(mode="json")["projection_at"] == expected_time,

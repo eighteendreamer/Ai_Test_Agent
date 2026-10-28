@@ -135,8 +135,36 @@ def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=
             h.runtime._tool_runtime_service.record_from_job = forbidden
             sessions._input_orchestrator_service.orchestrate_async = forbidden
             sessions._verification_service.build_results = forbidden
-            if recovery_mode in {"ack", "drain"}:
+            if recovery_mode in {"ack", "drain", "settle", "settle-drain"}:
                 sessions._finalize_runtime_result = forbidden
+            if recovery_mode in {"settle", "settle-drain"}:
+                sessions.execute_claimed_approval = forbidden
+        if pause_at == "after_projected":
+            from src.runtime.framework_message_stages import FrameworkMessageStages
+
+            projected = FrameworkMessageStages.projected_approval
+            async def projected_and_pause(self, *args, **kwargs):
+                result = await projected(self, *args, **kwargs)
+                await pause()
+                return result
+            FrameworkMessageStages.projected_approval = projected_and_pause
+        elif pause_at == "settlement_after_claim":
+            claim = tasks.claim
+            async def claim_and_pause(*args, **kwargs):
+                task = await claim(*args, **kwargs)
+                await pause()
+                return task
+            tasks.claim = claim_and_pause
+        elif pause_at in {"settlement_before_finish", "settlement_after_finish"}:
+            finish = tasks.finish
+            async def finish_and_pause(*args, **kwargs):
+                if pause_at == "settlement_before_finish":
+                    await pause()
+                result = await finish(*args, **kwargs)
+                if pause_at == "settlement_after_finish":
+                    await pause()
+                return result
+            tasks.finish = finish_and_pause
         if pause_at == "before_asset":
             import json
             from src.runtime.framework_runtime_results import FrameworkRuntimeResults
@@ -176,12 +204,12 @@ def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=
         try:
             worker = RedisTaskWorker(queue, consumer="separate-framework-worker",
                 handler=lambda delivery: dispatcher.handle_v2(delivery, worker_id="separate-framework-worker"), block_ms=1,
-                batch_size=100 if recovery_mode == "drain" else 1,
-                reclaim_idle_ms=1 if recovery_mode == "drain" else 120000)
+                batch_size=100 if recovery_mode in {"drain", "settle-drain"} else 1,
+                reclaim_idle_ms=1 if recovery_mode in {"drain", "settle-drain"} else 120000)
             # Revocation fences the old attempt, so its delivery remains pending
             # (TaskDeferred). A later terminal redelivery will ACK without work.
             processed = await worker.run_once()
-            if recovery_mode == "drain":
+            if recovery_mode in {"drain", "settle-drain"}:
                 assert processed >= 1
             else:
                 assert processed == (0 if pause_at == "before_prepare" else 1)

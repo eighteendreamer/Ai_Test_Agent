@@ -393,17 +393,26 @@ class SessionService:
                 raise ContinuationLeaseLostError("Framework approval is missing its matching captured owner")
             if not isinstance(task.input.get("decision_id"), str) or not task.input["decision_id"]:
                 raise ValueError("Framework approval task is missing its frozen decision_id")
+            from src.runtime.framework_approval_settlement import is_settlement_task
+
+            if is_settlement_task({"input_payload": task.input}):
+                from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+                raise FrameworkMessageStageRecoveryRequired("Projected approval requires task settlement, not Session execution")
         async with self._session_locks[task.session_id]:
             await self._store.assert_turn_execution(task.session_id, task.lease_token)
             session = await self._require_session(task.session_id)
+            if bound:
+                from src.runtime.framework_message_stages import FrameworkMessageStages, FrameworkMessageStageRecoveryRequired
+
+                stages = FrameworkMessageStages(self._agent_task_store)
+                stage = await asyncio.to_thread(stages.get, task.id, task.session_id, include_continuations=True)
+                if stage is not None and stage.phase == "projected":
+                    raise FrameworkMessageStageRecoveryRequired("Projected approval permits task settlement only")
             with framework_owner_scope(task.runtime_owner):
                 from src.runtime.framework_approval_finalization import is_finalization_task
 
                 if bound and task.operation == "approval_recover" and is_finalization_task({"input_payload": task.input}):
-                    from src.runtime.framework_message_stages import FrameworkMessageStages
-
-                    stages = FrameworkMessageStages(self._agent_task_store)
-                    stage = await asyncio.to_thread(stages.get, task.id, task.session_id, include_continuations=True)
                     stop = asyncio.Event()
                     heartbeat = asyncio.create_task(self._keep_turn_execution_alive(session_id=task.session_id,
                         lease_token=task.lease_token, stop_event=stop, framework_task=task))
@@ -1360,6 +1369,9 @@ class SessionService:
                 **({"projection_asset": projection_asset} if projection_asset is not None else {}),
                 ownership_monitors=ownership_monitors,
             )
+            if projection_asset is not None:
+                await FrameworkMessageStages(self._agent_task_store).projected_approval(
+                    framework_task.runtime_owner, response.output.id)
             settled = True
             return continuation.snapshot.model_copy(deep=True) if capture_snapshot else response
         except asyncio.CancelledError:

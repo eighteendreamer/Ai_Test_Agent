@@ -45,7 +45,14 @@ def assert_active_approval(session, binding, approval_id, owner):
 def assert_claimable_approval(cur, tasks, session, binding, row, owner):
     """Do not let an obsolete continuation bypass Session input ordering."""
     from src.runtime.framework_approval_finalization import is_finalization_task, require_finalization_claim
+    from src.runtime.framework_approval_settlement import is_settlement_task, require_settlement_claim
 
+    if row["operation"] == "approval_recover" and is_settlement_task(row):
+        from src.runtime.framework_approval_recovery import require_successor_proof
+
+        require_successor_proof(cur, tasks._settings, row)
+        require_settlement_claim(cur, tasks._settings, row, owner)
+        return
     if row["operation"] == "approval_recover" and is_finalization_task(row):
         from src.runtime.framework_approval_recovery import require_successor_proof
 

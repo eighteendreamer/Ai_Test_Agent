@@ -11,6 +11,8 @@ import json
 import logging
 from uuid import NAMESPACE_URL, uuid5
 
+from pydantic import ValidationError
+
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
 from src.runtime.postgres_runtime_owner import (
@@ -31,9 +33,7 @@ def _successor_task_id(operation, parent_id, attempt_id):
 
 
 def require_recovery_origin(cur, tasks, session, binding, origin):
-    from src.runtime.framework_approval_finalization import prepare_approval_finalization
-
-    if prepare_approval_finalization(cur, tasks._settings, session, binding, origin) is not None:
+    if prepare_application_recovery(cur, tasks._settings, session, binding, origin) is not None:
         return
     pending = (session["metadata"] or {}).get("pending_turn") or {}
     control = (session["metadata"] or {}).get("control") or {}
@@ -61,6 +61,18 @@ def is_expired_reconciliation(row):
     return (row["operation"] == "framework_reconcile" and row["status"] == "recovery_required"
         and row["error_code"] == "execution_owner_expired" and bool(row["attempt_id"])
         and not row["interrupt_requested"])
+
+
+def prepare_application_recovery(cur, settings, session, binding, origin):
+    from src.runtime.framework_approval_finalization import prepare_approval_finalization
+    from src.runtime.framework_approval_settlement import prepare_approval_settlement
+    from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+    try:
+        settled = prepare_approval_settlement(cur, settings, session, binding, origin)
+        return settled if settled is not None else prepare_approval_finalization(cur, settings, session, binding, origin)
+    except (FrameworkMessageStageRecoveryRequired, ValidationError) as exc:
+        raise FrameworkApprovalRecoveryRequired("Approval application recovery facts require reconciliation") from exc
 
 
 def reconciliation_origin(cur, tasks, session, binding, row):
@@ -99,8 +111,8 @@ def require_reconciliation_claim(cur, tasks, session, binding, row, owner):
     return origin
 
 
-def require_successor_proof(cur, settings, row):
-    """A recover command is valid only as the recorded child of a completed reconciliation."""
+def require_successor_lineage(cur, settings, row):
+    """Verify durable issuance without granting permission to re-enter a port."""
     cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE",
         (row["parent_task_id"],))
     parent = cur.fetchone()
@@ -117,10 +129,20 @@ def require_successor_proof(cur, settings, row):
         or proof.get("origin_attempt_id") != payload.get("origin_attempt_id")
         or proof.get("decision_id") != payload.get("decision_id")):
         raise FrameworkApprovalRecoveryRequired("Recovery successor has no matching durable reconciliation proof")
+    return proof
+
+
+def require_successor_proof(cur, settings, row):
+    """Validate issuance and the scope of the requested recovery operation."""
+    proof = require_successor_lineage(cur, settings, row)
     if proof.get("scope") == "application_finalization":
         from src.runtime.framework_approval_finalization import validate_finalization_link
 
         validate_finalization_link(cur, settings, row)
+    elif proof.get("scope") == "application_settlement":
+        from src.runtime.framework_approval_settlement import validate_settlement_link
+
+        validate_settlement_link(cur, settings, row)
     else:
         if proof.get("schema_version") != 1 or proof.get("scope") is not None:
             raise FrameworkApprovalRecoveryRequired("Native recovery proof has an unsupported scope or format")
@@ -293,13 +315,13 @@ class FrameworkApprovalRecovery:
         return session, row, origin
 
     def _completed_origin(self, task):
-        from src.runtime.framework_approval_finalization import prepare_approval_finalization, _stage
+        from src.runtime.framework_approval_finalization import _stage
         from src.runtime.framework_runtime_results import _approval_preparation
         from src.runtime.framework_event_completion import original_checkpoint_source
 
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             session, _, origin = self._owned_origin(cur, task)
-            if prepare_approval_finalization(cur, self._settings, session, task.runtime_binding, origin) is not None:
+            if prepare_application_recovery(cur, self._settings, session, task.runtime_binding, origin) is not None:
                 return None
             if _has_completed_boundary(cur, self._settings, task.runtime_binding):
                 return origin["id"], None
@@ -348,12 +370,16 @@ class FrameworkApprovalRecovery:
         tasks, owner = self._tasks, task.runtime_owner
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             session, row, origin = self._owned_origin(cur, task)
-            from src.runtime.framework_approval_finalization import prepare_approval_finalization, _save
-            from src.schemas.framework_message_stage import FrameworkApprovalFinalizationLink, FrameworkApprovalFinalizationProof
+            from src.runtime.framework_approval_finalization import _save
+            from src.schemas.framework_message_stage import (
+                FrameworkApprovalFinalizationLink, FrameworkApprovalFinalizationProof,
+                FrameworkApprovalSettlementLink, FrameworkApprovalSettlementProof,
+            )
 
             if original is not None:
                 self._seal_original(cur, owner.binding, origin, original)
-            prepared = prepare_approval_finalization(cur, self._settings, session, owner.binding, origin)
+            prepared = prepare_application_recovery(cur, self._settings, session, owner.binding, origin)
+            settling = prepared is not None and prepared[0].phase == "projected"
             if prepared is None:
                 require_native_recovery_scope(cur, self._settings, owner.binding)
                 plan, consumed = self._continuation.inspect_decision_in_transaction(cur, owner.binding, origin)
@@ -376,17 +402,26 @@ class FrameworkApprovalRecovery:
                 cur.execute("SELECT clock_timestamp() AS now")
                 now = cur.fetchone()["now"]
                 successor_id = _successor_task_id("approval_recover", task.id, origin["attempt_id"])
-                link = FrameworkApprovalFinalizationLink(task_id=successor_id, predecessor_task_id=origin["id"],
+                if settling:
+                    from src.runtime.framework_application_projection import require_application_commit
+
+                    commit = require_application_commit(cur, self._settings, session, owner.binding, stage)
+                link_type = FrameworkApprovalSettlementLink if settling else FrameworkApprovalFinalizationLink
+                link = link_type(task_id=successor_id, predecessor_task_id=origin["id"],
                     predecessor_attempt_id=origin["attempt_id"], predecessor_owner_epoch=predecessor_epoch,
                     budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now,
-                    source_sha256=asset.source_sha256, execution_sha256=asset.execution_sha256,
-                    model_calls_sha256=asset.model_calls_sha256, result_reference=asset.runtime_result.snapshot.id,
-                    result_sha256=asset.asset_sha256)
-                proof = FrameworkApprovalFinalizationProof(origin_task_id=origin["id"], origin_attempt_id=origin["attempt_id"],
+                    source_sha256=stage.source_sha256 if settling else asset.source_sha256, execution_sha256=asset.execution_sha256,
+                    model_calls_sha256=commit.model_calls_sha256 if settling else asset.model_calls_sha256,
+                    result_reference=stage.result_reference if settling else asset.runtime_result.snapshot.id,
+                    result_sha256=approval_value_hash(commit.model_dump(mode="json")) if settling else asset.asset_sha256)
+                proof_type = FrameworkApprovalSettlementProof if settling else FrameworkApprovalFinalizationProof
+                field = "settlement" if settling else "finalization"
+                proof = proof_type(origin_task_id=origin["id"], origin_attempt_id=origin["attempt_id"],
                     decision_id=origin["input_payload"]["decision_id"],
-                    finalization=link.model_dump(mode="json", exclude={"owner_attempt_id", "owner_epoch"})).model_dump(mode="json")
-                _save(cur, self._settings, stage.model_copy(update={"schema_version": max(18, stage.schema_version),
-                    "approval_finalizations": [*stage.approval_finalizations, link], "updated_at": now}))
+                    **{field: link.model_dump(mode="json", exclude={"owner_attempt_id", "owner_epoch"})}).model_dump(mode="json")
+                links_field = "approval_settlements" if settling else "approval_finalizations"
+                _save(cur, self._settings, stage.model_copy(update={"schema_version": max(23 if settling else 18, stage.schema_version),
+                    links_field: [*getattr(stage, links_field), link], "updated_at": now}))
             successor = self._publish(cur, origin, operation="approval_recover", reference_id=origin["reference_id"],
                 parent_id=task.id, input_payload={**origin["input_payload"], "origin_task_id": origin["id"],
                     "origin_attempt_id": origin["attempt_id"], "reconciliation_task_id": task.id, "recovery_proof": proof})
@@ -397,11 +432,12 @@ class FrameworkApprovalRecovery:
             metadata = dict(session["metadata"])
             for key in ("turn_lease_turn_id", "turn_lease_owner", "turn_lease_token", "turn_lease_expires_at"):
                 metadata.pop(key, None)
-            metadata["control"] = {**(metadata.get("control") or {}), "control_state": "waiting_approval",
+            next_state = "completed" if settling else "waiting_approval"
+            metadata["control"] = {**(metadata.get("control") or {}), "control_state": next_state,
                 "is_interrupted": False, "is_resumable": False}
-            cur.execute(f"UPDATE {tasks._session_table} SET status='waiting_approval',metadata=%s::jsonb, "
+            cur.execute(f"UPDATE {tasks._session_table} SET status=%s,metadata=%s::jsonb, "
                 "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
-                (json.dumps(metadata, ensure_ascii=False), task.session_id))
+                (next_state, json.dumps(metadata, ensure_ascii=False), task.session_id))
             tasks._event(cur, row, "framework.recovery_succeeded", {"successor_task_id": successor.id,
                 "origin_task_id": origin["id"], "binding_id": owner.binding.binding_id})
             return successor

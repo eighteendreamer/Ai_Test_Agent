@@ -57,20 +57,22 @@ def _material(cur, settings, binding, stage):
         and producer["session_id"] == binding.session_id and producer["turn_id"] == binding.turn_id,
         "Approval finalization has no matching original producer")
     try:
-        asset = validate_runtime_result_binding(cur, settings, binding, stage, producer, raw)
+        asset = validate_runtime_result_binding(cur, settings, binding, stage, producer, raw,
+            committed="application_projection_commit" in (stage.source_manifest or {}))
     except FrameworkMessageStageRecoveryRequired as exc:
         raise FrameworkApprovalRecoveryRequired("Approval finalization original result requires reconciliation") from exc
     return asset, producer
 
 
-def _context(cur, settings, session, binding, stage, asset, origin, *, current=True):
+def _context(cur, settings, session, binding, stage, asset, origin, *, current=True, recovering=True):
     from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
     from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 
     metadata = session["metadata"] or {}
     pending = metadata.get("pending_turn") or {}
     _require(origin["operation"] in {"approval_resume", "approval_recover"}
-        and origin["status"] in {"failed", "recovery_required"} and origin["attempt_id"]
+        and origin["status"] in ({"failed", "recovery_required"} if recovering else {"claimed", "running"})
+        and origin["attempt_id"]
         and not origin["interrupt_requested"] and origin["project_id"] == session["project_id"]
         and origin["runtime_binding"] == binding.model_dump(mode="json")
         and origin["session_id"] == binding.session_id and origin["turn_id"] == binding.turn_id,

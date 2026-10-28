@@ -146,6 +146,32 @@ def validate_message_stage(record):
         if stage.schema_version < 6 or stage.phase not in {"runtime_submitted", "projected"}:
             raise FrameworkMessageStageRecoveryRequired("Application commit has no matching message stage format")
         FrameworkProjectionCommit.model_validate(manifest["application_projection_commit"])
+    if stage.approval_settlements:
+        from src.schemas.framework_projection_commit import FrameworkProjectionCommit
+
+        if (stage.schema_version < 23 or stage.phase != "projected"
+            or "application_projection_commit" not in manifest or "runtime_result_asset" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Approval settlement has no projected commit format")
+        commit = FrameworkProjectionCommit.model_validate(manifest["application_projection_commit"])
+        result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        if result.task_id not in manifest.get("approval_graph_inputs", {}):
+            raise FrameworkMessageStageRecoveryRequired("Approval settlement has no original approval result")
+        previous = stage.approval_finalizations[-1] if stage.approval_finalizations else None
+        predecessor, attempt, epoch = ((previous.task_id, previous.owner_attempt_id, previous.owner_epoch)
+            if previous else (result.task_id, result.attempt_id, result.owner_epoch))
+        identities = {result.task_id, *(link.task_id for link in stage.approval_finalizations)}
+        for link in stage.approval_settlements:
+            if (link.predecessor_task_id != predecessor or link.predecessor_attempt_id != attempt
+                or link.predecessor_owner_epoch != epoch or link.task_id in identities
+                or link.source_sha256 != stage.source_sha256 or link.execution_sha256 != stage.execution_sha256
+                or link.model_calls_sha256 != commit.model_calls_sha256
+                or link.result_reference != stage.result_reference
+                or stage.result_reference != (commit.output_message_id or commit.snapshot_id)
+                or link.result_sha256 != approval_value_hash(commit.model_dump(mode="json"))
+                or (link.owner_attempt_id is None) != (link.owner_epoch is None)):
+                raise FrameworkMessageStageRecoveryRequired("Approval settlement lineage differs from its projected commit")
+            predecessor, attempt, epoch = link.task_id, link.owner_attempt_id, link.owner_epoch
+            identities.add(link.task_id)
     if "semantic_input" in manifest:
         semantic = PreparedSemanticInput.model_validate(manifest["semantic_input"])
         if semantic.request is not None and semantic.invocation_parameters is None:

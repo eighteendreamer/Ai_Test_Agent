@@ -57,7 +57,7 @@ def test_result_time_contract_requires_prepared_stage20_without_changing_legacy(
         with pytest.raises(TaskDeferred):
             FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=20).require_message_stage(21)
         with pytest.raises(TaskDeferred):
-            FrameworkWorkerCapabilities("a" * 64, True).require_message_stage(22)
+            FrameworkWorkerCapabilities("a" * 64, True, message_stage_max_version=21).require_message_stage(22)
 
 
 @pytest.mark.asyncio

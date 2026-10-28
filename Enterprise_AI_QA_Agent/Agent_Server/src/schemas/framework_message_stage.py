@@ -41,10 +41,25 @@ class FrameworkApprovalFinalizationProof(BaseModel):
     finalization: FrameworkMessageRecoveryLink
 
 
+class FrameworkApprovalSettlementLink(FrameworkApprovalFinalizationLink):
+    resume_phase: Literal["settling"] = "settling"
+
+
+class FrameworkApprovalSettlementProof(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[3] = 3
+    scope: Literal["application_settlement"] = "application_settlement"
+    origin_task_id: str = Field(min_length=1)
+    origin_attempt_id: str = Field(min_length=1)
+    decision_id: str = Field(min_length=1)
+    settlement: FrameworkMessageRecoveryLink
+
+
 class FrameworkMessageStage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22] = 3
+    schema_version: Literal[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23] = 3
     task_id: str
     binding_id: str
     input_sha256: str
@@ -59,6 +74,7 @@ class FrameworkMessageStage(BaseModel):
     result_reference: str | None = None
     recoveries: list[FrameworkMessageRecoveryLink] = Field(default_factory=list)
     approval_finalizations: list[FrameworkApprovalFinalizationLink] = Field(default_factory=list)
+    approval_settlements: list[FrameworkApprovalSettlementLink] = Field(default_factory=list)
     created_at: datetime
     updated_at: datetime
 
@@ -67,6 +83,8 @@ class FrameworkMessageStage(BaseModel):
         value = handler(self)
         if self.schema_version < 18 and not self.approval_finalizations:
             value.pop("approval_finalizations", None)
+        if self.schema_version < 23 and not self.approval_settlements:
+            value.pop("approval_settlements", None)
         return value
 
     @property
