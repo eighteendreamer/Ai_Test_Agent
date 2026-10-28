@@ -4061,3 +4061,36 @@ npm.cmd run build
 最终提交前检查：PG／Redis只读探针ready；`compileall -q Agent_Server/src Agent_Server/tests` exit0；`git diff --check` exit0；实施记录仅追加、§91唯一、代码围栏成对；v3草稿SHA256仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。ruff／mypy未安装，未擅自安装且不声称lint/typecheck通过；前端本轮无生产变更，未以历史前端绿色替代本轮验证。
 
 本子步提交范围为7个生产文件、10个测试文件和本实施记录，共18个文件。明确排除工作区已有的 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 修改、`.codex-logs`及本地数据。提交后仍保留：逐条MemoryWriteRequest／稳定行身份、embedding未知效果对账、执行／行回执、资源清理分项补偿、H07首因、A3其余出口，以及B／C／D／E／F和完整v4目标；本提交不授予Memory执行或重试权限。
+
+## 92. A3／H06：Memory embedding 降级保留请求并留下安全未知效果诊断（2026-10-29）
+
+基线 `8146d697e`。本步承接§91的原结果绑定意图，但不提前伪造逐条Memory执行回执；先审计现有 `MemoryRuntimeService._attach_embeddings` 的实际边界。依据现有 Memory 写入链与本地课程《Agent轨迹与协议鲁棒性》04.5“重复执行／半成功链路”要求：embedding 调用可能已到达外部服务，异常不能推断“未发生”；同时，批量返回数量不一致不能被 `zip()` 静默截断为部分成功。
+
+### TDD红测 → 根因 → 最小修复
+
+| 场景 | 红测 | 根因 | 修复 |
+| --- | --- | --- | --- |
+| embedding provider 抛异常 | 新测试先实际失败：`1 failed、4 deselected，exit1`，没有任何可检索诊断 | `_attach_embeddings` 直接 `except Exception: return requests`，既不记录上下文也不区分未知效果 | 记录 `memory_embedding_attach_failed`，只含Session／Turn／Trace、请求数、异常类型、`status=unknown`、`fallback=unembedded_requests`；保留原请求，不自动重试 |
+| 返回向量数与请求数不一致 | 新测试先实际失败：结果从2条请求被静默变成空列表 | `zip(requests, result.vectors)` 静默截断，可能丢失Memory写请求 | 在zip前核对数量；不一致时记录 `memory_embedding_attach_invalid_response`（请求数／向量数／身份／状态），完整返回原请求，不把部分结果当成功 |
+
+日志不记录正文、embedding向量、凭据或异常文本；只记录 `type(exc).__name__`。该诊断是安全本地观察，不是外部调用回执、Memory行回执、幂等证明或补偿授权。已有“异常时继续无embedding请求”的产品行为保持不变，未改变真实供应商、缓存、重试或付费调用策略。
+
+### 实际验证
+
+工作目录为Agent_Server，解释器为 `../.venv-framework-v2/Scripts/python.exe`；本步为E0纯Memory服务测试，没有启动Docker、PostgreSQL、Redis或真实embedding供应商：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_memory_embedding_runtime.py -k 'embedding_failure_is_visible' -q -rs --tb=short
+# 红测：1 failed、4 deselected；修复后目标：1 passed、4 deselected
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_memory_embedding_runtime.py -k 'embedding_failure_is_visible or short_response' -q -rs --tb=short
+# 2 passed、3 deselected，2.99秒，exit0
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_memory_embedding_runtime.py -q -rs --tb=short
+# 5 passed，2.98秒，exit0
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_memory_vector_replica.py tests/test_memory_embedding_runtime.py tests/test_session_hot_memory_integration.py -q -rs --tb=short
+# 7 passed，3.24秒，exit0
+```
+
+本步不改变stage格式、Worker能力、公开API或前端；没有新增提交前端／生产路由。`compileall`、全量A3回归、真实embedding端点、Memory行回执、未知调用对账和补偿仍待后续子步。下一步仍需把§91原结果绑定意图扩展为冻结的逐条MemoryWriteRequest计划，并沿既有持久Memory／compaction／cleanup journal建立执行状态与分项回执；本步只改善失败可见性和批量形状安全，不宣称A3完成。

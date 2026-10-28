@@ -10,6 +10,7 @@ from src.application.runtime.tool_runtime_service import (
     ToolRuntimeService,
 )
 from src.schemas.memory import MemoryPoint
+from src.schemas.memory import MemoryWriteRequest
 
 
 class _EmbeddingService:
@@ -20,6 +21,24 @@ class _EmbeddingService:
         self.calls.append(list(texts))
         return EmbeddingBatchResult(
             vectors=[[1.0, 0.0, 0.0] for _ in texts],
+            model_name="embedding-test",
+            provider="openai",
+            adapter="openai_compatible_embeddings",
+            original_dimension=3,
+            stored_dimension=3,
+            latency_ms=1,
+        )
+
+
+class _BrokenEmbeddingService:
+    async def embed_texts(self, _texts, **_kwargs):
+        raise ConnectionError("embedding-provider-private-failure")
+
+
+class _ShortEmbeddingService:
+    async def embed_texts(self, _texts, **_kwargs):
+        return EmbeddingBatchResult(
+            vectors=[],
             model_name="embedding-test",
             provider="openai",
             adapter="openai_compatible_embeddings",
@@ -128,6 +147,59 @@ def test_embedding_backfill_is_preview_only_by_default() -> None:
         assert embedding.calls == []
 
     asyncio.run(run())
+
+
+def test_turn_memory_embedding_failure_is_visible_without_exposing_content(caplog) -> None:
+    async def run() -> None:
+        service = MemoryRuntimeService(
+            _MemoryStore(),
+            embedding_runtime_service=_BrokenEmbeddingService(),
+        )
+        request = MemoryWriteRequest(
+            content="private user content that must not enter diagnostics",
+            summary="private summary",
+            session_id="session-embedding-failure",
+            turn_id="turn-embedding-failure",
+            trace_id="trace-embedding-failure",
+        )
+        caplog.set_level("WARNING", logger="src.application.context.memory_runtime_service")
+        result = await service._attach_embeddings([request])
+        assert result == [request]
+
+    asyncio.run(run())
+    records = [record for record in caplog.records if record.getMessage() == "memory_embedding_attach_failed"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.session_id == "session-embedding-failure"
+    assert record.turn_id == "turn-embedding-failure"
+    assert record.request_count == 1
+    assert record.status == "unknown"
+    assert record.fallback == "unembedded_requests"
+    assert "embedding-provider-private-failure" not in caplog.text
+    assert "private user content" not in caplog.text
+
+
+def test_turn_memory_embedding_short_response_keeps_all_requests_and_is_visible(caplog) -> None:
+    async def run() -> None:
+        service = MemoryRuntimeService(
+            _MemoryStore(),
+            embedding_runtime_service=_ShortEmbeddingService(),
+        )
+        requests = [
+            MemoryWriteRequest(content="first", session_id="session-short", turn_id="turn-short"),
+            MemoryWriteRequest(content="second", session_id="session-short", turn_id="turn-short"),
+        ]
+        caplog.set_level("WARNING", logger="src.application.context.memory_runtime_service")
+        result = await service._attach_embeddings(requests)
+        assert result == requests
+
+    asyncio.run(run())
+    records = [record for record in caplog.records if record.getMessage() == "memory_embedding_attach_invalid_response"]
+    assert len(records) == 1
+    assert records[0].request_count == 2
+    assert records[0].vector_count == 0
+    assert records[0].status == "unknown"
+    assert records[0].fallback == "unembedded_requests"
 
 
 class _HistoryStore:

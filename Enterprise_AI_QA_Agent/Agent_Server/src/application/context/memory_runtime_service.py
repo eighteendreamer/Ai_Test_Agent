@@ -624,7 +624,38 @@ class MemoryRuntimeService:
         ]
         try:
             result = await self._embedding_runtime_service.embed_texts(texts)
-        except Exception:
+        except Exception as exc:
+            first = requests[0]
+            # The provider call may have reached an external service before
+            # failing. Keep the existing unembedded fallback, but leave a
+            # safe, searchable observation; it is not a retry or completion
+            # receipt and contains no request text.
+            LOGGER.warning("memory_embedding_attach_failed", extra={
+                "session_id": first.session_id,
+                "turn_id": first.turn_id,
+                "trace_id": first.trace_id,
+                "request_count": len(requests),
+                "status": "unknown",
+                "fallback": "unembedded_requests",
+                "error_type": type(exc).__name__,
+            })
+            return requests
+        vector_count = len(result.vectors)
+        if vector_count != len(requests):
+            first = requests[0]
+            # A shape mismatch would otherwise let zip() silently drop
+            # MemoryWriteRequests. Preserve every original request and mark
+            # the embedding outcome unknown instead of treating truncation as
+            # a successful partial write.
+            LOGGER.warning("memory_embedding_attach_invalid_response", extra={
+                "session_id": first.session_id,
+                "turn_id": first.turn_id,
+                "trace_id": first.trace_id,
+                "request_count": len(requests),
+                "vector_count": vector_count,
+                "status": "unknown",
+                "fallback": "unembedded_requests",
+            })
             return requests
         return [
             request.model_copy(
