@@ -64,6 +64,93 @@ async def test_unsealed_message_reuses_complete_original_projection_without_writ
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("approval_asset_gap", ["approved", "denied"], indirect=True)
+@pytest.mark.parametrize("terminal_events", [False, True])
+async def test_unsealed_approval_reconciliation_seals_original_and_only_finalizes(approval_asset_gap, monkeypatch, terminal_events):
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+    from tests.test_framework_approval_recovery import run_delivery
+    from tests.test_framework_approval_continuation import receipt
+
+    h = approval_asset_gap
+    remove_fixture_seal(h, terminal_events=terminal_events)
+    budget, effects, requests = await h.calls.snapshot(h.binding), deepcopy(h.effects), list(h.adapter_requests)
+    receipts = [receipt(h, key) for key in ("A", "B")]
+    jobs = await h.jobs.list_jobs(session_id=h.session_id)
+    snapshot_before = await h.store.get_latest_snapshot(h.session_id)
+    finalizations, finalize = [], h.sessions._finalize_runtime_result
+
+    def forbidden(*args, **kwargs):
+        pytest.fail("Unsealed approval recovery attempted graph/model/tool execution")
+
+    async def finalizer(**kwargs):
+        finalizations.append(kwargs)
+        return await finalize(**kwargs)
+
+    monkeypatch.setattr(h.runtime, "execute_turn", forbidden)
+    monkeypatch.setattr(h.runtime, "resume_framework_approval", forbidden)
+    monkeypatch.setattr(h.runtime._deep_agent_bound_runtime_adapter, "execute", forbidden)
+    monkeypatch.setattr(h.runtime._deep_agent_bound_runtime_adapter, "_model_resolver", forbidden)
+    monkeypatch.setattr(h.runtime._tool_runtime_service, "record_from_job", forbidden)
+    monkeypatch.setattr(h.sessions._verification_service, "build_results", forbidden)
+    monkeypatch.setattr(h.sessions, "_finalize_runtime_result", finalizer)
+    reconciler = await h.tasks.ensure_framework_reconciliation(h.a.id)
+    claimed = await h.tasks.claim(reconciler.id, worker_id="unsealed-approval", expected_binding=h.binding)
+    await h.tasks.begin(claimed, resource_id="unsealed-approval", fencing_token=9)
+    successor = await h.runtime.reconcile_framework_task(claimed, tasks=h.tasks)
+    assert successor.input["recovery_proof"].get("scope") == "application_finalization"
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    asset = FrameworkRuntimeResultAsset.model_validate(stage.source_manifest["runtime_result_asset"])
+    assert asset.runtime_result.model_dump(mode="json") == h.oracle.model_dump(mode="json")
+    assert asset.verification_results == h.verification_oracle
+    assert not finalizations and await h.store.get_latest_snapshot(h.session_id) == snapshot_before
+    await run_delivery(h, successor.id)
+    assert (await h.tasks.get(successor.id)).status == "completed" and len(finalizations) == 1
+    events, saved = await h.store.list_events(h.session_id), h.stages.get(h.initial_task_id, h.session_id)
+    assert len([item for item in events if item.type == "runtime.event_log_completed"]) == 1
+    assert len([item for item in events if item.type == "turn.completed"
+        and item.payload.get("session_status") == "completed"]) == 1
+    await run_delivery(h, reconciler.id)
+    await run_delivery(h, successor.id)
+    assert await h.store.list_events(h.session_id) == events
+    assert h.stages.get(h.initial_task_id, h.session_id) == saved and len(finalizations) == 1
+    assert await h.tasks.get(h.a.id) == h.expired
+    assert await h.calls.snapshot(h.binding) == budget and h.effects == effects and h.adapter_requests == requests
+    assert [receipt(h, key) for key in ("A", "B")] == receipts
+    assert await h.jobs.list_jobs(session_id=h.session_id) == jobs
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["missing_reader", "reader_error"])
+async def test_unsealed_approval_read_failure_never_grants_native_replay(approval_asset_gap, failure):
+    from contextlib import asynccontextmanager
+    from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+    from src.runtime.framework_approval_recovery import FrameworkApprovalRecovery
+
+    h = approval_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    reconciler = await h.tasks.ensure_framework_reconciliation(h.a.id)
+    claimed = await h.tasks.claim(reconciler.id, worker_id="unreadable-approval", expected_binding=h.binding)
+    await h.tasks.begin(claimed, resource_id="unreadable-approval", fencing_token=9)
+    stage, events = h.stages.get(h.initial_task_id, h.session_id), await h.store.list_events(h.session_id)
+
+    @asynccontextmanager
+    async def fail_reader(*args, **kwargs):
+        raise ConnectionError("injected source-only reader failure")
+        yield  # pragma: no cover
+
+    recovery = FrameworkApprovalRecovery(h.tasks, h.runtime._framework_approval_continuation,
+        native_reader=fail_reader if failure == "reader_error" else None)
+    error, match = ((ConnectionError, "source-only reader failure") if failure == "reader_error"
+        else (FrameworkApprovalRecoveryRequired, "source-only native reader"))
+    with pytest.raises(error, match=match):
+        await recovery.apply(claimed)
+    assert h.stages.get(h.initial_task_id, h.session_id) == stage
+    assert await h.store.list_events(h.session_id) == events
+    assert not [item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == reconciler.id]
+    assert await h.tasks.get(h.a.id) == h.expired
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("message_asset_gap", ["none", "tools", "planning"], indirect=True)
 @pytest.mark.parametrize("terminal_events", [False, True])
 async def test_unsealed_message_admission_seals_once_and_runs_only_existing_finalizer(message_asset_gap, monkeypatch, terminal_events):
@@ -113,6 +200,174 @@ async def test_unsealed_message_admission_seals_once_and_runs_only_existing_fina
     assert await h.store.list_events(h.session_id) == events and len(finalizations) == 1
     assert await h.tasks.get(h.owner.id) == h.expired
     assert await h.calls.snapshot(h.binding) == budget and h.effects == effects and h.adapter_requests == requests
+
+
+async def claim_unsealed_approval_reconciler(h):
+    reconciler = await h.tasks.ensure_framework_reconciliation(h.a.id)
+    claimed = await h.tasks.claim(reconciler.id, worker_id="unsealed-reconciler", expected_binding=h.binding)
+    await h.tasks.begin(claimed, resource_id="unsealed-reconciler", fencing_token=9)
+    return claimed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["terminal_event", "declaration", "asset", "publication"])
+async def test_unsealed_approval_seal_and_publication_roll_back_together(approval_asset_gap, monkeypatch, failure):
+    from src.runtime import framework_runtime_results as results
+
+    h = approval_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    claimed = await claim_unsealed_approval_reconciler(h)
+    stage, events = h.stages.get(h.initial_task_id, h.session_id), await h.store.list_events(h.session_id)
+    tasks, snapshot = await h.tasks.list_session(h.session_id), await h.store.get_latest_snapshot(h.session_id)
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"SELECT event_key,payload FROM {h.settings.database.postgres_task_outbox_table} ORDER BY event_key")
+        outbox = cur.fetchall()
+    append, publish, freeze = h.store.append_event_in_transaction, h.tasks._event, results._freeze_runtime_result
+
+    def fail_append(cur, session_id, event, *args, **kwargs):
+        inserted = append(cur, session_id, event, *args, **kwargs)
+        if event.type == ("runtime.turn_completed" if failure == "terminal_event" else "runtime.event_log_completed"):
+            raise ConnectionError("injected approval seal transaction failure")
+        return inserted
+
+    def fail_publish(cur, row, name, payload):
+        publish(cur, row, name, payload)
+        if name == "framework.approval_recover_queued":
+            raise ConnectionError("injected approval seal transaction failure")
+
+    def fail_asset(*args, **kwargs):
+        freeze(*args, **kwargs)
+        raise ConnectionError("injected approval seal transaction failure")
+
+    with monkeypatch.context() as patch:
+        if failure in {"terminal_event", "declaration"}:
+            patch.setattr(h.store, "append_event_in_transaction", fail_append)
+        elif failure == "asset":
+            patch.setattr(results, "_freeze_runtime_result", fail_asset)
+        else:
+            patch.setattr(h.tasks, "_event", fail_publish)
+        with pytest.raises(ConnectionError, match="approval seal transaction failure"):
+            await h.runtime.reconcile_framework_task(claimed, tasks=h.tasks)
+    assert h.stages.get(h.initial_task_id, h.session_id) == stage
+    assert await h.store.list_events(h.session_id) == events
+    assert await h.tasks.list_session(h.session_id) == tasks
+    assert await h.store.get_latest_snapshot(h.session_id) == snapshot
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"SELECT event_key,payload FROM {h.settings.database.postgres_task_outbox_table} ORDER BY event_key")
+        assert cur.fetchall() == outbox
+    successor = await h.runtime.reconcile_framework_task(claimed, tasks=h.tasks)
+    assert successor.input["recovery_proof"]["scope"] == "application_finalization"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["native", "prefix", "event", "owner", "event_log", "output", "verification", "rehashed_native"])
+async def test_unsealed_approval_admission_rechecks_exact_originals(approval_asset_gap, monkeypatch, changed):
+    from psycopg import sql
+    from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+    from src.runtime.store import ContinuationLeaseLostError
+
+    h = approval_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    claimed = await claim_unsealed_approval_reconciler(h)
+    before = h.stages.get(h.initial_task_id, h.session_id)
+    read = FrameworkRuntimeResults.read_completed_approval
+
+    async def read_then_change(*args, **kwargs):
+        original = await read(*args, **kwargs)
+        if changed == "event_log":
+            original.runtime_result.state["event_log"][-1]["payload"]["output_length"] = 999
+        elif changed == "output":
+            original = replace(original, runtime_result=original.runtime_result.model_copy(update={"output_text": "foreign output"}))
+        elif changed == "verification":
+            from datetime import datetime
+            from src.schemas.session import VerificationResult
+
+            forged = VerificationResult(id="foreign-verification", session_id=h.session_id, turn_id=h.binding.turn_id,
+                trace_id=h.a.trace_id, verifier="foreign", status="passed", summary="foreign result", created_at=datetime(2026, 10, 28))
+            original = replace(original, verification_results=[*original.verification_results, forged])
+        elif changed == "rehashed_native":
+            from src.application.deep_agents.native_terminal import _native_hash
+            from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
+
+            native = deepcopy(original.native_read)
+            native.values["messages"][-1].content = "foreign native output"
+            serializer = BoundPostgresReader(None, source=original.originals[-1]).serde
+            native = replace(native, proof=native.proof.model_copy(update={"state_sha256": _native_hash(serializer, native.values)}))
+            original = replace(original, native_read=native)
+        elif changed == "owner":
+            assert await h.store.renew_turn_execution(h.session_id, claimed.lease_token, 0)
+        else:
+            with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+                if changed in {"native", "prefix"}:
+                    expression = ("checkpoint=jsonb_set(checkpoint,'{ts}','\"2020-01-01T00:00:00+00:00\"')"
+                        if changed == "native" else "metadata=metadata - 'framework_checkpoint_event_prefix'")
+                    query = (sql.SQL("UPDATE {}.checkpoints SET ").format(sql.Identifier(h.settings.deep_agents.checkpoint_schema))
+                        + sql.SQL(expression) + sql.SQL(" WHERE thread_id=%s AND checkpoint_id=%s"))
+                    cur.execute(query.as_string(), (h.binding.thread_id, original.native_read.proof.checkpoint_id))
+                else:
+                    cur.execute(f"UPDATE {h.settings.database.postgres_event_table} SET payload=payload || %s::jsonb WHERE id=%s",
+                        ('{"approval_sealing_drift":true}', h.oracle.events[0].id))
+        return original
+
+    monkeypatch.setattr(FrameworkRuntimeResults, "read_completed_approval", read_then_change)
+    with pytest.raises((FrameworkMessageStageRecoveryRequired, FrameworkApprovalRecoveryRequired, ContinuationLeaseLostError)):
+        await h.runtime.reconcile_framework_task(claimed, tasks=h.tasks)
+    assert h.stages.get(h.initial_task_id, h.session_id) == before
+    events = await h.store.list_events(h.session_id)
+    assert not [item for item in events if item.type in {"runtime.event_log_completed", "runtime.turn_completed"}]
+    assert not [item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == claimed.id]
+    assert await h.tasks.get(h.a.id) == h.expired
+
+
+@pytest.mark.asyncio
+async def test_unsealed_approval_parallel_reconciliations_publish_one_seal(approval_asset_gap, monkeypatch):
+    import asyncio
+    from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+    from src.runtime.store import ContinuationLeaseLostError
+
+    h = approval_asset_gap
+    remove_fixture_seal(h, terminal_events=False)
+    claimed = await claim_unsealed_approval_reconciler(h)
+    read, count, ready = FrameworkRuntimeResults.read_completed_approval, 0, asyncio.Event()
+
+    async def synchronized(*args, **kwargs):
+        nonlocal count
+        original = await read(*args, **kwargs)
+        count += 1
+        if count == 3:
+            ready.set()
+        await asyncio.wait_for(ready.wait(), 30)
+        return original
+
+    monkeypatch.setattr(FrameworkRuntimeResults, "read_completed_approval", synchronized)
+    outcomes = await asyncio.gather(*(h.runtime.reconcile_framework_task(claimed, tasks=h.tasks) for _ in range(3)),
+        return_exceptions=True)
+    admitted = [item for item in outcomes if not isinstance(item, Exception)]
+    assert len(admitted) == 1
+    assert all(isinstance(item, ContinuationLeaseLostError) for item in outcomes if isinstance(item, Exception))
+    assert len(h.stages.get(h.initial_task_id, h.session_id).approval_finalizations) == 1
+    assert len([item for item in await h.tasks.list_session(h.session_id) if item.parent_task_id == claimed.id]) == 1
+    events = await h.store.list_events(h.session_id)
+    assert len([item for item in events if item.type == "runtime.event_log_completed"]) == 1
+    assert len([item for item in events if item.type == "runtime.turn_completed"]) == 1
+    assert await h.tasks.get(h.a.id) == h.expired
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("reconcile_point,takeover_point", [
+    ("none", None), ("reconcile_before_commit", None), ("reconcile_after_commit", None),
+    ("none", "after_snapshot"), ("none", "after_application_commit"),
+])
+async def test_unsealed_original_approval_worker_kill_recovers_without_graph_execution(
+    prepared_approval_runtime, reconcile_point, takeover_point,
+):
+    from tests.test_framework_approval_graph_input import test_original_approval_worker_hard_kill_recovers_only_original_projections
+
+    # Kill a real original Worker after graph return/applied commit, before
+    # terminal events/seal; retain the full Redis/PG/finalizer/ACK contract.
+    await test_original_approval_worker_hard_kill_recovers_only_original_projections(
+        prepared_approval_runtime, "after_applied", takeover_point, reconcile_point=reconcile_point)
 
 
 @pytest.mark.asyncio

@@ -173,18 +173,22 @@ async def test_result_cannot_rehash_a_different_original_projection_time(frozen_
 
 
 @pytest.mark.asyncio
-async def test_missing_completion_declaration_does_not_fall_back_to_native_replay(approval_asset_gap):
+async def test_missing_completion_and_checkpoint_prefix_do_not_fall_back_to_native_replay(approval_asset_gap):
     h = approval_asset_gap
+    from psycopg import sql
     from src.runtime.framework_event_completion import completion_event_id
 
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
         cur.execute(f"DELETE FROM {h.settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
             (h.session_id, completion_event_id(h.binding)))
+        cur.execute(sql.SQL("UPDATE {}.checkpoints SET metadata=metadata - 'framework_checkpoint_event_prefix' "
+            "WHERE thread_id=%s").format(sql.Identifier(h.settings.deep_agents.checkpoint_schema)).as_string(),
+            (h.binding.thread_id,))
     before = h.stages.get(h.initial_task_id, h.session_id)
     reconciler = await h.tasks.ensure_framework_reconciliation(h.a.id)
     claimed = await h.tasks.claim(reconciler.id, worker_id="missing-original-owner", expected_binding=h.binding)
     await h.tasks.begin(claimed, resource_id="missing-original", fencing_token=9)
-    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="event completion is missing"):
+    with pytest.raises(ValueError, match="RuntimeCheckpointEventPrefix"):
         await h.runtime.reconcile_framework_task(claimed, tasks=h.tasks)
     assert h.stages.get(h.initial_task_id, h.session_id) == before
     assert not [task for task in await h.tasks.list_session(h.session_id) if task.parent_task_id == reconciler.id]

@@ -14,7 +14,7 @@ import logging
 
 from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
 
-from src.application.deep_agents.native_terminal import collect_native_terminal
+from src.application.deep_agents.native_terminal import NativeTerminalRead, collect_native_terminal
 from src.application.deep_agents.result_projection import project_deep_agent_result
 from src.application.models.framework_model_budget_projection import read_model_budget_material
 from src.application.runtime.turn_projection import (
@@ -48,6 +48,7 @@ class FrameworkApprovalResultRead:
     originals: tuple = field(repr=False)
     verification_results: list[VerificationResult] | None = None
     checkpoint_event_prefix: RuntimeCheckpointEventPrefix | None = None
+    native_read: NativeTerminalRead | None = field(default=None, repr=False)
 
 
 def _originals(tasks, binding, task_id, continuation, *, native=None, expected=None):
@@ -150,6 +151,32 @@ async def _read_native(agent, saver, source, completion):
     return await collect_native_terminal(agent, saver, config)
 
 
+def project_original_approval_result(preparation, source, read, native, materials):
+    """One pure projection for source-only assembly and owned admission."""
+    from src.application.testing.verification_service import VerificationService
+    from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
+
+    binding = source.binding
+    facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id,
+        returned_event_offset=read.returned_event_offset)
+    root_model_budget = (read.event_log[-1]["payload"].get("root_model_budget")
+        if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
+    result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
+        native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
+        root_model_budget=root_model_budget)
+    initial = preparation.graph_input_asset.runtime_preparation.initial_state
+    projected = project_original_completed_turn(preparation=preparation.graph_input_asset.runtime_preparation,
+        result=result, binding=binding, facts=facts, event_log=read.event_log,
+        returned_event_offset=read.returned_event_offset,
+        materials=[materials[item["call_id"]] for item in initial["tool_results"]])
+    state = projected.state
+    # Older originals remain readable; missing rules are not an empty result.
+    verifications = (VerificationService().build_results(session_id=binding.session_id, turn_id=binding.turn_id,
+        trace_id=state["trace_id"], tool_results=state["tool_results"], context_bundle=state["context_bundle"])
+        if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
+    return FrameworkRuntimeResult.from_result(projected), verifications
+
+
 async def read_completed_approval(tasks, binding, task_id, *, continuation, agent=None, saver=None, native_reader=None):
     """No long transaction across native I/O; recheck original facts afterwards."""
     try:
@@ -164,30 +191,10 @@ async def read_completed_approval(tasks, binding, task_id, *, continuation, agen
             async with native_reader(preparation.graph_input_asset, source=source) as (agent, saver):
                 native = await _read_native(agent, saver, source, completion)
         read = await asyncio.to_thread(_originals, tasks, binding, task_id, continuation, native=native, expected=before)
-        facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id,
-            returned_event_offset=read.returned_event_offset)
-        root_model_budget = (read.event_log[-1]["payload"].get("root_model_budget")
-            if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
-        result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
-            native_terminal=native.proof.model_dump(mode="json"),
-            native_checkpoint_timestamp=native.checkpoint_timestamp,
-            root_model_budget=root_model_budget)
-        initial = preparation.graph_input_asset.runtime_preparation.initial_state
-        projected = project_original_completed_turn(preparation=preparation.graph_input_asset.runtime_preparation,
-            result=result, binding=binding, facts=facts, event_log=read.event_log,
-            returned_event_offset=read.returned_event_offset,
-            materials=[materials[item["call_id"]] for item in initial["tool_results"]])
-        state, records = projected.state, projected.state["tool_results"]
-        from src.application.testing.verification_service import VerificationService
-        from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
-
-        # Older originals remain readable, but absence is not proof of an
-        # empty Verification set or permission to evaluate today's rules.
-        verifications = (VerificationService().build_results(session_id=binding.session_id, turn_id=binding.turn_id,
-            trace_id=state["trace_id"], tool_results=records, context_bundle=state["context_bundle"])
-            if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
-        assembled = FrameworkApprovalResultRead(preparation, read.completion, FrameworkRuntimeResult.from_result(projected),
-            model_hash, tool_hash, before, verifications, read.checkpoint_event_prefix)
+        projected, verifications = project_original_approval_result(preparation, source, read, native, materials)
+        assembled = FrameworkApprovalResultRead(preparation, read.completion, projected,
+            model_hash, tool_hash, before, verifications, read.checkpoint_event_prefix,
+            native if read.completion is None else None)
     except Exception as exc:
         logger.warning("framework_approval_original_result_read_rejected", extra={"binding_id": binding.binding_id,
             "task_id": task_id, "error_type": type(exc).__name__})

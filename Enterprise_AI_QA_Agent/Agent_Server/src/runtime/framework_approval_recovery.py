@@ -152,8 +152,8 @@ def _has_completed_boundary(cur, settings, binding):
     from src.runtime.framework_event_completion import completion_event_id
 
     # A durable typed completion event is enough to forbid native replay, not
-    # enough to seal a result. Missing/invalid declarations still fail the
-    # shared exact-original reader; absence never falls back to graph execution.
+    # enough to seal a result. A missing declaration still requires the shared
+    # exact-original reader; invalid/missing materials never allow graph replay.
     cur.execute(f"SELECT id FROM {settings.database.postgres_event_table} WHERE session_id=%s AND "
         "(id=%s OR (type='runtime.turn_completed' AND payload->>'turn_id'=%s)) LIMIT 1",
         (binding.session_id, completion_event_id(binding), binding.turn_id))
@@ -237,15 +237,34 @@ class FrameworkApprovalRecovery:
 
     async def apply(self, task):
         try:
-            origin_id = await asyncio.to_thread(self._completed_origin, task)
+            inspection = await asyncio.to_thread(self._completed_origin, task)
             original = None
-            if origin_id is not None:
+            if inspection is not None:
                 from src.runtime.framework_runtime_results import FrameworkRuntimeResults
 
                 if self._native_reader is None:
                     raise FrameworkApprovalRecoveryRequired("Completed approval requires its source-only native reader")
-                original = await FrameworkRuntimeResults(self._tasks).read_completed_approval(task.runtime_binding, origin_id,
-                    continuation=self._continuation, native_reader=self._native_reader)
+                origin_id, candidate = inspection
+                results = FrameworkRuntimeResults(self._tasks)
+                if candidate is None:
+                    original = await results.read_completed_approval(task.runtime_binding, origin_id,
+                        continuation=self._continuation, native_reader=self._native_reader)
+                else:
+                    from langgraph._internal._constants import CONFIG_KEY_CHECKPOINTER
+
+                    graph_input, source = candidate
+                    async with self._native_reader(graph_input, source=source) as (agent, saver):
+                        snapshot = await agent.aget_state({"configurable": {
+                            "thread_id": source.binding.thread_id, CONFIG_KEY_CHECKPOINTER: saver}}, subgraphs=True)
+                        if snapshot.next or snapshot.tasks or snapshot.interrupts:
+                            # This is only a position inspection, not a proof or
+                            # fallback after a failed terminal-original read.
+                            logger.info("framework_reconciliation_native_pending", extra={
+                                "task_id": task.id, "origin_task_id": origin_id,
+                                "binding_id": task.runtime_binding.binding_id})
+                        else:
+                            original = await results.read_completed_approval(task.runtime_binding, origin_id,
+                                continuation=self._continuation, agent=agent, saver=saver)
             result = await asyncio.to_thread(self._apply, task, original)
         except Exception as exc:
             logger.warning("framework_reconciliation_rejected", extra={"task_id": task.id,
@@ -274,27 +293,50 @@ class FrameworkApprovalRecovery:
         return session, row, origin
 
     def _completed_origin(self, task):
-        from src.runtime.framework_approval_finalization import prepare_approval_finalization
+        from src.runtime.framework_approval_finalization import prepare_approval_finalization, _stage
+        from src.runtime.framework_runtime_results import _approval_preparation
+        from src.runtime.framework_event_completion import original_checkpoint_source
 
         with postgres_connect(self._settings) as connection, connection.cursor() as cur:
             session, _, origin = self._owned_origin(cur, task)
             if prepare_approval_finalization(cur, self._settings, session, task.runtime_binding, origin) is not None:
                 return None
-            return origin["id"] if _has_completed_boundary(cur, self._settings, task.runtime_binding) else None
+            if _has_completed_boundary(cur, self._settings, task.runtime_binding):
+                return origin["id"], None
+            # No application tail is NOT proof that the graph is unfinished.
+            # Inspect only the original prepared schema/source, outside locks.
+            stage = _stage(cur, self._settings, task.runtime_binding)
+            preparation = _approval_preparation(stage, origin) if stage is not None else None
+            if preparation is not None:
+                source = original_checkpoint_source(cur, self._settings, task.runtime_binding, origin, preparation.owner_epoch)
+                return origin["id"], (preparation.graph_input_asset, source)
+            return None
 
     def _seal_original(self, cur, binding, origin, original):
         from src.runtime.framework_approval_result_reader import read_approval_originals
         from src.runtime.framework_approval_finalization import _stage
         from src.runtime.framework_runtime_results import _freeze_runtime_result
 
-        current = read_approval_originals(cur, self._tasks, binding, origin["id"], self._continuation)
+        current = read_approval_originals(cur, self._tasks, binding, origin["id"], self._continuation, allow_unsealed=True)
         if current != original.originals:
             raise FrameworkApprovalRecoveryRequired("Original approval materials changed before owned sealing")
-        preparation = original.preparation
+        preparation = current[0]
         if (preparation.task_id != origin["id"] or preparation.attempt_id != origin["attempt_id"]
             or preparation.graph_input_asset.feature_flags.get("result_projection_version") != 1
             or original.verification_results is None):
             raise FrameworkApprovalRecoveryRequired("Original approval lacks its deterministic result preparation")
+        if original.completion is None:
+            from src.runtime.framework_event_completion import seal_reconstructed_event_log
+            from src.runtime.framework_approval_result_reader import project_original_approval_result
+
+            if original.native_read is None or original.native_read.checkpoint_event_prefix is None:
+                raise FrameworkApprovalRecoveryRequired("Original approval lacks its exact native read material")
+            read = seal_reconstructed_event_log(cur, self._tasks, current[-1], preparation.graph_input_asset,
+                original.native_read, current[3], original.runtime_result.state["event_log"])
+            projected, verifications = project_original_approval_result(preparation, current[-1], read,
+                original.native_read, current[2])
+            if projected != original.runtime_result or verifications != original.verification_results:
+                raise FrameworkApprovalRecoveryRequired("Original approval projection changed before owned sealing")
         initial = preparation.graph_input_asset.runtime_preparation
         _freeze_runtime_result(cur, self._settings, binding, _stage(cur, self._settings, binding), origin,
             owner_epoch=preparation.owner_epoch, result=original.runtime_result.model_dump(mode="json"),

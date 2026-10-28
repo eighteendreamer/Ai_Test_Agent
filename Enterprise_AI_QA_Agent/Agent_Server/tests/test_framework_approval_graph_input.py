@@ -958,7 +958,7 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         assert original.status == "running"
         stages_before = h.stages.get(h.initial_task_id, h.session_id)
         raw = stages_before.source_manifest.get("runtime_result_asset")
-        assert (raw is None) is (point == "before_asset")
+        assert (raw is None) is (point in {"before_asset", "after_applied"})
         asset = FrameworkRuntimeResultAsset.model_validate(raw) if raw is not None else None
         preparation = stages_before.source_manifest["approval_graph_inputs"][original.id]
         if asset is not None:
@@ -981,6 +981,17 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         with pytest.raises(ContinuationLeaseLostError):
             await FrameworkRuntimeResults(h.tasks).load(old_owner)
         await reap_dead_worker_resources(h)
+        unsealed = None
+        if point == "after_applied":
+            # The official graph returned and the original applied/tool
+            # materials committed, but no Runtime terminal suffix/seal exists.
+            assert receipt_before.applied_at is not None
+            assert not [event for event in events_before if event.type in {
+                "runtime.turn_completed", "runtime.event_log_completed"}]
+            events_before_read = await h.store.list_events(h.session_id)
+            unsealed = await h.runtime.read_completed_framework_approval(h.binding, original.id, tasks=h.tasks)
+            assert unsealed.completion is None
+            assert await h.store.list_events(h.session_id) == events_before_read
         await run_delivery(h, original.id)
         reconciler = next(item for item in await h.tasks.list_session(h.session_id)
             if item.operation == "framework_reconcile" and item.reference_id == original.id)
@@ -1019,10 +1030,21 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         if asset is None:
             import json
 
-            oracle = json.loads(await h.redis.get(f"{h.prefix}:asset-gap-oracle"))
-            assert sealed.runtime_result.model_dump(mode="json") == oracle["runtime_result"]
-            assert [item.model_dump(mode="json") for item in sealed.verification_results] == oracle["verification_results"]
-            completion, = [event for event in events_before if event.type == "runtime.event_log_completed"]
+            if unsealed is None:
+                oracle = json.loads(await h.redis.get(f"{h.prefix}:asset-gap-oracle"))
+                assert sealed.runtime_result.model_dump(mode="json") == oracle["runtime_result"]
+                assert [item.model_dump(mode="json") for item in sealed.verification_results] == oracle["verification_results"]
+            else:
+                oracle = json.loads(await h.redis.get(f"{h.prefix}:graph-return-oracle"))
+                assert sealed.runtime_result.model_dump(mode="json") == unsealed.runtime_result.model_dump(mode="json")
+                assert sealed.verification_results == unsealed.verification_results
+                assert sealed.runtime_result.output_text == oracle["output_text"]
+                assert sealed.runtime_result.state["framework_messages"] == oracle["framework_messages"]
+                assert sealed.runtime_result.state["cognitive_subagent_events"] == oracle["subagent_events"]
+                assert sealed.runtime_result.state["model_response_summary"] == {
+                    "mode": "ok", "harness": "deepagents", "pilot_stage": "DA-E4", **oracle["metadata"]}
+            completion, = [event for event in await h.store.list_events(h.session_id)
+                if event.type == "runtime.event_log_completed"]
             assert sealed.projection_at == datetime.fromisoformat(completion.payload["completion"]["events"][-1]["timestamp"])
             assert (sealed.task_id, sealed.attempt_id, sealed.owner_epoch) == (original.id, original.attempt_id, preparation["owner_epoch"])
             asset = sealed
@@ -1059,7 +1081,7 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
         assert saved.source_manifest["approval_graph_inputs"] == stages_before.source_manifest["approval_graph_inputs"]
         assert len(saved.approval_finalizations) == (2 if takeover_point is not None else 1)
         snapshot = await h.store.get_latest_snapshot(h.session_id)
-        if committed_at not in {"before_asset", "after_asset"}:
+        if committed_at not in {"before_asset", "after_asset", "after_applied"}:
             assert snapshot == snapshot_before
         assert snapshot.id == asset.runtime_result.snapshot.id
         session = await h.store.get_session(h.session_id)

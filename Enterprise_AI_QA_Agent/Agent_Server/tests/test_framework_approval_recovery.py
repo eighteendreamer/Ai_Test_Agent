@@ -114,6 +114,25 @@ async def expire_reconciliation(h):
 
 
 @pytest.mark.asyncio
+async def test_legacy_native_reconciliation_without_message_stage_preserves_original_protocol(runtime_harness):
+    from src.runtime.framework_message_stages import message_stage_table
+
+    h = runtime_harness
+    origin = await claim_decision(h)
+    terminal = await expire(h, origin)
+    reconciler = await h.tasks.ensure_framework_reconciliation(origin.id)
+    claimed = await h.tasks.claim(reconciler.id, worker_id="legacy-no-stage", expected_binding=h.binding)
+    await h.tasks.begin(claimed, resource_id="legacy-no-stage", fencing_token=6)
+    with postgres_connect(h.settings) as connection, connection.cursor() as cur:
+        cur.execute(f"DELETE FROM {message_stage_table(h.settings)} WHERE binding_id=%s", (h.binding.binding_id,))
+    successor = await h.runtime.reconcile_framework_task(claimed, tasks=h.tasks)
+    assert successor.operation == "approval_recover" and "scope" not in successor.input["recovery_proof"]
+    assert (await h.tasks.get(reconciler.id)).status == "completed"
+    assert await h.tasks.get(origin.id) == terminal
+    assert h.effects == [] and receipt(h).applied_at is None
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("crashes", [1, 3])
 async def test_expired_reconciliation_gets_one_new_task_and_preserves_both_terminal_attempts(runtime_harness, crashes):
     h = runtime_harness

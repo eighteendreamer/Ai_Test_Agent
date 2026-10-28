@@ -115,7 +115,14 @@ def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=
 
         async def counted_adapter(*args, **kwargs):
             await redis.incr(f"{prefix}:framework-adapter-calls")
-            return await execute_adapter(*args, **kwargs)
+            result = await execute_adapter(*args, **kwargs)
+            if pause_at == "after_applied" and not result.interrupts:
+                import json
+                from dataclasses import asdict
+
+                # An oracle of the actual graph return, never recovery input.
+                await redis.set(f"{prefix}:graph-return-oracle", json.dumps(asdict(result)))
+            return result
 
         adapter.execute = counted_adapter
         if recovery_mode is not None:

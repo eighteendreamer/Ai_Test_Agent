@@ -3491,3 +3491,62 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 证据仍限E1／E2子集：固定官方框架／SDK、真实PostgreSQL／Redis及独立Worker，模型是受控替身或本地HTTP合成服务；LocalModelObjects不是RustFS。普通子代理graph-return强杀验证三次模型调用不增加、新Worker只收尾，但不代表真实供应商、RustFS或领域Runner的E3。E4双制品／部署／灰度回滚／备份恢复、官方saver conformance、长链查询／持锁性能、前端与全量尚未执行。同步官方物化在持锁短事务内只读，尚无性能基线支持扩大生产范围。
 
 下一出口仍包括审批缺封口的独立准入事务、A2-2其余故障／材料与再次接管矩阵，之后继续A2-3、A3、B/C/D/E/F和对应E3/E4；不把普通消息局部准入或本节当A2-2／完整目标完成。完整goal保持active，不升级依赖、不启停共享设施、不改生产路由／开关、不新增真实供应商／目标调用，不推送、不建PR。
+
+## 85. A2-2：审批缺封口时复核原生位置、原子封存原结果并发布仅收尾后继（2026-10-28）
+
+基线 `47944789f`，续接§84后的两个审批生产文件及一个测试文件草稿。先核对active完整目标、v4、§52及后续记录、真实失败日志、当前调用链和Git差异，不用摘要代替实际验证。原v3文档草稿保持独立，SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F，不编辑、不提交。**本节只处理审批缺事件封口的A2-2子步，不代表完整A2-2或v4完成。**
+
+### 根因、依据 → 做法与权限边界
+
+原审批对账仅凭typed completion／runtime.turn_completed选择原结果读取：缺尾行时把“没有应用完成事件”误当作“图未完成”，发布native续跑证明；有尾行但缺completion时，原封存事务又直接拒绝。缺失的是既有审批对账的原生位置识别和原子封存职责，不通过重执图、捕获读取异常后fallback或新建调度器补结果。
+
+| v4条款及依据 | 本步代码／测试与采用方式 | 明确不授予的权限／兼容边界 |
+| --- | --- | --- |
+| §8.2／§10.2；已有source-only reader、固定LangGraph 1.2.12的Pregel.aget_state(config, subgraphs=True) | [审批恢复](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_recovery.py)从原审批preparation与原producer构造惰性官方schema，在锁外只读检查next/tasks/interrupts；真正pending才保留既有native对账，终态必须进入完整原件reader | 位置检查不是终态证明；读取失败不得授予续跑权。已有preparation而缺reader明确拒绝；旧审批没有message stage时保留原协议，不将None传入要求stage的helper |
+| §8.1／§9.2／§9.4；§84的seal_reconstructed_event_log与同连接官方重新物化 | [原件reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_result_reader.py)提取共享纯结果／Verification投影；审批准入事务重读preparation、工具材料、根账本及来源，复核精确native原件与完整state／prefix，补确定性尾行及completion，再重算并比较完整结果和Verification | native_read只在缺completion时保留于内存且repr=False，不持久化、不充当owner。不能用调用方改过的output、Verification或重新计算的自摘要封存结果 |
+| §9.4／§10.2；既有_freeze_runtime_result、approval finalization link、task/outbox与唯一Session finalizer | 尾行、声明、原结果资产、finalization-only证明、后继和outbox在原审批对账事务中提交；后继只消费原资产进入既有finalizer，重复投递不再调用Runtime／模型／工具／Verification builder | 原审批task/attempt、原ToolJob、receipt、执行效果和根账本不改写；并发同一claim只有一个有效提交，其余失去owner资格，不重置原终态 |
+| §13／H05；本地[Agent轨迹与协议鲁棒性课程](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html)关于轨迹、权限、幂等和超时的要求 | [缺封口测试](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_unsealed_result_reconstruction.py)补完整oracle、四处事务回滚、八类读后漂移／伪造、三并发及独立Worker强杀；复用[原审批强杀验收链](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_graph_input.py)及[Worker helper](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_task_control.py) | 不把仅删除fixture事件行当作真实故障验收；正式强杀发生在原图返回且applied材料已提交、Runtime尾行／completion／资产均未生成的位置 |
+
+同步核对了_completed_origin、FrameworkApprovalResultRead和Worker helper全部引用；旧测试只删除合法completion即期待拒绝的语义，改为在[审批资产空窗测试](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_asset_gap_recovery.py)同时移除checkpoint认证prefix，仍必须拒绝且不得fallback。[旧审批恢复回归](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_approval_recovery.py)新增无message stage的真实协议用例。没有新增公开API、DDL、依赖、stage／proof格式或生产开关；不据此宣称双制品滚动兼容已经验收。
+
+### TDD、真实失败与脚手架修正
+
+日志均保存在项目.codex-logs，不提交或覆盖。以下中间绿色不累计为最终验收：
+
+- 续接的admission-red为 **1 failed，13.72秒，exit1**：缺尾行时返回native proof，无application_finalization scope；seal-red为 **1 failed，9.25秒，exit1**：已有尾行但缺completion，被旧严格read_approval_originals拒绝。这是两个原目标红测。
+- 草稿first为 **1 failed，13.22秒**；本轮target-baseline为 **1 failed，42 deselected，15.76秒，exit1**：审批fixture已存在等待审批snapshot及一个waiting_approval的turn.completed，不能套用普通消息的“无快照／总共一条turn.completed”。改为与动作前原snapshot严格相等，并只计session_status=completed的正式终态；未移除快照或重复投递断言。
+- legacy-stage-red为 **1 passed，8.94秒，exit0**，说明原有单例未实际覆盖无stage；新增no-stage-red真实 **1 failed，7.90秒，exit1**，AttributeError来自None.source_manifest。仅在调用前区分旧stage缺失，不改变helper其他消费方。
+- reader-permission-red为 **1 failed，46 deselected，9.07秒，exit1**：preparation存在但native reader缺失时未抛错。修正为缺reader必须拒绝，不将缺读取能力等同没有终态。target-recheck随后 **8 passed，42 deselected，53.53秒，exit0**；matrix-first **13 passed，48 deselected，64.10秒，exit0**。
+- 独立Worker的worker-first **1 failed，61 deselected，15.70秒，exit1**：只读前基线误含失租前事件集合，过期动作合法新增agent_task.recovery_required；把只读零写断言的基线移到只读动作紧前，仍逐项保留失租前原事件。worker-recheck **1 failed，61 deselected，20.34秒，exit1**：跨进程JSON资产与内存模型直接比较失败，按既有结果契约改为完整model_dump(mode=json)相等，不忽略任何字段。worker-json-contract **5 passed，61 deselected，266.31秒，exit0**。
+- Worker oracle只保存实际终态adapter返回用于独立比较，恢复不读取oracle；中间pending审批不序列化含原生interrupt对象的oracle。没有用新构造oracle授权恢复。五组合包括对账提交前／提交后强杀，以及仅收尾后继在snapshot／应用提交后再次强杀；验证原终态、账本、ToolJob、receipt、原事件不变，adapter及effect计数各保持1，Redis重复投递最终ACK。
+- message-consumers-final误选不存在的test_framework_approval_finalization.py，真实 **no tests ran，exit4**；保留该日志并移除无效选择，随后另开verified组，不把未收集到测试记为通过。本地课程首次提取因默认GBK编码失败，设置PYTHONIOENCODING=utf-8后实际读到课程正文，不把失败输出当信源读取成功。
+
+### 最终生产源码验证与证据范围
+
+生产源码固定后实际执行以下组。工作目录Agent_Server，解释器../.venv-framework-v2/Scripts/python.exe，RUN_LIVE_POSTGRES_TESTS=1、PYTHONIOENCODING=utf-8；统一参数为-u -m pytest及-q -x -rs --tb=short。完整stdout＋stderr经2>&1 | Tee-Object保存，立即捕获$LASTEXITCODE并追加PYTEST_EXIT_CODE，返回同一退出码。后续仅修正Worker测试oracle的pending保护；不消费该helper的native／projection组不受影响。
+
+| 选择／日志（均为framework-unsealed-approval-前缀、2026-10-28日期） | 实际结果 | 验证范围 |
+| --- | --- | --- |
+| native-final，会话99088 | **261 passed，387.03秒，exit0，无skip** | event_completion、checkpoint_fencing、native_terminal、delta_replay_order、deep_agent_runtime_adapter、runtime_import_isolation、turn_projection；正常路径、精确原件、SDK／Delta和严格原生消息契约 |
+| projections-final，会话45603 | **206 passed，895.42秒，exit0，无skip** | runtime_result_asset、application_projection、finalization_projection、partial_projection_recovery、snapshot_projection、event_projection、observation_projection；原资产、唯一收尾和应用提交／分项合同 |
+| message-consumers-verified，会话70032 | **191 passed，460.21秒，exit0，无skip** | message_result_reconstruction、message_asset_gap_recovery、terminal_gap、tool_projection、sqlalchemy_cursor_result、agent_v2_worker_contract；普通消息及工具强杀、schema／Worker能力和同连接bridge |
+
+审批综合组approvals-final，会话63549仍在执行，尚未取得终态，不据前述8／13／5项目标绿色声称审批全组通过；最终结果及提交检查在本节末追加。证据限E1／E2子集：固定官方框架／SDK、真实PostgreSQL／Redis、独立Worker和真实进程终止；模型为受控替身或本地HTTP合成服务，LocalModelObjects不是RustFS。真实供应商／RustFS／领域Runner的E3、双制品／部署／灰度回滚／备份恢复的E4、官方saver conformance、长链持锁性能、前端及全量仍未验收。§82的20秒、§84的45秒历史Worker超时未稳定复现，不据本步目标绿色宣称其根因已经修复。
+
+本步预期仅两个生产文件、五个测试文件及本节；原v3草稿、测试日志和本地数据排除。A2-2其他故障／材料出口仍需逐项核对，之后继续A2-3、A3及B/C/D/E/F，不把审批缺封口准入当整体完成，完整goal保持active。不升级依赖、不启停共享设施、不改生产路由、不发起真实供应商／目标调用，不推送、不建PR。
+
+### 最终审批综合回归补记
+
+审批综合选择 `tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_recovery.py tests/test_framework_approval_continuation.py tests/test_framework_task_control.py` 已实际取回终态：会话63549，**291 passed，2322.75秒，exit0，无skip**；日志 `framework-unsealed-approval-approvals-final-2026-10-28.log`。该结果覆盖本节四参数审批正例、缺reader拒绝、四处事务回滚、八类原件／owner／native漂移、三并发、无stage旧协议及独立Worker缺封口强杀／再次接管；不把其他最终组叠加为审批组结果。随后根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 和本节追加／链接／围栏／v3 hash校验均通过；`ruff`、`mypy`在环境中不存在，未安装，不声称lint/typecheck通过。
+
+最终四组精确命令如下，环境／日志／退出码处理同上文；均已取回exit0，不以早期目标组替代：
+
+```powershell
+# 工作目录Agent_Server；RUN_LIVE_POSTGRES_TESTS=1，PYTHONIOENCODING=utf-8
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_runtime_import_isolation.py tests/test_framework_turn_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_message_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py tests/test_framework_terminal_gap.py tests/test_framework_tool_projection.py tests/test_sqlalchemy_cursor_result.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_recovery.py tests/test_framework_approval_continuation.py tests/test_framework_task_control.py -q -x -rs --tb=short
+```
+
+提交前一次检查命令混用了Bash heredoc与PowerShell语法，ParserError发生在执行前，不记为校验通过；改用PowerShell here-string后实际compileall、diff、仅追加／唯一章节／围栏、8处本地链接及v3 hash全部exit0。实际进程清单无残留pytest／spawn Worker。仅暂存本节所属8文件，核对完整差异、暂存清单及明显凭据后提交，名称 `【feat】原子封存未封口审批并发布仅收尾后继`，具体commit ID以Git历史和交付输出为准。完整目标继续active，不推送、不建PR；E3/E4、全量／前端／lint／typecheck等未执行项和历史超时风险不因此转为已验收。
