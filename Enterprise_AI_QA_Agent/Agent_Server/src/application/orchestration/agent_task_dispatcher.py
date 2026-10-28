@@ -958,27 +958,58 @@ class AgentTaskDispatcher:
             config.resource_default_lease_seconds / 3,
         )
         interrupt_sent = False
-        while not stop.is_set():
-            try:
-                await asyncio.wait_for(stop.wait(), interval)
-                return
-            except TimeoutError:
-                pass
-            if not await self._resources.renew(
-                lease,
-                lease_seconds=config.resource_default_lease_seconds,
-            ):
-                raise ContinuationLeaseLostError("Agent resource admission lease was lost")
-            if not interrupt_sent and await self._tasks.interrupt_requested(task.id):
-                self._sessions._runtime_service.request_interrupt(
-                    task.session_id,
-                    "User requested task interruption",
-                )
-                interrupt_sent = True
-                LOGGER.info(
-                    "agent_task_interrupt_applied",
-                    extra={"task_id": task.id, "worker_id": task.worker_id},
-                )
+        monitor_clock = monotonic()
+        last_resource_renewal = None
+        last_interrupt_poll_seconds = None
+        operation, operation_clock = "wait", monitor_clock
+        try:
+            while not stop.is_set():
+                operation, operation_clock = "wait", monotonic()
+                try:
+                    await asyncio.wait_for(stop.wait(), interval)
+                    return
+                except TimeoutError:
+                    pass
+                operation, operation_clock = "resource_renew", monotonic()
+                if not await self._resources.renew(
+                    lease,
+                    lease_seconds=config.resource_default_lease_seconds,
+                ):
+                    raise ContinuationLeaseLostError("Agent resource admission lease was lost")
+                last_resource_renewal = monotonic()
+                operation, operation_clock = "interrupt_poll", monotonic()
+                if not interrupt_sent:
+                    requested = await self._tasks.interrupt_requested(task.id)
+                    last_interrupt_poll_seconds = monotonic() - operation_clock
+                    if requested:
+                        operation, operation_clock = "interrupt_apply", monotonic()
+                        self._sessions._runtime_service.request_interrupt(
+                            task.session_id,
+                            "User requested task interruption",
+                        )
+                        interrupt_sent = True
+                        LOGGER.info(
+                            "agent_task_interrupt_applied",
+                            extra={"task_id": task.id, "worker_id": task.worker_id},
+                        )
+        except Exception as exc:
+            observed_at = monotonic()
+            # Fixed event names remain useful in a spawned Worker's default
+            # formatter. Never log raw exception text, input or lease objects.
+            event = {"wait": "agent_task_monitor_wait_failed",
+                "resource_renew": "agent_task_resource_renew_failed",
+                "interrupt_poll": "agent_task_interrupt_poll_failed",
+                "interrupt_apply": "agent_task_interrupt_apply_failed"}[operation]
+            LOGGER.log(logging.WARNING if isinstance(exc, ContinuationLeaseLostError) else logging.ERROR,
+                event, extra={"task_id": task.id, "attempt_id": task.attempt_id, "worker_id": task.worker_id,
+                    "resource_id": lease.resource_id, "monitor_operation": operation,
+                    "operation_seconds": observed_at - operation_clock,
+                    "monitor_seconds": observed_at - monitor_clock, "error_type": type(exc).__name__,
+                    "resource_lease_seconds": config.resource_default_lease_seconds,
+                    "since_resource_renew_seconds": (observed_at - last_resource_renewal
+                        if last_resource_renewal is not None else None),
+                    "last_interrupt_poll_seconds": last_interrupt_poll_seconds})
+            raise
 
     @staticmethod
     def _child_input(task) -> dict:

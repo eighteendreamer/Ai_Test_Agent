@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 
@@ -30,6 +31,25 @@ LOG_FORMAT = (
     + "] %(name)s: %(message)s"
 )
 DATE_FORMAT = "%Y-%m-%d %H:%M:%S"
+DIAGNOSTIC_FIELDS = (
+    "task_id", "monitor_operation", "operation_seconds", "monitor_seconds", "error_type",
+    "resource_lease_seconds", "since_resource_renew_seconds", "last_interrupt_poll_seconds",
+)
+
+
+class ContextFormatter(logging.Formatter):
+    """Render selected scalar diagnostics, never arbitrary LogRecord extras."""
+
+    def format(self, record: logging.LogRecord) -> str:
+        rendered = super().format(record)
+        diagnostics = {}
+        for name in DIAGNOSTIC_FIELDS:
+            if name in record.__dict__:
+                value = record.__dict__[name]
+                diagnostics[name] = value if type(value) in (str, int, float, bool, type(None)) else "<unsupported>"
+        if diagnostics:
+            rendered += " diagnostics=" + json.dumps(diagnostics, ensure_ascii=False, separators=(",", ":"))
+        return rendered
 
 
 class ContextFilter(logging.Filter):
@@ -59,7 +79,7 @@ def configure_logging(level: int | str = logging.INFO) -> None:
     root = logging.getLogger()
     if not root.handlers:
         root.addHandler(logging.StreamHandler(sys.stderr))
-    formatter = logging.Formatter(LOG_FORMAT, datefmt=DATE_FORMAT)
+    formatter = ContextFormatter(LOG_FORMAT, datefmt=DATE_FORMAT)
     for handler in root.handlers:
         if not any(isinstance(existing, ContextFilter) for existing in handler.filters):
             handler.addFilter(ContextFilter())

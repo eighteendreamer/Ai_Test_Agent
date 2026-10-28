@@ -457,7 +457,7 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
         processes.append(process)
         process.start()
         if pause_at != "none":
-            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20)
+            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20, process=process)
             assert phase[1] == pause_at, f"worker exit code: {process.exitcode}"
             process.terminate()
             await asyncio.to_thread(process.join, 10)
@@ -478,7 +478,7 @@ async def test_separate_workers_reconcile_native_result_after_hard_kill_and_fini
     processes.append(process)
     try:
         process.start()
-        phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20)
+        phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20, process=process)
         assert phase[1] == pause_at, f"worker exit code: {process.exitcode}"
         job = await h.jobs.get_job(h.proposals["B"].job.id)
         assert job.status.value == ("completed" if decision == "approved" else "denied")

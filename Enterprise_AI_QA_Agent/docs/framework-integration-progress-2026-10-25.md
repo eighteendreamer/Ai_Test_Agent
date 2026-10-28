@@ -3789,3 +3789,76 @@ v1内容字段：必填整数 `schema_version=1`（不接受bool）、`scope="co
 提交边界仍为本节27个相关文件，不纳入v3草稿和日志。此前实际compileall／diff均exit0，27文件精确暂存、源文件与暂存一致、有限明显凭据、实施记录仅追加／章节唯一／围栏及v3 hash核对通过；最终文档追加后交付检查另行实际执行。ruff／mypy仍未安装，前端及上述E3／E4等未执行项仍保留。
 
 本地提交用于保留已验证的结构化结果实现和真实失败记录，**不作为全部验收完成或上线依据**。下一子步先沿既有Worker／owner／resource监控补齐脱敏诊断，定位该未稳定的故障点失租，再依实际依赖推进A3等出口；不以连续复验通过代替根因证据，不关闭完整goal。
+
+## 89. C／H07：保留资源监控首因、实际日志诊断与独立 Worker 超时现场（2026-10-29）
+
+基线 `7cd870470`，承接§88的真实综合失败。本节审阅并续接已有未提交监控草稿，不重做§54已修复的Delta任务路径排序；当前独立Worker失租／等待超时不是已证明的原messages顺序缺陷复发。原v3草稿保持SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`，不编辑、不纳入提交。整体目标继续active。
+
+**本节交付可验证的诊断改进，不宣称已定位或修复§88的非稳定失租，也不关闭C／H07或H05。** 不改变监控串行次序、续租周期、租约长度、故障门点、等待期限、owner判定、恢复权限或原断言，不增加重试／fallback。
+
+### 已取回失败与依据 → 做法
+
+上一轮handle均已取得终态，不重新启动仍活跃的相同测试，也不把过程绿色代替最终源码验收：
+
+| 来源 | 真实结果与可确认事实 | 不能据此推断 |
+| --- | --- | --- |
+| §88 projections-verified | 原记录 **1 failed、229 passed**，父进程等待after_application_commit门点30秒超时，子进程有owner／monitor丢失日志 | 不能因隔离通过或fixture租约3秒就归因负载／短租约 |
+| provenance-consumers／81024 | **1 failed、170 passed，233.68秒，exit1**；before_prepare撤权测试在20秒wait_gate超时，未获得有效子进程首因诊断 | 不是已确定的同一根因；该组早于最终formatter／spawn helper，不代表最终源码全覆盖 |
+| provenance-workers／1094 | **1 failed、10 passed，466.67秒，exit1**；approved-after_native-none替代Worker在20秒join后仍alive，任务快照包含running、recovery_required／execution_owner_expired、reconciled等不同阶段 | alive不证明正常执行或死锁；不同原生强杀参数不能被合并成已修复结论。此组跨越草稿修改时点，只作过程证据 |
+
+依据与改动保持现有模块边界：
+
+| v4条款／已有代码依据 | 本步采用方式 | 代码与消费方 |
+| --- | --- | --- |
+| C／H07、§11；Dispatcher原wait→Redis renew→PostgreSQL interrupt poll→apply；Session的FIRST_COMPLETED owner监控 | 在实际失败操作记录固定事件，随后bare raise原异常，不捕获／改写CancelledError。区分wait、resource_renew、interrupt_poll、interrupt_apply；不记录原异常正文、输入或lease对象 | `agent_task_dispatcher._monitor`；Session／Worker原失租分类与恢复机制不变 |
+| 原Redis RENEW布尔结果、`monotonic()`计时；原interrupt查询没有FOR UPDATE | 记录操作／整体耗时、配置资源租约、距本监控上次成功续租时长、上一轮已完成查询耗时。首次未成功续租时年龄为null，不伪造资源取得时间 | 当前慢查询阻塞续租只是待证假设；确定性替身只证明诊断可观察该情况，未据此拆循环或更改续租架构 |
+| `log_format.ContextFilter`／原12关联字段与`configure_logging`；真实handler红测证明原formatter丢extra | 保留原12字段格式，新增受控`diagnostics` JSON，仅白名单8项：task_id、monitor_operation、operation_seconds、monitor_seconds、error_type、resource_lease_seconds、since_resource_renew_seconds、last_interrupt_poll_seconds。仅原生标量；其他对象固定`<unsupported>`，不遍历任意extra或调用敏感repr | task_id／error_type在其他原日志中也将可见，属于文本日志格式扩展，不是API／schema／DDL变化；日志消费者不能假定所有行仅有原尾部 |
+| 真实v2 CLI导入main会配置日志，原spawn Harness没有；原父进程wait_gate超时先抛出、finally再终止子进程 | spawn helper调用同一日志设施且保留WARNING级别。wait_gate增加可选process观测，在原TimeoutError上add_note记录pid／alive／exitcode，原样传播，不输出gate key／Process参数；20／30／40秒不变 | TaskControl、原审批恢复、原结果投影强杀、仅结算强杀的父进程调用同步传process；子进程release门等旧调用默认行为不变 |
+| 项目现有`framework_model_call_policy`使用Exception.add_note；现有pytest／metrics日志测试 | 延用已有异常附注与日志设施，不增加调度器、服务或外部依赖；新增测试文件纳入既有gitignore白名单 | `test_agent_task_monitor.py`；原Task／v2 claim／TaskControl／checkpoint fence与独立Worker矩阵回归 |
+
+### TDD与实际验证
+
+全部pytest工作目录为Agent_Server，解释器`../.venv-framework-v2/Scripts/python.exe`；stdout＋stderr通过`2>&1 | Tee-Object`保存到根`.codex-logs`，紧接捕获原`$LASTEXITCODE`、输出`PYTEST_EXIT_CODE`并exit原码。PG组显式`RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`。日志不提交，各组范围不叠加为唯一覆盖数。
+
+| 日志前缀framework-monitor-，日期2026-10-29 | 真实结果 | 证据与范围 |
+| --- | --- | --- |
+| provenance-red | **4 failed，2.41秒，exit1** | 四种原操作失败已发生，但没有预期首因日志；不是原独立进程失租的确定性复现 |
+| provenance-first-green | **4 passed，1.48秒，exit0** | 初始监控局部契约；早于最终计时／formatter |
+| rendered-diagnostics-red | **1 failed、8 deselected，1.28秒，exit1** | 实际配置handler没有diagnostics，证明仅caplog读取extra不足以证明生产文本可见 |
+| rendered-diagnostics-green | **21 passed，2.43秒，exit0** | 当时9项monitor与12项metrics；不是当前14项新测试的最终结果 |
+| timing-and-process-red | **5 failed、9 passed，7.68秒，exit1** | 时长／task关联字段缺失，wait_gate尚无process参数，无法附加超时现场；后三项是新行为接口红测，不冒称原Worker根因复现 |
+| timing-and-process-green | **26 passed，5.07秒，exit0** | 最终14项monitor／formatter／gate局部测试＋12项metrics。包括同一异常对象、取消不转换、持续续租／中断仅一次、初始停止、受控标量、不调用敏感repr和真实asyncio deadline取消 |
+| final-consumers／20253 | **189 passed，172.55秒，exit0，无skip** | 最终源码：monitor、metrics、AgentTask、v2 Worker／claim、TaskControl与checkpoint fence；包含原before_prepare超时用例。通过不证明历史失败根因已修复 |
+
+对应最终局部与消费方命令：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_agent_task_monitor.py tests/test_metrics_core.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_agent_task_monitor.py tests/test_metrics_core.py tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py tests/test_framework_task_control.py tests/test_framework_checkpoint_fencing.py -q -rs --tb=short
+```
+
+原服务已运行，本轮没有启停Docker。首个只读就绪探针错误地把项目SQLAlchemy cursor返回的mapping当作元组，`row[0]`产生NoSuchColumnError、exit1；这是探针自身错误，不是数据库不可用。改为已读过的项目`postgres_healthcheck`后PostgreSQL与Redis均实际ready、exit0，不打印连接信息或凭据。未用该探针异常更改生产代码。
+
+当前最高证据仍为E2子集：官方框架／SDK、真实PG／Redis及独立进程；模型／工具和对象后端仍为受控测试对象，不称为真实供应商、领域Runner或RustFS验收。新诊断14项为E0局部替身／日志契约，不能冒充独立进程根因证明。
+
+最终源码已实际执行根目录`./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`与`git diff --check`，均exit0；ruff／mypy确认未安装，没有擅自安装或声称lint／typecheck通过。前端、全量后端、部署构建、官方saver conformance、真实供应商／Runner／RustFS、长链性能、E3／E4未执行，既有出口不缩减。
+
+### 独立Worker最终组与剩余出口
+
+消费方终态后串行启动final-workers／14320，避免与另一大型pytest组叠加。选择原结果投影整个五参数函数、原P0恢复整个六参数函数、仅结算强杀整个函数，不删失败参数、不加`-x`。启动后生产源码未再改动；真实终态结果在本节末追加：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py::test_original_approval_worker_hard_kill_recovers_only_original_projections tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling tests/test_framework_approval_settlement.py::test_independent_workers_only_settle_after_projected_approval_kill -q -rs --tb=short
+```
+
+本节拟同诊断代码／测试小范围中文fix提交，主题`【fix】保留任务监控首因与Worker超时现场`，ID以真实Git历史和交付为准；不推送、不建PR。提交前还须取回上述唯一活跃pytest handle，检查暂存精确集合、源码与暂存一致、本节仅追加／唯一／围栏、有限明显凭据及v3草稿hash。
+
+剩余：继续获取原非稳定失败的首因证据；若出现真实操作阻塞／失租因果再修对应架构，不用延长超时或隔离绿色宣布问题解决。A3、B／C其余公共契约、D／E／F、完整停止语义、E3／E4和全目标保持未完成；诊断子步提交不代表完整v4交付。
+
+### 最终取回与交付检查
+
+final-workers／14320已取得真实终态：**15 passed，516.35秒，exit0，无skip**。包含原投影5参数、原审批恢复6参数和仅结算4参数，原messages／原结果严格比较、模型／工具调用次数、终态及谱系断言保留；没有将替身工具改称真实Runner。本组启动后未修改生产源码。原§88及本节81024／1094失败仍保留，最终189项和15项绿色只能证明本次选择通过，不能证明非稳定首因已修复。
+
+本轮所有pytest handle均已取得终态，无遗留运行中的测试。后续A3预读确认：Session仍在应用提交后直接尝试turn Memory写入；仓库另有终态事件同事务compaction outbox、已有compaction owner／receipt及资源清理队列。下一子步应先核对这些既有端口与冻结原结果的关系，以真实故障样本推进派生补偿，不新建另一套调度层，也不将提交scope内的Observation降格成可丢副本。此预读不是A3实现或验收。
+
+交付精确集合为9文件：gitignore、Dispatcher、日志formatter、14项新测试、TaskControl helper及其3个父进程消费方、实施记录。本节只追加，不改写§1–88；v3草稿、日志、`.env`与本地数据不提交。最后对该集合实际执行语法／diff、源文件与暂存一致、文档只追加／章节唯一／围栏、v3 hash和有限明显凭据检查；具体结果以真实命令输出为准，不将有限扫描称为完整安全审计。

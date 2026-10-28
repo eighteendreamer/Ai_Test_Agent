@@ -21,17 +21,28 @@ from tests.test_framework_approval_runtime import runtime_harness, resume
 from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
 
 
-async def wait_gate(redis, key, timeout):
+async def wait_gate(redis, key, timeout, *, process=None):
     # Keep each Redis wait below the installed client's 5-second socket timeout.
-    async with asyncio.timeout(timeout):
-        while True:
-            value = await redis.blpop(key, timeout=1)
-            if value is not None:
-                return value
+    try:
+        async with asyncio.timeout(timeout):
+            while True:
+                value = await redis.blpop(key, timeout=1)
+                if value is not None:
+                    return value
+    except TimeoutError as exc:
+        if process is not None:
+            # The original deadline/exception survives; observe before cleanup
+            # terminates the child. Never render process arguments or gate keys.
+            exc.add_note(f"Worker gate timed out after {timeout:g}s: pid={process.pid}, "
+                f"alive={process.is_alive()}, exitcode={process.exitcode}")
+        raise
 
 
 def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=None):
     """A real v2 Redis Worker with official graph/storage and a counted fake tool."""
+    from src.core.log_format import configure_logging
+
+    configure_logging("WARNING")
     from redis.asyncio import Redis
     from redis import Redis as SyncRedis
     from time import monotonic
@@ -413,7 +424,7 @@ async def test_http_revocation_stops_a_separate_native_framework_worker_before_d
         args=(h.settings, h.prefix, h.binding, "before_prepare"))
     try:
         process.start()
-        phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20)
+        phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20, process=process)
         assert phase and phase[1] == "before_prepare", f"worker exit code: {process.exitcode}"
         response = await interrupt(h)
         assert response.status_code == 200, response.text
@@ -450,7 +461,7 @@ async def test_hard_killed_native_worker_leaves_unknown_effect_and_terminal_task
         args=(h.settings, h.prefix, h.binding, "after_effect"))
     try:
         process.start()
-        phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20)
+        phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 20, process=process)
         assert phase and phase[1] == "after_effect", f"worker exit code: {process.exitcode}"
         assert await h.redis.get(f"{h.prefix}:framework-effects") == "1"
         process.terminate()

@@ -950,7 +950,7 @@ async def test_original_approval_worker_hard_kill_recovers_only_original_project
             await asyncio.to_thread(process.join, 45)
             assert not process.is_alive() and process.exitcode == 0
         else:
-            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 30)
+            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 30, process=process)
             assert phase[1] == pause_at, f"Worker exited {process.exitcode} before reaching {pause_at}"
         return process
 

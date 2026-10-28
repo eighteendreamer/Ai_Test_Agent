@@ -541,7 +541,7 @@ async def test_independent_workers_only_settle_after_projected_approval_kill(pre
             await asyncio.to_thread(process.join, 60)
             assert not process.is_alive() and process.exitcode == 0
         else:
-            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 40)
+            phase = await wait_gate(h.redis, f"{h.prefix}:control:entered", 40, process=process)
             assert phase[1] == point, f"Worker exited {process.exitcode} before {point}"
         return process
 
