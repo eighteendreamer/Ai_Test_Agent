@@ -58,6 +58,20 @@ def validate_message_stage(record):
             not required and (payload is not None or digest is not None)):
             raise FrameworkMessageStageRecoveryRequired(f"Initial message stage asset integrity failed: {field}")
     manifest = stage.source_manifest or {}
+    if (stage.schema_version >= 25 and "application_projection_commit" in manifest
+        and "runtime_result_asset" in manifest and "post_commit_memory_intent" not in manifest):
+        raise FrameworkMessageStageRecoveryRequired("Application commit v25 lost its original Memory intent")
+    if "post_commit_memory_intent" in manifest:
+        from src.schemas.framework_projection_commit import FrameworkTurnMemoryIntent
+        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+        if (stage.schema_version < 25 or stage.phase not in {"runtime_submitted", "projected"}
+            or "runtime_result_asset" not in manifest or "application_projection_commit" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Memory intent has no atomic application commit or compatible format")
+        asset = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        intent = FrameworkTurnMemoryIntent.model_validate(manifest["post_commit_memory_intent"])
+        if intent != FrameworkTurnMemoryIntent.from_result_asset(asset):
+            raise FrameworkMessageStageRecoveryRequired("Memory intent differs from its frozen original result")
     if "approval_graph_inputs" in manifest:
         from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
 

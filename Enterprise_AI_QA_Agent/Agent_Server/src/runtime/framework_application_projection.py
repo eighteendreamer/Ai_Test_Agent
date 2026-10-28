@@ -18,7 +18,7 @@ from src.runtime.framework_message_stages import (
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.schemas.framework_approval import approval_value_hash
-from src.schemas.framework_projection_commit import FrameworkProjectionCommit
+from src.schemas.framework_projection_commit import FrameworkProjectionCommit, FrameworkTurnMemoryIntent, TURN_MEMORY_INTENT_KEY
 from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 
@@ -352,6 +352,13 @@ def record_application_commit(cur, settings, session, events, write):
             for event in events), "Application commit output has no matching completion event")
     manifest = dict(stage.source_manifest or {})
     manifest.pop(COMMIT_KEY, None)
+    if raw_result is not None and COMMIT_KEY not in (stage.source_manifest or {}):
+        # Same transaction as the application rows and proof. The existing
+        # immutable result supplies original inputs, not a new dispatch right.
+        intent = FrameworkTurnMemoryIntent.from_result_asset(result_asset).model_dump(mode="json")
+        _require(TURN_MEMORY_INTENT_KEY not in manifest or manifest[TURN_MEMORY_INTENT_KEY] == intent,
+            "Application commit cannot replace a different Memory intent")
+        manifest[TURN_MEMORY_INTENT_KEY] = intent
     cur.execute("SELECT clock_timestamp() AS now")
     committed_at = cur.fetchone()["now"]
     proof = FrameworkProjectionCommit(binding_fingerprint=binding.fingerprint, task_id=owner.task_id,
@@ -368,7 +375,8 @@ def record_application_commit(cur, settings, session, events, write):
     _require(previous is None or FrameworkProjectionCommit.model_validate(previous).model_dump(exclude={"committed_at"})
         == proof.model_dump(exclude={"committed_at"}), "Application commit cannot replace a different result")
     manifest[COMMIT_KEY] = previous or proof.model_dump(mode="json")
-    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(6, stage.schema_version),
+    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(
+        25 if TURN_MEMORY_INTENT_KEY in manifest else 6, stage.schema_version),
         "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
     cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
         (updated.model_dump_json(), stage.task_id))

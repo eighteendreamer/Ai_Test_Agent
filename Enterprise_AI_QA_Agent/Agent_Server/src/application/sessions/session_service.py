@@ -3112,8 +3112,9 @@ class SessionService:
         except ContinuationLeaseLostError:
             raise
         except Exception as exc:
-            effect_id = str(uuid5(NAMESPACE_URL,
-                f"enterprise-ai-qa-agent:post-commit-effect:{session_id}:{turn_id}:{source_snapshot_id}:{effect_kind}"))
+            from src.schemas.framework_projection_commit import post_commit_effect_id
+
+            effect_id = post_commit_effect_id(session_id, turn_id, source_snapshot_id, effect_kind)
             context = {"session_id": session_id, "turn_id": turn_id,
                 "source_snapshot_id": source_snapshot_id, "effect_id": effect_id,
                 "effect_kind": effect_kind, "error_type": type(exc).__name__}

@@ -565,7 +565,9 @@ async def test_application_commit_keeps_original_asset_and_prevents_refreeze(pro
     asset = await results.load(task.runtime_owner)
     assert asset == captured["projection_asset"]
     assert "application_projection_commit" in (await stage(h, task)).source_manifest
-    assert (await stage(h, task)).schema_version == 9
+    committed = await stage(h, task)
+    assert committed.schema_version == 25
+    assert committed.source_manifest["post_commit_memory_intent"]["runtime_result_asset_sha256"] == asset.asset_sha256
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="after application commit"):
         await results.freeze(task.runtime_owner, runtime_result=captured["runtime_result"],
             assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,

@@ -3950,3 +3950,114 @@ npm.cmd run build
 最终交付集合为7文件：Session服务、application_projection测试、projected_settlement测试、前端Session store、Session事件刷新测试、Flow测试及本实施记录。最后一轮实际语法／diff、精确暂存／源文件一致、文档仅追加／章节唯一／围栏、v3 hash及有限明显凭据检查在提交前执行，真实结果以相应工具输出为准。后端独立lint／typecheck、全量后端、Electron／VitePress、E3／E4及前述完整目标剩余出口不以本次局部绿色代替。
 
 最终检查已实际取得exit0：根目录compileall、diff／cached diff检查、7文件精确暂存与源文件一致、实施记录只追加／§90唯一／围栏成对、v3 hash及有限明显凭据模式无命中。6个代码／测试文件的Git对象摘要与最终回归使用版本一致。本文最后追加后再次核对并暂存本记录；不把有限模式扫描称为完整安全审计，不把本子步提交当作A3或完整v4完成。
+
+## 91. A3／H06：正式应用提交同事务登记原结果绑定的Memory派生意图（2026-10-29）
+
+基线 `4d2a9a166`，承接§90的派生失败边界及续接时已有未提交代码／测试。先核对实际差异、原测试handle和v4契约，再收敛本子步；不重做§54已验证的Delta顺序根因修复。原v3草稿保持SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`，不编辑、不提交。
+
+**本步登记的是绑定原结果材料的派生请求，不是冻结逐条Memory写入计划、执行回执、自动重试或补偿授权。** 进程在应用提交后、调用前死亡时，原请求现在有同事务持久落点；实际Memory／embedding／清理是否发生仍须各自的状态和对账证据。完整A3及v4其余范围不因此缩减。
+
+### 依据 → 实现与边界
+
+| v4条款／现有参考 | 本步采用方式 | 权限与未完成出口 |
+| --- | --- | --- |
+| A3／§9.4／H06；已有 `record_application_commit` 和原结果资产 | 严格字段、frozen的 `FrameworkTurnMemoryIntent` 写入私有stage manifest的 `post_commit_memory_intent`；与Session／消息／终态事件和application proof共用真实业务事务，proof source摘要包含意图 | 绑定session／turn／原snapshot／binding fingerprint／原结果asset hash；不新增任务、outbox或执行路径 |
+| §90既有UUID5 effect身份；原finalizer与 `_persist_turn_memory` 的条件 | 共用 `post_commit_effect_id`，保持原命名种子；非空白文本且原response mode为ok时requested=true，空结果登记false | 这是原请求条件，不证明Memory服务可用或已经接受请求；不假造memory_ids、status、completed_at或execution_authority |
+| §8–10；现有stage资产完整性校验及原结果source过滤 | 解析后与原结果派生值全量核对，拒绝来源／scope／effect ID／requested漂移、额外权限字段及v25意图丢失；从原结果source hash排除新派生字段 | 原Runtime结果资产保持不变；提交proof包含意图不等于proof证明派生执行完成 |
+| §14.1；现有格式能力路由 | 新写入要求message-stage **25**；schema与默认Worker reader同步25，保留reader24拒25、reader25接受25／拒26的claim前矩阵 | 新格式上线须兼容读者先行或消费者隔离；无DDL不表示E4滚动／回滚已验收 |
+| A1／历史记录兼容；现有仅ACK与仅结算端口 | 已有application commit不追填意图，不改旧proof；隔离fixture重建合法v24原记录并通过真实A1读取、ACK与任务finish验证 | 不能把携带v25意图的记录只改版本号当作合法v24；不放宽owner／阶段门 |
+| 现有 `FrameworkObservationAsset.write_requests`、Memory写入与compaction／cleanup journal | 预读确认已有逐项冻结模式可供后续复用；本步只登记原结果引用，未改这些子系统 | 逐条请求、稳定行身份、embedding未知效果、执行／行回执、资源分项清理仍需独立实施，不把Observation降为可丢副本 |
+
+现有终态compaction outbox只按当前Session压缩，handler没有消费固定source_event_id范围；不能把其存在等同于本意图已被执行。Memory `_attach_embeddings` 普通异常现有行为仍是返回无embedding请求，本步没有修改该降级或声称已经跟踪全部embedding失败。意图只在私有stage中，未加入公开Session metadata／ConversationResponse／SSE；公开响应负例保留。
+
+### TDD与续接失败的实际处理
+
+日志位于根 `.codex-logs`，不提交。数据库组均从Agent_Server使用独立 `../.venv-framework-v2/Scripts/python.exe`，显式 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，stdout＋stderr经Tee保留并返回原退出码；UUID隔离fixture沿既有PG／Redis协议执行，不启停Docker或测试服务。
+
+| 日志／handle | 实际结果 | 证据范围 |
+| --- | --- | --- |
+| memory-intent-red／67441 | **3 failed、34 deselected，20.88秒，exit1** | 真实事务回调与独立Worker提交后／派生前窗口均缺少意图；首项callback内断言曾被既有普通派生边界捕获，已把断言移至callback外，不删弱断言 |
+| memory-intent-first-green／79263 | **3 passed、34 deselected，20.41秒，exit0** | 早期目标组；不代替后续空结果、历史格式和删除保护的最终验证 |
+| memory-intent-contract／84583 | **1 failed、4 passed、162 deselected，27.62秒，exit1** | 续接取回真实终态。`-k`作用于所有文件，Worker合约也被筛除，不能报完整合约通过 |
+| memory-intent-contract-fixed／52478 | **5 passed、34 deselected，27.98秒，exit0** | 正确A1窗口、意图漂移／权限、真实事务回滚、空输出、提交后／派生前独立Worker强杀 |
+| memory-intent-worker-contract／52478 | **128 passed，13.59秒，exit0** | 不带`-k`单独执行完整Worker文件；覆盖新旧格式claim前检查，无skip |
+
+遗留兼容测试失败不是旧格式被证明不兼容：测试先完整 `run` 到projected，再调用只接受runtime_submitted提交后／ACK前窗口的 `load_committed_projection`，在stage／owner前置检查失败。依据真实Session调用顺序和A1既有故障注入，将测试放在原 `FrameworkMessageStages.projected` 前的实际提交窗口；在该窗口重建v24数据形状并重算相应摘要，然后读取原提交、正常ACK及finish。生产读取器、owner校验与仅结算权限完全不变。最后仍断言原manifest不变、不补意图，不能通过放宽生产门获取绿色。
+
+目标命令如下；`-k`仅用于第一个文件，完整Worker合约另起独立pytest命令：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py -k 'memory_intent or before_post_commit_effect' -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+```
+
+### 冻结源码后的串行回归在途
+
+目标组取回后冻结11个代码／测试文件的Git对象摘要，单一shell会话54117串行执行下列三组，前组成功才进入后组。本段追加时该handle仍活跃，结果须从原handle取回后再追加，不预报通过、不与另一大型PG组并行。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_projected_settlement.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_settlement.py tests/test_framework_approval_projection.py tests/test_framework_approval_graph_input.py tests/test_framework_finalization_projection.py tests/test_session_execution_ownership.py tests/test_session_hot_memory_integration.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_message_stages.py tests/test_framework_structured_result.py -q -rs --tb=short
+```
+
+日志依次为 `framework-memory-intent-projections-2026-10-29.log`、`framework-memory-intent-consumers-2026-10-29.log`、`framework-memory-intent-assets-2026-10-29.log`。目标组与完整组有重叠，不相加为唯一覆盖数。最高证据仍限E2子集：固定官方框架／SDK、真实PG／Redis、独立Worker强杀；模型HTTP及对象后端为既有本地替身，不称真实供应商、embedding、RustFS或领域Runner验收。
+
+全局核对新意图、格式上限及其消费方；`structured_result`中图前prepared材料仍是合法24，未无差别改25。实际只读健康检查PG／Redis均ready、exit0。ruff／mypy再次确认未安装，不安装、不声称后端lint／typecheck通过。本轮无前端生产改动，未重跑前端、Electron／VitePress；既有前端绿色不算本轮验证。全量后端、官方saver conformance、真实供应商／Runner、长链性能、部署构建及E3／E4仍未验收。
+
+剩余A3：冻结原逐条MemoryWriteRequest及稳定分项身份，沿既有持久任务／Memory／清理journal接入执行状态、行回执及未知效果查询／有依据的补偿；本步不自动消费或重派意图。§88–89非稳定失租首因仍未确认，H07不关闭。A3／B／C其余契约、D／E／F及完整v4继续active。本节拟与11个相关代码／测试文件小范围中文提交，不推送、不建PR；最终回归、只追加／精确暂存／源码一致／有限敏感检查及实际commit另据真实输出追加。
+
+### 首轮完整回归失败、消费方补齐及严格版本红测
+
+原会话54117已取回终态：第一组 **9 failed、114 passed，402.21秒，exit1**。失败全部发生在正式提交后的精确旧stage格式断言：application_projection仍断言9（2参数）、partial_projection_recovery断言11（3参数）、独立projected Worker断言21（4参数），实际均为25。该shell按前组失败立即停止，后两组未执行，不能把在途命令当作通过。日志保留，不覆盖。
+
+随后逐处全局搜索所有精确schema比较及降级fixture，而不是只搜索24／25：对已完成应用提交的普通／审批／部分恢复、原结果、终态gap、事件与Observation测试同步25，并增加意图来源／存在性断言；图前prepared、资产前、部分分项写入和合法历史格式保留原最小版本，没有无差别改25。历史6–8事件fixture额外移除新意图后重算原proof摘要；普通22／23、审批23／24门控测试在创建恢复后继前重建合法旧记录，再沿真实准入生成后继，避免用携带v25意图的非法降级掩盖旧格式兼容。两种真实claim门均增加reader24拒绝25，仍断言无attempt／未领取。共享 `legacy_application_commit_stage` 只服务隔离测试资料，不改生产权限。
+
+历史格式目标命令实际 **7 passed、135 deselected，35.11秒，exit0**，会话35913／`framework-memory-intent-historical-formats-2026-10-29.log`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py tests/test_framework_projected_settlement.py tests/test_framework_approval_settlement.py -k 'legacy_application_commit_without_memory_intent or format_is_rejected_before_real_claim or format_checked_before_real_claim' -q -rs --tb=short
+```
+
+另发现Pydantic的Literal默认会把bool／float的1接受为整数版本。依据现有 `FrameworkCognitiveResult.require_integer_version` 的严格类型契约，新Memory意图补同类before validator，两个版本字段都要求真正int；requested保留StrictBool。新五参数反例先实际 **4 failed、1 passed、39 deselected，15.69秒，exit1**（9602／`framework-memory-intent-version-types-enabled-red-2026-10-29.log`），四种bool／float版本均DID NOT RAISE，确认缺口后才修改生产类型校验。首次遗漏环境开关时该文件的模块级live标记实际 **5 skipped、39 deselected，4.07秒，exit0**，只作为测试未执行记录，不能当红测或绿色；随后显式启用现有测试开关取得上述真实失败，不因skip跳过该出口。
+
+相应红测命令：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py -k 'requires_explicit_integer_versions' -q -rs --tb=short
+```
+
+修正消费方后的源码范围扩为7个生产文件、10个测试文件及本记录；增加的测试文件均直接消费提交后的stage格式或验证合法历史记录，不扩大到无关重构。将对最终17个代码／测试文件重新冻结摘要，追加完整回归命令与真实终态；早期11文件冻结和已通过目标组仅证明当时版本，不代替最终源码验收。
+
+### 最终源码冻结与第一组取回
+
+严格版本修复后的目标组54462／`framework-memory-intent-types-green-2026-10-29.log`已取回：**10 passed、34 deselected，37.17秒，exit0**。包含五项类型反例以及原意图／真实回滚／空结果／历史A1／独立Worker提交后派生前强杀；无skip，不与较早目标组累计为唯一覆盖数。
+
+最终7个生产文件、10个测试文件已重新冻结Git对象摘要，单一会话71760串行执行以下四组；前组成功才进入下一组，没有并行启动第二个大型PG组：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_projected_settlement.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_settlement.py tests/test_framework_approval_projection.py tests/test_framework_approval_graph_input.py tests/test_framework_finalization_projection.py tests/test_session_execution_ownership.py tests/test_session_hot_memory_integration.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_message_stages.py tests/test_framework_structured_result.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_terminal_gap.py -q -rs --tb=short
+```
+
+最终日志依次为 `framework-memory-intent-projections-final-2026-10-29.log`、`framework-memory-intent-consumers-final-2026-10-29.log`、`framework-memory-intent-assets-final-2026-10-29.log`、`framework-memory-intent-parts-final-2026-10-29.log`。
+
+第一组已实际取回：**129 passed，457.54秒，exit0，无skip**。包括本步全部新增Memory意图测试、合法历史格式、完整普通消息部分恢复／仅结算及独立Worker强杀；原模型／工具不重执、原身份／结果不变、原终态不重置的断言保留。该组启动后未修改任何生产或测试源码。当前同一会话已进入第二组，须继续取回其余三组真实终态；不预报绿色，不重启原handle。
+
+### 最终三组回归取回与本子步交付边界
+
+同一会话71760继续取得其余真实终态，生产／测试源码在四组启动后均未再修改：
+
+| 日志 | 实际结果 | 证据范围 |
+| --- | --- | --- |
+| `framework-memory-intent-consumers-final-2026-10-29.log` | **188 passed，982.16秒，exit0，无skip** | 审批结算／投影／图输入、唯一finalizer、Session ownership、热Memory消费方；携带v25意图的正常／恢复／仅结算边界 |
+| `framework-memory-intent-assets-final-2026-10-29.log` | **217 passed，269.87秒，exit0，无skip** | Runtime结果资产、stage完整性、结构化结果及完整Worker能力矩阵；图前structured材料仍按合法24，不无差别升级 |
+| `framework-memory-intent-parts-final-2026-10-29.log` | **87 passed，324.30秒，exit0，无skip** | 事件／Observation／snapshot分项、终态gap及官方独立Worker强杀消费方；意图不进入runtime result source摘要 |
+
+四组均按固定版本官方框架／SDK＋真实PostgreSQL／Redis／独立进程或受控本地对象完成，最高证据仍为E2子集。模型HTTP、Memory embedding、对象存储和领域Runner不是本轮真实供应商／RustFS／目标验收；没有新增付费调用、生产开关或Docker操作。四组结果不作为全系统唯一累计覆盖数，但均与本轮改动涉及的消费方逐文件对应。
+
+最终提交前检查：PG／Redis只读探针ready；`compileall -q Agent_Server/src Agent_Server/tests` exit0；`git diff --check` exit0；实施记录仅追加、§91唯一、代码围栏成对；v3草稿SHA256仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。ruff／mypy未安装，未擅自安装且不声称lint/typecheck通过；前端本轮无生产变更，未以历史前端绿色替代本轮验证。
+
+本子步提交范围为7个生产文件、10个测试文件和本实施记录，共18个文件。明确排除工作区已有的 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 修改、`.codex-logs`及本地数据。提交后仍保留：逐条MemoryWriteRequest／稳定行身份、embedding未知效果对账、执行／行回执、资源清理分项补偿、H07首因、A3其余出口，以及B／C／D／E／F和完整v4目标；本提交不授予Memory执行或重试权限。

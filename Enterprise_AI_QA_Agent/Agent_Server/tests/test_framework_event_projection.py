@@ -115,7 +115,8 @@ async def test_original_streamed_event_is_collected_without_rewriting_or_recount
     assert saved.source_manifest["event_projection_commits"]["event_hashes"][h.live_event.id] == _hash(original)
     assert event_row(h, h.live_event.id) == original
     assert len([e for e in await h.store.list_events(h.session_id) if e.id == h.live_event.id]) == 1
-    assert saved.schema_version == 9
+    assert saved.schema_version == 25
+    assert "post_commit_memory_intent" in saved.source_manifest
 
 
 @pytest.mark.asyncio
@@ -317,6 +318,7 @@ async def test_historical_application_receipt_format_still_allows_ack_only(froze
         await h.sessions._finalize_runtime_result(**h.result_values)
     record = (await stage(h, h.task)).model_dump(mode="json")
     manifest = record["source_manifest"]
+    manifest.pop("post_commit_memory_intent")
     manifest.pop("event_projection_commits")
     if old_version < 8:
         manifest.pop("snapshot_projection_commit")

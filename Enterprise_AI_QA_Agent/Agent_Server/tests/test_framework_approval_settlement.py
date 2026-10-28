@@ -83,7 +83,8 @@ async def test_projected_approval_loss_reconciles_and_only_settles(projected_app
     successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
     assert outbox(h, successor.id) is not None
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.schema_version == 23 and saved.phase == "projected"
+    assert saved.schema_version == 25 and saved.phase == "projected"
+    assert "post_commit_memory_intent" in saved.source_manifest
     assert saved.source_manifest == before.source_manifest
     assert saved.result_reference == before.result_reference
     assert saved.approval_settlements[-1].resume_phase == "settling"
@@ -380,18 +381,21 @@ async def test_interrupt_after_expiry_without_active_task_cannot_rewrite_complet
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reader,version", [(22, 23), (23, 24)])
+@pytest.mark.parametrize("reader,version", [(22, 23), (23, 24), (24, 25)])
 async def test_approval_settlement_format_checked_before_real_claim(projected_approval, reader, version):
     from tests.test_framework_approval_graph_input import replace_stage
+    from tests.test_framework_application_projection import legacy_application_commit_stage
 
     h = projected_approval
+    if version < 25:
+        original = h.stages.get(h.initial_task_id, h.session_id)
+        replace_stage(h, legacy_application_commit_stage(original, version).model_dump(mode="json"))
     _, successor = await settlement_successor(h)
     saved = h.stages.get(h.initial_task_id, h.session_id)
+    assert saved.schema_version == version
     assert "approval_settlements" not in saved.model_copy(update={"schema_version": 22, "approval_settlements": []}).model_dump(mode="json")
     with pytest.raises((FrameworkMessageStageRecoveryRequired, ValidationError)):
         validate_message_stage(saved.model_copy(update={"schema_version": 22}).model_dump(mode="json"))
-    if version != 23:
-        replace_stage(h, saved.model_copy(update={"schema_version": version}).model_dump(mode="json"))
     h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities(h.binding.dependency_lock_sha256, True, message_stage_max_version=reader))
     with pytest.raises(TaskDeferred, match="framework_message_stage_unavailable"):
         await h.dispatcher.handle_v2(QueuedTask("incompatible", outbox(h, successor.id)["payload"]), worker_id="old-worker")

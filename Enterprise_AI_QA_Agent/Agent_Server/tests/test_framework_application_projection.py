@@ -10,6 +10,7 @@ from uuid import uuid4
 import pytest
 import pytest_asyncio
 from langgraph.graph import END, START, StateGraph
+from pydantic import ValidationError
 
 from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
 from src.infrastructure.postgres_runtime import postgres_connect
@@ -101,6 +102,7 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                 "after_snapshot_event": "snapshot-event-committed",
                 "after_observation_row": "observation-row-committed",
                 "before_final_session": "finalization-prepared",
+                "before_post_commit_effect": "application-committed-before-effect",
                 "after_commit": "application-committed"}[window]
             await redis.rpush(gate, marker)
             await asyncio.Event().wait()
@@ -226,6 +228,8 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                 await pause()
                 return actual
             memory.write = write_and_pause
+        elif window == "before_post_commit_effect":
+            sessions._run_post_commit_effect = pause
         elif window == "after_commit":
             FrameworkMessageStages.projected = pause
         elif window == "after_projected":
@@ -342,6 +346,18 @@ async def committed_before_stage_ack(h, monkeypatch):
     return original, await h.tasks.get(original.id)
 
 
+def legacy_application_commit_stage(saved, schema_version):
+    """Recreate a pre-intent format only in isolated historical fixtures."""
+    from src.runtime.framework_message_stages import validate_message_stage
+
+    manifest = {key: value for key, value in saved.source_manifest.items()
+        if key not in {"post_commit_memory_intent", "application_projection_commit"}}
+    proof = {**saved.source_manifest["application_projection_commit"], "source_sha256": approval_value_hash(manifest)}
+    manifest["application_projection_commit"] = proof
+    return validate_message_stage(saved.model_copy(update={"schema_version": schema_version,
+        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize("model_phase", [None, "completed"])
 async def test_native_checkpoint_and_committed_application_recover_without_reexecuting(projection_jobs, monkeypatch, model_phase):
@@ -358,7 +374,8 @@ async def test_native_checkpoint_and_committed_application_recover_without_reexe
     assert (await h.tasks.get(successor.id)).status == "completed"
     assert await h.tasks.get(original.id) == terminal
     saved = await stage(h, original)
-    assert saved.phase == "projected" and saved.schema_version == 9
+    assert saved.phase == "projected" and saved.schema_version == 25
+    assert saved.source_manifest["post_commit_memory_intent"]["source_snapshot_id"] == saved.source_manifest["application_projection_commit"]["snapshot_id"]
     after = await h.store.get_session(h.session_id)
     assert after.status.value == "completed" and after.metadata["control"]["control_state"] == "completed"
     def transcript(messages):
@@ -770,7 +787,132 @@ async def test_failure_observation_is_stable_private_and_visible_when_its_write_
 
 
 @pytest.mark.asyncio
-async def test_official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request(admission):
+async def test_memory_intent_is_atomic_before_effect_and_grants_no_execution_receipt(projection, monkeypatch):
+    h = projection
+    observed = []
+
+    async def observe_memory(**kwargs):
+        observed.append((await stage(h, original), kwargs["session"].id))
+
+    monkeypatch.setattr(h.sessions, "_persist_turn_memory", observe_memory)
+    original = await selected(h)
+    response = await run(h, original)
+    assert response.session.status.value == "completed" and len(observed) == 1
+    at_effect, session_id = observed[0]
+    raw = at_effect.source_manifest["post_commit_memory_intent"]
+    from src.schemas.framework_projection_commit import FrameworkTurnMemoryIntent
+
+    intent = FrameworkTurnMemoryIntent.model_validate(raw)
+    assert intent.requested and intent.session_id == session_id
+    assert intent.source_snapshot_id == at_effect.source_manifest["application_projection_commit"]["snapshot_id"]
+    assert intent.runtime_result_asset_sha256 == at_effect.source_manifest["runtime_result_asset"]["asset_sha256"]
+    assert not {"status", "memory_ids", "completed_at", "execution_authority"}.intersection(raw)
+    manifest = {key: value for key, value in at_effect.source_manifest.items() if key != "application_projection_commit"}
+    assert at_effect.source_manifest["application_projection_commit"]["source_sha256"] == approval_value_hash(manifest)
+    assert "post_commit_memory_intent" not in response.model_dump_json()
+    saved = await stage(h, original)
+    from src.runtime.framework_message_stages import validate_message_stage
+
+    for delta in ({"effect_id": "forged"}, {"requested": False}, {"source_snapshot_id": "other"},
+        {"runtime_result_asset_sha256": "b" * 64}, {"schema_version": 2}, {"status": "completed"},
+        {"scope": "execution_permission"}):
+        manifest = {**saved.source_manifest, "post_commit_memory_intent": {**raw, **delta}}
+        with pytest.raises((FrameworkMessageStageRecoveryRequired, ValidationError)):
+            validate_message_stage(saved.model_copy(update={"source_manifest": manifest,
+                "source_sha256": approval_value_hash(manifest)}).model_dump())
+    manifest = {key: value for key, value in saved.source_manifest.items() if key != "post_commit_memory_intent"}
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="lost its original Memory intent"):
+        validate_message_stage(saved.model_copy(update={"source_manifest": manifest,
+            "source_sha256": approval_value_hash(manifest)}).model_dump())
+
+
+@pytest.mark.asyncio
+async def test_empty_result_records_memory_intent_without_a_copy_request(projection):
+    h = projection
+    h.output_text = ""
+    original = await selected(h)
+    response = await run(h, original)
+    saved = await stage(h, original)
+    intent = saved.source_manifest["post_commit_memory_intent"]
+    assert response.session.status.value == "completed" and intent["requested"] is False
+    assert intent["source_snapshot_id"] == saved.source_manifest["application_projection_commit"]["snapshot_id"]
+
+
+@pytest.mark.parametrize("delta", [{"schema_version": True}, {"schema_version": 1.0},
+    {"derivation_contract_version": True}, {"derivation_contract_version": 1.0}, {"requested": 1}])
+def test_memory_intent_requires_explicit_integer_versions_and_boolean_request(delta):
+    from src.schemas.framework_projection_commit import FrameworkTurnMemoryIntent
+
+    raw = {"schema_version": 1, "derivation_contract_version": 1, "effect_id": "memory-effect",
+        "session_id": "session", "turn_id": "turn", "binding_fingerprint": "a" * 64,
+        "runtime_result_asset_sha256": "b" * 64, "source_snapshot_id": "snapshot", "requested": True}
+    with pytest.raises(ValidationError):
+        FrameworkTurnMemoryIntent.model_validate({**raw, **delta})
+
+
+@pytest.mark.asyncio
+async def test_legacy_application_commit_without_memory_intent_remains_readable(projection, monkeypatch):
+    from src.runtime.framework_message_stages import message_stage_table
+    from src.runtime.framework_application_projection import load_committed_projection
+
+    h = projection
+    original = await selected(h)
+    async def lose_ack(*args, **kwargs):
+        raise ConnectionError("injected legacy application commit before stage ACK")
+
+    # The A1 reader serves the committed-before-ACK window, not projected
+    # settlement. Preserve its original execution-owner and phase contract.
+    with monkeypatch.context() as patch:
+        patch.setattr(FrameworkMessageStages, "projected", lose_ack)
+        with pytest.raises(ConnectionError, match="legacy application commit before stage ACK"):
+            await run(h, original)
+    saved = await stage(h, original)
+    assert saved.phase == "runtime_submitted"
+    # Reconstruct the pre-v25 record shape in the isolated fixture only.
+    legacy = legacy_application_commit_stage(saved, 24)
+    manifest = legacy.source_manifest
+    proof = manifest["application_projection_commit"]
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {message_stage_table(h.settings)} SET record=%s::jsonb WHERE task_id=%s",
+            (legacy.model_dump_json(), saved.task_id))
+    read, snapshot, _ = await load_committed_projection(h.tasks, original.runtime_owner)
+    assert read.snapshot_id == snapshot.id == proof["snapshot_id"]
+    assert (await h.store.get_session(h.session_id)).status.value == "completed"
+    await FrameworkMessageStages(h.tasks).projected(original.runtime_owner, read.output_message_id or read.snapshot_id)
+    await h.tasks.finish(original, status="completed", result_status="completed")
+    assert (await stage(h, original)).source_manifest == manifest
+
+
+@pytest.mark.asyncio
+async def test_memory_intent_rolls_back_with_the_real_application_transaction(projection, monkeypatch):
+    from src.runtime import framework_application_projection as commits
+    from src.runtime.framework_message_stages import message_stage_table
+
+    h = projection
+    failure = ConnectionError("injected application transaction rollback after intent recording")
+    record = commits.record_application_commit
+    observed = []
+
+    def record_then_abort(cur, settings, session, events, write):
+        record(cur, settings, session, events, write)
+        cur.execute(f"SELECT record FROM {message_stage_table(h.settings)} WHERE binding_id=%s", (h.binding.binding_id,))
+        observed.append(cur.fetchone()["record"]["source_manifest"]["post_commit_memory_intent"])
+        raise failure
+
+    monkeypatch.setattr(commits, "record_application_commit", record_then_abort)
+    original = await selected(h)
+    with pytest.raises(ConnectionError) as captured:
+        await run(h, original)
+    assert captured.value is failure and len(observed) == 1
+    saved = await stage(h, original)
+    assert "application_projection_commit" not in saved.source_manifest
+    assert "post_commit_memory_intent" not in saved.source_manifest
+    assert (await h.store.get_session(h.session_id)).status.value != "completed"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", ["after_commit", "before_post_commit_effect"])
+async def test_official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request(admission, window):
     from redis.asyncio import Redis
     from src.application.models.framework_model_call_policy import model_config_fingerprint
     from src.infrastructure.redis_task_queue import RedisTaskQueue
@@ -801,11 +943,18 @@ async def test_official_deep_agent_worker_killed_after_commit_recovers_without_s
             assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
             gate = h.prefix + ":projection-committed"
             process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
-                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate))
+                args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate, window))
             process.start()
             assert await waiting.blpop(gate, timeout=40) is not None
             before = await h.store.get_session(h.session_id)
             proof = (await stage(h, original)).source_manifest["application_projection_commit"]
+            if window == "before_post_commit_effect":
+                saved = await stage(h, original)
+                intent = saved.source_manifest["post_commit_memory_intent"]
+                assert intent["requested"] is True
+                assert intent["runtime_result_asset_sha256"] == saved.source_manifest["runtime_result_asset"]["asset_sha256"]
+                assert intent["source_snapshot_id"] == proof["snapshot_id"]
+                assert intent["scope"] == "derived_turn_memory_intent_only"
             assert before.status.value == "completed" and len(requests) == 1
             assert process.is_alive()
             process.terminate()
@@ -840,6 +989,8 @@ async def test_official_deep_agent_worker_killed_after_commit_recovers_without_s
             assert after.messages[-1].content == before.messages[-1].content
             assert len(requests) == 1 and h.runtime.calls == []
             assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
+            if window == "before_post_commit_effect":
+                assert (await stage(h, successor)).source_manifest["post_commit_memory_intent"] == intent
     finally:
         if process is not None and process.is_alive():
             process.terminate()

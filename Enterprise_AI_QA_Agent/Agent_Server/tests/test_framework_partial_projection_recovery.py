@@ -200,7 +200,9 @@ async def test_result_asset_before_any_projection_is_sufficient_only_for_finaliz
     saved = await h.store.get_session(h.session_id)
     expected_count = 1 + bool(h.output_text) + bool(h.asset.runtime_result.tool_messages[0].metadata.get("persist_transcript", True))
     assert len(saved.messages) == expected_count
-    assert (await stage(h, h.task)).schema_version == 11
+    committed = await stage(h, h.task)
+    assert committed.schema_version == 25
+    assert committed.source_manifest["post_commit_memory_intent"]["runtime_result_asset_sha256"] == h.asset.asset_sha256
     assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
 
 
