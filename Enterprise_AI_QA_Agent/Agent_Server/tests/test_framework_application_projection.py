@@ -228,6 +228,15 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             memory.write = write_and_pause
         elif window == "after_commit":
             FrameworkMessageStages.projected = pause
+        elif window == "after_projected":
+            projected = FrameworkMessageStages.projected
+
+            async def projected_then_pause(*args, **kwargs):
+                await projected(*args, **kwargs)
+                await redis.rpush(gate, "stage-projected")
+                await asyncio.Event().wait()
+
+            FrameworkMessageStages.projected = projected_then_pause
         elif window == "complete":
             pass  # Normal Worker path: no fault or projection sample injected.
         else:

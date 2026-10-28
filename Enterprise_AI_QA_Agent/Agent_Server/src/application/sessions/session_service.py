@@ -208,6 +208,10 @@ class SessionService:
                     prepared_stage = None
                     if stages is not None and task.operation == "message_recover":
                         existing = await self._agent_task_store.get_framework_message_stage(task.id, session_id=task.session_id)
+                        if existing is not None and existing.phase == "projected":
+                            from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+                            raise FrameworkMessageStageRecoveryRequired("Projected message permits task settlement only")
                         if existing is not None and existing.phase == "orchestrated":
                             frozen = await stages.resume_orchestrated(task.runtime_owner, modes=self._mode_registry.list())
                         elif existing is not None and existing.phase == "orchestrating":

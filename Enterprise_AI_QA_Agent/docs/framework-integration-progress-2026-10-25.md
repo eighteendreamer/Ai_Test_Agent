@@ -3550,3 +3550,74 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 ```
 
 提交前一次检查命令混用了Bash heredoc与PowerShell语法，ParserError发生在执行前，不记为校验通过；改用PowerShell here-string后实际compileall、diff、仅追加／唯一章节／围栏、8处本地链接及v3 hash全部exit0。实际进程清单无残留pytest／spawn Worker。仅暂存本节所属8文件，核对完整差异、暂存清单及明显凭据后提交，名称 `【feat】原子封存未封口审批并发布仅收尾后继`，具体commit ID以Git历史和交付输出为准。完整目标继续active，不推送、不建PR；E3/E4、全量／前端／lint／typecheck等未执行项和历史超时风险不因此转为已验收。
+
+## 86. A2-3：普通消息 projected 后的原结算复核与仅结算后继（2026-10-28）
+
+基线 `616e74365`，续接§85已提交事实与v4 §10.1／H06、H07、H11。核对active完整目标、当前Git、§52及后续记录、Session／Dispatcher／TaskStore／阶段和应用提交证明的实际调用链。原v3草稿独立保留，SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F，不编辑、不提交。**本节是普通message及其message_recover谱系的A2-3子步，不代表审批projected空窗、完整A2-3或v4已经完成。**
+
+### 根因、依据 → 做法与权限
+
+应用提交和projected已持久化，但消息恢复准入明确拒绝projected；旧owner失租后，既不能重置原终态，也没有可发布的结算资格。与此同时，任务finish没有在自身事务内复核已projected的应用提交与精确引用。缺失的是既有任务机制中的结算职责，不是图内继续或另一个finalizer。
+
+| v4／现有依据 | 本步采用方式 | 权限与兼容边界 |
+| --- | --- | --- |
+| §10.1 A2-3；既有message_recover、确定性后继ID、owner及outbox事务 | [消息恢复](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_recovery.py)支持projected，但只签settling；准入和claim复核原输入、根预算、模型账本、ExecutionRequest、应用提交、阶段引用及前任task/attempt/epoch | 不读取原生图补结果，不以裸snapshot授权；原task/attempt保持recovery_required。重复准入仅返回原后继，漂移／显式中断／后续已执行Turn不扩张恢复权 |
+| §14.1；已有严格阶段格式和claim前能力检查 | [schema](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/schemas/framework_message_stage.py)新增独立settling语义，[阶段读者](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_stages.py)要求版本22、projected及完整提交引用；[Worker能力](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_worker_capabilities.py)上界同步22 | 正常原producer版本不统一抬升；仅新资格写22。reader21拒领22，reader22拒领未来23；不修改审批finalizing link，不据此声称已完成双制品部署 |
+| §8.1／§10.1；现有TaskStore.finish、require_application_commit及Session控制字段合并 | [任务结算](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/postgres_agent_task_store.py)在既有Session／owner锁和任务事务内复核projected、原输入及提交，恢复已证明的完成控制状态，再原子结算当前task/attempt、owner、事件和租约 | 原合法owner与后继共用这一结算出口，不重写stage、结果资产或原失败记录。并发finish只允许一个有效提交，失去owner者仍报fence错误；重复投递由既有终态分支只ACK |
+| §9.4／§10.2；已有Dispatcher执行和资源／监控生命周期 | [Dispatcher](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/orchestration/agent_task_dispatcher.py)识别settling后直接进入finish；[Session入口](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/sessions/session_service.py)明确拒绝projected重新进入执行 | 不调用Session执行、Runtime、编排、Verification builder或唯一finalizer；不借用runtime_submitted/finalizing资格。资源申请、续租、finally释放及异常分类继续复用原机制 |
+| §13 H06/H07/H11；本地Agent轨迹与协议鲁棒性课程关于幂等、超时及半成功链路 | [仅结算测试](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_projected_settlement.py)覆盖三处事实漂移、并发、回滚、权限隔离、空输出、后续排队输入与独立Worker强杀；[原Worker helper](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/tests/test_framework_application_projection.py)新增真正projected提交之后的断点 | 原应用提交／结果、消息、snapshot、模型／工具事实不变；不以模型替身代替真实官方图的故障窗口。新测试沿现有.gitignore白名单单独放行，不强制暂存忽略目录 |
+
+已全局核对resume_phase消费点：A1原提交读取和finalizing资产写入仍保留原窄权限，settling没有进入这两条写入路径；测试直接调用resume_finalizing、submit_runtime、projected、结果资产load和Session执行均拒绝。没有新增公开API、调度层、DDL、依赖、生产路由或开关。
+
+### TDD、真实失败与故障证据
+
+日志位于.codex-logs，均不提交；下列早期绿色不累计为最终回归。
+
+- 首个测试脚手架误从task表名拼接attempts表，真实 **1 failed，9.99秒，exit1**；按已读Settings.postgres_agent_attempt_table修正。随后目标红测admission-red真实 **1 failed，7.35秒，exit1**：已projected的原任务失租后，三并发准入全部返回None。
+- 最小实现first **2 passed，11.37秒，exit0**；matrix-first **140 passed，158.34秒，exit0**，覆盖三处复核、普通／空输出、原合法owner、原子回滚、禁止执行权限和新旧Worker能力矩阵，早于后续状态契约及排队消息测试。
+- status-red真实 **1 failed，42 deselected，8.04秒，exit1**：仅结算调用遗漏result_status仍可completed。修正在原finish事务中要求已projected成功结算必须携带completed结果，不改waiting_approval等非projected旧路径。
+- worker-first **5 passed，42 deselected，96.91秒，exit0**：状态负例及四个独立进程组合。原Worker运行真实固定Deep Agents／SDK、本地HTTP与PostgreSQL／Redis，实际projected后强杀；替代Worker禁止整个Session执行入口及Runtime／finalizer。后继分别正常完成、claim后强杀、running但finish前强杀、结算提交后Redis ACK前强杀；最终独立Worker处理原PEL与重复投递，HTTP始终一次、有效完成事件一次、原应用材料和原task/attempt不变。
+- claim但尚未begin的后继遵循现有可重领协议：同一task新增attempt，旧attempt保持interrupted；已经running再失租则保留其recovery_required终态，发布下一条settling谱系，不将终态重置为queued/completed。两者均有独立进程证据，不混称为同一种接管。
+- 首个dispatch-final为 **1 failed，45 passed，177.40秒，exit1**，排队消息created_at的UTC aware内存值与数据库UTC naive返回值不等。queued-diagnostic **1 failed，50 deselected，18.39秒，exit1**显示仅tzinfo不同；核对storage_utils.ensure_utc_datetime及_message_from_row后，以动作前实际持久化消息为完整比较基线，不忽略时间或其他字段，不改生产日期契约。
+- dispatch-verified为 **1 failed，87 passed，459.78秒，exit1**：既有图前强杀用例test_independent_worker_kill_before_orchestration_recovers_through_official_graph_once遇到resource_type:agent占用。resource-diagnostic单独复验 **1 passed，26 deselected，14.82秒，exit0**，未稳定复现根因；不放宽配额、重写资源机制或称问题已修复。原失败保留，随后重新执行完整六文件选择，不用单例绿色替代全组。
+
+### 最终源码回归（分组取回）
+
+生产源码固定后使用Python 3.11.16；本地实际安装LangGraph 1.2.12、checkpoint-postgres 3.1.2、Deep Agents 0.7.13、SQLAlchemy 2.0.53、pytest 9.1.1。工作目录Agent_Server，解释器../.venv-framework-v2/Scripts/python.exe，RUN_LIVE_POSTGRES_TESTS=1、PYTHONIOENCODING=utf-8；统一参数-u -m pytest与-q -x -rs --tb=short。完整stdout＋stderr经2>&1 | Tee-Object保存，立即保留$LASTEXITCODE，在日志追加PYTEST_EXIT_CODE并返回同一退出码；未复用或覆盖早期日志。
+
+| 最终组／日志前缀framework-projected-settlement-，日期2026-10-28 | 已取回结果 | 范围 |
+| --- | --- | --- |
+| native-final，会话13730 | **261 passed，335.55秒，exit0，无skip** | event_completion、checkpoint_fencing、native_terminal、delta_replay_order、deep_agent_runtime_adapter、runtime_import_isolation、turn_projection |
+| projections-final，会话31632 | **229 passed，866.87秒，exit0，无skip** | runtime_result_asset、application_projection、finalization_projection、snapshot_projection、event_projection、observation_projection、message_result_reconstruction、message_asset_gap_recovery、sqlalchemy_cursor_result |
+
+approvals-final会话90584与dispatch-complete-final会话9008已启动且仍在执行，尚未取得终态；不把正在运行当作通过，不重启存活handle。前者选择approval_graph_input、approval_runtime、approval_continuation、approval_projection、approval_recovery、model_admission、task_control、terminal_gap、tool_projection九文件；后者为projected_settlement、message_stages、message_recovery、partial_projection_recovery、agent_task_dispatch、agent_v2_worker_contract六文件。最终结果、精确命令与提交检查在本节末继续追加。
+
+### 尚未完成及环境边界
+
+本步证据限E1／E2子集：固定官方框架、真实PostgreSQL／Redis、独立Worker及真实进程终止；模型为替身或本地HTTP服务，不是实际供应商／RustFS／领域Runner的E3。审批projected后的仅结算出口、A2-2其余材料／故障矩阵、A3及B/C/D/E/F继续推进；E4双制品／灰度回滚／备份恢复、官方saver conformance、长链查询／持锁性能、全量及前端仍未验收。当前没有ruff／mypy，不安装，不称lint/typecheck通过；最终语法及diff检查须实际取回退出码。历史20／45秒Worker超时及本节一次资源占用未复现风险继续保留。
+
+完整goal保持active；本步拟提交仅七个生产文件、三个测试文件、测试白名单和本节，共12文件。原v3草稿、测试日志和本地数据排除。不升级依赖、不启停共享设施、不改生产路由、不发起真实供应商／目标调用，不推送、不建PR。
+
+### 最终调度组与提交检查补记
+
+dispatch-complete-final会话9008已实际取回：**241 passed，630.04秒，exit0，无skip**。选择完整六文件，包含本节52项仅结算测试、既有图前强杀资源占用样本所在完整文件、正常调度、再次失租、A1/A2-1及旧／新Worker格式；不以resource-diagnostic单例替代。此前87 passed后的失败仍保留，当前全组通过不等于已经查明该偶发资源占用的根因。
+
+任务结算会沿既有协议更新当前用户消息的delivery_status。应用提交继续按原_rows/_message_hashes合同仅排除这一个投递记账字段，核对id、role、content、created_at及其余metadata；没有为本步新增消息忽略项，也没有忽略Runtime原生messages。
+
+根目录实际取回compileall、diff及记录检查会话20717的exit0，日志framework-projected-settlement-checks-2026-10-28.log：COMPILEALL_EXIT_CODE=0、DIFF_CHECK_EXIT_CODE=0、RECORD_CHECK_EXIT_CODE=0；原实施记录前缀未改、§86唯一、围栏闭合、9个本地文件链接和原v3 SHA256全部通过。ruff/mypy的find_spec实际均为False，没有安装工具或声称相应检查通过。早期一次只输出检查前导而未保留完整handle的调用不作验证依据，本次以明确取回的20717结果为准。
+
+四组实际启动的精确命令如下；环境、完整日志和退出码处理同前文。前三组已exit0；approvals-final会话90584截至本补记仍在执行，之后单独追加其终态，不把83%的进度输出当作通过。
+
+```powershell
+# 工作目录Agent_Server；RUN_LIVE_POSTGRES_TESTS=1，PYTHONIOENCODING=utf-8
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_runtime_import_isolation.py tests/test_framework_turn_projection.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_message_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py tests/test_sqlalchemy_cursor_result.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_projected_settlement.py tests/test_framework_message_stages.py tests/test_framework_message_recovery.py tests/test_framework_partial_projection_recovery.py tests/test_agent_task_dispatch.py tests/test_agent_v2_worker_contract.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_approval_projection.py tests/test_framework_approval_recovery.py tests/test_framework_model_admission.py tests/test_framework_task_control.py tests/test_framework_terminal_gap.py tests/test_framework_tool_projection.py -q -x -rs --tb=short
+```
+
+### 最终审批／工具链终态与交付
+
+approvals-final会话90584已实际取回：**260 passed，1654.62秒，exit0，无skip**；完整日志framework-projected-settlement-approvals-final-2026-10-28.log。四个最终组均已取得明确退出码；原审批、原生messages、普通收尾与原结果读者、预算、独立Worker和工具材料消费方均按上述实际选择回归，不以早期140项或单例复验替代。当前源码没有正在等待的测试handle，也不将历史20／45秒超时或本节一次资源占用视为已经根因修复。
+
+提交前复核完整生产差异、新测试及两个既有测试的必要扩展；记录仍仅追加，原v3 hash不变。仅暂存本节12文件，检查暂存diff／文件集合／明显凭据，不纳入v3草稿、.codex-logs或本地数据。代码、测试及本节同一提交，名称 `【feat】补齐普通消息已投影后的仅结算恢复`，具体commit ID以Git历史与交付输出为准。新内部格式22需要兼容读者先行，不据源码回归开放生产。审批projected结算、A2-2其他出口、A3及B/C/D/E/F和E3/E4等未验收范围仍保留，完整目标继续active，不推送、不建PR。

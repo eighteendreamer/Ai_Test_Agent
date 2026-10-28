@@ -763,6 +763,16 @@ class AgentTaskDispatcher:
                     await self._sessions.execute_claimed_reconciliation(task)
                     finished_status = "completed"
                     return
+                if task.runtime_binding is not None and task.operation == "message_recover":
+                    stage = await self._tasks.get_framework_message_stage(task.id, session_id=task.session_id)
+                    if stage is not None and stage.recoveries and stage.recoveries[-1].resume_phase == "settling":
+                        if not await self._resources.renew(lease, lease_seconds=config.resource_default_lease_seconds):
+                            raise ContinuationLeaseLostError("Projected settlement admission lease lost before commit")
+                        # The finish transaction rechecks owner, commit, stage
+                        # reference and lineage. No Session/finalizer is entered.
+                        await self._tasks.finish(task, status="completed", result_status="completed")
+                        finished_status = "completed"
+                        return
                 if task.operation in {"message", "message_recover"}:
                     response = await self._sessions.execute_claimed_message(
                         task,

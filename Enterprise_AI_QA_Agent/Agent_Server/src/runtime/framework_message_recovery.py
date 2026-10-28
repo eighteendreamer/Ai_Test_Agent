@@ -72,7 +72,7 @@ def _same_input(stage, origin, row, binding):
 
 
 def _require_recoverable_turn(cur, tasks, session, binding, stage, origin):
-    if stage.phase not in {"submitted", "orchestrating", "orchestrated", "runtime_submitted"}:
+    if stage.phase not in {"submitted", "orchestrating", "orchestrated", "runtime_submitted", "projected"}:
         _reject("Message phase has no admitted continuation; its result requires reconciliation")
     if (session["project_id"] != origin["project_id"] or session["id"] != binding.session_id
         or origin["turn_id"] != binding.turn_id or stage.binding_id != binding.binding_id):
@@ -125,7 +125,7 @@ def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=Fals
             model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
     application_commit = None
     runtime_result = None
-    if stage.phase == "runtime_submitted":
+    if stage.phase in {"runtime_submitted", "projected"}:
         # Finalization changes messages and metadata. A1 validates a completed
         # transaction; A2 validates original inputs and existing parts instead
         # of the pre-runtime Session. Neither branch invokes the graph.
@@ -136,7 +136,16 @@ def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=Fals
             or request.turn_id != binding.turn_id):
             _reject("Runtime submission request differs from its original binding")
         from src.runtime.framework_application_projection import COMMIT_KEY
-        if finalizing or COMMIT_KEY not in (stage.source_manifest or {}):
+        if stage.phase == "projected":
+            application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
+            reference = application_commit.output_message_id or application_commit.snapshot_id
+            if stage.result_reference != reference:
+                _reject("Projected message differs from its committed application reference")
+            proof.update(resume_phase="settling", source_sha256=stage.source_sha256,
+                execution_sha256=stage.execution_sha256, result_reference=reference,
+                result_sha256=approval_value_hash(application_commit.model_dump(mode="json")),
+                model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
+        elif finalizing or COMMIT_KEY not in (stage.source_manifest or {}):
             from src.runtime.framework_runtime_results import RESULT_KEY, validate_runtime_result_binding
             from src.runtime.framework_finalization_projection import require_partial_finalization
 
@@ -272,6 +281,33 @@ def require_message_recovery_claim(cur, tasks, session, binding, row, owner):
     if approval_value_hash(budget.model_dump(mode="json")) != link.budget_sha256:
         _reject("Message successor no longer matches its admitted budget")
     return stage
+
+
+def require_projected_settlement(cur, tasks, session, row, owner, stage):
+    """Only the task finish transaction may consume a projected result.
+
+    No upstream counterpart (checked: existing task finish, A1 commit reader,
+    message_recover admission, v4 §10.1 A2-3): projected is an application ACK,
+    not permission to invoke the graph or adopt finalizer write ownership.
+    Keep the original stage and failed attempts unchanged.
+    """
+    from src.runtime.framework_application_projection import require_application_commit
+
+    if stage.phase != "projected" or stage.current_task_id != row["id"]:
+        _reject("Projected settlement has no current task admission")
+    cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (stage.task_id,))
+    origin = cur.fetchone()
+    _same_input(stage, origin, row, owner.binding)
+    _require_recoverable_turn(cur, tasks, session, owner.binding, stage, origin)
+    if stage.recoveries and stage.recoveries[-1].resume_phase == "settling":
+        require_message_recovery_claim(cur, tasks, session, owner.binding, row,
+            {"task_id": owner.task_id, "attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch})
+    else:
+        _recoverable(cur, tasks, session, owner.binding, stage, origin)
+    commit = require_application_commit(cur, tasks._settings, session, owner.binding, stage)
+    if stage.result_reference != (commit.output_message_id or commit.snapshot_id):
+        _reject("Projected settlement result reference changed")
+    return commit
 
 
 class FrameworkMessageRecovery:
@@ -415,8 +451,8 @@ class FrameworkMessageRecovery:
                 predecessor_attempt_id=predecessor["attempt_id"], predecessor_owner_epoch=owner["owner_epoch"],
                 budget_sha256=approval_value_hash(budget.model_dump(mode="json")), admitted_at=now, **proof)
             updated = validate_message_stage(stage.model_copy(update={"schema_version": max(stage.schema_version,
-                11 if proof["resume_phase"] == "finalizing" else (
-                    5 if stage.phase == "runtime_submitted" else (4 if stage.phase == "orchestrating" else 3))),
+                22 if proof["resume_phase"] == "settling" else (11 if proof["resume_phase"] == "finalizing" else (
+                    5 if stage.phase == "runtime_submitted" else (4 if stage.phase == "orchestrating" else 3)))),
                 "recoveries": [*stage.recoveries, link],
                 "updated_at": now}).model_dump())
             cur.execute(f"UPDATE {message_stage_table(self._settings)} SET record=%s::jsonb WHERE task_id=%s",

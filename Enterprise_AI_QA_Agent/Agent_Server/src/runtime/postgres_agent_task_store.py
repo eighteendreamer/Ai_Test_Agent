@@ -1372,10 +1372,11 @@ class PostgresAgentTaskStore:
         resource_id,
         fencing_token,
     ):
+        settlement = None
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             if task.runtime_binding is not None:
                 configure_runtime_owner_transaction(cur, self._settings)
-            self._lock_session(cur, task.session_id)
+            session = self._lock_session(cur, task.session_id)
             if task.runtime_binding is not None:
                 if task.runtime_owner is None:
                     raise ContinuationLeaseLostError("Framework task requires its captured execution owner")
@@ -1389,6 +1390,20 @@ class PostgresAgentTaskStore:
                 raise ContinuationLeaseLostError("Agent task attempt is already settled")
             if status in {"running", "waiting_resource"} and row["status"] != "claimed":
                 raise ValueError("Only a claimed task can start or wait for admission")
+            if (task.runtime_binding is not None and row["operation"] in {"message", "message_recover"}
+                and status == "completed"):
+                from src.runtime.framework_message_recovery import _stage, require_projected_settlement
+                from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+                stage = _stage(cur, self, task.runtime_binding)
+                if stage.phase == "projected":
+                    if result_status != "completed":
+                        raise FrameworkMessageStageRecoveryRequired("Projected settlement requires a completed result")
+                    settlement = require_projected_settlement(cur, self, session, row, task.runtime_owner, stage)
+                    cur.execute(f"UPDATE {self._session_table} SET status='completed', "
+                        "metadata=jsonb_set(metadata,'{control}',COALESCE(metadata->'control','{}'::jsonb) || %s::jsonb), "
+                        "state_revision=state_revision+1,updated_at=clock_timestamp() WHERE id=%s",
+                        (json.dumps(settlement.control), task.session_id))
             if status == "running":
                 if not resource_id or fencing_token is None:
                     raise ValueError("Running Agent task requires resource fencing metadata")
@@ -1408,6 +1423,12 @@ class PostgresAgentTaskStore:
                 if status in {"failed", "cancelled", "recovery_required"}:
                     self._interrupt_expired_session(cur, row)
                 self._clear_lease(cur, row)
+
+        if settlement is not None:
+            logger.info("framework_message_projected_settled", extra={"task_id": task.id,
+                "attempt_id": task.attempt_id, "binding_id": task.runtime_binding.binding_id,
+                "origin_commit_task_id": settlement.task_id,
+                "result_reference": settlement.output_message_id or settlement.snapshot_id})
 
     def _update_status(self, cur, row, status, result_status, reason):
         if row.get("runtime_binding") is not None:

@@ -41,6 +41,10 @@ def validate_message_stage(record):
             or (link.resume_phase == "finalizing" and (stage.schema_version < 11
                 or not all(assets) or not link.result_reference or not link.result_sha256
                 or "runtime_result_asset" not in (stage.source_manifest or {})))
+            or (link.resume_phase == "settling" and (stage.schema_version < 22 or stage.phase != "projected"
+                or not all(assets) or not link.result_reference or not link.result_sha256
+                or link.result_reference != stage.result_reference
+                or "application_projection_commit" not in (stage.source_manifest or {})))
             or (link.resume_phase == "submitted" and any(assets))):
             raise FrameworkMessageStageRecoveryRequired("Message recovery phase has no matching frozen proof")
         predecessor = link.task_id
