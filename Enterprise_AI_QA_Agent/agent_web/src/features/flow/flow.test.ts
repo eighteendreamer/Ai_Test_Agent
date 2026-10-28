@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import FlowInspector from "./FlowInspector.vue";
 import { buildFlowPath, publishFlowSession, subscribeFlowSession } from "./openFlowWindow";
-import { projectFlowNodes, resolveLatestTurnId, selectTurnEvents } from "./stages";
+import { projectFlowNodes, projectStageStatuses, resolveLatestTurnId, selectTurnEvents } from "./stages";
 import { collectWorkerDispatches, workerDispatchKey, workerFlowStatus, workerNodeId } from "./workers";
 import { t } from "../../services/i18n";
 import type { ExecutionEvent, WorkerDispatchRecord } from "../../types";
@@ -128,6 +128,25 @@ describe("Flow inspector long content", () => {
 });
 
 describe("Dynamic flow projection", () => {
+  it.each(["turn_memory", "resource_cleanup"])("does not rewrite completed stages after a %s failure", (effectKind) => {
+    const events: ExecutionEvent[] = [
+      { id: "started", session_id: "session-1", type: "runtime.turn_started", timestamp: "2026-10-29T00:00:00Z", payload: { turn_id: "turn-1" } },
+      { id: "answer", session_id: "session-1", type: "graph.response_ready", timestamp: "2026-10-29T00:00:01Z", payload: { turn_id: "turn-1", phase: "responder" } },
+      { id: "completed", session_id: "session-1", type: "turn.completed", timestamp: "2026-10-29T00:00:02Z", payload: { turn_id: "turn-1" } },
+    ];
+    const afterFailure: ExecutionEvent[] = [...events, {
+      id: "effect-failure", session_id: "session-1", type: "session.post_commit_effect_failed",
+      timestamp: "2026-10-29T00:00:03Z", payload: {
+        turn_id: "turn-1", source_snapshot_id: "snapshot-1", effect_id: "effect-1",
+        effect_kind: effectKind, status: "unknown", error_type: "ConnectionError",
+      },
+    }];
+
+    expect(projectFlowNodes(afterFailure, "turn-1")).toEqual(projectFlowNodes(events, "turn-1"));
+    expect(projectStageStatuses(afterFailure, "turn-1")).toEqual(projectStageStatuses(events, "turn-1"));
+    expect(projectStageStatuses(afterFailure, "turn-1").responder).toBe("done");
+  });
+
   it("selects events whose turn ID is carried at the top level", () => {
     const events: ExecutionEvent[] = [
       { id: "old", session_id: "session-1", type: "runtime.turn_started", timestamp: "2026-09-29T00:00:00Z", turn_id: "turn-old", payload: {} },

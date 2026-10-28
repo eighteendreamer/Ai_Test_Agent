@@ -605,6 +605,171 @@ async def test_exact_output_survives_store_restart_duplicate_delivery_and_second
 
 
 @pytest.mark.asyncio
+async def test_cleanup_failure_after_commit_cannot_rewrite_the_original_result(projection, monkeypatch, caplog):
+    from types import SimpleNamespace
+
+    h = projection
+    attempts = []
+
+    async def unavailable_resources(session_id, reason):
+        attempts.append((session_id, reason))
+        raise ConnectionError("injected resource inventory connection loss")
+
+    h.sessions._session_resource_service = SimpleNamespace(cleanup_session=unavailable_resources)
+    original = await selected(h)
+    response, failure = None, None
+    try:
+        response = await run(h, original)
+    except ConnectionError as exc:
+        failure = exc
+    projected = await stage(h, original)
+    assert "application_projection_commit" in projected.source_manifest
+    saved = await h.store.get_session(h.session_id)
+    assert saved.status.value == "completed"
+    assert saved.metadata["control"]["control_state"] == "completed"
+    events = await h.store.list_events(h.session_id)
+    assert len([event for event in events if event.type == "turn.completed"]) == 1
+    assert not [event for event in events if event.type == "turn.interrupted"]
+    assert failure is None and response.session.status.value == "completed"
+    assert projected.phase == "projected"
+    assert h.native_runs == len(h.runtime.calls) == 1
+    assert attempts == [(h.session_id, "session_completed")]
+    record, = [item for item in caplog.records if item.getMessage() == "session_resource_cleanup_failed_after_commit"]
+    assert record.error_type == "ConnectionError" and record.session_id == h.session_id
+    failures = [event for event in events if event.type == "session.post_commit_effect_failed"]
+    event, = failures
+    assert event.payload["effect_kind"] == "resource_cleanup"
+    assert event.payload["status"] == "unknown" and event.payload["error_type"] == "ConnectionError"
+    assert event.payload["source_snapshot_id"] == response.session.last_snapshot.id
+    await h.tasks.finish(original, status="completed", result_status="completed")
+    h.dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True))
+    for delivery in ("duplicate-after-cleanup-error", "second-duplicate"):
+        await h.dispatcher.handle_v2(QueuedTask(delivery, outbox(h, original.id)["payload"]), worker_id="no-replay")
+    assert attempts == [(h.session_id, "session_completed")]
+    assert (await h.tasks.get(original.id)).status == "completed"
+    assert await stage(h, original) == projected
+    assert len([event for event in await h.store.list_events(h.session_id)
+        if event.type == "session.post_commit_effect_failed"]) == 1
+
+
+@pytest.mark.asyncio
+async def test_memory_failure_has_a_separate_unknown_effect_not_a_false_runtime_failure(projection, monkeypatch, caplog):
+    h = projection
+    attempts = []
+    private = "fixture-private-memory-error"
+
+    async def unavailable_memory(**kwargs):
+        attempts.append(kwargs)
+        raise TimeoutError(private)
+
+    monkeypatch.setattr(h.sessions, "_persist_turn_memory", unavailable_memory)
+    original = await selected(h)
+    response = await run(h, original)
+    saved = await stage(h, original)
+    assert response.session.status.value == "completed" and saved.phase == "projected"
+    assert "application_projection_commit" in saved.source_manifest
+    events = await h.store.list_events(h.session_id)
+    failure, = [event for event in events if event.type == "session.post_commit_effect_failed"]
+    assert failure.payload["effect_kind"] == "turn_memory"
+    assert failure.payload["status"] == "unknown" and failure.payload["error_type"] == "TimeoutError"
+    assert failure.payload["source_snapshot_id"] == response.session.last_snapshot.id
+    assert len(attempts) == 1 and h.native_runs == len(h.runtime.calls) == 1
+    assert not [event for event in events if event.type == "turn.interrupted"]
+    assert private not in caplog.text and private not in failure.model_dump_json()
+
+
+@pytest.mark.asyncio
+async def test_failure_before_application_commit_still_fails_and_does_not_run_optional_effects(projection, monkeypatch):
+    h = projection
+    failure = ConnectionError("injected original application transaction failure")
+    effects = []
+
+    async def fail_commit(*args, **kwargs):
+        raise failure
+
+    async def observe_effect(**kwargs):
+        effects.append(kwargs)
+
+    monkeypatch.setattr(h.store, "save_session_with_events", fail_commit)
+    monkeypatch.setattr(h.sessions, "_persist_turn_memory", observe_effect)
+    original = await selected(h)
+    with pytest.raises(ConnectionError) as captured:
+        await run(h, original)
+    assert captured.value is failure
+    saved = await stage(h, original)
+    assert "application_projection_commit" not in saved.source_manifest and saved.phase != "projected"
+    assert effects == []
+    assert not [event for event in await h.store.list_events(h.session_id)
+        if event.type == "session.post_commit_effect_failed"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["effect", "failure_record"])
+@pytest.mark.parametrize("failure_type", [asyncio.CancelledError, ContinuationLeaseLostError])
+async def test_post_commit_effect_preserves_cancellation_and_ownership_signals(boundary, failure_type, caplog):
+    from types import SimpleNamespace
+    from src.application.sessions.session_service import SessionService
+
+    failure = failure_type("fixture-private-control-signal")
+    written = []
+
+    async def effect():
+        if boundary == "effect":
+            raise failure
+        raise RuntimeError("fixture-private-effect-failure")
+
+    async def append(session_id, event, **kwargs):
+        written.append(event)
+        raise failure
+
+    service = SessionService.__new__(SessionService)
+    service._store = SimpleNamespace(append_event=append)
+    with pytest.raises(failure_type) as captured:
+        await service._run_post_commit_effect(session_id="session", turn_id="turn", source_snapshot_id="snapshot",
+            effect_kind="resource_cleanup", operation=effect, fenced_write={})
+    assert captured.value is failure
+    assert len(written) == (boundary == "failure_record")
+    assert "fixture-private" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_failure_observation_is_stable_private_and_visible_when_its_write_fails(caplog):
+    from types import SimpleNamespace
+    from src.application.sessions.session_service import SessionService
+
+    effects, writes = [], []
+
+    async def effect():
+        effects.append(True)
+        raise TimeoutError("fixture-private-effect-failure")
+
+    async def append(session_id, event, **kwargs):
+        writes.append((session_id, event, kwargs))
+        raise ConnectionError("fixture-private-store-error")
+
+    service = SessionService.__new__(SessionService)
+    service._store = SimpleNamespace(append_event=append)
+    kwargs = dict(session_id="session", turn_id="turn", source_snapshot_id="snapshot",
+        effect_kind="turn_memory", operation=effect, fenced_write={"turn_lease_token": "fixture-private-token"})
+    await service._run_post_commit_effect(**kwargs)
+    assert effects == [True] and len(writes) == 1
+    session_id, event, fence = writes[0]
+    assert session_id == "session" and fence == kwargs["fenced_write"]
+    assert event.type == "session.post_commit_effect_failed" and event.payload["status"] == "unknown"
+    assert event.payload["effect_kind"] == "turn_memory" and event.payload["error_type"] == "TimeoutError"
+    assert event.payload["source_snapshot_id"] == "snapshot" and event.payload["turn_id"] == "turn"
+    from uuid import NAMESPACE_URL, uuid5
+
+    effect_id = str(uuid5(NAMESPACE_URL, "enterprise-ai-qa-agent:post-commit-effect:session:turn:snapshot:turn_memory"))
+    assert event.payload["effect_id"] == effect_id
+    assert event.id == str(uuid5(NAMESPACE_URL, f"enterprise-ai-qa-agent:post-commit-failure:{effect_id}"))
+    assert [record.getMessage() for record in caplog.records] == [
+        "turn_memory_persist_failed_after_commit", "post_commit_effect_failure_record_failed"]
+    assert all(record.exc_info is None for record in caplog.records)
+    assert "fixture-private" not in caplog.text and "fixture-private" not in event.model_dump_json()
+
+
+@pytest.mark.asyncio
 async def test_official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request(admission):
     from redis.asyncio import Redis
     from src.application.models.framework_model_call_policy import model_config_fingerprint

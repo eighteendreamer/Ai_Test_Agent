@@ -58,6 +58,7 @@ describe("session SSE refresh after durable state changes", () => {
     ["runtime.turn_failed", true],
     ["runtime.turn_interrupted", true],
     ["worker.interrupted", false],
+    ["session.post_commit_effect_failed", false],
   ])("refreshes the session for %s", async (type, includeTooling) => {
     const store = useSessionStore();
     const oldSession = {
@@ -102,6 +103,24 @@ describe("session SSE refresh after durable state changes", () => {
     const callsAtLimit = getSession.mock.calls.length;
     await vi.advanceTimersByTimeAsync(15000);
     expect(getSession).toHaveBeenCalledTimes(callsAtLimit);
+  });
+
+  it("retains the completed answer while showing a post-commit effect failure", () => {
+    const store = useSessionStore();
+    const answer = { id: "answer", role: "assistant", content: "Committed answer" };
+    store.session = {
+      id: "session-1", title: "Committed session", status: "completed",
+      messages: [answer], pending_approvals: [], metadata: {},
+    } as unknown as SessionDetail;
+    const refresh = vi.spyOn(store, "scheduleRefresh").mockImplementation(() => {});
+    store.connectEvents();
+    FakeEventSource.instances[0].emit("session.post_commit_effect_failed");
+    expect(store.activity[0].type).toBe("session.post_commit_effect_failed");
+    expect(store.session?.status).toBe("completed");
+    expect(store.watcherPhase).toBe("completed");
+    expect(store.session?.messages).toEqual([answer]);
+    expect(store.error).toBe("");
+    expect(refresh).toHaveBeenCalledWith(false);
   });
 
   it("clears the exhausted SSE error after an explicit connection succeeds", () => {

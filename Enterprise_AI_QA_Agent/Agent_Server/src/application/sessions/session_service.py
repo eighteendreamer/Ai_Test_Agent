@@ -3054,9 +3054,17 @@ class SessionService:
                     extra={"session_id": session_id, "turn_id": runtime_result.state["turn_id"],
                            "attempt": attempt + 1},
                 )
+        post_commit_context = {
+            "session_id": session_id,
+            "turn_id": runtime_result.state["turn_id"],
+            "source_snapshot_id": runtime_result.snapshot.id,
+            "fenced_write": fenced_write,
+        }
         if runtime_result.output_text and response_mode == "ok":
-            try:
-                await self._persist_turn_memory(
+            await self._run_post_commit_effect(
+                **post_commit_context,
+                effect_kind="turn_memory",
+                operation=lambda: self._persist_turn_memory(
                     session=session,
                     turn_id=runtime_result.state["turn_id"],
                     trace_id=runtime_result.state["trace_id"],
@@ -3065,16 +3073,14 @@ class SessionService:
                     tool_results=list(runtime_result.state.get("tool_results", [])),
                     context_bundle=dict(runtime_result.state.get("context_bundle", {})),
                     fenced_write=fenced_write,
-                )
-            except Exception:
-                # Transcript and completion events have already committed. Memory is
-                # derived data and must not turn the committed answer into an API error.
-                logger.exception("turn_memory_persist_failed_after_commit", extra={
-                    "session_id": session_id,
-                    "turn_id": runtime_result.state["turn_id"],
-                })
+                ),
+            )
         if session.status == SessionStatus.completed:
-            await self._cleanup_session_resources_if_terminal(session)
+            await self._run_post_commit_effect(
+                **post_commit_context,
+                effect_kind="resource_cleanup",
+                operation=lambda: self._cleanup_session_resources_if_terminal(session),
+            )
 
         latest_session = await self._require_session(session_id)
         if (
@@ -3088,6 +3094,46 @@ class SessionService:
             output=assistant_message,
             events=events,
         )
+
+    async def _run_post_commit_effect(
+        self, *, session_id: str, turn_id: str, source_snapshot_id: str,
+        effect_kind: str, operation: Callable[[], Awaitable[None]],
+        fenced_write: dict[str, str | None],
+    ) -> None:
+        """Keep optional effects outside the already-committed result's failure boundary.
+
+        This observation grants no retry/cleanup authority. Original allocation,
+        compaction and external-operation journals must decide any compensation.
+        """
+        log_event = {"turn_memory": "turn_memory_persist_failed_after_commit",
+            "resource_cleanup": "session_resource_cleanup_failed_after_commit"}[effect_kind]
+        try:
+            await operation()
+        except ContinuationLeaseLostError:
+            raise
+        except Exception as exc:
+            effect_id = str(uuid5(NAMESPACE_URL,
+                f"enterprise-ai-qa-agent:post-commit-effect:{session_id}:{turn_id}:{source_snapshot_id}:{effect_kind}"))
+            context = {"session_id": session_id, "turn_id": turn_id,
+                "source_snapshot_id": source_snapshot_id, "effect_id": effect_id,
+                "effect_kind": effect_kind, "error_type": type(exc).__name__}
+            logger.error(log_event, extra=context)
+            event = self._make_event(session_id, "session.post_commit_effect_failed", {
+                "turn_id": turn_id, "source_snapshot_id": source_snapshot_id,
+                "effect_id": effect_id, "effect_kind": effect_kind,
+                "status": "unknown", "error_type": type(exc).__name__,
+            })
+            event.id = str(uuid5(NAMESPACE_URL, f"enterprise-ai-qa-agent:post-commit-failure:{effect_id}"))
+            try:
+                await self._store.append_event(session_id, event, **fenced_write)
+            except ContinuationLeaseLostError:
+                raise
+            except Exception as record_error:
+                # A failed diagnostic write cannot undo the committed result.
+                # Keep a safe local trace; do not pretend a receipt was saved.
+                logger.error("post_commit_effect_failure_record_failed", extra={
+                    **context, "error_type": type(record_error).__name__,
+                })
 
     async def _cleanup_session_resources_if_terminal(self, session: SessionRecord) -> None:
         if self._session_resource_service is None:

@@ -931,6 +931,7 @@ export const useSessionStore = defineStore("session", {
             event.type === "worker.task_notification_received" ||
             event.type === "worker.auto_stopped" ||
             event.type === "worker.interrupted" ||
+            event.type === "session.post_commit_effect_failed" ||
             event.type === "input.queued" ||
             event.type === "input.dequeued" ||
             event.type === "queue.interrupted_turn_superseded" ||

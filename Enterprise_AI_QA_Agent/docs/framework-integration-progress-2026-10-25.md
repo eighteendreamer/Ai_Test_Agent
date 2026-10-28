@@ -3862,3 +3862,91 @@ final-workers／14320已取得真实终态：**15 passed，516.35秒，exit0，�
 本轮所有pytest handle均已取得终态，无遗留运行中的测试。后续A3预读确认：Session仍在应用提交后直接尝试turn Memory写入；仓库另有终态事件同事务compaction outbox、已有compaction owner／receipt及资源清理队列。下一子步应先核对这些既有端口与冻结原结果的关系，以真实故障样本推进派生补偿，不新建另一套调度层，也不将提交scope内的Observation降格成可丢副本。此预读不是A3实现或验收。
 
 交付精确集合为9文件：gitignore、Dispatcher、日志formatter、14项新测试、TaskControl helper及其3个父进程消费方、实施记录。本节只追加，不改写§1–88；v3草稿、日志、`.env`与本地数据不提交。最后对该集合实际执行语法／diff、源文件与暂存一致、文档只追加／章节唯一／围栏、v3 hash和有限明显凭据检查；具体结果以真实命令输出为准，不将有限扫描称为完整安全审计。
+
+## 90. A3／H06：隔离应用提交后的派生失败，保留未知效果观察而不伪造运行中断（2026-10-29）
+
+基线 `ec3b868f2`，承接§89的A3预读与已有未提交草稿。续接只读核对后实际恢复开发；本节不重复§54已确认的并行Delta回放顺序修复，也不把§88–89非稳定失租的绿色复验当作根因证明。原v3草稿保留SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`，不编辑、不纳入提交。
+
+**本步完成范围是正式提交与可选派生操作的失败边界及失败观察，不是完整A3补偿机制。** 没有新增自动重试、执行权或调度层；没有证明未知embedding／外部清理已经完成。完整v4与A3其余出口继续active。
+
+### 真实失败、根因及依据 → 做法
+
+- `framework-post-commit-cleanup-red-2026-10-29.log`真实 **1 failed，10.65秒，exit1**：资源清理的ConnectionError在业务提交之后穿出finalizer。
+- 随后的`framework-post-commit-cleanup-authority-red-2026-10-29.log`真实 **1 failed，7.73秒，exit1**：先从真实数据库读到`application_projection_commit`及completed Session，再发现错误的`turn.interrupted`事件。根因是正式运行与提交后资源清理共用异常边界；**不能误述成Session已被改写为interrupted**，原状态更新已有allowed_statuses保护，但错误中断事件与未达projected ACK仍真实存在。
+- 现有Memory写入已有独立post-commit异常边界，现有Session有UUID5稳定事件身份和fenced append_event；v4 §3、§9.4、§10／H06要求派生失败不能篡改正式结果 → Memory与资源清理共用窄范围`_run_post_commit_effect`，普通派生异常转为独立观察，不进入运行失败处理。
+- 原终态事件已有同事务compaction outbox；CompactionWorker／PostgresCompactionRecordStore、资源清理Worker／receipt和浏览器／Docker allocation journal继续分别承担其职责。它们存在不等于本步已有原子派生intent，不能据此盲重派unknown操作。
+- 本地课程《Agent轨迹与协议鲁棒性》§04.5幂等与补偿、半成功链路 → 同时核对已提交结果、调用次数、重复投递及失败可见性，不只断言最终completed字符串；不移植课程演示性的固定等待／直接重试。
+
+### 代码、跨层事件及权限边界
+
+| v4条款／落点 | 本步实现 | 明确不包含的权限或保证 |
+| --- | --- | --- |
+| A3／H06；Session唯一finalizer | `save_session_with_events`成功后，turn Memory和终态资源清理经同一helper。提交前异常保持原运行失败语义；取消及`ContinuationLeaseLostError`在派生与观察写入两处原样传播 | 不把owner丢失当普通派生失败，不回滚正式结果，不重跑图／模型／工具 |
+| §10.2；现有ExecutionEvent及fenced append_event | 新`session.post_commit_effect_failed`，payload为turn_id、source_snapshot_id、effect_id、effect_kind、status=`unknown`、error_type。effect_kind仅内部`turn_memory`／`resource_cleanup`两种调用点 | 这是待对账观察，不是完成回执、自动补偿授权或副作用幂等证明 |
+| 既有UUID5身份与实际事件时间 | effect_id按Session／Turn／原snapshot／effect kind派生；失败event ID再从effect_id派生。时间使用实际观察生成时间，不倒填原checkpoint时间 | 稳定ID只标识观察，不阻止任意私有重复调用；已完成任务不重执由既有任务／应用提交协议保证 |
+| §11及既有日志设施 | Memory保留`turn_memory_persist_failed_after_commit`；新增`session_resource_cleanup_failed_after_commit`。只记异常类型和来源身份，不输出异常正文／traceback／owner token。观察落库自身普通失败记`post_commit_effect_failure_record_failed` | 观察写失败时只有安全本地日志，不能声称持久观察已保存；不新增任意extras的日志输出 |
+| SSE、Session store与Flow消费方 | 前端收到新事件执行`scheduleRefresh(false)`，保留activity；不改completed答案／watcherPhase，不走turn.failed完成通知。Flow两个投影器仍忽略没有正式phase的新诊断事件 | EventConsole可按failed名称显示错误色，但不升级为正式Turn／测试失败或恢复权限 |
+| 现有Python／TypeScript事件类型 | Python为type:string及开放payload，TS为type:string／JsonObject，无需新增DTO、DDL或stage格式。核对SSE、Flow、事件控制台及通知分支 | 不升级依赖，不改变绑定、生产开关、模型协议或现有结果资产格式 |
+
+### TDD、过程失败与消费方契约纠正
+
+证据位于根`.codex-logs`，不提交。数据库组均从Agent_Server使用`../.venv-framework-v2/Scripts/python.exe`，显式`RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，使用`-u -m pytest`与`-q -rs --tb=short`；stdout＋stderr经`2>&1 | Tee-Object`保存，立即捕获并返回原退出码。重叠组不累计为唯一覆盖数。
+
+| 日志／测试选择 | 真实结果 | 范围与限制 |
+| --- | --- | --- |
+| cleanup-first-green | **1 passed，6.97秒，exit0** | 早期单项，不代替最终回归 |
+| boundary-green | **8 passed、26 deselected，25.56秒，exit0** | 新增8项；3项沿真实PG／Redis及官方StateGraph／既有投影fixture，Runtime和副作用为受控替身；5项局部替身验证取消／失租对象身份、稳定观察身份、fence、记录失败及隐私 |
+| event-web-red | **1 failed、10 passed，exit1** | 新失败事件没有触发Session刷新；补事件消费分支后通过 |
+| event-web-contract | **15 passed，2文件，exit0** | 早期前端Session／receipt回归 |
+| projection-final／31756 | **1 failed、117 passed，437.37秒，exit1** | 整个application_projection、partial_projection_recovery、projected_settlement；不能称该组通过 |
+| stage-contract-red | **1 failed，7.32秒，exit1** | 隔离复现仅结算测试仍将schema24当未来格式的断言，失败点早于任何finalizer重入操作 |
+| stage-contract-green | **119 passed，16.37秒，exit0** | 修正上述测试后，原失败用例及完整v2 Worker能力契约；无生产校验改动 |
+
+上述格式失败根因由当前schema、`validate_message_stage`、Worker能力矩阵及Git原件确认：§88已将读者上界扩为24，既有测试却仍期待24被拒绝；原格式21不足以表达settling，未来25才是不支持格式。本步增加24合法正例，将未来负例改为25；原21负例和禁止finalizer／stage重入的全部操作断言保留。不是忽略messages、放宽owner或修改生产版本门求绿。
+
+新资源失败用例同时验证真实已提交proof、原completed、无假中断、projected ACK和原任务finish之后的两次terminal redelivery；清理、图和Runtime均不重跑，失败观察仍一条。helper局部重复身份断言不冒称外部操作exactly-once。提交前失败用例确认无应用proof、不运行可选派生、不写提交后失败观察。
+
+前端首次最终命令包含不存在的`stages.test.ts`过滤项，Vitest实际只匹配2文件／15项，**不把它算作Flow回归**。随后读取实际文件，给Session补watcherPhase断言，给`flow.test.ts`补两种effect的节点／阶段保持用例；最终6文件 **39 passed，2.42秒，exit0**，`npm.cmd run typecheck`实际exit0。最终`npm.cmd run build`在这些测试改动后实际exit0（3311 modules，7.93秒）；不包括Electron、VitePress或真实浏览器验收。
+
+### 最终回归在途与剩余出口
+
+冻结当前生产源码后，单一shell会话64562串行执行以下两组，第一组成功才进入第二组；本段追加时尚未取回终态，不能预报通过。原应用组118项和Worker能力组119项也不能相加当唯一覆盖。精确命令如下：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_projected_settlement.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_settlement.py tests/test_framework_approval_projection.py tests/test_framework_approval_graph_input.py tests/test_framework_finalization_projection.py tests/test_session_execution_ownership.py tests/test_session_hot_memory_integration.py tests/test_framework_structured_result.py -q -rs --tb=short
+```
+
+两组日志分别为`framework-post-commit-projection-verified-2026-10-29.log`与`framework-post-commit-consumers-verified-2026-10-29.log`。前端最终消费方命令为：
+
+```powershell
+npm.cmd run test -- src/stores/sessionEventRefresh.test.ts src/stores/sessionReceiptDedup.test.ts src/features/flow/flow.test.ts src/features/flow/useFlowSession.lifecycle.test.ts src/features/flow/FlowCanvas.test.ts src/features/flow/wheelViewport.test.ts
+npm.cmd run typecheck
+npm.cmd run build
+```
+
+原PG／Redis只读探针实际ready、exit0，没有启停Docker／服务。一度在长pytest尚未输出完整行、Tee尚未创建文件时读取日志得到PathNotFound；工具仍确认同一pytest进程在运行，后续等待原handle并取得真实失败终态，没有因日志暂缺而重启测试。根目录一次先前探针因错误工作目录得到ModuleNotFoundError，后从Agent_Server运行既有healthcheck成功；均不是产品测试失败或服务不可用。
+
+当前语法检查`../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests`和`git diff --check`已实际exit0；ruff／mypy确认未安装，不安装、不宣称后端lint／typecheck通过。全量后端、真实供应商／embedding／RustFS／领域Runner、完整强杀矩阵、长链性能、官方saver conformance、wheel／部署／E3／E4仍未验收。
+
+剩余A3：正式提交事务内的完整派生intent、冻结原范围及分项回执、进程在调用／观察前死亡的缺口、未知embedding／外部清理对账与有依据的补偿。本步没有填平这些缺口；下一步复用已有compaction／cleanup／allocation journal逐项实现，不另建调度层。B／C其余公共契约、D／E／F及完整目标继续保留；§88–89非稳定Worker失租的根因仍待实际首因证据。
+
+本节拟与6个相关代码／测试文件一同提交`【fix】隔离应用提交后的派生失败边界`，不包含v3草稿、日志、`.env`、本地数据或构建产物；实际ID以Git历史及交付输出为准，不推送、不建PR。提交前须取回唯一活跃handle64562，并完成精确暂存、文档仅追加／章节唯一／围栏、v3 hash、源文件与暂存一致及有限明显凭据检查。最终结果在下文追加，不改写在途事实或既有失败。
+
+### 最终投影组取回补记
+
+会话64562的第一组已取回：**118 passed，421.34秒，exit0，无skip**，对应上述三个完整投影／部分恢复／仅结算文件；新8项包含在内，不另行累加。该组启动后生产源码未修改，完整调用次数、原事件／消息／proof及仅结算权限断言保留。首轮1 failed／117 passed及独立格式红测仍保留，不用后续绿色覆盖历史。
+
+同一shell已按原顺序进入第二组，工具继续返回活跃handle64562；当前等待该组真实终态，未重启、未新增并行PG组。追加检查已实际确认实施记录仅追加、§90唯一、围栏成对、原v3 hash不变、暂存区原为空及有限明显凭据模式无命中；这些检查不代替尚在运行的消费方回归。
+
+### 最终消费方取回与交付检查
+
+会话64562第二组已取回真实终态：**226 passed，1052.38秒，exit0，无skip**。覆盖上述7个完整文件：审批仅结算、审批投影、审批图输入／独立Worker故障窗口、唯一finalizer、Session所有权／取消、热记忆接口及结构化结果。该组启动后未改生产源码，未延长租约／门点等待、未移除失败参数或messages比较。当前本轮所有pytest／前端构建handle均已终态，没有遗留活跃测试。
+
+最高证据仍为E2子集：固定官方框架／SDK、真实PG／Redis、原独立Worker Harness；Runtime／Memory／资源清理的新故障样本为受控替身，模型HTTP和对象后端亦沿既有本地合成服务／对象替身，不能宣称真实供应商、RustFS、浏览器／压测／扫描Runner验收。118、226、119及前端39项范围分别保存，不叠加为唯一覆盖数。已通过结果不证明§88–89历史非稳定失租根因已修复。
+
+后续A3预读另确认：`MemoryRuntimeService.write_turn_memory`先attach embeddings再写各Memory行；`_attach_embeddings`现有普通异常会退回无embedding的请求，而EmbeddingRuntime的供应商调用异常目前增加error指标后再抛。**本helper仅观察传播到Session边界的异常，不能冒称捕获了全部embedding降级或持久化了其操作状态。** 下一步须审计／验证该既有降级的可追溯性、冻结范围与调用／回执边界，再接原子intent及未知效果对账；不根据缓存或固定Memory ID推断外部调用未发生，不在本提交偷偷改变既有embedding重试语义。
+
+最终交付集合为7文件：Session服务、application_projection测试、projected_settlement测试、前端Session store、Session事件刷新测试、Flow测试及本实施记录。最后一轮实际语法／diff、精确暂存／源文件一致、文档仅追加／章节唯一／围栏、v3 hash及有限明显凭据检查在提交前执行，真实结果以相应工具输出为准。后端独立lint／typecheck、全量后端、Electron／VitePress、E3／E4及前述完整目标剩余出口不以本次局部绿色代替。
+
+最终检查已实际取得exit0：根目录compileall、diff／cached diff检查、7文件精确暂存与源文件一致、实施记录只追加／§90唯一／围栏成对、v3 hash及有限明显凭据模式无命中。6个代码／测试文件的Git对象摘要与最终回归使用版本一致。本文最后追加后再次核对并暂存本记录；不把有限模式扫描称为完整安全审计，不把本子步提交当作A3或完整v4完成。
