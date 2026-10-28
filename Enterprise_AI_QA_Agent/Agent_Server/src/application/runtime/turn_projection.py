@@ -49,6 +49,9 @@ def deep_agent_terminal_event_specs(result: DeepAgentRuntimeResult, *, pilot_sta
     specs.append(("runtime.turn_completed", "runtime",
         "Deep Agents pilot execution finished for the current turn.",
         {"harness": "deepagents", "pilot_stage": pilot_stage, "final_response_length": len(result.output_text),
+            **({"structured_output_version": result.metadata["structured_output_version"],
+                "structured_result_sha256": approval_value_hash(result.metadata["structured_result"])}
+                if "structured_output_version" in result.metadata else {}),
             **({"root_model_budget": result.metadata["root_model_budget"]} if "root_model_budget" in result.metadata else {}),
             **({"adapter_stage": result.metadata.get("stage"),
                 "callback_events_sha256": approval_value_hash(result.subagent_events)}
@@ -188,6 +191,9 @@ def completed_deep_agent_state(
     """
     if result.interrupts or result.native_interrupts:
         raise ValueError("A result with native interrupts cannot be projected as completed")
+    from src.schemas.framework_cognitive_result import validate_cognitive_completion
+
+    validate_cognitive_completion(initial_state.get("context_bundle") or {}, result.metadata)
     state = deepcopy(initial_state)
     if binding is not None:
         if (state.get("session_id") != binding.session_id or state.get("turn_id") != binding.turn_id

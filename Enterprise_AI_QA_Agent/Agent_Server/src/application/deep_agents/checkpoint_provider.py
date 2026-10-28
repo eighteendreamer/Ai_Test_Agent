@@ -12,6 +12,16 @@ from src.runtime.execution_context import current_framework_owner
 logger = logging.getLogger(__name__)
 
 
+def checkpoint_serializer():
+    """One pinned codec policy for pooled reads and atomic source rechecks."""
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+    from src.schemas.framework_cognitive_result import FrameworkCognitiveResult
+
+    # Honor the official strict/permissive deployment policy while explicitly
+    # supporting this fixed output type, without wildcard/pickle fallback.
+    return JsonPlusSerializer().with_msgpack_allowlist([FrameworkCognitiveResult])
+
+
 class DeepAgentCheckpointProvider:
     """Own the optional official PostgreSQL saver and its bounded connection pool.
 
@@ -62,7 +72,7 @@ class DeepAgentCheckpointProvider:
                     max_size=config.checkpoint_pool_size,
                     open=False,
                 )
-                saver = ThreadedPostgresSaver(pool)
+                saver = ThreadedPostgresSaver(pool, serde=checkpoint_serializer())
 
                 def initialize():
                     pool.open()

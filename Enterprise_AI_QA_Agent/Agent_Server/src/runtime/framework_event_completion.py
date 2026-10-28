@@ -336,7 +336,7 @@ def read_terminal_event_materials(cur, settings, source, preparation, native, bu
             event_log=events, returned_event_offset=prefix.returned_event_offset)
         result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
             native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
-            root_model_budget=material)
+            root_model_budget=material, structured_output_version=preparation.feature_flags.get("structured_output_version"))
         phase = "existing_terminal_events"
         intents = project_deep_agent_terminal_events(preparation.runtime_preparation, result, event_log=events)
         existing = _event_rows(cur, settings, source.binding.session_id, [item.id for item in intents])

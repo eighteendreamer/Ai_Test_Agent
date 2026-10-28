@@ -139,6 +139,12 @@ def _require_prepared_identity(stage, task, asset):
         and identity.snapshot_id == snapshot.id and identity.snapshot_version == snapshot.version
         and identity.snapshot_created_at == snapshot.created_at,
         "Runtime result differs from its original preparation identity")
+    from src.schemas.framework_cognitive_result import STRUCTURED_OUTPUT_VERSION_KEY
+
+    expected = prepared.feature_flags.get("structured_output_version")
+    _require(all((state.get("context_bundle") or {}).get(STRUCTURED_OUTPUT_VERSION_KEY) == expected
+        for state in (asset.runtime_result.state, snapshot.graph_state)),
+        "Runtime result changed its original structured output contract")
 
 
 def validate_runtime_result_binding(cur, settings, binding, stage, task, raw, *, committed=False):

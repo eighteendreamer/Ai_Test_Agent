@@ -58,8 +58,9 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
         monkeypatch.setattr(graph_inputs, "graph_input_asset", legacy_input)
     build_runtime(h, responses=[AIMessage(id="prepared-source", content="", tool_calls=[
         {"name": tool_key, "args": {"value": key}, "id": key, "type": "tool_call"}
-        for key in ("A", "B")]), AIMessage(id="prepared-final",
-            content=selected.get("output_text", "finished") if isinstance(selected, dict) else "finished")])
+        for key in ("A", "B")]), (selected["output_message"] if isinstance(selected, dict) and "output_message" in selected
+            else AIMessage(id="prepared-final", content=selected.get("output_text", "finished") if isinstance(selected, dict) else "finished"))],
+        structured_output_enabled=selected.get("structured", False) if isinstance(selected, dict) else False)
     if tool_key != "inspect_value":
         from src.registry.tools import ToolModule
 

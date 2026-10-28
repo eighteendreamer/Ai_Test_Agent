@@ -115,6 +115,7 @@ class RuntimeService:
         agent_registry: AgentRegistry | None = None,
         skill_registry: SkillRegistry | None = None,
         deep_agent_governed_tools_enabled: bool = False,
+        deep_agent_structured_output_enabled: bool = False,
         tool_job_service: ToolJobService | None = None,
         framework_approval_projection=None,
         framework_approval_continuation=None,
@@ -152,6 +153,7 @@ class RuntimeService:
         self._agent_registry = agent_registry
         self._skill_registry = skill_registry
         self._deep_agent_governed_tools_enabled = bool(deep_agent_governed_tools_enabled)
+        self._deep_agent_structured_output_enabled = bool(deep_agent_structured_output_enabled)
         self._tool_job_service = tool_job_service
         self._framework_approval_projection = framework_approval_projection
         self._framework_approval_continuation = framework_approval_continuation
@@ -225,6 +227,14 @@ class RuntimeService:
             state["context_bundle"].pop(TOOL_PROJECTION_VERSION_KEY, None)
             state["context_bundle"].pop(RESULT_PROJECTION_VERSION_KEY, None)
             state["context_bundle"].pop(TERMINAL_EVENT_PREPARATION_KEY, None)
+            from src.schemas.framework_cognitive_result import STRUCTURED_OUTPUT_VERSION_KEY
+
+            state["context_bundle"].pop(STRUCTURED_OUTPUT_VERSION_KEY, None)
+            if projection_identity is not None and self._deep_agent_structured_output_enabled:
+                state["context_bundle"][STRUCTURED_OUTPUT_VERSION_KEY] = 1
+                logger.info("framework_structured_output_prepared", extra={
+                    "session_id": session.id, "turn_id": request.turn_id,
+                    "structured_output_version": 1})
             if projection_identity is not None:
                 state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 3
             prepare_graph_event_log(state)
@@ -414,6 +424,7 @@ class RuntimeService:
                 else state.pop("_deep_agent_resume", None)),
             continue_from_checkpoint=(continuation_plan.continue_from_checkpoint
                 if continuation_plan is not None else False),
+            structured_output_version=state["context_bundle"].get("framework_structured_output_version"),
         )
         runtime_preparation = None
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
@@ -469,6 +480,8 @@ class RuntimeService:
                     "cognitive_planning": adapter_request.cognitive_planning_enabled,
                     "cognitive_subagents": adapter_request.cognitive_subagents_enabled,
                     "governed_tools": self._deep_agent_governed_tools_enabled,
+                    **({"structured_output_version": adapter_request.structured_output_version}
+                        if adapter_request.structured_output_version is not None else {}),
                     **({"tool_projection_version": state["context_bundle"][TOOL_PROJECTION_VERSION_KEY]}
                         if TOOL_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
                     **({"verification_projection_version": 1}

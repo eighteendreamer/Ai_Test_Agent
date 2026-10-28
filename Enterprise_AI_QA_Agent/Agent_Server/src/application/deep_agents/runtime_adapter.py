@@ -46,6 +46,7 @@ class DeepAgentRuntimeRequest:
     interrupt_on: dict[str, Any] = field(default_factory=dict)
     resume: dict[str, Any] | None = None
     continue_from_checkpoint: bool = False
+    structured_output_version: int | None = None
 
 
 ModelResolver = Callable[[str], Awaitable[Any]]
@@ -136,7 +137,8 @@ class DeepAgentRuntimeAdapter:
         # names or a second Delta/reducer implementation. Model methods fail
         # closed and the source-only saver rejects every write.
         return create_deep_agent(model=model, tools=[], system_prompt=original.system_prompt,
-            checkpointer=saver, interrupt_on=interrupt_on or None, **options)
+            checkpointer=saver, interrupt_on=interrupt_on or None,
+            **_structured_output_options(flags.get("structured_output_version")), **options)
 
     async def _execute(
         self, request: DeepAgentRuntimeRequest, *, checkpointer: Any
@@ -157,6 +159,7 @@ class DeepAgentRuntimeAdapter:
         native_terminal = None
         native_checkpoint_timestamp = None
         root_model_budget = None
+        output_options = _structured_output_options(request.structured_output_version)
         try:
             model = await self._model_resolver(request.model_key)
             cleanup = None
@@ -212,6 +215,7 @@ class DeepAgentRuntimeAdapter:
                     system_prompt=request.system_prompt,
                     checkpointer=checkpointer,
                     interrupt_on=request.interrupt_on or None,
+                    **output_options,
                     **harness_kwargs,
                 )
                 invoke_input: Any
@@ -289,6 +293,7 @@ class DeepAgentRuntimeAdapter:
             native_terminal=native_terminal,
             native_checkpoint_timestamp=native_checkpoint_timestamp,
             root_model_budget=root_model_budget,
+            structured_output_version=request.structured_output_version,
         )
 
     def _resolve_factory(self) -> AgentFactory:
@@ -565,10 +570,22 @@ def _native_schema_input(graph_input, source):
     flags = original.feature_flags
     topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
     if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version",
-        "terminal_event_projection_version"}
+        "terminal_event_projection_version", "structured_output_version"}
         or any(type(flags.get(key)) is not bool for key in topology)):
         raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
     return original
+
+
+def _structured_output_options(version):
+    from src.schemas.framework_cognitive_result import FrameworkCognitiveResult, require_structured_output_version
+
+    if require_structured_output_version(version) is None:
+        return {}
+    from langchain.agents.structured_output import ToolStrategy
+
+    # Fixed validated type, not a raw JSON schema (which the pinned SDK returns
+    # without validation). No implicit parser retry/extra model request.
+    return {"response_format": ToolStrategy(FrameworkCognitiveResult, handle_errors=False)}
 
 
 def _native_schema_model():

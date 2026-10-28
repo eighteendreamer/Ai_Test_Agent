@@ -175,7 +175,7 @@ def project_original_message_result(original, source, read, native, jobs):
         if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
     result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
         native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
-        root_model_budget=root_model_budget)
+        root_model_budget=root_model_budget, structured_output_version=original.feature_flags.get("structured_output_version"))
     projected = project_original_completed_turn(preparation=original.runtime_preparation, result=result,
         binding=binding, facts=facts, event_log=read.event_log, returned_event_offset=0, materials=materials)
     state = projected.state

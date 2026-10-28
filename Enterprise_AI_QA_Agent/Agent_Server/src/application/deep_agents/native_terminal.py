@@ -93,6 +93,7 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
     from psycopg.rows import dict_row
     from src.application.deep_agents.fenced_postgres_saver import BoundPostgresReader
     from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.application.deep_agents.checkpoint_provider import checkpoint_serializer
     from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY
 
     # Use the SAME application connection. A nested savepoint restores the
@@ -103,7 +104,7 @@ def require_native_terminal_original(cur, settings, source, native, preparation)
         path = native_cur.fetchone()["path"]
         native_cur.execute("SELECT set_config('search_path', %s, true)",
             (sql.Identifier(settings.deep_agents.checkpoint_schema).as_string(connection),))
-        reader = BoundPostgresReader(connection, source=source)
+        reader = BoundPostgresReader(connection, source=source, serde=checkpoint_serializer())
         config = {"configurable": {"thread_id": source.binding.thread_id,
             "checkpoint_id": native.proof.checkpoint_id}}
         checkpoint = reader.get_tuple(config)

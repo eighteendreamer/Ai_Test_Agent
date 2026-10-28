@@ -74,6 +74,12 @@ class FrameworkRuntimeResultAsset(BaseModel):
             raise ValueError("Runtime result verification belongs to another Turn")
         if any(item.session_id != binding.session_id for item in result.events):
             raise ValueError("Runtime result event belongs to another Session")
+        from src.schemas.framework_cognitive_result import validate_cognitive_completion
+
+        cognitive = [validate_cognitive_completion(state.get("context_bundle") or {}, state.get("model_response_summary") or {})
+            for state in (result.state, result.snapshot.graph_state)]
+        if cognitive[0] != cognitive[1]:
+            raise ValueError("Runtime cognitive result differs from its original snapshot")
         if self.asset_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"asset_sha256"})):
             raise ValueError("Runtime result asset digest does not match its frozen contents")
         return self

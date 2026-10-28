@@ -13,6 +13,7 @@ from typing import Any
 
 from src.application.deep_agents.framework_transcript import serialize_messages
 from src.schemas.framework_approval import NativeToolInterrupt
+from src.schemas.framework_cognitive_result import FrameworkCognitiveResult, require_structured_output_version
 
 
 class DeepAgentRuntimeError(RuntimeError):
@@ -41,6 +42,7 @@ def project_deep_agent_result(
     native_terminal: dict[str, Any] | None = None,
     native_checkpoint_timestamp: str | None = None,
     root_model_budget: dict[str, Any] | None = None,
+    structured_output_version: int | None = None,
 ) -> DeepAgentRuntimeResult:
     """Project verified invocation/native values using one existing rule set.
 
@@ -50,21 +52,34 @@ def project_deep_agent_result(
     checkpoints need not contain them. This is NOT a complete RuntimeTurnResult
     projector or permission to resume a Turn without its original result asset.
 
-    Keep the existing nonempty-assistant contract until the structured-result
-    boundary in v4 §9.3 is independently implemented and verified.
+    Older inputs retain their nonempty-assistant contract. Only an explicitly
+    selected, validated cognitive result permits text-free completion; neither
+    arbitrary metadata nor a tool artifact selects that contract.
     """
     raw_messages = values.get("messages")
     messages = _normalize_messages(raw_messages)
     interrupts = [{"id": item.id, "value": item.value} for item in values.get("__interrupt__", [])]
     if interrupts and native_terminal is not None:
         raise DeepAgentRuntimeError("An interrupted result cannot also carry native terminal evidence.")
-    output_text = "" if interrupts else _last_assistant_text(messages)
-    if not output_text and not interrupts:
+    require_structured_output_version(structured_output_version)
+    structured = None
+    if not interrupts:
+        if structured_output_version is not None:
+            try:
+                structured = FrameworkCognitiveResult.model_validate(values.get("structured_response"))
+            except ValueError as exc:
+                raise DeepAgentRuntimeError("Deep Agents returned no valid cognitive structured result.") from exc
+        elif values.get("structured_response") is not None:
+            raise DeepAgentRuntimeError("Deep Agents returned an unselected structured result.")
+    output_text = "" if interrupts else _last_assistant_text(messages, current_only=structured is not None)
+    if not output_text and not interrupts and structured is None:
         raise DeepAgentRuntimeError("Deep Agents execution returned no assistant message.")
     return DeepAgentRuntimeResult(
         output_text=output_text,
         metadata={"harness": "deepagents", "stage": stage, "message_count": len(messages),
             **({"root_model_budget": deepcopy(root_model_budget)} if root_model_budget is not None else {}),
+            **({"structured_output_version": structured_output_version, "structured_result": structured.model_dump(mode="json")}
+                if structured is not None else {}),
             **({"native_terminal": deepcopy(native_terminal)} if native_terminal is not None else {})},
         messages=deepcopy(messages),
         framework_messages=deepcopy(serialize_messages(raw_messages)),
@@ -110,7 +125,7 @@ def _normalize_todos(value: Any) -> list[dict[str, str]]:
     return normalized
 
 
-def _last_assistant_text(messages: list[dict[str, Any]]) -> str:
+def _last_assistant_text(messages: list[dict[str, Any]], *, current_only: bool = False) -> str:
     for message in reversed(messages):
         role = str(message.get("role") or message.get("type") or "").lower()
         if role not in {"assistant", "ai"}:
@@ -126,4 +141,6 @@ def _last_assistant_text(messages: list[dict[str, Any]]) -> str:
             ).strip()
             if text:
                 return text
+        if current_only:
+            return ""
     return ""

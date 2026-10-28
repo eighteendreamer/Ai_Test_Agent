@@ -751,6 +751,7 @@ async def _initialize_lifespan_resources(
         agent_registry=agent_registry,
         skill_registry=skill_registry,
         deep_agent_governed_tools_enabled=settings.deep_agents.governed_tools_enabled,
+        deep_agent_structured_output_enabled=settings.deep_agents.structured_output_enabled,
         tool_job_service=tool_job_service,
         framework_approval_projection=FrameworkApprovalProjection(settings, sessions=store, jobs=tool_job_service),
         framework_approval_continuation=FrameworkApprovalContinuation(settings, sessions=store, jobs=tool_job_service),

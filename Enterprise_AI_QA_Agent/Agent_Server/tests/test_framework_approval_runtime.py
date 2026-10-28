@@ -30,7 +30,7 @@ from tests.test_framework_tool_bridge import Model, state_for
 from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
 
 
-def build_runtime(h, *, responses=None, model_call_policy=None):
+def build_runtime(h, *, responses=None, model_call_policy=None, structured_output_enabled=False):
     tools = ToolRuntimeService(tool_job_service=h.jobs)
 
     async def handle(arguments, context):
@@ -57,7 +57,8 @@ def build_runtime(h, *, responses=None, model_call_policy=None):
         framework_approval_projection=projector(h), framework_approval_continuation=service(h),
         deep_agent_runtime_adapter=Adapter(model_resolver=resolve_model, checkpointer_factory=h.provider.open,
             model_call_policy=model_call_policy),
-        deep_agent_enabled=True, deep_agent_governed_tools_enabled=True)
+        deep_agent_enabled=True, deep_agent_governed_tools_enabled=True,
+        deep_agent_structured_output_enabled=structured_output_enabled)
 
 
 @pytest_asyncio.fixture

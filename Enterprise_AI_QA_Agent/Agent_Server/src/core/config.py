@@ -513,6 +513,7 @@ class DeepAgentsConfig(BaseModel):
     turn_timeout_seconds: float = 600.0
     cognitive_subagents_enabled: bool = False
     governed_tools_enabled: bool = False
+    structured_output_enabled: bool = False
     checkpoint_enabled: bool = False
     checkpoint_schema: str = "deepagents_checkpoint"
     checkpoint_pool_size: int = Field(default=4, ge=1, le=32)

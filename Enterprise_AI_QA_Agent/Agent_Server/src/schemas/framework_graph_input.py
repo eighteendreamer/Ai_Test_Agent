@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_tool_projection import TOOL_PROJECTION_VERSION_KEY
+from src.schemas.framework_cognitive_result import STRUCTURED_OUTPUT_VERSION_KEY, require_structured_output_version
 
 
 RESULT_PROJECTION_VERSION_KEY = "framework_result_projection_version"
@@ -97,11 +98,18 @@ class _FrameworkGraphInputFields(BaseModel):
             type(self.feature_flags["terminal_event_projection_version"]) is not int
             or self.feature_flags["terminal_event_projection_version"] != 1 or self.schema_version != 2):
             raise ValueError("Terminal event projection requires its supported prepared graph format")
+        if "structured_output_version" in self.feature_flags:
+            if require_structured_output_version(self.feature_flags["structured_output_version"]) is None:
+                raise ValueError("Structured output requires its explicit selected version")
+            if self.schema_version != 2:
+                raise ValueError("Structured output requires its supported prepared graph format")
         return self
 
     @property
     def required_message_stage_version(self):
         version = self.feature_flags.get("tool_projection_version")
+        if "structured_output_version" in self.feature_flags:
+            return 24
         if "terminal_event_projection_version" in self.feature_flags:
             return 21
         if "result_projection_version" in self.feature_flags:
@@ -135,6 +143,10 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
         from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
 
         context = state.get("context_bundle") or {}
+        if STRUCTURED_OUTPUT_VERSION_KEY in context or "structured_output_version" in self.feature_flags:
+            version = require_structured_output_version(context.get(STRUCTURED_OUTPUT_VERSION_KEY))
+            if version is None or version != self.feature_flags.get("structured_output_version"):
+                raise ValueError("Structured output differs from its original graph format")
         result_version = context.get(RESULT_PROJECTION_VERSION_KEY)
         if RESULT_PROJECTION_VERSION_KEY in context or "result_projection_version" in self.feature_flags:
             if (type(result_version) is not int or result_version != 1

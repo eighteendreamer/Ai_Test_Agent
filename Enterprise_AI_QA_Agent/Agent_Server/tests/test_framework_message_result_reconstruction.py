@@ -31,21 +31,24 @@ from tests.test_framework_approval_recovery import expire
 @pytest_asyncio.fixture
 async def message_asset_gap(fresh_runtime_harness, monkeypatch, request):
     h = fresh_runtime_harness
-    selected = getattr(request, "param", "tools")
+    options = getattr(request, "param", "tools")
+    selected = options.get("case", "tools") if isinstance(options, dict) else options
     tool_key = "api-tester" if selected == "api-tester" else "inspect_value"
     descriptor = h.registry.get("inspect_value").model_copy(update={"key": tool_key, "permission_level": "safe"})
     if tool_key == "api-tester":
         monkeypatch.setitem(h.registry._tools, tool_key, ToolModule(descriptor, tool_key))
     else:
         h.registry.register_dynamic(descriptor, tool_key)
-    responses = [AIMessage(id="message-final", content="finished")]
+    responses = [options.get("output_message", AIMessage(id="message-final", content="finished"))
+        if isinstance(options, dict) else AIMessage(id="message-final", content="finished")]
     if selected != "none":
         calls = [{"name": tool_key, "args": {"value": key}, "id": key, "type": "tool_call"} for key in ("A", "B")]
         if selected == "planning":
             calls = [{"name": "write_todos", "args": {"todos": [{"content": "inspect", "status": "completed"}]},
                 "id": "todo", "type": "tool_call"}, *calls]
         responses.insert(0, AIMessage(id="message-source", content="", tool_calls=calls))
-    build_runtime(h, responses=responses)
+    build_runtime(h, responses=responses,
+        structured_output_enabled=options.get("structured", False) if isinstance(options, dict) else False)
     h.runtime._deep_agent_cognitive_planning_enabled = selected == "planning"
 
     async def handle(arguments, context):

@@ -169,7 +169,6 @@ async def test_official_response_evidence_survives_expired_owner_and_completion_
     from tests.test_artifact_storage_service import _RustFSClient
     from tests.test_framework_model_policy import governed, execute
     from tests.test_framework_chat_models import _config, _provider
-    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeError
 
     with _provider(transport) as (url, requests):
         async with governed(harness, _config(transport, url)) as h:
@@ -184,7 +183,7 @@ async def test_official_response_evidence_survives_expired_owner_and_completion_
                 return await complete(*args, **kwargs)
 
             monkeypatch.setattr(h.calls, "complete", expire_before_complete)
-            with pytest.raises(DeepAgentRuntimeError):
+            with pytest.raises(ContinuationLeaseLostError, match="owner is no longer active"):
                 await execute(h)
             call, = (await h.calls.snapshot(h.binding)).calls
             assert len(requests) == 1 and call.phase == "invoking" and call.usage is None

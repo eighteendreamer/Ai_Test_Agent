@@ -3703,3 +3703,89 @@ approvals-final会话90584已实际取回：**260 passed，1654.62秒，exit0，
 交付前对最终源码与测试再次执行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check`，实际exit0／exit0，日志checks-delivery；本节只追加、章节唯一和代码围栏检查通过。有限明显凭据模式检查通过，不将其称为完整安全审计。全部本轮pytest handle已取得终态，未遗留待取回的运行结果。
 
 首个暂存核验脚本因自身正则转义误判章节数，实际exit1，未据此提交；改为逐行检查后，暂存21文件精确集合、本节只追加／唯一、代码围栏、v3草稿hash及有限凭据检查均实际exit0。没有改动历史记录来迎合校验器。
+
+## 88. A2／H11：显式认知结构化结果允许空文本，正常与只读恢复保持同一契约（2026-10-28）
+
+基线 `d4e6015dd`，承接§87明确保留的v4 §9.3出口。续接时先读取已有active目标、方案、实施记录、真实Git差异及原测试handle，不重复启动已有测试。原v3草稿仍单独保留，SHA256为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`，不编辑、不提交。
+
+**本节仅补齐显式选中的认知结构化空文本结果及相关恢复契约，不代表H11整体、A2全部、任一领域模式或完整v4已验收。** 不放行无完成依据的空响应，不把模型总结／证据引用当作Runner裁决、已执行证明或恢复权限。
+
+### 依据 → 做法与格式契约
+
+| v4条款／依据 | 本步代码与采用方式 | 边界／消费方 |
+| --- | --- | --- |
+| §9.3／H11；固定Deep Agents 0.7.13的 `graph.py::create_deep_agent`、LangChain 1.4.6的 `agents/structured_output.py::ToolStrategy` | 新 `schemas/framework_cognitive_result.py` 定义严格Pydantic `FrameworkCognitiveResult`；adapter使用 `ToolStrategy(FrameworkCognitiveResult, handle_errors=False)`，正常构图与source-only官方schema读取共用选项 | 安装版明确说明裸JSON Schema不做本地校验，不能用任意dict冒充合法结果。固定类型、禁止额外字段、无隐式解析重试；不升级依赖，不新增网络网关 |
+| §4.2／§9.2／§14.1；既有prepared输入、Runtime与阶段能力 | 新配置 `DEEP_AGENTS__STRUCTURED_OUTPUT_ENABLED=false`，config／main／Runtime接线。新prepared Turn由服务端选择v1，清理外来context marker；图前同时冻结feature flag与原initial state，记录 `framework_structured_output_prepared` | 仅新prepared Turn可选；无投影身份的既有Runtime入口保留原文本契约。审批只读取原state，当前开关双向变化都不能升级或降级原等待Turn。绑定／公共API／DDL／依赖无变更 |
+| §8.3／§9.3；共用 `result_projection`／`turn_projection` | 只有显式选择v1且 `structured_response` 经类型校验才允许空文本；正文存 `model_response_summary.structured_result`，保存版本。等待审批不产出结构化完成；末个assistant无文本时不借用更早文本 | 旧入口仍要求非空assistant；未选择却返回structured_response也拒绝。completed事件新增可选版本与结构化结果hash，不传播正文或升级模型声明为测试结论 |
+| §9.2／§9.4／H05；原普通消息、审批reader及未封口事件投影 | 三个reader／event completion均消费原prepared版本；完成投影验证context与结果，资产同时校验state／snapshot；审批图后继及资产准入复核原版本 | 重算hash不能剥去原契约；正常／sealed／unsealed均进入同一投影及原finalizer。空文本不创建assistant业务行，但原结构化结果保留在快照与结果资产；不增加图／模型／工具执行权 |
+| H11／H12；固定checkpoint serializer与同连接原件复核 | `checkpoint_provider.checkpoint_serializer()` 复用官方 `JsonPlusSerializer().with_msgpack_allowlist([FrameworkCognitiveResult])`；pooled saver和atomic `BoundPostgresReader`共用此helper | 尊重官方strict／permissive部署策略，不打开wildcard或pickle。严格模式恢复固定类型，并拒绝未注册的无害测试类型；不能只给pooled读者注册却漏掉准入事务内读者 |
+| §14.1；已有graph-input及Worker能力路由 | structured flag仅接受prepared format2，原state marker必须一致；选中时要求message-stage **24**，schema及默认reader上界同步24 | 保留reader23拒24、reader24接受24／拒25的claim前消费方矩阵。新写者上线前必须读者先行或消费者隔离；无DDL不等于双制品／回滚E4通过 |
+
+v1内容字段：必填整数 `schema_version=1`（不接受bool）、`scope="cognitive_guidance_only"`、非空白 `summary`、字符串列表 `evidence_refs` 与 `limitations`。引用是认知声明，不认证引用对象存在或已执行领域断言。平台 `schemas/agent.py::ToolDescriptor.output_schema` 是工具输出描述，不是Agent最终结果，未误用该字段。既有 `ReviewReportSkeleton` 是领域报告骨架，也不能直接作为通用执行终态或测试通过证明。
+
+本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 分离最终文本、finish_reason、events与notifications → 本项目保留文本、结构化认知结果、原生终态和平台提交的不同职责，不移植其恢复保证。课程《Agent测试专项》的重复执行／副作用核对及《Agent轨迹与协议鲁棒性》的L4半成功／轨迹检查 → 对比完整原结果、阶段、消息／快照和账本，不能只看“completed”字符串。
+
+### TDD、真实失败与根因
+
+日志位于 `.codex-logs`，不提交、不覆盖。下列过程绿色不叠加为最终唯一覆盖数：
+
+- `framework-structured-result-red-2026-10-28.log`：**1 failed，12.93秒，exit1**。官方ToolStrategy已产生合法类型，旧adapter仍抛 `Deep Agents execution returned no assistant message.`；根因是最终结果契约与非空文本假设不一致，不是资产字符串字段或finalizer无法保存空串。
+- first-green为 **10 passed、2 skipped，10.19秒**，当时未打开live测试，不能用两项skip验收真实PG；target-first **23 passed，33.07秒**、contract **253 passed，51.13秒**仅是早期源码结果。target-second **33 passed，111.43秒**仍早于最后的开关和严格atomic读取修复。
+- contract-drift-red：**2 failed、30 deselected，17.34秒，exit1**。审批后继与结果资产能在同时移除marker／结果并重算hash后失去原契约；修复落在原prepared版本与消费者的绑定复核，不把hash当来源授权。
+- 名为strict-red的早期日志实际 **1 passed、32 deselected，9.42秒**，只测了不足以暴露atomic reader缺口的类型roundtrip，**不是成功复现缺陷的红测**。随后以新进程 `LANGGRAPH_STRICT_MSGPACK=true` 跑完整未封口恢复，strict-unsealed真实 **2 failed、33 deselected，15.09秒，exit1**，出现固定认知类型反序列化被阻止；pooled read已通过，漏在同连接 `BoundPostgresReader`。共用serializer后strict-final **53 passed，170.95秒，exit0**，包含严格类型恢复和原Delta顺序测试，但早于本轮补齐的未准备入口回归。
+- unprepared-red：**2 failed、35 deselected，7.40秒，exit1**。已有Runtime允许不提供projection identity而选择保存图输入；新开关却为该入口选入仅支持prepared格式的结构化契约，分别在adapter入参和schema1资产处失败。选择条件归位到新prepared身份后，unprepared-green **2 passed、35 deselected，8.37秒，exit0**；外来context marker不能升级该入口。没有通过放宽schema格式或任意空文本来避错。
+- 接续consumers-final真实 **3 failed、331 passed，387.84秒，exit1**。三种传输的失租响应测试仍期待通用 `DeepAgentRuntimeError`，但基线HEAD及历史 `2c70dfc81` 已直接传播 `ContinuationLeaseLostError`，model-policy／fence消费方也采用此契约。本步只将该测试收紧为明确的失租类型与消息，不包装／吞掉生产信号；owner-evidence-green **3 passed，22.11秒，exit0**，后续账本invoking、无usage、非权威响应与完整wire证据断言均保留。
+- 原integration handle 93248最终取回 **230 passed，1445.79秒，exit0，无skip**；它启动早于本轮最终修复，明确保留为早期证据，不当作当前全部源码通过。一次误从仓库根目录collect造成import collection错误；已改在Agent_Server执行，不记作通过。一次只读资料提取命令因进程初始化退出 `-1073741502`，后续分拆读取成功；不是pytest结果，也未因此重启活跃测试。
+
+新测试使用固定官方框架／SDK与真实PG／Redis链路，复用既有fixture的原result oracle与finalizer断言，不伪造结果资产。另有官方真实graph的非法schema／领域通过声明负例，校验解析失败只调用模型一次；模型本身为受控替身，不称为真实供应商能力验收。未准备入口选择回归使用adapter替身，证据限局部配置契约。
+
+### 最终源码验证与待取回状态
+
+最终生产修改后重新启动以下三组，全部工作目录Agent_Server，解释器 `../.venv-framework-v2/Scripts/python.exe`，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，统一 `-u -m pytest` 与 `-q -rs --tb=short`。stdout＋stderr通过 `2>&1 | Tee-Object` 保存，立即捕获并返回 `PYTEST_EXIT_CODE`。本节首次追加时仍在执行，不以点数或日志静默推断完成；终态结果在本节末追加。
+
+| 组／日志前缀framework-structured-result-，日期2026-10-28 | 实际选择／当前handle |
+| --- | --- |
+| strict-verified | structured_result、result_projection、delta_replay_order、deep_agent_runtime_adapter；会话47691，额外 `LANGGRAPH_STRICT_MSGPACK=true` |
+| consumers-verified | graph_input_asset、agent_v2_worker_contract、checkpoint_fencing、native_terminal、model_policy、model_evidence、runtime_result_asset、turn_projection、event_completion、message_stages；会话19378 |
+| projections-verified | message_result_reconstruction、approval_result_reconstruction、unsealed_result_reconstruction、finalization_projection、event_projection、approval_graph_input，以及approval_recovery的整个六参数独立Worker函数；会话83217 |
+
+对应精确命令（测试文件均为 `tests/test_framework_*.py`，以下保留实际全路径参数）：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_structured_result.py tests/test_framework_result_projection.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_graph_input_asset.py tests/test_agent_v2_worker_contract.py tests/test_framework_checkpoint_fencing.py tests/test_framework_native_terminal.py tests/test_framework_model_policy.py tests/test_framework_model_evidence.py tests/test_framework_runtime_result_asset.py tests/test_framework_turn_projection.py tests/test_framework_event_completion.py tests/test_framework_message_stages.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_finalization_projection.py tests/test_framework_event_projection.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling -q -rs --tb=short
+```
+
+### 权限、交付与剩余出口
+
+当前最高为E1／E2子集：官方框架／SDK、本地合成HTTP、真实数据库／队列及独立Worker。HTTP模型证据测试的 `_RustFSClient` 和其他本地对象后端均为替身，不是RustFS；未新增真实供应商／embedding／目标／付费调用，不启停Docker，不改生产路由或实际配置。
+
+前端只读核对 `agent_web/src/stores/session.ts`：completion事件仍会刷新Session／snapshot，不依赖新增assistant行；没有新增专用结构化结果展示组件，也不宣称前端已完整验收。最终源码的compileall／diff、暂存集合、有限明显凭据、文档仅追加／章节唯一／围栏和原v3 hash仍须在提交前核验；ruff／mypy未安装，不擅自安装或宣称lint／typecheck通过。前端、全量后端、wheel／部署构建、官方saver conformance、长链性能、E3与E4不以本步局部绿色代替。
+
+本步代码、测试、默认关闭的配置示例、测试白名单和本节拟同一中文feat提交，排除v3草稿、日志、`.env`及本地数据；提交名 `【feat】支持可验证的认知结构化空文本结果`，ID以实际Git历史和交付输出为准，不推送、不建PR。下一步仍按v4依赖推进A3／B／C及D／E／F；未知外部效果、完整停止语义、真实Runner、兼容制品和完整H01–H12等出口保持未完成，完整goal继续active。
+
+### 最终取回结果与未稳定失败补记（2026-10-29）
+
+三组均已取回真实退出码；最后一组存在一项失败，**不能称为最终综合全绿或用隔离复验替它改写结论**。生产源码在以下最终组启动后未再修改，各组范围存在交叠，不累加为唯一覆盖数。
+
+| 最终选择／handle／日志 | 真实结果 | 范围与局限 |
+| --- | --- | --- |
+| strict-verified／47691 | **136 passed，171.69秒，exit0，无skip** | 新39项结构化结果用例、原结果投影、Delta顺序与适配器；新进程严格Msgpack，含普通／审批未封口封存、当前开关双向变化、解析错误不重试及未准备入口 |
+| consumers-verified／19378 | **436 passed，964.15秒，exit0，无skip** | 原图输入／Worker claim、checkpoint fence、原生终态、模型治理／响应证据、结果资产与事件／Turn／stage消费方；失租响应保持准确异常类型 |
+| projections-verified／83217 | **1 failed、229 passed，2195.30秒，exit1** | 普通／审批只读重建、未封口、唯一finalizer、事件、审批图输入及六参数独立Worker；不能把229项或早期230项称为该组合通过 |
+| import-isolation／日志日期2026-10-29 | **2 passed，1.82秒，exit0，无skip** | `tests/test_runtime_import_isolation.py`，使用相同解释器／工作目录／公共pytest参数；不等于wheel或部署制品验证 |
+| approval-gate-isolated／68610／日志日期2026-10-29 | **1 passed，32.41秒，exit0** | 仅复验下面的原失败参数；未改源码、租约、超时或断言，未重新运行大型组合；**不证明失败根因已修复** |
+
+综合组失败参数为 `tests/test_framework_approval_graph_input.py::test_original_approval_worker_hard_kill_recovers_only_original_projections[after_application_commit-None]`。父进程30秒未收到原故障点，子进程依次报告 `session_execution_ownership_lost`、`approval_task_fenced_after_lease_loss`、`agent_task_ownership_lost`，最后processed数量断言失败。该原fixture未启用结构化开关，resource lease为3秒；代码阅读确认它仍运行真实owner／resource监控。**尚无证据确定哪个续租／监控首先失败，也不将短租约或环境负载直接认定为根因。** 原§82等历史Worker等待超时记录保持；本次未通过增加等待、缩小消息比较、绕过owner、删除参数或反复重跑整个组合求绿。
+
+精确隔离命令如下，环境和stdout＋stderr／原退出码保存方式同上：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_runtime_import_isolation.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest 'tests/test_framework_approval_graph_input.py::test_original_approval_worker_hard_kill_recovers_only_original_projections[after_application_commit-None]' -q -rs --tb=short
+```
+
+提交边界仍为本节27个相关文件，不纳入v3草稿和日志。此前实际compileall／diff均exit0，27文件精确暂存、源文件与暂存一致、有限明显凭据、实施记录仅追加／章节唯一／围栏及v3 hash核对通过；最终文档追加后交付检查另行实际执行。ruff／mypy仍未安装，前端及上述E3／E4等未执行项仍保留。
+
+本地提交用于保留已验证的结构化结果实现和真实失败记录，**不作为全部验收完成或上线依据**。下一子步先沿既有Worker／owner／resource监控补齐脱敏诊断，定位该未稳定的故障点失租，再依实际依赖推进A3等出口；不以连续复验通过代替根因证据，不关闭完整goal。

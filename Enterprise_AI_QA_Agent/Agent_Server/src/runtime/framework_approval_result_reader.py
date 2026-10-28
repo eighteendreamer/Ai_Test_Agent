@@ -163,7 +163,8 @@ def project_original_approval_result(preparation, source, read, native, material
         if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
     result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
         native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
-        root_model_budget=root_model_budget)
+        root_model_budget=root_model_budget,
+        structured_output_version=preparation.graph_input_asset.feature_flags.get("structured_output_version"))
     initial = preparation.graph_input_asset.runtime_preparation.initial_state
     projected = project_original_completed_turn(preparation=preparation.graph_input_asset.runtime_preparation,
         result=result, binding=binding, facts=facts, event_log=read.event_log,
