@@ -78,8 +78,8 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
         runtime = RuntimeService(graph=None, model_runtime_service=models, tool_runtime_service=object(),
             tool_registry=ToolRegistry(), runtime_control=RuntimeControlRegistry(), deep_agent_enabled=True,
             deep_agent_bound_runtime_adapter=adapter,
-            deep_agent_read_only_filesystem_enabled=window in {"after_graph_events", "after_subagent_event_completion"},
-            deep_agent_cognitive_subagents_enabled=window in {"after_graph_events", "after_subagent_event_completion"})
+            deep_agent_read_only_filesystem_enabled=window in {"after_graph_events", "after_subagent_event_completion", "after_subagent_graph_return"},
+            deep_agent_cognitive_subagents_enabled=window in {"after_graph_events", "after_subagent_event_completion", "after_subagent_graph_return"})
         _, tasks, sessions, _ = build_services(settings, runtime, resources)
         if audit_event is not None:
             from src.runtime.session_event_sink import SessionEventSink
@@ -149,7 +149,7 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                 await redis.rpush(gate, json.dumps(result.state["model_response_summary"]["native_terminal"]))
                 await asyncio.Event().wait()
             runtime._execute_deep_agent_turn = collection_completed
-        elif window in {"after_graph_return", "after_graph_events"}:
+        elif window in {"after_graph_return", "after_graph_events", "after_subagent_graph_return"}:
             captured = {}
             if window == "after_graph_events":
                 execute_turn = runtime._execute_deep_agent_turn
@@ -160,6 +160,10 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             execute = adapter.execute
             async def graph_returned(*args, **kwargs):
                 result = await execute(*args, **kwargs)
+                if window == "after_subagent_graph_return":
+                    await redis.set(gate + ":adapter", json.dumps({"output_text": result.output_text,
+                        "framework_messages": result.framework_messages, "subagent_events": result.subagent_events,
+                        "metadata": result.metadata}))
                 if window == "after_graph_events":
                     import inspect
 

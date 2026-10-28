@@ -336,7 +336,7 @@ async def test_checkpoint_prefix_rejects_changed_originals_without_repair(prefix
             "f" * 64 if field.endswith("sha256") or field == "binding_fingerprint" else (
                 "2020-01-01T00:00:00+00:00" if field == "checkpoint_timestamp" else "foreign"))
     elif changed in {"future", "bool_version"}:
-        receipt["schema_version"] = 2 if changed == "future" else True
+        receipt["schema_version"] = 99 if changed == "future" else True
     elif changed == "extra":
         receipt["future"] = "unsupported"
     elif changed == "naive_time":
@@ -525,3 +525,40 @@ async def test_checkpoint_prefix_preparation_is_validated_once_and_foreign_sink_
         async with h.provider.open(owner=h.owner.runtime_owner) as writer:
             saved = await writer.aput(config(h), empty_checkpoint(), {}, {})
             assert CHECKPOINT_PREFIX_KEY not in (await writer.aget_tuple(saved)).metadata
+
+
+@pytest.mark.asyncio
+async def test_checkpoint_budget_capture_is_copied_and_atomically_uses_the_v2_prefix(prefix_harness):
+    from langgraph.checkpoint.base import empty_checkpoint
+    from src.application.models.framework_model_budget_projection import capture_model_budget_material, read_model_budget_material
+    from src.runtime.framework_event_completion import CHECKPOINT_PREFIX_KEY, RuntimeCheckpointEventPrefix
+    from tests.test_framework_checkpoint_fencing import config
+    from tests.test_framework_model_budget_projection import original_budget
+
+    h = prefix_harness
+    _, budget = original_budget()
+    budget = budget.model_copy(update={"calls": [], "policy": budget.policy.model_copy(update={
+        "model_config_fingerprints": {"fixture": h.binding.model_config_fingerprint}})})
+    material = capture_model_budget_material(h.binding, budget)
+    sink = SessionEventSink(h.store, h.session_id, capacity=1, fence={}, runtime_owner=h.owner.runtime_owner)
+    for item in h.prepared.runtime_preparation.initial_state["event_log"]:
+        await sink.persist(ExecutionEvent(session_id=h.session_id, **item))
+    sink.bind_checkpoint_preparation(h.prepared, model_budget_source="ledger")
+    assert sink.checkpoint_event_prefix().root_model_budget_material is None
+    sink.bind_root_model_budget_material(material)
+    material["snapshot"]["policy"]["max_calls"] += 1
+    capture = sink.checkpoint_event_prefix()
+    preparation, events = capture
+    assert len(capture) == 2 and preparation == h.prepared
+    assert events == h.prepared.runtime_preparation.initial_state["event_log"]
+    assert read_model_budget_material(h.binding, capture.root_model_budget_material) == budget
+    capture.root_model_budget_material["snapshot"]["policy"]["max_calls"] += 2
+    assert read_model_budget_material(h.binding, sink.checkpoint_event_prefix().root_model_budget_material) == budget
+    with graph_event_scope(sink):
+        async with h.provider.open(owner=h.owner.runtime_owner) as saver:
+            saved = await saver.aput(config(h), empty_checkpoint(), {}, {})
+            receipt = (await saver.aget_tuple(saved)).metadata[CHECKPOINT_PREFIX_KEY]
+            prefix = RuntimeCheckpointEventPrefix.model_validate(receipt)
+            assert prefix.schema_version == 2 and prefix.model_dump(mode="json") == receipt
+            assert read_model_budget_material(h.binding, prefix.root_model_budget_material) == budget
+            assert (await saver.aget_tuple(h.checkpoint.config)) == h.checkpoint

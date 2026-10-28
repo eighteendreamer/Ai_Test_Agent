@@ -129,14 +129,34 @@ def project_deep_agent_callback_facts(
     if (type(returned_event_offset) is not int or not 0 <= returned_event_offset < len(event_log)
         or event_log[-1].get("type") != "runtime.turn_completed"):
         raise ValueError("Original Deep Agents callback collection has no completed invocation boundary")
-    suffix = event_log[returned_event_offset:]
-    if any(item.get("payload", {}).get("turn_id") != turn_id for item in suffix):
-        raise ValueError("Original Deep Agents callback collection differs from its Turn")
     completed = event_log[-1]["payload"]
     stages = {"DA-E1", "DA-E2", "DA-E3", "DA-E4"}
     if any(not isinstance(completed.get(key), str) or completed[key] not in stages
         for key in ("pilot_stage", "adapter_stage")):
         raise ValueError("Original Deep Agents callback collection has no supported original stages")
+    callbacks = _deep_agent_callback_events(event_log, turn_id=turn_id, returned_event_offset=returned_event_offset)
+    if completed.get("callback_events_sha256") != approval_value_hash(callbacks):
+        raise ValueError("Original Deep Agents callback material differs from its declared original digest")
+    return DeepAgentCallbackFacts(completed["pilot_stage"], completed["adapter_stage"], callbacks)
+
+
+def project_deep_agent_checkpoint_callback_facts(preparation, *, event_log, returned_event_offset):
+    """Consume authenticated ACK originals, never guess callbacks from messages."""
+    from src.schemas.framework_graph_input import FrameworkTerminalEventPreparation, TERMINAL_EVENT_PREPARATION_KEY
+
+    rules = FrameworkTerminalEventPreparation.model_validate(preparation.initial_state["context_bundle"].get(TERMINAL_EVENT_PREPARATION_KEY))
+    if (type(returned_event_offset) is not int or not 0 <= returned_event_offset < len(event_log)
+        or any(item["type"] in {"runtime.turn_completed", "graph.plan_built"} for item in event_log)):
+        raise ValueError("Checkpoint callback facts require their original pre-terminal invocation boundary")
+    callbacks = _deep_agent_callback_events(event_log, turn_id=preparation.identity.binding.turn_id,
+        returned_event_offset=returned_event_offset)
+    return DeepAgentCallbackFacts(rules.pilot_stage, rules.adapter_stage, callbacks)
+
+
+def _deep_agent_callback_events(event_log, *, turn_id, returned_event_offset):
+    suffix = event_log[returned_event_offset:]
+    if any(item.get("payload", {}).get("turn_id") != turn_id for item in suffix):
+        raise ValueError("Original Deep Agents callback collection differs from its Turn")
     callbacks = []
     for item in suffix:
         event_type = item.get("type", "")
@@ -149,9 +169,7 @@ def project_deep_agent_callback_facts(
             or raw["type"] != event_type.removeprefix("graph.subagent_")):
             raise ValueError("Original Deep Agents callback material is missing or has an unsupported format")
         callbacks.append(deepcopy(raw))
-    if completed.get("callback_events_sha256") != approval_value_hash(callbacks):
-        raise ValueError("Original Deep Agents callback material differs from its declared original digest")
-    return DeepAgentCallbackFacts(completed["pilot_stage"], completed["adapter_stage"], callbacks)
+    return callbacks
 
 
 def completed_deep_agent_state(

@@ -22,7 +22,10 @@ from src.application.runtime.turn_projection import (
 )
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_application_projection import COMMIT_KEY, _model_hash, _tool_hash
-from src.runtime.framework_event_completion import RuntimeEventCompletion, completion_event_id, read_completion
+from src.runtime.framework_event_completion import (
+    RuntimeEventCompletion, RuntimeCheckpointEventPrefix, completion_event_id, read_completion,
+    original_checkpoint_source, read_terminal_event_materials,
+)
 from src.runtime.framework_message_stages import message_stage_table, validate_message_stage
 from src.runtime.framework_runtime_results import RESULT_KEY, _approval_preparation, _require
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
@@ -30,7 +33,6 @@ from src.runtime.postgres_runtime_owner import configure_runtime_owner_transacti
 from src.schemas.framework_graph_input import FrameworkApprovalGraphInput
 from src.schemas.framework_runtime_result import FrameworkRuntimeResult
 from src.schemas.session import VerificationResult
-from src.schemas.runtime_binding import RuntimeCheckpointSource
 
 
 logger = logging.getLogger(__name__)
@@ -39,21 +41,27 @@ logger = logging.getLogger(__name__)
 @dataclass(frozen=True)
 class FrameworkApprovalResultRead:
     preparation: FrameworkApprovalGraphInput
-    completion: RuntimeEventCompletion
+    completion: RuntimeEventCompletion | None
     runtime_result: FrameworkRuntimeResult
     model_calls_sha256: str
     tool_jobs_sha256: str
     originals: tuple = field(repr=False)
     verification_results: list[VerificationResult] | None = None
+    checkpoint_event_prefix: RuntimeCheckpointEventPrefix | None = None
 
 
-def _originals(tasks, binding, task_id, continuation):
+def _originals(tasks, binding, task_id, continuation, *, native=None, expected=None):
     with postgres_connect(tasks._settings) as connection, connection.cursor() as cur:
         configure_runtime_owner_transaction(cur, tasks._settings)
-        return read_approval_originals(cur, tasks, binding, task_id, continuation)
+        current = read_approval_originals(cur, tasks, binding, task_id, continuation, allow_unsealed=True)
+        if native is None:
+            return current
+        _require(current == expected, "Approval result original materials changed during native read")
+        preparation, read, _, budget, _, _, _, source = current
+        return read_terminal_event_materials(cur, tasks._settings, source, preparation.graph_input_asset, native, budget, read)
 
 
-def read_approval_originals(cur, tasks, binding, task_id, continuation):
+def read_approval_originals(cur, tasks, binding, task_id, continuation, *, allow_unsealed=False):
     """Share exact material verification with the owned sealing transaction."""
     settings = tasks._settings
     _require(continuation._settings == settings, "Approval result reader requires its shared material store")
@@ -80,15 +88,19 @@ def read_approval_originals(cur, tasks, binding, task_id, continuation):
     cur.execute(f"SELECT payload FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
         (binding.session_id, completion_event_id(binding)))
     declaration = cur.fetchone()
-    _require(declaration is not None, "Approval result original event completion is missing")
-    material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
-    _require((material.task_id, material.attempt_id, material.owner_epoch)
-        == (task_id, preparation.attempt_id, preparation.owner_epoch),
-        "Approval result event completion belongs to another original producer")
-    read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
+    _require(declaration is not None or allow_unsealed, "Approval result original event completion is missing")
+    _require(task["attempt_id"] == preparation.attempt_id, "Approval result original attempt changed")
+    source = original_checkpoint_source(cur, settings, binding, task, preparation.owner_epoch)
+    read = None
+    if declaration is not None:
+        material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
+        _require((material.task_id, material.attempt_id, material.owner_epoch, material.worker_id)
+            == (task_id, source.attempt_id, source.owner_epoch, source.worker_id),
+            "Approval result event completion belongs to another original producer")
+        read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
     initial = preparation.graph_input_asset.runtime_preparation.initial_state
     prefix = initial["event_log"]
-    _require(read.event_log[:len(prefix)] == prefix and material.returned_event_offset == len(prefix) - 1,
+    _require(read is None or (read.event_log[:len(prefix)] == prefix and material.returned_event_offset == len(prefix) - 1),
         "Approval result preparation differs from its original invocation event boundary")
     ledger = PostgresFrameworkModelCalls(settings)
     ledger._require_binding(cur, binding)
@@ -99,11 +111,11 @@ def read_approval_originals(cur, tasks, binding, task_id, continuation):
         and root["project_id"] == task["project_id"] and root["input_hash"] == stage.input_sha256
         and tasks._v2_input_hash(root["input_payload"], binding, budget.policy) == stage.input_sha256,
         "Approval result differs from its original admitted root input or budget")
-    original_budget = read.event_log[-1]["payload"].get("root_model_budget")
-    if original_budget is not None:
+    original_budget = read.event_log[-1]["payload"].get("root_model_budget") if read else None
+    if read is not None and original_budget is not None:
         _require(read_model_budget_material(binding, original_budget) == budget,
             "Approval result original root model budget differs from its ledger")
-    else:
+    elif read is not None:
         # Preserve historical no-policy output exactly, not a fabricated
         # budget in its result summary. This is NOT automatic admission;
         # nonempty ledgers still require original captured material.
@@ -125,15 +137,16 @@ def read_approval_originals(cur, tasks, binding, task_id, continuation):
     _require(len(materials) == len(initial["tool_results"])
         and jobs == {(value.record.job_id, value.record.call_id) for value in materials.values()},
         "Approval result has an unprepared business tool or missing original job")
-    return (preparation, read, materials, budget.model_dump(mode="json"),
-        _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
+    return (preparation, read, materials, budget,
+        _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256, source)
 
 
 async def _read_native(agent, saver, source, completion):
     _require(getattr(saver, "runtime_source", None) == source,
         "Approval result native reader differs from its original bound producer")
-    config = {"configurable": {"thread_id": source.binding.thread_id,
-        "checkpoint_id": completion.native_terminal.checkpoint_id, CONFIG_KEY_CHECKPOINTER: saver}}
+    config = {"configurable": {"thread_id": source.binding.thread_id, CONFIG_KEY_CHECKPOINTER: saver}}
+    if completion is not None:
+        config["configurable"]["checkpoint_id"] = completion.native_terminal.checkpoint_id
     return await collect_native_terminal(agent, saver, config)
 
 
@@ -141,29 +154,28 @@ async def read_completed_approval(tasks, binding, task_id, *, continuation, agen
     """No long transaction across native I/O; recheck original facts afterwards."""
     try:
         before = await asyncio.to_thread(_originals, tasks, binding, task_id, continuation)
-        preparation, read, materials, _, model_hash, tool_hash, _ = before
-        source = RuntimeCheckpointSource(binding=binding, task_id=task_id, attempt_id=preparation.attempt_id,
-            owner_epoch=preparation.owner_epoch, worker_id=read.completion.worker_id)
+        preparation, read, materials, _, model_hash, tool_hash, _, source = before
+        completion = read.completion if read else None
         if native_reader is None:
             _require(agent is not None and saver is not None, "Approval result requires its original native reader")
-            native = await _read_native(agent, saver, source, read.completion)
+            native = await _read_native(agent, saver, source, completion)
         else:
             _require(agent is None and saver is None, "Approval result native reader selection is ambiguous")
             async with native_reader(preparation.graph_input_asset, source=source) as (agent, saver):
-                native = await _read_native(agent, saver, source, read.completion)
-        _require(native.proof == read.completion.native_terminal, "Approval result native terminal changed")
-        after = await asyncio.to_thread(_originals, tasks, binding, task_id, continuation)
-        _require(after == before, "Approval result original materials changed during native read")
+                native = await _read_native(agent, saver, source, completion)
+        read = await asyncio.to_thread(_originals, tasks, binding, task_id, continuation, native=native, expected=before)
         facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id,
-            returned_event_offset=read.completion.returned_event_offset)
+            returned_event_offset=read.returned_event_offset)
+        root_model_budget = (read.event_log[-1]["payload"].get("root_model_budget")
+            if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
         result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
             native_terminal=native.proof.model_dump(mode="json"),
             native_checkpoint_timestamp=native.checkpoint_timestamp,
-            root_model_budget=read.event_log[-1]["payload"].get("root_model_budget"))
+            root_model_budget=root_model_budget)
         initial = preparation.graph_input_asset.runtime_preparation.initial_state
         projected = project_original_completed_turn(preparation=preparation.graph_input_asset.runtime_preparation,
             result=result, binding=binding, facts=facts, event_log=read.event_log,
-            returned_event_offset=read.completion.returned_event_offset,
+            returned_event_offset=read.returned_event_offset,
             materials=[materials[item["call_id"]] for item in initial["tool_results"]])
         state, records = projected.state, projected.state["tool_results"]
         from src.application.testing.verification_service import VerificationService
@@ -175,11 +187,11 @@ async def read_completed_approval(tasks, binding, task_id, *, continuation, agen
             trace_id=state["trace_id"], tool_results=records, context_bundle=state["context_bundle"])
             if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
         assembled = FrameworkApprovalResultRead(preparation, read.completion, FrameworkRuntimeResult.from_result(projected),
-            model_hash, tool_hash, before, verifications)
+            model_hash, tool_hash, before, verifications, read.checkpoint_event_prefix)
     except Exception as exc:
         logger.warning("framework_approval_original_result_read_rejected", extra={"binding_id": binding.binding_id,
             "task_id": task_id, "error_type": type(exc).__name__})
         raise
     logger.info("framework_approval_original_result_read", extra={"binding_id": binding.binding_id,
-        "task_id": task_id, "checkpoint_id": read.completion.native_terminal.checkpoint_id})
+        "task_id": task_id, "checkpoint_id": native.proof.checkpoint_id, "sealed": read.completion is not None})
     return assembled

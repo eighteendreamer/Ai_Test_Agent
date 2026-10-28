@@ -78,6 +78,11 @@ class DeepAgentRuntimeAdapter:
         self._checkpointer_factory = checkpointer_factory
         self._model_call_policy = model_call_policy
 
+    @property
+    def root_model_budget_source(self):
+        """Freeze whether this invocation captures the original root ledger."""
+        return "ledger" if self._model_call_policy is not None else "none"
+
     async def execute(self, request: DeepAgentRuntimeRequest) -> DeepAgentRuntimeResult:
         if (
             request.interrupt_on or request.resume is not None or request.continue_from_checkpoint

@@ -19,7 +19,10 @@ from src.application.testing.verification_service import VerificationService
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_application_projection import COMMIT_KEY, _model_hash, _tool_hash
 from src.runtime.framework_approval_result_reader import _read_native
-from src.runtime.framework_event_completion import RuntimeEventCompletion, completion_event_id, read_completion
+from src.runtime.framework_event_completion import (
+    RuntimeEventCompletion, RuntimeCheckpointEventPrefix, completion_event_id, read_completion,
+    original_checkpoint_source, read_terminal_event_materials,
+)
 from src.runtime.framework_message_recovery import MESSAGE_EXECUTIONS, _same_input, _exists
 from src.runtime.framework_message_stages import message_stage_table, validate_message_stage
 from src.runtime.framework_runtime_results import RESULT_KEY, _require
@@ -42,22 +45,28 @@ logger = logging.getLogger(__name__)
 class FrameworkMessageResultRead:
     graph_input_asset: FrameworkPreparedGraphInputAsset
     source: RuntimeCheckpointSource
-    completion: RuntimeEventCompletion
+    completion: RuntimeEventCompletion | None
     runtime_result: FrameworkRuntimeResult
     model_calls_sha256: str
     tool_jobs_sha256: str
     originals: tuple = field(repr=False)
     verification_results: list[VerificationResult] | None = None
+    checkpoint_event_prefix: RuntimeCheckpointEventPrefix | None = None
 
 
-def _originals(tasks, binding, task_id):
+def _originals(tasks, binding, task_id, *, native=None, expected=None):
     settings = tasks._settings
     with postgres_connect(settings) as connection, connection.cursor() as cur:
         configure_runtime_owner_transaction(cur, settings)
-        return read_message_originals(cur, tasks, binding, task_id)
+        current = read_message_originals(cur, tasks, binding, task_id, allow_unsealed=True)
+        if native is None:
+            return current
+        _require(current == expected, "Message result original materials changed during native read")
+        original, source, read, _, _, _, _, budget = current
+        return read_terminal_event_materials(cur, settings, source, original, native, budget, read)
 
 
-def read_message_originals(cur, tasks, binding, task_id):
+def read_message_originals(cur, tasks, binding, task_id, *, allow_unsealed=False):
     """Share exact material verification with the separate admission transaction."""
     settings = tasks._settings
     cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE", (binding.session_id,))
@@ -85,14 +94,18 @@ def read_message_originals(cur, tasks, binding, task_id):
     cur.execute(f"SELECT payload FROM {settings.database.postgres_event_table} WHERE session_id=%s AND id=%s",
         (binding.session_id, completion_event_id(binding)))
     declaration = cur.fetchone()
-    _require(declaration is not None, "Message result original event completion is missing")
-    material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
-    _require((material.task_id, material.attempt_id, material.owner_epoch)
-        == (task_id, task["attempt_id"], stage.owner_epoch) and stage.owner_attempt_id == task["attempt_id"],
-        "Message result event completion belongs to another original producer")
-    read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
-    _require(read.event_log[:len(initial["event_log"])] == initial["event_log"] and material.returned_event_offset == 0,
-        "Message result original preparation differs from its invocation event boundary")
+    _require(declaration is not None or allow_unsealed, "Message result original event completion is missing")
+    _require(stage.owner_attempt_id == task["attempt_id"], "Message result original attempt changed")
+    source = original_checkpoint_source(cur, settings, binding, task, stage.owner_epoch)
+    read = None
+    if declaration is not None:
+        material = RuntimeEventCompletion.model_validate(declaration["payload"].get("completion"))
+        _require((material.task_id, material.attempt_id, material.owner_epoch, material.worker_id)
+            == (task_id, source.attempt_id, source.owner_epoch, source.worker_id),
+            "Message result event completion belongs to another original producer")
+        read = read_completion(cur, settings, binding, material.native_terminal.model_dump(mode="json"))
+        _require(read.event_log[:len(initial["event_log"])] == initial["event_log"] and material.returned_event_offset == 0,
+            "Message result original preparation differs from its invocation event boundary")
     ledger = PostgresFrameworkModelCalls(settings)
     ledger._require_binding(cur, binding)
     budget = ledger._snapshot(cur, binding.binding_id)
@@ -101,9 +114,10 @@ def read_message_originals(cur, tasks, binding, task_id):
     _same_input(stage, root, task, binding)
     _require(tasks._v2_input_hash(root["input_payload"], binding, budget.policy) == stage.input_sha256,
         "Message result original input or budget changed")
-    original_budget = read.event_log[-1]["payload"].get("root_model_budget")
-    _require(read_model_budget_material(binding, original_budget) == budget if original_budget is not None else not budget.calls,
-        "Message result original root model budget differs from its ledger or is missing")
+    if read is not None:
+        original_budget = read.event_log[-1]["payload"].get("root_model_budget")
+        _require(read_model_budget_material(binding, original_budget) == budget if original_budget is not None else not budget.calls,
+            "Message result original root model budget differs from its ledger or is missing")
     jobs = []
     if _exists(cur, settings.database.postgres_tool_job_table):
         cur.execute(f"SELECT * FROM {settings.database.postgres_tool_job_table} WHERE session_id=%s AND turn_id=%s ORDER BY id",
@@ -115,9 +129,7 @@ def read_message_originals(cur, tasks, binding, task_id):
         # as permission to omit an execution that actually happened.
         logger.debug("framework_message_original_tool_store_absent", extra={"binding_id": binding.binding_id,
             "task_id": task_id})
-    source = RuntimeCheckpointSource(binding=binding, task_id=task_id, attempt_id=task["attempt_id"],
-        owner_epoch=material.owner_epoch, worker_id=material.worker_id)
-    return (original, source, read, jobs, _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256)
+    return (original, source, read, jobs, _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256, budget)
 
 def _tool_materials(original, binding, messages, jobs):
     # Original application ordinal is completion order, not native task-path
@@ -155,17 +167,17 @@ def _tool_materials(original, binding, messages, jobs):
 async def read_completed_message(tasks, binding, task_id, *, native_reader):
     try:
         before = await asyncio.to_thread(_originals, tasks, binding, task_id)
-        original, source, read, jobs, model_hash, tool_hash, _ = before
+        original, source, read, jobs, model_hash, tool_hash, _, _ = before
         async with native_reader(original, source=source) as (agent, saver):
-            native = await _read_native(agent, saver, source, read.completion)
-        _require(native.proof == read.completion.native_terminal, "Message result native terminal changed")
-        after = await asyncio.to_thread(_originals, tasks, binding, task_id)
-        _require(after == before, "Message result original materials changed during native read")
+            native = await _read_native(agent, saver, source, read.completion if read else None)
+        read = await asyncio.to_thread(_originals, tasks, binding, task_id, native=native, expected=before)
         materials = _tool_materials(original, binding, native.values.get("messages", []), jobs)
         facts = project_deep_agent_callback_facts(read.event_log, turn_id=binding.turn_id, returned_event_offset=0)
+        root_model_budget = (read.event_log[-1]["payload"].get("root_model_budget")
+            if read.completion is not None else read.checkpoint_event_prefix.root_model_budget_material)
         result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
             native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
-            root_model_budget=read.event_log[-1]["payload"].get("root_model_budget"))
+            root_model_budget=root_model_budget)
         projected = project_original_completed_turn(preparation=original.runtime_preparation, result=result,
             binding=binding, facts=facts, event_log=read.event_log, returned_event_offset=0, materials=materials)
         state = projected.state
@@ -173,11 +185,11 @@ async def read_completed_message(tasks, binding, task_id, *, native_reader):
             trace_id=state["trace_id"], tool_results=state["tool_results"], context_bundle=state["context_bundle"])
             if VERIFICATION_PREPARATION_KEY in state["context_bundle"] else None)
         assembled = FrameworkMessageResultRead(original, source, read.completion, FrameworkRuntimeResult.from_result(projected),
-            model_hash, tool_hash, before, verifications)
+            model_hash, tool_hash, before, verifications, read.checkpoint_event_prefix)
     except Exception as exc:
         logger.warning("framework_message_original_result_read_rejected", extra={"binding_id": binding.binding_id,
             "task_id": task_id, "error_type": type(exc).__name__})
         raise
     logger.info("framework_message_original_result_read", extra={"binding_id": binding.binding_id,
-        "task_id": task_id, "checkpoint_id": read.completion.native_terminal.checkpoint_id})
+        "task_id": task_id, "checkpoint_id": native.proof.checkpoint_id, "sealed": read.completion is not None})
     return assembled

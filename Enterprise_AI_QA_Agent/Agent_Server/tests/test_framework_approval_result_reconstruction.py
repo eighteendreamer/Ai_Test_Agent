@@ -144,7 +144,10 @@ async def test_assetless_reader_refuses_changed_original_material(approval_asset
     declaration, = [event for event in events if event.type == "runtime.event_log_completed"]
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
         if changed == "completion":
-            cur.execute(f"DELETE FROM {h.settings.database.postgres_event_table} WHERE id=%s", (declaration.id,))
+            # Missing declarations now have a separate checkpoint-prefix read
+            # contract. An existing corrupt declaration must NEVER fall back.
+            cur.execute(f"UPDATE {h.settings.database.postgres_event_table} SET payload=jsonb_set(payload, "
+                "'{completion,completion_sha256}', %s::jsonb) WHERE id=%s", ('"' + '0' * 64 + '"', declaration.id))
         elif changed == "event":
             event_id = declaration.payload["completion"]["events"][-1]["event_id"]
             cur.execute(f"UPDATE {h.settings.database.postgres_event_table} SET payload=payload || %s::jsonb WHERE id=%s",

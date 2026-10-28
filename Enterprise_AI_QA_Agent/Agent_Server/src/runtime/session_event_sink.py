@@ -12,6 +12,25 @@ from src.schemas.runtime_binding import RuntimeExecutionOwner
 LOGGER = logging.getLogger(__name__)
 
 
+class CheckpointEventPrefixCapture:
+    """Two-item compatible capture with optional settled budget material."""
+
+    def __init__(self, preparation, acknowledged_events, root_model_budget_material=None):
+        self.preparation = deepcopy(preparation)
+        self.acknowledged_events = deepcopy(acknowledged_events)
+        self.root_model_budget_material = deepcopy(root_model_budget_material)
+
+    def __iter__(self):
+        yield self.preparation
+        yield self.acknowledged_events
+
+    def __getitem__(self, index):
+        return (self.preparation, self.acknowledged_events)[index]
+
+    def __len__(self):
+        return 2
+
+
 class SessionEventSink:
     """Legacy bounded queue plus acknowledged owner-bound event writes."""
 
@@ -29,9 +48,11 @@ class SessionEventSink:
         self._runtime_events_completed = False
         self._deferred_to_final_flush = False
         self._checkpoint_preparation = None
+        self._model_budget_capture_enabled = False
+        self._root_model_budget_material = None
         self._acknowledged_events = []
 
-    def bind_checkpoint_preparation(self, preparation) -> None:
+    def bind_checkpoint_preparation(self, preparation, *, model_budget_source=None) -> None:
         """Bind the already persisted input; this is not a completion declaration."""
         from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset, parse_graph_input_asset
 
@@ -42,7 +63,10 @@ class SessionEventSink:
             raise ValueError("Checkpoint event prefix requires its original prepared runtime owner")
         if self._checkpoint_preparation is not None:
             raise ValueError("Checkpoint event preparation is already bound")
+        if model_budget_source not in {None, "ledger", "none"}:
+            raise ValueError("Checkpoint event prefix has an unsupported original budget source")
         self._checkpoint_preparation = deepcopy(preparation)
+        self._model_budget_capture_enabled = model_budget_source == "ledger"
         LOGGER.debug("framework_checkpoint_event_preparation_bound", extra={
             "session_id": self._session_id, "binding_id": self.runtime_owner.binding.binding_id,
             "task_id": self.runtime_owner.task_id, "attempt_id": self.runtime_owner.attempt_id})
@@ -53,7 +77,21 @@ class SessionEventSink:
         # no awaiting, queue flush or new persistence happens in this accessor.
         if self._checkpoint_preparation is None:
             return None
-        return deepcopy((self._checkpoint_preparation, list(self._acknowledged_events)))
+        return CheckpointEventPrefixCapture(
+            self._checkpoint_preparation,
+            list(self._acknowledged_events),
+            self._root_model_budget_material if self._model_budget_capture_enabled else None,
+        )
+
+    def bind_root_model_budget_material(self, material) -> None:
+        """Capture the settled root ledger before the next checkpoint write."""
+        if not self._model_budget_capture_enabled:
+            return
+        if self._checkpoint_preparation is None:
+            raise RuntimeError("Root model budget cannot be captured before graph input preparation")
+        if not isinstance(material, dict):
+            raise ValueError("Root model budget material must be a JSON object")
+        self._root_model_budget_material = deepcopy(material)
 
     @property
     def runtime_owner(self) -> RuntimeExecutionOwner | None:

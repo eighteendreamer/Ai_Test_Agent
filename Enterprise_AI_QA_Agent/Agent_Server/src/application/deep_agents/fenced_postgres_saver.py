@@ -172,7 +172,9 @@ class FencedPostgresSaver(BoundPostgresReader):
                 original = saver.get_tuple(result)
                 with saver.conn.cursor() as cur:
                     prefix = checkpoint_event_prefix(cur, self._settings, self.runtime_owner,
-                        *captured, checkpoint=original, serde=self.serde)
+                        captured[0], captured[1],
+                        model_budget_material=getattr(captured, "root_model_budget_material", None),
+                        checkpoint=original, serde=self.serde)
                 saver.put(storage_config, checkpoint, {**metadata, CHECKPOINT_PREFIX_KEY: prefix.model_dump(mode="json")}, {})
                 logger.debug("framework_checkpoint_event_prefix_bound", extra={
                     "binding_id": self.runtime_owner.binding.binding_id, "checkpoint_id": checkpoint["id"],

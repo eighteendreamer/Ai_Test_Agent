@@ -287,4 +287,19 @@ class FrameworkModelCallPolicy:
                 "error_type": type(exc).__name__})
             exc.add_note("Provider response arrived; verify the durable model attempt before continuation")
             raise
+        await self._capture_checkpoint_budget(owner)
         return result
+
+    async def _capture_checkpoint_budget(self, owner) -> None:
+        """Bind the settled root ledger to the next owner checkpoint."""
+        from src.application.models.framework_model_budget_projection import capture_model_budget_material
+        from src.runtime.execution_context import current_graph_event_sink
+
+        sink = current_graph_event_sink()
+        if sink is None or getattr(sink, "runtime_owner", None) != owner:
+            return
+        snapshot = await self._calls.snapshot(owner.binding)
+        sink.bind_root_model_budget_material(capture_model_budget_material(owner.binding, snapshot))
+        logger.debug("framework_checkpoint_root_budget_material_captured", extra={
+            "binding_id": owner.binding.binding_id, "task_id": owner.task_id,
+            "call_count": len(snapshot.calls)})

@@ -416,6 +416,8 @@ class RuntimeService:
                 if continuation_plan is not None else False),
         )
         runtime_preparation = None
+        adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
+            else self._deep_agent_runtime_adapter)
         if on_graph_input is not None:
             from src.schemas.framework_graph_input import graph_input_asset
             from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
@@ -487,9 +489,8 @@ class RuntimeService:
 
                 sink = current_graph_event_sink()
                 if isinstance(sink, SessionEventSink):
-                    sink.bind_checkpoint_preparation(frozen_input)
-        adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
-            else self._deep_agent_runtime_adapter)
+                    sink.bind_checkpoint_preparation(frozen_input,
+                        model_budget_source=getattr(adapter, "root_model_budget_source", None))
         execution_task = asyncio.create_task(
             adapter.execute(adapter_request),
             name=f"deep-agent-turn:{session.id}:{request.turn_id}",

@@ -119,6 +119,8 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
                 assert native is not None and _native_hash(saver.serde, native.checkpoint) == proof.checkpoint_sha256
                 assert native.metadata.get("framework_checkpoint_event_prefix") is not None, (
                     "Worker death before the Runtime seal loses the checkpoint-bound audit prefix")
+                frozen_budget = native.metadata["framework_checkpoint_event_prefix"]["root_model_budget_material"]
+                assert read_model_budget_material(h.binding, frozen_budget) == budget
                 # Messages use DeltaChannel in the pinned real graph. Read
                 # through its channel implementation, not channel_values or
                 # guessed message deltas. The pinned config override selects
@@ -171,6 +173,34 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
             await asyncio.to_thread(process.join, 10)
             assert not process.is_alive() and process.exitcode != 0
             from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+            if window != "after_event_completion":
+                from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+                from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+                events_before_read = await h.store.list_events(h.session_id)
+                reader = DeepAgentRuntimeAdapter(model_resolver=None, checkpointer_factory=provider.open)
+                if window == "after_graph_events":
+                    # This original Harness deliberately injects callbacks
+                    # AFTER the last checkpoint. ACK rows alone cannot upgrade
+                    # its bound prefix; retain this real negative window.
+                    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="conflicting or unbound"):
+                        await FrameworkRuntimeResults(h.tasks).read_completed_message(h.binding, active.id,
+                            native_reader=reader.open_native_reader)
+                else:
+                    assembled = await FrameworkRuntimeResults(h.tasks).read_completed_message(h.binding, active.id,
+                        native_reader=reader.open_native_reader)
+                    assert assembled.completion is None
+                    frozen_budget = assembled.checkpoint_event_prefix.root_model_budget_material
+                    assert frozen_budget is not None
+                    assert read_model_budget_material(h.binding, frozen_budget) == budget
+                    assert assembled.runtime_result.output_text == "fixture answer"
+                    assert assembled.runtime_result.snapshot.id == identity["snapshot_id"]
+                    assert assembled.runtime_result.state["framework_messages"]
+                    reconstructed_budget = assembled.runtime_result.state["model_response_summary"]["root_model_budget"]
+                    assert read_model_budget_material(h.binding, reconstructed_budget) == budget
+                assert await h.store.list_events(h.session_id) == events_before_read
+                assert await h.store.get_latest_snapshot(h.session_id) is None
 
             if window == "after_event_completion":
                 read = await h.store.read_runtime_event_completion(h.binding, proof.model_dump(mode="json"))
@@ -264,7 +294,8 @@ async def test_native_terminal_and_settled_response_survive_kill_but_do_not_inve
 
 
 @pytest.mark.asyncio
-async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap_kill(admission, tmp_path, monkeypatch):
+@pytest.mark.parametrize("window", ["after_subagent_graph_return", "after_subagent_event_completion"])
+async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap_kill(admission, tmp_path, monkeypatch, window):
     from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
     from src.application.deep_agents.model_call_middleware import configure_model_policy
     from src.application.deep_agents.result_projection import project_deep_agent_result
@@ -300,11 +331,76 @@ async def test_official_subagent_original_callbacks_and_stages_survive_asset_gap
             gate = h.prefix + ":callback-completed"
             process = multiprocessing.get_context("spawn").Process(target=worker_waiting_after_application_commit,
                 args=(h.settings.model_dump(mode="json"), config.model_dump(mode="json"), h.prefix, gate,
-                    "after_subagent_event_completion", str(tmp_path)))
+                    window, str(tmp_path)))
             process.start()
             reached = await waiting.blpop(gate, timeout=70)
             assert reached is not None, f"worker exit code: {process.exitcode}"
             proof = NativeTerminalProof.model_validate_json(reached[1])
+            if window == "after_subagent_graph_return":
+                from copy import deepcopy
+                from dataclasses import replace
+                from src.runtime import framework_approval_result_reader as original_reader
+                from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+                from src.schemas.framework_approval import approval_value_hash
+
+                observed = json.loads(await waiting.get(gate + ":adapter"))
+                active, before = await h.tasks.get(task.id), await stage(h, task)
+                process.terminate()
+                await asyncio.to_thread(process.join, 10)
+                assert not process.is_alive() and process.exitcode != 0
+                saved_events, budget = await h.store.list_events(h.session_id), await h.calls.snapshot(h.binding)
+                assert not any(item.type == "runtime.event_log_completed" for item in saved_events)
+                assert len(requests) == len(budget.calls) == 3
+                def forbidden(*args, **kwargs):
+                    pytest.fail("Unsealed original callback read attempted execution")
+                reader = DeepAgentRuntimeAdapter(model_resolver=forbidden, skill_registry=SkillRegistry(),
+                    checkpointer_factory=provider.open)
+                from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+                collect = original_reader.collect_native_terminal
+                for changed in ("missing", "drift", "foreign"):
+                    async def changed_budget(*args, **kwargs):
+                        native = await collect(*args, **kwargs)
+                        prefix = deepcopy(native.checkpoint_event_prefix)
+                        material = prefix["root_model_budget_material"]
+                        assert read_model_budget_material(h.binding, material) == budget
+                        if changed == "missing":
+                            prefix["schema_version"] = 1
+                            prefix.pop("root_model_budget_material")
+                        else:
+                            if changed == "drift":
+                                material["snapshot"]["policy"]["max_calls"] += 1
+                            else:
+                                material["binding_id"] = "foreign-binding"
+                            material["sha256"] = approval_value_hash({key: value for key, value in material.items()
+                                if key != "sha256"})
+                        prefix["prefix_sha256"] = approval_value_hash({key: value for key, value in prefix.items()
+                            if key != "prefix_sha256"})
+                        return replace(native, checkpoint_event_prefix=prefix)
+
+                    with monkeypatch.context() as patch:
+                        patch.setattr(original_reader, "collect_native_terminal", changed_budget)
+                        with pytest.raises((ValueError, FrameworkMessageStageRecoveryRequired)):
+                            await FrameworkRuntimeResults(h.tasks).read_completed_message(h.binding, task.id,
+                                native_reader=reader.open_native_reader)
+                    assert await h.store.list_events(h.session_id) == saved_events
+                    assert await h.calls.snapshot(h.binding) == budget and len(requests) == 3
+                reconstructed = await FrameworkRuntimeResults(h.tasks).read_completed_message(h.binding, task.id,
+                    native_reader=reader.open_native_reader)
+                assert reconstructed.completion is None
+                assert reconstructed.runtime_result.output_text == observed["output_text"]
+                assert reconstructed.runtime_result.state["framework_messages"] == observed["framework_messages"]
+                assert reconstructed.runtime_result.state["cognitive_subagent_events"] == observed["subagent_events"]
+                assert [item["type"] for item in observed["subagent_events"]] == ["started", "completed"]
+                assert reconstructed.runtime_result.state["model_response_summary"]["root_model_budget"] == observed["metadata"]["root_model_budget"]
+                assert await h.store.list_events(h.session_id) == saved_events and await h.calls.snapshot(h.binding) == budget
+                assert await h.store.get_latest_snapshot(h.session_id) is None
+                assert (await stage(h, task)).source_manifest == before.source_manifest
+                assert await h.store.renew_turn_execution(h.session_id, active.lease_token, 0)
+                expired = await h.tasks.claim(task.id, worker_id="unsealed-callback-expiry", expected_binding=h.binding)
+                assert expired.status == "recovery_required"
+                assert await h.tasks.ensure_framework_message_recovery(task.id, native_reader=reader.open_native_reader) is None
+                assert len(requests) == 3
+                return
             # The oracle is a test-only observation of the normal Runtime result,
             # never a recovery input or a replacement application result asset.
             oracle = FrameworkRuntimeResult.model_validate_json(await waiting.get(gate + ":oracle"))

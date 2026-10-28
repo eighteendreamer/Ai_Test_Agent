@@ -14,7 +14,7 @@ import logging
 from typing import Any, Literal
 from uuid import NAMESPACE_URL, uuid5
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_serializer, model_validator
 
 from src.application.deep_agents.native_terminal import NativeTerminalProof
 from src.runtime.framework_application_projection import _event_row_hash, _require_event_intent
@@ -79,7 +79,7 @@ class RuntimeCheckpointEventPrefix(BaseModel):
     """An atomic ACK-prefix binding, never a graph/application completion grant."""
     model_config = ConfigDict(extra="forbid", frozen=True)
 
-    schema_version: Literal[1]
+    schema_version: Literal[1, 2]
     scope: Literal["checkpoint_graph_event_prefix_only"] = "checkpoint_graph_event_prefix_only"
     binding_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
     graph_input_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -93,6 +93,14 @@ class RuntimeCheckpointEventPrefix(BaseModel):
     returned_event_offset: int = Field(ge=0, strict=True)
     events: list[RuntimeEventReference] = Field(min_length=1)
     prefix_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    root_model_budget_material: dict[str, Any] | None = None
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_prefix(self, handler):
+        value = handler(self)
+        if self.schema_version == 1:
+            value.pop("root_model_budget_material", None)
+        return value
 
     @model_validator(mode="before")
     @classmethod
@@ -103,7 +111,9 @@ class RuntimeCheckpointEventPrefix(BaseModel):
 
     @model_validator(mode="after")
     def verify(self):
-        if (self.prefix_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"prefix_sha256"}))
+        if ((self.schema_version == 1 and self.root_model_budget_material is not None)
+            or (self.schema_version == 2 and self.root_model_budget_material is None)
+            or self.prefix_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"prefix_sha256"}))
             or self.returned_event_offset >= len(self.events)
             or len({item.event_id for item in self.events}) != len(self.events)
             or any(a.event_sequence >= b.event_sequence for a, b in zip(self.events, self.events[1:]))
@@ -116,6 +126,15 @@ class RuntimeCheckpointEventPrefix(BaseModel):
 class RuntimeEventCompletionRead:
     completion: RuntimeEventCompletion
     event_log: list[dict[str, Any]]
+
+
+@dataclass(frozen=True)
+class RuntimeTerminalEventRead:
+    """Verified originals plus derived intents, not a persisted declaration."""
+    completion: RuntimeEventCompletion | None
+    checkpoint_event_prefix: RuntimeCheckpointEventPrefix | None
+    event_log: list[dict[str, Any]]
+    returned_event_offset: int
 
 
 def _require_terminal(binding, raw):
@@ -178,7 +197,7 @@ def _event_references(cur, settings, binding, event_log, *, schema=""):
     return references
 
 
-def checkpoint_event_prefix(cur, settings, owner, preparation, acknowledged, *, checkpoint, serde):
+def checkpoint_event_prefix(cur, settings, owner, preparation, acknowledged, model_budget_material=None, *, checkpoint, serde):
     """Called ONLY by the fenced saver inside its existing owner transaction.
 
     No upstream counterpart (checked: PostgresSaver.put metadata support, ACK
@@ -205,11 +224,14 @@ def checkpoint_event_prefix(cur, settings, owner, preparation, acknowledged, *, 
     _require_ordered_log(binding, events, offset)
     _require(all(item["type"] not in {EVENT_TYPE, "runtime.turn_completed", "graph.plan_built"} for item in events),
         "Checkpoint event prefix cannot claim a Runtime completion")
-    value = dict(schema_version=1, scope="checkpoint_graph_event_prefix_only", binding_fingerprint=binding.fingerprint,
+    value = dict(schema_version=2 if model_budget_material is not None else 1,
+        scope="checkpoint_graph_event_prefix_only", binding_fingerprint=binding.fingerprint,
         graph_input_sha256=preparation.asset_sha256, task_id=owner.task_id, attempt_id=owner.attempt_id,
         owner_epoch=owner.owner_epoch, worker_id=owner.worker_id, checkpoint_id=checkpoint.checkpoint["id"],
         checkpoint_sha256=_native_hash(serde, checkpoint.checkpoint), checkpoint_timestamp=checkpoint.checkpoint["ts"],
         returned_event_offset=offset, events=_event_references(cur, settings, binding, events, schema="public."))
+    if model_budget_material is not None:
+        value["root_model_budget_material"] = model_budget_material
     material = RuntimeCheckpointEventPrefix(**value, prefix_sha256=approval_value_hash(value))
     _require_producer(cur, settings, binding, material, schema="public.")
     return material
@@ -267,6 +289,81 @@ def read_checkpoint_event_prefix(cur, settings, source, preparation, native):
         "event_count": len(events),
     })
     return events
+
+
+def original_checkpoint_source(cur, settings, binding, task, owner_epoch):
+    from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+    cur.execute(f"SELECT worker_id FROM {settings.database.postgres_agent_attempt_table} WHERE task_id=%s AND id=%s",
+        (task["id"], task["attempt_id"]))
+    attempt = cur.fetchone()
+    _require(attempt is not None, "Original native reader has no matching producer attempt")
+    return RuntimeCheckpointSource(binding=binding, task_id=task["id"], attempt_id=task["attempt_id"],
+        owner_epoch=owner_epoch, worker_id=attempt["worker_id"])
+
+
+def read_terminal_event_materials(cur, settings, source, preparation, native, budget, sealed):
+    """One explicit sealed/unsealed material branch; no persistence or admission.
+
+    No upstream counterpart (checked: checkpoint prefix v1/v2, original event
+    completion, shared terminal intent projector, v4 §9.2): a missing declaration
+    cannot be replaced with whatever events happen to be visible. Only the exact
+    checkpoint-bound ACK prefix plus frozen rules can derive the terminal suffix.
+    Existing terminal rows must match that suffix; they are never overwritten.
+    """
+    if sealed is not None:
+        _require(native.proof == sealed.completion.native_terminal, "Original result native terminal changed")
+        return RuntimeTerminalEventRead(sealed.completion, None, sealed.event_log, sealed.completion.returned_event_offset)
+
+    from src.application.deep_agents.result_projection import project_deep_agent_result
+    from src.application.runtime.turn_projection import project_deep_agent_checkpoint_callback_facts, project_deep_agent_terminal_events
+
+    phase = "checkpoint_prefix"
+    try:
+        events = read_checkpoint_event_prefix(cur, settings, source, preparation, native)
+        prefix = RuntimeCheckpointEventPrefix.model_validate(native.checkpoint_event_prefix)
+        phase = "original_budget_source"
+        if prefix.root_model_budget_material is None:
+            _require(not budget.calls, "Unsealed result has no original root budget material")
+            material = None
+        else:
+            from src.application.models.framework_model_budget_projection import read_model_budget_material
+
+            material = prefix.root_model_budget_material
+            _require(read_model_budget_material(source.binding, material) == budget,
+                "Unsealed result root model budget differs from its original ledger material")
+        facts = project_deep_agent_checkpoint_callback_facts(preparation.runtime_preparation,
+            event_log=events, returned_event_offset=prefix.returned_event_offset)
+        result = project_deep_agent_result(native.values, stage=facts.adapter_stage, subagent_events=facts.subagent_events,
+            native_terminal=native.proof.model_dump(mode="json"), native_checkpoint_timestamp=native.checkpoint_timestamp,
+            root_model_budget=material)
+        phase = "existing_terminal_events"
+        intents = project_deep_agent_terminal_events(preparation.runtime_preparation, result, event_log=events)
+        existing = _event_rows(cur, settings, source.binding.session_id, [item.id for item in intents])
+        for intent in intents:
+            if intent.id in existing:
+                _require_event_intent(existing[intent.id], intent)
+        # Also detect rows with unexpected identities/order. A missing suffix is
+        # derivable; foreign callbacks, duplicate/completed tails are not.
+        cur.execute(f"SELECT id FROM {settings.database.postgres_event_table} WHERE session_id=%s "
+            "AND payload->>'turn_id'=%s AND payload ? 'step' AND event_sequence>%s ORDER BY event_sequence FOR UPDATE",
+            (source.binding.session_id, source.binding.turn_id, prefix.events[-1].event_sequence))
+        actual = [row["id"] for row in cur.fetchall()]
+        expected = [item.id for item in intents]
+        _require(actual == expected[:len(actual)]
+            and all(existing[item]["event_sequence"] > prefix.events[-1].event_sequence for item in actual),
+            "Unsealed result has conflicting or unbound original events after its checkpoint prefix")
+        events += [dict(id=item.id, timestamp=item.timestamp.isoformat(), type=item.type, payload=item.payload) for item in intents]
+        _require_log(source.binding, events, prefix.returned_event_offset)
+    except (ValueError, FrameworkMessageStageRecoveryRequired) as exc:
+        logger.warning("framework_unsealed_terminal_materials_rejected", extra={"binding_id": source.binding.binding_id,
+            "task_id": source.task_id, "check_phase": phase, "error_type": type(exc).__name__})
+        raise
+    logger.info("framework_unsealed_terminal_materials_read", extra={"binding_id": source.binding.binding_id,
+        "task_id": source.task_id, "checkpoint_id": native.proof.checkpoint_id,
+        "existing_terminal_events": len(existing), "derived_terminal_events": len(intents),
+        "root_model_budget_material": prefix.root_model_budget_material is not None})
+    return RuntimeTerminalEventRead(None, prefix, events, prefix.returned_event_offset)
 
 
 def completion_event(cur, settings, owner, event_log, native_terminal, returned_event_offset):

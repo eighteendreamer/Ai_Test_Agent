@@ -3373,3 +3373,60 @@ if ((git diff --check).Length -ne 0) { throw 'git diff --check failed' }
 本步仅6个生产文件、5个测试文件及本节，共12文件；原v3草稿／测试日志／其他本地数据均排除。以上所有测试会话均已取回真实退出码，进程检查无遗留pytest；提交前核对Git status／完整diff／暂存清单、实施记录仅追加／唯一章节／围栏／本地绝对链接、明显凭据标记和v3 hash。根目录实际运行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 均exit0；ruff／mypy缺失的限制不由compileall替代。提交名 `【feat】原子绑定checkpoint审计前缀并复核原件`；本节与实现及测试同一提交，具体ID以Git历史和交付输出为准。不升级依赖、不改变生产开关或公开路由、不启停共享基础设施、不新增付费调用，不推送、不建PR。
 
 本步只完成同事务保存已确认前缀及只读原件复核，不表示“checkpoint前缀=完整Runtime事件封口”。下步仍须从精确原件与原账本派生缺失终态意图、校验已存在原事件，并在独立窄权限事务中封口／封存原结果／发布只收尾后继；不得invoke图补造事实，已有callback必须复用ACK原件。一次未稳定复现的Worker等待超时仍保留为Harness稳定性／诊断风险，不据此伪造根因或开放发布。A2-2其他故障／材料组合、A2-3、A3及B/C/D/E/F与E3/E4仍未整体完成，完整goal保持active。
+
+## 83. A2-2：缺事件封口时从精确checkpoint原件只读重建终态结果（2026-10-28）
+
+基线 `13bad9817`，承接§82后的未提交草稿。先核对v4、§52及后续记录、生产调用链、Git差异和原测试日志；§54已修复的Delta顺序及严格messages比较不重做、不削弱。原v3文档草稿独立保护，SHA256仍为37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F，不编辑、不提交。此前只读了解项目的一轮没有新增实现；恢复完整目标后继续取回原会话33679并补齐收尾消费方验证，没有因观察等待超时重启同一测试。
+
+**本步只增加缺封口结果读取，不授予事件封口、资产封存、后继发布或图执行权。** 恢复消费方的 `read_message_originals`／`read_approval_originals` 默认仍要求原completion，缺封口时继续拒绝准入；下一步必须独立实现窄权限同事务封口／封存／发布。不能把本步子集当作A2-2或完整v4完成。
+
+### 根因、依据 → 做法及契约对应
+
+§82已将ACK审计前缀绑定到精确checkpoint，§81已有冻结终态规则，但原结果reader仍只认 `runtime.event_log_completed`。图返回后强杀会同时缺该声明和末尾应用事件；仅接受当前可见事件会丢失来源边界。另外，根预算原件原来仅在图后结果中捕获，图返回即死亡时无法证明其原值。这是材料生成时机和结果读取职责的缺口，不是重执图或叠加fallback能解决的问题。
+
+| v4阶段／条款与依据 | 代码／测试及本步采用方式 | 真实权限／兼容边界 |
+| --- | --- | --- |
+| A2-2，§6.3／§9.2；既有根账本codec、模型结算和owner sink | [model policy](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/models/framework_model_call_policy.py)结算真实响应后捕获原根预算；[adapter](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/deep_agents/runtime_adapter.py)声明来源，[Runtime](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/runtime_service.py)据此绑定；[sink](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/session_event_sink.py)深拷贝原件，保持原二项解包／索引兼容 | 不新预留、结算或发送模型请求；无policy不伪造预算对象。saver沿原owner短事务把材料随ACK前缀写入同一精确checkpoint，新增一次结算后账本读取，长链性能未验收 |
+| §8.2／§9.2／§10.2；§82前缀认证及原终态投影器 | [event materials](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_event_completion.py)共用sealed／unsealed显式分支：已有声明仍严格读取；缺声明仅消费checkpoint-bound原ACK、原冻结规则、官方物化终态和精确根账本，派生缺失plan／completed意图 | 已有末尾事件必须为相同意图的连续前缀；缺plan却存在completed、额外callback、重复或漂移事件全部拒绝。读取不补写、不造声明、不改变原task／attempt／stage |
+| §8.3／§9.4；正常与恢复共用纯投影 | [turn projection](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/application/runtime/turn_projection.py)复用callback解析并消费原冻结stage；[message reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_message_result_reader.py)和[approval reader](G:/Code_Warehouse/Ai_Test_Agent/Enterprise_AI_QA_Agent/Agent_Server/src/runtime/framework_approval_result_reader.py)在原生I/O前后短事务复核原件，复用唯一结果及Verification投影 | read对象的completion可为None，并附checkpoint_event_prefix。未封口预算来自原prefix而非派生尾行；sealed仍沿原末尾材料。全量消息、身份、时间、工具材料和原规则不删减，原生读取不取得执行token |
+| §14.1／§16；原prefix schema1和stage21读者 | prefix schema2必须含根预算原件，使用既有codec与当前精确账本比较；schema1序列化保持原wire、不含预算字段，仅无调用账本可在缺封口时读取 | 没有公共API／DDL／依赖或stage版本变更。新reader读旧prefix的局部合同已测，旧prefix读者不认识schema2；不能声称双制品部署兼容通过。上线前仍须能力路由／兼容制品验收 |
+
+本地参考 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/deepseek-harness/python/sdk/src/deepseek_harness/api.py::RunResult` 的结果、events、notifications分责 → 保留图终态、应用审计、结果资产的不同权限，不移植其恢复承诺。固定SDK `langgraph-checkpoint-postgres 3.1.2::PostgresSaver.put` 与LangGraph 1.2.12同步checkpoint流程 → 复用原owner事务和官方codec，不手写SDK表。课程 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹／幂等／协议边界 → 核对完整oracle、重复读取零写入、来源漂移及真实独立Worker强杀。
+
+### TDD与真实失败保留
+
+日志均位于项目 `.codex-logs`，不提交、不覆盖原失败：
+
+- `framework-unsealed-result-contract-red-2026-10-28.log`：**1 failed，9.23秒**，旧reader因缺completion拒绝目标只读行为；`framework-unsealed-budget-material-red-2026-10-28.log`：**1 failed，18.59秒**，真实Worker精确checkpoint缺root_model_budget_material，是原材料时机缺口。
+- `framework-unsealed-result-integration-final-2026-10-28.log`：**1 failed，22 passed，102.59秒**。原after_graph_events Harness在最后checkpoint之后才注入callback；其当前可见ACK不能冒充checkpoint原件。保留该窗口为真实拒绝负例，另加官方子代理graph-return强杀正例，不放宽生产验证。
+- 首次fixture导入两次collection错误（9.88秒／7.06秒）、中间字段KeyError、续接时旧root_model_budget_source期望、一次编辑IndentationError均为测试／编辑错误，不冒充目标红测。多次legacy负例未抛异常后查证：无调用账本的schema1原本合法；改为明确非法夹带材料的legacy_budget负例，并保留schema1正例、真实三次调用账本缺预算／漂移／外绑定负例，不能靠一律拒绝旧格式求绿。
+- 中间12 passed及72 passed组仅作过程证据，以下最终选择覆盖它们，不累计。原§82审批Worker20秒等待超时及未稳定复现记录保持原样；本次完整消费者组通过不等于该历史超时根因已查明或已修复。
+
+### 最终源码验证
+
+工作目录Agent_Server，解释器 `../.venv-framework-v2/Scripts/python.exe`，设置RUN_LIVE_POSTGRES_TESTS=1、PYTHONIOENCODING=utf-8；每条pytest均加 `-u -m pytest`、末尾 `-q -x -rs --tb=short`，完整stdout＋stderr通过 `2>&1 | Tee-Object`保存，返回原$LASTEXITCODE。原会话实际取回exit0，不凭日志末尾猜测退出状态。
+
+| 选择／最终日志（均为2026-10-28） | 实际结果 | 核对范围 |
+| --- | --- | --- |
+| budget-final，会话51624；framework-unsealed-result-budget-final-2026-10-28.log | **72 passed，378.85秒，exit0，无skip** | unsealed_result_reconstruction、terminal_gap、message_result_reconstruction、approval_result_reconstruction四文件；普通none／tools／planning／api-tester、批准／拒绝oracle等价、重复读取零写入、真实强杀和三次调用根预算不增加 |
+| core-final，会话93914；framework-unsealed-result-core-final-2026-10-28.log | **290 passed，400.02秒，exit0，无skip** | event_completion、turn_projection、checkpoint_fencing、live_event_persistence、model_policy、model_budget_projection、deep_agent_runtime_adapter、runtime_import_isolation八文件；schema1／2、深拷贝、原件漂移、原owner事务及正常路径 |
+| consumers-final，会话33679；framework-unsealed-result-consumers-final-2026-10-28.log | **259 passed，1900.42秒，exit0，无skip** | approval_asset_gap_recovery、message_asset_gap_recovery、application_projection、runtime_result_asset、approval_graph_input、approval_runtime、approval_recovery七文件；sealed准入、资产封存、唯一收尾及原审批强杀／严格消息比较不回退 |
+| finalization-final，会话21598；framework-unsealed-result-finalization-final-2026-10-28.log | **143 passed，631.17秒，exit0，无skip** | finalization_projection、partial_projection_recovery、observation_projection、snapshot_projection、event_projection五文件；收尾与原分项补缺／冲突验证 |
+
+对应精确命令：
+
+```powershell
+# 工作目录Agent_Server；环境及统一pytest参数见上文
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_terminal_gap.py tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_event_completion.py tests/test_framework_turn_projection.py tests/test_framework_checkpoint_fencing.py tests/test_framework_live_event_persistence.py tests/test_framework_model_policy.py tests/test_framework_model_budget_projection.py tests/test_deep_agent_runtime_adapter.py tests/test_runtime_import_isolation.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_message_asset_gap_recovery.py tests/test_framework_application_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_recovery.py -q -x -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_observation_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py -q -x -rs --tb=short
+```
+
+证据限E1／E2子集：固定官方框架／SDK、真实PG／Redis、独立进程与真实强杀；模型是受控替身或本地HTTP／SSE服务，对象存储是LocalModelObjects替身，不是RustFS。真实供应商／RustFS／领域Runner的E3、双制品／灰度回滚／备份恢复的E4、全量、前端、wheel、官方saver conformance和长链性能未执行。实际find_spec确认ruff／mypy均不存在，未安装，不声称lint／typecheck通过。
+
+### 提交范围与后续出口
+
+本步9个生产文件、5个测试文件（含新unsealed测试）、测试白名单及本节，共16文件；仅暂存这些文件，排除原v3草稿、日志和本地数据。提交前实际执行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，核对完整diff、明显凭据、暂存清单、实施记录仅追加／唯一章节／围栏／本地链接及v3 hash。提交名 `【feat】从原checkpoint材料只读重建未封口终态`，commit ID以Git历史和交付输出为准。不升级依赖、不启停共享设施、不改生产路由／开关、不发起真实供应商／目标调用，不推送、不建PR。
+
+下一子步沿现有消息准入／审批对账事务重新复核精确原件，原子补封缺失终态意图、封存原结果并发布仅收尾后继；读取材料不能自授该权限，现有缺封口恢复拒绝仍是明确待实现出口。还需该事务回滚／竞争／再次失租和真实独立Worker故障矩阵。A2-2未整体完成，A2-3、A3及B/C/D/E/F与E3/E4等完整目标继续保持active。
