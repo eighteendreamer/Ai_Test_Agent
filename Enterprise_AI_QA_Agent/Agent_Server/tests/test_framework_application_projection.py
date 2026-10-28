@@ -350,8 +350,10 @@ def legacy_application_commit_stage(saved, schema_version):
     """Recreate a pre-intent format only in isolated historical fixtures."""
     from src.runtime.framework_message_stages import validate_message_stage
 
-    manifest = {key: value for key, value in saved.source_manifest.items()
-        if key not in {"post_commit_memory_intent", "application_projection_commit"}}
+    removed = {"post_commit_memory_plan", "application_projection_commit"}
+    if schema_version < 25:
+        removed.add("post_commit_memory_intent")
+    manifest = {key: value for key, value in saved.source_manifest.items() if key not in removed}
     proof = {**saved.source_manifest["application_projection_commit"], "source_sha256": approval_value_hash(manifest)}
     manifest["application_projection_commit"] = proof
     return validate_message_stage(saved.model_copy(update={"schema_version": schema_version,
@@ -374,7 +376,7 @@ async def test_native_checkpoint_and_committed_application_recover_without_reexe
     assert (await h.tasks.get(successor.id)).status == "completed"
     assert await h.tasks.get(original.id) == terminal
     saved = await stage(h, original)
-    assert saved.phase == "projected" and saved.schema_version == 25
+    assert saved.phase == "projected" and saved.schema_version == 26
     assert saved.source_manifest["post_commit_memory_intent"]["source_snapshot_id"] == saved.source_manifest["application_projection_commit"]["snapshot_id"]
     after = await h.store.get_session(h.session_id)
     assert after.status.value == "completed" and after.metadata["control"]["control_state"] == "completed"
@@ -827,6 +829,95 @@ async def test_memory_intent_is_atomic_before_effect_and_grants_no_execution_rec
 
 
 @pytest.mark.asyncio
+async def test_memory_plan_freezes_each_policy_request_with_stable_identities(projection):
+    h = projection
+    original = await selected(h)
+    await run(h, original)
+    saved = await stage(h, original)
+    raw = saved.source_manifest["post_commit_memory_plan"]
+
+    from src.application.context.memory_runtime_service import MemoryRuntimeService
+    from src.schemas.framework_projection_commit import FrameworkTurnMemoryPlan, turn_memory_request_id
+
+    asset = saved.source_manifest["runtime_result_asset"]
+    result = asset["runtime_result"]
+    expected = MemoryRuntimeService.build_turn_memory_requests(
+        session_id=h.session_id,
+        turn_id=h.binding.turn_id,
+        trace_id=result["state"]["trace_id"],
+        user_message=asset["user_message"],
+        assistant_message=result["output_text"],
+        tool_results=list(result["state"].get("tool_results", [])),
+        context_bundle=dict(result["state"].get("context_bundle", {})),
+    )
+    plan = FrameworkTurnMemoryPlan.model_validate(raw)
+    assert plan.schema_version == 1
+    assert plan.binding_fingerprint == h.binding.fingerprint
+    assert plan.runtime_result_asset_sha256 == saved.source_manifest["runtime_result_asset"]["asset_sha256"]
+    assert plan.source_snapshot_id == saved.source_manifest["application_projection_commit"]["snapshot_id"]
+    assert [item.ordinal for item in plan.requests] == list(range(len(expected)))
+    assert [item.request for item in plan.requests] == expected
+    assert [item.request_id for item in plan.requests] == [
+        turn_memory_request_id(plan.effect_id, index) for index in range(len(expected))
+    ]
+    assert len({item.request_id for item in plan.requests}) == len(plan.requests)
+    assert not {"turn_lease_token", "compaction_key", "compaction_owner_id"}.intersection(
+        plan.model_dump_json()
+    )
+    assert not {"memory_ids", "completed_at", "execution_authority", "retry_authority"}.intersection(
+        plan.model_dump_json()
+    )
+    from src.runtime.framework_message_stages import validate_message_stage
+
+    for delta in (
+        {"effect_id": "forged"},
+        {"requested": False},
+        {"requests": [{**raw["requests"][0], "request_id": "forged"}, *raw["requests"][1:]]},
+        {"completed": True},
+    ):
+        with pytest.raises((FrameworkMessageStageRecoveryRequired, ValidationError)):
+            validate_message_stage(saved.model_copy(update={
+                "source_manifest": {**saved.source_manifest, "post_commit_memory_plan": {**raw, **delta}},
+                "source_sha256": approval_value_hash({
+                    **saved.source_manifest, "post_commit_memory_plan": {**raw, **delta}
+                }),
+            }).model_dump())
+    manifest = {key: value for key, value in saved.source_manifest.items()
+        if key != "post_commit_memory_plan"}
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="lost its frozen Memory plan"):
+        validate_message_stage(saved.model_copy(update={"source_manifest": manifest,
+            "source_sha256": approval_value_hash(manifest)}).model_dump())
+
+
+@pytest.mark.asyncio
+async def test_memory_plan_rolls_back_with_the_real_application_transaction(projection, monkeypatch):
+    from src.runtime import framework_application_projection as commits
+    from src.runtime.framework_message_stages import message_stage_table
+
+    h = projection
+    failure = ConnectionError("injected memory plan transaction rollback")
+    record = commits.record_application_commit
+    observed = []
+
+    def record_then_abort(cur, settings, session, events, write):
+        record(cur, settings, session, events, write)
+        cur.execute(f"SELECT record FROM {message_stage_table(h.settings)} WHERE binding_id=%s", (h.binding.binding_id,))
+        observed.append(cur.fetchone()["record"]["source_manifest"]["post_commit_memory_plan"])
+        raise failure
+
+    monkeypatch.setattr(commits, "record_application_commit", record_then_abort)
+    original = await selected(h)
+    with pytest.raises(ConnectionError) as captured:
+        await run(h, original)
+    assert captured.value is failure and len(observed) == 1
+    saved = await stage(h, original)
+    assert "application_projection_commit" not in saved.source_manifest
+    assert "post_commit_memory_intent" not in saved.source_manifest
+    assert "post_commit_memory_plan" not in saved.source_manifest
+    assert (await h.store.get_session(h.session_id)).status.value != "completed"
+
+
+@pytest.mark.asyncio
 async def test_empty_result_records_memory_intent_without_a_copy_request(projection):
     h = projection
     h.output_text = ""
@@ -834,8 +925,10 @@ async def test_empty_result_records_memory_intent_without_a_copy_request(project
     response = await run(h, original)
     saved = await stage(h, original)
     intent = saved.source_manifest["post_commit_memory_intent"]
+    plan = saved.source_manifest["post_commit_memory_plan"]
     assert response.session.status.value == "completed" and intent["requested"] is False
     assert intent["source_snapshot_id"] == saved.source_manifest["application_projection_commit"]["snapshot_id"]
+    assert plan["requested"] is False and plan["requests"] == []
 
 
 @pytest.mark.parametrize("delta", [{"schema_version": True}, {"schema_version": 1.0},

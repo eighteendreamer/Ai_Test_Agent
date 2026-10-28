@@ -83,7 +83,7 @@ async def test_projected_approval_loss_reconciles_and_only_settles(projected_app
     successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
     assert outbox(h, successor.id) is not None
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.schema_version == 25 and saved.phase == "projected"
+    assert saved.schema_version == 26 and saved.phase == "projected"
     assert "post_commit_memory_intent" in saved.source_manifest
     assert saved.source_manifest == before.source_manifest
     assert saved.result_reference == before.result_reference
@@ -381,13 +381,13 @@ async def test_interrupt_after_expiry_without_active_task_cannot_rewrite_complet
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reader,version", [(22, 23), (23, 24), (24, 25)])
+@pytest.mark.parametrize("reader,version", [(22, 23), (23, 24), (25, 26)])
 async def test_approval_settlement_format_checked_before_real_claim(projected_approval, reader, version):
     from tests.test_framework_approval_graph_input import replace_stage
     from tests.test_framework_application_projection import legacy_application_commit_stage
 
     h = projected_approval
-    if version < 25:
+    if version < 26:
         original = h.stages.get(h.initial_task_id, h.session_id)
         replace_stage(h, legacy_application_commit_stage(original, version).model_dump(mode="json"))
     _, successor = await settlement_successor(h)

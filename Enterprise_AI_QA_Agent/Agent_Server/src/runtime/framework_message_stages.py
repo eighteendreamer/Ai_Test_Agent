@@ -61,6 +61,9 @@ def validate_message_stage(record):
     if (stage.schema_version >= 25 and "application_projection_commit" in manifest
         and "runtime_result_asset" in manifest and "post_commit_memory_intent" not in manifest):
         raise FrameworkMessageStageRecoveryRequired("Application commit v25 lost its original Memory intent")
+    if (stage.schema_version >= 26 and "application_projection_commit" in manifest
+        and "runtime_result_asset" in manifest and "post_commit_memory_plan" not in manifest):
+        raise FrameworkMessageStageRecoveryRequired("Application commit v26 lost its frozen Memory plan")
     if "post_commit_memory_intent" in manifest:
         from src.schemas.framework_projection_commit import FrameworkTurnMemoryIntent
         from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
@@ -72,6 +75,25 @@ def validate_message_stage(record):
         intent = FrameworkTurnMemoryIntent.model_validate(manifest["post_commit_memory_intent"])
         if intent != FrameworkTurnMemoryIntent.from_result_asset(asset):
             raise FrameworkMessageStageRecoveryRequired("Memory intent differs from its frozen original result")
+    if "post_commit_memory_plan" in manifest:
+        from src.runtime.framework_application_projection import build_turn_memory_plan
+        from src.schemas.framework_projection_commit import FrameworkTurnMemoryPlan
+        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+        if (stage.schema_version < 26 or stage.phase not in {"runtime_submitted", "projected"}
+            or "runtime_result_asset" not in manifest or "application_projection_commit" not in manifest
+            or "post_commit_memory_intent" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Memory plan has no atomic application commit or compatible format")
+        asset = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        plan = FrameworkTurnMemoryPlan.model_validate(manifest["post_commit_memory_plan"])
+        expected = build_turn_memory_plan(asset)
+        if plan != expected:
+            raise FrameworkMessageStageRecoveryRequired("Memory plan differs from its frozen original result")
+        intent = FrameworkTurnMemoryIntent.model_validate(manifest["post_commit_memory_intent"])
+        if (plan.effect_id != intent.effect_id or plan.requested != intent.requested
+            or plan.runtime_result_asset_sha256 != intent.runtime_result_asset_sha256
+            or plan.source_snapshot_id != intent.source_snapshot_id):
+            raise FrameworkMessageStageRecoveryRequired("Memory plan differs from its atomic Memory intent")
     if "approval_graph_inputs" in manifest:
         from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
 

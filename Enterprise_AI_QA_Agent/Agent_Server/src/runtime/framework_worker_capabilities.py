@@ -22,7 +22,7 @@ class FrameworkWorkerCapabilities:
     dependency_lock_sha256: str
     deepagents_available: bool
     runtime_version: str = FRAMEWORK_RUNTIME_VERSION
-    message_stage_max_version: int = 25
+    message_stage_max_version: int = 26
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):

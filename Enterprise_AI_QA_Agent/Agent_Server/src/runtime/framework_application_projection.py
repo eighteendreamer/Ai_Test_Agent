@@ -18,7 +18,17 @@ from src.runtime.framework_message_stages import (
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.runtime.postgres_runtime_owner import assert_runtime_owner, configure_runtime_owner_transaction
 from src.schemas.framework_approval import approval_value_hash
-from src.schemas.framework_projection_commit import FrameworkProjectionCommit, FrameworkTurnMemoryIntent, TURN_MEMORY_INTENT_KEY
+from src.schemas.framework_projection_commit import (
+    FrameworkProjectionCommit,
+    FrameworkTurnMemoryIntent,
+    FrameworkTurnMemoryPlan,
+    FrameworkTurnMemoryRequest,
+    TURN_MEMORY_INTENT_KEY,
+    TURN_MEMORY_PLAN_KEY,
+    post_commit_effect_id,
+    turn_memory_requested,
+    turn_memory_request_id,
+)
 from src.schemas.runtime_binding import RuntimeExecutionOwner
 
 
@@ -45,6 +55,48 @@ def _require(condition, message):
 
 def _hash(value):
     return approval_value_hash(make_json_safe(value))
+
+
+def build_turn_memory_plan(asset):
+    """Freeze the pure Memory policy without embedding or execution authority."""
+    from src.application.context.memory_runtime_service import MemoryRuntimeService
+
+    binding, result = asset.binding, asset.runtime_result
+    effect_id = post_commit_effect_id(binding.session_id, binding.turn_id, result.snapshot.id, "turn_memory")
+    requested = turn_memory_requested(result)
+    requests = []
+    if requested:
+        requests = MemoryRuntimeService.build_turn_memory_requests(
+            session_id=binding.session_id,
+            turn_id=binding.turn_id,
+            trace_id=str(result.state.get("trace_id") or ""),
+            user_message=asset.user_message,
+            assistant_message=result.output_text,
+            tool_results=list(result.state.get("tool_results") or []),
+            context_bundle=dict(result.state.get("context_bundle") or {}),
+        )
+    frozen_requests = [
+        FrameworkTurnMemoryRequest(
+            request_id=turn_memory_request_id(effect_id, ordinal),
+            ordinal=ordinal,
+            request=request,
+        )
+        for ordinal, request in enumerate(requests)
+    ]
+    values = {
+        "schema_version": 1,
+        "scope": "derived_turn_memory_plan_only",
+        "derivation_contract_version": 1,
+        "effect_id": effect_id,
+        "session_id": binding.session_id,
+        "turn_id": binding.turn_id,
+        "binding_fingerprint": binding.fingerprint,
+        "runtime_result_asset_sha256": asset.asset_sha256,
+        "source_snapshot_id": result.snapshot.id,
+        "requested": requested,
+        "requests": [item.model_dump(mode="json") for item in frozen_requests],
+    }
+    return FrameworkTurnMemoryPlan(**values, asset_sha256=approval_value_hash(values))
 
 
 def _rows(cur, table, columns, session_id, turn_id):
@@ -359,6 +411,10 @@ def record_application_commit(cur, settings, session, events, write):
         _require(TURN_MEMORY_INTENT_KEY not in manifest or manifest[TURN_MEMORY_INTENT_KEY] == intent,
             "Application commit cannot replace a different Memory intent")
         manifest[TURN_MEMORY_INTENT_KEY] = intent
+        plan = build_turn_memory_plan(result_asset).model_dump(mode="json")
+        _require(TURN_MEMORY_PLAN_KEY not in manifest or manifest[TURN_MEMORY_PLAN_KEY] == plan,
+            "Application commit cannot replace a different Memory plan")
+        manifest[TURN_MEMORY_PLAN_KEY] = plan
     cur.execute("SELECT clock_timestamp() AS now")
     committed_at = cur.fetchone()["now"]
     proof = FrameworkProjectionCommit(binding_fingerprint=binding.fingerprint, task_id=owner.task_id,
@@ -376,7 +432,8 @@ def record_application_commit(cur, settings, session, events, write):
         == proof.model_dump(exclude={"committed_at"}), "Application commit cannot replace a different result")
     manifest[COMMIT_KEY] = previous or proof.model_dump(mode="json")
     updated = validate_message_stage(stage.model_copy(update={"schema_version": max(
-        25 if TURN_MEMORY_INTENT_KEY in manifest else 6, stage.schema_version),
+        26 if TURN_MEMORY_PLAN_KEY in manifest else (25 if TURN_MEMORY_INTENT_KEY in manifest else 6),
+        stage.schema_version),
         "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
     cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
         (updated.model_dump_json(), stage.task_id))

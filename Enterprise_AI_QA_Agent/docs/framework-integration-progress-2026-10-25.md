@@ -4094,3 +4094,114 @@ npm.cmd run build
 ```
 
 本步不改变stage格式、Worker能力、公开API或前端；没有新增提交前端／生产路由。`compileall`、全量A3回归、真实embedding端点、Memory行回执、未知调用对账和补偿仍待后续子步。下一步仍需把§91原结果绑定意图扩展为冻结的逐条MemoryWriteRequest计划，并沿既有持久Memory／compaction／cleanup journal建立执行状态与分项回执；本步只改善失败可见性和批量形状安全，不宣称A3完成。
+
+## 93. A3／H06：在应用提交事务内冻结逐条 MemoryWriteRequest 计划（2026-10-29）
+
+基线 `64de9616b`，承接§91的原结果绑定意图和§92的 embedding 未知效果诊断。本步继续 v4 §9.4／§10、A3／H06，先以真实 PostgreSQL 投影 fixture 补红测，再实现**请求计划**；不接入 Memory 执行回执、自动重试、补偿授权或新的调度层。原工作区 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 保持未编辑，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。
+
+### 依据与范围
+
+| 依据 | 采用方式 | 明确边界 |
+| --- | --- | --- |
+| v4 A3／H06；§91 `FrameworkTurnMemoryIntent` | 在同一 `record_application_commit` 事务内，从冻结 `FrameworkRuntimeResultAsset` 复用既有 Memory policy，保存私有 `post_commit_memory_plan` | 计划不是 Memory 行回执、embedding 回执、完成状态、执行权或重试权 |
+| 既有 `FrameworkObservationAsset.write_requests`／`FrameworkObservationCommits` | 新增不可变 `FrameworkTurnMemoryPlan` 和逐项 `FrameworkTurnMemoryRequest`，包含 ordinal、稳定 request identity、完整 `MemoryWriteRequest` 内容与 metadata | 不把 embedding、lease token、compaction owner、memory_ids 或完成字段写入计划 |
+| 现有 `MemoryRuntimeService._build_turn_write_policy` | 抽为无存储依赖的 `build_turn_memory_requests` classmethod；正常 Memory 写入继续调用同一策略，避免重新拼装规则 | 本步未改变实际 Memory provider、embedding、缓存或写入时机 |
+| §14.1 message-stage 能力路由 | 计划引入 message-stage **26**；Worker capability 上限同步为26；历史 v25（仅有 intent、无 plan）继续可读 | 未进行双制品滚动、旧 Worker 实际部署或 E4 兼容验收 |
+
+计划的每个 request identity 由原 effect ID 与 ordinal 经 UUID5 派生，ordinal 必须连续且唯一；计划 digest、binding fingerprint、runtime result asset hash、source snapshot、requested 标志和每条请求均经过严格校验。`runtime_result_source` 排除该派生计划，原结果资产 source hash 不被派生计划污染。计划校验拒绝嵌套未知执行字段、lease/compaction ownership、embedding metadata、完成／重试／执行权限字段；不拒绝策略本身合法的单项 `memory_id` metadata。
+
+### TDD 红测 → 根因 → 修复
+
+新增真实 PG fixture 测试先实际失败：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py -k 'memory_plan_freezes_each_policy_request or memory_plan_rolls_back' -q -rs --tb=short
+# 2 failed、44 deselected；stage 中没有 post_commit_memory_plan，真实事务回滚观察也无法读取计划
+```
+
+根因是§91只保存了单一派生 intent，正式 application commit 没有冻结逐条 Memory policy 的可重建输入。最小修复为：新增严格 schema 与稳定分项身份；`record_application_commit` 同事务生成并写入 plan；`validate_message_stage` 复核 plan 与原结果重新计算值；更新 v26 reader／claim 矩阵。空输出仍登记 `requested=false` 且 `requests=[]`，不伪造 Memory 副本请求。
+
+### 实际验证
+
+以下命令均使用固定 `../.venv-framework-v2/Scripts/python.exe`；PG 测试显式设置 `RUN_LIVE_POSTGRES_TESTS=1`，未启动 Docker、未调用真实供应商或付费 embedding：
+
+```powershell
+# 目标计划／权限／回滚／空结果与严格版本反例
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py -k 'memory_plan or memory_intent_requires_explicit_integer_versions or empty_result_records_memory_intent' -q -rs --tb=short
+# 8 passed、38 deselected，23.77秒，exit0
+
+# 完整 application projection 文件（新计划及旧 v24/v25 读取兼容）
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py -q -rs --tb=short
+# 46 passed，148.32秒，exit0
+
+# Memory 既有局部回归
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_memory_embedding_runtime.py tests/test_memory_vector_replica.py tests/test_session_hot_memory_integration.py -q -rs --tb=short
+# 7 passed，4.25秒，exit0
+
+# Worker reader/claim 及 stage 单元契约
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py -q -rs --tb=short
+# 135 passed、16 skipped，5.77秒，exit0；skip 均为未启用真实 PG/Redis 的既有环境门
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均 exit0
+```
+
+在首轮跨文件回归中，旧测试仍按 v25 断言且历史 fixture 未移除新 plan，出现 **5 failed、308 passed**；失败均为测试契约／历史 fixture 未随 v26 迁移，不是运行时 plan 内容断言。随后已修正 projected／settlement 的 v26 断言、v25 无 plan 历史形状和旧 ACK-only fixture，并分别取得 projected settlement 3 passed、approval settlement 3 passed、historical event ACK-only 3 passed。该首轮失败记录保留，不用后续定向绿色覆盖它；尚未重新运行完整 308 项组合。
+
+### 当前提交边界与剩余出口
+
+本子步涉及 7 个生产文件、10 个测试文件及本记录；v3 草稿、`.codex-logs`、`.env` 和本地数据排除。尚未接入：Memory 执行状态／逐行回执、embedding／Memory 未知效果查询与有依据补偿、资源清理分项 journal、进程调用中途死亡矩阵；H07 Worker 失租首因仍未确认。A3 其余出口及 B／C／D／E／F、真实供应商／RustFS／领域 Runner、E3／E4 和完整 v4 目标继续 active。本子步不宣称 A3 或全系统完成。
+
+## 94. A3／H06：冻结计划提交前回归与 P0 失败样本复核（2026-10-29）
+
+本节承接 §54 的 P0 根因记录和 §93 的未提交冻结计划；只记录当前源码的重新验证，不改写历史结果，也不把 A3 子步扩大为全系统验收。
+
+### P0 当前复核
+
+在当前工作区、独立 `.venv-framework-v2`、`RUN_LIVE_POSTGRES_TESTS=1` 和既有 PostgreSQL／Redis 环境下，重新运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[approved-after_native-reconcile_after_commit]' `
+  -q -rs --tb=short
+# 1 passed，27.47 秒，exit 0
+```
+
+该用例当前不再出现 §54 的消息顺序漂移；仍按完整原生 `messages`（身份、顺序、正文、工具调用关联和元数据）比较。§54 的 Delta task-path 排序修复是其依据，不能由本次单例绿色推导 P0 全部出口已完成。
+
+### A3 冻结计划当前回归
+
+当前源码重新运行的主要跨层组如下：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_application_projection.py `
+  tests/test_framework_partial_projection_recovery.py `
+  tests/test_framework_projected_settlement.py `
+  tests/test_framework_approval_settlement.py `
+  -q -rs --tb=short
+# 181 passed，867.23 秒，exit 0
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py `
+  tests/test_framework_runtime_result_asset.py tests/test_framework_approval_graph_input.py `
+  tests/test_framework_event_projection.py tests/test_framework_observation_projection.py `
+  tests/test_framework_terminal_gap.py tests/test_memory_embedding_runtime.py `
+  -q -rs --tb=short
+# 312 passed、1 failed，884.57 秒，exit 1
+```
+
+第二组唯一失败为 `test_original_approval_worker_hard_kill_recovers_only_original_projections[after_snapshot-None]`。失败现场的独立 Worker 在 3 秒资源租约窗口内先记录 `ContinuationLeaseLostError`，未到达 Redis gate，`RedisTaskWorker.run_once()` 返回 0，父进程随后报告 gate 超时；失败栈不涉及 `post_commit_memory_plan`、stage v26 或 Memory 计划校验。将同一 node 单独连续运行三次均为 **1 passed**（每次约 33.4 秒），因此当前证据支持“强杀 fixture 的租约/调度时序不稳定”，不支持将其归因于本子步生产代码；该稳定性出口尚未修复，不能把第二组称为全绿。
+
+随后执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+git diff --check
+# 均 exit 0
+```
+
+### 归属与剩余出口
+
+本节与 §93 的 7 个生产文件、10 个测试文件及本记录共同归属本次 `【feat】冻结Memory逐条写入计划` 提交；v3 草稿、`.codex-logs`、`.env` 和本地数据不纳入。当前提交证明覆盖冻结计划及其消费方回归，不证明 Memory 行执行／逐行回执、未知 embedding 对账／补偿、资源清理 journal、H07、A2-3、B/C/D/E/F 或完整 v4 已完成。Worker 强杀 fixture 的时序失败保留为下一出口，不能用三次单例通过替代组合回归。

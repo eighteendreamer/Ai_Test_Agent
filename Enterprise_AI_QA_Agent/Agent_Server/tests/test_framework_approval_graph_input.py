@@ -1177,7 +1177,7 @@ async def test_approval_asset_successor_only_finalizes_the_original_result(froze
     completed = await h.tasks.get(successor_id)
     assert completed.status == "completed", completed.error_code
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.phase == "projected" and saved.schema_version == 25
+    assert saved.phase == "projected" and saved.schema_version == 26
     assert saved.source_manifest["post_commit_memory_intent"]["runtime_result_asset_sha256"] == asset.asset_sha256
     assert saved.source_manifest["runtime_result_asset"] == original.source_manifest["runtime_result_asset"]
     assert saved.source_manifest["approval_graph_inputs"] == original.source_manifest["approval_graph_inputs"]

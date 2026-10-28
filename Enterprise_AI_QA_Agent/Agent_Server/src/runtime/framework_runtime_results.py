@@ -112,6 +112,7 @@ def runtime_result_source(stage):
     source.pop("observation_projection_asset", None)
     source.pop("observation_projection_commits", None)
     source.pop("post_commit_memory_intent", None)
+    source.pop("post_commit_memory_plan", None)
     return source
 
 

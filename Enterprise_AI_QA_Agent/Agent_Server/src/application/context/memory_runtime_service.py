@@ -726,8 +726,9 @@ class MemoryRuntimeService:
             f"(tool={tool_key}, scope={hit.scope}, source={source}, score={hit.score or 0:.3f})"
         )
 
-    def _build_turn_write_policy(
-        self,
+    @classmethod
+    def build_turn_memory_requests(
+        cls,
         session_id: str,
         turn_id: str,
         trace_id: str,
@@ -738,7 +739,7 @@ class MemoryRuntimeService:
         compaction_key: str | None = None,
     ) -> list[MemoryWriteRequest]:
         mode_key = str(context_bundle.get("mode_key") or "default").strip() or "default"
-        metadata = self._build_common_metadata(context_bundle)
+        metadata = cls._build_common_metadata(context_bundle)
         requests = [
             MemoryWriteRequest(
                 scope="session",
@@ -772,7 +773,7 @@ class MemoryRuntimeService:
                 },
             ),
         ]
-        if not self._is_security_session_isolated(context_bundle):
+        if not cls._is_security_session_isolated(context_bundle):
             requests.append(
                 MemoryWriteRequest(
                     scope="global",
@@ -790,7 +791,7 @@ class MemoryRuntimeService:
                     source="conversation.long_term",
                     metadata={
                         **metadata,
-                        "memory_id": self._stable_long_term_memory_id(session_id, turn_id, user_message),
+                        "memory_id": cls._stable_long_term_memory_id(session_id, turn_id, user_message),
                         "memory_level": "long_term",
                         "mode_key": mode_key,
                         "context_keys": sorted(context_bundle.keys()),
@@ -839,6 +840,24 @@ class MemoryRuntimeService:
                 })
         return requests
 
+    def _build_turn_write_policy(
+        self,
+        session_id: str,
+        turn_id: str,
+        trace_id: str,
+        user_message: str,
+        assistant_message: str,
+        tool_results: list[dict[str, Any]],
+        context_bundle: dict[str, Any],
+        compaction_key: str | None = None,
+    ) -> list[MemoryWriteRequest]:
+        return type(self).build_turn_memory_requests(
+            session_id=session_id, turn_id=turn_id, trace_id=trace_id,
+            user_message=user_message, assistant_message=assistant_message,
+            tool_results=tool_results, context_bundle=context_bundle,
+            compaction_key=compaction_key,
+        )
+
     def _derive_read_tags(self, context: dict[str, Any]) -> list[str]:
         tags: list[str] = []
         target_url = str(context.get("target_url") or "")
@@ -865,7 +884,8 @@ class MemoryRuntimeService:
             filters["campaign_id"] = campaign_id
         return filters
 
-    def _build_common_metadata(self, context: dict[str, Any]) -> dict[str, Any]:
+    @staticmethod
+    def _build_common_metadata(context: dict[str, Any]) -> dict[str, Any]:
         metadata: dict[str, Any] = {}
         for key in ("mode_key", "target_fingerprint", "campaign_id", "platform_label", "project_id", "environment"):
             value = str(context.get(key) or "").strip()
@@ -873,7 +893,8 @@ class MemoryRuntimeService:
                 metadata[key] = value
         return metadata
 
-    def _is_security_session_isolated(self, context: dict[str, Any]) -> bool:
+    @staticmethod
+    def _is_security_session_isolated(context: dict[str, Any]) -> bool:
         mode_key = str(context.get("mode_key") or "").strip().lower()
         scope = str(context.get("security_memory_scope") or "").strip().lower()
         allow_cross_session = bool(context.get("allow_cross_session_memory"))
@@ -911,6 +932,7 @@ class MemoryRuntimeService:
         )
         return ranked[:top_k]
 
-    def _stable_long_term_memory_id(self, session_id: str, turn_id: str, user_message: str) -> str:
+    @staticmethod
+    def _stable_long_term_memory_id(session_id: str, turn_id: str, user_message: str) -> str:
         digest = hashlib.sha1(f"{session_id}:{turn_id}:{user_message.strip()}".encode("utf-8")).hexdigest()
         return f"ltm-{digest[:20]}"

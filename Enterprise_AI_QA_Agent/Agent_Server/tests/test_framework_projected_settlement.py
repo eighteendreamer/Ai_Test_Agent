@@ -59,7 +59,7 @@ async def test_projected_owner_loss_publishes_only_settlement_and_preserves_orig
     assert len({item.id for item in successors}) == 1
     successor = successors[0]
     saved = await stage(h, successor)
-    assert saved.phase == "projected" and saved.schema_version == 25
+    assert saved.phase == "projected" and saved.schema_version == 26
     assert "post_commit_memory_intent" in saved.source_manifest
     assert saved.result_reference == projected.result_reference
     assert saved.source_manifest == projected.source_manifest
@@ -178,9 +178,9 @@ async def test_settlement_proof_has_no_finalizer_or_stage_reentry_authority(proj
     stages = FrameworkMessageStages(h.tasks)
     saved = await stage(h, successor)
     assert validate_message_stage(saved.model_dump()) == saved
-    current_format = saved.model_copy(update={"schema_version": 25})
+    current_format = saved.model_copy(update={"schema_version": 26})
     assert validate_message_stage(current_format.model_dump()) == current_format
-    for version in (21, 24, 26):
+    for version in (21, 24, 27):
         with pytest.raises((FrameworkMessageStageRecoveryRequired, ValidationError)):
             validate_message_stage(saved.model_copy(update={"schema_version": version}).model_dump())
     for operation in (lambda: stages.resume_finalizing(claimed.runtime_owner),
@@ -245,7 +245,7 @@ async def test_settlement_success_cannot_omit_its_completed_result(projection):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reader,version", [(21, 22), (22, 23), (24, 25)])
+@pytest.mark.parametrize("reader,version", [(21, 22), (22, 23), (25, 26)])
 async def test_projected_settlement_format_is_rejected_before_real_claim(projection, reader, version):
     from src.infrastructure.redis_task_queue import QueuedTask
     from tests.test_framework_application_projection import legacy_application_commit_stage
@@ -253,7 +253,7 @@ async def test_projected_settlement_format_is_rejected_before_real_claim(project
     h = projection
     original = await selected(h)
     await run(h, original)
-    if version < 25:
+    if version < 26:
         saved = legacy_application_commit_stage(await stage(h, original), version)
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
             cur.execute(f"UPDATE {h.tasks._tasks}_message_stage SET record=%s::jsonb WHERE task_id=%s",
@@ -451,7 +451,7 @@ async def test_official_projected_worker_kill_and_settlement_worker_kill_preserv
             reached = await waiting.blpop(gate, timeout=50)
             assert reached is not None and reached[1] == "stage-projected", f"origin worker exit={process.exitcode}"
             projected = await stage(h, original)
-            assert projected.phase == "projected" and projected.schema_version == 25
+            assert projected.phase == "projected" and projected.schema_version == 26
             assert "post_commit_memory_intent" in projected.source_manifest
             snapshot = await h.store.get_latest_snapshot(h.session_id)
             budget = await h.calls.snapshot(h.binding)

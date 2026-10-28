@@ -385,7 +385,7 @@ async def test_completed_application_binds_observation_receipts(observation_resu
     with framework_owner_scope(h.task.runtime_owner):
         await h.sessions._finalize_runtime_result(**h.result_values)
     saved = await stage(h, h.task)
-    assert saved.schema_version == 25
+    assert saved.schema_version == 26
     assert "post_commit_memory_intent" in saved.source_manifest
     assert len(saved.source_manifest[COMMITS_KEY]["row_hashes"]) == 2
     assert "application_projection_commit" in saved.source_manifest
@@ -409,7 +409,7 @@ async def test_empty_observation_asset_is_reused_without_a_persisted_event(froze
     with framework_owner_scope(h.task.runtime_owner):
         await h.sessions._finalize_runtime_result(**h.result_values)
     saved = await stage(h, h.task)
-    assert saved.schema_version == 25 and saved.source_manifest[COMMITS_KEY]["row_hashes"] == {}
+    assert saved.schema_version == 26 and saved.source_manifest[COMMITS_KEY]["row_hashes"] == {}
     assert "post_commit_memory_intent" in saved.source_manifest
     assert "application_projection_commit" in saved.source_manifest
     assert not any(e.type == "observations.persisted" for e in await h.store.list_events(h.session_id))

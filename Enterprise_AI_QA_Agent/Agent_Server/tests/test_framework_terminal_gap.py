@@ -629,7 +629,7 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
             assert not process.is_alive() and process.exitcode == 0
             assert (await h.tasks.get(task.id)).status == "completed"
             saved = await stage(h, task)
-            assert saved.phase == "projected" and saved.schema_version == 25
+            assert saved.phase == "projected" and saved.schema_version == 26
             assert "post_commit_memory_intent" in saved.source_manifest
             completions = [event for event in await h.store.list_events(h.session_id)
                 if event.type == "runtime.event_log_completed"]
