@@ -233,7 +233,9 @@ class PostgresCaseActionAdmission:
                     WHERE id=%s AND started_at IS NULL AND status IN ('queued','waiting_approval') RETURNING *""",
                     (now, now, output["summary"], json.dumps(output,ensure_ascii=False),
                         json.dumps({RECEIPT_KEY:receipt},ensure_ascii=False),job.id))
-                saved = _job_from_row(cur.fetchone())
+                row = cur.fetchone()
+                self._jobs.record_activity_in_transaction(cur, job.model_dump(mode="python"), row)
+                saved = _job_from_row(row)
             else:
                 metadata = {RECEIPT_KEY:receipt}
                 if identity is not None:
@@ -282,6 +284,7 @@ class PostgresCaseActionAdmission:
         row = cur.fetchone()
         if row is None:
             raise ValueError("逻辑操作别名原状态已变化，不能覆盖")
+        self._jobs.record_activity_in_transaction(cur, job.model_dump(mode="python"), row)
         logger.info("case_operation_alias_saved",extra={"tool_job_id":job.id,"origin_job_id":origin.id,
             "operation_id":identity["operation_id"],"decision":decision,"action_sent":False})
         return _job_from_row(row)

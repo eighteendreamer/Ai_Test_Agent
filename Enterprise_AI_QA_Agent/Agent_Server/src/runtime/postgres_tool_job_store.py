@@ -14,6 +14,7 @@ from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
 from src.schemas.tool_job import ToolArtifactRecord, ToolJobRecord, ToolJobStatus
 from src.runtime.execution_context import current_framework_owner
 from src.runtime.framework_tool_authority import lock_tool_authority, execution_reference, EXECUTION_KEY
+from src.runtime.framework_tool_activity import ACTIVITY_KEY, record_tool_activity
 from src.runtime.store import ContinuationLeaseLostError
 
 
@@ -94,12 +95,13 @@ class PostgresToolJobStore:
 
     def _park_child_wait_sync(self, job_id, summary, metadata):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-            lock_tool_authority(cur, self._settings, job_id)
+            previous = lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status='waiting_children', summary=%s, metadata=metadata || %s::jsonb, updated_at=now()
                 WHERE id=%s AND status='running' AND NOT (metadata ? 'tool_output_observation') RETURNING *""",
                 (summary, json.dumps(make_json_safe(metadata), ensure_ascii=False), job_id))
             row = cur.fetchone()
+            self._record_activity(cur, previous, row)
             return _job_from_row(row) if row else None
 
     async def claim_child_wait(self, job_id: str) -> ToolJobRecord | None:
@@ -107,11 +109,12 @@ class PostgresToolJobStore:
 
     def _claim_child_wait_sync(self, job_id):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-            lock_tool_authority(cur, self._settings, job_id)
+            previous = lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status='running', heartbeat_at=now(), updated_at=now()
                 WHERE id=%s AND status='waiting_children' RETURNING *""", (job_id,))
             row = cur.fetchone()
+            self._record_activity(cur, previous, row)
             return _job_from_row(row) if row else None
 
     async def observe_job_output(self, job_id: str, *, output_payload: dict, observation: dict,
@@ -122,7 +125,7 @@ class PostgresToolJobStore:
 
     def _observe_job_output_sync(self, job_id, output_payload, observation, metadata=None, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-            lock_tool_authority(cur, self._settings, job_id)
+            previous = lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET output_payload=%s::jsonb, metadata=metadata || %s::jsonb, updated_at=now()
@@ -133,6 +136,7 @@ class PostgresToolJobStore:
                   json.dumps({"tool_output_observation": observation, **make_json_safe(metadata or {})}, ensure_ascii=False),
                   job_id, owner_token, owner_token))
             row = cur.fetchone()
+            self._record_activity(cur, previous, row, output_observed=True)
             if row is not None:
                 self.effect_evidence.capture(cur, _job_from_row(row), output_payload, observation)
             return _job_from_row(row) if row else None
@@ -149,7 +153,7 @@ class PostgresToolJobStore:
     def _settle_job_output_sync(self, job_id, expected_output, expected_observation, output_payload,
                                status, summary, error_message, artifact_count, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-            lock_tool_authority(cur, self._settings, job_id)
+            previous = lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET output_payload=%s::jsonb, status=%s, summary=%s, error_message=%s,
@@ -163,6 +167,7 @@ class PostgresToolJobStore:
                   json.dumps(make_json_safe(expected_output), ensure_ascii=False),
                   json.dumps(expected_observation, ensure_ascii=False)))
             row = cur.fetchone()
+            self._record_activity(cur, previous, row)
             return _job_from_row(row) if row else None
 
     def _heartbeat_job_execution_sync(self, job_id, owner_token=None):
@@ -186,7 +191,7 @@ class PostgresToolJobStore:
 
     def _finish_job_execution_sync(self, job_id, status, output_payload, summary, error_message, owner_token=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-            lock_tool_authority(cur, self._settings, job_id)
+            previous = lock_tool_authority(cur, self._settings, job_id)
             cur.execute(f"""
                 UPDATE {self._settings.database.postgres_tool_job_table}
                 SET status = %s, output_payload = %s::jsonb, summary = %s, error_message = %s,
@@ -197,6 +202,7 @@ class PostgresToolJobStore:
             """, (status.value, json.dumps(make_json_safe(output_payload), ensure_ascii=False),
                   summary, error_message, job_id, status.value, owner_token, owner_token))
             row = cur.fetchone()
+            self._record_activity(cur, previous, row)
             return _job_from_row(row) if row else None
 
     def _create_job_if_absent_sync(self, job: ToolJobRecord) -> ToolJobRecord:
@@ -205,16 +211,18 @@ class PostgresToolJobStore:
 
     def create_job_if_absent_in_transaction(self, cur, job: ToolJobRecord, *, framework_owner=None) -> ToolJobRecord:
         """Preserve an existing execution while sharing its caller's transaction."""
-        lock_tool_authority(cur, self._settings, job.id, candidate=job, owner=framework_owner, check_execution=False)
+        previous = lock_tool_authority(cur, self._settings, job.id, candidate=job, owner=framework_owner, check_execution=False)
         cur.execute(f"""INSERT INTO {self._settings.database.postgres_tool_job_table} (
             id, session_id, turn_id, trace_id, call_id, tool_key, tool_name,
             status, summary, input_payload, metadata, created_at, updated_at
             ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb,%s,%s)
-            ON CONFLICT (id) DO NOTHING""",
+            ON CONFLICT (id) DO NOTHING RETURNING *""",
             (job.id, job.session_id, job.turn_id, job.trace_id, job.call_id,
              job.tool_key, job.tool_name, job.status.value, job.summary,
              json.dumps(make_json_safe(job.input_payload), ensure_ascii=False),
              json.dumps(make_json_safe(job.metadata), ensure_ascii=False), job.created_at, job.updated_at))
+        inserted = cur.fetchone()
+        self._record_activity(cur, previous, inserted)
         cur.execute(f"SELECT * FROM {self._settings.database.postgres_tool_job_table} WHERE id=%s FOR UPDATE",
             (job.id,))
         return _job_from_row(cur.fetchone())
@@ -226,7 +234,7 @@ class PostgresToolJobStore:
 
     def claim_job_execution_in_transaction(self, cur, job_id, *, metadata=None):
         """Share the original claim with domain confirmation, without whole-row replacement."""
-        lock_tool_authority(cur, self._settings, job_id, check_execution=False)
+        previous = lock_tool_authority(cur, self._settings, job_id, check_execution=False)
         metadata = dict(metadata or {})
         owner = current_framework_owner()
         if owner is not None:
@@ -240,7 +248,46 @@ class PostgresToolJobStore:
             WHERE id = %s AND started_at IS NULL AND status IN ('queued', 'waiting_approval')
             RETURNING *""", (str(uuid4()), json.dumps(make_json_safe(metadata or {}), ensure_ascii=False), job_id))
         row = cur.fetchone()
+        self._record_activity(cur, previous, row)
         return _job_from_row(row) if row else None
+
+    def record_activity_in_transaction(self, cur, previous, current):
+        """Capture domain-owned status SQL after its existing owner/Job locks."""
+        self._record_activity(cur, previous, current)
+
+    def _record_activity(self, cur, previous, current, *, output_observed=False):
+        """One shared journal writer for successful bound state/output mutations.
+
+        The Job lock and captured owner are already held. Diagnostic corruption
+        preserves its original evidence and logs the rejected update; it must
+        not grant rights or block an otherwise legal tool state transition.
+        """
+        if current is None or not current["metadata"].get("framework_binding_id"):
+            return
+        saved = previous["metadata"].get(ACTIVITY_KEY) if previous else None
+        state_changed = previous is None or previous["status"] != current["status"] or output_observed
+        journal = saved
+        recorded = False
+        if saved is None or state_changed:
+            cur.execute("SELECT clock_timestamp() AS observed_at")
+            observed_at = cur.fetchone()["observed_at"]
+            try:
+                journal = record_tool_activity(previous, current, observed_at=observed_at,
+                    output_observed=output_observed)
+                recorded = True
+            except ValueError as exc:
+                logger.warning("framework_tool_activity_record_rejected", extra={
+                    "tool_job_id": current["id"], "binding_id": current["metadata"]["framework_binding_id"],
+                    "error_type": type(exc).__name__})
+        if journal is not None and current["metadata"].get(ACTIVITY_KEY) != journal:
+            cur.execute(f"UPDATE {self._settings.database.postgres_tool_job_table} "
+                "SET metadata=jsonb_set(metadata,'{framework_tool_activity}',%s::jsonb) WHERE id=%s",
+                (json.dumps(journal, ensure_ascii=False), current["id"]))
+            current["metadata"][ACTIVITY_KEY] = journal
+        if state_changed and recorded:
+            logger.info("framework_tool_activity_transition_recorded", extra={
+                "tool_job_id": current["id"], "binding_id": current["metadata"]["framework_binding_id"],
+                "previous_status": previous["status"] if previous else None, "status": current["status"]})
 
     async def list_jobs(self, session_id: str | None = None) -> list[ToolJobRecord]:
         return await asyncio.to_thread(self._list_jobs_sync, session_id)
@@ -342,7 +389,7 @@ class PostgresToolJobStore:
 
     def save_job_in_transaction(self, cur, job: ToolJobRecord, *, framework_owner=None) -> ToolJobRecord:
         """Save using the caller's transaction, without committing independently."""
-        lock_tool_authority(cur, self._settings, job.id, candidate=job, owner=framework_owner)
+        previous = lock_tool_authority(cur, self._settings, job.id, candidate=job, owner=framework_owner)
         cur.execute(
             f"""
             INSERT INTO {self._settings.database.postgres_tool_job_table} (
@@ -398,6 +445,9 @@ class PostgresToolJobStore:
                 job.completed_at,
             ),
         )
+        current = job.model_dump(mode="python")
+        self._record_activity(cur, previous, current)
+        job.metadata = current["metadata"]
         return job
 
     def _get_job_sync(self, job_id: str) -> ToolJobRecord | None:

@@ -5583,3 +5583,59 @@ $env:PYTHONUTF8='1'
 真实供应商、RustFS、领域 Runner、新计量独立 Worker 强杀、精确等待拆分／崩溃尾段、官方 saver conformance、前端与全量后端、E3/E4 未完成。A2/A3、B 其余出口、C/D/E/F、完整 H01–H12 与整体 v4 保持 active。
 
 本节与 §121 仅提交本轮两个运行时源、诊断 schema、两个测试和本实施记录；用户 v3 草稿、认证配置、私有日志、本地数据排除。提交前核对完整 diff 与暂存范围；不推送、不建 PR。
+
+## 123. C／§6.3、H09/H11：同事务保存工具活动状态边界，保留等待分段与未知尾段（2026-10-30）
+
+### 依据、根因与范围
+
+基线 `6c87d7d94`（§121–122）。上一轮提交代码并取得 238 项回归结果，属于实际进展。本轮重新核对工作区、v4 时间契约、ToolJob claim／park／resume／observe／settle 和正式动作确认的 SQL 写入点，用户 v3 草稿保持原样。
+
+- 现有 `PostgresToolJobStore`／`framework_tool_authority.py` 的同连接 owner → Job 锁及 CAS → 在原状态／输出事务内复用唯一活动记录器，不增加执行器、调度层、租约或恢复权限。
+- 本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/codex/codex-rs/rmcp-client/src/rmcp_client.rs::active_time_timeout` 根据显式暂停／恢复维护剩余活动时间 → 借鉴显式边界，不把其进程内 `Instant` 当作本平台持久事实；采用数据库 `clock_timestamp()` 记录实际写入事务观察，忽略调用方的 `updated_at`，旧数据不反推历史等待。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 强调工具轨迹、幂等、超时与部分失败 → 验收状态序列、真实 SQL 回滚、重复 CAS、并发领取和异常原件，不以最终文本或一个耗时数值代替链路证明。
+
+根因是 ToolJob 只有整体起止时间，没有可跨等待恢复读取的迁移历史；继续调整并集算法不能还原已经丢失的边界。本轮补持久来源，不将 §122 的执行包络改名为精确预算。
+
+### 实现与契约
+
+新增 `FrameworkToolActivity`／`ToolActivityEvent`，在服务端保留 `metadata.framework_tool_activity`，版本 1、scope=`tool_job_state_transitions`，只含 Job／binding／Session／Turn 身份、状态、数据库观察时间与已保存输出标志，不写入执行凭据、请求正文或工具结果正文。
+
+- 新绑定 Job 的创建、领取、whole-row 状态变化、子任务等待／继续、实际输出观察和结算共用同事务记录器；正式动作明确拒绝与结果别名的两处 SQL 也调用该记录器。失败 CAS／普通心跳不追加重复事件。
+- journal 是服务端保留字段：候选 whole-row 或等待 metadata 不得删除／替换既有轨迹；`output_observed` 只由实际输出观察写入端口设置，不由通用 metadata 中同名输出字段的存在推断。已知输出只能保持，不能通过后续字段覆盖伪造“未返回”。
+- `read_tool_activity()` 只读校验版本、身份、当前状态、时区与时间顺序；`activity_intervals()` 复用既有区间并集函数，排除显式等待分段。原生输出观察或 completed／partial 结算可关闭本地工具操作段；取消、retry/resume 信号、没有可靠返回的失败不能证明外部已停止，开放尾段仍要求显式 `as_of`。
+- `origin_observed` 仅表示记录器看到创建时的执行前状态，**不是完整 writer 覆盖、精确 handler 时间或物理停止证明**。旧行无轨迹时读取为 `None`；首次受测写入只记录当时看到的前缀，origin 为 false，不拿旧 `started_at` 或租约到期回填。
+- 损坏／未来版本活动原件保留并记录 `framework_tool_activity_record_rejected`，不把诊断资料错误升级为合法工具状态迁移的门禁，也不虚报记录成功。数据库／非预期异常继续传播；活动写入 I/O 故障与业务状态变更在同一事务一起回滚。
+- 本轮不将这些分段接入正常发送、恢复授权或时间预算裁决；根读取仍明确是 `persisted_execution_envelope`。Worker 活动／等待区间、跨来源完整性和真实停止证明尚需继续补齐，不能删掉这些出口。
+
+没有 DDL、依赖、默认配置或生产路由变更。自由 metadata 内新增私有版本化事实不破坏现有 ToolJob DTO；旧 writer 可能丢弃或不维护该字段，正式消费前仍必须验证全部写入制品与轨迹连续性，不能据本地源代码通过认定滚动部署完成。`.gitignore` 仅增加新测试的精确例外，沿已有规则纳入版本控制，不强制绕过父仓库忽略规则。
+
+### TDD 与中间失败
+
+只读服务探针实际得到 PostgreSQL `SELECT 1=1`、Redis `PING=True`，未启停基础设施；测试继续使用 UUID 隔离表／schema／Redis 前缀，不请求真实供应商、RustFS 或领域目标。
+
+1. 两个真实 SQL 生命周期反例先得到 **2 failed，13.14s**：等待恢复／取消后均无持久活动轨迹。首版实现后 **2 passed，9.61s**。
+2. 通用 metadata 伪造返回边界反例 **1 failed，7.02s**，错误地将“存在字段”等同实际输出返回。改为输出观察端口显式记录后 **3 passed，11.85s**，不删除该负例。
+3. 扩展生命周期组先得 **2 failed、10 passed，34.24s**：测试错误地假设宿主机与数据库完全同钟；实测数据库比宿主机约快 **0.38 秒**。改用数据库自身的前后观察时刻验证来源，没有修改生产时钟或放宽为任意时间。
+4. 来源声明反例 **1 failed、4 passed，4.30s**：首事件已 running 却可声明观察到完整执行前来源；补确定性矛盾校验，并将误导性的 `history_complete` 改为仅表达来源的 `origin_observed`。当前五项 schema 反例 **5 passed，4.10s**。
+5. 正式动作别名的真实 SQL 反例 **1 failed，6.88s**：Job 已 denied，journal 仍 queued。同步两处领域 SQL 消费方后，当前新测试全组 **25 passed，52.51s**，含真实 Store 重建、等待／返回／结算、历史缺失、并发 CAS、事务回滚、受控 I/O 故障、来源漂移和非法 metadata；别名测试仅替换 receipt 构建，验证真实 SQL 和原 owner 锁，不冒充完整正式 AgentCase 领域验收。
+6. 中间五文件回归 **95 passed、1 skipped，219.00s**，早于最终来源字段命名与领域 SQL 同步，不能代表最终源码。skip 是 `test_tool_child_wait.py::test_actual_pg_original_wait_claim_and_cancellation`，其独立 `RUN_LIVE_TOOL_CHILD_WAIT_STORE` 与显式隔离 Redis 配置未提供，不能计为通过。
+
+一次服务探针误将 context manager 当连接使用，随后按既有 `with postgres_connect(...)` 用法查证修正；一次从仓库根执行 pytest 因 `src` 导入路径报错，随后按约定切回 `Agent_Server`。这两次工具／命令错误不算生产缺陷。首份红测断言曾展开隔离 fixture 的临时执行标识，已对本轮私有日志脱敏并改成不展开 metadata 的布尔断言；日志不提交。
+
+### 最终验证与剩余出口
+
+续查原执行会话 `57453` 到终态，exit 0，没有重启。工作目录 `Agent_Server`，最终源码实际命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+$env:PYTHONUTF8='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_tool_activity.py tests/test_framework_tool_authority.py tests/test_tool_child_wait.py tests/test_framework_approval_projection.py tests/test_framework_approval_continuation.py tests/test_framework_approval_runtime.py tests/test_framework_approval_recovery.py tests/test_framework_model_budget_projection.py tests/test_framework_message_diagnostics.py tests/test_framework_application_projection.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_delta_replay_order.py -q -rs --tb=short
+# 313 passed、1 skipped，997.54s（0:16:37），exit 0，无 deselected
+```
+
+本地原日志 `.codex-logs/c123-final-tool-activity-2026-10-30.log` 不提交。唯一 skip 仍是上述独立 child-wait opt-in 用例，没有修改其 skip 条件或将其计为通过。组内完整运行 `test_framework_approval_recovery.py`，包含原 `test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling` 的批准／拒绝 × 三个 reconciliation 窗口共六参数；真实 PostgreSQL／Redis／独立进程与框架恢复，模型和工具为受控实现，不能代替真实供应商／领域 Runner。原生消息与 Delta 比较断言保持不变。此组不是新 journal 专门的进程强杀验收，也不是完整 H01–H12。
+
+最终运行期间没有再修改生产源码或测试，仅追加本记录。项目根实际执行 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check`，均 exit 0；`find_spec` 仍确认 ruff／mypy 未安装，未执行独立 lint／typecheck，没有擅自安装工具。最终提交仅包含两处存储接线、新活动 schema／读写逻辑、新测试、精确忽略例外及本实施记录；v3 草稿、配置、日志与本地数据排除。
+
+真实供应商、RustFS、领域 Runner、完整正式动作域验收、独立 child-wait 环境验收、活动 journal 的专门独立 Worker 强杀、精确 Worker／根活动覆盖、崩溃尾段结算／实际停止证明、前端／全量后端、官方 saver conformance 和 E3/E4 均未完成。本轮不开放生产能力，A2/A3/B 的其余出口、C/D/E/F、完整 H01–H12 与整体 v4 继续 active。下一步沿既有 Worker／owner 边界补齐活动来源，再统一根计量；不得把本节的工具状态分段单独升级为完整时间预算。
