@@ -51,11 +51,12 @@ async def context_project(monkeypatch):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("summarize", [False, True])
 @pytest.mark.parametrize("native_prefix", [False, True])
 @pytest.mark.parametrize("approval", [False, True])
 @pytest.mark.parametrize("runtime_version", ["v2.1.0", "v2.2.0"])
 async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_native_asset(
-    projection_harness, native_prefix, approval, monkeypatch, runtime_version, tmp_path, context_project,
+    projection_harness, native_prefix, approval, monkeypatch, runtime_version, tmp_path, context_project, summarize,
 ):
     from tests import test_framework_chat_models as provider_module
 
@@ -72,15 +73,23 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
     h.tables.extend([calls.budgets_table, calls.calls_table])
     original_reply = provider_module._reply
     reply_ids = []
+    agent_reply_ids = []
+    if summarize:
+        from tests.test_framework_model_policy import force_summary
+
+        force_summary(monkeypatch)
 
     def unique_reply(transport):
         reply = original_reply(transport)
         reply["id"] = f"chatcmpl_context_{len(reply_ids)}"
-        if approval and not reply_ids:
+        agent_request = bool(requests[-1]["body"].get("tools"))
+        if approval and agent_request and not agent_reply_ids:
             reply["choices"][0].update(finish_reason="tool_calls", message={"role": "assistant", "content": None,
                 "tool_calls": [{"id": "current-inspect", "type": "function", "function": {
                     "name": "inspect_value", "arguments": '{"value":"A"}'}}]})
         reply_ids.append(reply["id"])
+        if agent_request:
+            agent_reply_ids.append(reply["id"])
         return reply
 
     monkeypatch.setattr(provider_module, "_reply", unique_reply)
@@ -102,6 +111,7 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
         h.sessions._runtime_service = h.runtime
         previous_asset = None
         for index in range(2):
+            request_start = len(requests)
             h.binding = make_binding(h.session_id, f"context-turn-{uuid4().hex}", runtime_version=runtime_version,
                 model_config_fingerprint=fingerprint)
             budget = FrameworkModelBudget(max_calls=4, max_tokens=500_000,
@@ -214,21 +224,57 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
                 wire_system = json.dumps([item for item in requests[-1]["body"]["messages"] if item["role"] == "system"])
                 assert wire_system.count("FROZEN_SKILL_BODY") == wire_system.count("# Identity") == 1
             body = requests[-1]["body"]["messages"]
-            assert [item["content"] for item in body if item["role"] == "user"] == [
-                "Earlier review", *(["repeat"] * (index + 2))]
-            assert sum(item["content"] == "Legacy answer" for item in body) == 1
-            wire = json.dumps(body, ensure_ascii=False)
+            turn_requests = requests[request_start:]
+            summary_requests = [item for item in turn_requests if not item["body"].get("tools")]
+            agent_requests = [item for item in turn_requests if item["body"].get("tools")]
+            if summarize:
+                assert len(summary_requests) == len(agent_requests) == (2 if approval and index == 0 else 1)
+                summary_prompt = summary_requests[0]["body"]["messages"][0]["content"]
+                assert "Earlier review" in summary_prompt and "Legacy answer" in summary_prompt
+                initial_body = agent_requests[0]["body"]["messages"]
+                assert sum(item.get("content") == "repeat" for item in initial_body) == 1
+                assert "Earlier review" not in json.dumps(body)
+                from langchain_core.messages import messages_to_dict
+                from src.schemas.runtime_binding import RuntimeCheckpointSource
+
+                source = RuntimeCheckpointSource.model_validate(owner.runtime_owner.model_dump(exclude={"owner_token"}))
+                adapter = h.runtime._deep_agent_bound_runtime_adapter
+                async with adapter.open_native_reader(graph_input, source=source) as (agent, saver):
+                    terminal = await agent.aget_state({"configurable": {"thread_id": h.binding.thread_id}})
+                assert not terminal.next and not terminal.tasks and not terminal.interrupts
+                assert messages_to_dict(terminal.values["messages"]) == asset["framework_messages"]
+                event = terminal.values["_summarization_event"]
+                assert 0 < event["cutoff_index"] < len(asset["framework_messages"])
+                assert any(item.get("content") == event["summary_message"].content for item in body)
+                assert not any(item["data"]["additional_kwargs"].get("lc_source") == "summarization"
+                    for item in asset["framework_messages"])
+            else:
+                assert summary_requests == []
+                assert [item["content"] for item in body if item["role"] == "user"] == [
+                    "Earlier review", *(["repeat"] * (index + 2))]
+                assert sum(item["content"] == "Legacy answer" for item in body) == 1
+            wire = json.dumps(turn_requests, ensure_ascii=False)
             assert "not yet admitted to this Turn" not in wire and "not context" not in wire
             if native_prefix:
                 assert asset["framework_messages"][1]["data"]["additional_kwargs"]["provider_signature"] == "fixture-native-signature"
-                assert next(item for item in body if item.get("tool_calls"))["tool_calls"][0]["id"] == "previous-call"
-                assert next(item for item in body if item["role"] == "tool")["tool_call_id"] == "previous-call"
+                if not summarize:
+                    assert next(item for item in body if item.get("tool_calls"))["tool_calls"][0]["id"] == "previous-call"
+                    assert next(item for item in body if item["role"] == "tool")["tool_call_id"] == "previous-call"
+                else:
+                    assert "previous-call" in summary_requests[0]["body"]["messages"][0]["content"]
+                assert asset["framework_messages"][2]["data"]["tool_call_id"] == "previous-call"
+            assert sum(item["data"]["id"] == admitted.id for item in asset["framework_messages"]) == 1
             if previous_asset is not None:
                 assert asset["framework_messages"][:len(previous_asset["framework_messages"])] == previous_asset["framework_messages"]
             previous_asset = deepcopy(asset)
-            assert (await calls.snapshot(h.binding)).reserved_calls == (2 if approval and index == 0 else 1)
+            ledger = await calls.snapshot(h.binding)
+            purposes = ["summary", "agent"] if summarize else ["agent"]
+            assert [item.intent.purpose for item in ledger.calls] == purposes * (2 if approval and index == 0 else 1)
+            assert all(item.phase == "completed" for item in ledger.calls)
+            assert ledger.reserved_calls == len(turn_requests) and ledger.actual_tokens == 10 * len(turn_requests)
             await h.tasks.finish(owner, status="completed", result_status="completed")
-        assert len(requests) == len(reply_ids) == (3 if approval else 2)
+        assert len(requests) == len(reply_ids) == (3 if approval else 2) * (2 if summarize else 1)
+        assert len(agent_reply_ids) == (3 if approval else 2)
         assert len(h.effects) == (1 if approval else 0)
 
 

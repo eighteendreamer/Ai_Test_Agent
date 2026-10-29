@@ -163,6 +163,39 @@ async def test_automatic_summary_and_main_request_share_root_ledger(harness, mon
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("transport", TRANSPORTS)
+@pytest.mark.parametrize("summary_text", ["", " \n\t"])
+async def test_empty_native_summary_cannot_replace_history_or_start_the_main_request(
+    harness, monkeypatch, transport, summary_text, caplog,
+):
+    from tests.test_framework_chat_models import _reply
+
+    force_summary(monkeypatch)
+    reply = _reply(transport)
+    if transport == "openai_chat_completions":
+        reply["choices"][0]["message"]["content"] = summary_text
+    elif transport == "openai_responses":
+        reply["output"][0]["content"][0]["text"] = summary_text
+    elif transport == "anthropic_messages":
+        reply["content"][0]["text"] = summary_text
+    else:
+        reply["candidates"][0]["content"]["parts"][0]["text"] = summary_text
+    with _provider(transport, first_reply=reply) as (url, requests):
+        async with governed(harness, _config(transport, url)) as h:
+            with pytest.raises(DeepAgentRuntimeError, match="empty summary"):
+                await execute(h, history(h.request))
+            snapshot = await h.calls.snapshot(h.binding)
+            call, = snapshot.calls
+            assert call.intent.purpose == "summary" and call.phase == "completed"
+            assert snapshot.actual_tokens == 10 and snapshot.unknown_calls == 0
+            assert len(requests) == snapshot.reserved_calls == 1
+            events = [item for item in caplog.records if item.message == "framework_summary_empty"]
+            assert len(events) == 1 and events[0].binding_id == h.binding.binding_id
+            assert events[0].model_key == h.request.model_key and events[0].branch_name is None
+            assert "old fixture question" not in events[0].message
+
+
+@pytest.mark.asyncio
 async def test_failed_summary_has_no_implicit_middleware_retry(harness, monkeypatch):
     force_summary(monkeypatch)
     with _provider("openai_chat_completions", status=503) as (url, requests):

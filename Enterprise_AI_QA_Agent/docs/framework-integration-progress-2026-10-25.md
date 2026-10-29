@@ -5367,3 +5367,47 @@ P0 查证命令在 `Agent_Server`，使用已有根目录 `.venv-framework-v2`�
 旧 `agent` 读取、语义分类准入、原数据格式及指纹均保持；没有变更已有持久记录。新端口只允许按原目的读取已完成且唯一结算的 DTO，不创建新后继、不 invoke 图、不导入未结算 observation，也不授予图内模型节点的 completed 响应消费权。legacy 无 owner 摘要仍缺完整 root ledger；完整原生摘要覆盖迁移、根活动时间、图内安全继续、历史非稳定 Worker 超时首因、A3 远端查询／停止／补偿、D/E/F、完整 H01–H12 与 E3/E4 仍未完成，整体 v4 goal 继续 active。
 
 本节归入 `【fix】保留摘要模型响应恢复的原调用目的`，仅含两个模型源文件、三个测试文件及本实施记录，实际 commit ID 以 Git 和交付输出为准；用户 v3 草稿、日志、认证配置与本地数据均排除。下一步继续 B 的原生摘要覆盖／跨 Turn 发布及 C 的根预算与图内安全继续出口，不把本节的 DTO 只读恢复当作完整阶段或全系统完成。
+
+## 116. B／§5.1.5、C／H09：拒绝空白原生摘要并核实双 Turn 归档（2026-10-30）
+
+### 续接、依据与事实修正
+
+基线 `4426c094c`（§115）。核对当前活动 goal、v4、§52–54 与最新实施记录、实际源码和提交范围；工作区原有 v3 草稿的 SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`，没有覆盖、暂存或提交。Docker 仅执行只读状态检查，没有启停基础设施。
+
+先核实“摘要是否改写发布前缀”，没有将猜测直接当缺陷：固定版 `deepagents/middleware/summarization.py` 的 `_get_effective_messages`／`awrap_model_call` 把摘要和 cutoff 保存到私有 `_summarization_event`，常规阈值摘要只替换模型请求的 effective messages，完整持久 `messages` 不被该路径删除。因此本轮没有放松 `FrameworkContextService.publish()` 的冻结前缀 hash、闭合协议或原生终态精确比较，也没有为一个未复现的前缀缺陷新增资产格式。
+
+继而发现实际语义缺口：项目 `governed_summarization` 把 `result.text.strip()` 直接交回上游；固定版 LangChain `_check_summary` 只检查字符串类型并去空白，仍允许空字符串。真实非空历史因此可能被空白摘要的包装消息代替后继续发起主模型请求。根因是摘要完成的语义契约缺失，不是网络失败、Token 结算失败或需要额外重试。
+
+依据现有 `ContextCompactionService` 不接受空摘要的处理、固定 SDK 的 custom summarizer 扩展端口，以及本地 `Agent测试专项.html`／`Agent轨迹与协议鲁棒性.html` 对实际轨迹、成本和异常终止的要求 → 在已有治理摘要回调处检查非空文本，保留已经完成的真实模型结算；拒绝无内容摘要继续覆盖上下文，不增加 fallback／重新发送／第二套摘要器。
+
+### 代码、消费方与兼容性
+
+- `model_call_middleware.py`：统一 `governed_summarization` 在返回摘要前拒绝空串及纯空白，抛出既有 `DeepAgentRuntimeError`；`framework_summary_empty` 日志仅包含 binding、模型 key、分支名和实际摘要输入消息数，不输出历史正文、摘要、密钥或供应商原文。主／具名认知子代理继续共用同一回调，没有复制分支处理。
+- `test_framework_context_runtime.py`：原双 Turn SDK 集成组增加强制摘要参数，覆盖 v2.1/v2.2、有／无原生前缀、有／无审批的 16 个组合。分别核对摘要／主模型真实请求、未来／不合格消息排除、当前输入身份一次、原资产前缀、provider metadata 和工具配对；通过既有 source-only reader 对比官方原生终态与实际发布资产，并核对私有 summary event、实际 usage 和根账本。审批恢复继续消费冻结输入，不重新读取 Prompt／Skill。
+- `test_framework_model_policy.py`：四种官方 transport 的空串／纯空白共八例，验证只发出一次摘要请求，不发起主模型请求；摘要 ledger 保持 `completed` 和真实 10 Token 的合成 usage，未变成 unknown、未清零或重试；日志可定位且不含历史正文。
+- 全局核对 `governed_summarization`／`configure_model_policy`：既有 adapter、原生终态读者 schema 与恢复 Harness 仍走同一图构建规则。没有修改调用签名、原请求／响应格式、绑定指纹、schema、DDL、Worker capabilities、依赖或路由。空白摘要现在明确报错；非空摘要仍按原规则去两端空白。没有开放图内已结算响应自动消费或新的后继权限。
+
+### 实际验证与原始证据
+
+工作目录 `Agent_Server`，已有根目录 `.venv-framework-v2`；live 组显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`、`PYTHONUTF8=1`。私有 `.codex-logs` 保留结果但不提交：
+
+1. 常规摘要双 Turn 初验 `c116-context-summary-first-2026-10-30.log`：**16 passed，116.81s，exit 0**。该组在空白摘要修复前核实常规摘要并不改写持久消息，不将它冒称最终源码整体验收。
+2. 空白摘要首红测 `c116-empty-summary-red-2026-10-30.log`：**1 failed，8.75s，exit 1**，真实 SDK／PG 执行后 `Failed: DID NOT RAISE DeepAgentRuntimeError`。不是缺包、导入错误或未触发摘要。
+3. 修复后 `c116-empty-summary-green-2026-10-30.log`：**8 passed，30.87s，exit 0**，四种传输空串及纯空白都在主请求之前拒绝。
+4. `pytest tests/test_framework_context_transcript.py tests/test_framework_turn_context.py -q -rs --tb=short`：**49 passed，4.92s，exit 0**；早于最终消费方组，不与其重叠累加。
+
+最终源码的十一文件消费方回归：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_context_runtime.py tests/test_framework_context_transcript.py tests/test_framework_turn_context.py tests/test_framework_model_policy.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_context_compaction.py tests/test_model_failure_lifecycle.py -q -rs --tb=short
+# 354 passed，931.39s，exit 0，无 skip/deselect
+# .codex-logs/c116-summary-final-consumers-2026-10-30.log；终端会话 83754
+```
+
+该组包含本轮两类新增测试、正常／审批恢复的冻结输入消费、原生结果重建、严格终态／Delta 回放和 legacy 摘要错误生命周期，不把早期 16／8／49 项叠加成另一个最终结果。项目根实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均通过。`find_spec` 确认 ruff／mypy 未安装，未执行 lint/typecheck，也未安装新工具；未跑全量后端、前端、真实供应商／RustFS／领域 Runner、官方 saver conformance 或完整 E3/E4。
+
+### 证据边界与剩余出口
+
+本轮跨 Turn 与空白摘要验收为官方框架／SDK、本机合成 HTTP、真实 PG／Redis 的 E2 子集；无真实供应商、RustFS、外部领域 Runner 或新摘要独立 Worker 强杀验收。保留完整消息和检查私有 summary event，不等于已经实现跨 Turn 可复用的身份化摘要资产；`ContextOverflowError` 后修改尾部的 offload 路径也没有被本组强制触发。legacy summary 显式迁移、摘要覆盖身份的持久格式、根活动时间、图内安全继续、历史非稳定 Worker 超时首因、A3 远端查询／停止／补偿、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 均保留为后续出口，v4 goal 继续 active。
+
+本节归入 `【fix】拒绝空白原生摘要并验证跨回合消息覆盖`，仅包含本节、一个摘要源文件和两个相关测试文件，实际 commit ID 以 Git 和交付输出为准；v3 草稿、私有日志、认证配置与本地数据均排除。该子步不代表 B、C 或完整 v4 已完成。

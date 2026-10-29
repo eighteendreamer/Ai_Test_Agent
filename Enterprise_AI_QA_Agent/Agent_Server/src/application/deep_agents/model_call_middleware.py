@@ -1,6 +1,8 @@
 """Explicit policy wiring for main, named subagent and summary model calls."""
 from __future__ import annotations
 
+import logging
+
 from langchain.agents.middleware import AgentMiddleware
 from langchain.agents.middleware.internal_call_transformer import internal_call_metadata
 from langchain.agents.structured_output import AutoStrategy, ProviderStrategy, ToolStrategy
@@ -9,12 +11,16 @@ from langchain_core.messages.utils import get_buffer_string
 from langchain_core.utils.function_calling import convert_to_openai_tool
 from langgraph.runtime import get_runtime
 from deepagents.backends import StateBackend
+from src.application.deep_agents.result_projection import DeepAgentRuntimeError
 from src.application.model_clients.http_observation import (
     current_provider_call_observation, create_observed_http_client, observe_provider_call,
 )
 from deepagents.middleware.summarization import (
     DEEPAGENTS_DEFAULT_SUMMARY_PROMPT, SummarizationMiddleware, compute_summarization_defaults,
 )
+
+
+logger = logging.getLogger(__name__)
 
 
 class FrameworkModelCallMiddleware(AgentMiddleware):
@@ -146,7 +152,14 @@ def governed_summarization(*, policy, owner, model, model_key, backend, branch_n
             messages=request_messages, tools=[], options={},
             send=lambda: model.model_copy(update={"cache": False}).ainvoke(request_messages,
                 config={"metadata": {"lc_source": "summarization", **internal_call_metadata()}}))
-        return result.text.strip()
+        summary = result.text.strip()
+        if not summary:
+            # The upstream custom-summarizer contract accepts empty strings.
+            # Do not let one replace a real history range with an empty body.
+            logger.warning("framework_summary_empty", extra={"binding_id": owner.binding.binding_id,
+                "model_key": model_key, "branch_name": branch_name, "source_message_count": len(messages)})
+            raise DeepAgentRuntimeError("Deep Agents summarization returned an empty summary.")
+        return summary
 
     defaults = compute_summarization_defaults(model)
     return SummarizationMiddleware(model=model, backend=backend, trigger=defaults["trigger"],
