@@ -21,6 +21,8 @@ from src.application.deep_agents.result_projection import (
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.framework_transcript import uses_turn_context_assembly
+from src.schemas.framework_summary import require_summary_coverage_version
+from src.schemas.framework_transcript import SUMMARY_CONTEXT_RUNTIME_VERSION
 
 
 @dataclass(frozen=True)
@@ -48,6 +50,7 @@ class DeepAgentRuntimeRequest:
     resume: dict[str, Any] | None = None
     continue_from_checkpoint: bool = False
     structured_output_version: int | None = None
+    summary_coverage_version: int | None = None
 
 
 ModelResolver = Callable[[str], Awaitable[Any]]
@@ -150,6 +153,10 @@ class DeepAgentRuntimeAdapter:
             )
 
         execution_owner = getattr(checkpointer, "runtime_owner", None)
+        require_summary_coverage_version(request.summary_coverage_version)
+        if ((request.summary_coverage_version is not None)
+            != (execution_owner is not None and execution_owner.binding.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION)):
+            raise DeepAgentRuntimeError("Native summary coverage differs from its bound runtime contract.")
         if execution_owner is not None:
             binding = execution_owner.binding
             if (binding.session_id != request.session_id or binding.turn_id != request.turn_id
@@ -160,6 +167,7 @@ class DeepAgentRuntimeAdapter:
         native_terminal = None
         native_checkpoint_timestamp = None
         root_model_budget = None
+        summary_values = None
         output_options = _structured_output_options(request.structured_output_version)
         try:
             model = await self._model_resolver(request.model_key)
@@ -273,6 +281,7 @@ class DeepAgentRuntimeAdapter:
                         terminal = await collect_native_terminal(agent, checkpointer, invoke_config, returned_values=result)
                         native_terminal = terminal.proof.model_dump(mode="json")
                         native_checkpoint_timestamp = terminal.checkpoint_timestamp
+                        summary_values = terminal.values
                 if self._model_call_policy is not None:
                     root_model_budget = await self._model_call_policy.capture_root_budget(execution_owner.binding)
             finally:
@@ -286,7 +295,7 @@ class DeepAgentRuntimeAdapter:
                 f"{exc.__class__.__name__}: {str(exc)[:240]}"
             ) from exc
 
-        return project_deep_agent_result(
+        projected = project_deep_agent_result(
             result,
             stage=stage,
             subagent_events=subagent_events,
@@ -295,7 +304,16 @@ class DeepAgentRuntimeAdapter:
             native_checkpoint_timestamp=native_checkpoint_timestamp,
             root_model_budget=root_model_budget,
             structured_output_version=request.structured_output_version,
+            summary_coverage_version=request.summary_coverage_version,
+            summary_values=summary_values,
         )
+        if request.summary_coverage_version is not None and not projected.interrupts:
+            coverage = projected.metadata["native_summary_coverage"]
+            logger.info("framework_native_summary_coverage_captured", extra={
+                "binding_id": execution_owner.binding.binding_id,
+                "covered_message_count": len(coverage["covered_message_ids"]) if coverage is not None else 0,
+                "summary_coverage_version": request.summary_coverage_version})
+        return projected
 
     def _resolve_factory(self) -> AgentFactory:
         if self._agent_factory is not None:
@@ -571,7 +589,7 @@ def _native_schema_input(graph_input, source):
     flags = original.feature_flags
     topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
     if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version",
-        "terminal_event_projection_version", "structured_output_version"}
+        "terminal_event_projection_version", "structured_output_version", "summary_coverage_version"}
         or any(type(flags.get(key)) is not bool for key in topology)):
         raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
     return original

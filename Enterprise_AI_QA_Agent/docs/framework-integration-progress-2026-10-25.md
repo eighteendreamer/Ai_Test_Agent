@@ -5411,3 +5411,46 @@ P0 查证命令在 `Agent_Server`，使用已有根目录 `.venv-framework-v2`�
 本轮跨 Turn 与空白摘要验收为官方框架／SDK、本机合成 HTTP、真实 PG／Redis 的 E2 子集；无真实供应商、RustFS、外部领域 Runner 或新摘要独立 Worker 强杀验收。保留完整消息和检查私有 summary event，不等于已经实现跨 Turn 可复用的身份化摘要资产；`ContextOverflowError` 后修改尾部的 offload 路径也没有被本组强制触发。legacy summary 显式迁移、摘要覆盖身份的持久格式、根活动时间、图内安全继续、历史非稳定 Worker 超时首因、A3 远端查询／停止／补偿、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 均保留为后续出口，v4 goal 继续 active。
 
 本节归入 `【fix】拒绝空白原生摘要并验证跨回合消息覆盖`，仅包含本节、一个摘要源文件和两个相关测试文件，实际 commit ID 以 Git 和交付输出为准；v3 草稿、私有日志、认证配置与本地数据均排除。该子步不代表 B、C 或完整 v4 已完成。
+
+## 117. B／§5.1.5、§14.1：冻结 Deep Agents 原生摘要覆盖材料（2026-10-30）
+
+### 续接、依据与根因
+
+基线为 §116 的 `cf2d19544`。核对固定环境 `deepagents==0.7.13`、`langchain==1.4.6` 的源码和当前运行链：`SummarizationMiddleware.awrap_model_call()` 把 `cutoff_index`、`summary_message`、`file_path` 写入 `_summarization_event`，模型只看到摘要加保留尾部，checkpoint 的完整 `messages` 不被删除。仅保存一个数字 cutoff 无法证明下一 Turn 仍面对同一原生前缀；只保存摘要文本也无法校验覆盖边界或工具协议闭合。因此缺口在跨 Turn 资产缺少原生摘要覆盖身份材料，不在读取端猜测索引或重新加载 offload 文件。
+
+依据固定版 `_summarization_event`、现有 LangChain message wire 序列化、`approval_value_hash`、`FrameworkTranscriptAssetV2` 的身份覆盖和 source-only native reader → 新增独立的 `FrameworkNativeSummaryCoverage`，保存稳定 native message IDs、覆盖前缀 hash、原始非空 summary message 与 `file_path` 来源标记；正常执行和只读终态重建均从同一官方终态材料生成。该材料只证明覆盖元数据一致，不授予文件读取、图恢复、工具或审批权限。
+
+### TDD、实现与契约同步
+
+首轮红测对 schema-3 transcript／summary material 得到 **10 个校验错误**，证明旧 schema 只接受 1/2 且没有 summary coverage；补齐后 schema 单测通过。随后真实 live 上下文组暴露一个测试夹具根因：插入的历史行时间晚于当前 queued 输入，被 SessionStore 按 `created_at` 排到当前 Turn 之后，因而没有触发摘要；将历史行固定为当前输入之前的时间后，测试才验证了真实摘要路径。没有放宽生产 `_history()` 的时序规则。
+
+- `framework_summary.py`：定义版本 1 的 `FrameworkNativeSummaryCoverage`，严格校验唯一身份、前缀 hash、原始非空 summarization HumanMessage，并复核完整/摘要+尾部两种消息序列的工具协议闭合；`capture_native_summary_coverage()` 只读取已核验 native terminal，拒绝畸形或无覆盖范围事件；`validate_summary_completion()` 同时服务正常结果和恢复资产校验。
+- `FrameworkTranscriptAssetV3`、`FrameworkContextService`：v2.3 发布 schema-3 资产并保留完整 native history；摘要实际未触发时显式记录 `summary_coverage=None`，不伪造摘要事件。v2.1/v2.2 仍读取既有 schema-2 语义，v2.3 可消费合法旧 identity asset 后再发布自己的 schema-3 资产。
+- `DeepAgentRuntimeRequest`／adapter／result projection：v2.3 显式携带 `summary_coverage_version=1`；正常执行把 source-only `collect_native_terminal()` 返回的 `terminal.values` 交给统一投影器，原始 `_summarization_event` 只读、不 invoke、不重发。native message/approval result reader 复用同一参数，禁止恢复端重新组装 Prompt／Skill。
+- graph input、runtime result、message stage、worker capability、RuntimeBinding 和 Memory stage 更新同一版本契约：旧 Worker 在 claim 前拒绝 stage 28／v2.3 材料；v2.3 绑定必须有 provider/transport，摘要版本不允许从客户端 context 自选或跨历史 runtime 升级。所有分支只增加结构化日志，不输出摘要正文、文件内容、密钥或 token。
+
+### 实际验证与边界
+
+工作目录 `Agent_Server`，使用已有 `../.venv-framework-v2/Scripts/python.exe`；live 组设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`、`PYTHONUTF8=1`。未升级依赖、未启动/停止 Docker、未调用真实供应商、RustFS 或领域 Runner。
+
+```powershell
+# v2.3 双 Turn／摘要／审批／只读原生结果读者（真实 PostgreSQL/Redis + 官方 SDK + 本机合成 HTTP）
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_context_runtime.py -k 'v2.3.0' -q -rs --tb=short
+# 12 passed，100.14s，exit 0
+
+# schema、graph input、message stage、native result projection（live）
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_graph_input_asset.py tests/test_framework_message_stages.py tests/test_framework_result_projection.py -q -rs --tb=short
+# 79 passed，71.77s，exit 0
+
+# 其余上下文、审批重建、原生终态、模型治理回归（live）
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_turn_context.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_native_terminal.py tests/test_framework_model_policy.py -q -rs --tb=short
+# 103 passed，254.38s，exit 0
+
+# 最终消费方组（含本节所有相关路径）
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_context_runtime.py tests/test_framework_context_transcript.py tests/test_framework_turn_context.py tests/test_framework_model_policy.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_graph_input.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_deep_agent_runtime_adapter.py tests/test_context_compaction.py tests/test_model_failure_lifecycle.py -q -rs --tb=short
+# 367 passed，954.66s，exit 0；无 skip/deselect
+```
+
+项目根实际执行 `../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests` 与 `git diff --check`，均 exit 0。`ruff`／`mypy` 在当前环境未安装，未执行 lint/typecheck；未做真实供应商、RustFS、官方 saver conformance、独立 v2.3 Worker 强杀或完整 E3/E4 发布验收。此前的用户 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不变、未暂存。
+
+本节仅收敛原生摘要覆盖材料和旧 Worker claim 边界，不代表完整跨 Turn、A2/A3、C/D/E/F、H01–H12 或整体 v4 完成；整体 goal 继续 active。

@@ -14,6 +14,7 @@ from typing import Any
 from src.application.deep_agents.framework_transcript import serialize_messages
 from src.schemas.framework_approval import NativeToolInterrupt
 from src.schemas.framework_cognitive_result import FrameworkCognitiveResult, require_structured_output_version
+from src.schemas.framework_summary import capture_native_summary_coverage, require_summary_coverage_version
 
 
 class DeepAgentRuntimeError(RuntimeError):
@@ -43,6 +44,8 @@ def project_deep_agent_result(
     native_checkpoint_timestamp: str | None = None,
     root_model_budget: dict[str, Any] | None = None,
     structured_output_version: int | None = None,
+    summary_coverage_version: int | None = None,
+    summary_values: dict[str, Any] | None = None,
 ) -> DeepAgentRuntimeResult:
     """Project verified invocation/native values using one existing rule set.
 
@@ -62,6 +65,11 @@ def project_deep_agent_result(
     if interrupts and native_terminal is not None:
         raise DeepAgentRuntimeError("An interrupted result cannot also carry native terminal evidence.")
     require_structured_output_version(structured_output_version)
+    require_summary_coverage_version(summary_coverage_version)
+    summary_metadata = {}
+    if summary_coverage_version is not None and not interrupts:
+        summary_metadata = {"summary_coverage_version": summary_coverage_version,
+            "native_summary_coverage": capture_native_summary_coverage(summary_values if summary_values is not None else values)}
     structured = None
     if not interrupts:
         if structured_output_version is not None:
@@ -77,6 +85,7 @@ def project_deep_agent_result(
     return DeepAgentRuntimeResult(
         output_text=output_text,
         metadata={"harness": "deepagents", "stage": stage, "message_count": len(messages),
+            **summary_metadata,
             **({"root_model_budget": deepcopy(root_model_budget)} if root_model_budget is not None else {}),
             **({"structured_output_version": structured_output_version, "structured_result": structured.model_dump(mode="json")}
                 if structured is not None else {}),

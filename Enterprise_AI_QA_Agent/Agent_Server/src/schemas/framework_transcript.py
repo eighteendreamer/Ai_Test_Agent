@@ -9,18 +9,21 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.model_config import ModelTransport
+from src.schemas.framework_summary import FrameworkNativeSummaryCoverage
 
 
 CONTEXT_RUNTIME_VERSION = "v2.1.0"
 TURN_CONTEXT_RUNTIME_VERSION = "v2.2.0"
-IDENTITY_CONTEXT_RUNTIME_VERSIONS = frozenset({CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSION})
+SUMMARY_CONTEXT_RUNTIME_VERSION = "v2.3.0"
+TURN_CONTEXT_RUNTIME_VERSIONS = frozenset({TURN_CONTEXT_RUNTIME_VERSION, SUMMARY_CONTEXT_RUNTIME_VERSION})
+IDENTITY_CONTEXT_RUNTIME_VERSIONS = frozenset({CONTEXT_RUNTIME_VERSION, *TURN_CONTEXT_RUNTIME_VERSIONS})
 TRANSCRIPT_PREPARATION_KEY = "framework_transcript_preparation"
 
 
 def uses_turn_context_assembly(context: Mapping[str, Any]) -> bool:
     binding = context.get("runtime_binding")
     return (isinstance(binding, dict) and binding.get("runtime_kind") == "deepagents"
-        and binding.get("runtime_version") == TURN_CONTEXT_RUNTIME_VERSION)
+        and binding.get("runtime_version") in TURN_CONTEXT_RUNTIME_VERSIONS)
 
 
 class FrameworkTranscriptAsset(BaseModel):
@@ -73,7 +76,7 @@ class FrameworkTranscriptAssetV2(FrameworkTranscriptAsset):
     @model_validator(mode="after")
     def validate_coverage(self):
         covered = self.covered_message_ids
-        if self.runtime_version == TURN_CONTEXT_RUNTIME_VERSION and (
+        if self.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS and (
             not self.model_provider or not self.model_transport
         ):
             raise ValueError("v2.2 transcript requires an explicit model provider and transport")
@@ -90,6 +93,20 @@ class FrameworkTranscriptAssetV2(FrameworkTranscriptAsset):
             if (not identities or len(set(identities)) != len(identities)
                 or not set(identities).issubset(native_ids)):
                 raise ValueError("Transcript business mapping references unavailable native identities")
+        return self
+
+
+class FrameworkTranscriptAssetV3(FrameworkTranscriptAssetV2):
+    """Full native history plus independently scoped summary coverage evidence."""
+
+    schema_version: Literal[3] = 3
+    runtime_version: Literal["v2.3.0"] = SUMMARY_CONTEXT_RUNTIME_VERSION
+    summary_coverage: FrameworkNativeSummaryCoverage | None = None
+
+    @model_validator(mode="after")
+    def validate_summary_coverage(self):
+        if self.summary_coverage is not None:
+            self.summary_coverage.require_messages(self.framework_messages)
         return self
 
 
@@ -119,7 +136,9 @@ class FrameworkTranscriptPreparation(BaseModel):
         return self
 
 
-def parse_framework_transcript_asset(value: Any) -> FrameworkTranscriptAsset | FrameworkTranscriptAssetV2:
+def parse_framework_transcript_asset(value: Any) -> FrameworkTranscriptAsset | FrameworkTranscriptAssetV2 | FrameworkTranscriptAssetV3:
+    if isinstance(value, dict) and value.get("schema_version") == 3:
+        return FrameworkTranscriptAssetV3.model_validate(value)
     if isinstance(value, dict) and value.get("schema_version") == 2:
         return FrameworkTranscriptAssetV2.model_validate(value)
     return FrameworkTranscriptAsset.model_validate(value)

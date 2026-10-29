@@ -17,6 +17,7 @@ from src.application.projects.project_service import ProjectService
 from src.application.projects.project_store import PostgresProjectStore
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.schemas.framework_model_call import FrameworkModelBudget
+from src.schemas.framework_approval import approval_value_hash
 from src.schemas.project import ProjectCreateRequest
 from src.schemas.session import InputAttachment, SessionStatus
 from tests.live_postgres_config import LivePostgresTestConfig
@@ -54,7 +55,7 @@ async def context_project(monkeypatch):
 @pytest.mark.parametrize("summarize", [False, True])
 @pytest.mark.parametrize("native_prefix", [False, True])
 @pytest.mark.parametrize("approval", [False, True])
-@pytest.mark.parametrize("runtime_version", ["v2.1.0", "v2.2.0"])
+@pytest.mark.parametrize("runtime_version", ["v2.1.0", "v2.2.0", "v2.3.0"])
 async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_native_asset(
     projection_harness, native_prefix, approval, monkeypatch, runtime_version, tmp_path, context_project, summarize,
 ):
@@ -65,7 +66,7 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
     await h.tasks.finish(h.owner, status="completed", result_status="completed")
     session = await h.store.get_session(h.session_id)
     session.status = SessionStatus.idle
-    if runtime_version == "v2.2.0":
+    if runtime_version in {"v2.2.0", "v2.3.0"}:
         session.project_id = context_project.project.id
     await h.store.save_session(session)
     calls = PostgresFrameworkModelCalls(h.settings)
@@ -103,12 +104,21 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
         h.runtime._model_runtime_service = models
         h.runtime._deep_agent_bound_runtime_adapter._model_resolver = models.resolve_langchain_chat_model
         parts = None
-        if runtime_version == "v2.2.0":
+        if runtime_version in {"v2.2.0", "v2.3.0"}:
             from tests.test_framework_turn_context import assembly_components, build_assembly
 
             parts = assembly_components(tmp_path, tools=h.registry)
             h.runtime._turn_context_assembly = build_assembly(parts)
         h.sessions._runtime_service = h.runtime
+        if runtime_version == "v2.3.0":
+            from src.application.context.memory_runtime_service import MemoryRuntimeService
+            from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+
+            h.settings.database.postgres_memory_table = f"agent_test_summary_memory_{uuid4().hex[:12]}"
+            memory = PostgresVectorMemoryStore(h.settings)
+            await memory.initialize()
+            h.tables.append(h.settings.database.postgres_memory_table)
+            h.sessions._memory_runtime_service = MemoryRuntimeService(memory)
         previous_asset = None
         for index in range(2):
             request_start = len(requests)
@@ -193,9 +203,10 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
             stage = await h.tasks.get_framework_message_stage(submitted.id, session_id=h.session_id)
             assert stage.execution_request["user_message_id"] == admitted.id
             asset = (await h.store.get_session(h.session_id)).metadata["framework_transcript_asset"]
-            assert asset["schema_version"] == 2 and asset["source_input_message_id"] == admitted.id
+            assert asset["schema_version"] == (3 if runtime_version == "v2.3.0" else 2)
+            assert asset["source_input_message_id"] == admitted.id
             assert asset["runtime_version"] == runtime_version
-            if runtime_version == "v2.2.0":
+            if runtime_version in {"v2.2.0", "v2.3.0"}:
                 assert asset["model_provider"] == config.provider
                 assert asset["model_transport"] == config.transport
             assert asset["source_output_message_ids"] == [response.output.id]
@@ -248,8 +259,18 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
                 assert any(item.get("content") == event["summary_message"].content for item in body)
                 assert not any(item["data"]["additional_kwargs"].get("lc_source") == "summarization"
                     for item in asset["framework_messages"])
+                if runtime_version == "v2.3.0":
+                    coverage = asset["summary_coverage"]
+                    covered = asset["framework_messages"][:event["cutoff_index"]]
+                    assert coverage["covered_message_ids"] == [item["data"]["id"] for item in covered]
+                    assert coverage["covered_messages_sha256"] == approval_value_hash(covered)
+                    assert coverage["summary_message"] == messages_to_dict([event["summary_message"]])[0]
+                    assert graph_input["feature_flags"]["summary_coverage_version"] == 1
+                    assert stage.schema_version >= 28
             else:
                 assert summary_requests == []
+                if runtime_version == "v2.3.0":
+                    assert asset.get("summary_coverage") is None
                 assert [item["content"] for item in body if item["role"] == "user"] == [
                     "Earlier review", *(["repeat"] * (index + 2))]
                 assert sum(item["content"] == "Legacy answer" for item in body) == 1
@@ -309,10 +330,11 @@ async def test_real_durable_task_is_not_claimed_when_transcript_capability_is_in
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("runtime_version", ["v2.2.0", "v2.3.0"])
 @pytest.mark.parametrize("approval", [False, True])
 @pytest.mark.parametrize("complete_recovery", [False, True])
 async def test_full_context_original_result_reader_never_reloads_prompt_or_skill_sources(
-    projection_harness, tmp_path, monkeypatch, approval, context_project, complete_recovery,
+    projection_harness, tmp_path, monkeypatch, approval, context_project, complete_recovery, runtime_version,
 ):
     from src.schemas.framework_runtime_result import FrameworkRuntimeResult
     from tests.test_framework_approval_continuation import claim_decision
@@ -330,14 +352,29 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
     await calls.initialize()
     h.tables.extend([calls.budgets_table, calls.calls_table])
     first_reply = None
+    if runtime_version == "v2.3.0":
+        from tests.test_framework_model_policy import force_summary
+
+        force_summary(monkeypatch)
     if approval:
         first_reply = provider_module._tool_reply("openai_chat_completions")
         first_reply["choices"][0]["message"]["tool_calls"] = [{"id": "frozen-inspect", "type": "function",
             "function": {"name": "inspect_value", "arguments": '{"value":"A"}'}}]
-    with _provider("openai_chat_completions", first_reply=first_reply) as (url, requests):
+    with _provider("openai_chat_completions", first_reply=first_reply if runtime_version == "v2.2.0" else None) as (url, requests):
+        if runtime_version == "v2.3.0":
+            original_reply = provider_module._reply
+            sent_tool = []
+
+            def reply(transport):
+                if approval and requests[-1]["body"].get("tools") and not sent_tool:
+                    sent_tool.append(True)
+                    return deepcopy(first_reply)
+                return original_reply(transport)
+
+            monkeypatch.setattr(provider_module, "_reply", reply)
         config = _config("openai_chat_completions", url, key="fake")
         fingerprint = model_config_fingerprint(config)
-        h.binding = make_binding(h.session_id, f"assembly-gap-{uuid4().hex}", runtime_version="v2.2.0",
+        h.binding = make_binding(h.session_id, f"assembly-gap-{uuid4().hex}", runtime_version=runtime_version,
             model_config_fingerprint=fingerprint)
         budget = FrameworkModelBudget(max_calls=4, max_tokens=500_000,
             deadline_at=datetime.now(timezone.utc) + timedelta(minutes=5),
@@ -350,6 +387,17 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
         command = make_command(h, h.binding).model_copy(update={"project_id": session.project_id})
         submitted = await h.tasks.submit_v2(command, payload, admitted,
             idempotency_key=uuid4().hex, model_budget=budget)
+        if runtime_version == "v2.3.0":
+            from tests.test_framework_context_transcript import message
+
+            session = await h.store.get_session(h.session_id)
+            current_created_at = session.messages[-1].created_at
+            prior_user = message("summary-old-user", "user", "Prior question", "summary-old-turn").model_copy(
+                update={"created_at": current_created_at - timedelta(seconds=2)})
+            prior_answer = message("summary-old-answer", "assistant", "Prior evidence", "summary-old-turn").model_copy(
+                update={"created_at": current_created_at - timedelta(seconds=1)})
+            session.messages = [prior_user, prior_answer, *session.messages]
+            await h.store.save_session(session)
         owner = await h.tasks.claim(submitted.id, worker_id="assembly-gap", expected_binding=h.binding)
         await h.tasks.begin(owner, resource_id="assembly-gap", fencing_token=1)
         policy = FrameworkModelCallPolicy(calls=calls, model_config_resolver=lambda key: config)
@@ -413,6 +461,8 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
             result = await h.runtime.read_completed_framework_message(h.binding, owner.id, tasks=h.tasks)
             graph_input = result.graph_input_asset
         assert result.runtime_result.model_dump(mode="json") == captured[0].model_dump(mode="json")
+        if runtime_version == "v2.3.0":
+            assert result.runtime_result.state["model_response_summary"]["native_summary_coverage"] is not None
         assert graph_input.system_prompt == captured[0].state["system_prompt"]
         for marker in ("FROZEN_SKILL_BODY", "OBSERVATION_CONTEXT", "MEMORY_CONTEXT", "CASE_CONTEXT", "MCP_CONTEXT",
             "ATTACHMENT_CONTEXT", "# Identity"):
@@ -423,7 +473,8 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
         assert await h.store.list_events(h.session_id) == before_events
         assert parts.reads == before_reads
         assert len(h.effects) == (1 if approval else 0)
-        assert len(requests) == (await calls.snapshot(h.binding)).reserved_calls == (2 if approval else 1)
+        assert len(requests) == (await calls.snapshot(h.binding)).reserved_calls == (
+            (2 if approval else 1) * (2 if runtime_version == "v2.3.0" else 1))
         if not complete_recovery:
             from src.runtime.framework_approval_journal import FrameworkApprovalRecoveryRequired
             from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
@@ -470,4 +521,4 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
         assert await h.tasks.get(successor.id) == completed
         assert await h.store.list_events(h.session_id) == events
         assert parts.reads == before_reads and len(h.effects) == (1 if approval else 0)
-        assert len(requests) == (2 if approval else 1)
+        assert len(requests) == (2 if approval else 1) * (2 if runtime_version == "v2.3.0" else 1)

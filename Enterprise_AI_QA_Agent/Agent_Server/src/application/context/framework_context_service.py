@@ -11,8 +11,8 @@ from src.application.deep_agents.framework_transcript import deserialize_message
 from src.application.deep_agents.result_projection import _normalize_messages
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_transcript import (
-    CONTEXT_RUNTIME_VERSION, IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSION,
-    FrameworkTranscriptAssetV2, FrameworkTranscriptPreparation,
+    CONTEXT_RUNTIME_VERSION, IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSIONS,
+    SUMMARY_CONTEXT_RUNTIME_VERSION, FrameworkTranscriptAssetV2, FrameworkTranscriptAssetV3, FrameworkTranscriptPreparation,
     TRANSCRIPT_PREPARATION_KEY, parse_framework_transcript_asset,
 )
 
@@ -43,8 +43,10 @@ class FrameworkContextService:
                 raise ValueError("Framework transcript model configuration is incompatible")
             if binding.runtime_version == CONTEXT_RUNTIME_VERSION and asset.runtime_version != CONTEXT_RUNTIME_VERSION:
                 raise ValueError("Legacy context runtime cannot consume a newer transcript version")
-            if (binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION
-                and asset.runtime_version == TURN_CONTEXT_RUNTIME_VERSION
+            if isinstance(asset, FrameworkTranscriptAssetV3) and binding.runtime_version != SUMMARY_CONTEXT_RUNTIME_VERSION:
+                raise ValueError("Native summary transcript requires its compatible runtime reader")
+            if (binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS
+                and asset.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS
                 and (asset.model_provider != binding.model_provider
                      or asset.model_transport != binding.model_transport)):
                 raise ValueError("Framework transcript provider/transport protocol is incompatible")
@@ -125,8 +127,8 @@ class FrameworkContextService:
             preparation = FrameworkTranscriptPreparation(session_id=session.id, turn_id=request.turn_id,
                 source_input_message_id=request.user_message_id, covered_message_ids=covered_ids,
                 business_message_map=mapping, model_config_fingerprint=binding.model_config_fingerprint,
-                model_provider=(binding.model_provider if binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else None),
-                model_transport=(binding.model_transport if binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else None),
+                model_provider=(binding.model_provider if binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS else None),
+                model_transport=(binding.model_transport if binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS else None),
                 input_message_count=len(prefix), input_messages_sha256=approval_value_hash(prefix))
             # Native serialization stays untouched; display is a one-way projection.
             result = FrameworkContext(prefix, _normalize_messages(deserialize_messages(prefix)),
@@ -149,7 +151,7 @@ class FrameworkContextService:
             or binding["session_id"] != session_id or binding["turn_id"] != state["turn_id"]
             or preparation.model_config_fingerprint != binding["model_config_fingerprint"]):
             raise ValueError("Transcript preparation does not match its original binding")
-        if binding["runtime_version"] == TURN_CONTEXT_RUNTIME_VERSION:
+        if binding["runtime_version"] in TURN_CONTEXT_RUNTIME_VERSIONS:
             protocol = dict(context.get("framework_model_protocol") or {})
             if (preparation.model_provider != binding.get("model_provider")
                 or preparation.model_transport != binding.get("model_transport")
@@ -178,5 +180,15 @@ class FrameworkContextService:
             payload["model_provider"] = preparation.model_provider
         if preparation.model_transport is not None:
             payload["model_transport"] = preparation.model_transport
-        return FrameworkTranscriptAssetV2(**payload, content_sha256=approval_value_hash(payload)).model_dump(
+        asset_type = FrameworkTranscriptAssetV2
+        if binding["runtime_version"] == SUMMARY_CONTEXT_RUNTIME_VERSION:
+            summary = state.get("model_response_summary") or {}
+            if (type(summary.get("summary_coverage_version")) is not int or summary["summary_coverage_version"] != 1
+                or "native_summary_coverage" not in summary):
+                raise ValueError("Native summary publication requires its original versioned coverage material")
+            payload["schema_version"] = 3
+            if summary["native_summary_coverage"] is not None:
+                payload["summary_coverage"] = summary["native_summary_coverage"]
+            asset_type = FrameworkTranscriptAssetV3
+        return asset_type(**payload, content_sha256=approval_value_hash(payload)).model_dump(
             mode="json", exclude_none=True)

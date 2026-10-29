@@ -67,6 +67,27 @@ def covered_asset(session, binding):
     return {**payload, "content_sha256": approval_value_hash(payload)}
 
 
+def test_versioned_transcript_carries_native_summary_identity_coverage():
+    from src.schemas.framework_transcript import parse_framework_transcript_asset
+
+    session, request, _ = context_case()
+    payload = covered_asset(session, request.runtime_binding)
+    prefix = payload["framework_messages"][:3]
+    summary, = messages_to_dict([HumanMessage(content="Condensed original evidence",
+        additional_kwargs={"lc_source": "summarization"})])
+    payload.update(schema_version=3, runtime_version="v2.3.0", model_provider="openai",
+        model_transport="openai_chat_completions", summary_coverage={"schema_version": 1,
+            "scope": "native_summary_coverage_only", "covered_message_ids": [item["data"]["id"] for item in prefix],
+            "covered_messages_sha256": approval_value_hash(prefix), "summary_message": summary,
+            "file_path": "/conversation_history/original.md"})
+    payload["content_sha256"] = approval_value_hash({key: value for key, value in payload.items() if key != "content_sha256"})
+
+    asset = parse_framework_transcript_asset(payload)
+
+    assert asset.model_dump(mode="json", exclude_none=True) == payload
+    assert asset.summary_coverage.covered_message_ids == [item["data"]["id"] for item in prefix]
+
+
 def test_new_context_uses_admitted_identity_and_keeps_a_late_predecessor_answer():
     session, request, runtime = context_case()
     before = deepcopy(session)

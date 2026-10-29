@@ -148,6 +148,12 @@ def _require_prepared_identity(stage, task, asset):
     _require(all((state.get("context_bundle") or {}).get(STRUCTURED_OUTPUT_VERSION_KEY) == expected
         for state in (asset.runtime_result.state, snapshot.graph_state)),
         "Runtime result changed its original structured output contract")
+    from src.schemas.framework_summary import SUMMARY_COVERAGE_VERSION_KEY
+
+    expected_summary = prepared.feature_flags.get("summary_coverage_version")
+    _require(all((state.get("context_bundle") or {}).get(SUMMARY_COVERAGE_VERSION_KEY) == expected_summary
+        for state in (asset.runtime_result.state, snapshot.graph_state)),
+        "Runtime result changed its original native summary coverage contract")
 
 
 def validate_runtime_result_binding(cur, settings, binding, stage, task, raw, *, committed=False):

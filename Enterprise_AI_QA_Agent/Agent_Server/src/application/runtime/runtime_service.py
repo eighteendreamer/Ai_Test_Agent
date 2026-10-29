@@ -18,8 +18,9 @@ from src.application.deep_agents.runtime_adapter import _pilot_stage
 from src.application.deep_agents.framework_transcript import append_turn_input, require_closed_transcript
 from src.application.context.framework_context_service import FrameworkContextService
 from src.schemas.framework_transcript import (
-    IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY,
+    IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSIONS, SUMMARY_CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY,
 )
+from src.schemas.framework_summary import SUMMARY_COVERAGE_VERSION_KEY
 from src.application.context.turn_context_assembly import TurnContextAssembly
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
@@ -231,7 +232,7 @@ class RuntimeService:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
             full_context = (request.runtime_binding is not None
-                and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION)
+                and request.runtime_binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS)
             if full_context and self._turn_context_assembly is None:
                 raise RuntimeError("Framework context assembly is unavailable in this Worker")
             state = self._build_initial_state(session, request, include_framework_transcript=True)
@@ -433,7 +434,7 @@ class RuntimeService:
                 state.get("context_bundle", {}).get("checkpoint_namespace") or ""
             ) or None,
             system_prompt=(state["system_prompt"] if request.runtime_binding is not None
-                and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else (
+                and request.runtime_binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS else (
                 "You are the Enterprise AI QA Agent code review pilot. "
                 "Return evidence-grounded review guidance. Use only the "
                 "read-only project and selected skill capabilities exposed "
@@ -444,7 +445,7 @@ class RuntimeService:
             framework_messages=list(state.get("framework_messages") or []),
             context={**adapter_context, "skill_keys": list(state["resolved_skill_keys"]
                 if request.runtime_binding is not None
-                and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else request.skill_keys)},
+                and request.runtime_binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS else request.skill_keys)},
             read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
             read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
             read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
@@ -461,6 +462,7 @@ class RuntimeService:
             continue_from_checkpoint=(continuation_plan.continue_from_checkpoint
                 if continuation_plan is not None else False),
             structured_output_version=state["context_bundle"].get("framework_structured_output_version"),
+            summary_coverage_version=state["context_bundle"].get(SUMMARY_COVERAGE_VERSION_KEY),
         )
         runtime_preparation = None
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
@@ -518,6 +520,8 @@ class RuntimeService:
                     "governed_tools": self._deep_agent_governed_tools_enabled,
                     **({"structured_output_version": adapter_request.structured_output_version}
                         if adapter_request.structured_output_version is not None else {}),
+                    **({"summary_coverage_version": adapter_request.summary_coverage_version}
+                        if adapter_request.summary_coverage_version is not None else {}),
                     **({"tool_projection_version": state["context_bundle"][TOOL_PROJECTION_VERSION_KEY]}
                         if TOOL_PROJECTION_VERSION_KEY in state["context_bundle"] else {}),
                     **({"verification_projection_version": 1}
@@ -1569,7 +1573,7 @@ class RuntimeService:
 
         bound = state.get("context_bundle", {}).get("runtime_binding")
         binding = RuntimeBinding.model_validate(bound) if bound is not None else None
-        if binding is not None and binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION:
+        if binding is not None and binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS:
             from src.schemas.agent import ToolDescriptor
 
             raw_descriptors = state["context_bundle"].get("framework_tool_descriptors")
@@ -1982,7 +1986,7 @@ class RuntimeService:
         bound_protocol = (request.runtime_binding.model_provider, request.runtime_binding.model_transport) \
             if request.runtime_binding is not None else (None, None)
         if (request.runtime_binding is not None
-            and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION
+            and request.runtime_binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS
             and model_config is not None
             and bound_protocol != (model_config.provider, model_config.transport)):
             logger.warning("framework_model_protocol_changed", extra={
@@ -1995,6 +1999,9 @@ class RuntimeService:
             else bound_protocol[1] or "")
         context = dict(request.context)
         context.pop(TRANSCRIPT_PREPARATION_KEY, None)
+        context.pop(SUMMARY_COVERAGE_VERSION_KEY, None)
+        if request.runtime_binding is not None and request.runtime_binding.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION:
+            context[SUMMARY_COVERAGE_VERSION_KEY] = 1
         if request.runtime_binding is None:
             context.pop("runtime_binding", None)
         assembled = None
@@ -2062,7 +2069,7 @@ class RuntimeService:
                 **({"framework_model_protocol": {"provider": selected_model_provider,
                     "transport": selected_model_transport}}
                     if request.runtime_binding is not None
-                    and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else {}),
+                    and request.runtime_binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS else {}),
                 **({
                     "runtime_binding": request.runtime_binding.model_dump(mode="json"),
                     "checkpoint_namespace": request.runtime_binding.checkpoint_namespace,

@@ -349,7 +349,7 @@ def prepare_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryE
         _save_stage(cur, settings, stage, {TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")})
         stage = validate_message_stage({
             **stage.model_dump(mode="json"),
-            "schema_version": 27,
+            "schema_version": max(27, stage.schema_version),
             "source_manifest": {**stage.source_manifest, TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")},
             "source_sha256": approval_value_hash({**stage.source_manifest, TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")}),
         })

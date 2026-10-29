@@ -80,6 +80,13 @@ class FrameworkRuntimeResultAsset(BaseModel):
             for state in (result.state, result.snapshot.graph_state)]
         if cognitive[0] != cognitive[1]:
             raise ValueError("Runtime cognitive result differs from its original snapshot")
+        from src.schemas.framework_summary import validate_summary_completion
+
+        summaries = [validate_summary_completion(state.get("context_bundle") or {},
+            state.get("model_response_summary") or {}, state.get("framework_messages") or [])
+            for state in (result.state, result.snapshot.graph_state)]
+        if summaries[0] != summaries[1]:
+            raise ValueError("Runtime native summary coverage differs from its original snapshot")
         if self.asset_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"asset_sha256"})):
             raise ValueError("Runtime result asset digest does not match its frozen contents")
         return self

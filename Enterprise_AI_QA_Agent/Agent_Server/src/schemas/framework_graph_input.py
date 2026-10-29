@@ -16,6 +16,8 @@ from src.schemas.framework_approval import approval_value_hash
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_tool_projection import TOOL_PROJECTION_VERSION_KEY
 from src.schemas.framework_cognitive_result import STRUCTURED_OUTPUT_VERSION_KEY, require_structured_output_version
+from src.schemas.framework_summary import SUMMARY_COVERAGE_VERSION_KEY, require_summary_coverage_version
+from src.schemas.framework_transcript import SUMMARY_CONTEXT_RUNTIME_VERSION
 
 
 RESULT_PROJECTION_VERSION_KEY = "framework_result_projection_version"
@@ -103,11 +105,16 @@ class _FrameworkGraphInputFields(BaseModel):
                 raise ValueError("Structured output requires its explicit selected version")
             if self.schema_version != 2:
                 raise ValueError("Structured output requires its supported prepared graph format")
+        if "summary_coverage_version" in self.feature_flags:
+            if require_summary_coverage_version(self.feature_flags["summary_coverage_version"]) is None or self.schema_version != 2:
+                raise ValueError("Native summary coverage requires its supported prepared graph format")
         return self
 
     @property
     def required_message_stage_version(self):
         version = self.feature_flags.get("tool_projection_version")
+        if "summary_coverage_version" in self.feature_flags:
+            return 28
         if "structured_output_version" in self.feature_flags:
             return 24
         if "terminal_event_projection_version" in self.feature_flags:
@@ -143,6 +150,14 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
         from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
 
         context = state.get("context_bundle") or {}
+        summary_version = context.get(SUMMARY_COVERAGE_VERSION_KEY)
+        if binding.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION:
+            if (require_summary_coverage_version(summary_version) != 1
+                or self.feature_flags.get("summary_coverage_version") != 1
+                or self.context.get(SUMMARY_COVERAGE_VERSION_KEY) != 1):
+                raise ValueError("Native summary coverage differs from its original graph format")
+        elif SUMMARY_COVERAGE_VERSION_KEY in context or "summary_coverage_version" in self.feature_flags:
+            raise ValueError("Native summary coverage cannot upgrade a historical runtime binding")
         if STRUCTURED_OUTPUT_VERSION_KEY in context or "structured_output_version" in self.feature_flags:
             version = require_structured_output_version(context.get(STRUCTURED_OUTPUT_VERSION_KEY))
             if version is None or version != self.feature_flags.get("structured_output_version"):

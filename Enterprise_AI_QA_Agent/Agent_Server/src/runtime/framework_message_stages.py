@@ -142,6 +142,8 @@ def validate_message_stage(record):
                 raise FrameworkMessageStageRecoveryRequired("Approval graph input changed its original terminal event projection contract")
             if original.graph_input_asset.feature_flags.get("structured_output_version") != initial.feature_flags.get("structured_output_version"):
                 raise FrameworkMessageStageRecoveryRequired("Approval graph input changed its original structured output contract")
+            if original.graph_input_asset.feature_flags.get("summary_coverage_version") != initial.feature_flags.get("summary_coverage_version"):
+                raise FrameworkMessageStageRecoveryRequired("Approval graph input changed its original native summary coverage contract")
     if "graph_input_asset" in manifest:
         from src.schemas.framework_graph_input import parse_graph_input_asset
 

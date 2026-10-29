@@ -74,8 +74,8 @@ class RuntimeBinding(BaseModel):
             raise ValueError("runtime binding thread_id must equal turn_id")
         if self.runtime_kind == "legacy" and self.state_schema_version != 1:
             raise ValueError("legacy runtime bindings must use state_schema_version=1")
-        if self.runtime_version == "v2.2.0" and (not self.model_provider or not self.model_transport):
-            raise ValueError("v2.2 runtime bindings require an explicit model provider and transport")
+        if self.runtime_version in {"v2.2.0", "v2.3.0"} and (not self.model_provider or not self.model_transport):
+            raise ValueError("v2.2/v2.3 runtime bindings require an explicit model provider and transport")
         if not re.fullmatch(r"[0-9a-fA-F]{64}", self.dependency_lock_sha256):
             raise ValueError("dependency_lock_sha256 must be a SHA-256 hex digest")
         return self
