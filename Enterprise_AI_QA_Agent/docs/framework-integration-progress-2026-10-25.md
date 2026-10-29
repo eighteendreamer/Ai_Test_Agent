@@ -4481,3 +4481,57 @@ git diff --check
 提交前执行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，并核对 shared receipt/结果规则、snapshot 路由及全部新消费方；原前端 DTO/现有 URL 未改，无迁移/配置/生产开关变化。本子步与本节使用 `【feat】增加兼容性Runner只读报告对账` 提交，实际 ID 以 Git 与交付输出为准，不推送/建 PR。
 
 剩余：外部 Runner 真正执行/停止回执、未知操作的目标查询与有依据补偿、旧 owner 迟到观察、服务端未知 assignment 自动回收治理、Memory/资源分项补偿及 H07 首因仍未完成。A2-2/A2-3 的完整出口、A3、B/C/D/E/F 和完整 v4 保持 active，不以本节的只读核对替代完整恢复或发布验收。提交范围仅含本节代码/测试/文档及测试白名单；原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不动，日志、`.env` 和本地数据不纳入。
+
+## 102. A3／C／H06：中断 Runner assignment 保留未知效果，不因预算剩余自动重派（2026-10-29）
+
+基线 `7b40474af`，承接 §101。对应 v4 §7.4／§8.1／§10.1–10.2／§15 的未知 Runner 操作与执行权边界。本节修复自动中断恢复策略，不新增调度器、外部执行器、停止接口或补偿权限；仍不将本小步作为完整 v4 完成。
+
+### 依据、真实红测与根因 → 做法
+
+- 现有 `RunnerJournal` 在执行前提交 `executing`，客户端只能阻止同一本地日志重复执行；服务端 `_stage_requeued_task` 却把“自动预算尚有余额”作为清空当前尝试并重新排队的条件，另一 Runner 和独立日志可绕过本地 review。这是自动中断恢复与显式人工重试共用退役逻辑的职责错位，不是简单增加重试次数即可解决。参考本地课程 `Agent轨迹与协议鲁棒性.html` 的幂等/补偿与超时查询原则、`Agent测试专项.html` 的重复执行/状态误判断言；复用现有待核查状态、写入检查、JSON 保存与回滚协议。
+- 新增正式 ASGI + 真实 SQLite/JSON + 隔离临时文件副作用反例：原客户端先记录一次实际本地效果，再受控抛出 `URLError` 丢失结果；原 journal 留在 executing。服务重建或心跳过期后，另一 Runner 用独立日志运行。首次 **4 failed、42 deselected，exit 1**：预算 3 的两种中断均观察到文件效果从一次变两次；预算 0 已停止执行，但错误地把未知效果仅描述为预算耗尽。证据保存在 `a3-runner-interruption-red-2026-10-29.log`，不是生产事故或真实领域 Runner 故障。
+- 将自动中断持有待核查与人工重排队分开后，上述四项实测 **4 passed、42 deselected**。随后增加迟到写入反例，实测 **3 failed、1 passed、50 deselected**：上传和模式完成确实未拒绝；报告已拒绝但提示仍是原终态通用错误。根因是保留身份用于对账后，原公共写入检查仍把该身份视为写入许可。把已有 begin-only 待核查检查统一移入 `_ensure_runner_can_write_task`，不复制报告/上传/完成分支的状态机。
+- 首次完整消费方回归 **119 passed、4 failed，exit 1**，四项均仍断言旧自动 queued/清空证据行为。按新契约替换为原完整任务值比较、持久值一致与禁止领取断言，没有放宽为多种状态或删去证据比较；人工重排队/队尾公平性保留。
+- 新日志诊断反例另有 **1 failed**：实际 `ContextFormatter` 只输出 task_id，额外字段存在于 LogRecord 却未渲染。沿既有标量白名单增加本路径必要身份/原因/次数，继续禁止任意 extra 和非标量正文。前端提示红测为 **1 failed、2 passed**，随后同步“未知结果、未自动重派、核查原 Runner 日志”的提示与显式人工操作测试。
+
+### 代码、消费方与兼容性
+
+| v4 契约 | 代码与测试 | 本步权限边界 |
+| --- | --- | --- |
+| A3/C、§7.4：未知效果不盲重派 | `runner_service._hold_stale_assigned_tasks_locked` 与 `_load_state` 共用 `_stage_interrupted_task_for_review`；重建、心跳过期或 Runner 缺失时进入原 `recovery_required`，原因 `assignment_outcome_unknown` | 不依赖预算余额或缺少 bridge-start 标记推断未执行；不重试，不裁决测试成功/失败 |
+| §8.1／§10.2：证据身份不等于执行权 | 保留原 task 定义、Runner/assignment、结果/工件/错误、模式执行 metadata、计数与历史；原公共写入检查统一拒绝待核查报告、上传、模式开始/完成，上传 await 后再查 | 仅保留原件用于只读对账；迟到权威写入拒绝不等于已保存非权威观察或已停止远端执行 |
+| H06：正常任务及历史兼容 | 自动持有不改队列位置，去除 assigned capacity 索引；未触碰 queued 工作继续执行。仅显式人工 requeue 归档尝试并移到队尾 | 旧预算配置/default/schema 不改；历史次数/缺省值不重写，旧 budget_exhausted 原因不改；默认 failed 重试不会包括 recovery_required |
+| 可观测性与前端 | `core/log_format.py` 扩展现有安全诊断白名单；`CompatibilityTestingPanel.vue` 与 sessionSwitch 测试同步；Runner 持久化文档同步自动/人工、报告/上传/poll 回执语义 | 记录 staged 与写入拒绝，不冒充持久提交；无新凭据能力、生产开关或付费请求 |
+
+新增/增强的反例还覆盖 Runner 记录缺失、旧文件缺计数/计数达到或未达到预算、已有 retry_history、模式 partial/running、迟到写入及上传 await 期间转待核查、原日志只读对账 unknown、反复重建不改证据、显式人工重试及不同任务继续完成。服务测试以完整原任务值比较替代旧“清空再重排队”断言，仍验证工件身份和 JSON 持久值。历史验收报告中的旧测试名/结果不重写。
+
+### 最终源码实际验证
+
+独立 `.venv-framework-v2`，Python 3.11.16、SQLite 3.53.1；未升级或安装依赖。在 `Agent_Server` 执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_compatibility_runner_reconciliation.py tests/test_compatibility_runner_persistence.py `
+  tests/test_compatibility_runner_service.py tests/test_compatibility_mode_skills.py `
+  tests/test_agent_task_monitor.py tests/test_request_context.py -q -rs --tb=short
+# 146 passed，1 warning，19.74s，exit 0；无 skip/deselect
+# .codex-logs/a3-runner-interruption-final-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py `
+  tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 36 passed，9.59s，exit 0；无 skip/deselect
+# .codex-logs/a3-runner-interruption-adjacent-2026-10-29.log
+```
+
+在 `agent_web` 执行 `npm.cmd test -- src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts`：**3 passed，3.04s，exit 0**；`npm.cmd run typecheck` 与 `npm.cmd run build` 均 exit 0，后者实际通过 vue-tsc 与 Vite（3311 modules，build 19.55s）。日志为 `a3-runner-interruption-ui-final-2026-10-29.log`、`a3-runner-interruption-typecheck-2026-10-29.log`、`a3-runner-interruption-web-build-2026-10-29.log`。中间定向结果与最终集合有重叠，不累加为唯一覆盖数。
+
+根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均 exit 0；ruff/mypy 通过 importlib 检查均未安装，不把 compileall 当 lint/typecheck。后端唯一 warning 为既有 Starlette/anyio BlockingPortal 弃用提示。核心消费方已全局搜索核对：服务注册/心跳/清理/列表/poll/模式调用、报告/上传、journal 对账、前端报告/人工重试及活文档；公开 DTO、URL 和 JSON schema 保持兼容，不需要数据迁移。
+
+### 证据范围、交付与下一出口
+
+本节为 E0 与本地 ASGI/SQLite/JSON/受控文件效果契约，不满足 E2 的真实框架/PG/Redis/独立 Worker 条件，更不代表 E3/E4。副作用测试使用受控 executor，不执行真实领域工具；服务重建/人工过期心跳不是进程强杀事故。本次运行集合也包含 §101 的 journal 子进程强杀测试，该子进程不执行领域工具。未运行全量前后端测试、真实 PG/Redis/供应商/embedding/RustFS/浏览器/压测/扫描 Runner 或 E3/E4，未启动 Docker 或新增外部测试服务。
+
+兼容性行为有意改变：服务重启或超时不再自动重跑未完成 assignment，运维必须保留原日志并核查，不能通过增大旧预算恢复盲重派。原人工 requeue 入口保留，不等于已有证据化恢复审批；服务器不能撤销已发送外部请求，也不保证跨机器/多进程 JSON 排他。Runner 的真正执行/查询/停止回执、迟到非权威观察、未知操作有依据补偿、H07 首因及完整 A2/A3/B/C/D/E/F 出口继续保留，完整目标 active。
+
+本节使用 `【fix】阻止中断Runner未知效果自动重派` 提交，仅包含本节 8 个代码/测试/文档文件，实际 commit ID 以 Git 与交付输出为准；不推送/建 PR。提交前核对 status、完整 diff、暂存范围与实施记录只追加。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不动，日志、构建产物、`.env` 和本地数据库不纳入。

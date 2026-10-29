@@ -82,7 +82,7 @@ class CompatibilityRunnerService:
     async def register_runner(self, payload: CompatibilityRunnerRegistrationRequest) -> CompatibilityRunnerRecord:
         now = _utc_now()
         async with self._lock:
-            self._requeue_stale_assigned_tasks_locked(now, persist=False)
+            self._hold_stale_assigned_tasks_locked(now, persist=False)
             existing = self._runners.get(payload.runner_id)
             receipt = self._checked_poll_receipt(existing) if existing else None
             existing_active_task_ids = (
@@ -124,7 +124,7 @@ class CompatibilityRunnerService:
             record = self._runners.get(runner_id)
             if record is None:
                 raise KeyError(runner_id)
-            self._requeue_stale_assigned_tasks_locked(now, persist=False)
+            self._hold_stale_assigned_tasks_locked(now, persist=False)
             record = self._runners.get(runner_id)
             if record is None:
                 raise KeyError(runner_id)
@@ -142,7 +142,7 @@ class CompatibilityRunnerService:
 
     async def list_runners(self) -> list[CompatibilityRunnerRecord]:
         async with self._lock:
-            self._requeue_stale_assigned_tasks_locked()
+            self._hold_stale_assigned_tasks_locked()
             runners = [self._effective_runner_record(item) for item in self._runners.values()]
             return sorted(runners, key=lambda item: item.heartbeat_at, reverse=True)
 
@@ -156,7 +156,7 @@ class CompatibilityRunnerService:
         deleted: list[str] = []
         skipped_reasons: dict[str, str] = {}
         async with self._lock:
-            recovered_task_ids = self._requeue_stale_assigned_tasks_locked(now, persist=False)
+            recovered_task_ids = self._hold_stale_assigned_tasks_locked(now, persist=False)
             for runner_id, runner in list(self._runners.items()):
                 if wanted_runner_ids and runner_id not in wanted_runner_ids:
                     continue
@@ -251,7 +251,7 @@ class CompatibilityRunnerService:
             raise ValueError("Invalid identified poll parameters.")
         now = _utc_now()
         async with self._lock:
-            self._requeue_stale_assigned_tasks_locked(now)
+            self._hold_stale_assigned_tasks_locked(now)
             runner = self._runners.get(runner_id)
             if runner is None:
                 raise KeyError(runner_id)
@@ -529,7 +529,7 @@ class CompatibilityRunnerService:
 
     async def list_tasks(self, *, dispatch_id: str | None = None, runner_id: str | None = None) -> list[CompatibilityQueuedTask]:
         async with self._lock:
-            self._requeue_stale_assigned_tasks_locked()
+            self._hold_stale_assigned_tasks_locked()
             tasks = list(self._tasks.values())
             if dispatch_id:
                 tasks = [task for task in tasks if task.dispatch_id == dispatch_id]
@@ -553,7 +553,7 @@ class CompatibilityRunnerService:
 
     async def get_assigned_task_for_runner(self, runner_id: str, task_id: str) -> CompatibilityQueuedTask:
         async with self._lock:
-            self._requeue_stale_assigned_tasks_locked()
+            self._hold_stale_assigned_tasks_locked()
             task = self._tasks.get(task_id)
             if task is None:
                 raise KeyError(task_id)
@@ -565,14 +565,12 @@ class CompatibilityRunnerService:
     ) -> CompatibilityQueuedTask:
         now = _utc_now()
         async with self._lock:
-            self._requeue_stale_assigned_tasks_locked(now)
+            self._hold_stale_assigned_tasks_locked(now)
             task = self._tasks.get(task_id)
             if task is None:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
             self._ensure_assignment_matches(task, assignment_id)
-            if task.status == "recovery_required":
-                raise PermissionError(f"Task {task_id} requires recovery review before mode calls can execute.")
             execution_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()
             if execution_status in {"running", "completed", "failed", "partial"}:
                 raise PermissionError(f"Mode calls for task {task_id} have already been executed or are running.")
@@ -644,9 +642,7 @@ class CompatibilityRunnerService:
                     if wanted_task_ids:
                         skipped_reasons[task_id] = f"status_{task.status}_not_requeueable"
                     continue
-                self._stage_requeued_task(
-                    task, now=now, reason=payload.reason, source="manual",
-                )
+                self._stage_requeued_task(task, now=now, reason=payload.reason)
                 requeued.append(task_id)
             if requeued:
                 for runner_id, runner in list(self._runners.items()):
@@ -964,9 +960,9 @@ class CompatibilityRunnerService:
     def _runner_heartbeat_timeout_seconds(self) -> int:
         return max(30, int(getattr(self._orchestration_settings, "compatibility_runner_heartbeat_timeout_seconds", 120) or 120))
 
-    def _requeue_stale_assigned_tasks_locked(self, now: str | None = None, *, persist: bool = True) -> list[str]:
+    def _hold_stale_assigned_tasks_locked(self, now: str | None = None, *, persist: bool = True) -> list[str]:
         now = now or _utc_now()
-        requeued: list[str] = []
+        held: list[str] = []
         stale_runner_ids = {
             runner_id
             for runner_id, runner in self._runners.items()
@@ -977,51 +973,50 @@ class CompatibilityRunnerService:
                 continue
             if task.assigned_runner_id not in stale_runner_ids and task.assigned_runner_id in self._runners:
                 continue
-            self._stage_requeued_task(
-                task, now=now, reason="runner_heartbeat_timeout", source="heartbeat",
-            )
-            requeued.append(task_id)
-        if requeued:
+            self._stage_interrupted_task_for_review(task, now=now, source="heartbeat")
+            held.append(task_id)
+        if held:
             for runner_id, runner in list(self._runners.items()):
-                active = [item for item in runner.active_task_ids if item not in requeued]
+                active = [item for item in runner.active_task_ids if item not in held]
                 if active != runner.active_task_ids:
                     self._runners[runner_id] = runner.model_copy(update={"active_task_ids": active})
             if persist:
                 self._save_state()
-        return requeued
+        return held
 
-    def _stage_requeued_task(
-        self, task: CompatibilityQueuedTask, *, now: str, reason: str, source: str,
+    def _stage_interrupted_task_for_review(
+        self, task: CompatibilityQueuedTask, *, now: str, source: str,
     ) -> None:
-        automatic_retry_count = int(task.metadata.get("automatic_retry_count", 0))
         retry_limit = int(getattr(self._orchestration_settings, "compatibility_runner_max_automatic_retries", 3))
-        if source != "manual" and automatic_retry_count >= retry_limit:
-            # An interrupted assignment has an unknown outcome. Preserve its
-            # evidence and identity for review instead of claiming tool failure.
-            self._tasks[task.task_id] = task.model_copy(update={
-                "status": "recovery_required",
-                "updated_at": now,
-                "metadata": {
-                    **task.metadata,
-                    "automatic_retry_count": automatic_retry_count,
-                    "automatic_retry_limit": retry_limit,
-                    "recovery_reason": "automatic_retry_budget_exhausted",
-                    "recovery_required_at": now,
-                    "recovery_source": source,
-                },
-            })
-            logger.warning("compatibility_task_recovery_required_staged", extra={
-                "task_id": task.task_id, "requeue_source": source,
-                "automatic_retry_count": automatic_retry_count, "automatic_retry_limit": retry_limit,
-            })
-            return
-        # All three retry paths retire the same evidence value before clearing
-        # current-attempt fields. Keep the existing recent-ten retention policy.
+        # Dispatch may already have reached an external executor even without a
+        # bridge-start marker. A retry budget cannot prove that nothing ran.
+        self._tasks[task.task_id] = task.model_copy(update={
+            "status": "recovery_required",
+            "updated_at": now,
+            "metadata": {
+                **task.metadata,
+                "automatic_retry_limit": retry_limit,
+                "recovery_reason": "assignment_outcome_unknown",
+                "recovery_required_at": now,
+                "recovery_source": source,
+            },
+        })
+        logger.warning("compatibility_task_recovery_required_staged", extra={
+            "task_id": task.task_id, "runner_id": task.assigned_runner_id,
+            "assignment_id": task.metadata.get("assignment_id"),
+            "recovery_source": source, "recovery_reason": "assignment_outcome_unknown",
+            "automatic_retry_count": task.metadata.get("automatic_retry_count", 0),
+            "automatic_retry_limit": retry_limit,
+        })
+
+    def _stage_requeued_task(self, task: CompatibilityQueuedTask, *, now: str, reason: str) -> None:
+        # Only an explicit manual requeue retires the current attempt. Preserve
+        # the existing recent-ten history and queue-tail policy for this path.
         retry_history = deepcopy(list(task.metadata.get("retry_history") or []))
         retry_history.append({
             "at": now,
             "reason": reason,
-            "source": source,
+            "source": "manual",
             "previous_status": task.status,
             "previous_runner_id": task.assigned_runner_id,
             "previous_assignment_id": task.metadata.get("assignment_id"),
@@ -1046,7 +1041,7 @@ class CompatibilityRunnerService:
             "metadata": {
                 **self._clear_mode_call_execution_metadata(task.metadata),
                 "retry_count": retry_count,
-                "automatic_retry_count": 0 if source == "manual" else automatic_retry_count + 1,
+                "automatic_retry_count": 0,
                 "automatic_retry_limit": None,
                 "recovery_reason": None,
                 "recovery_required_at": None,
@@ -1063,7 +1058,7 @@ class CompatibilityRunnerService:
         self._tasks.pop(task.task_id)
         self._tasks[task.task_id] = updated
         logger.info("compatibility_task_requeue_staged", extra={
-            "task_id": task.task_id, "requeue_source": source, "retry_count": retry_count,
+            "task_id": task.task_id, "requeue_source": "manual", "retry_count": retry_count,
             "previous_status": task.status, "previous_artifact_count": len(task.artifacts),
         })
 
@@ -1192,7 +1187,9 @@ class CompatibilityRunnerService:
 
     def _recoverable_task_summary(self, task: CompatibilityQueuedTask) -> str:
         if task.status == "recovery_required":
-            return "Automatic recovery budget exhausted; review the previous attempt before manually requeuing."
+            if task.metadata.get("recovery_reason") == "automatic_retry_budget_exhausted":
+                return "Automatic recovery budget exhausted; review the previous attempt before manually requeuing."
+            return "Runner assignment outcome is unknown; reconcile the original attempt before manually requeuing."
         if task.result.get("summary") or task.error:
             return str(task.result.get("summary") or task.error)
         bridge_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()
@@ -1312,14 +1309,12 @@ class CompatibilityRunnerService:
             raise CompatibilityRunnerStateError("Compatibility runner state is invalid.") from None
         self._committed_state_json = serialized
         state_changed = False
-        # Restore the full queue before appending recovered assignments, or a
-        # task early in the file could jump ahead of work already waiting.
+        # Interrupted assignments retain their original evidence and position;
+        # only untouched queued work remains eligible for dispatch.
         for task in list(self._tasks.values()):
             if task.status == "assigned":
                 state_changed = True
-                self._stage_requeued_task(
-                    task, now=_utc_now(), reason="runner_service_restart", source="restart",
-                )
+                self._stage_interrupted_task_for_review(task, now=_utc_now(), source="restart")
         for runner_id, runner in list(self._runners.items()):
             active_task_ids = self._active_task_ids_for_runner(runner_id)
             if active_task_ids != runner.active_task_ids:
@@ -1463,6 +1458,13 @@ class CompatibilityRunnerService:
             if task.assigned_runner_id:
                 raise PermissionError(f"Task {task.task_id} is assigned to {task.assigned_runner_id}.")
             raise PermissionError(f"Task {task.task_id} is not assigned to runner {runner_id}.")
+        if task.status == "recovery_required":
+            logger.warning("compatibility_task_recovery_write_rejected", extra={
+                "task_id": task.task_id, "runner_id": runner_id,
+                "assignment_id": task.metadata.get("assignment_id"),
+                "recovery_reason": task.metadata.get("recovery_reason"),
+            })
+            raise PermissionError(f"Task {task.task_id} requires recovery review before Runner writes can continue.")
 
     def _ensure_task_can_be_reported(self, task: CompatibilityQueuedTask) -> None:
         if task.status != "assigned":

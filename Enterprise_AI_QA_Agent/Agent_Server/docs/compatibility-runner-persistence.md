@@ -10,15 +10,17 @@
 
 该实现仍是单服务实例的 JSON 存储：没有新增跨进程锁、数据库事务或掉电持久化保证。内存保留一份已提交 JSON 值用于撤销失败保存，历史保留/大目录容量和多个进程共享同一路径仍需单独治理。
 
-心跳过期和启动恢复共用 `orchestration.compatibility_runner_max_automatic_retries` 自动预算，环境变量为 `ORCHESTRATION__COMPATIBILITY_RUNNER_MAX_AUTOMATIC_RETRIES`，默认 3、最小 0。0 表示中断后不自动重新入队；预算是自动恢复次数，不含首次领取。人工明确重排队开启新的自动预算，累计 `retry_count` 继续保留。未有 automatic_retry_count 的旧文件从 0 开始统计，不凭最近十条历史猜测全部过往次数。
+心跳过期、Runner 记录缺失和服务启动恢复发现未完成的 `assigned` 任务时，直接进入 `recovery_required`，原因是 `assignment_outcome_unknown`。任务已派发就可能到达外部执行器，缺少模式调用开始标记不证明未执行。服务器不再因预算尚有余额自动重新入队，也不把中断改成工具成功或失败。
 
-预算耗尽进入新状态 `recovery_required`：保留上一轮 Runner 身份、结果、工件和模式调用状态，记录原因、来源、次数和上限；不会归为工具执行成功/失败，也不会继续被 poll 领取或再次开始模式调用。报告和环境状态显示待核查，前端列出数量并提示核验副作用；人工 requeue 请求需明确包含该状态。其他排队任务可继续领取。人工重试会按既有历史快照方式归档本轮，再清空当前执行字段。
+自动待核查保留原 Runner、assignment、任务定义、结果、工件、错误、模式调用执行元数据、已有 `retry_history` 和次数，不归档、不清空、不生成新 assignment。记录 `recovery_source=restart/heartbeat` 与核查时间；缺失 Runner 归入 heartbeat 回收路径。原领取只用于证据关联，不是继续写入或执行许可：报告、上传、模式调用开始/完成均拒绝，上传的外部存储 await 后也重新核查。其他排队任务仍可领取，重复读取/服务重建不反复改写待核查记录。报告与前端明确提示核查原 Runner 日志、目标状态及副作用，只有显式包含 `recovery_required` 的人工 requeue 才沿原入口归档并重排队；默认仅重跑失败任务不会包含它。该入口不自动查询目标，不证明已经对账或停止外部执行。
 
-预算和核查字段归服务器所有，派发元数据/Runner report 不能覆盖。正式 Settings 的预算与心跳超时均读取 orchestration；简化兼容调用的平面设置仍受支持。预算只限制现有自动恢复，不保证剩余预算内的重复执行一定无副作用；旧部署协议升级和供应商对账仍需后续处理。
+原 `orchestration.compatibility_runner_max_automatic_retries` 配置与环境变量 `ORCHESTRATION__COMPATIBILITY_RUNNER_MAX_AUTOMATIC_RETRIES` 继续兼容读取，默认 3、最小 0，不改变设置 schema；上限只保留为历史诊断信息，**任何值都不授权重派未知 assignment**。已有 `automatic_retry_count` 不递增或重置，缺此字段的旧记录保持缺省，不从最近十条历史猜测次数；人工重排队仍按旧格式归档、累计 `retry_count` 并重置兼容计数。原 `automatic_retry_budget_exhausted` 待核查记录仍可读取且保留其原因，不改写成新历史。预算和核查字段归服务器所有，派发元数据/Runner report 不能覆盖；正式 Settings 读取 orchestration，简化平面设置仍受支持。单服务 JSON 并发限制、跨机器 Runner 排他、目标对账与停止回执仍未解决。
+
+自动待核查留下 `compatibility_task_recovery_required_staged`，记录 task、Runner、assignment、原因、来源与兼容计数；该事件表示暂存，持久化失败仍由既有保存错误及回滚日志说明，不冒充已提交。待核查写入被拒绝时留下 `compatibility_task_recovery_write_rejected`。沿现有日志 formatter 的标量白名单输出诊断，不打印任务正文、结果、原始 metadata 或凭据。
 
 每次 poll 领取在任务 metadata 中生成新的 `assignment_id`。本仓库 Runner 注册时声明 `assignment_fencing_version: 1`，报告和上传 JSON 使用顶层 assignment_id，模式调用请求使用同名查询参数；服务器对这些领取强制核对身份，缺失或旧值返回 409，外来报告 metadata 无权修改身份或降级校验。领取身份用于区分执行轮次，不替代 API 鉴权。
 
-上传在外部存储 await 后再次核对开始时捕获的领取身份，换轮则拒绝挂入新任务并尝试补偿删除。模式调用完成使用入口捕获的身份，旧完成回执不能更新新一轮元数据，拒绝情况留下日志。人工/自动重排队将原身份记入历史，下一次 poll 产生新值。
+上传在外部存储 await 后再次核对开始时捕获的领取身份与待核查状态，换轮或转待核查则拒绝挂入任务并尝试补偿删除。模式调用完成使用入口捕获的身份，旧完成回执不能更新新一轮或待核查元数据，拒绝情况留下日志。只有人工重排队将原身份记入历史，下一次 poll 产生新值；自动中断保留原身份，不授予新执行权。
 
 旧 Runner 未声明协议时，缺失身份的普通写入继续兼容；显式提供旧身份仍会被拒绝。兼容缺失身份的旧报告无法完全隔离，需升级旧部署的 Runner。即使旧客户端不发送身份，本服务上传的异步提交及模式调用完成仍使用服务器捕获的身份复核。新版 CLI 的恢复阶段见下文；旧客户端和未知副作用仍需单独处置。
 
@@ -38,9 +40,9 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile targeted --ta
 
 新版 CLI 默认在当前工作目录 `.compatibility-runner/<服务器与 Runner 身份哈希>.sqlite3` 保存本地事务日志，可用 `--state-file <稳定的本地绝对路径>` 指定。恢复必须使用相同路径、服务器 URL 和 runner_id；更换目录/URL不会自动搬迁日志。SDK 构造函数新增可选 state_file，省略时只保留当前进程状态；调用结束须 close，CLI 在 finally 中关闭。无需新依赖，使用 Python 标准库 sqlite3。
 
-领取批次一次事务入库，逐项记录 queued → executing → executed → uploading（旧协议）/uploading_idempotent（已协商）→ report_ready。执行前提交 executing；得到结果后先保存完整 executed 结果，上传成功后先保存完整报告，再发 report。报告确认成功才删除本地待办。报告响应丢失/503 后，重启原样重传 report_ready，服务器复用当前领取的幂等回执；不会再次执行或上传。run_once 返回本次确认报告的数量，待核查/冲突不计成功。此前无 dispatcher 的内部续跑队列不在本客户端修复范围内。
+领取批次一次事务入库，逐项记录 queued → executing → executed → uploading（旧协议）/uploading_idempotent（已协商）→ report_ready。执行前提交 executing；得到结果后先保存完整 executed 结果，上传成功后先保存完整报告，再发 report。报告确认成功才删除本地待办。报告响应丢失/503 后，客户端重启原样重传 report_ready，只有服务器当前领取仍允许写入或已有匹配终态回执时才能确认；不会再次执行或上传。服务器重启/过期已将领取转为待核查时返回 409，本地保留 conflict 与原报告，不自动提交或抹除证据。run_once 返回本次确认报告的数量，待核查/冲突不计成功。此前无 dispatcher 的内部续跑队列不在本客户端修复范围内。
 
-恢复 queued 项前查询正式任务列表核对当前 Runner、assigned 状态和领取身份；已换轮则保留 conflict，不执行旧任务。404/409 的报告/上传冲突也保留本地证据和原因。executing 或旧协议 uploading 被中断时，客户端不能证明副作用/远端工件是否已提交，转本地 review；保留原结果，不伪造 failed、不重传无幂等身份的上传。review 不影响同批其他任务；同一 task_id 的后续领取也暂停，防止服务器自动换轮绕过未知结果。review 是本地阶段，不等同于服务器 recovery_required；未知工具副作用对账及人工处置接口仍未完成。核查前应保留数据库与关联证据，不应通过更换日志路径来绕过。
+恢复 queued 项前查询正式任务列表核对当前 Runner、assigned 状态和领取身份；已换轮或已转待核查则保留 conflict，不执行旧任务。404/409 的报告/上传冲突也保留本地证据和原因。executing 或旧协议 uploading 被中断时，客户端不能证明副作用/远端工件是否已提交，转本地 review；保留原结果，不伪造 failed、不重传无幂等身份的上传。review 不影响同批其他任务；同一 task_id 的后续领取也暂停，防止旧部署自动换轮绕过未知结果。review 是本地阶段，不等同于服务器 recovery_required；服务端自动中断治理也不依赖原客户端仍在线或共享同一日志。未知工具副作用对账及证据化人工处置接口仍未完成。核查前应保留数据库与关联证据，不应通过更换日志路径来绕过。
 
 日志身份包含版本，身份不匹配、坏 SQLite 文件或非法阶段拒绝启动并保留原文件。`.sqlite3.lock` 连接持有 SQLite 排他事务至 close/进程退出，同一路径的另一个进程不能操作日志；主数据库仍可逐次提交阶段。不要删运行中的锁文件；只支持有可靠文件锁的本地磁盘，网络共享、多机器同 Runner 身份、多路径启动没有全局排他保证。数据库含任务与完整结果，应放在 Runner 专用私有目录并按部署权限管理。确认成功项从本地移除，未知/冲突项保留，长期归档和容量治理仍需后续实施。
 
@@ -50,7 +52,7 @@ SQLite 使用依据：[Python 3.11 sqlite3 文档](https://docs.python.org/3.11/
 
 新版工件上传请求新增可选 `upload_id`（1–128 字符），必须与 `assignment_id` 一起提供。缺少领取身份返回 400。服务器按当前任务、领取身份和上传 ID 查持久工件回执；规范化全部请求字段并以解码后内容的 SHA-256 参与摘要。同身份同请求返回原工件，不再次存储或写索引；相同上传 ID 的不同内容/标签/元数据等返回 409。缺省 upload_id 的旧请求保持原行为。报告内嵌工件和上传 metadata 不能覆盖服务器维护的上传回执字段。
 
-上传先校验当前 Runner/领取、查回执；存储 await 后重新核对领取和回执。两个请求同时存储时，只有先提交者挂入任务，另一个返回已有回执并补偿自己的对象；每次对象存储前缀包含该请求的 artifact_id，避免删除已挂接的同名文件。旧对象 URI 无需迁移。回执在终态文件中保留；服务器重启会按既有规则撤销未完成 assigned 领取，旧身份仍被拒绝，不因为匹配上传 ID 绕过恢复或身份检查。进程在对象存储成功但索引保存前退出仍可能留下孤儿对象，未声称跨存储原子提交。
+上传先校验当前 Runner/领取、查回执；存储 await 后重新核对领取、待核查状态和回执。两个请求同时存储时，只有先提交者挂入任务，另一个返回已有回执并补偿自己的对象；每次对象存储前缀包含该请求的 artifact_id，避免删除已挂接的同名文件。旧对象 URI 无需迁移。回执在终态文件中保留；服务器重启把未完成 assigned 领取保留为待核查，原身份的写入也被拒绝，不因为匹配上传 ID 绕过恢复或身份检查。进程在对象存储成功但索引保存前退出仍可能留下孤儿对象，未声称跨存储原子提交。
 
 新版服务在注册响应 metadata 声明 `artifact_upload_idempotency_version: 1`，客户端只依据服务器声明启用，不把用户 metadata 中同名值发送出去。确认支持后，Runner 日志上传固定使用本次领取内的 `runner-log-v1` ID，并将上传前阶段保存为 uploading_idempotent。响应丢失后，重启先注册协商，再从保存结果重传同请求，得到原工件后持久化最终报告并提交；不会重跑工具。旧服务未声明能力、无领取身份、原日志为 uploading、或当前服务不再支持时保持 review，不推断重传安全。SDK 在处理任务前应 register；回退旧客户端不能读新的幂等上传阶段，将拒绝而非盲重放。
 
@@ -58,7 +60,7 @@ SQLite 使用依据：[Python 3.11 sqlite3 文档](https://docs.python.org/3.11/
 
 新版领取请求增加三个可选查询参数：`request_id`、正整数 `sequence`、`epoch`，三者须一起提供（缺项 400）。limit 仍为 1..20。服务器注册响应声明 `poll_request_idempotency_version: 1`、当前 poll_epoch 和 poll_next_sequence；客户端过滤用户 metadata 中这些服务器字段，收到声明后才启用。SDK 的 poll_tasks 参数和前端 pollCompatibilityRunnerTasks 的可选 receipt 参数已同步。
 
-每个 Runner 保存最新一份冻结批次回执（含空批次），与任务领取一起提交 JSON。相同 epoch/sequence/request_id/limit 返回该冻结响应，不再次派发或写文件；同序号不同请求/参数、过期序号、越序或旧 epoch 返回 409。下一请求须为最后序号加一，以顺序号避免被淘汰的旧 ID 重新变成派发请求，不保留无界的请求历史。重注册、heartbeat 不能覆盖回执和代次；回执非法明确返回状态错误并保留原状态。普通重新打开服务仍保留回执，但已有启动恢复会撤销未完成领取；客户端收到旧快照后仍核对当前身份，不能借回执重跑旧尝试。正常清理离线 Runner 后重新注册生成新代次，旧请求不用于新 Runner。
+每个 Runner 保存最新一份冻结批次回执（含空批次），与任务领取一起提交 JSON。相同 epoch/sequence/request_id/limit 返回该冻结响应，不再次派发；心跳过期回收可能另行持久化待核查状态，回执重放本身不创建新领取。同序号不同请求/参数、过期序号、越序或旧 epoch 返回 409。下一请求须为最后序号加一，以顺序号避免被淘汰的旧 ID 重新变成派发请求，不保留无界的请求历史。重注册、heartbeat 不能覆盖回执和代次；回执非法明确返回状态错误并保留原状态。服务重建保留原回执，未完成领取则保持原 assignment 并转待核查；客户端收到冻结旧快照后仍核对当前 assigned 状态与身份，不能借回执重跑旧尝试。正常清理离线 Runner 后重新注册生成新代次，旧请求不用于新 Runner。
 
 客户端发请求前将 UUID、limit、sequence 和 epoch 保存至 SQLite pending_poll。响应收到后，整批 queued 项入库与 pending_poll 移除在同一事务；任何失败保留原 pending_poll，不执行半个批次。响应丢失后客户端重开并注册，继续使用原请求的完整四字段，不能按新注册响应中的下一序号跳过未确认领取。收到整批并成功入库后才推进本地下一序号。旧服务器无能力声明维持原协议，不能恢复早先未返回的领取；若已有新协议 pending_poll 而当前服务不支持，则明确停止并保留日志供核查，不退回无身份请求。
 
@@ -84,4 +86,4 @@ CLI 不注册、不发心跳、不领取任务；每个 entry 输出一条只含
 
 CLI 沿用原 `_json_request` 传输，本步没有新增 Bearer 凭据配置能力；启用全局 Bearer 认证的环境会将未授权请求以 401 原样拒绝。不能为运行此命令关闭认证、改用普通列表或绕过网关；这些部署仍需通过既有授权 API 调用方式读取 snapshot。
 
-测试包含真实 SQLite/JSON 文件、正式 ASGI API、提交后受控丢弃报告 ACK、以及在 `executing` 提交后真实终止本地 journal 子进程。强杀子进程不执行领域工具，ASGI 传输不代表真实供应商/浏览器/压测/扫描 Runner。外部执行结果查询、旧执行的非权威迟到观察、有依据补偿及服务端未知 assignment 的自动回收治理仍未完成；本接口不把这些缺口变成已验收能力。
+测试包含真实 SQLite/JSON 文件、正式 ASGI API、提交后受控丢弃报告 ACK、以及在 `executing` 提交后真实终止本地 journal 子进程。强杀子进程不执行领域工具，ASGI 传输不代表真实供应商/浏览器/压测/扫描 Runner。新增受控本地文件副作用与结果丢失测试，验证服务重建、心跳过期/Runner 缺失后，另一 Runner 与独立日志不能再次领取该任务，原 journal 仍可只读核对为 unknown；它不是真实领域 Runner 验收。外部执行结果查询、旧执行的非权威迟到观察、有依据补偿及停止回执仍未完成；本接口不把这些缺口变成已验收能力。

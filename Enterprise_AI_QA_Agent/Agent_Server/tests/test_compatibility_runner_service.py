@@ -167,11 +167,11 @@ def test_retried_task_waits_behind_existing_queue_after_reload(tmp_path):
     asyncio.run(exercise())
 
 
-def test_restart_recovery_joins_existing_queue_tail(tmp_path):
+def test_restart_holds_unknown_assignment_without_blocking_queued_work(tmp_path):
     asyncio.run(_exercise_recovered_queue_order(tmp_path, recovery="restart"))
 
 
-def test_heartbeat_recovery_joins_existing_queue_tail(tmp_path):
+def test_heartbeat_holds_unknown_assignment_without_blocking_queued_work(tmp_path):
     asyncio.run(_exercise_recovered_queue_order(tmp_path, recovery="heartbeat"))
 
 
@@ -189,6 +189,7 @@ async def _exercise_recovered_queue_order(root: Path, *, recovery: str):
     ))
     first = await service.poll_tasks("recovery-runner")
     assert [task.task_id for task in first.tasks] == ["recovering-task"]
+    before = first.tasks[0].model_dump(mode="json")
     # Controlled recovery contracts, not evidence of a real Runner outage.
     if recovery == "restart":
         service = CompatibilityRunnerService(settings=_Settings(root))
@@ -198,13 +199,37 @@ async def _exercise_recovered_queue_order(root: Path, *, recovery: str):
     await service.register_runner(CompatibilityRunnerRegistrationRequest(
         runner_id="recovery-runner", capabilities=["local_browser"],
     ))
-    # Both recovery paths persist queue order, not only their in-memory state.
+    # Both paths persist the held evidence without reordering unrelated work.
     restored = CompatibilityRunnerService(settings=_Settings(root))
+    _assert_interrupted_assignment_held(restored._tasks["recovering-task"], before, source=recovery)
     second = await restored.poll_tasks("recovery-runner")
     assert [task.task_id for task in second.tasks] == ["waiting-task"]
+    await restored.report_task("recovery-runner", "waiting-task", CompatibilityRunnerTaskReportRequest(
+        status="completed", result={"summary": "Normal unrelated dry-run completion."},
+    ))
+    assert (await restored.poll_tasks("recovery-runner")).tasks == []
 
 
-def test_runner_restart_requeues_assigned_tasks_without_stale_capacity():
+def _assert_interrupted_assignment_held(task, before, *, source):
+    held_at = task.metadata["recovery_required_at"]
+    assert held_at
+    # Compare the full original definition, assignment, result, artifacts,
+    # error, history and execution metadata; only review fields may change.
+    assert task.model_dump(mode="json") == {
+        **before,
+        "status": "recovery_required",
+        "updated_at": held_at,
+        "metadata": {
+            **before["metadata"],
+            "automatic_retry_limit": 3,
+            "recovery_reason": "assignment_outcome_unknown",
+            "recovery_required_at": held_at,
+            "recovery_source": source,
+        },
+    }
+
+
+def test_runner_restart_holds_assigned_tasks_without_stale_capacity():
     root = Path(__file__).resolve().parent / ".tmp" / f"runner_restart_{uuid4().hex}"
     try:
         asyncio.run(_exercise_runner_restart_recovery(root))
@@ -276,7 +301,7 @@ def test_cancelled_runner_task_does_not_complete_report():
         shutil.rmtree(root, ignore_errors=True)
 
 
-def test_stale_runner_heartbeat_requeues_assigned_tasks_live():
+def test_stale_runner_heartbeat_holds_assigned_tasks_live():
     root = Path(__file__).resolve().parent / ".tmp" / f"runner_stale_{uuid4().hex}"
     try:
         asyncio.run(_exercise_stale_runner_recovery(root))
@@ -284,7 +309,7 @@ def test_stale_runner_heartbeat_requeues_assigned_tasks_live():
         shutil.rmtree(root, ignore_errors=True)
 
 
-def test_reregistering_stale_runner_requeues_prior_assignment():
+def test_reregistering_stale_runner_holds_prior_assignment():
     root = Path(__file__).resolve().parent / ".tmp" / f"runner_reregister_stale_{uuid4().hex}"
     try:
         asyncio.run(_exercise_stale_runner_reregister_recovery(root))
@@ -292,7 +317,7 @@ def test_reregistering_stale_runner_requeues_prior_assignment():
         shutil.rmtree(root, ignore_errors=True)
 
 
-def test_heartbeat_from_stale_runner_requeues_prior_assignment():
+def test_heartbeat_from_stale_runner_holds_prior_assignment():
     root = Path(__file__).resolve().parent / ".tmp" / f"runner_heartbeat_stale_{uuid4().hex}"
     try:
         asyncio.run(_exercise_stale_runner_heartbeat_recovery(root))
@@ -1916,44 +1941,22 @@ async def _exercise_runner_restart_recovery(root: Path):
         )
         service._save_state()
 
+    before = service._tasks[task_id].model_dump(mode="json")
     restarted = CompatibilityRunnerService(settings=settings)
     restored_runners = await restarted.list_runners()
     assert restored_runners[0].active_task_ids == []
     restored_tasks = await restarted.list_tasks(dispatch_id=dispatch_plan.dispatch_id)
-    assert restored_tasks[0].status == "queued"
-    assert restored_tasks[0].assigned_runner_id is None
-    assert restored_tasks[0].result == {}
-    assert restored_tasks[0].error is None
-    assert restored_tasks[0].artifacts == []
-    assert restored_tasks[0].metadata["mode_calls_execution_status"] is None
-    assert restored_tasks[0].metadata["mode_calls_execution_runner_id"] is None
-    assert restored_tasks[0].metadata["retry_history"][-1]["reason"] == "runner_service_restart"
-    previous = restored_tasks[0].metadata["retry_history"][-1]
-    assert previous["previous_result"] == {"summary": "Partial result before restart."}
-    assert previous["previous_artifacts"] == [restart_artifact.model_dump(mode="json")]
-    assert previous["previous_mode_call_execution"]["mode_calls_execution_status"] == "running"
-    assert restored_tasks[0].metadata["retry_history"][-1]["previous_artifact_ids"] == [
-        restart_artifact.artifact_id
-    ]
+    _assert_interrupted_assignment_held(restored_tasks[0], before, source="restart")
+    assert restored_tasks[0].artifacts[0].artifact_id == restart_artifact.artifact_id
     persisted_state = json.loads((Path(settings.data_dir) / "compatibility" / "runner_state.json").read_text(encoding="utf-8"))
     persisted_task = next(item for item in persisted_state["tasks"] if item["task_id"] == task_id)
     persisted_runner = next(item for item in persisted_state["runners"] if item["runner_id"] == "runner-restart-1")
-    assert persisted_task["status"] == "queued"
-    assert persisted_task["assigned_runner_id"] is None
-    assert persisted_task["result"] == {}
-    assert persisted_task["error"] is None
-    assert persisted_task["artifacts"] == []
-    assert persisted_task["metadata"]["mode_calls_execution_status"] is None
-    assert persisted_task["metadata"]["retry_history"][-1]["reason"] == "runner_service_restart"
-    assert persisted_task["metadata"]["retry_history"][-1]["previous_summary"] == "Partial result before restart."
-    assert persisted_task["metadata"]["retry_history"][-1]["previous_error"] == "partial_restart_error"
+    assert persisted_task == restored_tasks[0].model_dump(mode="json")
     assert persisted_runner["active_task_ids"] == []
 
     second_poll = await restarted.poll_tasks("runner-restart-1")
-    assert [task.task_id for task in second_poll.tasks] == [task_id]
-    assert second_poll.tasks[0].assigned_runner_id == "runner-restart-1"
-    second_running = await restarted.begin_mode_call_execution("runner-restart-1", task_id)
-    assert second_running.metadata["mode_calls_execution_status"] == "running"
+    assert second_poll.tasks == []
+    _assert_interrupted_assignment_held(restarted._tasks[task_id], before, source="restart")
 
 
 async def _exercise_cancelled_runner_report(root: Path):
@@ -2091,30 +2094,18 @@ async def _exercise_stale_runner_recovery(root: Path):
             }
         )
 
+    before = service._tasks[task_id].model_dump(mode="json")
     stale_tasks = await service.list_tasks(dispatch_id=dispatch_plan.dispatch_id)
-    assert stale_tasks[0].status == "queued"
-    assert stale_tasks[0].assigned_runner_id is None
-    assert stale_tasks[0].result == {}
-    assert stale_tasks[0].error is None
-    assert stale_tasks[0].artifacts == []
-    assert stale_tasks[0].metadata["mode_calls_execution_status"] is None
-    assert stale_tasks[0].metadata["mode_calls_execution_runner_id"] is None
-    assert stale_tasks[0].metadata["retry_count"] == 1
-    assert stale_tasks[0].metadata["retry_history"][-1]["reason"] == "runner_heartbeat_timeout"
-    assert stale_tasks[0].metadata["retry_history"][-1]["previous_runner_id"] == "runner-stale-1"
-    assert stale_tasks[0].metadata["retry_history"][-1]["previous_summary"] == "Partial result before stale recovery."
-    assert stale_tasks[0].metadata["retry_history"][-1]["previous_error"] == "partial_stale_error"
-    assert stale_tasks[0].metadata["retry_history"][-1]["previous_artifact_ids"] == [stale_artifact.artifact_id]
+    _assert_interrupted_assignment_held(stale_tasks[0], before, source="heartbeat")
+    assert stale_tasks[0].artifacts[0].artifact_id == stale_artifact.artifact_id
 
     runners = {runner.runner_id: runner for runner in await service.list_runners()}
     assert runners["runner-stale-1"].status == "offline"
     assert runners["runner-stale-1"].active_task_ids == []
 
     second_poll = await service.poll_tasks("runner-stale-2")
-    assert [task.task_id for task in second_poll.tasks] == [task_id]
-    assert second_poll.tasks[0].assigned_runner_id == "runner-stale-2"
-    second_running = await service.begin_mode_call_execution("runner-stale-2", task_id)
-    assert second_running.metadata["mode_calls_execution_status"] == "running"
+    assert second_poll.tasks == []
+    _assert_interrupted_assignment_held(service._tasks[task_id], before, source="heartbeat")
 
 
 async def _exercise_stale_runner_reregister_recovery(root: Path):
@@ -2184,6 +2175,7 @@ async def _exercise_stale_runner_reregister_recovery(root: Path):
             }
         )
 
+    before = service._tasks[task_id].model_dump(mode="json")
     registered = await service.register_runner(
         CompatibilityRunnerRegistrationRequest(
             runner_id="runner-reregister-stale",
@@ -2199,34 +2191,18 @@ async def _exercise_stale_runner_reregister_recovery(root: Path):
     assert registered.metadata["reconnected"] is True
 
     recovered_tasks = await service.list_tasks(dispatch_id=dispatch_plan.dispatch_id)
-    assert recovered_tasks[0].status == "queued"
-    assert recovered_tasks[0].assigned_runner_id is None
-    assert recovered_tasks[0].result == {}
-    assert recovered_tasks[0].error is None
-    assert recovered_tasks[0].artifacts == []
-    assert recovered_tasks[0].metadata["mode_calls_execution_status"] is None
-    assert recovered_tasks[0].metadata["retry_count"] == 1
-    assert recovered_tasks[0].metadata["retry_history"][-1]["reason"] == "runner_heartbeat_timeout"
-    assert recovered_tasks[0].metadata["retry_history"][-1]["previous_artifact_ids"] == [
-        stale_artifact.artifact_id
-    ]
+    _assert_interrupted_assignment_held(recovered_tasks[0], before, source="heartbeat")
+    assert recovered_tasks[0].artifacts[0].artifact_id == stale_artifact.artifact_id
     persisted_state = json.loads((Path(root / "data") / "compatibility" / "runner_state.json").read_text(encoding="utf-8"))
     persisted_task = next(item for item in persisted_state["tasks"] if item["task_id"] == task_id)
     persisted_runner = next(item for item in persisted_state["runners"] if item["runner_id"] == "runner-reregister-stale")
-    assert persisted_task["status"] == "queued"
-    assert persisted_task["assigned_runner_id"] is None
-    assert persisted_task["result"] == {}
-    assert persisted_task["artifacts"] == []
-    assert persisted_task["error"] is None
-    assert persisted_task["metadata"]["retry_history"][-1]["reason"] == "runner_heartbeat_timeout"
+    assert persisted_task == recovered_tasks[0].model_dump(mode="json")
     assert persisted_runner["active_task_ids"] == []
     assert persisted_runner["metadata"]["reconnected"] is True
 
     second_poll = await service.poll_tasks("runner-reregister-stale")
-    assert [task.task_id for task in second_poll.tasks] == [task_id]
-    assert second_poll.tasks[0].assigned_runner_id == "runner-reregister-stale"
-    second_running = await service.begin_mode_call_execution("runner-reregister-stale", task_id)
-    assert second_running.metadata["mode_calls_execution_status"] == "running"
+    assert second_poll.tasks == []
+    _assert_interrupted_assignment_held(service._tasks[task_id], before, source="heartbeat")
 
 
 async def _exercise_stale_runner_heartbeat_recovery(root: Path):
@@ -2293,6 +2269,7 @@ async def _exercise_stale_runner_heartbeat_recovery(root: Path):
             }
         )
 
+    before = service._tasks[task_id].model_dump(mode="json")
     heartbeat = await service.heartbeat(
         "runner-heartbeat-stale",
         CompatibilityRunnerHeartbeatRequest(
@@ -2306,40 +2283,18 @@ async def _exercise_stale_runner_heartbeat_recovery(root: Path):
     assert heartbeat.metadata["heartbeat_after_stale"] is True
 
     recovered_tasks = await service.list_tasks(dispatch_id=dispatch_plan.dispatch_id)
-    assert recovered_tasks[0].status == "queued"
-    assert recovered_tasks[0].assigned_runner_id is None
-    assert recovered_tasks[0].result == {}
-    assert recovered_tasks[0].error is None
-    assert recovered_tasks[0].artifacts == []
-    assert recovered_tasks[0].metadata["mode_calls_execution_status"] is None
-    assert recovered_tasks[0].metadata["retry_count"] == 1
-    assert recovered_tasks[0].metadata["retry_history"][-1]["reason"] == "runner_heartbeat_timeout"
-    assert recovered_tasks[0].metadata["retry_history"][-1]["previous_artifact_ids"] == [
-        stale_artifact.artifact_id
-    ]
-    assert recovered_tasks[0].metadata["retry_history"][-1]["previous_summary"] == "Partial result before stale heartbeat."
-    assert recovered_tasks[0].metadata["retry_history"][-1]["previous_error"] == "partial_heartbeat_stale_error"
-    previous = recovered_tasks[0].metadata["retry_history"][-1]
-    assert previous["previous_result"] == {"summary": "Partial result before stale heartbeat."}
-    assert previous["previous_artifacts"] == [stale_artifact.model_dump(mode="json")]
-    assert previous["previous_mode_call_execution"]["mode_calls_execution_status"] == "running"
+    _assert_interrupted_assignment_held(recovered_tasks[0], before, source="heartbeat")
+    assert recovered_tasks[0].artifacts[0].artifact_id == stale_artifact.artifact_id
     persisted_state = json.loads((Path(root / "data") / "compatibility" / "runner_state.json").read_text(encoding="utf-8"))
     persisted_task = next(item for item in persisted_state["tasks"] if item["task_id"] == task_id)
     persisted_runner = next(item for item in persisted_state["runners"] if item["runner_id"] == "runner-heartbeat-stale")
-    assert persisted_task["status"] == "queued"
-    assert persisted_task["assigned_runner_id"] is None
-    assert persisted_task["result"] == {}
-    assert persisted_task["artifacts"] == []
-    assert persisted_task["error"] is None
-    assert persisted_task["metadata"]["retry_history"][-1]["reason"] == "runner_heartbeat_timeout"
+    assert persisted_task == recovered_tasks[0].model_dump(mode="json")
     assert persisted_runner["active_task_ids"] == []
     assert persisted_runner["metadata"]["heartbeat_after_stale"] is True
 
     second_poll = await service.poll_tasks("runner-heartbeat-stale")
-    assert [task.task_id for task in second_poll.tasks] == [task_id]
-    assert second_poll.tasks[0].assigned_runner_id == "runner-heartbeat-stale"
-    second_running = await service.begin_mode_call_execution("runner-heartbeat-stale", task_id)
-    assert second_running.metadata["mode_calls_execution_status"] == "running"
+    assert second_poll.tasks == []
+    _assert_interrupted_assignment_held(service._tasks[task_id], before, source="heartbeat")
 
 
 class _BlockingArtifactStorage:

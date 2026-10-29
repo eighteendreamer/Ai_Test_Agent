@@ -1213,7 +1213,7 @@ onUnmounted(() => {
         待核查 {{ recoverableTaskSummary(executionReport).needsReview }}
       </p>
       <p v-if="recoverableTaskSummary(executionReport).needsReview" class="compatibility-risk">
-        自动重试已停止。请先核查上一轮执行结果与外部副作用，再决定是否手动重跑。
+        执行结果未知，未自动重派。请先核查原 Runner 日志、执行结果与外部副作用，再决定是否手动重跑。
       </p>
       <div v-if="executionReport.environments.length" class="compatibility-matrix">
         <div

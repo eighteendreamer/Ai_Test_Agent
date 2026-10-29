@@ -87,7 +87,7 @@ it("drafts once for a new confirmation in the active session", async () => {
   }
 });
 
-it("shows automatic recovery requiring review and includes it in manual retry", async () => {
+it("shows an unknown assignment without automatic redispatch and includes it in manual retry", async () => {
   api.getCompatibilityReport.mockResolvedValue({
     total_tasks: 1, status: "recovery_required", pass_rate: 0,
     summary: "An interrupted task needs review.", environments: [], failures: [], artifacts: [], markdown: "",
@@ -97,7 +97,9 @@ it("shows automatic recovery requiring review and includes it in manual retry", 
   try {
     await flushPromises();
     expect(wrapper.text()).toContain("待核查 1");
-    expect(wrapper.text()).toContain("自动重试已停止");
+    expect(wrapper.text()).toContain("执行结果未知，未自动重派");
+    expect(wrapper.text()).toContain("原 Runner 日志");
+    expect(wrapper.text()).not.toContain("预算耗尽");
     expect(api.requeueCompatibilityTasks).not.toHaveBeenCalled();
     const retryButton = wrapper.findAll("button").find((button) => button.text() === "重跑可恢复任务");
     expect(retryButton).toBeDefined();
