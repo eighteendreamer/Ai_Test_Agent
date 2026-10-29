@@ -4243,3 +4243,47 @@ git diff --check
 此前四文件恢复组合在旧断言下取得 `140 passed、1 failed`；唯一失败是结算测试仍把已升至 v27 的合法 stage 当作非法版本，修正为 v28 后，`test_framework_projected_settlement.py` 全文件实测通过。未重新宣称四文件组合全绿。ruff／mypy 未安装，未擅自安装且不声称 lint/typecheck 通过；真实 embedding、RustFS、领域 Runner、资源清理 journal、H07、A2-3 及 B/C/D/E/F 仍未验收。
 
 本子步与 §93–94 的冻结 Memory 计划代码及实施记录共同提交；明确排除工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 修改、`.codex-logs`、`.env` 和本地数据。提交仍不授予自动重试、未知效果补偿或新的调度权限。
+
+## 96. A3／H06：Memory 未知效果只读对账与终态 owner 脱离（2026-10-29）
+
+本节承接 §95 的冻结计划与逐条物理行回执，只补齐 A3/H06 的“未知效果先查询／对账”出口，不宣称 A3 或 v4 完成。目标是：在原 task 已进入终态、当前 owner／lease 已不存在时，只读核对冻结计划、逐条回执和实际 Memory 行；发现应用提交后的派生失败时，将缺失请求保留为 `unknown`，不把它转换成自动重试或补偿权限。
+
+### 实现与契约
+
+- `FrameworkTurnMemoryReconciliation` 是严格、冻结、只读诊断 DTO，携带稳定 effect／plan／binding 身份、已核对请求、缺失请求、未知请求、漂移请求、失败观察和原因码。它不写回 message stage，也不授予执行、重试或补偿权。
+- `reconcile_turn_memory_execution` 以冻结计划为唯一预期，逐项核对 receipt 的 request／ordinal／memory identity 与实际行 hash；回执缺行、行无回执、未知行或 hash 变化均分类为 `drifted`，不猜测“未开始”。有 `session.post_commit_effect_failed(status=unknown,effect_kind=turn_memory)` 证据时，未核对请求标记 `unknown`；只有已有 running 回执且无失败观察时才报告 `partial`。
+- `read_turn_memory_reconciliation` 单独走只读连接，验证 task 的 attempt／runtime binding 和阶段／冻结计划，但不调用需要活跃租约的 `_lock_stage_and_plan`。因此终态 task、已过期 owner 可以读取证据；服务层仅暴露该只读入口，不新增调度层。
+- 代码复用现有 PostgreSQL 连接、Memory 行列投影、事件表和结构化日志；没有新增依赖、DDL、真实 embedding 调用或资源清理行为。
+
+### TDD 与实际验证
+
+先运行新测试得到红测：
+
+```text
+pytest tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# ImportError: 无 reconcile_turn_memory_execution
+```
+
+补齐 schema、只读投影和服务包装后，在 `Agent_Server` 使用 `../.venv-framework-v2/Scripts/python.exe` 实际运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 8 passed in 6.80s
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_turn_memory_reconciliation.py `
+  tests/test_memory_embedding_runtime.py tests/test_memory_vector_replica.py `
+  tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py `
+  -q -rs --tb=short
+# 148 passed，16 skipped；skip 均为既有真实 PostgreSQL／Redis 环境门
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均 exit 0
+```
+
+本轮未完成真实 PG／Redis Memory 对账验收：定向 P0 复跑在测试体前因 Redis `127.0.0.1:6379` refused（WinError 1225）阻塞；未启动 Docker、Redis 或 PostgreSQL，也未调用真实供应商／付费 embedding。上述 8 项及 148 项只证明单元替身和已有回归范围，不替代 live 环境验收。
+
+### 剩余出口与提交边界
+
+本子步只覆盖 Memory 未知效果的查询分类；尚未实现有依据的分项补偿、资源清理 receipt／journal、外部 Runner 对账、H07 失租首因，以及 A3 其余出口。`docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 是工作区原有用户草稿，未纳入本提交；`.codex-logs`、`.env` 和本地数据同样排除。完整 A3、A2-3、B／C／D／E／F 继续 active。

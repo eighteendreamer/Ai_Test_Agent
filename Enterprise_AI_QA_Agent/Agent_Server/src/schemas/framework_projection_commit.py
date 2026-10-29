@@ -211,6 +211,50 @@ class FrameworkTurnMemoryExecution(BaseModel):
         return self
 
 
+class FrameworkTurnMemoryReconciliation(BaseModel):
+    """Read-only status derived from a frozen plan and durable row evidence.
+
+    This is deliberately not persisted in the message stage and grants no
+    execution or retry authority.  ``unknown`` means the missing requests
+    cannot be classified as not-started from the available durable evidence.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["derived_turn_memory_reconciliation_only"] = (
+        "derived_turn_memory_reconciliation_only"
+    )
+    effect_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+    binding_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_result_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_snapshot_id: str = Field(min_length=1)
+    plan_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    status: Literal["completed", "partial", "unknown", "drifted"]
+    request_ids: list[str] = Field(default_factory=list)
+    missing_request_ids: list[str] = Field(default_factory=list)
+    unknown_request_ids: list[str] = Field(default_factory=list)
+    drifted_request_ids: list[str] = Field(default_factory=list)
+    failure_observed: StrictBool = False
+    reason_code: Literal[
+        "all_rows_verified",
+        "partial_rows_verified",
+        "missing_execution_receipt",
+        "effect_failure_observed",
+        "row_evidence_drifted",
+        "execution_state_inconsistent",
+    ]
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def require_integer_version(cls, value):
+        if type(value) is not int:
+            raise ValueError("Memory reconciliation requires an explicit integer version")
+        return value
+
+
 class FrameworkSnapshotProjectionCommit(BaseModel):
     """The actual saved row, not the caller's requested version/header."""
     model_config = ConfigDict(extra="forbid", frozen=True)

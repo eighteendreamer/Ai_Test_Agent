@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
@@ -27,6 +28,7 @@ from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_projection_commit import (
     FrameworkTurnMemoryExecution,
     FrameworkTurnMemoryPlan,
+    FrameworkTurnMemoryReconciliation,
     FrameworkTurnMemoryRequest,
     FrameworkTurnMemoryRowReceipt,
     TURN_MEMORY_EXECUTION_KEY,
@@ -42,6 +44,7 @@ MEMORY_COLUMNS = (
     "id,scope,kind,content,summary,tags,session_id,turn_id,trace_id,source,stale,"
     "mode_key,metadata,embedding::text AS embedding,created_at,updated_at"
 )
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -155,6 +158,177 @@ def _request_by_id(plan: FrameworkTurnMemoryPlan, request_id: str) -> FrameworkT
     matches = [item for item in plan.requests if item.request_id == request_id]
     _require(len(matches) == 1, "Memory execution request is not part of the frozen plan")
     return matches[0]
+
+
+def reconcile_turn_memory_execution(
+    plan: FrameworkTurnMemoryPlan,
+    execution: FrameworkTurnMemoryExecution | None,
+    row_hashes: dict[str, str],
+    *,
+    effect_failure_observed: bool = False,
+) -> FrameworkTurnMemoryReconciliation:
+    """Classify durable Memory evidence without granting execution authority.
+
+    ``row_hashes`` must contain the physical Memory rows keyed by their stable
+    request-derived IDs.  A row without a matching receipt, a receipt without
+    a matching row, or a changed row is drift rather than a missing request.
+    Missing requests become ``unknown`` when a post-commit failure was
+    observed (or when no execution receipt exists); they are ``partial`` only
+    when the durable execution receipt proves a prefix of the plan.
+    """
+    expected = {item.request_id: item.ordinal for item in plan.requests}
+    receipts = {item.request_id: item for item in (execution.row_receipts if execution else [])}
+    drifted = set(row_hashes) - set(expected)
+    drifted.update(set(receipts) - set(expected))
+    committed: list[str] = []
+    for request_id, receipt in receipts.items():
+        if expected.get(request_id) != receipt.ordinal or receipt.memory_id != request_id:
+            drifted.add(request_id)
+            continue
+        if row_hashes.get(receipt.memory_id) != receipt.row_sha256:
+            drifted.add(request_id)
+            continue
+        committed.append(request_id)
+    for row_id in set(row_hashes).intersection(expected) - set(receipts):
+        drifted.add(row_id)
+
+    committed.sort(key=lambda request_id: expected[request_id])
+    missing = [request_id for request_id in expected if request_id not in receipts]
+    if drifted:
+        return FrameworkTurnMemoryReconciliation(
+            effect_id=plan.effect_id,
+            session_id=plan.session_id,
+            turn_id=plan.turn_id,
+            binding_fingerprint=plan.binding_fingerprint,
+            runtime_result_asset_sha256=plan.runtime_result_asset_sha256,
+            source_snapshot_id=plan.source_snapshot_id,
+            plan_asset_sha256=plan.asset_sha256,
+            status="drifted",
+            request_ids=committed,
+            missing_request_ids=missing,
+            drifted_request_ids=sorted(drifted),
+            failure_observed=effect_failure_observed,
+            reason_code="row_evidence_drifted",
+        )
+    if not missing:
+        if execution is None or execution.state != "completed":
+            return FrameworkTurnMemoryReconciliation(
+                effect_id=plan.effect_id,
+                session_id=plan.session_id,
+                turn_id=plan.turn_id,
+                binding_fingerprint=plan.binding_fingerprint,
+                runtime_result_asset_sha256=plan.runtime_result_asset_sha256,
+                source_snapshot_id=plan.source_snapshot_id,
+                plan_asset_sha256=plan.asset_sha256,
+                status="drifted",
+                request_ids=committed,
+                failure_observed=effect_failure_observed,
+                reason_code="execution_state_inconsistent",
+                drifted_request_ids=committed,
+            )
+        return FrameworkTurnMemoryReconciliation(
+            effect_id=plan.effect_id,
+            session_id=plan.session_id,
+            turn_id=plan.turn_id,
+            binding_fingerprint=plan.binding_fingerprint,
+            runtime_result_asset_sha256=plan.runtime_result_asset_sha256,
+            source_snapshot_id=plan.source_snapshot_id,
+            plan_asset_sha256=plan.asset_sha256,
+            status="completed",
+            request_ids=committed,
+            failure_observed=effect_failure_observed,
+            reason_code="all_rows_verified",
+        )
+    unknown = missing if effect_failure_observed or execution is None else []
+    return FrameworkTurnMemoryReconciliation(
+        effect_id=plan.effect_id,
+        session_id=plan.session_id,
+        turn_id=plan.turn_id,
+        binding_fingerprint=plan.binding_fingerprint,
+        runtime_result_asset_sha256=plan.runtime_result_asset_sha256,
+        source_snapshot_id=plan.source_snapshot_id,
+        plan_asset_sha256=plan.asset_sha256,
+        status="unknown" if unknown else "partial",
+        request_ids=committed,
+        missing_request_ids=missing,
+        unknown_request_ids=unknown,
+        failure_observed=effect_failure_observed,
+        reason_code=("effect_failure_observed" if effect_failure_observed
+                      else "missing_execution_receipt" if execution is None
+                      else "partial_rows_verified"),
+    )
+
+
+def read_turn_memory_reconciliation(owner, settings) -> FrameworkTurnMemoryReconciliation:
+    """Read Memory effect evidence after the execution owner may be gone.
+
+    This path verifies the immutable binding and attempt identity but does not
+    require a live lease, running task, or worker token.  It is intentionally
+    read-only: the returned status cannot claim a retry or compensation right.
+    """
+    with postgres_connect(settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT id,status,attempt_id,runtime_binding FROM {settings.database.postgres_agent_task_table} "
+            "WHERE id=%s",
+            (owner.task_id,),
+        )
+        task = cur.fetchone()
+        _require(task is not None, "Memory reconciliation task is missing")
+        _require(
+            task["attempt_id"] == owner.attempt_id
+            and task["runtime_binding"] == owner.binding.model_dump(mode="json"),
+            "Memory reconciliation task identity differs from its binding",
+        )
+        cur.execute(
+            f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s",
+            (owner.binding.binding_id,),
+        )
+        saved = cur.fetchone()
+        _require(saved is not None, "Memory reconciliation stage is missing")
+        stage = validate_message_stage(saved["record"])
+        _require(stage.phase in {"runtime_submitted", "projected"},
+                 "Memory reconciliation has no post-commit stage")
+        plan = _plan_from_stage(stage, owner)
+        execution = _execution(stage, plan)
+        request_ids = [item.request_id for item in plan.requests]
+        if request_ids:
+            cur.execute(
+                f"SELECT {MEMORY_COLUMNS} FROM {settings.database.postgres_memory_table} "
+                "WHERE id=ANY(%s)",
+                (request_ids,),
+            )
+            rows = {str(row["id"]): _row_hash(dict(row)) for row in cur.fetchall()}
+        else:
+            rows = {}
+        cur.execute(
+            f"SELECT 1 FROM {settings.database.postgres_event_table} "
+            "WHERE session_id=%s AND type='session.post_commit_effect_failed' "
+            "AND payload->>'effect_id'=%s AND payload->>'effect_kind'='turn_memory' "
+            "AND payload->>'status'='unknown' LIMIT 1",
+            (plan.session_id, plan.effect_id),
+        )
+        failure_observed = cur.fetchone() is not None
+        result = reconcile_turn_memory_execution(
+            plan, execution, rows, effect_failure_observed=failure_observed,
+        )
+    LOGGER.log(
+        logging.WARNING if result.status in {"unknown", "drifted"} else logging.INFO,
+        "framework_turn_memory_reconciliation_read",
+        extra={
+            "session_id": result.session_id,
+            "turn_id": result.turn_id,
+            "effect_id": result.effect_id,
+            "status": result.status,
+            "reason_code": result.reason_code,
+            "request_count": len(result.request_ids),
+            "missing_count": len(result.missing_request_ids),
+        },
+    )
+    return result
+
+
+async def read_turn_memory_reconciliation_async(owner, settings) -> FrameworkTurnMemoryReconciliation:
+    return await asyncio.to_thread(read_turn_memory_reconciliation, owner, settings)
 
 
 def prepare_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryExecutionWrite,

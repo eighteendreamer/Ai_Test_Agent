@@ -438,6 +438,14 @@ class MemoryRuntimeService:
             }
         return write_ids
 
+    async def reconcile_turn_memory(self, framework_owner):
+        """Read post-commit Memory evidence without acquiring execution rights."""
+        from src.runtime.framework_turn_memory_projection import read_turn_memory_reconciliation_async
+
+        return await read_turn_memory_reconciliation_async(
+            framework_owner, self._memory_store._settings,
+        )
+
     async def write_page_memory(
         self,
         session_id: str,
