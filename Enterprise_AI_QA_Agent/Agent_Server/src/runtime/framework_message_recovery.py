@@ -137,11 +137,18 @@ def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=Fals
             _reject("Runtime submission request differs from its original binding")
         from src.runtime.framework_application_projection import COMMIT_KEY
         if stage.phase == "projected":
+            from src.runtime.framework_application_projection import application_source_manifest
+
             application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
             reference = application_commit.output_message_id or application_commit.snapshot_id
             if stage.result_reference != reference:
                 _reject("Projected message differs from its committed application reference")
-            proof.update(resume_phase="settling", source_sha256=stage.source_sha256,
+            # Derived post-commit execution receipts may advance the stage
+            # after a settlement successor is admitted.  The continuation
+            # proof must bind the immutable application scope, not that
+            # mutable Memory execution detail.
+            proof.update(resume_phase="settling",
+                source_sha256=approval_value_hash(application_source_manifest(stage.source_manifest)),
                 execution_sha256=stage.execution_sha256, result_reference=reference,
                 result_sha256=approval_value_hash(application_commit.model_dump(mode="json")),
                 model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
@@ -165,10 +172,19 @@ def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=Fals
                 result_sha256=runtime_result.asset_sha256,
                 model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]))
         else:
+            from src.runtime.framework_application_projection import application_source_manifest
+
             application_commit = require_application_commit(cur, tasks._settings, session, binding, stage)
-            proof.update(source_sha256=stage.source_sha256, execution_sha256=stage.execution_sha256,
+            # The stage may still be ``runtime_submitted`` while a worker is
+            # killed after the application transaction (including the first
+            # post-commit Memory row) has committed.  Memory execution
+            # receipts are mutable derived state, so they must not enter the
+            # continuation proof.  Bind the successor to the immutable
+            # application scope and the committed output identity instead.
+            proof.update(source_sha256=approval_value_hash(application_source_manifest(stage.source_manifest)),
+                execution_sha256=stage.execution_sha256,
                 model_calls_sha256=approval_value_hash([call.model_dump(mode="json") for call in snapshot.calls]),
-                result_reference=application_commit.snapshot_id,
+                result_reference=application_commit.output_message_id or application_commit.snapshot_id,
                 result_sha256=approval_value_hash(application_commit.model_dump(mode="json")))
     cur.execute(f"SELECT role,content,metadata FROM {tasks._settings.database.postgres_message_table} "
         "WHERE id=%s AND session_id=%s", (stage.user_message_id, binding.session_id))
@@ -276,8 +292,18 @@ def require_message_recovery_claim(cur, tasks, session, binding, row, owner):
         _reject("Message recovery execution owner changed")
     budget, proof = _recoverable(cur, tasks, session, binding, stage, origin,
         finalizing=link.resume_phase == "finalizing")
-    if any(getattr(link, key) != value for key, value in proof.items()):
-        _reject("Message successor no longer matches its frozen continuation proof")
+    mismatches = [key for key, value in proof.items() if getattr(link, key) != value]
+    if mismatches:
+        logger.warning("framework_message_recovery_proof_drift", extra={
+            "task_id": row["id"], "binding_id": binding.binding_id,
+            "resume_phase": link.resume_phase, "fields": ",".join(mismatches),
+            "link_source_sha256": getattr(link, "source_sha256", None),
+            "current_source_sha256": proof.get("source_sha256"),
+        })
+        _reject("Message successor no longer matches its frozen continuation proof: "
+            + ",".join(mismatches) + " (source_sha256="
+            + str(proof.get("source_sha256")) + ", link_source_sha256="
+            + str(getattr(link, "source_sha256", None)) + ")")
     if approval_value_hash(budget.model_dump(mode="json")) != link.budget_sha256:
         _reject("Message successor no longer matches its admitted budget")
     return stage

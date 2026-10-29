@@ -17,7 +17,8 @@ class MemoryStoreProtocol(Protocol):
     async def refresh_connection_status(self) -> str: ...
 
     async def write(self, request: MemoryWriteRequest, *,
-        framework_projection: FrameworkProjectionWrite | None = None) -> MemoryPoint | None:
+        framework_projection: FrameworkProjectionWrite | None = None,
+        framework_memory_execution=None) -> MemoryPoint | None:
         """Check supplied turn/compaction ownership in the memory write transaction."""
         ...
 

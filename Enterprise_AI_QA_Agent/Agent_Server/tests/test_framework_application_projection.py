@@ -101,6 +101,7 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
             marker = {"before_finalization": "runtime-result-frozen", "after_snapshot": "snapshot-committed",
                 "after_snapshot_event": "snapshot-event-committed",
                 "after_observation_row": "observation-row-committed",
+                "after_turn_memory_row": "turn-memory-row-committed",
                 "before_final_session": "finalization-prepared",
                 "before_post_commit_effect": "application-committed-before-effect",
                 "after_commit": "application-committed"}[window]
@@ -227,6 +228,21 @@ def worker_waiting_after_application_commit(settings_data, config_data, prefix, 
                 actual = await write(*args, **kwargs)
                 await pause()
                 return actual
+            memory.write = write_and_pause
+        elif window == "after_turn_memory_row":
+            from src.application.context.memory_runtime_service import MemoryRuntimeService
+            from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+
+            memory = PostgresVectorMemoryStore(settings)
+            await memory.initialize()
+            sessions._memory_runtime_service = MemoryRuntimeService(memory)
+            write = memory.write
+
+            async def write_and_pause(*args, **kwargs):
+                actual = await write(*args, **kwargs)
+                await pause()
+                return actual
+
             memory.write = write_and_pause
         elif window == "before_post_commit_effect":
             sessions._run_post_commit_effect = pause
@@ -918,6 +934,176 @@ async def test_memory_plan_rolls_back_with_the_real_application_transaction(proj
 
 
 @pytest.mark.asyncio
+async def test_memory_plan_persists_each_row_receipt_and_resumes_missing_rows(projection, monkeypatch):
+    """A derived row and its receipt share one PostgreSQL transaction."""
+    from src.application.context.memory_runtime_service import MemoryRuntimeService
+    from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+    from src.schemas.framework_projection_commit import FrameworkTurnMemoryExecution
+
+    h = projection
+    h.settings.database.postgres_memory_table = h.prefix + "_turn_memory"
+    h.memories = PostgresVectorMemoryStore(h.settings)
+    await h.memories.initialize()
+    h.sessions._memory_runtime_service = MemoryRuntimeService(h.memories)
+    calls = []
+    original_write = h.memories.write
+
+    async def fail_after_first(request, **kwargs):
+        calls.append(kwargs.get("framework_memory_execution").request_id)
+        if len(calls) == 2:
+            raise ConnectionError("injected turn memory row failure")
+        try:
+            return await original_write(request, **kwargs)
+        except Exception as exc:
+            calls.append(f"error:{type(exc).__name__}:{exc}")
+            raise
+
+    monkeypatch.setattr(h.memories, "write", fail_after_first)
+    task = await selected(h)
+    response = await run(h, task)
+    saved = await stage(h, task)
+    assert response.session.status.value == "completed", calls
+    assert saved.schema_version == 27, calls
+    raw = saved.source_manifest["post_commit_memory_execution"]
+    execution = FrameworkTurnMemoryExecution.model_validate(raw)
+    assert execution.state == "running" and len(execution.row_receipts) == 1
+    assert "post_commit_memory_plan" in saved.source_manifest
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS n FROM {h.settings.database.postgres_memory_table}")
+        assert cur.fetchone()["n"] == 1
+
+    monkeypatch.setattr(h.memories, "write", original_write)
+    await h.sessions._persist_turn_memory(
+        session=await h.store.get_session(h.session_id),
+        turn_id=h.binding.turn_id,
+        trace_id="test-trace",
+        user_message="ignored recovery input",
+        assistant_message="ignored recovery output",
+        tool_results=[],
+        context_bundle={},
+        fenced_write={"turn_lease_token": task.lease_token},
+        framework_owner=task.runtime_owner,
+    )
+    recovered = await stage(h, task)
+    final_execution = FrameworkTurnMemoryExecution.model_validate(
+        recovered.source_manifest["post_commit_memory_execution"])
+    assert final_execution.state == "completed"
+    assert len(final_execution.row_receipts) == len(recovered.source_manifest["post_commit_memory_plan"]["requests"])
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS n FROM {h.settings.database.postgres_memory_table}")
+        assert cur.fetchone()["n"] == len(final_execution.row_receipts)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"DROP TABLE {h.settings.database.postgres_memory_table}")
+
+
+@pytest.mark.asyncio
+async def test_memory_row_and_execution_receipt_roll_back_together(projection, monkeypatch):
+    from src.application.context.memory_runtime_service import MemoryRuntimeService
+    from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+    import src.runtime.framework_turn_memory_projection as receipts
+
+    h = projection
+    h.settings.database.postgres_memory_table = h.prefix + "_turn_memory_rollback"
+    h.memories = PostgresVectorMemoryStore(h.settings)
+    await h.memories.initialize()
+    h.sessions._memory_runtime_service = MemoryRuntimeService(h.memories)
+    original = receipts.record_memory_row_projection
+
+    def fail_after_receipt(*args, **kwargs):
+        original(*args, **kwargs)
+        raise ConnectionError("injected row receipt rollback")
+
+    monkeypatch.setattr(receipts, "record_memory_row_projection", fail_after_receipt)
+    task = await selected(h)
+    response = await run(h, task)
+    assert response.session.status.value == "completed"
+    saved = await stage(h, task)
+    assert "post_commit_memory_execution" not in saved.source_manifest
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS n FROM {h.settings.database.postgres_memory_table}")
+        assert cur.fetchone()["n"] == 0
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"DROP TABLE {h.settings.database.postgres_memory_table}")
+
+
+@pytest.mark.asyncio
+async def test_memory_row_drift_is_not_masked_by_a_committed_receipt(projection, monkeypatch):
+    from src.application.context.memory_runtime_service import MemoryRuntimeService
+    from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+    from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+    h = projection
+    h.settings.database.postgres_memory_table = h.prefix + "_turn_memory_drift"
+    h.memories = PostgresVectorMemoryStore(h.settings)
+    await h.memories.initialize()
+    h.sessions._memory_runtime_service = MemoryRuntimeService(h.memories)
+    task = await selected(h)
+    await run(h, task)
+    saved = await stage(h, task)
+    first_id = saved.source_manifest["post_commit_memory_execution"]["row_receipts"][0]["memory_id"]
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {h.settings.database.postgres_memory_table} SET content='drifted' WHERE id=%s",
+            (first_id,))
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="execution rows"):
+        await h.sessions._persist_turn_memory(
+            session=await h.store.get_session(h.session_id),
+            turn_id=h.binding.turn_id,
+            trace_id="test-trace",
+            user_message="ignored",
+            assistant_message="ignored",
+            tool_results=[],
+            context_bundle={},
+            fenced_write={"turn_lease_token": task.lease_token},
+            framework_owner=task.runtime_owner,
+        )
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"DROP TABLE {h.settings.database.postgres_memory_table}")
+
+
+@pytest.mark.asyncio
+async def test_memory_request_id_collision_without_receipt_requires_reconciliation(projection, monkeypatch):
+    """A legacy row with a deterministic request ID cannot impersonate a receipt."""
+    from src.application.context.memory_runtime_service import MemoryRuntimeService
+    from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+
+    h = projection
+    h.settings.database.postgres_memory_table = h.prefix + "_turn_memory_collision"
+    h.memories = PostgresVectorMemoryStore(h.settings)
+    await h.memories.initialize()
+    h.sessions._memory_runtime_service = MemoryRuntimeService(h.memories)
+    original_write = h.memories.write
+    injected = False
+
+    async def insert_legacy_collision(request, **kwargs):
+        nonlocal injected
+        execution = kwargs.get("framework_memory_execution")
+        if execution is not None and not injected:
+            injected = True
+            legacy = request.model_copy(update={
+                "turn_lease_token": None,
+                "metadata": {**request.metadata, "memory_id": execution.request_id},
+            })
+            await original_write(legacy)
+        return await original_write(request, **kwargs)
+
+    monkeypatch.setattr(h.memories, "write", insert_legacy_collision)
+    task = await selected(h)
+    response = await run(h, task)
+    assert response.session.status.value == "completed"
+    failure_events = [event for event in await h.store.list_events(h.session_id)
+        if event.type == "session.post_commit_effect_failed"]
+    assert len(failure_events) == 1
+    assert failure_events[0].payload["effect_kind"] == "turn_memory"
+    assert failure_events[0].payload["status"] == "unknown"
+    saved = await stage(h, task)
+    assert "post_commit_memory_execution" not in saved.source_manifest
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT count(*) AS n FROM {h.settings.database.postgres_memory_table}")
+        assert cur.fetchone()["n"] == 1
+        cur.execute(f"DROP TABLE {h.settings.database.postgres_memory_table}")
+
+
+@pytest.mark.asyncio
 async def test_empty_result_records_memory_intent_without_a_copy_request(projection):
     h = projection
     h.output_text = ""
@@ -1004,7 +1190,7 @@ async def test_memory_intent_rolls_back_with_the_real_application_transaction(pr
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("window", ["after_commit", "before_post_commit_effect"])
+@pytest.mark.parametrize("window", ["after_commit", "before_post_commit_effect", "after_turn_memory_row"])
 async def test_official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request(admission, window):
     from redis.asyncio import Redis
     from src.application.models.framework_model_call_policy import model_config_fingerprint
@@ -1016,6 +1202,14 @@ async def test_official_deep_agent_worker_killed_after_commit_recovers_without_s
     from src.runtime.resource_lease_manager import ResourceLease
 
     h = admission
+    if window == "after_turn_memory_row":
+        from src.application.context.memory_runtime_service import MemoryRuntimeService
+        from src.infrastructure.postgres_vector_memory_store import PostgresVectorMemoryStore
+
+        h.settings.database.postgres_memory_table = h.prefix + "_turn_memory_hard_kill"
+        h.memories = PostgresVectorMemoryStore(h.settings)
+        await h.memories.initialize()
+        h.sessions._memory_runtime_service = MemoryRuntimeService(h.memories)
     # Importing the official graph can synchronously block the event loop on a
     # cold artifact. A 1s lease tests startup speed, not this commit boundary.
     # Keep a normal lease while executing; expire it only after the hard kill.
@@ -1048,6 +1242,12 @@ async def test_official_deep_agent_worker_killed_after_commit_recovers_without_s
                 assert intent["runtime_result_asset_sha256"] == saved.source_manifest["runtime_result_asset"]["asset_sha256"]
                 assert intent["source_snapshot_id"] == proof["snapshot_id"]
                 assert intent["scope"] == "derived_turn_memory_intent_only"
+            if window == "after_turn_memory_row":
+                from src.schemas.framework_projection_commit import FrameworkTurnMemoryExecution
+
+                execution = FrameworkTurnMemoryExecution.model_validate(
+                    (await stage(h, original)).source_manifest["post_commit_memory_execution"])
+                assert execution.state == "running" and len(execution.row_receipts) == 1
             assert before.status.value == "completed" and len(requests) == 1
             assert process.is_alive()
             process.terminate()
@@ -1082,8 +1282,26 @@ async def test_official_deep_agent_worker_killed_after_commit_recovers_without_s
             assert after.messages[-1].content == before.messages[-1].content
             assert len(requests) == 1 and h.runtime.calls == []
             assert len([e for e in await h.store.list_events(h.session_id) if e.type == "turn.completed"]) == 1
+            if window == "after_turn_memory_row":
+                assert len([e for e in await h.store.list_events(h.session_id)
+                    if e.type == "memory.persisted"]) == 1
             if window == "before_post_commit_effect":
                 assert (await stage(h, successor)).source_manifest["post_commit_memory_intent"] == intent
+            if window == "after_turn_memory_row":
+                final_stage = await stage(h, successor)
+                final_execution = FrameworkTurnMemoryExecution.model_validate(
+                    final_stage.source_manifest["post_commit_memory_execution"])
+                assert final_execution.state == "completed"
+                assert len(final_execution.row_receipts) == len(
+                    final_stage.source_manifest["post_commit_memory_plan"]["requests"])
+                with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                    cur.execute(f"SELECT count(*) AS n FROM {h.settings.database.postgres_memory_table}")
+                    # The frozen policy may contain multiple rows (for
+                    # example user, assistant and long-term summaries).  A
+                    # recovered run must have exactly one physical row per
+                    # committed execution receipt, never a duplicate.
+                    assert cur.fetchone()["n"] == len(final_execution.row_receipts)
+                    cur.execute(f"DROP TABLE {h.settings.database.postgres_memory_table}")
     finally:
         if process is not None and process.is_alive():
             process.terminate()

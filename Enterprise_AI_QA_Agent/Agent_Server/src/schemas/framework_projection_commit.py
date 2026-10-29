@@ -13,6 +13,7 @@ from src.schemas.memory import MemoryWriteRequest
 
 TURN_MEMORY_INTENT_KEY = "post_commit_memory_intent"
 TURN_MEMORY_PLAN_KEY = "post_commit_memory_plan"
+TURN_MEMORY_EXECUTION_KEY = "post_commit_memory_execution"
 
 
 def post_commit_effect_id(session_id: str, turn_id: str, snapshot_id: str, effect_kind: str) -> str:
@@ -150,6 +151,63 @@ class FrameworkTurnMemoryPlan(BaseModel):
             raise ValueError("Memory plan requested flag differs from its frozen requests")
         if self.asset_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"asset_sha256"})):
             raise ValueError("Memory plan digest differs from its contents")
+        return self
+
+
+class FrameworkTurnMemoryRowReceipt(BaseModel):
+    """Receipt for one durable Memory row, separate from the frozen plan."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    request_id: str = Field(min_length=1)
+    ordinal: int = Field(ge=0)
+    status: Literal["committed"] = "committed"
+    memory_id: str = Field(min_length=1)
+    row_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    recorded_at: datetime
+
+    @field_validator("schema_version", "ordinal", mode="before")
+    @classmethod
+    def require_integer_fields(cls, value):
+        if type(value) is not int:
+            raise ValueError("Memory row receipt requires explicit integer fields")
+        return value
+
+
+class FrameworkTurnMemoryExecution(BaseModel):
+    """Mutable derived execution state; it never changes the immutable plan."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["derived_turn_memory_execution_receipt_only"] = "derived_turn_memory_execution_receipt_only"
+    effect_id: str = Field(min_length=1)
+    session_id: str = Field(min_length=1)
+    turn_id: str = Field(min_length=1)
+    binding_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    runtime_result_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    source_snapshot_id: str = Field(min_length=1)
+    plan_asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    state: Literal["running", "completed"]
+    row_receipts: list[FrameworkTurnMemoryRowReceipt] = Field(default_factory=list)
+    asset_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def require_integer_version(cls, value):
+        if type(value) is not int:
+            raise ValueError("Memory execution requires an explicit integer version")
+        return value
+
+    @model_validator(mode="after")
+    def verify(self):
+        request_ids = [item.request_id for item in self.row_receipts]
+        if len(request_ids) != len(set(request_ids)):
+            raise ValueError("Memory execution contains duplicate row receipts")
+        if self.state == "completed" and not self.row_receipts:
+            # An empty requested plan is a valid completed derived effect.
+            pass
+        if self.asset_sha256 != approval_value_hash(self.model_dump(mode="json", exclude={"asset_sha256"})):
+            raise ValueError("Memory execution digest differs from its contents")
         return self
 
 

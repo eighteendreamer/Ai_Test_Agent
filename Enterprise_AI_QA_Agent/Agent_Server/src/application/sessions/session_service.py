@@ -334,6 +334,27 @@ class SessionService:
                 metadata={"turn_id": binding.turn_id, "recovered_projection": True},
             )
         reference = commit.output_message_id or commit.snapshot_id
+        if (not approval_finalization and self._memory_runtime_service is not None
+            and "post_commit_memory_plan" in (stage.source_manifest or {})):
+            await self._run_post_commit_effect(
+                session_id=session.id,
+                turn_id=binding.turn_id,
+                source_snapshot_id=commit.snapshot_id,
+                effect_kind="turn_memory",
+                operation=lambda: self._persist_turn_memory(
+                    session=session,
+                    turn_id=binding.turn_id,
+                    trace_id=str(task.trace_id),
+                    user_message="",
+                    assistant_message=assistant.content,
+                    tool_results=[],
+                    context_bundle={},
+                    fenced_write={"turn_lease_token": task.lease_token},
+                    framework_owner=task.runtime_owner,
+                    source_snapshot_id=commit.snapshot_id,
+                ),
+                fenced_write={"turn_lease_token": task.lease_token},
+            )
         await acknowledge(task.runtime_owner, reference)
         refreshed = await self._require_session(session.id)
         events = await self._store.list_events(session.id, limit=RECENT_CONVERSATION_EVENT_LIMIT)
@@ -3073,6 +3094,8 @@ class SessionService:
                     tool_results=list(runtime_result.state.get("tool_results", [])),
                     context_bundle=dict(runtime_result.state.get("context_bundle", {})),
                     fenced_write=fenced_write,
+                    framework_owner=projection_owner,
+                    source_snapshot_id=runtime_result.snapshot.id,
                 ),
             )
         if session.status == SessionStatus.completed:
@@ -3563,39 +3586,52 @@ class SessionService:
         tool_results: list[dict],
         context_bundle: dict,
         fenced_write: dict[str, str | None] | None = None,
+        framework_owner=None,
+        source_snapshot_id: str | None = None,
     ) -> None:
         if self._memory_runtime_service is None:
             return
-        if not assistant_message.strip():
+        if not assistant_message.strip() and framework_owner is None:
             return
         turn_lease_token = str((fenced_write or {}).get("turn_lease_token") or "")
         if turn_lease_token:
             await self._store.assert_turn_execution(session.id, turn_lease_token)
-        memory_ids = await self._memory_runtime_service.write_turn_memory(
-            session_id=session.id,
-            turn_id=turn_id,
-            trace_id=trace_id,
-            user_message=user_message,
-            assistant_message=assistant_message,
-            tool_results=tool_results,
-            context_bundle=context_bundle,
-            turn_lease_token=turn_lease_token or None,
-        )
-        await self._store.append_event(
+        if framework_owner is not None:
+            memory_ids = await self._memory_runtime_service.execute_turn_memory_plan(
+                framework_owner, turn_lease_token=turn_lease_token or None)
+        else:
+            memory_ids = await self._memory_runtime_service.write_turn_memory(
+                session_id=session.id,
+                turn_id=turn_id,
+                trace_id=trace_id,
+                user_message=user_message,
+                assistant_message=assistant_message,
+                tool_results=tool_results,
+                context_bundle=context_bundle,
+                turn_lease_token=turn_lease_token or None,
+            )
+        event = self._make_event(
             session.id,
-            self._make_event(
-                session.id,
-                "memory.persisted",
-                {
-                    "turn_id": turn_id,
-                    "trace_id": trace_id,
-                    "memory_backend": self._memory_runtime_service.backend,
-                    "memory_count": len(memory_ids),
-                    "memory_ids": memory_ids,
-                },
-            ),
-            **(fenced_write or {}),
+            "memory.persisted",
+            {
+                "turn_id": turn_id,
+                "trace_id": trace_id,
+                "memory_backend": self._memory_runtime_service.backend,
+                "memory_count": len(memory_ids),
+                "memory_ids": memory_ids,
+            },
         )
+        if framework_owner is not None and source_snapshot_id:
+            # A worker can die after the durable Memory rows commit but before
+            # this diagnostic event is appended.  Recovery must be able to
+            # replay the effect without creating a second ``memory.persisted``
+            # fact, so bind the event identity to the immutable effect scope.
+            from src.schemas.framework_projection_commit import post_commit_effect_id
+
+            effect_id = post_commit_effect_id(session.id, turn_id, source_snapshot_id, "turn_memory")
+            event.id = str(uuid5(NAMESPACE_URL,
+                f"enterprise-ai-qa-agent:post-commit-effect-event:{effect_id}"))
+        await self._store.append_event(session.id, event, **(fenced_write or {}))
 
     async def _persist_tool_observations(
         self,

@@ -4205,3 +4205,41 @@ git diff --check
 ### 归属与剩余出口
 
 本节与 §93 的 7 个生产文件、10 个测试文件及本记录共同归属本次 `【feat】冻结Memory逐条写入计划` 提交；v3 草稿、`.codex-logs`、`.env` 和本地数据不纳入。当前提交证明覆盖冻结计划及其消费方回归，不证明 Memory 行执行／逐行回执、未知 embedding 对账／补偿、资源清理 journal、H07、A2-3、B/C/D/E/F 或完整 v4 已完成。Worker 强杀 fixture 的时序失败保留为下一出口，不能用三次单例通过替代组合回归。
+
+## 95. A3／H06：逐条 Memory 回执强杀恢复与提交前证明稳定化（2026-10-29）
+
+本节承接 §94 当前工作区的冻结计划，继续只处理 A3/H06 的逐条 Memory 执行，不宣称 A3 或 v4 完成。范围是：每条冻结 `MemoryWriteRequest` 与其物理行回执共用一个 PostgreSQL 事务；回执记录不进入应用提交的不可变 continuation proof；应用提交后、阶段 ACK 前强杀时，只恢复缺失行，不重跑图／模型／HTTP。
+
+### 根因与修复
+
+- 独立 Worker 在 `runtime_submitted` 阶段已提交应用事务和第一条 Memory 行后被强杀，阶段尚未执行 `projected()`。恢复校验仍把包含可变 `post_commit_memory_execution` 的 `stage.source_sha256` 当作 successor proof，导致 `source_sha256` 漂移并错误进入 `recovery_required`。
+- `framework_message_recovery._recoverable()` 的 `runtime_submitted + application_projection_commit` 分支现改为哈希 `application_source_manifest()`，并使用 `output_message_id or snapshot_id` 作为稳定结果引用；`projected` 分支同样排除派生回执。阶段 ACK 语义保持不变。
+- `memory.persisted` 在框架拥有者路径使用由 `post_commit_effect_id` 派生的确定性事件 ID，避免“Memory 行已提交、事件尚未写入”窗口在恢复时重复产生诊断事件；普通非框架 Memory 写入保持原事件行为。
+- 强杀测试的物理行断言改为“行数等于最终回执数”，覆盖含用户／助手／长期摘要的多请求冻结策略，不把合法的多行计划误判为重复写入；同时将结算能力测试的非法版本改为真正超出当前 v27 的 28。
+
+### 实际验证
+
+以下命令均在 `Agent_Server` 使用 `../.venv-framework-v2/Scripts/python.exe`；PG/Redis 组显式设置 `RUN_LIVE_POSTGRES_TESTS=1`，未调用真实供应商或付费 embedding：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  'tests/test_framework_application_projection.py::test_official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request[after_turn_memory_row]' `
+  -q -rs --tb=short
+# 1 passed，15.14 秒
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_application_projection.py `
+  -k 'memory_plan or memory_row or memory_request_id_collision or empty_result_records_memory_intent or worker_killed_after_commit_recovers_without_second_http_request' `
+  -q -rs --tb=short
+# 10 passed、41 deselected，53.70 秒
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_projected_settlement.py -q -rs --tb=short
+# 53 passed，227.55 秒
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src
+git diff --check
+# 均 exit0
+```
+
+此前四文件恢复组合在旧断言下取得 `140 passed、1 failed`；唯一失败是结算测试仍把已升至 v27 的合法 stage 当作非法版本，修正为 v28 后，`test_framework_projected_settlement.py` 全文件实测通过。未重新宣称四文件组合全绿。ruff／mypy 未安装，未擅自安装且不声称 lint/typecheck 通过；真实 embedding、RustFS、领域 Runner、资源清理 journal、H07、A2-3 及 B/C/D/E/F 仍未验收。
+
+本子步与 §93–94 的冻结 Memory 计划代码及实施记录共同提交；明确排除工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 修改、`.codex-logs`、`.env` 和本地数据。提交仍不授予自动重试、未知效果补偿或新的调度权限。

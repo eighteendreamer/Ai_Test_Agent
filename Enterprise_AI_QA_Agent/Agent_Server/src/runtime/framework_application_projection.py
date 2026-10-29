@@ -25,6 +25,7 @@ from src.schemas.framework_projection_commit import (
     FrameworkTurnMemoryRequest,
     TURN_MEMORY_INTENT_KEY,
     TURN_MEMORY_PLAN_KEY,
+    TURN_MEMORY_EXECUTION_KEY,
     post_commit_effect_id,
     turn_memory_requested,
     turn_memory_request_id,
@@ -55,6 +56,14 @@ def _require(condition, message):
 
 def _hash(value):
     return approval_value_hash(make_json_safe(value))
+
+
+def application_source_manifest(manifest):
+    """Return the immutable application scope, excluding proof/derived receipts."""
+    value = dict(manifest or {})
+    value.pop(COMMIT_KEY, None)
+    value.pop(TURN_MEMORY_EXECUTION_KEY, None)
+    return value
 
 
 def build_turn_memory_plan(asset):
@@ -418,7 +427,8 @@ def record_application_commit(cur, settings, session, events, write):
     cur.execute("SELECT clock_timestamp() AS now")
     committed_at = cur.fetchone()["now"]
     proof = FrameworkProjectionCommit(binding_fingerprint=binding.fingerprint, task_id=owner.task_id,
-        attempt_id=owner.attempt_id, owner_epoch=owner.owner_epoch, source_sha256=approval_value_hash(manifest),
+        attempt_id=owner.attempt_id, owner_epoch=owner.owner_epoch, source_sha256=approval_value_hash(
+            application_source_manifest(manifest)),
         execution_sha256=stage.execution_sha256, snapshot_id=write.snapshot_id, snapshot_sha256=_hash(snapshot),
         output_message_id=write.output_message_id, message_hashes=messages,
         event_hashes=_event_hashes(cur, settings, binding.session_id, [event.id for event in events]),
@@ -432,7 +442,8 @@ def record_application_commit(cur, settings, session, events, write):
         == proof.model_dump(exclude={"committed_at"}), "Application commit cannot replace a different result")
     manifest[COMMIT_KEY] = previous or proof.model_dump(mode="json")
     updated = validate_message_stage(stage.model_copy(update={"schema_version": max(
-        26 if TURN_MEMORY_PLAN_KEY in manifest else (25 if TURN_MEMORY_INTENT_KEY in manifest else 6),
+        27 if TURN_MEMORY_EXECUTION_KEY in manifest else (
+            26 if TURN_MEMORY_PLAN_KEY in manifest else (25 if TURN_MEMORY_INTENT_KEY in manifest else 6)),
         stage.schema_version),
         "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
     cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
@@ -464,7 +475,7 @@ def require_application_commit(cur, settings, session, binding, stage):
             "Application commit differs from its original approval result")
         owners.update({expected} if finalizations else runtime_result_lineage(stage, task))
     _require(proof.binding_fingerprint == binding.fingerprint and proof.execution_sha256 == stage.execution_sha256
-        and proof.source_sha256 == approval_value_hash(manifest)
+        and proof.source_sha256 == approval_value_hash(application_source_manifest(manifest))
         and (proof.task_id, proof.attempt_id, proof.owner_epoch) in owners,
         "Application commit identity or input assets changed")
     _require(_hash(_snapshot(cur, settings, binding, proof.snapshot_id)) == proof.snapshot_sha256,

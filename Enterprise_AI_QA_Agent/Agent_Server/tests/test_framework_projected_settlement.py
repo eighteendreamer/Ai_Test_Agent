@@ -180,7 +180,7 @@ async def test_settlement_proof_has_no_finalizer_or_stage_reentry_authority(proj
     assert validate_message_stage(saved.model_dump()) == saved
     current_format = saved.model_copy(update={"schema_version": 26})
     assert validate_message_stage(current_format.model_dump()) == current_format
-    for version in (21, 24, 27):
+    for version in (21, 24, 28):
         with pytest.raises((FrameworkMessageStageRecoveryRequired, ValidationError)):
             validate_message_stage(saved.model_copy(update={"schema_version": version}).model_dump())
     for operation in (lambda: stages.resume_finalizing(claimed.runtime_owner),

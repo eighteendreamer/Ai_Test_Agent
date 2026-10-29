@@ -385,6 +385,59 @@ class MemoryRuntimeService:
                 write_ids.append(point.id)
         return write_ids
 
+    async def execute_turn_memory_plan(self, framework_owner, *, turn_lease_token: str | None = None) -> list[str]:
+        """Execute only the immutable framework plan and persist row receipts.
+
+        The plan is read from the fenced message stage; caller-provided turn
+        text is intentionally not accepted as a recovery source.
+        """
+        from src.runtime.framework_turn_memory_projection import (
+            FrameworkTurnMemoryExecutionWrite,
+            ensure_empty_turn_memory_execution,
+            read_turn_memory_execution_async,
+        )
+
+        execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings)
+        # The read helper also validates the owner/stage/plan.  Importing the
+        # plan here keeps the immutable source in one place and avoids a
+        # second policy reconstruction in the normal or recovery path.
+        from src.runtime.framework_turn_memory_projection import _lock_stage_and_plan
+        from src.infrastructure.postgres_runtime import postgres_connect
+
+        def read_plan():
+            with postgres_connect(self._memory_store._settings) as conn, conn.cursor() as cur:
+                stage, plan = _lock_stage_and_plan(cur, self._memory_store._settings, framework_owner)
+                return stage, plan
+
+        _, plan = await asyncio.to_thread(read_plan)
+        if not plan.requests:
+            await asyncio.to_thread(ensure_empty_turn_memory_execution, framework_owner, self._memory_store._settings)
+            return []
+
+        write_ids: list[str] = []
+        receipt_by_id = {
+            item.request_id: item
+            for item in (execution.row_receipts if execution is not None else [])
+        }
+        for item in plan.requests:
+            if item.request_id in receipt_by_id:
+                write_ids.append(receipt_by_id[item.request_id].memory_id)
+                continue
+            request = item.request
+            if turn_lease_token:
+                request = request.model_copy(update={"turn_lease_token": turn_lease_token})
+            prepared = await self._attach_embeddings([request])
+            point = await self._write_point(prepared[0], framework_memory_execution=FrameworkTurnMemoryExecutionWrite(
+                owner=framework_owner, request_id=item.request_id))
+            if point is not None:
+                write_ids.append(point.id)
+            execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings)
+            receipt_by_id = {
+                value.request_id: value
+                for value in (execution.row_receipts if execution is not None else [])
+            }
+        return write_ids
+
     async def write_page_memory(
         self,
         session_id: str,
@@ -499,9 +552,12 @@ class MemoryRuntimeService:
         return requests
 
     async def _write_point(self, request: MemoryWriteRequest, *,
-        framework_projection: FrameworkProjectionWrite | None = None):
+        framework_projection: FrameworkProjectionWrite | None = None,
+        framework_memory_execution=None):
         point = await self._memory_store.write(request, **(
-            {"framework_projection": framework_projection} if framework_projection is not None else {}))
+            {"framework_projection": framework_projection} if framework_projection is not None else {}), **(
+            {"framework_memory_execution": framework_memory_execution}
+            if framework_memory_execution is not None else {}))
         if point is None or self._vector_store is None:
             return point
         vector = request.metadata.get("embedding")

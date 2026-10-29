@@ -94,6 +94,30 @@ def validate_message_stage(record):
             or plan.runtime_result_asset_sha256 != intent.runtime_result_asset_sha256
             or plan.source_snapshot_id != intent.source_snapshot_id):
             raise FrameworkMessageStageRecoveryRequired("Memory plan differs from its atomic Memory intent")
+    if "post_commit_memory_execution" in manifest:
+        from src.schemas.framework_projection_commit import FrameworkTurnMemoryExecution, FrameworkTurnMemoryPlan
+
+        if (stage.schema_version < 27 or stage.phase not in {"runtime_submitted", "projected"}
+            or "post_commit_memory_plan" not in manifest or "application_projection_commit" not in manifest):
+            raise FrameworkMessageStageRecoveryRequired("Memory execution has no compatible frozen plan format")
+        plan = FrameworkTurnMemoryPlan.model_validate(manifest["post_commit_memory_plan"])
+        execution = FrameworkTurnMemoryExecution.model_validate_json(
+            json.dumps(manifest["post_commit_memory_execution"], ensure_ascii=False))
+        if (execution.effect_id != plan.effect_id
+            or execution.session_id != plan.session_id
+            or execution.turn_id != plan.turn_id
+            or execution.binding_fingerprint != plan.binding_fingerprint
+            or execution.runtime_result_asset_sha256 != plan.runtime_result_asset_sha256
+            or execution.source_snapshot_id != plan.source_snapshot_id
+            or execution.plan_asset_sha256 != plan.asset_sha256):
+            raise FrameworkMessageStageRecoveryRequired("Memory execution differs from its frozen plan")
+        request_ids = {item.request_id for item in plan.requests}
+        plan_by_id = {item.request_id: item for item in plan.requests}
+        if any(item.request_id not in request_ids
+            or plan_by_id[item.request_id].ordinal != item.ordinal for item in execution.row_receipts):
+            raise FrameworkMessageStageRecoveryRequired("Memory execution contains an unknown frozen request")
+        if execution.state == "completed" and {item.request_id for item in execution.row_receipts} != request_ids:
+            raise FrameworkMessageStageRecoveryRequired("Completed Memory execution is missing a row receipt")
     if "approval_graph_inputs" in manifest:
         from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
 
