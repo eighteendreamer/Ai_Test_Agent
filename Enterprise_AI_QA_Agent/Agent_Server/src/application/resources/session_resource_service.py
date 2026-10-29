@@ -10,6 +10,7 @@ from src.runtime.session_resource_store import SessionResourceStore
 from src.schemas.session_resource import (
     SessionResourceCleanupPolicy,
     SessionResourceKind,
+    SessionResourceCleanupReconciliation,
     SessionResourceRecord,
     SessionResourceStatus,
     session_resource_cleanup_operation_id,
@@ -18,6 +19,64 @@ from src.schemas.session_resource import (
 BrowserCleanup = Callable[..., Awaitable[None]]
 DockerCleanup = Callable[[SessionResourceRecord], Awaitable[None]]
 LOGGER = logging.getLogger(__name__)
+
+
+def reconcile_session_resource_cleanup(
+    resource: SessionResourceRecord,
+    reason: str = "",
+) -> SessionResourceCleanupReconciliation:
+    """Classify one SessionResource journal without invoking an adapter.
+
+    The operation journal is evidence only.  A missing journal, an in-flight
+    or failed operation, and a mismatched identity never grant cleanup retry
+    authority; only a matching completed journal and a released/missing row
+    are a known terminal cleanup.
+    """
+    expected_operation_id = session_resource_cleanup_operation_id(resource.session_id, resource.id, reason)
+    metadata = resource.metadata or {}
+    raw_operation_id = metadata.get("cleanup_operation_id")
+    raw_cleanup_state = metadata.get("cleanup_state")
+    raw_cleanup_reason = metadata.get("cleanup_reason")
+    observed_operation_id = raw_operation_id if isinstance(raw_operation_id, str) else None
+    cleanup_state = (
+        raw_cleanup_state
+        if isinstance(raw_cleanup_state, str) and raw_cleanup_state in {"unknown", "completed"}
+        else None
+    )
+
+    if raw_operation_id is None:
+        status, reason_code = "unknown", "cleanup_not_started"
+    elif not isinstance(raw_operation_id, str) or not raw_operation_id:
+        status, reason_code = "drifted", "cleanup_operation_drift"
+    elif raw_operation_id != expected_operation_id:
+        if isinstance(raw_cleanup_reason, str) and raw_cleanup_reason != reason:
+            status, reason_code = "unknown", "cleanup_other_operation"
+        else:
+            status, reason_code = "drifted", "cleanup_operation_drift"
+    elif raw_cleanup_reason != reason:
+        status, reason_code = "drifted", "cleanup_operation_drift"
+    elif raw_cleanup_state == "completed" and resource.status in {
+        SessionResourceStatus.released, SessionResourceStatus.missing,
+    }:
+        status, reason_code = "completed", "cleanup_completed"
+    elif raw_cleanup_state == "unknown":
+        status, reason_code = "unknown", "cleanup_unknown"
+    else:
+        status, reason_code = "drifted", "cleanup_state_drift"
+
+    return SessionResourceCleanupReconciliation(
+        session_id=resource.session_id,
+        resource_id=resource.id,
+        resource_key=resource.resource_key,
+        kind=resource.kind,
+        cleanup_policy=resource.cleanup_policy,
+        operation_id=expected_operation_id,
+        observed_operation_id=observed_operation_id,
+        resource_status=resource.status,
+        cleanup_state=cleanup_state,
+        status=status,
+        reason_code=reason_code,
+    )
 
 
 class SessionResourceService:
@@ -106,6 +165,36 @@ class SessionResourceService:
             cleaned.append(await self._cleanup_one(resource, reason))
         return cleaned
 
+    async def reconcile_session_cleanup(
+        self,
+        session_id: str,
+        reason: str = "",
+    ) -> list[SessionResourceCleanupReconciliation]:
+        """Read cleanup journal/status without invoking any external resource."""
+        resources = await self._store.list(session_id)
+        results: list[SessionResourceCleanupReconciliation] = []
+        for resource in resources:
+            if resource.cleanup_policy != SessionResourceCleanupPolicy.auto:
+                continue
+            result = reconcile_session_resource_cleanup(resource, reason)
+            log = LOGGER.warning if result.status in {"unknown", "drifted"} else LOGGER.info
+            log(
+                "session_resource_cleanup_reconciled",
+                extra={
+                    "session_id": result.session_id,
+                    "resource_id": result.resource_id,
+                    "resource_key": result.resource_key,
+                    "operation_id": result.operation_id,
+                    "observed_operation_id": result.observed_operation_id,
+                    "resource_status": result.resource_status.value,
+                    "cleanup_state": result.cleanup_state,
+                    "status": result.status,
+                    "reason_code": result.reason_code,
+                },
+            )
+            results.append(result)
+        return results
+
     async def _cleanup_one(self, resource: SessionResourceRecord, reason: str) -> SessionResourceRecord:
         operation_id = session_resource_cleanup_operation_id(resource.session_id, resource.id, reason)
         journal = {
@@ -130,9 +219,16 @@ class SessionResourceService:
                     "session_id": resource.session_id, "allocation_id": resource.metadata["allocation_id"],
                     "error_type": type(exc).__name__, "cleanup_reason": reason,
                 })
-                return resource.model_copy(update={"status": SessionResourceStatus.error,
-                    "metadata": {**resource.metadata, "cleanup_error_type": type(exc).__name__,
-                                 "cleanup_state": "unknown"}})
+                current = next((current for current in await self._store.list(resource.session_id)
+                                if current.id == resource.id), resource)
+                if current.metadata.get("allocation_id") == resource.metadata.get("allocation_id"):
+                    return await self._store.mark_status(current.id, SessionResourceStatus.error, {
+                        "cleanup_operation_id": operation_id,
+                        "cleanup_state": "unknown",
+                        "cleanup_reason": reason,
+                        "cleanup_error_type": type(exc).__name__,
+                    }) or current
+                return current
             current = next((current for current in await self._store.list(resource.session_id)
                             if current.id == resource.id), resource)
             if (

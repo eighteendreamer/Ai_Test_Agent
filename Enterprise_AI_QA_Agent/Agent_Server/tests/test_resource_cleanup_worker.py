@@ -8,7 +8,10 @@ import pytest
 
 from src.infrastructure.redis_task_queue import QueuedTask
 from src.application.sessions.session_service import SessionService
-from src.application.resources.session_resource_service import SessionResourceService
+from src.application.resources.session_resource_service import (
+    SessionResourceService,
+    reconcile_session_resource_cleanup,
+)
 from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
     ResourceCleanupWorker,
@@ -19,6 +22,7 @@ from src.schemas.session import SessionStatus
 from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.schemas.session_resource import (
     SessionResourceKind,
+    SessionResourceRecord,
     SessionResourceStatus,
     session_resource_cleanup_operation_id,
 )
@@ -411,3 +415,176 @@ async def test_browser_cleanup_marks_same_allocation_released_but_not_replacemen
     current = await service._cleanup_one(resource, "delayed_old_cleanup")
     assert current.metadata["allocation_id"] == "allocation-b"
     assert closed == [("browser-journal", "allocation-a")]
+
+
+@pytest.mark.asyncio
+async def test_browser_cleanup_failure_persists_error_journal_without_error_text():
+    async def fail(_resource_key, *, allocation_id):
+        raise ConnectionError(f"private-browser-failure-{allocation_id}")
+
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store, browser_cleanup=fail)
+    resource = await service.register(
+        session_id="session-browser-journal-failure",
+        kind=SessionResourceKind.browser_session,
+        resource_key="browser-journal-failure",
+        metadata={"allocation_id": "allocation-failure"},
+    )
+
+    cleaned = await service.cleanup_session(resource.session_id, reason="session_completed")
+    current = (await store.list(resource.session_id))[0]
+
+    assert cleaned[0].status == SessionResourceStatus.error
+    assert current.status == SessionResourceStatus.error
+    assert current.metadata["cleanup_state"] == "unknown"
+    assert current.metadata["cleanup_error_type"] == "ConnectionError"
+    assert "private-browser-failure" not in str(current.metadata)
+
+
+@pytest.mark.asyncio
+async def test_session_resource_reconciliation_is_read_only_and_known_after_journal():
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store)
+    resource = await service.register(
+        session_id="session-resource-reconcile",
+        kind=SessionResourceKind.browser_profile,
+        resource_key="profile-reconcile",
+    )
+    await service.cleanup_session(resource.session_id, reason="session_completed")
+
+    result = await service.reconcile_session_cleanup(
+        resource.session_id, reason="session_completed",
+    )
+
+    assert len(result) == 1
+    assert result[0].status == "completed"
+    assert result[0].reason_code == "cleanup_completed"
+
+
+@pytest.mark.asyncio
+async def test_session_resource_reconciliation_keeps_missing_journal_unknown():
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store)
+    resource = await service.register(
+        session_id="session-resource-reconcile-missing",
+        kind=SessionResourceKind.browser_profile,
+        resource_key="profile-reconcile-missing",
+    )
+
+    result = await service.reconcile_session_cleanup(
+        resource.session_id, reason="session_completed",
+    )
+
+    assert result[0].status == "unknown"
+    assert result[0].reason_code == "cleanup_not_started"
+
+
+@pytest.mark.asyncio
+async def test_session_resource_reconciliation_does_not_invoke_cleanup_for_unknown_effect():
+    calls = []
+
+    async def forbidden_cleanup(*_args, **_kwargs):
+        calls.append(True)
+        raise AssertionError("reconciliation must not invoke cleanup")
+
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store, browser_cleanup=forbidden_cleanup)
+    resource = await service.register(
+        session_id="session-resource-reconcile-unknown",
+        kind=SessionResourceKind.browser_session,
+        resource_key="browser-reconcile-unknown",
+        metadata={"allocation_id": "allocation-reconcile-unknown"},
+    )
+    operation_id = session_resource_cleanup_operation_id(
+        resource.session_id, resource.id, "session_completed",
+    )
+    await store.mark_status(
+        resource.id,
+        SessionResourceStatus.active,
+        {
+            "cleanup_operation_id": operation_id,
+            "cleanup_state": "unknown",
+            "cleanup_reason": "session_completed",
+        },
+    )
+
+    result = await service.reconcile_session_cleanup(
+        resource.session_id, reason="session_completed",
+    )
+
+    assert calls == []
+    assert result[0].status == "unknown"
+    assert result[0].reason_code == "cleanup_unknown"
+
+
+@pytest.mark.asyncio
+async def test_session_resource_reconciliation_distinguishes_other_operation_from_identity_drift():
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store)
+    resource = await service.register(
+        session_id="session-resource-reconcile-identity",
+        kind=SessionResourceKind.browser_profile,
+        resource_key="profile-reconcile-identity",
+    )
+
+    await service.cleanup_session(resource.session_id, reason="operator_requested")
+    other = await service.reconcile_session_cleanup(
+        resource.session_id, reason="session_completed",
+    )
+    assert other[0].status == "unknown"
+    assert other[0].reason_code == "cleanup_other_operation"
+
+    drifted = resource.model_copy(update={
+        "metadata": {
+            "cleanup_operation_id": "not-the-derived-operation",
+            "cleanup_state": "completed",
+            "cleanup_reason": "session_completed",
+        },
+        "status": SessionResourceStatus.released,
+    })
+    result = reconcile_session_resource_cleanup(drifted, "session_completed")
+    assert result.status == "drifted"
+    assert result.reason_code == "cleanup_operation_drift"
+
+
+def test_session_resource_reconciliation_rejects_terminal_state_without_terminal_row():
+    record = SessionResourceRecord(
+        session_id="session-resource-reconcile-state-drift",
+        kind=SessionResourceKind.browser_profile,
+        resource_key="profile-reconcile-state-drift",
+    )
+    record = record.model_copy(update={
+        "metadata": {
+            "cleanup_operation_id": session_resource_cleanup_operation_id(
+                record.session_id, record.id, "session_completed",
+            ),
+            "cleanup_state": "completed",
+            "cleanup_reason": "session_completed",
+        },
+    })
+    result = reconcile_session_resource_cleanup(record, "session_completed")
+
+    assert result.status == "drifted"
+    assert result.reason_code == "cleanup_state_drift"
+
+
+def test_session_resource_reconciliation_handles_malformed_cleanup_state_as_drift():
+    record = SessionResourceRecord(
+        session_id="session-resource-reconcile-malformed",
+        kind=SessionResourceKind.browser_profile,
+        resource_key="profile-reconcile-malformed",
+    )
+    record = record.model_copy(update={
+        "metadata": {
+            "cleanup_operation_id": session_resource_cleanup_operation_id(
+                record.session_id, record.id, "session_completed",
+            ),
+            "cleanup_state": [],
+            "cleanup_reason": "session_completed",
+        },
+    })
+
+    result = reconcile_session_resource_cleanup(record, "session_completed")
+
+    assert result.status == "drifted"
+    assert result.reason_code == "cleanup_state_drift"

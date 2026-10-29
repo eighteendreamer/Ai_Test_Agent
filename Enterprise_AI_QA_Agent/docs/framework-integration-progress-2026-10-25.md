@@ -4401,3 +4401,32 @@ git diff --check
 本节没有启动或验收真实 PostgreSQL／Redis／Docker／Chromium；live allocation／浏览器强杀仍待独立环境。SessionResource 的 error/unknown 后续只读汇总与有依据补偿、外部 Runner 对账、H07 仍未完成；A3、A2-3、B／C／D／E／F 和完整 v4 继续 active。
 
 提交边界排除原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md`、`.codex-logs`、`.env` 与本地数据。
+
+## 100. A3／H06：SessionResource 清理 journal 只读对账视图（2026-10-29）
+
+本节承接 §99 的逐项稳定 operation journal，只增加诊断视图，不调用 Docker、浏览器或其他外部清理 adapter，也不授予重试／补偿权限。范围仍限于现有 `SessionResourceStore.list()` 返回的 SessionResource 行和 metadata，不新增表、队列、路由或依赖。
+
+### 分类契约与实现
+
+- 新增 `reconcile_session_resource_cleanup()` 纯分类函数及 `SessionResourceService.reconcile_session_cleanup()` 只读入口。两者只读取 journal 与资源行，统一生成冻结的 `SessionResourceCleanupReconciliation` 证据模型，并用结构化日志记录 session/resource、状态和原因码。
+- 未发现 `cleanup_operation_id` 时报告 `unknown/cleanup_not_started`；匹配 operation ID 但 journal 为 `unknown`（包括处理中、失败或进程中途退出）时报告 `unknown/cleanup_unknown`。只有 operation ID、cleanup reason、`cleanup_state=completed` 及资源 `released/missing` 同时核对通过，才报告 `completed/cleanup_completed`。
+- 另一个 reason 的 operation journal 保留为 `unknown/cleanup_other_operation`，同 reason 的 operation ID、reason 或终态字段漂移报告 `drifted`，不把任何漂移误报为已完成。manual cleanup policy 不进入自动清理对账。
+- 测试显式注入禁止调用的 browser adapter，验证 reconciliation 不执行外部效果；补充未登记、未知效果、其他 operation、身份漂移和终态行不一致样本。浏览器 adapter 失败时沿 allocation fence 持久 `error` + `cleanup_state=unknown`，不写异常正文；分类结果不改变资源行，不自动重试。
+
+### 实际验证与边界
+
+在 `Agent_Server` 使用 `../.venv-framework-v2/Scripts/python.exe`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_resource_cleanup_worker.py -q -rs --tb=short
+# 24 passed
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py -q -rs --tb=short
+# 28 passed
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均 exit 0
+```
+
+另运行 `tests/test_browser_resource_harness.py` 得到 3 passed；尝试运行 `tests/test_live_resource_leases.py` 时本机 Redis `127.0.0.1:6379` 连接被拒（15 errors，78 skipped），因此没有形成真实 Redis／PostgreSQL／Docker 验收。live allocation／浏览器强杀、失败后的有依据补偿、外部 Runner 对账、H07 及 A3 其他出口仍未完成。工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 修改、`.codex-logs`、`.env` 与本地数据不纳入本提交；A2-3、B／C／D／E／F 和完整 v4 继续 active。
