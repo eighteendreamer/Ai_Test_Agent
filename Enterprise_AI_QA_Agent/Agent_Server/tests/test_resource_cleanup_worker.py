@@ -8,6 +8,7 @@ import pytest
 
 from src.infrastructure.redis_task_queue import QueuedTask
 from src.application.sessions.session_service import SessionService
+from src.application.resources.session_resource_service import SessionResourceService
 from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
     ResourceCleanupWorker,
@@ -15,7 +16,12 @@ from src.runtime.resource_cleanup_worker import (
 from src.runtime.postgres_resource_cleanup_store import reconcile_cleanup_receipt
 from src.runtime.resource_lease_manager import ExpiredResourceLease
 from src.schemas.session import SessionStatus
-from src.schemas.session_resource import SessionResourceKind, SessionResourceStatus
+from src.runtime.session_resource_store import InMemorySessionResourceStore
+from src.schemas.session_resource import (
+    SessionResourceKind,
+    SessionResourceStatus,
+    session_resource_cleanup_operation_id,
+)
 
 
 class ReceiptStore:
@@ -328,3 +334,80 @@ async def test_terminal_session_cleanup_surfaces_error_status_as_unknown_effect(
 
     with pytest.raises(RuntimeError, match="resource cleanup"):
         await service._cleanup_session_resources_if_terminal(session)
+
+
+@pytest.mark.asyncio
+async def test_session_resource_cleanup_records_stable_operation_journal():
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store)
+    resource = await service.register(
+        session_id="session-resource-journal",
+        kind=SessionResourceKind.browser_profile,
+        resource_key="profile-journal",
+    )
+
+    cleaned = await service.cleanup_session(resource.session_id, reason="session_completed")
+
+    operation_id = session_resource_cleanup_operation_id(
+        resource.session_id, resource.id, "session_completed",
+    )
+    assert cleaned[0].metadata["cleanup_operation_id"] == operation_id
+    assert cleaned[0].metadata["cleanup_state"] == "completed"
+    current = await store.list(resource.session_id)
+    assert current[0].metadata["cleanup_operation_id"] == operation_id
+
+
+@pytest.mark.asyncio
+async def test_session_resource_cleanup_failure_keeps_unknown_operation_journal(monkeypatch):
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store)
+    resource = await service.register(
+        session_id="session-resource-journal-failure",
+        kind=SessionResourceKind.docker_container,
+        resource_key="container-journal-failure",
+    )
+
+    async def fail(_container_name):
+        raise ConnectionError("fixture-private-cleanup-failure")
+
+    monkeypatch.setattr(service, "_cleanup_docker_container", fail)
+    cleaned = await service.cleanup_session(resource.session_id, reason="session_completed")
+
+    operation_id = session_resource_cleanup_operation_id(
+        resource.session_id, resource.id, "session_completed",
+    )
+    assert cleaned[0].status == SessionResourceStatus.error
+    assert cleaned[0].metadata["cleanup_operation_id"] == operation_id
+    assert cleaned[0].metadata["cleanup_state"] == "unknown"
+    assert "fixture-private" not in str(cleaned[0].metadata)
+
+
+@pytest.mark.asyncio
+async def test_browser_cleanup_marks_same_allocation_released_but_not_replacement():
+    store = InMemorySessionResourceStore()
+    closed = []
+
+    async def close_browser(resource_key, *, allocation_id):
+        closed.append((resource_key, allocation_id))
+
+    service = SessionResourceService(store, browser_cleanup=close_browser)
+    resource = await service.register(
+        session_id="session-browser-journal",
+        kind=SessionResourceKind.browser_session,
+        resource_key="browser-journal",
+        metadata={"allocation_id": "allocation-a"},
+    )
+    cleaned = await service.cleanup_session(resource.session_id, reason="session_completed")
+
+    assert closed == [("browser-journal", "allocation-a")]
+    assert cleaned[0].status == SessionResourceStatus.released
+    assert cleaned[0].metadata["cleanup_state"] == "completed"
+
+    replacement = await store.save(resource.model_copy(update={
+        "metadata": {"allocation_id": "allocation-b"},
+        "status": SessionResourceStatus.active,
+    }))
+    assert replacement.metadata["allocation_id"] == "allocation-b"
+    current = await service._cleanup_one(resource, "delayed_old_cleanup")
+    assert current.metadata["allocation_id"] == "allocation-b"
+    assert closed == [("browser-journal", "allocation-a")]

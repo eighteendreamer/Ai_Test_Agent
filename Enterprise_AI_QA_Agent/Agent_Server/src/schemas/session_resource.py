@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from enum import Enum
 from typing import Any
-from uuid import uuid4
+from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,14 @@ class SessionResourceStatus(str, Enum):
 class SessionResourceCleanupPolicy(str, Enum):
     auto = "auto"
     manual = "manual"
+
+
+def session_resource_cleanup_operation_id(session_id: str, resource_id: str, reason: str) -> str:
+    """Derive one stable cleanup operation identity for a resource and reason."""
+    return str(uuid5(
+        NAMESPACE_URL,
+        f"enterprise-ai-qa-agent:session-resource-cleanup:{session_id}:{resource_id}:{reason or ''}",
+    ))
 
 
 class SessionResourceRecord(BaseModel):

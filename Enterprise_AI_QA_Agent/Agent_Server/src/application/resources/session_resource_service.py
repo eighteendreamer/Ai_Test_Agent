@@ -12,6 +12,7 @@ from src.schemas.session_resource import (
     SessionResourceKind,
     SessionResourceRecord,
     SessionResourceStatus,
+    session_resource_cleanup_operation_id,
 )
 
 BrowserCleanup = Callable[..., Awaitable[None]]
@@ -106,10 +107,22 @@ class SessionResourceService:
         return cleaned
 
     async def _cleanup_one(self, resource: SessionResourceRecord, reason: str) -> SessionResourceRecord:
+        operation_id = session_resource_cleanup_operation_id(resource.session_id, resource.id, reason)
+        journal = {
+            "cleanup_operation_id": operation_id,
+            "cleanup_state": "unknown",
+            "cleanup_reason": reason,
+        }
         if (resource.kind == SessionResourceKind.browser_session and resource.metadata.get("allocation_id")
                 and self._browser_cleanup is not None):
             # The browser adapter commits a fenced projection. A generic update
             # by row ID here could overwrite a replacement allocation's status.
+            current = next((current for current in await self._store.list(resource.session_id)
+                            if current.id == resource.id), None)
+            if current is None or current.metadata.get("allocation_id") != resource.metadata.get("allocation_id"):
+                return current or resource
+            started = await self._store.mark_status(current.id, SessionResourceStatus.active, journal)
+            resource = started or current.model_copy(update={"metadata": {**current.metadata, **journal}})
             try:
                 await self._browser_cleanup(resource.resource_key, allocation_id=resource.metadata["allocation_id"])
             except Exception as exc:
@@ -118,9 +131,27 @@ class SessionResourceService:
                     "error_type": type(exc).__name__, "cleanup_reason": reason,
                 })
                 return resource.model_copy(update={"status": SessionResourceStatus.error,
-                    "metadata": {**resource.metadata, "cleanup_error_type": type(exc).__name__, "cleanup_reason": reason}})
-            return next((current for current in await self._store.list(resource.session_id)
-                         if current.id == resource.id), resource)
+                    "metadata": {**resource.metadata, "cleanup_error_type": type(exc).__name__,
+                                 "cleanup_state": "unknown"}})
+            current = next((current for current in await self._store.list(resource.session_id)
+                            if current.id == resource.id), resource)
+            if (
+                current.metadata.get("allocation_id") == resource.metadata.get("allocation_id")
+                and current.status in {SessionResourceStatus.active, SessionResourceStatus.released,
+                                       SessionResourceStatus.missing}
+            ):
+                final_status = (
+                    current.status if current.status in {SessionResourceStatus.released, SessionResourceStatus.missing}
+                    else SessionResourceStatus.released
+                )
+                return await self._store.mark_status(current.id, final_status, {
+                    "cleanup_operation_id": operation_id,
+                    "cleanup_state": "completed",
+                    "cleanup_reason": reason,
+                }) or current
+            return current
+        started = await self._store.mark_status(resource.id, SessionResourceStatus.active, journal)
+        resource = started or resource.model_copy(update={"metadata": {**resource.metadata, **journal}})
         try:
             if resource.kind == SessionResourceKind.docker_container:
                 if resource.metadata.get("tool_key") == "mock-target-runner":
@@ -140,13 +171,19 @@ class SessionResourceService:
             return await self._store.mark_status(
                 resource.id,
                 status,
-                {"cleanup_reason": reason},
+                {"cleanup_reason": reason,
+                 "cleanup_operation_id": operation_id,
+                 "cleanup_state": "completed" if status in {
+                     SessionResourceStatus.released, SessionResourceStatus.missing,
+                 } else "unknown"},
             ) or resource
         except Exception as exc:
             return await self._store.mark_status(
                 resource.id,
                 SessionResourceStatus.error,
-                {"cleanup_reason": reason, "cleanup_error": str(exc)},
+                {"cleanup_reason": reason, "cleanup_error_type": type(exc).__name__,
+                 "cleanup_operation_id": operation_id,
+                 "cleanup_state": "unknown"},
             ) or resource
 
     @staticmethod

@@ -4364,3 +4364,40 @@ git diff --check
 真实 PG／Redis／Docker／浏览器清理未在本节启动或验收；受影响 live 强杀及终态事件测试仍需独立服务。资源操作稳定 journal、失败后的有依据分项补偿、外部 Runner 对账和 H07 仍未完成。
 
 本节提交不包含工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md`、`.codex-logs`、`.env` 或本地数据；A3 及 A2-3、B／C／D／E／F、完整 v4 继续 active。
+
+## 99. A3／H06：SessionResource 逐项稳定 operation journal（2026-10-29）
+
+本节承接 §98 的终态清理失败边界，补齐 SessionResource 逐项清理的操作身份与处理中证据。范围是现有 `SessionResourceStore` metadata，不新增表、不改变资源租约／Redis 调度、不把 journal 当成外部效果完成证明。
+
+### TDD 红测与根因 → 做法
+
+- 新增成功与失败两个红测，先因 `session_resource_cleanup_operation_id` 缺失而在收集阶段得到 ImportError。目标契约要求成功项有稳定 operation ID／`cleanup_state=completed`，外部调用失败项保留 `cleanup_state=unknown`；此前仅记录 cleanup reason，无法区分同一资源的哪次清理或进程是否在外部调用前后退出。
+- 依据现有 SessionResourceStore 的 JSONB metadata 与浏览器 allocation fencing：`session_id + resource_row_id + reason` 通过 UUID5 派生稳定 operation ID；调用外部 adapter 前先持久 `cleanup_state=unknown`，成功后写 `completed`，异常只写异常类型并保留 unknown，不保存异常正文。
+- 浏览器资源在写 journal 前再次核对当前 allocation ID；旧 resource 的迟到清理不会覆盖 replacement allocation。相同 allocation 的 callback 返回后才把行标为 `released`，不把 fenced adapter 的成功观察误写到新 allocation。
+- 该 journal 只说明本项目何时登记／观察了清理步骤；unknown/error 不自动转成重试权限，后续补偿仍需先查询外部资源和既有 allocation／receipt。
+
+### 实际验证
+
+在 `Agent_Server` 使用 `../.venv-framework-v2/Scripts/python.exe`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py -q -rs --tb=short
+# 18 passed
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_browser_resource_harness.py -q -rs --tb=short
+# 3 passed
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_live_browser_lifecycle.py -q -rs --tb=short
+# 11 skipped；均为既有 Chromium／真实浏览器环境门
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均 exit 0
+```
+
+本节没有启动或验收真实 PostgreSQL／Redis／Docker／Chromium；live allocation／浏览器强杀仍待独立环境。SessionResource 的 error/unknown 后续只读汇总与有依据补偿、外部 Runner 对账、H07 仍未完成；A3、A2-3、B／C／D／E／F 和完整 v4 继续 active。
+
+提交边界排除原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md`、`.codex-logs`、`.env` 与本地数据。
