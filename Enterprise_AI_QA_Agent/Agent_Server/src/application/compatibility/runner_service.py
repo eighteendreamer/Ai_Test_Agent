@@ -30,6 +30,10 @@ from src.schemas.compatibility_runner import (
     CompatibilityRunnerTaskSummary,
     CompatibilityTaskRequeueRequest,
     CompatibilityTaskRequeueResponse,
+    normalize_runner_report_status,
+    runner_report_metadata,
+    runner_report_receipt,
+    runner_report_result,
 )
 
 
@@ -362,13 +366,8 @@ class CompatibilityRunnerService:
         payload: CompatibilityRunnerTaskReportRequest,
     ) -> CompatibilityQueuedTask:
         now = _utc_now()
-        status = self._normalize_report_status(payload.status)
-        receipt = None
-        if payload.assignment_id:
-            receipt = sha256(json.dumps(
-                {**payload.model_dump(mode="json"), "status": status},
-                sort_keys=True, ensure_ascii=False, separators=(",", ":"),
-            ).encode("utf-8")).hexdigest()
+        status = normalize_runner_report_status(payload.status)
+        receipt = runner_report_receipt(payload)
         async with self._lock:
             task = self._tasks.get(task_id)
             if task is None:
@@ -399,11 +398,7 @@ class CompatibilityRunnerService:
                 artifacts.append(artifact)
                 reserved_artifact_ids.add(artifact.artifact_id)
             merged_artifacts = [*task.artifacts, *artifacts]
-            result = {
-                **payload.result,
-                "artifacts": [artifact.model_dump() for artifact in merged_artifacts],
-                "error": payload.error,
-            }
+            result = runner_report_result(payload, merged_artifacts)
             updated = task.model_copy(
                 update={
                     "status": status,
@@ -412,7 +407,7 @@ class CompatibilityRunnerService:
                     "error": payload.error,
                     "updated_at": now,
                     "metadata": {
-                        **task.metadata, **self._reported_task_metadata(payload.metadata),
+                        **task.metadata, **runner_report_metadata(payload.metadata),
                         "report_receipt_sha256": receipt,
                     },
                 }
@@ -541,6 +536,20 @@ class CompatibilityRunnerService:
             if runner_id:
                 tasks = [task for task in tasks if task.assigned_runner_id == runner_id]
             return sorted(tasks, key=lambda item: item.updated_at, reverse=True)
+
+    async def read_task_snapshot(self, task_id: str) -> CompatibilityQueuedTask:
+        """Read committed task state without heartbeat recovery or reassignment.
+
+        Unlike list_tasks, this diagnostic port must not reap expired Runner
+        assignments.  Return a detached value so readers cannot mutate the
+        authoritative catalog through aliases.
+        """
+        async with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None:
+                raise KeyError(task_id)
+            logger.info("compatibility_task_snapshot_read", extra={"task_id": task_id, "task_status": task.status})
+            return task.model_copy(deep=True)
 
     async def get_assigned_task_for_runner(self, runner_id: str, task_id: str) -> CompatibilityQueuedTask:
         async with self._lock:
@@ -1141,28 +1150,6 @@ class CompatibilityRunnerService:
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
 
-    def _reported_task_metadata(self, value: Any) -> dict[str, Any]:
-        if not isinstance(value, dict):
-            return {}
-        server_controlled_keys = {
-            "mode_calls_execution_completed_at",
-            "mode_calls_execution_result_count",
-            "mode_calls_execution_runner_id",
-            "mode_calls_execution_started_at",
-            "mode_calls_execution_status",
-            "retry_count",
-            "retry_history",
-            "automatic_retry_count",
-            "automatic_retry_limit",
-            "recovery_reason",
-            "recovery_required_at",
-            "recovery_source",
-            "assignment_id",
-            "assignment_fencing_required",
-            "report_receipt_sha256",
-        }
-        return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
-
     def _environment_reports(self, tasks: list[CompatibilityQueuedTask]) -> list[CompatibilityEnvironmentReport]:
         grouped: dict[str, list[CompatibilityQueuedTask]] = {}
         for task in tasks:
@@ -1493,18 +1480,3 @@ class CompatibilityRunnerService:
                 "assignment_id_supplied": assignment_id is not None,
             })
             raise PermissionError(f"Task {task.task_id} assignment no longer matches this request.")
-
-    def _normalize_report_status(self, value: str) -> str:
-        status = str(value or "").strip().lower()
-        aliases = {
-            "passed": "completed",
-            "pass": "completed",
-            "success": "completed",
-            "error": "failed",
-            "failure": "failed",
-            "canceled": "cancelled",
-        }
-        normalized = aliases.get(status, status)
-        if normalized not in {"completed", "failed", "cancelled"}:
-            raise ValueError("Runner task report status must be completed, failed, or cancelled.")
-        return normalized

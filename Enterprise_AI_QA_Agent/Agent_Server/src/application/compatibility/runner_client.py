@@ -4,17 +4,25 @@ import argparse
 import base64
 import hashlib
 import json
+import logging
 import platform
 import time
 import traceback
 from pathlib import Path
 from typing import Any
 from urllib import error, request
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
-from src.application.compatibility.runner_journal import RunnerJournal
+from pydantic import ValidationError
+
+from src.application.compatibility.runner_journal import (
+    RunnerJournal,
+    reconcile_runner_journal_entry,
+)
+from src.schemas.compatibility_runner import CompatibilityRunnerJournalReconciliation
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1032"
+LOGGER = logging.getLogger(__name__)
 
 
 def _json_request(base_url: str, path: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> Any:
@@ -122,6 +130,52 @@ class CompatibilityRunnerClient:
             self.journal.complete_poll(pending["request_id"], tasks)
             self._poll_next_sequence = pending["sequence"] + 1
         return tasks
+
+    def reconcile_journal(self) -> list[CompatibilityRunnerJournalReconciliation]:
+        """Read each journal entry and exact server snapshot; never ACK or retry.
+
+        The ordinary task list reaps stale assignments, so it is deliberately
+        not used as a fallback, even against older servers.  A missing snapshot
+        remains unknown and transport/server errors are preserved for callers.
+        """
+        results: list[CompatibilityRunnerJournalReconciliation] = []
+        for entry in self.journal.entries():
+            task_id = entry["task"]["task_id"]
+            try:
+                snapshot = _json_request(
+                    self.base_url,
+                    f"/api/v1/compatibility/tasks/{quote(task_id, safe='')}/snapshot",
+                )
+            except error.HTTPError as exc:
+                if exc.code != 404:
+                    raise
+                snapshot = None
+                missing = True
+            else:
+                missing = False
+            try:
+                if not missing and not isinstance(snapshot, dict):
+                    raise ValueError("Runner task snapshot must be an object.")
+                result = reconcile_runner_journal_entry(
+                    runner_id=self.runner_id, entry=entry, server_task=snapshot,
+                )
+            except (ValidationError, ValueError, KeyError, TypeError) as exc:
+                LOGGER.error("compatibility_runner_reconciliation_invalid", extra={
+                    "task_id": task_id, "runner_id": self.runner_id, "error_type": type(exc).__name__,
+                })
+                # Validation diagnostics may contain entire private result bodies.
+                raise RuntimeError(f"Runner reconciliation data is invalid for task {task_id}.") from None
+            LOGGER.log(
+                logging.WARNING if result.status in {"unknown", "drifted"} else logging.INFO,
+                "compatibility_runner_journal_reconciled",
+                extra={
+                    "runner_id": result.runner_id, "task_id": result.task_id,
+                    "assignment_id": result.assignment_id, "journal_phase": result.journal_phase,
+                    "server_status": result.server_status, "status": result.status, "reason_code": result.reason_code,
+                },
+            )
+            results.append(result)
+        return results
 
     def report(self, task_id: str, payload: dict[str, Any]) -> None:
         _json_request(
@@ -532,7 +586,10 @@ def main() -> None:
     )
     parser.add_argument("--max-parallel", type=int, default=1)
     parser.add_argument("--poll-interval", type=float, default=5.0)
-    parser.add_argument("--once", action="store_true", help="Register and process one polling cycle.")
+    run_mode = parser.add_mutually_exclusive_group()
+    run_mode.add_argument("--once", action="store_true", help="Register and process one polling cycle.")
+    run_mode.add_argument("--reconcile-only", action="store_true",
+                          help="Read an existing journal against task snapshots; never register, ACK or execute.")
     parser.add_argument("--state-file", help="Local SQLite recovery journal; use a stable private local path.")
     parser.add_argument(
         "--executor",
@@ -547,6 +604,8 @@ def main() -> None:
     args = parser.parse_args()
     identity = json.dumps([args.base_url.rstrip("/"), args.runner_id], ensure_ascii=False).encode("utf-8")
     state_file = args.state_file or Path(".compatibility-runner") / (hashlib.sha256(identity).hexdigest()[:20] + ".sqlite3")
+    if args.reconcile_only and not Path(state_file).is_file():
+        parser.error("--reconcile-only requires an existing Runner journal; preserve the original --state-file.")
 
     client = CompatibilityRunnerClient(
         base_url=args.base_url,
@@ -561,7 +620,10 @@ def main() -> None:
         state_file=state_file,
     )
     try:
-        if args.once:
+        if args.reconcile_only:
+            for result in client.reconcile_journal():
+                print(result.model_dump_json())
+        elif args.once:
             client.register()
             client.run_once()
         else:

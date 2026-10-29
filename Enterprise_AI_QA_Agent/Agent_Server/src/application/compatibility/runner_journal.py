@@ -8,9 +8,109 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Mapping
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from pydantic import ValidationError
+
+from src.schemas.compatibility_runner import (
+    CompatibilityQueuedTask,
+    CompatibilityRunnerJournalReconciliation,
+    CompatibilityRunnerTaskReportRequest,
+    normalize_runner_report_status,
+    runner_report_metadata,
+    runner_report_receipt,
+    runner_report_result,
+)
+
+
+# These are the frozen task definition, not mutable assignment/execution facts.
+_TASK_DEFINITION_FIELDS = {
+    "task_id", "dispatch_id", "plan_id", "environment_id", "case_ids",
+    "runner_selector", "mode_calls", "created_at",
+}
+
+
+def reconcile_runner_journal_entry(
+    *,
+    runner_id: str,
+    entry: Mapping[str, Any],
+    server_task: Mapping[str, Any] | None,
+) -> CompatibilityRunnerJournalReconciliation:
+    """Verify an identified report against server state without changing it.
+
+    Reuse the submit path's receipt and result rules; a terminal status alone
+    does not prove delivery of this journal's report.  This is not a proof of
+    external side effects, artifact bytes or domain-test success, and grants
+    no execution, compensation or local ACK authority.
+    """
+    local = CompatibilityQueuedTask.model_validate(entry["task"])
+    assignment = local.metadata.get("assignment_id")
+    values = {
+        "runner_id": runner_id, "task_id": local.task_id,
+        "assignment_id": assignment if isinstance(assignment, str) else None,
+        "journal_phase": entry["phase"],
+    }
+
+    def classified(status, reason_code):
+        return CompatibilityRunnerJournalReconciliation(**values, status=status, reason_code=reason_code)
+
+    if not assignment:
+        return classified("unknown", "journal_assignment_missing")
+    if (not isinstance(assignment, str) or assignment != entry["assignment"]
+            or local.assigned_runner_id != runner_id):
+        return classified("drifted", "journal_identity_drift")
+    if server_task is None:
+        return classified("unknown", "server_task_missing")
+    observed = CompatibilityQueuedTask.model_validate(server_task)
+    server_assignment = observed.metadata.get("assignment_id")
+    server_receipt = observed.metadata.get("report_receipt_sha256")
+    values.update({
+        "server_status": observed.status,
+        "server_runner_id": observed.assigned_runner_id,
+        "server_assignment_id": server_assignment if isinstance(server_assignment, str) else None,
+        "server_receipt_sha256": server_receipt if isinstance(server_receipt, str) else None,
+    })
+    if observed.task_id != local.task_id:
+        return classified("drifted", "server_task_identity_drift")
+    if observed.metadata.get("assignment_id") != assignment:
+        return classified("drifted", "server_assignment_drift")
+    if observed.assigned_runner_id != runner_id:
+        return classified("drifted", "server_runner_drift")
+    if local.model_dump(include=_TASK_DEFINITION_FIELDS) != observed.model_dump(include=_TASK_DEFINITION_FIELDS):
+        return classified("drifted", "server_definition_drift")
+    if observed.status == "recovery_required":
+        return classified("unknown", "server_recovery_required")
+    if observed.status in {"queued", "assigned"}:
+        return classified("unknown", "server_non_terminal")
+    if observed.status not in {"completed", "failed", "cancelled"}:
+        return classified("drifted", "server_status_invalid")
+    if entry.get("payload") is None:
+        return classified("unknown", "journal_report_missing")
+    try:
+        payload = CompatibilityRunnerTaskReportRequest.model_validate(entry["payload"])
+        receipt = runner_report_receipt(payload)
+        status = normalize_runner_report_status(payload.status)
+    except (ValidationError, ValueError):
+        return classified("drifted", "journal_report_identity_drift")
+    if payload.assignment_id != assignment:
+        return classified("drifted", "journal_report_identity_drift")
+    values["report_receipt_sha256"] = receipt
+    if server_receipt is None:
+        return classified("unknown", "server_receipt_missing")
+    expected_metadata = runner_report_metadata({**local.metadata, **runner_report_metadata(payload.metadata)})
+    if (receipt != server_receipt or observed.status != status
+            or observed.result != runner_report_result(payload, observed.artifacts)
+            or observed.error != payload.error
+            or runner_report_metadata(observed.metadata) != expected_metadata):
+        return classified("drifted", "server_report_drift")
+    for artifact in observed.artifacts:
+        if (artifact.task_id, artifact.dispatch_id, artifact.plan_id, artifact.environment_id, artifact.runner_id) != (
+                local.task_id, local.dispatch_id, local.plan_id, local.environment_id, runner_id):
+            return classified("drifted", "server_report_drift")
+    return classified("completed", "report_verified")
 
 
 class RunnerJournal:

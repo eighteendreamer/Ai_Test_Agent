@@ -354,6 +354,15 @@ async def requeue_tasks(payload: CompatibilityTaskRequeueRequest, request: Reque
     return await request.app.state.compatibility_runner_service.requeue_tasks(payload)
 
 
+@router.get("/tasks/{task_id}/snapshot", response_model=CompatibilityQueuedTask)
+async def read_task_snapshot(task_id: str, request: Request):
+    """Diagnostic read only; unlike the task list it never reaps assignments."""
+    try:
+        return await request.app.state.compatibility_runner_service.read_task_snapshot(task_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
+
+
 @router.get("/artifacts", response_model=list[CompatibilityArtifactRecord])
 async def list_artifacts(
     request: Request,

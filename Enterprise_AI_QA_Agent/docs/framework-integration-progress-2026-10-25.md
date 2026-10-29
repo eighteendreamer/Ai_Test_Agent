@@ -4430,3 +4430,54 @@ git diff --check
 ```
 
 另运行 `tests/test_browser_resource_harness.py` 得到 3 passed；尝试运行 `tests/test_live_resource_leases.py` 时本机 Redis `127.0.0.1:6379` 连接被拒（15 errors，78 skipped），因此没有形成真实 Redis／PostgreSQL／Docker 验收。live allocation／浏览器强杀、失败后的有依据补偿、外部 Runner 对账、H07 及 A3 其他出口仍未完成。工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 修改、`.codex-logs`、`.env` 与本地数据不纳入本提交；A2-3、B／C／D／E／F 和完整 v4 继续 active。
+
+## 101. A3／H06：兼容性 Runner journal 与原报告只读对账（2026-10-29）
+
+基线 `3b3393a2f`，承接 §100。继续 v4 §7.4／§8.1／§10.1–10.2／§15 的 Runner 分项证据出口；本节只接入已有兼容性 Runner 的本地 journal 与服务端报告核对，不新增调度层、不执行工具、不提供补偿权限。其他 Runner、ToolJob 外部执行日志及未知效果处理仍保留在完整目标内。
+
+### 依据、红测与根因 → 做法
+
+- 已有 `RunnerJournal` 在 SQLite 保存 assignment、冻结任务、执行阶段和完整报告；`CompatibilityRunnerService.report_task` 已保存规范化 DTO 摘要。沿这些原件做核对，不从最后文本或 `completed` 标签推导执行事实。测试原则采用本地 `Agent轨迹与协议鲁棒性.html` 的“超时先查询、禁止盲重试”及 `Agent测试专项.html` 的轨迹/禁止调用断言。
+- 新行为先补测试，缺少 classifier 时收集阶段 ImportError。初版草稿的反例实际得到 **13 failed、6 passed，exit 1**：终态无回执/结果漂移被错误当作已核对，且既有 `/tasks` 列表触发过期 assignment 回收。根因是把带回收语义的业务列表当成诊断读端口，并把状态标签当作原报告证明；不能靠在调用端忽略漂移来修复。
+- 新增无回收副作用的单任务 snapshot 端口；正常报告与对账共享原有状态归一化、请求 SHA-256、结果投影及 metadata 过滤规则，未改变旧报告 receipt 格式。第一轮修正后实测 19 passed。
+- 进一步协议/CLI 红测 **5 failed、25 passed，exit 1**：`model_copy` 绕过严格 DTO 验证可泄入非法 identity，HTTP 200 null 被当作缺失，以及 CLI 参数尚未实现。改为构造严格证据 DTO；200 非法正文明确失败，仅 snapshot 404 保持 unknown；新增独立只读 CLI。修正后实测 30 passed，加入工件投影与空日志后定向 32 passed。
+- 最终身份审计再加“本地 task 所属 Runner 与 journal owner 不同”反例，实际 **1 failed，exit 1**；补齐本地 owner 身份核对后，最终完整组合 111 passed。上述均为本轮新契约/草稿的红绿过程，不伪称线上生产事故；不改写 §54／§88–89 等历史失败。
+
+### 契约与代码落点
+
+| v4 契约 | 代码/测试及采用方式 | 权限边界 |
+| --- | --- | --- |
+| A3、§7.4／§10.1：未知效果先查询 | `CompatibilityRunnerService.read_task_snapshot`、`GET /compatibility/tasks/{task_id}/snapshot` 在现有锁内返回 detached 已提交值；不像普通列表，不执行 heartbeat reaper、不改变 assignment 或 JSON | 不改变现有列表/注册/回收行为；不授予执行或重试权 |
+| §10.2：原操作证据只证明对应范围 | `reconcile_runner_journal_entry` 对比 task/dispatch/plan/environment、用例/模式调用、原 Runner/assignment、原报告 receipt、结果及 metadata；`CompatibilityRunnerJournalReconciliation` 冻结输出 | `completed/report_verified` 表示原报告核对成功，另存服务端 completed/failed/cancelled；不是测试通过，也不是外部副作用或工件字节证明 |
+| H06：未知状态不盲重派 | `CompatibilityRunnerClient.reconcile_journal` 逐项 GET snapshot；缺报告/缺回执/非终态/404 为 unknown，身份或原件漂移为 drifted；503/网络错误传播，非法成功正文报脱敏协议错误 | 不 fallback 普通列表，不调用 executor/register/heartbeat/poll/report/upload，不改变 journal phase 或 ACK |
+| 可执行诊断、兼容性与隐私 | `--reconcile-only` 要求原日志已存在，与 `--once` 互斥；沿既有本地锁和服务器身份，逐条输出仅身份/状态/摘要；`.gitignore` 纳管新测试，Runner 文档同步新 API/CLI | 不创建空证据替代旧日志，不新增凭据传输或关闭认证；现有 CLI 的 Bearer 支持不足仍明确保留 |
+
+新增 `tests/test_compatibility_runner_reconciliation.py` 使用真实 JSON/SQLite、正式 ASGI 路由及隔离目录。用例包括普通合法/失败/取消报告、已上传与内嵌工件投影、相同 task 换 Runner、过期心跳的只读读取、原报告提交后受控丢 ACK、缺失/非法响应、脱敏、CLI 无写操作，以及子进程提交 executing 后的真实强杀。强杀子进程只写 journal，不执行领域工具；所有本轮进程/pytest handle 已取得终态，未因观察超时重启。
+
+### 实际验证
+
+环境：独立 `.venv-framework-v2`，Python 3.11.16、SQLite 3.53.1、FastAPI 0.141.1、Pydantic 2.13.5；未安装/升级依赖。在 `Agent_Server` 执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_compatibility_runner_reconciliation.py `
+  tests/test_compatibility_runner_persistence.py `
+  tests/test_compatibility_runner_service.py `
+  tests/test_compatibility_mode_skills.py -q -rs --tb=short
+# 最终：111 passed，1 warning，11.41s，exit 0；无 skip/deselect
+# .codex-logs/a3-runner-identity-final-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py `
+  tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 36 passed，8.49s，exit 0；无 skip/deselect
+# .codex-logs/a3-runner-adjacent-regression-2026-10-29.log
+```
+
+兼容性中间组合另有 110 passed（14.48s）、目标文件中间最终 32 passed（6.72s），各日志分别为 `a3-runner-reconciliation-regression-2026-10-29.log`、`a3-runner-reconciliation-final-2026-10-29.log`；它们与最终 111 项有重叠，不累加为唯一覆盖数。唯一 warning 为既有 Starlette/anyio BlockingPortal 弃用提示，未通过改依赖消除。
+
+本节新证据属于纯逻辑与本地存储/ASGI/子进程契约；未运行官方框架/真实 PostgreSQL/Redis 的 E2 链路，不因用了真实 SQLite 或强杀就声称 E2/E3。未启动 Docker 或外部测试服务，未新增付费调用/真实目标请求。ruff/mypy 实测均未安装，不把 compileall 当 lint/typecheck；全量后端/前端、真实供应商/embedding/RustFS/浏览器/压测/扫描 Runner、E3/E4 未执行。
+
+提交前执行根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，并核对 shared receipt/结果规则、snapshot 路由及全部新消费方；原前端 DTO/现有 URL 未改，无迁移/配置/生产开关变化。本子步与本节使用 `【feat】增加兼容性Runner只读报告对账` 提交，实际 ID 以 Git 与交付输出为准，不推送/建 PR。
+
+剩余：外部 Runner 真正执行/停止回执、未知操作的目标查询与有依据补偿、旧 owner 迟到观察、服务端未知 assignment 自动回收治理、Memory/资源分项补偿及 H07 首因仍未完成。A2-2/A2-3 的完整出口、A3、B/C/D/E/F 和完整 v4 保持 active，不以本节的只读核对替代完整恢复或发布验收。提交范围仅含本节代码/测试/文档及测试白名单；原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不动，日志、`.env` 和本地数据不纳入。

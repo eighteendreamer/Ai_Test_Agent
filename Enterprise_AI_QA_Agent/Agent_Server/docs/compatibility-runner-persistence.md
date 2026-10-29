@@ -63,3 +63,25 @@ SQLite 使用依据：[Python 3.11 sqlite3 文档](https://docs.python.org/3.11/
 客户端发请求前将 UUID、limit、sequence 和 epoch 保存至 SQLite pending_poll。响应收到后，整批 queued 项入库与 pending_poll 移除在同一事务；任何失败保留原 pending_poll，不执行半个批次。响应丢失后客户端重开并注册，继续使用原请求的完整四字段，不能按新注册响应中的下一序号跳过未确认领取。收到整批并成功入库后才推进本地下一序号。旧服务器无能力声明维持原协议，不能恢复早先未返回的领取；若已有新协议 pending_poll 而当前服务不支持，则明确停止并保留日志供核查，不退回无身份请求。
 
 验证：普通重复领取/重注册、同请求文件不变、不同参数冲突、heartbeat 不能覆盖回执、空批次重传、过期请求不能领取新任务、服务重开和离线 Runner 清理重建；另有正式 poll 提交后受控丢弃响应及 SQLite 非法批次事务检查。后两项是受控恢复/健壮性契约，不是生产网络事故。仅支持同 Runner 单个未确认领取、同一稳定本地日志；多机器/多日志同身份会产生序号冲突，服务端多进程 JSON 并发仍不安全。恢复日志不会清理未知执行证据，缺失日志或旧协议的历史领取仍需对账。依据为既有报告/上传回执、本地 RunnerJournal 事务及 `Agent轨迹与协议鲁棒性.html` 的幂等/补偿原则。
+
+## 本地 journal 与服务端报告的只读对账
+
+`CompatibilityRunnerClient.reconcile_journal()` 读取每个本地 entry 对应的 `GET /api/v1/compatibility/tasks/{task_id}/snapshot`。新端口在现有服务锁内读取已提交任务并返回深拷贝，不执行心跳过期回收、不分配新 assignment、不写 JSON。普通 `/tasks` 列表仍保留原有回收行为，**不得作为对账查询的 fallback**。新端口沿用既有 API 访问控制，不扩张 Runner 的写权限。
+
+对账先核对原 task/dispatch/plan/environment、固定用例/模式调用、assignment 与 Runner，再用报告提交路径共享的状态归一化、DTO 摘要、结果投影和 metadata 规则核对原报告。`completed/report_verified` 仅表示本地原报告与服务端当前终态回执及投影匹配；`server_status` 仍明确保留 `completed/failed/cancelled`，失败报告核对成功不等于测试通过。工件仅核对索引归属与结果投影，未读取或验证其实际字节。
+
+本地报告缺失、服务端回执缺失、非终态或 snapshot 404 均保留 `unknown`；原身份、固定定义、回执或结果漂移为 `drifted`。404 也可能来自尚未升级的服务器，不能推断旧任务没有执行。HTTP 503/网络错误原样传播；HTTP 200 的非法正文明确报协议错误，只记录类型，不输出私有输入/结果。查询不删除 entry、不改 phase，不把任何分类变成执行、重试、上传、报告或 ACK 权限。
+
+在 `Agent_Server` 目录使用原服务器 URL、原 Runner 身份和原私有 SQLite 路径运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m src.application.compatibility.runner_client `
+  --base-url <原服务器URL> --runner-id <原Runner身份> `
+  --state-file <原SQLite绝对路径> --reconcile-only
+```
+
+CLI 不注册、不发心跳、不领取任务；每个 entry 输出一条只含身份/状态/摘要的 JSON。要求日志文件已存在，不能以新空日志替代原证据；`--once` 与 `--reconcile-only` 互斥。仍使用既有本地排他锁，应在原本地客户端释放锁后查询，不要删除锁文件；这不证明远端进程或外部副作用已经停止。SDK 未传 `state_file` 的进程内 journal 仍可调用只读方法，但不能获得跨进程证据。
+
+CLI 沿用原 `_json_request` 传输，本步没有新增 Bearer 凭据配置能力；启用全局 Bearer 认证的环境会将未授权请求以 401 原样拒绝。不能为运行此命令关闭认证、改用普通列表或绕过网关；这些部署仍需通过既有授权 API 调用方式读取 snapshot。
+
+测试包含真实 SQLite/JSON 文件、正式 ASGI API、提交后受控丢弃报告 ACK、以及在 `executing` 提交后真实终止本地 journal 子进程。强杀子进程不执行领域工具，ASGI 传输不代表真实供应商/浏览器/压测/扫描 Runner。外部执行结果查询、旧执行的非权威迟到观察、有依据补偿及服务端未知 assignment 的自动回收治理仍未完成；本接口不把这些缺口变成已验收能力。
