@@ -12,6 +12,7 @@ from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.schemas.agent import AgentDescriptor, ModelDescriptor, ToolDescriptor
+from src.schemas.framework_approval import approval_value_hash
 from src.schemas.settings import GeneralSettingsPayload
 from tests.test_framework_context_transcript import context_case, covered_asset
 
@@ -208,11 +209,69 @@ def test_older_context_binding_does_not_import_a_newer_assembly_transcript():
 
     session, request, _ = context_case()
     asset = covered_asset(session, request.runtime_binding)
-    asset["runtime_version"] = VERSION
+    asset.update(runtime_version=VERSION, model_provider="openai", model_transport="openai_chat_completions")
     asset["content_sha256"] = approval_value_hash({key: value for key, value in asset.items() if key != "content_sha256"})
     session.metadata["framework_transcript_asset"] = asset
     with pytest.raises(ValueError, match="newer transcript"):
         FrameworkContextService.compatible_asset(session, request.runtime_binding)
+
+
+def test_v22_transcript_requires_an_explicit_provider_and_transport_source():
+    from src.schemas.framework_transcript import FrameworkTranscriptAssetV2
+
+    session, request, _ = context_case()
+    asset = covered_asset(session, request.runtime_binding)
+    asset["runtime_version"] = VERSION
+    asset["content_sha256"] = approval_value_hash({key: value for key, value in asset.items()
+        if key != "content_sha256"})
+    with pytest.raises(ValueError, match="provider|transport"):
+        FrameworkTranscriptAssetV2.model_validate(asset)
+
+
+def test_v22_transcript_rejects_a_source_protocol_mismatch_even_with_the_same_fingerprint():
+    from src.application.context.framework_context_service import FrameworkContextService
+
+    session, request, _ = context_case()
+    binding = request.runtime_binding.model_copy(update={"runtime_version": VERSION,
+        "model_provider": "openai", "model_transport": "openai_chat_completions"})
+    asset = covered_asset(session, binding)
+    asset.update(runtime_version=VERSION, model_provider="anthropic", model_transport="anthropic_messages")
+    asset["content_sha256"] = approval_value_hash({key: value for key, value in asset.items()
+        if key != "content_sha256"})
+    session.metadata["framework_transcript_asset"] = asset
+    with pytest.raises(ValueError, match="provider|transport|protocol"):
+        FrameworkContextService.compatible_asset(session, binding)
+
+
+def test_v22_initial_state_records_the_actual_model_protocol():
+    from src.application.models.model_runtime_service import ModelRuntimeService
+    from tests.test_framework_chat_models import _config
+
+    session, request, runtime = context_case()
+    binding = request.runtime_binding.model_copy(update={"runtime_version": VERSION,
+        "model_provider": "openai", "model_transport": "openai_chat_completions"})
+    request = request.model_copy(update={"runtime_binding": binding, "model_key": "fixture-model"})
+    config = _config("openai_chat_completions", "http://127.0.0.1:1", key="fixture-model")
+    runtime._model_runtime_service = SimpleNamespace(get_model_config=lambda key: config)
+    state = runtime._build_initial_state(session, request, include_framework_transcript=True)
+    assert state["selected_model_provider"] == config.provider
+    assert state["selected_model_transport"] == config.transport
+    assert state["context_bundle"]["framework_model_protocol"] == {
+        "provider": config.provider, "transport": config.transport,
+    }
+
+
+def test_v22_initial_state_rejects_provider_transport_drift_from_the_bound_model():
+    from tests.test_framework_chat_models import _config
+
+    session, request, runtime = context_case()
+    binding = request.runtime_binding.model_copy(update={"runtime_version": VERSION,
+        "model_provider": "anthropic", "model_transport": "anthropic_messages"})
+    request = request.model_copy(update={"runtime_binding": binding, "model_key": "fixture-model"})
+    config = _config("openai_chat_completions", "http://127.0.0.1:1", key="fixture-model")
+    runtime._model_runtime_service = SimpleNamespace(get_model_config=lambda key: config)
+    with pytest.raises(ValueError, match="provider/transport"):
+        runtime._build_initial_state(session, request, include_framework_transcript=True)
 
 
 def test_unbound_client_context_cannot_select_full_prompt_semantics():

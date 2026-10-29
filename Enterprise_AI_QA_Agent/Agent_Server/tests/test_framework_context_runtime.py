@@ -185,6 +185,9 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
             asset = (await h.store.get_session(h.session_id)).metadata["framework_transcript_asset"]
             assert asset["schema_version"] == 2 and asset["source_input_message_id"] == admitted.id
             assert asset["runtime_version"] == runtime_version
+            if runtime_version == "v2.2.0":
+                assert asset["model_provider"] == config.provider
+                assert asset["model_transport"] == config.transport
             assert asset["source_output_message_ids"] == [response.output.id]
             assert asset["covered_message_ids"][-2:] == [admitted.id, response.output.id]
             assert "future-user" not in asset["covered_message_ids"] and "hidden-error" not in asset["covered_message_ids"]

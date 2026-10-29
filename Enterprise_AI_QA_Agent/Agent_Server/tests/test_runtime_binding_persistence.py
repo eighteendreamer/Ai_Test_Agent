@@ -28,6 +28,8 @@ def make_binding(session_id: str, turn_id: str, **overrides) -> RuntimeBinding:
         "skill_version": "skills-1",
         "tool_schema_version": "tools-1",
         "model_config_fingerprint": "model-sha256",
+        "model_provider": "openai",
+        "model_transport": "openai_chat_completions",
         "dependency_lock_sha256": "a" * 64,
     }
     value.update(overrides)

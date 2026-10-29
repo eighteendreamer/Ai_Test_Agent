@@ -214,3 +214,27 @@ $env:PYTHONUTF8='1'
 P0 强杀函数现有两个 decision/pause 参数及三个 reconciliation 参数，共六个 node ID；历史只带 `[reconcile_after_commit]` 的单参数 node ID 已不存在。应先 collect 核实，不能把未找到用例的 collection error 当作测试通过。
 
 新版本测试经过真实 Session 入口、官方框架／OpenAI SDK、本机 HTTP、PG／Redis，外部 Memory／Observation／Case／MCP／设置端口与工具为受控样本；包含两个新 Turn、首回合审批、原生前缀不变、冻结描述复用，以及原结果空窗后仅运行唯一 finalizer 和重复交付无额外效果。真实 legacy StateGraph 另验证共享节点及旧 Prompt 契约。既有独立 Worker 强杀回归仍是原 2.0，不证明 2.2 独立 Worker／双制品部署通过。摘要覆盖迁移、provider/transport 来源、完整 Harness、其余隐私面与生产接入仍保留；最终命令、失败归因和证据等级见实施记录 §111。
+
+## Transcript provider／transport 来源契约（v4 B／§5.1.2、§6.1 子集）
+
+v2.2 绑定必须包含非敏感的 `model_provider` 与 `model_transport`。Runtime 初始 state 的来源必须来自实际 `ModelConfigRecord`；`framework_model_protocol` 由服务端覆盖客户端 context，实际配置与绑定不一致时在装配前拒绝。发布的 schema-2/v2.2 原生资产同时保存来源，导入必须比较绑定来源；不得只凭 fingerprint、展示文本或摘要继续。
+
+旧 v2.0/v2.1 绑定仍可缺省这两个字段，序列化时也省略缺失字段，旧 schema-2/v2.1 资产仍按原摘要校验读取；仅 v2.2 资产要求来源完整。新增字段不得改变缺省旧绑定的 fingerprint 或旧资产 digest。
+
+```powershell
+# 工作目录 Agent_Server；不启动服务。
+$env:PYTHONIOENCODING='utf-8'
+../.venv-framework-v2/Scripts/python.exe -m pytest `
+  tests/test_framework_context_transcript.py tests/test_framework_turn_context.py `
+  tests/test_runtime_binding_contract.py -q -rs --tb=short
+# 56 passed，exit 0
+
+# 需真实 PostgreSQL/Redis 与本机环回 SDK fixture 时显式开启：
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_context_runtime.py::test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_native_asset `
+  -q -rs --tb=short
+# 8 passed，exit 0
+```
+
+该质量门只证明来源字段的冻结、拒绝和受控跨 Turn 消费；不证明真实供应商协议兼容、2.2 独立 Worker 强杀、摘要身份迁移或全量发布。

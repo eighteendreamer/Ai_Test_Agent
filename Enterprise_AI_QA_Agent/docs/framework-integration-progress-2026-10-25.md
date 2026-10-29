@@ -5182,3 +5182,59 @@ schema-1 缺覆盖身份，新版本明确要求迁移而不猜锚点；旧位�
 项目根 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；`ruff`／`mypy` 不在环境中，未执行 lint/typecheck。前端、全量后端、真实供应商／领域 Runner／远端对象存储、完整 Skills Harness、摘要迁移／provider-transport 来源契约、2.2 独立 Worker 强杀与双制品部署仍未验收。历史 2.1 PG heartbeat lock timeout 仍未找到首因，不能因本轮同参数后来通过而宣称修复。完整 v4 goal 继续 active。
 
 本节与本轮代码／测试／质量门文档待同一提交；v3 草稿保持未修改、未暂存，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。
+
+## 112. B／§5.1.2、§6.1：冻结 transcript 的 provider／transport 来源契约（2026-10-29）
+
+### 起点、依据与范围
+
+基线为 §111 的 `v2.2.0` 统一上下文装配。v4 §4.1、§5.1.2 和 §6.1 要求原生 transcript 记录实际模型协议来源，并在跨 Turn 导入时显式核对；此前 `FrameworkTranscriptAssetV2` 只有 serializer 与 `model_config_fingerprint`，指纹不能单独证明 provider／transport，且 Runtime 初始 state 未保留实际 transport。该缺口属于来源契约缺失，不通过继续堆叠 fingerprint 特判或静默投影解决。
+
+采用现有 `ModelConfigRecord.provider/transport`、`model_config_fingerprint` 和四种已验证官方 transport → 在绑定、Runtime 初始 state、准备材料和 schema-2 资产中保存同一来源；v2.2 资产导入只在 provider／transport 与绑定一致时放行。历史 v2.0/v2.1 绑定与旧 schema-2 资产保持可读，旧摘要／跨协议投影仍不自动迁移。
+
+### TDD 红测与根因
+
+新增红测先证明两项真实缺口：
+
+- `v2.2` transcript 缺少 provider／transport 时原 schema 仍可通过；
+- v2.2 Runtime 初始 state 没有 `selected_model_transport` 或冻结协议材料。
+
+正确工作目录下的首轮目标选择运行结果为 **2 failed、1 passed**；失败对应上述缺口。此前一次从项目根目录运行 pytest 得到 `ModuleNotFoundError: No module named 'src'`，仅为工作目录错误，不作为产品证据。
+
+### 实现与兼容边界
+
+- `RuntimeBinding` 新增可选 `model_provider`／`model_transport`；v2.2 绑定必须显式提供二者，v2.0/v2.1 缺失时仍可读取。指纹计算排除缺失的新增可选字段，序列化也省略缺失字段，避免历史绑定指纹和持久 JSON 形状漂移。
+- `FrameworkTranscriptAssetV2` 与 `FrameworkTranscriptPreparation` 保存来源字段；v2.2 资产缺失来源或与绑定不匹配时明确拒绝。旧 schema-2/v2.1 摘要哈希通过 `exclude_none` 保持不变。
+- `FrameworkContextService` 发布 v2.2 资产时写入 provider／transport，导入时执行来源核对；v2.2 仍可导入合法的旧 v2.1 schema-2 前缀。
+- `RuntimeService._build_initial_state` 保存实际 `model_config.provider/transport`，形成 `framework_model_protocol`；若实际配置与绑定来源漂移则拒绝，不从客户端 context 读取。
+- 测试绑定夹具补齐受控 OpenAI Chat 来源；不改变 legacy runtime 的协议行为。
+
+### 实际验证
+
+使用已有 `.venv-framework-v2`，未启动生产服务、未升级依赖、未调用真实供应商：
+
+```powershell
+# Agent_Server；单元与 schema/资产契约
+../.venv-framework-v2/Scripts/python.exe -m pytest `
+  tests/test_framework_context_transcript.py tests/test_framework_turn_context.py `
+  tests/test_runtime_binding_contract.py -q -rs --tb=short
+# 56 passed，5.94s，exit 0
+
+# 真实 PG/Redis、官方 SDK、本机环回 HTTP 的两个 Turn／审批参数组
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'; $env:PYTHONUTF8='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_context_runtime.py::test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_native_asset `
+  -q -rs --tb=short
+# 8 passed，59.30s，exit 0
+
+# 真实 PostgreSQL/Redis 持久化与历史绑定序列化回归
+../.venv-framework-v2/Scripts/python.exe -m pytest `
+  tests/test_runtime_binding_persistence.py -q -rs --tb=short
+# 11 passed，30.85s，exit 0
+```
+
+本轮尚未重跑 §111 的 418 核心组或 326 恢复消费方组；该子步不宣称它们已被当前源码重新验证。`compileall`、全量后端／前端、真实供应商、独立 2.2 Worker 强杀、摘要身份迁移和完整 Skills Harness仍是后续出口。`ruff`／`mypy` 未安装，未执行。
+
+### 提交边界与下一出口
+
+本节拟与 provider／transport 代码及新增测试同一提交；用户 v3 草稿保持未修改、未暂存，不纳入提交。下一步可继续处理身份化摘要覆盖，或按新的目标模式推进其他 v4 出口；完整 v4 goal 仍 active。

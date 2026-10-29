@@ -8,6 +8,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.model_config import ModelTransport
 
 
 CONTEXT_RUNTIME_VERSION = "v2.1.0"
@@ -46,7 +47,10 @@ class FrameworkTranscriptAsset(BaseModel):
         for item in self.framework_messages:
             if not isinstance(item.get("type"), str) or not isinstance(item.get("data"), dict):
                 raise ValueError("framework transcript must use LangChain message dictionaries")
-        payload = self.model_dump(mode="json", exclude={"content_sha256"})
+        # ``exclude_none`` keeps schema-2/v2.1 digests stable after the
+        # optional v2.2 source fields were introduced.  v2.2 requires both
+        # fields, so its published digest still covers the explicit source.
+        payload = self.model_dump(mode="json", exclude={"content_sha256"}, exclude_none=True)
         if self.content_sha256 != approval_value_hash(payload):
             raise ValueError("Framework transcript asset digest does not match its contents")
         return self
@@ -62,11 +66,17 @@ class FrameworkTranscriptAssetV2(FrameworkTranscriptAsset):
     covered_message_ids: list[str] = Field(min_length=1)
     business_message_map: dict[str, list[str]]
     model_config_fingerprint: str = Field(min_length=1)
+    model_provider: str | None = Field(default=None, min_length=1)
+    model_transport: ModelTransport | None = None
     serializer: Literal["langchain.messages.v1"] = "langchain.messages.v1"
 
     @model_validator(mode="after")
     def validate_coverage(self):
         covered = self.covered_message_ids
+        if self.runtime_version == TURN_CONTEXT_RUNTIME_VERSION and (
+            not self.model_provider or not self.model_transport
+        ):
+            raise ValueError("v2.2 transcript requires an explicit model provider and transport")
         native_ids = [item["data"].get("id") for item in self.framework_messages]
         if (not all(isinstance(identity, str) and identity for identity in native_ids)
             or len(set(native_ids)) != len(native_ids)):
@@ -95,6 +105,8 @@ class FrameworkTranscriptPreparation(BaseModel):
     covered_message_ids: list[str] = Field(min_length=1)
     business_message_map: dict[str, list[str]]
     model_config_fingerprint: str = Field(min_length=1)
+    model_provider: str | None = Field(default=None, min_length=1)
+    model_transport: ModelTransport | None = None
     input_message_count: int = Field(ge=1)
     input_messages_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 

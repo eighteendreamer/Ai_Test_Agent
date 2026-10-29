@@ -11,7 +11,7 @@ from src.application.deep_agents.framework_transcript import deserialize_message
 from src.application.deep_agents.result_projection import _normalize_messages
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_transcript import (
-    CONTEXT_RUNTIME_VERSION, IDENTITY_CONTEXT_RUNTIME_VERSIONS,
+    CONTEXT_RUNTIME_VERSION, IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSION,
     FrameworkTranscriptAssetV2, FrameworkTranscriptPreparation,
     TRANSCRIPT_PREPARATION_KEY, parse_framework_transcript_asset,
 )
@@ -43,6 +43,11 @@ class FrameworkContextService:
                 raise ValueError("Framework transcript model configuration is incompatible")
             if binding.runtime_version == CONTEXT_RUNTIME_VERSION and asset.runtime_version != CONTEXT_RUNTIME_VERSION:
                 raise ValueError("Legacy context runtime cannot consume a newer transcript version")
+            if (binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION
+                and asset.runtime_version == TURN_CONTEXT_RUNTIME_VERSION
+                and (asset.model_provider != binding.model_provider
+                     or asset.model_transport != binding.model_transport)):
+                raise ValueError("Framework transcript provider/transport protocol is incompatible")
         elif isinstance(asset, FrameworkTranscriptAssetV2):
             raise ValueError("Legacy runtime cannot consume identity-covered transcripts")
         require_closed_transcript(asset.framework_messages, session_id=session.id,
@@ -120,6 +125,8 @@ class FrameworkContextService:
             preparation = FrameworkTranscriptPreparation(session_id=session.id, turn_id=request.turn_id,
                 source_input_message_id=request.user_message_id, covered_message_ids=covered_ids,
                 business_message_map=mapping, model_config_fingerprint=binding.model_config_fingerprint,
+                model_provider=(binding.model_provider if binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else None),
+                model_transport=(binding.model_transport if binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else None),
                 input_message_count=len(prefix), input_messages_sha256=approval_value_hash(prefix))
             # Native serialization stays untouched; display is a one-way projection.
             result = FrameworkContext(prefix, _normalize_messages(deserialize_messages(prefix)),
@@ -142,6 +149,13 @@ class FrameworkContextService:
             or binding["session_id"] != session_id or binding["turn_id"] != state["turn_id"]
             or preparation.model_config_fingerprint != binding["model_config_fingerprint"]):
             raise ValueError("Transcript preparation does not match its original binding")
+        if binding["runtime_version"] == TURN_CONTEXT_RUNTIME_VERSION:
+            protocol = dict(context.get("framework_model_protocol") or {})
+            if (preparation.model_provider != binding.get("model_provider")
+                or preparation.model_transport != binding.get("model_transport")
+                or protocol != {"provider": binding.get("model_provider"),
+                                "transport": binding.get("model_transport")}):
+                raise ValueError("Transcript model protocol does not match its original binding")
         messages = state["framework_messages"]
         prefix = messages[:preparation.input_message_count]
         if approval_value_hash(prefix) != preparation.input_messages_sha256:
@@ -158,5 +172,11 @@ class FrameworkContextService:
             session_id=session_id, source_turn_id=preparation.turn_id, framework_messages=messages,
             source_input_message_id=preparation.source_input_message_id, source_output_message_ids=outputs,
             covered_message_ids=[*preparation.covered_message_ids, *outputs], business_message_map=mapping,
-            model_config_fingerprint=preparation.model_config_fingerprint, serializer="langchain.messages.v1")
-        return FrameworkTranscriptAssetV2(**payload, content_sha256=approval_value_hash(payload)).model_dump(mode="json")
+            model_config_fingerprint=preparation.model_config_fingerprint,
+            serializer="langchain.messages.v1")
+        if preparation.model_provider is not None:
+            payload["model_provider"] = preparation.model_provider
+        if preparation.model_transport is not None:
+            payload["model_transport"] = preparation.model_transport
+        return FrameworkTranscriptAssetV2(**payload, content_sha256=approval_value_hash(payload)).model_dump(
+            mode="json", exclude_none=True)

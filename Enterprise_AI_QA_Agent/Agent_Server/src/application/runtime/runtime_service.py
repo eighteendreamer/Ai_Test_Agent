@@ -1979,7 +1979,20 @@ class RuntimeService:
         model_config = self._effective_model_config(requested_model_key)
         selected_model_key = model_config.key if model_config is not None else (request.model_key or session.preferred_model or "")
         selected_model_name = model_config.name if model_config is not None else ""
-        selected_model_provider = model_config.provider if model_config is not None else ""
+        bound_protocol = (request.runtime_binding.model_provider, request.runtime_binding.model_transport) \
+            if request.runtime_binding is not None else (None, None)
+        if (request.runtime_binding is not None
+            and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION
+            and model_config is not None
+            and bound_protocol != (model_config.provider, model_config.transport)):
+            logger.warning("framework_model_protocol_changed", extra={
+                "session_id": session.id, "turn_id": request.turn_id,
+                "error_type": "provider_transport_mismatch"})
+            raise ValueError("Bound runtime model provider/transport does not match the selected model configuration")
+        selected_model_provider = (model_config.provider if model_config is not None
+            else bound_protocol[0] or "")
+        selected_model_transport = (model_config.transport if model_config is not None
+            else bound_protocol[1] or "")
         context = dict(request.context)
         context.pop(TRANSCRIPT_PREPARATION_KEY, None)
         if request.runtime_binding is None:
@@ -2007,6 +2020,7 @@ class RuntimeService:
             "selected_model_key": selected_model_key,
             "selected_model_name": selected_model_name,
             "selected_model_provider": selected_model_provider,
+            "selected_model_transport": selected_model_transport,
             "requested_skill_keys": request.skill_keys,
             "resolved_skill_keys": [],
             "skill_prompt_blocks": [],
@@ -2045,6 +2059,10 @@ class RuntimeService:
             "context_bundle": {
                 **context,
                 "project_id": session.project_id,
+                **({"framework_model_protocol": {"provider": selected_model_provider,
+                    "transport": selected_model_transport}}
+                    if request.runtime_binding is not None
+                    and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else {}),
                 **({
                     "runtime_binding": request.runtime_binding.model_dump(mode="json"),
                     "checkpoint_namespace": request.runtime_binding.checkpoint_namespace,

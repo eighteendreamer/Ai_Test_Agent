@@ -9,6 +9,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
+from src.schemas.model_config import ModelTransport
+
 
 RuntimeKind = Literal["legacy", "langgraph", "deepagents"]
 
@@ -30,17 +32,23 @@ class RuntimeBinding(BaseModel):
     skill_version: str = Field(min_length=1, max_length=255)
     tool_schema_version: str = Field(min_length=1, max_length=255)
     model_config_fingerprint: str = Field(min_length=1, max_length=128)
+    # v2.2 freezes the concrete model protocol in addition to the complete
+    # configuration fingerprint.  Legacy bindings remain readable without
+    # these fields so historical tasks do not require a migration.
+    model_provider: str | None = Field(default=None, max_length=128, exclude_if=lambda value: value is None)
+    model_transport: ModelTransport | None = Field(default=None, exclude_if=lambda value: value is None)
     dependency_lock_sha256: str = Field(min_length=1, max_length=128)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator(
         "binding_id", "session_id", "turn_id", "runtime_version", "thread_id",
         "checkpoint_namespace", "prompt_version", "skill_version", "tool_schema_version",
-        "model_config_fingerprint", "dependency_lock_sha256", mode="before",
+        "model_config_fingerprint", "model_provider", "model_transport",
+        "dependency_lock_sha256", mode="before",
     )
     @classmethod
     def normalize_text(cls, value: str) -> str:
-        return str(value or "").strip()
+        return None if value is None else str(value or "").strip()
 
     @field_validator("created_at", mode="before")
     @classmethod
@@ -66,6 +74,8 @@ class RuntimeBinding(BaseModel):
             raise ValueError("runtime binding thread_id must equal turn_id")
         if self.runtime_kind == "legacy" and self.state_schema_version != 1:
             raise ValueError("legacy runtime bindings must use state_schema_version=1")
+        if self.runtime_version == "v2.2.0" and (not self.model_provider or not self.model_transport):
+            raise ValueError("v2.2 runtime bindings require an explicit model provider and transport")
         if not re.fullmatch(r"[0-9a-fA-F]{64}", self.dependency_lock_sha256):
             raise ValueError("dependency_lock_sha256 must be a SHA-256 hex digest")
         return self
@@ -77,6 +87,7 @@ class RuntimeBinding(BaseModel):
             name: getattr(self, name)
             for name in type(self).model_fields
             if name not in {"binding_id", "created_at"}
+            and getattr(self, name) is not None
         }
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()

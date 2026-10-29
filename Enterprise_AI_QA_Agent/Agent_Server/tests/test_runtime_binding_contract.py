@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import hashlib
+import json
+
 import pytest
 from types import SimpleNamespace
 from pydantic import ValidationError
@@ -23,6 +26,8 @@ def binding(**overrides):
         "skill_version": "skills-1",
         "tool_schema_version": "tools-1",
         "model_config_fingerprint": "model-sha256",
+        "model_provider": "openai",
+        "model_transport": "openai_chat_completions",
         "dependency_lock_sha256": "a" * 64,
     }
     value.update(overrides)
@@ -43,6 +48,25 @@ def test_runtime_binding_fingerprint_is_stable_and_excludes_binding_id():
     assert first.fingerprint == second.fingerprint
     assert len(first.fingerprint) == 64
     assert first.model_dump(mode="json")["fingerprint"] == first.fingerprint
+
+
+def test_legacy_binding_fingerprint_omits_new_optional_protocol_fields():
+    value = binding(model_provider=None, model_transport=None)
+    payload = {name: getattr(value, name) for name in type(value).model_fields
+        if name not in {"binding_id", "created_at", "model_provider", "model_transport"}}
+    expected = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False).encode("utf-8")).hexdigest()
+    assert value.fingerprint == expected
+    assert binding().fingerprint != value.fingerprint
+
+
+def test_legacy_binding_wire_round_trip_omits_new_optional_protocol_fields():
+    value = binding(model_provider=None, model_transport=None)
+    historical = value.model_dump(mode="json", exclude={"model_provider", "model_transport"})
+    loaded = RuntimeBinding.model_validate(historical)
+    assert loaded.model_dump(mode="json") == historical
+    assert "model_provider" not in loaded.model_dump(mode="json")
+    assert "model_transport" not in loaded.model_dump(mode="json")
 
 
 def test_v1_command_rejects_runtime_v2_fields_and_v2_command_requires_binding():
