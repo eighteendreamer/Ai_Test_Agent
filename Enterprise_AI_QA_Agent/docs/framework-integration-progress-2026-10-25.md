@@ -4810,3 +4810,123 @@ git diff --check
 真实供应商／RustFS／浏览器／压测／扫描 Runner 的 E3、双制品／备份恢复／灰度与回滚 E4、官方 saver conformance、完整生产新绑定入口、实际旧绑定清点与排空仍未验收；A3 远端停止／查询和未知效果补偿以及完整 B/C/D/E/F 不从范围中删除。默认路由不变，无数据迁移或依赖升级。
 
 本节随 `【feat】分离框架新回合接入与存量执行能力` 提交，范围仅本轮 10 个配置／Runtime／测试／文档／白名单文件，实际 ID 以 Git 和交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 不变，实际 `.env`、日志、构建产物和本地数据不纳入提交。完整 v4 目标保持 active，不将本节或独立复验标为整体完成。
+
+## 107. C／H07：将可选诊断前移到轻量 spawn 入口（2026-10-29）
+
+### 起点、范围与证据边界
+
+从 §106 提交 `729f24b5c7f261dd589e40a742f9715646d3059a` 续接，核对 v4、§52–54 的 P0 结论及 §82／§89／§106 的独立 Worker 超时历史。本节只补齐测试 Harness 的诊断启动边界，不更改生产源码，不把原 messages 比较问题重新当作未修复问题，也不宣称本轮已查明历史非稳定超时／失租首因。
+
+已审阅 Dispatcher 的执行／监控、Session 的 owned execution 等待／取消收拢／续租、RedisTaskWorker handler、checkpoint provider／fenced saver 与 SQLAlchemy 池。没有足够证据确认业务死锁、数据库慢查询或环境负载根因，未据此改生产执行策略。原父进程期限、故障门点、租约、owner 判定、精确原生消息／结果和一次效果断言均保持不变。
+
+### 真实失败、TDD 与路线调整
+
+以下日志都位于私有 `.codex-logs`，不提交；每次结果单独保存，不能相加包装成一次完整全绿。日志名均以 `h07-worker-` 开头、以 `-2026-10-29.log` 结尾：
+
+| 中间日志 | 实际结果 | 可以证明／不能证明 |
+| --- | --- | --- |
+| `phase-diagnostic` | 1 passed，52.82s，exit 0 | 临时 INFO＋8 秒 watchdog 对 §106 原 `[approved-after_native-reconcile_before_commit]` 的复验；未稳定复现，不是根因修复 |
+| `full-phase-diagnostic` | 52 passed，455.48s，exit 0 | 临时无条件探针下的 binding／task-control／recovery 三文件；早于正式 helper，不作最终源码验收 |
+| `diagnostics-red` | 6 failed、1 passed，14.04s，exit 3／INTERNALERROR | 初版单测全局替换 faulthandler 清理函数，误伤 pytest 自己的失败 hook；这是测试脚手架错误，不能算产品有效红测 |
+| `diagnostics-valid-red` | 6 failed、1 passed，8.90s，exit 1 | 用 `monkeypatch.context()` 限定补丁作用域后，原 Worker 明确不具备显式诊断开启／注册行为；这才是有效行为红测 |
+| `diagnostics-green` | 22 passed，18.20s，exit 0 | 第一版可选 helper＋monitor；包括真实 Python 子进程睡眠时输出线程栈且正常返回，早于入口移动 |
+| `diagnostics-final-core` | **1 failed、51 passed，453.55s，exit 1** | 开关为 1；`[denied-after_applied-none]` 在首次 20 秒 `wait_gate` 超时，pid=43744、alive=True、exitcode=None，没有入口日志／线程栈；不能据此断定导入慢 |
+| `bootstrap-red` | 1 failed，11.00s，exit 1 | 真实 callable 的 `__module__` 仍是重型测试模块，spawn 反序列化 target 时尚未进入诊断作用域 |
+| `bootstrap-import-red` | 1 failed，14.76s，exit 1 | 真实子进程受控延迟原 fixture 导入 8.2 秒后抛 ImportError；原异常保持，但 stderr 为空，证明诊断未覆盖该阶段 |
+
+第一版集成失败揭示的是**诊断启动边界错位**，不是已定位的业务卡点。改变路线为轻量 spawn 入口，不继续往重型测试函数内部堆日志，也不调大期限或重复整组测试求绿。受控慢导入只用于验证证据采集能力，不冒充历史 Worker 超时的根因复现。
+
+### 条款 → 依据 → 实现与消费方
+
+| v4／职责 | 依据与采用方式 | 本节落点／边界 |
+| --- | --- | --- |
+| §11／§13、C／H07：保留原超时现场 | 安装版 CPython `multiprocessing.spawn._main` 先 `pickle.load` 进程对象、再 `_bootstrap`；target 必须先被导入 | 新 `tests/framework_worker_diagnostics.py` 顶层仅标准库；`framework_worker_process` 先进入诊断作用域，再导入原重型测试模块的 `_run_framework_worker` |
+| 既有日志与生命周期 | §89 的 `configure_logging`、关联字段及 diagnostics 白名单 | 最终默认 WARNING；仅 `QA_FRAMEWORK_WORKER_DIAGNOSTICS=1` 启用 INFO、进入／fixture 导入后／退出事件；记录 PID、累计耗时、异常类型，不记录参数／异常正文；原生 watchdog 经下述崩溃验证后已移除 |
+| 异常与清理不改变执行 | 原样传播业务异常／CancelledError | 正常／异常／取消均记录作用域退出；不安装或取消任何进程级 watchdog，不另建采样线程，不修改原异常 |
+| 原执行与契约兼容 | 原 helper 的签名和执行主体，四处共享消费方全局搜索 | `test_framework_task_control.py` 重导出同一函数；`_run_framework_worker` 保留原执行／门点／资源清理。AST 对比 HEAD 确认原签名一致，去除原日志初始化后的函数体逐节点一致 |
+| H05／H06／H07 测试消费 | TaskControl、approval recovery、approval graph input、approval settlement 的既有独立 Worker | 不修改三处外部消费方导入和原超时；新增 `test_framework_worker_diagnostics.py`，以局部替身及真实子进程验证启停、异常保留、脱敏、慢导入；不是新业务调度层 |
+| 可执行说明 | 本地 `Agent轨迹与协议鲁棒性.html` 的轨迹／恢复证据要求 | `Agent_Server/docs/test-quality-gates.md` 说明开关、唯一私有日志、保留原退出码与限制；`.gitignore` 仅新增两个测试文件白名单 |
+
+在线核对 [Python 3.11 spawn 文档](https://docs.python.org/3.11/library/multiprocessing.html#the-spawn-and-forkserver-start-methods)。最终轻量入口记录原重型测试模块／fixture 导入前后阶段，**不覆盖解释器启动、spawn 准备、轻量模块自身／日志设施导入与参数反序列化**，不提供线程栈或完整 asyncio await 树。`fixtures_loaded`／`exited` 的 `operation_seconds` 都是自作用域进入起的累计耗时。诊断退出事件不代表业务成功，强杀不会运行 finally；既有 INFO 日志仍须私有保存、归档前脱敏。
+
+### 移除原生采样前的过程验证
+
+以下命令工作目录为 `Agent_Server`，解释器固定 `../.venv-framework-v2/Scripts/python.exe`；`PYTHONIOENCODING=utf-8`，PG 组显式 `RUN_LIVE_POSTGRES_TESTS=1`。Docker 只读核查三个既有容器仍运行，正式 `postgres_healthcheck` 的 SELECT 1／Redis PING 成功；没有启停服务。数据库使用既有 UUID 专用表／schema／Redis 前缀隔离，模型／工具仍为受控对象，不调用真实供应商。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_worker_diagnostics.py tests/test_agent_task_monitor.py -q -rs --tb=short
+# 24 passed，20.91s，exit 0，无 skip/deselect
+# h07-worker-bootstrap-green-2026-10-29.log
+
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest 'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[denied-after_applied-none]' -vv -s -rs --tb=short
+# 1 passed，32.59s，exit 0；原失败 nodeid 独立复验，不能替代综合验收
+# h07-worker-bootstrap-failed-node-recheck-2026-10-29.log
+
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS=$null
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py::test_original_approval_worker_hard_kill_recovers_only_original_projections tests/test_framework_approval_settlement.py::test_independent_workers_only_settle_after_projected_approval_kill -q -rs --tb=short
+# 9 passed，458.00s，exit 0，无 skip/deselect；默认关闭诊断，五个原投影参数＋四个仅结算参数
+# h07-worker-bootstrap-default-consumers-2026-10-29.log
+```
+
+### 新证据：原生采样期间崩溃，撤掉不可靠诊断路线
+
+随后对轻量入口第一版（仍含 native watchdog）的三文件最终组运行：
+
+```powershell
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_runtime_binding_persistence.py tests/test_framework_task_control.py tests/test_framework_approval_recovery.py -vv -s -rs --tb=short
+# 2 failed、50 passed，433.52s，exit 1，无 skip/deselect；不是全绿
+# h07-worker-bootstrap-final-core-2026-10-29.log
+```
+
+这次不是单纯的活进程超时：两个子进程在父进程清理前已经退出。真实摘要：
+
+```text
+test_http_revocation_stops_a_separate_native_framework_worker_before_dispatch
+Worker gate timed out after 20s: pid=3596, alive=False, exitcode=3221225477
+test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[denied-after_applied-none]
+Worker gate timed out after 20s: pid=39276, alive=False, exitcode=3221225477
+```
+
+只读 Windows Application Event 1000 对应两 PID（`0xe0c`／`0x996c`），分别于 15:49:41／15:53:47 记录 `python311.dll`、异常 `c0000005`；偏移为 `0x1d1c47`／`0x26627c`。Python 为 **CPython 3.11.16 / MSC v.1944 / AMD64**。根据 [Microsoft 的异常码说明](https://learn.microsoft.com/en-us/shows/inside/c0000005)，这是访问冲突，不是业务 TimeoutError 或父进程 terminate 回执。早先过程消息把截断输出推测为清理所致，已依据最终 exitcode／事件明确更正。
+
+两次崩溃均发生在原生 8 秒栈采样输出中途：一次停在 `pydantic/fields.py`，一次出现 `<frozen importlib._bootstrap_external>` 的异常行号后截断。另有成功 Worker 的 tiktoken 导入／数据库等待采样，**不能把这些零散样本推导为所有历史超时的共同原因**。
+
+不再循环整组求绿。先用同一解释器单独启动一个受限子进程，只开启 `faulthandler.dump_traceback_later(0.001, repeat=True)` 并导入原测试模块，不执行 Worker／pytest fixture、不连接 PG/Redis。该子进程实际返回 **3221225477 / 0xc0000005**，未输出导入完成标记；stdout／stderr 与参数摘要分别保存为 `h07-worker-watchdog-import-risk-2026-10-29.log`／`.json`。外层记录程序 exit 0 仅表示成功保存证据，不是子进程通过。1ms 是隔离实验的风险放大参数，不冒充原 8 秒失败的等价重现。
+
+官方 [CPython #158200](https://github.com/python/cpython/issues/158200) 报告 watchdog 在另一线程释放代码元数据时可能崩溃，相关历史还有 [#116008](https://github.com/python/cpython/issues/116008)／[#140815](https://github.com/python/cpython/issues/140815)。这些版本／系统不完全相同，本机没有 native dump／符号级定位，**不能断言具体同源缺陷已确认或通过升级必能修好**；但本机真实失败已足以否决在测试 helper 中自动使用此采样机制。
+
+因此采取更简单的同步阶段日志，不增加自制线程采样器或另一层 fallback，不升级 Python／依赖：保留轻量入口、既有 INFO 业务阶段，增加 `framework_test_worker_fixtures_loaded`，完整删除 native watchdog 注册／取消。新增反例在旧 helper 上 **3 failed，6.76s，exit 1**（`h07-worker-lifecycle-only-red-2026-10-29.log`），确实观察到不应有的 `arm`／`cancel` 调用；移除后诊断＋monitor **21 passed，23.00s，exit 0**（`h07-worker-lifecycle-only-green-2026-10-29.log`）。撤掉的三项 watchdog 错误处理测试对应已删除的功能，不删除或放宽任何业务回归；保留默认行为、正常／异常／取消原对象、真实子进程 8.2 秒等待／慢导入的阶段与脱敏断言，并断言没有 native 栈采样。
+
+另按本机 `--help-xoptions` 和 [Python 命令行文档](https://docs.python.org/3.11/using/cmdline.html#cmdoption-X)，仅运行一次无 watchdog 的 `python -X importtime -c "from tests.test_framework_task_control import _run_framework_worker; print('fixture_import_completed')"`：**exit 0**，完成标记存在，测试模块 cumulative **16,918,850µs**，日志 `h07-worker-import-profile-no-watchdog-2026-10-29.log`。它只说明本次受测量影响的导入链成本，不是生产性能基线，也不能单独证明原 20 秒超时的根因；不据此修改执行期限。
+
+### 最终无采样源码：验证、交付与剩余出口
+
+上述 native watchdog 已移除后，实际运行以下最终源码回归；此后只追加文档，没有继续修改测试执行代码：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_worker_diagnostics.py tests/test_agent_task_monitor.py -q -rs --tb=short
+# 21 passed，23.00s，exit 0，无 skip/deselect
+# h07-worker-lifecycle-only-green-2026-10-29.log
+
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_runtime_binding_persistence.py tests/test_framework_task_control.py tests/test_framework_approval_recovery.py `
+  tests/test_framework_approval_graph_input.py::test_original_approval_worker_hard_kill_recovers_only_original_projections `
+  tests/test_framework_approval_settlement.py::test_independent_workers_only_settle_after_projected_approval_kill `
+  -vv -s -rs --tb=short
+# 61 passed，756.49s，exit 0，无 skip/deselect
+# h07-worker-lifecycle-only-final-integration-2026-10-29.log
+```
+
+61 项包括原三文件恢复组、五参数原结果投影强杀、四参数仅结算强杀；原失败参数没有被删掉，原始消息／工具效果／owner／后继／结算断言和等待期限不变。最终日志确实出现进入、fixture 导入后、执行及退出阶段；71 个已观察子进程 PID 的存活核验没有本轮测试残留。此前默认关闭诊断的 9 项是中间源码结果，不冒充最终整组；最终单测仍验证默认 WARNING／无诊断事件／无 watchdog。
+
+根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 均 exit 0；最终 AST 再核对原 helper 签名及实际执行／故障门／清理主体与 HEAD 一致，辅助模块没有 faulthandler 导入。ruff／mypy 经 importlib 查询仍未安装，未执行后端 lint/typecheck，也未擅自安装工具。没有前端修改，未跑前端；未运行全量后端、部署构建、真实供应商／领域 Runner／RustFS／官方 saver conformance 或 E3／E4 验收。
+
+本节最高仍为 E2 子集：官方框架＋本地真实 PG／Redis＋独立进程，模型／工具是受控对象。原生崩溃事实与两条经字段裁剪的 Windows 事件保存在私有 `h07-worker-native-crashes-2026-10-29.json`；不提交日志、异常原件、配置凭据或本地业务数据。未启停 Docker、未开放生产路由、无依赖升级／数据迁移／公开 API 变化。
+
+**本节解决的是测试诊断入口过晚及新增 native 采样不可靠的问题，不证明 §82／§89／§106 的活进程超时或失租首因已经修复。** 下一步沿明确的启动／fixture 导入／领取／执行／收尾阶段核对历史失败；需要原生精确根因时须有对应 dump／符号证据，不能根据本次通过或一个累计导入时间下结论。A3 远端停止／查询／补偿、完整 B/C/D/E/F、生产接入与 E3／E4 全部仍在目标范围内，完整 v4 保持 active。
+
+本节随 `【test】前移Worker阶段诊断并移除不可靠原生采样` 提交，仅含本轮六个 helper／测试／说明／进度／白名单文件；实际 commit ID 以 Git 和交付输出为准，不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 不变，保持未提交。

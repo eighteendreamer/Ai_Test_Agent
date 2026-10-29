@@ -13,6 +13,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.execution_context import framework_owner_scope
 from src.schemas.session import ApprovalDecisionRequest
+from tests.framework_worker_diagnostics import framework_worker_process
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_checkpoint_fencing import checkpoint_harness, config
 from tests.test_framework_approval_projection import projection_harness
@@ -38,11 +39,7 @@ async def wait_gate(redis, key, timeout, *, process=None):
         raise
 
 
-def framework_worker_process(settings, prefix, binding, pause_at, recovery_mode=None):
-    """A real v2 Redis Worker with official graph/storage and a counted fake tool."""
-    from src.core.log_format import configure_logging
-
-    configure_logging("WARNING")
+def _run_framework_worker(settings, prefix, binding, pause_at, recovery_mode):
     from redis.asyncio import Redis
     from redis import Redis as SyncRedis
     from time import monotonic

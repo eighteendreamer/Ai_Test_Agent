@@ -56,3 +56,52 @@ uv run --no-sync python -m scripts.frontend_time_browser_probe --output artifact
 ```
 
 探针使用已安装 Chromium，随机 loopback 端口、独立内存 SessionStore、正式 SessionService 创建/历史/SSE 路由和正式构建产物；启动目录/健康/工具任务列表为成功夹具，没有调用真实模型或供应商。UTC、上海、纽约各创建一个正常会话，比较实际 SSE 日志显示与同一事件 HTTP 历史的 UTC 时刻，并记录页面、HTTP、异步循环错误和产物 index SHA-256。异步循环错误保留原输出并使报告 partial/退出 1；成功仍 release_ready:false。用新目录保留每次结果，不覆盖失败记录。冻结的普通 API 样本位于 agent_web/tests/fixtures/session-created-utc.json，组件回归不伪造时间生成逻辑。
+
+## 独立框架 Worker 超时诊断
+
+`tests.framework_worker_diagnostics.framework_worker_process` 是轻量 spawn 入口；原 `tests.test_framework_task_control.framework_worker_process` 继续导出同一函数，参数不变。默认保持 WARNING 日志；无论开关状态都不安装或触碰进程级 watchdog。排查 v4 C/H07 的非稳定强杀／接管超时时，可以在确认本地测试 PG/Redis 可用后显式设置 `QA_FRAMEWORK_WORKER_DIAGNOSTICS=1`：
+
+```powershell
+# 工作目录 Agent_Server；只使用已有隔离测试环境，不启动生产服务。
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+$previousDiagnostics=$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+# 每次选择新的私有日志名，保留原失败，不覆盖或把重跑当成首次全绿。
+New-Item -ItemType Directory -Force -Path ../.codex-logs | Out-Null
+$log=Join-Path ../.codex-logs ("framework-worker-" + [guid]::NewGuid().ToString('N') + '.log')
+try {
+  ../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+    tests/test_framework_task_control.py tests/test_framework_approval_recovery.py `
+    -vv -s -rs --tb=short *> $log
+  $result=$LASTEXITCODE
+  Get-Content -LiteralPath $log -Encoding UTF8
+} finally {
+  $env:QA_FRAMEWORK_WORKER_DIAGNOSTICS=$previousDiagnostics
+}
+exit $result
+```
+
+这个开关只被测试子进程 helper 读取，不是生产 Settings 配置，也不会启用模型、目标或生产路由。当前共用该 helper 的原生审批、原结果投影和仅结算 Worker 均可沿原调用使用；其他自建进程入口不会自动获得此诊断。
+
+启用后：
+
+- 沿现有 `configure_logging` 输出 INFO 生命周期事件，以 task／attempt／worker 关联原领取、执行、原生继续、收尾及资源释放；不新建一套业务 Trace。
+- 在子进程函数入口、原重型 fixture 模块导入后、作用域退出时记录 `framework_test_worker_entered`／`framework_test_worker_fixtures_loaded`／`framework_test_worker_exited`。后两者的 `operation_seconds` 均为自进入作用域起的累计耗时，能区分 fixture 导入前后；不是完整解释器启动时间或每个业务操作的精确耗时。
+- `error_type` 只记录未处理异常类型，不记录 Settings、绑定、凭据或异常正文；原异常／取消原样传播。退出事件不等于业务成功，强杀不会运行 finally；没有后台采样线程，不终止、取消、重试或延长执行。
+
+本轮曾试用原生 `faulthandler.dump_traceback_later`，但当前 CPython 3.11.16 在真实 Worker 和独立导入实验中都出现采样期间 `0xC0000005` 崩溃，故已撤掉该路线，不作为诊断命令提供。官方 [CPython #158200](https://github.com/python/cpython/issues/158200) 也报告了采样读取代码元数据时的崩溃风险，但版本／系统与本机不同，不能据此宣称已确定本机原生缺陷的精确根因。旧失败日志保留，见实施记录 §107。
+
+需要单独检查导入链时，使用现有解释器的标准选项，不执行 Worker 或 pytest fixture；每次保留新日志：
+
+```powershell
+$log=Join-Path ../.codex-logs ("framework-import-" + [guid]::NewGuid().ToString('N') + '.log')
+../.venv-framework-v2/Scripts/python.exe -X importtime -c "from tests.test_framework_task_control import _run_framework_worker; print('fixture_import_completed')" *> $log
+$result=$LASTEXITCODE
+Get-Content -LiteralPath $log -Encoding UTF8
+exit $result
+```
+
+`-X importtime` 自身有测量开销，不是生产性能基线，也不代表所有 spawn 阶段。阶段日志不覆盖解释器启动、spawn 准备、轻量模块自身／日志设施导入和参数反序列化，不提供线程栈或完整 asyncio await 树。原父进程期限、租约、强杀点、owner 判定和原生消息断言保持不变。既有 INFO 日志不承诺自动脱敏全部业务上下文，原始输出仅保留在私有证据目录，归档前另行脱敏。没有捕获失败首因前，即使复验通过，也不能宣称历史 C/H07 超时已经修复。
+
+依据：本机 CPython `multiprocessing.spawn._main` 在调用进程 target 前先反序列化进程对象；沿 [Python 3.11 spawn 约定](https://docs.python.org/3.11/library/multiprocessing.html#the-spawn-and-forkserver-start-methods) 将 target 留在轻量模块；[Python 3.11 命令行说明](https://docs.python.org/3.11/using/cmdline.html#cmdoption-X) 与本机 `--help-xoptions` 确认 `-X importtime`。
