@@ -54,6 +54,7 @@ from src.modes.code_review_mode.project_source import (
 from src.application.reporting.report_template_service import ReportTemplateService
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.runtime.tool_job_service import ToolJobService
+from src.application.compatibility.runner_service import CompatibilityModeExecutionAuthorityLost, CompatibilityRunnerStateError
 from src.application.runtime.case_action_binding import (
     CaseActionBinding, bind_case_action, business_arguments, action_admission_enabled, CaseActionClaimUnavailable,
 )
@@ -74,6 +75,7 @@ from src.runtime.store import SessionStore
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.execution_context import current_framework_owner
 from src.schemas.agent import ToolDescriptor
+from src.schemas.compatibility_runner import CompatibilityModeExecutionReference
 from src.schemas.model_config import ModelConfigRecord
 from src.schemas.tool_job import ToolJobRecord, ToolJobStatus, ToolNonExecutionEvidence
 from src.schemas.tool_runtime import ModelToolCall, ToolExecutionRecord, is_reserved_tool_argument
@@ -168,6 +170,8 @@ class ToolExecutionContext:
     case_action_binding: CaseActionBinding | None = None
     claimed_job: ToolJobRecord | None = None
     non_execution: ToolNonExecutionEvidence | None = None
+    compatibility_mode_execution: CompatibilityModeExecutionReference | None = None
+    compatibility_mode_call_index: int | None = None
 
     def record_non_execution(self, *, stage: str, reason: str) -> None:
         # No upstream counterpart (checked: output observation, native API
@@ -187,6 +191,9 @@ class ToolExecutionContext:
         owner = current_framework_owner()
         if owner is not None:
             metadata["framework_binding_id"] = owner.binding.binding_id
+        if self.compatibility_mode_execution is not None:
+            metadata["compatibility_mode_execution"] = self.compatibility_mode_execution.model_dump(mode="json")
+            metadata["compatibility_mode_call_index"] = self.compatibility_mode_call_index
         if self.case_action_binding is not None:
             metadata["case_action_binding"] = self.case_action_binding.model_dump(mode="json")
             from src.application.runtime.case_effect_evidence import effect_intent, INTENT_KEY
@@ -585,6 +592,8 @@ class ToolRuntimeService:
                     approval_scope_hash=context.approval_scope_hash,
                     trusted_case_run_item_id=context.trusted_case_run_item_id,
                     case_action_binding=context.case_action_binding,
+                    compatibility_mode_execution=context.compatibility_mode_execution,
+                    compatibility_mode_call_index=context.compatibility_mode_call_index,
                 )
             if self._tool_job_service is not None:
                 if context.tool_job_id:
@@ -609,6 +618,11 @@ class ToolRuntimeService:
                     or job.metadata.get("case_action_binding") != context.case_action_binding.model_dump(mode="json")
                 ):
                     raise ValueError("工具任务执行项关联与原固定调用不一致")
+                mode_reference = (context.compatibility_mode_execution.model_dump(mode="json")
+                    if context.compatibility_mode_execution is not None else None)
+                if (job.metadata.get("compatibility_mode_execution") != mode_reference
+                    or job.metadata.get("compatibility_mode_call_index") != context.compatibility_mode_call_index):
+                    raise CompatibilityModeExecutionAuthorityLost("ToolJob differs from its original mode execution.")
                 if context.tool_job_id and job.status in {ToolJobStatus.completed, ToolJobStatus.partial,
                     ToolJobStatus.failed, ToolJobStatus.denied, ToolJobStatus.cancelled}:
                     logger.info("tool_terminal_job_replayed", extra={"tool_job_id": job.id,
@@ -671,6 +685,8 @@ class ToolRuntimeService:
                     approval_scope_hash=context.approval_scope_hash,
                     trusted_case_run_item_id=context.trusted_case_run_item_id,
                     case_action_binding=context.case_action_binding,
+                    compatibility_mode_execution=context.compatibility_mode_execution,
+                    compatibility_mode_call_index=context.compatibility_mode_call_index,
                 )
 
             trace_context = None
@@ -706,6 +722,15 @@ class ToolRuntimeService:
             with trace_manager:
                 if job is not None and self._tool_job_service is not None and current_framework_owner() is not None:
                     await self._tool_job_service.assert_dispatch_authority(job.id)
+                if context.compatibility_mode_execution is not None:
+                    if self._compatibility_runner_service is None:
+                        raise CompatibilityModeExecutionAuthorityLost("Mode execution authority service is unavailable.")
+                    # Same fence as the bridge, after all ToolJob awaits and
+                    # immediately before entering the real handler. This does
+                    # not revoke requests already admitted or sent externally.
+                    await self._compatibility_runner_service.assert_mode_call_execution(
+                        context.compatibility_mode_execution, call_index=context.compatibility_mode_call_index, call=call,
+                    )
                 raw_result = await handler(business_arguments(call.arguments, context.case_action_binding), job_context)
             result = self._normalize_result(tool, raw_result, context=job_context)
             result, _, _ = self._output_safety_policy.sanitize_tool_output(result)
@@ -819,6 +844,11 @@ class ToolRuntimeService:
         except ContinuationLeaseLostError:
             logger.warning("framework_tool_execution_authority_lost", extra={"tool_key": tool.key,
                 "tool_job_id": job.id if job is not None else context.tool_job_id, "session_id": context.session_id})
+            raise
+        except (CompatibilityModeExecutionAuthorityLost, CompatibilityRunnerStateError):
+            logger.warning("compatibility_mode_tool_dispatch_stopped", extra={"tool_key": tool.key,
+                "task_id": context.compatibility_mode_execution.task_id if context.compatibility_mode_execution else None,
+                "execution_id": context.compatibility_mode_execution.execution_id if context.compatibility_mode_execution else None})
             raise
         except Exception as exc:
             if current_framework_owner() is not None:

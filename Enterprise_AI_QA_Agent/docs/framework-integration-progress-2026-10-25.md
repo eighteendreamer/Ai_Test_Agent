@@ -4596,3 +4596,76 @@ git diff --check
 原报告按现有 inline 工件模式保存在私有 JSON metadata；列表 metadata 的 __content_text 和 content 查询结果均可能含未脱敏业务正文，须沿原文件/备份/API 权限保护，不可作为脱敏日志转发。本步未新增认证/保留策略，也不声称摘要能证明授权或外部执行事实。观察当前只可查询，不能自动升格成原权威结果；原 journal 仍需保留，404/409 不 ACK。外部 Runner 真正执行/查询/停止回执、模式桥迟到响应、当前 owner 核验/有依据补偿、A3 其余出口与 B/C/D/E/F 完整实施继续保留，完整 v4 目标 active。
 
 本节使用 `【feat】保留Runner迟到报告非权威观察` 提交，范围为本节 9 个代码/测试/活文档/记录/白名单文件，实际 ID 以 Git 与交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不动；日志、构建产物、凭据与本地数据库不纳入。
+
+## 104. A3／C／H06：贯穿模式桥的执行身份、临调用校验与迟到结果原件（2026-10-29）
+
+基线 `bab56d8cb`，承接 §103。继续 v4 §7.4／§8.1／§10.1–10.2／§15 的外部执行权与非权威观察出口，只处理已有兼容性模式调用桥；不新增调度层、不复用客户端 report DTO 假装模式结果、不升级依赖或启动生产路由。完整 v4 及 A3／B／C／D／E／F 继续 active，本子步不是全系统完成。
+
+### 依据、根因与采用方式
+
+- `api/routes/compatibility.py::execute_runner_task_mode_calls` 原先只在整批入口校验，工具 await 期间换轮后仍派发下一项，finish 被拒后仍返回 `ok=true`。`finish_mode_call_execution` 也未要求 assigned 状态；同 assignment 的终态可被批次收尾更新。根因是缺少贯穿批次、单项派发与收尾的原执行引用，不是再捕获一次异常可以解决。
+- `ToolRuntimeService` 已持有同一个 CompatibilityRunnerService，Context 的 `job_metadata()` 是服务器身份入 ToolJob 的既有位置，handler 前已有框架 owner 复核。采用同一路径：服务器引用随 Context 的两处重建保留，临 handler 再用服务锁内同一校验，不另造 ToolJob、intent 或重试调度器。
+- `PostgresToolJobStore._append_framework_late_output_sync` 和 §103 的独立 inline 工件提供原引用+内容摘要、非权威追加、严格读取与持久化回滚先例。本节提取已有报告/新模式观察共用的 inline 构造与绑定核对，保留原报告 receipt/工件 ID/错误契约；模式结果有自己的严格 schema，不伪装成 Runner report。
+- 本轮重新读取本地 `Agent轨迹与协议鲁棒性.html`、`Agent测试专项.html` 的轨迹/结果双断言、幂等/重复执行、错误恢复约束。测试断言实际受控文件效果、禁止调用、完整 task/Runner 集合和已返回结果，不从成功文本推断执行正确。
+
+### TDD、失败样本与消费方同步
+
+- 续接的新测试草稿尚未纳管，原日志 `a3-mode-execution-authority-red-2026-10-29.log` 为 **11 errors**：mode_calls 缺必填 reason，属于夹具 setup 错误，不能算目标缺陷红测。按真实 CompatibilityModeCall 契约修正后，实际 **11 failed，12.17s**；普通人工换轮、heartbeat 待核查、终态报告、Runner 记录清理四类受控中断，正常/抛错返回均复现错误响应或继续执行；正常路径无独立执行 ID，500 还回显私有异常正文。
+- 新增真实 ToolRuntime+ToolJobService/InMemoryToolJobStore 的临调用与 Context 重建测试，实际 **3 failed、11 deselected，11.60s**：ToolJob create await 中换轮后仍进入 handler，执行身份也未传递。完成第一版协议后 **14 passed，9.88s**。
+- 第一次兼容性消费方组合实际 **15 failed、190 passed，32.69s**。其中 13 项为内部 finish 消费方未传新增 execution_id（同一参数化夹具 12 项及服务测试 1 项）；1 项 CLI 旧测试在任务 completed 后执行空模式桥；1 项旧断言要求回显异常。同步原调用身份、将空桥验证放到正式 CLI 执行阶段并保留终态 409 断言、改为固定 500 及不泄露断言；相关子组随后 **131 passed，26.87s**。未删除失败语义、结果集合比较或拒绝断言。
+- 加入正文/回执/绑定漂移、重复留存、冻结调用、保留参数和实际 formatter 等检查后，实际 **2 failed、36 passed，14.88s**：新 fence 将已被 ModelToolCall 按既有规则丢弃的保留参数误判为篡改；execution_id 在 LogRecord 但 formatter 未渲染。复用既有 `is_reserved_tool_argument` 归一化，formatter 仅增安全标量 execution_id，不输出任意 extra。扩展组合随后 **45 passed，10.84s**。
+- 最后补正式 CLI main + 原 SQLite entry + ASGI 模式桥拒绝测试：一次本地文件效果后换轮，原 entry 保留 conflict、不 upload/report/ACK、不计 processed，第二次启动不再执行；独立目标文件 **46 passed，19.56s**。这是受控本地执行器而非真实领域 Runner。最终全组重新运行见下，以上重叠集合不累计。
+- 提交前的参数类型边界补测实际 **2 failed、5 passed、41 deselected，13.09s**：Python dict 相等把 JSON false/0/0.0 混同，不能作为冻结调用证明。复用定义摘要的规范化 JSON 规则比较有效参数，保持原保留参数忽略机制；不新增类型特判。收紧前完整组为 252 passed/30.52s，收紧后对最终源码重新运行 254 项与 runtime/相邻合组 216 项，见下。
+
+相关原始日志均在私有 `.codex-logs/`，有效红测为 `a3-mode-execution-authority-valid-red-2026-10-29.log`、`...-runtime-red-...`、`...-hardening-red-...`、`...-typed-arguments-red-...`；消费方首次失败为 `...-consumers-first-...`。保留夹具错误与所有失败记录，不将带 green 名称或历史通过代表当前源码。
+
+### v4 对应、代码与权限边界
+
+| 契约 | 实现/测试落点 | 实际权限 |
+| --- | --- | --- |
+| §8.1：不可变执行引用 | 新严格冻结 CompatibilityModeExecutionReference；begin 持久执行 ID、原 assignment、身份与 case_ids/runner_selector/mode_calls 摘要，返回 deep snapshot；人工重排队归档并清字段 | 只有 assigned、原 Runner/assignment/执行 ID/冻结定义和有效心跳才可继续；终态不能新开空桥 |
+| §7.4／§8.1：临发送复核 | 路由逐项 assert；服务器 Context 字段贯穿重建并入 ToolJob metadata；真实 handler 前复用同一 assert，校验调用 ID/下标/工具/有效参数；显式传播失权，不走通用失败 fallback | 不发下一项；已有 ToolJob 的模式引用不能被普通 context_bundle 或缺失服务器 Context 的重入替代；不声称撤销已准入 handler 或已发送请求 |
+| §10.1–10.2：窄权限留存 | complete_mode_call_execution 在同一服务锁内复核收尾并保存独立 runner_mode_execution；合法批次 metadata 与工件同次原子保存，普通异常保留已知前缀 | 失权只追加工件，404/409+observation，不改新/终态 task、Runner、心跳、时间、正式结果和 task.artifacts；末项成功也不包装为权威成功 |
+| A3：原件与回执 | CompatibilityModeExecutionEvidence/Observation；稳定 ID 绑定原引用及规范化内容 SHA-256，严格 false 权限、完整 scope；同内容迟到保存复用时间/回执且不写文件，不同内容追加；content 读端口完整校验 | 非权威工件不计正式通过率/证据数，不能当 report、ACK、重试或升格许可；保存/漂移失败为脱敏 503 且不覆盖，保存失败回滚内存 |
+| 来源与跨边界同步 | 报告/派发过滤新服务器字段，报告/上传工件过滤模式观察 marker；服务内部 finish 消费方同步 execution_id；前端既有 Record metadata、artifact_type 查询与非 2xx detail 处理保持适用 | 不改成功响应字段/URL/JSON schema_version=1，不新增观察专用 UI；泛型工件 type 本身不是证据或权限 |
+| 测试与记录 | 新 test_compatibility_mode_execution_authority.py 共 48 项；既有 persistence/service 断言同步；活文档、.gitignore 纳管与本节追加 | 原 v3 草稿、私有日志、凭据、数据库和前端构建产物均排除提交 |
+
+### 最终当前源码实际验证
+
+独立 `.venv-framework-v2`；未安装/升级依赖。在 `Agent_Server` 执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_compatibility_mode_execution_authority.py tests/test_compatibility_runner_late_reports.py `
+  tests/test_compatibility_runner_reconciliation.py tests/test_compatibility_runner_persistence.py `
+  tests/test_compatibility_runner_service.py tests/test_compatibility_mode_skills.py `
+  tests/test_agent_task_monitor.py tests/test_request_context.py -q -rs --tb=short
+# 254 passed，1 warning，31.31s，exit 0；无 skip/deselect
+# .codex-logs/a3-mode-execution-authority-final-typed-source-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_tool_runtime_heartbeat.py tests/test_framework_tool_messages.py tests/test_deep_agent_tool_replay.py `
+  tests/test_langchain_tool_adapter.py tests/test_tool_executor_safety_gate.py tests/test_runtime_interrupt_tool_calls.py `
+  tests/test_approval_checkpoint_consistency.py tests/test_intent_safety_routing.py `
+  tests/test_invalid_tool_plan_visibility.py tests/test_tool_message_budget.py `
+  tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py `
+  tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 216 passed，30.54s，exit 0；无 skip/deselect
+# .codex-logs/a3-mode-execution-authority-final-runtime-adjacent-2026-10-29.log
+```
+
+参数类型收紧前，上述 runtime 与相邻组曾分开执行，分别为 180 passed/31.25s、36 passed/11.26s；对应 `a3-mode-execution-authority-runtime-regression-2026-10-29.log`、`a3-mode-execution-authority-adjacent-2026-10-29.log`。最终合组与这些先前结果不累计。
+
+在 `agent_web` 执行 `npm.cmd test -- src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts`：**3 passed，4.87s，exit 0**；`npm.cmd run build`：**exit 0**，包含实际 vue-tsc typecheck 与 Vite build（3311 modules，Vite 17.48s）。日志为 `a3-mode-execution-authority-ui-2026-10-29.log`、`a3-mode-execution-authority-web-build-2026-10-29.log`。后端 warning 为既有 Starlette/anyio BlockingPortal 弃用提示。
+
+根目录实际执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 均 exit 0。ruff/mypy 经 importlib 检查未安装，未运行后端 lint/typecheck，不用 compileall 冒充。Windows shell 单次设置 PYTHONIOENCODING=utf-8；无系统/Git 配置变更。
+
+### 证据限制、剩余出口与提交
+
+本节证明本地 ASGI/JSON/SQLite、正式 CLI、真实 ToolRuntime 与内存 ToolJob 的协议和受控文件效果；不证明本轮真实 PG/Redis/独立 Worker E2、真实供应商/浏览器/压测/扫描 Runner E3 或部署回滚 E4。未运行全量后端/前端测试，未启动 Docker/外部服务、未发起付费或未授权目标请求。
+
+模式原件与 §103 一样以 inline metadata 保存，冻结调用/返回结果及列表 __content_text、content 查询可能含未脱敏业务正文，须保护私有状态文件、备份和 API。新证据只认当前/最近十条服务器执行历史；历史淘汰后没有既存同内容工件则拒绝创建，不从输入猜原执行。SHA-256 是绑定一致性证据，不替代认证或外部效果证明。单服务锁+JSON 原子替换不保证多进程混写、JSON/PG/外部操作整体原子，也不能强行停止已有 handler。
+
+真实领域 Runner execution/目标操作日志/停止与查询回执、当前 owner 核验观察与有依据补偿、A3 其他派生/清理出口、完整 B/C/D/E/F 与对应 E2/E3/E4 验收仍待完成；不把本子步或已有 103 节累计结果当作完整目标完成。
+
+本节以 `【fix】隔离模式桥失权执行与迟到结果` 提交，只含本轮 11 个实现/测试/文档/白名单文件，实际 ID 以 Git 与交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 已复核不变。

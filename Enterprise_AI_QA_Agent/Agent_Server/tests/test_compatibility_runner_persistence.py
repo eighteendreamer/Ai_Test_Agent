@@ -614,6 +614,16 @@ def test_cli_transmits_assignment_identity_through_formal_api(tmp_path, monkeypa
                 runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
             )],
         )))
+        bridge_results = []
+        execute_task = client.execute_task
+
+        def execute_with_empty_bridge(task):
+            # Exercise query transport while the original assignment is live;
+            # a completed task must not receive new mode execution authority.
+            bridge_results.append(client.execute_mode_calls(task))
+            return execute_task(task)
+
+        monkeypatch.setattr(client, "execute_task", execute_with_empty_bridge)
         assert client.run_once() == 1
         task = service._tasks["cli-task"]
         assert task.status == "completed"
@@ -624,8 +634,11 @@ def test_cli_transmits_assignment_identity_through_formal_api(tmp_path, monkeypa
             assert transmitted["assignment_id"] == assignment_id
         # Empty approved mode-call list: verifies query transport with no tool
         # execution, browser, model or provider request.
-        assert client.execute_mode_calls(task.model_dump(mode="json"))["status"] == "completed"
-        assert calls[-1][0].endswith("?assignment_id=" + assignment_id)
+        assert bridge_results[0]["status"] == "completed"
+        bridge_path = next(path for path, _ in calls if "/mode-calls/execute" in path)
+        assert bridge_path.endswith("?assignment_id=" + assignment_id)
+        terminal = http.post(bridge_path)
+        assert terminal.status_code == 409
 
 
 def test_same_assignment_identical_report_is_idempotent_but_cannot_change_terminal_result(tmp_path):
@@ -1056,8 +1069,9 @@ def test_interrupted_assignment_preserves_evidence_independent_of_retry_budget(
         artifact = await service.upload_task_artifact("runner", "task", CompatibilityArtifactUploadRequest(
             filename="evidence.txt", content_base64=base64.b64encode(b"safe evidence").decode(),
         ))
-        await service.begin_mode_call_execution("runner", "task")
-        await service.finish_mode_call_execution("runner", "task", status="partial", result_count=1)
+        mode_execution = await service.begin_mode_call_execution("runner", "task")
+        await service.finish_mode_call_execution("runner", "task", status="partial", result_count=1,
+            execution_id=mode_execution.metadata["mode_calls_execution_id"])
         # Legacy persisted counters are facts, not fresh execution authority.
         task = service._tasks["task"]
         metadata = {**task.metadata, "automatic_retry_count": previous_automatic_retries}

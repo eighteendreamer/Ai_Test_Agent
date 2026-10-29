@@ -1086,7 +1086,8 @@ def test_mode_call_execution_exception_marks_bridge_failed_and_requeue_clears_lo
             f"/api/v1/compatibility/runners/runner-api-mode-exception/tasks/{task_id}/mode-calls/execute",
         )
         assert response.status_code == 500
-        assert "mode runtime exploded" in response.json()["detail"]
+        assert response.json()["detail"] == "Mode call execution failed unexpectedly."
+        assert "mode runtime exploded" not in response.text
 
         tasks_after_failure = client.get(f"/api/v1/compatibility/tasks?dispatch_id={dispatch_plan.dispatch_id}")
         assert tasks_after_failure.status_code == 200
@@ -1346,6 +1347,7 @@ async def _exercise_runner_service(root: Path):
         task_id,
         status="completed",
         result_count=1,
+        execution_id=mode_call_running.metadata["mode_calls_execution_id"],
     )
     assert mode_call_completed.metadata["mode_calls_execution_status"] == "completed"
     assert mode_call_completed.metadata["mode_calls_execution_result_count"] == 1

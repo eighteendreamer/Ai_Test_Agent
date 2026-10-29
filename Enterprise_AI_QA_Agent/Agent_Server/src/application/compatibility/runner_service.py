@@ -18,6 +18,9 @@ from src.schemas.compatibility_runner import (
     CompatibilityEnvironmentReport,
     CompatibilityExecutionReport,
     CompatibilityFailureReport,
+    CompatibilityModeExecutionEvidence,
+    CompatibilityModeExecutionObservation,
+    CompatibilityModeExecutionReference,
     CompatibilityQueuedTask,
     CompatibilityRecoverableTaskReport,
     CompatibilityRunnerCleanupRequest,
@@ -36,11 +39,15 @@ from src.schemas.compatibility_runner import (
     runner_report_metadata,
     runner_report_receipt,
     runner_report_result,
+    runner_mode_definition,
+    runner_mode_definition_sha256,
 )
+from src.schemas.tool_runtime import ModelToolCall, is_reserved_tool_argument
 
 
 logger = logging.getLogger(__name__)
 _REPORT_OBSERVATION_ID_PREFIX = "runner-report-observation-"
+_MODE_OBSERVATION_ID_PREFIX = "runner-mode-observation-"
 
 
 def _utc_now() -> str:
@@ -66,6 +73,16 @@ class CompatibilityRunnerReportObserved(PermissionError):
         super().__init__(detail)
         self.observation = observation
         self.status_code = status_code
+
+
+class CompatibilityModeExecutionAuthorityLost(PermissionError):
+    """Stop dispatch; an optional receipt proves observation storage only."""
+
+    def __init__(self, detail: str, *, status_code: int = 409,
+                 observation: CompatibilityModeExecutionObservation | None = None) -> None:
+        super().__init__(detail)
+        self.status_code = status_code
+        self.observation = observation
 
 
 class CompatibilityRunnerService:
@@ -493,13 +510,9 @@ class CompatibilityRunnerService:
                 plan_id=task.plan_id, environment_id=task.environment_id, runner_id=runner_id,
                 assignment_id=assignment_id, report_receipt_sha256=receipt, observed_at=now,
             )
-            artifact = CompatibilityArtifactRecord(
-                artifact_id=artifact_id, task_id=task.task_id, dispatch_id=task.dispatch_id,
-                plan_id=task.plan_id, environment_id=task.environment_id, runner_id=runner_id,
-                type="runner_late_report", uri=f"/api/v1/compatibility/artifacts/{artifact_id}/content",
-                mime_type="application/json", label="迟到 Runner 报告（非权威，待核查）", created_at=now,
-                metadata={"storage_backend": "inline_text", "runner_report_observation": observation.model_dump(mode="json"),
-                    "__content_text": runner_report_content(payload)},
+            artifact = self._inline_observation_artifact(
+                observation, artifact_type="runner_late_report", marker="runner_report_observation",
+                label="迟到 Runner 报告（非权威，待核查）", content=runner_report_content(payload),
             )
             self._checked_report_observation(artifact)
             self._artifacts[artifact_id] = artifact
@@ -516,23 +529,10 @@ class CompatibilityRunnerService:
         try:
             raw = artifact.metadata["runner_report_observation"]
             observation = CompatibilityRunnerReportObservation.model_validate(raw)
-            content = artifact.metadata["__content_text"]
-            if not isinstance(content, str):
-                raise ValueError("Observation content must be text.")
+            content = self._inline_observation_content(artifact, observation, artifact_type="runner_late_report")
             payload = CompatibilityRunnerTaskReportRequest.model_validate_json(content, strict=True)
-            task = self._tasks.get(observation.task_id)
             if (
                 raw != observation.model_dump(mode="json")
-                or artifact.type != "runner_late_report" or artifact.mime_type != "application/json"
-                or artifact.metadata.get("storage_backend") != "inline_text"
-                or artifact.created_at != observation.observed_at
-                or artifact.uri != f"/api/v1/compatibility/artifacts/{observation.artifact_id}/content"
-                or any(getattr(artifact, field) != getattr(observation, field) for field in (
-                    "artifact_id", "task_id", "dispatch_id", "plan_id", "environment_id", "runner_id",
-                ))
-                or task is None or any(getattr(task, field) != getattr(observation, field) for field in (
-                    "task_id", "dispatch_id", "plan_id", "environment_id",
-                ))
                 or payload.assignment_id != observation.assignment_id
                 or runner_report_content(payload) != content
                 or runner_report_receipt(payload) != observation.report_receipt_sha256
@@ -547,6 +547,39 @@ class CompatibilityRunnerService:
                 "artifact_id": artifact.artifact_id, "task_id": artifact.task_id, "error_type": type(exc).__name__,
             })
             raise CompatibilityRunnerStateError("Runner report observation is invalid.") from None
+
+    def _inline_observation_artifact(
+        self, observation: CompatibilityRunnerReportObservation | CompatibilityModeExecutionObservation,
+        *, artifact_type: str, marker: str, label: str, content: str,
+    ) -> CompatibilityArtifactRecord:
+        return CompatibilityArtifactRecord(
+            **{field: getattr(observation, field) for field in (
+                "artifact_id", "task_id", "dispatch_id", "plan_id", "environment_id", "runner_id",
+            )},
+            type=artifact_type, uri=f"/api/v1/compatibility/artifacts/{observation.artifact_id}/content",
+            mime_type="application/json", label=label, created_at=observation.observed_at,
+            metadata={"storage_backend": "inline_text", marker: observation.model_dump(mode="json"),
+                "__content_text": content},
+        )
+
+    def _inline_observation_content(
+        self, artifact: CompatibilityArtifactRecord,
+        observation: CompatibilityRunnerReportObservation | CompatibilityModeExecutionObservation,
+        *, artifact_type: str,
+    ) -> str:
+        task = self._tasks.get(observation.task_id)
+        content = artifact.metadata["__content_text"]
+        if (not isinstance(content, str) or artifact.type != artifact_type or artifact.mime_type != "application/json"
+            or artifact.metadata.get("storage_backend") != "inline_text" or artifact.created_at != observation.observed_at
+            or artifact.uri != f"/api/v1/compatibility/artifacts/{observation.artifact_id}/content"
+            or any(getattr(artifact, field) != getattr(observation, field) for field in (
+                "artifact_id", "task_id", "dispatch_id", "plan_id", "environment_id", "runner_id",
+            ))
+            or task is None or any(getattr(task, field) != getattr(observation, field) for field in (
+                "task_id", "dispatch_id", "plan_id", "environment_id",
+            ))):
+            raise ValueError("Observation differs from its original artifact or task reference.")
+        return content
 
     async def upload_task_artifact(
         self,
@@ -692,9 +725,16 @@ class CompatibilityRunnerService:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
             self._ensure_assignment_matches(task, assignment_id)
+            self._ensure_task_can_be_reported(task)
             execution_status = str(task.metadata.get("mode_calls_execution_status") or "").strip().lower()
             if execution_status in {"running", "completed", "failed", "partial"}:
                 raise PermissionError(f"Mode calls for task {task_id} have already been executed or are running.")
+            reference = CompatibilityModeExecutionReference(
+                task_id=task.task_id, dispatch_id=task.dispatch_id, plan_id=task.plan_id,
+                environment_id=task.environment_id, runner_id=runner_id,
+                assignment_id=task.metadata["assignment_id"], execution_id=new_id("mode_execution"),
+                definition_sha256=runner_mode_definition_sha256(runner_mode_definition(task)),
+            )
             updated = task.model_copy(
                 update={
                     "updated_at": now,
@@ -703,12 +743,83 @@ class CompatibilityRunnerService:
                         "mode_calls_execution_status": "running",
                         "mode_calls_execution_started_at": now,
                         "mode_calls_execution_runner_id": runner_id,
+                        "mode_calls_execution_id": reference.execution_id,
+                        "mode_calls_execution_reference": reference.model_dump(mode="json"),
                     },
                 }
             )
             self._tasks[task_id] = updated
             self._save_state()
-            return updated
+            logger.info("compatibility_mode_execution_started", extra={"task_id": task_id, "runner_id": runner_id,
+                "assignment_id": reference.assignment_id, "execution_id": reference.execution_id})
+            return updated.model_copy(deep=True)
+
+    def _mode_execution_reference(self, task: CompatibilityQueuedTask) -> CompatibilityModeExecutionReference:
+        try:
+            return CompatibilityModeExecutionReference.model_validate(task.metadata["mode_calls_execution_reference"])
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.error("compatibility_mode_execution_reference_invalid", extra={
+                "task_id": task.task_id, "error_type": type(exc).__name__,
+            })
+            raise CompatibilityRunnerStateError("Mode execution reference is invalid.") from None
+
+    def _assert_mode_execution_locked(self, reference: CompatibilityModeExecutionReference) -> CompatibilityQueuedTask:
+        task = self._tasks.get(reference.task_id)
+        if task is None:
+            raise CompatibilityModeExecutionAuthorityLost("Task not found", status_code=404)
+        try:
+            self._ensure_runner_can_write_task(reference.runner_id, task)
+            self._ensure_assignment_matches(task, reference.assignment_id, strict=True)
+            self._ensure_task_can_be_reported(task)
+        except CompatibilityRunnerNotFound:
+            raise CompatibilityModeExecutionAuthorityLost("Runner not found", status_code=404) from None
+        except PermissionError:
+            raise CompatibilityModeExecutionAuthorityLost("Mode execution no longer owns the assigned task.") from None
+        if (self._is_runner_stale(self._runners[reference.runner_id])
+            or task.metadata.get("mode_calls_execution_status") != "running"
+            or task.metadata.get("mode_calls_execution_id") != reference.execution_id
+            or task.metadata.get("mode_calls_execution_reference") != reference.model_dump(mode="json")
+            or any(getattr(task, field) != getattr(reference, field) for field in (
+                "task_id", "dispatch_id", "plan_id", "environment_id",
+            ))
+            or runner_mode_definition_sha256(runner_mode_definition(task)) != reference.definition_sha256):
+            raise CompatibilityModeExecutionAuthorityLost("Mode execution identity, definition or Runner lease changed.")
+        return task
+
+    async def assert_mode_call_execution(
+        self, reference: CompatibilityModeExecutionReference, *, call_index: int | None = None,
+        call: ModelToolCall | None = None,
+    ) -> None:
+        async with self._lock:
+            try:
+                task = self._assert_mode_execution_locked(reference)
+                if call is not None:
+                    if type(call_index) is not int or not 0 <= call_index < len(task.mode_calls):
+                        raise CompatibilityModeExecutionAuthorityLost("Mode call position differs from its frozen execution.")
+                    expected = task.mode_calls[call_index]
+                    expected_arguments = {key: value for key, value in expected.get("arguments", {}).items()
+                        if not is_reserved_tool_argument(key)}
+                    # Python equality conflates JSON false/0/0.0; freeze the
+                    # actual wire representation with the definition's canonical rules.
+                    if (call.id != f"{reference.task_id}-{reference.execution_id}-mode-call-{call_index + 1}"
+                        or call.name != str(expected.get("tool_key") or "").strip()
+                        or runner_mode_definition_sha256({"arguments": call.arguments})
+                            != runner_mode_definition_sha256({"arguments": expected_arguments})):
+                        raise CompatibilityModeExecutionAuthorityLost("Mode call differs from its frozen execution.")
+            except CompatibilityModeExecutionAuthorityLost as exc:
+                logger.warning("compatibility_mode_execution_authority_lost", extra={"task_id": reference.task_id,
+                    "runner_id": reference.runner_id, "assignment_id": reference.assignment_id,
+                    "execution_id": reference.execution_id, "error_type": type(exc).__name__})
+                raise
+
+    def _stage_mode_call_finish(self, task: CompatibilityQueuedTask, *, status: str, result_count: int,
+                                now: str) -> CompatibilityQueuedTask:
+        updated = task.model_copy(update={"updated_at": now, "metadata": {
+            **task.metadata, "mode_calls_execution_status": status,
+            "mode_calls_execution_completed_at": now, "mode_calls_execution_result_count": result_count,
+        }})
+        self._tasks[task.task_id] = updated
+        return updated
 
     async def finish_mode_call_execution(
         self,
@@ -718,6 +829,7 @@ class CompatibilityRunnerService:
         status: str,
         result_count: int,
         assignment_id: str | None = None,
+        execution_id: str | None = None,
     ) -> CompatibilityQueuedTask:
         now = _utc_now()
         async with self._lock:
@@ -726,20 +838,100 @@ class CompatibilityRunnerService:
                 raise KeyError(task_id)
             self._ensure_runner_can_write_task(runner_id, task)
             self._ensure_assignment_matches(task, assignment_id)
-            updated = task.model_copy(
-                update={
-                    "updated_at": now,
-                    "metadata": {
-                        **task.metadata,
-                        "mode_calls_execution_status": status,
-                        "mode_calls_execution_completed_at": now,
-                        "mode_calls_execution_result_count": result_count,
-                    },
-                }
-            )
-            self._tasks[task_id] = updated
+            reference = self._mode_execution_reference(task)
+            if execution_id != reference.execution_id:
+                raise CompatibilityModeExecutionAuthorityLost("Mode execution ID no longer matches this request.")
+            self._assert_mode_execution_locked(reference)
+            updated = self._stage_mode_call_finish(task, status=status, result_count=result_count, now=now)
             self._save_state()
-            return updated
+            return updated.model_copy(deep=True)
+
+    async def complete_mode_call_execution(
+        self, original: CompatibilityQueuedTask, response: dict[str, Any], *, error_type: str | None = None,
+        authority_error: CompatibilityModeExecutionAuthorityLost | None = None,
+    ) -> dict[str, Any]:
+        """Commit bridge evidence independently; only the current execution can settle its metadata."""
+        reference = self._mode_execution_reference(original)
+        now = _utc_now()
+        async with self._lock:
+            lost = authority_error
+            try:
+                current = self._assert_mode_execution_locked(reference)
+            except CompatibilityModeExecutionAuthorityLost as exc:
+                lost = lost or exc
+            response = deepcopy(response)
+            if lost is not None:
+                response.update(ok=False, status="failed",
+                    summary="Mode execution lost its original authority; returned results are observation only.")
+            evidence = CompatibilityModeExecutionEvidence(reference=reference, **runner_mode_definition(original),
+                response=response, error_type=error_type)
+            content = json.dumps(evidence.model_dump(mode="json"), sort_keys=True, ensure_ascii=False,
+                separators=(",", ":"), allow_nan=False)
+            digest = sha256(content.encode("utf-8")).hexdigest()
+            artifact_id = self._mode_observation_artifact_id(reference, digest)
+            existing = self._artifacts.get(artifact_id)
+            if existing is not None:
+                observation = self._checked_mode_observation(existing)
+                if existing.metadata["__content_text"] != content:
+                    raise CompatibilityRunnerStateError("Mode execution observation content conflicts with its identity.")
+            else:
+                task = self._tasks.get(reference.task_id)
+                history = task.metadata.get("retry_history") if task else None
+                references = [task.metadata.get("mode_calls_execution_reference")] if task else []
+                references.extend(item.get("previous_mode_call_execution", {}).get("mode_calls_execution_reference")
+                    for item in (history if isinstance(history, list) else [])
+                    if isinstance(item, dict) and isinstance(item.get("previous_mode_call_execution"), dict))
+                if reference.model_dump(mode="json") not in references:
+                    raise CompatibilityRunnerStateError("Mode execution has no recorded original reference.")
+                observation = CompatibilityModeExecutionObservation(**reference.model_dump(mode="json"),
+                    artifact_id=artifact_id, content_sha256=digest, observed_at=now)
+                artifact = self._inline_observation_artifact(observation, artifact_type="runner_mode_execution",
+                    marker="runner_mode_execution_observation", label="模式桥执行结果（非权威，待核查）", content=content)
+                self._checked_mode_observation(artifact)
+                self._artifacts[artifact_id] = artifact
+            if lost is None:
+                self._stage_mode_call_finish(current, status=response["status"],
+                    result_count=len(response["mode_call_results"]), now=now)
+            if existing is None or lost is None:
+                self._save_state()
+            logger.info("compatibility_mode_execution_observed", extra={"task_id": reference.task_id,
+                "runner_id": reference.runner_id, "assignment_id": reference.assignment_id,
+                "execution_id": reference.execution_id, "artifact_id": artifact_id,
+                "task_status": self._tasks[reference.task_id].status, "error_type": error_type})
+            if lost is not None:
+                raise CompatibilityModeExecutionAuthorityLost(str(lost), status_code=lost.status_code,
+                    observation=observation)
+            return response
+
+    @staticmethod
+    def _mode_observation_artifact_id(reference: CompatibilityModeExecutionReference, digest: str) -> str:
+        identity = json.dumps([reference.model_dump(mode="json"), digest], sort_keys=True, separators=(",", ":"))
+        return _MODE_OBSERVATION_ID_PREFIX + sha256(identity.encode("utf-8")).hexdigest()
+
+    def _checked_mode_observation(self, artifact: CompatibilityArtifactRecord) -> CompatibilityModeExecutionObservation:
+        try:
+            raw = artifact.metadata["runner_mode_execution_observation"]
+            observation = CompatibilityModeExecutionObservation.model_validate(raw)
+            content = self._inline_observation_content(artifact, observation, artifact_type="runner_mode_execution")
+            evidence = CompatibilityModeExecutionEvidence.model_validate_json(content)
+            reference = evidence.reference
+            if (raw != observation.model_dump(mode="json")
+                or any(getattr(reference, field) != getattr(observation, field)
+                    for field in CompatibilityModeExecutionReference.model_fields)
+                or runner_mode_definition_sha256({"case_ids": evidence.case_ids,
+                    "runner_selector": evidence.runner_selector, "mode_calls": evidence.mode_calls}) != reference.definition_sha256
+                or content != json.dumps(evidence.model_dump(mode="json"), sort_keys=True, ensure_ascii=False,
+                    separators=(",", ":"), allow_nan=False)
+                or sha256(content.encode("utf-8")).hexdigest() != observation.content_sha256
+                or artifact.artifact_id != self._mode_observation_artifact_id(reference, observation.content_sha256)
+                or evidence.response.get("task_id") != reference.task_id
+                or evidence.response.get("runner_id") != reference.runner_id):
+                raise ValueError("Mode observation differs from its original definition or content.")
+            return observation
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.error("compatibility_mode_execution_observation_invalid", extra={"task_id": artifact.task_id,
+                "artifact_id": artifact.artifact_id, "error_type": type(exc).__name__})
+            raise CompatibilityRunnerStateError("Mode execution observation is invalid.") from None
 
     async def requeue_tasks(self, payload: CompatibilityTaskRequeueRequest) -> CompatibilityTaskRequeueResponse:
         now = _utc_now()
@@ -805,6 +997,10 @@ class CompatibilityRunnerService:
             artifact = self._artifacts.get(artifact_id)
         if artifact is None:
             raise KeyError(artifact_id)
+        if artifact_id.startswith(_MODE_OBSERVATION_ID_PREFIX) or "runner_mode_execution_observation" in artifact.metadata:
+            self._checked_mode_observation(artifact)
+            return {"content": artifact.metadata["__content_text"].encode("utf-8"),
+                "content_type": "application/json", "filename": "runner-mode-execution.json"}
         if artifact_id.startswith(_REPORT_OBSERVATION_ID_PREFIX) or "runner_report_observation" in artifact.metadata:
             self._checked_report_observation(artifact)
             return {
@@ -1212,6 +1408,8 @@ class CompatibilityRunnerService:
             "mode_calls_execution_completed_at": None,
             "mode_calls_execution_result_count": None,
             "mode_calls_execution_runner_id": None,
+            "mode_calls_execution_id": None,
+            "mode_calls_execution_reference": None,
         }
 
     def _unique_artifact_id(self, requested_id: str, reserved_artifact_ids: set[str]) -> str:
@@ -1271,6 +1469,7 @@ class CompatibilityRunnerService:
             "upload_assignment_id",
             "upload_receipt_sha256",
             "runner_report_observation",
+            "runner_mode_execution_observation",
             "__content_text",
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}

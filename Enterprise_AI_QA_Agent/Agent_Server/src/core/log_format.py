@@ -36,7 +36,7 @@ DIAGNOSTIC_FIELDS = (
     "resource_lease_seconds", "since_resource_renew_seconds", "last_interrupt_poll_seconds",
     "runner_id", "assignment_id", "recovery_source", "recovery_reason",
     "automatic_retry_count", "automatic_retry_limit",
-    "artifact_id", "task_status",
+    "artifact_id", "task_status", "execution_id",
 )
 
 

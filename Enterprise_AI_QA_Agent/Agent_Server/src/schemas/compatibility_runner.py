@@ -141,6 +141,7 @@ def runner_report_metadata(value: dict[str, Any]) -> dict[str, Any]:
     server_controlled_keys = {
         "mode_calls_execution_completed_at", "mode_calls_execution_result_count",
         "mode_calls_execution_runner_id", "mode_calls_execution_started_at", "mode_calls_execution_status",
+        "mode_calls_execution_id", "mode_calls_execution_reference",
         "retry_count", "retry_history", "automatic_retry_count", "automatic_retry_limit", "recovery_reason",
         "recovery_required_at", "recovery_source", "assignment_id", "assignment_fencing_required",
         "report_receipt_sha256",
@@ -181,6 +182,69 @@ class CompatibilityRunnerReportObservation(BaseModel):
         if value is not False:
             raise ValueError("Observation authority must be JSON false.")
         return value
+
+
+class CompatibilityModeExecutionReference(BaseModel):
+    """Server-owned identity, not an execution grant from tool arguments."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    task_id: str = Field(min_length=1)
+    dispatch_id: str = Field(min_length=1)
+    plan_id: str = Field(min_length=1)
+    environment_id: str = Field(min_length=1)
+    runner_id: str = Field(min_length=1)
+    assignment_id: str = Field(min_length=1)
+    execution_id: str = Field(min_length=1)
+    definition_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CompatibilityModeExecutionObservation(CompatibilityModeExecutionReference):
+    """Queryable mode-bridge evidence, never authoritative task evidence."""
+
+    schema_version: Literal[1] = 1
+    scope: Literal["compatibility_runner_mode_execution_observation_only"] = (
+        "compatibility_runner_mode_execution_observation_only"
+    )
+    artifact_id: str = Field(min_length=1)
+    content_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observed_at: str = Field(min_length=1)
+    authoritative: Literal[False] = False
+    execution_authority: Literal[False] = False
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _json_schema_version(cls, value: Any) -> Any:
+        if type(value) is not int:
+            raise ValueError("Observation schema version must be a JSON integer.")
+        return value
+
+    @field_validator("authoritative", "execution_authority", mode="before")
+    @classmethod
+    def _no_authority(cls, value: Any) -> bool:
+        if value is not False:
+            raise ValueError("Observation authority must be JSON false.")
+        return value
+
+
+class CompatibilityModeExecutionEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    reference: CompatibilityModeExecutionReference
+    case_ids: list[str]
+    runner_selector: dict[str, Any]
+    mode_calls: list[dict[str, Any]]
+    response: dict[str, Any]
+    error_type: str | None = None
+
+
+def runner_mode_definition(task: CompatibilityQueuedTask) -> dict[str, Any]:
+    return {"case_ids": task.case_ids, "runner_selector": task.runner_selector, "mode_calls": task.mode_calls}
+
+
+def runner_mode_definition_sha256(definition: dict[str, Any]) -> str:
+    content = json.dumps(definition, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
+    return sha256(content.encode("utf-8")).hexdigest()
 
 
 class CompatibilityRunnerJournalReconciliation(BaseModel):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from copy import deepcopy
 from urllib.parse import quote
 from types import SimpleNamespace
 from typing import Any
@@ -11,6 +12,7 @@ from fastapi.routing import APIRoute
 
 from src.application.compatibility.runner_service import (
     CompatibilityArtifactContentUnavailable,
+    CompatibilityModeExecutionAuthorityLost,
     CompatibilityRunnerNotFound,
     CompatibilityRunnerReportObserved,
     CompatibilityRunnerStateError,
@@ -22,6 +24,7 @@ from src.schemas.compatibility_runner import (
     CompatibilityArtifactRecord,
     CompatibilityArtifactUploadRequest,
     CompatibilityExecutionReport,
+    CompatibilityModeExecutionReference,
     CompatibilityPlanActionRequest,
     CompatibilityRunnerCleanupRequest,
     CompatibilityRunnerCleanupResponse,
@@ -237,11 +240,15 @@ async def execute_runner_task_mode_calls(
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     mode_calls = [item for item in task.mode_calls if isinstance(item, dict)]
+    reference = CompatibilityModeExecutionReference.model_validate(task.metadata["mode_calls_execution_reference"])
     results: list[dict[str, Any]] = []
+    error_type: str | None = None
+    authority_error: CompatibilityModeExecutionAuthorityLost | None = None
     try:
         for index, mode_call in enumerate(mode_calls):
+            await request.app.state.compatibility_runner_service.assert_mode_call_execution(reference)
             tool_key = str(mode_call.get("tool_key") or "").strip()
-            arguments = mode_call.get("arguments") if isinstance(mode_call.get("arguments"), dict) else {}
+            arguments = deepcopy(mode_call.get("arguments")) if isinstance(mode_call.get("arguments"), dict) else {}
             if not tool_key:
                 results.append(
                     {
@@ -281,11 +288,13 @@ async def execute_runner_task_mode_calls(
                 },
                 selected_agent_key="compatibility-testing-agent",
                 tool_key=tool_key,
+                compatibility_mode_execution=reference,
+                compatibility_mode_call_index=index,
             )
             record = await tool_runtime_service.execute(
                 tool,
                 ModelToolCall(
-                    id=f"{task.task_id}-mode-call-{index + 1}",
+                    id=f"{task.task_id}-{reference.execution_id}-mode-call-{index + 1}",
                     name=tool_key,
                     arguments=arguments,
                 ),
@@ -294,41 +303,20 @@ async def execute_runner_task_mode_calls(
             result = record.model_dump(mode="json")
             result["call_index"] = index
             results.append(result)
+    except CompatibilityRunnerStateError:
+        raise
+    except CompatibilityModeExecutionAuthorityLost as exc:
+        authority_error = exc
     except Exception as exc:
-        try:
-            await request.app.state.compatibility_runner_service.finish_mode_call_execution(
-                runner_id,
-                task_id,
-                status="failed",
-                result_count=len(results),
-                assignment_id=task.metadata.get("assignment_id"),
-            )
-        except (CompatibilityRunnerNotFound, KeyError, PermissionError) as finish_exc:
-            logger.warning("compatibility_mode_call_finish_rejected", extra={
-                "task_id": task_id, "runner_id": runner_id, "error_type": type(finish_exc).__name__,
-            })
-        raise HTTPException(
-            status_code=500,
-            detail=f"Mode call execution failed unexpectedly: {exc}",
-        ) from exc
+        error_type = type(exc).__name__
+        logger.error("compatibility_mode_execution_failed", extra={"task_id": task_id, "runner_id": runner_id,
+            "execution_id": reference.execution_id, "error_type": error_type})
 
     completed = sum(1 for item in results if item.get("status") == "completed")
     failed = sum(1 for item in results if item.get("status") in {"failed", "denied"})
     partial = sum(1 for item in results if item.get("status") in {"partial", "waiting_approval"})
-    status = "failed" if results and failed == len(results) else ("partial" if failed or partial else "completed")
-    try:
-        await request.app.state.compatibility_runner_service.finish_mode_call_execution(
-            runner_id,
-            task_id,
-            status=status,
-            result_count=len(results),
-            assignment_id=task.metadata.get("assignment_id"),
-        )
-    except (CompatibilityRunnerNotFound, KeyError, PermissionError) as finish_exc:
-        logger.warning("compatibility_mode_call_finish_rejected", extra={
-            "task_id": task_id, "runner_id": runner_id, "error_type": type(finish_exc).__name__,
-        })
-    return {
+    status = "failed" if error_type or (results and failed == len(results)) else ("partial" if failed or partial else "completed")
+    response = {
         "status": status,
         "ok": status == "completed",
         "task_id": task.task_id,
@@ -340,6 +328,17 @@ async def execute_runner_task_mode_calls(
         ),
         "mode_call_results": results,
     }
+    try:
+        response = await request.app.state.compatibility_runner_service.complete_mode_call_execution(
+            task, response, error_type=error_type, authority_error=authority_error,
+        )
+    except CompatibilityModeExecutionAuthorityLost as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "detail": str(exc), "observation": exc.observation.model_dump(mode="json"),
+        })
+    if error_type is not None:
+        raise HTTPException(status_code=500, detail="Mode call execution failed unexpectedly.")
+    return response
 
 
 @router.get("/tasks", response_model=list[CompatibilityQueuedTask])

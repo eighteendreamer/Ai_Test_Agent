@@ -20,7 +20,7 @@
 
 每次 poll 领取在任务 metadata 中生成新的 `assignment_id`。本仓库 Runner 注册时声明 `assignment_fencing_version: 1`，报告和上传 JSON 使用顶层 assignment_id，模式调用请求使用同名查询参数；服务器对这些领取强制核对身份，缺失或旧值返回 409，外来报告 metadata 无权修改身份或降级校验。领取身份用于区分执行轮次，不替代 API 鉴权。
 
-上传在外部存储 await 后再次核对开始时捕获的领取身份与待核查状态，换轮或转待核查则拒绝挂入任务并尝试补偿删除。模式调用完成使用入口捕获的身份，旧完成回执不能更新新一轮或待核查元数据，拒绝情况留下日志。只有人工重排队将原身份记入历史，下一次 poll 产生新值；自动中断保留原身份，不授予新执行权。
+上传在外部存储 await 后再次核对开始时捕获的领取身份与待核查状态，换轮或转待核查则拒绝挂入任务并尝试补偿删除。模式桥捕获独立执行 ID 与冻结定义，逐项、进入实际 handler 前和收尾时复核；旧执行不能派发后续项或更新新一轮、待核查及终态任务的元数据。失权返回拒绝，已返回材料另存非权威观察，详见末节。只有人工重排队将原身份记入历史，下一次 poll 产生新值；自动中断保留原身份，不授予新执行权。
 
 旧 Runner 未声明协议时，缺失身份的普通写入继续兼容；显式提供旧身份仍会被拒绝。兼容缺失身份的旧报告无法完全隔离，需升级旧部署的 Runner。即使旧客户端不发送身份，本服务上传的异步提交及模式调用完成仍使用服务器捕获的身份复核。新版 CLI 的恢复阶段见下文；旧客户端和未知副作用仍需单独处置。
 
@@ -108,3 +108,24 @@ CLI 沿用原 `_json_request` 传输，本步没有新增 Bearer 凭据配置能
 **观察回执不是成功报告、ACK、执行/重试/补偿许可或领域测试通过证明。** CLI 收到 404/409 仍将本地完整报告保留为 conflict，不删除 journal，也不因观察而增加 processed 数。真实 CLI + SQLite/JSON/正式 ASGI 路由测试在受控本地效果发生、日志上传及 report_ready 保存后重建服务；报告被留存但不结算，客户端重开不再次执行。该证据不是远端领域 Runner、实际进程停止或 E3 验收。
 
 公开成功 DTO、原 URL 和 JSON schema_version=1 保持不变；观察使用工件原有可选 metadata，旧读者可按旧工件结构读取，但不会因此具备新校验能力。新增错误正文仅附加 observation，原客户端/前端仍依据非 2xx 和 detail 处理，不需要升级为成功 DTO。本步没有新增观察专用 UI、自动核验/升格或调度器，也未证明旧/新版本多进程混写 JSON 安全；仍须保持单服务写入，不能把兼容读取等同滚动部署验收。
+
+## 模式桥：执行代次、临调用校验与独立结果
+
+`POST /api/v1/compatibility/runners/{runner_id}/tasks/{task_id}/mode-calls/execute` 只允许当前 `assigned` 任务开始。空列表也不能在任务终态后取得新执行权。同一批次 running/completed/failed/partial 后仍拒绝再次执行；查询已保存工件不会再次运行工具。
+
+开始时服务器生成 `mode_calls_execution_id`，将 task/dispatch/plan/environment、Runner/assignment、execution ID 及固定 case_ids/runner_selector/mode_calls 的规范化 SHA-256 保存为 `mode_calls_execution_reference`，返回 detached 任务快照。人工 requeue 将这些字段归入原历史并清空，下一次领取/执行产生新身份。客户端派发/报告 metadata 不能写入这两个服务器字段。内部 `finish_mode_call_execution` 的消费方须带入口的 execution_id，不能只凭当前 assignment 收尾。
+
+模式路由在每项前复核；同一引用与调用下标通过服务器 `ToolExecutionContext` 贯穿两处 context 重建，写入原 ToolJob metadata。ToolRuntime 在 ToolJob 等待结束、进入真实 handler 前，再复用同一服务校验当前任务状态、Runner 心跳、原 assignment/执行代次/定义、调用 ID/位置/工具/参数；校验失权不转普通失败记录、不继续 sibling。调用 ID 含 execution ID，新轮次不会复用旧调用 ID。原有保留参数忽略规则继续生效，工具参数或 context_bundle 不能授予服务器模式身份；恢复引用不能移除原 ToolJob 的模式身份来绕过校验。
+
+本校验不构成 JSON、ToolJob 数据库与外部操作的整体事务，也不能撤销已准入的 handler、已发送请求或其内部后续操作。没有实现远端停止/查询回执、强制终止 handler 或跨进程 JSON writer fencing。服务中断后仍沿原规则保留 `recovery_required`，不凭执行预算或空输出自动重派。
+
+批次返回时，在服务锁内再次核对原执行权，并将冻结定义、执行引用、已经返回的 `mode_call_results`、完整桥响应和仅异常类型的 `error_type` 保存为独立 `type="runner_mode_execution"` 工件：
+
+- 原执行仍合法：工件与批次收尾 metadata 同次原子保存，成功响应字段不变；任务仍为 assigned，正式结果仍由 Runner report 提交。模式异常保存已知返回前缀、标记原批次 failed，再返回固定 **500** `Mode call execution failed unexpectedly.`，不回显异常正文。
+- 原执行已失权：不执行下一项，不修改 task/Runner/心跳/任务时间/新批次 metadata/正式结果/task.artifacts，只保存独立材料；仍返回 **409**，Runner 记录缺失时为 **404**，附带 observation。即使最后一项返回成功，也不能将收尾拒绝包装成 `ok=true`。
+- 回执 scope 固定为 `compatibility_runner_mode_execution_observation_only`，`authoritative=false`、`execution_authority=false`；包含原执行引用、规范化内容摘要、稳定 artifact_id/observed_at。它不是任务报告、ACK、重试许可或领域测试通过证明。冻结定义/返回内容可含业务正文，拒绝回执和日志不输出它们。
+- 新工件须对应当前或最近十条服务器历史中的原执行引用。内容相同的迟到保存复用原回执且不写文件，不同内容追加；原引用被历史淘汰后只能查询或复用已经保存的同内容观察。摘要、规范化正文、回执或绑定漂移返回脱敏 **503**，不覆盖原件；保存失败回滚内存，不声称副作用未发生。
+
+查询沿现有 `GET /api/v1/compatibility/artifacts?task_id={task_id}&artifact_type=runner_mode_execution` 及工件 `uri` 的 content 端口；content 会校验完整冻结回执、定义与内容摘要、稳定 ID 和 task/工件绑定。type 只用于检索，不能代替上述校验。独立工件不计入正式报告的证据数或通过率；列表 metadata 的 `__content_text` 与 content 均可能包含未脱敏业务数据，必须保护状态文件、备份和 API 访问。
+
+CLI 遇到模式桥 404/409 仍将原 SQLite entry 保留为 conflict，不报告成功、不上传/报告伪造的失败结果、不 ACK。正式 main + SQLite + ASGI + 受控本地文件效果测试验证重开不再次执行。此证据及真实 ToolRuntime/InMemoryToolJobStore 的临调用测试，不代表真实供应商、领域 Runner、PG/Redis 独立 Worker 或 E3/E4 验收。没有新增观察专用 UI、自动升格或有依据补偿。
