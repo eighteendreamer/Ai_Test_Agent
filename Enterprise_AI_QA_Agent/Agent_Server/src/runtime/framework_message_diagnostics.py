@@ -89,7 +89,7 @@ class FrameworkMessageDiagnostics:
                 if attempt is None:
                     issues.append("task_attempt_missing")
             owner = self._owner(cur, task, binding, session, observation["observed_at"], issues)
-            budget, calls = self._models(cur, binding, issues)
+            budget, calls = self._models(cur, binding, issues, observed_at=observation["observed_at"])
             admission = self._input(cur, task, binding, budget.policy, issues)
             checkpoints = self._checkpoints(cur, binding, issues)
             jobs = self._jobs(cur, task, binding, issues)
@@ -181,7 +181,7 @@ class FrameworkMessageDiagnostics:
             attempt_id=owner["attempt_id"], execution_state=owner["execution_state"],
             expires_at=owner["expires_at"], matches_origin=matches, lease_active=active)
 
-    def _models(self, cur, binding, issues):
+    def _models(self, cur, binding, issues, *, observed_at):
         ledger = PostgresFrameworkModelCalls(self._settings)
         policy, calls, rows = None, [], []
         if _exists(cur, _table(ledger.budgets_table)):
@@ -216,10 +216,32 @@ class FrameworkMessageDiagnostics:
         accounting = None
         if policy is not None and calls_available and len(calls) == len(rows):
             accounting = FrameworkModelBudgetSnapshot(policy=policy, calls=calls)
+        root_activity_seconds = None
+        root_activity_sources_available = False
+        if accounting is not None and _exists(cur, _table(runtime_owner_table(self._settings))):
+            cur.execute("SELECT to_regclass(%s) IS NOT NULL AS present", (ledger.tool_jobs_table,))
+            tool_jobs_available = bool(cur.fetchone()["present"])
+            try:
+                root_activity_seconds = sum(
+                    (end - start).total_seconds()
+                    for start, end in ledger.root_activity_intervals_in_transaction(
+                        cur, binding, as_of=observed_at, snapshot=accounting,
+                        include_tool_jobs=tool_jobs_available,
+                    )
+                )
+            except ValueError as exc:
+                issues.append("root_activity_invalid")
+                logger.warning("framework_root_activity_diagnostic_rejected", extra={
+                    "binding_id": binding.binding_id, "error_type": type(exc).__name__})
+            else:
+                root_activity_sources_available = tool_jobs_available
+                issues.append("root_activity_execution_envelope_only")
         budget = MessageModelBudgetFact(policy=policy, ledger_rows=len(rows), accounting_complete=accounting is not None,
             reserved_calls=accounting.reserved_calls if accounting else None,
             charged_tokens=accounting.charged_tokens if accounting else None,
-            actual_tokens=accounting.actual_tokens if accounting else None)
+            actual_tokens=accounting.actual_tokens if accounting else None,
+            root_activity_seconds=root_activity_seconds,
+            root_activity_sources_available=root_activity_sources_available)
         facts = []
         for call in calls:
             if call.phase in {"ready", "invoking", "unknown"}:

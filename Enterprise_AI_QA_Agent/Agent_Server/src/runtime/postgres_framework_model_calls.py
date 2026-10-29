@@ -149,38 +149,8 @@ class PostgresFrameworkModelCalls:
         """
         def read():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                self._require_binding(cur, binding)
-                snapshot = self._snapshot(cur, binding.binding_id)
-                intervals = [
-                    (call.started_at, call.settled_at)
-                    for call in snapshot.calls
-                    if call.started_at is not None
-                ]
-                tasks_table = self._settings.database.postgres_agent_task_table
-                attempts_table = self._settings.database.postgres_agent_attempt_table
-                cur.execute(
-                    f"""SELECT attempt.started_at, attempt.finished_at
-                    FROM {tasks_table} AS task
-                    JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
-                    WHERE task.runtime_binding->>'binding_id'=%s
-                      AND task.operation IN ('message','message_recover','approval_resume')""",
-                    (binding.binding_id,),
-                )
-                intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
-                # Tool jobs are the durable execution boundary for external
-                # handlers.  A job waiting for approval/resource/children is
-                # not active wall-clock time; its pre-wait segment is not
-                # reconstructable from the current schema, so do not guess it.
-                cur.execute(
-                    f"""SELECT job.started_at, job.completed_at
-                    FROM {self.tool_jobs_table} AS job
-                    WHERE job.metadata->>'framework_binding_id'=%s
-                      AND job.started_at IS NOT NULL
-                      AND job.status IN ('running','resume_requested','completed','partial','failed','cancelled')""",
-                    (binding.binding_id,),
-                )
-                intervals.extend((row["started_at"], row["completed_at"]) for row in cur.fetchall())
-                return union_activity_intervals(intervals, as_of=as_of)
+                cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                return self.root_activity_intervals_in_transaction(cur, binding, as_of=as_of)
 
         result = await asyncio.to_thread(read)
         logger.info("framework_root_activity_read", extra={
@@ -190,6 +160,55 @@ class PostgresFrameworkModelCalls:
             "open_tail_observed": as_of is not None,
         })
         return result
+
+    def root_activity_intervals_in_transaction(
+        self,
+        cur,
+        binding: RuntimeBinding,
+        *,
+        as_of: datetime | None = None,
+        snapshot: FrameworkModelBudgetSnapshot | None = None,
+        include_tool_jobs: bool = True,
+    ) -> list[tuple[datetime, datetime]]:
+        """Read persisted execution envelopes, not exact active/handler time.
+
+        Owner expiry fences platform writes; it does not prove an external
+        request stopped. Open intervals retain the explicit observation bound.
+        """
+        self._require_binding(cur, binding)
+        snapshot = snapshot or self._snapshot(cur, binding.binding_id)
+        intervals = [
+            (call.started_at, call.settled_at)
+            for call in snapshot.calls
+            if call.started_at is not None
+        ]
+        tasks_table = self._settings.database.postgres_agent_task_table
+        attempts_table = self._settings.database.postgres_agent_attempt_table
+        cur.execute(
+            f"""SELECT attempt.started_at, attempt.finished_at
+            FROM {tasks_table} AS task
+            JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
+            WHERE task.runtime_binding->>'binding_id'=%s
+              AND task.session_id=%s AND task.turn_id=%s
+              AND task.operation IN ('message','message_recover','approval_resume')""",
+            (binding.binding_id, binding.session_id, binding.turn_id),
+        )
+        intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
+        if include_tool_jobs:
+            # Tool jobs are the durable execution boundary for external
+            # handlers. A waiting job is not active wall-clock time; its
+            # pre-wait segment is not reconstructable, so do not guess it.
+            cur.execute(
+                f"""SELECT job.started_at, job.completed_at
+                FROM {self.tool_jobs_table} AS job
+                WHERE job.metadata->>'framework_binding_id'=%s
+                  AND job.session_id=%s AND job.turn_id=%s
+                  AND job.started_at IS NOT NULL
+                  AND job.status IN ('running','resume_requested','completed','partial','failed','cancelled')""",
+                (binding.binding_id, binding.session_id, binding.turn_id),
+            )
+            intervals.extend((row["started_at"], row["completed_at"]) for row in cur.fetchall())
+        return union_activity_intervals(intervals, as_of=as_of)
 
     async def root_activity_seconds(
         self,

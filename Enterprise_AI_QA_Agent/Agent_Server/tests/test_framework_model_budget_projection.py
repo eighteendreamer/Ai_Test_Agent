@@ -204,8 +204,11 @@ async def test_postgres_activity_reader_joins_existing_attempt_timeline(monkeypa
             return False
 
         def execute(self, statement, params=()):
-            if "SELECT runtime_binding FROM" in statement:
-                self.rows = [{"runtime_binding": binding.model_dump(mode="json")}]
+            if statement.startswith("SET TRANSACTION"):
+                self.rows = []
+            elif "SELECT runtime_binding FROM" in statement:
+                self.rows = [{"runtime_binding": binding.model_dump(mode="json"),
+                              "attempt_id": None, "expires_at": None}]
             elif "SELECT policy FROM" in statement:
                 self.rows = [{"policy": snapshot.policy.model_dump(mode="json")}]
             elif "SELECT attempt_id,record FROM" in statement:
@@ -278,8 +281,11 @@ async def test_postgres_activity_reader_includes_bound_tool_jobs_and_open_tail(m
             return False
 
         def execute(self, statement, params=()):
-            if "SELECT runtime_binding FROM" in statement:
-                self.rows = [{"runtime_binding": binding.model_dump(mode="json")}]
+            if statement.startswith("SET TRANSACTION"):
+                self.rows = []
+            elif "SELECT runtime_binding FROM" in statement:
+                self.rows = [{"runtime_binding": binding.model_dump(mode="json"),
+                              "attempt_id": None, "expires_at": None}]
             elif "SELECT policy FROM" in statement:
                 self.rows = [{"policy": snapshot.policy.model_dump(mode="json")}]
             elif "SELECT attempt_id,record FROM" in statement:
@@ -336,3 +342,77 @@ async def test_postgres_activity_reader_includes_bound_tool_jobs_and_open_tail(m
         (base + timedelta(seconds=20), base + timedelta(seconds=30)),
         (base + timedelta(seconds=40), base + timedelta(seconds=45)),
     ]
+
+
+@pytest.mark.asyncio
+async def test_postgres_activity_reader_does_not_infer_external_stop_from_owner_expiry(monkeypatch):
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    binding, snapshot = original_budget()
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    snapshot.calls[1] = snapshot.calls[1].model_copy(update={
+        "phase": "invoking", "started_at": base + timedelta(seconds=5), "settled_at": None,
+        "owner_attempt_id": "owner-attempt",
+    })
+    owner_expiry = base + timedelta(seconds=20)
+
+    class Cursor:
+        def __init__(self):
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement, params=()):
+            if statement.startswith("SET TRANSACTION"):
+                self.rows = []
+            elif "SELECT runtime_binding FROM" in statement:
+                self.rows = [{"runtime_binding": binding.model_dump(mode="json"),
+                              "attempt_id": "owner-attempt", "expires_at": owner_expiry}]
+            elif "SELECT policy FROM" in statement:
+                self.rows = [{"policy": snapshot.policy.model_dump(mode="json")}]
+            elif "SELECT attempt_id,record FROM" in statement:
+                self.rows = [{"attempt_id": call.intent.attempt_id, "record": call.model_dump(mode="json")}
+                    for call in snapshot.calls]
+            elif "SELECT attempt.started_at" in statement or "SELECT job.started_at" in statement:
+                self.rows = []
+            else:
+                raise AssertionError(f"unexpected SQL: {statement}")
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+    connection = Connection()
+    monkeypatch.setattr(
+        "src.runtime.postgres_framework_model_calls.postgres_connect",
+        lambda settings: connection,
+    )
+    settings = SimpleNamespace(database=SimpleNamespace(
+        postgres_agent_task_table="tasks",
+        postgres_agent_attempt_table="attempts",
+        postgres_tool_job_table="tool_jobs",
+    ))
+    store = PostgresFrameworkModelCalls(settings)
+
+    intervals = await store.root_activity_intervals(binding, as_of=base + timedelta(seconds=60))
+
+    assert intervals == [(base + timedelta(seconds=5), base + timedelta(seconds=60))]

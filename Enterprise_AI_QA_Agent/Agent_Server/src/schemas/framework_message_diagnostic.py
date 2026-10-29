@@ -53,6 +53,10 @@ class MessageModelBudgetFact(_Fact):
     reserved_calls: int | None = None
     charged_tokens: int | None = None
     actual_tokens: int | None = None
+    # Source/table availability is not proof of exact active-time coverage.
+    root_activity_seconds: float | None = Field(default=None, ge=0)
+    root_activity_sources_available: bool = False
+    root_activity_scope: Literal["persisted_execution_envelope"] = "persisted_execution_envelope"
 
 
 class MessageModelWireFact(_Fact):

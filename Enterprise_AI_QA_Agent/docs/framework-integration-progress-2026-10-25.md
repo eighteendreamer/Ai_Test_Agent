@@ -5535,3 +5535,51 @@ cd Agent_Server
 本子步不改 DDL、配置默认值、工具审批 API、ToolJob claim/settle、模型预算额度或外部执行权。当前工具表只有任务起止时间，没有等待状态的历史区间事件；因此对 waiting 状态不猜造前段活动，也不能声称已精确覆盖工具 handler 内部、子代理等待、心跳租约或崩溃尾段。`root_activity_intervals()` 仍是只读计量材料，不自动授予发送、重试或恢复权限。A2/A3、B 其余出口、C 的完整崩溃尾段／排队口径、D/E/F、完整 H01–H12 与 E3/E4 继续 active。
 
 本节仅包含模型活动读取源、预算投影回归与本实施记录；用户 v3 草稿保持未修改、未暂存、未提交。下一步优先冻结 owner 心跳／租约与 Attempt 未闭合尾段的保守上界，再接入公共预算投影和故障回归。
+
+## 121. C／§6.3、H09：撤销租约到期代表外部执行停止的未提交假设（2026-10-30）
+
+基线 `34bff3980`（§120）。本轮尝试让同一 owner attempt 的开放模型／工具／Worker 区间按 `min(as_of, owner.expires_at)` 截断。原假设红测 1 failed，试验实现曾得到 25 passed 和扩展 83 passed、91 skipped；这些仅证明测试与当时假设一致，**不证明它符合真实执行契约**。
+
+继续复核 `framework_tool_authority.py` 的边界说明、迟到工具观察、owner fence 与 `PostgresAgentTaskStore` 的失租协议，发现反例：撤销平台写入权不会终止已发送的外部模型／工具请求。租约到期不是物理停止证明，不能用来缩短这些未知尾段。新增相反的安全断言后，试验实现实际 **1 failed**（返回到租约到期 20 秒，而不是显式观察 60 秒）。因此在提交前删除租约截断 helper、owner joins 与相关查询扩展；未提交、未发布这项策略，也没有修改原租约或预算状态机。
+
+最终保留的契约：没有持久闭合事实的区间仍需显式 `as_of`，不把失租解释成完成、零耗时或重发权限。现有 owner 心跳／租约继续作为独立诊断事实；完整崩溃尾段结算、实际停止证明和精确活动资产仍待实现。原失租尾段规则是设计缺口，不能靠一个绿测试或“保守上界”名称掩盖。下节只公开带范围说明的执行包络，不以它冒充完整 §6.3。
+
+## 122. C／§6.3、H09/H11：同快照诊断持久执行包络并隔离异常计量（2026-10-30）
+
+### 依据、根因与采用方式
+
+基线 `34bff3980`，含上节撤销的试验事实。`FrameworkMessageDiagnostics` 已使用单一 Repeatable Read／Read Only 快照读取任务、owner、账本及 checkpoint → 抽出 `root_activity_intervals_in_transaction()`，异步公开端口同样首先进入只读 Repeatable Read；诊断复用当前 cursor、已校验账本和 `observed_at`，不另开连接拼接不同时间的事实。正常发送、恢复准入与额度检查不消费该计量，不增加执行权。
+
+- `MessageModelBudgetFact` 增加非负或 `None` 的 `root_activity_seconds`、`root_activity_sources_available` 与固定 scope=`persisted_execution_envelope`。**来源表可用不等于精确活动覆盖**：Attempt 从 claim 起计，工具没有等待状态历史；每次成功读取同时给出 `root_activity_execution_envelope_only`，不报告 complete 或完整时间预算。
+- 工具表缺失时只读已有模型／Attempt，来源标为不可用；账本损坏则数值为 `None`，不置零。时间无时区、逆序以及 owner binding 漂移的 ValueError 只使活动计量失效，保留 `root_activity_invalid` 和结构化 `framework_root_activity_diagnostic_rejected` 日志，其余任务／模型原件继续返回；数据库或非预期程序异常仍传播，未作通用吞错。
+- 真实 PostgreSQL 反例发现仅按 `framework_binding_id` 筛选可能收进不同 Session 的工具行 → 任务及工具查询都同时限定 binding、Session、Turn，与现有 `assert_tool_scope()` 的服务器身份边界一致。无 schema／DDL／依赖／生产路由变更。
+- 等待状态过滤、开放尾段需显式 `as_of`、重叠并集和只读权限不变。等待／恢复后已经闭合的工具整体包络可能包含历史等待，因此明确不能将此数值作为精确 handler 时间或直接用于时间限额裁决。
+
+### TDD 与真实环境证据
+
+上一轮已提交且验证，属于 progress。本轮只读 `docker ps` 后以现有配置执行 `SELECT 1` 和 Redis `PING`，**两者实际可用**；不能仅凭没有名为 postgres/redis 的容器就判断环境不可用。未启停任何基础设施，真实测试只使用既有 UUID 隔离表、checkpoint schema、Redis 前缀与 fixture 清理，没有访问生产业务数据、真实供应商、RustFS 或领域 Runner。
+
+1. 早期未启用 live 的消费方组为 83 passed、108 skipped（9.69s）；后续开启真实环境，不把该 skip 组作为最终验收。
+2. 首轮活动／诊断 live 组 **42 passed，48.28s**（早于新增异常样本，非最终源码全验收）。
+3. 真实数据库注入无时区、未来时间、owner binding 漂移，新增三例实际 **3 failed，11.68s**：活动计算使整份诊断抛错。限制为可见计量失败后 **3 passed，13.67s**，不删除错误原件或重置任务。
+4. SQL 回归使用真实 Store 初始化、真实任务／模型账本和受 owner 管理的 ToolJob，**时间与状态是隔离数据中的受控注入**，不是 handler 实测或 Worker 强杀。新增同 binding／异 Session 行实际 **1 failed，8.08s**；同步服务器身份筛选后 **1 passed，7.62s**。覆盖重叠模型／Attempt／工具、等待和拒绝排除、外国 binding/Session 排除、开放工具尾段不因任务结束缩短、Read Only／Repeatable Read 属性及读取前后原行不变。
+
+### 最终验证与未完成出口
+
+续接原执行会话 `11214` 至终态，没有重启测试；最终源码消费方回归（含 P0 原生消息／Delta／终态空窗）实际命令如下，工作目录为 `Agent_Server`：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+$env:PYTHONUTF8='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_message_diagnostics.py tests/test_framework_model_calls.py tests/test_framework_model_policy.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_context_transcript.py tests/test_framework_turn_context.py tests/test_framework_delta_replay_order.py tests/test_framework_native_terminal.py tests/test_framework_terminal_gap.py -q -rs --tb=short
+# 238 passed，566.76s（0:09:26），exit 0，无 skipped／deselected
+```
+
+原始输出保存在本地未提交的 `.codex-logs/c122-final-model-activity-2026-10-30.log`。回归期间未再修改运行时源码或测试；最终仅追加实施记录。早期互相重叠结果不累加，也不以本组的终态空窗用例冒充本轮重跑了六参数独立审批 Worker 强杀组。
+
+项目根实际执行 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，均 exit 0。`importlib.util.find_spec` 再次确认 `ruff`／`mypy` 未安装，未安装额外工具，不声称 lint／typecheck 通过。已全局核对新增诊断字段与计量方法的生产／测试引用，未将只读字段接入发送、恢复授权或预算裁决。
+
+真实供应商、RustFS、领域 Runner、新计量独立 Worker 强杀、精确等待拆分／崩溃尾段、官方 saver conformance、前端与全量后端、E3/E4 未完成。A2/A3、B 其余出口、C/D/E/F、完整 H01–H12 与整体 v4 保持 active。
+
+本节与 §121 仅提交本轮两个运行时源、诊断 schema、两个测试和本实施记录；用户 v3 草稿、认证配置、私有日志、本地数据排除。提交前核对完整 diff 与暂存范围；不推送、不建 PR。

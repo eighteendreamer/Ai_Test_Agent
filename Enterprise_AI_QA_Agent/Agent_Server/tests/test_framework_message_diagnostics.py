@@ -75,6 +75,10 @@ async def test_diagnosis_preserves_model_phase_budget_and_non_authoritative_evid
         assert "model_settled_response_missing" in report.issues
     assert all(item.authoritative is False for item in call.response_observations)
     assert report.model_budget.charged_tokens == before.charged_tokens
+    assert report.model_budget.root_activity_seconds is not None
+    assert report.model_budget.root_activity_sources_available is False
+    assert report.model_budget.root_activity_scope == "persisted_execution_envelope"
+    assert "root_activity_execution_envelope_only" in report.issues
     assert report.owner.matches_origin and report.owner.lease_active
     assert report.automatic_replay_allowed is False
     assert await h.calls.snapshot(h.binding) == before
@@ -208,6 +212,130 @@ async def test_corrupt_ledger_is_unknown_accounting_not_zero_calls(admission):
     assert "model_call_invalid" in report.issues
     assert report.model_budget.ledger_rows == 1 and not report.model_budget.accounting_complete
     assert report.model_budget.reserved_calls is None and report.model_budget.charged_tokens is None
+    assert report.model_budget.root_activity_seconds is None
+    assert not report.model_budget.root_activity_sources_available
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["naive_start", "future_start", "owner_binding"])
+async def test_invalid_activity_is_visible_without_hiding_other_diagnostic_facts(model_calls_harness, changed):
+    from datetime import datetime, timedelta, timezone
+    from src.runtime.postgres_runtime_owner import runtime_owner_table
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    await begin(h)
+    await h.calls.freeze(h.owner, policy(h))
+    selected = intent()
+    await h.calls.prepare(h.owner, selected)
+    await h.calls.start(h.owner, selected.attempt_id)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        if changed == "owner_binding":
+            cur.execute(f"UPDATE {runtime_owner_table(h.settings)} SET runtime_binding="
+                "jsonb_set(runtime_binding,'{thread_id}',%s::jsonb) WHERE binding_id=%s",
+                (json.dumps("changed-thread"), h.binding.binding_id))
+        else:
+            start_time = (datetime.now() if changed == "naive_start" else
+                datetime.now(timezone.utc) + timedelta(minutes=10))
+            cur.execute(f"UPDATE {h.calls.calls_table} SET record=jsonb_set(record,'{{started_at}}',%s::jsonb) "
+                "WHERE binding_id=%s", (json.dumps(start_time.isoformat()), h.binding.binding_id))
+    before = await h.tasks.get(h.task.id)
+
+    report = await diagnose(h, h.task.id)
+
+    assert report.model_budget.reserved_calls == 1
+    assert report.model_budget.root_activity_seconds is None
+    assert not report.model_budget.root_activity_sources_available
+    assert "root_activity_invalid" in report.issues
+    assert len(report.model_calls) == 1 and not report.automatic_replay_allowed
+    assert await h.tasks.get(h.task.id) == before
+
+
+@pytest.mark.asyncio
+async def test_activity_query_unions_actual_isolated_stores_without_writing_or_shortening_unknown_tail(model_calls_harness):
+    from datetime import datetime, timedelta, timezone
+    from src.runtime.execution_context import framework_owner_scope
+    from src.runtime.framework_tool_authority import execution_reference
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+    from src.schemas.tool_job import ToolJobRecord, ToolJobStatus
+    from tests.test_live_postgres_concurrency import _drop_tables
+
+    h = model_calls_harness
+    suffix = uuid4().hex[:12]
+    h.settings.database.postgres_tool_job_table = f"activity_job_{suffix}"
+    h.settings.database.postgres_tool_artifact_table = f"activity_artifact_{suffix}"
+    jobs = PostgresToolJobStore(h.settings)
+    await jobs.initialize()
+    try:
+        await begin(h)
+        await h.calls.freeze(h.owner, policy(h))
+        selected = intent()
+        await h.calls.prepare(h.owner, selected)
+        await h.calls.start(h.owner, selected.attempt_id)
+        await h.calls.complete(h.owner, selected.attempt_id, usage=usage())
+        base = datetime.now(timezone.utc) - timedelta(minutes=5)
+        # Controlled persisted timestamps test SQL selection and arithmetic,
+        # not real handler duration or an independent Worker crash.
+        for index, (status, offset, end) in enumerate([
+            ("completed", 5, 15), ("running", 20, None),
+            ("waiting_approval", None, None), ("waiting_resource", 40, None),
+            ("waiting_children", 40, None), ("denied", None, 50),
+            ("completed", 40, 50), ("completed", 40, 50),
+        ]):
+            with framework_owner_scope(h.owner):
+                await jobs.save_job(ToolJobRecord(id=f"{suffix}-{index}", session_id=h.session_id,
+                    turn_id=h.binding.turn_id, trace_id="activity-test", call_id=f"call-{index}",
+                    tool_key="fixture", tool_name="Fixture", status=ToolJobStatus(status),
+                    created_at=base, updated_at=base,
+                    started_at=base + timedelta(seconds=offset) if offset is not None else None,
+                    completed_at=base + timedelta(seconds=end) if end is not None else None,
+                    metadata={"framework_execution_owner": execution_reference(h.owner)}))
+        await h.tasks.finish(h.task, status="failed", error_code="activity_fixture_end")
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"UPDATE {h.tasks._attempts} SET started_at=%s,finished_at=%s WHERE id=%s",
+                (base, base + timedelta(seconds=10), h.task.attempt_id))
+            call = (await h.calls.snapshot(h.binding)).calls[0].model_copy(update={
+                "started_at": base + timedelta(seconds=2), "settled_at": base + timedelta(seconds=4)})
+            cur.execute(f"UPDATE {h.calls.calls_table} SET record=%s::jsonb WHERE binding_id=%s",
+                (call.model_dump_json(), h.binding.binding_id))
+            cur.execute(f"UPDATE {h.settings.database.postgres_tool_job_table} SET metadata="
+                "jsonb_set(metadata,'{framework_binding_id}',%s::jsonb) WHERE id=%s",
+                (json.dumps("foreign-binding"), f"{suffix}-6"))
+            cur.execute(f"UPDATE {h.settings.database.postgres_tool_job_table} SET session_id='foreign-session' "
+                "WHERE id=%s", (f"{suffix}-7",))
+
+        before_jobs = await jobs.list_jobs(h.session_id)
+        before_calls = await h.calls.snapshot(h.binding)
+        observed = []
+
+        def check_snapshot(conn, cursor, statement, parameters, context, executemany):
+            if statement.startswith("SELECT runtime_binding FROM"):
+                cursor.execute("SELECT current_setting('transaction_read_only'), current_setting('transaction_isolation')")
+                observed.append(cursor.fetchone())
+
+        engine = postgres_engine(h.settings)
+        event.listen(engine, "before_cursor_execute", check_snapshot)
+        try:
+            result = await PostgresFrameworkModelCalls(h.settings).root_activity_intervals(
+                h.binding, as_of=base + timedelta(seconds=30))
+        finally:
+            event.remove(engine, "before_cursor_execute", check_snapshot)
+
+        assert result == [(base, base + timedelta(seconds=15)),
+            (base + timedelta(seconds=20), base + timedelta(seconds=30))]
+        assert observed == [("on", "repeatable read")]
+        report = await diagnose(h, h.task.id)
+        assert report.model_budget.root_activity_sources_available
+        assert report.model_budget.root_activity_scope == "persisted_execution_envelope"
+        assert report.model_budget.root_activity_seconds is not None
+        assert report.model_budget.root_activity_seconds > 25
+        assert not report.automatic_replay_allowed
+        assert await jobs.list_jobs(h.session_id) == before_jobs
+        assert await h.calls.snapshot(h.binding) == before_calls
+    finally:
+        _drop_tables(h.settings, [h.settings.database.postgres_tool_artifact_table,
+            h.settings.database.postgres_tool_job_table])
 
 
 @pytest.mark.asyncio
