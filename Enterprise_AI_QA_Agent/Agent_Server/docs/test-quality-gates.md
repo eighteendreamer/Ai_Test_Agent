@@ -146,3 +146,34 @@ $env:PYTHONIOENCODING='utf-8'
 审批生命周期回归运行官方 Deep Agents、真实本地 PostgreSQL／Redis 和受控模型／工具：初次等待、部分审批都保留上一份完成资产，最终批准／拒绝分支收口后才发布完整新资产，并验证下一 Turn 读取的完整原生前缀及工具效果次数。三类结构化日志只记录身份、阶段／原因、数量或异常类型，不记录正文／provider 扩展值；`framework_transcript_published` 仅在 Session 提交成功后记录。
 
 这项修复不改变资产 schema／运行时绑定，不自动修剪或重发历史非法资产；协议不闭合的存量资产需要对账，不能当作完整上下文继续调用。业务覆盖锚点、legacy 夹层、模型协议兼容性和其余 B 阶段出口仍须单独完成。实际红测、夹具修正及验证结果见实施记录 §109。
+
+## 原生 transcript 的业务覆盖与受理边界（v4 B／§5.1.2–4 子集）
+
+`v2.1.0` 是不可变绑定选定的新上下文能力，不是默认路由切换。新版 Worker 同时理解原 `v2.0.0`；`FrameworkWorkerCapabilities.context_transcript_enabled=False` 明确不受理新版本，旧制品原有的严格版本比较也不放行它。旧绑定、旧资产、已冻结请求与恢复记录保留原语义，不通过客户端 context 开关升级格式。无绑定请求中的伪造 `runtime_binding` 不作为执行／发布依据；客户端提供的 `framework_transcript_preparation` 不成为服务端覆盖证明。
+
+新路径由 `FrameworkContextService` 一次产生原生输入、单向展示投影和准备信息：按已受理 `user_message_id` 与所属 Turn 排序，保留晚落库的前驱回答；排除未来输入、queued、工具展示行和不具上下文资格的内容。相同正文但不同身份的消息均保留。已有 schema-2 原生前缀原样导入，只追加其明确覆盖范围后的合法业务消息和当前原身份，不用文本匹配猜覆盖范围。
+
+准备信息随原 graph input／Runtime 结果资产冻结，记录完整业务覆盖映射、原生输入数量／摘要及绑定模型指纹。唯一 finalizer 仍只在完成且协议闭合时发布；schema-2 另外核对原输入前缀未漂移，并把实际业务输出身份映射到本 Turn 原生输出范围。等待审批保留旧资产，同 Turn 继续只读取原 checkpoint／准备信息，不重读 Session 当前档案装配。
+
+claim 前依据真实阶段语义检查资产兼容性：提交时已有 `submitted` 记录，不能用“没有阶段记录”代替新回合判断。尚未提交图的普通消息检查格式／摘要／模型指纹／协议；已冻结图、审批、原结果恢复及 ACK-only 不因 Session 当前档案变化而重新装配。能力不足抛 `TaskDeferred`，保持 queued／attempt 不变；这不等于双制品部署或跨事务竞态已完成验收。
+
+```powershell
+# 工作目录 Agent_Server；先确认既有测试 PG/Redis 可用，不启动服务。
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+$env:PYTHONUTF8='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_context_transcript.py tests/test_framework_context_runtime.py `
+  tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py `
+  tests/test_runtime_binding_persistence.py tests/test_deep_agent_runtime_adapter.py `
+  tests/test_session_project_binding.py tests/test_framework_graph_input_asset.py `
+  tests/test_framework_model_policy.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py `
+  tests/test_framework_message_result_reconstruction.py tests/test_framework_finalization_projection.py `
+  tests/test_framework_native_terminal.py tests/test_agent_task_dispatch.py -q -rs --tb=short
+```
+
+新集成测试使用官方 Deep Agents、官方 OpenAI SDK、本机环回 HTTP、真实 PG／Redis 和受控工具。分别以无原生资产、带合成闭合原生前缀开局，执行两个完整新 Turn；首回合另覆盖逐项批准，校验等待资产不变、原准备信息续用、一次工具效果、真实请求消息顺序与后续原生前缀保留。SDK 测试响应使用唯一 response ID，不拿重复 fixture ID 冒充真实供应商消息身份。它不证明真实供应商接受合成签名，亦不是新版本独立 Worker 强杀或 E3／E4 验收。
+
+schema-1 没有覆盖锚点，旧位置摘要没有身份映射；新路径明确要求迁移，既不猜锚点也不自动删除旧摘要。模型指纹不同明确拒绝；它不替代 provider／transport 的完整协议描述。框架改写已冻结前缀时明确要求摘要覆盖对账，不能继续声明旧映射有效。统一 PromptAssembly、完整摘要迁移／原生摘要对账、跨协议策略、其余隐私输出面和生产接入仍是 B／后续阶段的未完成出口。真实失败及最终验证结果见实施记录 §110。

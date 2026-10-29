@@ -12,6 +12,7 @@ from pathlib import Path
 
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_transcript import CONTEXT_RUNTIME_VERSION
 
 
 FRAMEWORK_RUNTIME_VERSION = "v2.0.0"
@@ -23,6 +24,7 @@ class FrameworkWorkerCapabilities:
     deepagents_available: bool
     runtime_version: str = FRAMEWORK_RUNTIME_VERSION
     message_stage_max_version: int = 27
+    context_transcript_enabled: bool = True
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -40,7 +42,11 @@ class FrameworkWorkerCapabilities:
         Other graph workflows and resume operations
         require their own execution contracts before they can be admitted.
         """
-        if binding.runtime_version != self.runtime_version:
+        versions = {self.runtime_version}
+        if self.context_transcript_enabled and self.runtime_version == FRAMEWORK_RUNTIME_VERSION:
+            versions.add(CONTEXT_RUNTIME_VERSION)
+        if (binding.runtime_version not in versions
+            or binding.runtime_version == CONTEXT_RUNTIME_VERSION and not self.context_transcript_enabled):
             raise TaskDeferred("framework_runtime_version_unavailable")
         if binding.state_schema_version != 2:
             raise TaskDeferred("framework_state_schema_unavailable")

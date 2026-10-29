@@ -619,9 +619,19 @@ class AgentTaskDispatcher:
                 if self._framework_capabilities is None:
                     raise TaskDeferred("framework_worker_capabilities_unavailable")
                 self._framework_capabilities.require(runtime_binding, operation=command.operation)
-                self._framework_capabilities.require_message_stage(
-                    await self._tasks.get_framework_message_stage_version(
-                        command.task_id, session_id=command.session_id))
+                stage_version = await self._tasks.get_framework_message_stage_version(
+                    command.task_id, session_id=command.session_id)
+                self._framework_capabilities.require_message_stage(stage_version)
+                if command.operation == "message" and stored.status in {"queued", "waiting_resource"}:
+                    from src.application.context.framework_context_service import FrameworkContextService
+
+                    stage = await self._tasks.get_framework_message_stage(command.task_id, session_id=command.session_id)
+                    if stage is None or stage.phase in {"submitted", "orchestrating", "orchestrated"}:
+                        session = await self._sessions._require_session(command.session_id)
+                        try:
+                            FrameworkContextService.compatible_asset(session, runtime_binding)
+                        except (ValueError, FrameworkMessageStageRecoveryRequired) as exc:
+                            raise TaskDeferred("framework_transcript_format_unavailable") from exc
                 if (self._framework_model_calls is not None
                     and stored.status not in TERMINAL_AGENT_TASK_STATUSES
                     and command.operation != "framework_reconcile"):

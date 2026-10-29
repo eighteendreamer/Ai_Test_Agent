@@ -19,6 +19,8 @@ from src.application.resources.session_resource_service import SessionResourceSe
 from src.application.projects.project_service import ProjectService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.deep_agents.framework_transcript import require_closed_transcript
+from src.application.context.framework_context_service import FrameworkContextService
+from src.schemas.framework_transcript import CONTEXT_RUNTIME_VERSION
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
@@ -261,6 +263,13 @@ class SessionService:
                         request.runtime_binding = task.runtime_binding
                     else:
                         request = ExecutionRequest.model_validate(frozen.execution_request)
+                    if task.runtime_binding is not None and task.runtime_binding.runtime_version == CONTEXT_RUNTIME_VERSION:
+                        if frozen is None:
+                            request.user_message_id = task.user_message_id
+                        elif request.user_message_id != task.user_message_id:
+                            from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+                            raise FrameworkMessageStageRecoveryRequired("Frozen request has another admitted message identity")
                     if stages is not None:
                         if frozen is None:
                             frozen = await stages.freeze_execution(task.runtime_owner, request)
@@ -2711,7 +2720,8 @@ class SessionService:
                 )
 
     @staticmethod
-    def _build_framework_transcript_asset(session_id: str, state: dict[str, Any]) -> dict[str, Any] | None:
+    def _build_framework_transcript_asset(session_id: str, state: dict[str, Any], *,
+        assistant_message_id: str | None = None) -> dict[str, Any] | None:
         """Project Deep Agents' native messages for the next independent Turn."""
         framework_messages = list(state.get("framework_messages") or [])
         context = dict(state.get("context_bundle") or {})
@@ -2731,6 +2741,8 @@ class SessionService:
         require_closed_transcript(framework_messages, session_id=session_id,
             source_turn_id=str(state.get("turn_id") or ""), operation="publish")
         binding = dict(context.get("runtime_binding") or {})
+        if binding.get("runtime_version") == CONTEXT_RUNTIME_VERSION:
+            return FrameworkContextService.publish(session_id, state, assistant_message_id=assistant_message_id)
         asset = framework_transcript_asset(
             session_id=session_id,
             source_turn_id=str(state.get("turn_id") or ""),
@@ -2825,7 +2837,8 @@ class SessionService:
         framework_asset = None
         if (self._control_state_from_runtime_result(runtime_result) == "completed"
             and runtime_result.snapshot.stage == "completed"):
-            framework_asset = self._build_framework_transcript_asset(session_id, runtime_result.state)
+            framework_asset = self._build_framework_transcript_asset(session_id, runtime_result.state,
+                assistant_message_id=assistant_message_id if runtime_result.output_text else None)
         elif runtime_result.state.get("framework_messages"):
             logger.info("framework_transcript_not_published", extra={
                 "session_id": session_id, "turn_id": runtime_result.state.get("turn_id"),

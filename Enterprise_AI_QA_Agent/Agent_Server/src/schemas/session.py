@@ -5,7 +5,7 @@ from enum import Enum
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_serializer
 from src.schemas.approval_progress import FrameworkApprovalProgress
 from src.schemas.runtime_binding import RuntimeBinding
 
@@ -260,6 +260,7 @@ class ExecutionRequest(BaseModel):
     turn_id: str
     # Internal execution contract; SendMessageRequest cannot set this field.
     runtime_binding: RuntimeBinding | None = None
+    user_message_id: str | None = Field(default=None, min_length=1)
     trace_id: str = ""
     session_id: str
     user_message: str
@@ -278,6 +279,13 @@ class ExecutionRequest(BaseModel):
     routing_decision: InputRoutingDecision | None = None
     orchestration_meta: dict[str, Any] = Field(default_factory=dict)
     context: dict[str, Any] = Field(default_factory=dict)
+
+    @model_serializer(mode="wrap")
+    def preserve_legacy_request(self, handler):
+        value = handler(self)
+        if self.user_message_id is None:
+            value.pop("user_message_id", None)
+        return value
 
 
 class ApprovalDecisionRequest(BaseModel):

@@ -16,6 +16,8 @@ from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
 from src.application.deep_agents.runtime_adapter import _pilot_stage
 from src.application.deep_agents.framework_transcript import append_turn_input, require_closed_transcript
+from src.application.context.framework_context_service import FrameworkContextService
+from src.schemas.framework_transcript import CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -399,6 +401,10 @@ class RuntimeService:
             previous_messages=session.messages,
             original_materials=original_tool_materials,
         )
+        adapter_context = dict(state["context_bundle"] if request.runtime_binding is not None
+            and request.runtime_binding.runtime_version == CONTEXT_RUNTIME_VERSION else request.context)
+        if request.runtime_binding is None:
+            adapter_context.pop("runtime_binding", None)
         adapter_request = DeepAgentRuntimeRequest(
             session_id=session.id,
             turn_id=request.turn_id,
@@ -416,7 +422,7 @@ class RuntimeService:
             ),
             messages=list(state["runtime_messages"]),
             framework_messages=list(state.get("framework_messages") or []),
-            context={**dict(request.context), "skill_keys": list(request.skill_keys)},
+            context={**adapter_context, "skill_keys": list(request.skill_keys)},
             read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
             read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
             read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
@@ -1941,7 +1947,17 @@ class RuntimeService:
         selected_model_key = model_config.key if model_config is not None else (request.model_key or session.preferred_model or "")
         selected_model_name = model_config.name if model_config is not None else ""
         selected_model_provider = model_config.provider if model_config is not None else ""
-        framework_messages = self._framework_messages_for_new_turn(session, request) if include_framework_transcript else []
+        context = dict(request.context)
+        context.pop(TRANSCRIPT_PREPARATION_KEY, None)
+        if request.runtime_binding is None:
+            context.pop("runtime_binding", None)
+        assembled = None
+        if (include_framework_transcript and request.runtime_binding is not None
+            and request.runtime_binding.runtime_version == CONTEXT_RUNTIME_VERSION):
+            assembled = FrameworkContextService().prepare(session, request)
+            context[TRANSCRIPT_PREPARATION_KEY] = assembled.preparation
+        framework_messages = (assembled.framework_messages if assembled is not None
+            else self._framework_messages_for_new_turn(session, request) if include_framework_transcript else [])
         return {
             "session_id": session.id,
             "turn_id": request.turn_id,
@@ -1981,7 +1997,7 @@ class RuntimeService:
             "system_prompt_sections": [],
             "runtime_message_sections": [],
             "system_prompt": "",
-            "runtime_messages": self._build_conversation_messages(session),
+            "runtime_messages": assembled.runtime_messages if assembled is not None else self._build_conversation_messages(session),
             "framework_messages": framework_messages,
             "model_request_payload": {},
             "model_response_summary": {},
@@ -1994,7 +2010,7 @@ class RuntimeService:
             "tool_messages": [],
             "worker_dispatches": [],
             "context_bundle": {
-                **request.context,
+                **context,
                 "project_id": session.project_id,
                 **({
                     "runtime_binding": request.runtime_binding.model_dump(mode="json"),

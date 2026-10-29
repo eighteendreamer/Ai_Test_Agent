@@ -5043,3 +5043,94 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 §109 只收敛 §5.1.1 的完成／协议边界，不代表 B 完成。继续复用 `execute_claimed_message` 既有 queued 消息过滤与受理消息身份，推进统一装配、稳定覆盖锚点、legacy 夹层／当前输入一次／未来输入排除的完整契约；现有过滤不能代替原生资产的覆盖映射。Prompt／模型协议兼容性、完整下轮实际请求、摘要与其余隐私输出面仍待实现／验收。A3 远端查询／停止／补偿、C 历史超时首因、D/E/F 与 E3／E4 全部保留，整体目标仍 active。
 
 本节随 `【fix】仅发布完成且协议闭合的原生会话档案` 提交，仅含上述三个源文件、两个测试文件及两份文档，实际 commit ID 以 Git 和交付输出为准，不推送、不建 PR。原 v3 草稿保持未修改、未暂存，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。
+
+## 110. B／§5.1.2–4：按受理消息身份冻结跨 Turn 覆盖与 legacy 夹层（2026-10-29）
+
+### 起点、根因与依据 → 做法
+
+基线 `b454fed6e94c751b7aafb042117ccc0b14dec83e`。先只读核对项目、v4、§52 之后的 P0／恢复结论和最近 §106–109；取回交接中的测试句柄 4692，真实终态为 **2 failed，10.15s，exit 1**，不是仍在等待。原始 `b110-context-red-2026-10-29.log` 保留。工作区已有本节两项测试及白名单草稿，另有用户原 v3 修改；前者已审阅并续接，后者不改、不暂存、不提交。完整 v4 目标保持 active。
+
+旧 Runtime 的原生路径只追加当前文本，文本路径则独立读取业务历史；二者缺少共享覆盖身份，因而无法保留原生前缀同时补齐 legacy 夹层，也不能以正文相等判定当前输入是否已导入。这是装配职责缺失，不在 Session 与 Runtime 各加一套过滤算法。
+
+- v4 §4、§5.1.2–4／§14.1 → 新增并存的 `v2.1.0` 能力与 schema-2；绑定决定新语义，旧格式不自动升级，能力检查前移至领取之前。
+- 现有 `execute_claimed_message` 的受理消息 ID、`ExecutionRequest`／`freeze_execution`、原 graph input／结果资产 → 在所有新编排分支之后、冻结之前写入服务端身份；恢复只核对并消费原身份。参考已有 `FrameworkMessageStage` wrap serializer，未选定新字段的历史请求序列化不凭空增加 null，避免改变既有摘要。
+- `TranscriptHygieneService`、官方 `messages_to_dict`／`messages_from_dict` 和 `result_projection._normalize_messages` → 在既有 context 边界形成唯一装配服务，原生序列化不经展示文本重建；展示仅是同一产物的单向投影。
+- 本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/codex/codex-rs/core/src/context_manager/history.rs` 的消息／Turn 身份比较及 user_positions 接受边界 → 借鉴稳定身份与所属回合，而非复制其保留上下文格式。按前驱 user 的逻辑次序归组，接纳晚于当前排队输入落库的前驱回答，排除未来 Turn，不按正文去重。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 的 plan/action/observation／终止轨迹要求 → 同时验证实际请求、完整原生前缀、一次工具效果、等待与恢复、领取／attempt 副作用，不能只看最终文字。
+
+### TDD、真实失败与夹具修正
+
+日志均在私有 `.codex-logs`，不提交；以下为不同源码／测试阶段，不累加为最终覆盖，也不删除早先失败：
+
+| 日志（均为 `b110-…-2026-10-29.log`） | 实际结果与归因 |
+| --- | --- |
+| `context-contract-red` | **13 failed、5 passed，10.57s**。发现缺失正式身份字段、无原生资产时空列表、schema-2 不支持、未冻结服务端准备信息／输出覆盖及无新能力开关；五项负例当时只是被旧格式整体拒绝，不能解释为新语义已经正确 |
+| `context-contract-green` | **18 passed，11.66s**，最初单元契约，不是跨层验收 |
+| `context-sdk-first` | **2 failed、27 passed，20.57s**。新增夹具误把 submit 返回的 `AgentTaskRecord` 当成带 `user_message_id` 的 claim 结果，尚未进入实际 Runtime；改为保留真实提交消息的 ID，不算产品缺陷 |
+| `context-sdk-wired` | **2 failed，19.78s**。实际进入 Runtime，发现新身份只写到了 prepared 编排分支，普通编排遗漏；改在分支汇合后统一写入并冻结，恢复核对原身份 |
+| `context-sdk-admission` | **1 failed、1 passed，28.86s**。原生内容块确实是 list，新增负例错误地用 set membership 处理；改核对完整 wire JSON，保留块结构，不把内容摊平成字符串或放宽缺失断言 |
+| `context-protocol-admission-red` | **1 failed，10.64s**。闭合检查已经拒绝协议，但抛原生 recovery 异常而非能力不足的 `TaskDeferred`；沿既有异常类型统一分类，不吞错 |
+| `context-sdk-and-capability` | **2 failed、32 passed，65.71s**。真实任务在 submit 时已有阶段记录，原先 `stage_version is None` 条件跳过检查并发生 claim；后续缺预算表是错误进入执行后的级联，不能当成环境阻塞。改读取真实 phase，submitted／orchestrating／orchestrated 才检查当前来源，冻结图不重新装配 |
+| `context-real-admission-green` | **34 passed，58.64s**，含两个完整新 Turn 的实际 SDK 请求，以及真实 queued 任务／attempt 不变 |
+| `context-approval-sdk` | **4 failed、32 passed，82.27s**。新审批参数没有像现有 fresh fixture 一样初始化 `h.effects`；属于夹具错误，不是工具效果失败 |
+| `context-approval-sdk-fixture` | **36 passed，75.66s**，两个 Turn／首回合审批与原生前缀参数全部实际经过框架／SDK／存储 |
+| `context-final-contracts` | **37 passed，115.60s**，追加实际 graph input、runtime preparation 与 adapter 准备信息一致，以及冻结图不读取可变 Session 档案的断言 |
+| `context-unbound-version-red` | **1 failed，9.46s**。代码审阅发现无绑定请求的 context 可携带伪造 `runtime_binding`，会影响发布版本判断；在新输入 state／adapter 边界忽略无绑定请求的该保留键，真实绑定及已冻结的 bound 恢复语义不变 |
+
+集成修正依据真实 DTO、fixture 初始化与 SDK 内容块类型，未更改生产状态、期限、一次效果断言来迎合测试。协议负例、重复正文、晚落库回答、未来输入、非法覆盖／映射／模型指纹、客户端准备信息注入、schema-1 和旧摘要边界均保留。
+
+### 条款 → 实现与消费方
+
+| v4 条款／职责 | 实现与契约 |
+| --- | --- |
+| §4／§5：一次装配 | 新 `application/context/framework_context_service.py` 输出原生消息、其展示投影和准备信息；Runtime 不再为新版本单独拼两份历史。当前输入用正式业务 ID，无内容去重 |
+| §5.1.2：覆盖锚点 | `FrameworkTranscriptAssetV2` 保存 source input/output、完整覆盖 ID、业务／原生映射、模型指纹和 serializer；验证摘要、唯一身份、映射引用及来源关闭范围。schema-1 类／工厂保持旧语义 |
+| §4／§9：原事实可恢复 | `FrameworkTranscriptPreparation` 带原生输入数／摘要及覆盖映射，进入服务端 context、原 graph input、runtime preparation 与原结果资产；正常／审批恢复仍使用原唯一 finalizer |
+| §5.1.1／§5.2：可信发布 | 复用 §109 完成／闭合条件，schema-2 另核对冻结前缀并映射实际业务输出身份；审批等待不覆盖旧资产。发布日志仍在 Session 提交后，装配日志只记身份／数量／异常类型 |
+| §14.1：兼容领取 | `FrameworkWorkerCapabilities` 显式并存 2.0／2.1 与可关闭的新能力；Dispatcher 在真实新消息阶段检查资产，再进入 claim。无绑定客户端 context 不能伪造新版本；恢复／冻结图不因 Session 档案变化而误拒领 |
+| 回归与质量门 | 新 `test_framework_context_transcript.py`、`test_framework_context_runtime.py`；原 Worker／冻结／模型策略／审批／结果恢复消费方同步回归；`.gitignore` 仅增加两项测试白名单，补充 `test-quality-gates.md` |
+
+### 最终源码验证与证据范围
+
+运行前只读确认既有三个 Docker 容器在运行，正式 PG `SELECT 1` 与 Redis `PING` 成功；没有启停服务。使用已有 `.venv-framework-v2`、原 UUID 隔离表／checkpoint schema／Redis 前缀与 fixture 清理，不操作生产数据。模型请求仅到本机环回 HTTP；当前工具是受控 `inspect_value`，没有真实供应商／目标系统调用。
+
+追加无绑定保留键修复前，旧消费方七文件 **355 passed，375.68s，exit 0**（`context-core-consumers`），仅作为过程结果。最后一版 Runtime／装配／schema／领取源码实际运行：
+
+```powershell
+# 工作目录 Agent_Server；RUN_LIVE_POSTGRES_TESTS=1，PYTHONIOENCODING=utf-8，PYTHONUTF8=1。
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_context_transcript.py tests/test_framework_context_runtime.py `
+  tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py `
+  tests/test_runtime_binding_persistence.py tests/test_deep_agent_runtime_adapter.py `
+  tests/test_session_project_binding.py tests/test_framework_graph_input_asset.py `
+  tests/test_framework_model_policy.py -q -rs --tb=short
+# 393 passed，291.61s，exit 0，无 skip/deselect。
+# b110-context-final-core-and-contracts-2026-10-29.log
+```
+
+其中新增 38 项是目标契约与真实存储／SDK 组；不再累加先前的 18／34／36／37 或 355 项重叠结果。实际 graph input 的 context、runtime preparation 的 initial_state 与 adapter 准备信息一致；同 Turn 审批在 Session 当前档案被测试改成不兼容格式后仍复用原准备信息，批准工具恰好一次。真实队列负例保持原 queued 任务与 attempt 0，不进入缺预算的执行分支。
+
+审批／强杀／原结果恢复六文件消费方组保持原进程执行至实际终态，没有因安静输出、观察等待或阶段耗时而重启／缩小选择／改期限。工具句柄 85357 真实返回 exit 0：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py `
+  tests/test_framework_message_result_reconstruction.py tests/test_framework_finalization_projection.py `
+  tests/test_framework_native_terminal.py tests/test_agent_task_dispatch.py -q -rs --tb=short
+# 212 passed，1428.52s，exit 0，无 skip/deselect。
+# b110-context-approval-recovery-consumers-2026-10-29.log
+```
+
+该组启动后最后追加的生产差异仅为无绑定新输入的保留键清理；真实 bound 恢复的取值语义未变，该无绑定差异由上面的最后源码 Runtime／目标组验证，不把启动前后源码伪称为一次原子全树快照验收。两组选择文件互不重叠，共 **605 passed**，不是全量后端或完整发布验收；较早重叠批次不累加。第二组含原 2.0 独立 Worker／强杀与原结果恢复，不能用它代替新 2.1 独立 Worker 的未完成验收。
+
+项目根已有解释器 `-m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；`importlib.util.find_spec` 确认 ruff／mypy 均未安装，未执行后端 lint/typecheck，也未安装新工具。没有前端修改，未跑前端；没有全量后端、生产部署、真实付费模型／领域 Runner／远端对象存储、官方 saver conformance 或完整 E3／E4 验收。未安装采样 watchdog，不以本轮通过宣称历史活进程超时首因已修复。
+
+### 兼容性与剩余出口
+
+没有默认路由切换、依赖／锁文件升级、数据库迁移或前端契约变化。新格式写入只在真正的 2.1 绑定中发生；旧绑定和旧恢复资产仍可读，无新身份的旧 ExecutionRequest dump 不增加 null。新能力开关是制品能力声明，不是生产灰度开关，普通 submit 仍沿原 legacy 路径。
+
+schema-1 缺覆盖身份，新版本明确要求迁移而不猜锚点；旧位置摘要也不能冒充身份范围。框架改写冻结前缀时显式要求摘要覆盖对账，不宣称旧映射有效或静默转文本。模型指纹严格一致检查不等于 provider／transport 协议描述已补齐。统一 PromptAssembly、完整摘要迁移／原生摘要、跨协议兼容策略、其他隐私输出面、正式生产新绑定入口和新版本独立 Worker 强杀／双制品验收仍未完成。
+
+本节最高为 E2 子集：新增 2.1 测试是官方框架＋官方 OpenAI SDK／本地 HTTP＋真实 PG／Redis、单进程服务链；历史 2.0 独立 Worker 回归另记。合成 provider 扩展和闭合历史批次不证明真实供应商接受该签名，也不证明完整业务模式上线。A3 远端查询／停止／补偿、C 历史活进程超时首因与公共故障出口、D/E/F 与 E3／E4 全部保留，不将本节当作完整 B 或完整 v4 完成。
+
+本节随 `【feat】冻结原生上下文覆盖并保留业务消息身份` 提交，仅含七个源文件、两个测试文件、两份记录／质量门与测试白名单共十二个文件；实际 commit ID 以 Git 与交付输出为准，不推送、不建 PR。编译、diff 与提交范围检查实际执行；日志、凭据、依赖环境与本地数据不纳入提交。用户原 v3 草稿保持未改、未暂存，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。下一步继续 B 的统一 Prompt／摘要覆盖与协议来源契约，完整目标保持 active。
