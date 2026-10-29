@@ -6,7 +6,7 @@ from src.application.context.context_compaction_service import ContextCompaction
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.domain.models import SessionRecord
 from src.schemas.framework_approval import approval_value_hash
-from src.schemas.model_config import ModelConfigRecord, ModelInvocationResult
+from src.schemas.model_config import ModelConfigRecord, ModelInvocationResult, ModelTransportOptions
 from src.schemas.session import (
     ChatMessage,
     MessageRole,
@@ -62,14 +62,19 @@ class StubModelRuntimeService:
         )
         self.raise_error = raise_error
         self.invocations: list = []
+        self.invocation_kwargs: list[dict] = []
 
     def get_default_model_config(self):
         return _make_model_config()
 
-    async def invoke(self, model_key, request):
+    def governed_transport_options(self):
+        return ModelTransportOptions(timeout_seconds=30, max_retries=0)
+
+    async def invoke(self, model_key, request, **kwargs):
         if self.raise_error:
             raise RuntimeError("boom")
         self.invocations.append((model_key, request))
+        self.invocation_kwargs.append(kwargs)
         return self.result
 
 
@@ -143,6 +148,21 @@ async def test_maybe_compact_freezes_summary_coverage_by_message_identity():
     assert summary_state["covered_message_ids"] == [f"message-{index}" for index in range(36)]
     assert summary_state["coverage_sha256"] == info["coverage_sha256"]
     assert info["covered_message_count"] == 36
+
+
+@pytest.mark.asyncio
+async def test_maybe_compact_marks_summary_call_and_disables_provider_retries():
+    stub = StubModelRuntimeService()
+    service = ContextCompactionService(stub, watermark=0.7, max_tail_messages=24)
+    session = _make_session(
+        60,
+        metadata={"context_usage": {"prompt_tokens": 100000, "context_window": 128000}},
+    )
+
+    assert await service.maybe_compact(session) is not None
+
+    assert stub.invocation_kwargs[0]["purpose"] == "summary"
+    assert stub.invocation_kwargs[0]["transport_options"].max_retries == 0
 
 
 def test_identity_summary_coverage_rejects_inserted_message_before_frozen_prefix():

@@ -173,7 +173,12 @@ async def test_failed_model_result_is_not_saved_as_context_summary(
         def get_default_model_config(self):
             return _model_config()
 
-        async def invoke(self, model_key, request):
+        def governed_transport_options(self):
+            from src.schemas.model_config import ModelTransportOptions
+
+            return ModelTransportOptions(timeout_seconds=30, max_retries=0)
+
+        async def invoke(self, model_key, request, **kwargs):
             return result
 
     now = datetime.now(UTC)

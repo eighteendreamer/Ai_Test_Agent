@@ -147,22 +147,26 @@ class FrameworkModelCallPolicy:
             envelope=envelope, response_kind="langchain_messages")
 
     async def invoke_dto(self, *, owner, config: ModelConfigRecord, request: ModelInvocationRequest,
-                         options: dict, send: Callable[[], Awaitable[Any]]) -> Any:
+                         options: dict, send: Callable[[], Awaitable[Any]], purpose: str = "agent") -> Any:
         """Use the same lifecycle for application calls outside graph nodes."""
-        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options)
+        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options,
+            purpose=purpose)
         return await self._invoke_intent(owner=owner, intent=intent, send=send,
             usage_reader=lambda result: dto_model_usage(result, transport=config.transport),
             envelope=envelope, response_kind="model_invocation_result")
 
-    def _dto_intent(self, *, owner, config, request, options):
+    def _dto_intent(self, *, owner, config, request, options, purpose: str = "agent"):
         current = self._model_config_resolver(config.key)
         fingerprint = model_config_fingerprint(config)
         if current is None or model_config_fingerprint(current) != fingerprint:
             raise ValueError("Model configuration changed before the DTO request was sent")
         envelope, logical = dto_call_contract(owner.binding, fingerprint, request, options)
         request_sha256 = hashlib.sha256(envelope).hexdigest()
+        cleaned_purpose = str(purpose or "").strip()
+        if not cleaned_purpose:
+            raise ValueError("Governed DTO model invocation requires a purpose")
         intent = FrameworkModelCallIntent(position_version=1, attempt_id=uuid4().hex, logical_call_id=logical,
-            branch_id="root", purpose="agent", model_key=config.key, model_config_fingerprint=fingerprint,
+            branch_id="root", purpose=cleaned_purpose, model_key=config.key, model_config_fingerprint=fingerprint,
             transport=config.transport, request_sha256=request_sha256,
             reserved_input_tokens=len(envelope) + 1024, reserved_output_tokens=config.max_output_tokens)
         return intent, envelope

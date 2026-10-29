@@ -97,7 +97,12 @@ class ContextCompactionService:
         if model_config is None:
             return None
         try:
-            result = await self._model_runtime_service.invoke(model_config.key, request)
+            result = await self._model_runtime_service.invoke(
+                model_config.key,
+                request,
+                purpose="summary",
+                transport_options=self._model_runtime_service.governed_transport_options(),
+            )
         except Exception as exc:
             logger.warning(
                 "context_compaction_model_failed",

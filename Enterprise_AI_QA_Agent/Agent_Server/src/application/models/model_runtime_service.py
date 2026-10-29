@@ -181,7 +181,11 @@ class ModelRuntimeService:
         *, expected_parameters: dict[str, Any] | None = None,
         expected_runtime_parameters: dict[str, Any] | None = None,
         transport_options: ModelTransportOptions | None = None,
+        purpose: str = "agent",
     ) -> ModelInvocationResult:
+        cleaned_purpose = str(purpose or "").strip()
+        if not cleaned_purpose:
+            raise ValueError("Model invocation requires a purpose")
         owner = current_framework_owner()
         if owner is not None:
             if self._framework_model_call_policy is None:
@@ -194,6 +198,7 @@ class ModelRuntimeService:
             raise ValueError("Owner-bound model invocation requires a durable call position")
         logical_call_id = str(trace_context.get("logical_call_id") or trace_context.get("call_id") or uuid4())
         trace_context["logical_call_id"] = logical_call_id
+        trace_context["purpose"] = cleaned_purpose
         request = request.model_copy(update={"trace_context": trace_context})
         if (expected_runtime_parameters is not None and
             self.get_invocation_runtime_parameters(model_key, transport_options=transport_options) != expected_runtime_parameters):
@@ -229,7 +234,8 @@ class ModelRuntimeService:
         if transport_options is not None:
             self.get_invocation_runtime_parameters(model_key, transport_options=transport_options)
             logger.info("model_invocation_transport_configured", extra={"model_key": config.key,
-                "timeout_seconds": transport_options.timeout_seconds, "max_retries": transport_options.max_retries})
+                "timeout_seconds": transport_options.timeout_seconds, "max_retries": transport_options.max_retries,
+                "purpose": cleaned_purpose})
         try:
             mapped = map_model_request(config, request)
         except UnsupportedModelRequest as exc:
@@ -305,7 +311,8 @@ class ModelRuntimeService:
                     result = await send()
                 else:
                     result = await self._framework_model_call_policy.invoke_dto(owner=owner, config=config,
-                        request=request, options=self._framework_invocation_options(config, transport_options), send=send)
+                        request=request, options=self._framework_invocation_options(config, transport_options),
+                        purpose=cleaned_purpose, send=send)
             except ProviderClientError as exc:
                 result = self._http_error_result(config, request, exc)
         result.response_summary["logical_call_id"] = logical_call_id

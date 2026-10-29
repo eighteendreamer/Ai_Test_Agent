@@ -5275,3 +5275,38 @@ $env:PYTHONIOENCODING='utf-8'; $env:PYTHONUTF8='1'
 身份校验失败现在显式暴露为摘要覆盖冲突，调用方不得吞掉异常后继续使用旧索引；缺少身份字段的历史数字摘要仍是兼容分支，不代表历史数据已经完成迁移。摘要内容本身仍是非可信上下文，稳定身份与 digest 只证明覆盖元数据一致，不授予工具、审批或外部副作用权限。
 
 本节只收敛 B／§5.1.5 的摘要覆盖锚点，不代表统一 Prompt、完整跨 Turn 资产、C/D/E/F、E3／E4 或整体 v4 完成。用户 v3 草稿保持未修改、未暂存；本节提交仅包含三份上下文源文件、一个测试文件和本实施记录。
+
+## 114. B／§6.2：显式治理 legacy 摘要模型调用（2026-10-30）
+
+### 起点、根因与依据 → 做法
+
+基线为 §113 的身份化摘要覆盖。Deep Agents 的原生摘要已经通过 `governed_summarization` 进入 `FrameworkModelCallPolicy`，但 legacy `ContextCompactionService.maybe_compact()` 仍直接调用模型运行时，没有声明调用目的，也没有把显式 `max_retries=0` 传到 provider／SDK 边界。这是摘要调用未纳入统一治理契约的边界缺口，不把 Deep Agents 已有覆盖误认为 legacy 路径也已治理。
+
+依据现有 `ModelRuntimeService.governed_transport_options()`、DTO `FrameworkModelCallPolicy.invoke_dto()` 的账本入口和已验证 provider transport → `ModelRuntimeService.invoke()` 增加清洗后的 `purpose`（默认 `agent`），将其写入 trace context、传入 DTO policy 并记录 transport 日志；`ContextCompactionService` 固定使用 `purpose="summary"` 与 `max_retries=0`。空 purpose 明确拒绝，避免无身份调用悄然落入默认分支。无 framework owner 的 legacy 摘要仍不凭空获得 root ledger，限制保持显式。
+
+### TDD 红测、实现与消费方
+
+新增回归先得到 **1 failed**：`StubModelRuntimeService` 收到摘要调用时缺少 `purpose`（`KeyError: 'purpose'`），证明生产摘要路径尚未传递治理参数。随后最小修改：
+
+- `FrameworkModelCallPolicy.invoke_dto()`／`_dto_intent()` 接受并校验 purpose，写入冻结 intent；
+- `ModelRuntimeService.invoke()` 接受 purpose、拒绝空值、保存 trace context，并在 owner-bound DTO 调用时传递该 purpose；
+- `ContextCompactionService` 调用 `governed_transport_options()`，显式关闭 provider SDK 隐式重试；
+- 失败生命周期测试替身同步接受治理 transport 参数，保持真实错误结果不写入摘要的断言。
+
+### 实际验证
+
+使用已有 `Agent_Server/.venv-framework-v2`，未启动生产服务、未升级依赖、未调用真实供应商：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_context_compaction.py tests/test_model_failure_lifecycle.py -q -rs --tb=short
+# 28 passed，4.82s，exit 0
+
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_policy.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_context_compaction.py tests/test_model_failure_lifecycle.py -q -rs --tb=short
+# 36 passed，58 skipped，8.55s，exit 0；skip 均为未启用真实 PostgreSQL／Redis 的 live 组
+```
+
+项目根 `Agent_Server/src` 与 `Agent_Server/tests` 的 `compileall`、`git diff --check` 均实际通过；`ruff`／`mypy` 未安装，未执行 lint/typecheck。未启动 Docker／生产服务，未跑全量后端、前端、真实供应商、独立 Worker 强杀或完整 E3／E4 验收。
+
+### 兼容性、剩余出口与提交
+
+默认 `purpose="agent"` 保持既有图／DTO 调用契约；空 purpose 现在显式失败。摘要重试关闭只约束该摘要请求的 transport，不改变 provider 客户端的其他业务调用。legacy owner 缺失时仍没有完整 root ledger 与持久预算材料，不能宣称 B／§6.2 或整体 v4 已完成；Deep Agents 摘要和 legacy 摘要的治理边界现已分别可见、可核对。用户 v3 草稿保持未修改、未暂存；本节与五个相关源／测试文件同一小步提交。
