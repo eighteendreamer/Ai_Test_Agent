@@ -4669,3 +4669,72 @@ git diff --check
 真实领域 Runner execution/目标操作日志/停止与查询回执、当前 owner 核验观察与有依据补偿、A3 其他派生/清理出口、完整 B/C/D/E/F 与对应 E2/E3/E4 验收仍待完成；不把本子步或已有 103 节累计结果当作完整目标完成。
 
 本节以 `【fix】隔离模式桥失权执行与迟到结果` 提交，只含本轮 11 个实现/测试/文档/白名单文件，实际 ID 以 Git 与交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 已复核不变。
+
+## 105. A3／C／H06：模式桥已知结果只读查询与原交付恢复（2026-10-29）
+
+### 起点、范围与依据
+
+从 §104 提交 `2ccd42e2f976160d9f98c8c9ef50dfc975ddca2c` 续接，完整 v4 目标保持 active。本轮对应 v4 §7.4、§8.1、§10.1–10.2：原操作已知结果可以复用，未知执行不能重发，证明只授予对应范围的权限。不重做模式执行隔离，不实现远端停止，不更换依赖、不启动外部服务或生产路由；原 v3 草稿只核验、不修改或提交。
+
+依据来源 → 采用做法：
+
+- §104 的 `complete_mode_call_execution`、`_checked_mode_observation`、单服务 JSON 原子替换 → 在合法收尾同次提交中绑定明确的原结果工件，不扫描任意 observation 推断完成。
+- §101 的只读 snapshot／严格对账 DTO，以及既有 RunnerJournal SQLite 事务、上传与报告幂等 → 新查询不回收心跳、不派发；只把校验过的原桥结果交回既有 executed→上传→report_ready→报告→ACK 链路，不另造调度器。
+- 当前 `_execute_server_mode_calls_task` 的报告转换 → 正常和恢复抽取共用 `_mode_call_report`，原操作标记只由这个内置消费方在发送前提交，不能根据重启 executor 或自定义 SDK 调用推断原报告语义。
+- 本地 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的幂等／恢复轨迹原则、`接口测试-通用篇.html` 的状态／副作用／重复查询要求 → 同时断言文件效果次数、原身份、JSON/SQLite 状态与 HTTP 调用轨迹，不仅断言最终 status。
+- 当前 Python 标准库 `http.client.HTTPResponse.read` 与 `IncompleteRead` 源码 → 完整响应体读取可能抛 HTTPException，不能把截断响应当成新失败报告；显式传播脱敏协议错误并保留原日志。
+
+### 真实红测、根因与修复
+
+1. 新增隔离 ASGI／JSON／SQLite 用例，实际执行保存原桥响应后受控丢弃应答；另一用例在第二项抛普通异常，保留真实已返回的第一项。重开原 journal 后均得到 `processed=0 / review / unknown_executing`，没有交付已经确定的结果。另有 3 个 GET 查询均 404、waiting_resource/waiting_children 被聚合为 completed。初始 **7 failed，1 warning，6.88s，exit 1**，日志 `.codex-logs/a3-mode-result-recovery-red-2026-10-29.log`；这些是受控故障复现，不称为线上事故。
+2. 根因是缺少两个持久化契约：服务器合法收尾没有指向本次结果的引用，客户端没有记录原操作属于哪个报告消费链路。补上原子结果绑定和内置发送前标记；查询必须复核当前领取、执行引用、冻结定义、工件/原件/摘要、收尾状态/计数/时间。已知失败可交付，available 不等于测试通过。
+3. 沿同一真实成功链路注入 JSON 损坏、错误 count、等待结果伪装 completed，旧客户端分别提交新失败报告或错误成功报告。**3 failed，43 deselected，4.94s**，日志 `a3-mode-result-recovery-response-red-2026-10-29.log`。改为正常／恢复共享响应聚合校验，不再让通用异常 fallback 把不确定应答变成新报告。追加 HTTP IncompleteRead 复现 **1 failed，49 deselected，22.97s**，日志 `a3-mode-result-recovery-incomplete-red-2026-10-29.log`；同样保留原 executing，允许下次只读查询原件。
+4. 审阅首版标记位置发现直接 SDK 消费方可能另有报告转换。针对该边界红测 **1 failed，48 deselected，5.35s**，日志 `a3-mode-result-recovery-sdk-red-2026-10-29.log`。将标记从通用 execute_mode_calls 收紧到内置 `_execute_server_mode_calls_task`，旧／自定义 executing 仍待核查，不自动套用内置报告语义。
+5. 中间集成测试曾因新测试误用 `poll_tasks(...)[0]` 失败，输出为 `TypeError: 'CompatibilityRunnerPollResponse' object is not subscriptable`（**1 failed，188 passed**，`a3-mode-result-recovery-integrated-2026-10-29.log`）；按现有返回 DTO 改为 `.tasks[0]`。这是测试代码错误，不计为产品缺陷红测。此前 148 passed、43 passed 和后续 190 passed 都是中间源码结果，不与最终结果累计。
+
+### 条款 → 实现与消费方
+
+| v4／职责 | 实现与测试 | 权限与兼容边界 |
+| --- | --- | --- |
+| A3／§10.1：复用原结果 | runner_service 合法收尾同次保存 mode_calls_execution_result_artifact_id；schema 过滤外来同名字段；新批次／人工 requeue 清空且历史保存 | 失权观察不写绑定；旧记录无引用为 unknown；内部只 finish metadata 的旧路径不凭空获得结果证明 |
+| §8.1／§10.2：只读查询 | 新 GET mode-calls/execution 与 CompatibilityModeExecutionQuery；服务锁内验证、deep copy；available/unknown/conflict，固定 scope／false 执行权 | 仅当前原 assigned 且心跳有效可读取可交付结果；终态、换轮、服务重启 recovery_required、迟到观察均不能复活；漂移 503，不修改原件 |
+| A3：原日志恢复交付 | RunnerJournal.mark_mode_execution 将冻结 executing 的 reason 提交为 mode_calls_execution_v1；CLI 只按原标记查询，不看重启 executor；先保存 executed 再走既有链路 | 不改 SQLite 表／身份版本；旧读者安全转 review。无标记／旧服务／unknown/conflict 保留 review，网络／503／非法 DTO 保留 executing，绝不 fallback 执行 POST 或会回收任务的普通列表 |
+| §7.4：统一协议与报告 | 提取并复用原 canonical evidence／稳定 ID／回执校验；runner_mode_response 与 validate_runner_mode_response 统一聚合，正常和恢复共用 _mode_call_report | 稳定 ID 与原件格式不变；waiting_resource/waiting_children 不再被计为 completed；partial 仍沿既有报告规则映射 failed，不谎称外部效果已结束 |
+| 交付仍需原权限 | 查询后人工换轮、上传／报告拒绝；SQLite 恢复结果保存失败只重查；report ACK 丢失只重投同报告 | 查询不是执行权、ACK 或迟到观察升格；reconcile_journal／--reconcile-only 保持纯报告只读对账 |
+| 契约同步 | 5 个后端源文件、新 50 项恢复用例、既有 authority 元数据过滤测试、活文档与白名单 | 已搜索查询 DTO、共享 helper、字段、标记的所有引用；前端没有新查询消费方，原泛型 metadata／工件和错误处理不变；无需数据迁移 |
+
+### 最终当前源码实际验证
+
+在 `Agent_Server`、独立 `.venv-framework-v2` 执行，完整输出保留于私有 `.codex-logs`，未安装或升级依赖：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_compatibility_mode_execution_recovery.py tests/test_compatibility_mode_execution_authority.py `
+  tests/test_compatibility_runner_late_reports.py tests/test_compatibility_runner_reconciliation.py `
+  tests/test_compatibility_runner_persistence.py tests/test_compatibility_runner_service.py `
+  tests/test_compatibility_mode_skills.py tests/test_agent_task_monitor.py tests/test_request_context.py -q -rs --tb=short
+# 304 passed，1 warning，24.53s，exit 0，无 skip/deselect
+# a3-mode-result-recovery-final-compatibility-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_tool_runtime_heartbeat.py tests/test_framework_tool_messages.py tests/test_deep_agent_tool_replay.py `
+  tests/test_langchain_tool_adapter.py tests/test_tool_executor_safety_gate.py tests/test_runtime_interrupt_tool_calls.py `
+  tests/test_approval_checkpoint_consistency.py tests/test_intent_safety_routing.py `
+  tests/test_invalid_tool_plan_visibility.py tests/test_tool_message_budget.py `
+  tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py `
+  tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 216 passed，24.28s，exit 0，无 skip/deselect
+# a3-mode-result-recovery-final-runtime-2026-10-29.log
+```
+
+在 `agent_web` 实际执行 `npm.cmd test -- src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts`：**3 passed，2.22s，exit 0**；`npm.cmd run build`：**exit 0**，包括 vue-tsc typecheck 与 Vite build（3311 modules，Vite 11.55s）。日志为 `a3-mode-result-recovery-final-ui-2026-10-29.log`、`a3-mode-result-recovery-final-web-build-2026-10-29.log`。
+
+根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 均 exit 0。ruff/mypy 经 importlib 检查均未安装，未运行后端 lint/typecheck，不用 compileall 冒充。后端 1 warning 是既有 Starlette/anyio BlockingPortal 弃用提示。没有全量后端／前端测试，不把针对性回归说成全量通过。
+
+### 证据限制、剩余出口与提交
+
+本节证明正式 CLI main 与客户端、真实隔离 JSON/SQLite、ASGI 路由、受控文件效果及相关 ToolRuntime 回归；传输故障和 SQL 保存失败为受控注入，未验证本轮真实 PG/Redis／独立 Worker E2、供应商／浏览器／压测／扫描领域 Runner E3、部署回滚 E4 或掉电。未发起付费或未授权目标请求。
+
+本端口查询的是中心模式桥的原响应，不是远端领域 Runner execution 状态或停止回执。已有单服务 JSON writer、跨存储原子性、跨机器 Runner 排他和未脱敏业务正文限制仍在；SHA-256 不替代认证。无引用旧记录、自定义 SDK 报告语义、无本地原日志、已失权／服务重启待核查任务均没有自动恢复资格，不从历史观察推测。真实远端停止／查询协议、当前 owner 核验迟到观察与有依据补偿、A3 其他出口及完整 B/C/D/E/F 和 E2/E3/E4 仍待完成，不能把本子步标作整体目标完成。
+
+本节随 `【feat】恢复模式桥原结果交付而不重跑工具` 提交，仅含本轮 10 个实现／测试／文档／白名单文件，实际 commit ID 以 Git 与交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不变。

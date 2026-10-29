@@ -42,7 +42,7 @@ uv run --no-sync python scripts/run_test_quality_gate.py --profile targeted --ta
 
 领取批次一次事务入库，逐项记录 queued → executing → executed → uploading（旧协议）/uploading_idempotent（已协商）→ report_ready。执行前提交 executing；得到结果后先保存完整 executed 结果，上传成功后先保存完整报告，再发 report。报告确认成功才删除本地待办。报告响应丢失/503 后，客户端重启原样重传 report_ready，只有服务器当前领取仍允许写入或已有匹配终态回执时才能确认；不会再次执行或上传。服务器重启/过期已将领取转为待核查时返回 409，本地保留 conflict 与原报告，不自动提交或抹除证据。run_once 返回本次确认报告的数量，待核查/冲突不计成功。此前无 dispatcher 的内部续跑队列不在本客户端修复范围内。
 
-恢复 queued 项前查询正式任务列表核对当前 Runner、assigned 状态和领取身份；已换轮或已转待核查则保留 conflict，不执行旧任务。404/409 的报告/上传冲突也保留本地证据和原因。executing 或旧协议 uploading 被中断时，客户端不能证明副作用/远端工件是否已提交，转本地 review；保留原结果，不伪造 failed、不重传无幂等身份的上传。review 不影响同批其他任务；同一 task_id 的后续领取也暂停，防止旧部署自动换轮绕过未知结果。review 是本地阶段，不等同于服务器 recovery_required；服务端自动中断治理也不依赖原客户端仍在线或共享同一日志。未知工具副作用对账及证据化人工处置接口仍未完成。核查前应保留数据库与关联证据，不应通过更换日志路径来绕过。
+恢复 queued 项前查询正式任务列表核对当前 Runner、assigned 状态和领取身份；已换轮或已转待核查则保留 conflict，不执行旧任务。404/409 的报告/上传冲突也保留本地证据和原因。executing 或旧协议 uploading 被中断时，客户端不能证明副作用/远端工件是否已提交，默认转本地 review；唯一新增的自动恢复范围是下文带原内置模式桥标记、且查询核验原结果成功的交付。其他情况保留原结果，不伪造 failed、不重传无幂等身份的上传。review 不影响同批其他任务；同一 task_id 的后续领取也暂停，防止旧部署自动换轮绕过未知结果。review 是本地阶段，不等同于服务器 recovery_required；服务端自动中断治理也不依赖原客户端仍在线或共享同一日志。未知工具副作用对账及证据化人工处置接口仍未完成。核查前应保留数据库与关联证据，不应通过更换日志路径来绕过。
 
 日志身份包含版本，身份不匹配、坏 SQLite 文件或非法阶段拒绝启动并保留原文件。`.sqlite3.lock` 连接持有 SQLite 排他事务至 close/进程退出，同一路径的另一个进程不能操作日志；主数据库仍可逐次提交阶段。不要删运行中的锁文件；只支持有可靠文件锁的本地磁盘，网络共享、多机器同 Runner 身份、多路径启动没有全局排他保证。数据库含任务与完整结果，应放在 Runner 专用私有目录并按部署权限管理。确认成功项从本地移除，未知/冲突项保留，长期归档和容量治理仍需后续实施。
 
@@ -129,3 +129,25 @@ CLI 沿用原 `_json_request` 传输，本步没有新增 Bearer 凭据配置能
 查询沿现有 `GET /api/v1/compatibility/artifacts?task_id={task_id}&artifact_type=runner_mode_execution` 及工件 `uri` 的 content 端口；content 会校验完整冻结回执、定义与内容摘要、稳定 ID 和 task/工件绑定。type 只用于检索，不能代替上述校验。独立工件不计入正式报告的证据数或通过率；列表 metadata 的 `__content_text` 与 content 均可能包含未脱敏业务数据，必须保护状态文件、备份和 API 访问。
 
 CLI 遇到模式桥 404/409 仍将原 SQLite entry 保留为 conflict，不报告成功、不上传/报告伪造的失败结果、不 ACK。正式 main + SQLite + ASGI + 受控本地文件效果测试验证重开不再次执行。此证据及真实 ToolRuntime/InMemoryToolJobStore 的临调用测试，不代表真实供应商、领域 Runner、PG/Redis 独立 Worker 或 E3/E4 验收。没有新增观察专用 UI、自动升格或有依据补偿。
+
+## 模式桥：已知结果只读查询与原交付恢复
+
+合法模式批次收尾时，服务器将 `mode_calls_execution_result_artifact_id` 与完成状态、返回条数、完成时间和独立结果工件同次保存。失权保存不能写这个引用。开始新批次和人工 requeue 清空引用，人工历史保留原值；派发与 Runner report 过滤同名外来 metadata。旧版完成记录没有引用时，不扫描工件猜测原结果，也不补造历史引用。
+
+新增只读端口：`GET /api/v1/compatibility/runners/{runner_id}/tasks/{task_id}/mode-calls/execution?assignment_id={原领取身份}`。沿现有 API 访问控制，必须提供非空 assignment_id；它不是认证凭据。服务锁内只读，不执行心跳回收、续租、领取、工具调用或保存。查询不依赖 ToolRuntime；返回 detached 数据。DTO 的版本为 1、scope 为 `compatibility_runner_mode_execution_result_only`，始终 `execution_authority=false`：
+
+| status | reason_code／条件 | 结果与权限 |
+| --- | --- | --- |
+| available | result_available：当前 assigned、原 Runner/assignment、心跳有效，执行引用/冻结定义、明确绑定工件、收尾状态/计数/时间、原内容/摘要/回执均一致 | 返回原 evidence 和非权威 observation，仅供原内置客户端恢复结果交付；不是执行许可、ACK、任务完成或真实测试通过证明 |
+| unknown | execution_not_started / execution_running / execution_result_unbound | 不返回 evidence，不推断工具未执行，不自动重发 |
+| conflict | assignment_superseded / task_not_assigned / runner_unavailable / runner_lease_expired | 不返回其他领取或失权结果，不恢复旧轮次 |
+
+缺任务返回 404；引用、内容、摘要、收尾绑定漂移或损坏返回固定 503，保留原状态。服务重启仍将 assigned 转 recovery_required，查询不能复活它；迟到观察仍只用于核查。available 只证明原桥响应已确定返回，不证明 waiting/partial 中的外部效果已结束或停止。
+
+内置 `server-mode-calls` 执行器在实际发送前，将已有冻结任务的 SQLite executing.reason 事务保存为 `mode_calls_execution_v1`；保存失败不发送。此标记绑定内置报告转换职责，不凭重启后的 `--executor` 配置推断原操作；仅直接调用 SDK 的 execute_mode_calls、旧 executing、HTTP smoke 和没有日志的 SDK 调用不自动获得该恢复资格。SQLite 表结构和身份版本不变，旧读者仍把 executing 转 review。
+
+客户端恢复时只 GET 原领取查询，并核对严格 DTO、原 task/dispatch/plan/environment、冻结定义、原结果摘要/回执、调用顺序与聚合语义。available 后，正常执行和恢复共用 `_mode_call_report`，先保存 executed，再沿原上传／report_ready／幂等报告／ACK 链路交付，不再次执行工具。成功响应丢失、原批次异常的已保存失败前缀均走此链路；失败报告不是工具成功。查询后换轮仍被上传／报告的原 assignment 校验拒绝。恢复结果的 SQLite 保存失败只允许再次查询；报告 ACK 丢失继续重投完全相同的原报告。
+
+unknown/conflict、旧服务查询 404/409 保留 review；网络／503／非法成功 DTO 保留原 executing 并显式报错，不 fallback 普通任务列表或执行 POST。正常模式响应的 JSON／传输损坏、身份/顺序/数量/聚合矛盾也保留原标记，不包装成新的 failed 报告。`--reconcile-only` 仍只做原报告对账，不执行这种交付恢复。桥聚合与查询验证共用规则，`waiting_resource`、`waiting_children` 与其他非完成结果计为 partial，不能误报 completed；内置报告仍沿既有规则把 partial 映射为 failed。
+
+验证位于 `tests/test_compatibility_mode_execution_recovery.py`：正式 CLI、真实隔离 JSON/SQLite、ASGI 路由和受控文件效果，覆盖丢应答、异常前缀、类型／身份／绑定漂移、旧版本、换轮、查询失败、SQLite 提交失败、JSON 保存失败、重复报告和只读性质。不是生产网络故障、真实进程强杀、真实供应商／独立 Worker 或领域 Runner E3 验收。未新增观察自动升格、远端停止协议或 UI；前端现有泛型 metadata/工件与非 2xx 处理保持适用。结果查询仍可能返回私有业务正文，须保护 API、状态文件与本地日志。SHA-256 只证明一致性，不替代认证；单服务 JSON 的并发／掉电限制仍保留。

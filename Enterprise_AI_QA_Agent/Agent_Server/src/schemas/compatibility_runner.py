@@ -4,7 +4,7 @@ from hashlib import sha256
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class CompatibilityPlanActionRequest(BaseModel):
@@ -142,6 +142,7 @@ def runner_report_metadata(value: dict[str, Any]) -> dict[str, Any]:
         "mode_calls_execution_completed_at", "mode_calls_execution_result_count",
         "mode_calls_execution_runner_id", "mode_calls_execution_started_at", "mode_calls_execution_status",
         "mode_calls_execution_id", "mode_calls_execution_reference",
+        "mode_calls_execution_result_artifact_id",
         "retry_count", "retry_history", "automatic_retry_count", "automatic_retry_limit", "recovery_reason",
         "recovery_required_at", "recovery_source", "assignment_id", "assignment_fencing_required",
         "report_receipt_sha256",
@@ -245,6 +246,135 @@ def runner_mode_definition(task: CompatibilityQueuedTask) -> dict[str, Any]:
 def runner_mode_definition_sha256(definition: dict[str, Any]) -> str:
     content = json.dumps(definition, sort_keys=True, ensure_ascii=False, separators=(",", ":"), allow_nan=False)
     return sha256(content.encode("utf-8")).hexdigest()
+
+
+RUNNER_MODE_OBSERVATION_ID_PREFIX = "runner-mode-observation-"
+
+
+def runner_mode_evidence_content(evidence: CompatibilityModeExecutionEvidence) -> str:
+    return json.dumps(evidence.model_dump(mode="json"), sort_keys=True, ensure_ascii=False,
+        separators=(",", ":"), allow_nan=False)
+
+
+def runner_mode_observation_artifact_id(reference: CompatibilityModeExecutionReference, digest: str) -> str:
+    identity = json.dumps([reference.model_dump(mode="json"), digest], sort_keys=True, separators=(",", ":"))
+    return RUNNER_MODE_OBSERVATION_ID_PREFIX + sha256(identity.encode("utf-8")).hexdigest()
+
+
+def validate_runner_mode_evidence(
+    observation: CompatibilityModeExecutionObservation, evidence: CompatibilityModeExecutionEvidence,
+) -> None:
+    """Shared content/receipt checks, not permission to execute or report."""
+    reference = evidence.reference
+    if (any(getattr(reference, field) != getattr(observation, field)
+            for field in CompatibilityModeExecutionReference.model_fields)
+        or runner_mode_definition_sha256({"case_ids": evidence.case_ids,
+            "runner_selector": evidence.runner_selector, "mode_calls": evidence.mode_calls}) != reference.definition_sha256
+        or sha256(runner_mode_evidence_content(evidence).encode("utf-8")).hexdigest() != observation.content_sha256
+        or observation.artifact_id != runner_mode_observation_artifact_id(reference, observation.content_sha256)
+        or evidence.response.get("task_id") != reference.task_id
+        or evidence.response.get("runner_id") != reference.runner_id):
+        raise ValueError("Mode observation differs from its original definition or content.")
+
+
+def runner_mode_response(
+    *, task_id: str, runner_id: str, mode_call_count: int,
+    results: list[dict[str, Any]], error_type: str | None = None,
+) -> dict[str, Any]:
+    """The bridge's one aggregation rule; non-completed results never pass."""
+    completed = sum(1 for item in results if item.get("status") == "completed")
+    failed = sum(1 for item in results if item.get("status") in {"failed", "denied"})
+    partial = len(results) - completed - failed
+    status = "failed" if error_type or (results and failed == len(results)) else (
+        "partial" if failed or partial or len(results) != mode_call_count else "completed"
+    )
+    return {
+        "status": status, "ok": status == "completed", "task_id": task_id, "runner_id": runner_id,
+        "mode_call_count": mode_call_count,
+        "summary": f"Executed {mode_call_count} compatibility mode call(s): {completed} completed, {partial} partial, {failed} failed.",
+        "mode_call_results": results,
+    }
+
+
+def validate_runner_mode_response(
+    response: dict[str, Any], *, task_id: str, runner_id: str,
+    mode_calls: list[dict[str, Any]], error_type: str | None = None,
+) -> None:
+    """Validate the live wire response and a saved response by the same rules."""
+    if not isinstance(response, dict):
+        raise ValueError("Mode response must be an object.")
+    results = response.get("mode_call_results")
+    if (not isinstance(results, list) or len(results) > len(mode_calls)
+        or (not error_type and len(results) != len(mode_calls))):
+        raise ValueError("Mode response has an incomplete or invalid result sequence.")
+    for index, result in enumerate(results):
+        if (not isinstance(result, dict) or type(result.get("call_index")) is not int
+            or result["call_index"] != index
+            or result.get("tool_key") != str(mode_calls[index].get("tool_key") or "").strip()):
+            raise ValueError("Mode result position differs from its frozen call.")
+    expected = runner_mode_response(task_id=task_id, runner_id=runner_id,
+        mode_call_count=len(mode_calls), results=results, error_type=error_type)
+    if runner_mode_definition_sha256(expected) != runner_mode_definition_sha256(response):
+        raise ValueError("Mode response aggregation differs from its results.")
+
+
+class CompatibilityModeExecutionQuery(BaseModel):
+    """Only an explicitly bound bridge result can resume original delivery.
+
+    The observation itself remains non-authoritative. The server must verify
+    its current assignment and atomic finish binding before returning available;
+    upload/report still independently fence delivery. This is not an ACK.
+    """
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["compatibility_runner_mode_execution_result_only"] = "compatibility_runner_mode_execution_result_only"
+    runner_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    assignment_id: str = Field(min_length=1)
+    status: Literal["available", "unknown", "conflict"]
+    reason_code: Literal[
+        "result_available", "execution_not_started", "execution_running", "execution_result_unbound",
+        "assignment_superseded", "task_not_assigned", "runner_unavailable", "runner_lease_expired",
+    ]
+    execution_authority: Literal[False] = False
+    observation: CompatibilityModeExecutionObservation | None = None
+    evidence: CompatibilityModeExecutionEvidence | None = None
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _json_schema_version(cls, value: Any) -> Any:
+        if type(value) is not int:
+            raise ValueError("Query schema version must be a JSON integer.")
+        return value
+
+    @field_validator("execution_authority", mode="before")
+    @classmethod
+    def _no_authority(cls, value: Any) -> bool:
+        if value is not False:
+            raise ValueError("Query execution authority must be JSON false.")
+        return value
+
+    @model_validator(mode="after")
+    def _bound_result(self) -> "CompatibilityModeExecutionQuery":
+        if self.status != "available":
+            reasons = ({"execution_not_started", "execution_running", "execution_result_unbound"}
+                if self.status == "unknown" else
+                {"assignment_superseded", "task_not_assigned", "runner_unavailable", "runner_lease_expired"})
+            if self.reason_code not in reasons or self.observation is not None or self.evidence is not None:
+                raise ValueError("Unavailable mode query cannot supply a result.")
+            return self
+        if self.reason_code != "result_available" or self.observation is None or self.evidence is None:
+            raise ValueError("Available mode query requires its original evidence and receipt.")
+        evidence = self.evidence
+        validate_runner_mode_evidence(self.observation, evidence)
+        if any(getattr(self, field) != getattr(evidence.reference, field)
+                for field in ("runner_id", "task_id", "assignment_id")):
+            raise ValueError("Mode query identity differs from its evidence.")
+        validate_runner_mode_response(evidence.response, task_id=self.task_id, runner_id=self.runner_id,
+            mode_calls=evidence.mode_calls, error_type=evidence.error_type)
+        return self
 
 
 class CompatibilityRunnerJournalReconciliation(BaseModel):

@@ -31,6 +31,7 @@ _TASK_DEFINITION_FIELDS = {
     "task_id", "dispatch_id", "plan_id", "environment_id", "case_ids",
     "runner_selector", "mode_calls", "created_at",
 }
+MODE_CALLS_EXECUTION_MARKER = "mode_calls_execution_v1"
 
 
 def reconcile_runner_journal_entry(
@@ -242,6 +243,25 @@ class RunnerJournal:
                 self._db.execute("UPDATE entries SET phase = ?, payload = ?, reason = ? WHERE assignment = ?",
                                  (phase, serialized, reason, assignment))
         print(f"runner_journal_phase phase={phase} assignment={assignment} reason={reason or 'none'}")
+
+    def mark_mode_execution(self, task: dict[str, Any]) -> bool:
+        """Commit the actual operation before HTTP, not the restart's executor.
+
+        Reuse the existing phase reason, so old readers safely retain executing
+        as unknown. SDK calls without an identified entry have no recovery proof.
+        """
+        assignment = (task.get("metadata") or {}).get("assignment_id")
+        if not assignment:
+            return False
+        with self._db:
+            row = self._db.execute("SELECT task, phase FROM entries WHERE assignment = ?", (assignment,)).fetchone()
+            if row is None:
+                return False
+            if row["phase"] != "executing" or row["task"] != json.dumps(task, ensure_ascii=False, allow_nan=False):
+                raise RuntimeError("Mode execution requires its original executing journal entry.")
+            self._db.execute("UPDATE entries SET reason = ? WHERE assignment = ?", (MODE_CALLS_EXECUTION_MARKER, assignment))
+        print(f"runner_journal_mode_execution_marked assignment={assignment}")
+        return True
 
     def acknowledge(self, assignment: str) -> None:
         with self._db:

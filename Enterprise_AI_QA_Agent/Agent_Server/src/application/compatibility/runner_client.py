@@ -3,9 +3,11 @@ from __future__ import annotations
 import argparse
 import base64
 import hashlib
+from http.client import HTTPException
 import json
 import logging
 import platform
+import sqlite3
 import time
 import traceback
 from pathlib import Path
@@ -17,12 +19,24 @@ from pydantic import ValidationError
 
 from src.application.compatibility.runner_journal import (
     RunnerJournal,
+    MODE_CALLS_EXECUTION_MARKER,
     reconcile_runner_journal_entry,
 )
-from src.schemas.compatibility_runner import CompatibilityRunnerJournalReconciliation
+from src.schemas.compatibility_runner import (
+    CompatibilityModeExecutionQuery,
+    CompatibilityQueuedTask,
+    CompatibilityRunnerJournalReconciliation,
+    runner_mode_definition,
+    runner_mode_definition_sha256,
+    validate_runner_mode_response,
+)
 
 DEFAULT_BASE_URL = "http://127.0.0.1:1032"
 LOGGER = logging.getLogger(__name__)
+
+
+class CompatibilityModeExecutionRecoveryError(RuntimeError):
+    """Keep the journal when operation identity or query evidence is invalid."""
 
 
 def _json_request(base_url: str, path: str, *, method: str = "GET", payload: dict[str, Any] | None = None) -> Any:
@@ -221,11 +235,19 @@ class CompatibilityRunnerClient:
         metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
         assignment_id = metadata.get("assignment_id")
         suffix = "?" + urlencode({"assignment_id": assignment_id}) if assignment_id else ""
-        return _json_request(
-            self.base_url,
-            f"/api/v1/compatibility/runners/{self.runner_id}/tasks/{task_id}/mode-calls/execute{suffix}",
-            method="POST",
-        )
+        try:
+            response = _json_request(
+                self.base_url,
+                f"/api/v1/compatibility/runners/{self.runner_id}/tasks/{task_id}/mode-calls/execute{suffix}",
+                method="POST",
+            )
+            validate_runner_mode_response(response, task_id=task_id, runner_id=self.runner_id,
+                mode_calls=task.get("mode_calls") or [])
+            return response
+        except (HTTPException, ConnectionError, ValueError, KeyError, TypeError) as exc:
+            LOGGER.error("compatibility_mode_execution_response_invalid", extra={"task_id": task_id,
+                "runner_id": self.runner_id, "assignment_id": assignment_id, "error_type": type(exc).__name__})
+            raise CompatibilityModeExecutionRecoveryError("Mode execution response is invalid; preserve the journal.") from None
 
     def execute_task(self, task: dict[str, Any]) -> dict[str, Any]:
         metadata = task.get("metadata") if isinstance(task.get("metadata"), dict) else {}
@@ -286,7 +308,23 @@ class CompatibilityRunnerClient:
                 "error": None,
                 "metadata": {"executor": "server_mode_calls", "mode_bridge_status": "completed"},
             }
+        # Only this built-in consumer shares the recovery report projection.
+        # A custom SDK consumer may transform a bridge response differently;
+        # executing a bridge alone does not prove its intended task report.
+        try:
+            marked = self.journal.mark_mode_execution(task)
+        except (RuntimeError, ValueError, sqlite3.Error) as exc:
+            LOGGER.error("compatibility_mode_execution_marker_failed", extra={"task_id": task.get("task_id"),
+                "runner_id": self.runner_id, "assignment_id": metadata.get("assignment_id"), "error_type": type(exc).__name__})
+            raise CompatibilityModeExecutionRecoveryError("Mode execution journal could not be marked.") from None
+        if not marked:
+            LOGGER.warning("compatibility_mode_execution_without_journal", extra={"task_id": task.get("task_id"),
+                "runner_id": self.runner_id, "assignment_id": metadata.get("assignment_id")})
         bridge_result = self.execute_mode_calls(task)
+        return self._mode_call_report(task, bridge_result)
+
+    def _mode_call_report(self, task: dict[str, Any], bridge_result: dict[str, Any]) -> dict[str, Any]:
+        """One report projection for the live bridge and its verified saved result."""
         bridge_status = str(bridge_result.get("status") or "").strip().lower()
         failed = bridge_status != "completed" or bridge_result.get("ok") is False
         bridge_summary = str(
@@ -301,7 +339,7 @@ class CompatibilityRunnerClient:
                     else bridge_summary
                 ),
                 "environment_id": task.get("environment_id"),
-                "mode_call_count": bridge_result.get("mode_call_count", len(mode_calls)),
+                "mode_call_count": bridge_result.get("mode_call_count", len(task.get("mode_calls") or [])),
                 "mode_call_results": bridge_result.get("mode_call_results") or [],
             },
             "artifacts": [],
@@ -312,9 +350,55 @@ class CompatibilityRunnerClient:
             },
         }
 
+    def _recover_mode_execution(self, entry: dict[str, Any]) -> None:
+        task_id, assignment = entry["task"]["task_id"], entry["assignment"]
+        try:
+            local = CompatibilityQueuedTask.model_validate(entry["task"])
+            if local.assigned_runner_id != self.runner_id or local.metadata.get("assignment_id") != assignment:
+                raise ValueError("Mode execution journal identity changed.")
+            try:
+                raw = _json_request(self.base_url,
+                    f"/api/v1/compatibility/runners/{quote(self.runner_id, safe='')}/tasks/{quote(task_id, safe='')}/mode-calls/execution?"
+                    + urlencode({"assignment_id": assignment}))
+            except error.HTTPError as exc:
+                if exc.code not in {404, 409}:
+                    raise
+                # Old servers may lack this read port. Never fall back to a
+                # mutating task list or replay the original POST.
+                self.journal.update(assignment, "review", reason=f"mode_query_http_{exc.code}")
+                return
+            result = CompatibilityModeExecutionQuery.model_validate(raw)
+            if (runner_mode_definition_sha256(raw) != runner_mode_definition_sha256(result.model_dump(mode="json"))
+                or (result.runner_id, result.task_id, result.assignment_id) != (self.runner_id, task_id, assignment)):
+                raise ValueError("Mode execution query identity/format changed.")
+            if result.evidence is not None:
+                reference = result.evidence.reference
+                if (any(getattr(reference, field) != getattr(local, field)
+                        for field in ("task_id", "dispatch_id", "plan_id", "environment_id"))
+                    or reference.definition_sha256 != runner_mode_definition_sha256(runner_mode_definition(local))):
+                    raise ValueError("Mode execution query differs from the journal definition.")
+        except (ValidationError, ValueError, KeyError, TypeError) as exc:
+            LOGGER.error("compatibility_mode_execution_recovery_invalid", extra={"task_id": task_id,
+                "runner_id": self.runner_id, "assignment_id": assignment, "error_type": type(exc).__name__})
+            raise CompatibilityModeExecutionRecoveryError("Mode execution recovery data is invalid; preserve the journal.") from None
+        LOGGER.info("compatibility_mode_execution_reconciled", extra={"task_id": task_id,
+            "runner_id": self.runner_id, "assignment_id": assignment, "status": result.status,
+            "recovery_reason": result.reason_code})
+        if result.status != "available":
+            self.journal.update(assignment, "review", reason=result.reason_code)
+            return
+        payload = self._mode_call_report(entry["task"], result.evidence.response)
+        payload["assignment_id"] = assignment
+        # Must commit before upload/report. A failed SQLite write leaves the
+        # same executing marker for another read, never another execution.
+        self.journal.update(assignment, "executed", payload=payload)
+
     def run_once(self) -> int:
         self.heartbeat()
         for entry in self.journal.entries():
+            if entry["phase"] == "executing" and entry["reason"] == MODE_CALLS_EXECUTION_MARKER:
+                self._recover_mode_execution(entry)
+                continue
             if (entry["phase"] in {"executing", "uploading"}
                     or (entry["phase"] == "uploading_idempotent" and not self._idempotent_uploads)):
                 self.journal.update(entry["assignment"], "review", reason="unknown_" + entry["phase"])
@@ -342,7 +426,7 @@ class CompatibilityRunnerClient:
                     self.journal.update(assignment, "executing")
                     try:
                         payload = self.execute_task(task)
-                    except (error.HTTPError, error.URLError, TimeoutError):
+                    except (error.HTTPError, error.URLError, TimeoutError, CompatibilityModeExecutionRecoveryError):
                         # A remote tool may have committed before transport failed.
                         raise
                     except Exception as exc:

@@ -25,6 +25,7 @@ from src.schemas.compatibility_runner import (
     CompatibilityArtifactUploadRequest,
     CompatibilityExecutionReport,
     CompatibilityModeExecutionReference,
+    CompatibilityModeExecutionQuery,
     CompatibilityPlanActionRequest,
     CompatibilityRunnerCleanupRequest,
     CompatibilityRunnerCleanupResponse,
@@ -37,6 +38,7 @@ from src.schemas.compatibility_runner import (
     CompatibilityTaskRequeueRequest,
     CompatibilityTaskRequeueResponse,
     CompatibilityQueuedTask,
+    runner_mode_response,
 )
 
 
@@ -312,22 +314,8 @@ async def execute_runner_task_mode_calls(
         logger.error("compatibility_mode_execution_failed", extra={"task_id": task_id, "runner_id": runner_id,
             "execution_id": reference.execution_id, "error_type": error_type})
 
-    completed = sum(1 for item in results if item.get("status") == "completed")
-    failed = sum(1 for item in results if item.get("status") in {"failed", "denied"})
-    partial = sum(1 for item in results if item.get("status") in {"partial", "waiting_approval"})
-    status = "failed" if error_type or (results and failed == len(results)) else ("partial" if failed or partial else "completed")
-    response = {
-        "status": status,
-        "ok": status == "completed",
-        "task_id": task.task_id,
-        "runner_id": runner_id,
-        "mode_call_count": len(mode_calls),
-        "summary": (
-            f"Executed {len(mode_calls)} compatibility mode call(s): "
-            f"{completed} completed, {partial} partial, {failed} failed."
-        ),
-        "mode_call_results": results,
-    }
+    response = runner_mode_response(task_id=task.task_id, runner_id=runner_id,
+        mode_call_count=len(mode_calls), results=results, error_type=error_type)
     try:
         response = await request.app.state.compatibility_runner_service.complete_mode_call_execution(
             task, response, error_type=error_type, authority_error=authority_error,
@@ -339,6 +327,18 @@ async def execute_runner_task_mode_calls(
     if error_type is not None:
         raise HTTPException(status_code=500, detail="Mode call execution failed unexpectedly.")
     return response
+
+
+@router.get("/runners/{runner_id}/tasks/{task_id}/mode-calls/execution", response_model=CompatibilityModeExecutionQuery)
+async def query_runner_task_mode_execution(
+    runner_id: str, task_id: str, request: Request, assignment_id: str = Query(..., min_length=1),
+):
+    try:
+        return await request.app.state.compatibility_runner_service.query_mode_call_execution(
+            runner_id, task_id, assignment_id=assignment_id,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Task not found") from exc
 
 
 @router.get("/tasks", response_model=list[CompatibilityQueuedTask])

@@ -538,7 +538,8 @@ def test_begin_snapshot_is_detached_and_finish_requires_original_execution_id(co
 
 def test_external_metadata_cannot_supply_server_mode_identity_or_observation(connected):
     h = connected
-    forged = {"mode_calls_execution_id": "forged", "mode_calls_execution_reference": {"execution_id": "forged"}}
+    forged = {"mode_calls_execution_id": "forged", "mode_calls_execution_reference": {"execution_id": "forged"},
+        "mode_calls_execution_result_artifact_id": "forged"}
     queued = asyncio.run(h.service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
         plan_id="forgery-plan", tasks=[CompatibilityRunnerTask(task_id="unassigned", environment_id="other",
             runner_selector=RunnerSelector(provider="local_browser"), metadata={**forged, "user_note": "retained"})],
