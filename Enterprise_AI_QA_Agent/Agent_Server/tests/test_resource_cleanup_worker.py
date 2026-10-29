@@ -2,16 +2,20 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import replace
+from types import SimpleNamespace
 
 import pytest
 
 from src.infrastructure.redis_task_queue import QueuedTask
+from src.application.sessions.session_service import SessionService
 from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
     ResourceCleanupWorker,
 )
 from src.runtime.postgres_resource_cleanup_store import reconcile_cleanup_receipt
 from src.runtime.resource_lease_manager import ExpiredResourceLease
+from src.schemas.session import SessionStatus
+from src.schemas.session_resource import SessionResourceKind, SessionResourceStatus
 
 
 class ReceiptStore:
@@ -299,3 +303,28 @@ def test_failed_cleanup_receipt_remains_unknown():
     assert result.status == "unknown"
     assert result.reason_code == "receipt_failed"
     assert result.error_type == "ConnectionError"
+
+
+@pytest.mark.asyncio
+async def test_terminal_session_cleanup_surfaces_error_status_as_unknown_effect():
+    async def cleanup_session(_session_id, *, reason):
+        return [SimpleNamespace(
+            kind=SessionResourceKind.docker_container,
+            resource_key="container-incomplete",
+            status=SessionResourceStatus.error,
+        )]
+
+    service = SessionService.__new__(SessionService)
+    service._session_resource_service = SimpleNamespace(cleanup_session=cleanup_session)
+    async def append_event(*_args, **_kwargs):
+        return None
+    service._store = SimpleNamespace(append_event=append_event)
+    session = SimpleNamespace(
+        id="session-cleanup-incomplete",
+        status=SessionStatus.completed,
+        metadata={},
+        snapshot_count=0,
+    )
+
+    with pytest.raises(RuntimeError, match="resource cleanup"):
+        await service._cleanup_session_resources_if_terminal(session)

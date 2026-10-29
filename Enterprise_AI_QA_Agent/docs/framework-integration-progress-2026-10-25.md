@@ -4327,3 +4327,40 @@ git diff --check
 本节未运行真实 PostgreSQL／Redis／Docker／浏览器清理；当前环境的 live 资源门仍按既有标记跳过，不能把替身测试称为外部资源验收。失败 receipt 的后续分项补偿、Session 终态清理 journal、外部 Runner 对账、H07 及 A3 其余出口仍待实现。
 
 提交边界排除工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md`、`.codex-logs`、`.env` 和本地数据；完整 A3、A2-3、B／C／D／E／F 继续 active。
+
+## 98. A3／H06：终态 Session 清理失败不得伪装为成功收口（2026-10-29）
+
+本节承接 §97 的资源 receipt 对账，修正 Session 终态清理的失败可见性。范围只处理已有 `SessionResourceService.cleanup_session` 返回逐项 `error`／未终态时，Session finalizer 是否把 `session.resources_cleaned` 错当成功的问题；不回滚已提交的 Session/messages/events，不新增重试或调度。
+
+### 真实红测、根因与修复
+
+- 新增单元红测让终态 Session 的清理返回一个 `SessionResourceStatus.error` 项。测试实际失败为 `DID NOT RAISE RuntimeError`：`SessionResourceService._cleanup_one` 已把外部 adapter 异常降为持久 `error` 状态，但 `_cleanup_session_resources_if_terminal` 仍继续发布成功收口事件并正常返回，`_run_post_commit_effect` 因而无法记录该派生效果为 unknown。
+- 根因是“逐资源错误状态”与“终态派生操作边界”之间缺少汇总判定，不是再加一次重试。现有清理逻辑仍完成所有资源的逐项尝试并保留原状态；汇总只接受 `released`／`missing` 为已知清理终态。存在其他状态时记录结构化 `session_resource_cleanup_incomplete`，抛出 `ResourceCleanupIncompleteError`，由既有 `_run_post_commit_effect` 写入稳定 `session.post_commit_effect_failed(effect_kind=resource_cleanup,status=unknown)`。
+- 全部资源已知终态时行为不变，继续发布 `session.resources_cleaned`；正式应用提交、任务终态和原测试结果不受派生清理失败影响。
+
+### TDD 与实际验证
+
+在 `Agent_Server` 使用 `../.venv-framework-v2/Scripts/python.exe`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py -k 'terminal_session_cleanup_surfaces' `
+  -q -rs --tb=short
+# 修复后 1 passed
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_resource_cleanup_worker.py -q -rs --tb=short
+# 15 passed
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py `
+  -q -rs --tb=short
+# 83 skipped；均为既有真实 PostgreSQL／Redis 环境门，本轮未将 skip 当作通过
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均 exit 0
+```
+
+真实 PG／Redis／Docker／浏览器清理未在本节启动或验收；受影响 live 强杀及终态事件测试仍需独立服务。资源操作稳定 journal、失败后的有依据分项补偿、外部 Runner 对账和 H07 仍未完成。
+
+本节提交不包含工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md`、`.codex-logs`、`.env` 或本地数据；A3 及 A2-3、B／C／D／E／F、完整 v4 继续 active。

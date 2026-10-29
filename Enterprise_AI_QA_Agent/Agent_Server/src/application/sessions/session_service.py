@@ -55,6 +55,7 @@ from src.schemas.session import (
     ToolApprovalStatus,
     UpdateSessionRequest,
 )
+from src.schemas.session_resource import SessionResourceStatus
 from src.schemas.case_execution import AgentCaseExecutionContext
 from src.schemas.agent_task import AgentTaskAccepted
 from src.schemas.framework_transcript import framework_transcript_asset
@@ -97,6 +98,10 @@ SNAPSHOT_DETAIL_GRAPH_KEYS = {
     "worker_dispatches",
     "code_review_debate_progress",
 }
+
+
+class ResourceCleanupIncompleteError(RuntimeError):
+    """The terminal Session result is durable, but a derived cleanup is not."""
 
 
 class SessionService:
@@ -3173,6 +3178,20 @@ class SessionService:
         )
         if not cleaned:
             return
+        incomplete = [
+            item for item in cleaned
+            if item.status not in {SessionResourceStatus.released, SessionResourceStatus.missing}
+        ]
+        if incomplete:
+            logger.warning("session_resource_cleanup_incomplete", extra={
+                "session_id": session.id,
+                "resource_count": len(cleaned),
+                "incomplete_count": len(incomplete),
+                "statuses": sorted({item.status.value for item in incomplete}),
+            })
+            raise ResourceCleanupIncompleteError(
+                f"Session resource cleanup has {len(incomplete)} incomplete resource(s)"
+            )
         await self._store.append_event(
             session.id,
             self._make_event(
