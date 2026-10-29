@@ -6,12 +6,13 @@ from types import SimpleNamespace
 from typing import Any
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.routing import APIRoute
 
 from src.application.compatibility.runner_service import (
     CompatibilityArtifactContentUnavailable,
     CompatibilityRunnerNotFound,
+    CompatibilityRunnerReportObserved,
     CompatibilityRunnerStateError,
 )
 from src.application.runtime.tool_runtime_service import ToolExecutionContext
@@ -173,6 +174,10 @@ async def report_runner_task(
 ):
     try:
         return await request.app.state.compatibility_runner_service.report_task(runner_id, task_id, payload)
+    except CompatibilityRunnerReportObserved as exc:
+        return JSONResponse(status_code=exc.status_code, content={
+            "detail": str(exc), "observation": exc.observation.model_dump(mode="json"),
+        })
     except CompatibilityRunnerNotFound as exc:
         raise HTTPException(status_code=404, detail="Runner not found") from exc
     except KeyError as exc:
@@ -388,6 +393,8 @@ async def get_artifact_content(artifact_id: str, request: Request):
     except CompatibilityArtifactContentUnavailable as exc:
         logger.warning("compatibility_artifact_content_missing", extra={"artifact_id": artifact_id})
         raise HTTPException(status_code=404, detail="Artifact content not found") from exc
+    except CompatibilityRunnerStateError:
+        raise
     except Exception as exc:
         logger.error(
             "compatibility_artifact_content_read_failed",

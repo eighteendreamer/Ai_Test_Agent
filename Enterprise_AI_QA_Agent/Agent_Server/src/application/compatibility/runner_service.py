@@ -26,11 +26,13 @@ from src.schemas.compatibility_runner import (
     CompatibilityRunnerPollResponse,
     CompatibilityRunnerRecord,
     CompatibilityRunnerRegistrationRequest,
+    CompatibilityRunnerReportObservation,
     CompatibilityRunnerTaskReportRequest,
     CompatibilityRunnerTaskSummary,
     CompatibilityTaskRequeueRequest,
     CompatibilityTaskRequeueResponse,
     normalize_runner_report_status,
+    runner_report_content,
     runner_report_metadata,
     runner_report_receipt,
     runner_report_result,
@@ -38,6 +40,7 @@ from src.schemas.compatibility_runner import (
 
 
 logger = logging.getLogger(__name__)
+_REPORT_OBSERVATION_ID_PREFIX = "runner-report-observation-"
 
 
 def _utc_now() -> str:
@@ -54,6 +57,15 @@ class CompatibilityArtifactContentUnavailable(ValueError):
 
 class CompatibilityRunnerStateError(RuntimeError):
     """The durable runner catalog cannot be read or committed safely."""
+
+
+class CompatibilityRunnerReportObserved(PermissionError):
+    """The authoritative report is rejected; its separate observation is saved."""
+
+    def __init__(self, detail: str, observation: CompatibilityRunnerReportObservation, *, status_code: int) -> None:
+        super().__init__(detail)
+        self.observation = observation
+        self.status_code = status_code
 
 
 class CompatibilityRunnerService:
@@ -226,7 +238,7 @@ class CompatibilityRunnerService:
                     updated_at=now,
                     metadata={
                         "plan_version": dispatch_plan.plan_version,
-                        **task.metadata,
+                        **runner_report_metadata(task.metadata),
                         "automatic_retry_count": 0,
                         "automatic_retry_limit": None,
                         "recovery_reason": None,
@@ -372,14 +384,24 @@ class CompatibilityRunnerService:
             task = self._tasks.get(task_id)
             if task is None:
                 raise KeyError(task_id)
-            self._ensure_runner_can_write_task(runner_id, task)
-            self._ensure_assignment_matches(task, payload.assignment_id)
-            if task.status != "assigned" and receipt and task.metadata.get("report_receipt_sha256") == receipt:
-                logger.info("compatibility_task_report_receipt_reused", extra={
-                    "task_id": task_id, "runner_id": runner_id, "task_status": task.status,
-                })
-                return task
-            self._ensure_task_can_be_reported(task)
+            try:
+                self._ensure_runner_can_write_task(runner_id, task)
+                self._ensure_assignment_matches(task, payload.assignment_id)
+                if task.status != "assigned" and receipt and task.metadata.get("report_receipt_sha256") == receipt:
+                    logger.info("compatibility_task_report_receipt_reused", extra={
+                        "task_id": task_id, "runner_id": runner_id, "task_status": task.status,
+                    })
+                    return task
+                self._ensure_task_can_be_reported(task)
+            except (PermissionError, CompatibilityRunnerNotFound) as exc:
+                observation = self._append_report_observation_locked(task, runner_id, payload, now=now)
+                if observation is None:
+                    raise
+                missing_runner = isinstance(exc, CompatibilityRunnerNotFound)
+                raise CompatibilityRunnerReportObserved(
+                    "Runner not found" if missing_runner else str(exc), observation,
+                    status_code=404 if missing_runner else 409,
+                ) from None
             raw_artifacts = payload.artifacts
             if not raw_artifacts and isinstance(payload.result.get("artifacts"), list):
                 raw_artifacts = payload.result.get("artifacts") or []
@@ -426,6 +448,105 @@ class CompatibilityRunnerService:
                 self._runners[runner_id] = runner
             self._save_state()
             return updated
+
+    @staticmethod
+    def _report_observation_artifact_id(task_id: str, runner_id: str, assignment_id: str, receipt: str) -> str:
+        identity = json.dumps([task_id, runner_id, assignment_id, receipt], ensure_ascii=False, separators=(",", ":"))
+        return _REPORT_OBSERVATION_ID_PREFIX + sha256(identity.encode("utf-8")).hexdigest()
+
+    def _append_report_observation_locked(
+        self, task: CompatibilityQueuedTask, runner_id: str, payload: CompatibilityRunnerTaskReportRequest,
+        *, now: str,
+    ) -> CompatibilityRunnerReportObservation | None:
+        assignment_id = payload.assignment_id
+        receipt = runner_report_receipt(payload)
+        if not assignment_id or not receipt:
+            return None
+        artifact_id = self._report_observation_artifact_id(task.task_id, runner_id, assignment_id, receipt)
+        existing = self._artifacts.get(artifact_id)
+        if existing is not None:
+            observation = self._checked_report_observation(existing)
+            if (observation.task_id, observation.runner_id, observation.assignment_id, observation.report_receipt_sha256) != (
+                task.task_id, runner_id, assignment_id, receipt,
+            ):
+                logger.error("compatibility_runner_report_observation_identity_conflict", extra={
+                    "task_id": task.task_id, "runner_id": runner_id, "artifact_id": artifact_id,
+                })
+                raise CompatibilityRunnerStateError("Runner report observation identity conflicts with the report.")
+            event = "compatibility_runner_report_observation_reused"
+        else:
+            history = task.metadata.get("retry_history")
+            recorded = (
+                task.assigned_runner_id == runner_id and task.metadata.get("assignment_id") == assignment_id
+            ) or (
+                isinstance(history, list) and any(
+                    isinstance(item, dict) and item.get("previous_runner_id") == runner_id
+                    and item.get("previous_assignment_id") == assignment_id for item in history
+                )
+            )
+            if not recorded:
+                return None
+            # Like PostgresToolJobStore.append_framework_late_output: bind the
+            # original attempt and content, without publishing a task result.
+            observation = CompatibilityRunnerReportObservation(
+                artifact_id=artifact_id, task_id=task.task_id, dispatch_id=task.dispatch_id,
+                plan_id=task.plan_id, environment_id=task.environment_id, runner_id=runner_id,
+                assignment_id=assignment_id, report_receipt_sha256=receipt, observed_at=now,
+            )
+            artifact = CompatibilityArtifactRecord(
+                artifact_id=artifact_id, task_id=task.task_id, dispatch_id=task.dispatch_id,
+                plan_id=task.plan_id, environment_id=task.environment_id, runner_id=runner_id,
+                type="runner_late_report", uri=f"/api/v1/compatibility/artifacts/{artifact_id}/content",
+                mime_type="application/json", label="迟到 Runner 报告（非权威，待核查）", created_at=now,
+                metadata={"storage_backend": "inline_text", "runner_report_observation": observation.model_dump(mode="json"),
+                    "__content_text": runner_report_content(payload)},
+            )
+            self._checked_report_observation(artifact)
+            self._artifacts[artifact_id] = artifact
+            self._save_state()
+            event = "compatibility_runner_report_observation_committed"
+        logger.info(event, extra={
+            "task_id": task.task_id, "runner_id": runner_id, "assignment_id": assignment_id,
+            "artifact_id": artifact_id, "task_status": task.status,
+            "recovery_reason": task.metadata.get("recovery_reason"),
+        })
+        return observation
+
+    def _checked_report_observation(self, artifact: CompatibilityArtifactRecord) -> CompatibilityRunnerReportObservation:
+        try:
+            raw = artifact.metadata["runner_report_observation"]
+            observation = CompatibilityRunnerReportObservation.model_validate(raw)
+            content = artifact.metadata["__content_text"]
+            if not isinstance(content, str):
+                raise ValueError("Observation content must be text.")
+            payload = CompatibilityRunnerTaskReportRequest.model_validate_json(content, strict=True)
+            task = self._tasks.get(observation.task_id)
+            if (
+                raw != observation.model_dump(mode="json")
+                or artifact.type != "runner_late_report" or artifact.mime_type != "application/json"
+                or artifact.metadata.get("storage_backend") != "inline_text"
+                or artifact.created_at != observation.observed_at
+                or artifact.uri != f"/api/v1/compatibility/artifacts/{observation.artifact_id}/content"
+                or any(getattr(artifact, field) != getattr(observation, field) for field in (
+                    "artifact_id", "task_id", "dispatch_id", "plan_id", "environment_id", "runner_id",
+                ))
+                or task is None or any(getattr(task, field) != getattr(observation, field) for field in (
+                    "task_id", "dispatch_id", "plan_id", "environment_id",
+                ))
+                or payload.assignment_id != observation.assignment_id
+                or runner_report_content(payload) != content
+                or runner_report_receipt(payload) != observation.report_receipt_sha256
+                or observation.artifact_id != self._report_observation_artifact_id(
+                    observation.task_id, observation.runner_id, observation.assignment_id, observation.report_receipt_sha256,
+                )
+            ):
+                raise ValueError("Observation differs from its original reference or content.")
+            return observation
+        except (KeyError, ValueError, TypeError) as exc:
+            logger.error("compatibility_runner_report_observation_invalid", extra={
+                "artifact_id": artifact.artifact_id, "task_id": artifact.task_id, "error_type": type(exc).__name__,
+            })
+            raise CompatibilityRunnerStateError("Runner report observation is invalid.") from None
 
     async def upload_task_artifact(
         self,
@@ -482,7 +603,7 @@ class CompatibilityRunnerService:
                         label=payload.label or payload.filename or payload.type or "artifact",
                         created_at=now,
                         metadata={
-                            **payload.metadata,
+                            **self._reported_artifact_metadata(payload.metadata),
                             **metadata,
                             "case_ids": task.case_ids,
                             "original_filename": payload.filename,
@@ -684,6 +805,13 @@ class CompatibilityRunnerService:
             artifact = self._artifacts.get(artifact_id)
         if artifact is None:
             raise KeyError(artifact_id)
+        if artifact_id.startswith(_REPORT_OBSERVATION_ID_PREFIX) or "runner_report_observation" in artifact.metadata:
+            self._checked_report_observation(artifact)
+            return {
+                "content": artifact.metadata["__content_text"].encode("utf-8"),
+                "content_type": "application/json",
+                "filename": "runner-late-report.json",
+            }
         if artifact.uri.startswith("rustfs://") and self._artifact_storage_service is not None:
             stored = await self._artifact_storage_service.read_object_uri(artifact.uri)
             return {
@@ -1142,6 +1270,8 @@ class CompatibilityRunnerService:
             "upload_id",
             "upload_assignment_id",
             "upload_receipt_sha256",
+            "runner_report_observation",
+            "__content_text",
         }
         return {key: metadata_value for key, metadata_value in value.items() if key not in server_controlled_keys}
 

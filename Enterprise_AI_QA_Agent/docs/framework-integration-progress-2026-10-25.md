@@ -4535,3 +4535,64 @@ git diff --check
 兼容性行为有意改变：服务重启或超时不再自动重跑未完成 assignment，运维必须保留原日志并核查，不能通过增大旧预算恢复盲重派。原人工 requeue 入口保留，不等于已有证据化恢复审批；服务器不能撤销已发送外部请求，也不保证跨机器/多进程 JSON 排他。Runner 的真正执行/查询/停止回执、迟到非权威观察、未知操作有依据补偿、H07 首因及完整 A2/A3/B/C/D/E/F 出口继续保留，完整目标 active。
 
 本节使用 `【fix】阻止中断Runner未知效果自动重派` 提交，仅包含本节 8 个代码/测试/文档文件，实际 commit ID 以 Git 与交付输出为准；不推送/建 PR。提交前核对 status、完整 diff、暂存范围与实施记录只追加。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不动，日志、构建产物、`.env` 和本地数据库不纳入。
+
+## 103. A3／C／H06：保留 Runner 迟到报告为独立非权威观察（2026-10-29）
+
+基线 `e1db3549b`，承接 §102；对应 v4 §8.1／§10.1 的“旧 owner 迟到只保留非权威观察”及 §10.2／§15 的窄权限出口。本节接续已存在的未提交 schema/路由/测试草稿，补齐缺失的保存与校验实现；只覆盖兼容性 Runner 报告，不将模式调用桥返回、外部执行/停止协议或其他 Runner 等同实现。
+
+### 依据、根因与采用方式
+
+- 现有 `runtime/postgres_tool_job_store.py::_append_framework_late_output_sync` 以原执行引用和内容摘要生成稳定独立工件，不改权威 Job 输出；本服务已有独立 `_artifacts`、JSON 原子保存/回滚和列表/content 端口。采用同一分层：权威报告继续拒绝，已记录原 assignment 的报告另存非权威观察，不新增调度器或客户端 fallback。
+- 缺口是权威写入校验与证据保留没有分离，拒绝迟到写入会同时丢弃可核查结果；不能通过放开旧 assignment 或将 409 改成功来解决。`report_task` 只在原写权限校验失败后尝试追加观察，缺失/未知身份仍原样拒绝。
+- 测试依据为本地 `Agent轨迹与协议鲁棒性.html` 的重复执行/幂等/超时补偿与观察解释约束，以及 `Agent测试专项.html` 的幂等、禁止调用和轨迹断言。最终结论以正式 ASGI 路由、真实隔离 JSON/SQLite、完整集合比较与实际本地效果次数为准，不从返回文本推定通过。
+
+### TDD、真实失败与修正
+
+- 首轮目标红测 **6 failed、4 passed，7.13s**：四种迟到位置均丢观察，保存失败也未进入持久化协议。来源注入红测另为 **3 failed、10 deselected，7.72s**：报告/上传工件 metadata 可伪造观察标记，派发 metadata 可注入 retry_history。日志分别为 `a3-runner-late-reports-red-2026-10-29.log`、`a3-runner-late-reports-provenance-red-2026-10-29.log`。
+- 补齐独立保存与校验、复用 metadata 过滤后首轮 **13 passed，10.45s**。追加实际 formatter 反例得到 **1 failed、32 passed、21 deselected，7.87s**：LogRecord 有 artifact_id/task_status，但未渲染；只在现有安全标量白名单补这两个字段，不打印报告或任意 extra。
+- 初次完整消费方组 **198 passed、2 failed，16.92s**；失败均是旧“409 后整个文件/工件集合完全不变”的断言。更新为任务与 Runner 完整相等、原工件原序保留且只增加精确非权威工件；上传、模式开始/完成继续要求拒绝后文件完全不变。没有删除权威证据比较或放宽为多种成功状态。
+- 严格格式红测 **5 failed、5 passed、50 deselected，8.00s**：Pydantic strict Literal 仍把 JSON 0/true 转为 false/版本 1；缺失 scope 被默认补齐。沿项目既有 before validator 限定 JSON 原始类型，持久回执必须与完整 DTO 相等；不是已有权限提升事故，0 原先也被转为 false。后续组合 **121 passed、1 failed，16.60s** 的剩余项是本轮测试 patch 将异常别名绑定到邻近用例，导致 `NameError: rejected`；纠正测试作用域后再跑完整组，而非绕过异常断言。
+- 上述日志均保留；文件名 `a3-runner-late-reports-strict-green-2026-10-29.log` 对应的实际结果仍是 121 passed/1 failed，不能因名称带 green 当作通过。第一次完整修正组为 206 passed/21.74s；收紧未知身份 HTTP 状态断言后，对最终源码重新运行，结果见下文，重叠集合不累计。
+
+### v4 对应、代码与消费方
+
+| 契约 | 代码/测试 | 权限与兼容性 |
+| --- | --- | --- |
+| §8.1／§10.1：旧响应仅观察 | `runner_service._append_report_observation_locked`、严格 `CompatibilityRunnerReportObservation`；当前原引用或最近十条服务器历史准入，原 Runner 记录清理后仍可只保存观察 | 404/409 保留，回执 scope 为 `compatibility_runner_report_observation_only`，authoritative/execution_authority 固定 false；无原引用不创建 |
+| 稳定原件和幂等 | 共享原报告 canonical DTO/receipt；稳定 task/Runner/assignment/digest 工件 ID；校验器核对正文、摘要、完整回执、工件与原任务绑定 | 同内容返回原时间/ID且不改文件；不同内容追加；历史淘汰后只能复用已有同内容观察；冲突/漂移脱敏 503，不覆盖 |
+| A3/H06：派生独立 | 只写既有独立工件集合，沿 `_save_state` 保存成功后返回观察；失败回滚内存 | task/Runner、心跳、结果、模式 metadata、task.artifacts、正式通过率和权威证据数不变；不裁决领域测试、不赋予执行/补偿权 |
+| 协议、来源和日志 | report 路由附加 observation，content 路由沿既有状态错误处理；报告/上传过滤观察私有字段，派发过滤服务器历史；`core/log_format.py` 扩展标量诊断 | 不升级依赖、不增生产开关/数据库 schema/调度层；观察不是旧客户端可以接受的成功 DTO |
+| 验收与出口 | 新 `test_compatibility_runner_late_reports.py` 共 60 项，旧 persistence 测试成对更新，`.gitignore` 纳管新测试，Runner 活文档同步 | 真 CLI+SQLite+JSON+ASGI：一次受控文件效果，upload/report_ready 后服务重建，完整报告变 conflict、processed=0、不 ACK，重开不执行 |
+
+全局核对报告 schema/路由/服务/客户端/journal 对账与前端消费方。前端 `CompatibilityArtifactRecord.metadata` 已为 Record，工件查询已支持类型过滤，`http.ts` 非 2xx 继续按 detail 抛错；正式面板只消费汇总报告工件，不将观察计为通过。未修改 UI 或新增观察专用展示，只有现有工件 API 查询出口，不宣称全 UI 验收。JSON schema_version=1 仍使用可选工件 metadata；这不证明旧/新多进程可混写状态文件。
+
+### 最终源码实际验证
+
+独立 `.venv-framework-v2`；未安装/升级依赖。在 `Agent_Server` 执行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_compatibility_runner_late_reports.py tests/test_compatibility_runner_reconciliation.py `
+  tests/test_compatibility_runner_persistence.py tests/test_compatibility_runner_service.py `
+  tests/test_compatibility_mode_skills.py tests/test_agent_task_monitor.py tests/test_request_context.py -q -rs --tb=short
+# 206 passed，1 warning，27.82s，exit 0；无 skip/deselect
+# .codex-logs/a3-runner-late-reports-final-source-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py `
+  tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 36 passed，9.79s，exit 0；无 skip/deselect
+# .codex-logs/a3-runner-late-reports-adjacent-2026-10-29.log
+```
+
+在 `agent_web` 执行 `npm.cmd test -- src/components/chat/CompatibilityTestingPanel.sessionSwitch.test.ts`：**3 passed，2.24s，exit 0**；`npm.cmd run build`：**exit 0**，实际包含 vue-tsc typecheck 与 Vite build（3311 modules，11.77s）。日志为 `a3-runner-late-reports-ui-2026-10-29.log`、`a3-runner-late-reports-web-build-2026-10-29.log`。后端唯一 warning 为既有 Starlette/anyio BlockingPortal 弃用提示。
+
+根目录执行 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check`，均实际 exit 0；ruff/mypy 经 importlib 检查均未安装，未将 compileall 冒充 lint/typecheck。本轮课程摘录的首次输出另遇 Windows GBK/emoji UnicodeEncodeError；设置单次 shell 的 PYTHONIOENCODING=utf-8 后已重新读取并取得 exit 0，不改系统/项目编码配置。
+
+### 证据限制、剩余出口与提交
+
+本节是 E0 及本地 ASGI/SQLite/JSON/受控文件效果协议证据；CLI 为正式 main/RunnerClient/RunnerJournal，但传输为 TestClient、执行器为受控本地替身。没有运行本轮真实官方框架/PG/Redis/独立 Worker E2 链路，更不是 E3/E4；完整后端/前端、真实供应商/embedding/RustFS/浏览器/压测/扫描 Runner 未验收。未启动 Docker/外部服务，未发起付费或未授权目标请求。
+
+原报告按现有 inline 工件模式保存在私有 JSON metadata；列表 metadata 的 __content_text 和 content 查询结果均可能含未脱敏业务正文，须沿原文件/备份/API 权限保护，不可作为脱敏日志转发。本步未新增认证/保留策略，也不声称摘要能证明授权或外部执行事实。观察当前只可查询，不能自动升格成原权威结果；原 journal 仍需保留，404/409 不 ACK。外部 Runner 真正执行/查询/停止回执、模式桥迟到响应、当前 owner 核验/有依据补偿、A3 其余出口与 B/C/D/E/F 完整实施继续保留，完整 v4 目标 active。
+
+本节使用 `【feat】保留Runner迟到报告非权威观察` 提交，范围为本节 9 个代码/测试/活文档/记录/白名单文件，实际 ID 以 Git 与交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不动；日志、构建产物、凭据与本地数据库不纳入。

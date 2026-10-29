@@ -4,7 +4,7 @@
 
 写入、序列化或替换失败时，服务恢复上次已提交的 Runner、任务和工件索引，记录 `compatibility_runner_state_save_failed`，API 返回 **503** 和固定错误正文。上传索引提交失败沿用已有工件补偿删除；补偿失败记录 `compatibility_artifact_cleanup_failed`，原始提交错误仍返回给调用方。临时文件清理失败也单独记录，不删除目录或正式文件。
 
-503 表示状态没有提交成功；重新提交结果与重新执行工具是不同操作。工具已有外部副作用时，需要对账并保留原结果，不应因为收到 503 就重跑工具。新版 CLI 已保存确定的待提交报告，使用领取身份与幂等回执重传；未知执行/旧协议上传结果仍需核查。
+503 表示状态未能安全读取、校验或提交，不是工具尚未执行的证明；重新提交结果与重新执行工具是不同操作。工具已有外部副作用时，需要对账并保留原结果，不应因为收到 503 就重跑工具。新版 CLI 已保存确定的待提交报告，使用领取身份与幂等回执重传；未知执行/旧协议上传结果仍需核查。
 
 缺失状态文件允许初始化空服务。存在但无法读取、JSON/编码损坏、未知 schema、集合格式或记录不合法、重复身份的文件会触发 `CompatibilityRunnerStateError`，阻止初始化并保留原文件。日志仅记录类型、系统错误号及数量，不复制结果、元数据或验证失败的输入值。恢复前应保留原文件，核验备份及外部任务实际状态；服务不会自动清空损坏文件或把无法确认的执行结果标成成功。
 
@@ -12,7 +12,7 @@
 
 心跳过期、Runner 记录缺失和服务启动恢复发现未完成的 `assigned` 任务时，直接进入 `recovery_required`，原因是 `assignment_outcome_unknown`。任务已派发就可能到达外部执行器，缺少模式调用开始标记不证明未执行。服务器不再因预算尚有余额自动重新入队，也不把中断改成工具成功或失败。
 
-自动待核查保留原 Runner、assignment、任务定义、结果、工件、错误、模式调用执行元数据、已有 `retry_history` 和次数，不归档、不清空、不生成新 assignment。记录 `recovery_source=restart/heartbeat` 与核查时间；缺失 Runner 归入 heartbeat 回收路径。原领取只用于证据关联，不是继续写入或执行许可：报告、上传、模式调用开始/完成均拒绝，上传的外部存储 await 后也重新核查。其他排队任务仍可领取，重复读取/服务重建不反复改写待核查记录。报告与前端明确提示核查原 Runner 日志、目标状态及副作用，只有显式包含 `recovery_required` 的人工 requeue 才沿原入口归档并重排队；默认仅重跑失败任务不会包含它。该入口不自动查询目标，不证明已经对账或停止外部执行。
+自动待核查保留原 Runner、assignment、任务定义、结果、工件、错误、模式调用执行元数据、已有 `retry_history` 和次数，不归档、不清空、不生成新 assignment。记录 `recovery_source=restart/heartbeat` 与核查时间；缺失 Runner 归入 heartbeat 回收路径。原领取只用于证据关联，不是继续写入或执行许可：权威报告、上传、模式调用开始/完成均拒绝，上传的外部存储 await 后也重新核查。符合原领取引用的迟到报告只可追加独立的非权威观察，仍返回拒绝，规则见下文。其他排队任务仍可领取，重复读取/服务重建不反复改写待核查记录。报告与前端明确提示核查原 Runner 日志、目标状态及副作用，只有显式包含 `recovery_required` 的人工 requeue 才沿原入口归档并重排队；默认仅重跑失败任务不会包含它。该入口不自动查询目标，不证明已经对账或停止外部执行。
 
 原 `orchestration.compatibility_runner_max_automatic_retries` 配置与环境变量 `ORCHESTRATION__COMPATIBILITY_RUNNER_MAX_AUTOMATIC_RETRIES` 继续兼容读取，默认 3、最小 0，不改变设置 schema；上限只保留为历史诊断信息，**任何值都不授权重派未知 assignment**。已有 `automatic_retry_count` 不递增或重置，缺此字段的旧记录保持缺省，不从最近十条历史猜测次数；人工重排队仍按旧格式归档、累计 `retry_count` 并重置兼容计数。原 `automatic_retry_budget_exhausted` 待核查记录仍可读取且保留其原因，不改写成新历史。预算和核查字段归服务器所有，派发元数据/Runner report 不能覆盖；正式 Settings 读取 orchestration，简化平面设置仍受支持。单服务 JSON 并发限制、跨机器 Runner 排他、目标对账与停止回执仍未解决。
 
@@ -86,4 +86,25 @@ CLI 不注册、不发心跳、不领取任务；每个 entry 输出一条只含
 
 CLI 沿用原 `_json_request` 传输，本步没有新增 Bearer 凭据配置能力；启用全局 Bearer 认证的环境会将未授权请求以 401 原样拒绝。不能为运行此命令关闭认证、改用普通列表或绕过网关；这些部署仍需通过既有授权 API 调用方式读取 snapshot。
 
-测试包含真实 SQLite/JSON 文件、正式 ASGI API、提交后受控丢弃报告 ACK、以及在 `executing` 提交后真实终止本地 journal 子进程。强杀子进程不执行领域工具，ASGI 传输不代表真实供应商/浏览器/压测/扫描 Runner。新增受控本地文件副作用与结果丢失测试，验证服务重建、心跳过期/Runner 缺失后，另一 Runner 与独立日志不能再次领取该任务，原 journal 仍可只读核对为 unknown；它不是真实领域 Runner 验收。外部执行结果查询、旧执行的非权威迟到观察、有依据补偿及停止回执仍未完成；本接口不把这些缺口变成已验收能力。
+测试包含真实 SQLite/JSON 文件、正式 ASGI API、提交后受控丢弃报告 ACK、以及在 `executing` 提交后真实终止本地 journal 子进程。强杀子进程不执行领域工具，ASGI 传输不代表真实供应商/浏览器/压测/扫描 Runner。新增受控本地文件副作用与结果丢失测试，验证服务重建、心跳过期/Runner 缺失后，另一 Runner 与独立日志不能再次领取该任务，原 journal 仍可只读核对为 unknown；它不是真实领域 Runner 验收。独立迟到报告观察已按下节接入，但外部执行结果查询、观察核验/升格、有依据补偿及停止回执仍未完成；本接口不把这些缺口变成已验收能力。
+
+## 迟到报告：独立的非权威观察
+
+`POST /api/v1/compatibility/runners/{runner_id}/tasks/{task_id}/report` 仍拒绝待核查、已换轮或终态后不同内容的权威写入。若请求精确匹配服务器记录的原 Runner/assignment，则在既有工件集合追加 `type="runner_late_report"`，返回原 **409** 与 `detail`，并增加 `observation` 回执。Runner 注册记录已清理但任务仍保留该原引用时同样只保留观察，仍返回 **404**。不存在的任务/Runner 关联、缺失或未知 assignment 不创建观察；旧客户端不带 assignment 的报告不能据此生成证据。
+
+准入只认当前任务的原领取，或人工 requeue 保存的最近十条 `retry_history.previous_runner_id/previous_assignment_id`；不按 summary、工具名或结果相似度猜测。派发 metadata 和 Runner report 不能注入服务器历史，上传与内嵌工件 metadata 不能伪造 `runner_report_observation` 或 `__content_text`。这不是新增认证机制，领取身份仍不能替代现有 API 鉴权。
+
+回执 scope 固定为 `compatibility_runner_report_observation_only`，`authoritative=false`、`execution_authority=false`；含 task/dispatch/plan/environment、原 Runner/assignment、规范化报告 SHA-256、稳定 artifact_id 和 observed_at。报告沿正式回执的 DTO 及状态归一化规则保存，工件 ID 绑定 task/Runner/assignment/报告摘要。同报告重投复用原回执与时间且不写文件，状态别名或对象键顺序不产生新观察；不同内容追加独立工件，不替换已有观察。最近历史被淘汰后只能查询或复用已存在的同内容观察，不能据此补造新的旧尝试报告。
+
+保存只写独立工件索引，不改任务/Runner、心跳、assignment、任务时间、原结果、错误、模式执行元数据或 `task.artifacts`；因此汇总通过率、正式报告与权威证据数不变。观察在 JSON 原子保存成功后才返回回执，保存失败沿既有规则回滚内存并返回脱敏 503，不伪称证据已入库。工件冲突、回执格式或身份/内容漂移也返回 503，保留原件、不覆盖或静默重建。
+
+查询复用现有出口：
+
+- `GET /api/v1/compatibility/artifacts?task_id={task_id}&artifact_type=runner_late_report`：候选观察工件索引，可再按 dispatch_id/runner_id 过滤；type 仅用于检索，不能代替服务器回执、完整引用与内容校验，也不是权限证明。
+- `GET /api/v1/compatibility/artifacts/{artifact_id}/content`：校验完整回执、规范化内容、摘要、原任务绑定及工件引用后返回原报告 JSON。
+
+原报告作为 `storage_backend="inline_text"` 的工件 metadata 存在私有状态文件中，列表 metadata 的 `__content_text` 与 content 端口均可包含未脱敏业务正文；必须沿现有访问控制保护文件、备份与查询结果，不能把它们当作脱敏诊断输出。HTTP 拒绝回执和日志不返回/打印原报告正文。记录 `compatibility_runner_report_observation_committed/reused/invalid` 及身份冲突事件；现有 formatter 仅扩展 artifact_id/task_status 标量诊断，不输出任意 metadata。
+
+**观察回执不是成功报告、ACK、执行/重试/补偿许可或领域测试通过证明。** CLI 收到 404/409 仍将本地完整报告保留为 conflict，不删除 journal，也不因观察而增加 processed 数。真实 CLI + SQLite/JSON/正式 ASGI 路由测试在受控本地效果发生、日志上传及 report_ready 保存后重建服务；报告被留存但不结算，客户端重开不再次执行。该证据不是远端领域 Runner、实际进程停止或 E3 验收。
+
+公开成功 DTO、原 URL 和 JSON schema_version=1 保持不变；观察使用工件原有可选 metadata，旧读者可按旧工件结构读取，但不会因此具备新校验能力。新增错误正文仅附加 observation，原客户端/前端仍依据非 2xx 和 detail 处理，不需要升级为成功 DTO。本步没有新增观察专用 UI、自动核验/升格或调度器，也未证明旧/新版本多进程混写 JSON 安全；仍须保持单服务写入，不能把兼容读取等同滚动部署验收。

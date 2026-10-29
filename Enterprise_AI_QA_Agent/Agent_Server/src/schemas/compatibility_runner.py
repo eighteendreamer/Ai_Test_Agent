@@ -4,7 +4,7 @@ from hashlib import sha256
 import json
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class CompatibilityPlanActionRequest(BaseModel):
@@ -115,14 +115,19 @@ def normalize_runner_report_status(value: str) -> str:
     return normalized
 
 
+def runner_report_content(payload: CompatibilityRunnerTaskReportRequest) -> str:
+    """The original report receipt's canonical DTO representation."""
+    return json.dumps(
+        {**payload.model_dump(mode="json"), "status": normalize_runner_report_status(payload.status)},
+        sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+    )
+
+
 def runner_report_receipt(payload: CompatibilityRunnerTaskReportRequest) -> str | None:
     """The existing identified report digest, shared by submit and read paths."""
     if not payload.assignment_id:
         return None
-    return sha256(json.dumps(
-        {**payload.model_dump(mode="json"), "status": normalize_runner_report_status(payload.status)},
-        sort_keys=True, ensure_ascii=False, separators=(",", ":"),
-    ).encode("utf-8")).hexdigest()
+    return sha256(runner_report_content(payload).encode("utf-8")).hexdigest()
 
 
 def runner_report_result(
@@ -141,6 +146,41 @@ def runner_report_metadata(value: dict[str, Any]) -> dict[str, Any]:
         "report_receipt_sha256",
     }
     return {key: item for key, item in value.items() if key not in server_controlled_keys}
+
+
+class CompatibilityRunnerReportObservation(BaseModel):
+    """Receipt for a rejected report retained only as untrusted evidence."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["compatibility_runner_report_observation_only"] = "compatibility_runner_report_observation_only"
+    artifact_id: str = Field(min_length=1)
+    task_id: str = Field(min_length=1)
+    dispatch_id: str = Field(min_length=1)
+    plan_id: str = Field(min_length=1)
+    environment_id: str = Field(min_length=1)
+    runner_id: str = Field(min_length=1)
+    assignment_id: str = Field(min_length=1)
+    report_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    observed_at: str = Field(min_length=1)
+    authoritative: Literal[False] = False
+    execution_authority: Literal[False] = False
+
+    @field_validator("schema_version", mode="before")
+    @classmethod
+    def _json_schema_version(cls, value: Any) -> Any:
+        if type(value) is not int:
+            raise ValueError("Observation schema version must be a JSON integer.")
+        return value
+
+    @field_validator("authoritative", "execution_authority", mode="before")
+    @classmethod
+    def _no_authority(cls, value: Any) -> bool:
+        # Literal validation otherwise treats JSON 0 as False, even in strict mode.
+        if value is not False:
+            raise ValueError("Observation authority must be JSON false.")
+        return value
 
 
 class CompatibilityRunnerJournalReconciliation(BaseModel):

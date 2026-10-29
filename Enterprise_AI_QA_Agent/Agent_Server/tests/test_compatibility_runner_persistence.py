@@ -18,7 +18,7 @@ from src.api.routes.compatibility import router
 from src.application.compatibility import runner_client as runner_client_module
 from src.application.compatibility.runner_client import CompatibilityRunnerClient
 from src.application.compatibility.runner_journal import RunnerJournal
-from src.application.compatibility.runner_service import CompatibilityRunnerService
+from src.application.compatibility.runner_service import CompatibilityRunnerReportObserved, CompatibilityRunnerService
 from src.core.config import OrchestrConfig
 from src.core.log_format import ContextFilter, ContextFormatter, LOG_FORMAT
 from src.modes.compatibility_testing_mode.contracts import (
@@ -665,7 +665,15 @@ def test_same_assignment_identical_report_is_idempotent_but_cannot_change_termin
         assert len(service._artifacts) == 1
         different = client.post(path, json={**payload, "result": {"summary": "Changed result."}})
         assert different.status_code == 409
-        assert state_path.read_bytes() == committed
+        receipt = different.json()["observation"]
+        assert receipt["authoritative"] is False and receipt["execution_authority"] is False
+        after = json.loads(state_path.read_bytes())
+        original = json.loads(committed)
+        assert after["tasks"] == original["tasks"] and after["runners"] == original["runners"]
+        assert after["artifacts"][:-1] == original["artifacts"]
+        assert after["artifacts"][-1]["artifact_id"] == receipt["artifact_id"]
+        assert after["artifacts"][-1]["type"] == "runner_late_report"
+        assert service._tasks["task"].model_dump(mode="json") == first.json()
         # The receipt survives reload but never authorizes an old assignment.
         app.state.compatibility_runner_service = CompatibilityRunnerService(settings=settings_for(tmp_path))
         assert client.post(path, json=payload).json() == first.json()
@@ -1147,7 +1155,7 @@ def test_held_assignment_identity_does_not_authorize_runner_writes(tmp_path, ope
         before = restored._tasks["task"].model_dump(mode="json")
         state_path = tmp_path / "data" / "compatibility" / "runner_state.json"
         committed = state_path.read_bytes()
-        with pytest.raises(PermissionError, match="requires recovery review"):
+        with pytest.raises(PermissionError, match="requires recovery review") as rejected:
             if operation == "report":
                 await restored.report_task("runner", "task", CompatibilityRunnerTaskReportRequest(
                     status="completed", assignment_id=assignment, result={"summary": "Late controlled result."},
@@ -1163,8 +1171,18 @@ def test_held_assignment_identity_does_not_authorize_runner_writes(tmp_path, ope
                     "runner", "task", status="completed", result_count=1, assignment_id=assignment,
                 )
         assert restored._tasks["task"].model_dump(mode="json") == before
-        assert state_path.read_bytes() == committed
-        assert restored._artifacts == {}
+        if operation == "report":
+            assert isinstance(rejected.value, CompatibilityRunnerReportObserved)
+            receipt = rejected.value.observation
+            assert receipt.authoritative is False and receipt.execution_authority is False
+            original, after = json.loads(committed), json.loads(state_path.read_bytes())
+            assert after["tasks"] == original["tasks"] and after["runners"] == original["runners"]
+            assert len(after["artifacts"]) == 1 and set(restored._artifacts) == {receipt.artifact_id}
+            assert after["artifacts"][0]["metadata"]["runner_report_observation"] == receipt.model_dump(mode="json")
+            assert after["artifacts"][0]["type"] == "runner_late_report"
+        else:
+            assert state_path.read_bytes() == committed
+            assert restored._artifacts == {}
         assert not [path for path in (tmp_path / "artifacts").rglob("*") if path.is_file()]
     asyncio.run(exercise())
 
