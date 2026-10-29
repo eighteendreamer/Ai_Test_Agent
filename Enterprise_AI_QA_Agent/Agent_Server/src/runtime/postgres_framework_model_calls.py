@@ -14,6 +14,7 @@ import json
 import logging
 import re
 from dataclasses import dataclass
+from datetime import datetime
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.postgres_runtime_owner import (
@@ -24,7 +25,7 @@ from src.schemas.framework_model_call import (
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
     FrameworkModelWireObservation,
     FrameworkModelReservationOwner, FrameworkModelReservationTransfer,
-    response_observation_id,
+    response_observation_id, union_activity_intervals,
 )
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
 
@@ -128,6 +129,60 @@ class PostgresFrameworkModelCalls:
                 self._require_binding(cur, binding)
                 return self._snapshot(cur, binding.binding_id)
         return await asyncio.to_thread(read)
+
+    async def root_activity_intervals(
+        self,
+        binding: RuntimeBinding,
+        *,
+        as_of: datetime | None = None,
+    ) -> list[tuple[datetime, datetime]]:
+        """Read model plus Worker-attempt activity without counting approval wait.
+
+        The task-attempt table is the existing durable owner timeline.  Only
+        framework execution operations are included; application-only
+        ``approval_recover`` settlement/finalization tasks are deliberately
+        excluded.  An approval wait therefore appears as a gap between the
+        finished original attempt and a later ``approval_resume`` attempt.
+        """
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._require_binding(cur, binding)
+                snapshot = self._snapshot(cur, binding.binding_id)
+                intervals = [
+                    (call.started_at, call.settled_at)
+                    for call in snapshot.calls
+                    if call.started_at is not None
+                ]
+                tasks_table = self._settings.database.postgres_agent_task_table
+                attempts_table = self._settings.database.postgres_agent_attempt_table
+                cur.execute(
+                    f"""SELECT attempt.started_at, attempt.finished_at
+                    FROM {tasks_table} AS task
+                    JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
+                    WHERE task.runtime_binding->>'binding_id'=%s
+                      AND task.operation IN ('message','message_recover','approval_resume')""",
+                    (binding.binding_id,),
+                )
+                intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
+                return union_activity_intervals(intervals, as_of=as_of)
+
+        result = await asyncio.to_thread(read)
+        logger.info("framework_root_activity_read", extra={
+            "binding_id": binding.binding_id,
+            "interval_count": len(result),
+            "activity_seconds": sum((end - start).total_seconds() for start, end in result),
+            "open_tail_observed": as_of is not None,
+        })
+        return result
+
+    async def root_activity_seconds(
+        self,
+        binding: RuntimeBinding,
+        *,
+        as_of: datetime | None = None,
+    ) -> float:
+        intervals = await self.root_activity_intervals(binding, as_of=as_of)
+        return sum((end - start).total_seconds() for start, end in intervals)
 
     async def frozen_policy(self, binding: RuntimeBinding) -> FrameworkModelBudget:
         """Read admission policy without loading the Turn's entire call history."""

@@ -1,13 +1,14 @@
 """Original root budget facts are material, never permission to send or settle."""
 from copy import deepcopy
 from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import pytest
 
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
-    FrameworkModelCallRecord, FrameworkModelUsage,
+    FrameworkModelCallRecord, FrameworkModelUsage, union_activity_intervals,
 )
 from tests.test_runtime_binding_persistence import make_binding
 
@@ -161,3 +162,96 @@ def test_root_activity_time_uses_explicit_observation_for_an_unclosed_call():
     assert snapshot.root_activity_seconds(
         as_of=base + timedelta(seconds=9)
     ) == 5
+
+
+def test_activity_union_keeps_approval_waiting_gap_out_of_root_time():
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+
+    intervals = union_activity_intervals([
+        (base, base + timedelta(seconds=10)),
+        # The approval is waiting between these two execution attempts.
+        (base + timedelta(seconds=60), base + timedelta(seconds=70)),
+        # A child branch overlaps the resumed attempt.
+        (base + timedelta(seconds=65), base + timedelta(seconds=75)),
+    ])
+
+    assert intervals == [
+        (base, base + timedelta(seconds=10)),
+        (base + timedelta(seconds=60), base + timedelta(seconds=75)),
+    ]
+    assert sum((end - start).total_seconds() for start, end in intervals) == 25
+
+
+@pytest.mark.asyncio
+async def test_postgres_activity_reader_joins_existing_attempt_timeline(monkeypatch):
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    binding, snapshot = original_budget()
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    snapshot.calls[0] = snapshot.calls[0].model_copy(update={
+        "phase": "completed", "started_at": base + timedelta(seconds=2),
+        "settled_at": base + timedelta(seconds=4),
+    })
+
+    class Cursor:
+        def __init__(self):
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement, params=()):
+            if "SELECT runtime_binding FROM" in statement:
+                self.rows = [{"runtime_binding": binding.model_dump(mode="json")}]
+            elif "SELECT policy FROM" in statement:
+                self.rows = [{"policy": snapshot.policy.model_dump(mode="json")}]
+            elif "SELECT attempt_id,record FROM" in statement:
+                self.rows = [{"attempt_id": call.intent.attempt_id, "record": call.model_dump(mode="json")}
+                    for call in snapshot.calls]
+            elif "SELECT attempt.started_at" in statement:
+                self.rows = [
+                    {"started_at": base, "finished_at": base + timedelta(seconds=10)},
+                    {"started_at": base + timedelta(seconds=60), "finished_at": base + timedelta(seconds=70)},
+                ]
+            else:
+                raise AssertionError(f"unexpected SQL: {statement}")
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+    connection = Connection()
+    monkeypatch.setattr(
+        "src.runtime.postgres_framework_model_calls.postgres_connect",
+        lambda settings: connection,
+    )
+    settings = SimpleNamespace(database=SimpleNamespace(
+        postgres_agent_task_table="tasks",
+        postgres_agent_attempt_table="attempts",
+    ))
+    store = PostgresFrameworkModelCalls(settings)
+
+    intervals = await store.root_activity_intervals(binding)
+
+    assert intervals == [
+        (base, base + timedelta(seconds=10)),
+        (base + timedelta(seconds=60), base + timedelta(seconds=70)),
+    ]

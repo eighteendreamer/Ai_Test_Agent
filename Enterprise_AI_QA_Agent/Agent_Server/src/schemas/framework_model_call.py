@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections.abc import Iterable
 from datetime import datetime
 from typing import Literal
 
@@ -113,6 +114,44 @@ class FrameworkModelWireObservation(_ModelCallValue):
     attempt_sequence: StrictInt = Field(ge=1)
     authoritative: Literal[False] = False
     observed_at: datetime
+
+
+def union_activity_intervals(
+    intervals: Iterable[tuple[datetime, datetime | None]],
+    *,
+    as_of: datetime | None = None,
+) -> list[tuple[datetime, datetime]]:
+    """Normalize and union durable activity intervals without double-counting.
+
+    ``None`` is an open tail.  It is intentionally rejected unless callers
+    provide the observation time used for its conservative upper bound.
+    """
+    normalized: list[tuple[datetime, datetime]] = []
+    for start, end in intervals:
+        if start.tzinfo is None or start.utcoffset() is None:
+            raise ValueError("Activity interval start must include a timezone")
+        effective_end = end
+        if effective_end is None:
+            if as_of is None:
+                raise ValueError("Open activity requires an explicit as_of observation time")
+            effective_end = as_of
+        if effective_end.tzinfo is None or effective_end.utcoffset() is None:
+            raise ValueError("Activity interval end must include a timezone")
+        if effective_end < start:
+            raise ValueError("Activity interval ends before it starts")
+        if effective_end != start:
+            normalized.append((start, effective_end))
+
+    normalized.sort(key=lambda item: (item[0], item[1]))
+    merged: list[tuple[datetime, datetime]] = []
+    for start, end in normalized:
+        if not merged or start > merged[-1][1]:
+            merged.append((start, end))
+            continue
+        previous_start, previous_end = merged[-1]
+        if end > previous_end:
+            merged[-1] = (previous_start, end)
+    return merged
 
 
 class FrameworkModelReservationOwner(_ModelCallValue):
@@ -237,35 +276,12 @@ class FrameworkModelBudgetSnapshot(_ModelCallValue):
         conservative open-tail interval instead of silently treating it as
         zero.
         """
-        intervals: list[tuple[datetime, datetime]] = []
-        for call in self.calls:
-            if call.started_at is None:
-                continue
-            if call.started_at.tzinfo is None or call.started_at.utcoffset() is None:
-                raise ValueError("Model activity start must include a timezone")
-            end = call.settled_at
-            if end is None:
-                if as_of is None:
-                    raise ValueError("Open model activity requires an explicit as_of observation time")
-                end = as_of
-            if end.tzinfo is None or end.utcoffset() is None:
-                raise ValueError("Model activity end must include a timezone")
-            if end < call.started_at:
-                raise ValueError("Model activity interval ends before it starts")
-            if end == call.started_at:
-                continue
-            intervals.append((call.started_at, end))
-
-        intervals.sort(key=lambda item: (item[0], item[1]))
-        merged: list[tuple[datetime, datetime]] = []
-        for start, end in intervals:
-            if not merged or start > merged[-1][1]:
-                merged.append((start, end))
-                continue
-            previous_start, previous_end = merged[-1]
-            if end > previous_end:
-                merged[-1] = (previous_start, end)
-        return merged
+        intervals = [
+            (call.started_at, call.settled_at)
+            for call in self.calls
+            if call.started_at is not None
+        ]
+        return union_activity_intervals(intervals, as_of=as_of)
 
     def root_activity_seconds(self, *, as_of: datetime | None = None) -> float:
         """Return the union duration in seconds, preserving open-tail evidence."""

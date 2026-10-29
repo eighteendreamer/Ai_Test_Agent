@@ -5478,3 +5478,30 @@ cd Agent_Server
 ### 交付与剩余出口
 
 本子步仅修改 `Agent_Server/src/schemas/framework_model_call.py`、`Agent_Server/tests/test_framework_model_budget_projection.py` 与本实施记录；用户 v3 草稿、`.codex-logs`、`.env` 和本地数据排除。后续仍需把区间来源扩展到持久 Worker／工具活动并冻结审批等待与崩溃尾段口径，再接入公共故障回归；A2/A3、B 其余出口、D/E/F、E3/E4 与 H01–H12 继续 active。
+
+## 119. C／§6.3、H09：合并持久 Worker attempt 活动并排除审批等待（2026-10-30）
+
+### 续接、依据与根因
+
+基线为 §118 的 `001be5d63917`。上一节只从根模型调用记录计算活动并集，仍无法覆盖 Worker 实际执行窗口：同一根 Turn 的模型调用可能嵌在多个 root／子代理 attempt 中，且审批等待期间没有图执行活动。若直接累加调用或把 `approval_recover` 的应用结算任务算入活动，会重复计时或把等待误记为执行时间。这是计量来源不完整的问题，不通过放宽预算或猜测缺失时间修补。
+
+依据现有 `agent_turn_tasks`／`agent_turn_attempts` 持久 owner 时间线、`FrameworkModelBudgetSnapshot` 的模型原件以及 §6.3 的并集契约 → 抽出统一 `union_activity_intervals()`，在 `PostgresFrameworkModelCalls.root_activity_intervals()` 同一 PostgreSQL 读取中合并模型调用 `started_at/settled_at` 与任务操作 `message`、`message_recover`、`approval_resume` 的 attempt `started_at/finished_at`。`approval_recover` 只负责应用 settlement/finalization，明确排除；原 attempt 与后续 `approval_resume` 之间的自然空档即为审批等待，不进入活动并集。未闭合区间仍须显式传 `as_of`，时区缺失和逆序区间显式失败。
+
+### TDD、实现与验证
+
+先用重叠 root／子分支、审批等待空档、未闭合尾段和 fake PostgreSQL 读取反例锁定契约，再完成最小实现。`FrameworkModelBudgetSnapshot` 与持久读取端口共用同一并集逻辑，避免正常与数据库投影出现不同的边界规则；读取成功记录结构化 `framework_root_activity_read`，不输出 Prompt、响应正文或认证信息。
+
+```powershell
+cd Agent_Server
+..\\.venv-framework-v2\\Scripts\\python.exe -m compileall -q src tests
+..\\.venv-framework-v2\\Scripts\\python.exe -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_model_policy.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_context_transcript.py tests/test_framework_turn_context.py -q -rs --tb=short
+# 81 passed，67 skipped，10.54s，exit 0；skip 均为既有未启用 PostgreSQL／Redis live 组
+```
+
+专项新增测试此前实际经历 **2 failed** 的缺方法红测，随后目标组 **23 passed**；本轮最终消费方回归为上表 81 passed。`compileall` 与 `git diff --check` 均实际通过；当前环境未安装 `ruff`／`mypy`，未执行 lint/typecheck。fake cursor 只证明 SQL 形状、字段合并与边界语义，不能替代真实 PostgreSQL schema／独立 Worker 或 Redis 验收。
+
+### 证据边界、兼容性与剩余出口
+
+本子步不改表结构、配置默认值、公开审批 API、模型发送／结算契约或预算额度；继续复用现有任务表中的 `started_at`／`finished_at`，旧模型账本也可单独按 `as_of` 计量。当前 root 活动仍未覆盖工具 Runner 内部区间、排队等待、owner 心跳租约和崩溃后无法闭合的真实尾段资产，也未在真实 PostgreSQL／Redis、独立 Worker 强杀、RustFS、供应商或领域 Runner 上验收，因此不能宣称 C／H09 或完整 v4 已完成。A2/A3、B 其余出口、D/E/F、完整 H01–H12 与 E3/E4 继续 active。
+
+本节仅包含两个模型源文件、其回归测试与本实施记录；用户 v3 草稿保持未修改、未暂存、未提交。下一步继续补齐持久工具／心跳／崩溃尾段的计量来源，再评估接入公共预算投影，不把 fake DB 证据升级为 live 事实。
