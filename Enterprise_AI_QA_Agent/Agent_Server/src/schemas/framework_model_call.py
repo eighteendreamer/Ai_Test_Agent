@@ -222,3 +222,51 @@ class FrameworkModelBudgetSnapshot(_ModelCallValue):
     @property
     def unmeasured_calls(self) -> int:
         return sum(call.phase == "completed" and call.usage is None for call in self.calls)
+
+    def root_activity_intervals(
+        self,
+        *,
+        as_of: datetime | None = None,
+    ) -> list[tuple[datetime, datetime]]:
+        """Return the persisted model activity intervals after unioning overlap.
+
+        The root ledger owns calls from the root and its child branches.  Their
+        wall-clock intervals can overlap, so summing call durations would
+        overstate root activity.  A still-invoking call has no durable end yet;
+        callers must provide an explicit observation time to obtain its
+        conservative open-tail interval instead of silently treating it as
+        zero.
+        """
+        intervals: list[tuple[datetime, datetime]] = []
+        for call in self.calls:
+            if call.started_at is None:
+                continue
+            if call.started_at.tzinfo is None or call.started_at.utcoffset() is None:
+                raise ValueError("Model activity start must include a timezone")
+            end = call.settled_at
+            if end is None:
+                if as_of is None:
+                    raise ValueError("Open model activity requires an explicit as_of observation time")
+                end = as_of
+            if end.tzinfo is None or end.utcoffset() is None:
+                raise ValueError("Model activity end must include a timezone")
+            if end < call.started_at:
+                raise ValueError("Model activity interval ends before it starts")
+            if end == call.started_at:
+                continue
+            intervals.append((call.started_at, end))
+
+        intervals.sort(key=lambda item: (item[0], item[1]))
+        merged: list[tuple[datetime, datetime]] = []
+        for start, end in intervals:
+            if not merged or start > merged[-1][1]:
+                merged.append((start, end))
+                continue
+            previous_start, previous_end = merged[-1]
+            if end > previous_end:
+                merged[-1] = (previous_start, end)
+        return merged
+
+    def root_activity_seconds(self, *, as_of: datetime | None = None) -> float:
+        """Return the union duration in seconds, preserving open-tail evidence."""
+        return sum((end - start).total_seconds() for start, end in self.root_activity_intervals(as_of=as_of))

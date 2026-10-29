@@ -5454,3 +5454,27 @@ P0 查证命令在 `Agent_Server`，使用已有根目录 `.venv-framework-v2`�
 项目根实际执行 `../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests` 与 `git diff --check`，均 exit 0。`ruff`／`mypy` 在当前环境未安装，未执行 lint/typecheck；未做真实供应商、RustFS、官方 saver conformance、独立 v2.3 Worker 强杀或完整 E3/E4 发布验收。此前的用户 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不变、未暂存。
 
 本节仅收敛原生摘要覆盖材料和旧 Worker claim 边界，不代表完整跨 Turn、A2/A3、C/D/E/F、H01–H12 或整体 v4 完成；整体 goal 继续 active。
+
+## 118. C／§6.3、H09：按持久模型调用区间计算根活动时间并集（2026-10-30）
+
+### 续接、依据与边界
+
+基线为 §117 的 `d7177f185`。v4 §6.3 要求根活动时间按所有分支活动区间的并集计算，不能把重叠子分支墙钟时间相加；同时要求未闭合尾段不能在恢复时被猜成零。当前 `FrameworkModelCallRecord` 已持久保存 `started_at`／`settled_at`，但 `FrameworkModelBudgetSnapshot` 只有调用数和 Token 投影，没有活动时间读取出口。该缺口属于计量层，不改变现有 deadline、调用额度、owner、发送或恢复权限。
+
+依据现有根账本调用记录与 `framework_model_budget_projection` 的原件编解码 → 在 `FrameworkModelBudgetSnapshot` 增加只读 `root_activity_intervals(as_of=...)`／`root_activity_seconds(as_of=...)`：收集所有已开始的 root／subagent／summary 调用区间，按时间排序并合并重叠与相邻区间；`ready` 未发送调用不计入；`invoking` 没有持久结束时间时必须显式传入观察时刻，按开放尾段保守计量，不把它静默折算为零。调用方未传 `as_of` 时显式报错，时间戳缺少时区或逆序同样拒绝。
+
+### TDD 与实际验证
+
+先新增两条反例测试，基线实际得到 **2 failed**：`FrameworkModelBudgetSnapshot` 不存在根活动并集接口。最小实现后，持久材料往返、重叠 root／子分支、独立未知区间、ready 排除和未闭合尾段显式观察均通过：
+
+```powershell
+cd Agent_Server
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_model_calls.py -q -rs --tb=short
+# 21 passed，24 skipped，4.59s；skip 均为测试文件既有的未启用 PostgreSQL／Redis live 组
+```
+
+本次还实际运行了新增前的红测（2 failed，缺少方法）和修复后的目标组；未启动 Docker、未调用真实供应商、未修改数据库 schema 或生产开关。`root_activity_seconds()` 只计模型调用持久区间，尚未覆盖工具 Runner、排队、审批等待、owner 心跳租约和崩溃尾段的完整根活动资产；因此不能宣称 C／H09 或整体 v4 已完成。
+
+### 交付与剩余出口
+
+本子步仅修改 `Agent_Server/src/schemas/framework_model_call.py`、`Agent_Server/tests/test_framework_model_budget_projection.py` 与本实施记录；用户 v3 草稿、`.codex-logs`、`.env` 和本地数据排除。后续仍需把区间来源扩展到持久 Worker／工具活动并冻结审批等待与崩溃尾段口径，再接入公共故障回归；A2/A3、B 其余出口、D/E/F、E3/E4 与 H01–H12 继续 active。

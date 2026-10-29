@@ -109,3 +109,55 @@ def test_empty_original_ledger_is_valid_material_not_an_invented_model_call():
     restored = read_model_budget_material(binding, capture_model_budget_material(binding, snapshot))
     assert restored == snapshot
     assert restored.reserved_calls == restored.charged_tokens == restored.actual_tokens == 0
+
+
+def test_root_activity_time_is_the_union_of_persisted_call_intervals():
+    """Overlapping root/subagent calls must not double-count wall-clock time."""
+    _binding, snapshot = original_budget()
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    snapshot.calls[0] = snapshot.calls[0].model_copy(update={
+        "phase": "completed", "started_at": base,
+        "settled_at": base + timedelta(seconds=10),
+    })
+    snapshot.calls[1] = snapshot.calls[1].model_copy(update={
+        "phase": "completed", "started_at": base + timedelta(seconds=3),
+        "settled_at": base + timedelta(seconds=8),
+    })
+    snapshot.calls[2] = snapshot.calls[2].model_copy(update={
+        "phase": "unknown", "started_at": base + timedelta(seconds=20),
+        "settled_at": base + timedelta(seconds=25),
+    })
+    snapshot.calls[3] = snapshot.calls[3].model_copy(update={
+        "phase": "ready", "started_at": None, "settled_at": None,
+    })
+
+    assert snapshot.root_activity_intervals() == [
+        (base, base + timedelta(seconds=10)),
+        (base + timedelta(seconds=20), base + timedelta(seconds=25)),
+    ]
+    assert snapshot.root_activity_seconds() == 15
+    from src.application.models.framework_model_budget_projection import (
+        capture_model_budget_material,
+        read_model_budget_material,
+    )
+
+    restored = read_model_budget_material(
+        _binding,
+        capture_model_budget_material(_binding, snapshot),
+    )
+    assert restored.root_activity_seconds() == 15
+
+
+def test_root_activity_time_uses_explicit_observation_for_an_unclosed_call():
+    _binding, snapshot = original_budget()
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    snapshot.calls[1] = snapshot.calls[1].model_copy(update={
+        "phase": "invoking", "started_at": base + timedelta(seconds=4),
+        "settled_at": None,
+    })
+
+    with pytest.raises(ValueError, match="as_of"):
+        snapshot.root_activity_intervals()
+    assert snapshot.root_activity_seconds(
+        as_of=base + timedelta(seconds=9)
+    ) == 5
