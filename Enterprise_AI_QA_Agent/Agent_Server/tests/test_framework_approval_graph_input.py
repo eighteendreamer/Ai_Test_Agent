@@ -8,7 +8,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
-from langchain_core.messages import AIMessage
+from langchain_core.messages import AIMessage, HumanMessage, messages_to_dict
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.execution_context import framework_owner_scope
@@ -73,6 +73,20 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
 
         h.runtime._tool_runtime_service._handlers[tool_key] = verified_handle
     session = await h.store.get_session(h.session_id)
+    if isinstance(selected, dict) and selected.get("transcript_lifecycle"):
+        from src.schemas.framework_transcript import framework_transcript_asset
+
+        h.previous_transcript = framework_transcript_asset(
+            session_id=h.session_id, source_turn_id="previous-completed-turn", runtime_version=h.binding.runtime_version,
+            framework_messages=messages_to_dict([
+                HumanMessage(id="previous-user", content="Earlier review"),
+                AIMessage(id="previous-assistant", content="Earlier completed result",
+                    additional_kwargs={"provider_signature": "fixture-previous-signature"}),
+            ]),
+        ).model_dump(mode="json")
+        await h.store.mutate_metadata(h.session_id,
+            lambda metadata: metadata.update(framework_transcript_asset=h.previous_transcript))
+        session = await h.store.get_session(h.session_id)
     h.initial_task_id = h.owner.id
     h.stages = FrameworkMessageStages(h.tasks)
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id=h.owner.trace_id,
@@ -90,6 +104,12 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
     with framework_owner_scope(h.owner.runtime_owner):
         first = await sink.run(h.runtime.execute_turn, session, request, projection_identity=identity,
             on_graph_input=lambda raw: h.stages.record_graph_input(h.owner.runtime_owner, raw))
+        if isinstance(selected, dict) and selected.get("transcript_lifecycle"):
+            h.sessions._runtime_service = h.runtime
+            await h.sessions._finalize_runtime_result(session=await h.store.get_session(h.session_id),
+                runtime_result=first, assistant_message_id=identity.assistant_message_id,
+                user_message_override=request.user_message, turn_lease_token=h.owner.lease_token,
+                projection_owner=h.owner.runtime_owner)
     assert len(first.approvals) == 2 and h.effects == []
     h.proposals = {item["metadata"]["call_id"]: SimpleNamespace(approval=SimpleNamespace(id=item["id"]),
         job=SimpleNamespace(id=next(record["job_id"] for record in first.state["tool_results"]
@@ -102,6 +122,54 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
     h.sessions._runtime_service = h.runtime
     h.adapter_requests.clear()
     yield h
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("prepared_approval_runtime", [{"transcript_lifecycle": True}], indirect=True)
+@pytest.mark.parametrize("decision", ["approved", "denied"])
+async def test_only_completed_approval_turn_replaces_cross_turn_transcript(prepared_approval_runtime, decision):
+    from src.application.deep_agents.framework_transcript import deserialize_messages
+    from src.application.deep_agents.native_terminal import require_closed_native_messages
+    from src.application.runtime.runtime_service import RuntimeService
+    from src.schemas.framework_transcript import FrameworkTranscriptAsset
+
+    h = prepared_approval_runtime
+    initial = await h.store.get_session(h.session_id)
+    assert initial.status.value == "waiting_approval"
+    with pytest.raises(FrameworkMessageStageRecoveryRequired):
+        require_closed_native_messages(deserialize_messages(initial.metadata["pending_turn"]["graph_state"]["framework_messages"]))
+    assert initial.metadata["framework_transcript_asset"] == h.previous_transcript
+    monitor = asyncio.create_task(asyncio.Event().wait())
+    try:
+        b = await claim_decision(h)
+        partial = await h.sessions.execute_claimed_approval(b, ownership_monitor=monitor)
+        assert partial.session.status.value == "waiting_approval"
+        assert (await h.store.get_session(h.session_id)).metadata["framework_transcript_asset"] == h.previous_transcript
+        assert "framework_transcript_asset" not in partial.session.metadata
+        await h.tasks.finish(b, status="completed", result_status="waiting_approval")
+
+        a = await claim_decision(h, key="A", decision=decision)
+        final = await h.sessions.execute_claimed_approval(a, ownership_monitor=monitor)
+        assert final.session.status.value == "completed" and final.output.content == "finished"
+        stored = await h.store.get_session(h.session_id)
+        asset = FrameworkTranscriptAsset.model_validate(stored.metadata["framework_transcript_asset"])
+        assert asset.source_turn_id == h.binding.turn_id and asset.session_id == h.session_id
+        assert asset.framework_messages[:2] == h.previous_transcript["framework_messages"]
+        require_closed_native_messages(deserialize_messages(asset.framework_messages))
+        assert "framework_transcript_asset" not in final.session.metadata
+        expected = ["B", "A"] if decision == "approved" else ["B"]
+        assert [value for value, _ in h.effects] == expected
+
+        calls_before = len(h.adapter_requests)
+        messages = RuntimeService._framework_messages_for_new_turn(stored, ExecutionRequest(
+            session_id=h.session_id, turn_id="following-turn", user_message="Continue", normalized_input="Continue"))
+        assert messages[:-1] == asset.framework_messages
+        assert messages[-1]["data"]["content"] == "Continue"
+        assert len(h.adapter_requests) == calls_before and [value for value, _ in h.effects] == expected
+        await h.tasks.finish(a, status="completed", result_status="completed")
+    finally:
+        monitor.cancel()
+        await asyncio.gather(monitor, return_exceptions=True)
 
 
 def approval_input(h, task):

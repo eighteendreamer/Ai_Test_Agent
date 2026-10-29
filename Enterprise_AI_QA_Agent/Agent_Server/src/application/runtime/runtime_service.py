@@ -15,7 +15,7 @@ from pydantic import ValidationError
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
 from src.application.deep_agents.runtime_adapter import _pilot_stage
-from src.application.deep_agents.framework_transcript import append_turn_input
+from src.application.deep_agents.framework_transcript import append_turn_input, require_closed_transcript
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -2026,6 +2026,8 @@ class RuntimeService:
             raise ValueError("Framework transcript asset belongs to another Session")
         if asset.source_turn_id == request.turn_id:
             raise ValueError("Framework transcript asset cannot seed its source Turn")
+        require_closed_transcript(asset.framework_messages, session_id=session.id,
+            source_turn_id=asset.source_turn_id, operation="import")
         return append_turn_input(asset.framework_messages, request.user_message, request.turn_id)
 
     def _should_use_dedicated_security_runtime(self, request: ExecutionRequest) -> bool:

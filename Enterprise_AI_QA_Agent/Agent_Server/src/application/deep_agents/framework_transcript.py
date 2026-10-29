@@ -1,7 +1,11 @@
 """Native LangChain message persistence for framework-owned checkpoints."""
 from __future__ import annotations
 
+import logging
 from typing import Any
+
+
+logger = logging.getLogger(__name__)
 
 
 def serialize_messages(value: Any) -> list[dict[str, Any]]:
@@ -51,3 +55,24 @@ def append_turn_input(
         HumanMessage(content=content, id=f"framework-input:{turn_id}"),
     ]))
     return messages
+
+
+def require_closed_transcript(
+    framework_messages: list[dict[str, Any]],
+    *,
+    session_id: str,
+    source_turn_id: str,
+    operation: str,
+) -> None:
+    """Use the native-terminal protocol rule at both cross-Turn boundaries."""
+    from src.application.deep_agents.native_terminal import require_closed_native_messages
+    from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+    try:
+        require_closed_native_messages(deserialize_messages(framework_messages))
+    except (FrameworkMessageStageRecoveryRequired, ValueError, TypeError) as exc:
+        logger.warning("framework_transcript_protocol_rejected", extra={
+            "session_id": session_id, "source_turn_id": source_turn_id,
+            "operation": operation, "error_type": type(exc).__name__,
+        })
+        raise

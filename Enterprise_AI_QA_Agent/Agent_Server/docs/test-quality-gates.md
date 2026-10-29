@@ -123,3 +123,26 @@ $env:PYTHONIOENCODING='utf-8'
 ```
 
 边界用例采用进程内 ASGI／内存 SessionStore 与合成原生消息；消费方回归另覆盖真实 PostgreSQL／Redis 的既有隔离 fixtures，不能把二者混称真实供应商验证。该项不证明快照、导出、追踪或其他 metadata 字段均完成隐私审计，也不为历史存量资产补发来源证明；覆盖锚点、legacy 夹层与完整跨 Turn 请求仍按 B 阶段单独验收。已保存的原始失败／成功日志不可覆盖，见实施记录 §108。
+
+## 原生 transcript 的完成与协议闭合边界（v4 B／§5.1.1）
+
+只有已完成的 Runtime 结果、完成快照与无 pending 状态才能发布下一 Turn 的原生资产。等待审批、部分审批、可恢复、失败或中断不覆盖已有完成资产；原 Turn 的完整待处理消息仍保存在原 checkpoint／pending_turn 中，不截断工具批次后伪装成可导入历史。
+
+发布和新 Turn 导入通过 `framework_transcript.require_closed_transcript` 复用已有 `native_terminal.require_closed_native_messages`：拒绝待工具、孤儿／重复工具结果、无效调用及缺失调用身份；沿既有规则允许不同已闭合批次复用 call ID。不因资产摘要合法而跳过协议检查，不丢字段、改正文或回退到展示文本来获得通过。导入校验不 invoke 图／模型／工具，也不替代同 Turn 的 checkpoint 继续。
+
+```powershell
+# 工作目录 Agent_Server；使用既有隔离测试 PG/Redis，不启动服务。
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+../.venv-framework-v2/Scripts/python.exe -m pytest `
+  tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py tests/test_session_project_binding.py `
+  -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -m pytest `
+  tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py `
+  tests/test_framework_message_result_reconstruction.py tests/test_framework_finalization_projection.py `
+  -q -rs --tb=short
+```
+
+审批生命周期回归运行官方 Deep Agents、真实本地 PostgreSQL／Redis 和受控模型／工具：初次等待、部分审批都保留上一份完成资产，最终批准／拒绝分支收口后才发布完整新资产，并验证下一 Turn 读取的完整原生前缀及工具效果次数。三类结构化日志只记录身份、阶段／原因、数量或异常类型，不记录正文／provider 扩展值；`framework_transcript_published` 仅在 Session 提交成功后记录。
+
+这项修复不改变资产 schema／运行时绑定，不自动修剪或重发历史非法资产；协议不闭合的存量资产需要对账，不能当作完整上下文继续调用。业务覆盖锚点、legacy 夹层、模型协议兼容性和其余 B 阶段出口仍须单独完成。实际红测、夹具修正及验证结果见实施记录 §109。

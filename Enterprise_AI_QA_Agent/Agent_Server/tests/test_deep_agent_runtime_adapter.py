@@ -2087,6 +2087,8 @@ def test_framework_transcript_asset_rejects_tampered_native_payload():
 def test_session_finalization_projects_deep_agent_native_transcript_asset():
     state = {
         "turn_id": "turn-native",
+        "control_state": "completed",
+        "termination_reason": "completed",
         "context_bundle": {"runtime_binding": {"runtime_version": "deepagents-test"}},
         "model_response_summary": {"harness": "deepagents"},
         "framework_messages": messages_to_dict([AIMessage(content="native", id="assistant-1")]),
@@ -2096,6 +2098,76 @@ def test_session_finalization_projects_deep_agent_native_transcript_asset():
     assert asset is not None
     assert asset["source_turn_id"] == "turn-native"
     assert asset["framework_messages"][0]["data"]["content"] == "native"
+
+
+@pytest.mark.parametrize("field,value", [
+    ("control_state", "active_turn"),
+    ("termination_reason", "waiting_approval"),
+    ("termination_reason", "interrupted"),
+    ("termination_reason", "failed"),
+    ("pending_approvals", [{"id": "pending-approval"}]),
+    ("pending_turn", {"turn_id": "turn-native"}),
+    ("model_response_summary", {"harness": "deepagents", "mode": "incomplete_response"}),
+])
+def test_noncompleted_native_state_is_not_published_as_next_turn_history(field, value, caplog):
+    state = {
+        "turn_id": "turn-native", "control_state": "completed", "termination_reason": "completed",
+        "model_response_summary": {"harness": "deepagents"},
+        "framework_messages": messages_to_dict([AIMessage(content="private-native-body", id="assistant-1")]),
+        field: value,
+    }
+    original = deepcopy(state)
+    caplog.set_level("INFO", logger="src.application.sessions.session_service")
+
+    assert SessionService._build_framework_transcript_asset("session-transcript", state) is None
+    assert state == original
+    assert any(record.message == "framework_transcript_not_published" for record in caplog.records)
+    assert "private-native-body" not in caplog.text
+
+
+@pytest.mark.parametrize("operation", ["publish", "import"])
+@pytest.mark.parametrize("changed", ["pending", "duplicate_result", "orphan_result", "invalid_call", "missing_call_id"])
+def test_cross_turn_transcript_requires_the_existing_closed_native_protocol(operation, changed, caplog):
+    from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+    call = AIMessage(id="source", content="", tool_calls=[
+        {"id": "A", "name": "inspect", "args": {}, "type": "tool_call"}],
+        additional_kwargs={"provider_signature": "fixture-private-signature"})
+    result = ToolMessage(content="private-native-body", tool_call_id="A")
+    messages = [HumanMessage(content="inspect"), call, result, AIMessage(id="answer", content="done")]
+    if changed == "pending":
+        messages.remove(result)
+    elif changed == "duplicate_result":
+        messages.insert(3, result.model_copy())
+    elif changed == "orphan_result":
+        messages = [HumanMessage(content="inspect"), result, AIMessage(content="done")]
+    elif changed == "invalid_call":
+        messages[-1] = AIMessage(content="", invalid_tool_calls=[
+            {"name": "inspect", "args": "broken", "id": "B", "error": "bad args"}])
+    else:
+        call.tool_calls[0]["id"] = None
+    wire = messages_to_dict(messages)
+    original = deepcopy(wire)
+
+    with pytest.raises(FrameworkMessageStageRecoveryRequired):
+        if operation == "publish":
+            SessionService._build_framework_transcript_asset("session-transcript", {
+                "turn_id": "turn-native", "control_state": "completed", "termination_reason": "completed",
+                "model_response_summary": {"harness": "deepagents"}, "framework_messages": wire,
+            })
+        else:
+            session = _runtime_session("session-transcript")
+            session.metadata["framework_transcript_asset"] = framework_transcript_asset(
+                session_id=session.id, source_turn_id="turn-native", runtime_version="deepagents-test",
+                framework_messages=wire,
+            ).model_dump(mode="json")
+            RuntimeService._framework_messages_for_new_turn(session, _runtime_request(session.id, "turn-next"))
+
+    assert wire == original
+    rejected = [record for record in caplog.records if record.message == "framework_transcript_protocol_rejected"]
+    assert len(rejected) == 1 and rejected[0].operation == operation
+    assert "private-native-body" not in caplog.text
+    assert "fixture-private-signature" not in caplog.text
 
 
 class _ModelRuntimeStub:

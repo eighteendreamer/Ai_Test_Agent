@@ -4985,3 +4985,61 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 下一步 B 仍需统一 Prompt 装配、稳定业务覆盖锚点／legacy 夹层／未来输入排除、完整真实请求与协议兼容性，以及其余私有资产输出面的逐项审计。A3 远端查询／停止／补偿、C 历史超时首因与公共故障出口、D/E/F 和 E3／E4 继续保留，完整 v4 目标仍 active。
 
 本节随 `【fix】保护原生会话档案的服务端发布边界` 提交，仅包含上述四个文件，实际 commit ID 以 Git 和交付输出为准，不推送、不建 PR。原 v3 草稿保持未修改、未暂存，其 SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。
+
+## 109. B／§5.1.1：只发布完成且协议闭合的原生 transcript（2026-10-29）
+
+### 起点、根因与依据 → 做法
+
+基线 `ef81bda79ef783daf83e1b106f8b374eff5fa139`，原 v3 草稿之外无未提交改动。上一轮 §108 已实际提交并验证，属于 progress；完整 v4 仍 active。本轮沿 B 的来源链检查发现：`_execute_deep_agent_turn` 等待审批时已把未闭合消息放入 state，finalizer 却无条件调用资产工厂并覆盖 Session 的跨 Turn 资产；新 Turn 导入也只验证摘要／Session／来源 Turn，不检查工具协议。已有终态校验没有覆盖这两个跨 Turn 边界。
+
+- v4 §5.1.1 → 只有完成且协议闭合的范围可以导入，等待消息仍属于原 Turn，不能截掉半个批次后发布。
+- `turn_projection.project_completed_turn` 的完成／无 pending 约束、Session 既有控制状态判定 → finalizer 只在完成结果与完成快照时尝试发布；工厂同时确认完成 state、无 pending、无模型失败。等待／部分审批／中断／可恢复状态保留先前资产，不删除 checkpoint 或 pending_turn。
+- `native_terminal.require_closed_native_messages` 及其已存在的协议负例与跨批次复用 ID 正例 → `framework_transcript.require_closed_transcript` 只负责官方反序列化、委托同一规则及安全日志。发布、导入共用它，不另写工具配对算法，不根据最后一句文字推断协议闭合。
+
+这是跨 Turn 发布／导入边界缺少既有不变量，不是新增一个调度层或把不合法历史转成文本 fallback。正常完成和原结果只读恢复仍沿同一 finalizer；原生 checkpoint 读取器、终态比较／排序算法和恢复证明权限均不变。
+
+### TDD、夹具错误与真实失败
+
+所有日志位于私有 `.codex-logs`，每次使用不同文件，未覆盖历史失败：
+
+1. `b109-native-publication-red-2026-10-29.log`：**17 failed、2 errors，15.04s，exit 1**。七项完成状态负例仍生成资产；五种协议异常在发布／导入两侧均 `DID NOT RAISE`。两项 error 来自新增夹具在调用真实 finalizer 前尚未把 SessionService 的 Runtime 替身接到真实 Runtime，报 `AttributeError: 'Runtime' object has no attribute 'load_framework_approval'`；不把这两项算成产品缺陷。
+2. 仅修正新增夹具的 Runtime 接线后，`b109-native-approval-red-2026-10-29.log`：**2 failed，13.94s，exit 1**。官方框架已确实进入等待、原消息协议确实未闭合，持久资产却从 `previous-completed-turn` 变成当前待审批 Turn，原资产／摘要／消息发生覆盖。这才是实际生命周期失败样本，未改生产代码迎合夹具。
+3. 最小实现后 `b109-native-publication-green-2026-10-29.log`：**20 passed，27.57s，exit 0**。含十九项新增负例／生命周期参数及原完成资产正例；已有完成样本补齐真实 Runtime 会提供的完成状态，而非允许缺失状态默认为完成。
+
+审批集成使用合成的上一份闭合原生资产作为种子；当前 Turn 的初次等待、先处理 B 后仍等待、最终批准／拒绝 A 的收口经过真实官方 Deep Agents＋本地 PG／Redis＋现有治理／审批／最终投影链路。等待两次均保留旧资产，最终才发布当前 Turn；旧原生前缀／扩展值原样保留，批准工具各一次，拒绝分支不执行被拒工具。下轮仅调用原导入入口并比较完整原生前缀，确认没有额外 adapter／工具效果；不冒称已执行两个完整真实模型 Turn。
+
+### 代码、日志与兼容性
+
+- `application/deep_agents/framework_transcript.py`：新增薄委托端口，错误保留原异常；`framework_transcript_protocol_rejected` 只记录 Session／来源 Turn、publish/import 和异常类型，不记录正文、异常全文或 provider 扩展值。
+- `application/runtime/runtime_service.py`：在导入原件后、追加当前输入前校验闭合协议；不 invoke 图、补造工具结果、丢弃字段或静默回退。
+- `application/sessions/session_service.py`：完成状态、快照和协议检查后才形成资产；`framework_transcript_not_published` 明示不发布原因，`framework_transcript_published` 只在 Session 保存成功后记录身份及消息数。
+- 扩展既有 `test_deep_agent_runtime_adapter.py` 和 `test_framework_approval_graph_input.py`，同步 `test-quality-gates.md`。没有新资产 schema／绑定／stage 版本、公开 API、前端消费字段或依赖变化，无数据迁移；合法 schema-1 原件仍按同一格式读取。历史摘要合法但协议非法的资产明确拒绝，不能自动剪裁、重发或宣称来源已补证，须保留原件对账。
+
+### 最终当前源码实际验证
+
+以下从 `Agent_Server` 使用已有 `.venv-framework-v2`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`／`PYTHONUTF8=1`。先用现有配置确认 PG `SELECT 1`、Redis `PING` 成功；没有启停 Docker／服务，沿原 UUID 隔离 fixture 创建与清理测试表／schema／Redis 前缀。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py tests/test_session_project_binding.py `
+  -q -rs --tb=short
+# 142 passed，93.37s，exit 0，无 skip/deselect。
+# b109-transcript-native-consumers-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py `
+  tests/test_framework_message_result_reconstruction.py tests/test_framework_finalization_projection.py `
+  -q -rs --tb=short
+# 165 passed，971.21s，exit 0，无 skip/deselect。
+# b109-approval-result-consumers-2026-10-29.log
+```
+
+两组共 307 项，不把先前重叠的 20 项再累加。慢组保持同一执行至真实 exit 0；过程检查确认进程存活、本地存储连接及后续 pytest 进度，没有因一次安静输出或观察等待就重启／缩小用例／改期限。最终原 pytest 父子进程已退出，工具执行句柄均终态。回归包含官方框架、本地真实存储、原生终态与原结果恢复；模型／工具受控，最高仍是 E2 子集，不是 E3／E4 或领域模式上线证明。
+
+项目根 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；ruff／mypy 仍未安装，未执行 lint/typecheck，未安装新工具。没有前端修改，未跑前端；未跑全量后端、生产构建、真实付费供应商／领域 Runner／远端对象存储或完整发布演练。没有削弱原生 messages／审批／工具效果／恢复断言，也没有安装原生采样 watchdog。
+
+### 剩余出口与提交
+
+§109 只收敛 §5.1.1 的完成／协议边界，不代表 B 完成。继续复用 `execute_claimed_message` 既有 queued 消息过滤与受理消息身份，推进统一装配、稳定覆盖锚点、legacy 夹层／当前输入一次／未来输入排除的完整契约；现有过滤不能代替原生资产的覆盖映射。Prompt／模型协议兼容性、完整下轮实际请求、摘要与其余隐私输出面仍待实现／验收。A3 远端查询／停止／补偿、C 历史超时首因、D/E/F 与 E3／E4 全部保留，整体目标仍 active。
+
+本节随 `【fix】仅发布完成且协议闭合的原生会话档案` 提交，仅含上述三个源文件、两个测试文件及两份文档，实际 commit ID 以 Git 和交付输出为准，不推送、不建 PR。原 v3 草稿保持未修改、未暂存，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。

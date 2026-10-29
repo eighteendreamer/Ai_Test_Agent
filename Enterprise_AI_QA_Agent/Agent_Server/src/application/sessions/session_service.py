@@ -18,6 +18,7 @@ from src.runtime.session_assistant_stream import SessionAssistantStream
 from src.application.resources.session_resource_service import SessionResourceService
 from src.application.projects.project_service import ProjectService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
+from src.application.deep_agents.framework_transcript import require_closed_transcript
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
@@ -2720,6 +2721,15 @@ class SessionService:
             or context.get("deep_agent_harness") == "deepagents"
         ):
             return None
+        if (state.get("control_state") != "completed" or state.get("termination_reason") != "completed"
+            or state.get("pending_approvals") or state.get("pending_turn") or is_model_failure_summary(summary)):
+            logger.info("framework_transcript_not_published", extra={
+                "session_id": session_id, "turn_id": state.get("turn_id"),
+                "control_state": state.get("control_state"), "reason": "noncompleted_native_state",
+            })
+            return None
+        require_closed_transcript(framework_messages, session_id=session_id,
+            source_turn_id=str(state.get("turn_id") or ""), operation="publish")
         binding = dict(context.get("runtime_binding") or {})
         asset = framework_transcript_asset(
             session_id=session_id,
@@ -2812,7 +2822,15 @@ class SessionService:
             event_fenced_write["framework_projection"] = framework_projection
         model_response_summary = runtime_result.state.get("model_response_summary", {})
         response_mode = str(model_response_summary.get("mode") or "ok")
-        framework_asset = self._build_framework_transcript_asset(session_id, runtime_result.state)
+        framework_asset = None
+        if (self._control_state_from_runtime_result(runtime_result) == "completed"
+            and runtime_result.snapshot.stage == "completed"):
+            framework_asset = self._build_framework_transcript_asset(session_id, runtime_result.state)
+        elif runtime_result.state.get("framework_messages"):
+            logger.info("framework_transcript_not_published", extra={
+                "session_id": session_id, "turn_id": runtime_result.state.get("turn_id"),
+                "snapshot_stage": runtime_result.snapshot.stage, "reason": "noncompleted_runtime_result",
+            })
         # Live graph events are already durable. Stable IDs make this flush
         # idempotent, including runtimes which only return a final event log.
         for event in runtime_result.events:
@@ -3085,6 +3103,11 @@ class SessionService:
                     extra={"session_id": session_id, "turn_id": runtime_result.state["turn_id"],
                            "attempt": attempt + 1},
                 )
+        if framework_asset is not None:
+            logger.info("framework_transcript_published", extra={
+                "session_id": session_id, "source_turn_id": framework_asset["source_turn_id"],
+                "message_count": len(framework_asset["framework_messages"]),
+            })
         post_commit_context = {
             "session_id": session_id,
             "turn_id": runtime_result.state["turn_id"],
