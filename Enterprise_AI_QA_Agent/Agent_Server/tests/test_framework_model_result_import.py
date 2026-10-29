@@ -10,7 +10,7 @@ from src.runtime.execution_context import framework_owner_scope
 from tests.test_agent_task_dispatch import harness
 from tests.test_artifact_storage_service import _RustFSClient
 from tests.test_framework_chat_models import TRANSPORTS, _config, _provider
-from tests.test_framework_model_dto import dto_request
+from tests.test_framework_model_dto import PATHS, dto_request
 from tests.test_framework_model_policy import governed
 from tests.test_framework_model_calls import model_calls_harness, begin, intent, policy, usage
 from tests.test_framework_model_evidence import reference
@@ -44,6 +44,58 @@ def invocation_options(h):
     transport = h.models.governed_transport_options()
     return {"transport_options": transport.model_dump(mode="json"), "streaming": False,
         "langchain_adapter": h.models.get_invocation_runtime_parameters(h.request.model_key)["langchain_model_adapter_enabled"]}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", PATHS)
+async def test_summary_dto_restoration_keeps_original_purpose_without_another_send(harness, monkeypatch, path):
+    from src.application.models.model_runtime_service import ModelRuntimeService
+    from src.schemas.model_config import model_invocation_parameters
+
+    transport = "openai_chat_completions" if path == "langchain_chat" else path
+    with _provider(transport) as (url, requests):
+        async with governed(harness, _config(transport, url)) as h:
+            h.settings.model.langchain_model_adapter_enabled = path == "langchain_chat"
+            wire_evidence(h, monkeypatch)
+            request = dto_request(h, logical="summary:fixture:v1")
+            options = h.models.governed_transport_options()
+            contract = {"expected_parameters": model_invocation_parameters(h.registry.current),
+                "expected_runtime_parameters": h.models.get_invocation_runtime_parameters(
+                    h.request.model_key, transport_options=options), "transport_options": options}
+            with framework_owner_scope(h.owner.runtime_owner):
+                original = await h.models.invoke(h.request.model_key, request, purpose="summary",
+                    **contract)
+            before = await h.calls.snapshot(h.binding)
+            call, = before.calls
+            assert call.phase == "completed" and call.intent.purpose == "summary"
+            assert before.reserved_calls == 1 and before.actual_tokens == 10
+
+            # A new runtime cannot depend on the original in-memory response.
+            models = ModelRuntimeService(h.registry, h.settings)
+            models.set_framework_model_call_policy(h.policy)
+
+            async def no_send(*args, **kwargs):
+                pytest.fail("Completed summary import must not authenticate or send again")
+
+            monkeypatch.setattr(models, "_resolve_auth_token", no_send)
+            monkeypatch.setattr(models, "_invoke_with_client", no_send)
+            monkeypatch.setattr(models, "_invoke_with_langchain_adapter", no_send)
+            # Trace/display metadata cannot silently select a different purpose.
+            request.trace_context["purpose"] = "summary"
+            with framework_owner_scope(h.owner.runtime_owner):
+                with pytest.raises(ValueError, match="frozen request"):
+                    await models.restore_completed(h.request.model_key, request, expected=call, **contract)
+                with pytest.raises(ValueError, match="requires a purpose"):
+                    await models.restore_completed(h.request.model_key, request, expected=call,
+                        purpose=" ", **contract)
+                for _ in range(2):
+                    restored = await models.restore_completed(h.request.model_key, request,
+                        expected=call, purpose=" summary ", **contract)
+            direct = await h.policy.restore_completed_dto(owner=h.owner.runtime_owner, expected=call,
+                config=h.registry.current, request=request, options=invocation_options(h), purpose="summary")
+            assert restored.text == original.text and restored.raw_response == original.raw_response
+            assert direct == restored
+            assert len(requests) == 1 and await h.calls.snapshot(h.binding) == before
 
 
 @pytest.mark.asyncio

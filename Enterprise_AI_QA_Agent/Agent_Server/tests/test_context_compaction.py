@@ -165,6 +165,43 @@ async def test_maybe_compact_marks_summary_call_and_disables_provider_retries():
     assert stub.invocation_kwargs[0]["transport_options"].max_retries == 0
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["openai_chat_completions", "openai_responses", "anthropic_messages",
+    "google_gemini_generate_content", "langchain_chat"])
+async def test_legacy_summary_http_error_has_one_actual_sdk_request(path, caplog):
+    import logging
+
+    from src.application.models.model_runtime_service import ModelRuntimeService
+    from src.core.config import get_settings
+    from tests.test_framework_chat_models import _config, _provider
+
+    transport = "openai_chat_completions" if path == "langchain_chat" else path
+    with _provider(transport, status=503) as (url, requests):
+        config = _config(transport, url)
+
+        class Registry:
+            def get_runtime_config(self, key):
+                assert key == config.key
+                return config
+
+            def get_default_runtime_config(self):
+                return config
+
+        settings = get_settings().model_copy(deep=True)
+        settings.model.langchain_model_adapter_enabled = path == "langchain_chat"
+        models = ModelRuntimeService(Registry(), settings)
+        service = ContextCompactionService(models, max_tail_messages=24)
+        session = _make_session(80)
+        assert service.should_compact(session)
+        with caplog.at_level(logging.INFO):
+            result = await service.maybe_compact(session)
+        assert result is None and "context_summary" not in session.metadata
+        assert len(requests) == 1
+        configured, = [record for record in caplog.records
+            if record.message == "model_invocation_transport_configured"]
+        assert configured.purpose == "summary" and configured.max_retries == 0
+
+
 def test_identity_summary_coverage_rejects_inserted_message_before_frozen_prefix():
     hygiene = TranscriptHygieneService()
     session = _make_session(40, metadata={"context_summary": {

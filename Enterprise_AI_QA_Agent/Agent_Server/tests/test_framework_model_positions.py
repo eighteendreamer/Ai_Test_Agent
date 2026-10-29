@@ -32,6 +32,21 @@ async def test_dto_input_drift_cannot_turn_the_same_position_into_another_http_r
 
 
 @pytest.mark.asyncio
+async def test_dto_purpose_drift_cannot_reuse_a_settled_summary_position(harness):
+    from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            h.models.set_framework_model_call_policy(h.policy)
+            with framework_owner_scope(h.owner.runtime_owner):
+                await h.models.invoke(h.request.model_key, dto_request(h), purpose="summary")
+                original = await h.calls.snapshot(h.binding)
+                with pytest.raises(FrameworkModelRecoveryRequired, match="position_input_changed"):
+                    await h.models.invoke(h.request.model_key, dto_request(h), purpose="agent")
+            assert len(requests) == 1 and await h.calls.snapshot(h.binding) == original
+
+
+@pytest.mark.asyncio
 async def test_graph_position_is_independent_of_request_hash(harness):
     with _provider("openai_chat_completions") as (url, requests):
         async with governed(harness, _config("openai_chat_completions", url)) as h:

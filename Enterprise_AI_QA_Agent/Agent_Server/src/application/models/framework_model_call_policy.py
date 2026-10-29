@@ -172,25 +172,29 @@ class FrameworkModelCallPolicy:
         return intent, envelope
 
     async def restore_completed_dto(self, *, owner, expected, config: ModelConfigRecord,
-                                    request: ModelInvocationRequest, options: dict) -> ModelInvocationResult:
+                                    request: ModelInvocationRequest, options: dict,
+                                    purpose: str = "agent") -> ModelInvocationResult:
         """Decode a specifically settled DTO response; never call the provider.
 
         This is an explicit application recovery port. It neither creates a
         successor nor writes a checkpoint, and cannot promote late observations.
+        The caller's purpose must match the frozen intent, just as on initial send.
         """
         try:
             return await self._restore_completed_dto(owner=owner, expected=expected, config=config,
-                request=request, options=options)
+                request=request, options=options, purpose=purpose)
         except (Exception, asyncio.CancelledError) as exc:
             logger.warning("framework_model_completed_dto_rejected", extra={"binding_id": owner.binding.binding_id,
-                "model_attempt_id": expected.intent.attempt_id, "error_type": type(exc).__name__})
+                "model_attempt_id": expected.intent.attempt_id, "purpose": expected.intent.purpose,
+                "error_type": type(exc).__name__})
             raise
 
-    async def _restore_completed_dto(self, *, owner, expected, config, request, options):
+    async def _restore_completed_dto(self, *, owner, expected, config, request, options, purpose):
         if self._evidence is None:
             raise ValueError("Completed DTO import requires its original evidence store")
         expected = await self._calls.verify_completed(owner, expected=expected)
-        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options)
+        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options,
+            purpose=purpose)
         if (intent.model_dump(exclude={"attempt_id"}) != expected.intent.model_dump(exclude={"attempt_id"})
             or expected.request is None or expected.request.sha256 != intent.request_sha256):
             raise ValueError("Completed DTO import differs from its frozen request")
@@ -214,7 +218,8 @@ class FrameworkModelCallPolicy:
         # exact proof again before exposing a result to a recovery caller.
         await self._calls.verify_completed(owner, expected=expected)
         logger.info("framework_model_completed_dto_read", extra={"binding_id": owner.binding.binding_id,
-            "model_attempt_id": expected.intent.attempt_id, "settled_response_id": expected.settled_response_id})
+            "model_attempt_id": expected.intent.attempt_id, "purpose": expected.intent.purpose,
+            "settled_response_id": expected.settled_response_id})
         return result
 
     async def _invoke_intent(self, *, owner, intent, send, usage_reader, envelope, response_kind):

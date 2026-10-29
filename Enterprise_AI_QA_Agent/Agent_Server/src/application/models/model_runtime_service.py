@@ -138,8 +138,11 @@ class ModelRuntimeService:
         expected_parameters: dict[str, Any] | None,
         expected_runtime_parameters: dict[str, Any] | None,
         transport_options: ModelTransportOptions | None,
+        purpose: str = "agent",
     ) -> ModelInvocationResult:
         """Consume a proven application DTO; never authenticate, send or emit tokens.
+
+        Use the same explicit purpose as invoke; trace metadata does not select it.
 
         No upstream counterpart (checked: FrameworkModelCallPolicy, prepared
         semantic input, LangGraph persistence, v3 section 5.1): this request ran
@@ -161,7 +164,7 @@ class ModelRuntimeService:
                 raise ValueError("Frozen completed model runtime configuration changed")
             return await self._framework_model_call_policy.restore_completed_dto(
                 owner=owner, expected=expected, config=config, request=request,
-                options=self._framework_invocation_options(config, transport_options))
+                options=self._framework_invocation_options(config, transport_options), purpose=purpose)
         except (Exception, asyncio.CancelledError) as exc:
             logger.warning("model_completed_result_rejected", extra={"model_key": model_key,
                 "logical_call_id": request.trace_context.get("logical_call_id", ""),

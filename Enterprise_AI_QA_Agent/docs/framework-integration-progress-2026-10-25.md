@@ -5310,3 +5310,60 @@ $env:PYTHONIOENCODING='utf-8'; $env:PYTHONUTF8='1'
 ### 兼容性、剩余出口与提交
 
 默认 `purpose="agent"` 保持既有图／DTO 调用契约；空 purpose 现在显式失败。摘要重试关闭只约束该摘要请求的 transport，不改变 provider 客户端的其他业务调用。legacy owner 缺失时仍没有完整 root ledger 与持久预算材料，不能宣称 B／§6.2 或整体 v4 已完成；Deep Agents 摘要和 legacy 摘要的治理边界现已分别可见、可核对。用户 v3 草稿保持未修改、未暂存；本节与五个相关源／测试文件同一小步提交。
+
+## 115. C／§6.2、H09/H11：按原 purpose 只读恢复已结算摘要 DTO（2026-10-30）
+
+### 续接查证、P0 与根因
+
+基线 `cf6987435`（§114）；上一轮有代码、验证与提交，属于 progress。续接核对 v4、§52／§53／§54 及后续事实、Git 历史与当前源码。工作区仅有用户 v3 草稿的既有 15 增 2 删，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`，不修改、不暂存、不提交。
+
+§53 的审批返回／恢复消息比较失败已在 §54 根因定位为 task ID 与 task path 顺序不一致，并提交 `449746190`；当前 `PathOrderedPostgresSaver` 仍采用固定版官方 BaseCheckpointSaver 的祖先读取、只修正 pending-write 排序。`native_terminal` 仍严格比较顺序、身份、内容块及 metadata；没有忽略 messages。§107 的轻量 Worker 诊断入口保留，撤掉的不可靠原生 watchdog 没有重新加入。本轮重新运行 P0 原生／Delta／资产前组 **43 passed，171.47s**，以及原独立 Worker 审批强杀六个参数 **6 passed，155.27s**，均 exit 0、无 skip/deselect；当前未复现旧顺序失败，也不据此宣称历史非稳定超时／失租首因已经修复。
+
+随后沿 §114 的发送契约继续核对：`invoke()` 已能将摘要登记为 `summary`，但 `restore_completed()` → `restore_completed_dto()` → `_dto_intent()` 的读取链仍固定使用默认 `agent`。一个已完成、有原输入／唯一响应／真实 usage 的摘要 DTO 会被误判为冻结请求漂移。这是跨发送／恢复边界的 purpose 契约未同步，不是放宽比较、从 trace 推断目的或重发模型能解决的问题。
+
+### 依据 → 实现及消费方
+
+- 现有 `_dto_intent()` 负责发送前的模型指纹、规范输入、稳定逻辑位置与 purpose；现有响应读取已经要求 `verify_completed`、原请求字节、唯一 settled response、serializer 和 usage → 恢复仍调用同一 intent 构建器，只补传调用方声明的 purpose，不改变原件与 owner 的前后复核。
+- `ModelRuntimeService.restore_completed()`、`FrameworkModelCallPolicy.restore_completed_dto()` 增加可选关键字 `purpose="agent"` 并贯穿私有读取端口。默认保持历史语义分类及现有 DTO 消费方契约；摘要调用者必须显式传 `summary`，目的清洗／空值拒绝复用现有 `_dto_intent()`，不从展示／trace metadata 自动选择目的。
+- 读取成功／拒绝日志补原账本 purpose，只记录既有身份、目的及异常类型，不输出 Prompt、响应正文或认证信息。完整 intent 比较不变：不同 purpose 不能复用同一调用位置，不能改写原账本／预算。
+- `test_framework_model_result_import.py` 增加四种 transport 加 LangChain Chat 适配的真实 SDK／PG 回归：重建 runtime、禁止认证及发送、重复读取原结果、错误默认 purpose／空 purpose 拒绝、trace metadata 不自授目的、原 HTTP／账本／Token 不增加。
+- `test_framework_model_positions.py` 补发送端 purpose 漂移的回归；`test_context_compaction.py` 补 legacy 摘要真实 HTTP 503 在五条已存在路径中只发一次并保留失败、不落摘要。此 E1 测试不冒充 owner 账本验收。
+- 全局搜索 `restore_completed`／`restore_completed_dto`：生产消费方仍是 `SemanticIntentService.enrich_prepared`，其冻结语义分类与恢复准入明确要求 `agent`，沿默认值保持原契约，不将分类目的改成摘要。无新公开 API、schema、DDL、依赖或路由变更。
+
+### TDD 与中间结果
+
+私有 `.codex-logs` 只保留输出、不提交，失败日志不覆盖：
+
+1. `c115-summary-restore-red-2026-10-30.log`：实际完成本地 SDK 摘要调用并取得 `summary` 账本后，旧恢复链抛出 `ValueError: Completed DTO import differs from its frozen request`；**1 failed，8.69s，exit 1**。这是实际恢复语义缺口，不是缺包／导入错误。
+2. 调用方显式传递 purpose、恢复链同步后，`c115-summary-restore-green-2026-10-30.log` **5 passed，19.72s，exit 0**；默认 `agent` 对原摘要仍明确拒绝，不为通过绿测忽略目的。
+3. 首次扩展组 `c115-model-consumers-2026-10-30.log` **5 failed、125 passed，296.08s，exit 1**。新增 legacy HTTP 测试用 60 条消息且没有 usage，未超过既有 `24*3` 触发条件，实际请求为零；这是测试前置条件错误，不是 SDK 重试失败。改用 80 条消息，并在运行前显式断言 `should_compact`，不修改生产阈值／吞错或删除 HTTP 次数断言。
+4. 修正夹具后的五路径 SDK 组 `c115-summary-sdk-2026-10-30.log` **5 passed，7.25s，exit 0**；后续完整消费方结果单独记录，不把较早 125 项与修正后 5 项拼称一次最终全绿。
+
+### 实际验证与证据范围
+
+P0 查证命令在 `Agent_Server`，使用已有根目录 `.venv-framework-v2`，显式设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`、`PYTHONUTF8=1`。这两组在 purpose 恢复修改前核实当前基线，不冒称最终整棵源码的原子验收：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_framework_delta_replay_order.py tests/test_framework_native_terminal.py tests/test_framework_terminal_gap.py -q -x -rs --tb=short
+# 43 passed，171.47s，exit 0；终端会话 92385
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling -vv -rs --tb=short
+# 6 passed，155.27s，exit 0；终端会话 62299
+```
+
+最终源码（包括 legacy HTTP 夹具修正）的九文件回归：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_context_compaction.py tests/test_model_failure_lifecycle.py tests/test_framework_model_policy.py tests/test_framework_semantic_input.py tests/test_framework_orchestrating_recovery.py -q -rs --tb=short
+# 211 passed，496.64s，exit 0，无 skip/deselect
+# .codex-logs/c115-model-final-consumers-2026-10-30.log；终端会话 16392
+```
+
+该组实际覆盖原 purpose 的读取、原生摘要／主／子分支根账本、语义分类原结果消费及图前恢复消费方；没有以 §114 的 58 项 skipped 代替本次 live 结果，也不累计早期重叠的 5／125 项。项目根 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 均实际通过。`find_spec` 确认 ruff／mypy 不在当前环境，未执行 lint/typecheck，未安装新工具。未跑全量后端、前端、真实供应商／RustFS／领域 Runner、官方 saver conformance、完整 E3／E4 或发布验收。
+
+本轮没有启停 Docker／基础设施；只读检查已有容器状态后，沿现有 UUID 隔离表、checkpoint schema、Redis 前缀及 fixture 清理执行。模型仅连接本机合成 HTTP；对象证据仍为现有受控对象后端，不是实际 RustFS。P0 六参数含独立 Worker／强杀；新摘要读取为真实 PG／Redis、SDK、本地 HTTP 的同进程 E2 子集，不能称新摘要恢复已通过独立 Worker 强杀。
+
+### 兼容性与剩余出口
+
+旧 `agent` 读取、语义分类准入、原数据格式及指纹均保持；没有变更已有持久记录。新端口只允许按原目的读取已完成且唯一结算的 DTO，不创建新后继、不 invoke 图、不导入未结算 observation，也不授予图内模型节点的 completed 响应消费权。legacy 无 owner 摘要仍缺完整 root ledger；完整原生摘要覆盖迁移、根活动时间、图内安全继续、历史非稳定 Worker 超时首因、A3 远端查询／停止／补偿、D/E/F、完整 H01–H12 与 E3/E4 仍未完成，整体 v4 goal 继续 active。
+
+本节归入 `【fix】保留摘要模型响应恢复的原调用目的`，仅含两个模型源文件、三个测试文件及本实施记录，实际 commit ID 以 Git 和交付输出为准；用户 v3 草稿、日志、认证配置与本地数据均排除。下一步继续 B 的原生摘要覆盖／跨 Turn 发布及 C 的根预算与图内安全继续出口，不把本节的 DTO 只读恢复当作完整阶段或全系统完成。
