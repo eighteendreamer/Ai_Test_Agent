@@ -5505,3 +5505,33 @@ cd Agent_Server
 本子步不改表结构、配置默认值、公开审批 API、模型发送／结算契约或预算额度；继续复用现有任务表中的 `started_at`／`finished_at`，旧模型账本也可单独按 `as_of` 计量。当前 root 活动仍未覆盖工具 Runner 内部区间、排队等待、owner 心跳租约和崩溃后无法闭合的真实尾段资产，也未在真实 PostgreSQL／Redis、独立 Worker 强杀、RustFS、供应商或领域 Runner 上验收，因此不能宣称 C／H09 或完整 v4 已完成。A2/A3、B 其余出口、D/E/F、完整 H01–H12 与 E3/E4 继续 active。
 
 本节仅包含两个模型源文件、其回归测试与本实施记录；用户 v3 草稿保持未修改、未暂存、未提交。下一步继续补齐持久工具／心跳／崩溃尾段的计量来源，再评估接入公共预算投影，不把 fake DB 证据升级为 live 事实。
+
+## 120. C／§6.3、H09：纳入绑定 ToolJob 执行边界并保留等待排除（2026-10-30）
+
+### 续接、依据与根因
+
+基线为 §119 的 `42b0d4184`。上一节已合并模型调用与 Worker Attempt，但根活动仍遗漏外部工具执行的持久边界；直接把 `ToolJob` 的所有墙钟时间算入又会把审批、资源等待或子代理等待误记为活动。现有 `agent_tool_jobs` 已有 `metadata.framework_binding_id`、`started_at`、`completed_at` 和状态，是可复用的持久事实来源，不新增调度器或工具执行协议。
+
+依据 `PostgresToolJobStore` 的既有 claim／settle 契约与 v4 §6.3 的活动并集规则 → `PostgresFrameworkModelCalls.root_activity_intervals()` 同一读取事务中增加绑定 ToolJob 查询，仅纳入已开始且处于 `running`、`resume_requested` 或已结算终态（`completed`、`partial`、`failed`、`cancelled`）的区间；`queued`、`waiting_approval`、`waiting_resource`、`waiting_children`、`denied` 不作为活动区间。这样审批等待不会被工具任务的开放尾段吞并；未结算的 running/resume_requested 仍需调用方显式传 `as_of`，继续由统一 `union_activity_intervals()` 做重叠合并、时区与逆序校验。
+
+### TDD、实现与验证
+
+新增失败测试先证明旧读取端口没有 ToolJob 区间（**1 failed，exit 1**）；随后完成最小读取与 SQL 状态筛选，并验证已结算区间、开放尾段和绑定过滤。生产配置中的 ToolJob 关系名复用既有 `postgres_relation_parts()` 校验，未改变默认表名或 schema。
+
+```powershell
+cd Agent_Server
+..\\.venv-framework-v2\\Scripts\\python.exe -m pytest tests/test_framework_model_budget_projection.py::test_postgres_activity_reader_includes_bound_tool_jobs_and_open_tail -q -rs --tb=short
+# 1 passed，3.84s，exit 0
+..\\.venv-framework-v2\\Scripts\\python.exe -m compileall -q src tests
+# exit 0
+..\\.venv-framework-v2\\Scripts\\python.exe -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_model_calls.py tests/test_framework_model_policy.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_context_transcript.py tests/test_framework_turn_context.py -q -rs --tb=short
+# 82 passed，91 skipped，9.41s，exit 0；skip 均为既有未启用 PostgreSQL／Redis live 组
+```
+
+`git diff --check` 需在提交前再次执行；当前环境未安装 `ruff`／`mypy`，未执行 lint/typecheck。fake PostgreSQL cursor 验证了查询形状、状态边界、绑定条件和并集结果，但不能替代真实 PostgreSQL／Redis、独立 Worker 强杀、工具 Runner、RustFS 或真实供应商验收。
+
+### 证据边界、兼容性与剩余出口
+
+本子步不改 DDL、配置默认值、工具审批 API、ToolJob claim/settle、模型预算额度或外部执行权。当前工具表只有任务起止时间，没有等待状态的历史区间事件；因此对 waiting 状态不猜造前段活动，也不能声称已精确覆盖工具 handler 内部、子代理等待、心跳租约或崩溃尾段。`root_activity_intervals()` 仍是只读计量材料，不自动授予发送、重试或恢复权限。A2/A3、B 其余出口、C 的完整崩溃尾段／排队口径、D/E/F、完整 H01–H12 与 E3/E4 继续 active。
+
+本节仅包含模型活动读取源、预算投影回归与本实施记录；用户 v3 草稿保持未修改、未暂存、未提交。下一步优先冻结 owner 心跳／租约与 Attempt 未闭合尾段的保守上界，再接入公共预算投影和故障回归。

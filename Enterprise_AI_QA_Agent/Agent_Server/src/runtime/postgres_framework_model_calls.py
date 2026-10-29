@@ -17,6 +17,7 @@ from dataclasses import dataclass
 from datetime import datetime
 
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import postgres_relation_parts
 from src.runtime.postgres_runtime_owner import (
     assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row, runtime_owner_table,
 )
@@ -63,6 +64,8 @@ class PostgresFrameworkModelCalls:
         base = settings.database.postgres_agent_task_table
         self.budgets_table = f"{base}_model_budget"
         self.calls_table = f"{base}_model_call"
+        self.tool_jobs_table = settings.database.postgres_tool_job_table
+        postgres_relation_parts(self.tool_jobs_table)
         for table in (self.budgets_table, self.calls_table):
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", table):
                 raise ValueError("Invalid framework model ledger table identifier")
@@ -164,6 +167,19 @@ class PostgresFrameworkModelCalls:
                     (binding.binding_id,),
                 )
                 intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
+                # Tool jobs are the durable execution boundary for external
+                # handlers.  A job waiting for approval/resource/children is
+                # not active wall-clock time; its pre-wait segment is not
+                # reconstructable from the current schema, so do not guess it.
+                cur.execute(
+                    f"""SELECT job.started_at, job.completed_at
+                    FROM {self.tool_jobs_table} AS job
+                    WHERE job.metadata->>'framework_binding_id'=%s
+                      AND job.started_at IS NOT NULL
+                      AND job.status IN ('running','resume_requested','completed','partial','failed','cancelled')""",
+                    (binding.binding_id,),
+                )
+                intervals.extend((row["started_at"], row["completed_at"]) for row in cur.fetchall())
                 return union_activity_intervals(intervals, as_of=as_of)
 
         result = await asyncio.to_thread(read)
