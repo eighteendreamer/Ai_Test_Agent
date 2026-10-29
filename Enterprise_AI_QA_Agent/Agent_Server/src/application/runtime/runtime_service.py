@@ -2458,6 +2458,8 @@ class RuntimeService:
             limit=self._context_max_tail_messages,
             summary=summary or None,
             summary_covers_until=int(summary_state.get("covers_until_index") or 0),
+            summary_covered_message_ids=summary_state.get("covered_message_ids"),
+            summary_coverage_sha256=summary_state.get("coverage_sha256"),
         )
 
     def _state_from_pending_turn(self, session: SessionRecord, pending_turn: dict[str, Any]) -> dict[str, Any]:

@@ -5,6 +5,7 @@ import pytest
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.domain.models import SessionRecord
+from src.schemas.framework_approval import approval_value_hash
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationResult
 from src.schemas.session import (
     ChatMessage,
@@ -124,6 +125,84 @@ async def test_maybe_compact_writes_summary_metadata():
     assert summary_state["covers_until_index"] == 36
     assert "Completed work" in summary_state["summary"]
     assert len(stub.invocations) == 1
+
+
+@pytest.mark.asyncio
+async def test_maybe_compact_freezes_summary_coverage_by_message_identity():
+    stub = StubModelRuntimeService()
+    service = ContextCompactionService(stub, watermark=0.7, max_tail_messages=24)
+    session = _make_session(
+        60,
+        metadata={"context_usage": {"prompt_tokens": 100000, "context_window": 128000}},
+    )
+
+    info = await service.maybe_compact(session)
+
+    assert info is not None
+    summary_state = session.metadata["context_summary"]
+    assert summary_state["covered_message_ids"] == [f"message-{index}" for index in range(36)]
+    assert summary_state["coverage_sha256"] == info["coverage_sha256"]
+    assert info["covered_message_count"] == 36
+
+
+def test_identity_summary_coverage_rejects_inserted_message_before_frozen_prefix():
+    hygiene = TranscriptHygieneService()
+    session = _make_session(40, metadata={"context_summary": {
+        "summary": "Earlier work summary body",
+        "covers_until_index": 30,
+        "covered_message_ids": [f"message-{index}" for index in range(30)],
+    }})
+    session.messages.insert(0, ChatMessage(
+        id="inserted-before-summary", role=MessageRole.user, content="new message",
+        created_at=datetime.utcnow(),
+    ))
+
+    with pytest.raises(ValueError, match="summary coverage"):
+        hygiene.build_runtime_messages(
+            session.messages,
+            limit=10,
+            summary=session.metadata["context_summary"]["summary"],
+            summary_covers_until=session.metadata["context_summary"]["covers_until_index"],
+            summary_covered_message_ids=session.metadata["context_summary"]["covered_message_ids"],
+        )
+
+
+def test_identity_summary_coverage_replays_tail_after_frozen_prefix_without_index_guessing():
+    hygiene = TranscriptHygieneService()
+    session = _make_session(40)
+    covered_message_ids = [f"message-{index}" for index in range(30)]
+    session.messages.append(ChatMessage(
+        id="late-message", role=MessageRole.user, content="late answer",
+        created_at=datetime.utcnow(),
+    ))
+
+    runtime_messages = hygiene.build_runtime_messages(
+        session.messages,
+        limit=20,
+        summary="Earlier work summary body",
+        summary_covers_until=30,
+        summary_covered_message_ids=covered_message_ids,
+        summary_coverage_sha256=approval_value_hash(covered_message_ids),
+    )
+
+    assert [item["content"] for item in runtime_messages[1:]] == [
+        f"message content {index}" for index in range(30, 40)
+    ] + ["late answer"]
+
+
+def test_identity_summary_coverage_rejects_tampered_digest():
+    hygiene = TranscriptHygieneService()
+    session = _make_session(40)
+    covered_message_ids = [f"message-{index}" for index in range(30)]
+
+    with pytest.raises(ValueError, match="coverage digest"):
+        hygiene.build_runtime_messages(
+            session.messages,
+            summary="Earlier work summary body",
+            summary_covers_until=30,
+            summary_covered_message_ids=covered_message_ids,
+            summary_coverage_sha256=approval_value_hash([*covered_message_ids, "tampered"]),
+        )
 
 
 @pytest.mark.asyncio

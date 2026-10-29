@@ -5238,3 +5238,40 @@ $env:PYTHONIOENCODING='utf-8'; $env:PYTHONUTF8='1'
 ### 提交边界与下一出口
 
 本节拟与 provider／transport 代码及新增测试同一提交；用户 v3 草稿保持未修改、未暂存，不纳入提交。下一步可继续处理身份化摘要覆盖，或按新的目标模式推进其他 v4 出口；完整 v4 goal 仍 active。
+
+## 113. B／§5.1.5：以消息身份与覆盖摘要校验冻结覆盖（2026-10-30）
+
+### 起点、根因与依据 → 做法
+
+基线为 §112 的 `v2.2.0` provider／transport 来源冻结。v4 §5.1.5 要求摘要覆盖范围可追溯，不能把旧的数字 `covers_until_index` 当成消息仍未变动的证明。消息在摘要前插入、删除或重排时，旧数字水位会静默跳过错误前缀或重复回放；这是覆盖锚点缺少稳定身份的根因，不在 Runtime 继续增加位置特判。
+
+沿现有 `ChatMessage.id`、`TranscriptHygieneService` 的唯一上下文装配、`approval_value_hash` 的规范摘要校验和 `ContextCompactionService` 的持久摘要状态 → 新摘要同时保存 `covered_message_ids` 与 `coverage_sha256`，回放先核对身份列表仍是当前 Session 的严格前缀，再解析尾部；摘要索引仅保留为兼容展示字段。旧摘要只有 `covers_until_index` 时仍沿旧路径读取，未伪造身份范围。
+
+### TDD 红测、实现与消费方
+
+首轮新增身份覆盖测试实际得到 **3 failed**：摘要没有身份字段，且 Runtime 未向 `TranscriptHygieneService` 传递身份参数。补齐后增加摘要 digest 篡改负例，覆盖插入前缀、尾部追加和 hash 漂移三类边界。
+
+- `ContextCompactionService` 的 Prompt 要求引用稳定 `[message:<id>]`；新摘要记录覆盖身份、sha256、数量和兼容索引，excerpt 同时提供展示索引与身份。
+- `TranscriptHygieneService.resolve_summary_coverage_index` 校验非空唯一身份、严格前缀、索引与身份数量一致；提供 digest 时必须等于 `approval_value_hash(covered_message_ids)`，不一致记录 `conversation_summary_coverage_rejected` 并抛出明确 `ValueError`，不静默回退数字水位。
+- `RuntimeService._build_conversation_messages` 同步传递 `summary_covered_message_ids` 与 `summary_coverage_sha256`；摘要 compaction 的后续轮次也复用同一校验。
+- 仅修改摘要上下文内部字段和已有测试，没有新增公开 API、数据库迁移、依赖或前端契约。旧的数字摘要保持兼容；身份摘要缺少 digest 时仍可按身份前缀兼容读取，已有新写入路径始终生成 digest。
+
+### 最终源码实际验证
+
+使用 `Agent_Server/.venv-framework-v2`，未启动生产服务、未升级依赖、未发起真实供应商请求：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_context_compaction.py -q -rs --tb=short
+# 16 passed，2.85s，exit 0
+
+../.venv-framework-v2/Scripts/python.exe -m pytest tests/test_context_compaction.py tests/test_model_failure_lifecycle.py tests/test_framework_context_transcript.py tests/test_framework_tool_messages.py -q -rs --tb=short
+# 84 passed，5.04s，exit 0
+```
+
+`git diff --check` 实际通过。`ruff`／`mypy` 未安装，未执行 lint/typecheck，也未安装新工具；未跑全量后端、前端、真实 PG／Redis 强杀组、真实供应商、领域 Runner、E3／E4 或完整发布验收。
+
+### 兼容性、剩余出口与提交
+
+身份校验失败现在显式暴露为摘要覆盖冲突，调用方不得吞掉异常后继续使用旧索引；缺少身份字段的历史数字摘要仍是兼容分支，不代表历史数据已经完成迁移。摘要内容本身仍是非可信上下文，稳定身份与 digest 只证明覆盖元数据一致，不授予工具、审批或外部副作用权限。
+
+本节只收敛 B／§5.1.5 的摘要覆盖锚点，不代表统一 Prompt、完整跨 Turn 资产、C/D/E/F、E3／E4 或整体 v4 完成。用户 v3 草稿保持未修改、未暂存；本节提交仅包含三份上下文源文件、一个测试文件和本实施记录。

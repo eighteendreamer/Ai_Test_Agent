@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 from datetime import datetime
+import logging
 from typing import Any
 
 from src.application.prompting.untrusted_content import wrap_untrusted_content
+from src.schemas.framework_approval import approval_value_hash
 from src.schemas.model_config import is_model_failure_summary
 from src.schemas.session import ChatMessage, MessageRole
+
+
+logger = logging.getLogger(__name__)
 
 
 class TranscriptHygieneService:
@@ -25,6 +30,8 @@ class TranscriptHygieneService:
         limit: int = 24,
         summary: str | None = None,
         summary_covers_until: int = 0,
+        summary_covered_message_ids: list[str] | None = None,
+        summary_coverage_sha256: str | None = None,
     ) -> list[dict[str, Any]]:
         runtime_messages: list[dict[str, Any]] = []
         if summary and summary.strip():
@@ -36,6 +43,13 @@ class TranscriptHygieneService:
                         + wrap_untrusted_content("conversation_summary", summary.strip())
                     ),
                 }
+            )
+        if summary_covered_message_ids is not None:
+            summary_covers_until = self.resolve_summary_coverage_index(
+                messages,
+                summary_covered_message_ids,
+                summary_covers_until=summary_covers_until,
+                summary_coverage_sha256=summary_coverage_sha256,
             )
         tail = messages[summary_covers_until:] if summary_covers_until > 0 else messages
         for item in tail[-limit:]:
@@ -49,6 +63,57 @@ class TranscriptHygieneService:
                 continue
             runtime_messages.append({"role": role, "content": content})
         return runtime_messages
+
+    def resolve_summary_coverage_index(
+        self,
+        messages: list[ChatMessage],
+        covered_message_ids: list[str],
+        *,
+        summary_covers_until: int = 0,
+        summary_coverage_sha256: str | None = None,
+    ) -> int:
+        """Resolve an identity-frozen summary prefix without trusting an index.
+
+        A summary created by the current compactor stores the exact message
+        identities it covered.  The list must still be the session prefix;
+        insertion, deletion or reordering is an explicit coverage conflict,
+        not a reason to replay from a stale numeric watermark.
+        """
+        if not isinstance(covered_message_ids, list) or not covered_message_ids or any(
+            not isinstance(identity, str) or not identity for identity in covered_message_ids
+        ) or len(set(covered_message_ids)) != len(covered_message_ids):
+            logger.warning("conversation_summary_coverage_rejected", extra={
+                "message_count": len(messages),
+                "covered_message_count": len(covered_message_ids) if isinstance(covered_message_ids, list) else None,
+                "error_type": "invalid_identities",
+            })
+            raise ValueError("conversation summary coverage identities are invalid")
+        if summary_coverage_sha256 is not None:
+            if (not isinstance(summary_coverage_sha256, str)
+                or approval_value_hash(covered_message_ids) != summary_coverage_sha256):
+                logger.warning("conversation_summary_coverage_rejected", extra={
+                    "message_count": len(messages),
+                    "covered_message_count": len(covered_message_ids),
+                    "error_type": "coverage_digest_mismatch",
+                })
+                raise ValueError("conversation summary coverage digest does not match its identities")
+        expected = [item.id for item in messages[:len(covered_message_ids)]]
+        if expected != covered_message_ids:
+            logger.warning("conversation_summary_coverage_rejected", extra={
+                "message_count": len(messages),
+                "covered_message_count": len(covered_message_ids),
+                "error_type": "prefix_identity_mismatch",
+            })
+            raise ValueError("conversation summary coverage identities do not match the session prefix")
+        if summary_covers_until not in {0, len(covered_message_ids)}:
+            logger.warning("conversation_summary_coverage_rejected", extra={
+                "message_count": len(messages),
+                "covered_message_count": len(covered_message_ids),
+                "summary_covers_until": summary_covers_until,
+                "error_type": "index_identity_mismatch",
+            })
+            raise ValueError("conversation summary coverage index does not match its identities")
+        return len(covered_message_ids)
 
     def is_context_eligible(self, message: ChatMessage) -> bool:
         metadata = message.metadata or {}
