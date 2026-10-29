@@ -4930,3 +4930,58 @@ $env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
 **本节解决的是测试诊断入口过晚及新增 native 采样不可靠的问题，不证明 §82／§89／§106 的活进程超时或失租首因已经修复。** 下一步沿明确的启动／fixture 导入／领取／执行／收尾阶段核对历史失败；需要原生精确根因时须有对应 dump／符号证据，不能根据本次通过或一个累计导入时间下结论。A3 远端停止／查询／补偿、完整 B/C/D/E/F、生产接入与 E3／E4 全部仍在目标范围内，完整 v4 保持 active。
 
 本节随 `【test】前移Worker阶段诊断并移除不可靠原生采样` 提交，仅含本轮六个 helper／测试／说明／进度／白名单文件；实际 commit ID 以 Git 和交付输出为准，不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 不变，保持未提交。
+
+## 108. B／§5.2：保护原生 transcript 的服务端 metadata 发布与详情边界（2026-10-29）
+
+### 起点、依据与范围
+
+基线 `0e3b5873603c2f9549ed4217ff03dd7047444536`。续接核实完整 v4 目标仍 active、当前分支 main、只有原 v3 草稿未提交；不把 §107 的通过结果解释为历史 Worker 超时首因已修复。本节推进 B 的一个独立子步，不重复构建已有恢复／调度链路。
+
+- v4 §5.2／§15 B → 原生资产只能由服务端发布，公开详情与执行原件分离。
+- 现有 `SessionService.create_session`／`update_session` 共用 `_reject_server_managed_metadata`，`_to_detail` 共用内部字段过滤 → 将 `framework_transcript_asset` 纳入两项既有规则，不另造校验器、资产存储或授权层。
+- 现有 `test_session_project_binding.py` 的 ASGI 保留键负例、`test_deep_agent_runtime_adapter.py` 的官方消息序列化／新 Turn 导入样本 → 使用摘要有效且工具调用闭合的合成原生资产，验证来源边界而不是只验证坏摘要。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` → 同时断言权限、写入／事件副作用和完整消息轨迹，不以 HTTP 成功或最终文本代替契约验证。
+
+本节只修改 Session 服务、既有 Session API 测试、质量门说明及本实施记录。没有改动原生资产 schema、Runtime 导入算法、绑定版本、数据库结构、路由或前端类型；快照／导出／追踪和其他 metadata 字段不在本节已验收范围。
+
+### TDD：真实红测、根因与最小修复
+
+修复前新增反例实际得到 **8 failed、6 passed，9.25s，exit 1**（`b108-session-native-metadata-red-2026-10-29.log`）：
+
+- Create 与 Update 对完整有效资产、空对象和 null 均返回 `200`，而不是要求的 `400`（六项 `assert 200 == 400`）。Update 的有效资产使用当前 Session 身份并重新计算摘要，因此不能用摘要／Session 匹配替代来源控制。
+- 普通 GET 与可信内部创建返回的 SessionDetail 都暴露 `framework_transcript_asset`（两项字段不应存在的断言失败）。
+
+根因是新资产没有纳入原有 metadata 写入权和展示可见性分类，不是序列化丢失或 Runtime 缺少另一层 hash 判断。修复将该键加入 `SERVER_MANAGED_SESSION_METADATA_KEYS` 和 `INTERNAL_SESSION_METADATA_KEYS`；公开写入沿原 ValueError→HTTP 400 返回，日志事件 `session_metadata_write_rejected` 仅记录命中的保留键名。输出过滤只作用于详情投影，不删除／脱敏持久原件。
+
+新增断言同时确认：拒绝后 Session（含偏好、metadata、修订及时间）和事件不变；普通 metadata 更新正常；可信内部创建仍可保存原件但不向详情暴露；错误响应／拒绝日志不回显原生正文或 provider 扩展值；Runtime 原入口读取存储资产后保留全部原生前缀，只追加当前输入。内部创建夹具固定新 Session UUID，使资产身份与实际 Session 相符；不使用跨 Session 资产作为正常样本。
+
+### 最终当前源码实际验证
+
+以下均在 `Agent_Server` 使用已有 `.venv-framework-v2`，设置 `PYTHONIOENCODING=utf-8`／`PYTHONUTF8=1`，日志保存在私有 `.codex-logs`，不提交、不覆盖：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_session_project_binding.py -q -rs --tb=short
+# 最小修复后：14 passed，5.77s，exit 0。
+# b108-session-native-metadata-green-2026-10-29.log
+# 此次早于内部创建夹具固定 UUID；最终夹具随下列完整组重新运行。
+
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_session_project_binding.py tests/test_session_store_value_contract.py `
+  tests/test_deep_agent_runtime_adapter.py tests/test_framework_finalization_projection.py `
+  -q -rs --tb=short
+# 最终源码：204 passed，154.31s，exit 0，无 skip/deselect。
+# b108-session-native-consumers-2026-10-29.log
+```
+
+运行前核实既有 Docker 容器在运行，PG `SELECT 1` 与 Redis `PING` 均成功；本轮没有启停服务。真实存储组使用原有 UUID 隔离表／schema／Redis 前缀及 fixture 清理，不操作正式业务数据。Session 来源／详情负例本身是进程内 ASGI＋内存 Store；消费方组包含官方框架与真实本地存储／恢复用例，不能把这些结果称为真实供应商或完整业务模式验收。
+
+项目根 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际通过。`importlib.util.find_spec` 确认 ruff／mypy 未安装，未执行后端 lint/typecheck，未擅自安装工具。全局核对该资产引用：生产读写仍在 Session／Runtime／原生消息服务，前端无该字段消费者；`sessions.api.ts` 的普通 metadata PATCH 契约不变。没有前端修改，未跑前端；未执行全量后端、生产部署、真实模型／领域 Runner／对象存储或 E3／E4 验收。
+
+### 兼容性、剩余出口与提交
+
+公开写入该内部键现在明确返回 400，合法普通 metadata 不受影响；已经保存的原生资产格式及服务端读取路径不变，无数据迁移。此处阻止新的客户端注入，不为历史资产补发来源证明，也不证明其他 metadata／快照／导出路径均已完成隐私治理。`content_sha256` 仍仅证明一致性，不承担授权。
+
+下一步 B 仍需统一 Prompt 装配、稳定业务覆盖锚点／legacy 夹层／未来输入排除、完整真实请求与协议兼容性，以及其余私有资产输出面的逐项审计。A3 远端查询／停止／补偿、C 历史超时首因与公共故障出口、D/E/F 和 E3／E4 继续保留，完整 v4 目标仍 active。
+
+本节随 `【fix】保护原生会话档案的服务端发布边界` 提交，仅包含上述四个文件，实际 commit ID 以 Git 和交付输出为准，不推送、不建 PR。原 v3 草稿保持未修改、未暂存，其 SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。

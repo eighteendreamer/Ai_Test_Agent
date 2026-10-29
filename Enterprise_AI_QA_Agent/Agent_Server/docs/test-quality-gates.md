@@ -105,3 +105,21 @@ exit $result
 `-X importtime` 自身有测量开销，不是生产性能基线，也不代表所有 spawn 阶段。阶段日志不覆盖解释器启动、spawn 准备、轻量模块自身／日志设施导入和参数反序列化，不提供线程栈或完整 asyncio await 树。原父进程期限、租约、强杀点、owner 判定和原生消息断言保持不变。既有 INFO 日志不承诺自动脱敏全部业务上下文，原始输出仅保留在私有证据目录，归档前另行脱敏。没有捕获失败首因前，即使复验通过，也不能宣称历史 C/H07 超时已经修复。
 
 依据：本机 CPython `multiprocessing.spawn._main` 在调用进程 target 前先反序列化进程对象；沿 [Python 3.11 spawn 约定](https://docs.python.org/3.11/library/multiprocessing.html#the-spawn-and-forkserver-start-methods) 将 target 留在轻量模块；[Python 3.11 命令行说明](https://docs.python.org/3.11/using/cmdline.html#cmdoption-X) 与本机 `--help-xoptions` 确认 `-X importtime`。
+
+## 原生 transcript 的 Session metadata 边界（v4 B／§5.2 子集）
+
+`framework_transcript_asset` 是服务端发布且不面向展示的 metadata 字段：公共 Session Create／Update 均拒绝该键（HTTP 400），包括摘要合法的完整资产、空对象和 null；拒绝时不保存其他偏好／metadata，也不追加偏好变更事件。`session_metadata_write_rejected` 日志只包含保留键名，不记录提交的正文或原生 provider 数据。
+
+SessionDetail 使用既有内部字段过滤机制，不返回该字段；读取不删除或改写存储原件，普通 metadata 更新与可信服务端路径仍可用。Session API 契约测试还通过 Runtime 原有新 Turn 入口核对完整原生前缀，保留内容块、工具调用配对、provider 扩展字段与消息身份，不以脱敏后的展示文本重建运行历史。
+
+```powershell
+# 工作目录 Agent_Server；先确认现有测试 PG/Redis 可用，不启动服务。
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+../.venv-framework-v2/Scripts/python.exe -m pytest `
+  tests/test_session_project_binding.py tests/test_session_store_value_contract.py `
+  tests/test_deep_agent_runtime_adapter.py tests/test_framework_finalization_projection.py `
+  -q -rs --tb=short
+```
+
+边界用例采用进程内 ASGI／内存 SessionStore 与合成原生消息；消费方回归另覆盖真实 PostgreSQL／Redis 的既有隔离 fixtures，不能把二者混称真实供应商验证。该项不证明快照、导出、追踪或其他 metadata 字段均完成隐私审计，也不为历史存量资产补发来源证明；覆盖锚点、legacy 夹层与完整跨 Turn 请求仍按 B 阶段单独验收。已保存的原始失败／成功日志不可覆盖，见实施记录 §108。

@@ -75,10 +75,11 @@ BUSY_SUBMISSION_STATUSES = frozenset({
     SessionStatus.interrupted,
 })
 SERVER_MANAGED_SESSION_METADATA_KEYS = frozenset(
-    {"environment", "resource_scope", "security_authorization"}
+    {"environment", "resource_scope", "security_authorization", "framework_transcript_asset"}
 )
 INTERNAL_SESSION_METADATA_KEYS = frozenset(
     {
+        "framework_transcript_asset",
         "turn_lease_turn_id",
         "turn_lease_owner",
         "turn_lease_token",
@@ -711,6 +712,10 @@ class SessionService:
             return
         forbidden = sorted(SERVER_MANAGED_SESSION_METADATA_KEYS.intersection(metadata))
         if forbidden:
+            logger.warning(
+                "session_metadata_write_rejected",
+                extra={"metadata_keys": forbidden},
+            )
             raise ValueError(
                 "Session metadata keys are server-managed and cannot be set by clients: "
                 + ", ".join(forbidden)
