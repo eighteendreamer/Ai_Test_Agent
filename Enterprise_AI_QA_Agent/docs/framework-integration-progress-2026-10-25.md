@@ -4287,3 +4287,43 @@ git diff --check
 ### 剩余出口与提交边界
 
 本子步只覆盖 Memory 未知效果的查询分类；尚未实现有依据的分项补偿、资源清理 receipt／journal、外部 Runner 对账、H07 失租首因，以及 A3 其余出口。`docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 是工作区原有用户草稿，未纳入本提交；`.codex-logs`、`.env` 和本地数据同样排除。完整 A3、A2-3、B／C／D／E／F 继续 active。
+
+## 97. A3／H06：资源清理 receipt 的只读未知效果对账（2026-10-29）
+
+本节承接 §96 的 Memory 只读对账，处理现有 `PostgresResourceCleanupStore`／`ResourceCleanupTaskHandler` 已持久化但尚无统一查询分类的资源清理 receipt。范围只覆盖稳定 `task_id` 对应的过期资源清理投递；不把 Session 的正式结果改写为清理状态，不新增调度层或自动补偿。
+
+### 真实缺口、依据与实现
+
+- 现有清理 Worker 已把 `task_id`、原始资源身份（去除 lease token）、状态、尝试次数、Worker 和错误类型写入 PostgreSQL；但此前只能用 `begin()` 的布尔结果继续处理，没有只读入口区分“receipt 缺失／仍在运行／失败后外部效果未知／终态已核对／身份漂移”。
+- `reconcile_cleanup_receipt` 复用该持久 receipt 和 `ExpiredResourceLease` 的稳定字段，逐项核对 task、resource、allocation、fencing、attempt、request／trace 等身份。`completed`／`skipped` 只有在身份一致时才报告已知终态；`running`、`failed` 和缺失 receipt 均报告 `unknown`，不转换为重试或补偿权限；身份或状态格式不一致报告 `drifted`。
+- `PostgresResourceCleanupStore.reconcile()` 只读查询 receipt，不获取 owner、lease 或行锁，并通过结构化日志记录 task/resource、状态、原因码和尝试次数。该入口是诊断材料，不调用 Docker、浏览器或其他外部 adapter。
+- 采用现有资源清理 receipt 表和固定 `task_id`，没有新增依赖、DDL、Redis 操作、真实资源调用或生产路由；后续有依据补偿仍必须先消费本对账结果并沿现有 callback／allocation journal 规则执行。
+
+### TDD 与实际验证
+
+先加入失败契约测试并实际运行，得到：
+
+```text
+pytest tests/test_resource_cleanup_worker.py -k 'read_only_unknown or missing_cleanup_receipt or identity_drift' -q -rs --tb=short
+# ImportError: 无 reconcile_cleanup_receipt
+```
+
+实现后在 `Agent_Server` 使用 `../.venv-framework-v2/Scripts/python.exe` 实际运行：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_resource_cleanup_worker.py -q -rs --tb=short
+# 14 passed，1.17 秒内完成
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py tests/test_resource_cleanup_entrypoint.py `
+  -q -rs --tb=short
+# 21 passed
+
+../.venv-framework-v2/Scripts/python.exe -m compileall -q src tests
+git diff --check
+# 均 exit 0
+```
+
+本节未运行真实 PostgreSQL／Redis／Docker／浏览器清理；当前环境的 live 资源门仍按既有标记跳过，不能把替身测试称为外部资源验收。失败 receipt 的后续分项补偿、Session 终态清理 journal、外部 Runner 对账、H07 及 A3 其余出口仍待实现。
+
+提交边界排除工作区原有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md`、`.codex-logs`、`.env` 和本地数据；完整 A3、A2-3、B／C／D／E／F 继续 active。

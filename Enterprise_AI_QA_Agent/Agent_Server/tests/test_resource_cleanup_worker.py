@@ -10,6 +10,7 @@ from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
     ResourceCleanupWorker,
 )
+from src.runtime.postgres_resource_cleanup_store import reconcile_cleanup_receipt
 from src.runtime.resource_lease_manager import ExpiredResourceLease
 
 
@@ -188,3 +189,113 @@ async def test_pg_commit_then_redis_failure_replays_only_finalization():
 def test_cleanup_interval_must_be_positive():
     with pytest.raises(ValueError):
         ResourceCleanupWorker(Manager(), interval_seconds=0)
+
+
+def test_running_cleanup_receipt_is_read_only_unknown_effect():
+    lease = expired_lease("docker", "slot-unknown", "container-unknown")
+    record = lease.__dict__.copy()
+    record.pop("lease_token")
+    result = reconcile_cleanup_receipt(
+        "task-cleanup-unknown",
+        lease,
+        {
+            "task_id": "task-cleanup-unknown",
+            "record": record,
+            "status": "running",
+            "worker_id": "worker-a",
+            "attempts": 1,
+            "error_type": None,
+            "completed_at": None,
+        },
+    )
+
+    assert result.status == "unknown"
+    assert result.receipt_status == "running"
+    assert result.reason_code == "receipt_running"
+
+
+def test_missing_cleanup_receipt_is_unknown_without_execution_authority():
+    lease = expired_lease("docker", "slot-missing", "container-missing")
+    result = reconcile_cleanup_receipt("task-cleanup-missing", lease, None)
+
+    assert result.status == "unknown"
+    assert result.receipt_status is None
+    assert result.reason_code == "receipt_missing"
+
+
+def test_cleanup_receipt_identity_drift_is_not_terminal_success():
+    lease = expired_lease("docker", "slot-drift", "container-drift")
+    record = lease.__dict__.copy()
+    record.pop("lease_token")
+    record["resource_id"] = "different-slot"
+    result = reconcile_cleanup_receipt(
+        "task-cleanup-drift",
+        lease,
+        {
+            "task_id": "task-cleanup-drift",
+            "record": record,
+            "status": "completed",
+            "worker_id": "worker-a",
+            "attempts": 1,
+            "error_type": None,
+            "completed_at": None,
+        },
+    )
+
+    assert result.status == "drifted"
+    assert result.reason_code == "receipt_identity_drift"
+
+
+@pytest.mark.parametrize(
+    ("receipt_status", "expected_reason", "expected_terminal"),
+    [
+        ("completed", "receipt_completed", "completed"),
+        ("skipped", "receipt_skipped", "skipped"),
+    ],
+)
+def test_terminal_cleanup_receipt_is_known_only_after_identity_check(
+    receipt_status, expected_reason, expected_terminal,
+):
+    lease = expired_lease("docker", "slot-terminal", "container-terminal")
+    record = lease.__dict__.copy()
+    record.pop("lease_token")
+    result = reconcile_cleanup_receipt(
+        "task-cleanup-terminal",
+        lease,
+        {
+            "task_id": "task-cleanup-terminal",
+            "record": record,
+            "status": receipt_status,
+            "worker_id": "worker-a",
+            "attempts": 2,
+            "error_type": None,
+            "completed_at": None,
+        },
+    )
+
+    assert result.status == "completed"
+    assert result.reason_code == expected_reason
+    assert result.terminal_status == expected_terminal
+
+
+def test_failed_cleanup_receipt_remains_unknown():
+    lease = expired_lease("docker", "slot-failed", "container-failed")
+    record = lease.__dict__.copy()
+    record.pop("lease_token")
+    result = reconcile_cleanup_receipt(
+        "task-cleanup-failed",
+        lease,
+        {
+            "task_id": "task-cleanup-failed",
+            "record": record,
+            "status": "failed",
+            "worker_id": "worker-a",
+            "attempts": 2,
+            "error_type": "ConnectionError",
+            "completed_at": None,
+        },
+    )
+
+    assert result.status == "unknown"
+    assert result.reason_code == "receipt_failed"
+    assert result.error_type == "ConnectionError"
