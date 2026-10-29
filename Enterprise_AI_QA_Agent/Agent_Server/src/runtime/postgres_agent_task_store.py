@@ -167,6 +167,34 @@ class PostgresAgentTaskStore:
     async def get(self, task_id: str) -> AgentTaskExecution:
         return await asyncio.to_thread(self._get_sync, task_id)
 
+    async def get_framework_worker_activity(self, task_id: str, *, session_id: str):
+        """Read observed attempt boundaries in one snapshot; never grant execution."""
+        from src.runtime.framework_worker_activity import ACTIVITY_KEY, read_worker_activity
+
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+                cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s AND session_id=%s", (task_id, session_id))
+                task = cur.fetchone()
+                if task is None:
+                    raise KeyError(task_id)
+                if task["runtime_binding"] is None:
+                    return {}
+                cur.execute(f"SELECT id,worker_id,status FROM {self._attempts} WHERE task_id=%s ORDER BY attempt_no",
+                    (task_id,))
+                attempts = cur.fetchall()
+                cur.execute(f"SELECT * FROM {self._settings.database.postgres_event_table} "
+                    "WHERE session_id=%s AND payload->>'task_id'=%s AND payload ? %s ORDER BY event_sequence",
+                    (session_id, task_id, ACTIVITY_KEY))
+                return read_worker_activity(task, attempts, cur.fetchall())
+
+        try:
+            return await asyncio.to_thread(read)
+        except ValueError as exc:
+            logger.warning("framework_worker_activity_read_rejected", extra={
+                "task_id": task_id, "session_id": session_id, "error_type": type(exc).__name__})
+            raise
+
     async def ensure_framework_reconciliation(self, task_id):
         from src.runtime.framework_approval_recovery import FrameworkApprovalRecovery
 
@@ -1230,6 +1258,9 @@ class PostgresAgentTaskStore:
                         "error_code": "execution_owner_expired",
                     })
                 self._end_attempt(cur, row, "interrupted", "owner_expired_before_execution")
+                if saved_binding is not None:
+                    self._event(cur, row, "agent_task.interrupted", {
+                        "status": "interrupted", "reason": "owner_expired_before_execution"})
             if row.get("operation") == "manual_resume":
                 try:
                     self._assert_resume_checkpoint(
@@ -1424,7 +1455,11 @@ class PostgresAgentTaskStore:
                     (resource_id, fencing_token, row["id"]),
                 )
                 row = cur.fetchone()
-            self._update_status(cur, row, status, result_status, reason)
+            # Only explicit Worker finish observes local execution settlement.
+            # Control/reaper writes use _update_status's false default; neither
+            # fact proves that a separately sent model/tool operation stopped.
+            self._update_status(cur, row, status, result_status, reason,
+                execution_returned=status in TERMINAL_AGENT_TASK_STATUSES)
             if status == "running":
                 cur.execute(
                     f"UPDATE {self._session_table} SET status='running', "
@@ -1443,7 +1478,7 @@ class PostgresAgentTaskStore:
                 "origin_commit_task_id": settlement.task_id,
                 "result_reference": settlement.output_message_id or settlement.snapshot_id})
 
-    def _update_status(self, cur, row, status, result_status, reason):
+    def _update_status(self, cur, row, status, result_status, reason, *, execution_returned=False):
         if row.get("runtime_binding") is not None:
             saved_binding = RuntimeBinding.model_validate(row["runtime_binding"])
             cur.execute(f"""UPDATE {runtime_owner_table(self._settings)} SET execution_state=%s,
@@ -1473,6 +1508,7 @@ class PostgresAgentTaskStore:
                 "status": status,
                 "result_status": result_status,
                 "reason": reason,
+                **({"execution_returned": execution_returned} if row.get("runtime_binding") is not None else {}),
             },
         )
 
@@ -1501,8 +1537,17 @@ class PostgresAgentTaskStore:
             WHERE id=%s AND metadata->>'turn_lease_token'=%s""", (row["session_id"], row["lease_token"]))
 
     def _event(self, cur, row, event_type, payload):
+        observed_at = datetime.now(timezone.utc)
+        if row.get("runtime_binding") is not None and row.get("attempt_id") and event_type.startswith("agent_task."):
+            from src.runtime.framework_worker_activity import ACTIVITY_KEY, capture_worker_activity
+
+            cur.execute("SELECT clock_timestamp() AS observed_at")
+            observed_at = cur.fetchone()["observed_at"]
+            payload = {**payload, ACTIVITY_KEY: capture_worker_activity(row,
+                status=event_type.removeprefix("agent_task."), result_status=payload.get("result_status"),
+                execution_returned=payload.get("execution_returned", False), observed_at=observed_at)}
         self._sessions.append_event_in_transaction(cur, row["session_id"], ExecutionEvent(
-            type=event_type, session_id=row["session_id"], timestamp=datetime.now(timezone.utc),
+            type=event_type, session_id=row["session_id"], timestamp=observed_at,
             request_id=row["request_id"], trace_id=row["trace_id"], turn_id=row["turn_id"],
             run_id=row.get("run_id"), run_item_id=row.get("run_item_id"),
             attempt_id=row.get("attempt_id"), worker_id=row.get("worker_id"),

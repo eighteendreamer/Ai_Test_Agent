@@ -5639,3 +5639,73 @@ $env:PYTHONUTF8='1'
 最终运行期间没有再修改生产源码或测试，仅追加本记录。项目根实际执行 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check`，均 exit 0；`find_spec` 仍确认 ruff／mypy 未安装，未执行独立 lint／typecheck，没有擅自安装工具。最终提交仅包含两处存储接线、新活动 schema／读写逻辑、新测试、精确忽略例外及本实施记录；v3 草稿、配置、日志与本地数据排除。
 
 真实供应商、RustFS、领域 Runner、完整正式动作域验收、独立 child-wait 环境验收、活动 journal 的专门独立 Worker 强杀、精确 Worker／根活动覆盖、崩溃尾段结算／实际停止证明、前端／全量后端、官方 saver conformance 和 E3/E4 均未完成。本轮不开放生产能力，A2/A3/B 的其余出口、C/D/E/F、完整 H01–H12 与整体 v4 继续 active。下一步沿既有 Worker／owner 边界补齐活动来源，再统一根计量；不得把本节的工具状态分段单独升级为完整时间预算。
+
+## 124. C／§6.3、H09/H11：持久 Worker 任务状态边界与失租开放尾段（2026-10-30）
+
+### 依据、根因与范围
+
+基线 `20135127a`（§123）。续接核实 Git 仅有用户 v3 草稿未提交，其 SHA256 与前节一致；上一轮是有代码、验证和提交的 progress，不重复启动其已终态测试。重新读取 v4、§52–54 与 §118–123，并检查 Task claim／begin／defer／finish、控制撤权、子任务 reaper、审批 reconciliation 及 Session 事件事务链。
+
+- 现有 `PostgresAgentTaskStore._event()` 与 `PostgresSessionStore.append_event_in_transaction()` 已在 Session → owner → task 锁内同事务保存有序事件 → 将版本化 Worker 边界附在原 `agent_task.*` 事件的服务端保留 payload 内，复用 `event_sequence`，不新增表、执行器、调度层或租约。补齐原 claimed 失租重领分支缺少的旧 attempt 终结事件。
+- 本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/codex/codex-rs/rmcp-client/src/rmcp_client.rs::active_time_timeout` 用显式暂停／恢复而非单个墙钟包络 → 借鉴明确边界；本平台使用数据库 `clock_timestamp()`，不照搬进程内 `Instant`，不把 owner 到期当物理停止。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 的轨迹、终止、幂等及超时要求 → 验证领取、资源等待、执行、主动结算、控制撤权、并发失败与独立进程强杀，不以最后状态或一个绿色耗时数值代替原事实。
+
+根因是 Attempt.started_at 在 claim 时产生，而原读者只有起止包络；它无法区分 admission 等待与实际 begin，也无法证明 terminal 是 Worker 主动结算还是控制端撤权。继续改并集算法不能补回这些来源。本节补任务边界，不将 Worker 内嵌模型／工具等待伪装成已精确拆分。
+
+### 实现与契约
+
+新增 `WorkerActivityBoundary`、`FrameworkWorkerActivity` 和共享捕获／读取器，schema 1，scope=`worker_task_state_transitions`。事件事实仅保存 binding／Session／Turn／task／attempt／worker 身份、状态、结果状态、数据库观察时间与 `execution_returned`；不保存 lease／owner 凭据、输入或输出正文。
+
+- claim、begin、defer、finish 及既有 `_update_status()` 控制／恢复路径复用原同事务事件；普通 heartbeat 不追加，失败 CAS／事务回滚不留下成功事实。`_event()` 的原四参数契约保持不变，未复制各恢复分支或破坏既有强杀 Harness 的事件钩子。
+- `execution_returned` 只来自 Worker 显式 `finish()` 的本地执行结算入口，不从任务 terminal、租约、输入 metadata 或普通结果字段推断。控制／reaper 的终态写入为 false。它关闭的只是本地任务执行段，不证明独立模型／工具请求、派生清理或外部进程已停止。
+- 排队／claimed／admission defer 不计作已观察执行；begin 开段，显式 finish 闭段。控制撤权、失租标记 recovery_required 等没有实际 finish 的尾段保持开放，仍必须传显式 `as_of`；不按 owner.expires_at 截断，也不产生重试／重发权。
+- `get_framework_worker_activity(task_id, session_id=...)` 在单个 Repeatable Read／Read Only 快照读取 task、所有 attempts 及原事件，按 attempt 保留隔离；校验版本、身份、原事件类型／时间／上下文、当前 task／attempt 状态和顺序。旧记录无边界返回 `None`，只有已观察前缀则 `origin_observed=false`，不从 started_at 或旧事件时间倒填。
+- `origin_observed` 仅表示看到了 claimed 起点，不保证中间 writer 无缺口、精确内部等待或制品完整覆盖。损坏／未来格式由只读入口明确拒绝并记录 `framework_worker_activity_read_rejected`，原事件不改；这不是业务执行门禁，合法 begin 仍可提交。数据库／非预期异常继续传播，事件 I/O 失败与业务状态一起回滚。
+- 本节未将边界接入根时间预算／发送／恢复授权，§122 根诊断仍为 `persisted_execution_envelope`。仍需沿实际内部等待边界补计量，再统一模型／工具／Worker；不能仅将本节替换整体 attempt 包络便声称完整 §6.3。
+
+没有 DDL、依赖升级、默认配置或生产路由变化。旧事件自由 JSON payload 读者仍可读取；旧 writer 可不写新事实，不能据此声明滚动部署完成。未来正式消费需验证写入制品、连续性与原事件保留；不允许用压缩摘要代替本持久来源。前端 `ExecutionEvent.payload` 为 `JsonObject`，无需新增前端 API；本入口仅是内部只读存储方法。`.gitignore` 仅增加新测试的精确例外。
+
+### TDD 与中间验证
+
+只读探针实际取得 PostgreSQL `SELECT 1=1`、Redis `PING=True`；未启停服务。继续使用既有 UUID 隔离表／Redis 前缀及 fixture 清理，不调用真实供应商、RustFS 或领域目标。
+
+1. 真实 SQL 资源等待／撤权红测 **2 failed，11.68s**：原 task 事件没有 Worker 边界。补最小实现后 **2 passed，10.00s**。
+2. 扩展组 **20 passed、1 failed，112.79s**。失败不是生产路径缺陷：专门强杀 Harness 漏冻结既有模型预算，真实 Worker 在语义输入冻结处以 `FrameworkModelBudgetMissing` 拒绝，进程已 exit 0，未到达 Runtime gate。检查原异常后给隔离 fixture 补 `calls.freeze()`，不放宽准入、不重试活进程；单项 **1 passed，12.73s**。
+3. 专门强杀使用真实 PostgreSQL、Redis Streams、独立 spawn Worker、实际 Dispatcher／Session／owner 调用链；Runtime 为受控阻塞实现，不是官方图／真实供应商／领域 Runner。断点确认 running 与 begin 原事件后，实际终止进程并确认非零 exitcode；只在隔离 Session 行注入租约到期以驱动既有领取协议，原 attempt 保持 recovery_required，不领取新执行 attempt。Store 重建后原边界保留，尾段扩展到显式观察点而非失租点。后续增加 Redis 调用计数断言，最终源码回归结果另记，不以首版单项代替最终验证。
+
+### 最终验证与剩余出口
+
+最终源码消费方组已从原会话 `63503` 取得 exit 0。以下命令工作目录为 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`、`PYTHONUTF8=1`：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_worker_activity.py tests/test_agent_task_dispatch.py tests/test_runtime_binding_persistence.py tests/test_framework_task_control.py tests/test_framework_model_budget_projection.py tests/test_framework_message_diagnostics.py -q -rs --tb=short
+# 109 passed，240.56s（0:04:00），exit 0，无 skipped／deselected
+```
+
+包含新测试全组 21 项：17 项真实 SQL／Store／隔离服务用例（含一项独立 Worker 强杀），4 项纯 schema 反例；不将不同证据等级混称为全部真实领域验收。原日志 `.codex-logs/c124-worker-consumers.log` 不提交。
+
+扩大恢复组原会话 `42413` 已实际 exit 1，没有重启：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py tests/test_framework_native_terminal.py tests/test_framework_terminal_gap.py tests/test_framework_application_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_projected_settlement.py tests/test_framework_approval_settlement.py -q -rs --tb=short
+# 1 failed、257 passed，1323.82s（0:22:03），exit 1，无 skipped／deselected
+```
+
+原日志 `.codex-logs/c124-final-recovery-regression.log` 不提交。唯一失败：`test_settlement_proof_has_no_finalizer_or_stage_reentry_authority` 的版本负例 `DID NOT RAISE`；不是 messages、审批恢复或 Worker 运行时断言失败。查证 `d7177f185`／§117 已将 schema 和 Worker 支持上界升至 28，而旧测试仍在 `(21, 24, 28)` 中要求 28 被拒绝。单独重现 **1 failed，7.31s**，确认不是偶发环境故障；不修改生产 schema／准入来迎合错误 oracle。
+
+§95 的历史记录已有类似硬编码负例随格式升级失效，因此本轮不再简单改为另一个固定数字：读取 `FrameworkMessageStage.model_fields['schema_version'].annotation`，按标准库 `typing.get_args()`（已查看当前 Python 安装源码）取得实际支持集合。保留固定低版本 21／24 的不兼容负例，将未知版本改为 `max(supported)+1`，并对该 fixture 可读的 26–28 格式逐一增加合法正例；finalizer、阶段再入、RuntimeResult 读取和执行越权负例全部保留。测试方法未减少断言、忽略 messages 或绕过 Worker。单项修正后 **1 passed，18.74s**。因此本节增加一处受影响结算消费方的测试契约同步，不更改其运行时。
+
+最后的完整结算／Worker 制品／message-stage 消费方组原会话 `22704` 已取得 exit 0，没有重启：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_projected_settlement.py tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py -q -rs --tb=short
+# 204 passed，291.89s（0:04:51），exit 0，无 skipped／deselected
+```
+
+日志 `.codex-logs/c124-final-settlement-contracts.log` 不提交。该组在最终结算测试修改后实际覆盖完整结算文件、Worker claim 前能力和阶段读写契约；没有再修改运行时源码，也没有重跑整个八文件组合，不能将原组合改报为 258 passed。原八文件组内原审批六参数独立 Worker 强杀、Delta／messages 比较、原生终态、投影和其余结算用例已实际执行；唯一失败是上文已单独复现并在完整结算文件复验的测试版本 oracle。不同组有覆盖重叠，不累加为独立用例总数。
+
+最终根目录再次实际执行 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，均 exit 0；`find_spec` 确认 ruff／mypy 仍未安装，未新增工具，未执行独立 lint／typecheck。结算断言只在原八文件组终态、单项复现后修改；每次实际运行期间均未修改生产源码／测试，仅补本实施记录。
+
+精确内部等待／根活动覆盖、崩溃尾段结算与实际停止证明、工具 journal 专门 Worker 强杀、独立 child-wait 环境、真实供应商／RustFS／领域 Runner、前端／全量后端、官方 saver conformance 和 E3/E4 尚未完成。A2/A3/B 的其余出口、C/D/E/F、完整 H01–H12 与整体 v4 继续 active。下一步补 Worker 实际内部等待来源与跨来源连续性，之后统一根计量，不能直接把任务状态边界当完整活动预算。
+
+本节提交范围为 Worker schema／捕获读取器、Task Store 接线、新测试、结算消费方版本 oracle、精确忽略例外及本实施记录，共七文件；提交前核对完整 diff、原记录前缀、暂存范围和 v3 hash，排除用户草稿、配置、日志及本地数据，不推送、不建 PR。提交身份由包含本节的本轮 Git commit 和交付记录追溯。

@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import asyncio
 import multiprocessing
+from typing import get_args
 
 import pytest
 from pydantic import ValidationError
@@ -16,6 +17,7 @@ from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_message_stage import FrameworkMessageStage
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_model_admission import admission
 from tests.test_framework_message_recovery import isolate_recovery_stores, outbox
@@ -178,9 +180,15 @@ async def test_settlement_proof_has_no_finalizer_or_stage_reentry_authority(proj
     stages = FrameworkMessageStages(h.tasks)
     saved = await stage(h, successor)
     assert validate_message_stage(saved.model_dump()) == saved
-    current_format = saved.model_copy(update={"schema_version": 26})
-    assert validate_message_stage(current_format.model_dump()) == current_format
-    for version in (21, 24, 28):
+    supported = get_args(FrameworkMessageStage.model_fields["schema_version"].annotation)
+    # These formats all preserve the fixture's original Memory plan. Derive
+    # the unknown boundary from the schema so a new supported reader version
+    # does not turn this negative oracle into a rejection of valid history.
+    for version in supported:
+        if version >= saved.schema_version:
+            current_format = saved.model_copy(update={"schema_version": version})
+            assert validate_message_stage(current_format.model_dump()) == current_format
+    for version in (21, 24, max(supported) + 1):
         with pytest.raises((FrameworkMessageStageRecoveryRequired, ValidationError)):
             validate_message_stage(saved.model_copy(update={"schema_version": version}).model_dump())
     for operation in (lambda: stages.resume_finalizing(claimed.runtime_owner),
