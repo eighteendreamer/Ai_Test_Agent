@@ -120,6 +120,7 @@ class RuntimeService:
         framework_approval_projection=None,
         framework_approval_continuation=None,
         deep_agent_bound_runtime_adapter: DeepAgentRuntimeAdapter | None = None,
+        deep_agent_new_turns_enabled: bool = True,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -137,6 +138,7 @@ class RuntimeService:
             deep_agent_bound_runtime_adapter if deep_agent_bound_runtime_adapter is not None else deep_agent_runtime_adapter
         )
         self._deep_agent_enabled = bool(deep_agent_enabled)
+        self._deep_agent_new_turns_enabled = bool(deep_agent_new_turns_enabled)
         self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
         self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
         self._deep_agent_read_only_max_file_size_mb = max(1, int(deep_agent_read_only_max_file_size_mb))
@@ -318,6 +320,12 @@ class RuntimeService:
             if not self._deep_agent_enabled or self._deep_agent_bound_runtime_adapter is None:
                 raise RuntimeError("The bound Deep Agents runtime is unavailable in this Worker")
             return True
+        if not self._deep_agent_new_turns_enabled:
+            logger.info("deep_agent_new_turn_route_disabled", extra={
+                "session_id": request.session_id, "turn_id": request.turn_id,
+                "recovery_reason": "new_turn_admission_disabled",
+            })
+            return False
         return bool(
             self._deep_agent_enabled
             and self._deep_agent_runtime_adapter is not None

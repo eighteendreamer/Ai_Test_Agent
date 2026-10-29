@@ -30,7 +30,7 @@ from tests.test_framework_tool_bridge import Model, state_for
 from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
 
 
-def build_runtime(h, *, responses=None, model_call_policy=None, structured_output_enabled=False):
+def build_runtime(h, *, responses=None, model_call_policy=None, structured_output_enabled=False, new_turns_enabled=True):
     tools = ToolRuntimeService(tool_job_service=h.jobs)
 
     async def handle(arguments, context):
@@ -58,6 +58,7 @@ def build_runtime(h, *, responses=None, model_call_policy=None, structured_outpu
         deep_agent_runtime_adapter=Adapter(model_resolver=resolve_model, checkpointer_factory=h.provider.open,
             model_call_policy=model_call_policy),
         deep_agent_enabled=True, deep_agent_governed_tools_enabled=True,
+        deep_agent_new_turns_enabled=new_turns_enabled,
         deep_agent_structured_output_enabled=structured_output_enabled)
 
 
@@ -191,8 +192,12 @@ async def test_runtime_settles_selected_result_and_preserves_sibling_identity(ru
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("decision", ["approved", "denied"])
-async def test_runtime_replay_then_successor_preserves_results_and_transcript_ids(runtime_harness, decision):
+@pytest.mark.parametrize("new_turns_enabled", [True, False])
+async def test_runtime_replay_then_successor_preserves_results_and_transcript_ids(runtime_harness, decision, new_turns_enabled):
     h = runtime_harness
+    # Rebuild the consumer while original approvals/checkpoints remain durable.
+    # Closing new-Turn admission must not abandon a bound pending Turn.
+    build_runtime(h, new_turns_enabled=new_turns_enabled)
     b = await claim_decision(h, decision=decision)
     first = await resume(h, b)
     replay = await resume(h, b)
@@ -762,8 +767,16 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
         assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == (21 if acknowledged else 19)
+        # Application commit freezes the Memory plan in v26, independently of
+        # whether the original graph prefix had an acknowledged event sink.
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 26
         snapshot = await h.store.get_latest_snapshot(h.session_id)
+        from src.schemas.framework_projection_commit import FrameworkTurnMemoryPlan
+
+        memory_plan = FrameworkTurnMemoryPlan.model_validate(original_stage.source_manifest["post_commit_memory_plan"])
+        assert memory_plan.source_snapshot_id == snapshot.id
+        assert memory_plan.binding_fingerprint == h.binding.fingerprint
+        assert memory_plan.runtime_result_asset_sha256 == result_asset.asset_sha256
         native = deserialize_messages(snapshot.graph_state["framework_messages"])
         material = [parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])
             for message in native if isinstance(message, ToolMessage) and message.status == "success"]

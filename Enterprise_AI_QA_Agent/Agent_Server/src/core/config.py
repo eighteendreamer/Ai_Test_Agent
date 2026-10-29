@@ -498,13 +498,15 @@ class LangSmithConfig(BaseModel):
 
 
 class DeepAgentsConfig(BaseModel):
-    """Opt-in Deep Agents pilot switches.
+    """Opt-in runtime capability and independent new-turn route switches.
 
     The default is deliberately disabled so installing the optional package
-    cannot alter the existing runtime path.
+    cannot alter the existing runtime path. Stop new admission with
+    new_turns_enabled, not by removing execution capability from bound Turns.
     """
 
     enabled: bool = False
+    new_turns_enabled: bool = True
     pilot_mode_keys: list[str] = Field(default_factory=lambda: ["code_review"])
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10

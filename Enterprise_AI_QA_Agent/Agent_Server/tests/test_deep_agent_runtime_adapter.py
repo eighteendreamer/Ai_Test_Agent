@@ -992,7 +992,8 @@ def test_da_e4_latest_assistant_tool_call_ids_preserve_declared_order():
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("decision", ["approved", "denied", "scope_changed", "batch_mixed"])
-async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision, monkeypatch):
+@pytest.mark.parametrize("new_turns_enabled", [True, False])
+async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision, new_turns_enabled, monkeypatch):
     pytest.importorskip("deepagents")
     from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
     from langchain_core.messages import AIMessage
@@ -1092,6 +1093,8 @@ async def test_da_e4_approved_tool_resumes_back_into_deep_agent_loop(decision, m
     assert tool_runtime.calls == []
     approval_job_id = pending.approvals[0]["metadata"]["tool_job_id"]
 
+    # Test-only route change after admission; not a configuration hot-reload API.
+    runtime._deep_agent_new_turns_enabled = new_turns_enabled
     approval = dict(pending.approvals[0])
     approval["status"] = "denied" if decision == "denied" else "approved"
     if decision == "scope_changed":

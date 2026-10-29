@@ -737,6 +737,7 @@ async def _initialize_lifespan_resources(
         deep_agent_runtime_adapter=deep_agent_runtime_adapter,
         deep_agent_bound_runtime_adapter=deep_agent_bound_runtime_adapter,
         deep_agent_enabled=settings.deep_agents.enabled,
+        deep_agent_new_turns_enabled=settings.deep_agents.new_turns_enabled,
         deep_agent_pilot_mode_keys=settings.deep_agents.pilot_mode_keys,
         deep_agent_read_only_filesystem_enabled=settings.deep_agents.read_only_filesystem_enabled,
         deep_agent_read_only_max_file_size_mb=settings.deep_agents.read_only_max_file_size_mb,

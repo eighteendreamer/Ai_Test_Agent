@@ -4738,3 +4738,75 @@ git diff --check
 本端口查询的是中心模式桥的原响应，不是远端领域 Runner execution 状态或停止回执。已有单服务 JSON writer、跨存储原子性、跨机器 Runner 排他和未脱敏业务正文限制仍在；SHA-256 不替代认证。无引用旧记录、自定义 SDK 报告语义、无本地原日志、已失权／服务重启待核查任务均没有自动恢复资格，不从历史观察推测。真实远端停止／查询协议、当前 owner 核验迟到观察与有依据补偿、A3 其他出口及完整 B/C/D/E/F 和 E2/E3/E4 仍待完成，不能把本子步标作整体目标完成。
 
 本节随 `【feat】恢复模式桥原结果交付而不重跑工具` 提交，仅含本轮 10 个实现／测试／文档／白名单文件，实际 commit ID 以 Git 与交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 保持不变。
+
+## 106. F 前置／§14.2：分离无绑定新回合选路与存量框架执行能力（2026-10-29）
+
+### 起点、范围与依据
+
+从 §105 提交 `999e69c47e388979a0dbb9767fcf5d23cbebf9f4` 续接，完整 v4 目标继续 active。重新核对 v4 §14.2／§15 F、§52–54 的 P0 结论和最新实现；不重做已修复的 Delta 消息排序。本节只交付回滚控制的一个前置契约，不代表全系统新请求准入、生产灰度、旧绑定排空或 E4 已完成。
+
+根因是原 `_deep_agent_enabled` 同时参与新选路和绑定执行检查；仅把它置 false，会失去存量运行能力。当前 main 的 checkpoint provider 和 v2 CLI 的能力声明也依赖 `enabled && checkpoint_enabled`。因此沿原 Runtime 选路拆出独立配置，不改变总开关语义，不增加调度层、暂停协议或绑定迁移。
+
+依据来源 → 本项目做法：
+
+- 当前 `DeepAgentsConfig`、Settings 的嵌套环境加载及 `main.py` 的唯一 Runtime 装配 → 增加配置并接入正式构造参数；按原构造约定在参数末尾追加默认值，避免影响既有位置参数。
+- `RuntimeService._should_use_deep_agent` 的 binding-first 规则、`resume_framework_approval` 的原绑定恢复、原无绑定 pilot 审批继续路径 → 新配置只作用于无绑定新选路；继续沿原身份、adapter 和总能力检查处理绑定，不能 fallback 重跑。
+- `run_agent_v2_worker._run` 与 `FrameworkWorkerCapabilities` 的 claim 前准入 → 保留原能力声明和 runtime/version／依赖锁／operation／格式检查，关闭新选路不影响兼容消费者能力。
+- 本地 `项目借鉴/llm-testing-course/Agent轨迹与协议鲁棒性.html` 的轨迹、权限、恢复与幂等要求 → 验证调用次数、审批重放、原工具／消息身份和拒绝路径，不只检查最终文本。
+
+### TDD、中间失败及维护
+
+1. 初始真实反例：新配置被原模型忽略、实际 `execute_turn` 仍调用 framework 而不是 legacy、main 没有独立装配参数。`f-new-turn-rollback-red-2026-10-29.log`：**3 failed，14.87s，exit 1**，不是导入或构造签名失败。最小实现后 `f-new-turn-rollback-first-green-2026-10-29.log`：**3 passed，14.55s，exit 0**；随后才扩展边界与真实数据库回归。
+2. 扩展组 `f-new-turn-rollback-runtime-2026-10-29.log`：**8 failed、75 passed，274.44s，exit 1**。其中 4 项为新 Worker 替身遗漏 `from_settings` 的 queue 位置参数，按真实 CLI 和既有 Worker 用例同步完整签名；这不是产品缺陷红测。
+3. 另 4 项为既有审批测试期待 message-stage 19／21、实际为 26。追溯 `d95a39748` 和当前 `record_application_commit`：应用提交已原子冻结 Memory plan 并将 stage 升为 26，原断言仍停在图输入阶段。同步为精确 26，并新增原 Memory plan 的 snapshot、binding fingerprint、result asset 摘要断言；原消息、原生结果、工具次数、顺序和事件断言均保留。没有为了测试改写生产 stage 逻辑。
+
+### 条款 → 实现与消费方
+
+| v4／职责 | 代码与测试 | 已实现范围／剩余边界 |
+| --- | --- | --- |
+| §14.2：新选路 | `core/config.py` 新增 `new_turns_enabled=True`；Runtime 新参数；`main.py` 接线；`.env.example` 新增 `DEEP_AGENTS__NEW_TURNS_ENABLED=true` | `enabled` 仍默认 false；新开关 false 使无绑定新请求沿 legacy；不改实际 `.env`，不开放生产路由 |
+| §14.2：存量能力 | binding 校验仍在新开关之前；checkpoint provider 和 v2 CLI 原能力条件不变 | 已绑定审批／恢复不被新开关降级；总能力关闭、坏绑定或缺 adapter 仍拒绝，不能静默改成 legacy |
+| §11／H10：不是停止 | 新选路日志 `deep_agent_new_turn_route_disabled`，原日志字段携带 session/turn 与 `new_turn_admission_disabled` | 不触发显式中断、不取消已进入 adapter 的调用，不宣称已停止远端领域 Runner |
+| 配置与选路回归 | 新 `test_framework_route_rollback.py`：默认、模式过滤、绑定矩阵、请求覆盖负例、在途调用、同 Settings 配置的隔离环境解析、真实 CLI/dispatcher 准入 | 队列／lifespan／领域执行使用替身；main 为 AST 接线审计，不冒充完整 lifespan 或部署验证 |
+| 已有待审批回合 | `test_framework_approval_runtime.py` 参数化重建 Runtime；`test_deep_agent_runtime_adapter.py` 参数化原 pilot 批准／拒绝／scope_changed／batch_mixed | 绑定组为官方框架＋真实隔离 PG/Redis，原重放／后继及工具一次效果保留；pilot 为内存 saver＋受控工具；开关本身未做跨制品 E4 |
+| 契约与说明 | `Agent_Server/docs/runtime-route-controls.md`、测试白名单；搜索新配置和所有正式 Runtime 构造引用 | 没有前端新配置入口、DDL 或持久格式变更；原 `enabled` 消费方不改语义 |
+
+当前新 v2 绑定生产入口尚未全面开放；本开关不是 `submit_v2` 的全局禁投逻辑。已经存在绑定的任务按绑定路径执行，未来生产者需在创建绑定前接入新请求选路。Settings 仍按原缓存／进程生命周期加载，没有新增热更新 API；测试中私有属性变化只作在途边界验证。旧制品可能忽略新字段，必须部署兼容消费者后才依赖此控制；不能通过关闭旧 Worker 能力假装排空完成。
+
+### 当前源码实际验证
+
+本轮核实既有 Docker／PostgreSQL／Redis 已运行，本轮没有启动、停止或重启服务。使用原 UUID 表、checkpoint schema 和 Redis 前缀隔离 fixture；实际只读 PG `SELECT 1`／Redis `PING` 成功后执行测试，没有外部供应商、付费调用或未授权目标请求。以下工作目录为 `Agent_Server`，解释器固定 `.venv-framework-v2`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，stdout＋stderr 完整保留在私有 `.codex-logs` 并返回原退出码。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_route_rollback.py tests/test_framework_approval_runtime.py `
+  tests/test_deep_agent_runtime_adapter.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+# 304 passed，344.89s，exit 0，无 skip/deselect
+# f-new-turn-rollback-final-runtime-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_runtime_binding_persistence.py tests/test_framework_task_control.py `
+  tests/test_framework_approval_recovery.py -q -rs --tb=short
+# 1 failed、51 passed，560.66s，exit 1，无 skip/deselect；不是全绿
+# f-new-turn-rollback-final-recovery-2026-10-29.log
+
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling[approved-after_native-reconcile_before_commit]' `
+  -q -rs --tb=short
+# 原失败 nodeid 独立复验：1 passed，87.47s，exit 0
+# f-new-turn-rollback-worker-timeout-recheck-2026-10-29.log
+```
+
+综合恢复组的失败为原替换 Worker **20 秒 join deadline**，诊断为 alive、`approval_recover/running`，同时保留已完成 reconciled 任务及失租原任务；没有结果漂移或本次新开关拒绝的证据。原失败摘要：`Replacement Worker exceeded its 20-second deadline ... task_phases=[('approval_recover', 'running', None, None), ...]`。已检查原父／子进程路径和 §82／§89 的同类历史记录；本轮不调整期限、租约或断言，不加重试，不把未知卡点归因于负载。独立复验未稳定复现，**不证明根因已修复，也不把 51＋1 重新包装为一次 52 项综合全绿**。原失败日志保留；没有继续循环重跑求绿。
+
+在 `agent_web` 实际执行 `npm.cmd test -- src/stores/sessionFrameworkApproval.test.ts src/components/chat/ApprovalPanel.progress.test.ts`：**13 passed，14.03s，exit 0**；`npm.cmd run build`：**exit 0**，实际包含 vue-tsc 与 Vite（3311 modules，build 19.58s）。日志为 `f-new-turn-rollback-ui-2026-10-29.log` 和 `f-new-turn-rollback-web-build-2026-10-29.log`。
+
+根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 均通过。ruff/mypy 经 importlib 检查均未安装，未执行后端 lint/typecheck，不以 compileall 冒充；未跑全量后端／前端测试或治理外部扫描。所有本轮启动的 pytest／前端测试／构建均已取得终态。
+
+### 剩余出口与提交边界
+
+本节新选路与存量分离通过目标回归，但综合恢复存在上述失败，F 发布门仍未关闭。已有独立 Worker 回归覆盖 E2 子集，不等于新开关的双制品排空／回滚验收。C／H07 的非稳定 Worker 超时／失租首因仍待定位：下一步应沿原样本补齐进程启动、领取、原生执行、收尾与退出阶段的耗时／首因证据，审视监控及测试执行生命周期，不能再靠单例偶然通过或放大 deadline 结案。
+
+真实供应商／RustFS／浏览器／压测／扫描 Runner 的 E3、双制品／备份恢复／灰度与回滚 E4、官方 saver conformance、完整生产新绑定入口、实际旧绑定清点与排空仍未验收；A3 远端停止／查询和未知效果补偿以及完整 B/C/D/E/F 不从范围中删除。默认路由不变，无数据迁移或依赖升级。
+
+本节随 `【feat】分离框架新回合接入与存量执行能力` 提交，范围仅本轮 10 个配置／Runtime／测试／文档／白名单文件，实际 ID 以 Git 和交付输出为准；不推送、不建 PR。原 v3 草稿 SHA256 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F` 不变，实际 `.env`、日志、构建产物和本地数据不纳入提交。完整 v4 目标保持 active，不将本节或独立复验标为整体完成。
