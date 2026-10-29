@@ -24,6 +24,7 @@ from src.schemas.case_execution import AgentCaseExecutionContext
 from src.application.test_runs.agent_case_contract import case_result_contract
 from src.application.test_runs.execution_replanning import execution_replanning_enabled
 from src.schemas.settings import GeneralSettingsPayload
+from src.schemas.framework_transcript import uses_turn_context_assembly
 
 # Language display names for the output language instruction.
 _LANGUAGE_NAMES: dict[str, str] = {
@@ -82,7 +83,16 @@ class PromptAssemblyService:
         )
         runtime_sections: list[PromptSection] = []
         runtime_messages = list(state.get("runtime_messages") or [])
-        if not runtime_messages:
+        if uses_turn_context_assembly(state.get("context_bundle") or {}):
+            if not runtime_messages:
+                raise ValueError("Framework prompt assembly requires its admitted message projection")
+            # Native history already owns the user input. Reuse the contextual
+            # sections, not the legacy user envelope or its cognitive plan.
+            system_sections.extend(section.model_copy(update={"channel": "system", "priority": 100 + section.priority})
+                for section in self._build_runtime_sections(state)
+                if section.key not in {"user_request", "normalized_input", "execution_plan"})
+            system_sections.sort(key=lambda section: section.priority)
+        elif not runtime_messages:
             runtime_sections = self._build_runtime_sections(state)
             runtime_messages = self._render_runtime_messages(runtime_sections)
 
@@ -133,8 +143,8 @@ class PromptAssemblyService:
                     "- Keep answers grounded in runtime evidence, tool output, and persisted session context.\n"
                     "- Respect harness constraints: permission gate, checkpoint-ready execution, replayability, and verification.\n"
                     "- Never invent tools, agent keys, MCP servers, or capabilities that are not registered.\n"
-                    "- Skill keys are not callable tool names. When a needed capability is not visible, call the "
-                    "registered `skill` tool to load the relevant Skill and its deferred tools."
+                    "- Skill keys are not callable tool names. "
+                    + self._skill_loading_contract(context_bundle)
                 ),
             ),
             PromptSection(
@@ -717,8 +727,12 @@ class PromptAssemblyService:
                     f"Allowed safe tools: {self._format_csv(allowed_tools)}\n"
                     f"Approval-gated tools: {self._format_csv(approval_tools)}\n"
                     f"Denied tools: {self._format_csv(denied_tools)}\n"
-                    "Only the names above are callable on this turn. Use `skill` to load additional capability tools on demand; "
-                    "never emit a Skill key itself as a tool call."
+                    + ("Only the model-visible names above are callable on this turn. "
+                        if uses_turn_context_assembly(context_bundle) else "Only the names above are callable on this turn. ")
+                    + (self._skill_loading_contract(context_bundle)
+                        if uses_turn_context_assembly(context_bundle) else
+                        "Use `skill` to load additional capability tools on demand; "
+                        "never emit a Skill key itself as a tool call.")
                 ),
             ),
             PromptSection(
@@ -793,6 +807,15 @@ class PromptAssemblyService:
     def _render_system_prompt(self, sections: Sequence[PromptSection]) -> str:
         rendered = [section.render() for section in sections if section.render()]
         return "\n\n".join(rendered).strip()
+
+    @staticmethod
+    def _skill_loading_contract(context: Mapping[str, Any]) -> str:
+        if uses_turn_context_assembly(context):
+            return ("Selected Skill instructions are already frozen in this prompt. "
+                "There is no on-demand Skill loader or deferred tool expansion in this Turn. "
+                "Skill text and reference names do not grant permissions or access to unexposed files or tools.")
+        return ("When a needed capability is not visible, call the "
+            "registered `skill` tool to load the relevant Skill and its deferred tools.")
 
     def _render_runtime_messages(
         self,

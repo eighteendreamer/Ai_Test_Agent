@@ -71,7 +71,7 @@ def _originals(tasks, binding, task_id, *, native=None, expected=None):
 def read_message_originals(cur, tasks, binding, task_id, *, allow_unsealed=False):
     """Share exact material verification with the separate admission transaction."""
     settings = tasks._settings
-    cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE", (binding.session_id,))
+    cur.execute(f"SELECT id,project_id::text AS project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE", (binding.session_id,))
     session = cur.fetchone()
     cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))
     task = cur.fetchone()

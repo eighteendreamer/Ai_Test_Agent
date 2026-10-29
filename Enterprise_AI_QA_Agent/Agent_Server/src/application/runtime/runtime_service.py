@@ -17,7 +17,10 @@ from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntim
 from src.application.deep_agents.runtime_adapter import _pilot_stage
 from src.application.deep_agents.framework_transcript import append_turn_input, require_closed_transcript
 from src.application.context.framework_context_service import FrameworkContextService
-from src.schemas.framework_transcript import CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY
+from src.schemas.framework_transcript import (
+    IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY,
+)
+from src.application.context.turn_context_assembly import TurnContextAssembly
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
@@ -123,6 +126,7 @@ class RuntimeService:
         framework_approval_continuation=None,
         deep_agent_bound_runtime_adapter: DeepAgentRuntimeAdapter | None = None,
         deep_agent_new_turns_enabled: bool = True,
+        turn_context_assembly: TurnContextAssembly | None = None,
     ) -> None:
         self._graph = graph
         self._model_runtime_service = model_runtime_service
@@ -141,6 +145,7 @@ class RuntimeService:
         )
         self._deep_agent_enabled = bool(deep_agent_enabled)
         self._deep_agent_new_turns_enabled = bool(deep_agent_new_turns_enabled)
+        self._turn_context_assembly = turn_context_assembly
         self._deep_agent_pilot_mode_keys = frozenset(deep_agent_pilot_mode_keys or ("code_review",))
         self._deep_agent_read_only_filesystem_enabled = bool(deep_agent_read_only_filesystem_enabled)
         self._deep_agent_read_only_max_file_size_mb = max(1, int(deep_agent_read_only_max_file_size_mb))
@@ -225,6 +230,10 @@ class RuntimeService:
     ) -> RuntimeTurnResult:
         if self._should_use_deep_agent(request):
             pilot_stage = self._deep_agent_pilot_stage()
+            full_context = (request.runtime_binding is not None
+                and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION)
+            if full_context and self._turn_context_assembly is None:
+                raise RuntimeError("Framework context assembly is unavailable in this Worker")
             state = self._build_initial_state(session, request, include_framework_transcript=True)
             # Only newly prepared application Turns opt in. Request context
             # cannot upgrade a historical or unprepared graph invocation.
@@ -242,7 +251,17 @@ class RuntimeService:
             if projection_identity is not None:
                 state["context_bundle"][TOOL_PROJECTION_VERSION_KEY] = 3
             prepare_graph_event_log(state)
-            self._prepare_deep_agent_governed_tools(session, request, state)
+            if full_context:
+                state["context_bundle"].pop("deep_agent_approval_batch", None)
+                state["context_bundle"].pop("deep_agent_harness", None)
+                state = await self._turn_context_assembly.prepare(state)
+                if state["model_visible_tool_keys"] and (
+                    not self._deep_agent_governed_tools_enabled or self._tool_governance_service is None):
+                    raise RuntimeError("Framework assembled business tool governance is unavailable")
+                state["context_bundle"].update(deep_agent_governed_tool_keys=list(state["model_visible_tool_keys"]),
+                    deep_agent_governed_tool_stage="DA-E4")
+            else:
+                self._prepare_deep_agent_governed_tools(session, request, state)
             await append_graph_event_durable(
                 state,
                 "runtime.turn_started",
@@ -402,7 +421,7 @@ class RuntimeService:
             original_materials=original_tool_materials,
         )
         adapter_context = dict(state["context_bundle"] if request.runtime_binding is not None
-            and request.runtime_binding.runtime_version == CONTEXT_RUNTIME_VERSION else request.context)
+            and request.runtime_binding.runtime_version in IDENTITY_CONTEXT_RUNTIME_VERSIONS else request.context)
         if request.runtime_binding is None:
             adapter_context.pop("runtime_binding", None)
         adapter_request = DeepAgentRuntimeRequest(
@@ -413,16 +432,19 @@ class RuntimeService:
             checkpoint_namespace=str(
                 state.get("context_bundle", {}).get("checkpoint_namespace") or ""
             ) or None,
-            system_prompt=(
+            system_prompt=(state["system_prompt"] if request.runtime_binding is not None
+                and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else (
                 "You are the Enterprise AI QA Agent code review pilot. "
                 "Return evidence-grounded review guidance. Use only the "
                 "read-only project and selected skill capabilities exposed "
                 "by the current pilot stage. Business tools visible to you are "
                 "governed by the application's permission and approval controls."
-            ),
+            )),
             messages=list(state["runtime_messages"]),
             framework_messages=list(state.get("framework_messages") or []),
-            context={**adapter_context, "skill_keys": list(request.skill_keys)},
+            context={**adapter_context, "skill_keys": list(state["resolved_skill_keys"]
+                if request.runtime_binding is not None
+                and request.runtime_binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION else request.skill_keys)},
             read_only_filesystem_enabled=self._deep_agent_read_only_filesystem_enabled,
             read_only_max_file_size_mb=self._deep_agent_read_only_max_file_size_mb,
             read_only_max_output_chars=self._deep_agent_read_only_max_output_chars,
@@ -1537,7 +1559,7 @@ class RuntimeService:
     ) -> tuple[list[Any], dict[str, Any]]:
         if not self._deep_agent_governed_tools_enabled or self._tool_governance_service is None:
             return [], {}
-        descriptors = self._tool_registry.get_many(list(state.get("model_visible_tool_keys") or []))
+        visible_keys = list(state.get("model_visible_tool_keys") or [])
         batch = state.get("context_bundle", {}).get("deep_agent_approval_batch", [])
         by_call = {item["metadata"]["call_id"]: item for item in batch}
         from src.application.deep_agents.native_interrupts import executing_tool_identity
@@ -1547,6 +1569,17 @@ class RuntimeService:
 
         bound = state.get("context_bundle", {}).get("runtime_binding")
         binding = RuntimeBinding.model_validate(bound) if bound is not None else None
+        if binding is not None and binding.runtime_version == TURN_CONTEXT_RUNTIME_VERSION:
+            from src.schemas.agent import ToolDescriptor
+
+            raw_descriptors = state["context_bundle"].get("framework_tool_descriptors")
+            if not isinstance(raw_descriptors, list):
+                raise FrameworkApprovalRecoveryRequired("Frozen framework tool descriptors are unavailable")
+            descriptors = [ToolDescriptor.model_validate(item) for item in raw_descriptors]
+            if [item.key for item in descriptors] != visible_keys or len(set(visible_keys)) != len(visible_keys):
+                raise FrameworkApprovalRecoveryRequired("Frozen framework tool descriptors differ from their visible surface")
+        else:
+            descriptors = self._tool_registry.get_many(visible_keys)
         projection_version = state.get("context_bundle", {}).get(TOOL_PROJECTION_VERSION_KEY)
         if projection_version is not None and (binding is None or type(projection_version) is not int or projection_version not in {1, 2, 3}):
             raise FrameworkApprovalRecoveryRequired("Governed tool projection material format is unavailable")
@@ -1953,7 +1986,7 @@ class RuntimeService:
             context.pop("runtime_binding", None)
         assembled = None
         if (include_framework_transcript and request.runtime_binding is not None
-            and request.runtime_binding.runtime_version == CONTEXT_RUNTIME_VERSION):
+            and request.runtime_binding.runtime_version in IDENTITY_CONTEXT_RUNTIME_VERSIONS):
             assembled = FrameworkContextService().prepare(session, request)
             context[TRANSCRIPT_PREPARATION_KEY] = assembled.preparation
         framework_messages = (assembled.framework_messages if assembled is not None

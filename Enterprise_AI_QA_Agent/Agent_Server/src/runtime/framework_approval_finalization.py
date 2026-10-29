@@ -158,7 +158,8 @@ def validate_finalization_link(cur, settings, row, *, current=False, adopting=Fa
     origin = cur.fetchone()
     _require(origin is not None and origin["attempt_id"] == link.predecessor_attempt_id,
         "Approval finalization predecessor attempt changed")
-    cur.execute(f"SELECT * FROM {settings.database.postgres_session_table} WHERE id=%s", (binding.session_id,))
+    cur.execute(f"SELECT id,status,metadata,project_id::text AS project_id "
+        f"FROM {settings.database.postgres_session_table} WHERE id=%s", (binding.session_id,))
     session = cur.fetchone()
     budget = _context(cur, settings, session, binding, stage, asset, origin, current=current)
     _require(link.budget_sha256 == approval_value_hash(budget.model_dump(mode="json")),

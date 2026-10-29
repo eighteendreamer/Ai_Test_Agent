@@ -66,7 +66,7 @@ def read_approval_originals(cur, tasks, binding, task_id, continuation, *, allow
     """Share exact material verification with the owned sealing transaction."""
     settings = tasks._settings
     _require(continuation._settings == settings, "Approval result reader requires its shared material store")
-    cur.execute(f"SELECT id,project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE",
+    cur.execute(f"SELECT id,project_id::text AS project_id FROM {settings.database.postgres_session_table} WHERE id=%s FOR SHARE",
         (binding.session_id,))
     session = cur.fetchone()
     cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s FOR UPDATE", (task_id,))

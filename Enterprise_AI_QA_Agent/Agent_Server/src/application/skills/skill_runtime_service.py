@@ -31,12 +31,12 @@ class SkillRuntimeService:
             )
         return blocks
 
-    def _full_prompt_block(self, skill, *, require_content=False):
+    def _full_prompt_block(self, skill, *, require_content=False, include_reference_catalog=True):
         skill_file = self._skills_root / skill.key / "SKILL.md"
         content = skill_file.read_text(encoding="utf-8")
         if require_content and not content.strip():
             raise ValueError(f"Skill正文为空: {skill.key}")
-        references = self.list_references(skill.key)
+        references = self.list_references(skill.key) if include_reference_catalog else []
         reference_catalog = ""
         if references:
             reference_catalog = (
@@ -45,12 +45,12 @@ class SkillRuntimeService:
             )
         return f"## Skill: {skill.name}\nSource: {skill_file}\n{content.strip()}{reference_catalog}"
 
-    def capture_prompt_blocks(self, skill_keys: list[str]) -> list[SkillPromptSnapshot]:
+    def capture_prompt_blocks(self, skill_keys: list[str], *, include_reference_catalog: bool = True) -> list[SkillPromptSnapshot]:
         """Capture effective instructions, never a metadata-only fallback."""
         snapshots = []
         for key in dict.fromkeys(skill_keys):
             skill = self._skill_registry.get(key)
-            block = self._full_prompt_block(skill, require_content=True)
+            block = self._full_prompt_block(skill, require_content=True, include_reference_catalog=include_reference_catalog)
             snapshots.append(SkillPromptSnapshot(key=key, prompt_block=block,
                 sha256=hashlib.sha256(block.encode("utf-8")).hexdigest()))
         return snapshots

@@ -40,8 +40,9 @@ async def continuation_harness(projection_harness):
 
 async def claim_decision(h, *, key="B", decision="approved"):
     proposal = h.proposals[key]
+    session = await h.store.get_session(h.session_id)
     command = make_command(h, h.binding).model_copy(update={
-        "operation": "approval_resume", "reference_id": proposal.approval.id})
+        "operation": "approval_resume", "reference_id": proposal.approval.id, "project_id": session.project_id})
     task = await h.tasks.submit_approval_v2(command, proposal.approval.id,
         ApprovalDecisionRequest(decision=decision, reason="continuation decision"))
     h.owner = await h.tasks.claim(task.id, worker_id="continuation-worker", expected_binding=h.binding)

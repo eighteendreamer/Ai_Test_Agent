@@ -6,6 +6,7 @@ from langgraph.graph import END, START, StateGraph
 
 from src.application.context.mcp_runtime_service import MCPRuntimeService
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.context.turn_context_assembly import TurnContextAssembly
 from src.application.test_cases.embedding_service import TestCaseEmbeddingService
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
@@ -32,6 +33,32 @@ from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
 
 
+def build_turn_context_assembly(
+    *,
+    agent_registry: AgentRegistry,
+    tool_registry: ToolRegistry,
+    model_registry: ModelRegistry,
+    skill_registry: SkillRegistry,
+    skill_runtime_service: SkillRuntimeService,
+    mcp_runtime_service: MCPRuntimeService,
+    memory_runtime_service: MemoryRuntimeService | None,
+    test_case_embedding_service: TestCaseEmbeddingService | None,
+    permission_service: PermissionService,
+    prompt_assembly_service: PromptAssemblyService,
+) -> TurnContextAssembly:
+    return TurnContextAssembly(
+        context_builder=build_context_builder_node(memory_runtime_service=memory_runtime_service),
+        router=build_router_node(agent_registry=agent_registry, tool_registry=tool_registry,
+            model_registry=model_registry, skill_registry=skill_registry, skill_runtime_service=skill_runtime_service,
+            mcp_runtime_service=mcp_runtime_service, memory_runtime_service=memory_runtime_service,
+            test_case_embedding_service=test_case_embedding_service),
+        permission_gate=build_permission_gate(permission_service=permission_service, tool_registry=tool_registry,
+            durable_events=True),
+        prompt_assembler=build_prompt_assembler_node(prompt_assembly_service=prompt_assembly_service,
+            agent_registry=agent_registry, durable_events=True),
+    )
+
+
 def build_agent_graph(
     agent_registry: AgentRegistry,
     tool_registry: ToolRegistry,
@@ -50,7 +77,15 @@ def build_agent_graph(
     tool_message_max_chars: int = 24000,
     safety_gate: SafetyGate | None = None,
     observability_service: LangSmithObservabilityAdapter | None = None,
+    turn_context_assembly: TurnContextAssembly | None = None,
 ):
+    context_assembly = turn_context_assembly or build_turn_context_assembly(
+        agent_registry=agent_registry, tool_registry=tool_registry, model_registry=model_registry,
+        skill_registry=skill_registry, skill_runtime_service=skill_runtime_service,
+        mcp_runtime_service=mcp_runtime_service, memory_runtime_service=memory_runtime_service,
+        test_case_embedding_service=test_case_embedding_service, permission_service=permission_service,
+        prompt_assembly_service=prompt_assembly_service)
+
     def instrument(node_name: str, node):
         if observability_service is None:
             return node
@@ -75,36 +110,21 @@ def build_agent_graph(
         "context_builder",
         instrument(
             "context_builder",
-            build_context_builder_node(memory_runtime_service=memory_runtime_service),
+            context_assembly.context_builder,
         ),
     )
     graph.add_node(
         "router",
-        instrument("router", build_router_node(
-            agent_registry=agent_registry,
-            tool_registry=tool_registry,
-            model_registry=model_registry,
-            skill_registry=skill_registry,
-            skill_runtime_service=skill_runtime_service,
-            mcp_runtime_service=mcp_runtime_service,
-            memory_runtime_service=memory_runtime_service,
-            test_case_embedding_service=test_case_embedding_service,
-        )),
+        instrument("router", context_assembly.router),
     )
     graph.add_node("planner", instrument("planner", planner))
     graph.add_node(
         "permission_gate",
-        instrument("permission_gate", build_permission_gate(
-            permission_service=permission_service,
-            tool_registry=tool_registry,
-        )),
+        instrument("permission_gate", context_assembly.permission_gate),
     )
     graph.add_node(
         "prompt_assembler",
-        instrument("prompt_assembler", build_prompt_assembler_node(
-            prompt_assembly_service=prompt_assembly_service,
-            agent_registry=agent_registry,
-        )),
+        instrument("prompt_assembler", context_assembly.prompt_assembler),
     )
     graph.add_node(
         "model_invoker",

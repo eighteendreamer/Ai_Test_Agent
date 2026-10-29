@@ -4,7 +4,8 @@ from datetime import datetime
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.graph.state import AgentGraphState
-from src.runtime.execution_logging import append_graph_event, truncate_text
+from src.runtime.execution_logging import append_graph_event_durable, truncate_text
+from src.schemas.framework_transcript import uses_turn_context_assembly
 
 
 def build_context_builder_node(
@@ -72,7 +73,7 @@ def build_context_builder_node(
             }
         )
         state["context_bundle"] = context
-        append_graph_event(
+        await append_graph_event_durable(
             state,
             "graph.context_built",
             "context_builder",
@@ -82,7 +83,8 @@ def build_context_builder_node(
             runtime_mode=state["runtime_mode"],
             preferred_model=state["preferred_model"] or "auto",
             loop_iteration=state["loop_iteration"],
-            user_message_preview=truncate_text(state["user_message"], 160),
+            **({} if uses_turn_context_assembly(context) else {
+                "user_message_preview": truncate_text(state["user_message"], 160)}),
             observation_hit_count=len(state["observation_hits"]),
             context_keys=",".join(sorted(context.keys())),
         )

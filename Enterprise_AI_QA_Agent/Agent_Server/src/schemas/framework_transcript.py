@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -10,7 +11,15 @@ from src.schemas.framework_approval import approval_value_hash
 
 
 CONTEXT_RUNTIME_VERSION = "v2.1.0"
+TURN_CONTEXT_RUNTIME_VERSION = "v2.2.0"
+IDENTITY_CONTEXT_RUNTIME_VERSIONS = frozenset({CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSION})
 TRANSCRIPT_PREPARATION_KEY = "framework_transcript_preparation"
+
+
+def uses_turn_context_assembly(context: Mapping[str, Any]) -> bool:
+    binding = context.get("runtime_binding")
+    return (isinstance(binding, dict) and binding.get("runtime_kind") == "deepagents"
+        and binding.get("runtime_version") == TURN_CONTEXT_RUNTIME_VERSION)
 
 
 class FrameworkTranscriptAsset(BaseModel):
@@ -47,7 +56,7 @@ class FrameworkTranscriptAssetV2(FrameworkTranscriptAsset):
     """Identity coverage is a new format, never guessed for schema-1 assets."""
 
     schema_version: Literal[2] = 2
-    runtime_version: Literal["v2.1.0"] = CONTEXT_RUNTIME_VERSION
+    runtime_version: Literal["v2.1.0", "v2.2.0"] = CONTEXT_RUNTIME_VERSION
     source_input_message_id: str = Field(min_length=1)
     source_output_message_ids: list[str]
     covered_message_ids: list[str] = Field(min_length=1)

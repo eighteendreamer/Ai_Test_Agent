@@ -20,6 +20,7 @@ from src.application.deep_agents.result_projection import (
 )
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 from src.runtime.store import ContinuationLeaseLostError
+from src.schemas.framework_transcript import uses_turn_context_assembly
 
 
 @dataclass(frozen=True)
@@ -510,7 +511,7 @@ class DeepAgentRuntimeAdapter:
             }
         cleanup = None
         skill_keys = context.get("skill_keys")
-        if skill_keys:
+        if skill_keys and not uses_turn_context_assembly(context):
             if not _schema_only:
                 if self._skill_registry is None:
                     raise DeepAgentRuntimeError(

@@ -3,15 +3,17 @@
 from src.application.permissions.permission_service import PermissionPolicyContext, PermissionService
 from src.graph.state import AgentGraphState
 from src.registry.tools import ToolRegistry
-from src.runtime.execution_logging import append_graph_event
+from src.runtime.execution_logging import append_graph_event, append_graph_event_durable
 from src.schemas.session import MessageKind, RuntimeMode, SessionMode
+from src.schemas.framework_transcript import uses_turn_context_assembly
 
 
 def build_permission_gate(
     permission_service: PermissionService,
     tool_registry: ToolRegistry,
+    *, durable_events: bool = False,
 ):
-    def permission_gate(state: AgentGraphState) -> AgentGraphState:
+    def evaluate(state: AgentGraphState, event_writer):
         tool_descriptors = tool_registry.get_many(state["available_tool_keys"])
         input_envelope = dict(state.get("context_bundle", {}).get("input_envelope") or {})
         input_routing = dict(state.get("context_bundle", {}).get("input_routing") or {})
@@ -42,7 +44,11 @@ def build_permission_gate(
         state["model_visible_tool_keys"] = evaluation.model_visible_tool_keys
         state["permission_decisions"] = [item.to_payload() for item in evaluation.decisions]
         state["pending_approvals"] = []
-        append_graph_event(
+        if uses_turn_context_assembly(state.get("context_bundle") or {}):
+            by_key = {tool.key: tool for tool in tool_descriptors}
+            state["context_bundle"]["framework_tool_descriptors"] = [
+                by_key[key].model_dump(mode="json") for key in evaluation.model_visible_tool_keys]
+        return event_writer(
             state,
             "graph.permission_evaluated",
             "permission_gate",
@@ -62,6 +68,13 @@ def build_permission_gate(
             approval_required_count=len(state["approval_required_tool_keys"]),
             denied_tool_count=len(state["denied_tool_keys"]),
         )
+
+    def permission_gate(state: AgentGraphState) -> AgentGraphState:
+        evaluate(state, append_graph_event)
         return state
 
-    return permission_gate
+    async def acknowledged_permission_gate(state: AgentGraphState) -> AgentGraphState:
+        await evaluate(state, append_graph_event_durable)
+        return state
+
+    return acknowledged_permission_gate if durable_events else permission_gate

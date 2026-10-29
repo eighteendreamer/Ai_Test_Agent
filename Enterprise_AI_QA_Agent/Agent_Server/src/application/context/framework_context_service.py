@@ -11,7 +11,8 @@ from src.application.deep_agents.framework_transcript import deserialize_message
 from src.application.deep_agents.result_projection import _normalize_messages
 from src.schemas.framework_approval import approval_value_hash
 from src.schemas.framework_transcript import (
-    CONTEXT_RUNTIME_VERSION, FrameworkTranscriptAssetV2, FrameworkTranscriptPreparation,
+    CONTEXT_RUNTIME_VERSION, IDENTITY_CONTEXT_RUNTIME_VERSIONS,
+    FrameworkTranscriptAssetV2, FrameworkTranscriptPreparation,
     TRANSCRIPT_PREPARATION_KEY, parse_framework_transcript_asset,
 )
 
@@ -35,11 +36,13 @@ class FrameworkContextService:
         asset = parse_framework_transcript_asset(raw)
         if asset.session_id != session.id or asset.source_turn_id == binding.turn_id:
             raise ValueError("Framework transcript source does not match this new Turn")
-        if binding.runtime_version == CONTEXT_RUNTIME_VERSION:
+        if binding.runtime_version in IDENTITY_CONTEXT_RUNTIME_VERSIONS:
             if not isinstance(asset, FrameworkTranscriptAssetV2):
                 raise ValueError("Schema-1 transcript requires an explicit coverage migration")
             if asset.model_config_fingerprint != binding.model_config_fingerprint:
                 raise ValueError("Framework transcript model configuration is incompatible")
+            if binding.runtime_version == CONTEXT_RUNTIME_VERSION and asset.runtime_version != CONTEXT_RUNTIME_VERSION:
+                raise ValueError("Legacy context runtime cannot consume a newer transcript version")
         elif isinstance(asset, FrameworkTranscriptAssetV2):
             raise ValueError("Legacy runtime cannot consume identity-covered transcripts")
         require_closed_transcript(asset.framework_messages, session_id=session.id,
@@ -151,7 +154,7 @@ class FrameworkContextService:
             if not native_outputs:
                 raise ValueError("Business output has no original native output range")
             mapping[assistant_message_id] = native_outputs
-        payload = dict(schema_version=2, runtime_kind="deepagents", runtime_version=CONTEXT_RUNTIME_VERSION,
+        payload = dict(schema_version=2, runtime_kind="deepagents", runtime_version=binding["runtime_version"],
             session_id=session_id, source_turn_id=preparation.turn_id, framework_messages=messages,
             source_input_message_id=preparation.source_input_message_id, source_output_message_ids=outputs,
             covered_message_ids=[*preparation.covered_message_ids, *outputs], business_message_map=mapping,

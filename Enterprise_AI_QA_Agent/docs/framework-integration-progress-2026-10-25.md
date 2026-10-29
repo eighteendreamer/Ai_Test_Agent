@@ -5134,3 +5134,51 @@ schema-1 缺覆盖身份，新版本明确要求迁移而不猜锚点；旧位�
 本节最高为 E2 子集：新增 2.1 测试是官方框架＋官方 OpenAI SDK／本地 HTTP＋真实 PG／Redis、单进程服务链；历史 2.0 独立 Worker 回归另记。合成 provider 扩展和闭合历史批次不证明真实供应商接受该签名，也不证明完整业务模式上线。A3 远端查询／停止／补偿、C 历史活进程超时首因与公共故障出口、D/E/F 与 E3／E4 全部保留，不将本节当作完整 B 或完整 v4 完成。
 
 本节随 `【feat】冻结原生上下文覆盖并保留业务消息身份` 提交，仅含七个源文件、两个测试文件、两份记录／质量门与测试白名单共十二个文件；实际 commit ID 以 Git 与交付输出为准，不推送、不建 PR。编译、diff 与提交范围检查实际执行；日志、凭据、依赖环境与本地数据不纳入提交。用户原 v3 草稿保持未改、未暂存，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。下一步继续 B 的统一 Prompt／摘要覆盖与协议来源契约，完整目标保持 active。
+
+## 111. B／§4、§5：统一 TurnContextAssembly 与冻结运行上下文（2026-10-29）
+
+### 起点、根因与范围
+
+基线 `89300caade5`（§110）。§110 已按受理消息身份冻结 schema-2 原生覆盖，但新 Deep Agents 回合仍绕过 legacy 的 context／router／permission／prompt 装配；PromptAssembly 在已有原生 `runtime_messages` 时也不会生成附件、观察、Memory、Case、MCP、设置和 Skill 等运行上下文。共享节点原先同步写入事件，不能满足 owner-bound `SessionEventSink` 的 awaited 持久 ACK。该问题是统一装配职责缺失，不在 Runtime 与 Session 各加一套历史拼接或恢复算法。
+
+依据 v4 §4／§5、已存在的四个 Graph 节点与 `build_agent_graph` 组合根、安装版 Deep Agents 0.7.13 `graph.py:640–657` 的 system prompt 合并／SkillsMiddleware 条件，以及本地 Codex `context_manager/history.rs` 的职责分离做法 → 新增不可变绑定语义 `v2.2.0`，保留 `v2.0.0`／`v2.1.0`；组合根创建一次 `TurnContextAssembly`，按 context → router → permission → prompt 顺序准备，2.2 不调用 legacy planner／顶层模型循环。
+
+### TDD 红测、夹具错误与根因修正
+
+私有 `.codex-logs` 保留每轮输出，不覆盖历史：
+
+- `b111-final-core-and-assembly-2026-10-29.log`：**6 failed、406 passed，318.14 秒**。六项均在 Runtime 前因测试把 `session.project_id` 写成随机 UUID，违反真实 Session 表对默认 `agent_projects` 的 FK；不是生产装配失败。不能删 Case 检索、绕过 FK 或向默认项目表插入测试项目。
+- `b111-final-isolated-project-core-2026-10-29.log`：修为专用 project 表后，**6 failed、410 passed，290.48 秒**；失败暴露真实入口还缺 `SessionService.project_service`，以及 PostgreSQL UUID 与 task TEXT 项目身份的边界比较。没有通过移除项目校验来迎合测试。
+- `b111-isolated-project-sdk-2026-10-29.log`：补齐真实 `ProjectService` 后，**4 failed、10 passed，74.92 秒**；审批命令未沿会话正式 `project_id`，原结果读取比对 UUID／TEXT 不一致，均为真实契约问题。随后按既有任务写入身份规则修正 SQL 的 `project_id::text` 投影，并让共享审批测试 helper 从 Session 读取正式项目 ID。
+- `b111-project-finalization-red-2026-10-29.log`：**2 failed、14 passed，102.48 秒**；普通 message 恢复缺少 native reader，审批恢复需要唯一 finalizer successor，补齐真实恢复入口而未直接伪造结果。
+- `b111-final-core-with-project-recovery-2026-10-29.log`：**418 passed，317.40 秒，exit 0，无 skip/deselect**。该组包含本节新增 unit、2.1／2.2 双 Turn SDK 集成、项目 FK、审批、原结果只读重建和 legacy StateGraph 真实运行。
+
+原先误用的旧 P0 node ID（仅 `[reconcile_after_commit]`）先得到 collection error（0 items，exit 4），没有当作通过；按当前源码收集到包含 `decision,pause` 与 `reconcile_pause` 的 6 个 node ID 后重新运行。
+
+### 实现与契约消费方
+
+- 新增 `application/context/turn_context_assembly.py`、`tests/test_framework_turn_context.py`；扩展 Graph builder、main 组合根、Runtime、Session、Deep Agents adapter、四个共享节点、Prompt／Skill 服务和 Worker capabilities。
+- `v2.2.0` 只接受真实 bound runtime binding；服务端一次冻结原生前缀、业务上下文、主 Skill 正文快照、完整可见工具 `ToolDescriptor` 和系统 Prompt。原生消息不从展示文本重建；当前 user 输入不重复进入 system Prompt。审批续跑与原结果 reader 复用已冻结 graph input／result，不读取可变 Session／Skill／Registry／模型 resolver。
+- `v2.2.0` 暂不提供动态 Skill reference 加载或 deferred tool expansion，不重复启用官方 SkillsMiddleware；Prompt 明确说明主 Skill 已冻结且没有 legacy `skill` dispatcher。真正工具执行仍通过现有 permission／governance／approval 边界。
+- 共享 durable event wrapper 只对新组合根启用，默认同步节点 API 保持兼容；上下文／Prompt 事件只记身份、阶段、数量和异常类型，不输出用户正文或 system prompt preview。
+- 集成测试 autouse fixture 创建专用 PostgreSQL project 表和正式 `ProjectService` project，Session 表仍用真实 UUID FK；依赖表先清理后删除 project 表。生产 SQL 读取端将 UUID 显式投影为 TEXT，保持项目隔离语义。
+
+### 最终源码验证
+
+以下均从 `Agent_Server` 使用已有 `.venv-framework-v2`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`、`PYTHONUTF8=1`；没有启停 Docker／服务，没有真实供应商、付费模型或目标系统调用。
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_turn_context.py tests/test_framework_context_runtime.py tests/test_framework_context_transcript.py tests/test_agent_v2_worker_contract.py tests/test_framework_message_stages.py tests/test_runtime_binding_persistence.py tests/test_deep_agent_runtime_adapter.py tests/test_session_project_binding.py tests/test_framework_graph_input_asset.py tests/test_framework_model_policy.py tests/test_prompt_assembly_service.py -q -rs --tb=short
+# 418 passed，317.40s，exit 0，无 skip/deselect；b111-final-core-with-project-recovery-2026-10-29.log
+```
+
+审批／恢复消费方选择的当前源码 node 集合共 **326 项，1906.57 秒，exit 0**，无 skip/deselect；日志 `b111-final-recovery-current-nodeids-2026-10-29.log`：
+
+```powershell
+../.venv-framework-v2/Scripts/python.exe -u -m pytest tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py tests/test_framework_approval_continuation.py tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_finalization_projection.py tests/test_framework_native_terminal.py tests/test_agent_task_dispatch.py tests/test_framework_delta_replay_order.py tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling -vv -rs --tb=short
+# 326 passed，1906.57s，exit 0，无 skip/deselect；当前 6 个强杀／恢复参数均通过。
+```
+
+项目根 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；`ruff`／`mypy` 不在环境中，未执行 lint/typecheck。前端、全量后端、真实供应商／领域 Runner／远端对象存储、完整 Skills Harness、摘要迁移／provider-transport 来源契约、2.2 独立 Worker 强杀与双制品部署仍未验收。历史 2.1 PG heartbeat lock timeout 仍未找到首因，不能因本轮同参数后来通过而宣称修复。完整 v4 goal 继续 active。
+
+本节与本轮代码／测试／质量门文档待同一提交；v3 草稿保持未修改、未暂存，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。

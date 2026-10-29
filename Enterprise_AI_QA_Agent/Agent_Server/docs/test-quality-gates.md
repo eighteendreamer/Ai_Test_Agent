@@ -177,3 +177,40 @@ $env:PYTHONUTF8='1'
 新集成测试使用官方 Deep Agents、官方 OpenAI SDK、本机环回 HTTP、真实 PG／Redis 和受控工具。分别以无原生资产、带合成闭合原生前缀开局，执行两个完整新 Turn；首回合另覆盖逐项批准，校验等待资产不变、原准备信息续用、一次工具效果、真实请求消息顺序与后续原生前缀保留。SDK 测试响应使用唯一 response ID，不拿重复 fixture ID 冒充真实供应商消息身份。它不证明真实供应商接受合成签名，亦不是新版本独立 Worker 强杀或 E3／E4 验收。
 
 schema-1 没有覆盖锚点，旧位置摘要没有身份映射；新路径明确要求迁移，既不猜锚点也不自动删除旧摘要。模型指纹不同明确拒绝；它不替代 provider／transport 的完整协议描述。框架改写已冻结前缀时明确要求摘要覆盖对账，不能继续声明旧映射有效。统一 PromptAssembly、完整摘要迁移／原生摘要对账、跨协议策略、其余隐私输出面和生产接入仍是 B／后续阶段的未完成出口。真实失败及最终验证结果见实施记录 §110。
+
+## 新 Turn 的共享上下文装配（v4 B／§4、§5 子集）
+
+`v2.2.0` 绑定启用 `TurnContextAssembly`；组合根只创建一份服务，legacy 图注册它的四个原节点，新版 Deep Agents 只调用 context → router → permission → prompt 准备链，不调用旧 planner 或顶层模型循环。原生输入继续由 §110 的身份装配负责，平台上下文放入系统 Prompt；当前输入不再经旧 user envelope 重复注入。模型选择漂移、缺少装配服务、缺少已受理投影或选中 Skill 正文均明确失败，不用 metadata／pilot Prompt 兜底。
+
+实际 Prompt、选中 Skill 主正文快照、检索与观察原件、工具可见集合和有序完整 `ToolDescriptor` 随原 graph input 冻结。审批继续与原结果只读重建不重新读取可变 Skill、设置、Registry 工具描述或运行装配链；工具真正执行仍走当前治理与权限检查。`v2.2.0` 不重复启用官方 SkillsMiddleware，当前也不提供动态 Skill/reference 加载及 deferred tool expansion；包装文案不建议调用不存在的 legacy `skill` dispatcher。不能把这一步说成完整 Skills Harness 已完成。
+
+新语义不覆盖 `v2.0.0`／`v2.1.0`。新版可导入合法 2.1 schema-2 原生前缀，2.1 reader 拒绝 2.2 来源；能力关闭的 Worker 在 claim 前拒领，queued／attempt 不变。能力声明不是生产灰度开关。共享节点事件采用 awaited durable ACK，与原 owner-bound SessionEventSink 配合；同步节点工厂的默认调用方式仍保留给既有消费方。新版 context／prompt 事件不输出用户正文或 Prompt 预览，其余隐私面仍待独立审计。
+
+正式项目集成保留真实 UUID FK：先创建专用 project 表，通过真实 ProjectService 创建项目，再建立隔离 Session／task 表；清理顺序先移除依赖表，再只删除 fixture 自建 project 表，不向默认项目表写入。该用例实际发现原结果读取／审批继续／审批收尾的 SQL 原始 Session UUID 与任务 TEXT 身份比较不一致；相关 SQL 读取边界显式投影 `project_id::text`，与既有任务写入端一致，不删除项目检查、不改变数据库 schema。另验证真正改绑其他项目时，普通／审批原结果读取仍被拒绝。
+
+```powershell
+# 工作目录 Agent_Server；使用已有 .venv-framework-v2 和已运行的隔离测试 PG/Redis。
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+$env:PYTHONUTF8='1'
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_turn_context.py tests/test_framework_context_runtime.py `
+  tests/test_framework_context_transcript.py tests/test_agent_v2_worker_contract.py `
+  tests/test_framework_message_stages.py tests/test_runtime_binding_persistence.py `
+  tests/test_deep_agent_runtime_adapter.py tests/test_session_project_binding.py `
+  tests/test_framework_graph_input_asset.py tests/test_framework_model_policy.py `
+  tests/test_prompt_assembly_service.py -q -rs --tb=short
+../.venv-framework-v2/Scripts/python.exe -u -m pytest `
+  tests/test_framework_approval_graph_input.py tests/test_framework_approval_runtime.py `
+  tests/test_framework_approval_continuation.py tests/test_framework_message_result_reconstruction.py `
+  tests/test_framework_approval_result_reconstruction.py tests/test_framework_message_asset_gap_recovery.py `
+  tests/test_framework_approval_asset_gap_recovery.py tests/test_framework_finalization_projection.py `
+  tests/test_framework_native_terminal.py tests/test_agent_task_dispatch.py `
+  tests/test_framework_delta_replay_order.py `
+  tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling `
+  -vv -rs --tb=short
+```
+
+P0 强杀函数现有两个 decision/pause 参数及三个 reconciliation 参数，共六个 node ID；历史只带 `[reconcile_after_commit]` 的单参数 node ID 已不存在。应先 collect 核实，不能把未找到用例的 collection error 当作测试通过。
+
+新版本测试经过真实 Session 入口、官方框架／OpenAI SDK、本机 HTTP、PG／Redis，外部 Memory／Observation／Case／MCP／设置端口与工具为受控样本；包含两个新 Turn、首回合审批、原生前缀不变、冻结描述复用，以及原结果空窗后仅运行唯一 finalizer 和重复交付无额外效果。真实 legacy StateGraph 另验证共享节点及旧 Prompt 契约。既有独立 Worker 强杀回归仍是原 2.0，不证明 2.2 独立 Worker／双制品部署通过。摘要覆盖迁移、provider/transport 来源、完整 Harness、其余隐私面与生产接入仍保留；最终命令、失败归因和证据等级见实施记录 §111。

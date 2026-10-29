@@ -20,7 +20,7 @@ from src.application.projects.project_service import ProjectService
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.application.deep_agents.framework_transcript import require_closed_transcript
 from src.application.context.framework_context_service import FrameworkContextService
-from src.schemas.framework_transcript import CONTEXT_RUNTIME_VERSION
+from src.schemas.framework_transcript import IDENTITY_CONTEXT_RUNTIME_VERSIONS
 from src.application.testing.verification_service import VerificationService
 from src.domain.models import SessionRecord
 from src.runtime.execution_logging import truncate_text
@@ -263,7 +263,8 @@ class SessionService:
                         request.runtime_binding = task.runtime_binding
                     else:
                         request = ExecutionRequest.model_validate(frozen.execution_request)
-                    if task.runtime_binding is not None and task.runtime_binding.runtime_version == CONTEXT_RUNTIME_VERSION:
+                    if (task.runtime_binding is not None
+                        and task.runtime_binding.runtime_version in IDENTITY_CONTEXT_RUNTIME_VERSIONS):
                         if frozen is None:
                             request.user_message_id = task.user_message_id
                         elif request.user_message_id != task.user_message_id:
@@ -2741,7 +2742,7 @@ class SessionService:
         require_closed_transcript(framework_messages, session_id=session_id,
             source_turn_id=str(state.get("turn_id") or ""), operation="publish")
         binding = dict(context.get("runtime_binding") or {})
-        if binding.get("runtime_version") == CONTEXT_RUNTIME_VERSION:
+        if binding.get("runtime_version") in IDENTITY_CONTEXT_RUNTIME_VERSIONS:
             return FrameworkContextService.publish(session_id, state, assistant_message_id=assistant_message_id)
         asset = framework_transcript_asset(
             session_id=session_id,

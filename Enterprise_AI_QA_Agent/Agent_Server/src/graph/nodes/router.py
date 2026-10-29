@@ -18,7 +18,8 @@ from src.registry.agents import AgentRegistry
 from src.registry.models import ModelRegistry
 from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
-from src.runtime.execution_logging import append_graph_event
+from src.runtime.execution_logging import append_graph_event_durable
+from src.schemas.framework_transcript import uses_turn_context_assembly
 
 
 LOGGER = logging.getLogger(__name__)
@@ -143,6 +144,11 @@ def build_router_node(
                 ]
             )
         )
+        full_context = uses_turn_context_assembly(context_bundle)
+        if full_context:
+            # The frozen platform Skill content owns selected instructions.
+            # This legacy graph-only dispatcher has no ToolRuntime handler.
+            initial_tool_keys = [key for key in initial_tool_keys if key != "skill"]
         tools = capability_resolver.eligible_tools(
             tools=tool_registry.get_many(initial_tool_keys),
             active_mode_key=state["mode_key"],
@@ -158,10 +164,17 @@ def build_router_node(
         state["selected_model_name"] = selected_model.name
         state["selected_model_provider"] = selected_model.provider
         state["resolved_skill_keys"] = resolved_skills
-        state["skill_prompt_blocks"] = skill_runtime_service.build_prompt_blocks(
-            resolved_skills,
-            include_content=True,
-        )
+        if full_context:
+            snapshots = skill_runtime_service.capture_prompt_blocks(state["requested_skill_keys"],
+                include_reference_catalog=False)
+            state["resolved_skill_keys"] = [item.key for item in snapshots]
+            state["skill_prompt_blocks"] = [item.prompt_block for item in snapshots]
+            context_bundle["skill_prompt_snapshots"] = [item.model_dump(mode="json") for item in snapshots]
+        else:
+            state["skill_prompt_blocks"] = skill_runtime_service.build_prompt_blocks(
+                resolved_skills,
+                include_content=True,
+            )
         state["memory_hits"] = []
         state["memory_prompt_blocks"] = []
         if memory_runtime_service is not None:
@@ -212,7 +225,7 @@ def build_router_node(
                     "Test case retrieval failed for the bound project. Do not infer that no cases match; "
                     "report the retrieval fault or ask for a retry before claiming case coverage."
                 ]
-                append_graph_event(
+                await append_graph_event_durable(
                     state,
                     "test_case_retrieval_failed",
                     "router",
@@ -273,6 +286,8 @@ def build_router_node(
             for tool in eligible_deferred_tools
             if tool.key not in state["available_tool_keys"]
         ]
+        if full_context:
+            state["deferred_tool_keys"] = []
         context_bundle["available_skills"] = [
             skill.model_dump(mode="python")
             for skill in skill_registry.list()
@@ -286,7 +301,7 @@ def build_router_node(
             safety_assessment.get("indirect_injection_signals", [])
         )
         state["context_bundle"] = context_bundle
-        append_graph_event(
+        await append_graph_event_durable(
             state,
             "graph.route_selected",
             "router",

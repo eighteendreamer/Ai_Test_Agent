@@ -3,14 +3,16 @@
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.graph.state import AgentGraphState
 from src.registry.agents import AgentRegistry
-from src.runtime.execution_logging import append_graph_event, truncate_text
+from src.runtime.execution_logging import append_graph_event, append_graph_event_durable, truncate_text
+from src.schemas.framework_transcript import uses_turn_context_assembly
 
 
 def build_prompt_assembler_node(
     prompt_assembly_service: PromptAssemblyService,
     agent_registry: AgentRegistry,
+    *, durable_events: bool = False,
 ):
-    def prompt_assembler(state: AgentGraphState) -> AgentGraphState:
+    def assemble(state: AgentGraphState, event_writer):
         loop_iteration = int(state.get("loop_iteration") or 0)
 
         assembly = prompt_assembly_service.build_for_turn(
@@ -30,18 +32,26 @@ def build_prompt_assembler_node(
         # existing history. Appending it would duplicate every message on each
         # Agent iteration, including assistant/tool protocol pairs.
         state["runtime_messages"] = list(assembly.runtime_messages)
-        append_graph_event(
+        return event_writer(
             state,
             "graph.prompt_assembled",
             "prompt_assembler",
             "Structured prompt sections have been assembled for this turn.",
             system_section_count=len(state["system_prompt_sections"]),
             runtime_message_section_count=len(state["runtime_message_sections"]),
-            system_prompt_preview=truncate_text(state["system_prompt"], 180),
+            **({} if uses_turn_context_assembly(state.get("context_bundle") or {}) else {
+                "system_prompt_preview": truncate_text(state["system_prompt"], 180)}),
             runtime_message_count=len(state["runtime_messages"]),
             input_runtime_message_count=len(existing_runtime_messages),
             loop_iteration=loop_iteration,
         )
+
+    def prompt_assembler(state: AgentGraphState) -> AgentGraphState:
+        assemble(state, append_graph_event)
         return state
 
-    return prompt_assembler
+    async def acknowledged_prompt_assembler(state: AgentGraphState) -> AgentGraphState:
+        await assemble(state, append_graph_event_durable)
+        return state
+
+    return acknowledged_prompt_assembler if durable_events else prompt_assembler

@@ -335,7 +335,8 @@ class FrameworkApprovalContinuation:
             or task["reference_id"] != approval_id or task["input_payload"].get("decision_id") != decision_id
             or task["runtime_binding"] is None or RuntimeBinding.model_validate(task["runtime_binding"]) != binding):
             raise FrameworkApprovalRecoveryRequired("Continuation does not match its owned task")
-        cur.execute(f"SELECT * FROM {self._settings.database.postgres_session_table} WHERE id=%s", (binding.session_id,))
+        cur.execute(f"SELECT id,status,metadata,project_id::text AS project_id "
+            f"FROM {self._settings.database.postgres_session_table} WHERE id=%s", (binding.session_id,))
         session = cur.fetchone()
         assert_active_approval(session, binding, approval_id, {"execution_state": "running"})
         if session["project_id"] != task["project_id"]:

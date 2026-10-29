@@ -149,7 +149,7 @@ from src.application.recorder.recording_approval_service import RecordingApprova
 from src.application.recorder.ui_resource_assessor import UIResourceAssessor
 from src.core.config import get_settings
 from src.containers import AppContainer
-from src.graph.builder import build_agent_graph
+from src.graph.builder import build_agent_graph, build_turn_context_assembly
 from src.infrastructure.channel_config_store import MySQLChannelConfigStore
 from src.infrastructure.email_config_store import MySQLEmailConfigStore
 from src.infrastructure.memgraph_runtime import MemgraphRuntimeProvider
@@ -697,6 +697,13 @@ async def _initialize_lifespan_resources(
         **deep_agent_adapter_kwargs,
         model_call_policy=framework_model_call_policy,
     )
+    turn_context_assembly = build_turn_context_assembly(
+        agent_registry=agent_registry, tool_registry=tool_registry, model_registry=model_registry,
+        skill_registry=skill_registry, skill_runtime_service=skill_runtime_service,
+        mcp_runtime_service=mcp_runtime_service, memory_runtime_service=memory_runtime_service,
+        test_case_embedding_service=test_case_embedding_service, permission_service=permission_service,
+        prompt_assembly_service=prompt_assembly_service,
+    )
     graph = build_agent_graph(
         agent_registry=agent_registry,
         tool_registry=tool_registry,
@@ -715,6 +722,7 @@ async def _initialize_lifespan_resources(
         safety_gate=SafetyGate(),
         observability_service=observability_service,
         runtime_control=runtime_control,
+        turn_context_assembly=turn_context_assembly,
     )
     context_compaction_service = ContextCompactionService(
         model_runtime_service=model_runtime_service,
@@ -756,6 +764,7 @@ async def _initialize_lifespan_resources(
         tool_job_service=tool_job_service,
         framework_approval_projection=FrameworkApprovalProjection(settings, sessions=store, jobs=tool_job_service),
         framework_approval_continuation=FrameworkApprovalContinuation(settings, sessions=store, jobs=tool_job_service),
+        turn_context_assembly=turn_context_assembly,
     )
 
     app.state.settings = settings
