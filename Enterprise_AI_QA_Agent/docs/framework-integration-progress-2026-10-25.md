@@ -6609,3 +6609,41 @@ $env:RUN_LIVE_REDIS_TESTS='1'
 ### 交付边界与剩余出口
 
 本节修改 `Agent_Server/src/schemas/framework_runtime_result.py`、`Agent_Server/tests/test_framework_runtime_result_asset.py` 及本实施记录；用户既有 v3 草稿仍未修改、未暂存、未提交。该校验闭合“结果资产事件后缀不可缺失”一个 A2-2 材料出口，未证明图终态到资产的所有空窗、外部未知效果、A2-3、A3 或完整 v4；仍不开放缺原结果资产时的任意图／模型／工具重执行。整体目标继续 active。
+
+## 143. A2-2／§9.2、H11：结果资产事件必须绑定原 Turn（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `faf715085`／§142。§142 已要求新结果资产的 `RuntimeTurnResult.events` 是 `state.event_log` 的完整连续末尾，但校验仍只确认事件属于同一 Session；攻击者可把事件日志和返回事件的 payload 同时改成另一个 Turn，再重算资产摘要，形成跨 Turn 的“完整”事件后缀。该缺口位于结果资产材料边界，不通过依赖消息顺序、UUID 或物理行顺序修补。
+
+依据 v4 §9.2 的原生终态／完整事件材料、§9.4 唯一 finalizer 的绑定输入和现有 `RuntimeBinding.turn_id` → 对包含 `state.event_log` 的新材料逐条要求 `payload.turn_id` 精确等于绑定 Turn。没有 `state.event_log` 的历史资产继续沿兼容读路径，不倒填 Turn，也不新增 schema 版本、路由或恢复权限。
+
+### TDD 与最小实现
+
+1. 在现有结果资产损坏回归增加真实跨 Turn 反例：构造完整 `runtime.turn_started`／`runtime.turn_completed` 材料，保持 `events` 尾部、Pydantic 规范化和 `asset_sha256` 一致，只将最后事件的 `payload.turn_id` 改为 `foreign-turn`。旧校验实际 **1 failed，38 deselected，7.45 秒，exit 1，DID NOT RAISE**；期间两次夹具失败分别是缺少历史 `event_log` 和未按 Pydantic 默认字段重算摘要，均已修正为有效红测，不计入产品失败。
+2. `FrameworkRuntimeResultAsset.verify` 在解析新事件日志前校验 payload 为对象且 `turn_id == binding.turn_id`，不改变既有 Session、完整尾部、终态和摘要校验。最终跨 Turn 反例 **1 passed**，证明材料在恢复读取前被拒绝。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，复用用户已启动 PostgreSQL／Redis；未启停服务、未改生产路由、未调用付费模型。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_runtime_result_asset.py -q -rs --tb=short
+# 39 passed，163.66 秒，exit 0，无 skip/deselect
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_partial_projection_recovery.py -k 'result_asset_before_any_projection or load' -q -rs --tb=short
+# 3 passed，29 deselected，15.10 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_unsealed_result_reconstruction.py -k 'reuses_complete_original_projection_without_writes or same_original_projection_without_sealing' -q -rs --tb=short
+# 12 passed，54 deselected，57.51 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_application_projection.py -k 'native_checkpoint_and_committed_application_recover or exact_output_survives_store_restart_duplicate_delivery_and_second_owner_loss or official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request' -q -rs --tb=short
+# 7 passed，142 deselected，55.16 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+# exit 0
+git diff --check
+# exit 0
+```
+
+本步只闭合“新结果资产事件 payload 不得跨 Turn”这一 A2-2/H11 材料出口；不证明图终态到资产的全部强杀空窗、外部未知效果、A2-3、A3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 或完整 v4。`ruff`、`mypy` 环境仍未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。

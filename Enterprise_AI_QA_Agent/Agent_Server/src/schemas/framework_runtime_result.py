@@ -88,6 +88,9 @@ class FrameworkRuntimeResultAsset(BaseModel):
             for raw in event_log:
                 if not isinstance(raw, dict) or not required.issubset(raw):
                     raise ValueError("Runtime result event log has incomplete original material")
+                payload = raw["payload"]
+                if not isinstance(payload, dict) or payload.get("turn_id") != binding.turn_id:
+                    raise ValueError("Runtime result event log differs from its binding Turn")
                 try:
                     item = ExecutionEvent(session_id=binding.session_id, id=raw["id"],
                         timestamp=raw["timestamp"], type=raw["type"], payload=raw["payload"])

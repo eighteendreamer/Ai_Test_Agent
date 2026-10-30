@@ -280,7 +280,7 @@ async def test_freeze_failure_after_stage_sql_rolls_back_asset(projection, monke
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed", ["output", "events", "digest", "source", "task", "input", "schema"])
+@pytest.mark.parametrize("changed", ["output", "events", "event_scope", "digest", "source", "task", "input", "schema"])
 async def test_corrupt_or_foreign_asset_cannot_be_read(frozen_result, changed):
     h = frozen_result
     saved = await stage(h, h.task)
@@ -300,6 +300,27 @@ async def test_corrupt_or_foreign_asset_cannot_be_read(frozen_result, changed):
              "type": "runtime.turn_completed", "payload": {"turn_id": turn_id, "step": 2}},
         ]
         asset["runtime_result"]["events"] = []
+    elif changed == "event_scope":
+        # Keep the complete suffix and its digest internally consistent while
+        # moving one returned event to another Turn. The asset boundary must
+        # reject this before any recovery consumer can use it.
+        turn_id = asset["binding"]["turn_id"]
+        event_log = [
+            {"id": "scope-start", "timestamp": "2026-10-30T00:00:00+00:00",
+             "type": "runtime.turn_started", "payload": {"turn_id": turn_id, "step": 1}},
+            {"id": "scope-complete", "timestamp": "2026-10-30T00:00:01+00:00",
+             "type": "runtime.turn_completed", "payload": {"turn_id": turn_id, "step": 2}},
+        ]
+        asset["runtime_result"]["state"]["event_log"] = event_log
+        asset["runtime_result"]["events"] = [
+            {**item, "session_id": asset["binding"]["session_id"],
+             "request_id": None, "trace_id": None, "turn_id": None,
+             "run_id": None, "run_item_id": None, "attempt_id": None,
+             "worker_id": None, "resource_id": None}
+            for item in event_log
+        ]
+        asset["runtime_result"]["state"]["event_log"][-1]["payload"]["turn_id"] = "foreign-turn"
+        asset["runtime_result"]["events"][-1]["payload"]["turn_id"] = "foreign-turn"
     elif changed == "digest":
         asset["asset_sha256"] = "0" * 64
     elif changed == "schema":
@@ -307,10 +328,15 @@ async def test_corrupt_or_foreign_asset_cannot_be_read(frozen_result, changed):
     else:
         asset[{"source": "source_sha256", "task": "task_id", "input": "input_sha256"}[changed]] = (
             "foreign-task" if changed == "task" else "0" * 64)
-    if changed == "events":
+    if changed in {"events", "event_scope"}:
+        from src.schemas.framework_runtime_result import FrameworkRuntimeResult
+
+        asset["runtime_result"] = FrameworkRuntimeResult.model_validate(
+            asset["runtime_result"]
+        ).model_dump(mode="json")
         values = {key: value for key, value in asset.items() if key != "asset_sha256"}
         asset["asset_sha256"] = approval_value_hash(values)
-    elif changed not in {"digest", "schema", "output"}:
+    elif changed not in {"digest", "schema", "output", "event_scope"}:
         values = {key: value for key, value in asset.items() if key != "asset_sha256"}
         asset["asset_sha256"] = approval_value_hash(values)
     record["source_sha256"] = approval_value_hash(record["source_manifest"])
