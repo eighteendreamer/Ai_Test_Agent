@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 from dataclasses import replace
 from types import SimpleNamespace
@@ -447,6 +448,47 @@ async def test_session_resource_cleanup_failure_keeps_unknown_operation_journal(
     assert cleaned[0].metadata["cleanup_operation_id"] == operation_id
     assert cleaned[0].metadata["cleanup_state"] == "unknown"
     assert "fixture-private" not in str(cleaned[0].metadata)
+
+
+@pytest.mark.asyncio
+async def test_session_resource_cleanup_does_not_retry_unknown_same_operation(caplog):
+    calls = []
+
+    async def cleanup(resource_key, *, allocation_id):
+        calls.append((resource_key, allocation_id))
+
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store, browser_cleanup=cleanup)
+    resource = await service.register(
+        session_id="session-resource-unknown-retry",
+        kind=SessionResourceKind.browser_session,
+        resource_key="browser-unknown-retry",
+        metadata={"allocation_id": "allocation-unknown-retry"},
+    )
+    operation_id = session_resource_cleanup_operation_id(
+        resource.session_id, resource.id, "session_completed",
+    )
+    await store.mark_status(
+        resource.id,
+        SessionResourceStatus.active,
+        {
+            "cleanup_operation_id": operation_id,
+            "cleanup_state": "unknown",
+            "cleanup_reason": "session_completed",
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        cleaned = await service.cleanup_session(resource.session_id, reason="session_completed")
+
+    assert calls == []
+    assert cleaned[0].status == SessionResourceStatus.active
+    assert cleaned[0].metadata["cleanup_operation_id"] == operation_id
+    assert cleaned[0].metadata["cleanup_state"] == "unknown"
+    assert any(
+        record.getMessage() == "session_resource_cleanup_unknown_requires_reconciliation"
+        for record in caplog.records
+    )
 
 
 @pytest.mark.asyncio

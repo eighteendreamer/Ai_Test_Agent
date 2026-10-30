@@ -6647,3 +6647,35 @@ git diff --check
 ```
 
 本步只闭合“新结果资产事件 payload 不得跨 Turn”这一 A2-2/H11 材料出口；不证明图终态到资产的全部强杀空窗、外部未知效果、A2-3、A3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 或完整 v4。`ruff`、`mypy` 环境仍未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。
+
+## 144. A3／H06／§10.1：同一未知清理操作禁止盲目重试（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `f7e02d6b7`／§143。§141 已阻止 PostgreSQL cleanup receipt 在 `running` 状态被重复领取，但 SessionResource 清理服务仍存在另一条入口缺口：一个资源已经写入稳定 `cleanup_operation_id`、`cleanup_reason` 和 `cleanup_state=unknown`，但状态仍是 `active` 时，`cleanup_session()` 会再次把它交给 `_cleanup_one()` 并调用 browser／Docker 外部 adapter。外部效果可能已经发生，重复调用会把未知效果升级成新的副作用；只读 reconciliation 不能替代执行入口的保护。这是清理操作身份在执行前未核验的根因，不通过增加重试次数或覆盖状态修补。
+
+依据 v4 §10.1 的“未知外部操作先对账、不盲目重试”以及现有 `reconcile_session_resource_cleanup()` 的稳定操作身份规则：执行前重新读取同一资源；只有缺少该操作 journal 的首次清理才进入外部 adapter。若当前记录的 operation id 与本次 reason 精确匹配且 cleanup state 为 `unknown`，保留原状态并记录 `session_resource_cleanup_unknown_requires_reconciliation` 告警，要求显式 reconciliation。已有 browser allocation fencing 继续使用调用方传入的旧 allocation，避免把最新记录覆盖回参数后误清理替换 allocation。
+
+### TDD 与最小实现
+
+1. 新增 `test_session_resource_cleanup_does_not_retry_unknown_same_operation`：先注册 browser session，再写入稳定 operation journal 和 `active/unknown` 状态，断言 `cleanup_session()` 不调用 adapter、保留未知记录并留下结构化告警。旧实现实际 **1 failed，5.34 秒，exit 1**，失败为 adapter 已被再次调用。
+2. `SessionResourceService._cleanup_one()` 在副作用前读取当前资源；资源已消失时仅记录告警并返回，匹配同一 operation id/reason 的未知记录时只读返回。没有新增 schema、DDL、公开 API、调度器或自动补偿；首次清理、已完成清理以及已有替换 allocation 的 fence 保持原行为。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`，复用用户已启动 PostgreSQL／Redis；未启停服务、未改生产路由、未调用付费模型或升级依赖。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_resource_cleanup_worker.py tests/test_resource_cleanup_entrypoint.py tests/test_browser_resource_harness.py tests/test_framework_turn_memory_reconciliation.py tests/test_lifespan_resource_cleanup.py -q -rs --tb=short
+# 54 passed，1 skipped，6.07 秒；唯一 skip 为既有 RUN_LIVE_MYSQL_TESTS 门
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_live_browser_leases.py -k 'old_session_cleanup_does_not_close_replacement_browser or cleanup_failure_keeps_capacity_until_retry_commits or cleanup_receipt_updates_only_matching_session_allocation' -q -rs --tb=short
+# 3 skipped，29 deselected；相关真实 Chromium 用例因环境缺 Chromium 跳过
+
+.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+# exit 0
+git diff --check
+# exit 0
+```
+
+本步只闭合“同一稳定清理操作的未知效果不得从 SessionResource 执行入口盲重试”这一 A3/H06 出口；未知外部效果仍须 reconciliation／人工或有依据的补偿，不能据此证明 Docker、浏览器或领域 Runner 已实际停止，也不回滚正式测试结果。A2-2、A2-3、A3 其余 Memory／资源出口、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 与完整 v4 继续 active。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。

@@ -197,6 +197,39 @@ class SessionResourceService:
 
     async def _cleanup_one(self, resource: SessionResourceRecord, reason: str) -> SessionResourceRecord:
         operation_id = session_resource_cleanup_operation_id(resource.session_id, resource.id, reason)
+        current = next(
+            (item for item in await self._store.list(resource.session_id) if item.id == resource.id),
+            None,
+        )
+        if current is None:
+            LOGGER.warning(
+                "session_resource_cleanup_resource_missing_before_attempt",
+                extra={
+                    "session_id": resource.session_id,
+                    "resource_id": resource.id,
+                    "resource_key": resource.resource_key,
+                    "operation_id": operation_id,
+                    "cleanup_reason": reason,
+                },
+            )
+            return resource
+        if (
+            current.metadata.get("cleanup_operation_id") == operation_id
+            and current.metadata.get("cleanup_reason") == reason
+            and current.metadata.get("cleanup_state") == "unknown"
+        ):
+            LOGGER.warning(
+                "session_resource_cleanup_unknown_requires_reconciliation",
+                extra={
+                    "session_id": current.session_id,
+                    "resource_id": current.id,
+                    "resource_key": current.resource_key,
+                    "operation_id": operation_id,
+                    "cleanup_reason": reason,
+                    "resource_status": current.status.value,
+                },
+            )
+            return current
         journal = {
             "cleanup_operation_id": operation_id,
             "cleanup_state": "unknown",
