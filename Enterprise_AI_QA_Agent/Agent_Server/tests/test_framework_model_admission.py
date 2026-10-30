@@ -32,6 +32,7 @@ async def admission(harness):
         yield h
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {h.calls.uploads_table}")
             cur.execute(f"DROP TABLE {h.calls.calls_table}")
             cur.execute(f"DROP TABLE {h.calls.budgets_table}")
 
@@ -387,5 +388,6 @@ async def test_per_call_approval_owners_continue_same_admitted_root_budget(proje
             assert all(call.phase == "completed" for call in snapshot.calls)
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {h.calls.uploads_table}")
             cur.execute(f"DROP TABLE {h.calls.calls_table}")
             cur.execute(f"DROP TABLE {h.calls.budgets_table}")

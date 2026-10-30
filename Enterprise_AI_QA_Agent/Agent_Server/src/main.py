@@ -302,7 +302,8 @@ async def _initialize_lifespan_resources(
     await framework_model_calls.initialize()
     app.state.framework_model_calls = framework_model_calls
     logger.info("lifespan_framework_model_ledger_initialized", extra={
-        "budgets_table": framework_model_calls.budgets_table, "calls_table": framework_model_calls.calls_table})
+        "budgets_table": framework_model_calls.budgets_table, "calls_table": framework_model_calls.calls_table,
+        "uploads_table": framework_model_calls.uploads_table})
     await PostgresResourceAllocationStore(settings).initialize()
     await PostgresBrowserAllocationStore(settings).initialize()
     app.state.task_outbox = task_outbox
@@ -447,7 +448,7 @@ async def _initialize_lifespan_resources(
     runtime_control = container.runtime_control()
 
     model_runtime_service = container.model_runtime_service()
-    framework_model_evidence = (FrameworkModelEvidence(objects=artifact_storage_service)
+    framework_model_evidence = (FrameworkModelEvidence(objects=artifact_storage_service, writes=framework_model_calls)
         if artifact_storage_service.enabled else None)
     if framework_model_evidence is None:
         logger.info("framework_model_evidence_storage_disabled", extra={"backend": "disabled"})

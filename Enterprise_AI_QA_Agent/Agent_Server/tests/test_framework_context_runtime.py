@@ -71,7 +71,7 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
     await h.store.save_session(session)
     calls = PostgresFrameworkModelCalls(h.settings)
     await calls.initialize()
-    h.tables.extend([calls.budgets_table, calls.calls_table])
+    h.tables.extend([calls.budgets_table, calls.calls_table, calls.uploads_table])
     original_reply = provider_module._reply
     reply_ids = []
     agent_reply_ids = []
@@ -350,7 +350,7 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
     await h.store.save_session(session)
     calls = PostgresFrameworkModelCalls(h.settings)
     await calls.initialize()
-    h.tables.extend([calls.budgets_table, calls.calls_table])
+    h.tables.extend([calls.budgets_table, calls.calls_table, calls.uploads_table])
     first_reply = None
     if runtime_version == "v2.3.0":
         from tests.test_framework_model_policy import force_summary

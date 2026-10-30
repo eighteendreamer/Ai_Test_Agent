@@ -34,7 +34,7 @@ def wire_evidence(h, monkeypatch):
     objects = ArtifactStorageService(h.settings)
     client = _RustFSClient()
     monkeypatch.setattr(objects, "_rustfs_client", lambda: client)
-    h.evidence = FrameworkModelEvidence(objects=objects)
+    h.evidence = FrameworkModelEvidence(objects=objects, writes=h.calls)
     h.policy._evidence = h.evidence
     h.models.set_framework_model_call_policy(h.policy)
     return client
@@ -267,7 +267,7 @@ async def test_checksum_valid_response_still_requires_semantic_and_codec_validat
                     payload["data"]["response_summary"]["usage"]["total_tokens"] += 1
                 else:
                     payload["data"]["unknown_future_field"] = "must not be silently dropped"
-                return await h.evidence._store(owner, intent, canonical_model_input(payload), "fixture-response")
+                return await h.evidence._store(owner, intent, canonical_model_input(payload), "response")
 
             monkeypatch.setattr(h.evidence, "store_response", store_other)
             request = dto_request(h)
@@ -415,5 +415,6 @@ async def test_replacement_owner_reads_original_settlement_without_claiming_its_
         assert await calls.snapshot(h.binding) == before and await h.tasks.get(original.id) == terminal
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {calls.uploads_table}")
             cur.execute(f"DROP TABLE {calls.calls_table}")
             cur.execute(f"DROP TABLE {calls.budgets_table}")

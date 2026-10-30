@@ -167,6 +167,7 @@ async def test_waiting_and_completed_invocations_preserve_the_same_root_budget(p
         assert result.output_text == "fixture answer"
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {calls.uploads_table}")
             cur.execute(f"DROP TABLE {calls.calls_table}")
             cur.execute(f"DROP TABLE {calls.budgets_table}")
 
@@ -595,7 +596,7 @@ async def fresh_runtime_harness(projection_harness):
     h.binding = make_binding(h.session_id, f"runtime-turn-{uuid4().hex}")
     h.calls = PostgresFrameworkModelCalls(h.settings)
     await h.calls.initialize()
-    h.tables.extend([h.calls.budgets_table, h.calls.calls_table])
+    h.tables.extend([h.calls.budgets_table, h.calls.calls_table, h.calls.uploads_table])
     # Mirror application admission, not a late ledger invented at finalization.
     # Model itself remains controlled; these tests do not measure provider usage.
     budget = FrameworkModelBudget(max_calls=8, max_tokens=500_000,

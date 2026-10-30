@@ -325,5 +325,6 @@ async def test_started_reservation_never_transfers_even_to_real_reconciliation_o
         assert await h.tasks.get(old.id) == expired
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {calls.uploads_table}")
             cur.execute(f"DROP TABLE {calls.calls_table}")
             cur.execute(f"DROP TABLE {calls.budgets_table}")

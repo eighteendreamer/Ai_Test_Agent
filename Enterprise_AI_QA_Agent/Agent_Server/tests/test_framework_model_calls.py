@@ -34,6 +34,7 @@ async def model_calls_harness(harness):
         yield h
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {h.calls.uploads_table}")
             cur.execute(f"DROP TABLE {h.calls.calls_table}")
             cur.execute(f"DROP TABLE {h.calls.budgets_table}")
 
@@ -472,5 +473,6 @@ async def test_real_approval_successor_can_classify_unknown_without_resetting_bu
         assert await h.tasks.get(old.id) == expired
     finally:
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP TABLE {calls.uploads_table}")
             cur.execute(f"DROP TABLE {calls.calls_table}")
             cur.execute(f"DROP TABLE {calls.budgets_table}")

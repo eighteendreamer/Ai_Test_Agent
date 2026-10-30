@@ -161,6 +161,38 @@ class FrameworkModelReservationOwner(_ModelCallValue):
     observer_token_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
+def model_evidence_prefix(binding_id: str, attempt_id: str, upload_id: str) -> str:
+    return f"framework-models/{hashlib.sha256(binding_id.encode()).hexdigest()}/{hashlib.sha256(attempt_id.encode()).hexdigest()}/{upload_id}"
+
+
+class FrameworkModelEvidenceUpload(_ModelCallValue):
+    """An immutable pre-write identity, not an upload or settlement receipt."""
+
+    schema_version: Literal[1] = 1
+    binding_id: str = Field(min_length=1)
+    binding_fingerprint: str = Field(min_length=1)
+    upload_id: str = Field(pattern=r"^[0-9a-f]{32}$")
+    intent: FrameworkModelCallIntent
+    origin: FrameworkModelReservationOwner
+    stage: Literal["request", "response", "wire-request", "wire-response"]
+    target: FrameworkModelObject
+    created_at: datetime
+    authoritative: Literal[False] = False
+
+    @model_validator(mode="after")
+    def validate_identity(self):
+        extension = "bin" if self.stage.startswith("wire-") else "json"
+        expected = model_evidence_prefix(self.binding_id, self.intent.attempt_id, self.upload_id)
+        object_name = self.target.storage_uri.split("/", 3)[-1]
+        if object_name != f"{expected}/{self.stage}.{extension}":
+            raise ValueError("Upload object target differs from its original identity")
+        if self.stage == "request" and self.target.sha256 != self.intent.request_sha256:
+            raise ValueError("Upload request target differs from its original request identity")
+        if self.created_at.tzinfo is None or self.created_at.utcoffset() is None:
+            raise ValueError("Upload identity requires a timezone-aware creation time")
+        return self
+
+
 class FrameworkModelReservationTransfer(_ModelCallValue):
     predecessor: FrameworkModelReservationOwner
     successor: FrameworkModelReservationOwner

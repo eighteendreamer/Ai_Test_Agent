@@ -65,6 +65,7 @@ async def governed(h, config, *, begin_execution=True, **limits):
         await h.provider.close()
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
             cur.execute(f"DROP SCHEMA IF EXISTS {h.settings.deep_agents.checkpoint_schema} CASCADE")
+            cur.execute(f"DROP TABLE {h.calls.uploads_table}")
             cur.execute(f"DROP TABLE {h.calls.calls_table}")
             cur.execute(f"DROP TABLE {h.calls.budgets_table}")
 

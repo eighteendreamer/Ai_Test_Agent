@@ -6147,3 +6147,96 @@ npm run typecheck
 仅六个本轮文件：`.gitignore` 的新专项白名单、`framework_model_call_policy.py`、`framework_model_evidence.py`、原 `test_framework_execution_deadline.py`、新 `test_framework_model_evidence_cancellation.py` 与本记录。公开API、schema/DDL、依赖、配置、生产开关和通用对象服务的其他调用方未改；用户v3草稿、配置、日志和本地数据均不暂存。提交前核对完整diff、原记录983164字节前缀、EOF、六文件精确暂存和v3 SHA256；具体commit由包含本节的Git提交及交付记录追溯，不推送、不建PR。
 
 完整v4仍为active：对象未知效果的持久对账、全图任意重复取消/进程终止、提交ACK丢失、精确内部等待及根活动限额、跨来源/跨Worker连续性、官方saver conformance、完整H01–H12、A2/A3/B/C其余出口、D/E/F及真实E3/E4发布门尚未完成。下一步继续原模型证据未确认上传的持久身份及只读对账，不把本节的协作收尾当作全系统接入完成。
+
+
+## §133 · v4 C/A3：模型证据上传前持久身份与非权威只读回查（进行中）
+
+对应 v4 §1.3 未知效果先查询不重放、原 owner/观察权限、§10 公共故障、A3 派生与清理，承接 §132 上传/引用取消尾段。根因是对象地址仅在进程/日志中，进程退出后无持久入口，不是再加取消特判。本步不自动重发上传/模型、不清理未知对象、不完成结算，不扩大图恢复或 running 重领权限。
+
+### 依据与契约
+
+- `ArtifactStorageService.store_uploaded_bytes` 的原 bucket/key 规范 → 同源纯 `describe_uploaded_bytes`，不创建 client/IO，PUT 显式固定原 bucket/object_name，模型证据层不猜测安全清理算法。
+- 原 response observation、reservation transfer lineage、`_run_mutation` 和 §132 `_persist_evidence` → 独立不可变 `{agent_task_table}_model_upload`，先提交原 binding/fingerprint、intent、owner/observer 摘要、四阶段、UUID、URI/SHA256/大小和时间，再 PUT。请求要求活跃 owner/原根截止；已发送 response/wire 允许原 observer 迟到，不授予 start/complete。
+- 原 `read_response` → `read_upload(binding,upload_id)` 仅从持久原地址读取，验证大小/摘要，response 额外验证 SDK 应用 envelope；复核 journal 未变。wire 保留 bytes，不冒充应用响应。返回内容不进 repr，`authoritative=False`；读不到不等于未发生，不 attach/append/settle/退款/删除/重放。
+- 本地《Agent轨迹与协议鲁棒性》的轨迹、幂等/补偿、权限约束 → 分别覆盖写前失败/写后ACK丢失、事务未知、重复取消、迟到原observer、篡改和独立uploader进程终止，严格核对原HTTP数/账本/预算，不用文本相同代替轨迹。
+
+上传意图不是上传成功回执；不进入原 call schema1–3、预算快照、结算证明或应用提交scope，保持历史证明摘要。未绑定request journal不能换UUID再传或直接start；attach保持冻结target。读journal核对原binding/intent、current/predecessor lineage与配置bucket。主程序显式注入ledger；旧未提供writes的只读/本地替身仍兼容，但没有此持久能力。新增表沿既有initialize显式DDL，同步七个测试文件的逆依赖清理，不在模型请求中建表。
+
+### 服务与真实 TDD 轨迹
+
+用户已回复PG/Redis“已启动”；小怪没有启停服务、重启容器或改生产路由。Agent_Server目录实际probe：`redis_ping=True`、`postgres_select_one={'ready':1}`。此前项目根probe的`ModuleNotFoundError: src`是工作目录错误，不冒称服务或行为红测，也没有重复索取启动许可。
+
+固定`.venv-framework-v2`，后端工作目录`Agent_Server`；pytest环境`RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`；以下日志位于`.codex-logs/`，保留本地不提交。
+
+1. 新接口红测`-k 'storage_description or identity_is_immutable'`：**5 failed、22 deselected，24.03s，exit 1**（`c133-upload-contract-red.log`），缺describe/prepare接口。这只是接口红测；新测试request digest装配随后对齐实际fixture bytes。
+2. 基础端口及fixture清理后，`-k 'not committed_before_put'`：**11 passed、16 deselected，65.46s，exit 0**（`c133-upload-ports-first.log`）；此时_store未接journal。
+3. graph/DTO×四上传窗口×写前失败/写后ACK丢失：**16 failed、11 deselected，84.00s，exit 1**（`c133-upload-path-red.log`）。全部命中`Object upload began without its committed forensic identity`：PUT工作线程另开真实PG连接查询原地址，证实缺持久身份，不是接口/环境装配错误。
+4. 接线后首次27项 **2 failed、25 passed，139.75s，exit 1**（`c133-upload-first-green.log`，文件名不代表通过）。两项graph重入错误传入新输入，合法产生新逻辑位置；Harness改为`continue_from_checkpoint=True`，不改生产恢复规则，保留严格无新journal/HTTP/预算变化断言。
+5. 新增observer摘要/目标bucket篡改、attach换地址反例：**3 failed、27 deselected，26.28s，exit 1**（`c133-upload-identity-red.log`），证明初稿查询来源/目标核对不完整及attach可换地址。按原身份/lineage修复，不依赖新权威证明。
+6. 扩展45项 **45 passed，179.23s，exit 0**（`c133-upload-expanded-first.log`）：含并发幂等、事务回滚/ACK丢失零PUT、两次取消等待原事务、迟到原observer、缺对象/字节篡改/读中journal漂移/未知UUID/foreign binding、response envelope核对及原账本不变。
+7. 追加独立uploader真实强杀和request journal转移，首次选择 **1 failed、2 passed、45 deselected，26.09s，exit 1**（`c133-upload-process-first.log`）。两项强杀通过；失败为新Harness把running task当作可直接claim的claimed任务，返回无执行权限公开记录。修正为原协议允许的claimed→显式transfer，不扩大running重领权限；这不是生产行为缺陷红测。完整48项及消费方最终结果后续追加。
+
+前端4文件本轮已实际**29 passed，3.72s**，typecheck exit0。首次追加本节前的SHA256断言因大小写比较失败、未写入任何字节；改为同大小写后核实原995368字节前缀SHA256保持`E37E49FC75BE59FD34F6EF7700524A8089364805F5402BAA285006DAC189C333`。
+
+### 边界与剩余出口
+
+新独立进程强杀是uploader端口与跨进程本地字节后端，不是完整Agent Worker、RustFS、供应商或领域Runner强杀验收。真实PG/Redis、固定官方SDK、本机合成HTTP、ArtifactStorageService＋本地S3 client替身是实际证据范围。没有调用付费模型或真实RustFS。
+
+journal不追溯补造历史孤儿身份；当前可读不等于永久对象版本保证。自动扫描/补引用/清理、部分wire自动配对重建、完整Worker未知效果仍待后续。生产新增表需先执行initialize并具备DDL权限；bucket配置变化需独立迁移，不借配置切换任意外部引用。完整v4仍active：A2/A3/B/C其余出口、精确活动/等待预算、完整H01–H12、D/E/F及真实E3/E4发布门未完成。
+
+
+### 新专项完整结果
+
+修正上述新transfer Harness后，完整文件实际 **48 passed，258.56s，exit 0，无skip/deselect**（`c133-upload-final.log`）。包含两项独立进程真实terminate，父进程先从另一PG连接确认PUT前身份已提交；进程终止后重建ledger/evidence服务，分别验证对象不可读与原bytes可读，原request引用仍为空、budget/阶段不变且start明确拒绝。这里可读结果只用于只读取证，没有补引用或执行恢复。
+
+首次大模型消费方组在Harness修正前已导入旧测试；保留其过程和终态。为避免将旧采样当作最终源码结果，48项绿色后另启动全选择组（`c133-final-model-consumers-v2.log`），未用单项复验冒充整组通过。Runtime/审批/Context组独立运行；当前未提交，最终结果仍待原句柄终态。
+
+
+### 扩展消费方发现与处理
+
+首轮Runtime/Session/审批/Context全选择实际 **1 failed、376 passed，1461.17s，exit 1**（`c133-final-runtime-consumers.log`）。失败为`test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_native_asset[v2.1.0-True-True-False]`的`Framework transcript coverage does not match admitted business history`。随后原参数单项复验 **1 passed，23.18s，exit 0**（`c133-context-coverage-recheck.log`）。尚未稳定复现根因，不能宣称修复，也不凭猜测改历史排序、放宽coverage/messages或删除校验；保留失败，重新跑最终整组。此Context测试的policy没有注入模型evidence，不能未经证实归因为新journal。
+
+模型消费方出现额外失败后独立选择原5项codec/语义篡改测试：**5 failed、27 deselected，38.99s，exit 1**（`c133-import-journal-contract.log`），均因旧Harness用非正式`fixture-response`阶段被新四阶段schema拒绝，未到原restore断言。只将该测试上传阶段改为正式`response`（UUID仍独立），保留checksum有效但serializer/kind/identity/usage/data不合法的原输入和所有拒绝/零HTTP重发断言。对齐后 **5 passed、27 deselected，27.79s，exit 0**（`c133-import-journal-aligned.log`）。没有扩大生产stage或绕过journal。两次早先模型全组已采样旧fixture，保留其最终结果；最终源码另做完整消费方验证。
+
+
+首次大模型组最终 **6 failed、465 passed，2103.72s，exit 1**（`c133-final-model-consumers.log`）：原transfer Harness一项＋旧`fixture-response`五项，均保留原过程。修正后对整组471项再运行，不将前述失败当作绿色结果。
+
+为查证Context偶发失败而非盲改，实际测量1000次`context_case`均含相同created_at的消息；但此现象本身不足以证明该失败根因。随后用独立隔离PG/Redis Harness运行100轮原context_case保存/读取和严格coverage前缀比较，**1 passed，19.37s，exit 0**（`c133-context-clock-probe.log`；诊断源`c133_context_clock_probe.py`仅在.codex-logs本地）。未重现coverage差异，因此不修改生产排序或测试时间线，仍将原偶发失败根因标为未确认；未凭时钟假设报告修复。
+
+
+第二次大模型组最终 **5 failed、466 passed，2145.43s，exit 1**（`c133-final-model-consumers-v2.log`），仅已导入旧`fixture-response`的五项；transfer测试已绿。错误值仍明确是旧阶段名，运行中修改文件后traceback显示的源代码文本不能代表进程重新导入了新函数。完整最终源码组另记`c133-final-model-consumers-v3.log`，未混用不同采样代码的结果。
+
+
+Runtime/Session/审批/Context最终完整复验 **377 passed，1390.42s，exit 0，无skip/deselect**（`c133-final-runtime-consumers-v2.log`）。此结果证明本轮最终源码在本次完整选择下通过，不证明前述Context偶发coverage失败已被修复；根因仍未确认，需要后续保留实际失败输入取证。未删除该case、弱化coverage或借本步修正业务排序。
+
+本节“无重发”指未新增应用层上传重试/模型重发；journal记录原逻辑对象地址，不宣称底层S3 SDK内部没有物理重试。只读回查仍不形成持久上传成功回执，也不直接恢复部分wire观察或权限。
+
+
+### 最终源码验证、兼容性与提交
+
+所有本节pytest进程均已从原句柄取得终态，没有遗留运行中的测试；最终组启动后未再修改生产源码或测试，仅追加此记录。后端目录`Agent_Server`，固定`.venv-framework-v2`（Python3.11.16）；环境`RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_evidence_cancellation.py tests/test_framework_model_uploads.py tests/test_artifact_storage_service.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_evidence.py tests/test_framework_model_admission.py tests/test_framework_model_budget_projection.py tests/test_framework_prepared_orchestration.py -q -rs --tb=short
+# 471 passed，2001.24s（0:33:21），exit 0，无skip/deselect
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py tests/test_framework_cognitive_limits.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py tests/test_framework_approval_runtime.py tests/test_framework_context_runtime.py -q -rs --tb=short
+# 377 passed，1390.42s（0:23:10），exit 0，无skip/deselect
+```
+
+最终日志`c133-final-model-consumers-v3.log`、`c133-final-runtime-consumers-v2.log`。第一组包括原81项截止、68项取消专项、新48项上传专项、原模型/位置/显式转移/语义/只读导入/准入/预算投影与准备链路；第二组包含原282项消费方及新增明确选择的审批Runtime/Context，保留原messages/Delta严格比较与原审批Worker强杀。新48项是471的子集，不累加为独立覆盖数。
+
+前端`agent_web`本轮实际命令：
+
+```powershell
+npm run test -- src/stores/sessionFrameworkApproval.test.ts src/stores/sessionStreaming.test.ts src/stores/sessionAssistantStreamReplay.test.ts src/composables/useSSEStream.test.ts
+# 4文件／29 passed，3.72s，exit 0
+npm run typecheck
+# exit 0
+```
+
+日志`c133-frontend-consumers.log`、`c133-frontend-typecheck.log`。最终源码再执行根目录`.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`和`git diff --check`，均exit0。ruff/mypy未安装，未执行独立Python lint/typecheck；未运行后端/前端全量、真实RustFS/供应商/OAuth、领域Runner或完整E3/E4。保留前述Context首次偶发失败，不因最终复验绿色而宣称根因已消除。
+
+本步15个文件：对象服务的纯target描述、模型schema与独立journal/查询端口、证据上传/readback、main显式注入/初始化日志、新48项专项、七个既有fixture清理/正式stage装配、测试白名单与本记录。新增DDL保持原call格式/预算证明/API与前端协议，不升级依赖、不改配置或生产开关；部署需先具备新表DDL权限，当前不是生产发布。未知上传、部分wire和只读结果仍不授予补引用/清理/模型或图恢复权限。
+
+提交前核对完整diff、原记录995368字节前缀SHA256和v3原SHA256、EOF及15文件精确暂存；v3草稿、日志、配置、本地数据不暂存。具体commit由包含本节的Git提交与交付记录追溯，不推送、不建PR。完整v4仍active，下一步继续原对象未知效果及任务只读诊断的作用域整合，并保留Context偶发失败待实际样本取证；不把此子步当作全系统接入完成。

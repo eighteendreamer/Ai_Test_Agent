@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from dataclasses import dataclass, field
 from importlib.metadata import version
 from typing import Any
 from uuid import uuid4
@@ -18,15 +19,25 @@ from langchain_core.messages import messages_to_dict
 from pydantic import TypeAdapter
 
 from src.application.models.framework_model_call_policy import canonical_model_input
-from src.schemas.framework_model_call import FrameworkModelObject
+from src.schemas.framework_model_call import FrameworkModelObject, FrameworkModelEvidenceUpload, model_evidence_prefix
 
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass(frozen=True)
+class FrameworkModelUploadReadback:
+    """Verified bytes at an original upload address, never execution authority."""
+
+    upload: FrameworkModelEvidenceUpload
+    content: bytes = field(repr=False)
+    authoritative: bool = field(default=False, init=False)
+
+
 class FrameworkModelEvidence:
-    def __init__(self, *, objects):
+    def __init__(self, *, objects, writes=None):
         self._objects = objects
+        self._writes = writes
 
     async def store_request(self, owner, intent, envelope: bytes) -> FrameworkModelObject:
         if hashlib.sha256(envelope).hexdigest() != intent.request_sha256:
@@ -73,22 +84,33 @@ class FrameworkModelEvidence:
 
     async def _store(self, owner, intent, content, stage, *, filename=None, content_type="application/json"):
         # UUID write identities avoid overwriting an earlier/uncertain upload.
-        # As in impact_checkpoint_io, retain unconfirmed objects. These logs
-        # identify candidates for readback, not a durable reconciliation queue.
-        prefix = "framework-models/" + hashlib.sha256(owner.binding.binding_id.encode()).hexdigest()
-        prefix += "/" + hashlib.sha256(intent.attempt_id.encode()).hexdigest() + "/" + uuid4().hex
+        # Commit the original target before PUT; uncertainty never causes a
+        # replacement UUID, replay, cleanup, or an authoritative ledger receipt.
+        upload_id = uuid4().hex
+        prefix = model_evidence_prefix(owner.binding.binding_id, intent.attempt_id, upload_id)
         digest = hashlib.sha256(content).hexdigest()
         context = {"binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
-            "evidence_stage": stage, "object_prefix": prefix, "content_sha256": digest, "size_bytes": len(content)}
+            "evidence_stage": stage, "upload_id": upload_id, "object_prefix": prefix,
+            "content_sha256": digest, "size_bytes": len(content)}
         logger.info("framework_model_evidence_storage_started", extra=context)
         try:
-            saved = await self._objects.store_uploaded_bytes(content=content, filename=filename or stage + ".json",
+            arguments = dict(content=content, filename=filename or stage + ".json",
                 object_prefix=prefix, content_type=content_type)
+            target = None
+            if self._writes is not None:
+                description = self._objects.describe_uploaded_bytes(**arguments)
+                target = FrameworkModelObject(storage_uri=description["uri"], sha256=digest, size_bytes=len(content))
+                await self._writes.prepare_evidence_upload(owner, intent,
+                    upload_id=upload_id, stage=stage, target=target)
+                arguments.update(bucket_name=description["bucket"], object_name=description["object_name"])
+            saved = await self._objects.store_uploaded_bytes(**arguments)
+            reference = FrameworkModelObject(storage_uri=saved["uri"], sha256=digest, size_bytes=len(content))
+            if target is not None and reference != target:
+                raise ValueError("Model evidence storage returned a different upload identity")
         except (Exception, asyncio.CancelledError) as exc:
             logger.log(logging.WARNING if isinstance(exc, asyncio.CancelledError) else logging.ERROR,
                 "framework_model_evidence_storage_unconfirmed", extra={**context, "error_type": type(exc).__name__})
             raise
-        reference = FrameworkModelObject(storage_uri=saved["uri"], sha256=digest, size_bytes=len(content))
         logger.info("framework_model_evidence_stored", extra={**context, "storage_uri": reference.storage_uri})
         return reference
 
@@ -97,15 +119,41 @@ class FrameworkModelEvidence:
             filename=stage + ".bin", content_type="application/octet-stream")
 
     async def read(self, reference: FrameworkModelObject):
+        return json.loads(await self._read_bytes(reference))
+
+    async def _read_bytes(self, reference: FrameworkModelObject):
         reference = FrameworkModelObject.model_validate(reference.model_dump())
         loaded = await self._objects.read_object_uri(reference.storage_uri)
         content = loaded["content"]
         if len(content) != reference.size_bytes or hashlib.sha256(content).hexdigest() != reference.sha256:
             raise ValueError("Model evidence object digest or size does not match its reference")
-        return json.loads(content)
+        return content
+
+    async def read_upload(self, binding, upload_id: str) -> FrameworkModelUploadReadback:
+        """Read only the durable address; an unreadable object proves no rollback."""
+        if self._writes is None:
+            raise ValueError("Model upload readback requires its durable journal")
+        context = {"binding_id": binding.binding_id, "upload_id": upload_id, "authoritative": False}
+        try:
+            saved = await self._writes.get_evidence_upload(binding, upload_id)
+            content = await self._read_bytes(saved.target)
+            if saved.stage == "response":
+                self._validate_response(binding, saved.intent, json.loads(content))
+            if await self._writes.get_evidence_upload(binding, upload_id) != saved:
+                raise ValueError("Model upload identity changed during readback")
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("framework_model_upload_readback_unconfirmed",
+                extra={**context, "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_model_upload_readback_verified", extra={**context, "evidence_stage": saved.stage})
+        return FrameworkModelUploadReadback(upload=saved, content=content)
 
     async def read_response(self, binding, intent, reference: FrameworkModelObject):
         payload = await self.read(reference)
+        return self._validate_response(binding, intent, payload)
+
+    @staticmethod
+    def _validate_response(binding, intent, payload):
         expected = {"schema_version": 1, "source": "sdk_application", "binding_id": binding.binding_id,
             "binding_fingerprint": binding.fingerprint, "attempt_id": intent.attempt_id,
             "logical_call_id": intent.logical_call_id, "request_sha256": intent.request_sha256}

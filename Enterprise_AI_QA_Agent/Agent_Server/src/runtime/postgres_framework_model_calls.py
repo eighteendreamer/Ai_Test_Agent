@@ -28,6 +28,7 @@ from src.schemas.framework_model_call import (
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
     FrameworkModelWireObservation,
     FrameworkModelReservationOwner, FrameworkModelReservationTransfer,
+    FrameworkModelEvidenceUpload,
     response_observation_id, union_activity_intervals,
 )
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
@@ -66,9 +67,10 @@ class PostgresFrameworkModelCalls:
         base = settings.database.postgres_agent_task_table
         self.budgets_table = f"{base}_model_budget"
         self.calls_table = f"{base}_model_call"
+        self.uploads_table = f"{base}_model_upload"
         self.tool_jobs_table = settings.database.postgres_tool_job_table
         postgres_relation_parts(self.tool_jobs_table)
-        for table in (self.budgets_table, self.calls_table):
+        for table in (self.budgets_table, self.calls_table, self.uploads_table):
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", table):
                 raise ValueError("Invalid framework model ledger table identifier")
 
@@ -121,7 +123,108 @@ class PostgresFrameworkModelCalls:
                     attempt_id TEXT NOT NULL, record JSONB NOT NULL,
                     PRIMARY KEY(binding_id, attempt_id)
                 )""")
+                cur.execute(f"""CREATE TABLE IF NOT EXISTS {self.uploads_table} (
+                    binding_id TEXT NOT NULL, attempt_id TEXT NOT NULL, upload_id TEXT NOT NULL,
+                    record JSONB NOT NULL, PRIMARY KEY(binding_id, upload_id),
+                    FOREIGN KEY(binding_id, attempt_id) REFERENCES {self.calls_table}(binding_id, attempt_id)
+                        ON DELETE CASCADE
+                )""")
         await asyncio.to_thread(setup)
+
+    async def prepare_evidence_upload(self, owner, intent, *, upload_id, stage, target):
+        # No upstream counterpart (checked: model response observations,
+        # impact_checkpoint_io, v4 §10): an object address must survive before
+        # its external write, outside immutable model-budget/completion proofs.
+        intent = FrameworkModelCallIntent.model_validate(intent.model_dump())
+        target = FrameworkModelObject.model_validate(target.model_dump())
+
+        def save():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                if stage == "request":
+                    self._owned(cur, owner, before_execution=True)
+                else:
+                    self._require_binding(cur, owner.binding)
+                call = self._call(cur, owner.binding.binding_id, intent.attempt_id)
+                self._require_origin_owner(call, owner)
+                digest = hashlib.sha256(owner.owner_token.encode()).hexdigest()
+                if call.observer_token_sha256 is None or not hmac.compare_digest(call.observer_token_sha256, digest):
+                    raise ValueError("Upload observer identity differs from the original model attempt")
+                if call.intent != intent:
+                    raise ValueError("Upload intent differs from its original model identity")
+                if (stage == "request" and call.phase != "ready"
+                    or stage != "request" and (call.phase == "ready" or call.started_at is None)):
+                    raise ValueError("Upload stage differs from the original model phase")
+                if not target.storage_uri.startswith(f"rustfs://{self._settings.storage.rustfs_bucket}/"):
+                    raise ValueError("Upload target bucket differs from its original storage identity")
+                saved = FrameworkModelEvidenceUpload(binding_id=owner.binding.binding_id,
+                    binding_fingerprint=owner.binding.fingerprint, upload_id=upload_id, stage=stage,
+                    intent=intent, target=target, created_at=self._now(cur),
+                    origin=FrameworkModelReservationOwner.model_validate({
+                        name: getattr(call, name) for name in FrameworkModelReservationOwner.model_fields}))
+                cur.execute(f"SELECT record FROM {self.uploads_table} WHERE binding_id=%s AND upload_id=%s",
+                    (call.binding_id, upload_id))
+                existing = cur.fetchone()
+                if existing is None:
+                    if stage == "request":
+                        self._require_request_upload_binding(cur, call)
+                        self._require_time(cur, self._policy(cur, call.binding_id))
+                    cur.execute(f"INSERT INTO {self.uploads_table}(binding_id,attempt_id,upload_id,record) "
+                        "VALUES(%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
+                        (call.binding_id, intent.attempt_id, upload_id, saved.model_dump_json()))
+                    cur.execute(f"SELECT record FROM {self.uploads_table} WHERE binding_id=%s AND upload_id=%s",
+                        (call.binding_id, upload_id))
+                    existing = cur.fetchone()
+                original = FrameworkModelEvidenceUpload.model_validate(existing["record"])
+                if original.model_dump(exclude={"created_at"}) != saved.model_dump(exclude={"created_at"}):
+                    raise ValueError("Upload identity cannot change after preparation")
+                return original
+
+        result = await self._run_mutation(owner, "prepare_evidence_upload", save, attempt_id=intent.attempt_id)
+        logger.info("framework_model_upload_intent_saved", extra={"binding_id": result.binding_id,
+            "model_attempt_id": intent.attempt_id, "upload_id": result.upload_id,
+            "evidence_stage": result.stage, "authoritative": False})
+        return result
+
+    def _require_request_upload_binding(self, cur, call):
+        if call.request is not None:
+            return
+        cur.execute(f"SELECT 1 FROM {self.uploads_table} WHERE binding_id=%s AND attempt_id=%s "
+            "AND record->>'stage'='request' LIMIT 1", (call.binding_id, call.intent.attempt_id))
+        if cur.fetchone() is not None:
+            logger.warning("framework_model_request_upload_unbound", extra={"binding_id": call.binding_id,
+                "model_attempt_id": call.intent.attempt_id, "authoritative": False})
+            raise FrameworkModelRecoveryRequired("request_upload_requires_reconciliation", call)
+
+    async def evidence_uploads(self, binding, *, attempt_id=None, upload_id=None):
+        """Read immutable candidates; never settle, attach, retry, or grant a send."""
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                self._require_binding(cur, binding)
+                cur.execute(f"SELECT u.attempt_id,u.upload_id,u.record,c.record AS call_record "
+                    f"FROM {self.uploads_table} u JOIN {self.calls_table} c "
+                    "ON c.binding_id=u.binding_id AND c.attempt_id=u.attempt_id "
+                    "WHERE u.binding_id=%s AND (%s::text IS NULL OR u.attempt_id=%s) "
+                    "AND (%s::text IS NULL OR u.upload_id=%s) ORDER BY u.record->>'created_at',u.upload_id",
+                    (binding.binding_id, attempt_id, attempt_id, upload_id, upload_id))
+                result = []
+                for row in cur.fetchall():
+                    item = FrameworkModelEvidenceUpload.model_validate(row["record"])
+                    call = self._decode_call(row["call_record"], binding.binding_id, row["attempt_id"])
+                    origins = [self._reservation_owner(call), *(link.predecessor for link in call.reservation_transfers)]
+                    if (item.binding_id != binding.binding_id or item.binding_fingerprint != binding.fingerprint
+                        or item.upload_id != row["upload_id"] or item.intent != call.intent
+                        or item.origin not in origins
+                        or not item.target.storage_uri.startswith(f"rustfs://{self._settings.storage.rustfs_bucket}/")):
+                        raise ValueError("Upload journal differs from its original model identity")
+                    result.append(item)
+                return result
+        return await asyncio.to_thread(read)
+
+    async def get_evidence_upload(self, binding, upload_id):
+        saved = await self.evidence_uploads(binding, upload_id=upload_id)
+        if not saved:
+            raise KeyError("Model evidence upload identity does not exist")
+        return saved[0]
 
     async def freeze(self, owner: RuntimeExecutionOwner, policy: FrameworkModelBudget) -> FrameworkModelBudget:
         policy = FrameworkModelBudget.model_validate(policy.model_dump())
@@ -439,6 +542,11 @@ class PostgresFrameworkModelCalls:
                 self._require_origin_owner(call, owner)
                 if request.sha256 != call.intent.request_sha256:
                     raise ValueError("Model request asset does not match its admitted intent digest")
+                cur.execute(f"SELECT record FROM {self.uploads_table} WHERE binding_id=%s AND attempt_id=%s "
+                    "AND record->>'stage'='request'", (call.binding_id, attempt_id))
+                uploads = [FrameworkModelEvidenceUpload.model_validate(row["record"]) for row in cur.fetchall()]
+                if uploads and any(upload.target != request for upload in uploads):
+                    raise ValueError("Model request asset differs from its frozen upload identity")
                 if call.request is not None:
                     if call.request.sha256 != request.sha256 or call.request.size_bytes != request.size_bytes:
                         raise ValueError("Model request asset cannot change after admission")
@@ -605,6 +713,7 @@ class PostgresFrameworkModelCalls:
                 self._require_origin_owner(call, owner)
                 if call.phase != "ready":
                     return call, False
+                self._require_request_upload_binding(cur, call)
                 snapshot = self._snapshot(cur, owner.binding.binding_id)
                 self._require_time(cur, snapshot.policy)
                 # Actual usage can exceed a prior estimate after other branches

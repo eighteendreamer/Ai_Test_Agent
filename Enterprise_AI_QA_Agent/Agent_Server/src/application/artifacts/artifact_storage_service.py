@@ -59,6 +59,17 @@ class ArtifactStorageService:
         bucket_name: str | None = None,
         object_name: str | None = None,
     ) -> dict[str, Any]:
+        target = self.describe_uploaded_bytes(content=content, filename=filename, object_prefix=object_prefix,
+            content_type=content_type, bucket_name=bucket_name, object_name=object_name)
+        await asyncio.to_thread(self._put_object, bucket_name=target["bucket"], object_name=target["object_name"],
+            content=content, content_type=target["content_type"])
+        return target
+
+    def describe_uploaded_bytes(
+        self, *, content: bytes, filename: str, object_prefix: str, content_type: str | None = None,
+        bucket_name: str | None = None, object_name: str | None = None,
+    ) -> dict[str, Any]:
+        """Resolve the same upload target without creating a client or writing."""
         if not self.enabled:
             raise RuntimeError("Artifact storage backend is not enabled.")
 
@@ -69,13 +80,6 @@ class ArtifactStorageService:
             else self._build_uploaded_object_name(object_prefix=object_prefix, filename=filename)
         )
         resolved_content_type = content_type or self._content_type(Path(filename))
-        await asyncio.to_thread(
-            self._put_object,
-            bucket_name=target_bucket,
-            object_name=resolved_object_name,
-            content=content,
-            content_type=resolved_content_type,
-        )
         rustfs_uri = f"rustfs://{target_bucket}/{resolved_object_name}"
         return {
             "path": rustfs_uri,
