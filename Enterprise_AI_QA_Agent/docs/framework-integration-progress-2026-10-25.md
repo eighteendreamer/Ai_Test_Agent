@@ -6240,3 +6240,91 @@ npm run typecheck
 本步15个文件：对象服务的纯target描述、模型schema与独立journal/查询端口、证据上传/readback、main显式注入/初始化日志、新48项专项、七个既有fixture清理/正式stage装配、测试白名单与本记录。新增DDL保持原call格式/预算证明/API与前端协议，不升级依赖、不改配置或生产开关；部署需先具备新表DDL权限，当前不是生产发布。未知上传、部分wire和只读结果仍不授予补引用/清理/模型或图恢复权限。
 
 提交前核对完整diff、原记录995368字节前缀SHA256和v3原SHA256、EOF及15文件精确暂存；v3草稿、日志、配置、本地数据不暂存。具体commit由包含本节的Git提交与交付记录追溯，不推送、不建PR。完整v4仍active，下一步继续原对象未知效果及任务只读诊断的作用域整合，并保留Context偶发失败待实际样本取证；不把此子步当作全系统接入完成。
+
+
+## §134 · v4 C/A3：将原上传意图接入任务同快照只读诊断（进行中）
+
+前轮§133已提交`31c201dac`，属于实质进展，完整v4继续active。本步对应§10未知效果先查询/对账、§10.2证明只授予对应端口权限及A3残留可见。根因是§133持久上传意图已有独立只读端口，但原任务诊断仍只能看到已attach/append的引用，无法从task/session定位未确认候选；不能让操作人从日志猜原UUID，也不能把诊断命中当作重发/清理/结算授权。
+
+### 查证 → 采用方式与范围
+
+- 现有`FrameworkMessageDiagnostics._inspect`：首条SQL显式REPEATABLE READ READ ONLY，task+session+binding限定，随后统一读取模型/审批/checkpoint/投影 → 上传意图沿同一cursor查询，不另开async ledger/object服务的连接，不在读取时initialize、claim或修复。
+- §133 `PostgresFrameworkModelCalls.evidence_uploads` 的binding/fingerprint、原intent、owner/transfer lineage、bucket/UUID target核对 → 抽出唯一`_decode_evidence_upload`，严格原对象readback和诊断复用；诊断逐行记录不完整身份而不抛弃其他合法行。未知/缺表和真实零行分开表达，不伪造零上传或完整证明。
+- 原`MessageModelCallFact`仅展示白名单元数据及非权威wire引用 → 增加per-call `evidence_uploads`，只含原UUID/stage/target/创建时间、原owner公开身份、同快照内精确对象引用的类别/observation IDs。response/wire仍非权威；不暴露原Prompt、bytes、headers、完整intent或observer摘要/token。
+- 原diagnostic DTO的加法默认字段模式 → 聚合`model_upload_journal`区分store_available、journal_rows（缺表/旧报告为None）与identity_complete；旧报告缺字段解析为未知，不伪造完整。identity_complete只对应所选journal行的身份核对，不代替预算完整性、对象可读性或任何恢复证明。
+- 原response/wire observation去重可按bytes digest保留最早URI → 引用关系必须精确匹配URI/hash/size，不能把同bytes不同UUID对象误认为已引用，未引用也不能称为已证实孤儿或允许删除。
+- 本地课程《Agent轨迹与协议鲁棒性》的幂等/权限/轨迹约束 → 覆盖同事务并发提交、坏行/foreign Turn、原owner转移、终态候选、重复bytes及独立uploader强杀，检查既有账本不变而非仅比较文本。
+
+全仓引用检索确认现有诊断只由内部task store端口和测试消费，没有HTTP路由、前端类型或鉴权接线。本步沿现有session/task边界扩展内部只读报告，不冒称已交付公开API/UI或完整E3。不新增公开路由、DDL、配置、依赖或恢复权限；前端没有本契约消费方需要修改。已读相关三生产文件及现有diagnostic/上传/转移测试后才编辑。
+
+### TDD 与实际结果（阶段性）
+
+后端固定`.venv-framework-v2`，目录`Agent_Server`，pytest环境`RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`；既有PG/Redis由用户启动，本步没有启停服务。日志均在`.codex-logs/`本地，不提交。
+
+1. 先在真实隔离PG上保存§133四阶段上传意图，按引用/未引用8项调用原任务诊断：**8 failed、21 deselected，54.61s，exit1**（`c134-upload-diagnostic-red.log`），都因报告缺`model_upload_journal`而失败。实际journal与原引用存在，但原报告不包含上传身份；不是mock/服务错误。
+2. 三生产文件最小实现后，含缺表/空表/旧报告、8类坏journal行的选择组：**17 passed、21 deselected，80.16s，exit0**（`c134-upload-diagnostic-first.log`）。单条坏记录保留总行数和identity不完整原因，合法同attempt候选仍可见；错误记录不被修复或原样输出。
+3. 扩展51项完整文件（21项原diagnostic＋30项新增，此时尚无foreign Turn case）：**51 passed，266.46s，exit0**（`c134-upload-diagnostic-expanded.log`）。新增同快照并发提交、重复bytes不同URI、坏父call/owner binding、completed/unknown候选、原owner transfer及两项真实独立uploader终止；不读取或改写对象。
+4. 随后新增foreign Turn坏行canary首次选择 **1 failed、51 deselected，21.34s，exit1**（`c134-upload-diagnostic-scope.log`）：新的Harness错误地在已有pending工作时同步提交另一个Turn，被既有提交边界正确拒绝。依据`_submit_message_in_transaction`沿现有`submit_mode=queued`装配修正，不修改生产调度/鉴权。已补旧per-call字段缺失的解析断言；完整最终52项另行验证，不能把51项旧采样当最终52项通过。
+
+根目录compileall及diff检查实际exit0。一次补充测试的apply_patch因预期行转义不一致失败、未修改文件；重新读锚点后仅追加兼容断言，无覆盖/丢弃其他修改。最终全模型/诊断及跨层消费方结果后续追加。
+
+### 证据范围和保留出口
+
+本步真实PG/Redis、对象服务＋本地S3 client替身；独立进程真实terminate覆盖PUT前和写后ACK未返回两个窗口，但只是uploader端口，不是完整Agent Worker/RustFS/供应商/领域Runner验收。诊断不做对象探测；`object_verified=False`、`evidence_objects_verified=False`、`authoritative=False`、`automatic_replay_allowed=False`保持明确，旧owner迟到不会获得新权威。
+
+内部只读诊断不能替代公开授权API、对象原件核验/持久回查回执、补引用准入、部分wire重建或派生清理；上述后续出口继续保留。§133 Context偶发coverage失败尚无稳定真实失败样本，仍未宣称修复，不为本步弱化coverage/messages。完整A2/A3/B/C/H01–H12/D/E/F和E3/E4发布门继续按v4保留。
+
+
+### 最终源码扩大验证与失败取证（未提交）
+
+修正foreign Turn Harness后，完整诊断文件实际 **52 passed，307.33s，exit0，无skip/deselect**（`c134-upload-diagnostic-final.log`），即原21项＋新增31项。本轮前端实际执行4文件29项 **29 passed，3.75s，exit0**（`c134-frontend-consumers.log`），`npm run typecheck` exit0（`c134-frontend-typecheck.log`）。命令沿§133相同四个前端文件，未改前端源码。
+
+随后冻结三生产文件和测试源码，两个独立pytest进程分别使用fixture生成的隔离表/schema/Redis前缀；没有改服务、配置、生产路由、依赖或调用付费模型。后端工作目录`Agent_Server`，固定`.venv-framework-v2`，环境`RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_evidence_cancellation.py tests/test_framework_model_uploads.py tests/test_artifact_storage_service.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_evidence.py tests/test_framework_model_admission.py tests/test_framework_model_budget_projection.py tests/test_framework_prepared_orchestration.py tests/test_framework_message_diagnostics.py -q -rs --tb=short
+# 523 passed，2491.11s（0:41:31），exit0，无skip/deselect
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_message_recovery.py tests/test_framework_message_stages.py tests/test_framework_orchestrating_recovery.py tests/test_framework_orchestrated_message_recovery.py tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py tests/test_framework_cognitive_limits.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py tests/test_framework_approval_runtime.py tests/test_framework_context_runtime.py -q -rs --tb=short
+# 5 failed、467 passed，2091.28s（0:34:51），exit1，无skip/deselect
+```
+
+日志`c134-final-model-consumers.log`和`c134-final-runtime-consumers.log`均已从原句柄取得终态。523项已包含52项诊断，不重复累计。第二组是在§133原377项基础上显式增加四个原诊断/消息恢复消费方，共472项；不能把467通过称为整组通过。
+
+五项失败原样保留：
+
+- 独立审批Worker：`approved-after_native-reconcile_after_commit`和`denied-after_applied-reconcile_after_commit`在原20s gate截止时Worker仍存活；`denied-after_applied-reconcile_before_commit`的最终replacement超过原20s，公开task phases保留queued successor与原execution_owner_expired谱系。尚未确认原因，不直接加长截止、修改租约或认定只是机器慢。
+- Context：`v2.3.0-True-True-False`和`v2.3.0-True-True-True`再次在`FrameworkContextService.prepare`严格coverage前缀比较失败。与§133相同错误，但不是同一个固定版本/参数组合；三生产文件没有改变Context装配路径。不能因既有失败或最终单项复验变绿就声称根因已消除，也不凭时间戳猜测修改排序。
+
+因此暂停本步提交，先用原测试选择采集原消息身份/顺序/created_at/eligibility与asset covered IDs，以及既有`QA_FRAMEWORK_WORKER_DIAGNOSTICS=1`的阶段耗时，不采集正文、owner token、模型密钥或完整请求。第一次本地取证启动器误用stdin执行pytest，无可用pytest输出并超出预期；只核实并终止本轮两个stdin Python进程，原句柄exit -1。此为诊断启动器失败，不算产品红测；未终止服务或原已结束的回归进程。已改回项目既有`python -m pytest`入口及本地只观察plugin，取证尚在进行，结果后续追加。
+
+本次代码兼容性只保证新版内部诊断解析旧JSON为未知，不保证旧`extra=forbid`读者能消费新字段；当前无持久诊断记录、HTTP/API或前端消费者，不据此声称可跨旧制品发布。再次实际确认ruff/mypy未安装，未运行、未擅自安装。完整v4保持active，当前扩大回归存在上述明确失败，尚未交付全系统验收。
+
+
+### 失败专项与独立顺序缺口证据
+
+改回`python -m pytest`，选择原独立Worker六参数＋原Context二十四参数，附加本地只观察plugin及既有Worker诊断开关，实际 **30 passed，440.67s，exit0，无skip/deselect**（`c134-runtime-failure-capture-v2.log`）。没有修改生产源码、原fixture、20s截止或coverage断言。此单独复验未捕获新的失败身份，不能把它当作前述472项整组通过或问题已修复。
+
+为查证而非凭时间戳猜测，另用现有`context_case()`在实际Windows时钟上选取old-user与legacy-user确实同created_at的原合成样本，不篡改时间戳、身份或内容；写入真实隔离PG后，先确认原native prefix可正常导入。对old-user执行`SET metadata=metadata`，仅改变物理版本，不改变任何ChatMessage字段，验证读取前后逐ID完整对象相等：
+
+- 一次no-op更新实验 **1 passed，16.65s，exit0**（`c134-context-tuple-probe.log`），没有复现顺序改变。
+- 在同一真实事务中执行100次no-op，实际 **1 failed，7.74s，exit1**（`c134-context-tuple-probe-v2.log`）。原七消息实际created_at完全相同：`2026-10-30T14:14:55.405576`；原顺序从old-user/old-answer/legacy-user/current-user/future-user/legacy-answer/hidden-error变为old-answer/legacy-user/current-user/future-user/legacy-answer/hidden-error/old-user。asset仍为`[old-user,old-answer]`，实际history变为`[legacy-user,legacy-answer,current-user]`，原严格coverage校验拒绝。
+
+依据`PostgresSessionStore._get_session_sync`及merge分支只有`ORDER BY created_at ASC`、消息表当前无稳定顺序列，以及`_save_session_in_transaction`的既有逐消息upsert，上述实验确认“逻辑不变的消息可能因物理版本变化而改变上下文身份顺序”的设计缺口。它不是本步上传诊断造成，也不是文本去重问题；但100次no-op是独立受控复现，尚不能据此认定本轮两个完整Runtime失败就是这个物理窗口，更不能覆盖其原日志。两个本地probe源只留`.codex-logs`，不混入§134提交。
+
+后续根因方案必须独立覆盖：统一持久消息顺序来源与写入/重读/merge/导出路径；显式处理历史同时间戳且已发布coverage的迁移，不按随机UUID猜原顺序、不改created_at、不按asset强排来绕过矛盾；保持原消息/原生transcript与coverage拒绝断言。涉及DDL、旧记录与跨读者契约，另作TDD与兼容验收，不在此三文件诊断改动中追加排序补丁。
+
+当前又以原472项完整选择串行复验，附带失败身份观察plugin及Worker诊断开关（`c134-final-runtime-consumers-v2.log`），等待原进程终态。之前模型523项已终态且源码冻结；不重复大模型组、不把本次仅采集诊断误称为修复。
+
+
+### 最终终态、交付边界与提交
+
+上述原472项串行整组已取得终态：**472 passed，1673.82s（0:27:53），exit0，无skip/deselect**（`c134-final-runtime-consumers-v2.log`）。与首次组相同十九文件，只附加`-p c134_context_failure_capture`本地只观察plugin、`QA_FRAMEWORK_WORKER_DIAGNOSTICS=1`与其本地PYTHONPATH；没有改变测试选择、断言、截止、fixture、生产逻辑或服务。该plugin只在原coverage异常发生后打印合成身份/时间/资格信息并原样raise；本次整组没有触发异常观察。前三生产文件及原测试在523项启动后始终冻结，不混用运行中修改的源码。
+
+本步最终验证为：模型＋诊断523通过，Runtime/恢复/审批/Context472通过，前端四文件29通过及typecheck exit0；52项专项和30项失败相关单独复验是上述组的子集，不额外累加覆盖数量。首次整组5失败和独立真实PG顺序实验的红测仍完整保留；整组绿色仅证明本次采样通过，既不证明Worker超时根因已消失，也不修复消息顺序缺口。尤其不能将Context列为“已修复”。
+
+最终再次实际运行根目录`.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`和`git diff --check`，均exit0。ruff/mypy未安装，未执行Python独立lint/typecheck；未运行所有后端/前端测试、真实RustFS/供应商/OAuth、领域Runner或完整E3/E4。不新增DDL、配置、依赖或公开路由；旧报告字段缺失按未知读取，上传意图/对象候选不形成上传成功、结算或恢复授权。
+
+仅提交本轮五文件：三生产文件的同快照诊断/共享上传身份解码/加法默认DTO，原诊断测试文件的31项新增覆盖，以及此append-only记录。提交前核对完整diff、冻结源码四文件SHA256、原记录1009892字节前缀SHA256、v3原SHA256、EOF及五文件精确暂存。用户v3草稿、两份本地取证probe、plugin、日志、配置和本地数据不暂存；具体commit由包含本节的Git提交与交付记录追溯，不推送、不建PR。
+
+本节对应C/A3内部只读诊断可提交子步，不是全系统接入完成。完整v4保持active；下一独立子步优先查证并治理已复现的持久消息顺序缺口，先列清现有全部写读/merge/备份导出消费方和历史coverage迁移边界，再以真实PG失败样本TDD，不在诊断中排序绕过。原未知上传持久回查回执、补引用准入、部分wire、派生清理、完整A2/A3/B/C/H01–H12/D/E/F及真实E3/E4继续保留。

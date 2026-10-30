@@ -72,6 +72,28 @@ class MessageModelWireFact(_Fact):
     observed_at: datetime
 
 
+class MessageModelUploadJournalFact(_Fact):
+    store_available: bool = False
+    journal_rows: int | None = Field(default=None, ge=0)
+    identity_complete: bool = False
+
+
+class MessageModelUploadFact(_Fact):
+    """Original write intent and existing references, not upload success."""
+
+    upload_id: str
+    stage: Literal["request", "response", "wire-request", "wire-response"]
+    target: FrameworkModelObject
+    origin_task_id: str
+    origin_attempt_id: str
+    origin_epoch: int
+    created_at: datetime
+    ledger_reference: Literal["request", "response_observation", "wire_observation", "unreferenced"]
+    observation_ids: list[str] = Field(default_factory=list)
+    authoritative: Literal[False] = False
+    object_verified: Literal[False] = False
+
+
 class MessageModelCallFact(_Fact):
     attempt_id: str
     logical_call_id: str
@@ -91,6 +113,7 @@ class MessageModelCallFact(_Fact):
     response_observations: list[FrameworkModelResponseObservation]
     settled_response_id: str | None = None
     wire_observations: list[MessageModelWireFact]
+    evidence_uploads: list[MessageModelUploadFact] = Field(default_factory=list)
     created_at: datetime
     started_at: datetime | None
     settled_at: datetime | None
@@ -160,6 +183,7 @@ class FrameworkMessageDiagnostic(_Fact):
     stage: MessageStageFact | None = None
     model_budget: MessageModelBudgetFact
     model_calls: list[MessageModelCallFact]
+    model_upload_journal: MessageModelUploadJournalFact = Field(default_factory=MessageModelUploadJournalFact)
     checkpoints: list[MessageCheckpointFact]
     tool_jobs: list[MessageToolJobFact]
     projection: MessageProjectionFact

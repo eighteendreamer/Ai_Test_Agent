@@ -208,17 +208,24 @@ class PostgresFrameworkModelCalls:
                     (binding.binding_id, attempt_id, attempt_id, upload_id, upload_id))
                 result = []
                 for row in cur.fetchall():
-                    item = FrameworkModelEvidenceUpload.model_validate(row["record"])
                     call = self._decode_call(row["call_record"], binding.binding_id, row["attempt_id"])
-                    origins = [self._reservation_owner(call), *(link.predecessor for link in call.reservation_transfers)]
-                    if (item.binding_id != binding.binding_id or item.binding_fingerprint != binding.fingerprint
-                        or item.upload_id != row["upload_id"] or item.intent != call.intent
-                        or item.origin not in origins
-                        or not item.target.storage_uri.startswith(f"rustfs://{self._settings.storage.rustfs_bucket}/")):
-                        raise ValueError("Upload journal differs from its original model identity")
-                    result.append(item)
+                    result.append(self._decode_evidence_upload(row["record"], binding=binding, call=call,
+                        attempt_id=row["attempt_id"], upload_id=row["upload_id"]))
                 return result
         return await asyncio.to_thread(read)
+
+    def _decode_evidence_upload(self, value, *, binding, call, attempt_id, upload_id):
+        """Shared identity rules for strict readback and snapshot diagnostics."""
+        item = FrameworkModelEvidenceUpload.model_validate(value)
+        if (call is None or call.binding_id != binding.binding_id or call.intent.attempt_id != attempt_id
+            or item.binding_id != binding.binding_id or item.binding_fingerprint != binding.fingerprint
+            or item.upload_id != upload_id or item.intent != call.intent):
+            raise ValueError("Upload journal differs from its original model identity")
+        origins = [self._reservation_owner(call), *(link.predecessor for link in call.reservation_transfers)]
+        if (item.origin not in origins
+            or not item.target.storage_uri.startswith(f"rustfs://{self._settings.storage.rustfs_bucket}/")):
+            raise ValueError("Upload journal differs from its original model identity")
+        return item
 
     async def get_evidence_upload(self, binding, upload_id):
         saved = await self.evidence_uploads(binding, upload_id=upload_id)

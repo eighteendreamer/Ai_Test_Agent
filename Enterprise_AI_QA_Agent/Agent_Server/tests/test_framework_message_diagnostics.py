@@ -439,3 +439,395 @@ async def test_namespace_boundary_excludes_other_threads_and_similar_prefixes(ch
     report = await diagnose(h, h.owner.id)
     checkpoint, = report.checkpoints
     assert checkpoint.checkpoint_id == root["configurable"]["checkpoint_id"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["request", "response", "wire-request", "wire-response"])
+@pytest.mark.parametrize("referenced", [False, True])
+async def test_upload_journal_diagnostic_preserves_original_reference_scope_without_object_io(
+    model_calls_harness, monkeypatch, stage, referenced,
+):
+    from src.application.artifacts.artifact_storage_service import ArtifactStorageService
+    from tests.test_framework_model_uploads import admitted, evidence_store
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h, stage=stage)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    if stage.startswith("wire-"):
+        target = await evidence._store_bytes(h.owner, selected, b"diagnostic-private-body", stage)
+    else:
+        target = await evidence._store(h.owner, selected, b'{"fixture":"upload"}', stage)
+    original, = await h.calls.evidence_uploads(h.binding)
+    observations = []
+    if referenced:
+        if stage == "request":
+            await h.calls.attach_request(h.owner, selected.attempt_id, request=target)
+        elif stage == "response":
+            observations = [await h.calls.append_response_observation(h.owner, selected.attempt_id,
+                response=target, response_kind="model_invocation_result")]
+        else:
+            observations = [await h.calls.append_wire_observation(h.owner, selected.attempt_id,
+                observation={"request" if stage == "wire-request" else "response": target,
+                    "attempt_sequence": 1})]
+    before = await h.calls.snapshot(h.binding)
+    before_task, before_objects = await h.tasks.get(h.task.id), dict(client.objects)
+
+    async def forbidden(*args, **kwargs):
+        pytest.fail("Task diagnosis cannot read/upload objects or use another async ledger snapshot")
+
+    monkeypatch.setattr(ArtifactStorageService, "read_object_uri", forbidden)
+    monkeypatch.setattr(ArtifactStorageService, "store_uploaded_bytes", forbidden)
+    monkeypatch.setattr(type(h.calls), "evidence_uploads", forbidden)
+    report = await diagnose(h, h.task.id)
+    assert report.model_upload_journal.store_available and report.model_upload_journal.identity_complete
+    assert report.model_upload_journal.journal_rows == 1
+    fact, = report.model_calls[0].evidence_uploads
+    assert fact.upload_id == original.upload_id and fact.stage == stage and fact.target == target
+    assert fact.created_at == original.created_at
+    assert (fact.origin_task_id, fact.origin_attempt_id, fact.origin_epoch) == (
+        h.owner.task_id, h.owner.attempt_id, h.owner.owner_epoch)
+    expected = ("request" if stage == "request" else
+        "response_observation" if stage == "response" else "wire_observation") if referenced else "unreferenced"
+    assert fact.ledger_reference == expected
+    assert fact.observation_ids == [item.observation_id for item in observations]
+    assert not fact.authoritative and not fact.object_verified
+    from src.schemas.framework_message_diagnostic import FrameworkMessageDiagnostic
+
+    legacy = report.model_dump(exclude={"model_upload_journal"})
+    for call in legacy["model_calls"]:
+        call.pop("evidence_uploads")
+    parsed = FrameworkMessageDiagnostic.model_validate(legacy)
+    assert not parsed.model_upload_journal.store_available and parsed.model_upload_journal.journal_rows is None
+    assert not parsed.model_upload_journal.identity_complete and parsed.model_calls[0].evidence_uploads == []
+    assert ("model_upload_unreferenced" in report.issues) is not referenced
+    assert not report.evidence_objects_verified and not report.automatic_replay_allowed
+    text = report.model_dump_json()
+    assert h.owner.owner_token not in text and "observer_token_sha256" not in text
+    assert "diagnostic-private-body" not in text and '"fixture":"upload"' not in text
+    assert await h.calls.snapshot(h.binding) == before
+    assert await h.tasks.get(h.task.id) == before_task and client.objects == before_objects
+
+
+@pytest.mark.asyncio
+async def test_upload_journal_diagnostic_distinguishes_absent_store_empty_store_and_legacy_report(model_calls_harness):
+    from src.schemas.framework_message_diagnostic import FrameworkMessageDiagnostic
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    await begin(h)
+    await h.calls.freeze(h.owner, policy(h))
+    report = await diagnose(h, h.task.id)
+    assert report.model_upload_journal.store_available and report.model_upload_journal.identity_complete
+    assert report.model_upload_journal.journal_rows == 0
+    old = FrameworkMessageDiagnostic.model_validate(report.model_dump(exclude={"model_upload_journal"}))
+    assert not old.model_upload_journal.store_available and not old.model_upload_journal.identity_complete
+    assert old.model_upload_journal.journal_rows is None
+    renamed = f"diagnostic_upload_old_{uuid4().hex[:12]}"
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"ALTER TABLE {h.calls.uploads_table} RENAME TO {renamed}")
+    try:
+        report = await diagnose(h, h.task.id)
+        assert not report.model_upload_journal.store_available and not report.model_upload_journal.identity_complete
+        assert report.model_upload_journal.journal_rows is None and report.model_calls == []
+        assert "model_upload_store_missing" in report.issues
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute("SELECT to_regclass(%s) AS relation", (h.calls.uploads_table,))
+            assert cur.fetchone()["relation"] is None, "Diagnosis must not create an absent upload table"
+    finally:
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"ALTER TABLE {renamed} RENAME TO {h.calls.uploads_table}")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["schema", "binding", "upload_id", "attempt", "fingerprint", "origin", "intent", "bucket"])
+async def test_upload_journal_diagnostic_keeps_invalid_rows_visible_without_exposing_untrusted_record(
+    model_calls_harness, monkeypatch, changed,
+):
+    from tests.test_framework_model_uploads import admitted, evidence_store
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h, stage="wire-request")
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    await evidence._store_bytes(h.owner, selected, b"diagnostic-private-request", "wire-request")
+    await evidence._store_bytes(h.owner, selected, b"diagnostic-private-response", "wire-response")
+    broken, good = await h.calls.evidence_uploads(h.binding)
+    data = broken.model_dump(mode="json")
+    foreign = "diagnostic-private-foreign"
+    if changed == "schema":
+        data = {"untrusted_payload": foreign}
+    elif changed == "binding":
+        data["binding_id"] = foreign
+    elif changed == "upload_id":
+        data["upload_id"] = uuid4().hex
+    elif changed == "attempt":
+        data["intent"]["attempt_id"] = foreign
+    elif changed == "fingerprint":
+        data["binding_fingerprint"] = foreign
+    elif changed == "origin":
+        data["origin"]["observer_token_sha256"] = "f" * 64
+    elif changed == "intent":
+        data["intent"]["logical_call_id"] = foreign
+    else:
+        data["target"]["storage_uri"] = data["target"]["storage_uri"].replace(
+            f"rustfs://{h.settings.storage.rustfs_bucket}/", f"rustfs://{foreign}/")
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {h.calls.uploads_table} SET record=%s::jsonb WHERE binding_id=%s AND upload_id=%s",
+            (json.dumps(data), h.binding.binding_id, broken.upload_id))
+    before = await h.calls.snapshot(h.binding)
+    report = await diagnose(h, h.task.id)
+    assert report.model_upload_journal.store_available and report.model_upload_journal.journal_rows == 2
+    assert not report.model_upload_journal.identity_complete
+    fact, = report.model_calls[0].evidence_uploads
+    assert fact.upload_id == good.upload_id and fact.target == good.target
+    assert "model_upload_identity_invalid" in report.issues
+    assert report.model_budget.accounting_complete and report.model_budget.reserved_calls == 1
+    text = report.model_dump_json()
+    assert foreign not in text and "diagnostic-private-request" not in text and "diagnostic-private-response" not in text
+    assert "observer_token_sha256" not in text and h.owner.owner_token not in text
+    assert await h.calls.snapshot(h.binding) == before
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT record FROM {h.calls.uploads_table} WHERE binding_id=%s AND upload_id=%s",
+            (h.binding.binding_id, broken.upload_id))
+        assert cur.fetchone()["record"] == data, "Diagnosis must not repair a corrupt upload record"
+
+
+@pytest.mark.asyncio
+async def test_upload_journal_diagnostic_uses_the_same_read_only_snapshot_as_ledger_references(model_calls_harness, monkeypatch):
+    from tests.test_framework_model_uploads import admitted, evidence_store, upload_target
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    target = await evidence.store_request(h.owner, selected, b'{"fixture":"upload"}')
+    original, = await h.calls.evidence_uploads(h.binding)
+    call, = (await h.calls.snapshot(h.binding)).calls
+    another_id = uuid4().hex
+    another = original.model_copy(update={"upload_id": another_id,
+        "target": upload_target(h, selected, "request", another_id)})
+    observed, committed = [], []
+
+    def concurrent_commit(conn, cursor, statement, parameters, context, executemany):
+        if h.tasks._tasks in statement and not committed:
+            committed.append(True)
+            with postgres_connect(h.settings) as other, other.cursor() as cur:
+                h.calls._write(cur, call.model_copy(update={"request": target}))
+                cur.execute(f"INSERT INTO {h.calls.uploads_table}(binding_id,attempt_id,upload_id,record) "
+                    "VALUES(%s,%s,%s,%s::jsonb)",
+                    (h.binding.binding_id, selected.attempt_id, another_id, another.model_dump_json()))
+        if statement.startswith("SELECT attempt_id,upload_id,record FROM"):
+            cursor.execute("SELECT current_setting('transaction_read_only'), current_setting('transaction_isolation')")
+            observed.append(cursor.fetchone())
+
+    engine = postgres_engine(h.settings)
+    event.listen(engine, "before_cursor_execute", concurrent_commit)
+    try:
+        report = await diagnose(h, h.task.id)
+    finally:
+        event.remove(engine, "before_cursor_execute", concurrent_commit)
+    assert observed == [("on", "repeatable read")]
+    assert report.model_upload_journal.journal_rows == 1 and report.model_upload_journal.identity_complete
+    fact, = report.model_calls[0].evidence_uploads
+    assert fact.upload_id == original.upload_id and fact.ledger_reference == "unreferenced"
+    assert report.model_calls[0].request is None
+    assert (await h.calls.snapshot(h.binding)).calls[0].request == target
+    assert len(await h.calls.evidence_uploads(h.binding)) == 2
+    next_report = await diagnose(h, h.task.id)
+    references = {item.upload_id: item.ledger_reference for item in next_report.model_calls[0].evidence_uploads}
+    assert references == {original.upload_id: "request", another_id: "unreferenced"}
+    assert not next_report.automatic_replay_allowed and not next_report.evidence_objects_verified
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["response", "wire-request", "wire-response"])
+async def test_upload_journal_diagnostic_does_not_confuse_duplicate_bytes_with_a_bound_address(model_calls_harness, monkeypatch, stage):
+    from tests.test_framework_model_uploads import admitted, evidence_store
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h, stage=stage)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    store = evidence._store_bytes if stage.startswith("wire-") else evidence._store
+    first = await store(h.owner, selected, b"diagnostic-duplicate-fixture", stage)
+    second = await store(h.owner, selected, b"diagnostic-duplicate-fixture", stage)
+    assert first.sha256 == second.sha256 and first.storage_uri != second.storage_uri
+    if stage == "response":
+        original = await h.calls.append_response_observation(h.owner, selected.attempt_id,
+            response=first, response_kind="model_invocation_result")
+        duplicate = await h.calls.append_response_observation(h.owner, selected.attempt_id,
+            response=second, response_kind="model_invocation_result")
+    else:
+        key = "request" if stage == "wire-request" else "response"
+        original = await h.calls.append_wire_observation(h.owner, selected.attempt_id,
+            observation={key: first, "attempt_sequence": 1})
+        duplicate = await h.calls.append_wire_observation(h.owner, selected.attempt_id,
+            observation={key: second, "attempt_sequence": 1})
+    assert duplicate == original
+    before = await h.calls.snapshot(h.binding)
+    report = await diagnose(h, h.task.id)
+    facts = {item.target.storage_uri: item for item in report.model_calls[0].evidence_uploads}
+    assert report.model_upload_journal.journal_rows == 2 and report.model_upload_journal.identity_complete
+    assert facts[first.storage_uri].ledger_reference != "unreferenced"
+    assert facts[first.storage_uri].observation_ids == [original.observation_id]
+    assert facts[second.storage_uri].ledger_reference == "unreferenced"
+    assert facts[second.storage_uri].observation_ids == []
+    assert await h.calls.snapshot(h.binding) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("changed", ["owner_binding", "parent_call"])
+async def test_upload_journal_diagnostic_reports_unverifiable_parent_without_fabricating_zero_uploads(model_calls_harness, monkeypatch, changed):
+    from src.runtime.postgres_runtime_owner import runtime_owner_table
+    from tests.test_framework_model_uploads import admitted, evidence_store
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    await evidence.store_request(h.owner, selected, b'{"fixture":"upload"}')
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        if changed == "owner_binding":
+            cur.execute(f"UPDATE {runtime_owner_table(h.settings)} SET runtime_binding="
+                "jsonb_set(runtime_binding,'{prompt_version}',%s::jsonb) WHERE binding_id=%s",
+                (json.dumps("diagnostic-private-foreign"), h.binding.binding_id))
+        else:
+            cur.execute(f"UPDATE {h.calls.calls_table} SET record=%s::jsonb WHERE binding_id=%s",
+                ('{"private_payload":"diagnostic-private-foreign"}', h.binding.binding_id))
+    report = await diagnose(h, h.task.id)
+    assert report.model_upload_journal.store_available and report.model_upload_journal.journal_rows == 1
+    assert not report.model_upload_journal.identity_complete
+    assert all(call.evidence_uploads == [] for call in report.model_calls)
+    assert ("model_upload_binding_mismatch" if changed == "owner_binding" else "model_upload_identity_invalid") in report.issues
+    assert "diagnostic-private-foreign" not in report.model_dump_json()
+    assert not report.automatic_replay_allowed and not report.evidence_objects_verified
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("stage", ["response", "wire-response"])
+@pytest.mark.parametrize("phase", ["completed", "unknown"])
+async def test_upload_journal_diagnostic_never_promotes_an_unreferenced_terminal_candidate(model_calls_harness, monkeypatch, stage, phase):
+    from tests.test_framework_model_uploads import admitted, evidence_store
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h, stage=stage)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    store = evidence._store_bytes if stage.startswith("wire-") else evidence._store
+    await store(h.owner, selected, b"diagnostic-terminal-fixture", stage)
+    if phase == "completed":
+        await h.calls.complete(h.owner, selected.attempt_id, usage=usage())
+    else:
+        await h.calls.mark_unknown(h.owner, selected.attempt_id, code="fixture_unknown")
+    before = await h.calls.snapshot(h.binding)
+    report = await diagnose(h, h.task.id)
+    fact, = report.model_calls[0].evidence_uploads
+    assert report.model_calls[0].phase == phase and fact.ledger_reference == "unreferenced"
+    assert not fact.authoritative and not fact.object_verified
+    assert not report.automatic_replay_allowed and not report.evidence_objects_verified
+    assert await h.calls.snapshot(h.binding) == before
+
+
+@pytest.mark.asyncio
+async def test_upload_journal_diagnostic_retains_predecessor_origin_after_explicit_transfer(model_calls_harness, monkeypatch):
+    from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
+    from tests.test_framework_model_reservation_transfer import replacement
+    from tests.test_framework_model_uploads import admitted, evidence_store
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h, begin_execution=False)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    await evidence.store_request(h.owner, selected, b'{"fixture":"upload"}')
+    original, = (await h.calls.snapshot(h.binding)).calls
+    successor = await replacement(h, h.task)
+    await h.calls.transfer_ready(successor.runtime_owner, expected=original)
+    before = await h.calls.snapshot(h.binding)
+    report = await diagnose(h, h.task.id)
+    fact, = report.model_calls[0].evidence_uploads
+    assert report.model_upload_journal.identity_complete and fact.origin_attempt_id == h.owner.attempt_id
+    assert fact.origin_attempt_id != successor.attempt_id and fact.ledger_reference == "unreferenced"
+    assert report.model_calls[0].owner_attempt_id == successor.attempt_id
+    with pytest.raises(FrameworkModelRecoveryRequired, match="request_upload_requires_reconciliation"):
+        await h.calls.start(successor.runtime_owner, selected.attempt_id)
+    assert await h.calls.snapshot(h.binding) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("written", [False, True])
+async def test_upload_journal_diagnostic_after_real_uploader_termination_never_claims_object_success(
+    model_calls_harness, monkeypatch, tmp_path, written,
+):
+    import asyncio
+    import multiprocessing
+    from src.application.artifacts.artifact_storage_service import ArtifactStorageService
+    from tests.test_framework_model_uploads import admitted, upload_worker_until_ack
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h)
+    assert await h.tasks.renew_framework_execution(h.task, 120)
+    before = await h.calls.snapshot(h.binding)
+    context = multiprocessing.get_context("spawn")
+    entered = context.Event()
+    process = context.Process(target=upload_worker_until_ack,
+        args=(h.settings.model_dump(mode="json"), h.owner.model_dump(mode="json"),
+            selected.model_dump(mode="json"), str(tmp_path), written, entered))
+    try:
+        process.start()
+        assert await asyncio.to_thread(entered.wait, 35), f"Uploader did not reach PUT; exit={process.exitcode}"
+        uploads = await h.calls.evidence_uploads(h.binding)
+        assert len(uploads) == 1 and process.is_alive()
+        process.terminate()
+        await asyncio.to_thread(process.join, 10)
+        assert not process.is_alive() and process.exitcode != 0
+
+        async def forbidden(*args, **kwargs):
+            pytest.fail("Crash diagnosis must not probe or rewrite objects")
+
+        monkeypatch.setattr(ArtifactStorageService, "read_object_uri", forbidden)
+        monkeypatch.setattr(ArtifactStorageService, "store_uploaded_bytes", forbidden)
+        report = await diagnose(h, h.task.id)
+        fact, = report.model_calls[0].evidence_uploads
+        assert report.model_upload_journal.identity_complete and report.model_upload_journal.journal_rows == 1
+        assert fact.target == uploads[0].target and fact.ledger_reference == "unreferenced"
+        assert not fact.object_verified and not fact.authoritative and not report.automatic_replay_allowed
+        assert not report.evidence_objects_verified
+        assert await h.calls.snapshot(h.binding) == before
+        assert await h.calls.evidence_uploads(h.binding) == uploads
+        assert len(list(tmp_path.iterdir())) == written
+    finally:
+        if process.is_alive():
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+
+
+@pytest.mark.asyncio
+async def test_upload_journal_diagnostic_never_reads_foreign_turn_canaries(model_calls_harness, monkeypatch):
+    from tests.test_framework_model_uploads import admitted, evidence_store
+    from tests.test_runtime_binding_persistence import make_binding, make_command, make_message, make_payload
+
+    h = model_calls_harness
+    isolate_absent_stores(h)
+    selected = await admitted(h)
+    evidence, objects, client = evidence_store(h, monkeypatch)
+    await evidence.store_request(h.owner, selected, b'{"fixture":"upload"}')
+    foreign = make_binding(h.session_id, f"foreign-turn-{uuid4().hex}")
+    await h.tasks.submit_v2(make_command(h, foreign), make_payload().model_copy(update={"submit_mode": "queued"}), make_message(h, foreign),
+        idempotency_key=uuid4().hex, model_budget=policy(h))
+    # Corrupt canaries in another admitted Turn must be excluded in SQL before
+    # decoding. This does not claim that the foreign row is a valid execution.
+    payload = '{"private_payload":"diagnostic-private-foreign"}'
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"INSERT INTO {h.calls.calls_table}(binding_id,attempt_id,record) VALUES(%s,%s,%s::jsonb)",
+            (foreign.binding_id, "foreign-attempt", payload))
+        cur.execute(f"INSERT INTO {h.calls.uploads_table}(binding_id,attempt_id,upload_id,record) VALUES(%s,%s,%s,%s::jsonb)",
+            (foreign.binding_id, "foreign-attempt", uuid4().hex, payload))
+    before = await h.calls.snapshot(h.binding)
+    report = await diagnose(h, h.task.id)
+    assert report.model_upload_journal.identity_complete and report.model_upload_journal.journal_rows == 1
+    assert len(report.model_calls) == len(report.model_calls[0].evidence_uploads) == 1
+    assert "model_upload_identity_invalid" not in report.issues
+    assert "diagnostic-private-foreign" not in report.model_dump_json() and foreign.binding_id not in report.model_dump_json()
+    assert await h.calls.snapshot(h.binding) == before

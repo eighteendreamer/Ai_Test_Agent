@@ -18,6 +18,7 @@ from src.schemas.framework_model_call import FrameworkModelBudget, FrameworkMode
 from src.schemas.framework_message_diagnostic import (
     FrameworkMessageDiagnostic, MessageCheckpointFact, MessageInputFact, MessageModelBudgetFact,
     MessageModelCallFact, MessageModelWireFact, MessageOwnerFact, MessageProjectionFact, MessageTaskFact, MessageToolJobFact,
+    MessageModelUploadJournalFact, MessageModelUploadFact,
 )
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_message_diagnostic import MessageStageFact
@@ -51,7 +52,9 @@ class FrameworkMessageDiagnostics:
             raise
         logger.info("framework_message_diagnosed", extra={"task_id": task_id,
             "binding_id": report.binding.binding_id, "issue_codes": report.issues,
-            "model_call_count": len(report.model_calls), "checkpoint_count": len(report.checkpoints)})
+            "model_call_count": len(report.model_calls), "checkpoint_count": len(report.checkpoints),
+            "model_upload_rows": report.model_upload_journal.journal_rows,
+            "model_upload_identity_complete": report.model_upload_journal.identity_complete})
         return report
 
     def _inspect(self, task_id, session_id):
@@ -89,7 +92,7 @@ class FrameworkMessageDiagnostics:
                 if attempt is None:
                     issues.append("task_attempt_missing")
             owner = self._owner(cur, task, binding, session, observation["observed_at"], issues)
-            budget, calls = self._models(cur, binding, issues, observed_at=observation["observed_at"])
+            budget, calls, upload_journal = self._models(cur, binding, issues, observed_at=observation["observed_at"])
             admission = self._input(cur, task, binding, budget.policy, issues)
             checkpoints = self._checkpoints(cur, binding, issues)
             jobs = self._jobs(cur, task, binding, issues)
@@ -100,6 +103,7 @@ class FrameworkMessageDiagnostics:
                     attempt_id=task["attempt_id"], attempt_no=task["attempt_no"], attempt_status=attempt_status,
                     interrupt_requested=task["interrupt_requested"]),
                 input=admission, owner=owner, stage=stage, model_budget=budget, model_calls=calls,
+                model_upload_journal=upload_journal,
                 checkpoints=checkpoints, tool_jobs=jobs, projection=projection, issues=list(dict.fromkeys(issues)))
 
     def _stage(self, cur, task, binding, issues):
@@ -242,6 +246,7 @@ class FrameworkMessageDiagnostics:
             actual_tokens=accounting.actual_tokens if accounting else None,
             root_activity_seconds=root_activity_seconds,
             root_activity_sources_available=root_activity_sources_available)
+        upload_journal, uploads = self._uploads(cur, ledger, binding, calls, issues)
         facts = []
         for call in calls:
             if call.phase in {"ready", "invoking", "unknown"}:
@@ -263,8 +268,61 @@ class FrameworkMessageDiagnostics:
                 response_observations=call.response_observations, settled_response_id=call.settled_response_id,
                 wire_observations=[MessageModelWireFact(**item.model_dump(exclude={"schema_version", "request_headers",
                     "response_headers"})) for item in call.wire_observations],
+                evidence_uploads=uploads.get(call.intent.attempt_id, []),
                 created_at=call.created_at, started_at=call.started_at, settled_at=call.settled_at))
-        return budget, facts
+        return budget, facts, upload_journal
+
+    def _uploads(self, cur, ledger, binding, calls, issues):
+        # The existing read-only transaction owns this snapshot. Never use the
+        # async object/readback service or infer object existence from a journal.
+        table = _table(ledger.uploads_table)
+        if not _exists(cur, table):
+            issues.append("model_upload_store_missing")
+            return MessageModelUploadJournalFact(), {}
+        cur.execute(f"SELECT attempt_id,upload_id,record FROM {table} WHERE binding_id=%s "
+            "ORDER BY record->>'created_at',upload_id", (binding.binding_id,))
+        rows = cur.fetchall()
+        if not _exists(cur, _table(runtime_owner_table(self._settings))):
+            issues.append("model_upload_binding_unavailable")
+            return MessageModelUploadJournalFact(store_available=True, journal_rows=len(rows)), {}
+        try:
+            ledger._require_binding(cur, binding)
+        except ValueError:
+            issues.append("model_upload_binding_mismatch")
+            return MessageModelUploadJournalFact(store_available=True, journal_rows=len(rows)), {}
+        by_attempt = {call.intent.attempt_id: call for call in calls}
+        facts, complete = {}, True
+        for row in rows:
+            call = by_attempt.get(row["attempt_id"])
+            try:
+                item = ledger._decode_evidence_upload(row["record"], binding=binding, call=call,
+                    attempt_id=row["attempt_id"], upload_id=row["upload_id"])
+            except ValueError as exc:
+                complete = False
+                issues.append("model_upload_identity_invalid")
+                logger.warning("framework_model_upload_diagnostic_rejected", extra={
+                    "binding_id": binding.binding_id, "error_type": type(exc).__name__})
+                continue
+            observations, reference = [], "unreferenced"
+            if item.stage == "request":
+                if call.request == item.target:
+                    reference = "request"
+            elif item.stage == "response":
+                observations = [entry.observation_id for entry in call.response_observations if entry.response == item.target]
+                if observations:
+                    reference = "response_observation"
+            else:
+                observations = [entry.observation_id for entry in call.wire_observations
+                    if (entry.request if item.stage == "wire-request" else entry.response) == item.target]
+                if observations:
+                    reference = "wire_observation"
+            if reference == "unreferenced":
+                issues.append("model_upload_unreferenced")
+            facts.setdefault(call.intent.attempt_id, []).append(MessageModelUploadFact(
+                upload_id=item.upload_id, stage=item.stage, target=item.target, created_at=item.created_at,
+                origin_task_id=item.origin.owner_task_id, origin_attempt_id=item.origin.owner_attempt_id,
+                origin_epoch=item.origin.owner_epoch, ledger_reference=reference, observation_ids=observations))
+        return MessageModelUploadJournalFact(store_available=True, journal_rows=len(rows), identity_complete=complete), facts
 
     def _checkpoints(self, cur, binding, issues):
         schema = self._settings.deep_agents.checkpoint_schema
