@@ -14,6 +14,7 @@ from src.runtime.resource_lease_manager import (
     ExpiredResourceLease,
     RedisResourceLeaseManager,
 )
+from src.runtime.task_deferred import TaskDeferred
 
 LOGGER = logging.getLogger(__name__)
 CleanupCallback = Callable[[ExpiredResourceLease], Awaitable[None]]
@@ -99,13 +100,24 @@ class ResourceCleanupTaskHandler:
         task_id = str(payload.get("task_id") or f"task_cleanup_{lease.lease_token}")
         context = get_request_context()
         worker_id = str(context.worker_id if context else "cleanup")
-        if not await self._store.begin(task_id, lease, worker_id=worker_id):
+        begin_result = await self._store.begin(task_id, lease, worker_id=worker_id)
+        if begin_result is False or begin_result == "terminal":
             # Crash after PG commit but before Redis finalization/ACK: replay only
             # the fenced finalization, never call the external adapter again.
             await self._manager.complete_cleanup(lease)
             if payload.get("cleanup_reason") == "orphan_inventory":
                 await self._manager.complete_orphan_delivery(task_id)
             return
+        if begin_result == "in_progress":
+            LOGGER.info("resource_cleanup_receipt_in_progress", extra={
+                "task_id": task_id,
+                "resource_id": lease.resource_id,
+                "resource_type": lease.resource_type,
+                "worker_id": worker_id,
+            })
+            raise TaskDeferred("cleanup receipt is already running")
+        if begin_result not in {True, "started"}:
+            raise ValueError(f"Unsupported cleanup begin result: {begin_result!r}")
         try:
             if not lease.external_resource_id and not lease.allocation_id:
                 await self._store.finish(task_id, worker_id=worker_id, status="skipped")

@@ -6519,3 +6519,48 @@ git diff --check
 首次组合唯一失败为既有 foreign owner epoch 样本的 `Activity interval ends before it starts`，单测复跑与第二次组合均通过；该非稳定时间边界观察保留，不修改断言或生产计量规则。根目录 `compileall`、`git diff --check` 及提交前状态检查仍待执行；ruff/mypy 未安装，未执行。真实供应商、RustFS、领域 Runner、精确内部等待／崩溃尾段、官方 saver conformance、E3/E4 与完整 v4 仍未完成。
 
 本步只修改根活动读取、ToolJob 回归测试及本实施记录，不新增恢复权限或自动重试。用户 v3 草稿保持未修改、未暂存、未提交；本节证明的是 Worker claim epoch 歧义被拒绝，不等于完整 C/H09 或全系统 v4 完成。
+
+## 141. A3／H06／§10.1：清理 receipt 运行中不可被重复领取（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `bdf757299`／§140。§97–§100 已提供资源清理 receipt 与 SessionResource 的只读未知效果对账，但 `PostgresResourceCleanupStore.begin()` 仍用 `ON CONFLICT ... UPDATE` 把同一 `task_id` 的 `running` receipt 改成新的 Worker、递增 attempts 并返回真值。两个 Redis consumer group、重复投递或旧 Worker 尚未确认停止时，第二个 Handler 因而会再次进入外部清理 callback；只读对账并不能撤销这次盲重派。
+
+依据 v4 §6.3／§10.1–§10.2、A3/H06 的“未知效果先查询、不凭超时认定未发生、不盲重试”规则，复用已有 PostgreSQL receipt 行锁、`RedisTaskWorker` 的 `TaskDeferred` pending 语义和稳定 `task_id`。领取结果采用最小三态：`started` 表示本次获得 callback 权限，`in_progress` 表示已有未闭合外部效果、只能保留 pending，`terminal` 表示已有提交后的 completed/skipped receipt、只做既有 quota finalization。失败 receipt 仍沿既有显式 delivery retry 路径重新开始；没有新增调度器、DDL、外部停止假设或自动补偿。
+
+### TDD 红测与最小实现
+
+1. 首轮测试装配暴露 fake store 缺 `finish()` 和遗漏导入，修正装配后有效红测为 **2 failed、25 deselected，约 4 秒，exit 1**：Handler 对 `in_progress` 继续调用 callback 并尝试 finish；真实 PostgreSQL 第二次 `begin()` 返回 `True`，没有稳定领取状态。
+2. `PostgresResourceCleanupStore._begin_sync()` 改为先 `INSERT ... ON CONFLICT DO NOTHING`，冲突后在同一事务 `FOR UPDATE` 读取既有 receipt；`running` 返回 `in_progress` 且不改 Worker/attempts，`completed/skipped` 返回 `terminal`，仅 `failed` 允许原有 retry 更新为 `running`。未知状态明确报错，不静默重置。
+3. `ResourceCleanupTaskHandler` 识别三态；`in_progress` 记录安全结构化日志并抛 `TaskDeferred("cleanup receipt is already running")`，因此 Redis 不 ACK、不转移、不调用外部 adapter、不释放资源配额。旧 bool 测试替身的 `False`/`True` 仍兼容，生产路径只由 receipt store 返回三态。
+
+### 实际验证
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，复用用户已启动的 PostgreSQL／Redis；没有启动 Docker、浏览器、生产路由或真实供应商，没有升级依赖或调用付费模型。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py -k `
+  'does_not_call_external_adapter_for_in_progress_receipt or does_not_reclaim_running_receipt' `
+  -q -rs --tb=short
+# 2 passed，3.54 秒，exit 0
+
+$env:RUN_LIVE_REDIS_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_resource_cleanup_worker.py tests/test_resource_cleanup_entrypoint.py `
+  tests/test_browser_resource_harness.py tests/test_framework_turn_memory_reconciliation.py `
+  tests/test_lifespan_resource_cleanup.py -q -rs --tb=short
+# 53 passed、1 skipped，5.74 秒，exit 0；唯一 skip 为既有 RUN_LIVE_MYSQL_TESTS 门
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_live_redis_task_delivery.py tests/test_live_task_outbox.py `
+  -q -rs --tb=short
+# 30 passed，3.02 秒，exit 0；真实 Redis／PostgreSQL outbox 组无 skip
+```
+
+另用同一真实 PostgreSQL store 的独立并发 probe 运行两个 `begin()`：结果为 `['started', 'in_progress']`，随后只读回执保持 `attempts=1` 和首个 Worker；`failed → begin()` 的显式重试 probe 返回 `started` 且 attempts 递增为 2。此前同一 probe 在修复前得到 `[True, True]`、`attempts=2`，该失败事实不被后续绿色覆盖。
+
+### 交付边界与剩余出口
+
+本节修改 `Agent_Server/src/runtime/postgres_resource_cleanup_store.py`、`Agent_Server/src/runtime/resource_cleanup_worker.py`、`Agent_Server/tests/test_resource_cleanup_worker.py` 及本实施记录；用户既有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 草稿、日志、配置和本地数据不纳入。receipt `running` 仍是未知外部效果，需后续查询／人工或有依据补偿；本步没有证明 Docker／浏览器／Runner 已停止，没有实现 SessionResource/外部 Runner 的补偿，也没有完成 A3、H06、H09 或完整 v4。下一步继续沿真实失败样本推进其余未知效果与精确停止出口。

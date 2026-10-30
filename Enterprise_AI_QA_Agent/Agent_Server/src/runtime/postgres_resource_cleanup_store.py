@@ -6,7 +6,7 @@ import asyncio
 import json
 import logging
 from dataclasses import asdict
-from typing import Any
+from typing import Any, Literal
 
 from psycopg import sql
 
@@ -17,6 +17,8 @@ from src.schemas.resource_cleanup import ResourceCleanupReconciliation
 
 
 LOGGER = logging.getLogger(__name__)
+
+ResourceCleanupBeginResult = Literal["started", "in_progress", "terminal"]
 
 _RECEIPT_IDENTITY_FIELDS = (
     "resource_id",
@@ -165,12 +167,23 @@ class PostgresResourceCleanupStore:
                 )
             """).format(self._table))
 
-    async def begin(self, task_id: str, lease: ExpiredResourceLease, *, worker_id: str) -> bool:
-        """False means an earlier delivery already committed its terminal receipt.
+    async def begin(
+        self,
+        task_id: str,
+        lease: ExpiredResourceLease,
+        *,
+        worker_id: str,
+    ) -> ResourceCleanupBeginResult:
+        """Claim one cleanup delivery without taking over an active receipt.
 
         Delivery ownership is provided by RedisTaskWorker. The external callback
         must also be idempotent: a crash can occur after deletion but before this
         receipt commits. Docker cleanup therefore requires an immutable full ID.
+
+        ``in_progress`` is deliberately distinct from ``terminal``. A second
+        delivery cannot infer that an active external cleanup stopped, so it must
+        remain pending for read-only reconciliation instead of running the
+        callback or finalizing the lease.
         """
         record = asdict(lease)
         record.pop("lease_token")
@@ -221,18 +234,49 @@ class PostgresResourceCleanupStore:
             """).format(self._table), (task_id, allocation_id))
             return cur.fetchone() is not None
 
-    def _begin_sync(self, task_id: str, record: dict, worker_id: str) -> bool:
+    def _begin_sync(
+        self,
+        task_id: str,
+        record: dict,
+        worker_id: str,
+    ) -> ResourceCleanupBeginResult:
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(sql.SQL("""
-                INSERT INTO {table} AS job (task_id, record, status, worker_id)
+                INSERT INTO {table} (task_id, record, status, worker_id)
                 VALUES (%s, %s::jsonb, 'running', %s)
-                ON CONFLICT (task_id) DO UPDATE
-                SET status = 'running', worker_id = EXCLUDED.worker_id,
-                    attempts = job.attempts + 1, error_type = NULL, updated_at = NOW()
-                WHERE job.status NOT IN ('completed', 'skipped')
+                ON CONFLICT (task_id) DO NOTHING
                 RETURNING task_id
             """).format(table=self._table), (task_id, json.dumps(record), worker_id))
-            return cur.fetchone() is not None
+            if cur.fetchone() is not None:
+                return "started"
+
+            cur.execute(sql.SQL("""
+                SELECT record, status
+                FROM {}
+                WHERE task_id = %s
+                FOR UPDATE
+            """).format(self._table), (task_id,))
+            existing = cur.fetchone()
+            if existing is None:
+                raise RuntimeError(f"Cleanup receipt disappeared for task {task_id}")
+            if existing["status"] in {"completed", "skipped"}:
+                return "terminal"
+            if existing["status"] == "running":
+                return "in_progress"
+            if existing["status"] != "failed":
+                raise ValueError(
+                    f"Cleanup receipt has unsupported status {existing['status']!r} for task {task_id}"
+                )
+            cur.execute(sql.SQL("""
+                UPDATE {}
+                SET status = 'running', worker_id = %s,
+                    attempts = attempts + 1, error_type = NULL, updated_at = NOW()
+                WHERE task_id = %s AND status = 'failed'
+                RETURNING task_id
+            """).format(self._table), (worker_id, task_id))
+            if cur.fetchone() is None:
+                raise RuntimeError(f"Cleanup receipt claim was lost for task {task_id}")
+            return "started"
 
     async def finish(self, task_id: str, *, worker_id: str, status: str,
                      error_type: str | None = None) -> None:

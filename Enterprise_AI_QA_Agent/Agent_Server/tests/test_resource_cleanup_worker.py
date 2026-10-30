@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from dataclasses import replace
 from types import SimpleNamespace
+from uuid import uuid4
 
 import pytest
+from psycopg import sql
 
 from src.infrastructure.redis_task_queue import QueuedTask
 from src.application.sessions.session_service import SessionService
@@ -16,8 +19,14 @@ from src.runtime.resource_cleanup_worker import (
     ResourceCleanupTaskHandler,
     ResourceCleanupWorker,
 )
-from src.runtime.postgres_resource_cleanup_store import reconcile_cleanup_receipt
+from src.runtime.postgres_resource_cleanup_store import (
+    PostgresResourceCleanupStore,
+    reconcile_cleanup_receipt,
+)
 from src.runtime.resource_lease_manager import ExpiredResourceLease
+from src.core.config import get_settings
+from src.infrastructure.postgres_runtime import postgres_connect
+from src.runtime.task_deferred import TaskDeferred
 from src.schemas.session import SessionStatus
 from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.schemas.session_resource import (
@@ -198,6 +207,60 @@ async def test_pg_commit_then_redis_failure_replays_only_finalization():
     await handler(task)
     assert calls == ["container-1"]
     assert manager.finalized == ["slot-1"]
+
+
+@pytest.mark.asyncio
+async def test_cleanup_handler_does_not_call_external_adapter_for_in_progress_receipt():
+    calls = []
+
+    class InProgressStore:
+        async def begin(self, *_args, **_kwargs):
+            return "in_progress"
+
+        async def finish(self, *_args, **_kwargs):
+            raise AssertionError("an in-progress receipt must not be finalized")
+
+    async def docker(_lease):
+        calls.append(True)
+
+    manager = Manager()
+    handler = ResourceCleanupTaskHandler(InProgressStore(), {"docker": docker}, manager=manager)
+    with pytest.raises(TaskDeferred, match="cleanup receipt is already running"):
+        await handler(QueuedTask("1-0", {
+            "task_type": "cleanup_task",
+            **expired_lease("docker", "slot-in-progress", "container-in-progress").__dict__,
+        }))
+    assert calls == []
+    assert manager.finalized == []
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1",
+    reason="set RUN_LIVE_POSTGRES_TESTS=1 for the durable cleanup receipt contract",
+)
+@pytest.mark.asyncio
+async def test_postgres_cleanup_begin_does_not_reclaim_running_receipt():
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-running-{uuid4().hex}"
+    lease = replace(expired_lease("docker", "slot-running", "container-running"),
+                    lease_token=f"lease-{uuid4().hex}")
+    try:
+        results = await asyncio.gather(
+            store.begin(task_id, lease, worker_id="worker-a"),
+            store.begin(task_id, lease, worker_id="worker-b"),
+        )
+        assert sorted(results) == ["in_progress", "started"]
+        result = await store.reconcile(task_id, lease)
+        assert result.status == "unknown"
+        assert result.reason_code == "receipt_running"
+        assert result.attempts == 1
+        assert result.worker_id in {"worker-a", "worker-b"}
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
 
 
 def test_cleanup_interval_must_be_positive():
