@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import json
 import logging
+from contextlib import asynccontextmanager
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -19,6 +20,15 @@ from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryReq
 
 
 logger = logging.getLogger(__name__)
+
+
+class FrameworkExecutionDeadlineExceeded(TimeoutError):
+    """Root wall-clock expiry, not an inner model/tool timeout or stop receipt."""
+
+    def __init__(self, binding_id, root_model_budget):
+        self.binding_id = binding_id
+        self.root_model_budget = root_model_budget
+        super().__init__("Framework root execution deadline exhausted")
 
 
 def canonical_model_input(value: Any) -> bytes:
@@ -89,6 +99,35 @@ class FrameworkModelCallPolicy:
         self._calls = calls
         self._model_config_resolver = model_config_resolver
         self._evidence = evidence
+
+    @asynccontextmanager
+    async def execution_scope(self, owner):
+        """Bound initial/resume/continue by the same admitted wall-clock limit.
+
+        No upstream counterpart (checked: root ledger reserve/send checks,
+        document impact call deadlines, Codex remaining_operation_timeout,
+        Python asyncio.Timeout): a fresh invoke timeout is not a root deadline.
+        Cancellation remains cooperative; it cannot prove external effects stop.
+        """
+        deadline, remaining = await self._calls.execution_deadline(owner)
+        logger.info("framework_execution_deadline_selected", extra={"binding_id": owner.binding.binding_id,
+            "deadline_at": deadline, "remaining_seconds": remaining, "source": "original_root_ledger"})
+        timer = asyncio.timeout(max(0, remaining))
+        try:
+            if remaining > 0:
+                async with timer:
+                    yield timer
+                if not timer.expired():
+                    return
+        except TimeoutError:
+            if not timer.expired():
+                raise
+        # Cancellation/late-response accounting has unwound before this read.
+        # Do not invent zero usage or a completion proof for an interrupted graph.
+        material = await self.capture_root_budget(owner.binding)
+        logger.warning("framework_execution_deadline_exhausted", extra={"binding_id": owner.binding.binding_id,
+            "deadline_at": deadline, "external_effects_stopped": False})
+        raise FrameworkExecutionDeadlineExceeded(owner.binding.binding_id, material)
 
     async def capture_root_budget(self, binding) -> dict:
         """Read the existing root ledger without new reservations or settlement."""

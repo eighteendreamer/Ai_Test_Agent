@@ -5835,3 +5835,50 @@ v4 §6.3 要求根活动由持久执行事实计量，不能把 Worker claim/adm
 本节仍不证明内部模型等待、跨 Worker 连续性、崩溃尾段的精确结算、外部请求物理停止或完整根预算覆盖；等待／未知尾段和持久 envelope 的已知限制继续保留。A2/A3、B 其余出口、C 的完整 H09/H11、D/E/F、完整 H01–H12、真实 E3/E4 与整体 v4 目标继续 active。v3 用户草稿和本地测试日志不纳入本节提交。
 
 本节仅提交两个运行时读取源、预算／诊断／工具活动三个测试文件及本实施记录，共六文件。提交前检查完整 diff、实施记录原前缀及暂存范围，v3 草稿 SHA256 仍为续接时实际读取的 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不以更早交接 hash 代替当前事实。本节 commit 以包含本记录的 Git 提交及交付输出追溯；不推送、不建 PR。下一步继续补内部等待来源、跨 Worker 未闭合区间与根活动连续性，再评估预算裁决，不能直接把本次 envelope 接入精确时间限额。
+
+## 128. C／§6.3、§11、H09/H10/H11：受管图沿用原根截止，区分超时来源并保留已返回结果（2026-10-30）
+
+### 续接、根因与依据 → 做法
+
+基线 `fb0160008`／§127。上一回合仅做只读了解，没有新增实现；本轮重新核对 Git、v4、§52–54 和 §125–127，不重复实施已修复的 Delta task-path 顺序问题。工作区原有修改仍只有用户 v3 草稿，其 hash 与 §127 一致。本轮实际推进 C 的持久总体截止子步，不把它改称精确根活动时间完成。
+
+- 已有 `_require_time()` 只在模型预留／发送时检查原 `deadline_at`；`RuntimeService` 则给每次 adapter invoke 一个新的本地超时窗口。真实官方图／SDK／PostgreSQL 反例表明：审批等待后即使根截止已过，批准的工具仍会先执行，直到下一次模型调用才拒绝；没有下一次模型调用的模型／工具等待则不会被该持久截止取消。另有反例确认 blanket `except TimeoutError` 将内层错误误报成了本次 invoke 到期。这是截止职责没有覆盖图执行边界，不是再加模型重试或重建预算可以解决的问题。
+- 依据为原根账本与 owner fence、`application/documents/impact_calls.py` 对原任务剩余截止的消费、本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/codex/codex-rs/rmcp-client/src/rmcp_client.rs::remaining_operation_timeout` 对剩余绝对截止的处理，以及实际 Python 3.11 `asyncio.Timeout` 的 `expired()`／`reschedule(None)` 源码。采用原数据库时钟、原政策和官方异步取消机制；不抄用参考项目的进程内活动计时作为本项目持久事实。本地课程《Agent轨迹与协议鲁棒性》的超时、状态迁移与重复执行要求继续作为验收依据。
+
+### 实现与契约
+
+1. `PostgresFrameworkModelCalls.execution_deadline()` 在原 owner 短事务内读取冻结政策和数据库时钟，返回原截止与剩余时长，不更新政策、不增加预留／结算。旧 owner 在解析模型之前被现有 fence 拒绝；原模型发送检查及截止后的迟到结算规则不变。
+2. `FrameworkModelCallPolicy.execution_scope()` 使用这份剩余截止约束受管 adapter 的模型解析、Harness 构造及图执行。到期后等待取消传播／已有调用记账展开，再读取原根预算材料，抛出专用 `FrameworkExecutionDeadlineExceeded`；已发送但未可靠看到返回的模型继续为 unknown 并保留原预留，不声称零用量。普通取消、内层错误和失租不伪装成根截止。
+3. Adapter 的原请求／saver owner／摘要格式核对移至执行 scope 之前，仍只信任 captured saver owner。初始执行、审批 resume、无新输入 continue 共用此 scope。官方图以同步耐久性返回后立即解除执行计时，之后仅做原生中断／终态核验、原根预算捕获和确定性投影：这些只读收尾不能将已经返回的持久结果改写成超时。已经到期但吞掉取消的图不能通过该解除动作洗掉到期状态；原生消息、结果与终态比较没有放宽。
+4. Runtime 保留原 `termination_reason=interrupted`、`cause=timeout` 和 `runtime.turn_timed_out`，附加 `timeout_source=root_deadline/invocation`；只有本次本地 timer 真正到期才解释为 invoke 超时，原内层 `TimeoutError` 保持可见。根截止停止快照保留原预算材料、不产生 pending resume。实际 Session 入口沿既有非 completed 分支持久化中断，不伪造原生完成证明、原结果资产或应用 completed ACK；任务结算为 interrupted 后重复领取不增加 attempt。
+
+没有依赖、DDL、资产格式版本、公开路由、生产开关或基础设施启停变化。前端 `ExecutionEvent.payload` 原为通用 JSON，本轮沿同一事件名附加来源字段，不另建事件／恢复接口；已核对相应前端审批／流式／重放消费方。
+
+### TDD、中间失败与最终验证
+
+- 第一组红测为 **3 failed，90.43s**，其中模型等待确实未被根截止约束；另外两项是测试错误沿用了名为 `inspect_source(path)` 的 provider 工具回复却注册了 `inspect_value(value)`，不计为生产红测。对齐原回复后，四项最终有效行为红测为 **4 failed，27.83s**：内层超时被吞为中断；过期审批实际产生 `['main.py']` 工具效果；模型与工具等待均未结束。最小实现后 **4 passed，25.12s**。
+- 初版 scope 过宽，新增已完成图只读审计跨截止反例得到 **1 failed，15.71s**：原图已经返回并提交终态，却在延迟的只读核验中被取消。将 scope 的执行计时解除点明确置于同步耐久图返回处，不放宽终态校验；该反例纳入后续绿色组合。
+- 新 Session 消费方首次 **1 failed，9.22s**：测试先手工推进 message stage 又调用初始消息入口，导致合法的重复执行保护拒绝。改为走真实 InputOrchestrator／Session 入口，仅控制 fixture 模型选择；随后 **1 passed，8.34s**。该失败是测试装配错误，不是放宽 message stage 的理由。
+- 首轮模型／账本／Runtime／adapter 消费方 **164 passed，279.55s**；它早于只读审计边界修正和最终 Session 用例，不代表最终源码完整回归。
+
+后端工作目录 `Agent_Server`，环境为 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`，实际执行：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_approval_runtime.py tests/test_framework_harness_settings.py tests/test_framework_cognitive_limits.py tests/test_framework_delta_replay_order.py tests/test_framework_approval_recovery.py -q -rs --tb=short
+# 137 passed，606.46s（0:10:06），exit 0，无 skip/deselect；早于追加最后一条 Session 用例
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_admission.py tests/test_framework_model_budget_projection.py tests/test_framework_message_diagnostics.py tests/test_framework_context_runtime.py tests/test_framework_task_control.py tests/test_deep_agent_runtime_adapter.py -q -rs --tb=short
+# 最终源码：275 passed，670.10s（0:11:10），exit 0，无 skip/deselect，包含全部十条新用例
+```
+
+原始日志为本地 `.codex-logs/c128-*.log`，不提交。137 项组合包含原审批独立 Worker 强杀组和 Delta 严格消息比较；275 项包含预算、上下文、任务停止／重投递和 Session 消费方。新根截止专项使用固定 SDK／本地合成 HTTP／真实隔离 PostgreSQL+Redis，审批用例重建 provider/adapter；它本身不是根截止专项的独立 Worker 强杀验收。所有组合范围重叠，不相加；整体证据最高 E2，不把受控工具或本地对象后端标成真实领域 Runner／RustFS。
+
+前端工作目录 `agent_web`，实际执行 `npm run test -- src/stores/sessionFrameworkApproval.test.ts src/stores/sessionStreaming.test.ts src/stores/sessionAssistantStreamReplay.test.ts src/composables/useSSEStream.test.ts`，**4 文件／29 passed，2.98s，exit 0**；`npm run typecheck` **exit 0**。根目录实际执行 `.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 和新增／修改代码 EOF 检查，均通过；`ruff`／`mypy` 未安装，未执行独立 Python lint/typecheck，未安装新工具。
+
+### 边界、提交与剩余出口
+
+本步约束的是受管 adapter 从模型解析／Harness 组装到同步耐久图返回的执行区间；不是图前所有上下文／DTO 阶段、所有排队任务的主动截止回收器或外部 Runner 的物理停止机制。计时依赖数据库读取后的剩余时长和事件循环协作取消，不宣称分布式精确硬截止。总截止仍消费原冻结时间，不能与排除审批／排队的根活动时间混称。截止后的只读结果核验、迟到记账和既有源只读恢复不因此获得／失去图重执行权限。
+
+内部等待来源、跨 Worker 活动连续性、崩溃尾段结算与停止回执、完整活动时间限额、根截止专项独立进程故障验收和全部停止边界仍需继续推进；不能把 §127 的 persisted envelope 直接接入精确时间限额。A2/A3、B/C 其余出口、D/E/F、完整 H01–H12、官方 saver conformance、真实 E3/E4 和整体 v4 目标仍未完成并保持 active。本轮未请求真实供应商、RustFS、浏览器、压测／扫描／领域目标，未启停服务。
+
+本节提交范围仅为 `.gitignore` 的精确测试例外、四个生产源文件、新截止测试文件和本记录，共七文件。用户 v3 草稿、配置、测试日志和本地数据不纳入暂存／提交；v3 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`。commit 以包含本节的 Git 提交及交付输出追溯，不推送、不建 PR。

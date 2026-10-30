@@ -89,6 +89,10 @@ class DeepAgentRuntimeAdapter:
         return "ledger" if self._model_call_policy is not None else "none"
 
     async def execute(self, request: DeepAgentRuntimeRequest) -> DeepAgentRuntimeResult:
+        if not request.session_id or not request.turn_id or not request.model_key:
+            raise DeepAgentRuntimeError(
+                "Deep Agents runtime requires session_id, turn_id and model_key."
+            )
         if (
             request.interrupt_on or request.resume is not None or request.continue_from_checkpoint
         ) and self._checkpointer_factory is None:
@@ -101,7 +105,23 @@ class DeepAgentRuntimeAdapter:
             else nullcontext(None)
         )
         async with checkpoint_context as checkpointer:
-            return await self._execute(request, checkpointer=checkpointer)
+            execution_owner = getattr(checkpointer, "runtime_owner", None)
+            require_summary_coverage_version(request.summary_coverage_version)
+            if ((request.summary_coverage_version is not None)
+                != (execution_owner is not None and execution_owner.binding.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION)):
+                raise DeepAgentRuntimeError("Native summary coverage differs from its bound runtime contract.")
+            if execution_owner is not None:
+                binding = execution_owner.binding
+                if (binding.session_id != request.session_id or binding.turn_id != request.turn_id
+                    or binding.checkpoint_namespace != request.checkpoint_namespace):
+                    raise DeepAgentRuntimeError("Checkpoint owner does not match the runtime request binding.")
+            if self._model_call_policy is not None and execution_owner is None:
+                raise DeepAgentRuntimeError("Governed model calls require a captured checkpoint owner.")
+            budget_context = (self._model_call_policy.execution_scope(execution_owner)
+                if self._model_call_policy is not None else nullcontext())
+            async with budget_context as execution_deadline:
+                return await self._execute(request, checkpointer=checkpointer, execution_owner=execution_owner,
+                    execution_deadline=execution_deadline)
 
     @asynccontextmanager
     async def open_native_reader(self, graph_input, *, source):
@@ -146,24 +166,9 @@ class DeepAgentRuntimeAdapter:
             **_structured_output_options(flags.get("structured_output_version")), **options)
 
     async def _execute(
-        self, request: DeepAgentRuntimeRequest, *, checkpointer: Any
+        self, request: DeepAgentRuntimeRequest, *, checkpointer: Any, execution_owner: Any,
+        execution_deadline: Any,
     ) -> DeepAgentRuntimeResult:
-        if not request.session_id or not request.turn_id or not request.model_key:
-            raise DeepAgentRuntimeError(
-                "Deep Agents runtime requires session_id, turn_id and model_key."
-            )
-
-        execution_owner = getattr(checkpointer, "runtime_owner", None)
-        require_summary_coverage_version(request.summary_coverage_version)
-        if ((request.summary_coverage_version is not None)
-            != (execution_owner is not None and execution_owner.binding.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION)):
-            raise DeepAgentRuntimeError("Native summary coverage differs from its bound runtime contract.")
-        if execution_owner is not None:
-            binding = execution_owner.binding
-            if (binding.session_id != request.session_id or binding.turn_id != request.turn_id
-                or binding.checkpoint_namespace != request.checkpoint_namespace):
-                raise DeepAgentRuntimeError("Checkpoint owner does not match the runtime request binding.")
-
         stage = _pilot_stage(request)
         native_terminal = None
         native_checkpoint_timestamp = None
@@ -189,8 +194,6 @@ class DeepAgentRuntimeAdapter:
             else:
                 harness_kwargs = {}
             if self._model_call_policy is not None:
-                if execution_owner is None:
-                    raise DeepAgentRuntimeError("Governed model calls require a captured checkpoint owner.")
                 from src.application.deep_agents.model_call_middleware import configure_model_policy
 
                 harness_kwargs = configure_model_policy(harness_kwargs, policy=self._model_call_policy,
@@ -268,6 +271,12 @@ class DeepAgentRuntimeAdapter:
                 else:
                     result = await agent.ainvoke(invoke_input, config=invoke_config, **persistence_options)
                     subagent_events = []
+                # Sync durability has returned the original graph outcome.
+                # Only native audit/accounting/projection remains; expiry must
+                # not erase a committed completion or approval wait. A graph
+                # that swallowed our cancellation cannot disarm an expired timer.
+                if execution_deadline is not None and not execution_deadline.expired():
+                    execution_deadline.reschedule(None)
                 native_interrupts = []
                 if execution_owner is not None:
                     from src.application.deep_agents.native_interrupts import collect_pending_tool_interrupts

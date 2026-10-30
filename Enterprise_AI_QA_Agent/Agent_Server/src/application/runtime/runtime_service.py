@@ -14,6 +14,7 @@ from uuid import uuid4
 from pydantic import ValidationError
 
 from src.application.models.model_runtime_service import ModelRuntimeService
+from src.application.models.framework_model_call_policy import FrameworkExecutionDeadlineExceeded
 from src.application.deep_agents import DeepAgentRuntimeAdapter, DeepAgentRuntimeRequest
 from src.application.deep_agents.runtime_adapter import _pilot_stage
 from src.application.deep_agents.framework_transcript import append_turn_input, require_closed_transcript
@@ -573,10 +574,21 @@ class RuntimeService:
             name=f"deep-agent-turn:{session.id}:{request.turn_id}",
         )
         self._runtime_control.register_interruptible_task(session.id, execution_task)
+        invocation_timeout = asyncio.timeout(self._deep_agent_turn_timeout_seconds)
         try:
-            async with asyncio.timeout(self._deep_agent_turn_timeout_seconds):
+            async with invocation_timeout:
                 result = await execution_task
+        except FrameworkExecutionDeadlineExceeded as exc:
+            if request.runtime_binding is None or request.runtime_binding.binding_id != exc.binding_id:
+                raise
+            return await self._build_deep_agent_interrupted_result(
+                session, state, pilot_stage=pilot_stage, reason=str(exc), cause="timeout",
+                projection_identity=projection_identity, timeout_source="root_deadline",
+                root_model_budget=exc.root_model_budget,
+            )
         except TimeoutError:
+            if not invocation_timeout.expired():
+                raise
             return await self._build_deep_agent_interrupted_result(
                 session,
                 state,
@@ -587,6 +599,7 @@ class RuntimeService:
                 ),
                 cause="timeout",
                 projection_identity=projection_identity,
+                timeout_source="invocation",
             )
         except asyncio.CancelledError:
             if not self._runtime_control.is_interrupt_requested(session.id):
@@ -725,6 +738,8 @@ class RuntimeService:
         reason: str,
         cause: str,
         projection_identity: FrameworkProjectionIdentity | None = None,
+        timeout_source: str | None = None,
+        root_model_budget: dict[str, Any] | None = None,
     ) -> RuntimeTurnResult:
         """Map a bounded Deep Agents stop to existing terminal runtime contracts.
 
@@ -739,6 +754,7 @@ class RuntimeService:
                 "turn_id": state.get("turn_id", ""),
                 "pilot_stage": pilot_stage,
                 "cause": cause,
+                "timeout_source": timeout_source,
                 "resumable": False,
             },
         )
@@ -747,6 +763,8 @@ class RuntimeService:
             "harness": "deepagents",
             "pilot_stage": pilot_stage,
             "cause": cause,
+            **({"timeout_source": timeout_source} if timeout_source is not None else {}),
+            **({"root_model_budget": root_model_budget} if root_model_budget is not None else {}),
         }
         state["final_response"] = ""
         state["termination_reason"] = "interrupted"
@@ -763,6 +781,7 @@ class RuntimeService:
             pilot_stage=pilot_stage,
             cause=cause,
             resumable=False,
+            **({"timeout_source": timeout_source} if timeout_source is not None else {}),
         )
         snapshot = self._build_snapshot(session, state, session.snapshot_count + 1, identity=projection_identity)
         return RuntimeTurnResult(
