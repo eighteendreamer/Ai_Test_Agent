@@ -91,6 +91,26 @@ async def test_corrupt_durable_identity_cannot_grant_model_send_permission(model
         assert cur.fetchone()["phase"] == "ready"
 
 
+@pytest.mark.asyncio
+async def test_snapshot_rejects_model_call_from_foreign_worker_attempt(model_calls_harness):
+    """A model ledger owner must have a matching persisted Worker claim."""
+    from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
+
+    h = model_calls_harness
+    await h.calls.freeze(h.owner, policy(h))
+    await begin(h)
+    record = await h.calls.prepare_initial(h.owner, intent(position_version=1))
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"""UPDATE {h.calls.calls_table} SET record=jsonb_set(
+            jsonb_set(jsonb_set(record,'{{owner_task_id}}',%s::jsonb),
+                '{{owner_attempt_id}}',%s::jsonb),'{{owner_epoch}}',%s::jsonb)
+            WHERE binding_id=%s AND attempt_id=%s""",
+            (json.dumps("foreign-task"), json.dumps("foreign-attempt"), json.dumps(99),
+             h.binding.binding_id, record.intent.attempt_id))
+    with pytest.raises(FrameworkModelRecoveryRequired, match="owner"):
+        await h.calls.snapshot(h.binding)
+
+
 async def begin(h):
     await h.tasks.begin(h.task, resource_id="model-call-test", fencing_token=1)
 

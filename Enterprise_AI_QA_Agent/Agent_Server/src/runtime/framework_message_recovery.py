@@ -100,7 +100,7 @@ def _recoverable(cur, tasks, session, binding, stage, origin, *, finalizing=Fals
     if tasks._v2_input_hash(origin["input_payload"], binding, budget) != stage.input_sha256:
         _reject("Message recovery budget or input digest differs from admission")
     try:
-        snapshot = ledger._snapshot(cur, binding.binding_id)
+        snapshot = ledger._snapshot(cur, binding)
     except FrameworkModelRecoveryRequired as exc:
         raise FrameworkMessageStageRecoveryRequired("Message model facts require reconciliation") from exc
     proof = {"resume_phase": stage.phase}

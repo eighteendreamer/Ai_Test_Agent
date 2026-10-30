@@ -132,7 +132,7 @@ def _event_hashes(cur, settings, session_id, identities):
 
 
 def _model_hash(cur, settings, binding):
-    snapshot = PostgresFrameworkModelCalls(settings)._snapshot(cur, binding.binding_id)
+    snapshot = PostgresFrameworkModelCalls(settings)._snapshot(cur, binding)
     # This receipt acknowledges already-committed application output; it never
     # imports a model response or advances a graph. Legacy completed ledger facts
     # may lack response assets. Hash them as-is, without inventing those assets.

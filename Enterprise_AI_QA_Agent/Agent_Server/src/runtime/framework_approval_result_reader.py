@@ -105,7 +105,7 @@ def read_approval_originals(cur, tasks, binding, task_id, continuation, *, allow
         "Approval result preparation differs from its original invocation event boundary")
     ledger = PostgresFrameworkModelCalls(settings)
     ledger._require_binding(cur, binding)
-    budget = ledger._snapshot(cur, binding.binding_id)
+    budget = ledger._snapshot(cur, binding)
     cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (stage.task_id,))
     root = cur.fetchone()
     _require(root is not None and root["runtime_binding"] == binding.model_dump(mode="json")

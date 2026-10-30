@@ -473,7 +473,7 @@ class FrameworkMessageStages:
                         return original
                     from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 
-                    if PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding.binding_id).calls:
+                    if PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding).calls:
                         raise FrameworkMessageStageRecoveryRequired("Semantic input must be frozen before model reservation")
                     manifest["semantic_input"] = semantic_input
                     values.update(source_manifest=manifest, source_sha256=approval_value_hash(manifest))
@@ -522,7 +522,7 @@ class FrameworkMessageStages:
                     session = self._tasks._lock_session(cur, owner.binding.session_id)
                     _require_frozen_sources(cur, self._tasks, session, original)
                     prepared, call = prepared_model_call(original, owner.binding,
-                        PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding.binding_id))
+                        PostgresFrameworkModelCalls(self._settings)._snapshot(cur, owner.binding))
                     if prepared.request is not None and (call is None or call.phase != "completed"):
                         raise FrameworkMessageStageRecoveryRequired("Recovered semantic input has no settled result")
                 if expected == "submitted":

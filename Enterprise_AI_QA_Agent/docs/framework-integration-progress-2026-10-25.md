@@ -6439,3 +6439,30 @@ git diff --check
 本步证明的是 ToolJob → Worker task/attempt 的跨来源读取连续性；它不证明 owner epoch 的完整历史回放、模型调用 → Worker 的同类谱系核对、内部等待来源、崩溃尾段结算、外部进程物理停止或完整根预算覆盖。缺少执行引用的历史 ToolJob 仍明确属于弱兼容来源，不能据此宣称精确活动时间。完整 v4、A2/A3、B/C 其余出口、真实供应商／RustFS／领域 Runner、官方 saver conformance、全量前后端和 E3/E4 继续 active。
 
 本步拟提交 `Agent_Server/src/runtime/postgres_framework_model_calls.py`、两份相关测试和本实施记录；用户草稿 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 未修改、未暂存、未提交。下一步继续查证模型调用与 Worker attempt 的跨来源谱系及精确内部等待，不把本步绿色结果扩大为完整 H09。
+## 138. C／§6.3、H09/H11：模型账本 owner 与持久 Worker claim 连续性（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 8268dbe89／§137。ToolJob 读取已拒绝跨 Worker task/attempt，但模型账本的 snapshot 仍只校验 JSON 内的 owner_task_id/owner_attempt_id/owner_epoch，没有核对这些身份是否有同一 Turn 的持久 Worker claim 证据；runtime owner 表只保存当前 owner，不能证明已结算或已转移模型调用的历史 attempt。于是外来或被篡改的模型 owner 可能进入预算读取、恢复和投影消费方，造成模型／Worker／ToolJob 三条链的连续性断裂。
+
+依据现有 framework_event_completion._require_producer 的生产查询模式、PostgresAgentTaskStore 的 task/attempt 表和 agent_task.claimed 事件：读取侧在同一事务中以 binding、task、attempt、worker 及 claim event 的 _harness_context 建立持久 owner 集合；模型调用自身 owner 以及每个 reservation transfer 的前驱／后继都必须命中该集合。没有事件表、claim 缺失、epoch 非法或同一 attempt 出现多 epoch 时进入 recovery required，不用当前 runtime owner 猜测历史身份。
+
+### TDD 与最小实现
+
+1. 新增真实 PostgreSQL 红测，先持久保存正常模型 reservation，再篡改 ledger record 为 foreign task/attempt/epoch；旧实现实际 1 failed，7.68 秒，DID NOT RAISE，确认问题在读取校验缺失。首次实现查询误用了事件表不存在的 attempt_id/worker_id 列，实际 PostgreSQL 报 UndefinedColumn；按同一生产 _require_producer 的 payload 约定移除后继续，未修改数据库结构。
+2. PostgresFrameworkModelCalls._snapshot() 现在接受完整 RuntimeBinding，在读取账本后查询同一 binding 的 task/attempt 与 agent_task.claimed 事件，校验当前 owner 和 reservation transfer 全部身份；缺失或歧义记录日志并抛 FrameworkModelRecoveryRequired。root 活动的兼容弱来源显式使用 validate_owner=False，不把历史 ToolJob 缺引用升级成伪身份。
+3. 同步所有内部 _snapshot 消费方：消息阶段、消息恢复/结果读取、审批结果读取和应用 projection 均改为传入完整 binding。一次大组回归先发现 4 个旧签名调用导致 AttributeError，修正后 deadline 失败子组 4 passed，77 deselected，28.14 秒。
+
+### 实际验证与边界
+
+固定 .venv-framework-v2、工作目录 Agent_Server，RUN_LIVE_POSTGRES_TESTS=1，复用用户已启动 PostgreSQL／Redis；未启停服务、未改生产路由、未调用付费模型。
+
+    tests/test_framework_model_calls.py                         25 passed，73.84 秒
+    tests/test_framework_model_reservation_transfer.py          17 passed，62.07 秒
+    模型账本／预算／策略／截止／诊断组合（含首次签名回归） 231 passed，4 failed（均旧签名）
+    deadline 失败子组修正后                                      4 passed，77 deselected，28.14 秒
+    消息阶段／恢复／结果／审批／应用 projection 消费方          147 passed，488.37 秒
+
+最后一组覆盖修正后的直接消费方；此前组合中的 231 项通过与 4 项签名失败不重复计入最终绿色结果。尚未运行 ruff/mypy（环境未安装）；compileall、完整 v4、真实供应商／RustFS／领域 Runner、内部等待来源、崩溃尾段结算和 E3/E4 仍待后续阶段。没有新增 DDL、配置、依赖或公开路由。
+
+本步提交范围为模型 ledger、五个内部消费方、模型账本红测和本实施记录；用户 v3 草稿保持未修改、未暂存、未提交。该步只证明模型调用 → Worker claim 的读取连续性，不等于完整 H09 或全系统 v4 完成。

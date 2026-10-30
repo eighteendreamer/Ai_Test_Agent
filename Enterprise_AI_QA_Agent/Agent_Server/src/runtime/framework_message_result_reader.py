@@ -110,7 +110,7 @@ def read_message_originals(cur, tasks, binding, task_id, *, allow_unsealed=False
             "Message result original preparation differs from its invocation event boundary")
     ledger = PostgresFrameworkModelCalls(settings)
     ledger._require_binding(cur, binding)
-    budget = ledger._snapshot(cur, binding.binding_id)
+    budget = ledger._snapshot(cur, binding)
     cur.execute(f"SELECT * FROM {settings.database.postgres_agent_task_table} WHERE id=%s", (stage.task_id,))
     root = cur.fetchone()
     _same_input(stage, root, task, binding)

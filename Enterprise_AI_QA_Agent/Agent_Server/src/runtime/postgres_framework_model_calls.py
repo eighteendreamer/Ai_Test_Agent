@@ -277,7 +277,7 @@ class PostgresFrameworkModelCalls:
         def read():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 self._require_binding(cur, binding)
-                return self._snapshot(cur, binding.binding_id)
+                return self._snapshot(cur, binding)
         return await asyncio.to_thread(read)
 
     async def root_activity_intervals(
@@ -323,7 +323,7 @@ class PostgresFrameworkModelCalls:
         request stopped. Open intervals retain the explicit observation bound.
         """
         self._require_binding(cur, binding)
-        snapshot = snapshot or self._snapshot(cur, binding.binding_id)
+        snapshot = snapshot or self._snapshot(cur, binding, validate_owner=False)
         intervals = [
             (call.started_at, call.settled_at)
             for call in snapshot.calls
@@ -504,7 +504,7 @@ class PostgresFrameworkModelCalls:
         def reserve():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 self._owned(cur, owner, before_execution=True)
-                snapshot = self._snapshot(cur, owner.binding.binding_id)
+                snapshot = self._snapshot(cur, owner.binding)
                 if initial:
                     original = self._initial_position(snapshot.calls, intent)
                     if original is not None:
@@ -697,7 +697,7 @@ class PostgresFrameworkModelCalls:
                 if call != expected:
                     raise FrameworkModelRecoveryRequired("reservation_predecessor_changed", call)
                 self._require_unsent_reservation(call)
-                snapshot = self._snapshot(cur, owner.binding.binding_id)
+                snapshot = self._snapshot(cur, owner.binding)
                 self._require_time(cur, snapshot.policy)
                 if snapshot.charged_tokens > snapshot.policy.max_tokens:
                     raise FrameworkModelBudgetExceeded("tokens")
@@ -746,7 +746,7 @@ class PostgresFrameworkModelCalls:
                 if call.phase != "ready":
                     return call, False
                 self._require_request_upload_binding(cur, call)
-                snapshot = self._snapshot(cur, owner.binding.binding_id)
+                snapshot = self._snapshot(cur, owner.binding)
                 self._require_time(cur, snapshot.policy)
                 # Actual usage can exceed a prior estimate after other branches
                 # prepared. Recheck before granting a still-unsent request.
@@ -850,12 +850,94 @@ class PostgresFrameworkModelCalls:
             raise FrameworkModelBudgetMissing("Turn has no frozen model budget")
         return FrameworkModelBudget.model_validate(row["policy"])
 
-    def _snapshot(self, cur, binding_id):
-        policy = self._policy(cur, binding_id)
+    def _snapshot(self, cur, binding: RuntimeBinding, *, validate_owner=True):
+        policy = self._policy(cur, binding.binding_id)
         cur.execute(f"SELECT attempt_id,record FROM {self.calls_table} WHERE binding_id=%s "
-            "ORDER BY record->>'created_at', attempt_id", (binding_id,))
-        calls = [self._decode_call(row["record"], binding_id, row["attempt_id"]) for row in cur.fetchall()]
+            "ORDER BY record->>'created_at', attempt_id", (binding.binding_id,))
+        calls = [self._decode_call(row["record"], binding.binding_id, row["attempt_id"])
+            for row in cur.fetchall()]
+        if validate_owner:
+            self._validate_call_owner_lineage(cur, binding, calls)
         return FrameworkModelBudgetSnapshot(policy=policy, calls=calls)
+
+    def _validate_call_owner_lineage(self, cur, binding: RuntimeBinding, calls):
+        """Require every model owner to have a durable Worker claim fact.
+
+        The runtime owner row only describes the latest lease.  Model calls may
+        retain an older attempt (and reservation transfers retain its
+        predecessor), so the immutable task/attempt rows plus the claimed event
+        are the only sufficient historical evidence for a read-side ledger.
+        """
+        if not calls:
+            return
+        event_table = getattr(self._settings.database, "postgres_event_table", None)
+        if event_table is None:
+            logger.warning("framework_model_call_owner_unverifiable", extra={
+                "binding_id": binding.binding_id, "call_count": len(calls),
+                "reason": "event_store_unconfigured"})
+            raise FrameworkModelRecoveryRequired("owner_claim_evidence_unavailable", calls[0])
+
+        required = {}
+        for call in calls:
+            required[(call.owner_task_id, call.owner_attempt_id, call.owner_epoch)] = call
+            for transfer in call.reservation_transfers:
+                required[(transfer.predecessor.owner_task_id, transfer.predecessor.owner_attempt_id,
+                    transfer.predecessor.owner_epoch)] = call
+                required[(transfer.successor.owner_task_id, transfer.successor.owner_attempt_id,
+                    transfer.successor.owner_epoch)] = call
+
+        tasks_table = self._settings.database.postgres_agent_task_table
+        attempts_table = self._settings.database.postgres_agent_attempt_table
+        cur.execute(
+            f"""SELECT task.id AS task_id, attempt.id AS attempt_id, attempt.worker_id,
+                event.payload->>'owner_epoch' AS owner_epoch
+            FROM {tasks_table} AS task
+            JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
+            JOIN {event_table} AS event ON event.session_id=task.session_id
+                AND event.type='agent_task.claimed'
+                AND event.payload->>'task_id'=task.id
+                AND event.payload->>'binding_id'=%s
+                AND event.payload->'_harness_context'->>'attempt_id'=attempt.id
+                AND event.payload->'_harness_context'->>'worker_id'=attempt.worker_id
+            WHERE task.runtime_binding->>'binding_id'=%s
+              AND task.runtime_binding->>'session_id'=%s
+              AND task.runtime_binding->>'turn_id'=%s
+              AND task.runtime_binding=%s::jsonb
+            ORDER BY task.sequence, attempt.attempt_no, event.event_sequence""",
+            (binding.binding_id, binding.binding_id, binding.session_id, binding.turn_id,
+             binding.model_dump_json()))
+        observed = set()
+        observed_epochs = {}
+        for row in cur.fetchall():
+            try:
+                epoch = int(row["owner_epoch"])
+            except (TypeError, ValueError) as exc:
+                logger.warning("framework_model_call_owner_claim_invalid", extra={
+                    "binding_id": binding.binding_id, "task_id": row["task_id"],
+                    "attempt_id": row["attempt_id"], "error_type": type(exc).__name__})
+                raise FrameworkModelRecoveryRequired("owner_claim_epoch_invalid", calls[0]) from exc
+            attempt_identity = (row["task_id"], row["attempt_id"])
+            observed_epochs.setdefault(attempt_identity, set()).add(epoch)
+            observed.add((row["task_id"], row["attempt_id"], epoch))
+
+        ambiguous = [identity for identity, epochs in observed_epochs.items() if len(epochs) != 1]
+        if ambiguous:
+            task_id, attempt_id = ambiguous[0]
+            logger.warning("framework_model_call_owner_claim_ambiguous", extra={
+                "binding_id": binding.binding_id, "owner_task_id": task_id,
+                "owner_attempt_id": attempt_id, "owner_epochs": sorted(observed_epochs[(task_id, attempt_id)])})
+            call = next(iter(required.values()))
+            raise FrameworkModelRecoveryRequired("owner_claim_ambiguous", call)
+
+        missing = [identity for identity in required if identity not in observed]
+        if missing:
+            identity = missing[0]
+            call = required[identity]
+            logger.warning("framework_model_call_owner_rejected", extra={
+                "binding_id": binding.binding_id, "model_attempt_id": call.intent.attempt_id,
+                "owner_task_id": identity[0], "owner_attempt_id": identity[1],
+                "owner_epoch": identity[2], "reason": "worker_claim_missing"})
+            raise FrameworkModelRecoveryRequired("owner_claim_missing", call)
 
     def _call(self, cur, binding_id, attempt_id):
         cur.execute(f"SELECT record FROM {self.calls_table} WHERE binding_id=%s AND attempt_id=%s FOR UPDATE",
