@@ -4,6 +4,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import multiprocessing
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -23,6 +24,81 @@ from tests.test_framework_model_calls import model_calls_harness, begin
 from tests.test_live_postgres_concurrency import _drop_tables
 
 
+def tool_job_paused_in_independent_worker(settings_data, binding_data, prefix, gate):
+    """Run one real v2 Worker until a bound ToolJob is durably running.
+
+    The graph/runtime body is deliberately blocked only after the ToolJob
+    claim commits.  This gives the parent process a cross-process kill point
+    that exercises the ToolJob journal rather than the Worker journal alone.
+    """
+    async def run():
+        from redis.asyncio import Redis
+        from src.core.config import Settings
+        from src.infrastructure.redis_task_queue import RedisTaskQueue
+        from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+        from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+        from src.application.runtime.tool_job_service import ToolJobService
+        from src.runtime.redis_task_worker import RedisTaskWorker
+        from src.runtime.resource_lease_manager import RedisResourceLeaseManager
+        from src.schemas.agent import ToolDescriptor
+        from src.schemas.runtime_binding import RuntimeBinding
+        from tests.test_agent_task_dispatch import Runtime, build_services
+
+        settings = Settings.model_validate(settings_data)
+        binding = RuntimeBinding.model_validate(binding_data)
+        redis = Redis.from_url(settings.database.redis_url, decode_responses=True)
+        resources = RedisResourceLeaseManager(settings.database.redis_url, key_prefix=prefix, client=redis)
+        await resources.connect()
+
+        class ToolJobBlockingRuntime(Runtime):
+            async def execute_turn(self, session, request, **kwargs):
+                jobs = ToolJobService(PostgresToolJobStore(settings))
+                tool = ToolDescriptor(
+                    key="fixture.independent.kill",
+                    name="Independent kill fixture",
+                    description="A controlled ToolJob journal fixture",
+                    category="test",
+                )
+                created = await jobs.create_job(
+                    tool=tool,
+                    call_id=f"independent-tool:{request.turn_id}",
+                    session_id=session.id,
+                    turn_id=request.turn_id,
+                    trace_id=request.trace_id,
+                    input_payload={"fixture": "worker-kill"},
+                )
+                claimed = await jobs.claim_execution(created.id)
+                if claimed is None:
+                    raise RuntimeError("ToolJob fixture failed to claim")
+                await redis.rpush(gate + ":tool-running", created.id)
+                await asyncio.Event().wait()
+
+        runtime = ToolJobBlockingRuntime()
+        _, _, _, dispatcher = build_services(settings, runtime, resources)
+        dispatcher.set_framework_capabilities(FrameworkWorkerCapabilities(binding.dependency_lock_sha256, True))
+        queue = RedisTaskQueue(
+            settings.database.redis_url,
+            stream=settings.orchestration.agent_task_v2_stream,
+            group="tool-activity-worker",
+            client=redis,
+        )
+        await queue.connect()
+        try:
+            worker = RedisTaskWorker(
+                queue,
+                consumer="tool-activity-worker",
+                handler=lambda delivery: dispatcher.handle_v2(delivery, worker_id="tool-activity-worker"),
+                block_ms=100,
+            )
+            await worker.run_once()
+        finally:
+            await queue.close()
+            await resources.close()
+            await redis.aclose()
+
+    asyncio.run(run())
+
+
 @pytest_asyncio.fixture
 async def tool_activity_harness(model_calls_harness):
     h = model_calls_harness
@@ -39,6 +115,22 @@ async def tool_activity_harness(model_calls_harness):
             session_id=h.session_id, turn_id=h.binding.turn_id, trace_id="activity-test",
             call_id="activity-call", tool_key="fixture", tool_name="Fixture",
             status=ToolJobStatus.queued, created_at=now, updated_at=now))
+    try:
+        yield h
+    finally:
+        _drop_tables(h.settings, [h.settings.database.postgres_tool_artifact_table,
+            h.settings.database.postgres_tool_job_table])
+
+
+@pytest_asyncio.fixture
+async def independent_tool_kill_harness(model_calls_harness):
+    """Prepare isolated ToolJob tables while keeping the task merely claimed."""
+    h = model_calls_harness
+    suffix = uuid4().hex[:12]
+    h.settings.database.postgres_tool_job_table = f"tool_kill_{suffix}"
+    h.settings.database.postgres_tool_artifact_table = f"tool_kill_art_{suffix}"
+    h.job_store = PostgresToolJobStore(h.settings)
+    await h.job_store.initialize()
     try:
         yield h
     finally:
@@ -207,6 +299,85 @@ async def test_root_reader_keeps_unconfirmed_tool_tail_after_worker_returns(tool
     ], as_of=as_of)
     assert expected[-1][1] == as_of
     assert await reader.root_activity_intervals(h.binding, as_of=as_of) == expected
+
+
+@pytest.mark.asyncio
+async def test_independent_worker_kill_preserves_bound_tool_journal_and_open_root_tail(independent_tool_kill_harness):
+    """A killed independent Worker must not complete or replay its ToolJob."""
+    from redis.asyncio import Redis
+    from src.infrastructure.redis_task_queue import RedisTaskQueue
+    from src.runtime.framework_tool_activity import read_tool_activity
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from tests.test_framework_task_control import wait_gate
+    from tests.test_framework_model_calls import policy
+
+    h = independent_tool_kill_harness
+    await h.calls.freeze(h.owner, policy(h))
+    await h.tasks.defer(h.task, "hand off bound ToolJob to independent Worker")
+    h.settings.orchestration.turn_execution_lease_seconds = 120
+    queue = RedisTaskQueue(
+        h.settings.database.redis_url,
+        stream=h.settings.orchestration.agent_task_v2_stream,
+        group="tool-activity-worker",
+        client=h.redis,
+    )
+    await queue.connect()
+    assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+    process = multiprocessing.get_context("spawn").Process(
+        target=tool_job_paused_in_independent_worker,
+        args=(h.settings.model_dump(mode="json"), h.binding.model_dump(mode="json"), h.prefix, h.prefix + ":tool-kill"),
+    )
+    observer = Redis.from_url(h.settings.database.redis_url, decode_responses=True, socket_timeout=45)
+    try:
+        process.start()
+        reached = await wait_gate(observer, h.prefix + ":tool-kill:tool-running", 60, process=process)
+        tool_job_id = reached[1]
+        running_task = await h.tasks.get(h.task.id)
+        assert running_task.status == "running" and running_task.worker_id == "tool-activity-worker"
+        running_job = await h.job_store.get_job(tool_job_id)
+        assert running_job is not None and running_job.status == ToolJobStatus.running
+        journal_before = read_tool_activity(running_job)
+        assert [event.status for event in journal_before.events] == [ToolJobStatus.queued, ToolJobStatus.running]
+        assert not journal_before.events[-1].output_observed
+
+        process.terminate()
+        await asyncio.to_thread(process.join, 15)
+        assert not process.is_alive() and process.exitcode != 0
+
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(
+                f"UPDATE {h.settings.database.postgres_session_table} SET metadata=jsonb_set(metadata,"
+                "'{turn_lease_expires_at}',to_jsonb(clock_timestamp()-interval '1 second')) WHERE id=%s",
+                (h.session_id,),
+            )
+        recovered = await h.tasks.claim(h.task.id, worker_id="tool-replacement", expected_binding=h.binding)
+        assert recovered.status == "recovery_required" and recovered.attempt_id == running_task.attempt_id
+
+        rebuilt = PostgresToolJobStore(h.settings)
+        persisted = await rebuilt.get_job(tool_job_id)
+        assert persisted is not None and persisted.status == ToolJobStatus.running
+        journal = read_tool_activity(persisted)
+        assert journal.events == journal_before.events
+        as_of = journal.events[-1].observed_at + timedelta(seconds=30)
+        assert journal.activity_intervals(as_of=as_of) == [(journal.events[1].observed_at, as_of)]
+        with pytest.raises(ValueError, match="explicit as_of"):
+            journal.activity_intervals()
+
+        reader = PostgresFrameworkModelCalls(h.settings)
+        intervals = await reader.root_activity_intervals(h.binding, as_of=as_of)
+        # The Worker journal and ToolJob journal overlap; the root reader must
+        # retain their union and, importantly, the unconfirmed ToolJob tail.
+        assert intervals and intervals[-1][1] == as_of
+        assert intervals[-1][0] <= journal.events[1].observed_at
+        assert await h.job_store.get_job(tool_job_id) == persisted
+        assert await rebuilt.list_jobs(session_id=h.session_id)
+        assert await observer.get(h.prefix + ":tool-kill:tool-running") is None
+    finally:
+        if process.is_alive():
+            process.terminate()
+        await asyncio.to_thread(process.join, 15)
+        await queue.close()
+        await observer.aclose()
 
 
 @pytest.mark.asyncio

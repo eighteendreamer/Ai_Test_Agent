@@ -6368,3 +6368,39 @@ npm run typecheck
 ### §135 受影响消费方最终回归补充
 
 源码冻结后，framework recovery／stage／projection／runtime result／approval／Context／diagnostics 选择组实际 **455 passed，2208.64s，exit0，无 skip/deselect**（`c135-final-framework-consumers.log`；包含本步 Context 36 项及既有严格恢复消费方）。Session store／数据导入／事件／队列／reaper／flow／runtime binding 选择组实际 **203 passed、2 skipped，72.79s，exit0**；两个 skip 是既有“transaction ordering requires PostgreSQL”条件测试在该选择中的原有环境标记，不是本步新增逻辑。前端 **29 passed**、`npm run typecheck` **exit 0**。本节不把 skipped 项改写为通过，也不把上述选择组替代全量验收。
+
+## 136. C／§6.3、§11、H09/H11：独立 Worker 强杀后的 ToolJob journal 专项验收（2026-10-31）
+
+### 续接、依据与范围
+
+基线为 `21b178811`／§135。§127 已验证根活动读取会消费持久 Worker／Tool journal，但尚缺“独立 Worker 已实际领取 bound ToolJob、journal 已提交后再强杀”的专门跨进程验收。本节只补该真实失败窗口的回归测试，不修改 ToolJob 调度、owner fence、恢复状态语义，不把租约到期或 `resume_requested` 当成外部工具已停止；用户已启动的 PostgreSQL／Redis 测试资源继续复用。
+
+依据是现有 `PostgresToolJobStore._record_activity()` 的同事务状态边界、`framework_tool_activity.py` 的开放尾段规则、`PostgresFrameworkModelCalls.root_activity_intervals()` 的 Worker／Tool 并集读取，以及 §6.3／§11 的“取消／失租不证明物理停止”不变量。采用方式是复用既有 v2 Redis Worker 和 `ToolJobService`，仅在测试 Runtime 中于 `claim_execution` 提交后阻塞；不引入新的生产执行入口或恢复分支。
+
+### TDD 与实际验证
+
+新增 `test_independent_worker_kill_preserves_bound_tool_journal_and_open_root_tail` 及独立进程测试入口：
+
+1. 测试先创建真实隔离 PostgreSQL ToolJob 表和 v2 AgentTask，独立 Worker 领取任务；测试 Runtime 创建并领取 bound ToolJob，确认 journal 为 `queued → running` 后通过 Redis gate 放行强杀。
+2. 强杀后令 Session turn lease 过期，再由替代 claim 触发原 AgentTask 的 `recovery_required`；ToolJob 保持 `running`，不生成完成状态、不重发、不伪造 output observation。
+3. 重新构造 `PostgresToolJobStore` 读取 journal，显式 `as_of` 时保留开放尾段；无 `as_of` 仍拒绝不完整活动读取。根活动读取核对 Worker 与 Tool journal 重叠后的并集仍延伸至 `as_of`，而不是用 Worker 终态关闭工具尾段。
+
+首次目标运行暴露的是测试断言装配问题（根读取还包含重叠 Worker journal，不能只断言 ToolJob 的起点），非生产行为缺陷；修正为核对并集末端和 ToolJob 尾段包含关系后重新执行：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_framework_tool_activity.py::test_independent_worker_kill_preserves_bound_tool_journal_and_open_root_tail -q -s
+# 1 passed，10.93s，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_framework_tool_activity.py -q
+# 29 passed，65.42s，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_framework_tool_activity.py tests/test_framework_worker_activity.py tests/test_framework_model_budget_projection.py -q
+# 77 passed，112.02s，exit 0
+```
+
+上述测试使用真实 PostgreSQL／Redis、真实独立 Python Worker 进程和真实持久 ToolJob store；没有真实供应商、RustFS、领域 Runner 或生产路由。相关 Worker／Tool／模型预算消费方组合共 **77 passed**。未修改运行时源码，故本节的提交类型为 `test`；`compileall`、全量后端及既有大选择组需在后续源码冻结回归中继续执行。本节不能证明内部等待来源、跨来源精确连续性、外部进程物理停止或完整根预算覆盖已完成。
+
+### 交付边界与剩余出口
+
+本节仅提交 `Agent_Server/tests/test_framework_tool_activity.py` 与本实施记录；保留用户未提交的 v3 方案草稿，不纳入暂存或提交。ToolJob journal 独立 Worker 强杀出口现有真实回归证据，但 C/H09 的内部等待、跨 Worker／模型／ToolJob 精确活动连续性、A2-2/A2-3、A3、完整跨 Turn／逐模式 Harness、真实供应商与 E3/E4 仍继续 active。
