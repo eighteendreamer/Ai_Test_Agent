@@ -260,14 +260,14 @@ def prepared_model_call(stage, binding, snapshot):
 
 
 def _require_frozen_sources(cur, tasks, session, stage):
-    from src.runtime.postgres_session_store import _session_from_row, _message_from_row
+    from src.runtime.postgres_session_store import _session_with_message_rows
 
     manifest = stage.source_manifest or {}
     if not manifest.get("runtime_source_sha256") or not manifest.get("mode_registry_sha256"):
         _reject("Frozen orchestration is missing runtime source admission")
     cur.execute(f"SELECT * FROM {tasks._settings.database.postgres_message_table} "
-        "WHERE session_id=%s ORDER BY created_at ASC", (session["id"],))
-    current = _session_from_row(session, [_message_from_row(row) for row in cur.fetchall()])
+        "WHERE session_id=%s ORDER BY created_at ASC, message_sequence ASC", (session["id"],))
+    current = _session_with_message_rows(session, cur.fetchall())
     if message_runtime_source_hash(current, stage.user_message_id) != manifest["runtime_source_sha256"]:
         _reject("Frozen message runtime sources changed")
 

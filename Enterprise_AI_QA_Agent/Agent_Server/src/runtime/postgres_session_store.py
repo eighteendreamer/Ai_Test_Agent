@@ -16,6 +16,7 @@ from src.core.request_context import get_request_context
 from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.storage_utils import ensure_utc_datetime, make_json_safe
+from src.runtime.session_message_order import initialize_message_order, message_order_backup, migrate_message_order
 from src.runtime.store import (
     ContinuationLeaseLostError,
     EventCursorNotFoundError,
@@ -115,6 +116,15 @@ class PostgresSessionStore:
         self, bundles: list[SessionImportBundle]
     ) -> tuple[int, int]:
         return await asyncio.to_thread(self._import_session_bundles_sync, bundles)
+
+    async def migrate_message_order(self, session_id: str, ordered_message_ids: list[str]) -> None:
+        """Apply only an operator/evidence-supplied order to legacy rows."""
+        await asyncio.to_thread(self._migrate_message_order_sync, session_id, ordered_message_ids)
+
+    def _migrate_message_order_sync(self, session_id: str, ordered_message_ids: list[str]) -> None:
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            migrate_message_order(cur, self._settings.database.postgres_message_table,
+                session_id, ordered_message_ids)
 
     def create_session_in_transaction(self, cur, session: SessionRecord) -> bool:
         """Insert a new session as part of a caller-owned PostgreSQL transaction."""
@@ -516,8 +526,8 @@ class PostgresSessionStore:
                     cur.execute(
                         f"""
                         INSERT INTO {self._settings.database.postgres_message_table} (
-                            id, session_id, role, content, created_at, metadata
-                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                            id, session_id, role, content, created_at, metadata, message_sequence
+                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb, DEFAULT)
                         ON CONFLICT (id) DO NOTHING
                         """,
                         (
@@ -751,6 +761,7 @@ class PostgresSessionStore:
                     )
                     """
                 )
+                initialize_message_order(cur, self._settings.database.postgres_message_table)
                 cur.execute(
                     f"""
                     CREATE TABLE IF NOT EXISTS {self._settings.database.postgres_snapshot_table} (
@@ -899,8 +910,9 @@ class PostgresSessionStore:
                     cur.execute(
                         f"""
                         INSERT INTO {message_table} (
-                            id, session_id, role, content, created_at, metadata
-                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                            id, session_id, role, content, created_at, metadata, message_sequence
+                        ) VALUES (%s, %s, %s, %s, %s, %s::jsonb,
+                            {"NULL" if message.id in session.unsequenced_message_ids else "DEFAULT"})
                         """,
                         (
                             message.id,
@@ -1116,14 +1128,12 @@ class PostgresSessionStore:
                 current_row = cur.fetchone()
                 cur.execute(
                     f"SELECT * FROM {self._settings.database.postgres_message_table} "
-                    "WHERE session_id = %s ORDER BY created_at ASC",
+                    "WHERE session_id = %s ORDER BY created_at ASC, message_sequence ASC",
                     (session.id,),
                 )
-                current_messages = [
-                    _message_from_row(row) for row in (cur.fetchall() or [])
-                ]
+                current_message_rows = cur.fetchall() or []
                 current_snapshot = (
-                    _session_from_row(current_row, current_messages)
+                    _session_with_message_rows(current_row, current_message_rows)
                     if current_row is not None
                     else None
                 )
@@ -1217,8 +1227,9 @@ class PostgresSessionStore:
             cur.execute(
                 f"""
                 INSERT INTO {self._settings.database.postgres_message_table} (
-                    id, session_id, role, content, created_at, metadata
-                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb)
+                    id, session_id, role, content, created_at, metadata, message_sequence
+                ) VALUES (%s, %s, %s, %s, %s, %s::jsonb,
+                    {"NULL" if item.id in session.unsequenced_message_ids else "DEFAULT"})
                 {conflict_clause}
                 """,
                 (
@@ -1242,18 +1253,18 @@ class PostgresSessionStore:
                 row = cur.fetchone()
                 if row is None:
                     return None
-                messages: list[ChatMessage] = []
+                message_rows = []
                 if include_messages:
                     cur.execute(
                         f"""
                         SELECT * FROM {self._settings.database.postgres_message_table}
                         WHERE session_id = %s
-                        ORDER BY created_at ASC
+                        ORDER BY created_at ASC, message_sequence ASC
                         """,
                         (session_id,),
                     )
-                    messages = [_message_from_row(item) for item in (cur.fetchall() or [])]
-        return _session_from_row(row, messages)
+                    message_rows = cur.fetchall() or []
+        return _session_with_message_rows(row, message_rows)
 
     def _list_sessions_sync(
         self,
@@ -1393,7 +1404,7 @@ class PostgresSessionStore:
                       ON m.session_id = rs.id
                     WHERE m.role = ANY(%s)
                       AND BTRIM(m.content) <> ''
-                    ORDER BY m.created_at DESC
+                    ORDER BY m.created_at DESC, m.message_sequence DESC
                     LIMIT %s
                     """,
                     (
@@ -2106,12 +2117,11 @@ class PostgresSessionStore:
                     f"""
                     SELECT * FROM {self._settings.database.postgres_message_table}
                     WHERE session_id = %s
-                    ORDER BY created_at ASC
+                    ORDER BY created_at ASC, message_sequence ASC
                     """,
                     (session_id,),
                 )
-                messages = [_message_from_row(item) for item in (cur.fetchall() or [])]
-                return _session_from_row(row, messages=messages)
+                return _session_with_message_rows(row, cur.fetchall() or [])
 
     def _renew_turn_execution_sync(
         self,
@@ -2615,7 +2625,8 @@ class PostgresSessionStore:
                     session_rows = cur.fetchall() or []
 
                     cur.execute(
-                        f"SELECT * FROM {m_tbl} WHERE session_id IN ({placeholders}) ORDER BY session_id, created_at",
+                        f"SELECT * FROM {m_tbl} WHERE session_id IN ({placeholders}) "
+                        "ORDER BY session_id, created_at, message_sequence",
                         chunk_ids,
                     )
                     msg_rows = cur.fetchall() or []
@@ -2669,6 +2680,8 @@ class PostgresSessionStore:
                         "metadata": dict(s.get("metadata") or {}),
                         "event_count": s["event_count"],
                         "snapshot_count": s["snapshot_count"],
+                        "message_order": message_order_backup(
+                            row["id"] for row in msgs_map.get(sid, []) if row["message_sequence"] is None),
                         "messages": [
                             {"id": m["id"], "role": m["role"], "content": m["content"],
                              "created_at": _iso(m["created_at"]), "metadata": dict(m.get("metadata") or {})}
@@ -2715,6 +2728,12 @@ def _session_from_row(row: dict, messages: list[ChatMessage]) -> SessionRecord:
         snapshot_count=int(row.get("snapshot_count") or 0),
         state_revision=int(row.get("state_revision") or 0),
     )
+
+
+def _session_with_message_rows(row, message_rows):
+    session = _session_from_row(row, [_message_from_row(item) for item in message_rows])
+    session.unsequenced_message_ids = frozenset(item["id"] for item in message_rows if item["message_sequence"] is None)
+    return session
 
 
 def _history_overview_from_row(row: dict) -> dict:

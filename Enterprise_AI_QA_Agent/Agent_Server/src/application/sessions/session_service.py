@@ -233,6 +233,11 @@ class SessionService:
                                 stage=existing,
                                 stages=stages,
                             )
+                    if (frozen is None and prepared_stage is None and task.runtime_binding is not None
+                        and task.runtime_binding.runtime_version in IDENTITY_CONTEXT_RUNTIME_VERSIONS):
+                        from src.runtime.session_message_order import require_context_message_order
+
+                        require_context_message_order(session)
                     if prepared_stage is not None:
                         from src.runtime.framework_message_recovery import prepared_model_call
                         from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls

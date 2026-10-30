@@ -134,17 +134,25 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
                     "framework_transcript_preparation": {"source_input_message_id": "future-user"}}})
             admitted = make_message(h, h.binding).model_copy(update={"content": "repeat"})
             command = make_command(h, h.binding).model_copy(update={"project_id": session.project_id})
+            if index == 0:
+                case, _, _ = context_case()
+                # History must be persisted before admission, not backdated
+                # after it. Keep equal clocks so durable order is exercised.
+                for item in case.messages:
+                    item.created_at = admitted.created_at
+                current = case.messages[3]
+                current.id = admitted.id
+                current.metadata["turn_id"] = h.binding.turn_id
+                admitted = current
+                session.messages = case.messages[:3]
+                if native_prefix:
+                    session.metadata["framework_transcript_asset"] = covered_asset(session, h.binding)
+                await h.store.save_session(session)
             submitted = await h.tasks.submit_v2(command, payload, admitted,
                 idempotency_key=uuid4().hex, model_budget=budget)
             session = await h.store.get_session(h.session_id)
             if index == 0:
-                case, _, _ = context_case()
-                current = case.messages[3]
-                current.id = admitted.id
-                current.metadata["turn_id"] = h.binding.turn_id
-                session.messages = case.messages
-                if native_prefix:
-                    session.metadata["framework_transcript_asset"] = covered_asset(session, h.binding)
+                session.messages.extend(case.messages[4:])
             else:
                 # This intentionally malformed future row in the first sample
                 # remains unprocessed; restore its actual queued classification.

@@ -6328,3 +6328,43 @@ npm run typecheck
 仅提交本轮五文件：三生产文件的同快照诊断/共享上传身份解码/加法默认DTO，原诊断测试文件的31项新增覆盖，以及此append-only记录。提交前核对完整diff、冻结源码四文件SHA256、原记录1009892字节前缀SHA256、v3原SHA256、EOF及五文件精确暂存。用户v3草稿、两份本地取证probe、plugin、日志、配置和本地数据不暂存；具体commit由包含本节的Git提交与交付记录追溯，不推送、不建PR。
 
 本节对应C/A3内部只读诊断可提交子步，不是全系统接入完成。完整v4保持active；下一独立子步优先查证并治理已复现的持久消息顺序缺口，先列清现有全部写读/merge/备份导出消费方和历史coverage迁移边界，再以真实PG失败样本TDD，不在诊断中排序绕过。原未知上传持久回查回执、补引用准入、部分wire、派生清理、完整A2/A3/B/C/H01–H12/D/E/F及真实E3/E4继续保留。
+
+## §135 · v4 B/H08：持久消息顺序治理（进行中，安全迁移边界）
+
+本步承接§134已复现的真实 PostgreSQL 顺序缺口，用户已明确同意兼容策略：新消息保存不可变持久序号；历史同时间戳且无持久顺序证据的记录不按 UUID、物理行顺序或时间戳猜测；原数据及已有冻结审批／恢复链路保留；进入新的框架上下文前必须显式核验或迁移。本节为 append-only 事实记录，不覆盖此前失败或绿色结果，完整 v4 仍 active。
+
+### 查证与根因
+
+- `PostgresSessionStore` 的消息读取、stale merge、claim、导出、recent questions 及冻结 source recovery 原先仅按 `created_at`；真实受控 probe 对同一事务内同一消息执行 100 次 `SET metadata=metadata` 后，消息字段逐 ID 不变但物理版本改变，等时间样本的上下文身份顺序改变，证明物理行顺序不是业务顺序。
+- 项目已有 `event_sequence`／AgentTask sequence 与本地 Codex retained-message ordinal 作为“持久序号而非时钟”的参考；PostgreSQL 官方 sequence/default 语义作为 DDL 依据。采用 nullable `message_sequence BIGINT` + 专属 sequence default，仅未来写入自动编号，不回填旧行、不在读取时 DDL、不改变原 ChatMessage/API 字段或 hash。
+- 新增 `SessionRecord.unsequenced_message_ids` 仅为内部 provenance；备份新增可选 `message_order` marker。旧备份缺 marker、旧行 NULL、显式 unknown 均继续携带 unknown；普通保存、状态追加、重读、导出和 stale merge 不得洗白。冻结／审批恢复不重新编排历史。
+
+### 实施范围
+
+- `session_message_order.py`：初始化表列、sequence、唯一索引；严格解析/导出 marker；上下文门卫仅拦截高置信度的等时歧义；新增显式 `migrate_message_order`，仅接受证据提供的完整身份顺序，拒绝集合不匹配、重复、已混合已知序号的 transcript，不推断顺序。
+- PostgreSQL／内存 Session store：统一按 `created_at, message_sequence` 稳定读取；写入、append、AgentTask submit、import、claim、frozen recovery、bulk export 同步；显式迁移成功后才清除 unknown provenance。新序号不进入消息 DTO、客户端 metadata 或原生 transcript 证明。
+- FrameworkContextService 与新消息 Worker 入口在新的 identity-aware runtime 编排／阶段前调用门卫；冻结 request、prepared/orchestrated recovery 和已有审批恢复不被新门卫改写。Context 测试装配修正为“真实历史先落库、当前输入后受理”，没有修改严格 coverage、原生消息、签名、审批断言。
+- `.gitignore` 仅白名单本轮测试文件；未修改前端协议，核查 settings 数据导入／导出已有通用 JSON 消费方，无 `ChatMessage` 字段消费方。
+
+### TDD 与实际验证
+
+固定 `.venv-framework-v2`、`Agent_Server`，`RUN_LIVE_POSTGRES_TESTS=1`，使用用户已启动的 PostgreSQL／Redis；未启停服务、未改生产路由、未升级依赖、未调用付费模型。日志仅留 `.codex-logs/`，不提交。
+
+1. 原真实等时顺序失败样本：**1 failed、1 passed，9.66s**；契约红测 **5 failed、1 passed，8.96s**；确认缺口不是理想时间间隔问题。
+2. 初始实现目标选择：**6 passed，10.73s**。
+3. 扩展消息顺序、备份 marker、legacy NULL、初始化幂等、upsert/reinitialize、唯一时钟边界、queued/hidden 不误杀及坏 marker：**105 passed，18.27s**（含 `tests/test_session_message_order.py`、数据导入和 Session value contract 选择）。
+4. Context 真实 PostgreSQL／Redis／本地官方 SDK 组（含原 strict coverage／approval／native signature）：**36 passed，379.77s**，无 skip/deselect；最初测试装配失败是“当前输入先受理、历史后写入”，已将测试还原为真实受理顺序，未削弱断言。
+5. 消息顺序专项最终：**40 passed，35.77s，1 个既有 Starlette deprecation warning**；覆盖显式迁移、append/stale merge/claim/export、并发批次、回滚不发布/不复用已消费序号、HTTP 坏 marker 原子跳过、编排前零模型调用、冻结恢复不重新读入等边界。
+6. 前端既有数据导入／导出消费方相关回归：**29 passed，3.46s**；`npm run typecheck` **exit 0**。根目录 `compileall`、`git diff --check` **exit 0**。ruff/mypy 未安装，未运行。
+
+### 尚未完成与发布门
+
+- 历史顺序**尚未自动迁移**；只有调用者提供完整、可审计身份顺序时，显式迁移端口才会为“全 NULL、未混合新序号”的 transcript 写入 ordinal。没有证据的历史记录仍必须在新框架上下文前核验／迁移，不能宣称已恢复顺序。
+- 未以本节绿色子组替代完整 v4 验收；真实供应商、RustFS、领域 Runner、E3/E4、全部前端／后端全量仍未运行。本节后续还需冻结源码后完成受影响 framework recovery／projection／diagnostics 及 store 消费方整组；旧§134 失败记录继续保留。
+- 保护草稿 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 未纳入本步提交；其工作区已有用户草稿改动，未修改、未暂存、未覆盖。
+
+本步对应：v4 B/H08、§3.1 持久 transcript 不变量 → 本节 → `session_message_order.py`、Session store、Context/Runtime 测试 → 上述实际结果 → 历史迁移与完整回归待续。后续继续完整 v4，不把本节当作全系统接入完成。
+
+### §135 受影响消费方最终回归补充
+
+源码冻结后，framework recovery／stage／projection／runtime result／approval／Context／diagnostics 选择组实际 **455 passed，2208.64s，exit0，无 skip/deselect**（`c135-final-framework-consumers.log`；包含本步 Context 36 项及既有严格恢复消费方）。Session store／数据导入／事件／队列／reaper／flow／runtime binding 选择组实际 **203 passed、2 skipped，72.79s，exit0**；两个 skip 是既有“transaction ordering requires PostgreSQL”条件测试在该选择中的原有环境标记，不是本步新增逻辑。前端 **29 passed**、`npm run typecheck` **exit 0**。本节不把 skipped 项改写为通过，也不把上述选择组替代全量验收。

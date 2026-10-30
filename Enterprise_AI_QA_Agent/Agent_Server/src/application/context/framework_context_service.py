@@ -10,6 +10,7 @@ from src.application.context.transcript_hygiene_service import TranscriptHygiene
 from src.application.deep_agents.framework_transcript import deserialize_messages, require_closed_transcript
 from src.application.deep_agents.result_projection import _normalize_messages
 from src.schemas.framework_approval import approval_value_hash
+from src.runtime.session_message_order import require_context_message_order
 from src.schemas.framework_transcript import (
     CONTEXT_RUNTIME_VERSION, IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSIONS,
     SUMMARY_CONTEXT_RUNTIME_VERSION, FrameworkTranscriptAssetV2, FrameworkTranscriptAssetV3, FrameworkTranscriptPreparation,
@@ -101,6 +102,7 @@ class FrameworkContextService:
 
         binding = request.runtime_binding
         try:
+            require_context_message_order(session)
             asset = self.compatible_asset(session, binding)
             if (session.metadata.get("context_summary") or {}).get("summary"):
                 raise ValueError("Legacy context summary requires an identity-aware coverage migration")

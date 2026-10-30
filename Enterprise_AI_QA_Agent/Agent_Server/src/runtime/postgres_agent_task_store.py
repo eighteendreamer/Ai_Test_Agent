@@ -552,7 +552,8 @@ class PostgresAgentTaskStore:
                     (command.session_id,),
                 )
         cur.execute(f"""INSERT INTO {self._settings.database.postgres_message_table}
-            (id,session_id,role,content,created_at,metadata) VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
+            (id,session_id,role,content,created_at,metadata,message_sequence)
+            VALUES (%s,%s,%s,%s,%s,%s::jsonb,DEFAULT)""",
             (message.id, command.session_id, message.role.value, message.content, message.created_at,
              json.dumps(message.metadata, ensure_ascii=False)))
         cur.execute(

@@ -34,6 +34,8 @@ class SessionRecord:
     snapshot_count: int = 0
     # Internal optimistic-write token; deliberately omitted from API DTOs and exports.
     state_revision: int = field(default=0, repr=False, compare=False)
+    # Internal storage provenance, not client metadata or execution authority.
+    unsequenced_message_ids: frozenset[str] = field(default_factory=frozenset, repr=False, compare=False)
 
 
 @dataclass

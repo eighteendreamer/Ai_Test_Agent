@@ -16,6 +16,7 @@ from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 
 from src.domain.models import SessionImportBundle, SessionRecord
+from src.runtime.session_message_order import parse_message_order_backup
 from src.runtime.store import validate_session_import_bundle
 from src.schemas.channel_config import (
     ChannelAdvancedSettings,
@@ -715,6 +716,7 @@ def _session_import_bundle(item: object) -> SessionImportBundle:
         project_id=project_id,
         metadata=metadata,
         messages=messages,
+        unsequenced_message_ids=parse_message_order_backup(item.get("message_order"), messages),
         event_count=_import_count(item, "event_count"),
         snapshot_count=_import_count(item, "snapshot_count"),
     )

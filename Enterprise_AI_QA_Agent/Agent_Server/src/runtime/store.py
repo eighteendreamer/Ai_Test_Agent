@@ -12,6 +12,7 @@ if TYPE_CHECKING:
 
 from src.domain.models import SessionImportBundle, SessionRecord
 from src.infrastructure.storage_utils import ensure_utc_datetime
+from src.runtime.session_message_order import message_order_backup
 from src.schemas.session import (
     ChatMessage,
     ExecutionEvent,
@@ -42,6 +43,9 @@ def validate_session_import_bundle(bundle: SessionImportBundle) -> None:
         raise TypeError("Imported session ID must be a string.")
     if not session_id.strip():
         raise ValueError("Imported session ID must be a non-empty string.")
+    if (not isinstance(bundle.session.unsequenced_message_ids, frozenset)
+        or not bundle.session.unsequenced_message_ids.issubset({item.id for item in bundle.session.messages})):
+        raise ValueError("Imported session message order has invalid identities.")
 
     children = (
         ("message", bundle.session.messages, False),
@@ -504,11 +508,32 @@ class InMemorySessionStore:
             if bool(item.metadata.get("persist_transcript", True)):
                 messages[item.id] = item
         stored.messages = sorted(messages.values(), key=lambda item: ensure_utc_datetime(item.created_at))
+        if current is not None:
+            existing_ids = {item.id for item in current.messages}
+            stored.unsequenced_message_ids = (current.unsequenced_message_ids
+                | (stored.unsequenced_message_ids - existing_ids))
         self._sessions[session.id] = stored
         return session
 
     async def get_session(self, session_id: str) -> SessionRecord | None:
         return deepcopy(self._sessions.get(session_id))
+
+    async def migrate_message_order(self, session_id: str, ordered_message_ids: list[str]) -> None:
+        async with self._lock:
+            session = self._sessions.get(session_id)
+            if session is None:
+                raise KeyError(session_id)
+            actual = [item.id for item in session.messages]
+            if (set(actual) != set(ordered_message_ids) or len(actual) != len(ordered_message_ids)
+                or len(set(ordered_message_ids)) != len(ordered_message_ids)):
+                raise ValueError("Explicit message order does not match the session transcript")
+            if session.unsequenced_message_ids != frozenset(actual):
+                raise ValueError("Explicit migration cannot rewrite an already sequenced transcript")
+            by_id = {item.id: item for item in session.messages}
+            session.messages = [by_id[identity] for identity in ordered_message_ids]
+            session.unsequenced_message_ids = frozenset()
+            session.state_revision += 1
+            session.updated_at = datetime.utcnow()
 
     async def mutate_metadata(
         self, session_id: str, mutate: Callable[[dict], None]
@@ -1282,6 +1307,7 @@ class InMemorySessionStore:
                 "metadata": s.metadata,
                 "event_count": s.event_count,
                 "snapshot_count": s.snapshot_count,
+                "message_order": message_order_backup(s.unsequenced_message_ids),
                 "messages": [
                     {"id": m.id, "role": m.role.value if hasattr(m.role, "value") else str(m.role),
                      "content": m.content, "created_at": _iso(m.created_at), "metadata": m.metadata}
