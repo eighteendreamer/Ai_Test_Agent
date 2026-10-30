@@ -291,8 +291,17 @@ async def test_activity_query_unions_actual_isolated_stores_without_writing_or_s
                     started_at=base + timedelta(seconds=offset) if offset is not None else None,
                     completed_at=base + timedelta(seconds=end) if end is not None else None,
                     metadata={"framework_execution_owner": execution_reference(h.owner)}))
+        # This case intentionally exercises the legacy start/end fallback with
+        # controlled historical timestamps.  A journal observed at the real
+        # current time would be a future fact relative to the explicit as_of.
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"UPDATE {h.settings.database.postgres_tool_job_table} "
+                "SET metadata=metadata-'framework_tool_activity' WHERE session_id=%s", (h.session_id,))
         await h.tasks.finish(h.task, status="failed", error_code="activity_fixture_end")
         with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"UPDATE {h.settings.database.postgres_event_table} SET payload="
+                "payload-'framework_worker_activity' WHERE session_id=%s AND payload->>'task_id'=%s",
+                (h.session_id, h.task.id))
             cur.execute(f"UPDATE {h.tasks._attempts} SET started_at=%s,finished_at=%s WHERE id=%s",
                 (base, base + timedelta(seconds=10), h.task.attempt_id))
             call = (await h.calls.snapshot(h.binding)).calls[0].model_copy(update={

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
@@ -15,6 +16,7 @@ from src.infrastructure.postgres_runtime import postgres_connect
 from src.infrastructure.sqlalchemy_runtime import postgres_engine
 from src.runtime.execution_context import framework_owner_scope
 from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+from src.schemas.framework_model_call import union_activity_intervals
 from src.schemas.tool_job import ToolJobRecord, ToolJobStatus
 from tests.test_agent_task_dispatch import harness
 from tests.test_framework_model_calls import model_calls_harness, begin
@@ -75,6 +77,136 @@ async def test_durable_tool_activity_excludes_child_wait_after_store_rebuild(too
     ]
     assert journal.events[3].observed_at - journal.events[2].observed_at >= timedelta(seconds=0.05)
     assert await h.job_store.get_job(h.job.id) == saved
+
+
+@pytest.mark.asyncio
+async def test_live_root_activity_reader_consumes_persisted_worker_and_tool_journals(tool_activity_harness):
+    """The root reader must use durable journal boundaries, not claim or wait envelopes."""
+    from src.runtime.framework_tool_activity import read_tool_activity
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from tests.test_framework_model_calls import policy
+
+    h = tool_activity_harness
+    await h.calls.freeze(h.owner, policy(h))
+    with framework_owner_scope(h.owner):
+        await h.jobs.claim_execution(h.job.id)
+        await h.jobs.mark_waiting_children(h.job.id, summary="waiting", metadata={"children": ["child"]})
+        await h.jobs.claim_child_wait(h.job.id)
+        await h.jobs.observe_output(h.job.id, status="completed", output_payload={"result": "known"})
+        await h.jobs.finish_output_processing(
+            h.job.id,
+            status=ToolJobStatus.completed,
+            output_payload={"result": "known"},
+            summary="done",
+        )
+    await h.tasks.finish(h.task, status="completed", result_status="completed")
+
+    # Keep the real persisted journal rows, but move their observed timestamps
+    # onto one deterministic UTC axis so the read and its as_of are comparable.
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    worker_times = {"claimed": base, "running": base + timedelta(seconds=10), "completed": base + timedelta(seconds=20)}
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"SELECT id, type, timestamp, payload FROM {h.settings.database.postgres_event_table} "
+            "WHERE session_id=%s AND payload->>'task_id'=%s AND payload ? %s ORDER BY event_sequence",
+            (h.session_id, h.task.id, "framework_worker_activity"),
+        )
+        worker_rows = cur.fetchall()
+        assert [row["type"] for row in worker_rows] == [
+            "agent_task.claimed", "agent_task.running", "agent_task.completed",
+        ]
+        for row in worker_rows:
+            payload = dict(row["payload"])
+            status = payload["framework_worker_activity"]["event"]["status"]
+            observed_at = worker_times[status]
+            payload["framework_worker_activity"]["event"]["observed_at"] = observed_at.isoformat()
+            cur.execute(
+                f"UPDATE {h.settings.database.postgres_event_table} "
+                "SET timestamp=%s, payload=%s::jsonb WHERE id=%s",
+                (observed_at, json.dumps(payload, ensure_ascii=False), row["id"]),
+            )
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_agent_attempt_table} "
+            "SET started_at=%s, finished_at=%s WHERE id=%s",
+            (base, base + timedelta(seconds=20), h.task.attempt_id),
+        )
+
+    saved = await h.job_store.get_job(h.job.id)
+    assert saved is not None
+    events = saved.metadata["framework_tool_activity"]["events"]
+    assert [(event["status"], event["output_observed"]) for event in events] == [
+        ("queued", False), ("running", False), ("waiting_children", False),
+        ("running", False), ("running", True), ("completed", True),
+    ]
+    for event, offset in zip(events, (30, 40, 43, 50, 51, 52), strict=True):
+        event["observed_at"] = (base + timedelta(seconds=offset)).isoformat()
+    saved.metadata["tool_output_observation"]["observed_at"] = (base + timedelta(seconds=51)).isoformat()
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(
+            f"UPDATE {h.settings.database.postgres_tool_job_table} "
+            "SET metadata=%s::jsonb, started_at=%s, completed_at=%s, updated_at=%s, heartbeat_at=%s WHERE id=%s",
+            (
+                json.dumps(saved.metadata, ensure_ascii=False),
+                base + timedelta(seconds=40),
+                base + timedelta(seconds=52),
+                base + timedelta(seconds=52),
+                base + timedelta(seconds=50),
+                h.job.id,
+            ),
+        )
+
+    as_of = base + timedelta(seconds=60)
+    worker = (await h.tasks.get_framework_worker_activity(h.task.id, session_id=h.session_id))[h.task.attempt_id]
+    tool = read_tool_activity(await h.job_store.get_job(h.job.id))
+    assert worker.activity_intervals(as_of=as_of) == [(base + timedelta(seconds=10), base + timedelta(seconds=20))]
+    assert tool.activity_intervals(as_of=as_of) == [
+        (base + timedelta(seconds=40), base + timedelta(seconds=43)),
+        (base + timedelta(seconds=50), base + timedelta(seconds=51)),
+    ]
+
+    # Construct the reader after the fixture's isolated ToolJob relation is
+    # selected; production settings are immutable for a service instance.
+    reader = PostgresFrameworkModelCalls(h.settings)
+    intervals = await reader.root_activity_intervals(h.binding, as_of=as_of)
+    assert intervals == [
+        (base + timedelta(seconds=10), base + timedelta(seconds=20)),
+        (base + timedelta(seconds=40), base + timedelta(seconds=43)),
+        (base + timedelta(seconds=50), base + timedelta(seconds=51)),
+    ]
+    assert (await h.tasks.get_framework_worker_activity(h.task.id, session_id=h.session_id))[h.task.attempt_id] == worker
+    assert read_tool_activity(await h.job_store.get_job(h.job.id)) == tool
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("terminal", ["cancelled", "failed"])
+async def test_root_reader_keeps_unconfirmed_tool_tail_after_worker_returns(tool_activity_harness, terminal):
+    from src.runtime.framework_tool_activity import read_tool_activity
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from tests.test_framework_model_calls import policy
+
+    h = tool_activity_harness
+    await h.calls.freeze(h.owner, policy(h))
+    with framework_owner_scope(h.owner):
+        await h.jobs.claim_execution(h.job.id)
+        if terminal == "cancelled":
+            saved = await h.jobs.cancel_job(h.job.id, reason="physical stop unconfirmed")
+        else:
+            saved = await h.jobs.finish_execution(h.job.id, status=ToolJobStatus.failed,
+                output_payload={}, summary="no reliable native return")
+    await h.tasks.finish(h.task, status="failed", error_code="controlled_dispatch_return")
+    worker = (await h.tasks.get_framework_worker_activity(h.task.id, session_id=h.session_id))[h.task.attempt_id]
+    assert worker.events[-1].execution_returned
+    tool = read_tool_activity(saved)
+    assert not tool.events[-1].output_observed
+    as_of = worker.events[-1].observed_at + timedelta(seconds=10)
+    reader = PostgresFrameworkModelCalls(h.settings)
+    with pytest.raises(ValueError, match="explicit as_of"):
+        await reader.root_activity_intervals(h.binding)
+    expected = union_activity_intervals([
+        *worker.activity_intervals(), *tool.activity_intervals(as_of=as_of),
+    ], as_of=as_of)
+    assert expected[-1][1] == as_of
+    assert await reader.root_activity_intervals(h.binding, as_of=as_of) == expected
 
 
 @pytest.mark.asyncio

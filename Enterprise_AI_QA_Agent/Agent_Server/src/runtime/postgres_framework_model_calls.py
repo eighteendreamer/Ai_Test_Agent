@@ -21,6 +21,8 @@ from src.infrastructure.postgres_identifiers import postgres_relation_parts
 from src.runtime.postgres_runtime_owner import (
     assert_runtime_owner, configure_runtime_owner_transaction, lock_owner_row, runtime_owner_table,
 )
+from src.runtime.framework_tool_activity import read_tool_activity
+from src.runtime.framework_worker_activity import read_worker_activity
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
@@ -184,30 +186,85 @@ class PostgresFrameworkModelCalls:
         ]
         tasks_table = self._settings.database.postgres_agent_task_table
         attempts_table = self._settings.database.postgres_agent_attempt_table
-        cur.execute(
-            f"""SELECT attempt.started_at, attempt.finished_at
-            FROM {tasks_table} AS task
-            JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
-            WHERE task.runtime_binding->>'binding_id'=%s
-              AND task.session_id=%s AND task.turn_id=%s
-              AND task.operation IN ('message','message_recover','approval_resume')""",
-            (binding.binding_id, binding.session_id, binding.turn_id),
-        )
-        intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
-        if include_tool_jobs:
-            # Tool jobs are the durable execution boundary for external
-            # handlers. A waiting job is not active wall-clock time; its
-            # pre-wait segment is not reconstructable, so do not guess it.
+        event_table = getattr(self._settings.database, "postgres_event_table", None)
+
+        # Prefer the server-owned Worker journal when it exists.  Attempt.started_at
+        # is a claim/admission timestamp, so using it as an execution start would
+        # charge resource and queue waits to the root activity envelope.  Historical
+        # rows without the journal retain the old envelope as an explicitly weaker
+        # compatibility source; they cannot be backfilled from newer event facts.
+        if event_table is None:
             cur.execute(
-                f"""SELECT job.started_at, job.completed_at
-                FROM {self.tool_jobs_table} AS job
-                WHERE job.metadata->>'framework_binding_id'=%s
-                  AND job.session_id=%s AND job.turn_id=%s
-                  AND job.started_at IS NOT NULL
-                  AND job.status IN ('running','resume_requested','completed','partial','failed','cancelled')""",
+                f"""SELECT attempt.started_at, attempt.finished_at
+                FROM {tasks_table} AS task
+                JOIN {attempts_table} AS attempt ON attempt.task_id=task.id
+                WHERE task.runtime_binding->>'binding_id'=%s
+                  AND task.session_id=%s AND task.turn_id=%s
+                  AND task.operation IN ('message','message_recover','approval_resume')""",
                 (binding.binding_id, binding.session_id, binding.turn_id),
             )
-            intervals.extend((row["started_at"], row["completed_at"]) for row in cur.fetchall())
+            intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
+        else:
+            cur.execute(
+                f"""SELECT task.id, task.session_id, task.turn_id, task.runtime_binding,
+                    task.attempt_id, task.status
+                FROM {tasks_table} AS task
+                WHERE task.runtime_binding->>'binding_id'=%s
+                  AND task.session_id=%s AND task.turn_id=%s
+                  AND task.operation IN ('message','message_recover','approval_resume')""",
+                (binding.binding_id, binding.session_id, binding.turn_id),
+            )
+            for task in cur.fetchall():
+                cur.execute(
+                    f"SELECT id, worker_id, status, started_at, finished_at FROM {attempts_table} "
+                    "WHERE task_id=%s ORDER BY attempt_no",
+                    (task["id"],),
+                )
+                attempts = cur.fetchall()
+                cur.execute(
+                    f"SELECT session_id, type, timestamp, payload FROM {event_table} "
+                    "WHERE session_id=%s AND payload->>'task_id'=%s AND payload ? %s ORDER BY event_sequence",
+                    (task["session_id"], task["id"], "framework_worker_activity"),
+                )
+                journals = read_worker_activity(task, attempts, cur.fetchall())
+                for attempt in attempts:
+                    journal = journals.get(attempt["id"])
+                    if journal is not None:
+                        intervals.extend(journal.activity_intervals(as_of=as_of))
+                    elif attempt["started_at"] is not None:
+                        intervals.append((attempt["started_at"], attempt["finished_at"]))
+        if include_tool_jobs:
+            # A journalized ToolJob exposes each running segment around an
+            # explicit wait.  Legacy rows retain the old start/end envelope,
+            # but a waiting state alone must never invent a pre-wait segment.
+            if event_table is None:
+                cur.execute(
+                    f"""SELECT job.started_at, job.completed_at
+                    FROM {self.tool_jobs_table} AS job
+                    WHERE job.metadata->>'framework_binding_id'=%s
+                      AND job.session_id=%s AND job.turn_id=%s
+                      AND job.started_at IS NOT NULL
+                      AND job.status IN ('running','resume_requested','completed','partial','failed','cancelled')""",
+                    (binding.binding_id, binding.session_id, binding.turn_id),
+                )
+                intervals.extend((row["started_at"], row["completed_at"]) for row in cur.fetchall())
+            else:
+                cur.execute(
+                    f"""SELECT job.id, job.session_id, job.turn_id, job.status,
+                        job.started_at, job.completed_at, job.metadata
+                    FROM {self.tool_jobs_table} AS job
+                    WHERE job.metadata->>'framework_binding_id'=%s
+                      AND job.session_id=%s AND job.turn_id=%s""",
+                    (binding.binding_id, binding.session_id, binding.turn_id),
+                )
+                for job in cur.fetchall():
+                    journal = read_tool_activity(job)
+                    if journal is not None:
+                        intervals.extend(journal.activity_intervals(as_of=as_of))
+                    elif (job["started_at"] is not None and job["status"] in {
+                        "running", "resume_requested", "completed", "partial", "failed", "cancelled",
+                    }):
+                        intervals.append((job["started_at"], job["completed_at"]))
         return union_activity_intervals(intervals, as_of=as_of)
 
     async def root_activity_seconds(

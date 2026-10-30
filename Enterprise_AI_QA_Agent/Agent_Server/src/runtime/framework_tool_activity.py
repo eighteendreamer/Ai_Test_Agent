@@ -35,7 +35,13 @@ def _read(value):
 
 def read_tool_activity(job):
     """Read only; absent/legacy history remains absent, invalid history rejects."""
-    return _read(job.model_dump(mode="python"))
+    if hasattr(job, "model_dump"):
+        value = job.model_dump(mode="python")
+    elif hasattr(job, "_mapping"):
+        value = dict(job._mapping)
+    else:
+        value = dict(job)
+    return _read(value)
 
 
 def record_tool_activity(previous, current, *, observed_at, output_observed=False):

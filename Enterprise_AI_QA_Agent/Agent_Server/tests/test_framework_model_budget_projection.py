@@ -264,6 +264,238 @@ async def test_postgres_activity_reader_joins_existing_attempt_timeline(monkeypa
 
 
 @pytest.mark.asyncio
+async def test_postgres_activity_reader_uses_persisted_worker_running_boundary_not_claim_admission(monkeypatch):
+    """A claimed/admission gap must not become root execution activity once the journal exists."""
+    from src.runtime.framework_worker_activity import capture_worker_activity
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    binding, snapshot = original_budget()
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    task = {
+        "id": "worker-task",
+        "session_id": binding.session_id,
+        "turn_id": binding.turn_id,
+        "runtime_binding": binding.model_dump(mode="json"),
+        "attempt_id": "worker-attempt",
+        "status": "completed",
+        "worker_id": "worker-1",
+    }
+    attempt = {"id": "worker-attempt", "worker_id": "worker-1", "status": "completed"}
+
+    def worker_event(status, observed_at, *, execution_returned=False):
+        payload = {
+            "task_id": task["id"],
+            "turn_id": binding.turn_id,
+            "status": status,
+            "result_status": None,
+            "execution_returned": execution_returned,
+            "_harness_context": {"attempt_id": attempt["id"]},
+        }
+        payload["framework_worker_activity"] = capture_worker_activity(
+            task,
+            status=status,
+            result_status=None,
+            execution_returned=execution_returned,
+            observed_at=observed_at,
+        )
+        return {"session_id": binding.session_id, "type": f"agent_task.{status}",
+            "timestamp": observed_at, "payload": payload}
+
+    worker_events = [
+        worker_event("claimed", base),
+        worker_event("running", base + timedelta(seconds=10)),
+        worker_event("completed", base + timedelta(seconds=20), execution_returned=True),
+    ]
+
+    class Cursor:
+        def __init__(self):
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement, params=()):
+            if statement.startswith("SET TRANSACTION"):
+                self.rows = []
+            elif "SELECT runtime_binding FROM" in statement:
+                self.rows = [{"runtime_binding": binding.model_dump(mode="json"),
+                              "attempt_id": None, "expires_at": None}]
+            elif "SELECT policy FROM" in statement:
+                self.rows = [{"policy": snapshot.policy.model_dump(mode="json")}]
+            elif "SELECT attempt_id,record FROM" in statement:
+                self.rows = [{"attempt_id": call.intent.attempt_id, "record": call.model_dump(mode="json")}
+                    for call in snapshot.calls]
+            elif "SELECT attempt.started_at" in statement:
+                self.rows = [{"started_at": base, "finished_at": base + timedelta(seconds=20)}]
+            elif "SELECT task.id, task.session_id" in statement:
+                self.rows = [task]
+            elif "SELECT id, worker_id, status, started_at, finished_at FROM" in statement:
+                self.rows = [attempt]
+            elif "payload->>'task_id'=%s" in statement:
+                self.rows = worker_events
+            elif "SELECT job.started_at" in statement:
+                self.rows = []
+            elif "SELECT job.id, job.session_id, job.turn_id, job.status," in statement:
+                self.rows = []
+            else:
+                raise AssertionError(f"unexpected SQL: {statement}")
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+    monkeypatch.setattr(
+        "src.runtime.postgres_framework_model_calls.postgres_connect",
+        lambda settings: Connection(),
+    )
+    settings = SimpleNamespace(database=SimpleNamespace(
+        postgres_agent_task_table="tasks",
+        postgres_agent_attempt_table="attempts",
+        postgres_event_table="events",
+        postgres_tool_job_table="tool_jobs",
+    ))
+
+    intervals = await PostgresFrameworkModelCalls(settings).root_activity_intervals(binding)
+
+    assert intervals == [(base + timedelta(seconds=10), base + timedelta(seconds=20))]
+
+
+@pytest.mark.asyncio
+async def test_postgres_activity_reader_uses_tool_journal_to_preserve_wait_gap(monkeypatch):
+    """A journalized child wait closes one tool segment without guessing its duration."""
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    binding, snapshot = original_budget()
+    base = datetime(2026, 10, 27, tzinfo=timezone.utc)
+    job_id = "journalized-tool"
+    output_hash = "a" * 64
+    tool_job = {
+        "id": job_id,
+        "session_id": binding.session_id,
+        "turn_id": binding.turn_id,
+        "status": "completed",
+        "started_at": base + timedelta(seconds=1),
+        "completed_at": base + timedelta(seconds=12),
+        "metadata": {
+            "framework_binding_id": binding.binding_id,
+            "framework_tool_activity": {
+                "schema_version": 1,
+                "scope": "tool_job_state_transitions",
+                "job_id": job_id,
+                "binding_id": binding.binding_id,
+                "session_id": binding.session_id,
+                "turn_id": binding.turn_id,
+                "origin_observed": True,
+                "events": [
+                    {"status": "queued", "output_observed": False, "observed_at": base},
+                    {"status": "running", "output_observed": False,
+                     "observed_at": base + timedelta(seconds=1)},
+                    {"status": "waiting_children", "output_observed": False,
+                     "observed_at": base + timedelta(seconds=3)},
+                    {"status": "running", "output_observed": False,
+                     "observed_at": base + timedelta(seconds=10)},
+                    {"status": "completed", "output_observed": True,
+                     "observed_at": base + timedelta(seconds=12)},
+                ],
+            },
+            "tool_output_observation": {
+                "schema_version": 1,
+                "status": "completed",
+                "output_hash": output_hash,
+                "observed_at": base + timedelta(seconds=12),
+            },
+        },
+    }
+
+    class Cursor:
+        def __init__(self):
+            self.rows = []
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def execute(self, statement, params=()):
+            if statement.startswith("SET TRANSACTION"):
+                self.rows = []
+            elif "SELECT runtime_binding FROM" in statement:
+                self.rows = [{"runtime_binding": binding.model_dump(mode="json"),
+                              "attempt_id": None, "expires_at": None}]
+            elif "SELECT policy FROM" in statement:
+                self.rows = [{"policy": snapshot.policy.model_dump(mode="json")}]
+            elif "SELECT attempt_id,record FROM" in statement:
+                self.rows = [{"attempt_id": call.intent.attempt_id, "record": call.model_dump(mode="json")}
+                    for call in snapshot.calls]
+            elif "SELECT attempt.started_at" in statement:
+                self.rows = []
+            elif "SELECT job.started_at" in statement:
+                self.rows = [{"started_at": tool_job["started_at"], "completed_at": tool_job["completed_at"]}]
+            elif "SELECT task.id, task.session_id" in statement:
+                self.rows = []
+            elif "SELECT job.id, job.session_id, job.turn_id, job.status," in statement:
+                self.rows = [tool_job]
+            else:
+                raise AssertionError(f"unexpected SQL: {statement}")
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return list(self.rows)
+
+    class Connection:
+        def __init__(self):
+            self.cursor_instance = Cursor()
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def cursor(self):
+            return self.cursor_instance
+
+    monkeypatch.setattr(
+        "src.runtime.postgres_framework_model_calls.postgres_connect",
+        lambda settings: Connection(),
+    )
+    settings = SimpleNamespace(database=SimpleNamespace(
+        postgres_agent_task_table="tasks",
+        postgres_agent_attempt_table="attempts",
+        postgres_event_table="events",
+        postgres_tool_job_table="tool_jobs",
+    ))
+
+    intervals = await PostgresFrameworkModelCalls(settings).root_activity_intervals(binding)
+
+    assert intervals == [
+        (base + timedelta(seconds=1), base + timedelta(seconds=3)),
+        (base + timedelta(seconds=10), base + timedelta(seconds=12)),
+    ]
+
+
+@pytest.mark.asyncio
 async def test_postgres_activity_reader_includes_bound_tool_jobs_and_open_tail(monkeypatch):
     from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 

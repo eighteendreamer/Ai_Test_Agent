@@ -5789,3 +5789,49 @@ $env:PYTHONUTF8='1'
 ### 提交边界与剩余出口
 
 本节提交仅包含 Harness schema／Runtime 与 adapter 接线、stage 29 能力契约、相关格式消费方测试、Memory 消费方测试契约、精确 `.gitignore` 例外和本实施记录；不提交用户 v3 草稿、测试日志、配置、密钥或本地数据。当前仍未完成精确根活动时间／内部等待与崩溃尾段停止证明、跨 Worker 计数接管、工具 journal 专项强杀、真实供应商／RustFS／领域 Runner、官方 saver conformance、前端／全量后端、E3/E4、A2/A3/B 其余出口、D/E/F、完整 H01–H12 和整体 v4 目标；本节不能替代这些验收。
+
+## 127. C／§6.3、H09/H11：根活动读取消费持久 Worker／Tool journal（2026-10-30）
+
+### 续接、依据与范围
+
+基线为 `c09b93545`／§126 及工作区中尚未提交的 journal 消费改动。上一轮只读梳理没有交付代码；本轮审阅并验证该草稿，再补真实存储与未知尾段消费方证明。§52 的部分投影后继、§53 的原生终态审计以及 §54 的 Delta task-path 顺序根因修复已提交；不按 v4 文档旧快照重复实施 P0，也不忽略 messages。
+
+v4 §6.3 要求根活动由持久执行事实计量，不能把 Worker claim/admission 或 ToolJob child-wait 直接当作活动；H09/H11 要求预算／诊断消费缺失或不完整事实时保持可见，不用展示文本猜测。现有 Worker／Tool journal 的服务端写入与读取器、`PostgresFrameworkModelCalls.root_activity_intervals()`、本地 `G:/Code_Warehouse/DeepAgent-Studio/借鉴/codex/codex-rs/rmcp-client/src/rmcp_client.rs::active_time_timeout` 的显式暂停边界，以及课程《Agent轨迹与协议鲁棒性》中的轨迹／等待／幂等要求，是本节依据。采用方式是复用既有真实 Store 状态迁移和同一只读读取事务；不新增计时器、调度层或恢复权限。
+
+### 草稿实现与 live 证明
+
+`postgres_framework_model_calls.py` 优先读取原 Worker journal 的 `running → execution_returned` 区间、Tool journal 中等待前后分段，而不是沿用整体起止时间。没有历史 journal 的 Attempt／ToolJob 保留原 envelope 兼容读取，不回填历史、不声称精确活动覆盖。`framework_tool_activity.py` 的只读读取器同步支持现有 Pydantic Job 与真实 SQLAlchemy RowMapping／普通 mapping，不新增 journal 写入点。预算投影新增两条 SQL 单测；原诊断历史轴用例明确移除隔离样本的 journal，以继续验收 legacy fallback，而非把未来观察误算到历史 as_of。
+
+新增 `test_live_root_activity_reader_consumes_persisted_worker_and_tool_journals`：使用隔离 PostgreSQL／Redis fixture，实际执行 Worker `begin/finish`、ToolJob `claim → waiting_children → resume → output observation → finish`，保留真实持久 journal；仅将隔离测试行中的 journal 观察时间、ToolJob 起止时间和事件外层时间移动到同一固定 UTC 轴，`as_of` 取该轴之后，不删除或重建 journal。随后由按隔离 ToolJob 表构造的新 `PostgresFrameworkModelCalls` 实例读取根活动，并分别核对 Worker 与 Tool journal 的区间及最终并集。
+
+首次 live 目标运行得到 **1 failed，9.16s**：测试错误复用了在 fixture 切换隔离 ToolJob 关系之前创建的 reader，因而只查到旧表；根因是测试装配顺序，不是运行时计量行为。改为在 fixture 选定隔离关系后构造 reader，目标测试 **1 passed，8.19s**。另增取消／无可靠返回失败两条真实 Store 用例：Worker 已返回仍不能关闭工具未知尾段，无 as_of 必须失败，显式观察时尾段延续到该时刻；无需修改测试时间即可证明不把任务完成当物理停止。
+
+为补齐可重现的基线差异，在独立 Python 进程从 Git 读取 `HEAD` 的原根活动读取方法，仅在内存临时替换该方法运行当前测试，未覆盖工作区源码。第一轮 **3 failed，9.08s** 中 Tool fake SQL 用例因未支持旧 SELECT 提前失败；补齐旧查询形状后，最终基线 **5 failed，11.96s**：Worker 错收 claim/admission；Tool 整体起止吞并 waiting gap；真实持久 journal 同样被忽略；failed 工具无 as_of 也不报错，cancelled 样本旧起止还触发逆序而不是显式开放尾段错误。原输出保存在 `.codex-logs/c127-head-reader-red.log` 和 `c127-head-reader-final-red.log`，不提交。该基线对照不是当前源码回归失败，不把脚手架错误当行为红测。
+
+### 实际验证与剩余出口
+
+在 `Agent_Server` 目录设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`，使用 `.venv-framework-v2/Scripts/python.exe` 执行：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_framework_tool_activity.py::test_live_root_activity_reader_consumes_persisted_worker_and_tool_journals -q -rs --tb=short
+# 1 passed，8.19s，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_tool_activity.py tests/test_framework_worker_activity.py tests/test_framework_message_diagnostics.py -q -rs --tb=short
+# 95 passed，170.86s（0:02:50），exit 0，无 skipped／deselected
+
+..\.venv-framework-v2\Scripts\python.exe -m compileall -q src tests
+# exit 0
+```
+
+上述 95 项是在新增未知尾段两例和基线 SQL 形状补齐之前的真实结果，不替代最终源码。最终扩大组合从原执行会话 `67553` 取得 exit 0，期间未修改生产源码或测试，仅追加本记录：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_tool_activity.py tests/test_framework_worker_activity.py tests/test_framework_message_diagnostics.py tests/test_framework_delta_replay_order.py 'tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling' -q -rs --tb=short
+# 110 passed，340.36s（0:05:40），exit 0，无 skipped／deselected
+```
+
+原始输出保存在本地 `.codex-logs/c127-final-journal-consumers.log`，不提交。该组包含新的真实 Store journal 消费／未知尾段两例、原 Worker 强杀、Delta 顺序和原审批独立 Worker 强杀六参数组；未重启整组或放宽消息比较。各轮重叠结果不相加。根目录再次实际执行 `compileall`、`git diff --check` 与暂存检查；`find_spec` 确认 `ruff`／`mypy` 未安装，未执行独立 lint/typecheck。新增根读取测试的时间轴是隔离数据中的受控事实，取消／失败尾段两例使用真实观察时间；最高证据仍为 E2，未调用真实供应商、RustFS、浏览器、压测器或领域 Runner。没有 DDL、依赖升级、默认生产路由或服务启停变更。
+
+本节仍不证明内部模型等待、跨 Worker 连续性、崩溃尾段的精确结算、外部请求物理停止或完整根预算覆盖；等待／未知尾段和持久 envelope 的已知限制继续保留。A2/A3、B 其余出口、C 的完整 H09/H11、D/E/F、完整 H01–H12、真实 E3/E4 与整体 v4 目标继续 active。v3 用户草稿和本地测试日志不纳入本节提交。
+
+本节仅提交两个运行时读取源、预算／诊断／工具活动三个测试文件及本实施记录，共六文件。提交前检查完整 diff、实施记录原前缀及暂存范围，v3 草稿 SHA256 仍为续接时实际读取的 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不以更早交接 hash 代替当前事实。本节 commit 以包含本记录的 Git 提交及交付输出追溯；不推送、不建 PR。下一步继续补内部等待来源、跨 Worker 未闭合区间与根活动连续性，再评估预算裁决，不能直接把本次 envelope 接入精确时间限额。
