@@ -18,6 +18,7 @@ from src.application.deep_agents.framework_transcript import (
 from src.application.deep_agents.result_projection import (
     DeepAgentRuntimeError, DeepAgentRuntimeResult, project_deep_agent_result,
 )
+from src.application.models.framework_model_call_policy import FrameworkExecutionDeadlineExceeded
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.framework_transcript import uses_turn_context_assembly
@@ -297,7 +298,8 @@ class DeepAgentRuntimeAdapter:
             finally:
                 if cleanup is not None:
                     cleanup()
-        except (DeepAgentRuntimeError, FrameworkMessageStageRecoveryRequired, ContinuationLeaseLostError):
+        except (DeepAgentRuntimeError, FrameworkMessageStageRecoveryRequired, ContinuationLeaseLostError,
+                FrameworkExecutionDeadlineExceeded):
             raise
         except Exception as exc:
             raise DeepAgentRuntimeError(

@@ -16,7 +16,7 @@ from src.application.model_clients.http_observation import (
 )
 from src.schemas.framework_model_call import FrameworkModelCallIntent, FrameworkModelUsage
 from src.schemas.model_config import ModelConfigRecord, ModelInvocationRequest, ModelInvocationResult, model_invocation_parameters
-from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
+from src.runtime.postgres_framework_model_calls import FrameworkModelBudgetExceeded, FrameworkModelRecoveryRequired
 
 
 logger = logging.getLogger(__name__)
@@ -124,10 +124,16 @@ class FrameworkModelCallPolicy:
                 raise
         # Cancellation/late-response accounting has unwound before this read.
         # Do not invent zero usage or a completion proof for an interrupted graph.
+        raise await self._execution_deadline_error(owner, source="timer")
+
+    async def _execution_deadline_error(self, owner, *, source):
+        from src.application.models.framework_model_budget_projection import read_model_budget_material
+
         material = await self.capture_root_budget(owner.binding)
+        deadline = read_model_budget_material(owner.binding, material).policy.deadline_at
         logger.warning("framework_execution_deadline_exhausted", extra={"binding_id": owner.binding.binding_id,
-            "deadline_at": deadline, "external_effects_stopped": False})
-        raise FrameworkExecutionDeadlineExceeded(owner.binding.binding_id, material)
+            "deadline_at": deadline, "deadline_source": source, "external_effects_stopped": False})
+        return FrameworkExecutionDeadlineExceeded(owner.binding.binding_id, material)
 
     async def capture_root_budget(self, binding) -> dict:
         """Read the existing root ledger without new reservations or settlement."""
@@ -275,17 +281,23 @@ class FrameworkModelCallPolicy:
             "settled_response_id": expected.settled_response_id})
         return result
 
-    async def _invoke_intent(self, *, owner, intent, send, usage_reader, envelope, response_kind):
-        observation = None
-        saved = await self._calls.prepare_initial(owner, intent)
-        intent = saved.intent
-        if (saved.owner_epoch != owner.owner_epoch or saved.owner_task_id != owner.task_id
-            or saved.owner_attempt_id != owner.attempt_id):
-            raise FrameworkModelRecoveryRequired("position_owned_by_prior_attempt", saved)
-        if self._evidence is not None and saved.request is None and saved.phase == "ready":
-            request = await self._evidence.store_request(owner, intent, envelope)
-            await self._calls.attach_request(owner, intent.attempt_id, request=request)
-        current, permitted = await self._calls.start(owner, intent.attempt_id)
+    async def _start_intent(self, *, owner, intent, envelope):
+        # Reserve and send permission use the database clock. A stale local
+        # timer must not turn their root-deadline verdict into a model failure.
+        try:
+            saved = await self._calls.prepare_initial(owner, intent)
+            intent = saved.intent
+            if (saved.owner_epoch != owner.owner_epoch or saved.owner_task_id != owner.task_id
+                or saved.owner_attempt_id != owner.attempt_id):
+                raise FrameworkModelRecoveryRequired("position_owned_by_prior_attempt", saved)
+            if self._evidence is not None and saved.request is None and saved.phase == "ready":
+                request = await self._evidence.store_request(owner, intent, envelope)
+                await self._calls.attach_request(owner, intent.attempt_id, request=request)
+            current, permitted = await self._calls.start(owner, intent.attempt_id)
+        except FrameworkModelBudgetExceeded as exc:
+            if exc.kind != "deadline":
+                raise
+            raise await self._execution_deadline_error(owner, source="ledger") from exc
         if not permitted:
             logger.warning("framework_model_reentry_requires_reconciliation", extra={
                 "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id, "phase": current.phase})
@@ -293,6 +305,11 @@ class FrameworkModelCallPolicy:
         logger.info("framework_model_request_started", extra={"binding_id": owner.binding.binding_id,
             "model_attempt_id": intent.attempt_id, "logical_call_id": intent.logical_call_id,
             "branch_id": intent.branch_id, "purpose": intent.purpose, "transport": intent.transport})
+        return intent
+
+    async def _invoke_intent(self, *, owner, intent, send, usage_reader, envelope, response_kind):
+        intent = await self._start_intent(owner=owner, intent=intent, envelope=envelope)
+        observation = None
         try:
             active_observation = current_provider_call_observation()
             if active_observation is None:

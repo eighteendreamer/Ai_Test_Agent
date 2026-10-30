@@ -5947,3 +5947,64 @@ v4 §6.3 要求根活动由持久执行事实计量，不能把 Worker claim/adm
 本步只证明 owner-bound DTO 入口的协作截止及当前消息准备入口的专用截止投影；不等于整个 Turn 的全部图前等待、排队回收、同步阻塞代码或外部请求都能按硬截止物理停止。已返回 DTO 的证据／迟到结算和只读结果读取继续合法；未知调用不自动重发。租约／模型预算的账本拒绝与本地 timer 之间的时序、取消发生在 reserve／start／证据写入时的尾段、各等待来源和跨 Worker 连续性仍需专门验证，不能将本节或 §127 的持久包络冒充精确活动限额。
 
 最高证据仍为 E2；根截止专项独立进程故障验收、真实供应商／OAuth 服务／RustFS／领域 Runner、官方 saver conformance、完整 H01–H12、A2/A3/B/C 剩余出口、D/E/F 与 E3/E4 发布门均未完成。整体 v4 继续 active。下一步沿原模型 reserve／start 与停止原因消费链补时序反例，再推进等待来源、活动连续性及剩余阶段；不以本小步完成缩小原目标。
+
+## 130. C／§6.2、§6.3、§11、H09/H10/H11：统一账本准入截止与协作 timer 的停止裁决（2026-10-30）
+
+### 续接、根因与依据 → 做法
+
+基线 `a261a3d03`（§129）。上一轮只读梳理没有推进目标实现，本轮核对实际 HEAD、两个未提交文件、原测试日志及活动目标后继续实施。用户 v3 草稿保持原样，SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`；既有截止测试草稿先修正装配并取得有效红测，不直接当作已验证实现。§52／53 的历史失败按 §54 已提交的 Delta 排序根因修复续接，不重复实现、不豁免 messages。
+
+- `PostgresFrameworkModelCalls._require_time()` 在真实 reserve／start 事务用数据库时钟拒绝截止，原异常有可靠 `kind=deadline`；共享策略原来只把自己的 timer 到期转换为 `FrameworkExecutionDeadlineExceeded`。原本有效的剩余时长样本延迟送达后，数据库可以先判定到期，原异常却进入模型失败／adapter 包装／语义降级和 failed 结算路径。这是**两个裁决出口没有统一的架构缺失**，不是再给 Session／Dispatcher 各加一个异常补判。
+- 复用既有共享 `_invoke_intent()`、原根截止控制异常和 Runtime／Session 唯一停止投影 → 将原准备、owner 核验、请求证据与 start 抽到 `_start_intent()`，仅在该准入边界转换账本的 deadline；calls／tokens 原样抛出。timer 和账本共用错误工厂，从同一次原根预算材料取得 deadline、保留所有预留与 usage；不重置预算、不退款、不重发。
+- 本地参考 `DeepAgent-Studio/借鉴/codex/codex-rs/rmcp-client/src/rmcp_client.rs::remaining_operation_timeout` 以原 operation deadline 判定剩余额度 → 本项目继续使用已受理的原根截止，不给每次 invoke 新额度。具体数据库拒绝类型和模型发送身份沿本项目原契约，不照搬 Rust 错误类型。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 的超时、轨迹、幂等与异常恢复要求 → 不只核对异常文本，还验证实际 SQL cause、零 HTTP、ready／预留状态、原政策、根预算投影及重复投递终态。
+
+### 测试装配诊断与有效 TDD
+
+交接中的首次选择组为 **16 failed、25 deselected，138.86s**（`.codex-logs/c130-ledger-deadline-red.log`）。其中混有真实账本拒绝、DID NOT RAISE 和 completed，不能全部当作有效行为红测。后续两项诊断 **2 failed，25.23s**（`c130-observation-diagnostic.log`），失败在装配断言：单次本地 sleep 后数据库 remaining 仍分别为 `0.115734`／`0.018541`。没有证据确定具体偏差来源，不猜时钟漂移，不继续调大固定 sleep 常数。
+
+改用既有 `wait_gate()` 类有界 async 等待方式：在 15 秒 fixture 同步边界内反复读取原数据库 remaining，观察达到目标后才继续。reserve 延迟返回原先有效样本，直至数据库已过截止；start 在数据库观察原剩余时长已减半后返回旧样本，使本地 timer 仍有余量，再等数据库确认到期才执行原 start。始终调用原 PostgreSQL 方法，不 mock 抛拒绝、不改变运行中的冻结政策、不重试模型。§129 原等待 helper 同步复用该数据库观测规则，避免再用一次本地 sleep 推断数据库到期。
+
+装配修正后重新运行原十六项，实际 **16 failed、25 deselected，131.91s，exit 1**（`c130-ledger-synchronized-red.log`）。逐项核对：十二项图／四种 DTO 传输／LangChain DTO 均收到真实 SQL deadline（图被原 adapter 包装）；两项 Runtime 同样包装失败；两项完整 Session／Dispatcher 实际为 failed 而非 interrupted。没有装配断言失败。该组才是本节有效红测。
+
+两生产文件最小修复后，同一选择组实际 **16 passed、25 deselected，126.55s，exit 0**（`c130-ledger-first-green.log`）。随后扩展原生摘要两边界、deadline 结构化日志断言、calls／tokens 不转换反例；扩大最终源码回归另记，不以这次选择组代替完整验收。
+
+### 实现与边界
+
+`framework_model_call_policy.py` 统一错误工厂记录 `deadline_source=timer/ledger`、原 deadline 和 `external_effects_stopped=False`；账本转换使用 `raise ... from exc` 保留真实 SQL cause。`runtime_adapter.py` 将既有根截止控制异常加入原透传集合，不作为普通模型错误包装；错误、恢复要求与失租的原语义不变。未改 Runtime、Session、Dispatcher、语义服务、公开 API、schema／DDL、依赖或生产开关；原 §129 消费链直接获得同一控制结果。
+
+专项验证保留 reserve 无 call、start 原 call 仍 ready／无 started_at、unknown 为零、原政策及预留不变。Runtime 和图前 Session 使用既有 interrupted 投影，无 pending resume／结果资产／completed ACK，原 orchestrating 阶段不伪装成分类完成，重投递不增加 attempt。可靠结果、迟到结算、只读恢复和 claimed 准备契约继续由原回归验证；账本拒绝不证明外部操作已物理停止。
+
+当前最终源码回归进行中，以下继续追加真实终态；不得将正在运行的命令或历史绿色结果改报为本轮完成。
+
+### 最终源码验证
+
+后端工作目录 `Agent_Server`；环境为 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`。原十六项有效红测与首绿使用同一命令：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py -k 'ledger_deadline_rejection or runtime_ledger_expiry or pregraph_ledger_expiry' -q -rs --tb=short
+# 修复前：16 failed、25 deselected，131.91s，exit 1
+# 修复后：16 passed、25 deselected，126.55s，exit 0
+```
+
+扩展后的最终源码两组均从原进程取得真实终态，没有重启；测试运行期间未修改生产源码或测试，只追加本实施记录：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_admission.py tests/test_framework_model_budget_projection.py tests/test_framework_prepared_orchestration.py -q -rs --tb=short
+# 296 passed，915.77s（0:15:15），exit 0，无 skipped／deselected
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py -q -rs --tb=short
+# 274 passed，475.14s（0:07:55），exit 0，无 skipped／deselected
+```
+
+本地日志 `.codex-logs/c130-final-model-deadline-consumers.log`、`c130-final-runtime-consumers.log` 不提交。第一组包含完整 45 项截止测试：原 25 项、本节原 16 项、两项原生摘要和两项非时间预算；同时覆盖 ready 转移、已完成响应只读导入、未知请求、并发根账本、语义准备及 claimed/running 契约。第二组复验 Runtime、Session、Dispatcher、原审批独立 Worker 强杀和 Delta 严格 messages 比较，以及 legacy SDK／HTTP 消费方。组间按各自范围报告，不将早期选择组或重叠 fixture 累加成全量验收。
+
+前端工作目录 `agent_web`：`npm run test -- src/stores/sessionFrameworkApproval.test.ts src/stores/sessionStreaming.test.ts src/stores/sessionAssistantStreamReplay.test.ts src/composables/useSSEStream.test.ts`，**4 文件／29 passed，2.33s，exit 0**；`npm run typecheck` **exit 0**。日志 `c130-frontend-consumers.log`、`c130-frontend-typecheck.log` 不提交。根目录实际执行 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、限定本轮文件的 `git diff --check`，均 exit 0；Python 为 3.11.16。`find_spec` 确认 ruff／mypy 未安装，未新增工具、未运行独立 Python lint/typecheck。
+
+本节截止专项使用固定官方 SDK、本机合成 HTTP、真实隔离 PostgreSQL／Redis；请求证据仍是原 fixture 后端，工具仍为受控样本，不称真实供应商、OAuth、RustFS 或领域 Runner。既有强杀回归继续提供其原 E2 范围，不替代新的截止专项独立进程验收。前端和后端都未运行全量。所有本轮测试句柄已取得终态，无待观察或需重启的测试进程。
+
+### 提交与剩余出口
+
+本节提交仅包含两个生产源文件、既有截止测试文件和本记录，共四文件；提交前核对完整 diff、原记录字节前缀、EOF、暂存范围及 v3 SHA256。未改配置、用户草稿或生产开关，未启停基础设施、升级依赖、调用付费服务或真实目标；日志及本地数据不提交，不推送、不建 PR。具体 commit 以包含本节的 Git 提交和交付记录追溯。
+
+本步统一了数据库 reserve／start 主动拒绝与本地协作 timer 的根截止语义，未证明同步阻塞、取消期间数据库线程尾段或外部操作能够按硬截止物理停止。准备／发送许可／证据写入时的取消尾段与晚提交、精确内部等待及活动限额、跨来源和跨 Worker 连续性、根截止专项独立进程故障、真实供应商／RustFS／领域 Runner、官方 saver conformance、完整 H01–H12、A2/A3/B/C 其余出口、D/E/F、E3/E4 发布门仍未完成。整体 v4 继续 active；下一步检查原模型准入的取消尾段与原预算快照，不以本节通过代表全部恢复／预算完成。

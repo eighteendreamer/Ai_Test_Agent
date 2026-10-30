@@ -55,13 +55,16 @@ def set_deadline(h, seconds):
             (seconds, h.binding.binding_id))
 
 
-async def wait_for_database_deadline(h):
-    # asyncio callbacks may run within clock resolution. A second invocation's
-    # wall-deadline assertion must sample the database, not infer it from the
-    # first invocation's cooperative local timer. Never change the policy.
-    _, remaining = await h.calls.execution_deadline(h.owner.runtime_owner)
-    await asyncio.sleep(max(0, remaining) + .05)
-    assert (await h.calls.execution_deadline(h.owner.runtime_owner))[1] < 0
+async def wait_for_database_deadline(h, *, read_deadline=None, remaining_at_most=0, **kwargs):
+    # Observe the database clock, not elapsed local sleeps. Bound only this
+    # fixture's synchronization; never renew the policy or retry a model call.
+    read = read_deadline or h.calls.execution_deadline
+    async with asyncio.timeout(15):
+        while True:
+            _, remaining = await read(h.owner.runtime_owner, **kwargs)
+            if remaining <= remaining_at_most:
+                return remaining
+            await asyncio.sleep(min(.1, remaining - remaining_at_most))
 
 
 @pytest.mark.asyncio
@@ -527,3 +530,143 @@ async def test_reliable_nested_dto_return_does_not_disarm_its_parent_graph_deadl
             snapshot = await h.calls.snapshot(h.binding)
             assert cancelled.is_set() and len(requests) == snapshot.reserved_calls == 2
             assert snapshot.actual_tokens == 20 and all(call.phase == "completed" for call in snapshot.calls)
+
+
+def delay_deadline_observation(h, monkeypatch, *, boundary):
+    """Delay delivery of a real SQL time sample, never change the frozen policy.
+
+    Returning a once-valid remaining duration after connection/task scheduling
+    latency makes the database reserve/start check authoritative before the
+    local timer. The actual rejection still comes from production PostgreSQL.
+    """
+    read_deadline, start = h.calls.execution_deadline, h.calls.start
+
+    async def delayed_read(owner, **kwargs):
+        deadline, remaining = await read_deadline(owner, **kwargs)
+        assert remaining > 0
+        observed = await wait_for_database_deadline(h, read_deadline=read_deadline,
+            remaining_at_most=0 if boundary == "reserve" else remaining / 2, **kwargs)
+        assert (observed <= 0) is (boundary == "reserve"), (boundary, remaining, observed)
+        return deadline, remaining
+
+    async def delayed_start(owner, attempt_id):
+        await wait_for_database_deadline(h, read_deadline=read_deadline)
+        return await start(owner, attempt_id)
+
+    monkeypatch.setattr(h.calls, "execution_deadline", delayed_read)
+    if boundary == "start":
+        monkeypatch.setattr(h.calls, "start", delayed_start)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["graph", "graph_summary", "openai_chat_completions", "openai_responses", "anthropic_messages",
+    "google_gemini_generate_content", "langchain_chat"])
+@pytest.mark.parametrize("boundary", ["reserve", "start"])
+async def test_ledger_deadline_rejection_is_the_same_control_stop_as_local_expiry(harness, monkeypatch, caplog, path, boundary):
+    from src.runtime.postgres_framework_model_calls import FrameworkModelBudgetExceeded
+    from tests.test_framework_model_dto import dto_request
+    from tests.test_framework_model_policy import force_summary, history
+
+    transport = "openai_chat_completions" if path in {"graph", "graph_summary", "langchain_chat"} else path
+    with _provider(transport) as (url, requests):
+        async with governed(harness, _config(transport, url)) as h:
+            h.settings.model.langchain_model_adapter_enabled = path == "langchain_chat"
+            h.models.set_framework_model_call_policy(h.policy)
+            set_deadline(h, 4)
+            policy = await h.calls.frozen_policy(h.binding)
+            delay_deadline_observation(h, monkeypatch, boundary=boundary)
+            with framework_owner_scope(h.owner.runtime_owner):
+                with pytest.raises(FrameworkExecutionDeadlineExceeded) as raised:
+                    if path == "graph":
+                        await execute(h)
+                    elif path == "graph_summary":
+                        force_summary(monkeypatch)
+                        await execute(h, history(h.request))
+                    else:
+                        await h.models.invoke(h.request.model_key, dto_request(h))
+            assert isinstance(raised.value.__cause__, FrameworkModelBudgetExceeded)
+            assert raised.value.__cause__.kind == "deadline"
+            snapshot = await h.calls.snapshot(h.binding)
+            assert requests == [] and snapshot.policy == policy
+            assert snapshot.unknown_calls == 0 and snapshot.reserved_calls == (boundary == "start")
+            assert all(call.phase == "ready" and call.started_at is None for call in snapshot.calls)
+            assert all(call.intent.purpose == ("summary" if path == "graph_summary" else "agent") for call in snapshot.calls)
+            assert read_model_budget_material(h.binding, raised.value.root_model_budget) == snapshot
+            stopped, = [record for record in caplog.records if record.getMessage() == "framework_execution_deadline_exhausted"]
+            assert stopped.deadline_source == "ledger" and stopped.deadline_at == policy.deadline_at
+            assert stopped.binding_id == h.binding.binding_id and stopped.external_effects_stopped is False
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["reserve", "start"])
+async def test_runtime_ledger_expiry_is_interrupted_not_an_adapter_failure(harness, monkeypatch, boundary):
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            runtime, control = runtime_with(h.adapter)
+            request = _runtime_request(h.session_id, h.binding.turn_id).model_copy(update={
+                "model_key": h.request.model_key, "runtime_binding": h.binding})
+            set_deadline(h, 4)
+            delay_deadline_observation(h, monkeypatch, boundary=boundary)
+            with framework_owner_scope(h.owner.runtime_owner):
+                result = await runtime.execute_turn(_runtime_session(h.session_id), request)
+            assert result.snapshot.stage == result.state["termination_reason"] == "interrupted"
+            assert not result.pending_turn and not result.approvals and result.output_text == ""
+            summary = result.state["model_response_summary"]
+            assert summary["timeout_source"] == "root_deadline" and summary["cause"] == "timeout"
+            assert read_model_budget_material(h.binding, summary["root_model_budget"]) == await h.calls.snapshot(h.binding)
+            assert not control.has_interruptible_task(h.session_id) and requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["reserve", "start"])
+async def test_pregraph_ledger_expiry_reuses_interrupted_session_and_dispatcher_outcome(harness, monkeypatch, boundary):
+    from src.application.intent.semantic_intent_service import SemanticIntentService
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url), begin_execution=False) as h:
+            h.models.set_framework_model_call_policy(h.policy)
+            session = await h.store.get_session(h.session_id)
+            session.preferred_model = h.request.model_key
+            await h.store.save_session(session)
+            h.sessions._input_orchestrator_service = InputOrchestratorService(ModeRegistry(),
+                SemanticIntentService(h.models, deterministic_confidence_threshold=1.1))
+            h.sessions._runtime_service, _ = runtime_with(h.adapter)
+            set_deadline(h, 4)
+            delay_deadline_observation(h, monkeypatch, boundary=boundary)
+            await h.dispatcher._execute(h.owner)
+            assert (await h.tasks.get(h.owner.id)).status == "interrupted"
+            session = await h.store.get_session(h.session_id)
+            assert session.status.value == "interrupted" and not session.metadata.get("pending_turn")
+            snapshot = await h.store.get_latest_snapshot(h.session_id)
+            assert snapshot.stage == "interrupted"
+            budget = await h.calls.snapshot(h.binding)
+            assert read_model_budget_material(h.binding,
+                snapshot.graph_state["model_response_summary"]["root_model_budget"]) == budget
+            assert requests == [] and budget.reserved_calls == (boundary == "start")
+            stage = await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)
+            assert stage.phase == "orchestrating" and "runtime_result_asset" not in stage.source_manifest
+            delivered = await h.tasks.claim(h.owner.id, worker_id="redelivery", expected_binding=h.binding)
+            assert delivered.status == "interrupted" and delivered.attempt_no == h.owner.attempt_no
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind", ["calls", "tokens"])
+async def test_non_time_budget_rejections_are_not_converted_to_root_deadline(harness, caplog, kind):
+    from src.runtime.postgres_framework_model_calls import FrameworkModelBudgetExceeded
+    from tests.test_framework_model_dto import dto_request
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url),
+                **({"max_calls": 1} if kind == "calls" else {"max_tokens": 1})) as h:
+            h.models.set_framework_model_call_policy(h.policy)
+            if kind == "calls":
+                await execute(h)
+            before = await h.calls.snapshot(h.binding)
+            with framework_owner_scope(h.owner.runtime_owner):
+                with pytest.raises(FrameworkModelBudgetExceeded) as raised:
+                    await h.models.invoke(h.request.model_key, dto_request(h))
+            assert raised.value.kind == kind and await h.calls.snapshot(h.binding) == before
+            assert len(requests) == (kind == "calls")
+            assert not any(record.getMessage() == "framework_execution_deadline_exhausted" for record in caplog.records)
