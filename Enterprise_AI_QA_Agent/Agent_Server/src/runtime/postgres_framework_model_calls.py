@@ -372,16 +372,39 @@ class PostgresFrameworkModelCalls:
                 )
                 attempts = cur.fetchall()
                 worker_execution_refs.update(
-                    (task["id"], attempt["id"], attempt["worker_id"])
+                    (task["id"], attempt["id"], attempt["worker_id"], None)
                     for attempt in attempts
                     if attempt.get("worker_id")
                 )
                 cur.execute(
                     f"SELECT session_id, type, timestamp, payload FROM {event_table} "
-                    "WHERE session_id=%s AND payload->>'task_id'=%s AND payload ? %s ORDER BY event_sequence",
-                    (task["session_id"], task["id"], "framework_worker_activity"),
+                    "WHERE session_id=%s AND payload->>'task_id'=%s "
+                    "AND (payload->>'binding_id'=%s "
+                    "OR payload->'framework_worker_activity'->>'binding_id'=%s) "
+                    "AND (payload ? %s OR type='agent_task.claimed') ORDER BY event_sequence",
+                    (task["session_id"], task["id"], binding.binding_id, binding.binding_id,
+                     "framework_worker_activity"),
                 )
-                journals = read_worker_activity(task, attempts, cur.fetchall())
+                worker_events = cur.fetchall()
+                for event in worker_events:
+                    if event["type"] != "agent_task.claimed":
+                        continue
+                    payload = event["payload"] or {}
+                    context = payload.get("_harness_context") or {}
+                    epoch = payload.get("owner_epoch")
+                    if (context.get("attempt_id") not in {attempt["id"] for attempt in attempts}
+                        or not isinstance(context.get("worker_id"), str)
+                        or type(epoch) is not int or epoch < 1):
+                        logger.warning("framework_root_activity_worker_claim_invalid", extra={
+                            "binding_id": binding.binding_id, "task_id": task["id"],
+                            "attempt_id": context.get("attempt_id"),
+                            "owner_epoch": epoch, "authoritative": False})
+                        continue
+                    worker_execution_refs.discard(
+                        (task["id"], context["attempt_id"], context["worker_id"], None))
+                    worker_execution_refs.add(
+                        (task["id"], context["attempt_id"], context["worker_id"], epoch))
+                journals = read_worker_activity(task, attempts, worker_events)
                 for attempt in attempts:
                     journal = journals.get(attempt["id"])
                     if journal is not None:
@@ -418,13 +441,21 @@ class PostgresFrameworkModelCalls:
                         if not isinstance(execution, dict):
                             raise ValueError("Tool activity execution owner is not an object")
                         expected_binding = execution.get("binding_id")
+                        owner_epoch = execution.get("owner_epoch")
+                        if type(owner_epoch) is not int or owner_epoch < 1:
+                            logger.warning("framework_root_activity_tool_owner_rejected", extra={
+                                "binding_id": binding.binding_id, "tool_job_id": job["id"],
+                                "owner_epoch": owner_epoch, "reason": "invalid_owner_epoch",
+                                "authoritative": False})
+                            raise ValueError("Tool activity execution owner has an invalid epoch")
                         reference = (execution.get("task_id"), execution.get("attempt_id"),
-                            execution.get("worker_id"))
+                            execution.get("worker_id"), owner_epoch)
                         if expected_binding != binding.binding_id or reference not in worker_execution_refs:
                             logger.warning("framework_root_activity_tool_owner_rejected", extra={
                                 "binding_id": binding.binding_id, "tool_job_id": job["id"],
                                 "task_id": execution.get("task_id"),
                                 "attempt_id": execution.get("attempt_id"),
+                                "owner_epoch": execution.get("owner_epoch"),
                                 "authoritative": False,
                             })
                             raise ValueError("Tool activity execution owner is outside the persisted Worker attempt")

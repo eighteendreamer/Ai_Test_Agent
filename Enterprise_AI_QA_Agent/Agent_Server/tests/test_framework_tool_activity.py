@@ -407,6 +407,32 @@ async def test_live_root_activity_rejects_tool_job_from_foreign_worker_attempt(t
 
 
 @pytest.mark.asyncio
+async def test_live_root_activity_rejects_tool_job_from_foreign_owner_epoch(tool_activity_harness):
+    """A matching Worker identity with a forged historical epoch is invalid."""
+    import json
+
+    from src.infrastructure.postgres_runtime import postgres_connect
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from tests.test_framework_model_calls import policy
+
+    h = tool_activity_harness
+    await h.calls.freeze(h.owner, policy(h))
+    with framework_owner_scope(h.owner):
+        running = await h.jobs.claim_execution(h.job.id)
+    assert running is not None
+    forged = {"binding_id": h.binding.binding_id, "owner_epoch": h.owner.owner_epoch + 1,
+        "task_id": h.owner.task_id, "attempt_id": h.owner.attempt_id, "worker_id": h.owner.worker_id}
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {h.settings.database.postgres_tool_job_table} SET metadata="
+            "jsonb_set(metadata,'{framework_execution_owner}',%s::jsonb) WHERE id=%s",
+            (json.dumps(forged), h.job.id))
+    with pytest.raises(ValueError, match="execution owner"):
+        await PostgresFrameworkModelCalls(h.settings).root_activity_intervals(
+            h.binding, as_of=datetime.now(timezone.utc) + timedelta(seconds=1)
+        )
+
+
+@pytest.mark.asyncio
 async def test_cancel_signal_does_not_close_unknown_external_tail(tool_activity_harness):
     h = tool_activity_harness
     with framework_owner_scope(h.owner):

@@ -6466,3 +6466,30 @@ git diff --check
 最后一组覆盖修正后的直接消费方；此前组合中的 231 项通过与 4 项签名失败不重复计入最终绿色结果。尚未运行 ruff/mypy（环境未安装）；compileall、完整 v4、真实供应商／RustFS／领域 Runner、内部等待来源、崩溃尾段结算和 E3/E4 仍待后续阶段。没有新增 DDL、配置、依赖或公开路由。
 
 本步提交范围为模型 ledger、五个内部消费方、模型账本红测和本实施记录；用户 v3 草稿保持未修改、未暂存、未提交。该步只证明模型调用 → Worker claim 的读取连续性，不等于完整 H09 或全系统 v4 完成。
+
+## 139. C／§6.3、H09/H11：ToolJob owner epoch 与 Worker claim 连续性（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 9c0be5318／§138。模型账本读取已核对 owner task/attempt/epoch 的持久 Worker claim，但根活动 ToolJob 读取仍只比较 (task_id, attempt_id, worker_id) 三元组；同一 Worker attempt 的 framework_execution_owner.owner_epoch 被篡改为其他 epoch 时，旧实现仍把工具区间纳入活动并集。这是跨来源 owner 连续性缺少 epoch 约束，不通过放宽时间区间或依赖当前 runtime owner 修补。
+
+依据 §138 已采用的 agent_task.claimed 持久事件、PostgresAgentTaskStore._event() 的顶层 owner_epoch 事实和 framework_worker_activity 的嵌套身份 → 在同一 Repeatable Read／Read Only 快照内建立 (task_id, attempt_id, worker_id, owner_epoch) 合法集合。ToolJob 有执行引用时必须精确命中 binding 与四元组；epoch 缺失、非正整数或不匹配均拒绝。旧 ToolJob 缺执行引用的兼容弱来源仍不回填身份。
+
+### TDD 与最小实现
+
+1. 新增真实 PostgreSQL/Redis 红测：先由真实 ToolJob store 在当前 owner 下领取任务，再将 owner 引用改为同 task/attempt/worker 但伪造 epoch；旧实现实际 1 failed，8.66 秒，DID NOT RAISE，确认缺口在读取侧。
+2. 首次修复只筛选带 framework_worker_activity 的事件，导致旧行“保留 claim、缺 Worker journal”的合法兼容场景被误判为 Worker activity differs from its durable attempt state；没有放宽 epoch 校验，而是让查询同时读取 agent_task.claimed 与嵌套 Worker journal，并分别解析顶层 claim epoch 和 journal binding。
+3. 新实现对 ToolJob execution owner 校验四元组并拒绝非法 epoch，记录 framework_root_activity_tool_owner_rejected；同 binding 的历史无 journal ToolJob 仍走旧整体起止时间弱来源，跨 binding／Session 过滤保持不变。
+
+### 实际验证与边界
+
+固定 .venv-framework-v2、工作目录 Agent_Server，RUN_LIVE_POSTGRES_TESTS=1，复用已启动 PostgreSQL／Redis；未启停服务、未改生产路由、未调用付费模型。
+
+    epoch 外来 owner 定向红测修复后                         1 passed，6.52 秒
+    ToolJob／Worker／模型活动消费方最终组                  80 passed，135.23 秒
+    诊断／模型账本消费方最终组                              77 passed，233.82 秒
+    跨 binding／Session、旧 journal 缺失、等待分段、开放尾段均在上述组覆盖
+
+首次 epoch 红测失败和中间查询装配失败均保留为本节真实 TDD 过程；最终组未使用 skip/deselect。尚未运行 ruff/mypy（环境未安装）；compileall、git diff --check 及提交前状态检查仍待执行。真实供应商、RustFS、领域 Runner、精确内部等待／崩溃尾段结算、官方 saver conformance、E3/E4 与全系统 v4 仍未完成。
+
+本步只修改根活动读取与 ToolJob 回归测试及本实施记录，不新增 DDL、配置、依赖或公开路由。用户 v3 草稿保持未修改、未暂存、未提交；本节证明的是 ToolJob → Worker 的 epoch 级跨来源连续性，不等于完整 C/H09 或全系统完成。
