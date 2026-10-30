@@ -6564,3 +6564,48 @@ $env:RUN_LIVE_REDIS_TESTS='1'
 ### 交付边界与剩余出口
 
 本节修改 `Agent_Server/src/runtime/postgres_resource_cleanup_store.py`、`Agent_Server/src/runtime/resource_cleanup_worker.py`、`Agent_Server/tests/test_resource_cleanup_worker.py` 及本实施记录；用户既有 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 草稿、日志、配置和本地数据不纳入。receipt `running` 仍是未知外部效果，需后续查询／人工或有依据补偿；本步没有证明 Docker／浏览器／Runner 已停止，没有实现 SessionResource/外部 Runner 的补偿，也没有完成 A3、H06、H09 或完整 v4。下一步继续沿真实失败样本推进其余未知效果与精确停止出口。
+
+## 142. A2-2／§9.2：结果资产保留完整 Runtime 事件后缀（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `855885564`／§141。沿 v4 §9.2、§9.4 复核 `FrameworkRuntimeResultAsset` 时发现：资产只校验 `RuntimeTurnResult.events` 属于同一 Session，没有核对它与结果 `state.event_log` 的关系。调用方可以删除正式事件、重算 `asset_sha256`，仍得到可读取的结果资产；这会让恢复／唯一 finalizer 消费不完整的 Runtime 事件后缀。该缺口不是消息文本或 UUID 排序问题，也不通过放宽比较解决。
+
+### TDD 与最小实现
+
+1. 先将真实 `frozen_result` 资产回归扩展为缺失事件样本：注入完整 `state.event_log`（`runtime.turn_started` → `runtime.turn_completed`），清空 `runtime_result.events` 并重算资产摘要。临时移除生产校验后，目标测试实际 **1 failed、37 deselected，7.52 秒，exit 1**；失败为“未拒绝”，不是 fixture／环境错误。
+2. 在现有 `FrameworkRuntimeResultAsset` 校验中，只对包含 `state.event_log` 的新材料执行兼容性校验：日志必须是非空列表，结果事件必须非空，日志末尾必须是 `runtime.turn_completed`；将状态日志和返回事件规范化后，要求返回事件是完整日志的精确连续末尾，并逐项比较 ID、时间、类型和 payload。没有 `state.event_log` 的历史资产继续沿旧读路径，不新增 schema 版本或恢复权限。
+3. 校验失败留下现有 `ValueError`／上层 recovery-required 痕迹，不写数据库、不生成事件、不触发图／模型／工具；资产摘要仍覆盖全部新内容。
+
+### 实际验证
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONIOENCODING=utf-8`，复用用户已启动的 PostgreSQL／Redis；未启动或重启服务，未改生产路由，未调用付费模型，未升级依赖。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_framework_runtime_result_asset.py -q -x -rs --tb=short
+# 38 passed，160.63 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_framework_partial_projection_recovery.py `
+  -k 'result_asset_before_any_projection or load' -q -x -rs --tb=short
+# 3 passed，15.96 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_framework_unsealed_result_reconstruction.py `
+  -k 'reuses_complete_original_projection_without_writes or same_original_projection_without_sealing' `
+  -q -x -rs --tb=short
+# 12 passed，55.51 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest `
+  tests/test_framework_application_projection.py `
+  -k 'native_checkpoint_and_committed_application_recover or exact_output_survives_store_restart_duplicate_delivery_and_second_owner_loss or official_deep_agent_worker_killed_after_commit_recovers_without_second_http_request' `
+  -q -x -rs --tb=short
+# 7 passed，50.39 秒，exit 0
+```
+
+根目录 `./.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 均通过。一次早期应用投影筛选条件无匹配，得到 `51 deselected`／exit 1；改用实际测试名后以上 7 个场景通过，不将无测试运行记为绿色。`ruff`、`mypy` 未安装，未执行且不以 `compileall` 代替。
+
+### 交付边界与剩余出口
+
+本节修改 `Agent_Server/src/schemas/framework_runtime_result.py`、`Agent_Server/tests/test_framework_runtime_result_asset.py` 及本实施记录；用户既有 v3 草稿仍未修改、未暂存、未提交。该校验闭合“结果资产事件后缀不可缺失”一个 A2-2 材料出口，未证明图终态到资产的所有空窗、外部未知效果、A2-3、A3 或完整 v4；仍不开放缺原结果资产时的任意图／模型／工具重执行。整体目标继续 active。

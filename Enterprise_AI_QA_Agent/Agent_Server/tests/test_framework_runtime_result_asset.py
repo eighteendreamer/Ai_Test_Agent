@@ -280,7 +280,7 @@ async def test_freeze_failure_after_stage_sql_rolls_back_asset(projection, monke
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("changed", ["output", "digest", "source", "task", "input", "schema"])
+@pytest.mark.parametrize("changed", ["output", "events", "digest", "source", "task", "input", "schema"])
 async def test_corrupt_or_foreign_asset_cannot_be_read(frozen_result, changed):
     h = frozen_result
     saved = await stage(h, h.task)
@@ -288,6 +288,18 @@ async def test_corrupt_or_foreign_asset_cannot_be_read(frozen_result, changed):
     asset = record["source_manifest"]["runtime_result_asset"]
     if changed == "output":
         asset["runtime_result"]["output_text"] = "different result"
+    elif changed == "events":
+        # A completed result must retain the exact event suffix returned by the
+        # runtime; a same-session asset with its formal events removed is not a
+        # valid recovery input.
+        turn_id = asset["binding"]["turn_id"]
+        asset["runtime_result"]["state"]["event_log"] = [
+            {"id": "original-start", "timestamp": "2026-10-30T00:00:00+00:00",
+             "type": "runtime.turn_started", "payload": {"turn_id": turn_id, "step": 1}},
+            {"id": "original-complete", "timestamp": "2026-10-30T00:00:01+00:00",
+             "type": "runtime.turn_completed", "payload": {"turn_id": turn_id, "step": 2}},
+        ]
+        asset["runtime_result"]["events"] = []
     elif changed == "digest":
         asset["asset_sha256"] = "0" * 64
     elif changed == "schema":
@@ -295,6 +307,10 @@ async def test_corrupt_or_foreign_asset_cannot_be_read(frozen_result, changed):
     else:
         asset[{"source": "source_sha256", "task": "task_id", "input": "input_sha256"}[changed]] = (
             "foreign-task" if changed == "task" else "0" * 64)
+    if changed == "events":
+        values = {key: value for key, value in asset.items() if key != "asset_sha256"}
+        asset["asset_sha256"] = approval_value_hash(values)
+    elif changed not in {"digest", "schema", "output"}:
         values = {key: value for key, value in asset.items() if key != "asset_sha256"}
         asset["asset_sha256"] = approval_value_hash(values)
     record["source_sha256"] = approval_value_hash(record["source_manifest"])

@@ -74,6 +74,31 @@ class FrameworkRuntimeResultAsset(BaseModel):
             raise ValueError("Runtime result verification belongs to another Turn")
         if any(item.session_id != binding.session_id for item in result.events):
             raise ValueError("Runtime result event belongs to another Session")
+        # A completed framework result may return only the current invocation
+        # suffix (approval continuation), but that suffix must remain an exact
+        # tail of the complete event log captured in state. Without this check,
+        # a caller could remove formal events, recompute the asset digest, and
+        # still present the asset as a valid recovery input.
+        event_log = result.state.get("event_log")
+        if event_log is not None:
+            if not isinstance(event_log, list) or not event_log or not result.events:
+                raise ValueError("Runtime result has no complete event suffix")
+            required = {"id", "timestamp", "type", "payload"}
+            original = []
+            for raw in event_log:
+                if not isinstance(raw, dict) or not required.issubset(raw):
+                    raise ValueError("Runtime result event log has incomplete original material")
+                try:
+                    item = ExecutionEvent(session_id=binding.session_id, id=raw["id"],
+                        timestamp=raw["timestamp"], type=raw["type"], payload=raw["payload"])
+                except (TypeError, ValueError) as exc:
+                    raise ValueError("Runtime result event log has invalid original material") from exc
+                original.append(item.model_dump(mode="json", include={"id", "timestamp", "type", "payload"}))
+            returned = [item.model_dump(mode="json", include={"id", "timestamp", "type", "payload"})
+                for item in result.events]
+            if (original[-1]["type"] != "runtime.turn_completed"
+                or len(returned) > len(original) or original[-len(returned):] != returned):
+                raise ValueError("Runtime result events differ from its complete original event suffix")
         from src.schemas.framework_cognitive_result import validate_cognitive_completion
 
         cognitive = [validate_cognitive_completion(state.get("context_bundle") or {}, state.get("model_response_summary") or {})
