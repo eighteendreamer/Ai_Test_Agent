@@ -6008,3 +6008,69 @@ v4 §6.3 要求根活动由持久执行事实计量，不能把 Worker claim/adm
 本节提交仅包含两个生产源文件、既有截止测试文件和本记录，共四文件；提交前核对完整 diff、原记录字节前缀、EOF、暂存范围及 v3 SHA256。未改配置、用户草稿或生产开关，未启停基础设施、升级依赖、调用付费服务或真实目标；日志及本地数据不提交，不推送、不建 PR。具体 commit 以包含本节的 Git 提交和交付记录追溯。
 
 本步统一了数据库 reserve／start 主动拒绝与本地协作 timer 的根截止语义，未证明同步阻塞、取消期间数据库线程尾段或外部操作能够按硬截止物理停止。准备／发送许可／证据写入时的取消尾段与晚提交、精确内部等待及活动限额、跨来源和跨 Worker 连续性、根截止专项独立进程故障、真实供应商／RustFS／领域 Runner、官方 saver conformance、完整 H01–H12、A2/A3/B/C 其余出口、D/E/F、E3/E4 发布门仍未完成。整体 v4 继续 active；下一步检查原模型准入的取消尾段与原预算快照，不以本节通过代表全部恢复／预算完成。
+
+## 131. C／§6.2、§6.3、§11、H09/H10/H11：等待模型账本写事务尾段后传播取消与根截止（2026-10-30）
+
+### 续接、根因与依据 → 做法
+
+基线 `53ca6692d`（§130），上一轮已取得真实验证并提交，属于 progress。本轮重新核对 HEAD／工作区后继续原准入取消尾段；用户 v3 草稿仍不修改或提交，SHA256 为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`。P0 和严格 messages 比较沿原 §54 实现，不重复建设。
+
+- 真实 `prepare`／`attach_request`／`start` 的同步事务原来直接经 `asyncio.to_thread()`；取消等待者后，已运行的线程仍可能提交。`snapshot()` 原本是无 owner 锁的只读账本读取，可以在该提交前取得旧状态；原根截止材料因而早于原准入事务的最终事实。修复线程桥接的生命周期，不给 snapshot 增加权限门、不在 Runtime／Session／Dispatcher 复制等待补判。
+- 项目已有 `sqlalchemy_engine_lifespan()` 和 `SessionService._settle_execution_tasks`／compaction 收尾使用强引用任务、`asyncio.shield()` 与循环等待处理重复取消 → 模型账本采用同一机制，仅等待已经调用的本次写事务完成，再传播捕获的原 CancelledError，不继续下一步准入或发送。
+- 实际读取安装版 Python 3.11.16 的 `concurrent.futures.Future.cancel`／`asyncio.shield` 文档：运行中的 future 不能靠取消停止；shield 不等于吞掉调用方取消，且必须持有任务引用 → 新 `_run_mutation()` 在正常路径保留原返回／错误；取消路径等待提交／回滚，重复取消也不遗弃线程，晚失败留下独立结构化记录后仍传播原取消。
+- 本地 `Agent轨迹与协议鲁棒性.html` 的状态、幂等和异常恢复要求 → 用实际 SQL 已执行、连接尚未提交的窗口验证，不 mock 成功结果或直接制造政策拒绝；提交／回滚、原根材料、预留、阶段、零 HTTP 和日志均分别核对。
+
+### 有效红测与实现
+
+新增隔离 transaction gate：沿原 PostgreSQL 连接事务，在目标真实 SQL 已执行后阻塞连接退出，释放后由原连接提交；回滚反例在原连接上下文内显式抛出受控错误，确认实际 rollback。主调用停止后另用原 owner-locking deadline 读作为事务后屏障，避免 Harness 再把线程调度等同于已提交。测试 gate 仅用于隔离 fixture，不改运行中的政策、生产 SQL 或外部请求。
+
+先运行 DTO 三边界 × 根截止／显式取消六项，实际 **6 failed、63 deselected，35.60s，exit 1**（`.codex-logs/c131-admission-tail-red.log`）：三项根截止材料与晚提交后的原账本不一致，另外三项在 SQL 仍可提交时已返回取消。所有目标 SQL 均真实执行并在释放后提交；没有装配断言或环境错误。这是本节行为红测。
+
+`postgres_framework_model_calls.py` 统一八处写事务桥接：freeze、reserve、attach_request、response／wire 观察、ready 转移、start、settle（completed／unknown 共用）。不新增全局任务注册表、调度器、重试器或持久格式；回调内部原有 owner／origin／epoch／阶段／预算校验和锁顺序不变。只读查询和部署初始化不改为该写事务桥接。
+
+取消时先记录 `framework_model_mutation_cancellation_pending`，确认线程返回或失败后记录 `framework_model_mutation_drained_after_cancel`，包含 binding、attempt、operation、outcome、取消次数及安全错误类型；不记录 Token、Prompt、请求正文或凭据。事务失败不会假装提交，取消也不会变为返回发送许可；不把调用方取消当成已经停止远端操作。
+
+最小实现后扩展 graph／DTO × 三边界 × 根截止／显式取消 × 提交／回滚，实际 **24 passed、45 deselected，149.95s，exit 0**（`c131-admission-tail-first-green.log`）。根截止材料在提交／回滚后与原账本相同，未发送调用保持 ready 或原 invoking，不捏造 unknown／usage，不退款，不发 HTTP。
+
+再扩展其余六种写入的重复取消和提交／回滚。首次 **2 failed、10 passed、69 deselected，55.66s**（`c131-other-mutation-cancellation.log`）；两项 ready 转移在 gate 前未取得 replacement 的 runtime_owner：误将原 claimed／未执行转移 helper 用到已 begin 的 fixture。该问题属于测试阶段装配，不改生产 claim 或恢复权限；将这两个 fixture 沿原转移回归保持 claimed，取得合法 replacement 后再 begin。其余断言保留，后续真实终态继续追加。
+
+本节最终消费方回归尚未完成；以下结果只按实际取得的命令终态记录，不以选择组或历史绿色代表最终源码。
+
+### 最终源码验证
+
+阶段装配修正后，其他六种写入选择组实际 **12 passed、69 deselected，57.93s，exit 0**（`.codex-logs/c131-other-mutation-cancellation-final.log`）。该组逐项核对冻结重入、response／wire 非权威观察、合法 ready 转移及 completed／unknown 结算；每项两次取消仍等待原事务，最终传播第一次取消的原消息，提交保留实际行／预留／usage，回滚保持原快照，晚失败有明确日志。
+
+后端工作目录 `Agent_Server`，环境为 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`。TDD 和中间验证的实际命令：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py -k 'admission_cancellation_drains and dto and commit' -q -rs --tb=short
+# 有效红测：6 failed、63 deselected，35.60s，exit 1
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py -k admission_cancellation_drains -q -rs --tb=short
+# 最小实现后：24 passed、45 deselected，149.95s，exit 0
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py -k other_model_mutations -q -rs --tb=short
+# 阶段装配修正后：12 passed、69 deselected，57.93s，exit 0
+```
+
+最终完整消费方两组均已从原进程取得终态，没有因等待观察而重启；运行期间未修改生产源码或测试，只追加本实施记录：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_evidence.py tests/test_framework_model_admission.py tests/test_framework_model_budget_projection.py tests/test_framework_prepared_orchestration.py -q -rs --tb=short
+# 348 passed，1191.48s（0:19:51），exit 0，无 skipped／deselected
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py tests/test_framework_cognitive_limits.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py -q -rs --tb=short
+# 282 passed，457.89s（0:07:37），exit 0，无 skipped／deselected
+```
+
+原日志 `c131-final-model-consumers.log`、`c131-final-runtime-consumers.log` 保留本地，不提交。第一组包括完整 81 项截止测试（原 45＋本节 36），并覆盖所有原模型账本、证据、转移、响应导入、语义与准备消费方；第二组覆盖任务停止、Session／Dispatcher、adapter、原审批独立 Worker 强杀、严格 Delta/messages、认知子代理与审批配额、legacy SDK／HTTP。各组按范围报告，不累加重叠结果充作全量验收。
+
+前端工作目录 `agent_web`：`npm run test -- src/stores/sessionFrameworkApproval.test.ts src/stores/sessionStreaming.test.ts src/stores/sessionAssistantStreamReplay.test.ts src/composables/useSSEStream.test.ts`，**4 文件／29 passed，2.40s，exit 0**；`npm run typecheck` **exit 0**。日志 `c131-frontend-consumers.log`、`c131-frontend-typecheck.log` 不提交。根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和限定本轮文件的 `git diff --check` 实际 exit 0。`find_spec` 确认 ruff／mypy 仍未安装，未安装工具或运行独立 Python lint/typecheck。
+
+本节新专项为实际 PostgreSQL 写事务、受控 commit gate 和本机 SDK／HTTP fixture，准入停止没有发 HTTP；观察对象引用及上传后端为原 fixture，不是真实 RustFS。不是专门的独立 Worker 强杀或真实供应商验收；既有审批强杀回归仅保留其原 E2 范围，不能替代新桥接的独立进程故障专项。所有本轮 pytest／前端句柄均已终态，无待观察或需重启的测试进程。
+
+### 兼容性、提交与剩余出口
+
+本步有意改变取消延迟：等待本次已经开始的写事务返回／失败，再传播原取消，而不是立即遗弃同步线程。只影响模型账本异步写桥接；没有延长根预算、增加发送、重试／退款、修改 owner 或锁顺序。线程 `outcome=returned/failed` 不等于外部效果证明；连接／提交 ACK 失败仍按实际持久事实核对，不从失败推断必然回滚。原 SQL／连接超时设置保留，不能宣称该等待有硬实时停止保证。
+
+不修改 Runtime／Session／Dispatcher、公开 API、schema／DDL、依赖或生产开关；内部方法调用点已全部核对。提交仅包含账本源文件、原截止测试和本记录，共三文件；提交前检查完整 diff、记录原字节前缀、EOF、精确暂存与 v3 hash。用户 v3 草稿、配置、日志与本地数据排除；不推送、不建 PR。具体 commit 以包含本节的 Git 提交及交付记录追溯。
+
+尚未完成：对象证据写入的取消与未知上传尾段、全图任意重复取消／进程终止、提交 ACK 丢失专门故障、精确内部等待及根活动限额、跨来源／跨 Worker 连续性、新截止专项独立进程强杀、真实供应商／OAuth／RustFS／领域 Runner、官方 saver conformance、完整 H01–H12、A2/A3/B/C 其余出口、D/E/F 与 E3/E4。整体 v4 继续 active。下一步沿原 `FrameworkModelEvidence` 与 `ArtifactStorageService` 检查请求／响应／wire 的对象写入取消事实和既有孤儿对账机制，不把 SQL 线程收尾扩大成全部外部 I/O 已停止。

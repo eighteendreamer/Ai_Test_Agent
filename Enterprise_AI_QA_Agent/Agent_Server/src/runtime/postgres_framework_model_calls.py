@@ -72,6 +72,41 @@ class PostgresFrameworkModelCalls:
             if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]{0,62}", table):
                 raise ValueError("Invalid framework model ledger table identifier")
 
+    async def _run_mutation(self, owner, operation, callback, *, attempt_id=None):
+        # Follow sqlalchemy_engine_lifespan/_settle_execution_tasks: cancelling
+        # an async waiter cannot stop its running synchronous transaction.
+        # Drain only this mutation, then propagate cancellation, never permission
+        # to continue to the next admission step or send a provider request.
+        pending = asyncio.create_task(asyncio.to_thread(callback), name=f"framework-model-ledger:{operation}")
+        cancelled = None
+        cancellation_count = 0
+        context = {"binding_id": owner.binding.binding_id, "model_attempt_id": attempt_id,
+            "operation": operation}
+        while not pending.done():
+            try:
+                await asyncio.shield(pending)
+            except asyncio.CancelledError as exc:
+                cancellation_count += 1
+                if cancelled is None:
+                    cancelled = exc
+                    logger.warning("framework_model_mutation_cancellation_pending", extra=context)
+            except Exception:
+                if cancelled is None:
+                    raise
+                break
+        if cancelled is not None:
+            try:
+                pending.result()
+            except Exception as exc:
+                logger.error("framework_model_mutation_drained_after_cancel", extra={**context,
+                    "outcome": "failed", "error_type": type(exc).__name__,
+                    "cancellation_count": cancellation_count})
+            else:
+                logger.warning("framework_model_mutation_drained_after_cancel", extra={**context,
+                    "outcome": "returned", "cancellation_count": cancellation_count})
+            raise cancelled
+        return pending.result()
+
     async def initialize(self):
         # Deployment setup is explicit; never create schema in a model request.
         def setup():
@@ -94,7 +129,7 @@ class PostgresFrameworkModelCalls:
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
                 self._owned(cur, owner, before_execution=True)
                 return self._freeze_policy(cur, owner.binding, policy)
-        result = await asyncio.to_thread(save)
+        result = await self._run_mutation(owner, "freeze", save)
         logger.info("framework_model_budget_frozen", extra={"binding_id": owner.binding.binding_id,
             "max_calls": result.max_calls, "max_tokens": result.max_tokens, "deadline_at": result.deadline_at})
         return result
@@ -365,7 +400,7 @@ class PostgresFrameworkModelCalls:
                     phase="ready", created_at=self._now(cur))
                 return self._write(cur, record, insert=True)
         try:
-            saved = await asyncio.to_thread(reserve)
+            saved = await self._run_mutation(owner, "reserve", reserve, attempt_id=intent.attempt_id)
         except FrameworkModelBudgetExceeded as exc:
             logger.warning("framework_model_budget_rejected", extra={"binding_id": owner.binding.binding_id,
                 "model_attempt_id": intent.attempt_id, "budget_kind": exc.kind})
@@ -412,7 +447,7 @@ class PostgresFrameworkModelCalls:
                     raise FrameworkModelRecoveryRequired("request_asset_cannot_be_reconstructed", call)
                 return self._write(cur, call.model_copy(update={"request": request}))
 
-        saved = await asyncio.to_thread(attach)
+        saved = await self._run_mutation(owner, "attach_request", attach, attempt_id=attempt_id)
         logger.info("framework_model_request_asset_bound", extra={"binding_id": saved.binding_id,
             "model_attempt_id": saved.intent.attempt_id, "request_sha256": saved.intent.request_sha256})
         return saved
@@ -454,7 +489,7 @@ class PostgresFrameworkModelCalls:
                     "response_observations": [*call.response_observations, observation]}))
                 return observation
 
-        result = await asyncio.to_thread(append)
+        result = await self._run_mutation(owner, "observe_response", append, attempt_id=attempt_id)
         logger.info("framework_model_response_observed", extra={"binding_id": owner.binding.binding_id,
             "model_attempt_id": attempt_id, "owner_epoch": owner.owner_epoch,
             "observation_id": result.observation_id, "authoritative": False})
@@ -482,7 +517,7 @@ class PostgresFrameworkModelCalls:
                 self._write(cur, call.model_copy(update={
                     "wire_observations": [*call.wire_observations, item]}))
                 return item
-        result = await asyncio.to_thread(append)
+        result = await self._run_mutation(owner, "observe_wire", append, attempt_id=attempt_id)
         logger.info("framework_model_wire_observed", extra={"binding_id": owner.binding.binding_id,
             "model_attempt_id": attempt_id, "observation_id": result.observation_id,
             "authoritative": False})
@@ -534,7 +569,7 @@ class PostgresFrameworkModelCalls:
                     **successor.model_dump(), "reservation_transfers": [*call.reservation_transfers, link]}))
 
         try:
-            saved = await asyncio.to_thread(transfer)
+            saved = await self._run_mutation(owner, "transfer_ready", transfer, attempt_id=expected.intent.attempt_id)
         except Exception as exc:
             logger.warning("framework_model_reservation_transfer_rejected", extra={
                 "binding_id": owner.binding.binding_id, "model_attempt_id": expected.intent.attempt_id,
@@ -579,7 +614,7 @@ class PostgresFrameworkModelCalls:
                 call = call.model_copy(update={"phase": "invoking", "started_at": self._now(cur)})
                 return self._write(cur, call), True
         try:
-            result = await asyncio.to_thread(grant)
+            result = await self._run_mutation(owner, "start", grant, attempt_id=attempt_id)
         except FrameworkModelBudgetExceeded as exc:
             logger.warning("framework_model_budget_rejected", extra={"binding_id": owner.binding.binding_id,
                 "model_attempt_id": attempt_id, "budget_kind": exc.kind})
@@ -649,7 +684,7 @@ class PostgresFrameworkModelCalls:
                     "settled_response_id": settlement.response_id,
                     "schema_version": 3 if settlement.response_id is not None else call.schema_version})
                 return self._write(cur, saved)
-        result = await asyncio.to_thread(save)
+        result = await self._run_mutation(owner, f"settle_{settlement.phase}", save, attempt_id=attempt_id)
         logger.log(logging.WARNING if settlement.phase == "unknown" else logging.INFO,
             "framework_model_call_settled", extra={"binding_id": result.binding_id,
                 "model_attempt_id": attempt_id, "phase": result.phase, "outcome_code": result.outcome_code,

@@ -670,3 +670,176 @@ async def test_non_time_budget_rejections_are_not_converted_to_root_deadline(har
             assert raised.value.kind == kind and await h.calls.snapshot(h.binding) == before
             assert len(requests) == (kind == "calls")
             assert not any(record.getMessage() == "framework_execution_deadline_exhausted" for record in caplog.records)
+
+
+def pause_admission_commit(h, monkeypatch, *, boundary, outcome):
+    """Hold real, already-issued SQL before its connection commits/rolls back."""
+    from contextlib import contextmanager
+    import threading
+    from src.runtime import postgres_framework_model_calls as ledger
+
+    loop = asyncio.get_running_loop()
+    entered, release = asyncio.Event(), threading.Event()
+    selected, local = threading.Event(), threading.local()
+    connect, write = ledger.postgres_connect, h.calls._write
+
+    def tracked_write(cur, record, *, insert=False):
+        target = ((boundary == "reserve" and insert)
+            or (boundary == "request" and record.phase == "ready" and record.request is not None)
+            or (boundary == "start" and record.phase == "invoking"))
+        result = write(cur, record, insert=insert)
+        if target and not selected.is_set():
+            selected.set()
+            local.selected = True
+        return result
+
+    @contextmanager
+    def paused_connect(settings):
+        with connect(settings) as conn:
+            yield conn
+            if boundary == "mutation" and not selected.is_set():
+                selected.set()
+                local.selected = True
+            if getattr(local, "selected", False):
+                local.selected = False
+                loop.call_soon_threadsafe(entered.set)
+                assert release.wait(15), "Test did not release the pending SQL transaction"
+                if outcome == "rollback":
+                    raise ConnectionError("controlled admission transaction rollback")
+
+    monkeypatch.setattr(h.calls, "_write", tracked_write)
+    monkeypatch.setattr(ledger, "postgres_connect", paused_connect)
+    return entered, release
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["graph", "dto"])
+@pytest.mark.parametrize("boundary", ["reserve", "request", "start"])
+@pytest.mark.parametrize("stop", ["deadline", "cancel"])
+@pytest.mark.parametrize("outcome", ["commit", "rollback"])
+async def test_admission_cancellation_drains_sql_before_control_result(harness, monkeypatch, caplog, path, boundary, stop, outcome):
+    from tests.test_framework_model_dto import dto_request
+    from tests.test_framework_model_result_import import wire_evidence
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            wire_evidence(h, monkeypatch)
+            if stop == "deadline":
+                set_deadline(h, 3)
+            entered, release = pause_admission_commit(h, monkeypatch, boundary=boundary, outcome=outcome)
+
+            async def invoke():
+                with framework_owner_scope(h.owner.runtime_owner):
+                    return await (execute(h) if path == "graph" else
+                        h.models.invoke(h.request.model_key, dto_request(h)))
+
+            task = asyncio.create_task(invoke())
+            try:
+                await asyncio.wait_for(entered.wait(), 10)
+                if stop == "cancel":
+                    task.cancel("controlled admission cancellation")
+                done, _ = await asyncio.wait({task}, timeout=5 if stop == "deadline" else .5)
+                abandoned_sql = task in done
+                release.set()
+                error, = await asyncio.gather(task, return_exceptions=True)
+                assert isinstance(error, FrameworkExecutionDeadlineExceeded if stop == "deadline" else asyncio.CancelledError)
+                # This owner-locking read is also a post-release transaction
+                # barrier on the old implementation's detached worker thread.
+                await h.calls.execution_deadline(h.owner.runtime_owner)
+                snapshot = await h.calls.snapshot(h.binding)
+                assert requests == [] and snapshot.actual_tokens == snapshot.unknown_calls == 0
+                assert snapshot.reserved_calls == (0 if boundary == "reserve" and outcome == "rollback" else 1)
+                for call in snapshot.calls:
+                    assert call.phase == ("invoking" if boundary == "start" and outcome == "commit" else "ready")
+                    assert (call.request is not None) is (boundary == "start" or (boundary == "request" and outcome == "commit"))
+                if stop == "deadline":
+                    assert read_model_budget_material(h.binding, error.root_model_budget) == snapshot
+                assert not abandoned_sql, "Control result returned while its model-ledger transaction could still commit"
+                drained, = [record for record in caplog.records if record.getMessage() == "framework_model_mutation_drained_after_cancel"]
+                assert drained.binding_id == h.binding.binding_id and drained.model_attempt_id
+                assert drained.operation == {"reserve": "reserve", "request": "attach_request", "start": "start"}[boundary]
+                assert drained.outcome == ("returned" if outcome == "commit" else "failed")
+                if outcome == "rollback":
+                    assert drained.error_type == "ConnectionError"
+            finally:
+                release.set()
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["freeze", "observe_response", "observe_wire", "transfer_ready",
+    "settle_completed", "settle_unknown"])
+@pytest.mark.parametrize("outcome", ["commit", "rollback"])
+async def test_other_model_mutations_drain_even_repeated_cancellation(harness, monkeypatch, caplog, operation, outcome):
+    from tests.test_framework_model_calls import intent, usage
+    from tests.test_framework_model_evidence import reference
+    from tests.test_framework_model_reservation_transfer import replacement
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url),
+                begin_execution=operation != "transfer_ready") as h:
+            frozen = await h.calls.frozen_policy(h.binding)
+            request, response = reference(b"controlled request"), reference(b"controlled response")
+            selected = intent(position_version=1, model_key=h.request.model_key,
+                model_config_fingerprint=h.binding.model_config_fingerprint, request_sha256=request.sha256)
+            if operation != "freeze":
+                original = await h.calls.prepare_initial(h.owner.runtime_owner, selected, request=request)
+                if operation == "transfer_ready":
+                    h.owner = await replacement(h, h.owner)
+                else:
+                    await h.calls.start(h.owner.runtime_owner, selected.attempt_id)
+            owner = h.owner.runtime_owner
+            actions = {
+                "freeze": lambda: h.calls.freeze(owner, frozen),
+                "observe_response": lambda: h.calls.append_response_observation(owner, selected.attempt_id,
+                    response=response, response_kind="model_invocation_result"),
+                "observe_wire": lambda: h.calls.append_wire_observation(owner, selected.attempt_id,
+                    observation={"request": request, "response": response, "attempt_sequence": 1, "response_complete": True}),
+                "transfer_ready": lambda: h.calls.transfer_ready(owner, expected=original),
+                "settle_completed": lambda: h.calls.complete(owner, selected.attempt_id, usage=usage(10)),
+                "settle_unknown": lambda: h.calls.mark_unknown(owner, selected.attempt_id, code="controlled_unknown"),
+            }
+            before = await h.calls.snapshot(h.binding)
+            entered, release = pause_admission_commit(h, monkeypatch, boundary="mutation", outcome=outcome)
+            task = asyncio.create_task(actions[operation]())
+            try:
+                await asyncio.wait_for(entered.wait(), 10)
+                task.cancel("first controlled cancellation")
+                done, _ = await asyncio.wait({task}, timeout=.5)
+                abandoned_sql = task in done
+                task.cancel("second controlled cancellation")
+                done, _ = await asyncio.wait({task}, timeout=.5)
+                abandoned_sql |= task in done
+                release.set()
+                with pytest.raises(asyncio.CancelledError, match="first controlled cancellation"):
+                    await task
+                await h.calls.execution_deadline(owner)
+                snapshot = await h.calls.snapshot(h.binding)
+                assert not abandoned_sql and requests == [] and snapshot.policy == frozen
+                if outcome == "rollback":
+                    assert snapshot == before
+                elif operation != "freeze":
+                    call, = snapshot.calls
+                    assert snapshot.reserved_calls == before.reserved_calls == 1
+                    if operation == "observe_response":
+                        assert len(call.response_observations) == 1 and call.phase == "invoking" and call.usage is None
+                    elif operation == "observe_wire":
+                        assert len(call.wire_observations) == 1 and call.phase == "invoking" and call.usage is None
+                    elif operation == "transfer_ready":
+                        assert call.owner_attempt_id == owner.attempt_id and len(call.reservation_transfers) == 1
+                        assert call.phase == "ready" and snapshot.charged_tokens == before.charged_tokens
+                    else:
+                        assert call.phase == ("completed" if operation == "settle_completed" else "unknown")
+                        assert snapshot.charged_tokens == (10 if operation == "settle_completed" else before.charged_tokens)
+                drained, = [record for record in caplog.records if record.getMessage() == "framework_model_mutation_drained_after_cancel"]
+                assert drained.operation == operation and drained.cancellation_count == 2
+                assert drained.outcome == ("returned" if outcome == "commit" else "failed")
+                if outcome == "rollback":
+                    assert drained.error_type == "ConnectionError"
+            finally:
+                release.set()
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
