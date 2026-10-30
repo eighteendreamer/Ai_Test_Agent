@@ -196,6 +196,15 @@ class ModelRuntimeService:
             if transport_options is not None and transport_options.max_retries != 0:
                 raise ValueError("Owner-bound model retries require explicit accounted attempts")
             transport_options = transport_options or self.governed_transport_options()
+        scope = (self._framework_model_call_policy.execution_scope(owner, before_execution=True)
+            if owner is not None else nullcontext())
+        async with scope as execution_deadline:
+            return await self._invoke(model_key, request, owner=owner, cleaned_purpose=cleaned_purpose,
+                expected_parameters=expected_parameters, expected_runtime_parameters=expected_runtime_parameters,
+                transport_options=transport_options, execution_deadline=execution_deadline)
+
+    async def _invoke(self, model_key, request, *, owner, cleaned_purpose, expected_parameters,
+                      expected_runtime_parameters, transport_options, execution_deadline):
         trace_context = dict(request.trace_context)
         if owner is not None and not (trace_context.get("logical_call_id") or trace_context.get("call_id")):
             raise ValueError("Owner-bound model invocation requires a durable call position")
@@ -315,7 +324,7 @@ class ModelRuntimeService:
                 else:
                     result = await self._framework_model_call_policy.invoke_dto(owner=owner, config=config,
                         request=request, options=self._framework_invocation_options(config, transport_options),
-                        purpose=cleaned_purpose, send=send)
+                        purpose=cleaned_purpose, send=send, execution_deadline=execution_deadline)
             except ProviderClientError as exc:
                 result = self._http_error_result(config, request, exc)
         result.response_summary["logical_call_id"] = logical_call_id

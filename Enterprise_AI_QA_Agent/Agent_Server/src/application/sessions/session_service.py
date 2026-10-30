@@ -13,6 +13,7 @@ from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.context.observation_runtime_service import ObservationRuntimeService
 from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
 from src.application.runtime.runtime_service import RuntimeService
+from src.application.models.framework_model_call_policy import FrameworkExecutionDeadlineExceeded
 from src.runtime.session_event_sink import SessionEventSink
 from src.runtime.session_assistant_stream import SessionAssistantStream
 from src.application.resources.session_resource_service import SessionResourceService
@@ -309,8 +310,33 @@ class SessionService:
                     execute,
                     ownership_monitors=(ownership_monitor,),
                 )
+            except FrameworkExecutionDeadlineExceeded as exc:
+                return await self._await_owned_execution(task.session_id, heartbeat,
+                    self._finalize_pregraph_deadline, task, payload, exc,
+                    ownership_monitors=(ownership_monitor,))
             finally:
                 await self._stop_lease_heartbeat(task.session_id, stop, heartbeat)
+
+    async def _finalize_pregraph_deadline(self, task, payload, expiry):
+        """Reuse the runtime stop projection and sole Session finalizer.
+
+        No upstream counterpart (checked: claimed-message preparation, Runtime
+        root-deadline projection, Session finalizer): classification precedes
+        execute_turn, but expiry is still an interrupted Turn, not a failed send.
+        """
+        with framework_owner_scope(task.runtime_owner):
+            await self._store.assert_turn_execution(task.session_id, task.lease_token)
+            session = await self._require_session(task.session_id)
+            request = ExecutionRequest(session_id=task.session_id, turn_id=str(task.turn_id),
+                trace_id=str(task.trace_id), runtime_binding=task.runtime_binding,
+                user_message_id=task.user_message_id, user_message=payload.content,
+                normalized_input=" ".join(str(payload.content or "").split()),
+                mode_key=payload.mode_key or session.mode_key, agent_key=payload.agent_key,
+                model_key=payload.model_key or session.preferred_model)
+            result = await self._runtime_service.stop_expired_framework_turn(session, request, expiry=expiry)
+            return await self._finalize_runtime_result(session=session, runtime_result=result,
+                assistant_message_id=str(uuid4()), user_message_override=payload.content,
+                turn_lease_token=task.lease_token, projection_owner=task.runtime_owner)
 
     async def _recover_projected_framework_message(self, *, session, task, stage, stages):
         """Finish or acknowledge an original application result, never its graph.

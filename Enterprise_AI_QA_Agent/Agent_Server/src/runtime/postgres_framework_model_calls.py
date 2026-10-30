@@ -284,7 +284,7 @@ class PostgresFrameworkModelCalls:
                 return self._policy(cur, binding.binding_id)
         return await asyncio.to_thread(read)
 
-    async def execution_deadline(self, owner: RuntimeExecutionOwner) -> tuple[datetime, float]:
+    async def execution_deadline(self, owner: RuntimeExecutionOwner, *, before_execution: bool = False) -> tuple[datetime, float]:
         """Read the original root deadline against the database clock and owner.
 
         Like the existing reserve/send checks, this neither renews the policy
@@ -292,7 +292,7 @@ class PostgresFrameworkModelCalls:
         """
         def read():
             with postgres_connect(self._settings) as conn, conn.cursor() as cur:
-                self._owned(cur, owner)
+                self._owned(cur, owner, before_execution=before_execution)
                 policy = self._policy(cur, owner.binding.binding_id)
                 return policy.deadline_at, (policy.deadline_at - self._now(cur)).total_seconds()
         return await asyncio.to_thread(read)

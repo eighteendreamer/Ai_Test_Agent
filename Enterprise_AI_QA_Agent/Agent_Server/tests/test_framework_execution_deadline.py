@@ -55,6 +55,15 @@ def set_deadline(h, seconds):
             (seconds, h.binding.binding_id))
 
 
+async def wait_for_database_deadline(h):
+    # asyncio callbacks may run within clock resolution. A second invocation's
+    # wall-deadline assertion must sample the database, not infer it from the
+    # first invocation's cooperative local timer. Never change the policy.
+    _, remaining = await h.calls.execution_deadline(h.owner.runtime_owner)
+    await asyncio.sleep(max(0, remaining) + .05)
+    assert (await h.calls.execution_deadline(h.owner.runtime_owner))[1] < 0
+
+
 @pytest.mark.asyncio
 async def test_expired_approval_cannot_execute_its_approved_tool_after_adapter_rebuild(harness):
     effects = []
@@ -139,6 +148,7 @@ async def test_root_deadline_cancels_inflight_graph_without_reissuing_unknown_wo
                 assert call.phase == ("unknown" if boundary == "model" else "completed")
                 assert snapshot.charged_tokens == (call.intent.reserved_tokens if boundary == "model" else 10)
                 assert read_model_budget_material(h.binding, raised.value.root_model_budget) == snapshot
+                await wait_for_database_deadline(h)
                 with pytest.raises(TimeoutError, match="root.*deadline"):
                     await execute(h, replace(request, continue_from_checkpoint=True))
                 assert len(requests) == 1 and await h.calls.snapshot(h.binding) == snapshot
@@ -274,3 +284,246 @@ async def test_expired_root_is_persisted_as_nonresumable_interruption_not_comple
             delivered = await h.tasks.claim(h.owner.id, worker_id="redelivery", expected_binding=h.binding)
             assert delivered.status == "interrupted" and delivered.attempt_no == h.owner.attempt_no
             assert requests == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path", ["openai_chat_completions", "openai_responses", "anthropic_messages",
+    "google_gemini_generate_content", "langchain_chat"])
+async def test_dto_stream_wait_obeys_root_deadline_and_keeps_unknown_reservation(harness, path):
+    from tests.test_framework_model_dto import dto_request
+    from tests.test_model_sdk_fault_http import fault_gateway
+
+    transport = "openai_chat_completions" if path == "langchain_chat" else path
+    with fault_gateway(transport, "cancel") as (url, requests, replies, errors):
+        async with governed(harness, _config(transport, url)) as h:
+            h.settings.model.langchain_model_adapter_enabled = path == "langchain_chat"
+            h.settings.model.llm_request_timeout_seconds = 20
+            h.models.set_framework_model_call_policy(h.policy)
+            received = asyncio.Event()
+
+            async def chunk(_delta):
+                received.set()
+
+            set_deadline(h, 3)
+            policy = await h.calls.frozen_policy(h.binding)
+            with framework_owner_scope(h.owner.runtime_owner):
+                async with h.models.stream_handler(chunk):
+                    task = asyncio.create_task(h.models.invoke(h.request.model_key, dto_request(h)))
+                    try:
+                        await asyncio.wait_for(received.wait(), 10)
+                        done, _ = await asyncio.wait({task}, timeout=5)
+                        assert task in done, "DTO transport continued waiting past the original root deadline"
+                        with pytest.raises(FrameworkExecutionDeadlineExceeded) as raised:
+                            await task
+                    finally:
+                        if not task.done():
+                            task.cancel()
+                        await asyncio.gather(task, return_exceptions=True)
+                snapshot = await h.calls.snapshot(h.binding)
+                call, = snapshot.calls
+                assert snapshot.policy == policy and len(requests) == len(replies) == 1 and not errors
+                assert call.phase == "unknown" and call.outcome_code == "request_cancelled"
+                assert snapshot.charged_tokens == call.intent.reserved_tokens
+                assert read_model_budget_material(h.binding, raised.value.root_model_budget) == snapshot
+                # Event-loop timers may wake within clock resolution. Confirm
+                # database wall expiry before asserting the next invocation's
+                # rejection; replay exactly the same streaming request shape.
+                await wait_for_database_deadline(h)
+                async with h.models.stream_handler(chunk):
+                    with pytest.raises(FrameworkExecutionDeadlineExceeded):
+                        await h.models.invoke(h.request.model_key, dto_request(h))
+                assert len(requests) == 1 and await h.calls.snapshot(h.binding) == snapshot
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("expired", [False, True])
+async def test_dto_deadline_includes_auth_wait_without_sending_or_reserving(harness, monkeypatch, expired):
+    from tests.test_framework_model_dto import dto_request
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            h.models.set_framework_model_call_policy(h.policy)
+            entered, cancelled = asyncio.Event(), asyncio.Event()
+
+            async def auth(_config):
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+
+            monkeypatch.setattr(h.models, "_resolve_auth_token", auth)
+            set_deadline(h, -1 if expired else 2)
+            before = await h.calls.snapshot(h.binding)
+            with framework_owner_scope(h.owner.runtime_owner):
+                task = asyncio.create_task(h.models.invoke(h.request.model_key, dto_request(h)))
+                try:
+                    done, _ = await asyncio.wait({task}, timeout=4)
+                    assert task in done, "DTO authentication wait escaped the root deadline"
+                    with pytest.raises(FrameworkExecutionDeadlineExceeded) as raised:
+                        await task
+                finally:
+                    if not task.done():
+                        task.cancel()
+                    await asyncio.gather(task, return_exceptions=True)
+            assert entered.is_set() is not expired and cancelled.is_set() is not expired
+            assert requests == [] and await h.calls.snapshot(h.binding) == before
+            assert read_model_budget_material(h.binding, raised.value.root_model_budget) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("frozen", [False, True])
+async def test_semantic_root_expiry_is_not_downgraded_to_deterministic_fallback(harness, frozen):
+    from src.application.intent.semantic_intent_service import SemanticIntentService
+    from src.schemas.intent import IntentDecision
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            h.models.set_framework_model_call_policy(h.policy)
+            semantic = SemanticIntentService(h.models, deterministic_confidence_threshold=1.1)
+            prepared = semantic.prepare(message="Inspect the supplied fixture", baseline=IntentDecision(),
+                model_key=h.request.model_key, freeze_runtime=frozen,
+                trace_context={"session_id": h.session_id, "turn_id": h.binding.turn_id,
+                    "logical_call_id": "semantic-deadline-fixture"})
+            assert prepared.request is not None
+            set_deadline(h, -1)
+            with framework_owner_scope(h.owner.runtime_owner):
+                with pytest.raises(FrameworkExecutionDeadlineExceeded):
+                    await semantic.enrich_prepared(prepared)
+            assert requests == [] and not (await h.calls.snapshot(h.binding)).calls
+
+
+@pytest.mark.asyncio
+async def test_pregraph_semantic_deadline_uses_existing_interrupted_projection_and_task_settlement(harness):
+    from src.application.intent.semantic_intent_service import SemanticIntentService
+    from src.application.orchestration.input_orchestrator_service import InputOrchestratorService
+    from src.registry.modes import ModeRegistry
+    from tests.test_model_sdk_fault_http import fault_gateway
+
+    with fault_gateway("openai_chat_completions", "cancel") as (url, requests, replies, errors):
+        async with governed(harness, _config("openai_chat_completions", url), begin_execution=False) as h:
+            h.settings.model.llm_request_timeout_seconds = 20
+            h.models.set_framework_model_call_policy(h.policy)
+            session = await h.store.get_session(h.session_id)
+            session.preferred_model = h.request.model_key
+            await h.store.save_session(session)
+            h.sessions._input_orchestrator_service = InputOrchestratorService(ModeRegistry(),
+                SemanticIntentService(h.models, deterministic_confidence_threshold=1.1))
+            runtime, _ = runtime_with(h.adapter)
+            h.sessions._runtime_service = runtime
+            set_deadline(h, 3)
+            policy = await h.calls.frozen_policy(h.binding)
+            task = asyncio.create_task(h.dispatcher._execute(h.owner))
+            try:
+                done, _ = await asyncio.wait({task}, timeout=6)
+                assert task in done, "Claimed semantic classification outlived the root deadline"
+                await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            saved_task = await h.tasks.get(h.owner.id)
+            saved = await h.store.get_session(h.session_id)
+            assert saved_task.status == saved.status.value == "interrupted"
+            snapshot = await h.store.get_latest_snapshot(h.session_id)
+            assert snapshot.stage == "interrupted" and not saved.metadata.get("pending_turn")
+            summary = snapshot.graph_state["model_response_summary"]
+            budget = await h.calls.snapshot(h.binding)
+            assert summary["timeout_source"] == "root_deadline" and summary["cause"] == "timeout"
+            assert read_model_budget_material(h.binding, summary["root_model_budget"]) == budget
+            assert budget.policy == policy and len(requests) == len(replies) == budget.unknown_calls == 1
+            stage = await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)
+            assert stage.phase == "orchestrating" and "runtime_result_asset" not in stage.source_manifest
+            events = await h.store.list_events(h.session_id)
+            stopped, = [item for item in events if item.type == "runtime.turn_timed_out"]
+            assert not stopped.payload["resumable"] and stopped.payload["timeout_source"] == "root_deadline"
+            assert not any(item.type in {"runtime.turn_started", "input.orchestrated"} for item in events)
+            delivered = await h.tasks.claim(h.owner.id, worker_id="redelivery", expected_binding=h.binding)
+            assert delivered.status == "interrupted" and delivered.attempt_no == h.owner.attempt_no
+            assert len(requests) == 1 and not errors
+
+
+@pytest.mark.asyncio
+async def test_reliable_dto_response_can_finish_evidence_and_restore_after_root_deadline(harness, monkeypatch):
+    from tests.test_framework_model_result_import import wire_evidence
+    from tests.test_framework_semantic_result_import import prepared_input, restore_arguments
+
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            wire_evidence(h, monkeypatch)
+            _, prepared = prepared_input(h)
+            store_response = h.policy._evidence.store_response
+
+            async def late_evidence(*args, **kwargs):
+                await asyncio.sleep(3.2)
+                return await store_response(*args, **kwargs)
+
+            monkeypatch.setattr(h.policy._evidence, "store_response", late_evidence)
+            set_deadline(h, 3)
+            with framework_owner_scope(h.owner.runtime_owner):
+                result = await h.models.invoke(prepared.model_key, prepared.request,
+                    transport_options=prepared.transport_options)
+                before = await h.calls.snapshot(h.binding)
+                call, = before.calls
+                assert call.phase == "completed" and before.actual_tokens == 10
+                assert (await h.calls.execution_deadline(h.owner.runtime_owner))[1] < 0
+                restored = await h.models.restore_completed(prepared.model_key, prepared.request,
+                    **restore_arguments(prepared, call))
+                assert restored.text == result.text and restored.raw_response == result.raw_response
+            assert len(requests) == 1 and await h.calls.snapshot(h.binding) == before
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mismatch", ["owner", "binding", "turn"])
+async def test_pregraph_stop_rejects_foreign_expiry_or_missing_owner(harness, mismatch):
+    with _provider("openai_chat_completions") as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            runtime, _ = runtime_with(h.adapter)
+            request = _runtime_request(h.session_id, h.binding.turn_id).model_copy(update={
+                "runtime_binding": h.binding, "model_key": h.request.model_key})
+            if mismatch == "turn":
+                request.turn_id = "foreign-turn"
+            expiry = FrameworkExecutionDeadlineExceeded(
+                "foreign-binding" if mismatch == "binding" else h.binding.binding_id,
+                await h.policy.capture_root_budget(h.binding))
+            with framework_owner_scope(None if mismatch == "owner" else h.owner.runtime_owner):
+                with pytest.raises(ContinuationLeaseLostError, match="captured runtime owner"):
+                    await runtime.stop_expired_framework_turn(_runtime_session(h.session_id), request, expiry=expiry)
+            assert requests == [] and await h.store.get_latest_snapshot(h.session_id) is None
+
+
+@pytest.mark.asyncio
+async def test_reliable_nested_dto_return_does_not_disarm_its_parent_graph_deadline(harness):
+    from tests.test_framework_model_dto import dto_request
+
+    with _provider("openai_chat_completions", first_reply=_tool_reply("openai_chat_completions")) as (url, requests):
+        async with governed(harness, _config("openai_chat_completions", url)) as h:
+            h.models.set_framework_model_call_policy(h.policy)
+            returned, cancelled = asyncio.Event(), asyncio.Event()
+
+            @tool
+            async def inspect_source(path: str) -> str:
+                """Call a governed DTO, then wait at a controlled tool boundary."""
+                result = await h.models.invoke(h.request.model_key, dto_request(h, logical="nested-dto"))
+                assert result.text == "fixture answer"
+                returned.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    cancelled.set()
+
+            set_deadline(h, 3)
+            task = asyncio.create_task(execute(h, replace(h.request, business_tools=[inspect_source])))
+            try:
+                await asyncio.wait_for(returned.wait(), 10)
+                done, _ = await asyncio.wait({task}, timeout=5)
+                assert task in done, "DTO completion disarmed the enclosing graph's root timer"
+                with pytest.raises(FrameworkExecutionDeadlineExceeded):
+                    await task
+            finally:
+                if not task.done():
+                    task.cancel()
+                await asyncio.gather(task, return_exceptions=True)
+            snapshot = await h.calls.snapshot(h.binding)
+            assert cancelled.is_set() and len(requests) == snapshot.reserved_calls == 2
+            assert snapshot.actual_tokens == 20 and all(call.phase == "completed" for call in snapshot.calls)

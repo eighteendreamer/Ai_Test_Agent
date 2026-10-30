@@ -62,6 +62,7 @@ from src.domain.models import SessionRecord
 from src.infrastructure.storage_utils import make_json_safe
 from src.registry.tools import ToolRegistry
 from src.runtime.control import RuntimeControlRegistry
+from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.execution_context import graph_event_scope, current_framework_owner
 from src.runtime.execution_logging import (
     GRAPH_EVENT_LOG_VERSION_KEY, append_graph_event, append_graph_event_durable,
@@ -222,6 +223,28 @@ class RuntimeService:
             if on_runtime_result is not None:
                 await on_runtime_result(result)
             return result
+
+    async def stop_expired_framework_turn(
+        self, session: SessionRecord, request: ExecutionRequest, *, expiry: FrameworkExecutionDeadlineExceeded,
+    ) -> RuntimeTurnResult:
+        """Project a pre-graph root expiry without executing or preparing a graph.
+
+        The admitted input is for the stopped snapshot only, not a successfully
+        classified/frozen ExecutionRequest or permission to resume execution.
+        """
+        owner = current_framework_owner()
+        binding = request.runtime_binding
+        if (binding is None or owner is None or owner.binding != binding
+            or binding.binding_id != expiry.binding_id or binding.session_id != session.id
+            or request.session_id != session.id or binding.turn_id != request.turn_id):
+            logger.warning("framework_pregraph_stop_rejected", extra={
+                "session_id": session.id, "turn_id": request.turn_id, "error_type": "owner_input_mismatch"})
+            raise ContinuationLeaseLostError("Pre-graph deadline requires its captured runtime owner and input")
+        state = self._build_initial_state(session, request)
+        prepare_graph_event_log(state)
+        return await self._build_deep_agent_interrupted_result(session, state,
+            pilot_stage=self._deep_agent_pilot_stage(), reason=str(expiry), cause="timeout",
+            timeout_source="root_deadline", root_model_budget=expiry.root_model_budget)
 
     async def _execute_turn(
         self,

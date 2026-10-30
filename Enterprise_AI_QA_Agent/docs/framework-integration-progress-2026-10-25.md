@@ -5882,3 +5882,68 @@ v4 §6.3 要求根活动由持久执行事实计量，不能把 Worker claim/adm
 内部等待来源、跨 Worker 活动连续性、崩溃尾段结算与停止回执、完整活动时间限额、根截止专项独立进程故障验收和全部停止边界仍需继续推进；不能把 §127 的 persisted envelope 直接接入精确时间限额。A2/A3、B/C 其余出口、D/E/F、完整 H01–H12、官方 saver conformance、真实 E3/E4 和整体 v4 目标仍未完成并保持 active。本轮未请求真实供应商、RustFS、浏览器、压测／扫描／领域目标，未启停服务。
 
 本节提交范围仅为 `.gitignore` 的精确测试例外、四个生产源文件、新截止测试文件和本记录，共七文件。用户 v3 草稿、配置、测试日志和本地数据不纳入暂存／提交；v3 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`。commit 以包含本节的 Git 提交及交付输出追溯，不推送、不建 PR。
+
+## 129. C／§6.2、§6.3、§11、H09/H10/H11：图前 DTO 沿用原根截止并统一停止投影（2026-10-30）
+
+### 续接、根因与依据 → 做法
+
+基线 `31712e041`／§128。上一回合按用户要求只读了解项目，本轮实际新增 TDD 和代码；不把只读汇报当实现完成。重新核对 Git、v4、§54 的真实 P0 根因和 §125–128；原生 messages 比较不变，不重复实施 Delta 排序修复。只读探针实际取得 PostgreSQL health=True、Redis PING=True；未启停服务。用户 v3 草稿保持原样，不纳入本节。
+
+- §128 只约束受管图执行，`ModelRuntimeService.invoke()` 的鉴权等待与 owner-bound `invoke_dto()` 不在此 scope；真实 SDK／本机 HTTP 反例确认五条流式路径仍会等待到传输超时，图前分类也不受原根截止取消。这是模型 DTO 入口的执行边界缺失，不是再加重试或重新冻结预算的问题。
+- `SemanticIntentService` 的未冻结分支会将普通异常降级为确定性 baseline；冻结分类虽然重抛，发生在 `Runtime.execute_turn()` 之外，Dispatcher 会把逃逸错误结算为普通 failed。截止需要作为控制结果传播，不能变成分类成功或复制一套 Dispatcher 恢复逻辑。
+- 依据 §128 的 `execution_scope()`、DTO 原有 reserve／start／unknown／late-complete 生命周期、`ModelRuntimeService.restore_completed()` 的只读入口，以及本地 Codex `rmcp_client.rs::remaining_operation_timeout` 对原剩余截止的消费 → 在 DTO 服务入口复用同一原根 scope，覆盖配置／鉴权到可靠响应；响应返回后仅解除自己的 DTO timer，保留父图 timer、响应证据及迟到结算。已结算 DTO 的只读恢复不进入发送截止。
+- 本地课程《Agent轨迹与协议鲁棒性》的轨迹、超时、幂等与重复执行要求 → 同时验证物理 HTTP 次数、账本预留／unknown、停止事件、Session 状态和任务重复领取，而不只断言抛出 TimeoutError。
+
+### TDD 与中间事实
+
+1. 新增十一条目标用例的原源码运行：**10 failed、1 passed、10 deselected，97.96s，exit 1**。五条实际 SDK 流式等待、到期前／已到期鉴权、冻结／未冻结分类和真实 Session／Dispatcher 图前调用均暴露目标缺口；可靠响应后的迟到证据／只读恢复原本合法，保留正例。日志 `.codex-logs/c129-dto-deadline-red.log` 不提交。
+2. 首版最小实现：**3 failed、8 passed、10 deselected，77.80s，exit 1**。三项已经正确取消并保留 unknown，失败发生于后续测试离开流式作用域后以不同请求形状重试，触发 `position_input_changed`；测试改为等待数据库剩余截止加一个时钟分辨率余量后，按原流式形状重试，仍要求专用根截止、一次 HTTP 和原账本不变，不放宽断言、不修改政策。安装版 Python 3.11 `base_events._run_once` 实际源码按 `self.time()+self._clock_resolution` 提取定时回调，事件循环到期不等于数据库墙钟绝对比较的同一采样点。日志 `.codex-logs/c129-dto-deadline-green.log` 保留原失败。
+3. 调查消费方时发现 scope 的原 reader 只接收 running owner，而 DTO 原 `prepare_initial()` 合法接受 claimed owner，发送仍由 `start()` 要求 running。真实既有 ready-transfer 用例在首版得到 **1 failed、1 passed，17.08s，exit 1**：DTO 过早被拒，未保存原 ready 意图。这是首版引入的阶段契约回归，不通过修改原测试预期掩盖；应让 DTO 截止只读核验沿原准备阶段接受 claimed/running，图执行默认仍要求 running，发送权规则不变。日志 `.codex-logs/c129-reservation-consumer-red.log` 不提交。
+
+本节实施及最终回归仍在进行，以下继续追加实际终态；不以较早绿色组、正在运行的命令或方案意图冒充最终源码通过。
+
+### 实现与契约同步
+
+1. `ModelRuntimeService.invoke()` 保持原 purpose／显式重试核对，在 owner 存在时进入共享原根 scope，再执行原配置／参数核对、鉴权、请求和结算。拆出的 `_invoke()` 是原调用体，不新增传输客户端／重试器。无 owner 继续原 legacy 行为；`restore_completed()` 不进该发送 scope，也不鉴权或请求供应商。
+2. `invoke_dto()` 接收本次 DTO timer；独立调用该策略入口时自行建立相同 scope。真实 SDK 可靠返回后只解除 DTO timer，再走原响应证据、wire、usage 与迟到结算；若取消已发生则不解除到期状态。不将图模型的父执行 timer 传给 DTO，新增官方图中嵌套 DTO 返回后仍被父根截止取消的回归。
+3. `execution_deadline()`／`execution_scope()` 增加内部可选 `before_execution`，默认 false 保持图原契约；DTO 使用 true，沿原 `_owned(..., before_execution=True)` 只读校验 claimed/running。它不创建预算、不许可发送、不修改 owner，`start()` 仍只在 running 下提交发送许可。既有 ready-transfer 测试不变，保留原准备意图及受控转移规则。
+4. 语义服务将原恢复要求与专用根截止都作为控制结果重抛，保留原合法 baseline 降级；根截止日志使用 `semantic_intent_execution_stopped` 并记录安全错误类型，不将未冻结分类伪造成成功。
+5. `RuntimeService.stop_expired_framework_turn()` 只按本次 captured owner／binding／Session／Turn 核对图前停止身份，使用原 `_build_deep_agent_interrupted_result()` 构建同一 `timeout_source=root_deadline`、非 resumable 快照与事件。不导入 transcript、不构建／调用图，不把用于停止显示的 admitted-input request 写成已完成分类或冻结执行资产。缺 owner／错误 binding／错误 Turn 三项真实 Store 反例要求拒绝且不落快照。
+6. Session 在原心跳与 ownership monitor 下将图前专用截止送到上述 Runtime 端口，再走原 `_finalize_runtime_result()`；不另造 finalizer、不改 Dispatcher 分支。原分类阶段仍为 orchestrating，任务由既有正常结算通道变为 interrupted；无原生完成证明、completed ACK、Runtime 结果资产或可恢复 pending_turn，重投递不增加 attempt。外部未知模型调用仍保留原预留，不从 interrupted 推断已物理停止。
+
+中间六文件 DTO／语义／根截止组合实际得到 **1 failed、141 passed，488.45s，exit 1**（`.codex-logs/c129-dto-final-consumers.log`）。失败是 §128 原 model-wait 用例在第一次协作 timer 到期后，立即将第二次 invoke 等同于数据库墙钟已过截止，收到原 `position_already_started` 对账拒绝而非断言的根截止；HTTP 没有重发。与上文同一采样边界，统一为测试 helper `wait_for_database_deadline()`：读取原数据库剩余时间、等待并重新确认墙钟已经到期，再执行原重入断言；没有修改政策、生产 timer 或原消息比较，也未删减原未知请求／预算断言。最终回归另记，不能将此中间组合改报为 142 passed。
+
+没有 DDL、格式版本、依赖、公开 API、生产开关或服务启停变化。内部 deadline／DTO 签名的所有调用点已全局搜索并同步；前端仍消费既有 Runtime／turn 事件与通用 payload，不新增前端类型或审批接口。
+
+### 最终源码验证
+
+后端工作目录 `Agent_Server`；环境为 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`，未在运行期间修改生产源码或测试，只追加本实施记录。已取得终态的组合：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_reservation_transfer.py -q -rs --tb=short
+# 42 passed，181.29s，exit 0，无 skipped／deselected
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_framework_prepared_orchestration.py tests/test_session_execution_ownership.py -q -rs --tb=short
+# 127 passed，52.46s，exit 0，无 skipped／deselected
+```
+
+原日志为 `.codex-logs/c129-stop-transfer-final.log`、`c129-legacy-preparation-consumers.log`，不提交。42 项包含本节全部十五条新用例及原十条截止、全部原意图转移回归。五路径使用实际固定 SDK、本机真实 HTTP 流和真实隔离 PostgreSQL／Redis；鉴权等待为受控 async 反例，嵌套工具为受控工具，响应证据为已有本地对象替身，不称真实供应商／OAuth 服务／领域 Runner／RustFS 验收。图前 Session 用例实际走 Dispatcher、分类、模型账本、Runtime 中断投影和唯一 finalizer；它本身不是独立 Worker 强杀专项。
+
+前端工作目录 `agent_web`：`npm run test -- src/stores/sessionFrameworkApproval.test.ts src/stores/sessionStreaming.test.ts src/stores/sessionAssistantStreamReplay.test.ts src/composables/useSSEStream.test.ts`，**4 文件／29 passed，3.04s，exit 0**；`npm run typecheck` **exit 0**。根目录 `compileall -q Agent_Server/src Agent_Server/tests` 与限定本轮文件的 `git diff --check` 实际通过。`find_spec` 确认 ruff／mypy 仍未安装，未运行独立 Python lint/typecheck，未新增工具。
+
+最终扩大消费方组合从原会话 `21707` 取得 exit 0，没有重启或在运行期间修改生产源码／测试：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_admission.py tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py -q -rs --tb=short
+# 354 passed，887.26s（0:14:47），exit 0，无 skipped／deselected
+```
+
+日志 `.codex-logs/c129-final-model-session-consumers.log` 不提交。该组复验最终 claimed/running 读取契约修改后的全部 DTO、请求位置、已结算导入、语义输入、模型政策／账本／受理、任务停止、Session／Dispatcher 与 adapter 消费方；包括原审批独立 Worker 强杀组及严格 Delta/messages 比较。各组按各自范围报告，不以相加或较早结果代表全量。所有本节启动的命令均已取得终态，无遗留待观察的测试句柄。
+
+### 提交、兼容性与剩余出口
+
+本节仅提交六个生产源文件、既有截止测试文件和本记录，共八文件；提交前核对完整 diff、记录原前缀、EOF、暂存范围及 v3 SHA256。原 v3 草稿仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，配置、日志、用户草稿和本地数据不纳入提交；不推送、不建 PR。具体 commit 以包含本节的 Git 提交及交付记录追溯。
+
+本步只证明 owner-bound DTO 入口的协作截止及当前消息准备入口的专用截止投影；不等于整个 Turn 的全部图前等待、排队回收、同步阻塞代码或外部请求都能按硬截止物理停止。已返回 DTO 的证据／迟到结算和只读结果读取继续合法；未知调用不自动重发。租约／模型预算的账本拒绝与本地 timer 之间的时序、取消发生在 reserve／start／证据写入时的尾段、各等待来源和跨 Worker 连续性仍需专门验证，不能将本节或 §127 的持久包络冒充精确活动限额。
+
+最高证据仍为 E2；根截止专项独立进程故障验收、真实供应商／OAuth 服务／RustFS／领域 Runner、官方 saver conformance、完整 H01–H12、A2/A3/B/C 剩余出口、D/E/F 与 E3/E4 发布门均未完成。整体 v4 继续 active。下一步沿原模型 reserve／start 与停止原因消费链补时序反例，再推进等待来源、活动连续性及剩余阶段；不以本小步完成缩小原目标。

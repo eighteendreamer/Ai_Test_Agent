@@ -5,7 +5,7 @@ import asyncio
 import hashlib
 import json
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, nullcontext
 from typing import Any, Awaitable, Callable
 from uuid import uuid4
 
@@ -101,7 +101,7 @@ class FrameworkModelCallPolicy:
         self._evidence = evidence
 
     @asynccontextmanager
-    async def execution_scope(self, owner):
+    async def execution_scope(self, owner, *, before_execution: bool = False):
         """Bound initial/resume/continue by the same admitted wall-clock limit.
 
         No upstream counterpart (checked: root ledger reserve/send checks,
@@ -109,7 +109,7 @@ class FrameworkModelCallPolicy:
         Python asyncio.Timeout): a fresh invoke timeout is not a root deadline.
         Cancellation remains cooperative; it cannot prove external effects stop.
         """
-        deadline, remaining = await self._calls.execution_deadline(owner)
+        deadline, remaining = await self._calls.execution_deadline(owner, before_execution=before_execution)
         logger.info("framework_execution_deadline_selected", extra={"binding_id": owner.binding.binding_id,
             "deadline_at": deadline, "remaining_seconds": remaining, "source": "original_root_ledger"})
         timer = asyncio.timeout(max(0, remaining))
@@ -186,13 +186,27 @@ class FrameworkModelCallPolicy:
             envelope=envelope, response_kind="langchain_messages")
 
     async def invoke_dto(self, *, owner, config: ModelConfigRecord, request: ModelInvocationRequest,
-                         options: dict, send: Callable[[], Awaitable[Any]], purpose: str = "agent") -> Any:
+                         options: dict, send: Callable[[], Awaitable[Any]], purpose: str = "agent",
+                         execution_deadline: asyncio.Timeout | None = None) -> Any:
         """Use the same lifecycle for application calls outside graph nodes."""
-        intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options,
-            purpose=purpose)
-        return await self._invoke_intent(owner=owner, intent=intent, send=send,
-            usage_reader=lambda result: dto_model_usage(result, transport=config.transport),
-            envelope=envelope, response_kind="model_invocation_result")
+        scope = (self.execution_scope(owner, before_execution=True)
+            if execution_deadline is None else nullcontext(execution_deadline))
+        async with scope as deadline:
+            intent, envelope = self._dto_intent(owner=owner, config=config, request=request, options=options,
+                purpose=purpose)
+
+            async def send_before_deadline():
+                result = await send()
+                # As with sync-durable graph return, a reliable DTO response
+                # ends execution, not its evidence/late-accounting obligations.
+                # This is only the DTO timer; never disarm a parent graph timer.
+                if not deadline.expired():
+                    deadline.reschedule(None)
+                return result
+
+            return await self._invoke_intent(owner=owner, intent=intent, send=send_before_deadline,
+                usage_reader=lambda result: dto_model_usage(result, transport=config.transport),
+                envelope=envelope, response_kind="model_invocation_result")
 
     def _dto_intent(self, *, owner, config, request, options, purpose: str = "agent"):
         current = self._model_config_resolver(config.key)

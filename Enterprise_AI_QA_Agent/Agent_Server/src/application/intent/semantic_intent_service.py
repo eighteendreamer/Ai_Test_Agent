@@ -11,6 +11,7 @@ from src.schemas.framework_model_call import FrameworkModelCallRecord
 from src.schemas.model_config import ModelInvocationRequest, model_invocation_parameters
 from src.schemas.semantic_input import PreparedSemanticInput
 from src.runtime.postgres_framework_model_calls import FrameworkModelRecoveryRequired
+from src.application.models.framework_model_call_policy import FrameworkExecutionDeadlineExceeded
 
 logger = logging.getLogger(__name__)
 
@@ -172,11 +173,13 @@ class SemanticIntentService:
                 )
                 return baseline
             candidate = self._parse_candidate(str(result.text or ""))
-        except FrameworkModelRecoveryRequired:
-            # A persisted request cannot become a deterministic fallback on
-            # reentry; its result/position still needs explicit reconciliation.
-            logger.warning("semantic_intent_recovery_required", extra={"model_key": resolved_model_key,
-                "logical_call_id": call_context["logical_call_id"], "turn_id": call_context.get("turn_id", "")})
+        except (FrameworkModelRecoveryRequired, FrameworkExecutionDeadlineExceeded) as exc:
+            # Recovery and root expiry are control outcomes, not classifier
+            # failures that may become a deterministic fallback.
+            logger.warning("semantic_intent_execution_stopped" if isinstance(exc, FrameworkExecutionDeadlineExceeded)
+                else "semantic_intent_recovery_required", extra={"model_key": resolved_model_key,
+                "logical_call_id": call_context["logical_call_id"], "turn_id": call_context.get("turn_id", ""),
+                "error_type": type(exc).__name__})
             raise
         except Exception as exc:
             logger.warning(
