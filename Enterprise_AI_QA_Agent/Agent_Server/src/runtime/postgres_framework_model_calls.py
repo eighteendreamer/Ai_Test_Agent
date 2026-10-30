@@ -350,6 +350,11 @@ class PostgresFrameworkModelCalls:
             )
             intervals.extend((row["started_at"], row["finished_at"]) for row in cur.fetchall())
         else:
+            # Keep the ToolJob journal tied to a durable Worker attempt.  The
+            # runtime owner table only contains the current owner, so historical
+            # ToolJob rows are checked against the task/attempt identities read in
+            # this snapshot instead of treating a later owner as their producer.
+            worker_execution_refs = set()
             cur.execute(
                 f"""SELECT task.id, task.session_id, task.turn_id, task.runtime_binding,
                     task.attempt_id, task.status
@@ -366,6 +371,11 @@ class PostgresFrameworkModelCalls:
                     (task["id"],),
                 )
                 attempts = cur.fetchall()
+                worker_execution_refs.update(
+                    (task["id"], attempt["id"], attempt["worker_id"])
+                    for attempt in attempts
+                    if attempt.get("worker_id")
+                )
                 cur.execute(
                     f"SELECT session_id, type, timestamp, payload FROM {event_table} "
                     "WHERE session_id=%s AND payload->>'task_id'=%s AND payload ? %s ORDER BY event_sequence",
@@ -403,6 +413,21 @@ class PostgresFrameworkModelCalls:
                     (binding.binding_id, binding.session_id, binding.turn_id),
                 )
                 for job in cur.fetchall():
+                    execution = (job["metadata"] or {}).get("framework_execution_owner")
+                    if execution is not None:
+                        if not isinstance(execution, dict):
+                            raise ValueError("Tool activity execution owner is not an object")
+                        expected_binding = execution.get("binding_id")
+                        reference = (execution.get("task_id"), execution.get("attempt_id"),
+                            execution.get("worker_id"))
+                        if expected_binding != binding.binding_id or reference not in worker_execution_refs:
+                            logger.warning("framework_root_activity_tool_owner_rejected", extra={
+                                "binding_id": binding.binding_id, "tool_job_id": job["id"],
+                                "task_id": execution.get("task_id"),
+                                "attempt_id": execution.get("attempt_id"),
+                                "authoritative": False,
+                            })
+                            raise ValueError("Tool activity execution owner is outside the persisted Worker attempt")
                     journal = read_tool_activity(job)
                     if journal is not None:
                         intervals.extend(journal.activity_intervals(as_of=as_of))

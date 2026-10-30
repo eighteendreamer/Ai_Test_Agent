@@ -6404,3 +6404,38 @@ $env:RUN_LIVE_POSTGRES_TESTS='1'
 ### 交付边界与剩余出口
 
 本节仅提交 `Agent_Server/tests/test_framework_tool_activity.py` 与本实施记录；保留用户未提交的 v3 方案草稿，不纳入暂存或提交。ToolJob journal 独立 Worker 强杀出口现有真实回归证据，但 C/H09 的内部等待、跨 Worker／模型／ToolJob 精确活动连续性、A2-2/A2-3、A3、完整跨 Turn／逐模式 Harness、真实供应商与 E3/E4 仍继续 active。
+
+## 137. C／§6.3、H09/H11：根活动读取拒绝跨 Worker 的 ToolJob 执行引用（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `df7276c67`／§136。上一节已用真实独立 Worker 强杀证明 ToolJob journal 能保留开放尾段，但根活动读取仍只按 binding／Session／Turn 过滤 ToolJob；它没有核对 `framework_execution_owner` 是否属于同一快照中已持久化的 Worker task/attempt。这样一个被篡改或错误接线的同 Turn ToolJob 可能被并入根活动，造成跨来源连续性被错误扩大。这是读取端缺少谱系校验，不通过放宽时间区间或按时间戳猜测修补。
+
+依据现有 `PostgresFrameworkModelCalls.root_activity_intervals_in_transaction()` 的单一 Repeatable Read／Read Only 读取、`PostgresAgentTaskStore` 持久 task/attempt 身份和 `framework_tool_authority.execution_reference()` 的公开 owner 引用 → 在同一读取快照中建立 `(task_id, attempt_id, worker_id)` 合法集合；ToolJob 存在执行引用时必须匹配该集合及当前 binding。runtime owner 表只保存当前 owner，不能用它替代历史 attempt 谱系；缺少执行引用的旧行继续走既有兼容弱来源，不凭空补写历史身份。
+
+### TDD 与最小实现
+
+1. 新增 fake PostgreSQL 读取红测，构造 binding 正确但 task/attempt/worker 全部外来的 ToolJob owner；修复前实际 **1 failed，约 4.5 秒，exit 1（DID NOT RAISE）**，确认旧读取器把外来区间纳入计量。
+2. 生产最小修复仅在 `postgres_framework_model_calls.py` 的同事务读取中保存已读 Worker attempt 身份；带 owner 引用且不匹配时记录 `framework_root_activity_tool_owner_rejected` 并抛出 `ValueError`。不修改 ToolJob 调度、claim/settle、owner fence、DDL 或恢复权限。
+3. 新增真实隔离 PostgreSQL/Redis 用例：先由真实 ToolJob store 在当前 owner 下领取并持久 journal，再只在隔离表中篡改 owner 引用为 foreign task/attempt/worker；根活动读取实际拒绝，原始 ToolJob 不被修复或删除。该 live 红测修复后 **1 passed，6.37 秒，exit 0**。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`、`RUN_LIVE_POSTGRES_TESTS=1`，复用用户已启动 PostgreSQL／Redis；未启停服务、未调用付费模型、未改生产路由。目标消费方实际结果：
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_budget_projection.py tests/test_framework_tool_activity.py tests/test_framework_worker_activity.py -q -rs --tb=short
+# 79 passed，117.96 秒，exit 0，无 skip/deselect
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_message_diagnostics.py tests/test_framework_model_calls.py tests/test_framework_model_policy.py -q -rs --tb=short
+# 108 passed，317.15 秒，exit 0，无 skip/deselect
+
+..\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+# exit 0
+git diff --check
+# exit 0
+```
+
+本步证明的是 ToolJob → Worker task/attempt 的跨来源读取连续性；它不证明 owner epoch 的完整历史回放、模型调用 → Worker 的同类谱系核对、内部等待来源、崩溃尾段结算、外部进程物理停止或完整根预算覆盖。缺少执行引用的历史 ToolJob 仍明确属于弱兼容来源，不能据此宣称精确活动时间。完整 v4、A2/A3、B/C 其余出口、真实供应商／RustFS／领域 Runner、官方 saver conformance、全量前后端和 E3/E4 继续 active。
+
+本步拟提交 `Agent_Server/src/runtime/postgres_framework_model_calls.py`、两份相关测试和本实施记录；用户草稿 `docs/langgraph-deepagents-integration-plan-v3-2026-10-26.md` 未修改、未暂存、未提交。下一步继续查证模型调用与 Worker attempt 的跨来源谱系及精确内部等待，不把本步绿色结果扩大为完整 H09。
