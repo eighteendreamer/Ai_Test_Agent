@@ -6074,3 +6074,76 @@ v4 §6.3 要求根活动由持久执行事实计量，不能把 Worker claim/adm
 不修改 Runtime／Session／Dispatcher、公开 API、schema／DDL、依赖或生产开关；内部方法调用点已全部核对。提交仅包含账本源文件、原截止测试和本记录，共三文件；提交前检查完整 diff、记录原字节前缀、EOF、精确暂存与 v3 hash。用户 v3 草稿、配置、日志与本地数据排除；不推送、不建 PR。具体 commit 以包含本节的 Git 提交及交付记录追溯。
 
 尚未完成：对象证据写入的取消与未知上传尾段、全图任意重复取消／进程终止、提交 ACK 丢失专门故障、精确内部等待及根活动限额、跨来源／跨 Worker 连续性、新截止专项独立进程强杀、真实供应商／OAuth／RustFS／领域 Runner、官方 saver conformance、完整 H01–H12、A2/A3/B/C 其余出口、D/E/F 与 E3/E4。整体 v4 继续 active。下一步沿原 `FrameworkModelEvidence` 与 `ArtifactStorageService` 检查请求／响应／wire 的对象写入取消事实和既有孤儿对账机制，不把 SQL 线程收尾扩大成全部外部 I/O 已停止。
+
+
+## 132. C／§6.2、§11、A3／H09/H10/H11：模型证据上传与原账本引用的取消收尾（2026-10-30）
+
+### 续接、范围与依据 → 做法
+
+基线 `d0a4af744`（§131）。上一轮仅只读梳理，没有推进实现；本轮重新核对 Git、v4、§52–54 与 §130–131 后续接。P0 沿 §54 的 Delta/task_path 修复及严格 messages 契约，不重复实现。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改、不暂存或提交。
+
+- `FrameworkModelEvidence` 原 `_store` 只有普通异常的 prefix 日志，wire `_store_bytes` 连这一路径也未复用；`ArtifactStorageService.store_uploaded_bytes` 的 `to_thread` 等待者取消不停止已运行上传，导致停止结果先于对象效果，且成功上传的引用可能来不及入账。这是证据写生命周期缺失，不是在 Session／Runtime／Dispatcher 添加补判。
+- 实际读取 `impact_checkpoint_io`：它只保留未确认对象并报错，**没有持久孤儿对账器**；原注释不代表该能力已经实现。本步不把日志当持久恢复队列，也不补造上传成功或回滚证明。
+- 现有 `_settle_execution_tasks`、§131 账本桥接、安装版 Python 3.11.16 `asyncio.shield` 文档 → 对每次原证据单元持有强引用任务，等待“上传→既有账本引用写入”，重复取消仍保留第一次取消，收尾后才传播；不 shield 模型发送或权威 completed 结算。请求单元只 attach_request，响应单元只 append_response_observation，wire 单元沿原两对象写入后只 append_wire_observation。所有 owner／origin／epoch／阶段校验保持原端口，不放宽失租写权限。
+- 本地参考 `DeepAgent-Studio/借鉴/codex/sdk/python/src/openai_codex/async_client.py` 的 sync Future shield／取消后实际结果清理 → 本项目不遗弃未知外部尾段，但不用其内存回调冒充持久副作用查询；本地课程 `Agent轨迹与协议鲁棒性.html` → 同时核对轨迹、根材料、保留预算、非权威观察及零重发。
+
+### TDD、环境失败与中间诊断
+
+首次真实账本选择组 **4 errors、44 deselected，6.98s，exit 1**，均在 Redis fixture 建立连接时报 `Connection closed by server`，不是有效行为红测（`.codex-logs/c132-evidence-tail-red.log`）。随后只读检查 Docker、容器进程、Redis PING 和 PG SELECT 1：容器在运行，但 Redis／PostgreSQL 均不可用。向用户一次询问启动授权；用户答复“已启动”后再次只读探测，得到 `redis_ping=True`、`postgres_select_one={'ready': 1}`。小怪没有启动、停止或重启基础设施，也未改连接配置。
+
+等待期间不把真实数据库测试换成替身冒称通过，另补明确标注的单元证据：真实 ArtifactStorageService/线程桥接＋本地 S3 client 替身＋账本/send doubles。原实现四上传阶段取消反例 **4 failed、64 deselected，4.52s**，均在后台仍可写入时提前结束策略（`c132-policy-unit-tail-red.log`）。原对象未确认身份反例 **8 failed、48 deselected，4.22s**：JSON 日志无摘要/大小，wire 无统一未确认事件（`c132-unconfirmed-object-red.log`）。前者证明生命周期缺口，后者证明诊断缺口；不称真实 RustFS／PG 证据。
+
+两生产文件修复后单元选择组 **20 passed、48 deselected，7.16s**（`c132-policy-unit-tail-first-green.log`），含上传失败前无对象与写成功但 ACK 丢失两种不同事实。未知上传不重试、不删除对象，不从异常推断回滚；四阶段共用 prefix、摘要、大小、开始/完成/未确认事件，不记录正文或凭据。
+
+服务恢复后首次完整新专项 **18 failed、50 passed，287.27s，exit 1**（`c132-evidence-tail-live-first.log`）。其中九项 DTO post-response deadline 误判：§129 的 `invoke_dto` 在可靠响应返回后会解除本次 timer，合法证据/结算允许超过原根截止；应验证完成或实际上传异常，不能修改生产以强制取消可靠结果。另九项 graph 重入测试使用新输入而非 `continue_from_checkpoint`，没有正确验证原图继续。按既有契约修正 Harness；保留取消等待、原身份/预算/阶段、对象实效和严格零重发断言，不忽略 messages、不放宽 unknown 继续。后续结果另行追加，不能将这次失败报告为绿色。
+
+### 当前验证状态（进行中）
+
+本地消费方选择组实际 **54 passed、48 deselected，8.88s，exit 0**（`c132-local-consumers.log`）：新专项的20项单元、ArtifactStorageService、LangChain adapter、model clients；48项真实账本选择被明确排除，不能视为已验收。前端原4文件 **29 passed，2.46s，exit 0**，`npm run typecheck` exit 0。根目录 compileall 和 diff 检查实际通过；ruff/mypy 未安装，未执行独立 Python lint/typecheck。
+
+此时第二轮完整新专项正在运行，未提交本步。改动范围为模型共享策略、模型证据服务、新专项、原截止测试的取消日志归属、测试白名单及本记录。请求 attach 现在归属上传/引用单元，其原 SQL 不再接收父取消，故原截止测试改为严格核对该单元的收尾事件；其他边界仍核对原 SQL 事件。没有公开 API、schema／DDL、配置、依赖或生产开关变化；不修改通用 ArtifactStorageService 的其他调用方。
+
+
+### 真实链路契约复验与旧实现反证
+
+保持48项真实矩阵全部选择，修正上述 Harness 后新专项完整 **68 passed，286.04s，exit 0，无 skipped／deselected**（`.codex-logs/c132-evidence-tail-live-contracts.log`）：20项独立单元＋graph/DTO×四上传窗口×显式取消/根截止×返回/写前失败/写后ACK丢失的48项真实PG/SDK/本机HTTP路径。post-response DTO 的根截止分支严格验证原可靠结果继续收尾，完成时10 tokens、原 settled_response_id/观察引用齐全；上传异常仍保留 invoking/预留，不制造 completed/unknown。显式取消测试两次取消仍保留第一次消息，已确认对象引用落原账本，停止后不继续 start/complete；graph 继续明确使用原 checkpoint，断言无新HTTP和账本变化。
+
+为补充基础设施恢复后的真实旧实现反证，所有其他测试进程终态后，临时用 HEAD 原策略运行四个 DTO returned/cancel 上传窗口；使用 Python try/finally 逐字节恢复本轮策略并核对 SHA256，未改用户文件或 git index。实际 **4 failed、64 deselected，16.10s，exit 1**，均命中 `Control returned while its object upload could still take effect`（`c132-original-policy-live-red.log`）。这是在单元有效红测/修复之后追加的真实链路反证，不重写其执行顺序，也不将环境错误冒称行为红测。
+
+恢复修复源码后已启动完整模型消费方和 Runtime/Session/审批恢复两组；此时仍在运行，最终结果取得后继续追加。没有为了对齐错误测试而修改 DTO 可靠结果 timer、图重入权限或领域结算语义。
+
+
+### 最终源码验证
+
+后端工作目录 `Agent_Server`，解释器 `.venv-framework-v2`（Python 3.11.16）；两组环境均为 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`。测试期间没有修改生产源码或测试，只追加本记录；两组均已从原进程取得终态，没有重启或遗留待观察句柄。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_execution_deadline.py tests/test_framework_model_evidence_cancellation.py tests/test_artifact_storage_service.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_dto.py tests/test_framework_model_positions.py tests/test_framework_model_result_import.py tests/test_framework_semantic_result_import.py tests/test_framework_semantic_input.py tests/test_framework_model_policy.py tests/test_framework_model_calls.py tests/test_framework_model_evidence.py tests/test_framework_model_admission.py tests/test_framework_model_budget_projection.py tests/test_framework_prepared_orchestration.py -q -rs --tb=short
+# 423 passed，1362.80s（0:22:42），exit 0，无 skipped／deselected
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py tests/test_agent_task_dispatch.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_approval_recovery.py tests/test_framework_delta_replay_order.py tests/test_framework_cognitive_limits.py tests/test_session_execution_ownership.py tests/test_semantic_intent_failure_visibility.py tests/test_semantic_intent_trace_http.py tests/test_model_clients.py tests/test_langchain_model_adapter.py tests/test_model_completion_http.py tests/test_model_stream_terminal_http.py -q -rs --tb=short
+# 282 passed，440.56s（0:07:20），exit 0，无 skipped／deselected
+```
+
+日志 `.codex-logs/c132-final-model-consumers.log`、`c132-final-runtime-consumers.log` 保留本地、不提交。第一组包含原81项截止回归、新68项证据专项、存储服务、全部原模型账本/位置/转移/只读响应导入/语义输入/准备契约；第二组包括正式停止/调度/Session/adapter、原审批独立Worker强杀、Delta/messages 严格比较、认知配额及 legacy SDK/HTTP 消费方。不将重叠的选择组累加成独立覆盖数。
+
+前端工作目录 `agent_web`，本轮实际执行：
+
+```powershell
+npm run test -- src/stores/sessionFrameworkApproval.test.ts src/stores/sessionStreaming.test.ts src/stores/sessionAssistantStreamReplay.test.ts src/composables/useSSEStream.test.ts
+# 4文件／29 passed，2.46s，exit 0
+npm run typecheck
+# exit 0
+```
+
+前端日志 `c132-frontend-consumers.log`、`c132-frontend-typecheck.log` 不提交。测试后再次实际运行根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 及本轮文件 `git diff --check`，均 exit 0。ruff/mypy 仍未安装，未运行独立 Python lint/typecheck；后端/前端全量、真实供应商与对象服务验收未执行。
+
+本节新专项使用固定官方 SDK、真实隔离 PostgreSQL/Redis、本机合成HTTP及 ArtifactStorageService＋本地S3 client替身。不是实际RustFS、真实供应商/OAuth、领域Runner、独立Worker强杀的新专项或完整E3/E4；旧审批强杀回归仍只有其原E2范围。这里“零重发”核对的是模型HTTP；未新增应用上传重试，不据此证明底层S3 SDK内部没有重试。
+
+### 兼容性、提交与剩余出口
+
+本步的取消延迟有意等待本次已开始的证据单元完成/失败，再传播原取消；不保证硬实时停止，也不证明外部执行已物理停止。成功上传但引用写入失败、wire两对象部分成功、上传ACK丢失均保留实际对象/已知引用和未确认诊断；不补造引用、不退款、不调用模型补结果，也不删除疑似孤儿。日志不是持久对账器：进程终止后的未确认上传身份、对象独立只读查询与持久回执、部分wire重建、补偿/清理仍需后续独立实现和故障验收。
+
+仅六个本轮文件：`.gitignore` 的新专项白名单、`framework_model_call_policy.py`、`framework_model_evidence.py`、原 `test_framework_execution_deadline.py`、新 `test_framework_model_evidence_cancellation.py` 与本记录。公开API、schema/DDL、依赖、配置、生产开关和通用对象服务的其他调用方未改；用户v3草稿、配置、日志和本地数据均不暂存。提交前核对完整diff、原记录983164字节前缀、EOF、六文件精确暂存和v3 SHA256；具体commit由包含本节的Git提交及交付记录追溯，不推送、不建PR。
+
+完整v4仍为active：对象未知效果的持久对账、全图任意重复取消/进程终止、提交ACK丢失、精确内部等待及根活动限额、跨来源/跨Worker连续性、官方saver conformance、完整H01–H12、A2/A3/B/C其余出口、D/E/F及真实E3/E4发布门尚未完成。下一步继续原模型证据未确认上传的持久身份及只读对账，不把本节的协作收尾当作全系统接入完成。

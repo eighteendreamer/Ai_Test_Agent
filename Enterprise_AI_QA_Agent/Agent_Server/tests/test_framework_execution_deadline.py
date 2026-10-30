@@ -755,9 +755,16 @@ async def test_admission_cancellation_drains_sql_before_control_result(harness, 
                 if stop == "deadline":
                     assert read_model_budget_material(h.binding, error.root_model_budget) == snapshot
                 assert not abandoned_sql, "Control result returned while its model-ledger transaction could still commit"
-                drained, = [record for record in caplog.records if record.getMessage() == "framework_model_mutation_drained_after_cancel"]
+                # Request attachment belongs to the upload/reference unit; its
+                # parent cancellation no longer reaches the inner SQL waiter.
+                event = ("framework_model_evidence_drained_after_cancel" if boundary == "request"
+                    else "framework_model_mutation_drained_after_cancel")
+                drained, = [record for record in caplog.records if record.getMessage() == event]
                 assert drained.binding_id == h.binding.binding_id and drained.model_attempt_id
-                assert drained.operation == {"reserve": "reserve", "request": "attach_request", "start": "start"}[boundary]
+                if boundary == "request":
+                    assert drained.evidence_stage == "request"
+                else:
+                    assert drained.operation == {"reserve": "reserve", "start": "start"}[boundary]
                 assert drained.outcome == ("returned" if outcome == "commit" else "failed")
                 if outcome == "rollback":
                     assert drained.error_type == "ConnectionError"

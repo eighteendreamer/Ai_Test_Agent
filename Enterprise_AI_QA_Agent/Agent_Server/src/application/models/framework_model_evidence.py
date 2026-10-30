@@ -6,6 +6,7 @@ write must be reconciled, never interpreted as permission to resend a model.
 """
 from __future__ import annotations
 
+import asyncio
 import hashlib
 import json
 import logging
@@ -70,29 +71,30 @@ class FrameworkModelEvidence:
             "attempt_sequence": observation.request_attempt_count,
         }
 
-    async def _store(self, owner, intent, content, stage):
+    async def _store(self, owner, intent, content, stage, *, filename=None, content_type="application/json"):
         # UUID write identities avoid overwriting an earlier/uncertain upload.
-        # As in impact_checkpoint_io, retain possible orphans for reconciliation.
+        # As in impact_checkpoint_io, retain unconfirmed objects. These logs
+        # identify candidates for readback, not a durable reconciliation queue.
         prefix = "framework-models/" + hashlib.sha256(owner.binding.binding_id.encode()).hexdigest()
         prefix += "/" + hashlib.sha256(intent.attempt_id.encode()).hexdigest() + "/" + uuid4().hex
+        digest = hashlib.sha256(content).hexdigest()
+        context = {"binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
+            "evidence_stage": stage, "object_prefix": prefix, "content_sha256": digest, "size_bytes": len(content)}
+        logger.info("framework_model_evidence_storage_started", extra=context)
         try:
-            saved = await self._objects.store_uploaded_bytes(content=content, filename=stage + ".json",
-                object_prefix=prefix, content_type="application/json")
-        except Exception as exc:
-            logger.error("framework_model_evidence_storage_unconfirmed", extra={
-                "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
-                "evidence_stage": stage, "object_prefix": prefix, "error_type": type(exc).__name__})
+            saved = await self._objects.store_uploaded_bytes(content=content, filename=filename or stage + ".json",
+                object_prefix=prefix, content_type=content_type)
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.log(logging.WARNING if isinstance(exc, asyncio.CancelledError) else logging.ERROR,
+                "framework_model_evidence_storage_unconfirmed", extra={**context, "error_type": type(exc).__name__})
             raise
-        return FrameworkModelObject(storage_uri=saved["uri"], sha256=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content))
+        reference = FrameworkModelObject(storage_uri=saved["uri"], sha256=digest, size_bytes=len(content))
+        logger.info("framework_model_evidence_stored", extra={**context, "storage_uri": reference.storage_uri})
+        return reference
 
     async def _store_bytes(self, owner, intent, content: bytes, stage: str):
-        prefix = "framework-models/" + hashlib.sha256(owner.binding.binding_id.encode()).hexdigest()
-        prefix += "/" + hashlib.sha256(intent.attempt_id.encode()).hexdigest() + "/" + uuid4().hex
-        saved = await self._objects.store_uploaded_bytes(content=content, filename=stage + ".bin",
-            object_prefix=prefix, content_type="application/octet-stream")
-        return FrameworkModelObject(storage_uri=saved["uri"], sha256=hashlib.sha256(content).hexdigest(),
-            size_bytes=len(content))
+        return await self._store(owner, intent, content, stage,
+            filename=stage + ".bin", content_type="application/octet-stream")
 
     async def read(self, reference: FrameworkModelObject):
         reference = FrameworkModelObject.model_validate(reference.model_dump())

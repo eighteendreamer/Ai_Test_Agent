@@ -281,6 +281,40 @@ class FrameworkModelCallPolicy:
             "settled_response_id": expected.settled_response_id})
         return result
 
+    async def _persist_evidence(self, owner, intent, stage, operation):
+        # Follow _settle_execution_tasks and the ledger mutation bridge, but
+        # retain the whole upload -> existing reference write, not just the
+        # thread. No provider send or authoritative settlement is shielded.
+        pending = asyncio.create_task(operation, name=f"framework-model-evidence:{stage}")
+        cancelled = None
+        cancellation_count = 0
+        context = {"binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
+            "evidence_stage": stage}
+        while not pending.done():
+            try:
+                await asyncio.shield(pending)
+            except asyncio.CancelledError as exc:
+                cancellation_count += 1
+                if cancelled is None:
+                    cancelled = exc
+                    logger.warning("framework_model_evidence_cancellation_pending", extra=context)
+            except Exception:
+                if cancelled is None:
+                    raise
+                break
+        if cancelled is not None:
+            try:
+                pending.result()
+            except (Exception, asyncio.CancelledError) as exc:
+                logger.error("framework_model_evidence_drained_after_cancel", extra={**context,
+                    "outcome": "cancelled" if isinstance(exc, asyncio.CancelledError) else "failed",
+                    "error_type": type(exc).__name__, "cancellation_count": cancellation_count})
+            else:
+                logger.warning("framework_model_evidence_drained_after_cancel", extra={**context,
+                    "outcome": "returned", "cancellation_count": cancellation_count})
+            raise cancelled
+        return pending.result()
+
     async def _start_intent(self, *, owner, intent, envelope):
         # Reserve and send permission use the database clock. A stale local
         # timer must not turn their root-deadline verdict into a model failure.
@@ -291,8 +325,11 @@ class FrameworkModelCallPolicy:
                 or saved.owner_attempt_id != owner.attempt_id):
                 raise FrameworkModelRecoveryRequired("position_owned_by_prior_attempt", saved)
             if self._evidence is not None and saved.request is None and saved.phase == "ready":
-                request = await self._evidence.store_request(owner, intent, envelope)
-                await self._calls.attach_request(owner, intent.attempt_id, request=request)
+                async def save_request():
+                    request = await self._evidence.store_request(owner, intent, envelope)
+                    await self._calls.attach_request(owner, intent.attempt_id, request=request)
+
+                await self._persist_evidence(owner, intent, "request", save_request())
             current, permitted = await self._calls.start(owner, intent.attempt_id)
         except FrameworkModelBudgetExceeded as exc:
             if exc.kind != "deadline":
@@ -331,10 +368,15 @@ class FrameworkModelCallPolicy:
                 exc.add_note("Model attempt remains reserved and requires durable reconciliation")
             raise
         if self._evidence is not None:
-            try:
+            response = None
+
+            async def save_response():
+                nonlocal response
                 response = await self._evidence.store_response(owner, intent, result, response_kind=response_kind)
-                observation = await self._calls.append_response_observation(owner, intent.attempt_id,
+                return await self._calls.append_response_observation(owner, intent.attempt_id,
                     response=response, response_kind=response_kind)
+
+            async def save_wire():
                 wire = await self._evidence.store_wire(owner, intent, active_observation)
                 logger.info("framework_model_wire_candidate", extra={
                     "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
@@ -344,13 +386,17 @@ class FrameworkModelCallPolicy:
                 })
                 if wire is not None:
                     await self._calls.append_wire_observation(owner, intent.attempt_id, observation=wire)
+
+            try:
+                observation = await self._persist_evidence(owner, intent, "response", save_response())
+                await self._persist_evidence(owner, intent, "wire", save_wire())
             except (Exception, asyncio.CancelledError) as exc:
                 # The response has arrived. Preserve uncertainty and any saved
                 # object even if its ledger reference could not be confirmed.
                 logger.error("framework_model_response_evidence_unconfirmed", extra={
                     "binding_id": owner.binding.binding_id, "model_attempt_id": intent.attempt_id,
-                    "response_sha256": response.sha256 if "response" in locals() else None,
-                    "response_uri": response.storage_uri if "response" in locals() else None,
+                    "response_sha256": response.sha256 if response is not None else None,
+                    "response_uri": response.storage_uri if response is not None else None,
                     "error_type": type(exc).__name__})
                 exc.add_note("Provider response arrived; reconcile evidence without resending the request")
                 raise
