@@ -166,7 +166,9 @@ async def test_v2_dispatcher_forwards_native_reader_at_existing_recovery_entries
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("operation", ["message", "message_recover", "approval_resume", "approval_recover", "framework_reconcile"])
-@pytest.mark.parametrize("reader,format_version", [(15, 16), (16, 17), (16, 16), (17, 17), (17, 18), (18, 18), (18, 19), (19, 19), (19, 20), (20, 20), (20, 21), (21, 21), (21, 22), (22, 22), (22, 23), (23, 23), (23, 24), (24, 24), (24, 25), (25, 25), (25, 26), (26, 26), (26, 27)])
+@pytest.mark.parametrize("reader,format_version", [(reader, version)
+    for reader in range(15, FrameworkWorkerCapabilities("a" * 64, True).message_stage_max_version + 1)
+    for version in (reader, reader + 1)])
 async def test_approval_preparation_format_is_checked_before_claim(operation, reader, format_version):
     selected = binding()
     task = stored_task(selected)

@@ -10,6 +10,7 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import BaseModel, ConfigDict, Field
 from src.schemas.session import ToolApprovalRequest
 from src.schemas.tool_job import ToolJobRecord
+from src.schemas.framework_harness_settings import FrameworkHarnessSettings
 
 
 def approval_value_hash(value: Any) -> str:
@@ -90,6 +91,7 @@ class FrameworkContinuationPlan(PreparedFrameworkApproval):
     """One validated decision; invocation mode derives from durable delivery."""
 
     receipt: FrameworkDecisionReceipt
+    harness_settings: FrameworkHarnessSettings | None = Field(default=None, exclude_if=lambda value: value is None)
 
     @property
     def continue_from_checkpoint(self) -> bool:

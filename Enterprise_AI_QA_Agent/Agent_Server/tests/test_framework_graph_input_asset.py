@@ -31,6 +31,16 @@ def prepared_graph_input(binding, trace_id, *, identity=None, initial_state=None
         runtime_preparation=FrameworkRuntimePreparation(identity=identity, initial_state=state))
 
 
+def expected_graph_stage_version(stage, *, minimum):
+    """Keep feature-specific stage floors without assuming a fixture's graph format."""
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+
+    manifest = stage.source_manifest or {}
+    graphs = ([manifest["graph_input_asset"]] if "graph_input_asset" in manifest else [])
+    graphs.extend(item["graph_input_asset"] for item in manifest.get("approval_graph_inputs", {}).values())
+    return max([minimum, *[parse_graph_input_asset(raw).required_message_stage_version for raw in graphs]])
+
+
 def test_prepared_graph_input_round_trip_and_nested_copy():
     from src.schemas.framework_graph_input import parse_graph_input_asset
     from tests.test_runtime_binding_persistence import make_binding

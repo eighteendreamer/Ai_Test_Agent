@@ -22,6 +22,7 @@ from tests.test_framework_approval_graph_input import (
 )
 from tests.test_framework_approval_recovery import expire, run_delivery, outbox
 from tests.test_framework_projected_settlement import attempts, change_projection
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 @pytest_asyncio.fixture
@@ -83,7 +84,7 @@ async def test_projected_approval_loss_reconciles_and_only_settles(projected_app
     successor = await h.tasks.get(reconciled.result_payload["successor_task_id"])
     assert outbox(h, successor.id) is not None
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.schema_version == 26 and saved.phase == "projected"
+    assert saved.schema_version == expected_graph_stage_version(saved, minimum=26) and saved.phase == "projected"
     assert "post_commit_memory_intent" in saved.source_manifest
     assert saved.source_manifest == before.source_manifest
     assert saved.result_reference == before.result_reference
@@ -381,7 +382,9 @@ async def test_interrupt_after_expiry_without_active_task_cannot_rewrite_complet
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("reader,version", [(22, 23), (23, 24), (25, 26)])
+@pytest.mark.parametrize("prepared_approval_runtime,reader,version", [
+    *[({"legacy_harness": True}, reader, version) for reader, version in ((22, 23), (23, 24), (25, 26))],
+    ({}, 28, 29)], indirect=["prepared_approval_runtime"])
 async def test_approval_settlement_format_checked_before_real_claim(projected_approval, reader, version):
     from tests.test_framework_approval_graph_input import replace_stage
     from tests.test_framework_application_projection import legacy_application_commit_stage

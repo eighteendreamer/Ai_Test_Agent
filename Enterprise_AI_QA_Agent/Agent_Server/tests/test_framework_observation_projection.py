@@ -27,6 +27,7 @@ from tests.test_framework_application_projection import projection
 from tests.test_framework_message_stages import run, selected, stage
 from tests.test_framework_snapshot_projection import snapshot_write, stop_after_snapshot
 from tests.test_framework_runtime_result_asset import frozen_result
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 @pytest_asyncio.fixture
@@ -385,8 +386,9 @@ async def test_completed_application_binds_observation_receipts(observation_resu
     with framework_owner_scope(h.task.runtime_owner):
         await h.sessions._finalize_runtime_result(**h.result_values)
     saved = await stage(h, h.task)
-    assert saved.schema_version == 26
+    assert saved.schema_version == expected_graph_stage_version(saved, minimum=27)
     assert "post_commit_memory_intent" in saved.source_manifest
+    assert "post_commit_memory_execution" in saved.source_manifest
     assert len(saved.source_manifest[COMMITS_KEY]["row_hashes"]) == 2
     assert "application_projection_commit" in saved.source_manifest
     event, = [e for e in await h.store.list_events(h.session_id) if e.type == "observations.persisted"]
@@ -485,7 +487,8 @@ async def test_official_worker_killed_after_first_observation_retains_atomic_rec
             assert reached is not None and reached[1] == "observation-row-committed", f"worker exit code: {process.exitcode}"
             before = await stage(h, original)
             rows = memory_rows(h)
-            assert before.phase == "runtime_submitted" and before.schema_version == 21
+            assert before.phase == "runtime_submitted"
+            assert before.schema_version == expected_graph_stage_version(before, minimum=21)
             assert before.source_manifest["graph_input_asset"]["feature_flags"]["tool_projection_version"] == 3
             identity = before.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]
             result = before.source_manifest["runtime_result_asset"]

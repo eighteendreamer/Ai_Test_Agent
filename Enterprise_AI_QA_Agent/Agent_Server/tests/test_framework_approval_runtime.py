@@ -763,13 +763,15 @@ async def test_initial_runtime_and_session_continuations_share_the_official_harn
         from langchain_core.messages import ToolMessage
         from src.application.deep_agents.framework_transcript import deserialize_messages
         from src.schemas.framework_tool_projection import parse_tool_projection, TOOL_PROJECTION_KEY
+        from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
         # The server-owned feature survives pending_turn and separate approval
         # tasks. Partial sibling results retain their original display slots.
         assert inputs[0]["feature_flags"]["tool_projection_version"] == 3
         # Application commit freezes the Memory plan in v26, independently of
         # whether the original graph prefix had an acknowledged event sink.
-        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == 26
+        assert await h.tasks.get_framework_message_stage_version(a.id, session_id=h.session_id) == expected_graph_stage_version(
+            original_stage, minimum=26)
         snapshot = await h.store.get_latest_snapshot(h.session_id)
         from src.schemas.framework_projection_commit import FrameworkTurnMemoryPlan
 

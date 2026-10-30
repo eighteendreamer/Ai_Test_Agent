@@ -25,7 +25,7 @@ class FrameworkWorkerCapabilities:
     dependency_lock_sha256: str
     deepagents_available: bool
     runtime_version: str = FRAMEWORK_RUNTIME_VERSION
-    message_stage_max_version: int = 28
+    message_stage_max_version: int = 29
     context_transcript_enabled: bool = True
     turn_context_assembly_enabled: bool = True
     native_summary_coverage_enabled: bool = True

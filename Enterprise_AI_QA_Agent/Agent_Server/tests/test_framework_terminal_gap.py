@@ -27,6 +27,7 @@ from tests.test_framework_message_recovery import isolate_recovery_stores
 from tests.test_framework_message_stages import stage
 from tests.test_framework_native_terminal import Model
 from tests.test_runtime_binding_persistence import make_command
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 class LocalModelObjects:
@@ -629,7 +630,7 @@ async def test_normal_worker_result_keeps_prepared_identity_and_stage_version(ad
             assert not process.is_alive() and process.exitcode == 0
             assert (await h.tasks.get(task.id)).status == "completed"
             saved = await stage(h, task)
-            assert saved.phase == "projected" and saved.schema_version == 26
+            assert saved.phase == "projected" and saved.schema_version == expected_graph_stage_version(saved, minimum=26)
             assert "post_commit_memory_intent" in saved.source_manifest
             completions = [event for event in await h.store.list_events(h.session_id)
                 if event.type == "runtime.event_log_completed"]

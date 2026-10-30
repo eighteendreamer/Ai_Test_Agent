@@ -128,10 +128,11 @@ class DeepAgentRuntimeAdapter:
         original = _native_schema_input(graph_input, source)
         flags = original.feature_flags
         model = _native_schema_model()
-        options, _ = self._configure_harness(model,
-            read_only_filesystem_enabled=flags["read_only_filesystem"], read_only_max_file_size_mb=10,
-            context=original.context, cognitive_planning_enabled=flags["cognitive_planning"],
-            cognitive_subagents_enabled=flags["cognitive_subagents"], _schema_only=True)
+        harness_options = dict(read_only_filesystem_enabled=flags["read_only_filesystem"], read_only_max_file_size_mb=10,
+            cognitive_planning_enabled=flags["cognitive_planning"], cognitive_subagents_enabled=flags["cognitive_subagents"])
+        if original.harness_settings is not None:
+            harness_options.update(original.harness_settings.adapter_options())
+        options, _ = self._configure_harness(model, context=original.context, _schema_only=True, **harness_options)
         from langchain.agents.middleware import HumanInTheLoopMiddleware
 
         interrupt_on = {key: {"allowed_decisions": ["approve", "reject"]} for key in original.interrupt_tool_keys}
@@ -600,7 +601,7 @@ def _native_schema_input(graph_input, source):
     flags = original.feature_flags
     topology = {"read_only_filesystem", "cognitive_planning", "cognitive_subagents", "governed_tools"}
     if (set(flags) - topology - {"tool_projection_version", "verification_projection_version", "result_projection_version",
-        "terminal_event_projection_version", "structured_output_version", "summary_coverage_version"}
+        "terminal_event_projection_version", "structured_output_version", "summary_coverage_version", "harness_settings_version"}
         or any(type(flags.get(key)) is not bool for key in topology)):
         raise DeepAgentRuntimeError("Native reader does not support the original harness schema flags")
     return original

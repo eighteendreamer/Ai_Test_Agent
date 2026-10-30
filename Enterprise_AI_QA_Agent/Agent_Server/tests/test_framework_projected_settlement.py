@@ -24,6 +24,7 @@ from tests.test_framework_message_recovery import isolate_recovery_stores, outbo
 from tests.test_framework_application_projection import projection, projection_jobs, drift, worker_waiting_after_application_commit
 from tests.test_framework_partial_projection_recovery import dispatch, expire, forbid_reexecution, reap_dead_worker_resources
 from tests.test_framework_message_stages import run, selected, stage
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 def attempts(h, task_id):
@@ -459,7 +460,7 @@ async def test_official_projected_worker_kill_and_settlement_worker_kill_preserv
             reached = await waiting.blpop(gate, timeout=50)
             assert reached is not None and reached[1] == "stage-projected", f"origin worker exit={process.exitcode}"
             projected = await stage(h, original)
-            assert projected.phase == "projected" and projected.schema_version == 26
+            assert projected.phase == "projected" and projected.schema_version == expected_graph_stage_version(projected, minimum=26)
             assert "post_commit_memory_intent" in projected.source_manifest
             snapshot = await h.store.get_latest_snapshot(h.session_id)
             budget = await h.calls.snapshot(h.binding)

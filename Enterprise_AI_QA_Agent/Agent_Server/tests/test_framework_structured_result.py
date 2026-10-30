@@ -23,6 +23,7 @@ from tests.test_framework_message_result_reconstruction import (
 )
 from tests.test_framework_approval_graph_input import prepared_approval_runtime, frozen_approval_result, replace_stage
 from tests.test_framework_approval_result_reconstruction import approval_asset_gap
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 def guidance():
@@ -152,7 +153,8 @@ async def test_structured_message_native_read_and_finalization_preserve_original
     assert first.runtime_result.state["model_response_summary"]["structured_result"] == guidance()
     original = first.graph_input_asset
     assert original.feature_flags["structured_output_version"] == 1
-    assert original.required_message_stage_version == h.stages.get(h.initial_task_id, h.session_id).schema_version == 24
+    stage = h.stages.get(h.initial_task_id, h.session_id)
+    assert original.required_message_stage_version == stage.schema_version == expected_graph_stage_version(stage, minimum=24)
     completed = [event for event in first.runtime_result.events if event.type == "runtime.turn_completed"]
     assert len(completed) == 1 and completed[0].payload["structured_output_version"] == 1
     await test_terminal_delivery_seals_original_and_runs_only_the_existing_finalizer(h, monkeypatch)

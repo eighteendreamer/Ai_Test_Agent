@@ -24,6 +24,7 @@ from tests.test_framework_model_admission import admission
 from tests.test_framework_message_recovery import isolate_recovery_stores
 from tests.test_framework_application_projection import projection, projection_jobs
 from tests.test_framework_message_stages import selected, run, stage
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 def install_preparation(h, *, keep_result=False):
@@ -395,7 +396,7 @@ async def test_official_worker_hard_kill_before_finalization_retains_result_not_
                     assert asset.event_id("snapshot.saved") in event_receipts["event_hashes"]
                     for identity, digest in event_receipts["event_hashes"].items():
                         assert digest == _hash(events[identity])
-            assert before.schema_version == 21
+            assert before.schema_version == expected_graph_stage_version(before, minimum=21)
             assert before.source_manifest["graph_input_asset"]["feature_flags"]["tool_projection_version"] == 3
             identity = before.source_manifest["graph_input_asset"]["runtime_preparation"]["identity"]
             assert identity["snapshot_id"] == asset.runtime_result.snapshot.id

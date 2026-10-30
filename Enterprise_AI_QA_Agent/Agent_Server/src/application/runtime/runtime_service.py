@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import nullcontext
+from dataclasses import replace
 from datetime import datetime, timezone
 import json
 import logging
@@ -21,6 +22,7 @@ from src.schemas.framework_transcript import (
     IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSIONS, SUMMARY_CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY,
 )
 from src.schemas.framework_summary import SUMMARY_COVERAGE_VERSION_KEY
+from src.schemas.framework_harness_settings import FrameworkHarnessSettings, HARNESS_SETTINGS_KEY
 from src.application.context.turn_context_assembly import TurnContextAssembly
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.context.context_compaction_service import ContextCompactionService
@@ -464,6 +466,27 @@ class RuntimeService:
             structured_output_version=state["context_bundle"].get("framework_structured_output_version"),
             summary_coverage_version=state["context_bundle"].get(SUMMARY_COVERAGE_VERSION_KEY),
         )
+        # Only original prepared Turns select this format. Continuations read
+        # it from the original stage via their owned plan, never caller/pending
+        # metadata or the replacement Worker's current configuration.
+        harness_settings = None
+        if projection_identity is not None:
+            harness_settings = (FrameworkHarnessSettings.capture(adapter_request, pilot_stage=pilot_stage)
+                if continuation_plan is None else continuation_plan.harness_settings)
+        state["context_bundle"].pop(HARNESS_SETTINGS_KEY, None)
+        adapter_context = dict(adapter_request.context)
+        adapter_context.pop(HARNESS_SETTINGS_KEY, None)
+        if harness_settings is not None:
+            frozen_settings = harness_settings.model_dump(mode="json")
+            state["context_bundle"][HARNESS_SETTINGS_KEY] = frozen_settings
+            adapter_context[HARNESS_SETTINGS_KEY] = frozen_settings
+            pilot_stage = harness_settings.pilot_stage
+            adapter_request = replace(adapter_request, **harness_settings.adapter_options(),
+                on_subagent_event=on_subagent_event if harness_settings.cognitive_subagents_enabled else None)
+            logger.info("framework_harness_settings_selected", extra={
+                "binding_id": projection_identity.binding.binding_id, "schema_version": harness_settings.schema_version,
+                "source": "original_stage" if continuation_plan is not None else "initial_preparation"})
+        adapter_request = replace(adapter_request, context=adapter_context)
         runtime_preparation = None
         adapter = (self._deep_agent_bound_runtime_adapter if request.runtime_binding is not None
             else self._deep_agent_runtime_adapter)
@@ -518,6 +541,7 @@ class RuntimeService:
                     "cognitive_planning": adapter_request.cognitive_planning_enabled,
                     "cognitive_subagents": adapter_request.cognitive_subagents_enabled,
                     "governed_tools": self._deep_agent_governed_tools_enabled,
+                    **({"harness_settings_version": 1} if harness_settings is not None else {}),
                     **({"structured_output_version": adapter_request.structured_output_version}
                         if adapter_request.structured_output_version is not None else {}),
                     **({"summary_coverage_version": adapter_request.summary_coverage_version}

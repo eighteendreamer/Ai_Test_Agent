@@ -84,6 +84,8 @@ class FrameworkApprovalContinuation:
                 if initial is None or initial.schema_version != 2:
                     raise FrameworkApprovalRecoveryRequired("Approval graph input has no original prepared input")
                 initial_binding = initial.runtime_preparation.identity.binding
+                if initial.harness_settings != asset.harness_settings:
+                    raise FrameworkApprovalRecoveryRequired("Approval graph input changed its original Harness settings")
                 if (stage.binding_id != owner.binding.binding_id or initial_binding != owner.binding
                     or manifest.get("binding_fingerprint") != owner.binding.fingerprint):
                     raise FrameworkApprovalRecoveryRequired("Approval graph input differs from its original prepared binding")
@@ -250,7 +252,21 @@ class FrameworkApprovalContinuation:
                 turn_lease_token=owner.owner_token)
         else:
             receipt = self._journal.mark_sending_in_transaction(cur, approval_id)
-        return plan.model_copy(update={"receipt": receipt})
+        from src.runtime.framework_message_stages import message_stage_table, validate_message_stage
+        from src.schemas.framework_graph_input import parse_graph_input_asset
+
+        cur.execute(f"SELECT record FROM {message_stage_table(self._settings)} WHERE binding_id=%s", (binding.binding_id,))
+        row = cur.fetchone()
+        harness_settings = None
+        if row is not None:
+            stage = validate_message_stage(row["record"])
+            raw = (stage.source_manifest or {}).get("graph_input_asset")
+            original = parse_graph_input_asset(raw) if raw is not None else None
+            if original is not None and original.schema_version == 2:
+                if (stage.binding_id != binding.binding_id or original.runtime_preparation.identity.binding != binding):
+                    raise FrameworkApprovalRecoveryRequired("Harness settings have no original prepared binding")
+                harness_settings = original.harness_settings
+        return plan.model_copy(update={"receipt": receipt, "harness_settings": harness_settings})
 
     async def read_tool_projection(self, owner, approval_id, decision_id):
         """Read original material, not a fresh ToolJob output transformation.

@@ -18,6 +18,7 @@ from src.schemas.framework_tool_projection import TOOL_PROJECTION_VERSION_KEY
 from src.schemas.framework_cognitive_result import STRUCTURED_OUTPUT_VERSION_KEY, require_structured_output_version
 from src.schemas.framework_summary import SUMMARY_COVERAGE_VERSION_KEY, require_summary_coverage_version
 from src.schemas.framework_transcript import SUMMARY_CONTEXT_RUNTIME_VERSION
+from src.schemas.framework_harness_settings import FrameworkHarnessSettings, HARNESS_SETTINGS_KEY
 
 
 RESULT_PROJECTION_VERSION_KEY = "framework_result_projection_version"
@@ -108,11 +109,29 @@ class _FrameworkGraphInputFields(BaseModel):
         if "summary_coverage_version" in self.feature_flags:
             if require_summary_coverage_version(self.feature_flags["summary_coverage_version"]) is None or self.schema_version != 2:
                 raise ValueError("Native summary coverage requires its supported prepared graph format")
+        if "harness_settings_version" in self.feature_flags:
+            if (self.schema_version != 2 or type(self.feature_flags["harness_settings_version"]) is not int
+                or self.feature_flags["harness_settings_version"] != 1):
+                raise ValueError("Harness settings require their explicit prepared format")
+            settings = self.harness_settings
+            if any(self.feature_flags.get(flag) is not getattr(settings, name) for flag, name in (
+                ("read_only_filesystem", "read_only_filesystem_enabled"),
+                ("cognitive_planning", "cognitive_planning_enabled"),
+                ("cognitive_subagents", "cognitive_subagents_enabled"))):
+                raise ValueError("Harness settings differ from the frozen graph topology")
         return self
+
+    @property
+    def harness_settings(self):
+        if "harness_settings_version" not in self.feature_flags:
+            return None
+        return FrameworkHarnessSettings.model_validate(self.context.get(HARNESS_SETTINGS_KEY))
 
     @property
     def required_message_stage_version(self):
         version = self.feature_flags.get("tool_projection_version")
+        if "harness_settings_version" in self.feature_flags:
+            return 29
         if "summary_coverage_version" in self.feature_flags:
             return 28
         if "structured_output_version" in self.feature_flags:
@@ -150,6 +169,8 @@ class FrameworkPreparedGraphInputAsset(_FrameworkGraphInputFields):
         from src.schemas.framework_verification_projection import FrameworkVerificationPreparation, VERIFICATION_PREPARATION_KEY
 
         context = state.get("context_bundle") or {}
+        if self.harness_settings is not None and context.get(HARNESS_SETTINGS_KEY) != self.harness_settings.model_dump():
+            raise ValueError("Harness settings differ from their original runtime preparation")
         summary_version = context.get(SUMMARY_COVERAGE_VERSION_KEY)
         if binding.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION:
             if (require_summary_coverage_version(summary_version) != 1

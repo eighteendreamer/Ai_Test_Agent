@@ -25,14 +25,18 @@ from tests.test_framework_checkpoint_fencing import checkpoint_harness
 from tests.test_framework_approval_projection import projection_harness
 from tests.test_framework_approval_runtime import fresh_runtime_harness, build_runtime
 from tests.test_framework_approval_continuation import claim_decision, service, receipt
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
+from src.schemas.framework_harness_settings import HARNESS_SETTINGS_KEY
 
 
 @pytest_asyncio.fixture
-async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch):
+async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch, tmp_path):
     h = fresh_runtime_harness
     selected = getattr(request, "param", "inspect_value")
     tool_key = selected.get("tool_key", "inspect_value") if isinstance(selected, dict) else selected
-    if isinstance(selected, dict) and (selected.get("legacy_verification") or selected.get("legacy_result") or selected.get("legacy_terminal")):
+    legacy_projection = isinstance(selected, dict) and any(selected.get(key)
+        for key in ("legacy_verification", "legacy_result", "legacy_terminal"))
+    if isinstance(selected, dict) and (legacy_projection or selected.get("legacy_harness")):
         from src.schemas import framework_graph_input as graph_inputs
 
         capture = graph_inputs.graph_input_asset
@@ -45,6 +49,11 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
             first_input = False
             # Simulate old preparation at the original boundary, before any
             # graph runs; do not remove material from a completed result.
+            kwargs["feature_flags"].pop("harness_settings_version", None)
+            kwargs["context"].pop(HARNESS_SETTINGS_KEY, None)
+            kwargs["runtime_preparation"].initial_state["context_bundle"].pop(HARNESS_SETTINGS_KEY, None)
+            if not legacy_projection:
+                return capture(**kwargs)
             if not selected.get("legacy_terminal"):
                 kwargs["feature_flags"].pop("result_projection_version", None)
                 kwargs["runtime_preparation"].initial_state["context_bundle"].pop("framework_result_projection_version", None)
@@ -61,6 +70,9 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
         for key in ("A", "B")]), (selected["output_message"] if isinstance(selected, dict) and "output_message" in selected
             else AIMessage(id="prepared-final", content=selected.get("output_text", "finished") if isinstance(selected, dict) else "finished"))],
         structured_output_enabled=selected.get("structured", False) if isinstance(selected, dict) else False)
+    harness_options = selected.get("harness_options", {}) if isinstance(selected, dict) else {}
+    for name, value in harness_options.items():
+        setattr(h.runtime, "_deep_agent_" + name, value)
     if tool_key != "inspect_value":
         from src.registry.tools import ToolModule
 
@@ -91,7 +103,8 @@ async def prepared_approval_runtime(fresh_runtime_harness, request, monkeypatch)
     h.stages = FrameworkMessageStages(h.tasks)
     request = ExecutionRequest(session_id=h.session_id, turn_id=h.binding.turn_id, trace_id=h.owner.trace_id,
         user_message="Inspect A/B", normalized_input="Inspect A/B", mode_key="default", agent_key="coordinator",
-        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": [tool_key]})
+        model_key="fake", runtime_binding=h.binding, context={"requested_tool_keys": [tool_key],
+            **({"project_root": str(tmp_path)} if harness_options.get("read_only_filesystem_enabled") else {})})
     await h.stages.begin(h.owner.runtime_owner, message_source_manifest(session, h.binding,
         SendMessageRequest.model_validate(h.owner.input)))
     await h.stages.freeze_execution(h.owner.runtime_owner, request)
@@ -205,7 +218,8 @@ async def test_approval_input_is_frozen_before_adapter_and_cannot_be_replaced(pr
     async def inspect_before_graph(request):
         stage = h.stages.get(task.id, h.session_id, include_continuations=True)
         saved = stage.source_manifest["approval_graph_inputs"][task.id]
-        assert stage.schema_version == 21 and saved["attempt_id"] == task.attempt_id
+        assert stage.schema_version == expected_graph_stage_version(stage, minimum=21)
+        assert saved["attempt_id"] == task.attempt_id
         assert saved["owner_epoch"] == task.runtime_owner.owner_epoch
         assert (await h.jobs.get_job(h.proposals["B"].job.id)).status.value == "waiting_approval"
         raw = saved["graph_input_asset"]
@@ -321,6 +335,9 @@ async def test_stage16_reads_original_inputs_but_never_grants_message_write_auth
     graphs = [manifest["graph_input_asset"],
         *[item["graph_input_asset"] for item in manifest["approval_graph_inputs"].values()]]
     for graph in graphs:
+        graph["feature_flags"].pop("harness_settings_version", None)
+        graph["context"].pop(HARNESS_SETTINGS_KEY, None)
+        graph["runtime_preparation"]["initial_state"]["context_bundle"].pop(HARNESS_SETTINGS_KEY, None)
         graph["feature_flags"].pop("result_projection_version", None)
         graph["runtime_preparation"]["initial_state"]["context_bundle"].pop("framework_result_projection_version", None)
         graph["feature_flags"].pop("terminal_event_projection_version", None)
@@ -475,7 +492,7 @@ async def test_approval_result_before_finalization_is_read_only_reproducible(pre
     from src.runtime.framework_runtime_results import FrameworkRuntimeResults
 
     results = FrameworkRuntimeResults(h.tasks)
-    assert saved.schema_version == 21
+    assert saved.schema_version == expected_graph_stage_version(saved, minimum=21)
     assert await results.load(a.runtime_owner) == asset
     assert await results.freeze(a.runtime_owner, runtime_result=asset.runtime_result.restore(),
         assistant_message_id=asset.assistant_message_id, user_message=asset.user_message,
@@ -652,7 +669,7 @@ async def test_stage17_does_not_serialize_new_finalization_fields(frozen_approva
 
     h = frozen_approval_result
     stage = h.stages.get(h.initial_task_id, h.session_id)
-    assert stage.schema_version == 21
+    assert stage.schema_version == expected_graph_stage_version(stage, minimum=21)
     assert stage.model_dump(mode="json")["approval_finalizations"] == []
     legacy = stage.model_copy(update={"schema_version": 17})
     assert "approval_finalizations" not in legacy.model_dump(mode="json")
@@ -1245,7 +1262,7 @@ async def test_approval_asset_successor_only_finalizes_the_original_result(froze
     completed = await h.tasks.get(successor_id)
     assert completed.status == "completed", completed.error_code
     saved = h.stages.get(h.initial_task_id, h.session_id)
-    assert saved.phase == "projected" and saved.schema_version == 26
+    assert saved.phase == "projected" and saved.schema_version == expected_graph_stage_version(saved, minimum=26)
     assert saved.source_manifest["post_commit_memory_intent"]["runtime_result_asset_sha256"] == asset.asset_sha256
     assert saved.source_manifest["runtime_result_asset"] == original.source_manifest["runtime_result_asset"]
     assert saved.source_manifest["approval_graph_inputs"] == original.source_manifest["approval_graph_inputs"]

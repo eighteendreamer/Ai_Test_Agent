@@ -5756,3 +5756,36 @@ $env:PYTHONUTF8='1'
 精确 Worker 内部等待／根活动覆盖、跨来源连续性、崩溃尾段结算与实际停止、专门计数跨 Worker 接管、工具 journal 专门强杀、独立 child-wait 环境、真实供应商／RustFS／领域 Runner、官方 saver conformance、前端／全量后端和 E3/E4 均未完成。A2/A3/B 其余出口、C/D/E/F、完整 H01–H12 与整体 v4 保持 active，不能以本节持久化限额代替完整 §6.3。
 
 本节只提交 adapter、原配置消费方测试、新专项测试、精确忽略例外及本实施记录五文件；提交前复核完整 diff、记录只追加、暂存范围及 v3 hash，不提交用户草稿、配置、私有日志或本地数据，不推送、不建 PR。提交身份以包含本节的 Git commit 及交付报告追溯。
+
+## 126. B／§4、C／§6.3：首次准备冻结完整 SDK Harness 设置并统一旧格式测试契约（2026-10-30）
+
+### 续接、根因与依据 → 做法
+
+基线 `fbbf0ef6f`（§125）。本轮先复核 v4、实施记录 §52 及其后续章节、当前工作区和固定版 SDK；用户 v3 草稿未纳入本节提交。v4 §4.1 要求一次装配产物同时作为冻结输入和实际调用来源，§6.3 明确官方运行期计数不能代替持久预算；本节只冻结 SDK Harness 语义配置，不把授权、根模型账本或外部停止证明混入配置资产。
+
+真实反例显示审批恢复仍从替换 Worker 的当前 `RuntimeService` 实例读取只读文件、认知规划／子代理和各项数值限制，原 `(1, 6, 12)` 可在恢复后变成当前 `(11, 16, 22)`；拓扑开关及 pending context 也可漂移。固定版 Deep Agents 0.7.13／LangChain 中 `run_*_call_count` 是 `UntrackedValue`，恢复 invoke 会重置，§125 已将 `thread_limit` 接入官方 middleware；本节进一步冻结首次准备图所用的完整 Harness 设置，并让审批恢复、只读 schema reader 和实际 adapter request 读取同一原件。
+
+### 实现与契约
+
+新增 `Agent_Server/src/schemas/framework_harness_settings.py` 的 frozen、strict、extra-forbid `FrameworkHarnessSettings`（schema 1），冻结 pilot stage、只读文件大小／输出上限、认知规划／子代理开关、根认知子代理次数以及具名子代理模型／工具调用上限；显式拒绝 bool／字符串／浮点版本和值域越界。该资产不冻结业务授权、工具权限、根模型账本或外部执行权。
+
+- `framework_graph_input.py` 增加显式 `harness_settings_version=1`，只有 prepared schema 2 获得新语义；上下文、initial preparation 和三个拓扑开关必须与冻结设置一致。无 flag 的历史输入即使携带同名字段也不升级。新资产要求 message-stage 29。
+- `RuntimeService` 首次带 projection identity 时捕获当前 adapter request；审批继续只使用原 message-stage 中的设置，先删除调用方／pending 中同名字段，再写回服务端原件并覆盖实际 adapter request 的八项参数与 callback。结构化日志只记录 binding、版本和来源，不记录配置正文、凭据或文件内容。
+- `FrameworkApprovalContinuation`、`FrameworkMessageStages` 和 `record_graph_input` 在既有 owner／task／stage 事务边界内校验 Harness 设置、binding 和 digest；不为历史 schema 1 或无新 flag 的原件回填设置。`runtime_adapter.native_schema()` 使用原件的确切 adapter options 构建同一只读官方 schema；旧 reader 在 claim 前由 `FrameworkWorkerCapabilities.message_stage_max_version=29` 和 dispatcher 现有检查拒绝未来格式。
+- 测试版本 oracle 从 stage 中所有 graph input 的实际 `required_message_stage_version` 与功能最低版本取 max，避免每次格式升级只替换固定数字；历史 stage16／stage20 fixture 明确移除 Harness、结果、终态和 Verification 新材料后再 rehash。Memory 消费方对齐现有 `FrameworkTurnMemoryExecution` 逐条 receipt／实际物理行哈希契约。
+
+没有 DDL、依赖升级、公开路由、默认生产开关或基础设施启停变化。未修改用户 v3 草稿、`.codex-logs`、配置和本地数据；没有请求真实供应商、RustFS、浏览器、压测器或领域 Runner。证据最高为 E2（固定 SDK／本地合成 HTTP／真实 PostgreSQL+Redis／部分独立 Worker），schema-only reader 测试不执行模型或文件 I/O。
+
+### TDD 与实际验证
+
+1. 真实 PostgreSQL／Redis／官方图恢复反例先得到 **1 failed，15.72s**：审批恢复确实把原 `(1,6,12)` 变成当前 `(11,16,22)`。最小修复后同项 **1 passed，15.05s**；扩展专项首轮为 **4 failed、16 passed，18.00s**，其中 3 项是测试脚手架残留变量名错误，另一项确认 Pydantic `Literal[1]` 接受 `True`，已用显式 before validator 修正，未将脚手架错误写成生产缺陷。
+2. 格式消费方首次回归为 **9 failed、273 passed，658.75s**；9 项全部是旧 `test_framework_approval_graph_input.py` 固定版本 oracle 或历史 fixture 仍携带 Harness 新材料，不是运行时消息比较失败。统一版本推导和旧材料构造后，专项及格式消费方 **322 passed，729.51s，无 skip／deselect**。
+3. Harness 专项与 Worker contract 组合 **198 passed，46.63s，无 skip／deselect**；覆盖配置数值／拓扑／pending 漂移、原件 digest、历史无 flag、当前 reader 拒绝 29、source-only schema 只读，以及五种操作在 claim 前检查。
+4. 审批恢复／原生终态／预算／Delta 组合最终为 **375 项中 374 passed、1 项独立 Worker 强杀场景因续租观察时序失败**；失败输出为 `processed == 0` 断言与 `ContinuationLeaseLostError`，不是 Harness 设置或 messages 比较失败。该精确样本未重启整组，仅按真实失败重新单项运行，得到 **1 passed，33.87s**。因此这组证据记录为“374+1 单项复验”，不改报成一次性 375 全绿。
+5. 结果资产／观察／应用投影／Memory／结构化结果／结算组合首次为 **263 passed、5 failed，1510.49s**：1 项旧 Memory 阶段 26 oracle、1 项引用已不存在的 `FrameworkTurnMemoryCommits`、3 项旧审批样本混入 Harness 29。对齐现有 execution receipt 和历史格式后，定位补测 **6 passed，38.11s**；最终跨层投影消费方 **277 passed，1538.47s，无 skip／deselect**。
+
+本轮工作目录为 `Agent_Server`，数据库组设置 `RUN_LIVE_POSTGRES_TESTS=1`、`PYTHONUTF8=1`、`PYTHONIOENCODING=utf-8`，解释器为 `.venv-framework-v2/Scripts/python.exe`。证据日志保存在本地 `.codex-logs/c126-*.log`，不提交。根目录实际执行 `.venv-framework-v2/Scripts/python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 和新增文件 EOF 检查，均 exit 0；`ruff`／`mypy` 未安装，未安装工具且未声称 lint/typecheck 通过。只读探针取得 PostgreSQL healthcheck `True`、Redis `PING=True`，未启停服务。
+
+### 提交边界与剩余出口
+
+本节提交仅包含 Harness schema／Runtime 与 adapter 接线、stage 29 能力契约、相关格式消费方测试、Memory 消费方测试契约、精确 `.gitignore` 例外和本实施记录；不提交用户 v3 草稿、测试日志、配置、密钥或本地数据。当前仍未完成精确根活动时间／内部等待与崩溃尾段停止证明、跨 Worker 计数接管、工具 journal 专项强杀、真实供应商／RustFS／领域 Runner、官方 saver conformance、前端／全量后端、E3/E4、A2/A3/B 其余出口、D/E/F、完整 H01–H12 和整体 v4 目标；本节不能替代这些验收。
