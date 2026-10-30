@@ -5709,3 +5709,50 @@ $env:PYTHONUTF8='1'
 精确内部等待／根活动覆盖、崩溃尾段结算与实际停止证明、工具 journal 专门 Worker 强杀、独立 child-wait 环境、真实供应商／RustFS／领域 Runner、前端／全量后端、官方 saver conformance 和 E3/E4 尚未完成。A2/A3/B 的其余出口、C/D/E/F、完整 H01–H12 与整体 v4 继续 active。下一步补 Worker 实际内部等待来源与跨来源连续性，之后统一根计量，不能直接把任务状态边界当完整活动预算。
 
 本节提交范围为 Worker schema／捕获读取器、Task Store 接线、新测试、结算消费方版本 oracle、精确忽略例外及本实施记录，共七文件；提交前核对完整 diff、原记录前缀、暂存范围和 v3 hash，排除用户草稿、配置、日志及本地数据，不推送、不建 PR。提交身份由包含本节的本轮 Git commit 和交付记录追溯。
+
+## 125. C／§6.3、H09：审批与图继续不得重置认知委派及具名分支配额（2026-10-30）
+
+### 续接、根因与依据 → 做法
+
+基线 `668234dfd`（§124）。上一轮仅完成用户要求的只读项目梳理，没有新增目标实现；本轮重新核实该提交、工作区及原测试日志后实际推进 C。用户 v3 草稿保持原样，SHA256 仍为 `37FEACF26E85C45D9C0382CA9BE9EF26116580996BAD3975F3D5F30BE63B265F`。§54 的 P0 修复已经提交，不按 v4 文档制作时的历史失败描述重复实现或放宽 messages 比较。
+
+- 固定安装版 `langchain/agents/middleware/model_call_limit.py`、`tool_call_limit.py`：`run_*_call_count` 明确使用 `UntrackedValue`，`thread_*_call_count` 已是持久通道；前者在下一次 invoke 不保留，后者由官方中间件持续维护。原 `_configure_harness()` 只配置 `run_limit`，因此同一 Turn 经审批续跑可再次获得完整委派配额，具名分支也有同类问题。修复配置归属，而不是自建恢复计数器或再加调度层。
+- 现有 adapter 使用 `thread_id=turn_id`；固定版 Deep Agents 的 `SubAgentMiddleware` 按子图 namespace 调用，并通过 `private_state_keys` 排除父图私有计数 → 根 `task` 配额绑定原 Turn，具名分支在自己的官方通道中累计，不把每个审批 invoke 当新 Turn，也不让不同分支共享父计数。
+- 本地课程 `Agent轨迹与协议鲁棒性.html` 要求验证最大步骤数、预算、轨迹和重复执行，而不只看答案 → 验收两次审批、实际子代理调用数、账本与 HTTP 数量、继续前后持久事实和新 thread 隔离。
+
+### 实现、兼容性与权限边界
+
+`runtime_adapter.py` 的三个原配置同步增加与原 `run_limit` 相同的官方 `thread_limit`：根 `task` 的 `max_subagent_calls_per_turn`，以及具名分支的模型／工具限额。保留原 run 限额、工具过滤、exit behavior 和最小值规范，不删除任何原计数。增加结构化 `framework_cognitive_limits_configured` 日志，区分官方 thread 通道范围及 schema-only 读取；不记录正文、凭据或文件内容。
+
+这些 thread 通道在旧中间件中已经存在并被写入，不增加状态字段、schema／DDL 或依赖，不重置已有计数、不回填历史。只读 native schema 复用同一装配器；现有静态配置契约测试同步核对三处 thread／run 上限。`.gitignore` 只增加新测试的精确例外。
+
+**该计数不是根预算真相，也不是新的执行／恢复权限。** 所有真实模型请求仍经过既有共享策略和 PostgreSQL 根账本；主代理、认知分支、摘要／分类的预留、结算和未知发送规则不变。是否可继续仍由原 owner／stage／审批证明决定。本节只修复已获合法继续权时，原认知限额被单次 invoke 重置的问题；不以官方 thread 计数替代物理 attempt、根活动时间、外部停止或未知效果对账。限额语义配置冻结及多次跨 Worker 接管的完整出口不能仅凭本节声明完成。
+
+### TDD 与实际证据
+
+1. 新增四个目标反例先运行得到 **4 failed，19.77s，exit 1**。两个真实 PostgreSQL／SDK 反例分别捕获：限额 1 在第一次审批后实际产生第二个子代理调用；限额 2 在第二次审批后实际产生第三个调用。两个官方图／内存 saver 反例确认具名模型／工具限额续跑后都错误进入第二次审批。失败不是导入／环境错误，也没有用最后文本推断发生了委派。
+2. 最小生产修复和原配置消费方同步后 **5 passed，23.12s**。继续扩展批准／拒绝、无新决定的 `continue_from_checkpoint`、两次审批、新 thread 与官方静态 checkpoint 断点恢复，随后 **9 passed，27.01s**。
+3. 新文件全组 8 项：4 项使用实际官方 OpenAI SDK、本机合成 HTTP、PostgreSQL 根模型账本／fenced checkpoint 和隔离 Redis 基础设施；4 项使用受控模型、官方 LangChain 图／中间件、实际只读文件工具和 `InMemorySaver`。真实组每次审批前关闭连接池并重建 provider／adapter；无决定继续不得增加账本，配额 2 必须还能消耗剩余一次，耗尽后不得再获配额。完整请求数为 `6 + limit`，实际 usage 与所有 completed 调用逐一对应。工具为受控审批样本，**不是领域 Runner；重建不是独立 Worker 强杀或 owner 转移验收**。
+4. 扩大回归第一次命令误写不存在的 `tests/test_framework_graph_input.py`，实际 **no tests ran，exit 4**；查实际文件清单后改用 `test_framework_graph_input_asset.py`。原无测试输出保留在本地日志，不把命令错误算生产缺陷或通过结果。
+
+### 最终验证、提交与剩余出口
+
+最终消费方组原会话 `79717` 已取回终态，期间没有改动生产源码或测试。工作目录 `Agent_Server`，实际命令：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+$env:PYTHONUTF8='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_cognitive_limits.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_model_policy.py tests/test_framework_native_interrupts.py tests/test_framework_native_terminal.py tests/test_framework_delta_replay_order.py tests/test_framework_approval_recovery.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_message_result_reconstruction.py tests/test_framework_graph_input_asset.py tests/test_framework_context_runtime.py -q -rs --tb=short
+# 352 passed，1111.72s（0:18:31），exit 0，无 skipped／deselected
+```
+
+该组包含新行为、完整适配器、主／具名分支模型治理、原生审批／终态、P0 原审批独立 Worker 强杀与 Delta 严格消息比较、正常／审批原结果只读重建、冻结图输入和完整上下文消费方。新计数专项没有冒称真实供应商或独立强杀；既有强杀回归也不替代新的计数跨进程专门验收。原红测／首绿／扩展及最终日志位于本地 `.codex-logs/c125-*.log`，不提交；重叠结果不相加。
+
+首次暂存检查还发现新测试末尾多一个空行（`new blank line at EOF`）；此前未暂存的 `git diff --check` 不包含 untracked 新文件，不能代替暂存检查。只删除该末尾空行后，重新执行 `tests/test_framework_cognitive_limits.py` 和 `tests/test_deep_agent_runtime_adapter.py::test_da_e3_subagent_limits_are_applied_to_official_middleware`，实际 **9 passed，29.79s，exit 0**；最终 `git diff --cached --check` 也为 exit 0。未改运行时或断言逻辑，没有因此重跑或重报整组 352 项。
+
+根目录实际执行 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check`，均 exit 0。解释器为 Python 3.11.16；`find_spec` 确认 ruff／mypy 未安装，未安装工具或声称 lint／typecheck 通过。未启停基础设施、升级依赖、调用付费供应商、RustFS 或领域目标；HTTP 沿用既有本机环回临时 fixture，默认能力与生产路由不变。
+
+精确 Worker 内部等待／根活动覆盖、跨来源连续性、崩溃尾段结算与实际停止、专门计数跨 Worker 接管、工具 journal 专门强杀、独立 child-wait 环境、真实供应商／RustFS／领域 Runner、官方 saver conformance、前端／全量后端和 E3/E4 均未完成。A2/A3/B 其余出口、C/D/E/F、完整 H01–H12 与整体 v4 保持 active，不能以本节持久化限额代替完整 §6.3。
+
+本节只提交 adapter、原配置消费方测试、新专项测试、精确忽略例外及本实施记录五文件；提交前复核完整 diff、记录只追加、暂存范围及 v3 hash，不提交用户草稿、配置、私有日志或本地数据，不推送、不建 PR。提交身份以包含本节的 Git commit 及交付报告追溯。

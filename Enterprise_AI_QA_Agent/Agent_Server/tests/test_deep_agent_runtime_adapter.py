@@ -1670,6 +1670,7 @@ def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path
         ]
         assert len(parent_limiters) == 1
         assert parent_limiters[0].run_limit == 1
+        assert parent_limiters[0].thread_limit == 1
         assert parent_limiters[0].exit_behavior == "continue"
 
         subagent = kwargs["subagents"][0]
@@ -1686,7 +1687,9 @@ def test_da_e3_subagent_limits_are_applied_to_official_middleware(tmp_path: Path
             if isinstance(item, ToolCallLimitMiddleware)
         ]
         assert model_limiters[0].run_limit == 4
+        assert model_limiters[0].thread_limit == 4
         assert tool_limiters[0].run_limit == 7
+        assert tool_limiters[0].thread_limit == 7
     finally:
         if cleanup is not None:
             cleanup()

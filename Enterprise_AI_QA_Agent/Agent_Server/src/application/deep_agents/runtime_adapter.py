@@ -415,10 +415,19 @@ class DeepAgentRuntimeAdapter:
             planning_middleware.append(
                 ToolCallLimitMiddleware(
                     tool_name="task",
+                    # thread_id is the original Turn. SDK run counters are
+                    # UntrackedValue and reset on approval/graph continuation;
+                    # the already-persisted thread counter must cap those runs.
+                    thread_limit=max(1, int(max_subagent_calls_per_turn)),
                     run_limit=max(1, int(max_subagent_calls_per_turn)),
                     exit_behavior="continue",
                 )
             )
+            logger.info("framework_cognitive_limits_configured", extra={
+                "max_subagent_calls_per_turn": max(1, int(max_subagent_calls_per_turn)),
+                "subagent_model_call_limit": max(1, int(subagent_model_call_limit)),
+                "subagent_tool_call_limit": max(1, int(subagent_tool_call_limit)),
+                "counter_scope": "official_thread_channels", "schema_only": _schema_only})
 
         if not read_only_filesystem_enabled:
             return ({"middleware": planning_middleware} if planning_middleware else {}), None
@@ -516,10 +525,12 @@ class DeepAgentRuntimeAdapter:
                                 _permissions=permissions,
                             ),
                             ModelCallLimitMiddleware(
+                                thread_limit=max(1, int(subagent_model_call_limit)),
                                 run_limit=max(1, int(subagent_model_call_limit)),
                                 exit_behavior="end",
                             ),
                             ToolCallLimitMiddleware(
+                                thread_limit=max(1, int(subagent_tool_call_limit)),
                                 run_limit=max(1, int(subagent_tool_call_limit)),
                                 exit_behavior="end",
                             ),
