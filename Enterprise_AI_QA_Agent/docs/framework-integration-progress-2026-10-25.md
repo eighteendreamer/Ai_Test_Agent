@@ -6493,3 +6493,29 @@ git diff --check
 首次 epoch 红测失败和中间查询装配失败均保留为本节真实 TDD 过程；最终组未使用 skip/deselect。尚未运行 ruff/mypy（环境未安装）；compileall、git diff --check 及提交前状态检查仍待执行。真实供应商、RustFS、领域 Runner、精确内部等待／崩溃尾段结算、官方 saver conformance、E3/E4 与全系统 v4 仍未完成。
 
 本步只修改根活动读取与 ToolJob 回归测试及本实施记录，不新增 DDL、配置、依赖或公开路由。用户 v3 草稿保持未修改、未暂存、未提交；本节证明的是 ToolJob → Worker 的 epoch 级跨来源连续性，不等于完整 C/H09 或全系统完成。
+
+## 140. C／§6.3、H09/H11：拒绝同一 Worker attempt 的多 epoch claim 歧义（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `3d56db687`／§139。此前根活动读取已要求 ToolJob 的执行引用命中 `(task_id, attempt_id, worker_id, owner_epoch)`，但同一持久 Worker attempt 若在同一快照内出现两个不同 `agent_task.claimed` 的 `owner_epoch`，读取器会把两个四元组都加入合法集合；随后 ToolJob 可能命中其中任意一个 epoch。这与模型账本读取已拒绝同 attempt 多 epoch 的契约不一致，不能依赖当前 runtime owner、事件物理顺序或时间戳选择“最后一个”。
+
+依据 §138 模型账本的 claim epoch 唯一性、`PostgresAgentTaskStore._event()` 保存的顶层 `owner_epoch` 及 §139 的同快照 Worker claim 读取 → 在每个 task 的只读快照中按 `(task_id, attempt_id, worker_id)` 收集持久 claim epoch；同 epoch 的重复 claim 保持幂等，不同 epoch 的集合进入明确拒绝。该校验只影响根活动诊断读取，不改变调度、claim、ToolJob 状态或历史事件。
+
+### TDD 与最小实现
+
+1. 新增真实 PostgreSQL／Redis 回归：真实 ToolJob 在当前 owner 下领取后，向隔离 event 表插入同 task/attempt/worker 但不同 `owner_epoch` 的持久 `agent_task.claimed` 事实；修复前目标测试实际 **1 failed，DID NOT RAISE**。首个测试样本错误地复制旧 journal 时间，先触发 Worker 事件乱序校验；修正为只增加顶层 claim 事实后重新得到目标红测，未把装配失败当产品缺陷。
+2. `postgres_framework_model_calls.py` 在构造 ToolJob 合法 Worker 集合时记录 claim epoch 集合；发现同一 Worker attempt 有多个不同 epoch 时记录 `framework_root_activity_worker_claim_epoch_ambiguous`，抛出 `ValueError`，不继续计算活动区间。单一 epoch 及重复同 epoch 仍沿原路径读取；无 claim journal 的旧弱来源继续不回填身份。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`、`RUN_LIVE_POSTGRES_TESTS=1`，复用用户已启动 PostgreSQL／Redis；未启停服务、未调用付费模型、未改生产路由、DDL 或依赖。
+
+    多 epoch claim 定向红测修复后                         1 passed，6.60 秒
+    ToolJob／Worker／根活动／模型账本组合（首次）          105 passed、1 failed，193.39 秒
+    上述组合重复复验                                    106 passed，201.38 秒，无 skip/deselect
+    既有 foreign owner epoch 单测独立复跑                  1 passed，6.33 秒
+
+首次组合唯一失败为既有 foreign owner epoch 样本的 `Activity interval ends before it starts`，单测复跑与第二次组合均通过；该非稳定时间边界观察保留，不修改断言或生产计量规则。根目录 `compileall`、`git diff --check` 及提交前状态检查仍待执行；ruff/mypy 未安装，未执行。真实供应商、RustFS、领域 Runner、精确内部等待／崩溃尾段、官方 saver conformance、E3/E4 与完整 v4 仍未完成。
+
+本步只修改根活动读取、ToolJob 回归测试及本实施记录，不新增恢复权限或自动重试。用户 v3 草稿保持未修改、未暂存、未提交；本节证明的是 Worker claim epoch 歧义被拒绝，不等于完整 C/H09 或全系统 v4 完成。

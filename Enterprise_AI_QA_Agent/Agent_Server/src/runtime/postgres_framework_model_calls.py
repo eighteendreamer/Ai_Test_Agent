@@ -376,6 +376,7 @@ class PostgresFrameworkModelCalls:
                     for attempt in attempts
                     if attempt.get("worker_id")
                 )
+                claim_epochs = {}
                 cur.execute(
                     f"SELECT session_id, type, timestamp, payload FROM {event_table} "
                     "WHERE session_id=%s AND payload->>'task_id'=%s "
@@ -400,10 +401,19 @@ class PostgresFrameworkModelCalls:
                             "attempt_id": context.get("attempt_id"),
                             "owner_epoch": epoch, "authoritative": False})
                         continue
+                    claim_key = (task["id"], context["attempt_id"], context["worker_id"])
+                    claim_epochs.setdefault(claim_key, set()).add(epoch)
                     worker_execution_refs.discard(
                         (task["id"], context["attempt_id"], context["worker_id"], None))
                     worker_execution_refs.add(
                         (task["id"], context["attempt_id"], context["worker_id"], epoch))
+                if any(len(epochs) > 1 for epochs in claim_epochs.values()):
+                    logger.warning("framework_root_activity_worker_claim_epoch_ambiguous", extra={
+                        "binding_id": binding.binding_id, "task_id": task["id"],
+                        "claim_count": sum(len(epochs) > 1 for epochs in claim_epochs.values()),
+                        "authoritative": False,
+                    })
+                    raise ValueError("Worker claim owner epoch is ambiguous")
                 journals = read_worker_activity(task, attempts, worker_events)
                 for attempt in attempts:
                     journal = journals.get(attempt["id"])

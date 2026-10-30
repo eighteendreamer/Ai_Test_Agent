@@ -433,6 +433,40 @@ async def test_live_root_activity_rejects_tool_job_from_foreign_owner_epoch(tool
 
 
 @pytest.mark.asyncio
+async def test_live_root_activity_rejects_ambiguous_worker_claim_epochs(tool_activity_harness):
+    """Multiple durable claim epochs for one Worker attempt are not an owner proof."""
+    import json
+
+    from src.infrastructure.postgres_runtime import postgres_connect
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from tests.test_framework_model_calls import policy
+
+    h = tool_activity_harness
+    await h.calls.freeze(h.owner, policy(h))
+    with framework_owner_scope(h.owner):
+        running = await h.jobs.claim_execution(h.job.id)
+    assert running is not None
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT payload FROM {h.settings.database.postgres_event_table} "
+            "WHERE session_id=%s AND type='agent_task.claimed' AND payload->>'task_id'=%s "
+            "ORDER BY event_sequence LIMIT 1", (h.session_id, h.owner.task_id))
+        original = cur.fetchone()
+        assert original is not None
+        payload = dict(original["payload"])
+        payload["owner_epoch"] = h.owner.owner_epoch + 1
+        payload.pop("framework_worker_activity", None)
+        cur.execute("SELECT clock_timestamp() AS observed_at")
+        observed_at = cur.fetchone()["observed_at"]
+        cur.execute(f"INSERT INTO {h.settings.database.postgres_event_table} "
+            "(id,session_id,type,timestamp,payload) VALUES(%s,%s,'agent_task.claimed',%s,%s::jsonb)",
+            (uuid4().hex, h.session_id, observed_at, json.dumps(payload)))
+    with pytest.raises(ValueError, match="owner epoch"):
+        await PostgresFrameworkModelCalls(h.settings).root_activity_intervals(
+            h.binding, as_of=datetime.now(timezone.utc) + timedelta(seconds=1)
+        )
+
+
+@pytest.mark.asyncio
 async def test_cancel_signal_does_not_close_unknown_external_tail(tool_activity_harness):
     h = tool_activity_harness
     with framework_owner_scope(h.owner):
