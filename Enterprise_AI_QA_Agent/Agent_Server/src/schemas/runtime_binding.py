@@ -10,6 +10,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator, model_validator
 
 from src.schemas.model_config import ModelTransport
+from src.schemas.framework_release import FrameworkReleaseReference
 
 
 RuntimeKind = Literal["legacy", "langgraph", "deepagents"]
@@ -38,6 +39,9 @@ class RuntimeBinding(BaseModel):
     model_provider: str | None = Field(default=None, max_length=128, exclude_if=lambda value: value is None)
     model_transport: ModelTransport | None = Field(default=None, exclude_if=lambda value: value is None)
     dependency_lock_sha256: str = Field(min_length=1, max_length=128)
+    # Reader-first rollout: absent references preserve every historical wire
+    # and fingerprint. No production writer infers a release for old bindings.
+    release_reference: FrameworkReleaseReference | None = Field(default=None, exclude_if=lambda value: value is None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
     @field_validator(
@@ -89,6 +93,8 @@ class RuntimeBinding(BaseModel):
             if name not in {"binding_id", "created_at"}
             and getattr(self, name) is not None
         }
+        payload = {name: value.model_dump(mode="json") if isinstance(value, BaseModel) else value
+            for name, value in payload.items()}
         encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
         return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 

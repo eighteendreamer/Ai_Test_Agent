@@ -1219,6 +1219,12 @@ class PostgresAgentTaskStore:
             raise ValueError("Framework compatibility requires a framework binding")
         if check_model_ledger and framework_capabilities is None:
             raise ValueError("Model ledger compatibility requires framework capabilities")
+        if (expected_binding is not None and expected_binding.release_reference is not None
+            and framework_capabilities is None):
+            logger.warning("framework_release_reader_unavailable", extra={
+                "task_id": task_id, "binding_id": expected_binding.binding_id,
+                "worker_id": worker_id, "reason": "framework_release_artifact_unavailable"})
+            raise TaskDeferred("framework_release_artifact_unavailable")
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             if expected_binding is not None:
                 configure_runtime_owner_transaction(cur, self._settings)
@@ -1238,6 +1244,13 @@ class PostgresAgentTaskStore:
             if saved_binding != expected_binding:
                 raise ValueError("Agent claim runtime binding does not match the durable task")
             if framework_capabilities is not None:
+                try:
+                    framework_capabilities.require_release(saved_binding)
+                except TaskDeferred as exc:
+                    logger.warning("framework_release_reader_unavailable", extra={
+                        "task_id": task_id, "binding_id": saved_binding.binding_id,
+                        "worker_id": worker_id, "reason": str(exc)})
+                    raise
                 from src.runtime.framework_message_stages import FrameworkMessageStages
 
                 try:

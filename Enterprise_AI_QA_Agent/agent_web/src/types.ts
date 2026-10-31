@@ -998,6 +998,34 @@ export type AgentTaskStatus =
   | "waiting_children"
   | "coordinator_resuming";
 
+export interface FrameworkReleaseReference {
+  readonly schema_version: 1;
+  readonly archive_sha256: string;
+  readonly size_bytes: number;
+  readonly source_revision: string;
+}
+
+export interface RuntimeBinding {
+  readonly binding_id: string;
+  readonly session_id: string;
+  readonly turn_id: string;
+  readonly runtime_kind: "legacy" | "langgraph" | "deepagents";
+  readonly runtime_version: string;
+  readonly state_schema_version: number;
+  readonly thread_id: string;
+  readonly checkpoint_namespace: string;
+  readonly prompt_version: string;
+  readonly skill_version: string;
+  readonly tool_schema_version: string;
+  readonly model_config_fingerprint: string;
+  readonly model_provider?: string | null;
+  readonly model_transport?: "anthropic_messages" | "openai_chat_completions" | "openai_responses" | "google_gemini_generate_content" | null;
+  readonly dependency_lock_sha256: string;
+  readonly release_reference?: FrameworkReleaseReference | null;
+  readonly created_at: string;
+  readonly fingerprint: string;
+}
+
 export interface AgentTaskRecord {
   id: string;
   operation:
@@ -1029,6 +1057,7 @@ export interface AgentTaskRecord {
   parent_task_id?: string | null;
   root_trace_id?: string | null;
   result_payload?: Record<string, unknown> | null;
+  runtime_binding?: RuntimeBinding | null;
   created_at: string;
   updated_at: string;
 }

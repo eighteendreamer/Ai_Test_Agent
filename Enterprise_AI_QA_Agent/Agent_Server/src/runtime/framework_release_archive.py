@@ -23,29 +23,21 @@ import zipfile
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from src.schemas.framework_release import FrameworkReleaseReference, GIT_REVISION_PATTERN, MAX_ARCHIVE_BYTES
+
 
 logger = logging.getLogger(__name__)
 MANIFEST = "release/manifest.json"
 GENERATED = {"release/environment.json", "release/formats.json", "release/tools.json"}
 METADATA = {"uv.lock", "pyproject.toml", "Agent_Server/pyproject.toml"}
-MAX_ARCHIVE_BYTES = 128 * 1024 * 1024
 MAX_CONTENT_BYTES = 256 * 1024 * 1024
 MAX_FILES = 20000
-GIT_REVISION_PATTERN = r"^(?:[0-9a-f]{40}|[0-9a-f]{64})$"
 
 
 class ReleaseFile(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     size_bytes: int = Field(ge=0, strict=True)
-
-
-class FrameworkReleaseReference(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-    schema_version: Literal[1] = 1
-    archive_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
-    size_bytes: int = Field(gt=0, le=MAX_ARCHIVE_BYTES, strict=True)
-    source_revision: str = Field(pattern=GIT_REVISION_PATTERN)
 
 
 class FrameworkReleaseManifest(BaseModel):
@@ -278,6 +270,45 @@ def _verified_files(store: Path, reference) -> tuple[FrameworkReleaseManifest, d
 def verify_release(store: Path, reference) -> FrameworkReleaseManifest:
     """Verify bytes and inventory only; never import code from an input archive."""
     manifest, _ = _verified_files(store, reference)
+    return manifest
+
+
+def require_installed_release(project: Path, store: Path, reference) -> FrameworkReleaseManifest:
+    """Check trusted local installed source and the active interpreter offline.
+
+    No upstream counterpart (checked: orchestration_artifact, release verifier,
+    v4 section 14.1): a matching lock/runtime label cannot identify deployed
+    application code. Compare the entire release inventory, then its actual
+    environment and definitions. This probe imports trusted local source.
+    Deployments must keep source/dependencies immutable for the process lifetime.
+    """
+    manifest, files = _verified_files(store, reference)
+    project = Path(project).resolve()
+    source_names = set(files) - GENERATED
+    installed = {name for name in METADATA if (project / name).is_file()}
+    for path in (project / "Agent_Server/src").rglob("*"):
+        name = path.relative_to(project).as_posix()
+        if _source_name(name) and path.is_file():
+            if path.is_symlink() or not path.resolve().is_relative_to(project):
+                raise ValueError("Installed release contains an external source path")
+            installed.add(name)
+    if installed != source_names:
+        raise ValueError("Installed release source inventory differs from its archive")
+    for name in sorted(source_names):
+        path = project / name
+        if path.is_symlink() or not path.resolve().is_relative_to(project):
+            raise ValueError("Installed release contains an external source path")
+        # Match the existing orchestration fingerprint's UTF-8/newline policy.
+        expected = files[name].decode("utf-8-sig").replace("\r\n", "\n").replace("\r", "\n")
+        if path.read_text(encoding="utf-8-sig") != expected:
+            raise ValueError("Installed release source differs from its archive: " + name)
+    observed = _probe(project)
+    if (observed["environment"] != manifest.environment
+        or _json(observed["formats"]) != files["release/formats.json"]
+        or _json(observed["tools"]) != files["release/tools.json"]):
+        raise ValueError("Installed release environment or definitions differ from its archive")
+    logger.info("framework_release_installation_verified", extra={"source_revision": manifest.source_revision,
+        "file_count": len(files)})
     return manifest
 
 

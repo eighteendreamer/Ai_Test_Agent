@@ -7,7 +7,7 @@ integration plan, sections 3 and 8). Keep this separate from business leases.
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 import hashlib
 from pathlib import Path
 
@@ -19,6 +19,7 @@ from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelCallRecord, FrameworkModelEvidenceUpload,
 )
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_release import FrameworkReleaseReference
 from src.schemas.framework_message_stage import FrameworkMessageStage
 from src.schemas.framework_transcript import (
     CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSION, SUMMARY_CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSIONS,
@@ -38,6 +39,7 @@ class FrameworkWorkerCapabilities:
     turn_context_assembly_enabled: bool = True
     native_summary_coverage_enabled: bool = True
     model_call_max_version: int = 3
+    release_reference: FrameworkReleaseReference | None = None
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -47,6 +49,18 @@ class FrameworkWorkerCapabilities:
             deepagents_available=deepagents_available,
         )
 
+    @classmethod
+    def from_release(cls, store: Path, reference, *, deepagents_available: bool):
+        from src.runtime.framework_release_archive import require_installed_release
+
+        reference = FrameworkReleaseReference.model_validate(reference)
+        require_installed_release(Path(__file__).resolve().parents[3], store, reference)
+        return replace(cls.from_artifact(deepagents_available=deepagents_available), release_reference=reference)
+
+    def require_release(self, binding: RuntimeBinding) -> None:
+        if binding.release_reference is not None and binding.release_reference != self.release_reference:
+            raise TaskDeferred("framework_release_artifact_unavailable")
+
     def require(self, binding: RuntimeBinding, *, operation: str) -> None:
         """Unavailable compatibility leaves the durable task unclaimed.
 
@@ -55,6 +69,7 @@ class FrameworkWorkerCapabilities:
         Other graph workflows and resume operations
         require their own execution contracts before they can be admitted.
         """
+        self.require_release(binding)
         versions = {self.runtime_version}
         if self.context_transcript_enabled and self.runtime_version == FRAMEWORK_RUNTIME_VERSION:
             versions.add(CONTEXT_RUNTIME_VERSION)

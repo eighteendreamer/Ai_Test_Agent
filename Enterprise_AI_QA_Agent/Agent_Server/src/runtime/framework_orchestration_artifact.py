@@ -38,6 +38,7 @@ ORCHESTRATION_SOURCES = (
     "runtime/execution_context.py",
     "schemas/approval_progress.py",
     "schemas/framework_model_call.py",
+    "schemas/framework_release.py",
     "schemas/framework_message_stage.py",
     "schemas/intent.py",
     "schemas/mode.py",

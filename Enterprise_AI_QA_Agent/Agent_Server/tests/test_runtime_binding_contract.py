@@ -53,7 +53,7 @@ def test_runtime_binding_fingerprint_is_stable_and_excludes_binding_id():
 def test_legacy_binding_fingerprint_omits_new_optional_protocol_fields():
     value = binding(model_provider=None, model_transport=None)
     payload = {name: getattr(value, name) for name in type(value).model_fields
-        if name not in {"binding_id", "created_at", "model_provider", "model_transport"}}
+        if name not in {"binding_id", "created_at", "model_provider", "model_transport", "release_reference"}}
     expected = hashlib.sha256(json.dumps(payload, sort_keys=True, separators=(",", ":"),
         ensure_ascii=False).encode("utf-8")).hexdigest()
     assert value.fingerprint == expected

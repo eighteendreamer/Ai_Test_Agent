@@ -242,16 +242,31 @@ async def test_v2_dispatcher_rejects_binding_drift_before_claim():
 
 
 @pytest.mark.asyncio
-async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypatch):
+@pytest.mark.parametrize("pinned", [False, True])
+async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypatch, tmp_path, pinned):
     from src.cli import run_agent_v2_worker as module
+    from src.schemas.framework_release import FrameworkReleaseReference
+    import json
 
     runtime_binding = binding()
     wire = command(runtime_binding).model_dump(mode="json")
     received = []
+    reference = FrameworkReleaseReference(archive_sha256="b" * 64, size_bytes=1234, source_revision="c" * 40)
+    reference_path = tmp_path / "release.json"
+    reference_path.write_text(reference.model_dump_json(), encoding="utf-8")
+    checked = []
+
+    def installed(store, value, *, deepagents_available):
+        assert store == tmp_path and value == json.loads(reference_path.read_text(encoding="utf-8"))
+        checked.append(True)
+        return FrameworkWorkerCapabilities("a" * 64, deepagents_available, release_reference=reference)
+
+    monkeypatch.setattr(FrameworkWorkerCapabilities, "from_release", installed)
 
     class Dispatcher:
         def set_framework_capabilities(self, capabilities):
             assert capabilities.deepagents_available
+            assert capabilities.release_reference == (reference if pinned else None)
 
         async def handle_v2(self, task, *, worker_id):
             received.append((task.payload, worker_id))
@@ -322,12 +337,14 @@ async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypat
     monkeypatch.setattr(module, "RedisTaskQueue", Queue)
     monkeypatch.setattr(module, "RedisTaskWorker", Worker)
 
-    await module._run(once=True, worker_id="v2-test-worker")
+    await module._run(once=True, worker_id="v2-test-worker", release_store=tmp_path if pinned else None,
+        release_reference=reference_path if pinned else None)
 
     assert [(queue.stream, queue.group) for queue in Queue.instances] == [
         ("qa:tasks:agent:v2", "qa:workers:agent-v2")
     ]
     assert received == [(wire, "v2-test-worker")]
+    assert checked == ([True] if pinned else [])
 
 
 @pytest.mark.asyncio

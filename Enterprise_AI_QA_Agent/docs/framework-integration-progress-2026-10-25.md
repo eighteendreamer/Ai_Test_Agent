@@ -7507,3 +7507,55 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1 → 本节 → 新 runtime／CLI／测试、`.gitignore` 与本记录共 5 文件 → 上述红绿、382 项最终组合与实际持久制品／独立恢复 → 独立提交 `【feat】归档并校验可恢复的框架源码制品`，ID 见 Git 历史和交付。不推送，不提交制品或用户 v3 草稿；草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`。本轮没有运行 Docker、付费调用、重启 PG／Redis、升级依赖或改生产路由。
 
 下一步仍需 binding→可信实物引用／解析、完整结果格式与读能力清单、双制品独立安装部署、备份恢复、灰度／回滚／排空。本节不宣称 F 完成。§159 完整组合 **1 failed、792 passed** 与 §160 **2 failed、536 passed** 的历史失败继续保留：动态诊断污染已独立修正，但中断到期比较和零秒续租后仍 active 两类异常未定位；本轮没有重跑这些完整组合。§158 未归属共享 checkpoint 不猜测清理。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 继续按 v4 验收，整体目标保持 active。
+
+## 165. F／§14.1：绑定制品引用的兼容读者、可信本机校验与领取前身份检查（2026-10-31）
+
+### 续接与依据 → 做法
+
+续接 `8c3e7d8aa`／§164，上一轮实际保存源码实物、完成恢复与提交，属于 progress。重新核对 v4 §14.1／§15、§52–54 原 P0 事实及较新记录、当前 Git／调用链；原生 messages 顺序根因已在 §54 独立修正，不依据 v4 较早描述重复实现。工作区仅有用户原 v3 草稿，SHA256 未变。本轮没有宣称解决 §159／160 的后续时间异常。
+
+当前 `RuntimeBinding` 只有 runtime version／根锁等逻辑身份，同一版本和根锁不能唯一确定源码；`submit_v2` 仍是内部持久化端口，没有生产新绑定创建调用方。因此不猜测历史绑定对应哪个 commit，也不将归档工具安装等同于生产新 Turn 已能发布。本轮沿 v4 的兼容读者先行顺序，为**未来显式带引用的绑定**准备严格读者与 Worker 校验；没有自动写者、历史回填或生产路由切换。
+
+依据 `RuntimeBinding` 既有 optional protocol 字段的 `exclude_if=None`／fingerprint 规则、§164 的真实制品 verifier、Dispatcher 原能力 defer 与 PG Session → owner → task 锁边界 → 增加可选引用并复用同一个读取／领取链路。`framework_orchestration_artifact.py` 的 UTF-8 BOM／通用换行规范化 → 本机源码比较沿用该策略，不误拒绝仅 CRLF／BOM 的合法检出。本地《Agent轨迹与协议鲁棒性》§3／§03.5 的字段／版本／语义漂移与轨迹检查 → 同时验证旧 wire、未来版本、零领取副作用、原投递与正常合法分支，不引入课程示例中的新依赖。
+
+### 红测、实现与消费方
+
+1. 初始三个新契约实际 **3 failed，14.60 秒**：原 binding 拒绝 release_reference，新安装校验端口缺失。这是新增能力红测，不伪称生产事故。另在真实 PG 提交带引用绑定后直接调用低层 claim、不传能力，实际 **1 failed，8.80 秒，DID NOT RAISE TaskDeferred**，原路径确实会领取。补齐低层入口及锁内检查，不能仅靠 Dispatcher preflight 保护。
+2. 新 `schemas/framework_release.py` 承载原 `FrameworkReleaseReference`；旧 runtime 模块仍重导出同名对象，不破坏原 CLI／测试 import。保持 schema 1 的原字段和限额，嵌套版本必须精确整数，实例重校验防 `model_copy` 绕过；未来整数版本仍由 Literal 分类，使原 command reader 保留兼容延后策略。引用只含摘要／大小／完整 commit，不含机器路径、凭据或 owner 权限。
+3. `RuntimeBinding.release_reference` 缺省 None 且不输出，历史字段和 fingerprint 不变；显式引用则参与不可变 fingerprint，嵌套模型按其 JSON 原件编码。首次接线曾 **2 failed、8 passed，30.86 秒**：嵌套模型不能直接 json.dumps，以及原测试按全部新 model_fields 拼出含新 None 字段的“历史”预期。补齐嵌套 JSON 编码，测试仍以不含新增字段的原历史集合计算摘要，并增加真实旧源码进程的逐字段 wire 对等验证，不放宽 fingerprint 核验。
+4. `require_installed_release()` 先复用整体／逐文件 verifier，再比较本机完整发布范围的 inventory、每份源码、元数据、实际 Python／全部已登记依赖、能力、ToolRegistry 和 13 模型 schema。缺失／新增／修改源码在 import probe 前拒绝；不要求 Git checkout 存在，恢复目录可直接校验。probe 会 import **可信本地源码**，不是安全沙箱；复用当前 venv，不是独立依赖安装。制品信任来自部署方提供的固定引用，不是摘要自带签名认证。
+5. `FrameworkWorkerCapabilities.from_release()` 只在上述本机校验成功后声明该完整引用；只匹配 runtime／lock 不算匹配制品，引用的摘要、size、commit 均须相等。`require()` 的既有运行时／操作／根锁／模型等约束完整保留。PG claim 在原锁内、任何终态返回／失租迁移／attempt／owner 修改之前复核引用；带引用却未提供能力的低层调用也显式 defer。结构化日志 `framework_release_reader_unavailable` 只带 task／binding／worker／固定 reason，复用 Dispatcher 的原能力日志，不记资产正文。没有额外调度层、重试或自动重跑。
+6. 原 v2 CLI 增加成对的 `--release-store`／`--release-reference`；只给一项立即失败，校验失败不进入应用 lifespan／Redis 队列。未给两项时保持原 Worker 行为，但不能领取显式 pin 到某制品的绑定。新旧启动分支、原 v2 stream／dispatcher、停止新 Turn 不撤销旧绑定执行能力的回滚测试均保留。校验在进程启动时执行一次；**部署必须在该进程生命周期内保持源码／依赖不变**，不是热替换模块或每次 claim 重读整个 ZIP 的承诺。
+7. 共享 binding schema 引入新引用模型后，原 source-contract AST 测试真实发现 `schemas/framework_release.py` 未纳入冻结编排依赖：第一轮七文件 **1 failed、436 passed，188.57 秒**。按现有闭包规则将其纳入 `ORCHESTRATION_SOURCES`，未削弱测试或忽略依赖。旧冻结编排指纹仍要求原代码，不回填或改写原资产。前端同步新增引用／绑定类型及 `AgentTaskRecord.runtime_binding`（后端原字段此前未在 TS 表达），无新界面或 API 路由。
+
+### 验证细节与中间失败
+
+专项真实 PG／Redis 验证四种状态 queued／claimed／running／cancelled 下，制品不匹配均原样保留 11 张隔离表；原 outbox 经真实 relay／Redis Worker 后仍是同一 Stream entry、retry_count=0、PEL=1、无 dead letter，不调用 Runtime。正常匹配分支验证绑定／引用持久化与幂等、不同引用不能覆盖原绑定，并沿原 Dispatcher 领取一次。这里能力对象和正常 `_execute` 是明确的受控替身，证明路由／持久化契约，不冒称已部署真实制品 Worker 或付费模型。
+
+实际源码侧另有两类独立进程：① 恢复此前已提交的 HEAD 归档，旧 reader 读取无引用命令时完整 wire／fingerprint 不变，遇新字段按原未知格式策略延后；仅证明该 parser，不证明旧 Worker 初始化可读取含新字段的全部数据库，因此仍禁止先上线写者。② 在隔离临时 Git 仓库提交**当前工作区白名单源码快照**，真实 export／restore 后，新进程只加载该恢复目录中的实现，实际调用 `from_release()`、解析带真实引用的 binding、verify 原实物并通过 `require()`；明确核对四个核心模块及所有已加载 src 模块均在恢复目录。没有改用户 Git 配置或替用户仓库提前提交，不把测试快照说成正式发布制品。
+
+专项扩大曾 **2 failed、36 passed，193.34 秒**：测试在原有换行／BOM 上重复转换，以及误将 `begin()` 的 None 返回值赋给原 execution。按实际文件和既有接口修正构造，不改生产授权。当前源码快照首次运行 **1 failed、10 passed，80.63 秒**：实物校验与绑定准入已通过，但测试错误期待父进程加载超过 100 个模块；真实环境／schema probe 在另一个子进程中，父进程实际为 19。改为断言所需四个模块存在、全部 src 路径都在恢复目录，而非无依据的计数门槛，没有豁免引用、环境或源码一致性。
+
+另一次中间四文件组合未显式开 live 标志，为 **350 passed、3 skipped，37.47 秒**，不算服务验收。最终源码均显式开启真实 PG／Redis，沿随机 prefix／checkpoint schema 隔离，不操作 §158 未归属共享残留；以下两组均取得终态，无 skip／deselect，不累计重叠 fixture 为额外覆盖：
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_binding.py tests/test_framework_release_archive.py tests/test_runtime_binding_contract.py tests/test_agent_v2_worker_contract.py tests/test_framework_dependencies.py tests/test_framework_orchestration_artifact.py tests/test_framework_route_rollback.py -q -rs --tb=short
+# 439 passed，238.54 秒，exit 0
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_runtime_binding_persistence.py tests/test_framework_command_reader_admission.py tests/test_framework_message_recovery.py tests/test_framework_approval_recovery.py tests/test_framework_turn_context.py -q -rs --tb=short
+# 101 passed，571.29 秒，exit 0
+```
+
+后组包含既有真实绑定持久化、Redis 入口、消息／审批恢复、独立 Worker 和跨 Turn 消费方；其中官方框架／SDK 对端仍是本地合成 HTTP／项目受控模型，对象后端不是实际 RustFS，不算 E3／E4。`agent_web` 实际执行 `npm run typecheck`，exit 0；未跑完整前端测试／build。根目录 compileall、`git diff --check` 通过；ruff／mypy 未安装，未执行独立后端 lint／typecheck，也未安装任何依赖。
+
+### 提交对应与剩余出口
+
+v4 F／§14.1、H11 → 本节 → 共享引用 schema、binding、制品安装 verifier、能力／原 CLI／原 claim、编排依赖闭包、既有与新增测试、前端类型、白名单与本记录共 13 文件 → 上述红绿、439／101 项最终组合、真实源码快照独立进程与前端类型检查 → 独立提交 `【feat】绑定制品引用并在领取前核对身份`，ID 见 Git 历史和交付。用户 v3 草稿保持原 SHA256 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／暂存／提交；不提交测试制品、不推送，无 DDL／数据迁移／配置项／默认生产路由变更。
+
+这只是兼容读者及显式引用的解析／校验子步，**没有启用生产引用写者，也没有为历史绑定补造关联**。正式当前版本归档与 Worker 安装验收、所有消费方先部署／旧初始化读者的升级验证、新绑定发布与冻结入口、历史绑定有证据的迁移、全部结果格式清单、双制品独立安装部署／备份恢复／灰度／回滚排空仍待完成。启动校验不提供 WORM、签名、文件 ACL 或热更新安全保证，不替代动态 Prompt／Skill／模型配置的 Turn 原资产。
+
+§159／160 两类时间异常仍未定位，本轮通过不等于其历史完整组合重新全绿；§158 共享残留不清理。本轮不运行 Docker、不重启 PG／Redis、不调用付费模型、不升级依赖或开生产路由。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 按 v4 保留，整体目标保持 active。
