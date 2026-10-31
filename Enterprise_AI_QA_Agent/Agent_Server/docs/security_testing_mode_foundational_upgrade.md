@@ -69,6 +69,8 @@ depends_on: security_testing_mode_vs_pentagi_comparison.md
 
 正常执行、取消、失租后的读取及历史快照共用同一状态投影。历史数据不回写；没有上述观测依据的历史快照按完整容器 ID 只读查询，不用容器名、短 ID、ToolJob 终态或 `DockerResourceSession.active=false` 猜测停止。查询失败、目标仍存在或身份缺失时返回 `null`；轮询不结算任务、不重跑命令、不触发清理。消费者须使用 `is_running is False`（TypeScript 为 `=== false`）判断已知结束，不能使用 `not is_running`／`!is_running`。新快照带新增观测字段，旧 Worker 的 dataclass reader 不具备读取该字段的能力；混合版本部署／回滚前须先升级读取方或隔离路由，不能把旧制品当作兼容读者。本轮没有改生产路由、数据库结构或任务调度。
 
+**2026-10-31 身份与数据所有权补充（v4 实施记录 §153）**：上述查询及已知观测的复用，均须核对请求 job ID、持久 metadata 的完整容器 ID、原 `initial_result` 与当前快照的执行身份；本机活跃监督还须匹配启动时捕获的不可变身份。只读取既有 producer 保存的精确 `docker exec -w <cwd> <full-id> sh -lc <script>` argv，不解析命令文本、不猜其他 argv 形式。材料缺失或漂移返回 `null／unknown` 并记录原因，不查询可疑目标、不回写历史、不改变既有审批／恢复资格。监督心跳与结算使用捕获的原 job ID，不能由可变结果选择另一任务。启动及轮询返回独立深拷贝，调用方修改 argv 或嵌套 artifact 不得污染内部监督／账本。本步不新增公开字段、DDL、执行权或停止权限；这只是既有证据的一致性核验，不是防篡改签名或真实 Runner 的目标接受回执。
+
 **验收**：
 - 起一个 `sleep 30 && echo done` 的 detached job，`poll_execution` 能在结束后读到 `done` 全量输出；
 - `put_file` 上传一个字典文件、`get_file` 取回 nuclei 输出文件，内容一致；

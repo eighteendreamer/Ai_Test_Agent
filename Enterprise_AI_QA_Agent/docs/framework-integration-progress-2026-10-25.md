@@ -6953,3 +6953,48 @@ $env:RUN_LIVE_DOCKER_TESTS='0'
 v4 A3／§8.1、§11、H06/H10 → 本节 → `tests/test_live_resource_leases.py` 的真实故障／停止 oracle、逐场景首因隔离 → 上述 14 项真实环境及 145 项相关回归 → `【test】验证后台命令真实停止边界` 同一提交，提交 ID 见本轮交付及 Git 历史。用户 v3 草稿 SHA256 保持 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不纳入暂存／提交。
 
 本节增加的是安全后台命令这一领域入口的真实生命周期证据，不是全部 Runner 或整个 A3／C／E3 已完成。外部 Runner execution ID 与目标／代次全链路绑定、停止与查询 journal、未知效果补偿权限、跨版本读取／路由兼容，以及完整 v4 的其余阶段与验收门继续保留；没有改动生产开关，整体目标仍 active。
+
+## 153. A3／§8.1、§10.2、§11：后台停止观测绑定原执行身份并隔离公开结果（2026-10-31）
+
+### 续接、根因与依据 → 做法
+
+续接 `81ec09e8c`／§152，继续当前未提交的身份绑定草稿。上一节真实 Docker 验收证明三态停止边界，但没有证明已保存观测不会被另一 job／目标误用。本步复现两处数据所有权缺失：观测只消费可变快照的状态标记／metadata，监督又从 `record.result.job_id` 选择心跳和结算对象；此外启动结果与内部 record 共用对象，轮询结果的 argv／artifact 与 record 或内存 store 共用嵌套对象。仅增加状态 if 不能闭合这些缺口，因此在既有 service 内固定执行身份，并隔离公共返回边界。
+
+依据当前 `_start_detached_in_docker()` 保存的 `initial_result` 和精确八元素 argv、ToolJob 的原 job ID、完整 Docker 容器 ID，以及 §151 的唯一状态投影 → 私有 frozen identity 只读取原 producer 格式，在观测前统一核对原始准备快照／当前快照／请求账本身份。本机监督另核对捕获身份，心跳、结算和关闭兜底均使用它。依据现有 `application/compatibility/runner_service.py` 对响应的 deepcopy、`application/deep_agents/result_projection.py` 的嵌套数据隔离 → 在启动、运行中轮询和持久结果轮询的公共出口深拷贝，而不在内部反复复制。按本地《Agent轨迹与协议鲁棒性》的工具参数／结果与轨迹要求，测试同时验证查询目标、心跳／结算对象及不重复执行，不仅检查最终布尔值。
+
+没有新增调度器、公共 DTO 字段、DDL、依赖、停止 API、审批资格、自动清理或未知效果重派权限；正常与恢复继续复用唯一投影链路。
+
+### TDD 与实际实现
+
+1. 续接草稿的首次有效身份红测 **15 failed，1.84 秒**：三种终态标记在 job／metadata／快照目标漂移或材料缺失后仍返回 false，本机监督可对改变后的目标返回 true，修改结果 job ID 可把另一 job 结算为 cancelled。单独前置 foreign-job 断言的 **3 failed，1.41 秒** 确认了错误任务被改写，不只是原任务漏结算。
+2. 私有 `_DetachedExecutionIdentity(job_id, container_id)` 在启动时捕获；身份读取只接受既有 producer 的 backend、detached、cwd 和完整 64 hex 容器 ID 的精确 argv，不从容器名、短 ID、命令文本或其他 argv 变体猜测。监督心跳、读取、结算、取消兜底和日志均不再从可变结果获取 job ID。只比较当前快照与 metadata 仍会被两者共同漂移绕过，补原始 `initial_result` 核验的红测 **9 failed，12 passed，1.31 秒** 后，统一在 observer 中加入准备身份一致性，不另造恢复分支。
+3. 缺少材料记录 `execution_identity_unavailable`；原件、当前快照、账本或活跃监督身份不一致记录 `execution_identity_mismatch`。均返回 `null／unknown`，不查询可疑目标、不重写历史。不把一致性核验说成防篡改签名，也不把本地 job／容器身份说成真实 Runner 已接受的 execution ID。
+4. `_historical_job()` 改用真实 writer 的 target-bearing argv；原准备快照与 output 用独立 deepcopy，模拟 PostgreSQL 两个 JSON 值，避免夹具共享 dict 掩盖原件漂移。新增 21 个终态漂移负例、3 个一致观测复用正例、缺历史目标材料、本机目标漂移、原 job 监督结算不改 foreign job，以及 3 个真实 PostgreSQL 写入／独立 store 读取的漂移负例。PG 用例只注入本轮创建的测试行，核验读取只读、不查询错误目标、不改原记录，结束仅清理其测试 job。
+5. 续接后再次运行公共别名红测，实际 **2 failed，1.46 秒**；补运行中轮询及嵌套 artifact 修改后，实际 **3 failed，1.63 秒**，明确复现启动返回值改写 record、运行中 view 改写嵌套对象、历史 view 改写内存账本。三个公共出口使用标准库 deepcopy 后，目标用例实际 **3 passed，1.35 秒**，不以浅层 `replace()` 掩盖列表／字典共享。
+6. 全局核对 `SecurityCommandExecutionResult`、`execute_detached`、`poll_execution`、observer 与 `record.result.job_id` 引用：生产后台入口集中于本 service，其他结果消费为原前台路径，前端没有直接消费此 DTO；没有新增需要同步的公开字段。基础规格补充身份绑定、公开 view 所有权和证据范围，保留 §151 的三态／旧读者兼容限制。
+
+### 当前源码实际验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`。复用用户已启动的 PostgreSQL／Redis。真实 Docker 验收沿用 §152 已授权范围：本地 `vxcontrol/kali-linux:latest`，Docker Server **29.3.1**，镜像验收前后均为 `sha256:9520f0e11a5c74e80c758260e5ac2ad46bcae90fc0dda45670cb50b9f421c3d4`；隔离网络、pull=never、关闭 NET_RAW／NET_ADMIN。未拉取镜像、扫描目标、重启服务、调用付费模型或改生产路由。没有把 §152 的通过结果沿用为当前源码通过。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_security_detached_execution_evidence.py tests/test_security_execution_environment_upgrade.py tests/test_security_approval_boundary.py tests/test_invalid_tool_plan_visibility.py tests/test_security_target_guard.py tests/test_security_session_target_quoting.py tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py tests/test_resource_cleanup_entrypoint.py tests/test_lifespan_resource_cleanup.py tests/test_resource_occupancy.py -q -rs --tb=short
+# 179 passed，3 skipped，22.60 秒，exit 0
+# skip：2 项其他 Docker 目标转义用例，本轮未扩张到这些命令；1 项既有 MySQL 环境门
+
+$env:RUN_LIVE_DOCKER_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_live_resource_leases.py::test_security_background_lifecycle_and_durable_result tests/test_live_resource_leases.py::test_security_background_worker_kill_preserves_recovery_and_releases_container tests/test_live_resource_leases.py::test_security_background_cancel_remains_unknown_until_real_deferred_cleanup -q -rs --tb=short
+# 14 passed，97.25 秒，exit 0；无 skip／deselect
+```
+
+根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 实际通过。验收后 `docker ps --all --filter label=enterprise-ai-qa-agent=managed` 返回空，受管容器无残留。ruff／mypy 经 find_spec 确认未安装，未运行独立 lint／typecheck，不擅自安装。未运行全量前后端、其他真实领域 Runner、安全工具／目标、真实供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4。
+
+### 对应、兼容与剩余出口
+
+v4 A3／§8.1、§10.2、§11 → 本节 → `execution_environment_service.py` 的捕获身份／唯一观测／公共深拷贝及 `test_security_detached_execution_evidence.py` → 上述真实 PG、179 项相关回归、14 项真实 Docker 验收 → `【fix】绑定后台观测身份并隔离结果视图` 同一提交，提交 ID 见本轮交付及 Git 历史。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
+
+本步无迁移；不具备原始身份材料的历史数据保持不变，查询投影为未知，不能由 metadata 或裸观测标记取得确定停止结论。§151 的旧 Worker 读取新增观测字段限制仍有效，本步未部署混合版本或改路由。外部 Runner execution ID 到目标／代次全链路、停止／查询 journal、资源补偿与 Memory 其余出口、A2-2/A2-3、B/C 其余出口、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 继续按完整 v4 保留。此子步不等于整个 A3 或全系统完成，整体目标保持 active。

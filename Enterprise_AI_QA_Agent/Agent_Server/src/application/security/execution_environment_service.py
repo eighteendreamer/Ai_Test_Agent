@@ -15,6 +15,7 @@ import re
 import shlex
 import shutil
 import subprocess
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field, replace
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
@@ -64,9 +65,37 @@ class _DetachedJobRecord:
     container: _ManagedSecurityContainer
     log_path: Path
     cleanup_after_run: bool
+    identity: _DetachedExecutionIdentity
     task: asyncio.Task | None = None
     stopping: bool = False
     operation_started: bool = False
+
+
+@dataclass(frozen=True)
+class _DetachedExecutionIdentity:
+    job_id: str
+    container_id: str
+
+    @classmethod
+    def from_result(cls, result: SecurityCommandExecutionResult) -> _DetachedExecutionIdentity | None:
+        return cls.from_snapshot({"job_id": result.job_id, "argv": result.argv,
+            "cwd": result.cwd, "backend": result.backend, "detached": result.detached})
+
+    @classmethod
+    def from_snapshot(cls, snapshot: Any) -> _DetachedExecutionIdentity | None:
+        # Read the exact persisted argv produced by _start_detached_in_docker,
+        # including pre-observation snapshots. Do not infer identity from a
+        # command string, a container name, or arbitrary Docker argv variants.
+        if not isinstance(snapshot, dict):
+            return None
+        argv = snapshot.get("argv")
+        if (snapshot.get("backend") != "docker" or snapshot.get("detached") is not True or not snapshot.get("job_id")
+            or not isinstance(argv, list) or len(argv) != 8
+            or argv[:3] != ["docker", "exec", "-w"] or argv[3] != snapshot.get("cwd")
+            or argv[5:7] != ["sh", "-lc"] or not isinstance(argv[4], str) or not isinstance(argv[7], str)
+            or not re.fullmatch(r"[a-f0-9]{64}", argv[4])):
+            return None
+        return cls(snapshot["job_id"], argv[4])
 
 
 @dataclass
@@ -186,7 +215,8 @@ class SecurityExecutionEnvironmentService:
         with bind_request_context(session_id=getattr(context, "session_id", None),
             turn_id=getattr(context, "turn_id", None), trace_id=getattr(context, "trace_id", None),
             project_id=bundle.get("project_id")):
-            return await self._start_detached_in_docker(command, command_args, timeout_seconds, artifact_dir, context)
+            # Public views must not expose the supervisor's owned mutable state.
+            return deepcopy(await self._start_detached_in_docker(command, command_args, timeout_seconds, artifact_dir, context))
 
     async def poll_execution(self, job_id: str, *, context: Any = None) -> SecurityCommandExecutionResult:
         """Read output without granting execution or settlement authority.
@@ -205,14 +235,18 @@ class SecurityExecutionEnvironmentService:
             raise KeyError(f"Unknown detached security execution job: {normalized_job_id}")
         if job.session_id != self._owner_session_id(context):
             raise ValueError("Detached security job does not belong to this session")
+        identity = _DetachedExecutionIdentity(normalized_job_id, job.metadata.get("container_id", ""))
+        origin_identity = _DetachedExecutionIdentity.from_snapshot(job.metadata.get("initial_result"))
         record = self._detached_jobs.get(normalized_job_id)
         if record is not None and record.result.is_running and job.status == ToolJobStatus.running:
             result = replace(record.result, stdout=await asyncio.to_thread(record.log_path.read_text,
                 encoding="utf-8", errors="replace"), completed_at=_utc_now())
-            return await self._observe_detached_execution(result,
-                container_id=job.metadata.get("container_id", ""),
-                supervised=not record.stopping and record.container.session.active
-                    and record.task is not None and not record.task.done())
+            active_identity = record.identity if (
+                not record.stopping and record.container.session.active
+                and record.task is not None and not record.task.done()
+            ) else None
+            return deepcopy(await self._observe_detached_execution(result, identity=identity,
+                origin_identity=origin_identity, supervised_identity=active_identity))
         payload = job.output_payload or job.metadata.get("initial_result", {})
         if not payload:
             raise RuntimeError("Detached security job has no execution snapshot")
@@ -224,30 +258,42 @@ class SecurityExecutionEnvironmentService:
             # never turn that into a successful result or repeat the command.
             result = replace(result, is_running=None, exit_code=255,
                 stderr=job.error_message or f"Background job requires recovery: {job.status.value}")
-        return await self._observe_detached_execution(result, container_id=job.metadata.get("container_id", ""))
+        return deepcopy(await self._observe_detached_execution(result, identity=identity, origin_identity=origin_identity))
 
-    async def _observe_detached_execution(self, result: SecurityCommandExecutionResult, *,
-                                          container_id: str, supervised: bool = False) -> SecurityCommandExecutionResult:
+    async def _observe_detached_execution(
+        self,
+        result: SecurityCommandExecutionResult,
+        *,
+        identity: _DetachedExecutionIdentity,
+        origin_identity: _DetachedExecutionIdentity | None,
+        supervised_identity: _DetachedExecutionIdentity | None = None,
+    ) -> SecurityCommandExecutionResult:
         """One projection for live, recovered and historical command snapshots."""
-        if result.is_running is False and result.execution_observation in {
-            "command_returned", "container_absent", "not_dispatched",
-        }:
-            return result
-        if supervised:
-            return replace(result, is_running=True, execution_observation="supervised")
-        fields = {"job_id": result.job_id, "container_id": container_id}
-        reason = "missing_immutable_identity"
-        if isinstance(container_id, str) and re.fullmatch(r"[a-f0-9]{64}", container_id):
+        fields = {"job_id": identity.job_id, "container_id": identity.container_id}
+        material = _DetachedExecutionIdentity.from_result(result)
+        if material is None or origin_identity is None:
+            reason = "execution_identity_unavailable"
+        elif material != identity or origin_identity != identity or (
+            supervised_identity is not None and supervised_identity != identity
+        ):
+            reason = "execution_identity_mismatch"
+        else:
+            if result.is_running is False and result.execution_observation in {
+                "command_returned", "container_absent", "not_dispatched",
+            }:
+                return result
+            if supervised_identity is not None:
+                return replace(result, is_running=True, execution_observation="supervised")
             try:
                 # Same read-only absence check as ToolBootstrapService. A live
                 # container alone cannot tell us whether this command is live.
                 code, stdout, _ = await self._docker._command(
-                    ["ps", "--all", "--no-trunc", "--filter", f"id={container_id}", "--format", "{{.ID}}"],
+                    ["ps", "--all", "--no-trunc", "--filter", f"id={identity.container_id}", "--format", "{{.ID}}"],
                     timeout=self._settings.orchestration.resource_docker_command_timeout_seconds)
                 if code == 0 and not stdout.strip():
                     logger.info("security_background_container_absence_observed", extra=fields)
                     return replace(result, is_running=False, execution_observation="container_absent")
-                reason = "container_present" if code == 0 and stdout.strip() == container_id else "target_query_unconfirmed"
+                reason = "container_present" if code == 0 and stdout.strip() == identity.container_id else "target_query_unconfirmed"
                 fields["query_exit_code"] = code
             except Exception as exc:
                 reason = "target_query_failed"
@@ -479,8 +525,8 @@ class SecurityExecutionEnvironmentService:
                         execution_observation="not_dispatched" if not record.operation_started else "unknown",
                         exit_code=130, stderr="Background supervisor stopped", completed_at=_utc_now())
                     result = await self._observe_detached_execution(result,
-                        container_id=record.container.session.container.container_id)
-                    await self._background_jobs.finish_execution(result.job_id, status=ToolJobStatus.cancelled,
+                        identity=record.identity, origin_identity=record.identity)
+                    await self._background_jobs.finish_execution(record.identity.job_id, status=ToolJobStatus.cancelled,
                         summary=result.stderr, error_message=result.stderr, output_payload=asdict(result))
         finally:
             await asyncio.gather(*(session.close() for session in list(self._managed_sessions)))
@@ -733,7 +779,8 @@ class SecurityExecutionEnvironmentService:
             job.metadata["initial_result"] = asdict(result)
             job.metadata["container_id"] = container.session.container.container_id
             await self._background_jobs.mark_running(job)
-            record = _DetachedJobRecord(result, container, log_path, self._cleanup_after_run_enabled())
+            record = _DetachedJobRecord(result, container, log_path, self._cleanup_after_run_enabled(),
+                _DetachedExecutionIdentity(job.id, container.session.container.container_id))
             self._detached_jobs[job.id] = record
             record.task = asyncio.create_task(self._supervise_detached(record, args, timeout_seconds, interval))
             record.task.add_done_callback(lambda task: self._detached_finished(job.id, task))
@@ -758,9 +805,9 @@ class SecurityExecutionEnvironmentService:
                     done, _ = await asyncio.wait({operation}, timeout=interval)
                     if done:
                         break
-                    job = await self._background_jobs.heartbeat_execution(record.result.job_id)
+                    job = await self._background_jobs.heartbeat_execution(record.identity.job_id)
                     if job is None:
-                        job = await self._background_jobs.get_job(record.result.job_id)
+                        job = await self._background_jobs.get_job(record.identity.job_id)
                     if job is None:
                         raise RuntimeError("Background ToolJob disappeared")
                     if job.status == ToolJobStatus.cancelled:
@@ -779,7 +826,7 @@ class SecurityExecutionEnvironmentService:
             except Exception as exc:
                 stderr = f"Background execution stopped: {type(exc).__name__}"
                 logger.error("security_background_execution_failed", extra={
-                    "job_id": record.result.job_id, "error_type": type(exc).__name__})
+                    "job_id": record.identity.job_id, "error_type": type(exc).__name__})
             finally:
                 record.stopping = True
                 if not operation.done():
@@ -794,11 +841,11 @@ class SecurityExecutionEnvironmentService:
                 output_artifacts=[*self._collect_output_artifacts(record.container.host_workdir),
                     {"type": "security_runner_log", "label": record.log_path.name, "path": str(record.log_path)}])
             record.result = await self._observe_detached_execution(record.result,
-                container_id=record.container.session.container.container_id)
+                identity=record.identity, origin_identity=record.identity)
             payload = asdict(record.result)
             status = (ToolJobStatus.cancelled if cancelled else
                 ToolJobStatus.completed if code == 0 and not timed_out else ToolJobStatus.failed)
-            saved = await self._background_jobs.finish_execution(record.result.job_id, status=status,
+            saved = await self._background_jobs.finish_execution(record.identity.job_id, status=status,
                 summary=f"Background command {status.value}", output_payload=payload,
                 error_message=None if status == ToolJobStatus.completed else stderr or f"exit_code={code}")
             if saved is None:
@@ -807,18 +854,18 @@ class SecurityExecutionEnvironmentService:
                 # save a cancelled snapshot only if cancellation still owns it.
                 code = 130
                 cancelled_result = replace(record.result, exit_code=130, stderr="Background settlement superseded")
-                await self._background_jobs.finish_execution(record.result.job_id, status=ToolJobStatus.cancelled,
+                await self._background_jobs.finish_execution(record.identity.job_id, status=ToolJobStatus.cancelled,
                     summary="Background cancellation preserved", output_payload=asdict(cancelled_result),
                     error_message=cancelled_result.stderr)
-                logger.warning("security_background_settlement_superseded", extra={"job_id": record.result.job_id})
-            logger.info("security_background_completed", extra={"job_id": record.result.job_id,
+                logger.warning("security_background_settlement_superseded", extra={"job_id": record.identity.job_id})
+            logger.info("security_background_completed", extra={"job_id": record.identity.job_id,
                 "exit_code": code, "timed_out": timed_out, "cancelled": cancelled})
         except Exception as exc:
             # Persistence errors are visible; never publish an in-memory success
             # as a durable result. The existing stale-ToolJob recovery owns this.
             code = 255
             logger.error("security_background_result_uncommitted", extra={
-                "job_id": record.result.job_id, "error_type": type(exc).__name__})
+                "job_id": record.identity.job_id, "error_type": type(exc).__name__})
             raise
         finally:
             if record.cleanup_after_run or code != 0 or timed_out:
