@@ -67,11 +67,13 @@ def register_runtime_binding(cur, settings, binding: RuntimeBinding) -> None:
         raise ValueError("Turn already has a different runtime binding")
 
 
-def lock_owner_row(cur, settings, binding: RuntimeBinding) -> dict:
+def lock_owner_row(cur, settings, binding: RuntimeBinding, *, binding_reader=RuntimeBinding.model_validate) -> dict:
+    # Admission may classify an unavailable codec, but still compares the full
+    # original identity under the same lock. Authority ports keep the default.
     cur.execute(f"SELECT * FROM {runtime_owner_table(settings)} WHERE binding_id=%s FOR UPDATE",
         (binding.binding_id,))
     row = cur.fetchone()
-    if row is None or RuntimeBinding.model_validate(row["runtime_binding"]) != binding:
+    if row is None or binding_reader(row["runtime_binding"]) != binding:
         raise ValueError("Agent claim runtime binding does not match the durable owner")
     return row
 

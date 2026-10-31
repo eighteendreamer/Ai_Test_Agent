@@ -600,7 +600,16 @@ class AgentTaskDispatcher:
         queue: str,
         runtime_binding: RuntimeBinding | None = None,
     ) -> None:
-        stored = await self._tasks.get(command.task_id)
+        if runtime_binding is None:
+            stored = await self._tasks.get(command.task_id)
+        else:
+            try:
+                stored = await self._tasks.get(command.task_id, framework_capabilities=self._framework_capabilities)
+            except TaskDeferred as exc:
+                LOGGER.warning("agent_v2_binding_reader_unavailable", extra={
+                    "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
+                    "worker_id": worker_id, "reason": str(exc)})
+                raise
         for name in (
             "operation",
             "session_id",

@@ -124,6 +124,12 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred("framework_message_stage_unavailable")
 
     @classmethod
+    def require_binding_format(cls, value) -> RuntimeBinding:
+        """One persisted binding reader; compatibility never grants identity."""
+        return cls._read_compatible(RuntimeBinding.model_validate, value,
+            "framework_binding_format_unavailable", literal_fields=("runtime_kind", "model_transport"))
+
+    @classmethod
     def require_command_format(cls, value: object) -> AgentTaskCommandV2:
         """Read a v2 delivery without retrying an unavailable strict format.
 
@@ -259,18 +265,18 @@ class FrameworkWorkerCapabilities:
         self._read_compatible(model.model_validate, value, reason)
 
     @staticmethod
-    def defer_unsupported_format(exc: ValidationError, *, reason: str) -> None:
+    def defer_unsupported_format(exc: ValidationError, *, reason: str, literal_fields=()) -> None:
         if any(error["type"] == "extra_forbidden" or (
             error["type"] == "literal_error" and error["loc"]
-            and error["loc"][-1] in {"schema_version", "position_version", "derivation_contract_version", "format_version"})
+            and error["loc"][-1] in {"schema_version", "position_version", "derivation_contract_version", "format_version", *literal_fields})
             for error in exc.errors(include_input=False, include_url=False)):
             # Do not attach the raw record / validation input to queue logs.
             raise TaskDeferred(reason) from None
 
     @classmethod
-    def _read_compatible(cls, reader, value, reason):
+    def _read_compatible(cls, reader, value, reason, *, literal_fields=()):
         try:
             return reader(value)
         except ValidationError as exc:
-            cls.defer_unsupported_format(exc, reason=reason)
+            cls.defer_unsupported_format(exc, reason=reason, literal_fields=literal_fields)
             raise

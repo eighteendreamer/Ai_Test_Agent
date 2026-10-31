@@ -64,6 +64,12 @@ v2 CLI 未传显式 `--release-store`／`--release-reference` 时也消费同一
 - `tests/test_framework_release_startup.py`：配置、原安装校验 factory、实际 lifespan 的资源前顺序、CLI 配置分支、日志有限输出，以及恢复当前源码快照的新进程预检。新进程的 SQL／业务初始化明确替换为空端口，不是全后端 lifespan 验收。
 - `tests/test_framework_release_binding.py`／`test_framework_release_workers.py`：安装源码一致性、历史读者／真实 PG 与 Redis 的既有消费契约；具体结果和限制见实施记录。
 
+### 持久绑定的兼容读取
+
+v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原 `RuntimeBinding` codec。只有明确注入 Worker 能力的读取才把严格新增字段、未知 runtime kind／model transport 或引用版本分类为 `framework_binding_format_unavailable`，沿原 TaskDeferred 保留 Redis 原投递，不增加 retry／dead letter 或领取副作用。claim 仍按 Session → owner → task 原顺序加锁，并在等待 Session 锁后重新读取；不能靠锁前校验代替事务内核对。
+
+已知约束、摘要／fingerprint、合法格式下的身份不一致仍是原错误，不转为兼容等待；读能力不授予执行或恢复权限。普通 task API／未注入能力的底层调用、其他 owner 写权限端口和初始化读者保留原契约，不能据此认定所有旧初始化读者已升级。固定诊断事件为锁前 `agent_v2_binding_reader_unavailable` 和锁内 `framework_binding_reader_unavailable`，保留任务／Worker 标识，不输出原绑定或异常正文。真实 PG／Redis、失租／终态和锁等待反例见 `tests/test_framework_command_reader_admission.py`。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

@@ -7745,3 +7745,50 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → 原 stage codec／归档探针、两个已有测试、原控制说明和本记录共 6 文件 → 上述红绿、当前／历史源码安装、454／111 两组回归 → 独立提交 `【feat】让制品归档复用运行时材料格式目录`，ID 见 Git 历史和交付；不推送，不混入用户 v3 草稿。
 
 后续继续完成未覆盖格式／行为清单、正式绑定创建／冻结／发布及真实资产关联、旧初始化读者升级／隔离、独立依赖双制品部署、一致备份恢复和灰度回滚排空；没有给历史绑定猜关联或开启引用写者。§159／160 两类时间异常和 §166 子进程 RuntimeError 仍未定位，§158 未归属共享 checkpoint 残留不猜测清理。完整 A2/A3/B/C/D/E/F、H01–H12、MySQL 实库分支、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 保持原出口。整体目标仍 active，本子步不代表 F 或全系统完成。
+
+## 170. F／§14.1、H11：统一持久绑定的领取前兼容读取（2026-11-01）
+
+### 续接、根因与依据 → 做法
+
+续接 `673e3f727574f4ca0403e51805b49442953e1ebd`／§169；重新核对 v4、§52–54 与最新记录、当前 diff 和实际消费方。原 messages 顺序问题已有 §54 的 Delta 读取根因修复，不重复实现或放宽比较。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。
+
+探索正式绑定入口时确认一个独立读取缺口：Redis command 已按原严格 codec 区分未知格式，但 PostgreSQL task 的早期 lookup、claim 内 task／owner 的 `runtime_binding` 仍直接解析。兼容的旧命令遇持久记录新增严格字段时，普通 ValidationError 会进入原 Worker 失败转投链；这不是未知外部效果，不应通过重发执行或放宽身份检查修补。缺的是同一绑定 codec 在两个持久入口的兼容分类，**本步不建立正式绑定创建／冻结／发布入口，也不启用引用写者**。
+
+依据现有 `FrameworkWorkerCapabilities._read_compatible()`／command reader、`RuntimeBinding.model_validate()` 和原 TaskDeferred → 同一绑定 reader 仅分类明确不支持的格式；依据原 Session → owner → task 锁序与完整 binding 比较 → claim 等锁后再次读取，不以锁前检查替代事务内核对；本地《评测工程化与CICD》的可追溯结果及《Agent轨迹与协议鲁棒性》的状态／协议断言 → 同时保留真实 PG 状态摘要、Redis 原投递和正常／错误反例。没有新调度层、宽泛 fallback 或恢复权限。
+
+### TDD、实现与契约同步
+
+1. 初始两个新用例各覆盖 task／owner，实际 **4 failed，22.87 秒**：raw claim 抛原 ValidationError；真实 outbox → Redis Worker 用例原 PEL 的 `pending=0` 而非 1，伴随 `handler_failed`／`delivery_transferred`。这是目标缺陷红测，不是环境未启动。
+2. 新 `require_binding_format()` 复用原严格 RuntimeBinding codec；新增严格字段、未知 runtime kind／model transport literal、未知嵌套 release schema 转为固定 `framework_binding_format_unavailable`，不附原验证输入。原通用分类器仅新增可选 literal 字段参数，其他读者保持默认规则；已知约束、fingerprint 和合法格式下身份不一致仍按原错误处理。
+3. `PostgresAgentTaskStore.get()`／`_get_sync()` 仅在显式注入能力时使用该 reader；普通 API／未注入能力的调用维持原严格行为。claim 在原锁序内对 owner 与 task 使用同一 reader，并继续完整身份相等比较。`lock_owner_row()` 的原默认 reader 保持不变，其他 owner 写权限端口未获取新权限；无状态迁移、租约、DDL、写入格式或生产路由变更。
+4. v2 Dispatcher 的早期 lookup 传递已有能力；锁前／锁内分别记录有限事件 `agent_v2_binding_reader_unavailable`／`framework_binding_reader_unavailable`，只含安全任务／Worker 身份和固定 reason。初步两个完整模块 **354 passed，80.82 秒**；此时尚未包含后续全部边界与 legacy 修正，不作为最终结果。
+5. 扩展纯契约时实际 **1 failed、9 passed，13.02 秒**：初版把 legacy lookup 也纳入 v2 catch，遮蔽原 TaskDeferred 并访问 None 的 binding_id。修正为只有 bound 分支捕获，legacy 原异常原样传播；保留该反例，不把 legacy 加入新兼容分类。
+6. 新真实数据库反例覆盖 task／owner × queued／过期 claimed／过期 running／cancelled、未知选择字段／引用版本、等待真实 Session 锁后才变更绑定，以及已知约束／指纹／合法身份漂移。真实 Redis 用例覆盖 max_retries=0／3：原 message_id、wire、retry_count、PEL 不变，无死信、无执行，PG 状态摘要不变；日志不含原绑定输入。原正常完成、真正错误死信和未知 command 格式用例均保留。
+7. 搜索 `get` 替身、`_get_sync`、全部 `lock_owner_row` 消费方，同步原 v2 `_Tasks` 替身并验证 lookup／claim 使用同一能力；其他默认 owner 消费方不变。同步原控制说明，不修改公开 API／DTO、前端、binding schema、格式版本上界或历史归档。
+
+### 当前源码最终验证
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_v2_worker_contract.py tests/test_framework_command_reader_admission.py tests/test_runtime_binding_persistence.py tests/test_framework_model_reader_admission.py tests/test_framework_stage_reader_admission.py -q -rs --tb=short
+# 440 passed，277.66 秒，exit 0，无 skip／deselect
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_task_dispatch.py tests/test_framework_checkpoint_fencing.py tests/test_framework_task_control.py tests/test_framework_approval_reader_admission.py tests/test_framework_recovery_proof_reader_admission.py tests/test_framework_release_workers.py tests/test_runtime_binding_contract.py tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling -q -rs --tb=short
+# 105 passed，626.29 秒，exit 0，无 skip／deselect
+```
+
+扩大组首次沿用历史单维 nodeid `[reconcile_after_commit]`，实际 **no tests ran，10.07 秒，非零退出**；查当前源码确认该函数已扩为 2×3 六参数，随后执行上面的整个函数，没有放宽参数或断言。续接后先观察原会话 `13028`，取得 105 项真实终态，没有重启或用新执行覆盖未知结果。本节所有已启动 pytest 均已取得终态。
+
+最终组合覆盖真实 PG／Redis、原 saver／owner、legacy 调度、审批／恢复证明读者、历史源码 Worker，以及完整六参数的独立 Worker 强杀／精确原生 messages 比较；强杀仅涉及 fixture 自建测试子进程，没有重启服务或运行 Docker。历史源码 Worker 的受控执行终态和复用同一 venv 的限制仍在，不代表独立依赖安装、真实供应商／工具／领域 Runner 或完整 E4。上述组合不是 §159 完整 20 文件或 §160 完整 10 文件重新全绿。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际 exit 0，仅既有 CRLF 提示；再确认 ruff／mypy／build／wheel／setuptools 未安装，未跑独立 lint／typecheck／构建安装，不安装依赖。前端无改动，未重跑。没有读取／修改实际 `.env`、重启 PG／Redis、Docker 验收、付费调用、目标扫描、生产路由变更、DDL 或数据迁移。
+
+### 提交对应与剩余出口
+
+v4 F／§14.1、H11 → 本节 → 原能力 codec／task store／owner／Dispatcher、两个已有测试、原控制说明及本记录共 8 文件 → 上述红绿、440／105 两组最终回归 → 独立提交 `【fix】统一持久绑定的领取前兼容读取`，ID 见 Git 历史和交付；不推送、不提交用户草稿或测试制品。
+
+本步仅证明显式能力注入路径的兼容读取；普通 API／旧初始化读者仍未升级，不能据此开启新引用写者。正式绑定创建／冻结／发布、真实 Prompt／Skill／工具／模型资产关联仍待完成，不为历史绑定猜关联。§159／160 时间异常和 §166 子进程 RuntimeError 仍未定位，当前样本通过不撤销历史失败；§158 未归属共享 checkpoint 残留不猜测清理。未覆盖格式／行为完整清单、旧初始化升级／隔离、双制品独立安装／完整部署、一致备份恢复、灰度回滚排空、MySQL 实库、完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端及 E3/E4 继续保留。整体目标保持 active，本子步不代表 F 或全系统完成。

@@ -165,8 +165,8 @@ class PostgresAgentTaskStore:
 
         return await asyncio.to_thread(FrameworkApprovalSubmission(self).submit, command, approval_id, payload)
 
-    async def get(self, task_id: str) -> AgentTaskExecution:
-        return await asyncio.to_thread(self._get_sync, task_id)
+    async def get(self, task_id: str, *, framework_capabilities=None) -> AgentTaskExecution:
+        return await asyncio.to_thread(self._get_sync, task_id, framework_capabilities)
 
     async def get_framework_worker_activity(self, task_id: str, *, session_id: str):
         """Read observed attempt boundaries in one snapshot; never grant execution."""
@@ -905,12 +905,14 @@ class PostgresAgentTaskStore:
             )
         return AgentTaskRecord.model_validate(row)
 
-    def _get_sync(self, task_id):
+    def _get_sync(self, task_id, framework_capabilities=None):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s", (task_id,))
             row = cur.fetchone()
             if row is None:
                 raise KeyError(task_id)
+        if framework_capabilities is not None and row["runtime_binding"] is not None:
+            row = {**row, "runtime_binding": framework_capabilities.require_binding_format(row["runtime_binding"])}
         return self._record(row)
 
     @staticmethod
@@ -1233,14 +1235,19 @@ class PostgresAgentTaskStore:
             if identity is None:
                 raise KeyError(task_id)
             session = self._lock_session(cur, identity["session_id"])
-            if expected_binding is not None:
-                binding_owner = lock_owner_row(cur, self._settings, expected_binding)
-            cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task_id,))
-            row = cur.fetchone()
-            saved_binding = (
-                RuntimeBinding.model_validate(row["runtime_binding"])
-                if row.get("runtime_binding") is not None else None
-            )
+            binding_reader = (framework_capabilities.require_binding_format
+                if framework_capabilities is not None else RuntimeBinding.model_validate)
+            try:
+                if expected_binding is not None:
+                    binding_owner = lock_owner_row(cur, self._settings, expected_binding, binding_reader=binding_reader)
+                cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task_id,))
+                row = cur.fetchone()
+                saved_binding = binding_reader(row["runtime_binding"]) if row.get("runtime_binding") is not None else None
+            except TaskDeferred as exc:
+                logger.warning("framework_binding_reader_unavailable", extra={
+                    "task_id": task_id, "binding_id": expected_binding.binding_id,
+                    "worker_id": worker_id, "reason": str(exc)})
+                raise
             if saved_binding != expected_binding:
                 raise ValueError("Agent claim runtime binding does not match the durable task")
             if framework_capabilities is not None:

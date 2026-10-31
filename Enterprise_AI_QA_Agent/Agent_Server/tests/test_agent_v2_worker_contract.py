@@ -61,9 +61,11 @@ class _Tasks:
         self.message_recoveries = []
         self.framework_capabilities = []
         self.model_ledger_checks = []
+        self.binding_readers = []
 
-    async def get(self, task_id):
+    async def get(self, task_id, *, framework_capabilities=None):
         assert task_id == self.stored.id
+        self.binding_readers.append(framework_capabilities)
         return self.stored
 
     async def get_framework_message_stage_version(self, task_id, *, session_id):
@@ -141,7 +143,57 @@ async def test_v2_dispatcher_requires_persisted_binding_and_executes_once():
     await dispatcher.handle_v2(delivery, worker_id="v2-worker")
 
     assert tasks.claimed == ["v2-worker"]
+    assert tasks.binding_readers == tasks.framework_capabilities
     assert executions == [("task-1", runtime_binding)]
+
+
+@pytest.mark.asyncio
+async def test_legacy_lookup_deferral_is_not_reclassified_as_a_framework_binding_wait(monkeypatch, caplog):
+    selected = binding()
+    tasks = _Tasks(stored_task(selected))
+    tasks.stored.runtime_binding = None
+
+    async def defer(task_id):
+        raise TaskDeferred("controlled legacy lookup deferral")
+
+    monkeypatch.setattr(tasks, "get", defer)
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None)
+    wire = command(selected).model_dump(mode="json", exclude={"runtime_binding"})
+    wire["schema_version"] = 1
+    with pytest.raises(TaskDeferred, match="controlled legacy lookup deferral"):
+        await dispatcher.handle(QueuedTask("legacy-read", wire), worker_id="legacy-reader")
+    assert tasks.claimed == []
+    assert not any(row.message == "agent_v2_binding_reader_unavailable" for row in caplog.records)
+
+
+@pytest.mark.parametrize("changes", [
+    {"future_field": "private-binding-input"}, {"runtime_kind": "future-runtime"},
+    {"model_transport": "future-transport"},
+    {"release_reference": {"schema_version": 2, "archive_sha256": "b" * 64,
+        "size_bytes": 1234, "source_revision": "c" * 40}},
+])
+def test_persisted_binding_reader_defers_only_unsupported_declared_formats(changes):
+    raw = {**binding().model_dump(mode="json"), **changes}
+    with pytest.raises(TaskDeferred, match="framework_binding_format_unavailable") as caught:
+        FrameworkWorkerCapabilities.require_binding_format(raw)
+    assert caught.value.__suppress_context__ and "private-binding-input" not in str(caught.value)
+
+
+@pytest.mark.parametrize("changes", [{"dependency_lock_sha256": "broken"}, {"thread_id": "other-turn"},
+    {"fingerprint": "0" * 64}, {"prompt_version": ""}])
+def test_persisted_binding_known_validation_errors_do_not_become_compatibility_waits(changes):
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        FrameworkWorkerCapabilities.require_binding_format({**binding().model_dump(mode="json"), **changes})
+
+
+def test_persisted_binding_reader_retains_compatible_historical_wire_and_model():
+    original = binding()
+    wire = original.model_dump(mode="json")
+    assert FrameworkWorkerCapabilities.require_binding_format(wire) == original
+    assert FrameworkWorkerCapabilities.require_binding_format(original) == original
+    assert wire == original.model_dump(mode="json") and "release_reference" not in wire
 
 
 @pytest.mark.asyncio
