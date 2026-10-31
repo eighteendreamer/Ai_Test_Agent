@@ -579,9 +579,12 @@ class AgentTaskDispatcher:
         binding, so a stale or manually altered envelope is rejected before a
         task lease can be claimed.
         """
-        command = parse_agent_task_command(delivery.payload)
-        if not isinstance(command, AgentTaskCommandV2):
-            raise ValueError("v2 worker requires a schema_version=2 agent command")
+        try:
+            command = FrameworkWorkerCapabilities.require_command_format(delivery.payload)
+        except TaskDeferred as exc:
+            LOGGER.warning("agent_v2_command_reader_unavailable", extra={
+                "message_id": delivery.message_id, "worker_id": worker_id, "reason": str(exc)})
+            raise
         await self._handle_command(
             command,
             worker_id=worker_id,

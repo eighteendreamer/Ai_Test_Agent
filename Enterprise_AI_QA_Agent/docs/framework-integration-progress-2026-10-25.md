@@ -7406,3 +7406,51 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → 4 个生产文件、3 个测试文件、测试白名单与本记录 → 上述红绿、真实 PG／Redis 与固定官方 SDK 消费方验证 → 独立提交 `【fix】领取事务内核对原生历史兼容性`，ID 见 Git 历史和交付。无生产 DDL、数据迁移、写入格式、公共 API／DTO／前端／配置变化。仅提交本轮 9 文件，不推送；用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改、暂存或提交。
 
 下一步仍需核实上述时间异常，继续 native command／其他结果材料的独立读能力、实际不可变制品归档和双制品兼容部署；本节不宣称所有格式均覆盖。完整 A2/A3/B/C/D/E/F、H01–H12、真实依赖／领域 Runner、官方 saver conformance、完整前后端和 E3/E4 均按 v4 保留，整体目标继续 active，不把本次兼容子步当作全系统完成。
+
+## 163. F／§14.1、H11：不兼容 command 保留原投递，不重试或进入死信（2026-10-31）
+
+### 续接、时间异常与有效红测
+
+续接 `3e12b07c0`／§162，工作区仅有用户原 v3 草稿；先读取 v4 兼容／阶段出口、§52–54 与后续实际记录，核对既有 P0 结果没有被旧描述覆盖。本轮先用现有精确诊断复跑中断两参数、零秒续租样本和两个过期诊断分支，实际 **5 passed，27.48 秒**。这次没有复现异常，不据此将 §159／160 两类时间问题认定已修复；既有完整组合失败和未归属共享 checkpoint 残留继续保留。
+
+独立 command 缺口位于 `handle_v2()`：严格 `parse_agent_task_command()` 在读取任务之前抛出未知 schema／新增字段错误，通用 Redis Worker 把它当作执行失败，transfer 后 ACK 原项，并最终送死信。已有 task/stage/model/proof/transcript 的受控 defer 不覆盖这一入口。根因是协议读能力与执行错误分类错位，不是 Redis 重试不足，不通过扩展通用 Worker 的吞错或另建调度层解决。
+
+新增两个真实 PG／Redis 反例，分别在投递中加入 schema 3 和 binding 新字段；使用 max_retries=0 使原错误策略可立即观察。旧源码实际 **2 failed，13.65 秒**，均原 PEL `0 != 1`，日志 `redis_task_handler_failed`／`redis_task_delivery_transferred`；数据库原事实未变，但原投递已不能留给兼容消费者。这是未来格式契约的受控注入，不伪称收到过真实未来生产制品。
+
+### 依据 → 实现与边界
+
+依据现有 `FrameworkWorkerCapabilities.defer_unsupported_format()` 的严格字段分类、`AgentTaskCommandV2`／`RuntimeBinding` 原 codec、`parse_agent_task_command()` 的显式版本分派、Redis Worker 的 TaskDeferred 保留 PEL 分支 → 只在 v2 Dispatcher 入站复用这些端口。固定环境 `pydantic/main.py:model_validate()` 与原代码的 `errors(include_input=False, include_url=False)` 用法已核对，不升级依赖、不复制 schema。另核对本地参考 `借鉴/codex/codex-rs/app-server-protocol/src/protocol/common.rs` 的 `client_request_definitions!`：以明确 method tag 选择类型化 params，而非猜测命令。这里只借鉴显式类型边界，不把该 Rust RPC 的未知字段策略或版本行为套入本项目。测试设计沿本地《Agent轨迹与协议鲁棒性》§3／§3.5 的协议漂移、身份、轨迹与异常边界。
+
+1. 新 `FrameworkWorkerCapabilities.require_command_format()` 返回已通过原解析器的 `AgentTaskCommandV2`，不重写原 envelope。显式版本必须为精确整数；不支持的版本、v2 严格新增字段和原 codec 的未知 Literal selector（operation／task_type、binding runtime kind／transport）转固定 `framework_command_format_unavailable`。自由 payload／metadata 不递归扫描，也不将其中的 schema／operation 字段当作外层协议。
+2. 缺必填项、长度／范围、已知身份／绑定 fingerprint 错误仍传播原 ValidationError／ValueError；非对象仍是原数据错误。legacy 缺省版本 1 的读取语义不改，v1 进入 v2 端口仍拒绝，不默认提升为 v2、不退回 legacy 执行。`handle()`、公共 parser／DTO／API／生产者／路由和通用 Worker 的重试／死信规则没有修改。
+3. `handle_v2()` 在任何 PG task lookup／claim／执行之前调用此 reader；新的结构化日志 `agent_v2_command_reader_unavailable` 仅带 Redis message_id、worker_id、固定 reason，不从未解析输入提取 binding／task 身份或附异常正文。未知格式异常抑制私有验证输入链；兼容解析通过后，原 durable task identity、binding 对等、能力、锁内账本／审批／历史、owner 与授权检查完整保留。此入口是当前安装代码的读能力，不是通过配置声称具有未来 parser。
+4. 新专项最终 14 项：隔离 outbox 注入并经真实 relay → Redis Worker，覆盖 queued／过期未执行 claimed／cancelled、schema／顶层及 binding 新字段、命令／协议 selectors；max_retries=0 和 3 均不 transfer。精确比较 11 张表行数及整行摘要，原 task／attempt／owner／outbox／模型账本不变；相同 Stream entry、retry_count=0、PEL=1、无后继／dead letter，重新读取原 pending 项仍为同一原件。显式核对随机 checkpoint 隔离，沿既有白名单纳入新文件，不操作默认共享 schema。
+5. 同一专项还保留正常已知错误的原死信策略，断言约束和身份拒绝均不领取；正常兼容 command 携带自由 payload，沿真实 Dispatcher／PG／Redis 完成一次、重复投递 ACK-only，不增加 Runtime 调用或改变 PG 终态。该正常 Runtime 使用已有受控替身，不冒称真实模型；随后真实固定 SDK／saver 恢复消费方另行回归。Worker 契约增加 26 项，覆盖版本精确类型、带／不带序列化 fingerprint 的严格字段、普通错误、legacy 隔离、不查库及原 wire 不变；原 binding 比较锚定同一创建对象，不依赖两次 `now()` 恰好相等。
+
+### 实际验证
+
+固定 `.venv-framework-v2`，复用用户已启动 PG／Redis，不重启服务、不运行 Docker、不扫描、不调用付费模型、不升级依赖或改生产路由。最初两例＋原 Worker 契约 **295 passed，28.37 秒**；扩大到当时 13 项专项／Worker／Redis worker 与 retry 为 **338 passed，67.81 秒**。两者只记中间结果，不与后续组合重复相加。
+
+```powershell
+# cwd: Agent_Server
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py::test_http_interrupt_revokes_owner_before_worker_poll_and_blocks_late_writes tests/test_framework_approval_settlement.py::test_approval_settlement_rechecks_committed_facts[missing_commit-claim] tests/test_framework_approval_recovery.py::test_expiration_deferral_keeps_safe_timing_diagnostics -q -rs --tb=short
+# 5 passed，27.48 秒；原时间样本未复现，不等于定位原因
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_command_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_redis_task_worker.py tests/test_redis_task_retry.py tests/test_redis_execution_dispatcher.py tests/test_redis_task_queue.py tests/test_live_redis_task_delivery.py -q -rs --tb=short
+# 413 passed，205.08 秒，exit 0；此组加载的源码早于新日志 message_id 及对应断言
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_command_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_runtime_binding_contract.py tests/test_framework_approval_submission.py tests/test_framework_approval_http.py tests/test_framework_approval_recovery.py tests/test_framework_message_recovery.py tests/test_framework_task_control.py -q -rs --tb=short
+# 当前源码最终 453 passed，633.93 秒，exit 0；上述各组均无 skip／deselect
+```
+
+最终组合覆盖正式 command parser、legacy 拒绝、审批受理／HTTP、消息／审批后继与恢复、控制路径及独立 Worker；相关真实框架／官方 SDK／saver 以本地合成 HTTP 或项目既有测试模型为对端，不是付费供应商或不可变旧／新制品部署验收。全部本轮 pytest 句柄已取得终态，没有通过重启相同测试替代观察。根目录 compileall、`git diff --check` 通过；全局核对 command reader／parser／日志及 CLI 引用，未改其他 parser 调用方。find_spec 确认 ruff／mypy 仍未安装，未运行独立 lint／typecheck，也未安装依赖。
+
+### 提交对应与剩余出口
+
+v4 F／§14.1、H11 → 本节 → `framework_worker_capabilities.py`、`agent_task_dispatcher.py`、既有 Worker 契约、新 command 专项、测试白名单与本记录 → 上述红绿和真实 PG／Redis／恢复消费方 → 独立提交 `【fix】不兼容命令保留原投递等待兼容读者`，ID 见 Git 历史和交付。仅提交本轮 6 文件，无 DDL、数据回填、新写入格式、公共 DTO／前端／配置变化，不推送。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／暂存／提交。
+
+保留原投递不证明已部署能读取未来格式的消费者，也不授予未来 operation 的执行权；实际制品归档、双制品部署／排空、其他结果材料读能力与全量格式清单仍需完成。§159／160 时间异常及历史完整组合失败未被本轮通过覆盖，§158 共享 checkpoint 历史残留不猜测清理。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 继续按 v4 验收，整体目标保持 active，本节不代表 F 或全系统完成。

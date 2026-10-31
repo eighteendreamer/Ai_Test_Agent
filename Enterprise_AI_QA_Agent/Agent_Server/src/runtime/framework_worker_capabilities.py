@@ -14,6 +14,7 @@ from pathlib import Path
 from pydantic import ValidationError
 
 from src.runtime.task_deferred import TaskDeferred
+from src.schemas.agent_task import AgentTaskCommandV2, parse_agent_task_command
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelCallRecord, FrameworkModelEvidenceUpload,
 )
@@ -82,6 +83,31 @@ class FrameworkWorkerCapabilities:
         if schema_version is not None and (type(schema_version) is not int
             or not 1 <= schema_version <= self.message_stage_max_version):
             raise TaskDeferred("framework_message_stage_unavailable")
+
+    @classmethod
+    def require_command_format(cls, value: object) -> AgentTaskCommandV2:
+        """Read a v2 delivery without retrying an unavailable strict format.
+
+        The wire reader remains authoritative for identities and constraints;
+        a compatible format is not permission to claim its durable task.
+        """
+        reason = "framework_command_format_unavailable"
+        version = value.get("schema_version", 1) if isinstance(value, dict) else None
+        if isinstance(value, dict) and (type(version) is not int or version not in {1, 2}):
+            raise TaskDeferred(reason)
+        try:
+            command = parse_agent_task_command(value)
+        except ValidationError as exc:
+            if version == 2:
+                # Command selectors (operation/type and binding protocol) are
+                # declared Literals in the existing codec, not arbitrary payload.
+                if any(error["type"] == "literal_error" for error in exc.errors(include_input=False, include_url=False)):
+                    raise TaskDeferred(reason) from None
+                cls.defer_unsupported_format(exc, reason=reason)
+            raise
+        if not isinstance(command, AgentTaskCommandV2):
+            raise ValueError("v2 worker requires a schema_version=2 agent command")
+        return command
 
     def require_model_ledger_format(self, kind: str, value: object) -> None:
         """Check the installed strict reader, not model settlement authority.

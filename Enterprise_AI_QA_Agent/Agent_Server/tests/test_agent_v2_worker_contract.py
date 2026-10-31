@@ -800,3 +800,84 @@ def test_native_recovery_proof_keeps_free_metadata_without_recursive_format_chec
 def test_present_nonobject_recovery_proof_is_not_read_as_an_absent_proof(value):
     with pytest.raises(TaskDeferred, match="framework_recovery_proof_format_unavailable"):
         FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)
+
+
+@pytest.mark.parametrize("version", [True, "2", 2.0, 0, 3, None, [], {}])
+def test_command_reader_requires_an_exact_supported_wire_version(version):
+    wire = command(binding()).model_dump(mode="json")
+    wire["schema_version"] = version
+    with pytest.raises(TaskDeferred, match="framework_command_format_unavailable"):
+        FrameworkWorkerCapabilities.require_command_format(wire)
+
+
+@pytest.mark.parametrize("nested", [False, True])
+@pytest.mark.parametrize("fingerprint", [False, True])
+def test_command_reader_uses_strict_envelope_and_binding_codecs(nested, fingerprint):
+    wire = command(binding()).model_dump(mode="json")
+    if not fingerprint:
+        wire["runtime_binding"].pop("fingerprint")
+    (wire["runtime_binding"] if nested else wire)["future_field"] = "private-command-input"
+    with pytest.raises(TaskDeferred, match="framework_command_format_unavailable") as caught:
+        FrameworkWorkerCapabilities.require_command_format(wire)
+    assert caught.value.__suppress_context__ and "private-command-input" not in str(caught.value)
+
+
+@pytest.mark.parametrize("change", ["task_id", "priority", "missing_request", "thread_id", "fingerprint", "session_id"])
+def test_command_reader_preserves_known_constraint_and_identity_errors(change):
+    from pydantic import ValidationError
+
+    wire = command(binding()).model_dump(mode="json")
+    if change == "missing_request":
+        del wire["request_id"]
+    elif change in {"thread_id", "fingerprint"}:
+        wire["runtime_binding"][change] = "0" * 64
+    else:
+        wire[change] = {"task_id": "", "priority": 101, "session_id": "other-session"}[change]
+    with pytest.raises(ValidationError):
+        FrameworkWorkerCapabilities.require_command_format(wire)
+
+
+@pytest.mark.parametrize("value", [None, [], "future-command", 2])
+def test_command_reader_keeps_nonobject_data_errors_visible(value):
+    with pytest.raises(ValueError, match="must be an object"):
+        FrameworkWorkerCapabilities.require_command_format(value)
+
+
+@pytest.mark.parametrize("explicit_version", [False, True])
+def test_command_reader_never_promotes_a_legacy_envelope(explicit_version):
+    wire = command(binding()).model_dump(mode="json", exclude={"runtime_binding"})
+    if explicit_version:
+        wire["schema_version"] = 1
+    else:
+        del wire["schema_version"]
+    with pytest.raises(ValueError, match="requires a schema_version=2"):
+        FrameworkWorkerCapabilities.require_command_format(wire)
+
+
+@pytest.mark.asyncio
+async def test_command_format_is_checked_without_database_lookup_or_execution():
+    tasks = _Tasks(stored_task(binding()))
+
+    async def unexpected(*args, **kwargs):
+        pytest.fail("Unknown command must not perform a durable task lookup")
+
+    tasks.get = unexpected
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None)
+    dispatcher._execute = unexpected
+    wire = command(binding()).model_dump(mode="json")
+    wire["future_field"] = "private-command-input"
+    with pytest.raises(TaskDeferred, match="framework_command_format_unavailable"):
+        await dispatcher.handle_v2(QueuedTask("future-command", wire), worker_id="command-reader")
+    assert tasks.claimed == []
+
+
+def test_command_reader_keeps_free_payload_metadata_and_original_wire_untouched():
+    from copy import deepcopy
+
+    original = command(binding())
+    wire = original.model_dump(mode="json")
+    wire["payload"] = {"schema_version": 99, "metadata": {"operation": "future", "future_field": True}}
+    before = deepcopy(wire)
+    parsed = FrameworkWorkerCapabilities.require_command_format(wire)
+    assert isinstance(parsed, AgentTaskCommandV2) and parsed.payload == before["payload"]
+    assert parsed.runtime_binding == original.runtime_binding and wire == before
