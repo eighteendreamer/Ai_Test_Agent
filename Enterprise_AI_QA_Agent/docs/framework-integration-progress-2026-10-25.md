@@ -7792,3 +7792,52 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → 原能力 codec／task store／owner／Dispatcher、两个已有测试、原控制说明及本记录共 8 文件 → 上述红绿、440／105 两组最终回归 → 独立提交 `【fix】统一持久绑定的领取前兼容读取`，ID 见 Git 历史和交付；不推送、不提交用户草稿或测试制品。
 
 本步仅证明显式能力注入路径的兼容读取；普通 API／旧初始化读者仍未升级，不能据此开启新引用写者。正式绑定创建／冻结／发布、真实 Prompt／Skill／工具／模型资产关联仍待完成，不为历史绑定猜关联。§159／160 时间异常和 §166 子进程 RuntimeError 仍未定位，当前样本通过不撤销历史失败；§158 未归属共享 checkpoint 残留不猜测清理。未覆盖格式／行为完整清单、旧初始化升级／隔离、双制品独立安装／完整部署、一致备份恢复、灰度回滚排空、MySQL 实库、完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端及 E3/E4 继续保留。整体目标保持 active，本子步不代表 F 或全系统完成。
+
+## 171. F／§14.1–14.2、H11：在持久读取前准入能力并固定单次投递的读者（2026-11-01）
+
+### 续接、查证与根因
+
+上一轮已经提交 `09bb7476f`／§170 并取得实际回归终态，属于 progress；本轮复核当前 Git、v4 与最新记录。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。沿正式受理链查证，原 Dispatcher.submit 仍创建 legacy AgentTaskCommand，尚无生产 RuntimeBinding 创建入口；本步不把现有底层 submit_v2 或测试绑定说成正式创建／发布已完成。
+
+发现 §170 的明确剩余分支：Dispatcher 能力允许为空，但在判定 `framework_worker_capabilities_unavailable` 前已调用 task.get；若 task 含未知严格绑定字段，仍以 ValidationError 进入 Redis 失败转投。专用 v2 CLI 原本在开始投递前安装能力，不能据此说每个 CLI 都必然经过该空能力分支；本步修复的是无能力 Dispatcher 复用端口的准入顺序。另一个同根缺口是 `_handle_command` 在多个 await 之间反复读取可替换的能力属性，lookup／检查／claim 可能不属于同一能力快照。
+
+这是准入顺序和单次投递上下文缺失，不是增加一个兼容 fallback。依据原 Dispatcher、固定的 FrameworkWorkerCapabilities dataclass、既有 CLI 安装端口与 TaskDeferred → 在持久 lookup 前拒绝无能力 v2 消费，单次投递捕获一次能力并贯穿 lookup／格式检查／claim；依据 v4 §14.2 的能力、路由、紧急停止分离 → 显式安装能力仅影响后续投递，不撤销 owner，不提供自动配置热更新或紧急停止。正常命令格式 codec 仍先执行，legacy 不依赖新前置。沿原日志事件输出固定 reason，不打印原绑定或验证异常。
+
+### TDD、实现与边界
+
+1. 新增五个 operation 的无能力 lookup 反例、两个 await 窗口的能力替换反例，以及真实 PG／Redis 的 task／owner／不变绑定 × max_retries=0／3。首次 **9 failed、4 passed，25.56 秒** 中，四个纯契约错误地把 operation 填进 task_type，按实际 AgentTaskCommandV2 schema 修正为保留原 agent_turn，只改变 operation；不算目标缺陷证明。修正后同组实际 **9 failed、4 passed，21.55 秒**：五个操作已读取 `[None]` 而非零 lookup；lookup 后替换导致使用新能力拒绝原投递，stage-version 后替换使 claim 使用另一能力；真实 task 新字段在 max_retries=0 时原 PEL 消失，在 3 时增加 retry_count=1 的新消息，日志为原 handler_failed／delivery_transferred。
+2. 只修改现有 Dispatcher：无能力时在持久读取前记录 `agent_v2_capability_unavailable`／固定 reason 并 TaskDeferred；有能力时 lookup、require、stage／transcript 检查及 claim 均复用局部捕获对象，不新增调度层、权限端口、状态、schema、配置或重试策略。原 setter 签名不变，docstring 明确其不是紧急停止。目标组随后 **13 passed，21.77 秒**。
+3. 补充真实数据库两个替换窗口：原能力到达真实 claim，后续投递才被替换后的不可用能力拒绝，第二次数据库状态摘要不变、原 owner 代次和执行次数不增加。另用真实 Redis Worker 首先保留无能力投递，显式安装兼容能力后，以原 xclaim／pending／Dispatcher／owned ACK 端口处理同一 message_id、原 wire、retry_count=0；任务只产生一次 attempt 并完成，原 stream 不重写、无死信。后半段显式调用既有投递／ACK 端口，不冒称第二个 RedisTaskWorker 进程或独立部署。
+4. 首轮五模块扩大组实际 **1 failed、468 passed，238.16 秒**：原“绑定漂移拒领”纯契约未配置能力，却期待已经读取持久绑定。按新前置给该身份校验用例明确装配兼容能力，保留原 ValueError／拒领断言，并额外断言使用该读者；无能力不读取由独立五 operation 反例覆盖，没有把真正身份错误改成等待或删除原断言。
+5. 搜索原 setter／所有能力访问点、CLI 与现有测试消费方；真实 CLI 仍在消费前安装能力，原 owner／claim 及普通 task API 默认严格读取不变。同步原控制说明；不开放引用写者、改变生产选路、增加外部调用或为历史绑定猜版本／资产关联。
+
+### 当前源码验证与配置事实更正
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_v2_worker_contract.py tests/test_framework_command_reader_admission.py tests/test_framework_model_reader_admission.py tests/test_framework_stage_reader_admission.py tests/test_framework_route_rollback.py -q -rs --tb=short
+# 469 passed，234.12 秒，exit 0，无 skip／deselect
+```
+
+```powershell
+# cwd／解释器同上，另显式关闭 MySQL 实库标志；不重启任何服务
+$env:RUN_LIVE_MYSQL_TESTS='0'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_task_dispatch.py tests/test_framework_task_control.py tests/test_framework_approval_reader_admission.py tests/test_framework_recovery_proof_reader_admission.py tests/test_framework_release_startup.py tests/test_framework_release_workers.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_framework_approval_recovery.py::test_separate_workers_reconcile_native_result_after_hard_kill_and_finish_sibling -q -rs --tb=short
+# 125 passed，710.87 秒，exit 0，无 skip／deselect
+```
+
+原消费方会话 `73597` 持续观察至真实终态，没有因观察超时重启；本节所有已启动 pytest 均已取得终态。最终组合覆盖 legacy、真实 PG／Redis 的准入／owner／审批／proof、真实源码归档 Worker、配置启动及整个六参数独立 Worker 强杀函数，保留精确原生 messages 比较。启动专项后端空端口、历史 Worker 受控终态、同一 venv，以及普通准入 Harness 的 Runtime 替身边界仍在；独立强杀场景使用固定官方框架／本地合成 HTTP 与受控工具，最高证据为对应 E2，不代表真实供应商／领域 Runner 或双制品独立依赖安装。没有把这两组当成历史完整 20／10 文件失败组合全绿。
+
+配置边界校正：重新阅读原 `test_agent_task_dispatch.py::harness` 与 `core/config.py`，前者通过既有 `get_settings()` 获取连接配置，后者 `SettingsConfigDict.env_file` 指向后端 `.env`。因此本轮只可声称**没有用工具直接打开、输出或修改实际 `.env`／认证内容**，不能把沿原 fixture 的配置加载说成完全不访问 `.env`；前节“没有读取实际 .env”的宽泛表述也不能作为零访问证明。没有复制凭据到测试、日志、文档或提交；不删除历史记录，用本事实限定其边界。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际 exit 0；ruff／mypy／build／wheel／setuptools 经 find_spec 再确认未安装，未跑独立 lint／typecheck／构建安装，不安装依赖。前端无改动，未重跑。没有启动／重启 PG／Redis、运行 Docker 验收、付费模型调用、目标扫描、生产路由变更、DDL 或数据迁移；测试资源仍按原隔离 fixture 管理，不清理 §158 未归属残留。
+
+### 提交对应与剩余出口
+
+v4 F／§14.1–14.2、H11 → 本节 → 原 Dispatcher、两个已有测试、原控制说明和本记录共 5 文件 → 上述红绿、469／125 两组最终回归 → 独立提交 `【fix】前移 Worker 能力准入并固定投递读者`，ID 见 Git 历史和交付；不推送、不提交用户草稿或测试制品。
+
+本步没有完成正式绑定创建／冻结／发布和真实 Prompt／Skill／工具／模型资产关联；后续沿原 submit_v2 原子受理事务衔接真实版本资产，不推断历史关联，并在旧初始化读者升级／隔离前保持引用写者关闭。§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位，当前样本通过不撤销历史失败。全部格式／行为清单、双制品独立安装／完整部署、一致备份恢复、灰度回滚排空、MySQL 实库、完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端及 E3/E4 继续按 v4 保留。整体目标仍 active，本子步不代表 F 或全系统完成。

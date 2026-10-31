@@ -82,7 +82,7 @@ class AgentTaskDispatcher:
         self._coordinator = coordinator
 
     def set_framework_capabilities(self, capabilities: FrameworkWorkerCapabilities) -> None:
-        """Install the v2 CLI's artifact capabilities before delivery starts."""
+        """Install capabilities for subsequent deliveries, not an emergency stop."""
         self._framework_capabilities = capabilities
 
     def _record_submission(self, command) -> None:
@@ -600,11 +600,21 @@ class AgentTaskDispatcher:
         queue: str,
         runtime_binding: RuntimeBinding | None = None,
     ) -> None:
+        capabilities = self._framework_capabilities
+        if runtime_binding is not None and capabilities is None:
+            # Without a reader, even a lookup can turn an unavailable durable
+            # format into a delivery failure. Do not decode or claim it.
+            reason = "framework_worker_capabilities_unavailable"
+            LOGGER.warning("agent_v2_capability_unavailable", extra={
+                "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
+                "runtime_kind": runtime_binding.runtime_kind, "runtime_version": runtime_binding.runtime_version,
+                "worker_id": worker_id, "reason": reason})
+            raise TaskDeferred(reason)
         if runtime_binding is None:
             stored = await self._tasks.get(command.task_id)
         else:
             try:
-                stored = await self._tasks.get(command.task_id, framework_capabilities=self._framework_capabilities)
+                stored = await self._tasks.get(command.task_id, framework_capabilities=capabilities)
             except TaskDeferred as exc:
                 LOGGER.warning("agent_v2_binding_reader_unavailable", extra={
                     "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
@@ -629,22 +639,20 @@ class AgentTaskDispatcher:
             if stored.runtime_binding != runtime_binding:
                 raise ValueError("Agent command runtime binding does not match the durable task")
             try:
-                if self._framework_capabilities is None:
-                    raise TaskDeferred("framework_worker_capabilities_unavailable")
-                self._framework_capabilities.require(runtime_binding, operation=command.operation)
+                capabilities.require(runtime_binding, operation=command.operation)
                 stage_version = await self._tasks.get_framework_message_stage_version(
                     command.task_id, session_id=command.session_id)
-                self._framework_capabilities.require_message_stage(stage_version)
+                capabilities.require_message_stage(stage_version)
                 if command.operation == "message" and stored.status in {"queued", "waiting_resource"}:
                     try:
                         stage = await self._tasks.get_framework_message_stage(command.task_id, session_id=command.session_id)
                     except ValidationError as exc:
-                        self._framework_capabilities.defer_unsupported_format(
+                        capabilities.defer_unsupported_format(
                             exc, reason="framework_message_stage_format_unavailable")
                         raise
                     if stage is None or stage.phase in {"submitted", "orchestrating", "orchestrated"}:
                         session = await self._sessions._require_session(command.session_id)
-                        self._framework_capabilities.require_transcript_format(session, runtime_binding)
+                        capabilities.require_transcript_format(session, runtime_binding)
             except TaskDeferred as exc:
                 LOGGER.warning("agent_v2_capability_unavailable", extra={
                     "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
@@ -655,7 +663,7 @@ class AgentTaskDispatcher:
                 raise
             task = await self._tasks.claim(
                 command.task_id, worker_id=worker_id, expected_binding=runtime_binding,
-                framework_capabilities=self._framework_capabilities,
+                framework_capabilities=capabilities,
                 check_model_ledger=self._framework_model_calls is not None,
             )
         else:

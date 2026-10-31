@@ -148,6 +148,58 @@ async def test_v2_dispatcher_requires_persisted_binding_and_executes_once():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["message", "message_recover", "approval_resume", "approval_recover", "framework_reconcile"])
+async def test_unconfigured_v2_worker_defers_before_any_durable_binding_lookup(operation, caplog):
+    selected = binding()
+    tasks = _Tasks(stored_task(selected))
+    tasks.stored.operation = operation
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None)
+    wire = command(selected).model_dump(mode="json")
+    wire["operation"] = operation
+
+    with pytest.raises(TaskDeferred, match="framework_worker_capabilities_unavailable"):
+        await dispatcher.handle_v2(QueuedTask("unconfigured-reader", wire), worker_id="unconfigured-worker")
+
+    assert tasks.binding_readers == [] and tasks.claimed == []
+    records = [row for row in caplog.records if row.message == "agent_v2_capability_unavailable"]
+    assert len(records) == 1 and records[0].reason == "framework_worker_capabilities_unavailable"
+    assert records[0].task_id == "task-1" and records[0].exc_info is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", ["lookup", "stage_version"])
+async def test_one_delivery_keeps_its_captured_capabilities_across_awaited_reads(window, monkeypatch):
+    selected = binding()
+    tasks = _Tasks(stored_task(selected))
+    captured = FrameworkWorkerCapabilities("a" * 64, True)
+    replacement = FrameworkWorkerCapabilities("a" * 64, False)
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None, framework_capabilities=captured)
+    method = "get" if window == "lookup" else "get_framework_message_stage_version"
+    original = getattr(tasks, method)
+
+    async def replace_after_read(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        dispatcher.set_framework_capabilities(replacement)
+        return result
+
+    monkeypatch.setattr(tasks, method, replace_after_read)
+    executions = []
+
+    async def execute(task):
+        executions.append(task.id)
+
+    dispatcher._execute = execute
+    delivery = QueuedTask("captured-reader", command(selected).model_dump(mode="json"))
+    await dispatcher.handle_v2(delivery, worker_id="captured-worker")
+    assert tasks.binding_readers == [captured] and tasks.framework_capabilities == [captured]
+    assert executions == ["task-1"] and dispatcher._framework_capabilities is replacement
+    with pytest.raises(TaskDeferred, match="framework_deepagents_unavailable"):
+        await dispatcher.handle_v2(delivery, worker_id="next-worker")
+    assert tasks.binding_readers == [captured, replacement]
+    assert tasks.claimed == ["captured-worker"] and executions == ["task-1"]
+
+
+@pytest.mark.asyncio
 async def test_legacy_lookup_deferral_is_not_reclassified_as_a_framework_binding_wait(monkeypatch, caplog):
     selected = binding()
     tasks = _Tasks(stored_task(selected))
@@ -284,13 +336,14 @@ async def test_v2_dispatcher_rejects_binding_drift_before_claim():
     command_binding = binding()
     stored_binding = binding(runtime_version="langgraph-1.2")
     tasks = _Tasks(stored_task(stored_binding))
-    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None)
+    capabilities = FrameworkWorkerCapabilities("a" * 64, True)
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None, framework_capabilities=capabilities)
     delivery = QueuedTask("message-1", command(command_binding).model_dump(mode="json"))
 
     with pytest.raises(ValueError, match="runtime binding"):
         await dispatcher.handle_v2(delivery, worker_id="v2-worker")
 
-    assert tasks.claimed == []
+    assert tasks.binding_readers == [capabilities] and tasks.claimed == []
 
 
 @pytest.mark.asyncio

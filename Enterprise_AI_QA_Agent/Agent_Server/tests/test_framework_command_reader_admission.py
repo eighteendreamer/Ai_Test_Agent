@@ -32,6 +32,117 @@ def change_persisted_binding(h, target, **changes):
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("target", ["task", "owner", "unchanged"])
+@pytest.mark.parametrize("retries", [0, 3])
+async def test_unconfigured_worker_keeps_original_delivery_before_binding_decode(admission, target, retries, caplog):
+    h = admission
+    await submit(h)
+    if target != "unchanged":
+        change_persisted_binding(h, target, future_field="private-unconfigured-reader-input")
+    selected = AgentTaskDispatcher(h.settings, h.tasks, h.sessions, h.resources, framework_model_calls=h.calls)
+    queue = RedisTaskQueue(h.settings.database.redis_url,
+        stream=h.settings.orchestration.agent_task_v2_stream, group="unconfigured-binding-reader")
+    await queue.connect()
+    received, executions = [], []
+
+    async def execute(task):
+        executions.append(task.id)
+
+    selected._execute = execute
+
+    async def handle(item):
+        received.append(item.retry_count)
+        await selected.handle_v2(item, worker_id="unconfigured-binding-worker")
+
+    try:
+        assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+        entries, before = await h.redis.xrange(queue.stream), database_state(h)
+        assert await RedisTaskWorker(queue, consumer="unconfigured-binding-worker", handler=handle,
+            block_ms=1, max_retries=retries).run_once() == 0
+        assert received == [0] and executions == [] and database_state(h) == before
+        assert await h.redis.xrange(queue.stream) == entries
+        assert (await h.redis.xpending(queue.stream, queue.group))["pending"] == 1
+        assert await h.redis.xlen(queue.stream + ":dead_letter") == 0
+        pending = await queue.consume(consumer="unconfigured-binding-worker", stream_id="0", block_ms=0)
+        assert len(pending) == 1 and pending[0].message_id == entries[0][0] and pending[0].retry_count == 0
+        assert pending[0].payload == h.command.model_dump(mode="json")
+        records = [row for row in caplog.records if row.message == "agent_v2_capability_unavailable"]
+        assert len(records) == 1 and records[0].reason == "framework_worker_capabilities_unavailable"
+        assert records[0].task_id == h.command.task_id and records[0].exc_info is None
+        assert "private-unconfigured-reader-input" not in caplog.text
+    finally:
+        await queue.close()
+
+
+@pytest.mark.asyncio
+async def test_compatible_reader_can_finish_the_original_unconfigured_delivery(admission):
+    h = admission
+    task = await submit(h)
+    selected = AgentTaskDispatcher(h.settings, h.tasks, h.sessions, h.resources, framework_model_calls=h.calls)
+    queue = RedisTaskQueue(h.settings.database.redis_url,
+        stream=h.settings.orchestration.agent_task_v2_stream, group="reader-installation")
+    await queue.connect()
+
+    async def handle(item):
+        await selected.handle_v2(item, worker_id="unconfigured-binding-worker")
+
+    try:
+        assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+        entries, before = await h.redis.xrange(queue.stream), database_state(h)
+        assert await RedisTaskWorker(queue, consumer="unconfigured-binding-worker", handler=handle,
+            block_ms=1, max_retries=0).run_once() == 0
+        assert database_state(h) == before and h.runtime.calls == []
+        selected.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, True))
+        # Same existing PEL entry, no enqueue/retry and no wall-clock assumption.
+        await h.redis.xclaim(queue.stream, queue.group, "installed-binding-reader", 0, [entries[0][0]], justid=True)
+        pending = await queue.consume(consumer="installed-binding-reader", stream_id="0", block_ms=0)
+        assert len(pending) == 1 and pending[0].message_id == entries[0][0] and pending[0].retry_count == 0
+        assert pending[0].payload == h.command.model_dump(mode="json")
+        await selected.handle_v2(pending[0], worker_id="installed-binding-reader")
+        assert await queue.ack_owned(pending[0], consumer="installed-binding-reader")
+        saved = await h.tasks.get(task.id)
+        assert saved.status == "completed" and saved.attempt_no == 1
+        assert h.runtime.calls == [h.binding.turn_id]
+        assert not await queue.pending() and await h.redis.xrange(queue.stream) == entries
+        assert await h.redis.xlen(queue.stream + ":dead_letter") == 0
+    finally:
+        await queue.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("window", ["lookup", "stage_version"])
+async def test_captured_reader_reaches_real_claim_and_replacement_only_affects_next_delivery(admission, window, monkeypatch):
+    from tests.test_framework_model_reader_admission import deliver
+
+    h = admission
+    await submit(h)
+    captured = FrameworkWorkerCapabilities("a" * 64, True)
+    selected = dispatcher(h, captured)
+    method = "get" if window == "lookup" else "get_framework_message_stage_version"
+    original, claim = getattr(h.tasks, method), h.tasks.claim
+    claim_readers = []
+
+    async def replace_after_read(*args, **kwargs):
+        result = await original(*args, **kwargs)
+        selected.set_framework_capabilities(FrameworkWorkerCapabilities("a" * 64, False))
+        return result
+
+    async def claim_with_reader(*args, **kwargs):
+        claim_readers.append(kwargs.get("framework_capabilities"))
+        return await claim(*args, **kwargs)
+
+    monkeypatch.setattr(h.tasks, method, replace_after_read)
+    monkeypatch.setattr(h.tasks, "claim", claim_with_reader)
+    await deliver(h, selected)
+    assert claim_readers == [captured] and h.executions == [h.command.task_id]
+    before = database_state(h)
+    with pytest.raises(TaskDeferred, match="framework_deepagents_unavailable"):
+        await deliver(h, selected)
+    assert database_state(h) == before and claim_readers == [captured]
+    assert h.executions == [h.command.task_id] and h.claimed_epochs == [1]
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("target", ["task", "owner"])
 @pytest.mark.parametrize("status", ["queued", "claimed", "running", "cancelled"])
 async def test_future_persisted_binding_defers_raw_claim_without_mutation(admission, target, status):

@@ -66,6 +66,8 @@ v2 CLI 未传显式 `--release-store`／`--release-reference` 时也消费同一
 
 ### 持久绑定的兼容读取
 
+v2 Worker 未装配能力对象时，在任何持久任务 lookup 前以 `framework_worker_capabilities_unavailable` 保留原投递，不尝试用默认严格读者解码新绑定。一次投递只捕获一份能力对象，lookup、格式核对与 claim 复用它；安装替换能力仅影响后续投递，不是运维紧急停止或撤销已授予 owner 的入口。命令格式解析仍先使用原 codec，legacy 投递不受此能力前置影响。
+
 v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原 `RuntimeBinding` codec。只有明确注入 Worker 能力的读取才把严格新增字段、未知 runtime kind／model transport 或引用版本分类为 `framework_binding_format_unavailable`，沿原 TaskDeferred 保留 Redis 原投递，不增加 retry／dead letter 或领取副作用。claim 仍按 Session → owner → task 原顺序加锁，并在等待 Session 锁后重新读取；不能靠锁前校验代替事务内核对。
 
 已知约束、摘要／fingerprint、合法格式下的身份不一致仍是原错误，不转为兼容等待；读能力不授予执行或恢复权限。普通 task API／未注入能力的底层调用、其他 owner 写权限端口和初始化读者保留原契约，不能据此认定所有旧初始化读者已升级。固定诊断事件为锁前 `agent_v2_binding_reader_unavailable` 和锁内 `framework_binding_reader_unavailable`，保留任务／Worker 标识，不输出原绑定或异常正文。真实 PG／Redis、失租／终态和锁等待反例见 `tests/test_framework_command_reader_admission.py`。
