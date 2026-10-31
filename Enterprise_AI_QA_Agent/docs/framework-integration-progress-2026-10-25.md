@@ -7899,3 +7899,63 @@ $env:PYTHONIOENCODING='utf-8'
 v4 B／§4、F／§14.1 → 本节 → 新内部准备模块、原模型／预算 schema 和 Worker 能力、三个已有测试、控制说明与本记录共 9 文件 → 本节实际红绿、964 项扩大组、最终 134 项与精确协议分类验证 → 独立提交 `【feat】准备真实制品绑定并冻结模型语义参数`，ID 见 Git 历史和交付；不推送、不混入用户草稿或测试制品。
 
 §159／160 时间异常与 §166 子进程 RuntimeError 仍未定位，本轮新样本通过不撤销历史失败，也不等于历史完整失败组合全部通过；§158 未归属共享 checkpoint 残留不猜测清理。正式新绑定的 API 原子受理／完整有效输入冻结与发布、所有旧初始化读者升级／隔离、完整格式与行为清单、双制品独立安装／完整部署、一致备份恢复、灰度回滚排空、MySQL 实库、全部 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端及 E3/E4 继续按 v4 保留。整体目标继续 active，本子步不代表 B、F 或全系统完成。
+
+## 173. B／§4.1、F／§14.1：接入原消息受理事务并分离请求幂等与执行证明（2026-11-01）
+
+### 续接、边界与依据 → 做法
+
+续接 `cf8cc8c8350498fc5fe0e476938c43d9e4384f1f`／§172，核对 v4、最新实施记录、原 Dispatcher／受理事务、Session 图前阶段、统一上下文与 graph-input 消费。已有语义输入、ExecutionRequest、图输入及恢复链不重做；原 §54 messages 顺序修复及严格比较保留。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。
+
+实际缺口是 §172 准备结果尚无原消息入口的消费方，且 API 重试每次都会分配候选 Turn／时间，不能拿候选绑定充当请求幂等身份。依据现有 `_submit_sync()`／`submit_v2()`、Session 行锁与同连接原子受理 → 在原 store 增加准备式消息受理，先核对原请求，再仅为胜出的首次意图准备真实制品／模型材料，复用原写入函数；不新建调度器。依据原 `_v2_input_hash()`、`FrameworkMessageStages._require_input()` 和 message recovery → 任务仍保存含绑定／预算的原完整执行摘要，请求重试只读取已存 payload 核对意图，不改执行证明或恢复权限。
+
+依据 `TestModeIntentService` 的 `parameters.objective=normalized_message`、原 Prompt 全上下文投影与实际 SDK wire → 原生消息拥有用户正文，完整上下文 system 不再渲染分类中该原文副本，其他参数／原分类资产及 legacy 渲染不变。依据本地《Agent轨迹与协议鲁棒性》§04.5 和《评测工程化与CICD》的幂等／轨迹／版本追溯要求 → 同时断言请求、事务状态、执行摘要、真实投递、实际请求和应用结果，不以非空回答为通过。没有引入依赖或调用新模型 API。
+
+### TDD、真实失败与修复
+
+1. 新入口并发／legacy 重试两项先实际 **2 failed、53 deselected，60.09 秒**，失败为缺少 `framework_submission_preparer` 构造参数；接入后该两项实际 **2 passed、53 deselected，49.92 秒**。原 8 次 HTTP 相同请求只调用一次准备端口，原 key 不同 payload 仍 409。
+2. 扩展边界组曾 **1 failed、8 passed、53 deselected，146.25 秒**：测试运行中又修改生产源码，导致模块级真实归档快照与安装源码不一致。此为验证组织错误；未修改 verifier，之后固定源码再重跑，不能将此失败当成目标功能红测。
+3. 新完整链路实际 **1 failed、6 passed、61 deselected，109.23 秒**，任务为 recovery_required，原阶段明确报 `Initial message stage input digest differs from its admission`。初版把 API 原始请求 hash 写进 bound 任务，破坏了原绑定＋预算证明。根因修复为分离两种身份：API 幂等沿原消息 key、读取已存 payload 核对；任务仍使用原 `_v2_input_hash(payload,binding,budget)`，不改 stage／recovery 校验，不新增 DB 字段或回填历史记录。直接 submit_v2 及其他操作保持原严格摘要规则。
+4. 修复后扩大目标组 **1 failed、7 passed、60 deselected，135.48 秒**，真实图前装配发现小型上下文夹具缺少代码审查模式自动添加的 `ci-pipeline-review` 等正文。补齐本地该模式的真实默认 Skill 文件，保留测试自建 tdd-review。期间独立用例 **1 failed，33.74 秒** 是试图重复创建已有 tdd-review 目录；修夹具而非覆盖它。随后 **1 failed，45.52 秒** 是夹具没有装配原 `FrameworkApprovalProjection`；补齐真实 PostgreSQL ToolJob store／原治理与投影服务，不给生产代码增加 fallback 或伪造 owner。
+5. 完整链路接着实际 **1 failed，50.98 秒**：已完成的图请求中 `ORIGINAL_CURRENT_INPUT` 出现两次。定位到分类参数 objective 在 detected_intent 中再次进入 system。以原真实分类器补纯红测，v2.2／v2.3 实际 **2 failed、18 deselected，4.69 秒**；按上述唯一正文来源修复后，两个上下文／Prompt 模块实际 **22 passed，5.01 秒**。没有按文本相等去重、删除原分类参数、忽略 messages 或放宽断言。
+
+### 实现与消费契约
+
+- `AgentTaskDispatcher` 末尾新增默认 None 的内部同步准备端口，调用方显式提供受信服务端闭包；客户端 DTO／metadata／context 不能安装它。捕获本次端口和 Worker 能力；新意图关闭时不调用准备，返回 None 明确保留该模式 legacy；准备异常明确失败，不回退。
+- 原 `submit_prepared_message()` 在原 Session 行锁内先做首次意图查询，随后才准备候选值；复用原事务保存绑定／owner、预算、原用户消息／不可变顺序、stage、task、事件与 outbox。同步准备只读本机制品和已捕获配置，不可在持锁期间调用模型／图／工具、网络、额外 DB／队列或异步服务。没有跨系统事务保证，生产并发性能未验收。
+- 已受理任务优先于当前准备配置：并发、提交后丢 ACK、安装／移除端口或关闭新接入均复用首次任务／Turn／预算 deadline，不能重新读取可变配置替换原绑定。丢 ACK 用例在真实 store 提交后于 Dispatcher 调用端注入异常再重试，不是实际网络断连演练。新旧 API 路径共用原消息 key；底层直接 submit_v2 的原严格 key／摘要不改。
+- 新绑定要求显式、同制品能力与原预算 reader 通过；缺能力、制品不匹配、旧预算读者或 runtime 不可用均不写入。绑定／预算仍重验原 codec；准备、身份、预算冻结后、stage 后、消息／事件后失败分别验证整体回滚。另故意破坏隔离任务的执行摘要，实际执行仍被原阶段拦截为 recovery_required，模型预算消耗为零，不把请求幂等当执行许可。
+- 复用真实 `SessionService`、统一装配、`FrameworkMessageStages`、原官方 adapter／fenced saver、模型账本和唯一 finalizer；不新造图或恢复分支。新成功／复用／失败日志仅有限任务／绑定标识、schema／错误类型，准备失败不泄露原输入；提交 metric／日志按实际返回任务绑定选择流，兼容重试不能被候选 legacy command 错记流。
+- 已搜索准备端口、受理 helper／幂等查询的所有调用点、原 claim／阶段／恢复、main 和前端类型。新增参数均默认兼容；其他原受理操作保持默认精确校验。前端现有可选 RuntimeBinding／release 类型已覆盖返回值，无公共路由／DTO／schema、前端、DDL、依赖或配置变更。同步原控制说明。
+
+### 当前源码验证与证据范围
+
+```powershell
+# cwd: Agent_Server；复用已启动 PG／Redis，不运行 Docker／MySQL
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_binding.py tests/test_framework_model_admission.py tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_framework_message_stages.py tests/test_framework_turn_context.py tests/test_prompt_assembly_service.py -q -rs --tb=short
+# 178 passed，660.39 秒，exit 0，无 skip／deselect
+```
+
+最终七模块包含全部新边界：真实 FastAPI 测试 app 的原路由、PG 原子受理、Redis outbox／Worker、§172 真实归档准备的 v2.3 绑定＋预算 v2、真实模式默认 Skill／平台装配／工具 schema 与原治理投影、固定官方 SDK／框架／PostgreSQL saver、本地合成 HTTP、原图输入与应用结果、重复投递只 ACK。冻结回执后改写测试 Skill 正文，实际 wire 仍为原冻结正文；Skill／Memory／观察／MCP／附件和用户正文标记逐一恰好一次，原 graph-input 和最终消息／预算身份保留。
+
+该链路使用手动装配的测试 app，不是完整 main lifespan／前后端部署；检索、GeneralSettings 与 Agent／模型配置端口受控，Session 无正式项目对象，模型返回合成文本／usage，未发业务工具调用，不代表真实代码审查项目、质量基线、领域工具效果、真实供应商或 E3。源码快照与历史源码进程继续复用同一 venv，不是双制品独立依赖安装或 E4。配置事实仍按 §171：实库 Harness 的 get_settings() 会沿 Settings 加载后端 `.env`；未用工具直接打开、输出或修改实际 `.env`／认证内容。
+
+```powershell
+# 同一最终源码、同一上述环境；完整九文件扩大组
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_v2_worker_contract.py tests/test_framework_model_reader_admission.py tests/test_framework_stage_reader_admission.py tests/test_framework_graph_input_asset.py tests/test_framework_context_transcript.py tests/test_framework_context_runtime.py tests/test_framework_route_rollback.py tests/test_framework_release_startup.py tests/test_framework_release_workers.py -q -rs --tb=short
+# 591 passed，518.79 秒，exit 0，无 skip／deselect
+```
+
+两组最终源码合计 **769 passed**，覆盖原 v1／v2／预算／绑定／消息阶段、旧 Worker 和严格格式读取、跨 Turn／原生摘要／完整上下文、图输入固定消费、关闭新接入、制品启动及历史源码消费。不是 §159 原完整 20 文件或 §160 原完整 10 文件组合重跑，不据此撤销历史失败。所有已启动 pytest 均取得真实终态，没有留着测试运行就交付，也未用历史绿色代替本轮结果。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过；另用 AST 核实 main 的真实 Dispatcher 构造未传准备端口，输出 `production_dispatcher_preparer_unconfigured`。该 AST 核实不替代完整 main lifespan。`find_spec` 确认 ruff／mypy／build／wheel／setuptools 均未安装，未执行独立 lint／typecheck／构建安装，不新增依赖。前端类型已核对但本轮无前端修改，未重跑前端。未直接读取／修改实际 `.env`、启动／重启 PG／Redis、运行 Docker／MySQL、调用付费供应商、扫描目标或修改生产路由；原测试 fixture 仅清理本轮隔离资源，§158 未归属残留不猜测删除。
+
+### 提交对应与剩余出口
+
+v4 B／§4.1／§5 唯一当前正文、F／§14.1 → 本节 → 原 Dispatcher、PostgreSQL task store、PromptAssembly，两个既有测试、原控制说明与本记录共 7 文件 → 本节红绿、实际完整上下文请求、最终 178／591 两组 → 独立提交 `【feat】接入消息受理并固定请求与执行身份`，ID 见 Git 历史与交付；不推送，不混入用户 v3 草稿或测试制品。
+
+本子步只完成原消息入口的显式、默认未安装的接入及其隔离验收，**没有为真实 main／CLI 配置新写者或开放模式**；同步准备端口不是正式模型选择／配置装配策略，其他 headless／Coordinator／审批入口也不因此自动迁移。后续仍需正式装配／发布策略、所有旧初始化读者升级或隔离、完整有效输入与项目／用例固定版本冻结验收、完整格式／行为能力审计、双制品独立依赖安装及完整部署、一致备份恢复、灰度回滚排空。§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位；全部 A2/A3/B/C/D/E/F、H01–H12、真实项目／MySQL／供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 保持 v4 原出口。整体 goal 继续 active，本次接入验收不代表 B、F 或全系统完成。

@@ -9,6 +9,7 @@ import sys
 
 import pytest
 
+from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.runtime_binding import RuntimeBinding
@@ -278,6 +279,397 @@ async def test_prepared_release_binding_and_semantic_configuration_commit_in_the
     assert (await h.calls.snapshot(h.binding)).policy == prepared.model_budget
     await h.tasks.finish(claimed, status="cancelled", error_code="prepared_binding_contract_probe")
     assert (await h.tasks.get(task.id)).runtime_binding == h.binding and h.runtime.calls == []
+
+
+def prepared_dispatcher(h, source_release, prepare):
+    from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher
+
+    dispatcher = AgentTaskDispatcher(h.settings, h.tasks, h.sessions, h.resources,
+        framework_capabilities=FrameworkWorkerCapabilities.from_release(*source_release, deepagents_available=True),
+        framework_model_calls=h.calls, framework_submission_preparer=prepare)
+    h.app.state.agent_task_dispatcher = dispatcher
+    h.sessions.set_agent_task_dispatcher(dispatcher)
+    return dispatcher
+
+
+@pytest.mark.asyncio
+async def test_http_prepared_submission_serializes_first_binding_and_reuses_it_after_route_changes(
+        admission, isolate_recovery_stores, current_source_release):
+    import asyncio
+    import httpx
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_model_admission import counts
+
+    h = admission
+    prepared = []
+
+    def prepare(session, request, command):
+        assert session.id == command.session_id == request.session_id
+        assert request.turn_id == command.turn_id and request.model_key == "primary"
+        value = prepare_submission(current_source_release, session_id=command.session_id, turn_id=command.turn_id,
+            binding_id="http-" + command.task_id, created_at=command.created_at)
+        prepared.append(value)
+        return value
+
+    dispatcher = prepared_dispatcher(h, current_source_release, prepare)
+    body = payload("prepared HTTP input", key="prepared-http", model_key="primary").model_dump(mode="json")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
+        responses = await asyncio.gather(*(client.post(f"/sessions/{h.session_id}/messages", json=body)
+            for _ in range(8)))
+        assert [response.status_code for response in responses] == [202] * 8
+        assert len({response.json()["task"]["id"] for response in responses}) == 1
+        task_id = responses[0].json()["task"]["id"]
+        # Same API idempotency identity survives removing the new admission
+        # route; retrying must not create an unbound second Turn.
+        h.app.state.agent_task_dispatcher = h.dispatcher
+        retry = await client.post(f"/sessions/{h.session_id}/messages", json=body)
+        assert retry.status_code == 202 and retry.json()["task"]["id"] == task_id
+        h.app.state.agent_task_dispatcher = dispatcher
+        conflict = await client.post(f"/sessions/{h.session_id}/messages", json={**body, "content": "different"})
+        assert conflict.status_code == 409
+    assert len(prepared) == 1 and h.runtime.calls == []
+    assert counts(h) == dict(tasks=1, owners=1, outbox=1, budgets=1, messages=1)
+    task = await h.tasks.get(task_id)
+    assert task.runtime_binding == prepared[0].binding and task.turn_id == prepared[0].binding.turn_id
+    assert (await h.calls.snapshot(task.runtime_binding)).policy == prepared[0].model_budget
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT stream,payload FROM {h.settings.database.postgres_task_outbox_table}")
+        row = cur.fetchone()
+        cur.execute(f"SELECT input_hash,input_payload FROM {h.settings.database.postgres_agent_task_table}")
+        original = cur.fetchone()
+    assert original["input_hash"] == h.tasks._v2_input_hash(original["input_payload"], task.runtime_binding,
+        prepared[0].model_budget)
+    assert row["stream"] == h.settings.orchestration.agent_task_v2_stream
+    assert row["payload"]["schema_version"] == 2
+    assert row["payload"]["runtime_binding"] == task.runtime_binding.model_dump(mode="json")
+    session = await h.store.get_session(h.session_id)
+    assert session.messages[0].metadata["turn_id"] == task.turn_id
+    assert session.messages[0].metadata["context_eligible"] is False
+
+
+@pytest.mark.asyncio
+async def test_http_legacy_retry_after_installing_preparer_does_not_rebind(admission,
+        isolate_recovery_stores, current_source_release):
+    import httpx
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_model_admission import counts
+
+    h = admission
+    body = payload(key="legacy-first").model_dump(mode="json")
+
+    def unexpected(*args):
+        pytest.fail("An accepted legacy request must not acquire a new runtime binding")
+
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
+        first = await client.post(f"/sessions/{h.session_id}/messages", json=body)
+        prepared_dispatcher(h, current_source_release, unexpected)
+        retry = await client.post(f"/sessions/{h.session_id}/messages", json=body)
+    assert first.status_code == retry.status_code == 202
+    assert first.json()["task"]["id"] == retry.json()["task"]["id"]
+    assert counts(h) == dict(tasks=1, owners=0, outbox=1, budgets=0, messages=1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["preparation", "identity", "budget", "stage", "event"])
+async def test_http_prepared_submission_rolls_back_every_admission_fact_and_can_retry(admission,
+        isolate_recovery_stores, current_source_release, monkeypatch, caplog, failure):
+    import httpx
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_model_admission import counts
+    from src.runtime import framework_message_stages
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    h = admission
+    fail = True
+
+    def prepare(session, request, command):
+        if failure == "preparation" and fail:
+            raise ValueError("synthetic-private-preparer-input")
+        selected_session = "foreign-session" if failure == "identity" and fail else session.id
+        return prepare_submission(current_source_release, session_id=selected_session, turn_id=command.turn_id,
+            binding_id="rollback-" + command.task_id, created_at=command.created_at)
+
+    def after(original):
+        def injected(*args, **kwargs):
+            result = original(*args, **kwargs)
+            if fail:
+                raise ValueError("controlled admission failure")
+            return result
+        return injected
+
+    if failure == "budget":
+        monkeypatch.setattr(PostgresFrameworkModelCalls, "freeze_submission", after(PostgresFrameworkModelCalls.freeze_submission))
+    elif failure == "stage":
+        monkeypatch.setattr(framework_message_stages, "admit_message_stage", after(framework_message_stages.admit_message_stage))
+    elif failure == "event":
+        monkeypatch.setattr(h.tasks, "_event", after(h.tasks._event))
+    prepared_dispatcher(h, current_source_release, prepare)
+    body = payload(key="rollback-prepared").model_dump(mode="json")
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
+        response = await client.post(f"/sessions/{h.session_id}/messages", json=body)
+        assert response.status_code in {400, 409}
+        assert counts(h) == dict(tasks=0, owners=0, outbox=0, budgets=0, messages=0)
+        assert await h.store.list_events(h.session_id) == []
+        assert "synthetic-private-preparer-input" not in response.text + caplog.text
+        fail = False
+        retry = await client.post(f"/sessions/{h.session_id}/messages", json=body)
+    assert retry.status_code == 202
+    assert counts(h) == dict(tasks=1, owners=1, outbox=1, budgets=1, messages=1)
+
+
+@pytest.mark.asyncio
+async def test_explicit_preparer_can_keep_an_ineligible_mode_on_the_original_legacy_stream(admission,
+        isolate_recovery_stores, current_source_release):
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_model_admission import counts
+
+    h = admission
+    dispatcher = prepared_dispatcher(h, current_source_release, lambda *args: None)
+    receipt = await dispatcher.submit(h.session_id, payload(key="excluded-mode"))
+    assert receipt.task.runtime_binding is None
+    assert counts(h) == dict(tasks=1, owners=0, outbox=1, budgets=0, messages=1)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT stream,payload FROM {h.settings.database.postgres_task_outbox_table}")
+        row = cur.fetchone()
+    assert row["stream"] == h.settings.orchestration.agent_task_stream and row["payload"]["schema_version"] == 1
+
+
+@pytest.mark.asyncio
+async def test_disabled_new_turn_admission_never_invokes_the_installed_preparer(admission,
+        isolate_recovery_stores, current_source_release):
+    from tests.test_agent_task_dispatch import payload
+
+    h = admission
+
+    def unexpected(*args):
+        pytest.fail("Disabling new Turns must prevent preparation without removing bound execution capability")
+
+    dispatcher = prepared_dispatcher(h, current_source_release, unexpected)
+    h.settings.deep_agents.new_turns_enabled = False
+    receipt = await dispatcher.submit(h.session_id, payload(key="disabled-preparer"))
+    assert receipt.task.runtime_binding is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unsupported", ["absent", "release", "budget", "runtime"])
+async def test_prepared_http_writer_cannot_bypass_explicit_compatible_reader_capabilities(admission,
+        isolate_recovery_stores, current_source_release, unsupported):
+    import httpx
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_model_admission import counts
+
+    h = admission
+
+    def prepare(session, request, command):
+        return prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+            binding_id="capabilities-" + command.task_id, created_at=command.created_at)
+
+    dispatcher = prepared_dispatcher(h, current_source_release, prepare)
+    capabilities = dispatcher._framework_capabilities
+    dispatcher.set_framework_capabilities(None if unsupported == "absent" else replace(capabilities, **{
+        "release_reference": None} if unsupported == "release" else {
+        "model_budget_max_version": 1} if unsupported == "budget" else {"deepagents_available": False}))
+    async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
+        response = await client.post(f"/sessions/{h.session_id}/messages", json=payload().model_dump(mode="json"))
+    assert response.status_code == 400 and response.json()["detail"] == "Framework message preparation failed"
+    assert counts(h) == dict(tasks=0, owners=0, outbox=0, budgets=0, messages=0)
+
+
+@pytest.mark.asyncio
+async def test_prepared_http_retry_after_commit_loses_ack_does_not_prepare_again(admission,
+        isolate_recovery_stores, current_source_release, monkeypatch):
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_model_admission import counts
+
+    h = admission
+    prepared = []
+
+    def prepare(session, request, command):
+        assert not prepared, "A retry after commit must not re-read mutable release/model inputs"
+        value = prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+            binding_id="lost-ack-" + command.task_id, created_at=command.created_at)
+        prepared.append(value)
+        return value
+
+    dispatcher = prepared_dispatcher(h, current_source_release, prepare)
+    original = h.tasks.submit_prepared_message
+    committed = []
+
+    async def lost_ack(*args, **kwargs):
+        value = await original(*args, **kwargs)
+        committed.append(value)
+        raise RuntimeError("controlled post-commit lost acknowledgement")
+
+    monkeypatch.setattr(h.tasks, "submit_prepared_message", lost_ack)
+    with pytest.raises(RuntimeError, match="controlled post-commit"):
+        await dispatcher.submit(h.session_id, payload(key="lost-prepared-ack"))
+    monkeypatch.setattr(h.tasks, "submit_prepared_message", original)
+    retry = await dispatcher.submit(h.session_id, payload(key="lost-prepared-ack"))
+    assert retry.task == committed[0] and len(prepared) == 1
+    assert counts(h) == dict(tasks=1, owners=1, outbox=1, budgets=1, messages=1)
+
+
+@pytest.mark.asyncio
+async def test_prepared_api_idempotency_is_not_an_execution_digest_bypass(admission,
+        isolate_recovery_stores, current_source_release):
+    from src.infrastructure.redis_task_queue import QueuedTask
+    from tests.test_agent_task_dispatch import payload
+
+    h = admission
+
+    def prepare(session, request, command):
+        return prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+            binding_id="digest-" + command.task_id, created_at=command.created_at)
+
+    dispatcher = prepared_dispatcher(h, current_source_release, prepare)
+    receipt = await dispatcher.submit(h.session_id, payload(key="execution-digest"))
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"SELECT payload FROM {h.settings.database.postgres_task_outbox_table}")
+        wire = cur.fetchone()["payload"]
+        # Controlled corruption of this fixture's original proof. Returning an
+        # idempotent receipt is not permission to execute an altered task.
+        cur.execute(f"UPDATE {h.settings.database.postgres_agent_task_table} SET input_hash=%s WHERE id=%s",
+            ("0" * 64, receipt.task.id))
+    await dispatcher.handle_v2(QueuedTask("corrupt-prepared", wire), worker_id="digest-check")
+    task = await h.tasks.get(receipt.task.id)
+    assert task.status == "recovery_required" and h.runtime.calls == []
+    assert (await h.calls.snapshot(task.runtime_binding)).reserved_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_http_prepared_release_runs_full_context_graph_and_commits_original_assets(admission,
+        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch):
+    import httpx
+    import shutil
+    from types import SimpleNamespace
+    from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
+    from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
+    from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
+    from src.application.models.model_runtime_service import ModelRuntimeService
+    from src.application.runtime.runtime_service import RuntimeService
+    from src.application.runtime.tool_job_service import ToolJobService
+    from src.application.runtime.tool_runtime_service import ToolRuntimeService
+    from src.infrastructure.redis_task_queue import QueuedTask, RedisTaskQueue
+    from src.runtime.control import RuntimeControlRegistry
+    from src.runtime.framework_message_stages import FrameworkMessageStages
+    from src.runtime.framework_approval_projection import FrameworkApprovalProjection
+    from src.runtime.postgres_tool_job_store import PostgresToolJobStore
+    from src.runtime.redis_task_worker import RedisTaskWorker
+    from src.application.skills.skill_runtime_service import SkillRuntimeService
+    from src.registry.modes import ModeRegistry
+    from src.registry.skills import SkillRegistry
+    from src.schemas.framework_graph_input import parse_graph_input_asset
+    from tests.test_agent_task_dispatch import payload
+    from tests.test_framework_chat_models import _config, _provider
+    from tests.test_framework_turn_context import assembly_components, build_assembly
+
+    h = admission
+    h.settings.database.postgres_tool_artifact_table = h.prefix + "_artifacts"
+    job_store = PostgresToolJobStore(h.settings)
+    jobs = ToolJobService(job_store)
+    provider = DeepAgentCheckpointProvider(h.settings)
+    parts = assembly_components(tmp_path)
+    # HTTP orchestration adds the real mode's defaults. The small context-unit
+    # fixture has only tdd-review; supply the actual additional source bodies
+    # instead of weakening the production missing-Skill error or routing.
+    source_skills = SkillRegistry().skills_root
+    for key in ModeRegistry().get("code_review").default_skill_keys:
+        if key != "tdd-review":
+            shutil.copytree(source_skills / key, parts.skill_registry.skills_root / key)
+    parts.skill_registry = SkillRegistry(skills_root=parts.skill_registry.skills_root)
+    parts.skill_runtime_service = SkillRuntimeService(parts.skill_registry)
+    frozen_inputs = []
+    original_record = FrameworkMessageStages.record_graph_input
+
+    async def record(stages, owner, asset):
+        result = await original_record(stages, owner, asset)
+        frozen_inputs.append(parse_graph_input_asset(asset))
+        # The actual model request must use the already assembled original,
+        # not reopen mutable Skills after its graph-input receipt was saved.
+        parts.skill_file.write_text("# Changed Skill\nMUTATED_SKILL_BODY", encoding="utf-8")
+        return result
+
+    monkeypatch.setattr(FrameworkMessageStages, "record_graph_input", record)
+    try:
+        await job_store.initialize()
+        with _provider("openai_chat_completions") as (url, requests):
+            config = _config("openai_chat_completions", url, key="fake", is_active=True)
+            models = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config), h.settings)
+            owned = DeepAgentRuntimeAdapter(model_resolver=models.resolve_langchain_chat_model,
+                checkpointer_factory=provider.open, model_call_policy=FrameworkModelCallPolicy(
+                    calls=h.calls, model_config_resolver=models.get_model_config))
+            h.sessions._runtime_service = RuntimeService(graph=None, model_runtime_service=models,
+                tool_runtime_service=ToolRuntimeService(tool_job_service=jobs), tool_registry=parts.tool_registry,
+                runtime_control=RuntimeControlRegistry(), tool_job_service=jobs,
+                framework_approval_projection=FrameworkApprovalProjection(h.settings, sessions=h.store, jobs=jobs),
+                deep_agent_enabled=True, deep_agent_new_turns_enabled=False, deep_agent_bound_runtime_adapter=owned,
+                turn_context_assembly=build_assembly(parts), permission_service=parts.permission_service,
+                deep_agent_governed_tools_enabled=True)
+            prepared = []
+
+            def prepare(session, request, command):
+                selected = prepare_submission(current_source_release, session_id=session.id, turn_id=command.turn_id,
+                    binding_id="full-" + command.task_id, created_at=command.created_at,
+                    root_model_key="fake", model_configurations={"fake": config})
+                prepared.append(selected)
+                return selected
+
+            dispatcher = prepared_dispatcher(h, current_source_release, prepare)
+            body = payload("ORIGINAL_CURRENT_INPUT", key="full-context-http", model_key="fake", mode_key="code_review",
+                agent_key="context-reviewer", skill_keys=["tdd-review"], context={"requested_tool_keys": ["inspect_value"]},
+                attachments=[{"name": "context.txt", "text_excerpt": "ATTACHMENT_CONTEXT"}]).model_dump(mode="json")
+            async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
+                response = await client.post(f"/sessions/{h.session_id}/messages", json=body)
+            assert response.status_code == 202 and requests == []
+            task_id = response.json()["task"]["id"]
+            queue = RedisTaskQueue(h.settings.database.redis_url,
+                stream=h.settings.orchestration.agent_task_v2_stream, group="prepared-http", client=h.redis)
+            await queue.connect()
+            assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+            errors = []
+
+            async def handle(item):
+                try:
+                    await dispatcher.handle_v2(item, worker_id="full-context-http-worker")
+                except Exception as exc:
+                    errors.append(exc)
+                    raise
+
+            worker = RedisTaskWorker(queue, consumer="full-context-http-worker", handler=handle, block_ms=0)
+            assert await worker.run_once() == 1
+            if errors:
+                raise errors[0]
+            task = await h.tasks.get(task_id)
+            assert task.status == "completed" and task.runtime_binding == prepared[0].binding
+            assert len(requests) == len(frozen_inputs) == len(prepared) == 1
+            graph = frozen_inputs[0]
+            assert graph.runtime_preparation.identity.binding == task.runtime_binding
+            stage = FrameworkMessageStages(h.tasks).get(task_id, h.session_id)
+            assert stage.phase == "projected"
+            assert parse_graph_input_asset(stage.source_manifest["graph_input_asset"]) == graph
+            snapshot = await h.calls.snapshot(task.runtime_binding)
+            assert snapshot.policy == prepared[0].model_budget and snapshot.actual_tokens == 10
+            assert snapshot.reserved_calls == 1 and snapshot.calls[0].phase == "completed"
+            wire = json.dumps(requests[0]["body"], ensure_ascii=False)
+            for marker in ("FROZEN_SKILL_BODY", "OBSERVATION_CONTEXT", "MEMORY_CONTEXT", "MCP_CONTEXT",
+                "ATTACHMENT_CONTEXT", "ORIGINAL_CURRENT_INPUT"):
+                assert wire.count(marker) == 1, marker
+            assert "MUTATED_SKILL_BODY" not in wire and "code review pilot" not in wire
+            assert [kind for kind, _ in parts.reads] == ["observations", "memory", "mcp", "settings"]
+            session = await h.store.get_session(h.session_id)
+            assert [message.content for message in session.messages] == ["ORIGINAL_CURRENT_INPUT", "fixture answer"]
+            # Duplicate delivery may only ACK the existing committed result.
+            with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT payload FROM {h.settings.database.postgres_task_outbox_table}")
+                command_wire = cur.fetchone()["payload"]
+            await dispatcher.handle_v2(QueuedTask("duplicate-prepared", command_wire), worker_id="duplicate")
+            assert len(requests) == 1 and await h.calls.snapshot(task.runtime_binding) == snapshot
+    finally:
+        await provider.close()
+        with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+            cur.execute(f"DROP SCHEMA IF EXISTS {h.settings.deep_agents.checkpoint_schema} CASCADE")
+            cur.execute(f"DROP TABLE IF EXISTS {h.settings.database.postgres_tool_artifact_table}")
+            cur.execute(f"DROP TABLE IF EXISTS {h.settings.database.postgres_tool_job_table}")
 
 
 @pytest.fixture

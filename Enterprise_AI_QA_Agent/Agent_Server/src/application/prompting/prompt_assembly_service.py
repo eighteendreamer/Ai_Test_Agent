@@ -656,6 +656,12 @@ class PromptAssemblyService:
         input_envelope = dict(context_bundle.get("input_envelope") or {})
         input_routing = dict(context_bundle.get("input_routing") or {})
         mode_intent = dict(context_bundle.get("mode_intent") or {})
+        intent_parameters = mode_intent.get("parameters") or {}
+        if uses_turn_context_assembly(context_bundle) and isinstance(intent_parameters, dict):
+            # TestModeIntentService's objective is the normalized user body,
+            # not derived routing context. Native history owns that body;
+            # keep the original asset but do not promote its copy to system.
+            intent_parameters = {key: value for key, value in intent_parameters.items() if key != "objective"}
         user_request = str(state.get("user_message") or "").strip()
         normalized_input = str(state.get("normalized_input") or "").strip()
         sections = [
@@ -685,7 +691,7 @@ class PromptAssemblyService:
                         f"Suggested agent: {mode_intent.get('suggested_agent_key') or 'none'}\n"
                         f"Recommended skills: {self._format_csv(mode_intent.get('recommended_skills') or [])}\n"
                         f"Reasons: {self._format_csv(mode_intent.get('reasons') or [])}\n"
-                        f"Parameters: {mode_intent.get('parameters') or {}}"
+                        f"Parameters: {intent_parameters}"
                     )
                 ),
             ),

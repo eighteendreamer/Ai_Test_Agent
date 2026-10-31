@@ -59,7 +59,7 @@ v2 CLI 未传显式 `--release-store`／`--release-reference` 时也消费同一
 
 旧源码未导出这份目录时，归档探针保持旧清单原样，不补造空目录或回写旧制品；旧清单缺失不等于旧读者支持了新格式。现有普通读取、JSON 模式读取和 claim 前格式分类仍走原 reader，无新写入格式／版本上界变化。
 
-**发布限制不变**：所有旧初始化读者升级／隔离前，不得启用引用写者。原 API 普通消息受理仍走现有 legacy；正式新绑定创建／冻结入口尚待接入。源码归档验收复用当前 venv，不等于双制品独立依赖安装、完整后端部署或 E4。
+**发布限制不变**：所有旧初始化读者升级／隔离前，不得启用引用写者。应用默认未装配新消息准备端口，API 普通消息受理仍走现有 legacy；下述显式接入只在隔离 Harness 中启用。源码归档验收复用当前 venv，不等于双制品独立依赖安装、完整后端部署或 E4。
 
 - `tests/test_framework_release_startup.py`：配置、原安装校验 factory、实际 lifespan 的资源前顺序、CLI 配置分支、日志有限输出，以及恢复当前源码快照的新进程预检。新进程的 SQL／业务初始化明确替换为空端口，不是全后端 lifespan 验收。
 - `tests/test_framework_release_binding.py`／`test_framework_release_workers.py`：安装源码一致性、历史读者／真实 PG 与 Redis 的既有消费契约；具体结果和限制见实施记录。
@@ -85,6 +85,20 @@ v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原
 这一步不自动配置新写者或打开生产路由；普通 API 新消息仍走原 legacy 受理。所有初始化读者升级／隔离、完整有效输入冻结、发布与真实部署验收仍是上线前提。运行进程仍依赖可信且生命周期不可变的源码／依赖，不是热更新、ACL 或安全沙箱。
 
 验证落点：`test_framework_model_admission.py`（v1/v2、原子回滚／幂等、原结果材料及官方模型＋本地 HTTP）、`test_framework_model_reader_admission.py`（实库格式／身份错误分类、原 PEL 接续）、`test_framework_release_binding.py`（真实源码归档、内部准备、历史读者与恢复源码新进程）。临时源码仓库只用自身 `.gitattributes` 保留实际锁文件原始字节，不改用户 Git 配置；同一 venv 的恢复源码进程不代表独立依赖安装或完整 E4。
+
+### 显式接入原消息受理事务（v4 §4.1／§14.1）
+
+`AgentTaskDispatcher` 可由受信服务端装配 `framework_submission_preparer(session, execution_request, command)`；默认 `None`，真实 main／CLI 均未装配，不新增公共请求字段、配置或生产选路。该同步端口返回上面的 `PreparedFrameworkSubmission`，或明确返回 `None` 保留该模式的 legacy 路径；异常不回退。客户端 metadata／context 不得选择、替换或安装该端口。`new_turns_enabled=false` 时不调用准备端口，新意图仍走 legacy；重试则继续返回首次已受理任务，不改其已有绑定。
+
+原 `PostgresAgentTaskStore.submit_prepared_message()` 在既有 Session 行锁内先查同一消息幂等身份，再为首次请求调用准备端口，复用原同连接事务保存绑定／owner、模型预算、消息、stage、任务、事件和 outbox。准备端口必须同步、只读、无执行副作用；可校验已捕获的配置和本机制品，不能在持锁期间调用模型、图、工具、队列、额外 DB／网络或异步服务。此处不提供跨系统事务或撤销外部副作用的保证，也未验收生产并发性能。
+
+- **请求幂等与执行证明分开**：API 重试按原存储 payload 核对请求意图，沿原未加前缀的消息 key 与 legacy 共用首次受理身份；不使用新配置、随机 Turn 或新时间重新决定绑定。任务 `input_hash` 仍复用原 `_v2_input_hash(payload, binding, budget)`，stage／恢复仍逐项核验同一绑定与预算，不新增宽松执行摘要。直接 `submit_v2()` 及其他操作继续使用各自原严格摘要／幂等规则，无 DDL、格式升级或历史回填。
+- 并发、提交成功但响应丢失、后续关闭／移除／新增准备端口均不能生成第二个 Turn、替换模型快照或刷新预算 deadline；相同 key 不同 payload 仍 409。原准备失败、身份不符、预算／阶段／事件写入失败均回滚，允许同一请求重新受理，没有自动重跑已执行命令。
+- 首次新绑定须由显式的同制品 Worker 能力和原预算 reader 准入；能力缺失／制品不符／旧预算 reader 不可作为写入许可。绑定与预算经原 codec 重验，不能用 `model_copy()` 绕过。该本机检查不证明所有其他旧初始化读者已升级／隔离，仍不能据此开放生产写者。
+- 后续编排、上下文装配、graph-input、模型账本、原生终态及应用投影全部沿原 Worker 链；未在 Dispatcher 新造图、finalizer 或恢复分支。消息提交的日志／metric 按实际返回任务的绑定选择流，不能用本次候选 command 把复用的 v2 任务记为 legacy。
+- 完整上下文 Prompt 只投影分类得到的路由参数，不把 `mode_intent.parameters.objective` 中的原请求副本再次提升到 system；原分类原件及其其他参数仍在冻结资产中保留，当前用户正文继续只由原生消息身份提供。legacy Prompt 不变，已冻结图输入的恢复不重新渲染。
+
+日志 `agent_message_admission_reused`／`agent_message_admission_committed` 记录有限任务／绑定身份和 schema；`agent_message_preparation_failed`／`agent_message_prepared_values_invalid` 只记错误类型，不输出输入或原异常；关闭新意图为 `agent_message_new_turn_admission_disabled`。验证见 `test_framework_release_binding.py` 的真实 HTTP／PG／Redis、事务回滚、丢响应重试及官方框架＋本地 HTTP 完整上下文用例；证据等级与实际结果见实施记录 §173。普通 headless／Coordinator／审批等入口不因该端口自动迁移，发布门、独立部署与真实领域验收仍保留。
 
 ### 原路由与恢复验证
 

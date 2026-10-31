@@ -110,6 +110,33 @@ def test_full_prompt_keeps_native_input_separate_and_has_no_unavailable_skill_di
     assert result.runtime_messages == [{"role": "user", "content": "CURRENT_INPUT"}]
 
 
+@pytest.mark.parametrize("version", ["v2.2.0", "v2.3.0"])
+def test_full_prompt_does_not_promote_the_classified_request_copy_into_system_instructions(version):
+    from dataclasses import asdict
+    from src.application.testing.mode_intent_service import TestModeIntentService
+    from src.registry.modes import ModeRegistry
+
+    original = "ORIGINAL_CURRENT_INPUT"
+    intent = asdict(TestModeIntentService().classify(mode=ModeRegistry().get("code_review"), message=original))
+    assert intent["parameters"]["objective"] == original
+    intent["parameters"]["retained_fixture_parameter"] = "RETAINED_MODE_PARAMETER"
+    state = {"selected_agent_key": "reviewer", "user_message": original, "normalized_input": original,
+        "runtime_messages": [{"role": "user", "content": original}], "context_bundle": {
+            "runtime_binding": {"runtime_kind": "deepagents", "runtime_version": version}, "mode_intent": intent}}
+    before = deepcopy(state)
+    result = PromptAssemblyService().build_for_turn(state=state, available_agent_keys=["reviewer"])
+    assert original not in result.system_prompt
+    assert "RETAINED_MODE_PARAMETER" in result.system_prompt
+    assert result.runtime_messages == state["runtime_messages"] and state == before
+    # The existing legacy renderer retains its original envelope/parameters;
+    # only native full-context rendering delegates the user body to history.
+    state["context_bundle"].pop("runtime_binding")
+    state["runtime_messages"] = []
+    legacy = PromptAssemblyService().build_for_turn(state=state, available_agent_keys=["reviewer"])
+    detected = next(section for section in legacy.runtime_message_sections if section.key == "detected_intent")
+    assert original in detected.content and "RETAINED_MODE_PARAMETER" in detected.content
+
+
 @pytest.mark.asyncio
 async def test_shared_assembly_freezes_all_sources_without_rebuilding_native_history(tmp_path):
     parts = assembly_components(tmp_path)

@@ -6,6 +6,7 @@ only command identity; the input and execution outcome remain database facts.
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
 import hashlib
 import json
 import logging
@@ -19,6 +20,7 @@ from sqlalchemy.exc import DBAPIError
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
+from src.runtime.framework_submission_preparation import PreparedFrameworkSubmission
 from src.schemas.agent_task import (
     AgentTaskCommand,
     AgentTaskCommandV2,
@@ -95,6 +97,25 @@ class PostgresAgentTaskStore:
             idempotency_key,
             model_budget,
         )
+
+    async def submit_prepared_message(
+        self,
+        command: AgentTaskCommand,
+        payload: SendMessageRequest,
+        message: ChatMessage,
+        *,
+        idempotency_key: str,
+        prepare_framework_submission: Callable[[], PreparedFrameworkSubmission | None],
+    ) -> AgentTaskRecord:
+        """Admit one API intent using its original message idempotency identity.
+
+        A synchronous, side-effect-free preparer runs only after the existing
+        Session lock and duplicate check. Retries reuse the first committed
+        route/binding/budget, even if admission configuration has since changed.
+        None selects legacy; direct submit_v2 retains its stricter wire identity.
+        """
+        return await asyncio.to_thread(self._submit_prepared_message_sync, command, payload, message,
+            idempotency_key, prepare_framework_submission)
 
     async def submit_resume(
         self,
@@ -429,6 +450,7 @@ class PostgresAgentTaskStore:
                 message,
                 effective_key=effective_key,
                 content_hash=content_hash,
+                idempotency_input_hash=content_hash,
             )
         return AgentTaskRecord.model_validate(row)
 
@@ -459,6 +481,46 @@ class PostgresAgentTaskStore:
                 "deadline_at": model_budget.deadline_at})
         return AgentTaskRecord.model_validate(row)
 
+    def _submit_prepared_message_sync(self, command, payload, message, idempotency_key, prepare):
+        if command.operation != "message" or command.task_type != "agent_turn":
+            raise ValueError("Prepared admission supports only message agent_turn commands")
+        effective_key = self._idempotency_key("message", idempotency_key)
+        content_hash = self._input_hash("message", payload.model_dump(mode="json"))
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            configure_runtime_owner_transaction(cur, self._settings)
+            self._lock_session(cur, command.session_id)
+            row = self._find_idempotent(cur, command.session_id, effective_key, content_hash, message_intent=True)
+            if row is not None:
+                logger.info("agent_message_admission_reused", extra={
+                    "session_id": command.session_id, "task_id": row["id"], "turn_id": row["turn_id"]})
+                return AgentTaskRecord.model_validate(row)
+            prepared = prepare()
+            binding, budget = None, None
+            if prepared is not None:
+                try:
+                    binding = RuntimeBinding.model_validate(prepared.binding.model_dump(mode="json", warnings="error"))
+                    budget = FrameworkModelBudget.model_validate(prepared.model_budget.model_dump(mode="json", warnings="error"))
+                    if binding.release_reference is None or budget.schema_version != 2:
+                        raise ValueError("Prepared admission requires release and model materials")
+                    command = AgentTaskCommandV2.model_validate({**command.model_dump(mode="json"),
+                        "schema_version": 2, "runtime_binding": binding})
+                except Exception as exc:
+                    logger.warning("agent_message_prepared_values_invalid", extra={
+                        "session_id": command.session_id, "task_id": command.task_id, "error_type": type(exc).__name__})
+                    raise ValueError("Prepared message binding or budget is invalid") from None
+            # API retry identity is the original payload, while execution must
+            # retain submit_v2's sealed binding+budget digest. Never replace
+            # the execution proof with the looser request idempotency hash.
+            execution_hash = self._v2_input_hash(payload.model_dump(mode="json"), binding, budget) if binding else content_hash
+            row = self._submit_message_in_transaction(cur, command, payload, message,
+                effective_key=effective_key, content_hash=execution_hash, idempotency_input_hash=content_hash,
+                runtime_binding=binding, model_budget=budget,
+                stream=self._settings.orchestration.agent_task_v2_stream if binding else None)
+        logger.info("agent_message_admission_committed", extra={
+            "session_id": command.session_id, "task_id": row["id"], "turn_id": row["turn_id"],
+            "binding_id": binding.binding_id if binding else None, "schema_version": command.schema_version})
+        return AgentTaskRecord.model_validate(row)
+
     def _submit_message_in_transaction(
         self,
         cur,
@@ -471,6 +533,7 @@ class PostgresAgentTaskStore:
         runtime_binding: RuntimeBinding | None = None,
         stream: str | None = None,
         model_budget: FrameworkModelBudget | None = None,
+        idempotency_input_hash: str | None = None,
     ):
         session = self._lock_session(cur, command.session_id)
         if runtime_binding is not None:
@@ -486,7 +549,8 @@ class PostgresAgentTaskStore:
             cur,
             command.session_id,
             effective_key,
-            content_hash,
+            idempotency_input_hash if idempotency_input_hash is not None else content_hash,
+            message_intent=idempotency_input_hash is not None,
         )
         if existing:
             return existing
@@ -941,14 +1005,20 @@ class PostgresAgentTaskStore:
         ).encode()
         return hashlib.sha256(canonical_payload).hexdigest()
 
-    def _find_idempotent(self, cur, session_id, idempotency_key, content_hash):
+    def _find_idempotent(self, cur, session_id, idempotency_key, content_hash, *, message_intent=False):
         cur.execute(
             f"SELECT * FROM {self._tasks} WHERE session_id=%s AND idempotency_key=%s",
             (session_id, idempotency_key),
         )
         existing = cur.fetchone()
-        if existing and existing["input_hash"] != content_hash:
-            raise AgentSubmissionConflict("Submission ID already belongs to different input")
+        if existing:
+            # API messages key the caller's intent, not a newly sampled model
+            # configuration/time/Turn. Direct v2 and all other operations keep
+            # their original exact digest comparison. No proof is rewritten.
+            original_hash = (self._input_hash("message", existing["input_payload"])
+                if message_intent and existing["runtime_binding"] is not None else existing["input_hash"])
+            if original_hash != content_hash:
+                raise AgentSubmissionConflict("Submission ID already belongs to different input")
         return existing
 
     def _latest_snapshot(self, cur, session_id):

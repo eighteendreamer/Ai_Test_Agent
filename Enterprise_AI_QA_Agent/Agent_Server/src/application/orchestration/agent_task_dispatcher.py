@@ -65,7 +65,8 @@ def _seconds_since(value: datetime | None) -> float:
 class AgentTaskDispatcher:
     def __init__(self, settings, tasks, sessions, resources, *,
                  framework_capabilities: FrameworkWorkerCapabilities | None = None,
-                 framework_model_calls=None, framework_native_reader=None):
+                 framework_model_calls=None, framework_native_reader=None,
+                 framework_submission_preparer=None):
         self._settings = settings
         self._tasks = tasks
         self._sessions = sessions
@@ -73,6 +74,9 @@ class AgentTaskDispatcher:
         self._framework_capabilities = framework_capabilities
         self._framework_model_calls = framework_model_calls
         self._framework_native_reader = framework_native_reader
+        # Explicit composition only. No production caller installs this port
+        # until compatible readers and the mode's release gates are deployed.
+        self._framework_submission_preparer = framework_submission_preparer
         self._coordinator = None
         self._child_reaper_task: asyncio.Task[None] | None = None
         self._child_reaper_stop: asyncio.Event | None = None
@@ -88,8 +92,13 @@ class AgentTaskDispatcher:
     def _record_submission(self, command) -> None:
         agent_tasks_submitted_total().labels(
             task_type=_task_type(command),
-            queue=self._settings.orchestration.agent_task_stream,
+            queue=self._submission_queue(command),
         ).inc()
+
+    def _submission_queue(self, task) -> str:
+        return (self._settings.orchestration.agent_task_v2_stream
+            if getattr(task, "runtime_binding", None) is not None
+            else self._settings.orchestration.agent_task_stream)
 
     async def submit(self, session_id, payload, *, execution_request=None):
         session = await self._sessions._require_session(session_id)
@@ -132,8 +141,36 @@ class AgentTaskDispatcher:
             ),
         )
         message.metadata["context_eligible"] = False
-        task = await self._tasks.submit(command, payload, message, idempotency_key=key)
-        self._record_submission(command)
+        preparer = self._framework_submission_preparer
+        capabilities = self._framework_capabilities
+        if preparer is None:
+            task = await self._tasks.submit(command, payload, message, idempotency_key=key)
+        else:
+            def prepare():
+                # Called only for a new API intent, under the existing Session
+                # transaction lock. Must be synchronous and preparation-only:
+                # no graph, model, queue, DB or other execution side effects.
+                if not self._settings.deep_agents.new_turns_enabled:
+                    LOGGER.info("agent_message_new_turn_admission_disabled", extra={"session_id": session_id,
+                        "task_id": command.task_id, "recovery_reason": "new_turn_admission_disabled"})
+                    return None
+                try:
+                    prepared = preparer(session, request, command)
+                    if prepared is not None:
+                        if capabilities is None:
+                            raise ValueError("Prepared admission requires explicit reader capabilities")
+                        capabilities.require(prepared.binding, operation="message")
+                        capabilities.require_model_ledger_format("budget",
+                            prepared.model_budget.model_dump(mode="json", warnings="error"))
+                    return prepared
+                except Exception as exc:
+                    LOGGER.warning("agent_message_preparation_failed", extra={
+                        "session_id": session_id, "task_id": command.task_id, "error_type": type(exc).__name__})
+                    raise ValueError("Framework message preparation failed") from None
+
+            task = await self._tasks.submit_prepared_message(command, payload, message, idempotency_key=key,
+                prepare_framework_submission=prepare)
+        self._record_submission(task)
         LOGGER.info(
             "agent_task_submitted",
             extra={
@@ -142,7 +179,7 @@ class AgentTaskDispatcher:
                 "turn_id": task.turn_id,
                 "request_id": task.request_id,
                 "trace_id": task.trace_id,
-                "queue": self._settings.orchestration.agent_task_stream,
+                "queue": self._submission_queue(task),
                 "source": payload.source,
             },
         )
