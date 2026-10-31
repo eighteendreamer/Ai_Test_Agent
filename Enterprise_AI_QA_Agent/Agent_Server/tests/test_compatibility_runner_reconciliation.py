@@ -32,6 +32,8 @@ from src.schemas.compatibility_runner import (
     CompatibilityRunnerRegistrationRequest,
     CompatibilityRunnerTaskReportRequest,
     CompatibilityTaskRequeueRequest,
+    runner_report_content,
+    runner_report_receipt,
 )
 
 
@@ -44,7 +46,7 @@ def local_entry(*, phase="report_ready", assignment="assignment-1", report_statu
     ).model_dump(mode="json")
     payload = CompatibilityRunnerTaskReportRequest(
         assignment_id=assignment, status=report_status, result={"summary": "controlled result"},
-    ).model_dump(mode="json")
+    ).model_dump(mode="json", exclude={"runner_execution_id"})
     return {"assignment": assignment, "phase": phase, "reason": None, "task": task, "payload": payload}
 
 
@@ -56,7 +58,39 @@ def server_task(entry, *, status="completed"):
         {**payload, "status": status}, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
     ).encode("utf-8")).hexdigest()
     task["result"] = {**payload["result"], "artifacts": [], "error": payload["error"]}
+    if payload.get("runner_execution_id") is not None:
+        task["metadata"]["runner_execution_id"] = payload["runner_execution_id"]
     return task
+
+
+@pytest.mark.parametrize("explicit_null", [False, True])
+def test_report_without_execution_id_keeps_frozen_pre149_content_and_digest(explicit_null):
+    # Exact wire shape of 1bf782326's report DTO and canonical encoder.
+    legacy_content = ('{"artifacts":[],"assignment_id":"assignment-1","error":null,"metadata":{},'
+        '"result":{"summary":"controlled result"},"status":"completed"}')
+    raw = json.loads(legacy_content)
+    raw["status"] = "success"
+    if explicit_null:
+        raw["runner_execution_id"] = None
+    payload = CompatibilityRunnerTaskReportRequest.model_validate(raw)
+    assert runner_report_content(payload) == legacy_content
+    assert runner_report_receipt(payload) == sha256(legacy_content.encode("utf-8")).hexdigest()
+
+
+@pytest.mark.parametrize("observed_id", ["execution-a", "execution-b", None, "missing"])
+def test_identified_report_verification_checks_execution_metadata_without_mutation(observed_id):
+    entry = local_entry()
+    entry["payload"]["runner_execution_id"] = "execution-a"
+    task = server_task(entry)
+    if observed_id == "missing":
+        task["metadata"].pop("runner_execution_id")
+    else:
+        task["metadata"]["runner_execution_id"] = observed_id
+    before = deepcopy((entry, task))
+    result = reconcile_runner_journal_entry(runner_id="runner-1", entry=entry, server_task=task)
+    assert result.status == ("completed" if observed_id == "execution-a" else "drifted")
+    assert result.execution_authority is False
+    assert (entry, task) == before
 
 
 @pytest.mark.parametrize("status", ["completed", "failed", "cancelled"])
@@ -229,6 +263,32 @@ def test_committed_report_with_lost_ack_is_verified_without_retransmission(conne
     assert (ctx.service._state_path.read_bytes(), ctx.journal_path.read_bytes()) == before
     assert len(ctx.client.journal.entries()) == 1  # Diagnostic read is not ACK.
     assert ctx.calls == [("GET", "/api/v1/compatibility/tasks/task-1/snapshot")]
+
+
+@pytest.mark.parametrize("null_id_writer", [False, True])
+def test_historical_receipt_survives_reload_duplicate_and_read_only_reconciliation(connected, null_id_writer):
+    ctx = connected
+    assignment = ctx.task["metadata"]["assignment_id"]
+    payload = CompatibilityRunnerTaskReportRequest(assignment_id=assignment, status="completed",
+        result={"summary": "controlled legacy result"})
+    legacy_payload = payload.model_dump(mode="json", exclude={"runner_execution_id"})
+    if null_id_writer:
+        legacy_payload["runner_execution_id"] = None
+    ctx.client.journal.update(assignment, "report_ready", payload=legacy_payload)
+    asyncio.run(ctx.service.report_task("runner-1", "task-1", payload))
+    # Reconstruct each known old writer's shape without using the new encoder
+    # as the compatibility oracle (six-field DTO or caad77084's extra null).
+    stored = json.loads(ctx.service._state_path.read_text(encoding="utf-8"))
+    stored["tasks"][0]["metadata"]["report_receipt_sha256"] = sha256(json.dumps(
+        legacy_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"),
+    ).encode("utf-8")).hexdigest()
+    ctx.service._state_path.write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
+    ctx.http.app.state.compatibility_runner_service = CompatibilityRunnerService(settings=ctx.settings)
+    before = (ctx.service._state_path.read_bytes(), ctx.journal_path.read_bytes())
+    repeated = ctx.http.post("/api/v1/compatibility/runners/runner-1/tasks/task-1/report", json=legacy_payload)
+    assert repeated.status_code == 200, repeated.text
+    assert ctx.client.reconcile_journal()[0].reason_code == "report_verified"
+    assert (ctx.service._state_path.read_bytes(), ctx.journal_path.read_bytes()) == before
 
 
 def test_report_with_uploaded_and_inline_artifacts_uses_existing_projection(connected, caplog):

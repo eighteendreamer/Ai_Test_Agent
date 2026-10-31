@@ -20,6 +20,7 @@ from src.schemas.compatibility_runner import (
     CompatibilityRunnerJournalReconciliation,
     CompatibilityRunnerTaskReportRequest,
     normalize_runner_report_status,
+    runner_report_encodings,
     runner_report_metadata,
     runner_report_receipt,
     runner_report_result,
@@ -102,8 +103,13 @@ def reconcile_runner_journal_entry(
     values["report_receipt_sha256"] = receipt
     if server_receipt is None:
         return classified("unknown", "server_receipt_missing")
+    encodings = runner_report_encodings(payload)
+    if isinstance(server_receipt, str) and server_receipt in encodings:
+        receipt = server_receipt
+        values["report_receipt_sha256"] = receipt
     expected_metadata = runner_report_metadata({**local.metadata, **runner_report_metadata(payload.metadata)})
     if (receipt != server_receipt or observed.status != status
+            or observed.metadata.get("runner_execution_id") != payload.runner_execution_id
             or observed.result != runner_report_result(payload, observed.artifacts)
             or observed.error != payload.error
             or runner_report_metadata(observed.metadata) != expected_metadata):

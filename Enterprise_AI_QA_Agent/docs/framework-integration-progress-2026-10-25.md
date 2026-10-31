@@ -6845,3 +6845,36 @@ git diff --check
 本步只闭合“外部 Runner operation identity 在 assignment 内不可变且可跨 journal／报告恢复”这一 A3/H06 子出口；没有新增停止 API、目标查询端口、外部停止回执或自动补偿权限，`runner_execution_id` 仍是关联证据而非执行／停止授权。外部操作已发送但效果未知仍须 Runner journal／目标查询或人工对账；不能凭该 ID 认定已停止、重派或回滚正式结果。资源清理补偿、Memory 独立副本 journal、A2-2/A2-3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 和整体 v4 仍未完成。`ruff`、`mypy` 未安装，未执行独立 lint/typecheck；用户 v3 草稿保持未修改、未暂存、未提交。
 
 本步拟提交 `Agent_Server/src/contracts/memory_store.py`、`Agent_Server/src/infrastructure/postgres_vector_memory_store.py`、`Agent_Server/src/infrastructure/redis_vector_store.py`、`Agent_Server/src/application/context/memory_runtime_service.py`、观察投影回归测试及本实施记录；不包含用户草稿、日志、本地数据或配置。
+
+## 150. A3／§8.1、§10.2：Runner 报告编码兼容与执行身份只读核验（2026-10-31）
+
+### 续接、依据与根因 → 做法
+
+§149 已提交 `caad77084`。其提交前最后一组实际为 **208 passed，1 warning，28.83 秒**（此前记录的 207 项属于新增终态身份用例前的组合，不相加）；compileall／diff check 实际通过。上方末尾的 Memory 拟提交文件列表属于 §148，不是 §149 的文件范围。续接审查没有把这一局部提交作为完整 A3 或整体 v4 完成。
+
+发现 §149 的两个跨层契约缺口：新增可选 DTO 字段会让 `model_dump()` 给无 execution ID 的历史报告补上 `runner_execution_id:null`，从而改变 SHA256，旧报告重复提交实际返回 409、旧 observation 原件读取实际返回 503；此外 `runner_report_metadata()` 过滤了 server-controlled execution ID，但只读 reconciliation 未单独比较该字段，元数据 ID 被改掉／清空后仍错误给出 `report_verified`。根因是持久编码依赖可增长 DTO 的默认展开，以及新增 server-owned 身份未同步消费方；不是传输重试问题。
+
+依据 `1bf782326` 的六字段报告 DTO／canonical 编码、§149 已写出的 null 形状、既有 report receipt／observation 原件核验规则及 v4 §10.2 的窄证明权限 → 把已知编码集中在 `runner_report_encodings()`。无 execution ID 的新写入保持原六字段 canonical 字节；只读核验兼容 §149 的精确 null 形状。存在非空 ID 时只有一个精确编码，不把不同 ID／结果／metadata 当成等价。提交幂等检查、observation 原件校验／复用和本地 journal 对账共用该规则；历史内容和摘要不改写、不重新发起执行。参考本地《Agent轨迹与协议鲁棒性》《接口测试-通用篇》的协议／幂等边界，回归覆盖旧格式重读与重复提交、身份漂移和无写入证明。
+
+### TDD 与契约同步
+
+1. 撤回上一上下文尚未验证的编码草稿，先对已提交源码运行新反例：缺省／显式 null 两个字节对照失败，三个执行 ID 漂移负例错误返回 completed，历史 terminal receipt 重复提交返回 409；共 **6 failed，1 passed，34 deselected**。旧 observation 独立用例实际 **1 failed**，GET 为 503。历史格式由上述已提交编码重建，不声称来自生产故障。
+2. schema 层统一给出已知编码及各自内容摘要，保留原默认写形状。服务端验证 observation 时要求其摘要所指的 exact canonical bytes 与存储原文完全一致；重复报告／observation 只确认已存在的对应回执，不迁移、覆盖或增加副作用。
+3. journal reader 单独比较 `observed.metadata.runner_execution_id` 与原报告字段；旧格式缺省与 null 均只代表无 execution identity。已有任务／runner／assignment／定义／结果／制品校验不削弱；只读结果仍无执行／ACK 权限。原测试中依赖可增长 DTO dump 的 wire 预期同步为冻结编码，新增独立旧字节 oracle 防止自证。
+4. 已搜索 schema、Runner client／service／journal、API 路由、测试和前端消费者；无前端报告 DTO 消费方，metadata 仍为通用字段，没有公共路由／DDL／依赖变化。
+
+### 实际验证与剩余出口
+
+使用已有 `.venv-framework-v2`，工作目录 `Agent_Server`；这些用例使用真实隔离 JSON／SQLite、ASGI 路由及既有 journal 子进程，不调用 PostgreSQL／Redis／真实供应商／付费模型／RustFS／领域 Runner，未启停任何服务。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_compatibility_runner_reconciliation.py::test_report_without_execution_id_keeps_frozen_pre149_content_and_digest tests/test_compatibility_runner_reconciliation.py::test_identified_report_verification_checks_execution_metadata_without_mutation tests/test_compatibility_runner_reconciliation.py::test_historical_receipt_survives_reload_duplicate_and_read_only_reconciliation tests/test_compatibility_runner_late_reports.py::test_historical_observation_is_readable_and_idempotent_without_rewriting_history -q --tb=short
+# 10 passed，1 warning，7.58 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_compatibility_runner_persistence.py tests/test_compatibility_runner_reconciliation.py tests/test_compatibility_runner_late_reports.py tests/test_compatibility_mode_execution_recovery.py tests/test_compatibility_mode_execution_authority.py tests/test_compatibility_runner_service.py tests/test_compatibility_mode_skills.py -q -rs --tb=short
+# 302 passed，1 warning，28.02 秒，exit 0；无 skip／deselect
+```
+
+根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 及 `git diff --check` 均 exit 0。ruff／mypy 经 find_spec 确认未安装，未执行独立 lint／typecheck。没有前端变更，未跑前端／后端全量、真实领域 Runner／供应商／RustFS 或 E3/E4。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存／提交。
+
+§149 的本地 `runner_execution_id` 目前只在 journal／报告侧关联，尚未成为真实领域 Runner 或目标已接收的 execution ID；不能据此声称停止、目标查询、执行代次／资源租约全链路或补偿完成。本步只修复持久报告的兼容读写与身份校验，未回写正式结果、未赋予未知效果任何执行权。A3 其余 Memory journal／资源补偿／真实 Runner、A2-2/A2-3、B/C 其余出口、D/E/F、完整 H01–H12、官方 saver conformance 和 E3/E4 按 v4 保留，整体目标继续 active。

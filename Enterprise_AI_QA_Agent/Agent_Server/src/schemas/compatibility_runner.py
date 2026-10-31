@@ -119,19 +119,33 @@ def normalize_runner_report_status(value: str) -> str:
     return normalized
 
 
+def runner_report_encodings(payload: CompatibilityRunnerTaskReportRequest) -> dict[str, str]:
+    """Known wire encodings, indexed by their exact content digest.
+
+    Missing execution identity keeps the pre149 six-field shape. The initial
+    optional-field writer (caad77084) emitted an extra JSON null; retain only
+    that exact alternate encoding for reads, never an alternate non-null ID.
+    """
+    values = {**payload.model_dump(mode="json"), "status": normalize_runner_report_status(payload.status)}
+    if payload.runner_execution_id is None:
+        values.pop("runner_execution_id")
+        variants = [values, {**values, "runner_execution_id": None}]
+    else:
+        variants = [values]
+    contents = [json.dumps(value, sort_keys=True, ensure_ascii=False, separators=(",", ":")) for value in variants]
+    return {sha256(content.encode("utf-8")).hexdigest(): content for content in contents}
+
+
 def runner_report_content(payload: CompatibilityRunnerTaskReportRequest) -> str:
-    """The original report receipt's canonical DTO representation."""
-    return json.dumps(
-        {**payload.model_dump(mode="json"), "status": normalize_runner_report_status(payload.status)},
-        sort_keys=True, ensure_ascii=False, separators=(",", ":"),
-    )
+    """Preferred stable wire shape; reads also recognize known old encodings."""
+    return next(iter(runner_report_encodings(payload).values()))
 
 
 def runner_report_receipt(payload: CompatibilityRunnerTaskReportRequest) -> str | None:
     """The existing identified report digest, shared by submit and read paths."""
     if not payload.assignment_id:
         return None
-    return sha256(runner_report_content(payload).encode("utf-8")).hexdigest()
+    return next(iter(runner_report_encodings(payload)))
 
 
 def runner_report_result(

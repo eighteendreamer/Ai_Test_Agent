@@ -37,6 +37,7 @@ from src.schemas.compatibility_runner import (
     CompatibilityTaskRequeueResponse,
     normalize_runner_report_status,
     runner_report_content,
+    runner_report_encodings,
     runner_report_metadata,
     runner_report_receipt,
     runner_report_result,
@@ -411,7 +412,9 @@ class CompatibilityRunnerService:
                 recorded_execution_id = task.metadata.get("runner_execution_id")
                 if recorded_execution_id is not None and payload.runner_execution_id != recorded_execution_id:
                     raise PermissionError("Runner execution ID no longer matches the assigned operation.")
-                if task.status != "assigned" and receipt and task.metadata.get("report_receipt_sha256") == receipt:
+                recorded_receipt = task.metadata.get("report_receipt_sha256")
+                if (task.status != "assigned" and receipt and isinstance(recorded_receipt, str)
+                        and recorded_receipt in runner_report_encodings(payload)):
                     logger.info("compatibility_task_report_receipt_reused", extra={
                         "task_id": task_id, "runner_id": runner_id, "task_status": task.status,
                     })
@@ -490,7 +493,12 @@ class CompatibilityRunnerService:
         if not assignment_id or not receipt:
             return None
         artifact_id = self._report_observation_artifact_id(task.task_id, runner_id, assignment_id, receipt)
-        existing = self._artifacts.get(artifact_id)
+        existing = None
+        for digest in runner_report_encodings(payload):
+            candidate_id = self._report_observation_artifact_id(task.task_id, runner_id, assignment_id, digest)
+            if candidate_id in self._artifacts:
+                artifact_id, receipt, existing = candidate_id, digest, self._artifacts[candidate_id]
+                break
         if existing is not None:
             observation = self._checked_report_observation(existing)
             if (observation.task_id, observation.runner_id, observation.assignment_id, observation.report_receipt_sha256) != (
@@ -544,12 +552,11 @@ class CompatibilityRunnerService:
             payload = CompatibilityRunnerTaskReportRequest.model_validate_json(content, strict=True)
             expected_observation = observation.model_dump(mode="json")
             if (
-                raw != expected_observation
-                and raw != observation.model_dump(mode="json", exclude_none=True)
+                (raw != expected_observation
+                    and raw != observation.model_dump(mode="json", exclude_none=True))
                 or payload.assignment_id != observation.assignment_id
                 or payload.runner_execution_id != observation.runner_execution_id
-                or runner_report_content(payload) != content
-                or runner_report_receipt(payload) != observation.report_receipt_sha256
+                or runner_report_encodings(payload).get(observation.report_receipt_sha256) != content
                 or observation.artifact_id != self._report_observation_artifact_id(
                     observation.task_id, observation.runner_id, observation.assignment_id, observation.report_receipt_sha256,
                 )

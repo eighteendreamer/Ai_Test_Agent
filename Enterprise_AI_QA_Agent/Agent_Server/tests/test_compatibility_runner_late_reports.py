@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from copy import deepcopy
+from hashlib import sha256
 import io
 import json
 import logging
@@ -23,7 +24,9 @@ from src.application.compatibility.runner_journal import RunnerJournal
 from src.application.compatibility.runner_service import CompatibilityRunnerService
 from src.core.log_format import ContextFilter, ContextFormatter, LOG_FORMAT
 from src.modes.compatibility_testing_mode.contracts import CompatibilityDispatchPlan, CompatibilityRunnerTask, RunnerSelector
-from src.schemas.compatibility_runner import CompatibilityRunnerReportObservation, CompatibilityRunnerTaskReportRequest
+from src.schemas.compatibility_runner import (
+    CompatibilityRunnerReportObservation, CompatibilityRunnerTaskReportRequest, runner_report_content,
+)
 
 
 PREFIX = "/api/v1/compatibility"
@@ -113,7 +116,7 @@ def test_late_report_is_queryable_after_restart_without_changing_authoritative_r
     assert all(item["artifact_id"] != receipt["artifact_id"] for task in after["tasks"] for item in task["artifacts"])
     content = h.http.get(artifact["uri"])
     assert content.status_code == 200, content.text
-    assert content.json() == CompatibilityRunnerTaskReportRequest(**late_payload(h)).model_dump(mode="json")
+    assert content.text == runner_report_content(CompatibilityRunnerTaskReportRequest(**late_payload(h)))
     # A normalized alias/reordered object is the same report, not a second observation.
     committed = h.state_path.read_bytes()
     repeated = h.http.post(report_path(), json={**late_payload(h), "status": "success"})
@@ -148,6 +151,42 @@ def test_runner_execution_identity_cannot_change_terminal_authority(connected):
     snapshot = h.http.get(f"{PREFIX}/tasks/task/snapshot").json()
     assert snapshot["metadata"]["runner_execution_id"] == "external-execution-a"
     assert snapshot["result"]["summary"] == "Authoritative external result"
+
+
+@pytest.mark.parametrize("null_id_writer", [False, True])
+def test_historical_observation_is_readable_and_idempotent_without_rewriting_history(connected, null_id_writer):
+    h = connected
+    h.app.state.compatibility_runner_service = CompatibilityRunnerService(settings=h.settings)
+    assert h.http.post(report_path(), json=late_payload(h)).status_code == 409
+    stored = persisted(h)
+    artifact = stored["artifacts"][0]
+    legacy_payload = CompatibilityRunnerTaskReportRequest(**late_payload(h)).model_dump(
+        mode="json", exclude={"runner_execution_id"},
+    )
+    if null_id_writer:
+        legacy_payload["runner_execution_id"] = None
+    legacy_content = json.dumps(legacy_payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+    digest = sha256(legacy_content.encode("utf-8")).hexdigest()
+    identity = json.dumps(["task", "original", legacy_payload["assignment_id"], digest],
+        ensure_ascii=False, separators=(",", ":"))
+    artifact_id = "runner-report-observation-" + sha256(identity.encode("utf-8")).hexdigest()
+    artifact["artifact_id"] = artifact_id
+    artifact["uri"] = f"{PREFIX}/artifacts/{artifact_id}/content"
+    artifact["metadata"]["__content_text"] = legacy_content
+    observation = artifact["metadata"]["runner_report_observation"]
+    if not null_id_writer:
+        observation.pop("runner_execution_id", None)
+    observation.update(artifact_id=artifact_id, report_receipt_sha256=digest)
+    h.state_path.write_text(json.dumps(stored, ensure_ascii=False, indent=2), encoding="utf-8")
+    h.app.state.compatibility_runner_service = CompatibilityRunnerService(settings=h.settings)
+    before = h.state_path.read_bytes()
+    content = h.http.get(artifact["uri"])
+    assert content.status_code == 200, content.text
+    assert content.text == legacy_content
+    repeated = h.http.post(report_path(), json=legacy_payload)
+    assert repeated.status_code == 409, repeated.text
+    assert repeated.json()["observation"]["artifact_id"] == artifact_id
+    assert h.state_path.read_bytes() == before
 
 
 @pytest.mark.parametrize("changed", ["missing-assignment", "unknown-assignment", "wrong-runner", "unknown-runner"])
@@ -450,7 +489,7 @@ def test_real_cli_keeps_conflict_and_full_report_after_late_observation_without_
     artifact_id = reports[0]["body"]["observation"]["artifact_id"]
     content = h.http.get(f"{PREFIX}/artifacts/{artifact_id}/content")
     assert content.status_code == 200
-    assert content.json() == CompatibilityRunnerTaskReportRequest(**entries[0]["payload"]).model_dump(mode="json")
+    assert content.text == runner_report_content(CompatibilityRunnerTaskReportRequest(**entries[0]["payload"]))
     runner_client_module.main()
     assert processed == [0, 0] and len(reports) == 1
     assert effects.read_text(encoding="utf-8").splitlines() == ["task"]
