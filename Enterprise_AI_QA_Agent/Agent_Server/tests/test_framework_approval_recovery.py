@@ -42,9 +42,52 @@ async def test_coordinator_keeps_recovered_execution_parent_but_not_reconciliati
 
 async def expire(h, task):
     assert await h.store.renew_turn_execution(h.session_id, task.lease_token, 0)
-    expired = await h.tasks.claim(task.id, worker_id="expiry-observer", expected_binding=h.binding)
+    try:
+        expired = await h.tasks.claim(task.id, worker_id="expiry-observer", expected_binding=h.binding)
+    except TaskDeferred as exc:
+        # Sample only after the original deferral; this is not its decision
+        # timestamp. Keep the exception and never print the lease capability.
+        try:
+            with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT (metadata->>'turn_lease_expires_at')::timestamptz AS session_expires_at, "
+                    "clock_timestamp() AS observed_at, "
+                    "EXTRACT(EPOCH FROM (clock_timestamp() - (metadata->>'turn_lease_expires_at')::timestamptz)) "
+                    "* 1000 AS expiration_lag_ms, metadata->>'turn_lease_token'=%s AS same_lease "
+                    f"FROM {h.settings.database.postgres_session_table} WHERE id=%s", (task.lease_token, task.session_id))
+                timing = cur.fetchone()
+            exc.add_note(f"Zero-second expiry claim deferred (sample=after_defer): {dict(timing) if timing else None}")
+        except Exception as diagnostic_error:
+            exc.add_note("Zero-second expiry claim deferred (sample=after_defer): "
+                f"diagnostic_error_type={type(diagnostic_error).__name__}")
+        raise
     assert expired.status == "recovery_required" and expired.attempt_no == task.attempt_no
     return await h.tasks.get(task.id)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("diagnostic_failure", [False, True])
+async def test_expiration_deferral_keeps_safe_timing_diagnostics(checkpoint_harness, monkeypatch, diagnostic_failure):
+    h = checkpoint_harness
+
+    async def defer(*args, **kwargs):
+        raise TaskDeferred("Agent task is owned by another worker")
+
+    monkeypatch.setattr(h.tasks, "claim", defer)
+    if diagnostic_failure:
+        def unavailable(*args, **kwargs):
+            raise ConnectionError("private-test-diagnostic")
+
+        monkeypatch.setitem(expire.__globals__, "postgres_connect", unavailable)
+    with pytest.raises(TaskDeferred) as caught:
+        await expire(h, h.owner)
+    note = "\n".join(getattr(caught.value, "__notes__", []))
+    assert "Zero-second expiry claim deferred" in note
+    if diagnostic_failure:
+        assert "diagnostic_error_type=ConnectionError" in note and "private-test-diagnostic" not in note
+    else:
+        assert "session_expires_at" in note and "observed_at" in note and "expiration_lag_ms" in note
+        assert "same_lease" in note and "sample=after_defer" in note
+    assert h.owner.lease_token not in note
 
 
 def outbox(h, task_id):

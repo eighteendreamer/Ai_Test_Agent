@@ -7289,3 +7289,45 @@ v4 F／§14.1、H11 → 本节 → 3 个生产文件、4 个测试文件、测�
 新增 journal 兼容行为已由最终专项验证，但完整组合仍保留一次未定位的中断过期比较失败，不宣称本轮所有验收完成。下一步优先用新精确诊断核实该现象，再继续 task recovery_proof 的独立 finalization／settlement scope、native transcript／command／其他结果材料格式、实际双制品兼容部署与制品归档；本步不把自由 proof 字典新建为完整严格模型，不证明所有 proof／native 读能力已覆盖。生产无 DDL／迁移／配置变化，隔离测试 receipt 新列由原测试 fixture 清理；尚无全量 journal 规模性能基线。
 
 A2-2/A2-3、A3、B/C/D/E/F、H01–H12、真实领域 Runner、供应商／embedding／RustFS、官方 saver conformance、全量前后端及完整 E3/E4 仍按 v4 保留。整体目标继续 active，本节不代表 F 或全系统完成。
+
+## 160. F／H11 回归：隔离所有权快照的动态诊断，保留零秒失效异常（2026-10-31）
+
+### 续接、采样与仍未定位的事实
+
+续接 `e9a1ddaf6`／§159。先检查中断事务、`_update_status()`、`_lock_session()`、Session 续租、owner 校验和 SQLAlchemy cursor：中断明确写 `execution_state='interrupted', expires_at=clock_timestamp()`；claim 在 Session 行锁后比较数据库时钟。没有找到能证明原中断异常原因的写者证据。本节不修改生产中断、租约或授权判定，不将状态比较异常称为权限绕过。
+
+只读 PG 采样均使用现有 `postgres_connect(get_settings())`、`SET TRANSACTION READ ONLY`，只输出时间与差值，不输出连接配置：
+
+- 240 次、间隔 0.05 秒：DB 跨度 12.838563 秒、Python monotonic 跨度 12.469 秒；最小相邻 DB 差值 52.953ms、最大 RTT 16ms，未观察到回退。
+- 随后 2000 次无 sleep、每条查询取两次 `clock_timestamp()`：DB 跨度 1.662521 秒、monotonic 跨度 1.594 秒；语句内最小差值 0ms、语句间最小差值 0.53ms，均未观察到回退。没有把两种时钟差值解释为已确认的漂移根因，也不能用短窗口未观测到回退证明长期无回退。
+- 采样后的原控制全文件 **12 passed，77.88 秒**，但不覆盖 §159 的完整组合失败。
+
+在下一节 proof 兼容工作区上，补新诊断测试前的单一串行 10 文件组合实际 **2 failed、536 passed，1922.57 秒，exit 1**，无 skip／deselect：
+
+1. `test_approval_settlement_rechecks_committed_facts[missing_commit-claim]` 在 `expire()` 中零秒续租返回成功后，原 claim 仍返回 `TaskDeferred: Agent task is owned by another worker`。这次没有精确的决策时刻、到期时间或续租写者采样，不能认定与 §159 同因，也不能将时钟回退或后台续租推测当作事实。
+2. `test_settlement_respects_later_input_without_overwriting_it[True]` 的两次 owner 行比较失败；输出明确只有 `observed_at` 和 `expiration_lag_ms` 不同，其余 13 项相同。根因是 §159 为单个失败增加动态时间诊断时，污染了既有稳定快照 helper 的所有调用方。这是测试诊断契约回归，不是生产 owner 被修改。
+
+该 10 文件命令包含下一节专项、Worker 契约、approval_graph_input／settlement／recovery、checkpoint_fencing／task_control，以及 model／stage／approval 三个 reader_admission，全选执行，无过滤。后续专项通过不抹去其 exit 1。
+
+### 有效红测、测试修正与验证
+
+1. 新增 `test_owner_snapshot_keeps_volatile_expiration_diagnostics_opt_in`，旧 helper 实际 **1 failed，22.88 秒**，准确失败于默认快照含动态诊断字段。`owner_row()` 改为显式 `expiration_diagnostics=True` 才附加观测时间和差值；原中断失败断言明确请求这一视图，仍一次取样、必须 expired，并保留全部续租／旧 saver／finish 拒绝断言。默认视图恢复原有字段，既有 later owner 整行不变比较不删除、不放宽。控制全文件与 later input 两参数随后 **15 passed，107.59 秒**。
+2. 对未能定位的零秒失效，只在既有测试 helper `expire()` 捕获原 TaskDeferred 后附加一次窄查询诊断：Session 到期时间、观测时间、差值及同一 lease 的布尔比较；注明 `sample=after_defer`，不冒充原决策时刻，不输出 token、不重试 claim、不 sleep、不改零秒参数。诊断查询异常只记录异常类型并保留原异常，不能遮蔽原失败。
+3. 新诊断契约先实际 **1 failed，14.73 秒**，缺少 note；这是故障注入验证可观测性，不是伪称复现生产时钟故障。扩展诊断查询失败用例后，第一次组合 **1 failed、17 passed，116.83 秒**：字符串模块路径未命中被测函数使用的全局引用；改用项目已有 `monkeypatch.setitem` 操作该函数 globals，没有改生产代码或添加测试包导入机制。
+4. 最终下列组合 **18 passed，110.97 秒，exit 0**，无 skip／deselect；包含原零秒失效样本、两个诊断注入分支、控制全文件和 later input 两参数。原样本此次通过仅表明未重现，**零秒失效和 §159 中断过期异常的根因仍待核，32 分钟完整组合没有重跑全绿**。
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_approval_recovery.py::test_expiration_deferral_keeps_safe_timing_diagnostics tests/test_framework_approval_settlement.py::test_approval_settlement_rechecks_committed_facts[missing_commit-claim] tests/test_framework_task_control.py tests/test_framework_approval_settlement.py::test_settlement_respects_later_input_without_overwriting_it -q -rs --tb=short
+# 18 passed，110.97 秒
+```
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests`、本节文件的 `git diff --check` 通过。ruff／mypy 未安装，未运行独立 lint／typecheck，不安装或升级依赖。
+
+### 提交边界
+
+v4 F／H11 → 本节 → 两个既有测试文件与本记录 → 上述红绿与真实 PG／Redis 控制回归 → 独立提交 `【test】隔离所有权快照的过期诊断`，ID 见 Git 历史和交付。proof 兼容实现不混入本提交，随后单独记录。没有生产 DDL／配置／公共契约变化，不运行 Docker、不付费、不改生产路由、不推送。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／暂存／提交；§158 共享 checkpoint 历史残留仍未归属，未猜测清理。完整 v4 目标保持 active。

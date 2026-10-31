@@ -234,12 +234,26 @@ async def interrupt(h):
         return await client.post(f"/sessions/{h.session_id}/interrupt", json={"source": "test", "reason": "stop now"})
 
 
-def owner_row(h):
+def owner_row(h, *, expiration_diagnostics=False):
+    diagnostics = (", clock_timestamp() AS observed_at, "
+        "EXTRACT(EPOCH FROM (clock_timestamp() - expires_at)) * 1000 AS expiration_lag_ms"
+        if expiration_diagnostics else "")
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
-        cur.execute(f"SELECT *, expires_at <= clock_timestamp() AS expired, clock_timestamp() AS observed_at, "
-            "EXTRACT(EPOCH FROM (clock_timestamp() - expires_at)) * 1000 AS expiration_lag_ms "
+        cur.execute(f"SELECT *, expires_at <= clock_timestamp() AS expired{diagnostics} "
             f"FROM {h.settings.database.postgres_agent_task_table}_runtime WHERE binding_id=%s", (h.binding.binding_id,))
         return cur.fetchone()
+
+
+@pytest.mark.asyncio
+async def test_owner_snapshot_keeps_volatile_expiration_diagnostics_opt_in(checkpoint_harness):
+    h = checkpoint_harness
+    snapshot = owner_row(h)
+    assert not {"observed_at", "expiration_lag_ms"}.intersection(snapshot)
+    diagnostic = owner_row(h, expiration_diagnostics=True)
+    assert set(diagnostic) == set(snapshot) | {"observed_at", "expiration_lag_ms"}
+    assert diagnostic["expires_at"] == snapshot["expires_at"]
+    assert diagnostic["execution_state"] == snapshot["execution_state"]
+    assert diagnostic["observed_at"].tzinfo is not None and diagnostic["expiration_lag_ms"] is not None
 
 
 @pytest.mark.asyncio
@@ -257,7 +271,7 @@ async def test_http_interrupt_revokes_owner_before_worker_poll_and_blocks_late_w
         saved = await h.tasks.get(h.owner.id)
         assert saved.status == "interrupted" and saved.attempt_no == 1
         assert await h.tasks.interrupt_requested(saved.id)
-        revoked = owner_row(h)
+        revoked = owner_row(h, expiration_diagnostics=True)
         assert revoked["execution_state"] == "interrupted" and revoked["expired"], (
             f"Interrupted owner expiration mismatch: state={revoked['execution_state']}, "
             f"expires_at={revoked['expires_at']}, observed_at={revoked['observed_at']}, "
