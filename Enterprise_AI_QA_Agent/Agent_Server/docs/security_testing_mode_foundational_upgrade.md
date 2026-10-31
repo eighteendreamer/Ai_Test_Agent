@@ -65,6 +65,10 @@ depends_on: security_testing_mode_vs_pentagi_comparison.md
 
 **数据契约变更**：`SecurityCommandExecutionResult` 新增可选字段 `job_id: str = ""`、`detached: bool = False`、`is_running: bool = False`（向后兼容，默认值不影响现有调用方）。
 
+**2026-10-31 契约修订（v4 实施记录 §151，用户已确认）**：上方布尔定义保留为历史规格；当前后台执行的 `is_running` 为 `bool | None`。`true` 仅表示本 Worker 的命令监督仍活跃；`false` 须有成功返回、确定未派发或完整容器 ID 查询确认不存在的依据；`null` 表示外部执行状态未知，不能作为已停止、可以重试或副作用已撤销的证明。新增默认值为 `unknown` 的 `execution_observation`，说明当前投影依据（`supervised`／`command_returned`／`not_dispatched`／`container_absent`／`unknown`）。非零 Docker CLI 返回也可能是传输错误，保留原退出码和输出，但不能单凭该退出码宣称外部进程停止。
+
+正常执行、取消、失租后的读取及历史快照共用同一状态投影。历史数据不回写；没有上述观测依据的历史快照按完整容器 ID 只读查询，不用容器名、短 ID、ToolJob 终态或 `DockerResourceSession.active=false` 猜测停止。查询失败、目标仍存在或身份缺失时返回 `null`；轮询不结算任务、不重跑命令、不触发清理。消费者须使用 `is_running is False`（TypeScript 为 `=== false`）判断已知结束，不能使用 `not is_running`／`!is_running`。新快照带新增观测字段，旧 Worker 的 dataclass reader 不具备读取该字段的能力；混合版本部署／回滚前须先升级读取方或隔离路由，不能把旧制品当作兼容读者。本轮没有改生产路由、数据库结构或任务调度。
+
 **验收**：
 - 起一个 `sleep 30 && echo done` 的 detached job，`poll_execution` 能在结束后读到 `done` 全量输出；
 - `put_file` 上传一个字典文件、`get_file` 取回 nuclei 输出文件，内容一致；

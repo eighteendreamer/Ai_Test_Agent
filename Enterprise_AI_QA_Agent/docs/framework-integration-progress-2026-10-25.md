@@ -6878,3 +6878,40 @@ git diff --check
 根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 及 `git diff --check` 均 exit 0。ruff／mypy 经 find_spec 确认未安装，未执行独立 lint／typecheck。没有前端变更，未跑前端／后端全量、真实领域 Runner／供应商／RustFS 或 E3/E4。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存／提交。
 
 §149 的本地 `runner_execution_id` 目前只在 journal／报告侧关联，尚未成为真实领域 Runner 或目标已接收的 execution ID；不能据此声称停止、目标查询、执行代次／资源租约全链路或补偿完成。本步只修复持久报告的兼容读写与身份校验，未回写正式结果、未赋予未知效果任何执行权。A3 其余 Memory journal／资源补偿／真实 Runner、A2-2/A2-3、B/C 其余出口、D/E/F、完整 H01–H12、官方 saver conformance 和 E3/E4 按 v4 保留，整体目标继续 active。
+
+## 151. A3／§8.1、§10.2、§11：后台安全命令未知状态不再冒充外部停止（2026-10-31）
+
+### 续接、用户确认与依据 → 做法
+
+续接 `92ff945a0`／§150，不把 Runner journal 的关联 ID 当作目标接受或停止证明。本轮调查实际领域执行入口 `SecurityExecutionEnvironmentService`：`poll_execution()` 在 ToolJob 终态但只有初始快照时直接合成 `is_running=False, exit_code=255`；supervisor 在结束协程后也直接写 `is_running=False`。而 `DockerResourceSession.close()` 会等待已有 manager 的清理，但 manager 允许清理失败后延交既有回收链路。因此任务终态、CLI 取消和本地 session inactive 均不能证明容器内命令停止。根因是任务生命周期与外部执行观测混用，而不是心跳间隔或重试次数不足。
+
+用户本轮明确同意把 `is_running` 扩展为 `true／false／null`，未知返回 `null`，保留原任务结果且不自动重跑。依据既有 `ToolBootstrapService._confirmed_removed()` 的完整 ID、只读 `docker ps --all --no-trunc --filter id=<full-id>` 检查，现有容器身份／租约／清理机制，以及本地《Agent轨迹与协议鲁棒性》的轨迹、幂等、超时边界 → 在原 execution service 中统一正常、恢复和历史快照的状态投影，没有新增调度器、停止 API、DDL、依赖、自动清理或重试权限。
+
+### TDD、代码与消费方
+
+1. 新增真实本机隔离 Python 子进程作为外部存活 oracle，Docker 传输与清理用受控替身。第一次测试夹具误把 Windows CRLF 当作 LF，前三例因夹具超时失败；修正换行检查后，在旧生产源码上得到有效红测 **14 failed，2 passed，1.76 秒**：真实进程仍活着时取消路径报告 false，清理延交后持久快照仍为 false，清理中仍返回 true，历史／孤儿快照忽略查询结果。此处不是实际 Docker 或安全目标故障样本，不提升证据等级。
+2. `SecurityCommandExecutionResult.is_running` 改为 `bool | None`，新增默认 `unknown` 的 `execution_observation`。本地仍有效监督返回 true；观察到成功返回、明确未派发或完整容器 ID 查询确认不存在时返回 false；容器仍存在、查询失败／异常／不确定、缺少完整 ID时返回 null。非零 CLI 返回保留原退出码和输出，但不能单独证明外部停止。历史无观测字段的快照不猜测、不改写。
+3. `_observe_detached_execution()` 为唯一状态投影；supervisor 在清理尝试及观测后保存原取消／失败结果；轮询只读，不改变任务终态，不启动或停止命令。取消发生在协程首条指令之前与清理期间再次取消，通过 `operation_started` 区分，不能只凭 `task.cancelled()` 认定未派发。失败日志保留 job ID、完整 container ID、原因与异常类型，不记录异常正文。
+4. 新增反例覆盖 running／resume_requested／cancelled、初始与历史终态快照、目标存在／不存在／查询错误／异常／畸形响应、短 ID／名称拒作查询身份、跨 Session 先校验再查询、原数据不变、单次执行、立即关闭与脱敏日志；其中清理延交／null 持久化使用现有真实 PostgreSQL，重新读取后仍保持未知。没有启动额外 Docker 容器、扫描目标或调用付费模型。
+5. 全局核对生产消费方：后台启动／轮询集中在该 service，前端没有直接消费该 DTO。正常结果跨服务读取继续保留观测；真实 Docker 测试把 `not result.is_running` 加强为 `result.is_running is False`，避免 null 误过。基础规格文档补充当前三态与混合版本限制，不覆盖历史规格；`.gitignore` 按现有白名单约定仅放行本轮新测试文件，未使用强制暂存。
+
+### 最终源码实际验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`。复用用户已启动 PostgreSQL／Redis，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`、`RUN_LIVE_DOCKER_TESTS=0`、`PYTHONIOENCODING=utf-8`，没有启停服务或改生产路由。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_security_detached_execution_evidence.py tests/test_security_execution_environment_upgrade.py tests/test_security_approval_boundary.py tests/test_invalid_tool_plan_visibility.py tests/test_security_target_guard.py tests/test_security_session_target_quoting.py tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py tests/test_resource_cleanup_entrypoint.py tests/test_lifespan_resource_cleanup.py tests/test_resource_occupancy.py -q -rs --tb=short
+# 145 passed，3 skipped，23.46 秒，exit 0
+# skip：2 项既有 Kali Docker 目标转义用例、1 项既有 RUN_LIVE_MYSQL_TESTS 门禁
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_live_resource_leases.py::test_security_background_lifecycle_and_durable_result tests/test_live_resource_leases.py::test_security_background_worker_kill_preserves_recovery_and_releases_container -q -rs --tb=short
+# 13 skipped，5.56 秒，exit 0：仅确认可收集，真实 Docker 门未开启，不是生命周期验收通过
+```
+
+根目录 compileall 与 `git diff --check` 实际通过；ruff／mypy 经 find_spec 确认未安装，未执行独立 lint／typecheck。未运行全量前后端、真实 Docker、安全工具／目标、供应商、RustFS 或 E3/E4。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不纳入暂存／提交。
+
+### 剩余出口与提交对应
+
+本节只闭合“任务状态不能伪装外部停止、无监督快照须只读核验”的领域 Runner 子出口。`true` 不是目标接受回执，成功返回不证明容器内所有后代进程都消失，`false` 更不证明既有副作用已撤销。尚未新增独立停止回执／查询 journal、Runner execution ID 到目标的全链路绑定或补偿权限；真实 Docker 强杀／失租／清理失败验收待额外环境授权。新快照含观测字段，旧 Worker dataclass reader 不兼容该新增字段；混合版本／回滚须先升级读者或隔离路由，本轮未部署。
+
+本节代码、测试与文档随 `【fix】区分后台命令未知状态与停止观测` 同一提交交付，提交 ID 见本轮交付及 Git 历史。A3 其余 journal／资源补偿／真实 Runner、A2-2/A2-3、B/C 其余出口、D/E/F、H01–H12、官方 saver conformance 与 E3/E4 继续按完整 v4 保留，整体目标仍 active。

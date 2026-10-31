@@ -1117,7 +1117,7 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
                         await asyncio.wait_for(operation, 15)
                 remote = SecurityExecutionEnvironmentService(settings=settings, tool_jobs=ToolJobService(PostgresToolJobStore(settings)))
                 result = await remote.poll_execution(job_id, context=owner)
-                assert not result.is_running
+                assert result.is_running is False
                 saved = await jobs.get_job(job_id)
                 if scenario in {"unpolled", "partial", "retained"}:
                     assert saved.status.value == "completed" and result.exit_code == 0
@@ -1288,7 +1288,7 @@ async def test_security_background_worker_kill_preserves_recovery_and_releases_c
         remote = SecurityExecutionEnvironmentService(settings=settings)
         with bind_request_context(session_id="s-background-kill"):
             result = await remote.poll_execution(job_id)
-        assert not result.is_running and result.exit_code == 255
+        assert result.is_running is False and result.exit_code == 255
         assert "recovery" in result.stderr
         inspected = subprocess.run(["docker", "inspect", container_id], capture_output=True, timeout=15)
         assert inspected.returncode != 0

@@ -303,12 +303,14 @@ async def test_detached_job_returns_partial_output_then_completes_and_cleans_up(
         await asyncio.wait_for(service._detached_jobs[started.job_id].task, 1)
         assert closed.is_set()
         completed = await service.poll_execution(started.job_id, context=_Context())
-        assert not completed.is_running and completed.exit_code == 0
+        assert completed.is_running is False and completed.exit_code == 0
+        assert completed.execution_observation == "command_returned"
         assert completed.stdout == "starting\ndone\n"
         assert (await jobs.get_job(started.job_id)).status.value == "completed"
         remote = SecurityExecutionEnvironmentService(settings=settings, tool_jobs=jobs)
         restored = await remote.poll_execution(started.job_id, context=_Context())
         assert restored.stdout == completed.stdout and restored.exit_code == 0
+        assert restored.is_running is False and restored.execution_observation == "command_returned"
     finally:
         release.set()
         await service.close()
