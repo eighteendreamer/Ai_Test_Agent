@@ -6717,3 +6717,35 @@ git diff --check
 ```
 
 本步只闭合 Memory embedding backfill 的批量响应完整性与未知效果可见性；测试使用受控 embedding double，未验收真实 embedding 供应商。已有 Memory 行／执行回执只读对账、Redis vector replica rebuild、资源清理补偿、外部 Runner 对账、A2-2/A2-3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 与完整 v4 仍继续 active。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。
+
+## 146. A3／H06／§10.1：不同 reason 也不得绕过未知资源清理对账（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `c304b8450`／§145。§144 已拦截同一 `cleanup_operation_id`／reason 的未知记录，但 `cleanup_session()` 仍可在上一次清理效果为 `unknown` 时换用新的 reason，生成第二个 operation id 并再次调用 browser／Docker adapter。现有只读 `reconcile_session_resource_cleanup()` 已将这种状态分类为 `cleanup_other_operation`／`unknown`，说明未知外部效果尚未获得新的执行授权；执行入口没有消费该证据，导致 reason 变化可以绕过门禁。这不是 reason 字符串的重复判断问题，而是未知副作用按资源生命周期而非调用理由建立执行边界的缺失。
+
+依据 v4 §10.1／§10.2 的“未知效果先查询、不盲重试”和稳定操作 journal：只要当前资源已有非空 cleanup operation id 且 `cleanup_state=unknown`，任何新的 cleanup reason 都必须保留原状态、记录请求与已观察 operation 身份并要求显式 reconciliation。没有 operation journal 的首次清理继续允许执行；不新增调度层、自动补偿、DDL 或公开 API。
+
+### TDD 与最小实现
+
+1. 新增跨 reason 失败样本 `test_session_resource_cleanup_does_not_start_new_reason_after_unknown_effect`：先写入 `session_completed` 的未知 journal，再以 `operator_requested` 调用 `cleanup_session()`；旧实现实际 **1 failed，5.24 秒，exit 1**，已经调用 browser adapter 并覆盖原 journal。
+2. `_cleanup_one()` 将未知状态门禁提升到资源级：只检查非空 observed operation id，不再要求 reason 相同；告警额外记录 `observed_operation_id` 与 `observed_cleanup_reason`，原首次清理、同 allocation fence 和已完成路径保持不变。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`，复用用户已启动 PostgreSQL／Redis；未启停服务、未调用付费模型、未改生产路由、DDL 或依赖。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_resource_cleanup_worker.py::test_session_resource_cleanup_does_not_retry_unknown_same_operation tests/test_resource_cleanup_worker.py::test_session_resource_cleanup_does_not_start_new_reason_after_unknown_effect tests/test_resource_cleanup_worker.py::test_browser_cleanup_marks_same_allocation_released_but_not_replacement tests/test_resource_cleanup_worker.py::test_session_resource_cleanup_failure_keeps_unknown_operation_journal -q -x --tb=short
+# 4 passed，3.93 秒
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_resource_cleanup_worker.py tests/test_resource_cleanup_entrypoint.py tests/test_browser_resource_harness.py tests/test_framework_turn_memory_reconciliation.py tests/test_lifespan_resource_cleanup.py -q -rs --tb=short
+# 55 passed，1 skipped，6.13 秒；唯一 skip 为既有 RUN_LIVE_MYSQL_TESTS 门
+
+.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+# exit 0
+git diff --check
+# exit 0
+```
+
+本步只闭合“已有未知资源清理效果不能通过更换 reason 重新取得执行权”这一 A3/H06 出口；显式 reconciliation／人工或有依据的补偿端口仍未新增，不能据此证明 Docker、浏览器或领域 Runner 已停止。Memory 副本补偿、外部 Runner 对账、A2-2/A2-3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 与完整 v4 继续 active。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。

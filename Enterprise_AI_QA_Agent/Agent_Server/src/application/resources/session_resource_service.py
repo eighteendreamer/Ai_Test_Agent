@@ -213,10 +213,12 @@ class SessionResourceService:
                 },
             )
             return resource
+        observed_operation_id = current.metadata.get("cleanup_operation_id")
+        observed_reason = current.metadata.get("cleanup_reason")
         if (
-            current.metadata.get("cleanup_operation_id") == operation_id
-            and current.metadata.get("cleanup_reason") == reason
-            and current.metadata.get("cleanup_state") == "unknown"
+            current.metadata.get("cleanup_state") == "unknown"
+            and isinstance(observed_operation_id, str)
+            and bool(observed_operation_id)
         ):
             LOGGER.warning(
                 "session_resource_cleanup_unknown_requires_reconciliation",
@@ -225,7 +227,9 @@ class SessionResourceService:
                     "resource_id": current.id,
                     "resource_key": current.resource_key,
                     "operation_id": operation_id,
+                    "observed_operation_id": observed_operation_id,
                     "cleanup_reason": reason,
+                    "observed_cleanup_reason": observed_reason,
                     "resource_status": current.status.value,
                 },
             )

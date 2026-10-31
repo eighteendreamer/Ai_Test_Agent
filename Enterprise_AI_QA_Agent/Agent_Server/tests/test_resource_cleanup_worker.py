@@ -492,6 +492,50 @@ async def test_session_resource_cleanup_does_not_retry_unknown_same_operation(ca
 
 
 @pytest.mark.asyncio
+async def test_session_resource_cleanup_does_not_start_new_reason_after_unknown_effect(caplog):
+    calls = []
+
+    async def cleanup(resource_key, *, allocation_id):
+        calls.append((resource_key, allocation_id))
+
+    store = InMemorySessionResourceStore()
+    service = SessionResourceService(store, browser_cleanup=cleanup)
+    resource = await service.register(
+        session_id="session-resource-unknown-reason",
+        kind=SessionResourceKind.browser_session,
+        resource_key="browser-unknown-reason",
+        metadata={"allocation_id": "allocation-unknown-reason"},
+    )
+    prior_reason = "session_completed"
+    prior_operation_id = session_resource_cleanup_operation_id(
+        resource.session_id, resource.id, prior_reason,
+    )
+    await store.mark_status(
+        resource.id,
+        SessionResourceStatus.active,
+        {
+            "cleanup_operation_id": prior_operation_id,
+            "cleanup_state": "unknown",
+            "cleanup_reason": prior_reason,
+        },
+    )
+
+    with caplog.at_level(logging.WARNING):
+        cleaned = await service.cleanup_session(
+            resource.session_id, reason="operator_requested",
+        )
+
+    assert calls == []
+    assert cleaned[0].status == SessionResourceStatus.active
+    assert cleaned[0].metadata["cleanup_operation_id"] == prior_operation_id
+    assert cleaned[0].metadata["cleanup_reason"] == prior_reason
+    assert any(
+        record.getMessage() == "session_resource_cleanup_unknown_requires_reconciliation"
+        for record in caplog.records
+    )
+
+
+@pytest.mark.asyncio
 async def test_browser_cleanup_marks_same_allocation_released_but_not_replacement():
     store = InMemorySessionResourceStore()
     closed = []
