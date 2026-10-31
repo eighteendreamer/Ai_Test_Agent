@@ -151,7 +151,13 @@ environment = {"python_version": platform.python_version(), "python_implementati
     "platform": sys.platform, "machine": platform.machine(), "dependencies": dependencies,
     "worker_capabilities": dataclasses.asdict(module.FrameworkWorkerCapabilities.from_artifact(
         deepagents_available=importlib.util.find_spec("deepagents") is not None))}
-print(json.dumps({"environment": environment, "formats": {model.__name__: model.model_json_schema() for model in models},
+formats = {model.__name__: model.model_json_schema() for model in models}
+from src.runtime import framework_message_stages
+# Old source releases have no catalogue export. Preserve their exact inventory,
+# rather than inventing definitions or rewriting an immutable historical object.
+if hasattr(framework_message_stages, "message_stage_material_schemas"):
+    formats["message_stage_materials"] = framework_message_stages.message_stage_material_schemas()
+print(json.dumps({"environment": environment, "formats": formats,
     "tools": {tool.key: tool.model_dump(mode="json") for tool in ToolRegistry().list()}}, ensure_ascii=True, sort_keys=True))
 '''
 

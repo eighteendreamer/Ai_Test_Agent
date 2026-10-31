@@ -55,6 +55,10 @@ v2 CLI 未传显式 `--release-store`／`--release-reference` 时也消费同一
 
 日志 `framework_release_preflight_verified` 带有限标量 `framework_release_revision`／`framework_release_sha256`；未配置为 `framework_release_preflight_unconfigured`，不声称已验证归档；失败为 `framework_release_preflight_failed`／error_type，不渲染路径、原 JSON、异常正文或凭据。
 
+新源码制品的 `release/formats.json` 增加 `message_stage_materials`：复用运行时同一 codec 目录，保存 `source_manifest` 中现有 12 类严格材料的 JSON schema（包括原结果资产、图输入 v1/v2、逐审批图输入映射、投影回执及派生 Memory 材料）。每份 schema 保留自身嵌套定义；安装预检继续比较完整定义，不能仅凭 ZIP 摘要有效就接受缺失／漂移的材料清单。schema 是结构清单，不代替 Python 校验器、业务身份核对或执行权限，也不代表任意自由 metadata 都已版本化。
+
+旧源码未导出这份目录时，归档探针保持旧清单原样，不补造空目录或回写旧制品；旧清单缺失不等于旧读者支持了新格式。现有普通读取、JSON 模式读取和 claim 前格式分类仍走原 reader，无新写入格式／版本上界变化。
+
 **发布限制不变**：所有旧初始化读者升级／隔离前，不得启用引用写者。原 API 普通消息受理仍走现有 legacy；正式新绑定创建／冻结入口尚待接入。源码归档验收复用当前 venv，不等于双制品独立依赖安装、完整后端部署或 E4。
 
 - `tests/test_framework_release_startup.py`：配置、原安装校验 factory、实际 lifespan 的资源前顺序、CLI 配置分支、日志有限输出，以及恢复当前源码快照的新进程预检。新进程的 SQL／业务初始化明确替换为空端口，不是全后端 lifespan 验收。

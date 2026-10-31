@@ -7697,3 +7697,51 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → main／原能力 factory／v2 CLI／配置／formatter、配置模板和控制说明、三个既有与一个新增测试、白名单及本记录共 13 文件 → 上述红绿、真实恢复源码预检、483 项通过与明确 1 项未验收 → 独立提交 `【feat】在应用资源启动前核验配置制品`，ID 见 Git 历史和交付。不推送、不修改实际 `.env`、不提交测试制品或用户草稿；没有重启服务、运行 Docker、调用付费模型、目标扫描、生产路由变更、DDL 或数据迁移。
 
 旧版可能静默忽略新配置字段，设置环境变量本身不是读者已升级证明；§166 的旧初始化限制未消失。新绑定正式创建／冻结／发布入口及真实 Prompt／Skill／工具／模型资产关联仍待完成，禁止补造版本或给历史绑定猜关联。三类历史异常、全部格式清单、双制品独立安装／完整后端启动、一致备份恢复、灰度／回滚排空、MySQL 实库清理分支、§158 未归属残留和完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 按 v4 保留。整体目标继续 active，本节不宣称 F 或全系统完成。
+
+## 169. F／§14.1、H11：制品格式清单复用运行时材料 codec 目录（2026-11-01）
+
+### 续接、事实与采用依据
+
+审阅 §168 的 13 文件、完整 diff、新测试和原回归记录后，补跑 compileall／暂存 diff 检查并精确提交为 `908c11ba9d2f089f0d860c9c9634464176c5ee0d`（`【feat】在应用资源启动前核验配置制品`）。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，没有修改／暂存／提交，正式历史制品未覆盖。
+
+先复跑 §159 中断两参数、§160 零秒续租原样本及两个诊断分支：**5 passed，34.59 秒**；本次未复现，不将其作为原异常的根因修复，也未重跑旧 20／10 文件全组合。复核 §52–54 确认原 messages 顺序失败已有固定版 Delta 读取根因与独立修复，不能因 v4 历史现状描述而重复实现。
+
+查证原归档 `PROBE` 只保存部分顶层模型 schema；`FrameworkMessageStage.source_manifest` 是自由字典，其中 12 类既有严格材料虽已使用唯一 `message_stage_material_readers()` 读取，却没有进入制品格式清单。缺的是运行时读者与归档定义的同源关系，不是新的业务恢复门或审批／调度层。原 `require_installed_release()` 已比较完整 formats，不复制 verifier 或另造兼容推断。
+
+依据原材料 reader 目录及原安装 probe → 把同一目录条目表示为原 reader 与其定义类型，派生原 reader 视图及离线 schema 视图；固定环境已安装的 `pydantic/type_adapter.py::TypeAdapter.json_schema()` → 生成模型、图输入 v1/v2 union 和逐审批输入映射的原生 JSON schema；本地《评测工程化与CICD》的版本化／可追溯基线与《Agent轨迹与协议鲁棒性》的协议字段契约 → 核对当前源码实物、旧制品和真实数据库消费方。最初提取本地课程片段因终端 GBK 不能编码符号而 exit 1，设置 UTF-8 后取得内容；不修改课程文件或把提取失败算通过。
+
+### TDD、实现和兼容边界
+
+1. 先补同源 schema、目录替换、当前归档导出及旧版本保留四个契约，实际 **3 failed、1 passed，90.09 秒**：缺少 schema／codec 目录出口，当前 ZIP 没有 `message_stage_materials`。这是新行为红测，不伪称生产数据损坏。
+2. `framework_message_stages.py` 保持原 reader 函数、逐审批映射遍历、`parse_graph_input_asset()` 和 Memory execution 的 `model_validate_json()` 原样；同一目录新增定义类型，`message_stage_material_schemas()` 只生成定义，不执行材料 reader、授予 owner 或建立恢复后继。第一轮修正后四个契约 **4 passed，79.85 秒**。
+3. 原归档探针从正在探测的可信源码导出 `release/formats.json.message_stage_materials`，12 类定义各保留完整 `$defs`；没有将本机新版定义灌给旧源码。旧源码没有该导出时明确保持旧清单，不补空目录或回写旧对象；真实冻结 `908c11ba9` 归档／恢复／安装核对及字节不变断言通过。该受控兼容分支不捕获生成异常或放宽新制品检查，旧清单缺失也不代表旧 reader 支持新格式。
+4. 扩展全部 12 类嵌套 `$ref` 可解析性、同目录新条目同时出现在 reader／schema、原 JSON 模式 Memory 回执读取和无执行端口调用断言。再构造清单缺项／版本漂移两个反例，重新计算文件及 manifest／ZIP 摘要：原字节校验确实通过，但真实安装 probe 因定义不同拒绝。没有削弱已存在的源文件、引用、环境、业务 digest 或权限校验。
+5. 搜索 `release/formats.json`、reader／schema 的全部生产和测试消费点：原安装检查继续全量比较；原正常读取、claim 前检查和各投影消费方仍共用原 reader。同步原控制说明，不修改 API／DTO、binding／stage 写入格式、版本上界、生产 DDL、配置开关或前端。JSON schema 只表达结构，不能代替 Python model validators、业务来源／谱系核对或自由 metadata 的完整语义。
+
+### 当前源码验证
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py::test_http_interrupt_revokes_owner_before_worker_poll_and_blocks_late_writes 'tests/test_framework_approval_settlement.py::test_approval_settlement_rechecks_committed_facts[missing_commit-claim]' tests/test_framework_approval_recovery.py::test_expiration_deferral_keeps_safe_timing_diagnostics -q -rs --tb=short
+# 5 passed，34.59 秒；本轮代码修改之前，未复现原时间异常
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_v2_worker_contract.py tests/test_framework_release_archive.py tests/test_framework_release_binding.py tests/test_framework_release_startup.py tests/test_framework_stage_reader_admission.py tests/test_framework_turn_memory_projection.py tests/test_framework_turn_memory_reconciliation.py -q -rs --tb=short
+# 454 passed，408.30 秒，exit 0，无 skip／deselect
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_workers.py tests/test_framework_message_stages.py tests/test_framework_runtime_result_asset.py tests/test_framework_graph_input_asset.py -q -rs --tb=short
+# 111 passed，338.69 秒，exit 0，无 skip／deselect
+```
+
+两组最终源码分别覆盖归档／恢复／安装、启动预检、原新旧源码 Worker、真实 PG／Redis 投递和阶段／资产／图输入／派生 Memory 读者；所有已启动 pytest 均已取得终态。源码测试快照继续复用同一 venv，启动测试使用原明确后端空端口，历史 Worker 使用真实领取／结算和受控终态，不是新双制品独立依赖安装、完整后端或真实模型／工具部署。没有把本轮格式清单当成已完成全部格式／行为能力审计。
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际 exit 0；仅有既有 CRLF 提示。`find_spec` 再确认 ruff／mypy／build／wheel／setuptools 未安装，未跑独立 lint／typecheck／构建安装，不装依赖。前端无改动，未重跑。没有读取／修改实际 `.env`、重启服务、运行 Docker、付费调用、目标扫描、生产路由变更或数据迁移；测试制品仍临时／ignored，不纳入提交。
+
+### 提交与下一步
+
+v4 F／§14.1、H11 → 本节 → 原 stage codec／归档探针、两个已有测试、原控制说明和本记录共 6 文件 → 上述红绿、当前／历史源码安装、454／111 两组回归 → 独立提交 `【feat】让制品归档复用运行时材料格式目录`，ID 见 Git 历史和交付；不推送，不混入用户 v3 草稿。
+
+后续继续完成未覆盖格式／行为清单、正式绑定创建／冻结／发布及真实资产关联、旧初始化读者升级／隔离、独立依赖双制品部署、一致备份恢复和灰度回滚排空；没有给历史绑定猜关联或开启引用写者。§159／160 两类时间异常和 §166 子进程 RuntimeError 仍未定位，§158 未归属共享 checkpoint 残留不猜测清理。完整 A2/A3/B/C/D/E/F、H01–H12、MySQL 实库分支、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 保持原出口。整体目标仍 active，本子步不代表 F 或全系统完成。

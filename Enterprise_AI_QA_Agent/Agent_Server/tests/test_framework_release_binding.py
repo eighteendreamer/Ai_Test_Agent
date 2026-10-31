@@ -236,6 +236,67 @@ def current_source_release(tmp_path_factory):
     return store, reference
 
 
+def test_current_source_release_archives_the_actual_stage_material_schemas(tmp_path, current_source_release):
+    import zipfile
+    from src.runtime import framework_message_stages
+    from src.runtime.framework_release_archive import require_installed_release, restore_release
+
+    store, reference = current_source_release
+    with zipfile.ZipFile(store / (reference.archive_sha256 + ".zip")) as archive:
+        formats = json.loads(archive.read("release/formats.json"))
+    assert formats["message_stage_materials"] == framework_message_stages.message_stage_material_schemas()
+    destination = tmp_path / "installed-with-material-inventory"
+    restore_release(store, reference, destination)
+    assert require_installed_release(destination, store, reference).source_revision == reference.source_revision
+
+
+@pytest.mark.parametrize("change", ["missing", "changed"])
+def test_installation_rejects_self_consistent_but_stale_material_definitions(tmp_path, current_source_release, change):
+    import hashlib
+    from src.runtime import framework_release_archive as module
+    from tests.test_framework_release_archive import rewrite_release
+
+    def alter(files):
+        formats = json.loads(files["release/formats.json"])
+        if change == "missing":
+            del formats["message_stage_materials"]["runtime_result_asset"]
+        else:
+            formats["message_stage_materials"]["runtime_result_asset"]["properties"]["schema_version"]["const"] = 99
+        content = module._json(formats)
+        files["release/formats.json"] = content
+        manifest = json.loads(files[module.MANIFEST])
+        manifest["files"]["release/formats.json"] = {
+            "sha256": hashlib.sha256(content).hexdigest(), "size_bytes": len(content)}
+        files[module.MANIFEST] = module._json(manifest)
+
+    store, reference = rewrite_release(tmp_path, current_source_release, alter)
+    # Byte integrity is not proof that definitions match the installed readers.
+    module.verify_release(store, reference)
+    destination = tmp_path / "installed-with-stale-inventory"
+    module.restore_release(store, reference, destination)
+    with pytest.raises(ValueError, match="environment or definitions"):
+        module.require_installed_release(destination, store, reference)
+
+
+def test_previous_source_without_material_inventory_keeps_its_original_release_definitions(tmp_path):
+    import zipfile
+    from src.runtime.framework_release_archive import archive_release, require_installed_release, restore_release
+
+    # Freeze the implementation before the catalogue export. Do not treat a
+    # future HEAD as an old reader or add definitions to an existing object.
+    store = tmp_path / "previous-material-store"
+    reference = archive_release(Path(__file__).resolve().parents[2], store,
+        revision="908c11ba9d2f089f0d860c9c9634464176c5ee0d")
+    path = store / (reference.archive_sha256 + ".zip")
+    original = path.read_bytes()
+    with zipfile.ZipFile(path) as archive:
+        assert "message_stage_materials" not in json.loads(archive.read("release/formats.json"))
+    destination = tmp_path / "installed-before-material-inventory"
+    restore_release(store, reference, destination)
+    assert require_installed_release(destination, store, reference).source_revision == reference.source_revision
+    assert path.read_bytes() == original
+
+
 def test_current_source_snapshot_resolves_a_pinned_binding_in_a_fresh_process(tmp_path, current_source_release):
     from src.runtime import framework_release_archive as module
 

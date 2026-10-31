@@ -24,13 +24,15 @@ class FrameworkMessageStageRecoveryRequired(RuntimeError):
     pass
 
 
-def message_stage_material_readers():
-    """One codec catalogue for normal validation and pre-claim compatibility.
+def _message_stage_material_codecs():
+    """One codec catalogue for validation, claim compatibility and releases.
 
     These are the existing typed manifest materials, not a new proof or a
     whitelist for the source manifest's untyped application metadata.
     """
-    from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
+    from src.schemas.framework_graph_input import (
+        FrameworkApprovalGraphInput, FrameworkGraphInputAsset, FrameworkPreparedGraphInputAsset, parse_graph_input_asset,
+    )
     from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
     from src.schemas.framework_projection_commit import (
         FrameworkTurnMemoryIntent, FrameworkTurnMemoryPlan, FrameworkTurnMemoryExecution,
@@ -39,21 +41,32 @@ def message_stage_material_readers():
     from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
 
     return {
-        "post_commit_memory_intent": FrameworkTurnMemoryIntent.model_validate,
-        "post_commit_memory_plan": FrameworkTurnMemoryPlan.model_validate,
-        "post_commit_memory_execution": lambda value: FrameworkTurnMemoryExecution.model_validate_json(
-            json.dumps(value, ensure_ascii=False)),
-        "approval_graph_inputs": lambda values: {key: FrameworkApprovalGraphInput.model_validate(raw)
-            for key, raw in values.items()},
-        "graph_input_asset": parse_graph_input_asset,
-        "observation_projection_asset": FrameworkObservationAsset.model_validate,
-        "observation_projection_commits": FrameworkObservationCommits.model_validate,
-        "event_projection_commits": FrameworkEventProjectionCommits.model_validate,
-        "snapshot_projection_commit": FrameworkSnapshotProjectionCommit.model_validate,
-        "runtime_result_asset": FrameworkRuntimeResultAsset.model_validate,
-        "application_projection_commit": FrameworkProjectionCommit.model_validate,
-        "semantic_input": PreparedSemanticInput.model_validate,
+        "post_commit_memory_intent": (FrameworkTurnMemoryIntent.model_validate, FrameworkTurnMemoryIntent),
+        "post_commit_memory_plan": (FrameworkTurnMemoryPlan.model_validate, FrameworkTurnMemoryPlan),
+        "post_commit_memory_execution": (lambda value: FrameworkTurnMemoryExecution.model_validate_json(
+            json.dumps(value, ensure_ascii=False)), FrameworkTurnMemoryExecution),
+        "approval_graph_inputs": (lambda values: {key: FrameworkApprovalGraphInput.model_validate(raw)
+            for key, raw in values.items()}, dict[str, FrameworkApprovalGraphInput]),
+        "graph_input_asset": (parse_graph_input_asset, FrameworkGraphInputAsset | FrameworkPreparedGraphInputAsset),
+        "observation_projection_asset": (FrameworkObservationAsset.model_validate, FrameworkObservationAsset),
+        "observation_projection_commits": (FrameworkObservationCommits.model_validate, FrameworkObservationCommits),
+        "event_projection_commits": (FrameworkEventProjectionCommits.model_validate, FrameworkEventProjectionCommits),
+        "snapshot_projection_commit": (FrameworkSnapshotProjectionCommit.model_validate, FrameworkSnapshotProjectionCommit),
+        "runtime_result_asset": (FrameworkRuntimeResultAsset.model_validate, FrameworkRuntimeResultAsset),
+        "application_projection_commit": (FrameworkProjectionCommit.model_validate, FrameworkProjectionCommit),
+        "semantic_input": (PreparedSemanticInput.model_validate, PreparedSemanticInput),
     }
+
+
+def message_stage_material_readers():
+    return {key: codec[0] for key, codec in _message_stage_material_codecs().items()}
+
+
+def message_stage_material_schemas():
+    """Offline definitions only; Python validators and execution rights remain separate."""
+    from pydantic import TypeAdapter
+
+    return {key: TypeAdapter(codec[1]).json_schema() for key, codec in _message_stage_material_codecs().items()}
 
 
 def read_message_stage_material(key, value):

@@ -604,6 +604,68 @@ STAGE_MATERIAL_KEYS = (
 )
 
 
+def test_stage_material_schema_inventory_uses_the_original_codec_catalogue():
+    from pydantic import TypeAdapter
+    from src.runtime import framework_message_stages as module
+    from src.schemas.framework_graph_input import (
+        FrameworkApprovalGraphInput, FrameworkGraphInputAsset, FrameworkPreparedGraphInputAsset,
+    )
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+    schemas = module.message_stage_material_schemas()
+    assert set(schemas) == set(module.message_stage_material_readers()) == set(STAGE_MATERIAL_KEYS)
+    assert schemas["runtime_result_asset"] == FrameworkRuntimeResultAsset.model_json_schema()
+    assert schemas["graph_input_asset"] == TypeAdapter(
+        FrameworkGraphInputAsset | FrameworkPreparedGraphInputAsset).json_schema()
+    assert schemas["approval_graph_inputs"] == TypeAdapter(dict[str, FrameworkApprovalGraphInput]).json_schema()
+    assert schemas["runtime_result_asset"]["additionalProperties"] is False
+    assert schemas["runtime_result_asset"]["properties"]["schema_version"]["const"] == 1
+
+
+def test_material_inventory_and_readers_follow_one_catalogue_without_granting_execution(monkeypatch):
+    from src.runtime import framework_message_stages as module
+    from src.schemas.semantic_input import PreparedSemanticInput
+
+    seen = []
+    reader = lambda value: seen.append(value)
+    monkeypatch.setattr(module, "_message_stage_material_codecs", lambda: {
+        "controlled_catalogue_entry": (reader, PreparedSemanticInput)})
+    assert module.message_stage_material_readers() == {"controlled_catalogue_entry": reader}
+    assert module.message_stage_material_schemas() == {
+        "controlled_catalogue_entry": PreparedSemanticInput.model_json_schema()}
+    assert not seen, "Generating a schema must not invoke material readers or execution ports"
+
+
+@pytest.mark.parametrize("key", STAGE_MATERIAL_KEYS)
+def test_each_material_schema_keeps_all_nested_definitions_readable(key):
+    from src.runtime.framework_message_stages import message_stage_material_schemas
+
+    schema = message_stage_material_schemas()[key]
+    pending = [schema]
+    while pending:
+        node = pending.pop()
+        if isinstance(node, dict):
+            if "$ref" in node:
+                assert node["$ref"].startswith("#/$defs/")
+                assert node["$ref"].removeprefix("#/$defs/") in schema["$defs"]
+            pending.extend(node.values())
+        elif isinstance(node, list):
+            pending.extend(node)
+
+
+def test_material_catalogue_keeps_original_json_mode_memory_receipt_reading():
+    from src.runtime.framework_message_stages import read_message_stage_material
+    from tests.test_framework_turn_memory_reconciliation import _execution, _plan
+
+    plan = _plan()
+    original = _execution(plan, [item.request_id for item in plan.requests], state="completed")
+    wire = original.model_dump(mode="json")
+    assert read_message_stage_material("post_commit_memory_execution", wire) == original
+    assert wire == original.model_dump(mode="json")
+    value = stage_record(source_manifest={"post_commit_memory_execution": wire})
+    assert FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value).source_manifest == value["source_manifest"]
+
+
 @pytest.mark.parametrize("key", STAGE_MATERIAL_KEYS)
 @pytest.mark.parametrize("new_field", [{"schema_version": 99}, {"future_field": "private-material-input"}])
 def test_known_stage_materials_use_the_installed_strict_codecs(key, new_field):
