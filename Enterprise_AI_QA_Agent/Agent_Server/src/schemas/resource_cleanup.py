@@ -5,7 +5,29 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+
+
+class DockerResourceAbsenceObservation(BaseModel):
+    """A target query, not proof of command success or reversed side effects."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["docker_container_absence_only"] = "docker_container_absence_only"
+    method: Literal["docker_ps_all_full_id"] = "docker_ps_all_full_id"
+    container_id: str = Field(min_length=64, max_length=64, pattern=r"^[a-f0-9]{64}$")
+    allocation_id: str = Field(min_length=32, max_length=32, pattern=r"^[a-f0-9]{32}$")
+    lease_namespace: str = Field(min_length=1)
+    observer_worker_id: str = Field(min_length=1)
+    observed_at: datetime
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        if value.tzinfo is None or value.utcoffset() is None:
+            raise ValueError("Docker absence observation requires a timezone")
+        return value
 
 
 class ResourceCleanupReconciliation(BaseModel):

@@ -13,7 +13,7 @@ from psycopg import sql
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.resource_lease_manager import ExpiredResourceLease
-from src.schemas.resource_cleanup import ResourceCleanupReconciliation
+from src.schemas.resource_cleanup import DockerResourceAbsenceObservation, ResourceCleanupReconciliation
 
 
 LOGGER = logging.getLogger(__name__)
@@ -45,10 +45,23 @@ def _lease_record(lease: ExpiredResourceLease) -> dict[str, Any]:
 
 
 def _receipt_identity_matches(lease: ExpiredResourceLease, record: Any) -> bool:
+    return _record_identity_matches(_lease_record(lease), record)
+
+
+def _record_identity_matches(expected: dict[str, Any], record: Any) -> bool:
     if not isinstance(record, dict):
         return False
-    expected = _lease_record(lease)
-    return all(record.get(field) == expected.get(field) for field in _RECEIPT_IDENTITY_FIELDS)
+    if not all(record.get(field) == expected.get(field) for field in _RECEIPT_IDENTITY_FIELDS):
+        return False
+    if "absence_observation" in record:
+        try:
+            observation = DockerResourceAbsenceObservation.model_validate_json(json.dumps(record["absence_observation"]))
+        except (TypeError, ValueError):
+            return False
+        return (expected.get("resource_type") == "docker"
+            and observation.container_id == expected.get("external_resource_id")
+            and observation.allocation_id == expected.get("allocation_id"))
+    return True
 
 
 def reconcile_cleanup_receipt(
@@ -182,8 +195,8 @@ class PostgresResourceCleanupStore:
 
         ``in_progress`` is deliberately distinct from ``terminal``. A second
         delivery cannot infer that an active external cleanup stopped, so it must
-        remain pending for read-only reconciliation instead of running the
-        callback or finalizing the lease.
+        remain pending unless a separately committed target observation closes
+        the same receipt. It grants neither callback nor quota-release authority.
         """
         record = asdict(lease)
         record.pop("lease_token")
@@ -259,6 +272,9 @@ class PostgresResourceCleanupStore:
             existing = cur.fetchone()
             if existing is None:
                 raise RuntimeError(f"Cleanup receipt disappeared for task {task_id}")
+            if not _record_identity_matches(record, existing["record"]):
+                LOGGER.warning("resource_cleanup_receipt_identity_rejected", extra={"task_id": task_id})
+                raise ValueError(f"Cleanup receipt identity differs for task {task_id}")
             if existing["status"] in {"completed", "skipped"}:
                 return "terminal"
             if existing["status"] == "running":
@@ -277,6 +293,37 @@ class PostgresResourceCleanupStore:
             if cur.fetchone() is None:
                 raise RuntimeError(f"Cleanup receipt claim was lost for task {task_id}")
             return "started"
+
+    async def complete_observed_absence(self, task_id: str, lease: ExpiredResourceLease,
+                                       observation: DockerResourceAbsenceObservation, *, namespace: str) -> None:
+        if (lease.resource_type != "docker" or observation.container_id != lease.external_resource_id
+            or observation.allocation_id != lease.allocation_id or observation.lease_namespace != namespace):
+            raise ValueError("Cleanup absence observation identity differs from its lease")
+        committed = await asyncio.to_thread(self._complete_observed_absence_sync, task_id, _lease_record(lease),
+            observation.model_dump(mode="json"))
+        LOGGER.info("resource_cleanup_absence_committed" if committed else "resource_cleanup_absence_superseded", extra={"task_id": task_id,
+            "resource_id": lease.resource_id, "container_id": observation.container_id,
+            "allocation_id": observation.allocation_id, "observer_worker_id": observation.observer_worker_id})
+
+    def _complete_observed_absence_sync(self, task_id, record, observation) -> bool:
+        with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("SELECT record, status FROM {} WHERE task_id = %s FOR UPDATE").format(
+                self._table), (task_id,))
+            row = cur.fetchone()
+            if row is None or not _record_identity_matches(record, row["record"]):
+                raise ValueError(f"Cleanup receipt identity differs for task {task_id}")
+            if row["status"] in {"completed", "skipped"}:
+                return False
+            if row["status"] != "running":
+                raise ValueError(f"Cleanup absence settlement requires a running receipt for task {task_id}")
+            cur.execute(sql.SQL("""
+                UPDATE {} SET status = 'completed', error_type = NULL, updated_at = NOW(), completed_at = NOW(),
+                    record = jsonb_set(record, '{{absence_observation}}', %s::jsonb)
+                WHERE task_id = %s AND status = 'running'
+            """).format(self._table), (json.dumps(observation), task_id))
+            if cur.rowcount != 1:
+                raise RuntimeError(f"Cleanup absence settlement lost for task {task_id}")
+        return True
 
     async def finish(self, task_id: str, *, worker_id: str, status: str,
                      error_type: str | None = None) -> None:

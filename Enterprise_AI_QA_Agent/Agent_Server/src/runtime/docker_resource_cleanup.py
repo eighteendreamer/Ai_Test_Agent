@@ -4,9 +4,13 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import datetime, timezone
 
-from src.application.docker_management_service import DockerManagementService
+from src.application.docker_management_service import DockerCommandError, DockerManagementService, DockerUnavailableError
+from src.core.request_context import get_request_context
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
+from src.runtime.resource_lease_manager import ExpiredResourceLease
+from src.schemas.resource_cleanup import DockerResourceAbsenceObservation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -38,21 +42,57 @@ class DockerResourceCleanup:
         self._batch_size = settings.orchestration.resource_docker_reconcile_batch_size
         self._cursor = ""
 
+    async def observe_absence(self, lease) -> DockerResourceAbsenceObservation | None:
+        """Read only. An unbound allocation may still have a late create response."""
+        fields = {"resource_id": lease.resource_id, "allocation_id": lease.allocation_id,
+            "container_id": lease.external_resource_id}
+        if (lease.resource_type != "docker" or not lease.allocation_id
+            or not re.fullmatch(r"[a-f0-9]{64}", lease.external_resource_id or "")):
+            LOGGER.warning("docker_cleanup_absence_unconfirmed", extra={**fields, "reason": "identity_unavailable"})
+            return None
+        allocation = await self._allocation_for_lease(lease)
+        prepared = ExpiredResourceLease.from_payload({**allocation["lease_record"],
+            "external_resource_id": allocation.get("container_id"), "allocation_id": allocation["allocation_id"]})
+        if prepared != lease:
+            LOGGER.warning("docker_cleanup_absence_unconfirmed", extra={**fields, "reason": "allocation_identity_mismatch"})
+            return None
+        try:
+            present = await self._docker.container_exists(lease.external_resource_id)
+            if present is not False:
+                LOGGER.info("docker_cleanup_absence_unconfirmed", extra={**fields,
+                    "reason": "container_present" if present is True else "query_unconfirmed"})
+                return None
+        except (DockerCommandError, DockerUnavailableError) as exc:
+            LOGGER.warning("docker_cleanup_absence_unconfirmed", extra={**fields,
+                "reason": "query_failed", "error_type": type(exc).__name__})
+            return None
+        context = get_request_context()
+        observation = DockerResourceAbsenceObservation(container_id=lease.external_resource_id,
+            allocation_id=lease.allocation_id, lease_namespace=self._namespace,
+            observer_worker_id=str(context.worker_id if context and context.worker_id else "cleanup"),
+            observed_at=datetime.now(timezone.utc))
+        LOGGER.info("docker_cleanup_absence_observed", extra=fields)
+        return observation
+
+    async def _allocation_for_lease(self, lease):
+        if not lease.allocation_id:
+            return None
+        rows = await self._allocations.get_many([lease.allocation_id], namespace=self._namespace)
+        allocation = rows.get(lease.allocation_id)
+        if (allocation is None or allocation["allocation_id"] != lease.allocation_id
+            or allocation["lease_namespace"] != self._namespace or any(
+                allocation["lease_record"].get(key) != getattr(lease, key)
+                for key in ("lease_token", "fencing_token", "resource_id", "resource_type"))):
+            raise ValueError("Docker cleanup allocation ownership does not match durable intent")
+        return allocation
+
     async def __call__(self, lease) -> None:
         if lease.resource_type != "docker":
             raise ValueError(f"Unexpected Docker cleanup resource type: {lease.resource_type}")
         if lease.external_resource_id and not re.fullmatch(r"[a-f0-9]{64}", lease.external_resource_id):
             raise ValueError("Automatic Docker cleanup requires an immutable full container ID")
-        allocation = None
-        if lease.allocation_id:
-            rows = await self._allocations.get_many([lease.allocation_id], namespace=self._namespace)
-            allocation = rows.get(lease.allocation_id)
-            if allocation is None or any(
-                allocation["lease_record"].get(key) != getattr(lease, key)
-                for key in ("lease_token", "fencing_token", "resource_id", "resource_type")
-            ):
-                raise ValueError("Docker cleanup allocation ownership does not match durable intent")
-        elif not lease.external_resource_id:
+        allocation = await self._allocation_for_lease(lease)
+        if allocation is None and not lease.external_resource_id:
             return
         containers = await self._docker.list_containers()
         for container in containers:

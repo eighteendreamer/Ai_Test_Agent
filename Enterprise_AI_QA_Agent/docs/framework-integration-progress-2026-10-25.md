@@ -6998,3 +6998,51 @@ $env:RUN_LIVE_DOCKER_TESTS='1'
 v4 A3／§8.1、§10.2、§11 → 本节 → `execution_environment_service.py` 的捕获身份／唯一观测／公共深拷贝及 `test_security_detached_execution_evidence.py` → 上述真实 PG、179 项相关回归、14 项真实 Docker 验收 → `【fix】绑定后台观测身份并隔离结果视图` 同一提交，提交 ID 见本轮交付及 Git 历史。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
 
 本步无迁移；不具备原始身份材料的历史数据保持不变，查询投影为未知，不能由 metadata 或裸观测标记取得确定停止结论。§151 的旧 Worker 读取新增观测字段限制仍有效，本步未部署混合版本或改路由。外部 Runner execution ID 到目标／代次全链路、停止／查询 journal、资源补偿与 Memory 其余出口、A2-2/A2-3、B/C 其余出口、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 继续按完整 v4 保留。此子步不等于整个 A3 或全系统完成，整体目标保持 active。
+
+## 154. A3／§8.1、§10.1–§10.2、§11、H06/H10：清理进程崩溃后凭持久容器缺失观测闭合原回执（2026-10-31）
+
+### 续接、真实缺口与依据 → 做法
+
+续接 `04eb46e9a`／§153，上一轮是有效进展，不把已绑定的状态投影当作资源补偿已完成。沿既有 `DockerResourceCleanup`、`PostgresResourceCleanupStore` 和 `ResourceCleanupTaskHandler` 查到一个实际恢复空窗：清理 Worker 已删除原容器，但在 PG `finish()` 前退出，receipt 保持 running；§141 正确阻止盲目重领，但后继只能无限 pending，无法根据目标事实释放原配额。另发现 `begin()` 读取了既有 record 却未校验它，另一资源可复用同 task ID 的 terminal／failed receipt；只读 reconcile 的身份校验没有进入实际领取／复用边界。
+
+依据 §151 完整 ID 的只读 `ps --all --no-trunc --filter id=<full-id> --format {{.ID}}`、原 allocation 的不可重新分配绑定、既有 receipt 行锁／稳定身份校验、PG 提交后 Redis fenced finalization 与 ACK 顺序 → 在原 adapter 增加只读缺失观测，在原 receipt JSON 保存窄 scope 证据并以同一短事务闭合原 receipt，然后复用原终态处理，不新建调度器／清理任务，不再执行删除。依据现有 `schemas/resource_cleanup.py` 的 frozen／strict 证据模型和项目 JSON round-trip 读取方式 → 使用独立 `DockerResourceAbsenceObservation`，不把命令输出 DTO 扩成另一个账本；本地《Agent轨迹与协议鲁棒性》的工具参数、轨迹、幂等和异常边界 → 同时验证原删除不重派、PG 原取消结果不变、Worker／attempts 不被重领、Redis 配额与 Stream ACK 的真实状态。
+
+### TDD、代码与契约
+
+1. 新增真实 PG 的四状态 receipt 身份负例，旧源码实际 **4 failed，6.84 秒**：running 没有识别为身份漂移，completed／skipped／failed 未拒绝 foreign lease。继而扩展 §152 的真实清理延交用例：独立清理 Worker 完成真实 Docker 删除后，在 PG receipt 提交前 gate，父进程强杀；确认 receipt running、attempts=1、quota=1 后回收 pending。旧源码实际 **1 failed，16.68 秒**，`worker.run_once()` 为 0 而预期 1；原删除完成但 receipt 无恢复出口，不是 Docker／PG 启动失败。
+2. `DockerManagementService.container_exists()` 仅接受完整 64 hex ID。CLI 非零继续抛原受控命令错误，零退出仅接受空输出或精确同一 ID；短 ID、名称、陌生／重复响应均不能充当缺失证明。不复用会过滤畸形 JSON 行的列表解析器来认定目标不存在。
+3. `DockerResourceCleanup.observe_absence()` 复用 `_allocation_for_lease()` 的持久身份读取，再要求 allocation 已绑定到同一完整容器 ID，规范化后的原 lease 与当前请求完全一致。未绑定 allocation 可能迟到创建，因此空 inventory 不是该情况的终止证明。目标仍在／查询错误／无完整身份返回未确认，保留 pending；确定的持久身份矛盾明确报错，不删除、不释放配额。查询错误仅记录上下文、原因与异常类型，不回显私有 stderr。
+4. 新观测模型带版本、`docker_container_absence_only` scope、固定查询方法、namespace、allocation ID、完整 container ID、观察者与带时区时间，不含 lease token。Handler 的 in_progress 只查询，不调用 cleanup callback；确认缺失后进入 `complete_observed_absence()`，在 PG 行锁下复核 receipt 全部稳定身份与 running 状态，将观测写入原 `record.absence_observation` 并标记 completed。原 worker_id／attempts 保留，不覆盖既有终态。随后复用原 terminal 分支的 fenced Redis finalization／orphan confirmation／ACK，没有复制另一套恢复执行路径。
+5. `begin()`、只读 reconcile 与缺失结算复用同一个身份比较器；存在新观测时还核对模型格式和原 container／allocation，不用裸 completed 标记跨资源复用。PG 提交失败／提交 ACK 丢失／Redis 最终确认失败均不转成 callback 重派：未提交时可再次只读查询，已提交时只复用原终态／补 Redis。迟到原 Worker 的失败 finish 不能降级已完成 receipt。并发两次缺失结算在同一行锁串行化，实际只保存一份观测、记录一次 committed 和一次 superseded，不伪造第二次提交。
+6. 测试覆盖完整 ID 查询正常／错误／畸形输出、13 类 allocation／目标材料、原回执四状态跨资源拒绝、缺失结算目标／namespace／receipt 漂移、查询后 receipt 已失败、PG 前后不确定／Redis 失败、目标仍在／查询失败保持 pending、六类坏持久观测、并发结算与迟到原 finish。真实场景使用原有独立进程 gate，仅新增提交前窗口；测试 helper 的默认 reclaim 时长与当前 `RedisTaskWorker` 的 120000ms 保持一致，仅故障例显式缩短为 10ms，不改生产时序。基础规格追加当前恢复契约，公开 API／`ResourceCleanupReconciliation`／`SecurityCommandExecutionResult` 未改。
+7. 最终复核补受控 query port 返回 `None` 的协议反例，实际 **1 failed，6.04 秒**：用 truthiness 判断仍会把未确认响应当成缺失。adapter 改为只接受显式 `False`，`True` 与非布尔未确认响应分别留原因，不升格为 proof。真实 Docker 管理端口原本只返回 bool，此处是协议负例，不伪称抓到真实 Docker 返回 None；随后重新运行当前生产源码的相关和真实 Docker 完整组合，不沿用修改前结果。
+8. 重跑 Docker 组合实际 **1 failed，14 passed，109.47 秒**：lost_lease 在命令启动标记之前自然失租，尚未到该用例预定的 renewal rejection 注入点；保留 `docker_resource_heartbeat_failed` 首因，不把它改称命令超时或证明注入已完成。该组 lost_lease 用例实际验证的是“命令已启动后的拒绝续租”，不是 2 秒启动期自然过期。仅 Harness 统一使用该组已有的 30 秒启动租约，仍在 marker 后注入原 renew=False，并新增 rejection_observed 正反断言，证明确实经过注入且其他场景没有冒用此路径。独立 Worker 强杀用例仍保留原 2 秒真实过期，生产默认 300 秒及心跳机制未改。修正后该失租单项实际 **1 passed，22.22 秒**，随后重新执行完整组合。
+
+### 当前源码实际验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`，复用用户已启动的 PostgreSQL／Redis，`PYTHONIOENCODING=utf-8`。延续已授权的本地 Kali echo／sleep 隔离容器与测试 Worker 强杀：Docker Server **29.3.1**；`vxcontrol/kali-linux:latest` 镜像前后均为 `sha256:9520f0e11a5c74e80c758260e5ac2ad46bcae90fc0dda45670cb50b9f421c3d4`；network=none、pull=never、无 NET_RAW／NET_ADMIN。不拉镜像、不扫描目标、不重启服务、不调用模型、不改生产路由。
+
+首次目标修复后真实强杀例 **1 passed，14.01 秒**；专项扩展组 **76 passed，7.15 秒**；首次大组合 **264 passed，3 skipped，28.60 秒**。随后追加并发结算例，单项 **1 passed，4.70 秒**；追加真实观测 Worker 精确断言后，该真实强杀例再次 **1 passed，16.52 秒**；当时大组合 **265 passed，3 skipped，24.81 秒**，真实 Docker 组合 **15 passed，112.42 秒**。这些重叠结果不相加，补齐显式 False 协议后的最终组合如下：
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_security_detached_execution_evidence.py tests/test_security_execution_environment_upgrade.py tests/test_security_approval_boundary.py tests/test_invalid_tool_plan_visibility.py tests/test_security_target_guard.py tests/test_security_session_target_quoting.py tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py tests/test_resource_cleanup_entrypoint.py tests/test_lifespan_resource_cleanup.py tests/test_resource_occupancy.py tests/test_docker_route_error_status.py tests/test_framework_turn_memory_reconciliation.py tests/test_live_redis_task_delivery.py tests/test_live_task_outbox.py -q -rs --tb=short
+# 266 passed，3 skipped，26.09 秒，exit 0
+# skip：2 项其他 Docker 目标转义用例，本轮未扩张到这些命令；1 项既有 MySQL 环境门
+
+$env:RUN_LIVE_DOCKER_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_live_resource_leases.py::test_security_background_lifecycle_and_durable_result tests/test_live_resource_leases.py::test_security_background_worker_kill_preserves_recovery_and_releases_container tests/test_live_resource_leases.py::test_security_background_cancel_remains_unknown_until_real_deferred_cleanup -q -rs --tb=short
+# 15 passed，128.18 秒，exit 0；无 skip／deselect
+# 清理延交包括 normal／kill_before_receipt；失租须经过 marker 后的明确续租拒绝
+```
+
+真实强杀／清理链路断言原 PG 取消结果、退出码 130、单行命令启动标记不变；后继禁用任何再次 remove，确认保存原 allocation／namespace／完整 ID 的观测，receipt 原 Worker 与 attempts=1 不变，Redis pending 和配额清空。验收后 managed 容器列表为空，本轮无残留。全局核对新模型／方法及 receipt JSON 消费方，没有把额外观测字段展开到 `ExpiredResourceLease(**record)` 或公开 DTO。根目录 compileall 和 `git diff --check` 实际通过；ruff／mypy 仍未安装，未运行独立 lint／typecheck。没有运行全量前后端、浏览器进程、其他真实领域 Runner、真实供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4。
+
+### 提交对应、兼容与剩余范围
+
+v4 A3／§8.1、§10.1–§10.2、§11、H06/H10 → 本节 → Docker 管理精确查询、Docker cleanup 的只读观测、PG receipt 原子结算、既有 Handler 的恢复复用、独立观测模型（5 个生产文件），4 个相关测试文件、基础规格与本记录 → 上述 PG／Redis／独立 Worker／真实 Docker 验证 → `【fix】凭容器缺失观测恢复清理回执` 同一提交，ID 见本轮交付及 Git 历史。用户 v3 草稿 SHA256 保持 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
+
+本步不做 DDL；新证据是原 JSON record 的可选带版本子结构，旧无观测回执读／执行沿现有测试验证。没有改变公开响应或终态枚举，但完整旧／新双制品与生产发布演练仍未执行，§151 的旧命令 DTO 读者限制也未解除。此观测只证明指定已绑定容器在查询时不存在，不能证明命令成功、外部副作用已撤销或未绑定 allocation 不会迟到创建；不授予新的删除／图／工具执行权。未确认查询目前只留结构化诊断，不宣称全量查询历史 journal 已完成。未绑定／历史缺身份、浏览器及其他 Runner 的未知清理仍不自动闭合；真实 Runner execution ID／代次全链路、独立停止意图／回执、其余 Memory／资源补偿、A2-2/A2-3、B/C、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 继续保留，整体目标 active。

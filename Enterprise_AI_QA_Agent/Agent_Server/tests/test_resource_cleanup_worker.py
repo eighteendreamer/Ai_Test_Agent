@@ -4,6 +4,7 @@ import asyncio
 import logging
 import os
 from dataclasses import replace
+from datetime import datetime, timezone
 from types import SimpleNamespace
 from uuid import uuid4
 
@@ -29,6 +30,7 @@ from src.core.config import get_settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.session import SessionStatus
+from src.schemas.resource_cleanup import DockerResourceAbsenceObservation
 from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.schemas.session_resource import (
     SessionResourceKind,
@@ -258,6 +260,216 @@ async def test_postgres_cleanup_begin_does_not_reclaim_running_receipt():
         assert result.reason_code == "receipt_running"
         assert result.attempts == 1
         assert result.worker_id in {"worker-a", "worker-b"}
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["running", "completed", "skipped", "failed"])
+async def test_cleanup_delivery_cannot_reuse_another_resources_receipt(status):
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-identity-{uuid4().hex}"
+    original = replace(expired_lease("docker", "slot-original", "a" * 64), allocation_id="a" * 32)
+    calls = []
+    async def cleanup(lease):
+        calls.append(lease.external_resource_id)
+    manager = Manager()
+    try:
+        assert await store.begin(task_id, original, worker_id="original") == "started"
+        if status != "running":
+            await store.finish(task_id, worker_id="original", status=status)
+        before = await asyncio.to_thread(store._read_sync, task_id)
+        foreign = replace(original, resource_id="slot-foreign", external_resource_id="b" * 64,
+            allocation_id="b" * 32, fencing_token=8)
+        handler = ResourceCleanupTaskHandler(store, {"docker": cleanup}, manager=manager)
+        with pytest.raises(ValueError, match="identity"):
+            await handler(QueuedTask("identity-0", {"task_type": "cleanup_task", "task_id": task_id,
+                **foreign.__dict__}))
+        assert calls == [] and manager.finalized == []
+        assert await asyncio.to_thread(store._read_sync, task_id) == before
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
+
+
+def absence_observation(lease, **updates):
+    return DockerResourceAbsenceObservation(**{"container_id": lease.external_resource_id,
+        "allocation_id": lease.allocation_id, "lease_namespace": "qa:test",
+        "observer_worker_id": "query-worker", "observed_at": datetime.now(timezone.utc), **updates})
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure", ["before_pg", "after_pg", "redis"])
+async def test_absence_receipt_commit_and_finalization_failures_never_repeat_cleanup(failure):
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-absence-{uuid4().hex}"
+    lease = replace(expired_lease("docker", "slot-query", "a" * 64), allocation_id="a" * 32)
+    calls = []
+    class Observer:
+        async def __call__(self, _lease):
+            raise AssertionError("running receipt must not dispatch cleanup again")
+        async def observe_absence(self, observed_lease):
+            calls.append(observed_lease)
+            return absence_observation(observed_lease)
+    manager = Manager()
+    manager.namespace = "qa:test"
+    real_commit, real_finalize = store.complete_observed_absence, manager.complete_cleanup
+    async def uncertain_commit(*args, **kwargs):
+        if failure == "after_pg":
+            await real_commit(*args, **kwargs)
+        raise ConnectionError("injected receipt commit uncertainty")
+    async def uncertain_finalize(_lease):
+        raise ConnectionError("injected Redis failure")
+    try:
+        assert await store.begin(task_id, lease, worker_id="original-worker") == "started"
+        if failure == "redis":
+            manager.complete_cleanup = uncertain_finalize
+        else:
+            store.complete_observed_absence = uncertain_commit
+        task = QueuedTask("absence-0", {"task_type": "cleanup_task", "task_id": task_id, **lease.__dict__})
+        handler = ResourceCleanupTaskHandler(store, {"docker": Observer()}, manager=manager)
+        with pytest.raises(ConnectionError):
+            await handler(task)
+        assert manager.finalized == []
+        receipt = await asyncio.to_thread(store._read_sync, task_id)
+        assert receipt["status"] == ("running" if failure == "before_pg" else "completed")
+        store.complete_observed_absence, manager.complete_cleanup = real_commit, real_finalize
+        await handler(task)
+        receipt = await asyncio.to_thread(store._read_sync, task_id)
+        assert receipt["status"] == "completed" and receipt["attempts"] == 1
+        assert receipt["worker_id"] == "original-worker" and receipt["completed_at"] is not None
+        observation = receipt["record"]["absence_observation"]
+        assert observation["container_id"] == lease.external_resource_id and "lease_token" not in receipt["record"]
+        assert len(calls) == (2 if failure == "before_pg" else 1)
+        assert manager.finalized == [lease.resource_id]
+        assert (await store.reconcile(task_id, lease)).status == "completed"
+        await handler(task)
+        assert await asyncio.to_thread(store._read_sync, task_id) == receipt
+        with pytest.raises(RuntimeError, match="ownership lost"):
+            await store.finish(task_id, worker_id="original-worker", status="failed")
+        assert await asyncio.to_thread(store._read_sync, task_id) == receipt
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("drift", ["container", "allocation", "namespace", "receipt", "receipt_failed"])
+async def test_absence_settlement_rechecks_identity_and_running_receipt(drift):
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-absence-drift-{uuid4().hex}"
+    lease = replace(expired_lease("docker", "slot-query", "a" * 64), allocation_id="a" * 32)
+    observation = absence_observation(lease, **{
+        "container": {"container_id": "b" * 64}, "allocation": {"allocation_id": "b" * 32},
+        "namespace": {"lease_namespace": "foreign"}, "receipt": {}, "receipt_failed": {},
+    }[drift])
+    try:
+        await store.begin(task_id, lease, worker_id="original-worker")
+        if drift == "receipt":
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("UPDATE {} SET record = jsonb_set(record, '{{session_id}}', %s::jsonb) WHERE task_id=%s").format(
+                    sql.Identifier(settings.database.postgres_resource_cleanup_table)), ('"foreign"', task_id))
+        if drift == "receipt_failed":
+            await store.finish(task_id, worker_id="original-worker", status="failed")
+        before = await asyncio.to_thread(store._read_sync, task_id)
+        with pytest.raises(ValueError):
+            await store.complete_observed_absence(task_id, lease, observation, namespace="qa:test")
+        assert await asyncio.to_thread(store._read_sync, task_id) == before
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
+@pytest.mark.asyncio
+async def test_concurrent_absence_settlements_preserve_one_receipt_and_original_owner(caplog):
+    caplog.set_level(logging.INFO, logger="src.runtime.postgres_resource_cleanup_store")
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-absence-race-{uuid4().hex}"
+    lease = replace(expired_lease("docker", "slot-query", "a" * 64), allocation_id="a" * 32)
+    observations = [absence_observation(lease, observer_worker_id=worker) for worker in ("query-a", "query-b")]
+    try:
+        await store.begin(task_id, lease, worker_id="original-worker")
+        await asyncio.gather(*(store.complete_observed_absence(task_id, lease, observation,
+            namespace="qa:test") for observation in observations))
+        row = await asyncio.to_thread(store._read_sync, task_id)
+        assert row["status"] == "completed" and row["attempts"] == 1 and row["worker_id"] == "original-worker"
+        assert row["record"]["absence_observation"] in [item.model_dump(mode="json") for item in observations]
+        assert [record.message for record in caplog.records].count("resource_cleanup_absence_committed") == 1
+        assert [record.message for record in caplog.records].count("resource_cleanup_absence_superseded") == 1
+        assert await store.begin(task_id, lease, worker_id="another-delivery") == "terminal"
+        assert await asyncio.to_thread(store._read_sync, task_id) == row
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
+
+
+@pytest.mark.parametrize("drift", ["container", "allocation", "scope", "method", "observer", "naive_time"])
+def test_mismatched_persisted_absence_observation_is_not_a_terminal_receipt(drift):
+    lease = replace(expired_lease("docker", "slot-query", "a" * 64), allocation_id="a" * 32)
+    record = {key: value for key, value in lease.__dict__.items() if key != "lease_token"}
+    observation = absence_observation(lease).model_dump(mode="json")
+    key, value = {"container": ("container_id", "b" * 64), "allocation": ("allocation_id", "b" * 32),
+        "scope": ("scope", "command_succeeded"), "method": ("method", "container_name_lookup"),
+        "observer": ("observer_worker_id", ""), "naive_time": ("observed_at", "2026-10-31T00:00:00")}[drift]
+    observation[key] = value
+    record["absence_observation"] = observation
+    result = reconcile_cleanup_receipt("cleanup-drift", lease, {"task_id": "cleanup-drift", "record": record,
+        "status": "completed", "worker_id": "original-worker", "attempts": 1})
+    assert result.status == "drifted" and result.reason_code == "receipt_identity_drift"
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", ["present", "failed"])
+async def test_running_docker_receipt_waits_without_redis_finalization_until_absence(query):
+    from src.runtime.docker_resource_cleanup import DockerResourceCleanup
+    from src.application.docker_management_service import DockerCommandError
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-query-unknown-{uuid4().hex}"
+    lease = replace(expired_lease("docker", "slot-query", "a" * 64), allocation_id="a" * 32)
+    class Allocations:
+        async def get_many(self, ids, *, namespace):
+            return {lease.allocation_id: {"allocation_id": lease.allocation_id, "lease_namespace": namespace,
+                "lease_record": lease.__dict__, "container_id": lease.external_resource_id}}
+    class Docker:
+        async def container_exists(self, target):
+            assert target == lease.external_resource_id
+            if query == "failed":
+                raise DockerCommandError("controlled query failure")
+            return True
+        async def list_containers(self):
+            raise AssertionError("Do not dispatch cleanup while its effect is unknown")
+    manager = Manager()
+    manager.namespace = "qa:test"
+    callback = DockerResourceCleanup(settings, allocations=Allocations(), namespace=manager.namespace, docker=Docker())
+    try:
+        await store.begin(task_id, lease, worker_id="original-worker")
+        before = await asyncio.to_thread(store._read_sync, task_id)
+        handler = ResourceCleanupTaskHandler(store, {"docker": callback}, manager=manager)
+        with pytest.raises(TaskDeferred):
+            await handler(QueuedTask("query-unknown-0", {"task_type": "cleanup_task", "task_id": task_id, **lease.__dict__}))
+        assert manager.finalized == []
+        assert await asyncio.to_thread(store._read_sync, task_id) == before
     finally:
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(

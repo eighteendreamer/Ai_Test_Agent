@@ -91,7 +91,7 @@ async def _wait_for_running_container(manager):
     return await asyncio.wait_for(wait(), timeout=30)
 
 
-async def _complete_real_cleanup(manager, *, retain_receipt=False):
+async def _complete_real_cleanup(manager, *, retain_receipt=False, reclaim_idle_ms=120000):
     settings = get_settings()
     store = PostgresResourceCleanupStore(settings)
     queue = RedisTaskQueue(settings.database.redis_url, stream=manager._cleanup_stream, group="live-perf-cleanup")
@@ -102,7 +102,7 @@ async def _complete_real_cleanup(manager, *, retain_receipt=False):
         payloads = [json.loads(fields["payload"]) for _, fields in await manager._client.xrange(manager._cleanup_stream)]
         task_ids = [payload["task_id"] for payload in payloads]
         assert len(task_ids) == 1
-        worker = RedisTaskWorker(queue, consumer="live-perf-cleanup", block_ms=0,
+        worker = RedisTaskWorker(queue, consumer="live-perf-cleanup", block_ms=0, reclaim_idle_ms=reclaim_idle_ms,
             handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings, manager=manager), manager=manager))
         assert await worker.run_once() == 1
         assert not await queue.pending()
@@ -1039,11 +1039,10 @@ async def test_security_reusable_foreground_lifecycle(manager, tmp_path, scenari
 async def test_security_background_lifecycle_and_durable_result(manager, tmp_path, monkeypatch, caplog, scenario):
     m, _ = manager
     settings = _security_foreground_settings()
-    # Each scenario must reach its own fault boundary, not accidentally lose
-    # the 2s fixture lease during startup or the command-timeout window.
-    # Keep the dedicated rejection/expiry tests short; never relabel a real
-    # heartbeat failure as a command timeout just to satisfy this test.
-    settings.orchestration.resource_default_lease_seconds = 2 if scenario == "lost_lease" else 30
+    # This group's lost_lease is a renewal rejection after the command marker,
+    # not a startup-expiry test. Give every scenario a viable startup lease;
+    # the independent Worker-kill case still verifies actual 2s expiry.
+    settings.orchestration.resource_default_lease_seconds = 30
     settings.security.security_runner_detach_poll_interval_seconds = .1
     settings.security.security_runner_docker_cleanup_after_run = scenario != "retained"
     store = PostgresToolJobStore(settings)
@@ -1055,6 +1054,7 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
         user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
     job_id = ""
     operation = None
+    rejection_observed = asyncio.Event()
     command = "echo ready > command-started; echo partial; echo diagnostic >&2; "
     command += "sleep 1; echo done" if scenario in {"unpolled", "partial", "retained", "database_result_failure", "settlement_cancel"} else "sleep 300"
     if scenario == "nonzero":
@@ -1105,7 +1105,10 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
                             await service.execute_detached(command="echo blocked", command_args=["echo", "blocked"],
                                 timeout_seconds=10, artifact_dir=tmp_path / "other", context=owner)
                     elif scenario == "lost_lease":
-                        async def rejected(*args, **kwargs): return False
+                        assert not operation.done() and not rejection_observed.is_set()
+                        async def rejected(*args, **kwargs):
+                            rejection_observed.set()
+                            return False
                         m.renew = rejected
                     elif scenario == "cancel":
                         await jobs.cancel_job(job_id, reason="test cancellation")
@@ -1148,6 +1151,7 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
         assert inspected.returncode != 0
         lease_lost = any(record.message == "docker_resource_heartbeat_failed" for record in caplog.records)
         assert lease_lost == (scenario == "lost_lease")
+        assert rejection_observed.is_set() == (scenario == "lost_lease")
     finally:
         await service.close()
         if job_id:
@@ -1158,8 +1162,9 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
 @pytest.mark.asyncio
-async def test_security_background_cancel_remains_unknown_until_real_deferred_cleanup(manager, tmp_path):
-    """Real container/process, Redis lease and PostgreSQL result; only rm fails."""
+@pytest.mark.parametrize("cleanup_worker_crash", [False, True], ids=["normal", "kill_before_receipt"])
+async def test_security_background_cancel_remains_unknown_until_real_deferred_cleanup(manager, tmp_path, monkeypatch, cleanup_worker_crash):
+    """Real Docker/leases/results; controlled rm failure and optional cleaner crash."""
     m, _ = manager
     settings = _security_foreground_settings()
     # This case injects removal failure, not expiry. Dedicated lost-lease and
@@ -1174,7 +1179,8 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
     service = SecurityExecutionEnvironmentService(settings=settings, docker_resources=docker, tool_jobs=jobs)
     owner = ToolExecutionContext(session_id=f"s-deferred-{uuid4().hex}", turn_id="t-deferred", trace_id="trace-deferred",
         user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
-    container_id = job_id = ""
+    container_id = job_id = cleanup_task_id = ""
+    process = None
     denied_removals = []
 
     async def defer_own_removal(args, *, timeout):
@@ -1219,7 +1225,45 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
         assert len(pending) == 1 and pending[0]["external_resource_id"] == container_id
         assert (await m.usage_snapshot())["global:all"] == 1
         assert next(tmp_path.rglob("command-started")).read_text(encoding="utf-8").splitlines() == ["external-started"]
-        await _complete_real_cleanup(m)
+        if cleanup_worker_crash:
+            context = multiprocessing.get_context("spawn")
+            removed = context.Event()
+            process = context.Process(target=_cleanup_then_wait_after_pg_commit,
+                args=(m._cleanup_stream, "live-perf-cleanup", m.namespace, removed, True))
+            process.start()
+            async def wait_removed():
+                while not removed.is_set():
+                    assert process.is_alive(), f"cleanup child exited: {process.exitcode}"
+                    await asyncio.sleep(.05)
+            await asyncio.wait_for(wait_removed(), 40)
+            process.terminate()
+            await asyncio.to_thread(process.join, 10)
+            assert not process.is_alive()
+            payloads = [json.loads(fields["payload"]) for _, fields in await m._client.xrange(m._cleanup_stream)]
+            assert len(payloads) == 1
+            cleanup_task_id = payloads[0]["task_id"]
+            receipt_store = PostgresResourceCleanupStore(settings)
+            receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
+            assert receipt["status"] == "running" and receipt["attempts"] == 1
+            assert (await m.usage_snapshot())["global:all"] == 1
+            async def must_not_repeat_removal(*args, **kwargs):
+                raise AssertionError("Absence reconciliation must not repeat Docker removal")
+            with monkeypatch.context() as patch:
+                patch.setattr("src.application.docker_management_service.DockerManagementService.remove_container",
+                    must_not_repeat_removal)
+                await asyncio.sleep(.05)
+                await _complete_real_cleanup(m, retain_receipt=True, reclaim_idle_ms=10)
+            receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
+            observation = receipt["record"]["absence_observation"]
+            assert receipt["attempts"] == 1 and receipt["worker_id"] == "terminated-cleanup-worker"
+            assert observation["container_id"] == container_id
+            assert observation["allocation_id"] == pending[0]["allocation_id"]
+            assert observation["lease_namespace"] == m.namespace
+            assert observation["scope"] == "docker_container_absence_only"
+            assert observation["observer_worker_id"] == "live-perf-cleanup"
+            assert "lease_token" not in observation
+        else:
+            await _complete_real_cleanup(m)
         result = await remote.poll_execution(job_id, context=owner)
         assert result.is_running is False and result.exit_code == 130
         assert result.execution_observation == "container_absent"
@@ -1229,6 +1273,10 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
         assert code == 0 and not stdout.strip(), (stdout, stderr)
         container_id = ""
     finally:
+        if process is not None:
+            if process.is_alive():
+                process.terminate()
+            await asyncio.to_thread(process.join, 10)
         docker._command = real_command
         await service.close()
         if container_id:
@@ -1238,6 +1286,10 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
             with postgres_connect(settings) as conn, conn.cursor() as cur:
                 cur.execute(sql.SQL("DELETE FROM {} WHERE id = %s").format(
                     sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
+        if cleanup_task_id:
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("DELETE FROM {} WHERE task_id = %s").format(
+                    sql.Identifier(settings.database.postgres_resource_cleanup_table)), (cleanup_task_id,))
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
@@ -1449,8 +1501,8 @@ async def test_security_persistent_worker_kill_recovered_by_cleanup(manager, tmp
             subprocess.run(["docker", "rm", "--force", container_id], capture_output=True, timeout=15)
 
 
-def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):
-    """Real worker paused at the PG/Redis boundary; parent terminates this process."""
+def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed, before_commit=False):
+    """Real worker paused on either side of its receipt commit, then terminated."""
     async def run():
         settings = get_settings()
         manager = RedisResourceLeaseManager(settings.database.redis_url,
@@ -1461,13 +1513,16 @@ def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed):
         await queue.connect()
         finish = store.finish
         async def finish_and_wait(*args, **kwargs):
+            if kwargs["status"] == "completed" and before_commit:
+                committed.set()
+                await asyncio.Event().wait()
             await finish(*args, **kwargs)
-            if kwargs["status"] == "completed":
+            if kwargs["status"] == "completed" and not before_commit:
                 committed.set()
                 await asyncio.Event().wait()
         store.finish = finish_and_wait
         worker = RedisTaskWorker(queue, consumer="terminated-cleanup-worker", block_ms=0,
-            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings), manager=manager))
+            handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings, manager=manager), manager=manager))
         try:
             await worker.run_once()
         finally:

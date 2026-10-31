@@ -71,6 +71,8 @@ depends_on: security_testing_mode_vs_pentagi_comparison.md
 
 **2026-10-31 身份与数据所有权补充（v4 实施记录 §153）**：上述查询及已知观测的复用，均须核对请求 job ID、持久 metadata 的完整容器 ID、原 `initial_result` 与当前快照的执行身份；本机活跃监督还须匹配启动时捕获的不可变身份。只读取既有 producer 保存的精确 `docker exec -w <cwd> <full-id> sh -lc <script>` argv，不解析命令文本、不猜其他 argv 形式。材料缺失或漂移返回 `null／unknown` 并记录原因，不查询可疑目标、不回写历史、不改变既有审批／恢复资格。监督心跳与结算使用捕获的原 job ID，不能由可变结果选择另一任务。启动及轮询返回独立深拷贝，调用方修改 argv 或嵌套 artifact 不得污染内部监督／账本。本步不新增公开字段、DDL、执行权或停止权限；这只是既有证据的一致性核验，不是防篡改签名或真实 Runner 的目标接受回执。
 
+**2026-10-31 资源清理恢复补充（v4 实施记录 §154）**：清理 Worker 在删除容器后、提交 receipt 前退出，原 `running` receipt 不重新领取或重派删除。既有 Handler 可调用 Docker adapter 的只读 `observe_absence()`：须有原 allocation 的持久完整容器绑定，核对租约／代次及请求谱系，再以完整 ID 查询；目标仍在、查询不确定、未绑定或身份漂移均不释放配额。确认缺失后，将带 namespace、allocation ID、完整容器 ID、观察者、时间和窄 scope 的观测存入原 receipt JSON，并在同一 PG 短事务核对身份后标记 completed；保留原 Worker 和 attempts，再复用已有 Redis fenced finalization／ACK。PG 回执未确认或 Redis 失败仍允许重复只读核验／最终确认，不再次执行删除，不改原 ToolJob 结果。已有回执的领取与复用均校验资源身份。无 DDL／公开 API／DTO 变更，旧无观测回执仍可读取；这不证明未绑定 allocation 不会迟到创建，也不证明命令成功或副作用被撤销，浏览器及其他 Runner 不自动获得该资格。
+
 **验收**：
 - 起一个 `sleep 30 && echo done` 的 detached job，`poll_execution` 能在结束后读到 `done` 全量输出；
 - `put_file` 上传一个字典文件、`get_file` 取回 nuclei 输出文件，内容一致；

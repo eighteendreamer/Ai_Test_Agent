@@ -9,6 +9,7 @@ from src.cli.run_resource_cleanup_worker import build_cleanup_callbacks, main
 from src.core.config import Settings
 from src.runtime.resource_lease_manager import ExpiredResourceLease
 from src.runtime.docker_resource_cleanup import DockerResourceCleanup
+from src.application.docker_management_service import DockerCommandError
 from tests.test_resource_cleanup_worker import expired_lease
 
 
@@ -115,3 +116,49 @@ async def test_inventory_cursor_does_not_starve_orphan_after_live_entries():
     manager = Manager()
     assert [await cleanup.reconcile(manager) for _ in range(4)] == [0, 0, 1, 0]
     assert manager.seen == ["slot-0", "slot-1", "slot-2", "slot-0"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("material", ["valid", "present", "query_failed", "query_unconfirmed", "missing_allocation", "short_id",
+    "missing_intent", "unbound", "target_drift", "session_drift", "worker_drift", "namespace_drift", "fence_drift"])
+async def test_docker_absence_observation_requires_its_bound_allocation(material, caplog):
+    lease = replace(expired_lease("docker", "slot-observation", "a" * 64), allocation_id="b" * 32)
+    allocation = {"allocation_id": lease.allocation_id, "lease_namespace": "qa:test",
+        "lease_record": lease.__dict__.copy(), "container_name": "original", "container_id": "a" * 64}
+    if material == "missing_allocation": lease = replace(lease, allocation_id=None)
+    if material == "short_id": lease = replace(lease, external_resource_id="a" * 12)
+    if material == "unbound": allocation["container_id"] = None
+    if material == "target_drift": allocation["container_id"] = "c" * 64
+    if material == "session_drift": allocation["lease_record"]["session_id"] = "foreign"
+    if material == "worker_drift": allocation["lease_record"]["worker_id"] = "foreign"
+    if material == "namespace_drift": allocation["lease_namespace"] = "foreign"
+    if material == "fence_drift": allocation["lease_record"]["fencing_token"] = 8
+    queries = []
+    class Allocations:
+        async def get_many(self, ids, *, namespace):
+            assert ids == [lease.allocation_id] and namespace == "qa:test"
+            return {} if material == "missing_intent" else {lease.allocation_id: allocation}
+    class Docker:
+        async def container_exists(self, target):
+            queries.append(target)
+            if material == "query_failed":
+                raise DockerCommandError("private-docker-query-error")
+            if material == "query_unconfirmed":
+                return None
+            return material == "present"
+        async def remove_container(self, *_args, **_kwargs):
+            raise AssertionError("observation must never remove a resource")
+    cleanup = DockerResourceCleanup(Settings(), allocations=Allocations(), namespace="qa:test", docker=Docker())
+    if material in {"missing_intent", "namespace_drift", "fence_drift"}:
+        with pytest.raises(ValueError, match="intent"):
+            await cleanup.observe_absence(lease)
+    else:
+        result = await cleanup.observe_absence(lease)
+        if material == "valid":
+            assert result.container_id == lease.external_resource_id and result.allocation_id == lease.allocation_id
+            assert result.lease_namespace == "qa:test" and result.observed_at.tzinfo is not None
+            assert result.scope == "docker_container_absence_only"
+        else:
+            assert result is None
+    assert queries == (["a" * 64] if material in {"valid", "present", "query_failed", "query_unconfirmed"} else [])
+    assert "private-docker-query-error" not in caplog.text

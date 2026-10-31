@@ -193,6 +193,17 @@ class DockerManagementService:
             )
         return containers
 
+    async def container_exists(self, container_id: str) -> bool:
+        """Query an exact immutable target without treating malformed output as absence."""
+        if not re.fullmatch(r"[a-f0-9]{64}", container_id):
+            raise ValueError("Docker target query requires an immutable full container ID")
+        proc = await self._run(["ps", "--all", "--no-trunc", "--filter", f"id={container_id}",
+            "--format", "{{.ID}}"], timeout=30)
+        observed = proc.stdout.strip()
+        if observed not in {"", container_id}:
+            raise DockerCommandError("Docker target query returned an unexpected identity")
+        return bool(observed)
+
     async def pull_image(self, image: str) -> dict[str, Any]:
         normalized = self._validate_image(image)
         proc = await self._run(["pull", normalized], timeout=1800)

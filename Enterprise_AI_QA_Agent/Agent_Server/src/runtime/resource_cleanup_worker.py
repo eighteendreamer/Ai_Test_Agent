@@ -101,6 +101,21 @@ class ResourceCleanupTaskHandler:
         context = get_request_context()
         worker_id = str(context.worker_id if context else "cleanup")
         begin_result = await self._store.begin(task_id, lease, worker_id=worker_id)
+        if begin_result == "in_progress":
+            callback = self._callbacks.get(lease.resource_type)
+            observer = getattr(callback, "observe_absence", None)
+            observation = await observer(lease) if observer is not None else None
+            if observation is None:
+                LOGGER.info("resource_cleanup_receipt_in_progress", extra={
+                    "task_id": task_id, "resource_id": lease.resource_id,
+                    "resource_type": lease.resource_type, "worker_id": worker_id,
+                })
+                raise TaskDeferred("cleanup receipt is already running")
+            # No second cleanup dispatch: commit the target query first,
+            # then reuse normal fenced finalization and ACK ordering.
+            await self._store.complete_observed_absence(task_id, lease, observation,
+                namespace=self._manager.namespace)
+            begin_result = "terminal"
         if begin_result is False or begin_result == "terminal":
             # Crash after PG commit but before Redis finalization/ACK: replay only
             # the fenced finalization, never call the external adapter again.
@@ -108,14 +123,6 @@ class ResourceCleanupTaskHandler:
             if payload.get("cleanup_reason") == "orphan_inventory":
                 await self._manager.complete_orphan_delivery(task_id)
             return
-        if begin_result == "in_progress":
-            LOGGER.info("resource_cleanup_receipt_in_progress", extra={
-                "task_id": task_id,
-                "resource_id": lease.resource_id,
-                "resource_type": lease.resource_type,
-                "worker_id": worker_id,
-            })
-            raise TaskDeferred("cleanup receipt is already running")
         if begin_result not in {True, "started"}:
             raise ValueError(f"Unsupported cleanup begin result: {begin_result!r}")
         try:
