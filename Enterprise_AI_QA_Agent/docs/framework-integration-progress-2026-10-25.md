@@ -7454,3 +7454,56 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → `framework_worker_capabilities.py`、`agent_task_dispatcher.py`、既有 Worker 契约、新 command 专项、测试白名单与本记录 → 上述红绿和真实 PG／Redis／恢复消费方 → 独立提交 `【fix】不兼容命令保留原投递等待兼容读者`，ID 见 Git 历史和交付。仅提交本轮 6 文件，无 DDL、数据回填、新写入格式、公共 DTO／前端／配置变化，不推送。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／暂存／提交。
 
 保留原投递不证明已部署能读取未来格式的消费者，也不授予未来 operation 的执行权；实际制品归档、双制品部署／排空、其他结果材料读能力与全量格式清单仍需完成。§159／160 时间异常及历史完整组合失败未被本轮通过覆盖，§158 共享 checkpoint 历史残留不猜测清理。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 继续按 v4 验收，整体目标保持 active，本节不代表 F 或全系统完成。
+
+## 164. F／§14.1：归档、校验并恢复实际框架源码制品（2026-10-31）
+
+### 缺口与依据 → 做法
+
+续接 `b6646d89c`／§163。现有 `deployment/legacy-runtime.json` 与 `framework_orchestration_artifact.py` 保存环境／代码指纹，不能从摘要恢复实际源码；这是制品保存能力缺失，不通过放宽兼容领取或改写已有 Turn 绑定补救。本轮只增加离线源码发布工具、契约测试与忽略规则，不修改生产执行路径、公共 binding／API／前端、配置、DDL 或已冻结资产。
+
+依据 v4 §14.1 的代码实物／根锁／依赖／schema 保存要求、项目既有 `FrameworkWorkerCapabilities.from_artifact()`、Pydantic `model_json_schema()`、ToolRegistry 原定义以及本地参考 `借鉴/codex/.github/scripts/publish_r2_release.py` 的实际发布物与摘要分离 → 使用标准库 Git／ZIP／hashlib／subprocess，独立保存明确 Git commit 的可读源码。核对固定 Python 的 `zipfile.ZipInfo.__init__` 对反斜杠／NUL 的预处理后，校验 central-directory 的原始名称而非仅校验其规范化结果。环境没有 build／wheel／setuptools，不安装或伪造 wheel；归档不是新依赖安装、镜像或部署。
+
+### TDD、实现与边界
+
+1. 新归档接口的初始红测实际 **2 failed，0.98 秒**，原因是目标模块不存在，证明新能力缺失，不伪称生产故障。初实现 **2 failed、2 warnings，22.25 秒**：Windows 子进程用 GBK 输出非 ASCII JSON，而父进程按 UTF-8 text 解码。改为子进程 ASCII JSON、父进程捕获原始 bytes 后解析，未用 `errors=ignore` 隐藏损坏。扩大测试曾 **1 failed、19 passed，47.48 秒**：反斜杠负例已被 ZipInfo 提前规范化；按已安装标准库实现修正真实恶意条目的构造，并增加 NUL／`orig_filename` 检查，不放松路径拒绝断言。修正后 **31 passed，48.09 秒**；后续 50 项组合仅是中间结果，不与最终组合累加。
+2. `src/runtime/framework_release_archive.py` 从明确本地 Git commit 读取 regular blobs，按白名单选择根 `uv.lock`、两个 pyproject、框架 `.py`、静态 Skill／HTML 模板和 recorder.js。只读已提交版本，不把工作树改动、`.env`、mutable data、venv、egg-info 或私钥扩展名纳入归档。独立临时 Git fixture 实际追踪合成私有路径并留下未提交源码修改，验证它们不进入 ZIP；不是仅对当前没有私有文件的目录做空断言。白名单不是源码内容的秘密扫描器，发布者仍须确保所选可信 commit 可发布。
+3. 将选中源码写入临时目录，以 `python -I -B` 独立进程从该目录加载现有能力、13 个模型的实际 JSON schema 及 ToolRegistry；只记录 Python／平台和 distribution name/version，不保存 direct URL／安装路径，不继承模型凭据环境。probe 会执行所选**可信本地 Git 源码的 imports**，不是不可信代码沙箱。当前解释器依赖被复用；115 个已安装 distribution 与根锁对应版本的只读比较未发现 mismatch，只是环境采样，不等于独立部署通过。
+4. manifest 保存逐文件 SHA256／size、来源 commit、实际环境与根锁对等；ZIP 固定条目顺序和时间，按整体 SHA256 寻址，使用同目录临时文件与 hard-link 原子 no-clobber 发布。已有同名对象必须完整校验，损坏对象不覆盖；发布权限失败保留错误且清理本轮临时文件。未增加可变 latest，不上传。逻辑内容寻址／校验不是 WORM、签名信任或 ACL 防篡改，也不适用于没有 hard-link 支持的制品文件系统。
+5. verify 先核对引用的精确版本、大小和整体摘要，再检查 ZIP inventory、casefold 重名、原始路径、regular file、条目／内容上限、manifest 与逐文件摘要、环境及根锁。拒绝穿越、绝对路径、反斜杠、NUL、ADS、保留设备名、symlink 和私有路径；引用与 manifest 的来源 commit 只接受完整 40 或 64 位 hex，export 则允许解析本地 HEAD／分支等 revision。verify 不 import 输入 ZIP。restore 全部校验后只创建新目录，已有目录及其原文件不覆盖；这不是文件系统写入失败时的事务化部署／回滚承诺。
+6. 新 `src/cli/framework_release_archive.py` 提供 export／verify／restore；正常输出 JSON，失败返回 exit 1 和可检索 operation／error_type，不把不可信引用正文或私有验证输入打入 traceback。新增测试同时覆盖实物／独立恢复、篡改／缺失／额外文件、格式／环境、路径攻击、限额、原引用摘要、重复发布、不覆盖已有恢复目录／损坏对象、原子发布失败与非法 revision。仅 CLI／测试消费新增接口，未把它自动接入生产路由或 binding。
+
+### 当前源码实际验证
+
+固定 `.venv-framework-v2`，以下组合进程取得终态，**382 passed，92.80 秒，exit 0，无 skip／deselect**。该组证明源码归档／离线独立进程与相关依赖、binding、原指纹和 Worker 契约；虽然保留服务环境开关，不把这些离线契约测试冒称新增真实数据库／供应商验收。
+
+```powershell
+# cwd: Agent_Server
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_archive.py tests/test_framework_dependencies.py tests/test_runtime_binding_contract.py tests/test_framework_orchestration_artifact.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+```
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 通过；find_spec 再次确认 ruff／mypy／build／wheel／setuptools 均未安装，未运行独立 lint／typecheck／wheel 构建，未安装依赖。此前命令查证中从项目子目录运行 Git archive 曾因 prefix 二次应用而 pathspec 不匹配（exit 128）；确认 Git 根目录后，当前实现改为在根目录以 commit:project-prefix 分批导出，不把该查证错误记成业务红测。
+
+### 实际持久制品与独立恢复
+
+使用当前 CLI 导出的是**此前已提交基线 `b6646d89c83bd4cc9e45fc2b8bdca4499a407039`**，不含本轮未提交的新归档工具。实际执行 export、verify、restore 均 exit 0；引用以 exclusive create 保存，恢复到本轮新目录，没有覆盖原文件：
+
+```powershell
+# cwd: Agent_Server
+..\.venv-framework-v2\Scripts\python.exe -m src.cli.framework_release_archive export --project .. --store ..\deployment\artifacts --revision b6646d89c
+..\.venv-framework-v2\Scripts\python.exe -B -m src.cli.framework_release_archive verify --store ..\deployment\artifacts --reference ..\deployment\artifacts\b6646d89c.reference.json
+..\.venv-framework-v2\Scripts\python.exe -B -m src.cli.framework_release_archive restore --store ..\deployment\artifacts --reference ..\deployment\artifacts\b6646d89c.reference.json --destination ..\deployment\artifacts\restored-b6646d89c-2ed8da134426
+```
+
+- 实物：`deployment/artifacts/8b440d7ccc248d416d7b516a1f06f776a09cf59aab06dbe606c5fe4f1ad6564b.zip`，**3,041,013 bytes**；引用的 SHA256 即文件名，schema_version=1，manifest 登记 **1,013** 个文件。
+- 使用同一 venv 的新 `python -I -B` 进程，cwd／显式源码路径均为上述恢复目录，实际核对 **113 个已加载 src 模块全部来自恢复目录**，加载 55 个 Skill，58 个 Tool 的定义与归档原件相等；schema catalog 为 13 个模型，归档能力 message-stage 上界为 29。根锁实物 SHA256 为 `65494091f8dbfdb4edc701ec2b468e6811c131ec0e7360f6995eea21026690dc`，与恢复代码读取的能力完全一致。此 probe exit 0，没有启动应用／模型／服务。
+- ZIP、引用与恢复目录均置于新忽略的 `/deployment/artifacts/`，不提交源代码库；本机实物不替代异地备份／恢复证明。源码独立不等于两套依赖独立安装，13 个 schema 也不等于所有结果材料的读能力已覆盖。动态 Prompt／Skill／运行配置仍由原 Turn 资产保存，本次静态发布源码不替代它们。
+
+### 提交对应与剩余出口
+
+v4 F／§14.1 → 本节 → 新 runtime／CLI／测试、`.gitignore` 与本记录共 5 文件 → 上述红绿、382 项最终组合与实际持久制品／独立恢复 → 独立提交 `【feat】归档并校验可恢复的框架源码制品`，ID 见 Git 历史和交付。不推送，不提交制品或用户 v3 草稿；草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`。本轮没有运行 Docker、付费调用、重启 PG／Redis、升级依赖或改生产路由。
+
+下一步仍需 binding→可信实物引用／解析、完整结果格式与读能力清单、双制品独立安装部署、备份恢复、灰度／回滚／排空。本节不宣称 F 完成。§159 完整组合 **1 failed、792 passed** 与 §160 **2 failed、536 passed** 的历史失败继续保留：动态诊断污染已独立修正，但中断到期比较和零秒续租后仍 active 两类异常未定位；本轮没有重跑这些完整组合。§158 未归属共享 checkpoint 不猜测清理。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 继续按 v4 验收，整体目标保持 active。
