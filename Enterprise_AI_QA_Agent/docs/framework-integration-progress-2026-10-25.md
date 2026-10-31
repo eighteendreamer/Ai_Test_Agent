@@ -7331,3 +7331,38 @@ $env:PYTHONIOENCODING='utf-8'
 ### 提交边界
 
 v4 F／H11 → 本节 → 两个既有测试文件与本记录 → 上述红绿与真实 PG／Redis 控制回归 → 独立提交 `【test】隔离所有权快照的过期诊断`，ID 见 Git 历史和交付。proof 兼容实现不混入本提交，随后单独记录。没有生产 DDL／配置／公共契约变化，不运行 Docker、不付费、不改生产路由、不推送。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改／暂存／提交；§158 共享 checkpoint 历史残留仍未归属，未猜测清理。完整 v4 目标保持 active。
+
+## 161. F／§14.1、H11：领取前核对审批恢复 task 的独立证明格式（2026-10-31）
+
+### 缺口、依据 → 做法
+
+§159 已覆盖独立审批 journal，但 task 的 `input_payload.recovery_proof` 是另一份材料：`FrameworkApprovalFinalizationProof`／`FrameworkApprovalSettlementProof` 在原授权端口严格读取，未知字段／版本此前会先变成 `recovery_required`，而非留给兼容 Worker。根因是格式兼容与恢复授权核验的执行顺序错位，不通过再造全局恢复证明、复制 finalizer 或放宽严格模型解决。
+
+依据 `framework_approval_finalization.validate_finalization_link()`、`framework_approval_settlement.validate_settlement_link()` 的原有 codec，`framework_approval_recovery.require_successor_proof()`／`_apply()` 的 native v1 自由字典契约，以及 §157–159 已建立的领取事务能力端口 → 在原 `FrameworkWorkerCapabilities` 增加独立 proof 格式读取，复用 `_read_compatible()`，不另造严格 native proof。按本地《Agent轨迹与协议鲁棒性》的 schema 漂移、关键步骤与状态不变量清单验证，保留正常合法分支和原授权拒绝。
+
+### TDD 与已验证实现
+
+1. 对真实 SDK／saver／PG 形成的 finalization、settlement 后继分别增加未来字段／版本测试；同步维护原 parent proof 等值及 input hash，以排除先被摘要或签发关系拒绝。旧源码实际 **2 failed，31.78 秒**，均 DID NOT RAISE TaskDeferred，日志为原 `framework_approval_claim_rejected`。这是新兼容契约的有效红测，不是伪称抓到真实未来部署事故。接入后原两例 **2 passed，26.83 秒**。
+2. `claim()` 在原 Session → owner → task 锁后，已有 stage／journal 检查之后，任何状态迁移或终态返回之前，对 `approval_recover` 已存在的 recovery_proof 调用新 reader。未知 scope、明确声明的不支持版本、非对象值、严格应用 proof 及内嵌 lineage 的未来字段受控 TaskDeferred。应用 v2/v3 读取复用原模型及其默认值；native v1 只核对明确版本／scope 声明，保留既有自由字段，不递归扫描 metadata、不新设字段白名单。整个 proof 缺失仍由原签发核验拒绝，格式读取不会创建或补齐证明。
+3. 新日志 `framework_recovery_proof_reader_unavailable` 仅含 task／binding／worker／固定 reason，不带 proof 或异常输入。已知字段的普通约束错误仍是 ValidationError；格式合法但谱系变化仍由原授权链拒绝。正式 v2 Dispatcher 使用原能力传入，无新增调度器／队列；legacy 和显式不带 capabilities 的底层 claim 保留原路径。
+4. 新专项最终 21 项，覆盖 queued／过期 claimed／过期 running／cancelled、等待 Session 锁后证明变化、两种应用 scope 与 native 声明、合法正常领取、已知校验错误、签发证明缺失及谱系变化；比较原业务／attempt／outbox／model ledger／ToolJob／native checkpoint 全部表行摘要，断言未知格式不改原事实且不调用执行端口。真实 Redis Worker 保持原 entry、retry_count=0、PEL=1、无 dead letter，不重发或 ACK。新模块先依赖并核对 `fence_test_` checkpoint 隔离，沿既有测试白名单纳入 Git。
+5. Worker 契约补齐精确整数版本、未知 scope／非对象值、原默认读取、严格内嵌字段、普通错误与自由 native metadata；既有 `test_finalization_proof_rejects_unknown_authority_before_claim` 对齐新的非变更 TaskDeferred，同时额外保留显式 raw claim 的原授权拒绝断言，没有将未知字段转成执行资格。早期专项／Worker／该消费方组合 **313 passed，151.55 秒**；其后已补齐最终专项的两个边界例，不把早期通过数当最终源码结果。
+6. 扩大 10 文件组合的 **2 failed、536 passed，1922.57 秒** 及原因／修正完整保留在 §160；其中动态诊断污染已经独立提交 `acac18b1c`，零秒失效异常没有确认根因。最终下列组合 **395 passed，438.97 秒，exit 0**，无 skip／deselect；不把这一结果称为整个 32 分钟组合已重新全绿。
+
+### 最终命令、证据等级与边界
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2；复用用户已启动的 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_recovery_proof_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_framework_model_reader_admission.py tests/test_framework_stage_reader_admission.py tests/test_framework_approval_reader_admission.py tests/test_framework_approval_graph_input.py::test_finalization_proof_rejects_unknown_authority_before_claim tests/test_framework_approval_settlement.py::test_approval_settlement_rechecks_committed_facts[missing_commit-claim] tests/test_framework_approval_settlement.py::test_settlement_respects_later_input_without_overwriting_it tests/test_framework_approval_recovery.py::test_expiration_deferral_keeps_safe_timing_diagnostics tests/test_framework_task_control.py -q -rs --tb=short
+# 395 passed，438.97 秒，exit 0
+```
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 通过。ruff／mypy 仍未安装，未运行独立 lint／typecheck，不安装或升级依赖。上述真实 PG／Redis、官方固定 SDK／saver 与较大组合内的独立 Worker 进程，不等于真实供应商、领域 Runner 或不可变制品部署验收；本轮没有运行 Docker、付费模型、前后端全量或新增生产路由。
+
+v4 F／§14.1、H11 → 本节 → 两个生产文件、三个测试文件、测试白名单和本记录 → 上述红绿／完整组合失败与最终专项结果 → 独立提交 `【fix】领取前核对审批恢复证明格式`，ID 见 Git 历史和交付。生产无 DDL、数据迁移、写入格式、公共 API／DTO／前端／配置变化；仅提交本节 7 文件，不自动推送。用户 v3 草稿内容与 SHA256 不变，§158 已知共享 checkpoint 残留仍未擅自清理。
+
+仍需核实 §159／160 的时间异常，继续核对 native transcript／command／其他结果材料格式、实际双制品部署及归档。当前检查不代表所有 proof 或结果格式均覆盖，不补造历史证明、不授予跨 scope 恢复权限。A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 均按 v4 保留；整体目标继续 active，本节不代表全系统完成。

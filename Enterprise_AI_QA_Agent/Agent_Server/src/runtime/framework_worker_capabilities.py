@@ -141,6 +141,36 @@ class FrameworkWorkerCapabilities:
             if isinstance(application, dict) and TOOL_PROJECTION_KEY in application:
                 self._read_compatible(parse_tool_projection, application[TOOL_PROJECTION_KEY], reason)
 
+    def require_recovery_proof_format(self, value: object) -> None:
+        """Read declared recovery formats without granting a recovery scope.
+
+        Native-decision proofs keep their existing free-dictionary contract;
+        application proofs use the same strict readers as their owned ports.
+        Issuance, hashes and lineage are still checked by the original claim.
+        """
+        from src.schemas.framework_message_stage import (
+            FrameworkApprovalFinalizationProof, FrameworkApprovalSettlementProof,
+        )
+
+        reason = "framework_recovery_proof_format_unavailable"
+        if not isinstance(value, dict):
+            raise TaskDeferred(reason)
+        scope = value.get("scope")
+        if scope is None:
+            # There is no strict native proof codec. Do not invent a metadata
+            # whitelist or grant authority to a missing/malformed native proof.
+            if "schema_version" in value and (type(value["schema_version"]) is not int or value["schema_version"] != 1):
+                raise TaskDeferred(reason)
+            return
+        model = {"application_finalization": FrameworkApprovalFinalizationProof,
+            "application_settlement": FrameworkApprovalSettlementProof}.get(scope) if isinstance(scope, str) else None
+        if model is None:
+            raise TaskDeferred(reason)
+        version = value.get("schema_version", model.model_fields["schema_version"].default)
+        if type(version) is not int or version != model.model_fields["schema_version"].default:
+            raise TaskDeferred(reason)
+        self._read_compatible(model.model_validate, value, reason)
+
     @staticmethod
     def defer_unsupported_format(exc: ValidationError, *, reason: str) -> None:
         if any(error["type"] == "extra_forbidden" or (

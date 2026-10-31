@@ -738,6 +738,7 @@ async def test_finalization_proof_cannot_be_used_at_the_native_runtime_port(froz
 @pytest.mark.asyncio
 async def test_finalization_proof_rejects_unknown_authority_before_claim(frozen_approval_result):
     import json
+    from src.runtime.task_deferred import TaskDeferred
     from tests.test_framework_approval_recovery import run_delivery
 
     h = frozen_approval_result
@@ -753,8 +754,13 @@ async def test_finalization_proof_rejects_unknown_authority_before_claim(frozen_
         cur.execute(f"UPDATE {h.tasks._tasks} SET result_payload=jsonb_set(result_payload,'{{proof}}',%s::jsonb) WHERE id=%s",
             (json.dumps(proof), successor.parent_task_id))
     requests, effects = list(h.adapter_requests), list(h.effects)
-    await run_delivery(h, successor.id)
-    rejected = await h.tasks.get(successor.id)
+    before = await h.tasks.get(successor.id)
+    with pytest.raises(TaskDeferred, match="framework_recovery_proof_format_unavailable"):
+        await run_delivery(h, successor.id)
+    assert await h.tasks.get(successor.id) == before
+    # Format admission does not replace the original authority validator. An
+    # explicit raw claim still rejects the same additional grant as before.
+    rejected = await h.tasks.claim(successor.id, worker_id="raw-proof-validator", expected_binding=h.binding)
     assert rejected.status == "recovery_required" and rejected.attempt_no == 0
     assert h.stages.get(h.initial_task_id, h.session_id) == original
     assert h.adapter_requests == requests and h.effects == effects

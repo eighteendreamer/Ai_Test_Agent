@@ -719,3 +719,83 @@ def test_receipt_format_accepts_the_mapping_contract_of_database_rows():
 
     FrameworkWorkerCapabilities("a" * 64, True).require_approval_journal_format(
         "receipt", MappingProxyType(approval_receipt_record()))
+
+
+def recovery_proof_record(scope):
+    from src.schemas.framework_message_stage import FrameworkMessageRecoveryLink
+
+    if scope is None:
+        return {"schema_version": 1, "origin_task_id": "origin", "origin_attempt_id": "attempt",
+            "decision_id": "decision", "native_consumed": False}
+    field = "finalization" if scope == "application_finalization" else "settlement"
+    link = FrameworkMessageRecoveryLink(task_id="successor", predecessor_task_id="origin",
+        predecessor_attempt_id="attempt", predecessor_owner_epoch=1, budget_sha256="budget",
+        admitted_at=datetime.now(timezone.utc), resume_phase="finalizing" if field == "finalization" else "settling")
+    return {"schema_version": 2 if field == "finalization" else 3, "scope": scope,
+        "origin_task_id": "origin", "origin_attempt_id": "attempt", "decision_id": "decision",
+        field: link.model_dump(mode="json")}
+
+
+@pytest.mark.parametrize("scope", [None, "application_finalization", "application_settlement"])
+@pytest.mark.parametrize("version", [True, "2", 2.0, 0, 99, None])
+def test_recovery_proof_requires_a_supported_explicit_integer_version(scope, version):
+    value = recovery_proof_record(scope)
+    value["schema_version"] = version
+    with pytest.raises(TaskDeferred, match="framework_recovery_proof_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)
+
+
+@pytest.mark.parametrize("scope", ["future_application_scope", "", [], {}, 1])
+def test_unknown_recovery_scope_is_a_format_wait_not_native_authority(scope):
+    value = recovery_proof_record(None)
+    value["scope"] = scope
+    with pytest.raises(TaskDeferred, match="framework_recovery_proof_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)
+
+
+@pytest.mark.parametrize("scope", [None, "application_finalization", "application_settlement"])
+def test_recovery_proof_reader_preserves_existing_version_defaults_and_input(scope):
+    from copy import deepcopy
+
+    caps = FrameworkWorkerCapabilities("a" * 64, True)
+    value = recovery_proof_record(scope)
+    before = deepcopy(value)
+    caps.require_recovery_proof_format(value)
+    assert value == before
+    del value["schema_version"]
+    caps.require_recovery_proof_format(value)
+    assert "schema_version" not in value  # Parsing is not an issued recovery proof.
+
+
+@pytest.mark.parametrize("scope", ["application_finalization", "application_settlement"])
+@pytest.mark.parametrize("nested", [False, True])
+def test_scoped_proofs_reuse_strict_readers_without_exposing_future_input(scope, nested):
+    value = recovery_proof_record(scope)
+    field = "finalization" if scope == "application_finalization" else "settlement"
+    (value[field] if nested else value)["future_field"] = "private-proof-input"
+    with pytest.raises(TaskDeferred, match="framework_recovery_proof_format_unavailable") as caught:
+        FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)
+    assert caught.value.__suppress_context__ and "private-proof-input" not in str(caught.value)
+
+
+@pytest.mark.parametrize("scope", ["application_finalization", "application_settlement"])
+def test_known_scoped_proof_validation_error_is_not_mislabeled_as_a_new_format(scope):
+    from pydantic import ValidationError
+
+    value = recovery_proof_record(scope)
+    field = "finalization" if scope == "application_finalization" else "settlement"
+    value[field]["predecessor_owner_epoch"] = -1
+    with pytest.raises(ValidationError):
+        FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)
+
+
+def test_native_recovery_proof_keeps_free_metadata_without_recursive_format_checks():
+    value = recovery_proof_record(None)
+    value.update(future_field={"schema_version": 99}, metadata={"scope": "future_application_scope"})
+    FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)
+
+
+@pytest.mark.parametrize("value", [None, [], 1, "future-proof"])
+def test_present_nonobject_recovery_proof_is_not_read_as_an_absent_proof(value):
+    with pytest.raises(TaskDeferred, match="framework_recovery_proof_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_recovery_proof_format(value)

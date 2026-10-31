@@ -1256,6 +1256,14 @@ class PostgresAgentTaskStore:
                         "task_id": task_id, "binding_id": saved_binding.binding_id,
                         "worker_id": worker_id, "reason": str(exc)})
                     raise
+                if row["operation"] == "approval_recover" and "recovery_proof" in (row["input_payload"] or {}):
+                    try:
+                        framework_capabilities.require_recovery_proof_format(row["input_payload"]["recovery_proof"])
+                    except TaskDeferred as exc:
+                        logger.warning("framework_recovery_proof_reader_unavailable", extra={
+                            "task_id": task_id, "binding_id": saved_binding.binding_id,
+                            "worker_id": worker_id, "reason": str(exc)})
+                        raise
             if check_model_ledger:
                 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 
