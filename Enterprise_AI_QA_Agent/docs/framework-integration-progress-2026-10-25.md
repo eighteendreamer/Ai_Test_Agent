@@ -7614,3 +7614,43 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → 原 CLI、新跨制品测试、原归档／绑定专项、测试白名单与本记录共 6 文件 → 正式 d3 实物／安装预检、新旧源码真实 PG／Redis 独立进程、424 项最终回归 → 独立提交 `【feat】提供制品安装预检并验证跨版本消费`，ID 见 Git 历史及交付。不推送，不提交制品／用户 v3 草稿；无 DDL／数据迁移／生产写者或配置字段新增。
 
 下一步仍需诊断本节子进程异常及 §159／160 两类时间异常，完善旧初始化读者的升级／隔离与发布前验证、新绑定正式创建／冻结入口、历史绑定有证据的关联迁移、全部格式清单、双制品独立安装／完整应用部署、一致备份恢复、灰度／回滚／排空。当前共享 venv 的源码实物验收不能替代这些出口。§158 未归属共享残留不清理；动态 Prompt／Skill／模型配置仍由原 Turn 资产保存，不由源码归档猜测。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 按 v4 保留，整体目标继续 active，不宣称 F 或全系统完成。
+
+## 167. C／§11、H07／H10：Redis 心跳失败的来源诊断与日志消费方对齐（2026-11-01）
+
+### 续接、复现与范围
+
+核对工作区／完整 diff／暂存清单后，§166 六文件已提交为 `a0bba7c779c98ae14b1ba1918e9d6d736af833cb`（`【feat】提供制品安装预检并验证跨版本消费`）。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存／提交。正式制品保持 ignored，没有混入提交。
+
+改动前对 §166 原跨版本模块再次实际执行，**4 passed，86.95 秒**，未复现原 `redis_task_ownership_uncertain` 后子进程 RuntimeError，不能据此销账。沿原 Worker 的 `_run_handler()`／heartbeat、队列 `touch()`／原 Lua CONTROL 查证：外层告警只保留包装后的 DeliveryOwnershipLost 类型，无法区分 touch 返回失去所有权还是 Redis 异常，也没有耗时／上次成功证据。这是已确定的可观测性缺口，**不是已经找到历史异常根因，也不是通过调整租约策略修复异常**。
+
+依据原 `AgentTaskDispatcher._monitor()` 的安全来源／monotonic 耗时诊断、现有 `ContextFormatter` 标量白名单和本地《Agent轨迹与协议鲁棒性》结果＋轨迹评估要求 → 在唯一原 heartbeat 路径记录失败来源与耗时，并同步原日志消费方；不新增调度层、fallback 或恢复权限。范围限原 Worker、原 formatter、两个已有测试模块和本记录共 5 文件。
+
+### TDD、实现与契约同步
+
+1. 先补心跳首次失败／已成功一次后失败 × owner 变化／Redis 连接异常／非 Redis 异常的六个受控反例，原代码实际 **6 failed、4 passed，0.47 秒**；全部准确失败于缺少 `redis_task_heartbeat_failed`，已有取消／ACK／重试策略断言已通过。此处是可观测性红测，不伪称复现历史服务事故。
+2. 原 heartbeat 增加同一 perf_counter 的总时长、单次 touch 时长、距上次成功时长、成功次数及 reclaim_idle 配置。固定分类为 `owner_changed`／`transport_unavailable`／`unexpected_error`，保留原异常重新抛出、原 RedisError 包装与原外层处理；不打印异常正文、payload、URL、owner token 或 traceback，不增加 Redis 命令。单元／入口／队列组合 **24 passed，8.10 秒**，加入真实投递与 v2 契约后 **374 passed，23.44 秒**。
+3. 继续核对实际日志出口发现：只给 LogRecord 加 extra 不够，当前 `ContextFormatter` 有限白名单会过滤这些字段。新增真实 configure_logging → StreamHandler → formatter 契约先实际 **2 failed，0.60 秒**，输出只有原 task_id／error_type。随后在原白名单精确纳入九个新标量字段；投递身份使用 `delivery_message_id`／`delivery_stream`，分类使用 `heartbeat_failure_reason`，不顺便开放其他模块的通用 message_id／stream／failure_reason 或任意 extra。含原 monitor／formatter 回归的组合 **390 passed，42.29 秒**。
+4. 原真实 Redis 抢占用例增加诊断断言，仍由另一 consumer 实际 XCLAIM、取消原 handler 并保留 replacement 的同一 PEL。新增真实 Redis 用例先成功 touch 一次，第二次实际执行原 touch 后注入响应丢失；断言同一 message_id／Stream 原字段／原 consumer 的 PEL 不变、无后继／dead letter、handler 已收尾，诊断同时保留底层 ConnectionError 与上次成功采样。服务响应丢失是显式注入，不冒充真实网络故障。
+5. 正常心跳仍原样 ACK；取消发生在 Redis touch 在途时，原协作式收尾等待该调用返回、不额外 ACK、不报虚假心跳失败。新增测试用 Event 精确控制窗口，不靠 sleep 或放宽超时断言。错误与正常日志均验证私有标记不被渲染；原未知非 Redis 异常仍沿既有 transfer 策略，未借诊断改语义。
+
+### 最终验证与证据边界
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用用户已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_redis_task_worker.py tests/test_live_redis_task_delivery.py tests/test_redis_task_queue.py tests/test_redis_worker_entrypoint.py tests/test_agent_v2_worker_contract.py tests/test_agent_task_monitor.py tests/test_agent_task_dispatch.py tests/test_framework_task_control.py 'tests/test_framework_approval_settlement.py::test_approval_settlement_rechecks_committed_facts[missing_commit-claim]' tests/test_framework_release_workers.py tests/test_compatibility_mode_execution_authority.py::test_execution_log_formatter_renders_identity_but_not_private_payload tests/test_compatibility_runner_late_reports.py::test_committed_observation_diagnostics_are_searchable_without_rendering_private_report -q -rs --tb=short
+# 430 passed，1 warning，356.94 秒，exit 0，无 skip
+```
+
+该最终组合明确选择完整投递／Worker／monitor／调度／控制／跨源码模块及指定旧失败／其他 formatter 消费方函数，不是 §159 的完整 20 文件或 §160 的完整 10 文件重新全绿。一条警告为已安装 Starlette TestClient 使用 deprecated `anyio.abc.BlockingPortal` alias，未升级依赖或忽略警告。过程中一次仅收集用例的调用未保留完整返回句柄，不作为测试通过证据；后续已查该收集进程不存在，以上完整执行有真实终态与输出。其余本节 pytest／compileall 命令均取得终态。
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际 exit 0。当前环境 ruff／mypy／build／wheel／setuptools 均未安装，未跑独立 lint／typecheck／构建安装；前端无改动，未重跑前端。没有启动／重启 PG 或 Redis、运行 Docker、付费调用、目标扫描、修改依赖、生产路由、公共 API／DTO／schema 或执行数据迁移。新增实物诊断只存在当前源码，**不会反向写入冻结的 b664／d3 历史归档**；跨源码专项仍加载原真实归档，不把新日志说成历史制品已有能力。
+
+### 提交与剩余出口
+
+v4 C／§11、H07／H10 的故障可观测性及 F 回归 → 本节 → 原 Worker／formatter、原两个测试与本记录共 5 文件 → 红测、真实 Redis 故障注入、430 项最终回归 → 独立提交 `【fix】补齐 Redis 心跳失败的安全诊断`，ID 见 Git 历史和交付；不推送，不提交用户草稿或制品。
+
+§159 中断后 expired=False、§160 零秒失效后 claim 仍 lease-active、§166 子进程 RuntimeError **均仍未取得足够证据定位根因**；本轮原样本通过不撤销历史失败。后续优先在实际失败窗口取得新安全诊断／原栈和数据库决策证据，不调整租约／重试获取绿色。旧初始化读者未升级／隔离前仍不能开启生产引用写者；全部格式清单、正式创建／冻结入口、有证据历史关联、独立依赖安装／双制品部署、一致备份、灰度回滚排空、§158 未归属残留、完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 按 v4 保留。整体目标保持 active，本节不代表 C／F 或全系统完成。

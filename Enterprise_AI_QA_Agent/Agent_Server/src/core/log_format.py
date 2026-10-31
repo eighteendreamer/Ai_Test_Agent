@@ -37,6 +37,8 @@ DIAGNOSTIC_FIELDS = (
     "runner_id", "assignment_id", "recovery_source", "recovery_reason",
     "automatic_retry_count", "automatic_retry_limit",
     "artifact_id", "task_status", "execution_id",
+    "delivery_message_id", "delivery_stream", "heartbeat_operation", "heartbeat_failure_reason",
+    "reclaim_idle_ms", "heartbeat_seconds", "touch_seconds", "successful_touches", "since_last_touch_seconds",
 )
 
 

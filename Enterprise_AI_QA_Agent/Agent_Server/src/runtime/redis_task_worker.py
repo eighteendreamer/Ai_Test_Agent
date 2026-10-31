@@ -188,6 +188,9 @@ class RedisTaskWorker:
     async def _run_handler(self, task: QueuedTask) -> None:
         heartbeat_stop = asyncio.Event()
         async def heartbeat():
+            heartbeat_clock = perf_counter()
+            last_touch = None
+            successful_touches = 0
             while not heartbeat_stop.is_set():
                 try:
                     await asyncio.wait_for(heartbeat_stop.wait(), timeout=self._reclaim_idle_ms / 3000)
@@ -195,8 +198,29 @@ class RedisTaskWorker:
                     pass
                 if heartbeat_stop.is_set():
                     return
-                if not await self._queue.touch(task, consumer=self._consumer):
-                    raise DeliveryOwnershipLost("Pending delivery belongs to another consumer")
+                touch_clock = perf_counter()
+                try:
+                    if not await self._queue.touch(task, consumer=self._consumer):
+                        raise DeliveryOwnershipLost("Pending delivery belongs to another consumer")
+                except Exception as exc:
+                    observed_at = perf_counter()
+                    reason = ("owner_changed" if isinstance(exc, DeliveryOwnershipLost)
+                        else "transport_unavailable" if isinstance(exc, RedisError) else "unexpected_error")
+                    # Keep source/timing evidence before transport errors are
+                    # wrapped. Never log exception text, payloads or URLs.
+                    LOGGER.log(logging.ERROR if reason == "unexpected_error" else logging.WARNING,
+                        "redis_task_heartbeat_failed", extra={
+                            "task_id": task.payload.get("task_id"), "delivery_message_id": task.message_id,
+                            "worker_id": self._consumer, "delivery_stream": str(getattr(self._queue, "stream", "") or ""),
+                            "heartbeat_operation": "touch", "heartbeat_failure_reason": reason,
+                            "error_type": type(exc).__name__, "reclaim_idle_ms": self._reclaim_idle_ms,
+                            "heartbeat_seconds": observed_at - heartbeat_clock,
+                            "touch_seconds": observed_at - touch_clock, "successful_touches": successful_touches,
+                            "since_last_touch_seconds": observed_at - last_touch if last_touch is not None else None,
+                        })
+                    raise
+                last_touch = perf_counter()
+                successful_touches += 1
 
         execution = asyncio.ensure_future(self._handler(task))
         renewal = asyncio.create_task(heartbeat())

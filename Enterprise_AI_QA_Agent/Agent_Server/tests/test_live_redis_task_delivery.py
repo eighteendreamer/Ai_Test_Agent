@@ -161,7 +161,7 @@ async def test_timeout_and_deferred_delivery_are_distinct(queue):
 
 
 @pytest.mark.asyncio
-async def test_worker_stops_execution_after_ownership_loss(queue):
+async def test_worker_stops_execution_after_ownership_loss(queue, caplog):
     message_id = await queue.enqueue(payload())
     started, cancelled = asyncio.Event(), asyncio.Event()
     async def handler(task):
@@ -180,9 +180,66 @@ async def test_worker_stops_execution_after_ownership_loss(queue):
         pending = await queue.pending()
         owned = [item for item in pending if item["message_id"] == message_id]
         assert len(owned) == 1 and owned[0]["consumer"] == "replacement"
+        records = [record for record in caplog.records if record.message == "redis_task_heartbeat_failed"]
+        assert len(records) == 1
+        assert records[0].heartbeat_failure_reason == "owner_changed" and records[0].error_type == "DeliveryOwnershipLost"
+        assert records[0].delivery_message_id == message_id and records[0].worker_id == "worker-test"
+        assert records[0].delivery_stream == queue.stream and records[0].reclaim_idle_ms == 60
     finally:
         running.cancel()
         await asyncio.gather(running, return_exceptions=True)
+
+
+@pytest.mark.asyncio
+async def test_heartbeat_reply_loss_keeps_original_pending_and_safe_timing_evidence(queue, caplog):
+    message_id = await queue.enqueue(payload())
+    entries = await queue._client.xrange(queue.stream)
+    entered, cancelled = asyncio.Event(), asyncio.Event()
+    real_touch = queue.touch
+    touches = 0
+
+    async def lose_second_touch_reply(task, **kwargs):
+        nonlocal touches
+        await entered.wait()
+        assert await real_touch(task, **kwargs)
+        touches += 1
+        if touches == 2:
+            raise RedisConnectionError("private-heartbeat-reply-loss-probe")
+        return True
+
+    async def handler(task):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    queue.touch = lose_second_touch_reply
+    running = asyncio.create_task(worker(queue, handler, max_retries=0).run_once())
+    try:
+        assert await asyncio.wait_for(running, 2) == 0
+        assert cancelled.is_set() and touches == 2
+        pending = await queue.pending()
+        assert len(pending) == 1 and pending[0]["message_id"] == message_id
+        assert pending[0]["consumer"] == "worker-test"
+        assert await queue._client.xrange(queue.stream) == entries
+        assert await queue._client.xlen(f"{queue.stream}:dead_letter") == 0
+        records = [record for record in caplog.records if record.message == "redis_task_heartbeat_failed"]
+        assert len(records) == 1
+        record = records[0]
+        assert record.heartbeat_failure_reason == "transport_unavailable" and record.error_type == "ConnectionError"
+        assert record.heartbeat_operation == "touch" and record.successful_touches == 1
+        assert record.delivery_message_id == message_id and record.worker_id == "worker-test"
+        assert record.delivery_stream == queue.stream and record.reclaim_idle_ms == 60
+        assert record.heartbeat_seconds >= record.since_last_touch_seconds >= record.touch_seconds >= 0
+        assert not any("private-" in str(value) for value in record.__dict__.values())
+        assert "private-" not in caplog.text
+    finally:
+        queue.touch = real_touch
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+
 @pytest.mark.asyncio
 async def test_retry_after_database_commit_preserves_one_durable_result(queue):
     settings = get_settings()

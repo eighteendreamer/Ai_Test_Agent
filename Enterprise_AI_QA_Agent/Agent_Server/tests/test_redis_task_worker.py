@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
+
 import pytest
+from redis.exceptions import ConnectionError as RedisConnectionError
 
 from src.infrastructure.redis_task_queue import QueuedTask
 from src.runtime.redis_task_worker import RedisTaskWorker
@@ -70,3 +73,150 @@ async def test_stop_finishes_current_and_does_not_start_next():
     assert await worker.run_once() == 1
     assert handled == ["1-0"] and queue.acked == ["1-0"]
     assert await worker.run_once() == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("successful_touches", [0, 1])
+@pytest.mark.parametrize("failure,reason,error_type", [
+    ("owner", "owner_changed", "DeliveryOwnershipLost"),
+    ("transport", "transport_unavailable", "ConnectionError"),
+    ("unexpected", "unexpected_error", "RuntimeError"),
+])
+async def test_heartbeat_failure_keeps_safe_source_diagnostics_and_delivery_policy(
+        caplog, successful_touches, failure, reason, error_type):
+    entered, settled = asyncio.Event(), asyncio.Event()
+
+    class FailedHeartbeat(QueueStub):
+        stream = "unit-heartbeat"
+
+        def __init__(self):
+            super().__init__([QueuedTask("1-0", {"task_id": "heartbeat-probe", "body": "private-payload-probe"})])
+            self.touches = 0
+            self.transfers = []
+
+        async def touch(self, task, **kwargs):
+            await entered.wait()
+            self.touches += 1
+            if self.touches <= successful_touches:
+                return True
+            if failure == "transport":
+                raise RedisConnectionError("private-transport-probe")
+            if failure == "unexpected":
+                raise RuntimeError("private-unexpected-probe")
+            return False
+
+        async def transfer(self, task, **kwargs):
+            self.transfers.append(kwargs)
+            return None
+
+    async def handler(task):
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            settled.set()
+
+    queue = FailedHeartbeat()
+    worker = RedisTaskWorker(queue, consumer="heartbeat-worker", handler=handler,
+        reclaim_idle_ms=3, max_retries=0)
+    assert await asyncio.wait_for(worker.run_once(), 2) == 0
+    assert settled.is_set() and queue.acked == []
+    assert len(queue.transfers) == int(failure == "unexpected")
+    if queue.transfers:
+        assert queue.transfers[0]["dead_letter_reason"] == "RuntimeError"
+    records = [record for record in caplog.records if record.message == "redis_task_heartbeat_failed"]
+    assert len(records) == 1
+    record = records[0]
+    assert record.task_id == "heartbeat-probe" and record.delivery_message_id == "1-0"
+    assert record.worker_id == "heartbeat-worker" and record.delivery_stream == "unit-heartbeat"
+    assert record.heartbeat_operation == "touch" and record.heartbeat_failure_reason == reason
+    assert record.error_type == error_type and record.reclaim_idle_ms == 3
+    assert record.successful_touches == successful_touches
+    assert record.heartbeat_seconds >= record.touch_seconds >= 0
+    if successful_touches:
+        assert record.since_last_touch_seconds >= record.touch_seconds
+    else:
+        assert record.since_last_touch_seconds is None
+    assert not any("private-" in str(value) for value in record.__dict__.values())
+    assert "private-" not in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_successful_heartbeat_does_not_emit_failure_or_change_ack(caplog):
+    touched = asyncio.Event()
+
+    class HealthyHeartbeat(QueueStub):
+        async def touch(self, task, **kwargs):
+            touched.set()
+            return True
+
+    async def handler(task):
+        await touched.wait()
+
+    queue = HealthyHeartbeat([QueuedTask("1-0", {"task_id": "healthy"})])
+    worker = RedisTaskWorker(queue, consumer="healthy-worker", handler=handler, reclaim_idle_ms=3)
+    assert await asyncio.wait_for(worker.run_once(), 2) == 1
+    assert queue.acked == ["1-0"] and touched.is_set()
+    assert not any(record.message == "redis_task_heartbeat_failed" for record in caplog.records)
+
+
+@pytest.mark.asyncio
+async def test_cancellation_settles_inflight_heartbeat_without_false_failure_or_ack(caplog):
+    touching, release, settled = asyncio.Event(), asyncio.Event(), asyncio.Event()
+
+    class InflightHeartbeat(QueueStub):
+        async def touch(self, task, **kwargs):
+            touching.set()
+            await release.wait()
+            return True
+
+    async def handler(task):
+        try:
+            await asyncio.Event().wait()
+        finally:
+            settled.set()
+
+    queue = InflightHeartbeat([QueuedTask("1-0", {"task_id": "cancelled"})])
+    worker = RedisTaskWorker(queue, consumer="cancelled-worker", handler=handler, reclaim_idle_ms=3)
+    running = asyncio.create_task(worker.run_once())
+    try:
+        await asyncio.wait_for(touching.wait(), 2)
+        running.cancel()
+        await asyncio.wait_for(settled.wait(), 2)
+        assert not running.done()
+        release.set()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(running, 2)
+        assert queue.acked == []
+        assert not any(record.message == "redis_task_heartbeat_failed" for record in caplog.records)
+    finally:
+        release.set()
+        running.cancel()
+        await asyncio.gather(running, return_exceptions=True)
+
+
+@pytest.mark.parametrize("previous_touch", [None, .5])
+def test_configured_handler_renders_heartbeat_diagnostics_without_opening_arbitrary_extras(monkeypatch, previous_touch):
+    import io
+    import json
+    import logging
+
+    from src.core.log_format import configure_logging
+
+    output = io.StringIO()
+    root = logging.getLogger()
+    monkeypatch.setattr(root, "handlers", [logging.StreamHandler(output)])
+    configure_logging(root.level)
+    expected = {"task_id": "heartbeat-probe", "delivery_message_id": "1-0", "delivery_stream": "stream-probe",
+        "heartbeat_operation": "touch", "heartbeat_failure_reason": "transport_unavailable",
+        "error_type": "ConnectionError", "reclaim_idle_ms": 60, "heartbeat_seconds": .75,
+        "touch_seconds": .25, "successful_touches": int(previous_touch is not None),
+        "since_last_touch_seconds": previous_touch}
+    private = "private-heartbeat-formatter-probe"
+    logger = logging.getLogger("src.runtime.redis_task_worker")
+    logger.warning("redis_task_heartbeat_failed", extra={**expected, "payload": private, "redis_url": private})
+    logger.warning("ordinary_event", extra={"message_id": private, "stream": private, "failure_reason": private})
+    lines = output.getvalue().splitlines()
+    assert len(lines) == 2 and private not in output.getvalue()
+    assert json.loads(lines[0].split(" diagnostics=", 1)[1]) == expected
+    assert lines[1].endswith(": ordinary_event")
