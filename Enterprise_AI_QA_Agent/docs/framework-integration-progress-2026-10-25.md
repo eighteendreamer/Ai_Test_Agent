@@ -6749,3 +6749,39 @@ git diff --check
 ```
 
 本步只闭合“已有未知资源清理效果不能通过更换 reason 重新取得执行权”这一 A3/H06 出口；显式 reconciliation／人工或有依据的补偿端口仍未新增，不能据此证明 Docker、浏览器或领域 Runner 已停止。Memory 副本补偿、外部 Runner 对账、A2-2/A2-3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 与完整 v4 继续 active。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。
+
+## 147. A3／H06／§10.1：Redis Memory 副本失败不得伪装为成功（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `5693ad365`／§146。`MemoryRuntimeService._write_point()` 已在 PostgreSQL Memory 行提交后调用 Redis vector replica；Redis `create_index` 或 `upsert` 失败时旧实现只记录 `memory_vector_replica_write_failed` 日志并返回已写入的 MemoryPoint。于是上层 Session post-commit effect 会继续追加 `memory.persisted`，既有 `session.post_commit_effect_failed(status=unknown)` 入口无法观察该派生失败，恢复也失去失败边界。根因是派生副本异常被写入层吞掉，而不是 Redis 重试次数不足。
+
+依据 v4 §10.1 的“必需业务事实与可补偿派生数据分开、未知效果保留可检索事实”以及现有 `_run_post_commit_effect()`／Memory execution receipt 的异常记录路径：PostgreSQL 行仍是权威事实；副本失败必须留下不含正文和异常文本的结构化未知状态，并向既有 post-commit／compaction 调用方抛出，让其沿现有 effect journal 记录并在恢复时重放同一稳定 Memory 行身份。没有新增队列、DDL、公开 API、Redis 重试或生产开关。
+
+### TDD 与最小实现
+
+1. 新增 `test_memory_vector_replica_failure_is_visible_to_post_commit_effect`，使用受控 vector double 在 `upsert` 失败；旧实现实际 **1 failed，4.11 秒，DID NOT RAISE**，并以 traceback 暴露异常文本。
+2. `_write_point()` 将 `LOGGER.exception` 改为安全结构化 `warning`（记录 `memory_id`、`embedding_version`、`status=unknown`、异常类型，不记录异常正文或 Memory 内容），随后原样重新抛出。上层已有 Session post-commit effect、框架 Memory execution receipt 和 compaction failure journal 继续负责未知效果记录；成功副本、幂等回放和 PostgreSQL 权威回源保持不变。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`，复用用户已启动 PostgreSQL／Redis；未启停服务、未调用付费模型、未改生产路由、DDL 或依赖。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_memory_vector_replica.py::test_memory_vector_replica_failure_is_visible_to_post_commit_effect -q -x --tb=short
+# 修复后 1 passed，2.25 秒
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_memory_vector_replica.py tests/test_memory_vector_rebuild.py tests/test_memory_embedding_runtime.py tests/test_framework_turn_memory_reconciliation.py tests/test_framework_application_projection.py -q -rs --tb=short
+# 未开启 live 门禁时 25 passed，51 skipped，6.34 秒（跳过项均为既有真实 PostgreSQL/Redis 门禁）
+
+$env:RUN_LIVE_POSTGRES_TESTS='1'; $env:RUN_LIVE_REDIS_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_memory_vector_replica.py tests/test_memory_vector_rebuild.py tests/test_memory_embedding_runtime.py tests/test_framework_turn_memory_reconciliation.py tests/test_framework_application_projection.py -q -rs --tb=short
+# 76 passed，194.46 秒，无失败或跳过
+
+..\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+# exit 0
+git diff --check
+# exit 0
+```
+
+本步只闭合“Redis Memory 副本失败可被既有 post-commit／compaction 对账入口观察”这一 A3/H06 出口；未新增独立副本操作 journal，直接调用 `_write_point()` 的调用方仍需由其上层 effect wrapper 决定持久记录方式。未证明真实 embedding／Redis 故障下的自动补偿、RustFS、领域 Runner、A2-2/A2-3、完整跨 Turn／逐模式 Harness、官方 saver conformance、E3/E4 或完整 v4。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。

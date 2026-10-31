@@ -609,8 +609,19 @@ class MemoryRuntimeService:
                     "environment": str(request.metadata.get("environment") or ""),
                 },
             )
-        except Exception:
-            LOGGER.exception("memory_vector_replica_write_failed", extra={"memory_id": point.id, "embedding_version": version})
+        except Exception as exc:
+            # PostgreSQL is authoritative and the row is already committed,
+            # but a failed Redis projection is an unknown derived effect.  Do
+            # not turn it into a successful ``memory.persisted`` result: the
+            # post-commit caller must record its existing unknown-effect
+            # evidence so recovery can reconcile the durable row later.
+            LOGGER.warning("memory_vector_replica_write_failed", extra={
+                "memory_id": point.id,
+                "embedding_version": version,
+                "status": "unknown",
+                "error_type": type(exc).__name__,
+            })
+            raise
         return point
 
     async def _search_memory(self, request: MemorySearchRequest) -> list[MemoryPoint]:
