@@ -20,7 +20,6 @@ from src.runtime.store import ContinuationLeaseLostError
 from src.runtime.task_deferred import TaskDeferred
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
 from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
-from src.runtime.postgres_framework_model_calls import FrameworkModelBudgetMissing
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.agent_task import (
     AgentTaskAccepted,
@@ -632,13 +631,6 @@ class AgentTaskDispatcher:
                             FrameworkContextService.compatible_asset(session, runtime_binding)
                         except (ValueError, FrameworkMessageStageRecoveryRequired) as exc:
                             raise TaskDeferred("framework_transcript_format_unavailable") from exc
-                if (self._framework_model_calls is not None
-                    and stored.status not in TERMINAL_AGENT_TASK_STATUSES
-                    and command.operation != "framework_reconcile"):
-                    try:
-                        await self._framework_model_calls.frozen_policy(runtime_binding)
-                    except FrameworkModelBudgetMissing as exc:
-                        raise TaskDeferred("framework_model_budget_unavailable") from exc
             except TaskDeferred as exc:
                 LOGGER.warning("agent_v2_capability_unavailable", extra={
                     "task_id": command.task_id, "binding_id": runtime_binding.binding_id,
@@ -649,6 +641,8 @@ class AgentTaskDispatcher:
                 raise
             task = await self._tasks.claim(
                 command.task_id, worker_id=worker_id, expected_binding=runtime_binding,
+                model_ledger_capabilities=(self._framework_capabilities
+                    if self._framework_model_calls is not None else None),
             )
         else:
             if stored.runtime_binding is not None:

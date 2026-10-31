@@ -23,6 +23,7 @@ from src.runtime.postgres_runtime_owner import (
 )
 from src.runtime.framework_tool_activity import read_tool_activity
 from src.runtime.framework_worker_activity import read_worker_activity
+from src.runtime.task_deferred import TaskDeferred
 from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelBudgetSnapshot, FrameworkModelCallIntent,
     FrameworkModelCallRecord, FrameworkModelUsage, FrameworkModelObject, FrameworkModelResponseObservation,
@@ -494,6 +495,26 @@ class PostgresFrameworkModelCalls:
                 self._require_binding(cur, binding)
                 return self._policy(cur, binding.binding_id)
         return await asyncio.to_thread(read)
+
+    def require_worker_compatibility(self, cur, binding, capabilities, *, require_budget):
+        """Use the caller's owner-locked claim transaction, before any mutation.
+
+        Like freeze_submission, this does not open another connection. Parsing
+        the installed codecs is only a format check, never a recovery proof or
+        permission to transfer a reservation, settle a call or send a request.
+        """
+        cur.execute(f"SELECT policy FROM {self.budgets_table} WHERE binding_id=%s FOR SHARE",
+            (binding.binding_id,))
+        saved = cur.fetchone()
+        if saved is None:
+            if require_budget:
+                raise TaskDeferred("framework_model_budget_unavailable")
+        else:
+            capabilities.require_model_ledger_format("budget", saved["policy"])
+        for kind, table in (("call", self.calls_table), ("upload", self.uploads_table)):
+            cur.execute(f"SELECT record FROM {table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
+            for row in cur.fetchall():
+                capabilities.require_model_ledger_format(kind, row["record"])
 
     async def execution_deadline(self, owner: RuntimeExecutionOwner, *, before_execution: bool = False) -> tuple[datetime, float]:
         """Read the original root deadline against the database clock and owner.

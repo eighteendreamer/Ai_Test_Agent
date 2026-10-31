@@ -59,6 +59,7 @@ class _Tasks:
         self.stored = stored
         self.claimed = []
         self.message_recoveries = []
+        self.model_ledger_capabilities = []
 
     async def get(self, task_id):
         assert task_id == self.stored.id
@@ -68,10 +69,11 @@ class _Tasks:
         assert task_id == self.stored.id and session_id == self.stored.session_id
         return None
 
-    async def claim(self, task_id, *, worker_id, expected_binding=None):
+    async def claim(self, task_id, *, worker_id, expected_binding=None, model_ledger_capabilities=None):
         assert task_id == self.stored.id
         assert expected_binding == self.stored.runtime_binding
         self.claimed.append(worker_id)
+        self.model_ledger_capabilities.append(model_ledger_capabilities)
         return self.stored
 
     async def ensure_framework_message_recovery(self, task_id, *, native_reader=None):
@@ -138,6 +140,29 @@ async def test_v2_dispatcher_requires_persisted_binding_and_executes_once():
 
     assert tasks.claimed == ["v2-worker"]
     assert executions == [("task-1", runtime_binding)]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("operation", ["message", "message_recover", "approval_resume", "approval_recover", "framework_reconcile"])
+async def test_model_reader_capabilities_reach_claim_for_all_bound_operations(operation):
+    selected = binding()
+    task = stored_task(selected)
+    task.operation = operation
+    task.reference_id = "approval-1" if operation != "message" else None
+    tasks = _Tasks(task)
+    caps = FrameworkWorkerCapabilities("a" * 64, True)
+    dispatcher = AgentTaskDispatcher(_Settings(), tasks, None, None,
+        framework_capabilities=caps, framework_model_calls=object())
+    executions = []
+
+    async def execute(received):
+        executions.append(received.id)
+
+    dispatcher._execute = execute
+    envelope = command(selected).model_copy(update={"operation": operation, "reference_id": task.reference_id})
+    await dispatcher.handle_v2(QueuedTask("reader-admission", envelope.model_dump(mode="json")), worker_id="v2-worker")
+    assert tasks.claimed == ["v2-worker"] and executions == [task.id]
+    assert tasks.model_ledger_capabilities == [caps]
 
 
 @pytest.mark.asyncio

@@ -7137,3 +7137,51 @@ v4 A3／§8.1、§10.1–§10.2、§11、H06/H10 → 本节 → 4 个生产文�
 新增 DDL 由现有 `PostgresResourceCleanupStore.initialize()` 执行，不改已有 receipt 字段；默认派生表为 `agent_resource_cleanup_jo_query_bd48b1b3dd52de91`，分页索引为 `idx_agent_resource_cleanup_jo_query_bd48b1b3dd52de91_page`。部署角色须具备创建表／序列／索引和引用原表的权限，未部署或改生产路由。未进行完整双制品发布演练，旧 Worker 不写查询历史，§151 的旧命令 DTO 读者限制仍保留；不能据此宣称混合版本全契约已验。没有新 public API、数据回填或自动补偿权限。
 
 本步只为 Docker cleanup 对账持久记录查询请求与结果，不证明 command 成功、目标副作用撤销或未绑定 allocation 不会迟到创建。request-only 不证明查询已发送，也不证明没有发送；缺失结果不作为执行权限。后台命令 poll 的查询历史、浏览器／其他 Runner 与停止意图／回执、未绑定／历史缺身份、真实 Runner execution ID／代次全链路、Memory 独立副本 journal／其余资源补偿、A2-2/A2-3、B/C、D/E/F、完整 H01–H12、官方 saver conformance 和 E3/E4 按完整 v4 保留，整体目标继续 active。
+
+## 157. F／§14.1、H11：模型账本严格格式在领取事务内核对（2026-10-31）
+
+### 续接、根因与依据 → 做法
+
+续接 `2c34ea16f`／§156，回到 v4 的兼容发布出口，而非继续扩大 Docker 授权。已复核 §86–87 的 projected 仅结算、恢复后继和新 Turn 路由回滚实现，不根据 v4 编写时的历史状态重复实现；当前 message-stage 上界是 29，不是方案基线中的 11。本轮确认的独立缺口是 Dispatcher 领取前只调用 `frozen_policy()`，它不读取模型调用或上传意图。已持久化的新调用格式／严格模型新增字段可以被旧读者先领取，消耗 attempt／变更 owner 后才解析失败。根因是制品读能力检查与业务领取的事务边界错位，不是模型重试不足。
+
+依据现有 `FrameworkWorkerCapabilities.require_message_stage()` 的显式能力声明、`FrameworkModelBudget`／`FrameworkModelCallRecord`／`FrameworkModelEvidenceUpload` 的严格 Pydantic 读者、`freeze_submission()` 的调用方同连接协议，以及 `_claim_sync()` 的 Session → runtime owner → task 行锁顺序 → 在原 claim 短事务内读取并解析该 binding 的原账本，确认兼容后才允许原状态迁移。不新增调度器、模型调用或另一套恢复证明。本地《Agent轨迹与协议鲁棒性》§3 的字段／必填项／嵌套结构漂移与严格校验实例 → 测试未知格式保留投递、普通数据错误可见、原执行身份及结果不被重写。
+
+### TDD、代码与消费方
+
+1. 新增真实 PG 回归：先通过生产 `prepare_initial()` 保存 claimed owner 的 ready 调用，再仅在隔离行注入未知 schema 4、顶层新字段或 intent 嵌套新字段。旧代码实际 **3 failed，20.01 秒**，均为未抛 `TaskDeferred`；不是服务启动失败，也不伪称真实供应商事故样本。
+2. 能力对象新增 `model_call_max_version=3`；预算／上传意图沿当前 schema 1，调用沿 1–3，缺省版本沿既有 schema 的默认值 1 读取，不改原 JSON。显式顶层版本拒绝 null／bool／字符串／float 等隐式转换。复用已安装模型解析，未知 schema／position 版本、严格新增字段和非对象记录才分类为受控格式 defer；已知 usage 等语义错误仍传播原验证异常。安全原因不包含 record／异常正文，格式 defer 不附原 ValidationError 输入链。兼容解析不是 owner／资产摘要／响应结算证明，后续原有核验不移除。
+3. `PostgresFrameworkModelCalls.require_worker_compatibility()` 借用 claim cursor，按 binding 精确读取 budget、calls、uploads，既有行以 `FOR SHARE` 保持到本事务结束；不新开连接、不初始化表、不访问对象存储或模型。`PostgresAgentTaskStore.claim()` 增加内部可选 `model_ledger_capabilities`，在任何 attempt、owner、expired-running 迁移和终态返回之前核对。普通未完成执行仍要求原预算；终态交付和确定性 reconciliation 不补造缺失预算，但已存在的记录仍须兼容。延迟观察在事务结束后的兼容发布约束仍保留，不能把本次行锁理解为禁止未来写者。
+4. Dispatcher 删除事务外的预算专用读取，只有既有模型账本已注入时将能力传入原 claim；main 的正式组装及 v2 CLI 能力注入已核对。legacy 和未注入账本的旧单元替身保持原行为，不据此宣称它们具有生产格式核对能力。新日志 `framework_model_reader_unavailable` 只携带 task／binding／Worker 和固定 reason；普通 claim 的忙锁／已占用延后不误分类为格式能力问题。五种 bound operation 的能力转交契约和原 fake 同步；没有新增公共 DTO／HTTP API／前端契约。
+5. 第一版误用了本项目 SQLAlchemy cursor 不支持的 `fetchmany()`，实际 **3 failed，15.25 秒**；读取 `SQLAlchemyCursor` 后对齐项目已有 `fetchall()`，没有给连接包装器另加接口。中间三文件 **189 passed，65.10 秒**；该结果早于日志边界和后续新增例，只记中间结果。扩大专项时 **3 failed，22 passed，30.44 秒**：两例试图续租已过期 fixture、一例把公开 `get()` 的记录当作带新 owner 的 claim 返回。修正为上传准备后再过期、从实际 execute 捕获 claim epoch，不放宽生产租约或读权限。另一次 **1 failed，27 passed，45.96 秒** 为状态摘要采样早于正常 outbox relay；改在 relay 提交后采样，仍完整比较 outbox，未删除断言。
+6. 最终专项 **28 passed，39.67 秒**：精确比较 11 张隔离表的行数及整行摘要，避免断言打印 lease token；验证格式拒绝不新增 attempt、不更换 owner、不改 Session／事件／stage／预算／原调用／上传意图，不进入 Runtime。真实 Session 锁等待后再注入 schema 4，领取事务看到最新格式并原样回滚。真实 ready reservation transfer 产出 schema 2，读者 max=1 不领取，兼容读者只取得原合法 claim，原预留、调用和转移事实完全不变。终态无预算不补配额；已知 usage 错误传播而不伪装成兼容等待。
+7. 真实 outbox → Redis Worker 的不兼容消费者保留同一 PEL 项，原 retry_count=0、无后继／dead letter、PG 终态不变；测试显式把该 PEL 项移交兼容消费者，沿真实队列读取、Dispatcher 和 fenced ACK 完成，不重新执行图或模型。这是同一安装代码中能力范围参数的兼容模拟，不是两个独立旧／新发布制品。沿原测试白名单只增加精确测试文件例外，未使用强制添加。
+
+### 当前源码实际验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`，复用用户已启动的 PostgreSQL／Redis。相关 HTTP／SDK 回归使用项目既有本地合成对端；本轮未运行 Docker／扫描／付费供应商／真实对象上传，未重启服务或改生产路由。以下组合按各自范围报告，重叠测试不相加。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_framework_model_admission.py tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_framework_model_calls.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_result_import.py tests/test_framework_model_uploads.py -q -rs --tb=short
+# 363 passed，605.65 秒，exit 0；无 skip／deselect
+# 该组加载了当时 25 项专项；之后只新增专项 3 项和 operation 转交 5 项，无生产源码变化。
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_framework_model_admission.py -q -rs --tb=short
+# 最终 219 passed，94.21 秒，exit 0；包含完整 28 项专项和五种 operation；无 skip／deselect
+```
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py tests/test_framework_approval_runtime.py tests/test_framework_approval_recovery.py tests/test_framework_checkpoint_fencing.py tests/test_framework_message_recovery.py tests/test_framework_orchestrated_message_recovery.py tests/test_framework_projected_settlement.py tests/test_framework_context_runtime.py tests/test_framework_route_rollback.py tests/test_framework_model_policy.py tests/test_framework_model_dto.py tests/test_framework_model_evidence.py tests/test_framework_execution_deadline.py -q -rs --tb=short
+# 435 passed，1991.98 秒，exit 0；无 skip／deselect
+```
+
+扩大组合包含真实 PG／Redis、官方框架与 SDK／本地合成 HTTP、既有独立 Worker 强杀及审批／消息恢复、projected 结算、上下文与新 Turn 回滚、模型预算／截止消费方；不是完整生产制品部署或真实供应商验收。所有本轮测试命令均已取得终态，无待观察测试句柄。根目录 compileall、`git diff --check` 和实施记录仅追加核验实际通过；ruff／mypy 仍未安装，未运行独立 lint／typecheck，也未安装依赖。
+
+### 提交对应、兼容与剩余出口
+
+v4 F／§14.1、H11 → 本节 → 4 个生产文件、2 个测试文件、测试白名单及本记录 → 上述真实 PG／Redis 和当前严格读者验证 → `【fix】领取前核对模型账本格式兼容性` 同一提交，ID 见最终交付和 Git 历史。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
+
+本步无 DDL、新写入格式、依赖升级、配置变更或数据回填，只扩展当前制品领取端的兼容读能力；不能追溯修复已发布旧 Worker，也不证明全量格式／双制品发布／回滚能力。格式检查全量读取该 root 的现有调用与上传意图，不查询远端资产，未做大规模账本性能基线。binding／command、receipt／proof／transcript／结果资产的完整兼容路由和各阶段剩余验收仍须逐项补齐。未运行全量前后端、真实领域 Runner、供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4。A2-2/A2-3 剩余、A3、B/C、D/E/F、H01–H12 按完整 v4 保留，整体目标继续 active，本节不代表 F 或全系统完成。

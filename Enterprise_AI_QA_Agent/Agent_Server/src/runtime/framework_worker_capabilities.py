@@ -10,7 +10,12 @@ from dataclasses import dataclass
 import hashlib
 from pathlib import Path
 
+from pydantic import ValidationError
+
 from src.runtime.task_deferred import TaskDeferred
+from src.schemas.framework_model_call import (
+    FrameworkModelBudget, FrameworkModelCallRecord, FrameworkModelEvidenceUpload,
+)
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_transcript import (
     CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSION, SUMMARY_CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSIONS,
@@ -29,6 +34,7 @@ class FrameworkWorkerCapabilities:
     context_transcript_enabled: bool = True
     turn_context_assembly_enabled: bool = True
     native_summary_coverage_enabled: bool = True
+    model_call_max_version: int = 3
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -74,3 +80,29 @@ class FrameworkWorkerCapabilities:
         if schema_version is not None and (type(schema_version) is not int
             or not 1 <= schema_version <= self.message_stage_max_version):
             raise TaskDeferred("framework_message_stage_unavailable")
+
+    def require_model_ledger_format(self, kind: str, value: object) -> None:
+        """Check the installed strict reader, not model settlement authority.
+
+        A future field can break an extra=forbid reader without a version bump.
+        Ordinary validation/identity errors are not compatibility deferrals.
+        """
+        model = {"budget": FrameworkModelBudget, "call": FrameworkModelCallRecord,
+            "upload": FrameworkModelEvidenceUpload}[kind]
+        reason = f"framework_model_{kind}_format_unavailable"
+        if not isinstance(value, dict):
+            raise TaskDeferred(reason)
+        version = value.get("schema_version", 1)
+        maximum = self.model_call_max_version if kind == "call" else 1
+        if type(version) is not int or not 1 <= version <= maximum:
+            raise TaskDeferred(reason)
+        try:
+            model.model_validate(value)
+        except ValidationError as exc:
+            if any(error["type"] == "extra_forbidden" or (
+                error["type"] == "literal_error" and error["loc"]
+                and error["loc"][-1] in {"schema_version", "position_version"})
+                for error in exc.errors(include_input=False, include_url=False)):
+                # Do not attach the raw record / validation input to queue logs.
+                raise TaskDeferred(reason) from None
+            raise
