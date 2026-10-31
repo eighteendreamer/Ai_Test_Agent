@@ -658,3 +658,64 @@ def test_format_compatibility_neither_recurses_into_metadata_nor_grants_recovery
     caps.require_message_stage_format(value)
     with pytest.raises(FrameworkMessageStageRecoveryRequired, match="asset integrity"):
         validate_message_stage(value)
+
+
+def approval_receipt_record(**changes):
+    from src.schemas.framework_approval import FrameworkDecisionReceipt
+
+    value = FrameworkDecisionReceipt(decision_id="decision", approval_id="approval", decision={"type": "approve"},
+        decision_hash="hash", state="queued", created_at=datetime.now(timezone.utc)).model_dump(mode="json")
+    value.update(changes)
+    return value
+
+
+@pytest.mark.parametrize("changes", [{"future_field": None},
+    {"proof": {"format_version": "langgraph-next"}},
+    {"proof": {"application": {"format_version": "langgraph-next"}}}])
+def test_receipt_format_reader_rejects_strict_fields_and_declared_future_native_protocol(changes):
+    with pytest.raises(TaskDeferred, match="framework_approval_receipt_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_approval_journal_format(
+            "receipt", approval_receipt_record(**changes))
+
+
+@pytest.mark.parametrize("version", [1, 2])
+def test_receipt_retains_both_tool_projection_readers(version):
+    from src.schemas.framework_tool_projection import FrameworkToolProjection, TOOL_PROJECTION_KEY
+    from tests.test_framework_tool_projection import sample
+
+    binding, source, material = sample()
+    if version == 2:
+        material = FrameworkToolProjection.capture(binding=binding, source=source, record=material.record,
+            message=material.message, model_content=material.model_content,
+            runtime_message={"role": "tool", "tool_call_id": material.record.call_id,
+                "name": material.record.tool_key, "content": "original-runtime-slot"})
+    proof = {"application": {TOOL_PROJECTION_KEY: material.model_dump(mode="json")}}
+    FrameworkWorkerCapabilities("a" * 64, True).require_approval_journal_format("receipt", approval_receipt_record(proof=proof))
+
+
+@pytest.mark.parametrize("change", ["schema_version", "future_field", "digest"])
+def test_receipt_typed_material_uses_original_codec_without_relabeling_integrity_errors(change):
+    from pydantic import ValidationError
+    from src.schemas.framework_tool_projection import TOOL_PROJECTION_KEY
+    from tests.test_framework_tool_projection import sample
+
+    _, _, original = sample()
+    material = original.model_dump(mode="json")
+    material[change if change != "digest" else "model_content"] = 99 if change == "schema_version" else "private-input"
+    value = approval_receipt_record(proof={"application": {TOOL_PROJECTION_KEY: material}})
+    expected = ValidationError if change == "digest" else TaskDeferred
+    with pytest.raises(expected):
+        FrameworkWorkerCapabilities("a" * 64, True).require_approval_journal_format("receipt", value)
+
+
+def test_receipt_proof_metadata_is_not_a_recursive_format_whitelist():
+    proof = {"format_version": "langgraph-1.2.12", "metadata": {"format_version": "future", "schema_version": 99},
+        "application": {"format_version": "langgraph-1.2.12", "metadata": {"future_field": True}}}
+    FrameworkWorkerCapabilities("a" * 64, True).require_approval_journal_format("receipt", approval_receipt_record(proof=proof))
+
+
+def test_receipt_format_accepts_the_mapping_contract_of_database_rows():
+    from types import MappingProxyType
+
+    FrameworkWorkerCapabilities("a" * 64, True).require_approval_journal_format(
+        "receipt", MappingProxyType(approval_receipt_record()))

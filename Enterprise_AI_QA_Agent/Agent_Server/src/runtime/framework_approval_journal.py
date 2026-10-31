@@ -65,6 +65,22 @@ class FrameworkApprovalJournal:
         links, receipts = framework_approval_tables(settings)
         self._links, self._receipts = f"public.{links}", f"public.{receipts}"
 
+    def require_worker_compatibility(self, cur, binding, capabilities):
+        """Read original journal formats under the caller's claim transaction.
+
+        No native checkpoint read, receipt repair or delivery/application proof
+        is performed. Missing rows do not synthesize an approval or decision.
+        """
+        cur.execute(f"SELECT link FROM {self._links} WHERE binding_id=%s ORDER BY approval_id FOR SHARE",
+            (binding.binding_id,))
+        for row in cur.fetchall():
+            capabilities.require_approval_journal_format("link", row["link"])
+        cur.execute(f"SELECT receipt.* FROM {self._receipts} receipt WHERE EXISTS ("
+            f"SELECT 1 FROM {self._links} link WHERE link.approval_id=receipt.approval_id AND link.binding_id=%s) "
+            "ORDER BY receipt.approval_id FOR SHARE", (binding.binding_id,))
+        for row in cur.fetchall():
+            capabilities.require_approval_journal_format("receipt", row)
+
     def _native_rows(self, cur, binding, link_config, task_id, *, channels=(RESUME, INTERRUPT)):
         cur.execute(sql.SQL("SELECT idx, channel, type, blob, task_path FROM {} "
             "WHERE thread_id=%s AND checkpoint_ns=%s AND checkpoint_id=%s AND task_id=%s "

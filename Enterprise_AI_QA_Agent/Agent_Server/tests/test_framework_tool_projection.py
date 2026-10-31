@@ -21,6 +21,7 @@ from tests.test_framework_checkpoint_fencing import checkpoint_harness
 from tests.test_framework_approval_projection import projection_harness
 from tests.test_framework_approval_runtime import fresh_runtime_harness
 from tests.test_runtime_binding_persistence import make_binding
+from tests.test_framework_graph_input_asset import expected_graph_stage_version
 
 
 def sample():
@@ -411,8 +412,9 @@ async def test_independent_process_kill_retains_original_tool_material_without_r
         await asyncio.to_thread(process.join, 10)
         assert not process.is_alive() and process.exitcode != 0
         saved_stage = await h.tasks.get_framework_message_stage_version(h.owner.id, session_id=h.session_id)
-        assert saved_stage == 21
         before = await h.tasks.get_framework_message_stage(h.owner.id, session_id=h.session_id)
+        assert saved_stage == expected_graph_stage_version(before, minimum=21)
+        assert before.source_manifest["graph_input_asset"]["feature_flags"]["terminal_event_projection_version"] == 1
         assert "runtime_result_asset" not in before.source_manifest
         assert await h.store.get_latest_snapshot(h.session_id) is None
         selected = {"configurable": {"thread_id": h.binding.thread_id,

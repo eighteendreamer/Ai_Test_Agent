@@ -236,7 +236,8 @@ async def interrupt(h):
 
 def owner_row(h):
     with postgres_connect(h.settings) as connection, connection.cursor() as cur:
-        cur.execute(f"SELECT *, expires_at <= clock_timestamp() AS expired "
+        cur.execute(f"SELECT *, expires_at <= clock_timestamp() AS expired, clock_timestamp() AS observed_at, "
+            "EXTRACT(EPOCH FROM (clock_timestamp() - expires_at)) * 1000 AS expiration_lag_ms "
             f"FROM {h.settings.database.postgres_agent_task_table}_runtime WHERE binding_id=%s", (h.binding.binding_id,))
         return cur.fetchone()
 
@@ -256,7 +257,11 @@ async def test_http_interrupt_revokes_owner_before_worker_poll_and_blocks_late_w
         saved = await h.tasks.get(h.owner.id)
         assert saved.status == "interrupted" and saved.attempt_no == 1
         assert await h.tasks.interrupt_requested(saved.id)
-        assert owner_row(h)["execution_state"] == "interrupted" and owner_row(h)["expired"]
+        revoked = owner_row(h)
+        assert revoked["execution_state"] == "interrupted" and revoked["expired"], (
+            f"Interrupted owner expiration mismatch: state={revoked['execution_state']}, "
+            f"expires_at={revoked['expires_at']}, observed_at={revoked['observed_at']}, "
+            f"expiration_lag_ms={revoked['expiration_lag_ms']}")
         assert not await h.tasks.renew_framework_execution(h.owner, 60)
         with pytest.raises(ContinuationLeaseLostError):
             await saver.aput(config(h), empty_checkpoint(), {}, {})

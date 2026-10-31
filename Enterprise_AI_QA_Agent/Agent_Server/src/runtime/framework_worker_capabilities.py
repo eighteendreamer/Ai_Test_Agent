@@ -6,6 +6,7 @@ integration plan, sections 3 and 8). Keep this separate from business leases.
 """
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 import hashlib
 from pathlib import Path
@@ -114,11 +115,37 @@ class FrameworkWorkerCapabilities:
                     raise TaskDeferred(reason)
                 self._read_compatible(reader, manifest[key], reason)
 
+    def require_approval_journal_format(self, kind: str, value: object) -> None:
+        """Reuse existing journal readers without granting native delivery rights.
+
+        Proof dictionaries retain their untyped metadata contract. Only their
+        declared native protocol and existing typed application material are
+        inspected here; native facts, identities and outcomes remain separate.
+        """
+        from src.schemas.framework_approval import FrameworkInterruptLink, FrameworkDecisionReceipt, NativeToolInterrupt
+        from src.schemas.framework_tool_projection import TOOL_PROJECTION_KEY, parse_tool_projection
+
+        reason = f"framework_approval_{kind}_format_unavailable"
+        if not isinstance(value, Mapping):
+            raise TaskDeferred(reason)
+        model = {"link": FrameworkInterruptLink, "receipt": FrameworkDecisionReceipt}[kind]
+        record = self._read_compatible(model.model_validate, value, reason)
+        if kind == "receipt":
+            proof = record.proof or {}
+            application = proof.get("application")
+            native_format = NativeToolInterrupt.model_fields["format_version"].default
+            for material in (proof, application):
+                if (isinstance(material, dict) and "format_version" in material
+                    and material["format_version"] != native_format):
+                    raise TaskDeferred(reason)
+            if isinstance(application, dict) and TOOL_PROJECTION_KEY in application:
+                self._read_compatible(parse_tool_projection, application[TOOL_PROJECTION_KEY], reason)
+
     @staticmethod
     def defer_unsupported_format(exc: ValidationError, *, reason: str) -> None:
         if any(error["type"] == "extra_forbidden" or (
             error["type"] == "literal_error" and error["loc"]
-            and error["loc"][-1] in {"schema_version", "position_version", "derivation_contract_version"})
+            and error["loc"][-1] in {"schema_version", "position_version", "derivation_contract_version", "format_version"})
             for error in exc.errors(include_input=False, include_url=False)):
             # Do not attach the raw record / validation input to queue logs.
             raise TaskDeferred(reason) from None

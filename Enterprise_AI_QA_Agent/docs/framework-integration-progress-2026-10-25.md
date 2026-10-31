@@ -7237,3 +7237,55 @@ v4 F／§14.1、H11 → 本节 → 4 个生产文件、2 个测试文件、测�
 本步无 DDL、新写入格式、数据回填、依赖或生产开关变化；只有当前制品读能力检查，不追溯修复旧 Worker，也不证明双制品滚动部署、完整回滚或大规模 stage 解析性能。目录范围限于原 `validate_message_stage()` 已显式解析的 typed manifest 材料；任意 untyped payload、feature flag 自定义约束、独立审批 journal／receipt／proof、native transcript、其他结果资产路由与全量兼容契约仍须逐项核对，不能把本步当作所有 claim 前格式能力已完成。
 
 未运行全量前后端、真实领域 Runner、供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4。A2-2/A2-3、A3、B/C、D/E/F 和完整 H01–H12 的剩余出口按完整 v4 保留；上述共享 checkpoint 数据残留也保留为已知事项。整体目标继续 active，本节不代表 F 或全系统完成。
+
+## 159. F／§14.1、H11：领取前核对独立审批 journal 格式，并保留回归时间异常（2026-10-31）
+
+### 续接、根因与依据 → 做法
+
+续接 `9b4f7cd76`／§158，继续核对独立审批材料，未扩大 Docker／模型授权。现有 `assert_claimable_approval()` 在领取过程中解析 link 与 receipt；严格新字段或未知 native format 引起的 ValidationError 会被原业务恢复错误分支捕获，将 queued 任务改成 recovery_required。expired-running 则会在进入审批解析之前先迁移终态。格式能力与业务领取再次错位；这是 v4 已要求系统治理的同一架构边界，不增加新的 fallback、恢复权限或调度器，而是沿 §157–158 的原 claim 兼容检查统一补齐下一类持久材料。
+
+依据 `FrameworkApprovalJournal.require_link_in_transaction()`／`get_receipt_in_transaction()` 的既有严格读者、`NativeToolInterrupt.format_version` 的固定协议、journal 的 delivery／application proof 生产位置、`parse_tool_projection()` 的已有 v1/v2 codec → 在原 claim 短事务内读取同 binding 的现存 journal，使用同一严格 reader 做兼容检查；原生事实、业务身份、ToolJob 结果和恢复证明继续由原链路核验。参考本地《Agent轨迹与协议鲁棒性》§3 的协议字段／枚举／语义漂移与严格校验 → 真实 PG 负例必须验证零领取副作用，并保留兼容正常分支，不接受“一律拒绝”的假绿。
+
+### TDD、实现与消费方
+
+1. 新模块复用真实官方 Deep Agents per-call HITL、PG saver 和现有审批提交 fixture：正常提交 B 决定后，在隔离 link 注入新字段／`format_version=langgraph-next`，或仅在隔离 receipt 表增加一个新列。旧生产代码实际 **3 failed，21.35 秒**，均 `DID NOT RAISE TaskDeferred`，日志为 `framework_approval_claim_rejected`；不是服务启动失败。另通过真实图执行与原 settle 保存 delivered／applied proof 后，分别变更其顶层或 application 的 native format，实际 **2 failed，15.14 秒**，同样没有延后。都是受控未来格式反例，不伪称生产供应商事故。
+2. `FrameworkApprovalJournal.require_worker_compatibility()` 使用调用方 cursor，在原 Session → owner → task 锁之后、任何状态迁移／终态返回之前，按 binding 精确读取全部现存 link 和对应 receipt，按 approval_id 稳定排序并 `FOR SHARE` 保持至事务结束。receipt 保持原 `SELECT *` 契约，因此真实 DDL 新列也能被当前 `extra=forbid` reader 发现。无行不补造决定，不读取 native checkpoint、不修复 receipt、不执行工具／图。所有正式 v2 operation 复用 §158 的能力传入，legacy 及显式不提供能力的底层测试调用原路径不变。
+3. `FrameworkWorkerCapabilities.require_approval_journal_format()` 复用 `FrameworkInterruptLink`／`FrameworkDecisionReceipt`；共享 ValidationError 分类补上已存在的 `format_version` literal。receipt proof 的顶层及 application 如果显式声明 native format，只接受已安装 `NativeToolInterrupt` 模型的原协议值；未声明的历史字典不擅自补版本。application 中已有的 `enterprise_qa_tool_projection` 复用原 v1/v2 reader，未知 schema／严格新字段受控延后，intrinsic digest 错误继续 ValidationError。proof 仍为既有自由字典，不把它改成字段白名单，不递归检查任意 metadata，也不授予 native／finalization／settlement 权限。
+4. 新日志 `framework_approval_reader_unavailable` 只含 task／binding／worker／固定 reason，不记录原输入或异常正文。普通数据校验错误不伪装成能力等待；格式合法但业务 tool_job_id 变化仍由原业务检查拒绝，保持 recovery_required、attempt_no=0。没有修改 public API、DTO、前端、配置、生产 DDL、写入格式或恢复调度。
+5. 初版 **5 passed，25.95 秒** 不能单独证明正常分支。扩大组合实际 **1 failed、269 passed，102.27 秒**：真实兼容 receipt 被误拒绝。读取 `SQLAlchemyCursor.fetchall()`／`result.mappings()` 后确认数据库行是 RowMapping，不是 dict；形态校验对齐项目已有 `collections.abc.Mapping`，不另造数据库适配器，也不改变 receipt SELECT 字段。新增正常领取及 MappingProxyType 契约，随后 **272 passed，81.15 秒**。之后扩展真实投影专项 **19 passed，89.81 秒**。
+6. 最终新增审批专项共 21 项，覆盖 queued／claimed／running／cancelled、同 binding 的 sibling link、等待真实 Session 锁后 journal 变化、receipt 新列、真实 delivered／applied 原生 proof、真实拒绝投影资产 schema／extra／digest、reconciliation operation、普通校验与业务身份错误、兼容合法领取。摘要比较隔离业务／journal／ToolJob 以及 native schema 全部表行数与整行内容，断言不打印 token 或 checkpoint 内容；新模块 autouse 显式依赖并核对隔离 checkpoint fixture，开 saver 前确认 `fence_test_` schema。
+7. 真实 outbox → Redis Worker 验证同一 binding 的初始终态消息和决定投递均保留原 PEL，不增 retry／后继／dead letter、不改原 PG 事实或调用图。初次扩展 **1 failed、276 passed，93.01 秒**，原因是新测试默认 batch_size=1 却期望两项均被消费；对齐该用例明确的 batch_size=2 后单例 **1 passed，12.55 秒**，最终又增加原 stream entries 与实际接收 retry_count 的精确核对。未修改生产 Worker 或弱化 PEL 断言。
+
+### 扩大回归发现、查证及未解决项
+
+1. 首轮 journal 消费方组合 **6 failed、203 passed，989.00 秒**，六个既有独立 Worker 强杀窗口停在同一个旧断言：`saved_stage == 21`，实际为 29。检查当前 `FrameworkGraphInput.required_message_stage_version` 确认冻结 Harness settings 要求 29；禁用本轮新增 journal 检查再执行原始 False/None 样本，仍 **1 failed，18.98 秒**、`29 != 21`，证明并非新格式检查改变写入格式。测试对齐项目已有 `expected_graph_stage_version(before, minimum=21)`，同时明确断言冻结 `terminal_event_projection_version=1`；其余原资产、native hash、原 ToolJob、强杀、后继与无重复执行断言不变。没有把预期值改成“实际值自己”或删除强杀验证。该诊断最初用 stdin 启动，未返回 pytest 结果；确认仅对应两个 Python stdin 进程的 PID／父子关系和命令后终止，改用 `python -c` 取得上述真实失败终态；不把无输出诊断算作通过或据此推断数据库状态。
+2. 另一并发运行的恢复消费方组合 **1 failed、306 passed，1558.22 秒**，失败为 `denied/after_applied/reconcile_after_commit` replacement Worker 在 3 秒资源租约中失租，退出码 1；日志 `agent_task_resource_renew_failed`／`ContinuationLeaseLostError`，不是格式 defer。改为串行执行该真实样本及上述全部六个工具投影强杀窗口，**7 passed，167.66 秒**；未放宽租约、deadline 或断言，也没有将一次串行通过认定为已定位其偶发根因。
+3. 最终将 20 文件置于单一 pytest 串行进程，仍为 **1 failed、792 passed，3805.47 秒，exit 1**，无 skip／deselect。这次前述资源失租样本通过；失败是 `test_http_interrupt_revokes_owner_before_worker_poll_and_blocks_late_writes[False]`：owner `execution_state='interrupted'`，但读取的 `expired` 为 False。当前生产事务明确设置 `expires_at=clock_timestamp()`，测试也用数据库 `clock_timestamp()` 比较；仅凭这次布尔输出不能证明是时钟回退、数据竞态或某种服务故障。Windows 时间事件查询未取得能解释该样本的证据，不把时钟推测写成根因。
+4. 原中断两参数单独复跑 **2 passed，24.28 秒**。遵循“不能复现先补诊断”，只在既有测试 `owner_row()` 额外读取 observed_at／expiration_lag_ms，并在同一行采样的失败断言中输出状态、expires_at、观测时间和差值，不打印 owner token；保留必须已过期及所有旧 owner 写入拒绝断言，不加 sleep／重试，不改生产中断或租约语义。其后控制全文件＋审批兼容＋Worker 契约 **289 passed，228.28 秒**。**本轮没有将完整 20 文件重新跑成全绿；该一次过期比较异常原因仍待核，完整组合的 exit 1 必须保留，不能以 289 项通过覆盖它。**
+
+### 当前源码实际验证与证据范围
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`，复用用户已启动的 PG／Redis。不重启服务、不运行 Docker、不扫描、不调用付费模型、不升级依赖、不改生产路由。真实 SDK 模型以测试模型／本地合成 HTTP 为对端；独立 Worker 强杀为真实子进程，不等于真实供应商或生产制品部署。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_approval_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_framework_approval_receipts.py tests/test_framework_approval_submission.py tests/test_framework_approval_projection.py tests/test_framework_approval_continuation.py tests/test_framework_approval_results.py tests/test_framework_tool_projection.py tests/test_framework_approval_settlement.py tests/test_framework_stage_reader_admission.py tests/test_framework_model_reader_admission.py tests/test_framework_model_admission.py tests/test_framework_approval_runtime.py tests/test_framework_approval_recovery.py tests/test_framework_checkpoint_fencing.py tests/test_framework_task_control.py tests/test_framework_finalization_projection.py tests/test_framework_projected_settlement.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_approval_asset_gap_recovery.py -q -rs --tb=short
+# 1 failed、792 passed，3805.47 秒，exit 1；失败和证据见上节
+# 此命令之后只有测试时间诊断变化，无生产源码变更。
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_task_control.py tests/test_framework_approval_reader_admission.py tests/test_agent_v2_worker_contract.py -q -rs --tb=short
+# 当前源码最终 289 passed，228.28 秒，exit 0；无 skip／deselect
+```
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际通过。ruff／mypy 仍未安装，未运行独立 lint／typecheck，未安装依赖。所有命令均取得终态，当前没有待观察 pytest／spawn 进程。§158 的默认共享 checkpoint 历史残留未擅自删除，仍是已知事项，不能声称环境无测试残留。
+
+### 提交对应、边界与下一步
+
+v4 F／§14.1、H11 → 本节 → 3 个生产文件、4 个测试文件、测试白名单及本记录 → 上述真实 PG／Redis、官方框架与独立 Worker 结果 → `【fix】领取前核对审批记录格式` 同一提交，ID 见本轮交付和 Git 历史。仅提交本轮 9 文件；用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交，不自动推送。
+
+新增 journal 兼容行为已由最终专项验证，但完整组合仍保留一次未定位的中断过期比较失败，不宣称本轮所有验收完成。下一步优先用新精确诊断核实该现象，再继续 task recovery_proof 的独立 finalization／settlement scope、native transcript／command／其他结果材料格式、实际双制品兼容部署与制品归档；本步不把自由 proof 字典新建为完整严格模型，不证明所有 proof／native 读能力已覆盖。生产无 DDL／迁移／配置变化，隔离测试 receipt 新列由原测试 fixture 清理；尚无全量 journal 规模性能基线。
+
+A2-2/A2-3、A3、B/C/D/E/F、H01–H12、真实领域 Runner、供应商／embedding／RustFS、官方 saver conformance、全量前后端及完整 E3/E4 仍按 v4 保留。整体目标继续 active，本节不代表 F 或全系统完成。

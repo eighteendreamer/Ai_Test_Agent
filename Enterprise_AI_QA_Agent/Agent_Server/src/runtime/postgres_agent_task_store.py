@@ -1246,6 +1246,16 @@ class PostgresAgentTaskStore:
                         "task_id": task_id, "binding_id": saved_binding.binding_id,
                         "worker_id": worker_id, "reason": str(exc)})
                     raise
+                from src.runtime.framework_approval_journal import FrameworkApprovalJournal
+
+                try:
+                    FrameworkApprovalJournal(self._settings).require_worker_compatibility(
+                        cur, saved_binding, framework_capabilities)
+                except TaskDeferred as exc:
+                    logger.warning("framework_approval_reader_unavailable", extra={
+                        "task_id": task_id, "binding_id": saved_binding.binding_id,
+                        "worker_id": worker_id, "reason": str(exc)})
+                    raise
             if check_model_ledger:
                 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 
