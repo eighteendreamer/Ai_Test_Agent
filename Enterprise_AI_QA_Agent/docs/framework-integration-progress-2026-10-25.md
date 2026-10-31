@@ -7559,3 +7559,58 @@ v4 F／§14.1、H11 → 本节 → 共享引用 schema、binding、制品安装 
 这只是兼容读者及显式引用的解析／校验子步，**没有启用生产引用写者，也没有为历史绑定补造关联**。正式当前版本归档与 Worker 安装验收、所有消费方先部署／旧初始化读者的升级验证、新绑定发布与冻结入口、历史绑定有证据的迁移、全部结果格式清单、双制品独立安装部署／备份恢复／灰度／回滚排空仍待完成。启动校验不提供 WORM、签名、文件 ACL 或热更新安全保证，不替代动态 Prompt／Skill／模型配置的 Turn 原资产。
 
 §159／160 两类时间异常仍未定位，本轮通过不等于其历史完整组合重新全绿；§158 共享残留不清理。本轮不运行 Docker、不重启 PG／Redis、不调用付费模型、不升级依赖或开生产路由。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 按 v4 保留，整体目标保持 active。
+
+## 166. F／§14.1、H11：正式源码制品的安装预检与跨版本独立进程消费（2026-11-01）
+
+### 续接与本轮范围
+
+续接 `d3b6ad24e`／§165。上一轮有代码／真实回归／中文提交，属于 progress。本轮重新核对 v4 §14.1–14.3、当前实现与最新记录；原 v3 草稿仍保持 SHA256 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。实施跨越 10 月 31 日至 11 月 1 日，日期按交付时区 Asia/Shanghai。
+
+§165 的源码快照和能力替身不能证明正式已提交制品实际跨进程消费。本轮据现有 `archive_release`／`require_installed_release`、原 PG task／owner、Dispatcher、Redis Worker 和 v4 的读者先行要求 → 固定真实旧版 `b6646d89c83bd4cc9e45fc2b8bdca4499a407039` 与引用读者版 `d3b6ad24eb17187bb293bf35e6a99740b8ab1bd0`，分别真实归档／恢复，在只加载相应源码的新进程中验证原端口。本轮不复制调度／恢复分支，不改业务执行路径、绑定写者、数据 schema、默认生产路由或依赖。
+
+### 实际持久制品与离线安装预检
+
+1. 当前 CLI 对正式 commit `d3b6ad24eb17187bb293bf35e6a99740b8ab1bd0` 实际 export／verify／restore 均 exit 0。持久 ZIP 为 `deployment/artifacts/2ca801711c979eafcd9118731273e39e956a9cc8a5ff332f0bed88d24fc059c2.zip`，**3,049,669 bytes、1,016 个登记文件**；引用以 exclusive create 保存为 `deployment/artifacts/d3b6ad24e.reference.json`，恢复到新目录 `deployment/artifacts/restored-d3b6ad24e-996a53cccb2c`。不覆盖原 §164 制品，不将 ZIP／引用／恢复目录入 Git。
+2. 同一 venv 的新 `python -I -B` 进程从该恢复目录实际执行 `FrameworkWorkerCapabilities.from_release()`，解析携带真实引用／根锁的合成 binding，调用原 `require(operation='message')`；**19 个已加载 src 模块全部来自恢复目录**，exit 0。此处没有实际 Turn／模型执行，不将构造的 probe 版本标签声称为真实业务 Prompt／Skill 冻结资产。归档是上述 d3 commit，不含本轮新增预检 CLI。
+3. 新行为先写 CLI 红测，实际 **1 failed，33.02 秒**：命令 `verify-installed` 不存在，argparse 返回 exit 2／invalid choice，非环境或业务失败。沿现有 CLI 增加该子命令，以 `--project` 指定可信安装目录，复用唯一 `require_installed_release()`，不另写比较器、不加载应用 lifespan；通过时输出原小摘要和 `installed_source_verified=true`，源码漂移时按原安全错误出口返回 exit 1／operation／error_type，不泄露引用正文或 traceback。
+4. 对上述真实持久目录实际执行下面的预检，exit 0，确认相同 archive SHA256／commit／1,016 文件。测试另验证修改源码后 CLI 拒绝，不将 ZIP 验证成功混同于安装源码一致。
+
+```powershell
+# cwd: Agent_Server；以下目标是恢复出的正式 d3 源码，不是本轮工作树
+..\.venv-framework-v2\Scripts\python.exe -B -m src.cli.framework_release_archive verify-installed --project ..\deployment\artifacts\restored-d3b6ad24e-996a53cccb2c --store ..\deployment\artifacts --reference ..\deployment\artifacts\d3b6ad24e.reference.json
+```
+
+### 跨制品进程、真实服务与部署限制
+
+新增 `tests/test_framework_release_workers.py`，源码来自两个明确已提交 Git 对象而非当前 import／工作树替身；浅克隆必须提供这两个历史对象，缺失时失败而不是 skip。每个 `python -I -B` 子进程检查所有已加载 src 模块位于相应恢复目录，引用读者版实际执行 `from_release()` 验证本机源码／环境。设置只通过 stdin 传递，不写凭据文件或命令参数；失败诊断仅允许类型／文件名／行号／函数名和固定非私有错误标识，不输出配置或验证输入。真实 PostgreSQL／Redis 使用原随机测试表／stream／checkpoint prefix，不访问默认共享 checkpoint。
+
+- **同一投递兼容接管**：旧源码已运行消费者读到含新引用的 envelope，按原 command reader 延后；11 张表行数／整行摘要不变，相同 Stream entry、retry_count=0、PEL=1、无后继／dead letter。随后引用匹配的真实读者源码进程通过初始化并接管**同一 message_id**，领取一次，以明确的受控 `cancelled` 终态沿原 PG owner／finish 结算并 ACK；再次投递由新进程 ACK-only，原 attempt_no=1、绑定和全部原事实不变。模型账本 calls 为空／reserved_calls=0，未调用 Runtime。
+- **版本／根锁不足以选源码**：显式断言两份归档能力的 runtime version 与根锁相同、实物引用不同；绑定 pin 到另一归档时，新读者版进程仍在领取前延后，原投递和 11 张表不变。没有靠版本标签猜测实物或自动降级。
+- **旧初始化的真实边界**：对含新字段的持久绑定，旧源码 `tasks.initialize()` 实际抛 `ValidationError`，事务不改原事实；读者版初始化成功且不改绑定。这一负例是已确认的部署限制，**命令入口会 defer 不等于旧 Worker 能在混合数据库里重启／回滚**。不能在所有相关初始化读者升级／隔离验证之前启用引用写者，本轮没有掩盖或绕过旧严格 reader。
+- **原历史合法分支**：无引用绑定保持原 wire，旧源码实际初始化并领取／受控终态结算一次；读者版再消费同一业务命令只 ACK，原状态／绑定不变。避免只有旧版拒绝、新版通过而遗漏历史兼容。
+
+这里 `_execute` 被明确替换为不运行模型／工具的受控取消回调，SessionService 的读取适配为原 store 读取。原 Redis 投递／heartbeat／reclaim、Dispatcher 入站／能力、PG task／owner／finish 均为归档源码实物。**不是完整应用 lifespan／官方图／真实领域结果验收，不是两套独立依赖安装或 E4 部署**；没有把 cancelled 当成图执行成功，也没有伪造 A1／A2 应用结果或恢复证明。
+
+### 中间失败、修正与实际验证
+
+最初三项跨源码专项 **3 passed，119.27 秒**。扩大组合第一次 **1 failed、422 passed，358.89 秒**：§165 的 `test_previous_committed_reader_preserves_old_wire_and_defers_new_reference` 错用动态 HEAD 作为“旧版本”，提交推进后实际上恢复了能读取新字段的 d3。对原失败目录的新进程查证输出 `historical_wire_unchanged=true、pinned_reference_readable=true`，exit 0，证明并非新生产 reader 应继续拒绝。根因是历史回归样本未冻结，改为显式归档 b664 commit，保留旧 wire 对等和新字段 defer 原断言；同时完整保留 stdout／stderr 供失败诊断。不回退生产读取能力、不改新字段契约。
+
+随后加入无引用历史正常分支的组合曾 **1 failed、423 passed，359.41 秒**：匹配制品的子进程 stderr 出现 `redis_task_ownership_uncertain`，随后以 `RuntimeError` 退出；当时只有类型，没有足够上下文确定错误点。**原因仍未确定，未声称已修复**。仅补不含私有输入的栈位置诊断，不更改 heartbeat、reclaim、重试、断言或生产代码；专项 **4 passed，86.24 秒**，最终完整同组合如下通过，未再复现该异常。后续仍需对原场景取到失败栈，不能将本轮绿色结果当作其根因修复证明。
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_archive.py tests/test_framework_release_binding.py tests/test_framework_release_workers.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_runtime_binding_contract.py -q -rs --tb=short
+# 最终源码 424 passed，329.33 秒，exit 0，无 skip／deselect
+```
+
+全部已启动 pytest／归档进程取得终态，不通过重启相同运行替代观察。根目录 compileall、`git diff --check` 通过；ruff／mypy／build／wheel／setuptools 仍未安装，未运行独立 lint／typecheck／安装构建，不安装依赖。前端本轮无改动，未重跑前端测试／build；§165 类型检查仅作为历史记录，不冒充本轮全前端验证。本轮没有重启 PG／Redis、运行 Docker、调用付费模型、扫描目标或修改生产路由。
+
+### 对应提交与剩余出口
+
+v4 F／§14.1、H11 → 本节 → 原 CLI、新跨制品测试、原归档／绑定专项、测试白名单与本记录共 6 文件 → 正式 d3 实物／安装预检、新旧源码真实 PG／Redis 独立进程、424 项最终回归 → 独立提交 `【feat】提供制品安装预检并验证跨版本消费`，ID 见 Git 历史及交付。不推送，不提交制品／用户 v3 草稿；无 DDL／数据迁移／生产写者或配置字段新增。
+
+下一步仍需诊断本节子进程异常及 §159／160 两类时间异常，完善旧初始化读者的升级／隔离与发布前验证、新绑定正式创建／冻结入口、历史绑定有证据的关联迁移、全部格式清单、双制品独立安装／完整应用部署、一致备份恢复、灰度／回滚／排空。当前共享 venv 的源码实物验收不能替代这些出口。§158 未归属共享残留不清理；动态 Prompt／Skill／模型配置仍由原 Turn 资产保存，不由源码归档猜测。完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 按 v4 保留，整体目标继续 active，不宣称 F 或全系统完成。

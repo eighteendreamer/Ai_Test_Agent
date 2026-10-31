@@ -173,10 +173,14 @@ def test_capability_factory_cannot_advertise_a_reference_before_installation_che
         FrameworkWorkerCapabilities.from_release(tmp_path, reference, deepagents_available=True)
 
 
-def test_previous_committed_reader_preserves_old_wire_and_defers_new_reference(tmp_path, release):
-    from src.runtime.framework_release_archive import restore_release
+def test_previous_committed_reader_preserves_old_wire_and_defers_new_reference(tmp_path):
+    from src.runtime.framework_release_archive import archive_release, restore_release
 
-    store, reference = release
+    # HEAD advances to the new reader after its commit. A historical contract
+    # must keep using the actual old implementation, not whichever HEAD is now.
+    store = tmp_path / "previous-store"
+    reference = archive_release(Path(__file__).resolve().parents[2], store,
+        revision="b6646d89c83bd4cc9e45fc2b8bdca4499a407039")
     destination = tmp_path / "previous-release"
     restore_release(store, reference, destination)
     messages = [command(binding()).model_dump(mode="json"),
@@ -201,7 +205,8 @@ else:
 print('previous_reader_old_wire_unchanged_new_reference_deferred')
 '''
     result = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(destination), str(path)],
-        cwd=destination, capture_output=True, check=True, timeout=30)
+        cwd=destination, capture_output=True, timeout=30)
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
     assert b"old_wire_unchanged_new_reference_deferred" in result.stdout
 
 

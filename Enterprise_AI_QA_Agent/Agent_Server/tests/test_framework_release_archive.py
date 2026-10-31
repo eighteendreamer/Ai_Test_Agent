@@ -334,3 +334,27 @@ def test_invalid_git_revision_does_not_create_an_artifact_store(tmp_path):
     with pytest.raises(ValueError, match="local Git revision"):
         archive_release(ROOT, store, revision="--remote=untrusted")
     assert not store.exists()
+
+
+def test_cli_verifies_an_installed_release_offline_without_settings_or_service_startup(tmp_path, release):
+    from src.runtime.framework_release_archive import restore_release
+
+    store, reference = release
+    destination = tmp_path / "installed-cli-source"
+    restore_release(store, reference, destination)
+    path = tmp_path / "reference.json"
+    path.write_text(reference.model_dump_json(), encoding="utf-8")
+    arguments = [sys.executable, "-B", "-m", "src.cli.framework_release_archive", "verify-installed",
+        "--project", str(destination), "--store", str(store), "--reference", str(path)]
+    result = subprocess.run(arguments, cwd=ROOT / "Agent_Server", capture_output=True, timeout=120)
+    assert result.returncode == 0, (result.stdout, result.stderr)
+    observed = json.loads(result.stdout)
+    assert observed["source_revision"] == reference.source_revision
+    assert observed["archive_sha256"] == reference.archive_sha256 and observed["file_count"] > 900
+    assert observed["installed_source_verified"] is True
+    source = destination / "Agent_Server/src/runtime/framework_worker_capabilities.py"
+    source.write_bytes(source.read_bytes() + b"\n# drift\n")
+    changed = subprocess.run(arguments, cwd=ROOT / "Agent_Server", capture_output=True, timeout=120)
+    assert changed.returncode == 1 and changed.stdout == b""
+    assert b"operation=verify-installed error_type=ValueError" in changed.stderr
+    assert b"Traceback" not in changed.stderr
