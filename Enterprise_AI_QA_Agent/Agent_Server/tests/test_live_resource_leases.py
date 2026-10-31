@@ -1162,7 +1162,7 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cleanup_failure", ["normal", "kill_before_receipt", "pg_before_commit", "pg_after_commit"])
+@pytest.mark.parametrize("cleanup_failure", ["normal", "kill_before_receipt", "pg_before_commit", "pg_after_commit", "query_history", "kill_during_query"])
 async def test_security_background_cancel_remains_unknown_until_real_deferred_cleanup(manager, tmp_path, monkeypatch, cleanup_failure, caplog):
     """Real Docker/leases/results with cleaner crash or lost receipt commit ACK."""
     m, _ = manager
@@ -1265,6 +1265,9 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
             assert observation["scope"] == "docker_container_absence_only"
             assert observation["observer_worker_id"] == "live-perf-cleanup"
             assert "lease_token" not in observation
+            rows = await receipt_store.list_target_queries(cleanup_task_id,
+                ExpiredResourceLease.from_payload(payloads[0]), namespace=m.namespace)
+            assert len(rows) == 1 and rows[0]["result"]["status"] == "absent"
         elif cleanup_failure in {"pg_before_commit", "pg_after_commit"}:
             receipt_store = PostgresResourceCleanupStore(settings)
             await receipt_store.initialize()
@@ -1335,7 +1338,87 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
                 assert observation["observer_worker_id"] == "receipt-recovery-worker"
             else:
                 assert observation is None  # Already committed; no target query needed.
+            rows = await receipt_store.list_target_queries(cleanup_task_id,
+                ExpiredResourceLease.from_payload(payload), namespace=m.namespace)
+            assert len(rows) == (1 if cleanup_failure == "pg_before_commit" else 0)
+            if rows:
+                assert rows[0]["result"]["status"] == "absent"
             assert await m._client.xrange(m._cleanup_stream) == deliveries_after
+        elif cleanup_failure in {"query_history", "kill_during_query"}:
+            from src.application.docker_management_service import DockerCommandError
+            receipt_store = PostgresResourceCleanupStore(settings)
+            await receipt_store.initialize()
+            queue = RedisTaskQueue(settings.database.redis_url, stream=m._cleanup_stream, group="live-perf-cleanup")
+            await queue.connect()
+            deliveries = await m._client.xrange(m._cleanup_stream)
+            assert len(deliveries) == 1
+            payload = json.loads(deliveries[0][1]["payload"])
+            cleanup_task_id = payload["task_id"]
+            lease = ExpiredResourceLease.from_payload(payload)
+            assert await receipt_store.begin(cleanup_task_id, lease, worker_id="original-cleanup-worker") == "started"
+            interrupted = []
+            if cleanup_failure == "kill_during_query":
+                context = multiprocessing.get_context("spawn")
+                observed = context.Event()
+                process = context.Process(target=_query_then_wait_before_result,
+                    args=(m._cleanup_stream, "live-perf-cleanup", m.namespace, observed))
+                process.start()
+                async def wait_observed():
+                    while not observed.is_set():
+                        assert process.is_alive(), f"query child exited: {process.exitcode}"
+                        await asyncio.sleep(.05)
+                await asyncio.wait_for(wait_observed(), 40)
+                interrupted = await receipt_store.list_target_queries(cleanup_task_id, lease, namespace=m.namespace)
+                assert len(interrupted) == 1 and interrupted[0]["result"] is None
+                assert interrupted[0]["request"]["observer_worker_id"] == "terminated-query-worker"
+                process.terminate()
+                await asyncio.to_thread(process.join, 10)
+                assert not process.is_alive()
+            callbacks = build_cleanup_callbacks(settings, manager=m)
+            worker = RedisTaskWorker(queue, consumer="query-history-worker", block_ms=0, reclaim_idle_ms=10,
+                handler=ResourceCleanupTaskHandler(receipt_store, callbacks, manager=m))
+
+            async def must_not_dispatch_cleanup(*args, **kwargs):
+                raise AssertionError("Query history must never authorize a second cleanup")
+
+            async def unavailable_query(*args, **kwargs):
+                raise DockerCommandError("private-test-query-diagnostic")
+
+            with monkeypatch.context() as patch:
+                patch.setattr("src.application.docker_management_service.DockerManagementService.remove_container",
+                    must_not_dispatch_cleanup)
+                patch.setattr("src.application.docker_management_service.DockerManagementService.list_containers",
+                    must_not_dispatch_cleanup)
+                await asyncio.sleep(.02)
+                assert await worker.run_once() == 0  # Real complete-ID query sees the live container.
+                first = await receipt_store.list_target_queries(cleanup_task_id, lease, namespace=m.namespace)
+                assert first[:len(interrupted)] == interrupted
+                assert len(first) == len(interrupted) + 1 and first[-1]["result"]["status"] == "present"
+                with monkeypatch.context() as query_patch:
+                    query_patch.setattr(callbacks["docker"]._docker, "container_exists", unavailable_query)
+                    await asyncio.sleep(.02)
+                    assert await worker.run_once() == 0
+                middle = await receipt_store.list_target_queries(cleanup_task_id, lease, namespace=m.namespace)
+                assert middle[:len(first)] == first and middle[-1]["result"]["reason_code"] == "query_failed"
+                assert "private-test-query-diagnostic" not in json.dumps([row["result"] for row in middle]) + caplog.text
+                assert len(await queue.pending()) == 1 and (await m.usage_snapshot())["global:all"] == 1
+                receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
+                assert receipt["status"] == "running" and receipt["attempts"] == 1
+                # An explicit test actor removes only its original container;
+                # the recovery worker remains read-only throughout.
+                code, stdout, stderr = await real_command(["rm", "--force", container_id], timeout=15)
+                assert code == 0, (stdout, stderr)
+                await asyncio.sleep(.02)
+                assert await worker.run_once() == 1
+                rows = await PostgresResourceCleanupStore(settings).list_target_queries(cleanup_task_id, lease, namespace=m.namespace)
+                assert rows[:len(middle)] == middle
+                assert [row["result"]["status"] for row in rows[len(interrupted):]] == ["present", "unknown", "absent"]
+                assert not await queue.pending() and not await m.usage_snapshot()
+                assert await worker.run_once() == 0
+            receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
+            assert receipt["status"] == "completed" and receipt["attempts"] == 1
+            assert receipt["worker_id"] == "original-cleanup-worker"
+            assert await m._client.xrange(m._cleanup_stream) == deliveries
         else:
             await _complete_real_cleanup(m)
         result = await remote.poll_execution(job_id, context=owner)
@@ -1601,6 +1684,33 @@ def _cleanup_then_wait_after_pg_commit(stream, group, prefix, committed, before_
         worker = RedisTaskWorker(queue, consumer="terminated-cleanup-worker", block_ms=0,
             handler=ResourceCleanupTaskHandler(store, build_cleanup_callbacks(settings, manager=manager), manager=manager))
         try:
+            await worker.run_once()
+        finally:
+            await queue.close()
+            await manager.close()
+    asyncio.run(run())
+
+
+def _query_then_wait_before_result(stream, group, prefix, observed):
+    """Query a real target, then get killed before recording the response."""
+    async def run():
+        settings = get_settings()
+        manager = RedisResourceLeaseManager(settings.database.redis_url, cleanup_stream=stream, key_prefix=prefix)
+        queue = RedisTaskQueue(settings.database.redis_url, stream=stream, group=group)
+        store = PostgresResourceCleanupStore(settings)
+        callbacks = build_cleanup_callbacks(settings, manager=manager)
+        query = callbacks["docker"].query_target
+        async def query_and_wait(lease):
+            result = await query(lease)
+            assert result.status == "present"
+            observed.set()
+            await asyncio.Event().wait()
+        callbacks["docker"].query_target = query_and_wait
+        await manager.connect()
+        await queue.connect()
+        try:
+            worker = RedisTaskWorker(queue, consumer="terminated-query-worker", block_ms=0,
+                handler=ResourceCleanupTaskHandler(store, callbacks, manager=manager))
             await worker.run_once()
         finally:
             await queue.close()

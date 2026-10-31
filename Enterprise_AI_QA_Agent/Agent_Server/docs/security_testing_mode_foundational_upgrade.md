@@ -75,6 +75,8 @@ depends_on: security_testing_mode_vs_pentagi_comparison.md
 
 **2026-10-31 清理调用与提交边界补充（v4 实施记录 §155）**：adapter 成功返回后，`completed` receipt 写入失败或提交确认丢失，不再尝试写 `failed`，也不提前释放 Redis 配额；保留原 running／已提交 completed，记录不含异常正文的 `resource_cleanup_result_uncommitted` 并传播原异常。既有 Stream 可转交同一任务的投递后继，但不能将其当作新的清理执行权：running 走 §154 只读观测，terminal 只补 fenced finalization／ACK，保留原 Worker／attempts。adapter 本身的异常仍沿原有显式幂等重试处理；取消仍传播且不降级为 failed。本步不把所有异常改成待对账，不增加调度／迁移／公开字段，也不扩大其他 Runner 的查询或补偿资格。
 
+**2026-10-31 查询 journal 补充（v4 实施记录 §156）**：Docker 清理对账在查询前持久化独立 query ID、原 receipt／资源谱系、namespace、观察 Worker 与固定查询方法，返回后记录存在／未知／缺失及受控原因；未返回、取消或提交状态未知时保留 request-only 行，不推断目标存在或缺失。结果一次写入、重复相同结果幂等，原始查询历史不覆盖，以 DB sequence 分页而非 UUID／时间猜顺序；不存 lease token、异常正文或 CLI 输出。新增派生 PG 查询表与分页索引，由既有 cleanup store initialize 创建，旧 receipt 不迁移、不回填查询。Handler 使用同一 `query_target()`；`observe_absence()` 仅为同一结果的窄兼容视图。查询历史读取不执行命令、不释放配额，确认缺失仍走 §154 原结算规则。正常首次删除及 terminal finalization 不增发查询。本步不覆盖后台命令轮询、浏览器／其他 Runner 的查询或停止 journal；生产启用前需完成新表 DDL 权限与兼容发布验收。
+
 **验收**：
 - 起一个 `sleep 30 && echo done` 的 detached job，`poll_execution` 能在结束后读到 `done` 全量输出；
 - `put_file` 上传一个字典文件、`get_file` 取回 nuclei 输出文件，内容一致；

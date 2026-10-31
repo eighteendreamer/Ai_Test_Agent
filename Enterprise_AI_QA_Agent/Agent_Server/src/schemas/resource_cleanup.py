@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator
+from pydantic import BaseModel, ConfigDict, Field, StrictInt, field_validator, model_validator
 
 
 class DockerResourceAbsenceObservation(BaseModel):
@@ -28,6 +28,39 @@ class DockerResourceAbsenceObservation(BaseModel):
         if value.tzinfo is None or value.utcoffset() is None:
             raise ValueError("Docker absence observation requires a timezone")
         return value
+
+
+class DockerResourceQueryObservation(BaseModel):
+    """A bounded target-query result; presence/unknown never grant execution."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal[1] = 1
+    scope: Literal["docker_cleanup_target_query_only"] = "docker_cleanup_target_query_only"
+    status: Literal["absent", "present", "unknown"]
+    reason_code: Literal["container_absent", "container_present", "query_failed", "query_unconfirmed",
+        "identity_unavailable", "allocation_identity_mismatch"]
+    observed_at: datetime
+    error_type: str | None = Field(default=None, min_length=1)
+    absence_observation: DockerResourceAbsenceObservation | None = None
+
+    @field_validator("observed_at")
+    @classmethod
+    def require_timezone(cls, value: datetime) -> datetime:
+        return DockerResourceAbsenceObservation.require_timezone(value)
+
+    @model_validator(mode="after")
+    def require_coherent_result(self):
+        expected = {"container_absent": "absent", "container_present": "present"}.get(self.reason_code, "unknown")
+        if self.status != expected:
+            raise ValueError("Docker query status differs from its reason")
+        if (self.status == "absent") != (self.absence_observation is not None):
+            raise ValueError("Only a confirmed absence query carries absence evidence")
+        if self.absence_observation is not None and self.absence_observation.observed_at != self.observed_at:
+            raise ValueError("Docker query and absence evidence have different observation times")
+        if (self.reason_code == "query_failed") != (self.error_type is not None):
+            raise ValueError("Only a failed Docker query carries an error type")
+        return self
 
 
 class ResourceCleanupReconciliation(BaseModel):

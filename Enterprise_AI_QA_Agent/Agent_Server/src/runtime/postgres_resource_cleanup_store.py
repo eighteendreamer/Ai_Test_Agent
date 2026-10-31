@@ -7,13 +7,15 @@ import json
 import logging
 from dataclasses import asdict
 from typing import Any, Literal
+from uuid import uuid4
 
 from psycopg import sql
 
 from src.core.config import Settings
 from src.infrastructure.postgres_runtime import postgres_connect
+from src.infrastructure.postgres_identifiers import derived_postgres_table, postgres_index_name, postgres_relation_sql
 from src.runtime.resource_lease_manager import ExpiredResourceLease
-from src.schemas.resource_cleanup import DockerResourceAbsenceObservation, ResourceCleanupReconciliation
+from src.schemas.resource_cleanup import DockerResourceAbsenceObservation, DockerResourceQueryObservation, ResourceCleanupReconciliation
 
 
 LOGGER = logging.getLogger(__name__)
@@ -46,6 +48,13 @@ def _lease_record(lease: ExpiredResourceLease) -> dict[str, Any]:
 
 def _receipt_identity_matches(lease: ExpiredResourceLease, record: Any) -> bool:
     return _record_identity_matches(_lease_record(lease), record)
+
+
+def _query_absence_matches(lease, namespace, observer_worker_id, observation):
+    absence = observation.absence_observation
+    return absence is None or (absence.container_id == lease.external_resource_id
+        and absence.allocation_id == lease.allocation_id and absence.lease_namespace == namespace
+        and absence.observer_worker_id == observer_worker_id)
 
 
 def _record_identity_matches(expected: dict[str, Any], record: Any) -> bool:
@@ -161,6 +170,9 @@ class PostgresResourceCleanupStore:
     def __init__(self, settings: Settings) -> None:
         self._settings = settings
         self._table = sql.Identifier(settings.database.postgres_resource_cleanup_table)
+        queries = derived_postgres_table(postgres_relation_sql((settings.database.postgres_resource_cleanup_table,)), "query")
+        self._queries = sql.SQL(queries)
+        self._query_page_index = sql.SQL(postgres_index_name(queries, "page"))
 
     async def initialize(self) -> None:
         await asyncio.to_thread(self._initialize_sync)
@@ -179,6 +191,23 @@ class PostgresResourceCleanupStore:
                     completed_at TIMESTAMPTZ
                 )
             """).format(self._table))
+            # No upstream counterpart (checked: cleanup receipts, model response
+            # observations, Runner journal, v4 section 8.1): read-only target
+            # queries need intent/result history, not a second execution queue.
+            cur.execute(sql.SQL("""
+                CREATE TABLE IF NOT EXISTS {} (
+                    query_id TEXT PRIMARY KEY,
+                    sequence BIGSERIAL NOT NULL UNIQUE,
+                    task_id TEXT NOT NULL REFERENCES {}(task_id) ON DELETE CASCADE,
+                    request JSONB NOT NULL,
+                    result JSONB,
+                    requested_at TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+                    recorded_at TIMESTAMPTZ,
+                    CHECK ((result IS NULL) = (recorded_at IS NULL))
+                )
+            """).format(self._queries, self._table))
+            cur.execute(sql.SQL("CREATE INDEX IF NOT EXISTS {} ON {} (task_id, sequence)").format(
+                self._query_page_index, self._queries))
 
     async def begin(
         self,
@@ -204,6 +233,95 @@ class PostgresResourceCleanupStore:
 
     async def completed(self, task_id: str, *, allocation_id: str) -> bool:
         return await asyncio.to_thread(self._completed_sync, task_id, allocation_id)
+
+    @staticmethod
+    def _query_request(lease, namespace, observer_worker_id):
+        if lease.resource_type != "docker" or not namespace or not observer_worker_id:
+            raise ValueError("Target query requires a Docker lease, namespace and observer identity")
+        return {"schema_version": 1, "scope": "resource_cleanup_target_query_only",
+            "method": "docker_ps_all_full_id", "lease": _lease_record(lease),
+            "lease_namespace": namespace, "observer_worker_id": observer_worker_id}
+
+    async def begin_target_query(self, task_id: str, lease: ExpiredResourceLease, *,
+                                 namespace: str, observer_worker_id: str) -> str | None:
+        query_id = uuid4().hex
+        request = self._query_request(lease, namespace, observer_worker_id)
+        def begin():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("SELECT record, status FROM {} WHERE task_id=%s FOR UPDATE").format(
+                    self._table), (task_id,))
+                row = cur.fetchone()
+                if row is None or not _receipt_identity_matches(lease, row["record"]):
+                    raise ValueError("Cleanup query receipt identity differs")
+                if row["status"] in {"completed", "skipped"}:
+                    return None
+                if row["status"] != "running":
+                    raise ValueError("Target query requires a running cleanup receipt")
+                cur.execute(sql.SQL("INSERT INTO {} (query_id,task_id,request) VALUES (%s,%s,%s::jsonb)").format(
+                    self._queries), (query_id, task_id, json.dumps(request)))
+            return query_id
+        result = await asyncio.to_thread(begin)
+        LOGGER.info("resource_cleanup_target_query_requested" if result else "resource_cleanup_target_query_superseded",
+            extra={"task_id": task_id, "query_id": result, "resource_id": lease.resource_id,
+                "observer_worker_id": observer_worker_id})
+        return result
+
+    async def finish_target_query(self, task_id: str, lease: ExpiredResourceLease, query_id: str,
+                                  observation: DockerResourceQueryObservation, *, namespace: str,
+                                  observer_worker_id: str) -> None:
+        observation = DockerResourceQueryObservation.model_validate(observation.model_dump())
+        request = self._query_request(lease, namespace, observer_worker_id)
+        if not _query_absence_matches(lease, namespace, observer_worker_id, observation):
+            raise ValueError("Target query absence evidence differs from its request")
+        result = observation.model_dump(mode="json")
+        def finish():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("SELECT record FROM {} WHERE task_id=%s FOR UPDATE").format(self._table), (task_id,))
+                receipt = cur.fetchone()
+                if receipt is None or not _receipt_identity_matches(lease, receipt["record"]):
+                    raise ValueError("Cleanup query receipt identity differs")
+                cur.execute(sql.SQL("SELECT task_id,request,result FROM {} WHERE query_id=%s FOR UPDATE").format(
+                    self._queries), (query_id,))
+                row = cur.fetchone()
+                if row is None or row["task_id"] != task_id or row["request"] != request:
+                    raise ValueError("Cleanup query request identity differs")
+                if row["result"] is not None:
+                    if row["result"] != result:
+                        raise ValueError("Cleanup query result is immutable")
+                    return False
+                cur.execute(sql.SQL("UPDATE {} SET result=%s::jsonb,recorded_at=clock_timestamp() WHERE query_id=%s").format(
+                    self._queries), (json.dumps(result), query_id))
+            return True
+        committed = await asyncio.to_thread(finish)
+        LOGGER.info("resource_cleanup_target_query_recorded" if committed else "resource_cleanup_target_query_reused",
+            extra={"task_id": task_id, "query_id": query_id,
+            "resource_id": lease.resource_id, "status": observation.status, "reason_code": observation.reason_code,
+            "observer_worker_id": observer_worker_id})
+
+    async def list_target_queries(self, task_id: str, lease: ExpiredResourceLease, *, namespace: str,
+                                  after_sequence: int = 0, limit: int = 100) -> list[dict[str, Any]]:
+        if type(after_sequence) is not int or after_sequence < 0 or type(limit) is not int or not 1 <= limit <= 1000:
+            raise ValueError("Invalid cleanup query history page")
+        def read():
+            with postgres_connect(self._settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("SELECT record FROM {} WHERE task_id=%s").format(self._table), (task_id,))
+                receipt = cur.fetchone()
+                if receipt is None or not _receipt_identity_matches(lease, receipt["record"]):
+                    raise ValueError("Cleanup query receipt identity differs")
+                cur.execute(sql.SQL("SELECT * FROM {} WHERE task_id=%s AND sequence>%s ORDER BY sequence LIMIT %s").format(
+                    self._queries), (task_id, after_sequence, limit))
+                rows = [dict(row) for row in cur.fetchall()]
+            for row in rows:
+                request = row["request"]
+                observer = request.get("observer_worker_id") if isinstance(request, dict) else None
+                if request != self._query_request(lease, namespace, observer):
+                    raise ValueError("Persisted cleanup query identity differs")
+                if row["result"] is not None:
+                    result = DockerResourceQueryObservation.model_validate_json(json.dumps(row["result"]))
+                    if not _query_absence_matches(lease, namespace, observer, result):
+                        raise ValueError("Persisted cleanup query evidence differs")
+            return rows
+        return await asyncio.to_thread(read)
 
     async def reconcile(
         self,

@@ -1,4 +1,5 @@
 import asyncio
+import json
 from dataclasses import replace
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -10,6 +11,7 @@ from src.core.config import Settings
 from src.runtime.resource_lease_manager import ExpiredResourceLease
 from src.runtime.docker_resource_cleanup import DockerResourceCleanup
 from src.application.docker_management_service import DockerCommandError
+from src.schemas.resource_cleanup import DockerResourceQueryObservation
 from tests.test_resource_cleanup_worker import expired_lease
 
 
@@ -162,3 +164,19 @@ async def test_docker_absence_observation_requires_its_bound_allocation(material
             assert result is None
     assert queries == (["a" * 64] if material in {"valid", "present", "query_failed", "query_unconfirmed"} else [])
     assert "private-docker-query-error" not in caplog.text
+
+
+@pytest.mark.parametrize("invalid", ["status", "missing_absence", "false_absence", "error_type", "scope", "naive_time", "absence_time"])
+def test_docker_query_observation_rejects_incoherent_evidence(invalid):
+    from tests.test_resource_cleanup_worker import query_observation
+    lease = replace(expired_lease("docker", "slot-model", "a" * 64), allocation_id="b" * 32)
+    data = query_observation(lease).model_dump(mode="json")
+    if invalid == "status": data["status"] = "present"
+    if invalid == "missing_absence": data["absence_observation"] = None
+    if invalid == "false_absence": data.update(status="unknown", reason_code="query_unconfirmed")
+    if invalid == "error_type": data["error_type"] = "ConnectionError"
+    if invalid == "scope": data["scope"] = "command_succeeded"
+    if invalid == "naive_time": data["observed_at"] = "2026-10-31T00:00:00"
+    if invalid == "absence_time": data["observed_at"] = "2026-10-31T00:00:00Z"
+    with pytest.raises(ValueError):
+        DockerResourceQueryObservation.model_validate_json(json.dumps(data))

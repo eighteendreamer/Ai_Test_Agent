@@ -30,7 +30,7 @@ from src.core.config import get_settings
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.session import SessionStatus
-from src.schemas.resource_cleanup import DockerResourceAbsenceObservation
+from src.schemas.resource_cleanup import DockerResourceAbsenceObservation, DockerResourceQueryObservation
 from src.runtime.session_resource_store import InMemorySessionResourceStore
 from src.schemas.session_resource import (
     SessionResourceKind,
@@ -339,6 +339,12 @@ def absence_observation(lease, **updates):
         "observer_worker_id": "query-worker", "observed_at": datetime.now(timezone.utc), **updates})
 
 
+def query_observation(lease):
+    absence = absence_observation(lease, observer_worker_id="cleanup")
+    return DockerResourceQueryObservation(status="absent", reason_code="container_absent",
+        observed_at=absence.observed_at, absence_observation=absence)
+
+
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("commit", ["before_pg", "after_pg"])
@@ -352,10 +358,10 @@ async def test_cleanup_returned_but_receipt_commit_is_unknown_never_grants_reexe
     class Cleanup:
         async def __call__(self, value):
             effects.append(value.external_resource_id)
-        async def observe_absence(self, value):
+        async def query_target(self, value):
             assert effects == [lease.external_resource_id]
             observations.append(value.external_resource_id)
-            return absence_observation(value)
+            return query_observation(value)
     finish = store.finish
     async def lose_commit_ack(*args, **kwargs):
         writes.append(kwargs["status"])
@@ -409,9 +415,9 @@ async def test_absence_receipt_commit_and_finalization_failures_never_repeat_cle
     class Observer:
         async def __call__(self, _lease):
             raise AssertionError("running receipt must not dispatch cleanup again")
-        async def observe_absence(self, observed_lease):
+        async def query_target(self, observed_lease):
             calls.append(observed_lease)
-            return absence_observation(observed_lease)
+            return query_observation(observed_lease)
     manager = Manager()
     manager.namespace = "qa:test"
     real_commit, real_finalize = store.complete_observed_absence, manager.complete_cleanup

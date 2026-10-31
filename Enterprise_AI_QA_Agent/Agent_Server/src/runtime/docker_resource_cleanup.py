@@ -10,7 +10,7 @@ from src.application.docker_management_service import DockerCommandError, Docker
 from src.core.request_context import get_request_context
 from src.runtime.postgres_resource_allocation_store import PostgresResourceAllocationStore
 from src.runtime.resource_lease_manager import ExpiredResourceLease
-from src.schemas.resource_cleanup import DockerResourceAbsenceObservation
+from src.schemas.resource_cleanup import DockerResourceAbsenceObservation, DockerResourceQueryObservation
 
 LOGGER = logging.getLogger(__name__)
 
@@ -43,36 +43,44 @@ class DockerResourceCleanup:
         self._cursor = ""
 
     async def observe_absence(self, lease) -> DockerResourceAbsenceObservation | None:
+        """Compatibility view of the same query, without inventing absence."""
+        return (await self.query_target(lease)).absence_observation
+
+    async def query_target(self, lease) -> DockerResourceQueryObservation:
         """Read only. An unbound allocation may still have a late create response."""
         fields = {"resource_id": lease.resource_id, "allocation_id": lease.allocation_id,
             "container_id": lease.external_resource_id}
+        def unconfirmed(reason, *, error_type=None):
+            return DockerResourceQueryObservation(status="present" if reason == "container_present" else "unknown",
+                reason_code=reason, observed_at=datetime.now(timezone.utc), error_type=error_type)
         if (lease.resource_type != "docker" or not lease.allocation_id
             or not re.fullmatch(r"[a-f0-9]{64}", lease.external_resource_id or "")):
             LOGGER.warning("docker_cleanup_absence_unconfirmed", extra={**fields, "reason": "identity_unavailable"})
-            return None
+            return unconfirmed("identity_unavailable")
         allocation = await self._allocation_for_lease(lease)
         prepared = ExpiredResourceLease.from_payload({**allocation["lease_record"],
             "external_resource_id": allocation.get("container_id"), "allocation_id": allocation["allocation_id"]})
         if prepared != lease:
             LOGGER.warning("docker_cleanup_absence_unconfirmed", extra={**fields, "reason": "allocation_identity_mismatch"})
-            return None
+            return unconfirmed("allocation_identity_mismatch")
         try:
             present = await self._docker.container_exists(lease.external_resource_id)
             if present is not False:
                 LOGGER.info("docker_cleanup_absence_unconfirmed", extra={**fields,
                     "reason": "container_present" if present is True else "query_unconfirmed"})
-                return None
+                return unconfirmed("container_present" if present is True else "query_unconfirmed")
         except (DockerCommandError, DockerUnavailableError) as exc:
             LOGGER.warning("docker_cleanup_absence_unconfirmed", extra={**fields,
                 "reason": "query_failed", "error_type": type(exc).__name__})
-            return None
+            return unconfirmed("query_failed", error_type=type(exc).__name__)
         context = get_request_context()
         observation = DockerResourceAbsenceObservation(container_id=lease.external_resource_id,
             allocation_id=lease.allocation_id, lease_namespace=self._namespace,
             observer_worker_id=str(context.worker_id if context and context.worker_id else "cleanup"),
             observed_at=datetime.now(timezone.utc))
         LOGGER.info("docker_cleanup_absence_observed", extra=fields)
-        return observation
+        return DockerResourceQueryObservation(status="absent", reason_code="container_absent",
+            observed_at=observation.observed_at, absence_observation=observation)
 
     async def _allocation_for_lease(self, lease):
         if not lease.allocation_id:

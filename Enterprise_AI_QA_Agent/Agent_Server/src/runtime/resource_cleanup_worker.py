@@ -99,22 +99,10 @@ class ResourceCleanupTaskHandler:
         lease = ExpiredResourceLease.from_payload(payload)
         task_id = str(payload.get("task_id") or f"task_cleanup_{lease.lease_token}")
         context = get_request_context()
-        worker_id = str(context.worker_id if context else "cleanup")
+        worker_id = str(context.worker_id if context and context.worker_id else "cleanup")
         begin_result = await self._store.begin(task_id, lease, worker_id=worker_id)
         if begin_result == "in_progress":
-            callback = self._callbacks.get(lease.resource_type)
-            observer = getattr(callback, "observe_absence", None)
-            observation = await observer(lease) if observer is not None else None
-            if observation is None:
-                LOGGER.info("resource_cleanup_receipt_in_progress", extra={
-                    "task_id": task_id, "resource_id": lease.resource_id,
-                    "resource_type": lease.resource_type, "worker_id": worker_id,
-                })
-                raise TaskDeferred("cleanup receipt is already running")
-            # No second cleanup dispatch: commit the target query first,
-            # then reuse normal fenced finalization and ACK ordering.
-            await self._store.complete_observed_absence(task_id, lease, observation,
-                namespace=self._manager.namespace)
+            await self._observe_in_progress(task_id, lease, worker_id)
             begin_result = "terminal"
         if begin_result is False or begin_result == "terminal":
             # Crash after PG commit but before Redis finalization/ACK: replay only
@@ -174,3 +162,26 @@ class ResourceCleanupTaskHandler:
             "resource_id": lease.resource_id,
             "external_resource_id": lease.external_resource_id,
         })
+
+    async def _observe_in_progress(self, task_id, lease, worker_id):
+        callback = self._callbacks.get(lease.resource_type)
+        observer = getattr(callback, "query_target", None)
+        if observer is not None:
+            query_id = await self._store.begin_target_query(task_id, lease,
+                namespace=self._manager.namespace, observer_worker_id=worker_id)
+            if query_id is None:
+                return  # A concurrent completion won before the query intent.
+            result = await observer(lease)
+            # A requested row with no result survives cancellation/crash or an
+            # unconfirmed DB commit; it proves neither dispatch nor absence.
+            await self._store.finish_target_query(task_id, lease, query_id, result,
+                namespace=self._manager.namespace, observer_worker_id=worker_id)
+            if result.absence_observation is not None:
+                await self._store.complete_observed_absence(task_id, lease, result.absence_observation,
+                    namespace=self._manager.namespace)
+                return
+        LOGGER.info("resource_cleanup_receipt_in_progress", extra={
+            "task_id": task_id, "resource_id": lease.resource_id,
+            "resource_type": lease.resource_type, "worker_id": worker_id,
+        })
+        raise TaskDeferred("cleanup receipt is already running")
