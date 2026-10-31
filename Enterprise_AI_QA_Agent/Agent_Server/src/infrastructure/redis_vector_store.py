@@ -274,6 +274,31 @@ class RedisVectorStore:
             })
         return key
 
+    async def is_current(
+        self,
+        *,
+        entity: str,
+        embedding_version: str,
+        point_id: str,
+        dimension: int,
+        source_updated_at: datetime | None,
+    ) -> bool:
+        """Return whether a versioned point has the authoritative row revision."""
+        expected = ensure_utc_datetime(source_updated_at)
+        if expected is None:
+            return False
+        try:
+            await self.validate_index(
+                entity=entity, embedding_version=embedding_version, dimension=int(dimension)
+            )
+        except ResponseError as exc:
+            if "unknown index" in str(exc).lower() or "no such index" in str(exc).lower():
+                return False
+            raise
+        key = f"{self.prefix(entity, embedding_version)}{point_id}"
+        raw = await self._client.hget(key, "_source_updated_at")
+        return raw is not None and _text(raw) == expected.isoformat(timespec="microseconds")
+
     async def search(
         self,
         *,

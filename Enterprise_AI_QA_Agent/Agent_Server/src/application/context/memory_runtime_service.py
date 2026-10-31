@@ -446,6 +446,7 @@ class MemoryRuntimeService:
         }
         for item in plan.requests:
             if item.request_id in receipt_by_id:
+                await self._repair_vector_replica(receipt_by_id[item.request_id].memory_id)
                 write_ids.append(receipt_by_id[item.request_id].memory_id)
                 continue
             request = item.request
@@ -545,6 +546,7 @@ class MemoryRuntimeService:
                 point = await self._memory_store.load_observation_projection(
                     request, framework_projection=framework_projection)
             if point is not None:
+                await self._repair_vector_replica(point.id)
                 write_ids[str(request.metadata["memory_id"])] = point.id
             else:
                 pending.append(request)
@@ -597,16 +599,65 @@ class MemoryRuntimeService:
         version = str(request.metadata.get("embedding_version") or "")
         if not vector or not version:
             return point
+        await self._publish_vector_replica(
+            point_id=point.id,
+            source_updated_at=point.updated_at,
+            vector=list(vector),
+            embedding_version=version,
+            metadata=request.metadata,
+        )
+        return point
+
+    async def _repair_vector_replica(self, memory_id: str) -> None:
+        """Repair only a missing/stale Redis point from the durable row."""
+        if self._vector_store is None:
+            return
+        loader = getattr(self._memory_store, "get_vector_record", None)
+        if loader is None:
+            raise RuntimeError("Memory store cannot load an authoritative vector record")
+        record = await loader(memory_id)
+        if record is None:
+            return
+        version = str(record.metadata.get("embedding_version") or "")
+        if not version:
+            return
+        checker = getattr(self._vector_store, "is_current", None)
+        if checker is None:
+            raise RuntimeError("Vector store cannot verify an existing replica revision")
+        if await checker(
+            entity="memory", embedding_version=version, point_id=record.id,
+            dimension=len(record.embedding),
+            source_updated_at=record.updated_at,
+        ):
+            LOGGER.info("memory_vector_replica_already_current", extra={
+                "memory_id": record.id, "embedding_version": version,
+            })
+            return
+        await self._publish_vector_replica(
+            point_id=record.id,
+            source_updated_at=record.updated_at,
+            vector=list(record.embedding),
+            embedding_version=version,
+            metadata=record.metadata,
+            stale=record.stale,
+        )
+
+    async def _publish_vector_replica(
+        self, *, point_id: str, source_updated_at, vector: list[float],
+        embedding_version: str, metadata: dict[str, Any], stale: bool = False,
+    ) -> None:
         try:
-            await self._vector_store.create_index(entity="memory", embedding_version=version, dimension=len(vector))
+            await self._vector_store.create_index(
+                entity="memory", embedding_version=embedding_version, dimension=len(vector)
+            )
             await self._vector_store.upsert(
-                entity="memory", embedding_version=version, point_id=point.id,
-                source_updated_at=point.updated_at,
+                entity="memory", embedding_version=embedding_version, point_id=point_id,
+                source_updated_at=source_updated_at,
                 vector=list(vector), metadata={
-                    "project_id": str(request.metadata.get("project_id") or ""),
-                    "case_version_id": str(request.metadata.get("case_version_id") or ""),
-                    "status": "active" if not point.stale else "stale",
-                    "environment": str(request.metadata.get("environment") or ""),
+                    "project_id": str(metadata.get("project_id") or ""),
+                    "case_version_id": str(metadata.get("case_version_id") or ""),
+                    "status": "active" if not stale else "stale",
+                    "environment": str(metadata.get("environment") or ""),
                 },
             )
         except Exception as exc:
@@ -616,13 +667,12 @@ class MemoryRuntimeService:
             # post-commit caller must record its existing unknown-effect
             # evidence so recovery can reconcile the durable row later.
             LOGGER.warning("memory_vector_replica_write_failed", extra={
-                "memory_id": point.id,
-                "embedding_version": version,
+                "memory_id": point_id,
+                "embedding_version": embedding_version,
                 "status": "unknown",
                 "error_type": type(exc).__name__,
             })
             raise
-        return point
 
     async def _search_memory(self, request: MemorySearchRequest) -> list[MemoryPoint]:
         """Redis supplies IDs only; PostgreSQL rechecks scope and computes scores."""

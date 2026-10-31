@@ -214,10 +214,18 @@ async def test_successful_rows_skip_reembedding_and_vector_republication(observa
             return SimpleNamespace(vectors=[[1., 0.] for _ in texts], model_name="fixture", provider="fixture",
                 adapter="fixture", original_dimension=2, stored_dimension=2, embedding_version="fixture-v1", normalized=True)
     class Vectors:
+        def __init__(self):
+            self.current = set()
+
         async def create_index(self, **kwargs):
             pass
+
+        async def is_current(self, **kwargs):
+            return kwargs["point_id"] in self.current
+
         async def upsert(self, **kwargs):
             vectors.append(kwargs)
+            self.current.add(kwargs["point_id"])
     h.sessions._memory_runtime_service._embedding_runtime_service = Embeddings()
     h.sessions._memory_runtime_service.set_vector_store(Vectors())
     await stop_after_snapshot(h, monkeypatch)
@@ -226,6 +234,61 @@ async def test_successful_rows_skip_reembedding_and_vector_republication(observa
     await stop_after_snapshot(h, monkeypatch)
     assert len(embeddings) == 1 and len(vectors) == 2
     assert memory_rows(h) == original
+
+
+@pytest.mark.asyncio
+async def test_recovery_repairs_missing_vector_replica_without_reembedding_existing_row(observation_result, monkeypatch):
+    h = observation_result
+    embeddings, vectors = [], []
+
+    class Embeddings:
+        async def embed_texts(self, texts):
+            embeddings.append(list(texts))
+            return SimpleNamespace(
+                vectors=[[1., 0.] for _ in texts], model_name="fixture", provider="fixture",
+                adapter="fixture", original_dimension=2, stored_dimension=2,
+                embedding_version="fixture-v1", normalized=True,
+            )
+
+    class Vectors:
+        def __init__(self):
+            self.current = set()
+            self.failed = False
+
+        async def create_index(self, **kwargs):
+            pass
+
+        async def is_current(self, **kwargs):
+            return kwargs["point_id"] in self.current
+
+        async def upsert(self, **kwargs):
+            vectors.append(kwargs)
+            if not self.failed:
+                self.failed = True
+                raise ConnectionError("injected vector replica failure")
+            self.current.add(kwargs["point_id"])
+
+    vector = Vectors()
+    h.sessions._memory_runtime_service._embedding_runtime_service = Embeddings()
+    h.sessions._memory_runtime_service.set_vector_store(vector)
+
+    with framework_owner_scope(h.task.runtime_owner):
+        with pytest.raises(ConnectionError, match="injected vector replica failure"):
+            await h.sessions._finalize_runtime_result(**h.result_values)
+
+    partial_rows = memory_rows(h)
+    assert len(partial_rows) == 1
+    first_id = partial_rows[0]["id"]
+    assert [item["point_id"] for item in vectors] == [first_id]
+
+    await stop_after_snapshot(h, monkeypatch)
+    completed_rows = memory_rows(h)
+    assert len(completed_rows) == 2
+    assert [item["point_id"] for item in vectors] == [first_id, first_id, next(item["id"] for item in completed_rows if item["id"] != first_id)]
+    assert len(embeddings) == 2 and len(embeddings[0]) == 2 and len(embeddings[1]) == 1
+
+    await stop_after_snapshot(h, monkeypatch)
+    assert len(vectors) == 3
 
 
 @pytest.mark.asyncio

@@ -6785,3 +6785,35 @@ git diff --check
 ```
 
 本步只闭合“Redis Memory 副本失败可被既有 post-commit／compaction 对账入口观察”这一 A3/H06 出口；未新增独立副本操作 journal，直接调用 `_write_point()` 的调用方仍需由其上层 effect wrapper 决定持久记录方式。未证明真实 embedding／Redis 故障下的自动补偿、RustFS、领域 Runner、A2-2/A2-3、完整跨 Turn／逐模式 Harness、官方 saver conformance、E3/E4 或完整 v4。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。
+
+## 148. A3／H06／§10.1：Memory 已提交行的 Redis 副本恢复只修复副本（2026-10-31）
+
+### 续接、依据与根因 → 做法
+
+基线为 `079093c99`／§147。上一节已让 Redis vector replica 写失败沿既有 post-commit／执行回执路径可见，但恢复读取到已存在的 PostgreSQL Memory 行时，`write_observations()` 与 `execute_turn_memory_plan()` 会直接复用行回执并跳过 `_write_point()`。因此首次写入已提交、Redis upsert 失败后，后继只会补应用回执／事件，不能修复缺失的向量副本；若简单重新 embedding 或无条件 upsert，又会重复调用模型或重复发布已经成功的副本。
+
+依据现有 `MemoryVectorRebuildService` 的“PostgreSQL 向量为权威、同版本按稳定行 ID 重建”、`RedisVectorStore.upsert()` 的 `_source_updated_at` 版本保护，以及 §147 的未知效果可见性 → 增加按 Memory 行 ID 读取权威向量、按 Redis 行版本核验副本的最小内部端口。恢复只从 PostgreSQL 已存 embedding 读取，不重新 embedding、不重跑图／模型／工具；Redis 已有相同权威 `updated_at` 时跳过发布，缺失或版本落后时才用原行 ID upsert。没有新增独立 journal、队列、DDL、调度器、公开 API 或自动重试权限。
+
+### TDD 与最小实现
+
+1. 新增真实隔离 PostgreSQL 观察投影失败样本：第一条 Memory 行提交后 vector upsert 失败，旧实现实际 **1 failed**，恢复后向量调用只有第二条待写行，第一条缺失副本未被修复。
+2. `MemoryStoreProtocol`／`PostgresVectorMemoryStore` 新增按 ID 读取 `MemoryVectorRecord`；`RedisVectorStore.is_current()` 只核对版本化 key 的 `_source_updated_at` 与权威行 `updated_at`；`MemoryRuntimeService` 在 observation／turn-memory 已有行回执路径调用修复端口，成功副本不重复发布，缺失副本复用原向量和行身份。副本失败继续记录脱敏结构化 `memory_vector_replica_write_failed(status=unknown)` 并抛出，交给既有上层未知效果记录。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`、`PYTHONIOENCODING=utf-8`，复用用户已启动的 PostgreSQL／Redis；未启停服务、未改生产路由、未调用付费模型或真实 embedding／RustFS／领域 Runner。
+
+```powershell
+..\\.venv-framework-v2\\Scripts\\python.exe -u -m pytest tests/test_framework_observation_projection.py::test_recovery_repairs_missing_vector_replica_without_reembedding_existing_row tests/test_framework_observation_projection.py::test_successful_rows_skip_reembedding_and_vector_republication -q -x -rs --tb=short
+# 2 passed，12.39 秒，exit 0
+
+..\\.venv-framework-v2\\Scripts\\python.exe -u -m pytest tests/test_memory_vector_replica.py tests/test_framework_observation_projection.py -q -rs --tb=short
+# 32 passed，128.39 秒，exit 0
+
+..\\.venv-framework-v2\\Scripts\\python.exe -u -m pytest tests/test_memory_vector_replica.py tests/test_memory_vector_rebuild.py tests/test_memory_embedding_runtime.py tests/test_framework_turn_memory_reconciliation.py tests/test_framework_turn_memory_projection.py tests/test_framework_application_projection.py -q -rs --tb=short
+# 77 passed，189.85 秒，exit 0（提交后最终源码复核）
+```
+
+本步闭合的是“已提交 Memory 行的同版本 Redis 副本可按稳定行身份恢复”一个 A3/H06 出口；没有新增副本完成／失败持久 journal，`get_vector_record()` 读不到 embedding 时不声称存在副本修复权，Redis 查询或发布失败仍保持 unknown。真实 embedding 供应商、外部 Runner／资源清理补偿、A2-2/A2-3、完整跨 Turn／逐模式 Harness、官方 saver conformance、E3/E4 和整体 v4 仍未完成。`ruff`、`mypy` 未安装，尚未执行独立 lint/typecheck；用户 v3 草稿继续保持未修改、未暂存、未提交。
+
+本步拟提交 `Agent_Server/src/contracts/memory_store.py`、`Agent_Server/src/infrastructure/postgres_vector_memory_store.py`、`Agent_Server/src/infrastructure/redis_vector_store.py`、`Agent_Server/src/application/context/memory_runtime_service.py`、观察投影回归测试及本实施记录；不包含用户草稿、日志、本地数据或配置。

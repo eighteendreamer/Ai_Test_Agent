@@ -139,6 +139,9 @@ class PostgresVectorMemoryStore:
     ) -> list[MemoryVectorRecord]:
         return await asyncio.to_thread(self._list_vector_records_sync, embedding_version, after_id, limit)
 
+    async def get_vector_record(self, memory_id: str) -> MemoryVectorRecord | None:
+        return await asyncio.to_thread(self._get_vector_record_sync, memory_id)
+
     def _vector_inventory_sync(self, embedding_version: str) -> dict[int, int]:
         with self._connect() as conn:
             with conn.cursor() as cur:
@@ -169,6 +172,26 @@ class PostgresVectorMemoryStore:
                     stale=row["stale"], metadata=row["metadata"],
                     updated_at=ensure_utc_datetime(row["updated_at"]),
                 ) for row in cur.fetchall()]
+
+    def _get_vector_record_sync(self, memory_id: str) -> MemoryVectorRecord | None:
+        with self._connect() as conn:
+            with conn.cursor() as cur:
+                cur.execute(
+                    f"SELECT id, embedding::text AS embedding, stale, metadata, updated_at "
+                    f"FROM {self._settings.database.postgres_memory_table} WHERE id=%s",
+                    (memory_id,),
+                )
+                row = cur.fetchone()
+                if row is None or row["embedding"] is None:
+                    return None
+                embedding = json.loads(row["embedding"])
+                if not isinstance(embedding, list) or not embedding:
+                    raise ValueError("Stored Memory vector is not a non-empty list")
+                return MemoryVectorRecord(
+                    id=row["id"], embedding=[float(value) for value in embedding],
+                    stale=row["stale"], metadata=row["metadata"] or {},
+                    updated_at=ensure_utc_datetime(row["updated_at"]),
+                )
 
     async def count_documents(self, request: MemorySearchRequest) -> int:
         return await asyncio.to_thread(self._count_documents_sync, request)
