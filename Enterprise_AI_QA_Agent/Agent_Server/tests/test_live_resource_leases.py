@@ -1036,9 +1036,14 @@ async def test_security_reusable_foreground_lifecycle(manager, tmp_path, scenari
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
 @pytest.mark.asyncio
 @pytest.mark.parametrize("scenario", ["unpolled", "partial", "nonzero", "timeout", "lost_lease", "cancel", "settlement_cancel", "shutdown", "immediate_shutdown", "retained", "database_start_failure", "database_result_failure"])
-async def test_security_background_lifecycle_and_durable_result(manager, tmp_path, monkeypatch, scenario):
+async def test_security_background_lifecycle_and_durable_result(manager, tmp_path, monkeypatch, caplog, scenario):
     m, _ = manager
     settings = _security_foreground_settings()
+    # Each scenario must reach its own fault boundary, not accidentally lose
+    # the 2s fixture lease during startup or the command-timeout window.
+    # Keep the dedicated rejection/expiry tests short; never relabel a real
+    # heartbeat failure as a command timeout just to satisfy this test.
+    settings.orchestration.resource_default_lease_seconds = 2 if scenario == "lost_lease" else 30
     settings.security.security_runner_detach_poll_interval_seconds = .1
     settings.security.security_runner_docker_cleanup_after_run = scenario != "retained"
     store = PostgresToolJobStore(settings)
@@ -1141,8 +1146,94 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
         await _complete_real_cleanup(m)
         inspected = subprocess.run(["docker", "inspect", pending[0]["external_resource_id"]], capture_output=True, timeout=15)
         assert inspected.returncode != 0
+        lease_lost = any(record.message == "docker_resource_heartbeat_failed" for record in caplog.records)
+        assert lease_lost == (scenario == "lost_lease")
     finally:
         await service.close()
+        if job_id:
+            with postgres_connect(settings) as conn, conn.cursor() as cur:
+                cur.execute(sql.SQL("DELETE FROM {} WHERE id = %s").format(
+                    sql.Identifier(settings.database.postgres_tool_job_table)), (job_id,))
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
+@pytest.mark.asyncio
+async def test_security_background_cancel_remains_unknown_until_real_deferred_cleanup(manager, tmp_path):
+    """Real container/process, Redis lease and PostgreSQL result; only rm fails."""
+    m, _ = manager
+    settings = _security_foreground_settings()
+    # This case injects removal failure, not expiry. Dedicated lost-lease and
+    # Worker-kill cases retain their 2s leases; avoid a startup race here.
+    settings.orchestration.resource_default_lease_seconds = 30
+    settings.security.security_runner_detach_poll_interval_seconds = .1
+    store = PostgresToolJobStore(settings)
+    await store.initialize()
+    jobs = ToolJobService(store)
+    docker = DockerResourceManager(settings, lease_manager=m)
+    real_command = docker._command
+    service = SecurityExecutionEnvironmentService(settings=settings, docker_resources=docker, tool_jobs=jobs)
+    owner = ToolExecutionContext(session_id=f"s-deferred-{uuid4().hex}", turn_id="t-deferred", trace_id="trace-deferred",
+        user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
+    container_id = job_id = ""
+    denied_removals = []
+
+    async def defer_own_removal(args, *, timeout):
+        if container_id and args == ["rm", "--force", container_id]:
+            denied_removals.append(container_id)
+            return 1, "", "controlled test-only removal failure"
+        return await real_command(args, timeout=timeout)
+
+    docker._command = defer_own_removal
+    try:
+        command = "echo external-started >> command-started; sleep 300"
+        with bind_request_context(attempt_id="a-live-perf"):
+            started = await service.execute_detached(command=command, command_args=["sh", "-lc", command],
+                timeout_seconds=310, artifact_dir=tmp_path, context=owner)
+        job_id = started.job_id
+        record = service._detached_jobs[job_id]
+        container_id = record.container.session.container.container_id
+
+        async def wait_started():
+            while not list(tmp_path.rglob("command-started")):
+                assert not record.task.done()
+                await asyncio.sleep(.05)
+
+        await asyncio.wait_for(wait_started(), 15)
+        await jobs.cancel_job(job_id, reason="test cancellation with deferred cleanup")
+        await asyncio.wait_for(record.task, 15)
+        assert denied_removals == [container_id]
+        # CLI cancellation did not kill the sleep inside this real container.
+        code, processes, stderr = await real_command(["top", container_id], timeout=10)
+        assert code == 0, (processes, stderr)
+        assert any(line.split()[-2:] == ["sleep", "300"] for line in processes.splitlines()), processes
+        saved = await jobs.get_job(job_id)
+        assert saved.status.value == "cancelled"
+        assert saved.output_payload["is_running"] is None
+        assert saved.output_payload["exit_code"] == 130
+        before = saved.model_dump(mode="json")
+        remote = SecurityExecutionEnvironmentService(settings=settings,
+            tool_jobs=ToolJobService(PostgresToolJobStore(settings)))
+        assert (await remote.poll_execution(job_id, context=owner)).is_running is None
+        assert (await jobs.get_job(job_id)).model_dump(mode="json") == before
+        pending = await m.list_cleanup_pending()
+        assert len(pending) == 1 and pending[0]["external_resource_id"] == container_id
+        assert (await m.usage_snapshot())["global:all"] == 1
+        assert next(tmp_path.rglob("command-started")).read_text(encoding="utf-8").splitlines() == ["external-started"]
+        await _complete_real_cleanup(m)
+        result = await remote.poll_execution(job_id, context=owner)
+        assert result.is_running is False and result.exit_code == 130
+        assert result.execution_observation == "container_absent"
+        assert (await jobs.get_job(job_id)).model_dump(mode="json") == before
+        code, stdout, stderr = await real_command(["ps", "--all", "--no-trunc", "--filter",
+            f"id={container_id}", "--format", "{{.ID}}"], timeout=10)
+        assert code == 0 and not stdout.strip(), (stdout, stderr)
+        container_id = ""
+    finally:
+        docker._command = real_command
+        await service.close()
+        if container_id:
+            code, stdout, stderr = await real_command(["rm", "--force", container_id], timeout=15)
+            assert code == 0 or "No such container" in stderr, (stdout, stderr)
         if job_id:
             with postgres_connect(settings) as conn, conn.cursor() as cur:
                 cur.execute(sql.SQL("DELETE FROM {} WHERE id = %s").format(

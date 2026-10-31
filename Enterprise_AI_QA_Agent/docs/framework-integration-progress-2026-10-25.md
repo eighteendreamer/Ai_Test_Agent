@@ -6915,3 +6915,41 @@ git diff --check
 本节只闭合“任务状态不能伪装外部停止、无监督快照须只读核验”的领域 Runner 子出口。`true` 不是目标接受回执，成功返回不证明容器内所有后代进程都消失，`false` 更不证明既有副作用已撤销。尚未新增独立停止回执／查询 journal、Runner execution ID 到目标的全链路绑定或补偿权限；真实 Docker 强杀／失租／清理失败验收待额外环境授权。新快照含观测字段，旧 Worker dataclass reader 不兼容该新增字段；混合版本／回滚须先升级读者或隔离路由，本轮未部署。
 
 本节代码、测试与文档随 `【fix】区分后台命令未知状态与停止观测` 同一提交交付，提交 ID 见本轮交付及 Git 历史。A3 其余 journal／资源补偿／真实 Runner、A2-2/A2-3、B/C 其余出口、D/E/F、H01–H12、官方 saver conformance 与 E3/E4 继续按完整 v4 保留，整体目标仍 active。
+
+## 152. A3／§8.1、§11、H06/H10：真实 Docker 取消、失租、强杀与清理延交验收（2026-10-31）
+
+### 授权、实际环境与验收范围
+
+续接 `684e8e945`／§151。上一节的 13 项 Docker skip 只证明可收集，本节不把它们沿用为通过。用户本轮明确允许使用本地已有镜像创建隔离测试容器，运行 echo／sleep，验证取消、失租和测试 Worker 强杀，清理本轮容器；不拉镜像、不扫描目标、不重启 PostgreSQL／Redis、不调用付费模型、不改生产路由。
+
+只读核实 Docker Server **29.3.1**；本地 `vxcontrol/kali-linux:latest` image ID 在验收前后均为 `sha256:9520f0e11a5c74e80c758260e5ac2ad46bcae90fc0dda45670cb50b9f421c3d4`。沿现有 `_security_foreground_settings()` 使用 `network=none`、`pull=never`、关闭 NET_RAW／NET_ADMIN；每例沿既有 manager fixture 使用独立 `qa:test:lease:*` Redis 命名空间和 PostgreSQL allocation，退出只清理测试身份。没有创建或重置正式 RunItem、修改正式测试结论，也没有启动安全扫描器。
+
+### 真实反例、首因与测试改动
+
+1. 首先启用既有后台生命周期和独立 Worker 强杀用例，实际 **13 passed，115.85 秒**，使用真实 Docker／PG／Redis 与独立 Worker，指定故障注入见原用例，不调用模型。继而新增 `test_security_background_cancel_remains_unknown_until_real_deferred_cleanup`：只让当前完整容器 ID 的一次 `rm --force` 返回受控失败，其余 Docker 调用、容器、命令进程、Redis lease、PG ToolJob 及既有 cleanup Worker 均真实执行。按本机 `docker top --help` 证实的只读命令读取该容器的进程表，先断言真实 `sleep 300` 仍存活，再断言取消结果、跨服务查询保持 null；清理后查询必须为 false／container_absent，原 PG 取消快照、退出码 130 不变，启动标记只有一行。
+2. 历史对照用 `git show 92ff945a0:Enterprise_AI_QA_Agent/Agent_Server/src/application/security/execution_environment_service.py` 只读加载 §151 前的 service 到隔离测试模块，经 pytest 收集 hook 替换该例的全局构造器并断言实际绑定；不切换或改写工作树。最初替换预导入模块未覆盖 pytest 的实际收集模块，得到的 1 passed 不算历史反例。修正绑定后又因 2 秒夹具租约在 Docker 启动阶段丢失而 **1 failed，10.35 秒**，也不算目标红测。隔离该清理失败用例的租约窗口后，历史生产代码实际 **1 failed，8.42 秒**，失败为 `assert False is None`，且此前真实进程存活 oracle 已通过；当前源码同例 **1 passed，10.84 秒**。
+3. 首次扩展 14 项组合实际 **1 failed，13 passed，90.67 秒**：timeout 例日志首先出现 `docker_resource_heartbeat_failed`，结果按真实失租返回 `timed_out=False`，未到其预定命令超时边界。没有把生产失租改标为超时。根因为本组不同故障共用 `_bootstrap_settings()` 的 2 秒短租约，存在首因竞争；生产配置默认 300 秒未改。本组非失租例改用 30 秒租约窗口，lost_lease 与独立强杀仍保留 2 秒。增加正反断言：只有 lost_lease 场景应记录 heartbeat_failed，其他场景不得由该首因冒充通过。原退出码、超时、结果入库、取消保留、原子结算及资源清理断言均未削弱。
+4. 隔离修改后的 timeout／lost_lease／独立强杀／清理延交四项实际 **4 passed，37.31 秒**；最终再运行完整组合验证以下结果。本轮只增加／修正测试 Harness 与记录，没有修改生产 Runner、资源调度器、数据结构或三态契约。
+
+### 最终源码验证
+
+工作目录 `Agent_Server`，使用固定 `.venv-framework-v2`、已有真实 PostgreSQL／Redis 和上述本地 Docker 镜像；`RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`、`PYTHONIOENCODING=utf-8`。
+
+```powershell
+$env:RUN_LIVE_DOCKER_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_live_resource_leases.py::test_security_background_lifecycle_and_durable_result tests/test_live_resource_leases.py::test_security_background_worker_kill_preserves_recovery_and_releases_container tests/test_live_resource_leases.py::test_security_background_cancel_remains_unknown_until_real_deferred_cleanup -q -rs --tb=short
+# 14 passed，95.08 秒，exit 0；无 skip／deselect
+
+$env:RUN_LIVE_DOCKER_TESTS='0'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_security_detached_execution_evidence.py tests/test_security_execution_environment_upgrade.py tests/test_security_approval_boundary.py tests/test_invalid_tool_plan_visibility.py tests/test_security_target_guard.py tests/test_security_session_target_quoting.py tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py tests/test_resource_cleanup_entrypoint.py tests/test_lifespan_resource_cleanup.py tests/test_resource_occupancy.py -q -rs --tb=short
+# 145 passed，3 skipped，20.49 秒，exit 0
+# skip：2 项其他 Docker 目标转义用例，本轮未扩张到这些命令；1 项未授权 MySQL 门禁
+```
+
+根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 均 exit 0；验收结束 `docker ps --all --filter label=enterprise-ai-qa-agent=managed` 返回空，本轮受管容器无残留。ruff／mypy 仍未安装，未运行独立 lint／typecheck；未运行全量前后端、真实供应商／embedding／RustFS、安全工具目标、其他领域 Runner、官方 saver conformance 或完整 E3/E4。
+
+### 交付对应与剩余边界
+
+v4 A3／§8.1、§11、H06/H10 → 本节 → `tests/test_live_resource_leases.py` 的真实故障／停止 oracle、逐场景首因隔离 → 上述 14 项真实环境及 145 项相关回归 → `【test】验证后台命令真实停止边界` 同一提交，提交 ID 见本轮交付及 Git 历史。用户 v3 草稿 SHA256 保持 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不纳入暂存／提交。
+
+本节增加的是安全后台命令这一领域入口的真实生命周期证据，不是全部 Runner 或整个 A3／C／E3 已完成。外部 Runner execution ID 与目标／代次全链路绑定、停止与查询 journal、未知效果补偿权限、跨版本读取／路由兼容，以及完整 v4 的其余阶段与验收门继续保留；没有改动生产开关，整体目标仍 active。
