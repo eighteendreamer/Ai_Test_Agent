@@ -71,7 +71,32 @@ class MemoryRuntimeService:
                 "\n".join(part for part in (point.summary, point.content) if part)
                 for point in batch
             ]
-            result = await self._embedding_runtime_service.embed_texts(texts)
+            try:
+                result = await self._embedding_runtime_service.embed_texts(texts)
+            except Exception as exc:
+                first = batch[0]
+                LOGGER.warning("memory_embedding_backfill_failed", extra={
+                    "session_id": first.session_id,
+                    "turn_id": first.turn_id,
+                    "trace_id": first.trace_id,
+                    "request_count": len(batch),
+                    "status": "unknown",
+                    "error_type": type(exc).__name__,
+                })
+                raise
+            if len(result.vectors) != len(batch):
+                first = batch[0]
+                LOGGER.warning("memory_embedding_backfill_invalid_response", extra={
+                    "session_id": first.session_id,
+                    "turn_id": first.turn_id,
+                    "trace_id": first.trace_id,
+                    "request_count": len(batch),
+                    "vector_count": len(result.vectors),
+                    "status": "unknown",
+                })
+                raise ValueError(
+                    "Embedding provider returned a different number of vectors than backfill items."
+                )
             metadata = {
                 "embedding_model": result.model_name,
                 "embedding_provider": result.provider,

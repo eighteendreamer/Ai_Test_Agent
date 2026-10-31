@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 
+import pytest
+
 from src.application.context.embedding_runtime_service import EmbeddingBatchResult
 from src.application.context.memory_runtime_service import MemoryRuntimeService
 from src.application.runtime.tool_runtime_service import (
@@ -94,6 +96,33 @@ class _MemoryStore:
         return 12
 
 
+class _BackfillStore(_MemoryStore):
+    def __init__(self) -> None:
+        super().__init__()
+        now = datetime.now(timezone.utc)
+        self.points = [
+            MemoryPoint(
+                id=f"missing-{index}",
+                content=f"content-{index}",
+                summary=f"summary-{index}",
+                created_at=now,
+                updated_at=now,
+            )
+            for index in range(2)
+        ]
+        self.updated_items = []
+
+    async def count_missing_embeddings(self):
+        return len(self.points)
+
+    async def list_missing_embeddings(self, limit):
+        return self.points[:limit]
+
+    async def update_embeddings(self, items):
+        self.updated_items.extend(items)
+        return len(items)
+
+
 def test_memory_runtime_attaches_query_and_write_embeddings() -> None:
     async def run() -> None:
         store = _MemoryStore()
@@ -147,6 +176,33 @@ def test_embedding_backfill_is_preview_only_by_default() -> None:
         assert embedding.calls == []
 
     asyncio.run(run())
+
+
+def test_embedding_backfill_rejects_short_provider_response_without_partial_update(caplog) -> None:
+    async def run() -> None:
+        store = _BackfillStore()
+        service = MemoryRuntimeService(
+            store,
+            embedding_runtime_service=_ShortEmbeddingService(),
+        )
+        caplog.set_level("WARNING", logger="src.application.context.memory_runtime_service")
+        with pytest.raises(ValueError, match="different number of vectors"):
+            await service.backfill_missing_embeddings(
+                limit=2,
+                batch_size=2,
+                execute=True,
+            )
+        assert store.updated_items == []
+
+    asyncio.run(run())
+    records = [
+        record for record in caplog.records
+        if record.getMessage() == "memory_embedding_backfill_invalid_response"
+    ]
+    assert len(records) == 1
+    assert records[0].request_count == 2
+    assert records[0].vector_count == 0
+    assert records[0].status == "unknown"
 
 
 def test_turn_memory_embedding_failure_is_visible_without_exposing_content(caplog) -> None:

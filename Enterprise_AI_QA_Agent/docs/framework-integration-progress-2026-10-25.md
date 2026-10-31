@@ -6679,3 +6679,41 @@ git diff --check
 ```
 
 本步只闭合“同一稳定清理操作的未知效果不得从 SessionResource 执行入口盲重试”这一 A3/H06 出口；未知外部效果仍须 reconciliation／人工或有依据的补偿，不能据此证明 Docker、浏览器或领域 Runner 已实际停止，也不回滚正式测试结果。A2-2、A2-3、A3 其余 Memory／资源出口、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 与完整 v4 继续 active。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。
+
+## 145. A3／H06／§10.1：Memory embedding backfill 拒绝不完整批量响应（2026-10-31）
+
+### 续接、依据与根因
+
+基线为 `d3e768afc`／§144。§92 已保护正常 Memory 写入的 `_attach_embeddings()`，但维护入口 `backfill_missing_embeddings(execute=True)` 仍直接对 `batch` 和供应商返回的 `vectors` 使用 `zip()`。供应商调用可能已经到达外部服务而返回数量未知；旧代码会静默截断，少量缺失行被当作正常 `updated` 结果，调用者也没有“不完整效果”的可检索事实。这是同类批量边界在另一个入口重复实现，不通过补偿重试或把缺失向量伪装成成功修复。
+
+依据 v4 §10.1 的未知 embedding 先记录／对账、不得把不完整外部结果当完成，以及 §92 已采用的“响应形状先核对、保留未知状态”做法：backfill 在 `update_embeddings` 前要求返回向量数与当前 batch 完全一致；异常或数量不一致只记录请求身份、数量、异常类型和 `status=unknown`，不记录正文、向量或凭据，并让调用者看到失败。没有新增 schema、任务、自动重试、公开 API 或模型配置。
+
+### TDD 与最小实现
+
+1. 新增受控失败样本 `test_embedding_backfill_rejects_short_provider_response_without_partial_update`：两条缺失记录收到零向量时，旧实现实际 **1 failed，3.55 秒，exit 1（DID NOT RAISE）**，确认没有抛错且会静默走空更新；首次执行另先发现测试文件缺少 `pytest` 导入，补齐测试装配后才得到该产品红测。
+2. `MemoryRuntimeService.backfill_missing_embeddings()` 对 provider 异常记录 `memory_embedding_backfill_failed` 后原样抛出；对 batch/vector 数量不一致记录 `memory_embedding_backfill_invalid_response` 并抛 `ValueError`，只有完整 batch 才允许调用 `update_embeddings`。既有预览模式仍不调用 embedding provider。
+
+### 实际验证与边界
+
+固定 `.venv-framework-v2`、工作目录 `Agent_Server`，相关 live 选择设置 `RUN_LIVE_POSTGRES_TESTS=1`、`RUN_LIVE_REDIS_TESTS=1`，复用用户已启动的 PostgreSQL／Redis；未启停服务、未调用付费 embedding／模型、未改生产路由或依赖。
+
+```powershell
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_memory_embedding_runtime.py::test_embedding_backfill_rejects_short_provider_response_without_partial_update -q -x --tb=short
+# 修复前 1 failed，3.55 秒；证明旧实现未拒绝不完整响应
+
+..\.venv-framework-v2\Scripts\python.exe -m pytest tests/test_memory_embedding_runtime.py::test_embedding_backfill_rejects_short_provider_response_without_partial_update tests/test_memory_embedding_runtime.py -q -rs --tb=short
+# 6 passed，3.19 秒
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_memory_embedding_runtime.py tests/test_memory_vector_replica.py tests/test_memory_vector_rebuild.py tests/test_memory_vector_retrieval.py tests/test_framework_turn_memory_reconciliation.py tests/test_framework_turn_memory_projection.py -q -rs --tb=short
+# 34 passed，9.37 秒
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_application_projection.py -k 'memory' -q -rs --tb=short
+# 17 passed，34 deselected，66.46 秒
+
+.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests
+# exit 0
+git diff --check
+# exit 0
+```
+
+本步只闭合 Memory embedding backfill 的批量响应完整性与未知效果可见性；测试使用受控 embedding double，未验收真实 embedding 供应商。已有 Memory 行／执行回执只读对账、Redis vector replica rebuild、资源清理补偿、外部 Runner 对账、A2-2/A2-3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 与完整 v4 仍继续 active。`ruff`、`mypy` 未安装，未执行；用户 v3 草稿保持未修改、未暂存、未提交。
