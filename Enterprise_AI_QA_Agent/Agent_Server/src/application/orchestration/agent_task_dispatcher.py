@@ -7,6 +7,8 @@ from datetime import datetime, timezone
 from time import monotonic
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from pydantic import ValidationError
+
 from src.application.observability.business_metrics import (
     agent_task_execution_seconds,
     agent_task_retries_total,
@@ -624,7 +626,12 @@ class AgentTaskDispatcher:
                 if command.operation == "message" and stored.status in {"queued", "waiting_resource"}:
                     from src.application.context.framework_context_service import FrameworkContextService
 
-                    stage = await self._tasks.get_framework_message_stage(command.task_id, session_id=command.session_id)
+                    try:
+                        stage = await self._tasks.get_framework_message_stage(command.task_id, session_id=command.session_id)
+                    except ValidationError as exc:
+                        self._framework_capabilities.defer_unsupported_format(
+                            exc, reason="framework_message_stage_format_unavailable")
+                        raise
                     if stage is None or stage.phase in {"submitted", "orchestrating", "orchestrated"}:
                         session = await self._sessions._require_session(command.session_id)
                         try:
@@ -641,8 +648,8 @@ class AgentTaskDispatcher:
                 raise
             task = await self._tasks.claim(
                 command.task_id, worker_id=worker_id, expected_binding=runtime_binding,
-                model_ledger_capabilities=(self._framework_capabilities
-                    if self._framework_model_calls is not None else None),
+                framework_capabilities=self._framework_capabilities,
+                check_model_ledger=self._framework_model_calls is not None,
             )
         else:
             if stored.runtime_binding is not None:

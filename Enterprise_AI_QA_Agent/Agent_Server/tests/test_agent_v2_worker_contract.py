@@ -59,7 +59,8 @@ class _Tasks:
         self.stored = stored
         self.claimed = []
         self.message_recoveries = []
-        self.model_ledger_capabilities = []
+        self.framework_capabilities = []
+        self.model_ledger_checks = []
 
     async def get(self, task_id):
         assert task_id == self.stored.id
@@ -69,11 +70,12 @@ class _Tasks:
         assert task_id == self.stored.id and session_id == self.stored.session_id
         return None
 
-    async def claim(self, task_id, *, worker_id, expected_binding=None, model_ledger_capabilities=None):
+    async def claim(self, task_id, *, worker_id, expected_binding=None, framework_capabilities=None, check_model_ledger=False):
         assert task_id == self.stored.id
         assert expected_binding == self.stored.runtime_binding
         self.claimed.append(worker_id)
-        self.model_ledger_capabilities.append(model_ledger_capabilities)
+        self.framework_capabilities.append(framework_capabilities)
+        self.model_ledger_checks.append(check_model_ledger)
         return self.stored
 
     async def ensure_framework_message_recovery(self, task_id, *, native_reader=None):
@@ -162,7 +164,7 @@ async def test_model_reader_capabilities_reach_claim_for_all_bound_operations(op
     envelope = command(selected).model_copy(update={"operation": operation, "reference_id": task.reference_id})
     await dispatcher.handle_v2(QueuedTask("reader-admission", envelope.model_dump(mode="json")), worker_id="v2-worker")
     assert tasks.claimed == ["v2-worker"] and executions == [task.id]
-    assert tasks.model_ledger_capabilities == [caps]
+    assert tasks.framework_capabilities == [caps] and tasks.model_ledger_checks == [True]
 
 
 @pytest.mark.asyncio
@@ -561,3 +563,98 @@ async def test_v2_expired_attempt_reuses_admission_only_before_execution(admissi
     assert len(harness.runtime.calls) == (0 if started else 1)
     with pytest.raises(ContinuationLeaseLostError):
         await harness.tasks.finish(owner, status="completed")
+
+
+def stage_record(**changes):
+    from src.schemas.framework_message_stage import FrameworkMessageStage
+
+    now = datetime.now(timezone.utc)
+    value = FrameworkMessageStage(task_id="task-1", binding_id="binding-1", input_sha256="input",
+        user_message_id="message-1", phase="submitted", created_at=now, updated_at=now).model_dump(mode="json")
+    value.update(changes)
+    return value
+
+
+STAGE_MATERIAL_KEYS = (
+    "post_commit_memory_intent", "post_commit_memory_plan", "post_commit_memory_execution",
+    "approval_graph_inputs", "graph_input_asset", "observation_projection_asset",
+    "observation_projection_commits", "event_projection_commits", "snapshot_projection_commit",
+    "runtime_result_asset", "application_projection_commit", "semantic_input",
+)
+
+
+@pytest.mark.parametrize("key", STAGE_MATERIAL_KEYS)
+@pytest.mark.parametrize("new_field", [{"schema_version": 99}, {"future_field": "private-material-input"}])
+def test_known_stage_materials_use_the_installed_strict_codecs(key, new_field):
+    from src.runtime.framework_message_stages import message_stage_material_readers
+
+    assert set(message_stage_material_readers()) == set(STAGE_MATERIAL_KEYS)
+    material = {"approval-task": new_field} if key == "approval_graph_inputs" else new_field
+    # These are deliberately incomplete future formats. No valid asset or
+    # recovery proof is implied by their presence in a manifest.
+    value = stage_record(source_manifest={key: material})
+    with pytest.raises(TaskDeferred, match="framework_message_stage_format_unavailable") as caught:
+        FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value)
+    assert caught.value.__suppress_context__ and "private-material-input" not in str(caught.value)
+
+
+@pytest.mark.parametrize("version", range(1, 30))
+def test_stage_format_reader_retains_each_existing_version(version):
+    from src.runtime.framework_message_stages import validate_message_stage
+
+    value = stage_record(schema_version=version)
+    FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value)
+    assert validate_message_stage(value).schema_version == version
+
+
+def test_missing_stage_version_keeps_the_original_default_without_rewriting_input():
+    from src.runtime.framework_message_stages import validate_message_stage
+
+    value = stage_record()
+    del value["schema_version"]
+    FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value)
+    assert validate_message_stage(value).schema_version == 3 and "schema_version" not in value
+
+
+@pytest.mark.parametrize("version,reason", [(None, "framework_message_stage_format_unavailable"),
+    *[(value, "framework_message_stage_unavailable") for value in (True, "3", 3.0, 0, 30)]])
+def test_stage_format_requires_an_explicit_supported_integer_version(version, reason):
+    with pytest.raises(TaskDeferred, match=reason):
+        FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(stage_record(schema_version=version))
+
+
+@pytest.mark.parametrize("value", [None, [], "future-stage", 3])
+def test_nonobject_stage_is_not_confused_with_a_missing_stage(value):
+    with pytest.raises(TaskDeferred, match="framework_message_stage_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value)
+
+
+@pytest.mark.parametrize("key", ["recoveries", "approval_finalizations", "approval_settlements"])
+def test_unknown_stage_lineage_fields_defer_before_execution(key):
+    from src.schemas.framework_message_stage import FrameworkMessageRecoveryLink
+
+    link = FrameworkMessageRecoveryLink(task_id="next", predecessor_task_id="task-1",
+        predecessor_attempt_id="attempt-1", predecessor_owner_epoch=1, budget_sha256="budget",
+        admitted_at=datetime.now(timezone.utc)).model_dump(mode="json")
+    link["resume_phase"] = {"recoveries": "submitted", "approval_finalizations": "finalizing",
+        "approval_settlements": "settling"}[key]
+    link["future_field"] = "private-lineage-input"
+    with pytest.raises(TaskDeferred, match="framework_message_stage_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(stage_record(**{key: [link]}))
+
+
+def test_format_compatibility_neither_recurses_into_metadata_nor_grants_recovery_authority():
+    from src.runtime.framework_message_stages import validate_message_stage, FrameworkMessageStageRecoveryRequired
+    from src.schemas.framework_approval import approval_value_hash
+
+    manifest = {"application_metadata": {"schema_version": 99, "future_field": True,
+        "runtime_result_asset": {"schema_version": 99}}}
+    value = stage_record(phase="orchestrating", source_manifest=manifest,
+        source_sha256=approval_value_hash(manifest))
+    caps = FrameworkWorkerCapabilities("a" * 64, True)
+    caps.require_message_stage_format(value)
+    assert validate_message_stage(value).source_manifest == manifest
+    value["source_sha256"] = "0" * 64
+    caps.require_message_stage_format(value)
+    with pytest.raises(FrameworkMessageStageRecoveryRequired, match="asset integrity"):
+        validate_message_stage(value)

@@ -266,10 +266,10 @@ class PostgresAgentTaskStore:
 
     async def claim(self, task_id: str, *, worker_id: str,
                     expected_binding: RuntimeBinding | None = None,
-                    model_ledger_capabilities=None) -> AgentTaskExecution:
+                    framework_capabilities=None, check_model_ledger=False) -> AgentTaskExecution:
         try:
             return await asyncio.to_thread(self._claim_sync, task_id, worker_id, expected_binding,
-                model_ledger_capabilities)
+                framework_capabilities, check_model_ledger)
         except DBAPIError as exc:
             if expected_binding is None or getattr(exc.orig, "sqlstate", None) != "55P03":
                 raise
@@ -1213,9 +1213,11 @@ class PostgresAgentTaskStore:
                 (expires_at, task.runtime_binding.binding_id))
         return True
 
-    def _claim_sync(self, task_id, worker_id, expected_binding=None, model_ledger_capabilities=None):
-        if model_ledger_capabilities is not None and expected_binding is None:
-            raise ValueError("Model ledger compatibility requires a framework binding")
+    def _claim_sync(self, task_id, worker_id, expected_binding=None, framework_capabilities=None, check_model_ledger=False):
+        if framework_capabilities is not None and expected_binding is None:
+            raise ValueError("Framework compatibility requires a framework binding")
+        if check_model_ledger and framework_capabilities is None:
+            raise ValueError("Model ledger compatibility requires framework capabilities")
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             if expected_binding is not None:
                 configure_runtime_owner_transaction(cur, self._settings)
@@ -1234,12 +1236,22 @@ class PostgresAgentTaskStore:
             )
             if saved_binding != expected_binding:
                 raise ValueError("Agent claim runtime binding does not match the durable task")
-            if model_ledger_capabilities is not None:
+            if framework_capabilities is not None:
+                from src.runtime.framework_message_stages import FrameworkMessageStages
+
+                try:
+                    FrameworkMessageStages(self).require_worker_compatibility(cur, saved_binding, framework_capabilities)
+                except TaskDeferred as exc:
+                    logger.warning("framework_message_stage_reader_unavailable", extra={
+                        "task_id": task_id, "binding_id": saved_binding.binding_id,
+                        "worker_id": worker_id, "reason": str(exc)})
+                    raise
+            if check_model_ledger:
                 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 
                 try:
                     PostgresFrameworkModelCalls(self._settings).require_worker_compatibility(
-                        cur, saved_binding, model_ledger_capabilities,
+                        cur, saved_binding, framework_capabilities,
                         require_budget=(row["status"] not in TERMINAL_AGENT_TASK_STATUSES
                             and row["operation"] != "framework_reconcile"))
                 except TaskDeferred as exc:

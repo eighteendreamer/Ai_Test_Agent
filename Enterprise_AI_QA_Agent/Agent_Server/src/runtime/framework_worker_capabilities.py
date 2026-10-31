@@ -96,13 +96,37 @@ class FrameworkWorkerCapabilities:
         maximum = self.model_call_max_version if kind == "call" else 1
         if type(version) is not int or not 1 <= version <= maximum:
             raise TaskDeferred(reason)
+        self._read_compatible(model.model_validate, value, reason)
+
+    def require_message_stage_format(self, value: object) -> None:
+        from src.runtime.framework_message_stages import message_stage_material_readers
+        from src.schemas.framework_message_stage import FrameworkMessageStage
+
+        reason = "framework_message_stage_format_unavailable"
+        if not isinstance(value, dict):
+            raise TaskDeferred(reason)
+        self.require_message_stage(value.get("schema_version", 3))
+        stage = self._read_compatible(FrameworkMessageStage.model_validate, value, reason)
+        manifest = stage.source_manifest or {}
+        for key, reader in message_stage_material_readers().items():
+            if key in manifest:
+                if not isinstance(manifest[key], dict):
+                    raise TaskDeferred(reason)
+                self._read_compatible(reader, manifest[key], reason)
+
+    @staticmethod
+    def defer_unsupported_format(exc: ValidationError, *, reason: str) -> None:
+        if any(error["type"] == "extra_forbidden" or (
+            error["type"] == "literal_error" and error["loc"]
+            and error["loc"][-1] in {"schema_version", "position_version", "derivation_contract_version"})
+            for error in exc.errors(include_input=False, include_url=False)):
+            # Do not attach the raw record / validation input to queue logs.
+            raise TaskDeferred(reason) from None
+
+    @classmethod
+    def _read_compatible(cls, reader, value, reason):
         try:
-            model.model_validate(value)
+            return reader(value)
         except ValidationError as exc:
-            if any(error["type"] == "extra_forbidden" or (
-                error["type"] == "literal_error" and error["loc"]
-                and error["loc"][-1] in {"schema_version", "position_version"})
-                for error in exc.errors(include_input=False, include_url=False)):
-                # Do not attach the raw record / validation input to queue logs.
-                raise TaskDeferred(reason) from None
+            cls.defer_unsupported_format(exc, reason=reason)
             raise

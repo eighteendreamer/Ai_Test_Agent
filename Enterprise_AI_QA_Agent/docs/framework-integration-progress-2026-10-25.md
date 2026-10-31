@@ -7185,3 +7185,55 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → 4 个生产文件、2 个测试文件、测试白名单及本记录 → 上述真实 PG／Redis 和当前严格读者验证 → `【fix】领取前核对模型账本格式兼容性` 同一提交，ID 见最终交付和 Git 历史。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
 
 本步无 DDL、新写入格式、依赖升级、配置变更或数据回填，只扩展当前制品领取端的兼容读能力；不能追溯修复已发布旧 Worker，也不证明全量格式／双制品发布／回滚能力。格式检查全量读取该 root 的现有调用与上传意图，不查询远端资产，未做大规模账本性能基线。binding／command、receipt／proof／transcript／结果资产的完整兼容路由和各阶段剩余验收仍须逐项补齐。未运行全量前后端、真实领域 Runner、供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4。A2-2/A2-3 剩余、A3、B/C、D/E/F、H01–H12 按完整 v4 保留，整体目标继续 active，本节不代表 F 或全系统完成。
+## 158. F／§14.1、H11：阶段与内嵌材料严格格式在领取事务内核对（2026-10-31）
+
+### 续接、根因与依据 → 做法
+
+续接 `46beaf3cd`／§157，不重复模型账本实现。本轮核实：message-stage 原来只在 Dispatcher 的独立事务检查顶层版本；同版本严格新增字段及内嵌结果资产的新格式仍可能在 claim 之后解析。expired-running 投递甚至会先被改成 recovery_required，再发现不兼容；等待 Session 锁期间 stage 变化也没有在实际领取事务内重查。根因仍是制品读能力与领取状态迁移的事务边界错位，不是恢复分支不足。
+
+依据 `validate_message_stage()` 已有的严格 codec、§157 的格式异常分类、`FrameworkMessageStages` 的原始 stage 读取以及 `_claim_sync()` 的 Session → owner → task 锁顺序 → 将现有 typed manifest 材料汇入唯一 codec 目录，在原 claim cursor 内用同一读者核对，不新增调度层、恢复证明或外部调用。参考本地《Agent轨迹与协议鲁棒性》§3 的字段／必填项／嵌套结构漂移与严格校验、《评测工程化与CICD》的版本化、基线与环境可追溯 → 保留有效红测、真实数据库边界和历史失败，不用旧绿测代表当前源码。
+
+### TDD、代码与消费方
+
+1. 新增真实 PG 回归，在正常提交的 stage 顶层注入新字段，或在真实 LangGraph 图＋PG saver 产生、原 Session 链路冻结的 runtime_result_asset 中注入 schema 2／新字段。嵌套变更同步重算外层 source_sha256，避免外层哈希错误掩盖目标格式问题。首次为 **3 failed、2 teardown errors，19.27 秒**；修正下述 fixture 装配后，旧生产代码再次为 **3 failed，15.95 秒**，无 teardown error，三个行为失败均为 `DID NOT RAISE TaskDeferred`，构成有效目标红测。它们是受控格式变更样本，不是已抓到的供应商生产事故。
+2. `framework_message_stages.py` 提取唯一 `message_stage_material_readers()` 目录：Memory intent／plan／execution、approval_graph_inputs、graph_input_asset、observation asset／commits、event commits、snapshot commit、runtime result、application commit、semantic input，共 12 类。正常 `validate_message_stage()` 和领取兼容检查共用它；原摘要、谱系、阶段、材料关系和恢复授权检查保留。Memory execution 继续走原 JSON reader，不改成另一种严格解析语义；approval_graph_inputs 仍按原 task 映射读取。这不是 manifest 白名单，也不递归检查任意 application metadata。
+3. `FrameworkWorkerCapabilities.require_message_stage_format()` 先核对对象形态、顶层能力上界 29 和原 base schema，再解析已存在的这 12 类材料；缺省版本仍为 3，不回写记录。§157 的分类抽为共用 helper，仅确定的严格新增字段、schema／position／derivation_contract 版本 literal 等不兼容错误变成固定 reason 的 TaskDeferred，原普通验证错误继续传播。格式通过不等于材料关系正确或恢复被授权，未知输入不附到队列日志。
+4. `FrameworkMessageStages.require_worker_compatibility()` 借用 claim cursor，精确按 binding 读取原 stage，`FOR SHARE` 保持到领取事务结束；历史无 stage 不强制补造。实际存在的 JSON null 与无行区分，前者受控等待；`get_version()` 对非对象记录不再提前调用 `.get()`，仍由兼容路径分类。事务内检查在所有状态变更和终态返回之前，因此不会先改 attempt／owner／running 终态再报格式不支持。
+5. 内部 claim 参数从 §157 的 `model_ledger_capabilities` 归并为 `framework_capabilities`，另用 `check_model_ledger` 保留模型账本注入边界。Dispatcher 的所有 v2 operation 都转交阶段读能力，不再由是否注入模型账本决定阶段检查；legacy 原路径不变。queued／waiting_resource 的原完整 stage 预读若先遇到未知严格格式，也复用同一异常分类。新增安全日志 `framework_message_stage_reader_unavailable`，仅 task／binding／worker／固定 reason；原模型日志不变。已全局核对生产代码与测试无旧参数调用，五种 bound operation 的 fake 和断言同步，无 HTTP／前端／公开 DTO 变更。
+6. 实现后四文件中间组合 **222 passed，112.22 秒**。扩展阶段专项 **10 passed，35.72 秒**，包含 queued／claimed／running／cancelled、未注入模型账本、真实 Session 锁等待后的 schema 3→30、结果 intrinsic hash 错误保持 ValidationError、兼容 expired-running 继续原 recovery_required 和历史无 stage 的终态只读路径。完整比较 11 张隔离表行数与整行摘要，不在断言中打印 lease token；不重跑图或模型。
+7. 补齐纯格式契约：12 类目录材料的未知版本／字段、合法 submitted 基本记录版本 1–29／缺省 3、显式非整数／null 版本、非对象 stage、三类 lineage 新字段、自由 metadata 不递归误杀，以及格式通过不替代原摘要关系检查。材料负例故意为不完整未来格式，不伪称有效业务资产。扩大组合初次 **1 failed、296 passed，118.51 秒**，失败为新测试预期 reason 不一致：`Expected framework_message_stage_unavailable; Actual framework_message_stage_format_unavailable`。显式 null 已被原严格 reader 拒绝；按“无版本沿默认值、显式 null 属于未知格式”的实际契约修正精确 reason 断言，生产逻辑未因此变动；另补真实 JSON null／数组／字符串持久记录用例，防止将 null 行当作无 stage。
+
+### 测试隔离事故与保留事项
+
+首轮新模块漏导入既有 autouse `isolate_recovery_stores`，两组 `frozen_result` 图写入了默认 `deepagents_checkpoint` schema，随后 teardown 的隔离断言失败。涉及 fixture 前缀为 `agent_test_0cf852b5f703`、`agent_test_771573c17e7e`；它们不是 native thread ID，不能据此前缀猜测 checkpoint 行归属。已修正导入，并在新模块增加显式依赖隔离 fixture 的 autouse 断言，在图 fixture 打开 saver 之前确认 schema 为本轮随机前缀的 `_checkpoints`。后续专项及最终组合没有 teardown error。
+
+该事故已告知用户。外层隔离业务表已清理，但首轮随机 Turn 的 native ID 未捕获，没有充分证据安全定位默认 schema 中对应旧行，可能仍有两组测试 checkpoint 数据残留。本轮没有 DROP 共享 schema、按时间或 UUID 猜测删除，不能宣称测试数据完全无残留；这与后续已正确隔离的绿色结果分别记录。
+
+### 当前源码实际验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`，复用用户已启动的 PostgreSQL／Redis；未重启服务、未运行 Docker、未调用付费模型或改生产路由。三组均取得实际终态，无 skip／deselect；重叠的中间结果不相加。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_stage_reader_admission.py tests/test_framework_model_reader_admission.py tests/test_agent_v2_worker_contract.py tests/test_framework_model_admission.py -q -rs --tb=short
+# 300 passed，143.10 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_runtime_binding_persistence.py tests/test_agent_task_dispatch.py tests/test_framework_model_calls.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_result_import.py tests/test_framework_model_uploads.py -q -rs --tb=short
+# 152 passed，598.91 秒，exit 0
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_message_stages.py tests/test_framework_runtime_result_asset.py tests/test_framework_graph_input_asset.py tests/test_framework_approval_graph_input.py tests/test_framework_application_projection.py tests/test_framework_observation_projection.py tests/test_framework_event_projection.py tests/test_framework_snapshot_projection.py tests/test_framework_finalization_projection.py tests/test_framework_projected_settlement.py tests/test_framework_message_recovery.py tests/test_framework_orchestrated_message_recovery.py tests/test_framework_turn_memory_projection.py tests/test_framework_turn_memory_reconciliation.py tests/test_framework_semantic_input.py -q -rs --tb=short
+# 455 passed，1995.51 秒，exit 0
+```
+
+上述包含真实 PG／Redis、官方框架／SDK＋本地合成 HTTP、既有独立 Worker 故障与恢复，以及正常 codec、结果／审批图输入、投影、Memory、语义编排和消息恢复消费方；不是实际领域 Runner、真实供应商或独立旧／新制品部署验收。根目录执行 `python -m compileall -q Agent_Server/src Agent_Server/tests` 实际通过，`git diff --check` 通过。ruff／mypy 经 find_spec 确认仍未安装，未运行独立 lint／typecheck，也未安装依赖。所有本轮测试命令已结束，没有待观察句柄。
+
+### 提交对应、兼容与剩余出口
+
+v4 F／§14.1、H11 → 本节 → 4 个生产文件、2 个测试文件、测试白名单和本记录 → 上述当前源码真实回归 → `【fix】领取前核对阶段与内嵌材料格式` 同一提交，ID 见本轮交付和 Git 历史。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
+
+本步无 DDL、新写入格式、数据回填、依赖或生产开关变化；只有当前制品读能力检查，不追溯修复旧 Worker，也不证明双制品滚动部署、完整回滚或大规模 stage 解析性能。目录范围限于原 `validate_message_stage()` 已显式解析的 typed manifest 材料；任意 untyped payload、feature flag 自定义约束、独立审批 journal／receipt／proof、native transcript、其他结果资产路由与全量兼容契约仍须逐项核对，不能把本步当作所有 claim 前格式能力已完成。
+
+未运行全量前后端、真实领域 Runner、供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4。A2-2/A2-3、A3、B/C、D/E/F 和完整 H01–H12 的剩余出口按完整 v4 保留；上述共享 checkpoint 数据残留也保留为已知事项。整体目标继续 active，本节不代表 F 或全系统完成。

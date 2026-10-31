@@ -24,6 +24,42 @@ class FrameworkMessageStageRecoveryRequired(RuntimeError):
     pass
 
 
+def message_stage_material_readers():
+    """One codec catalogue for normal validation and pre-claim compatibility.
+
+    These are the existing typed manifest materials, not a new proof or a
+    whitelist for the source manifest's untyped application metadata.
+    """
+    from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
+    from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
+    from src.schemas.framework_projection_commit import (
+        FrameworkTurnMemoryIntent, FrameworkTurnMemoryPlan, FrameworkTurnMemoryExecution,
+        FrameworkEventProjectionCommits, FrameworkSnapshotProjectionCommit, FrameworkProjectionCommit,
+    )
+    from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
+
+    return {
+        "post_commit_memory_intent": FrameworkTurnMemoryIntent.model_validate,
+        "post_commit_memory_plan": FrameworkTurnMemoryPlan.model_validate,
+        "post_commit_memory_execution": lambda value: FrameworkTurnMemoryExecution.model_validate_json(
+            json.dumps(value, ensure_ascii=False)),
+        "approval_graph_inputs": lambda values: {key: FrameworkApprovalGraphInput.model_validate(raw)
+            for key, raw in values.items()},
+        "graph_input_asset": parse_graph_input_asset,
+        "observation_projection_asset": FrameworkObservationAsset.model_validate,
+        "observation_projection_commits": FrameworkObservationCommits.model_validate,
+        "event_projection_commits": FrameworkEventProjectionCommits.model_validate,
+        "snapshot_projection_commit": FrameworkSnapshotProjectionCommit.model_validate,
+        "runtime_result_asset": FrameworkRuntimeResultAsset.model_validate,
+        "application_projection_commit": FrameworkProjectionCommit.model_validate,
+        "semantic_input": PreparedSemanticInput.model_validate,
+    }
+
+
+def read_message_stage_material(key, value):
+    return message_stage_material_readers()[key](value)
+
+
 def validate_message_stage(record):
     stage = FrameworkMessageStage.model_validate(record)
     if stage.schema_version == 1 and stage.recoveries:
@@ -66,43 +102,37 @@ def validate_message_stage(record):
         raise FrameworkMessageStageRecoveryRequired("Application commit v26 lost its frozen Memory plan")
     if "post_commit_memory_intent" in manifest:
         from src.schemas.framework_projection_commit import FrameworkTurnMemoryIntent
-        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
 
         if (stage.schema_version < 25 or stage.phase not in {"runtime_submitted", "projected"}
             or "runtime_result_asset" not in manifest or "application_projection_commit" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Memory intent has no atomic application commit or compatible format")
-        asset = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
-        intent = FrameworkTurnMemoryIntent.model_validate(manifest["post_commit_memory_intent"])
+        asset = read_message_stage_material("runtime_result_asset", manifest["runtime_result_asset"])
+        intent = read_message_stage_material("post_commit_memory_intent", manifest["post_commit_memory_intent"])
         if intent != FrameworkTurnMemoryIntent.from_result_asset(asset):
             raise FrameworkMessageStageRecoveryRequired("Memory intent differs from its frozen original result")
     if "post_commit_memory_plan" in manifest:
         from src.runtime.framework_application_projection import build_turn_memory_plan
-        from src.schemas.framework_projection_commit import FrameworkTurnMemoryPlan
-        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
 
         if (stage.schema_version < 26 or stage.phase not in {"runtime_submitted", "projected"}
             or "runtime_result_asset" not in manifest or "application_projection_commit" not in manifest
             or "post_commit_memory_intent" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Memory plan has no atomic application commit or compatible format")
-        asset = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
-        plan = FrameworkTurnMemoryPlan.model_validate(manifest["post_commit_memory_plan"])
+        asset = read_message_stage_material("runtime_result_asset", manifest["runtime_result_asset"])
+        plan = read_message_stage_material("post_commit_memory_plan", manifest["post_commit_memory_plan"])
         expected = build_turn_memory_plan(asset)
         if plan != expected:
             raise FrameworkMessageStageRecoveryRequired("Memory plan differs from its frozen original result")
-        intent = FrameworkTurnMemoryIntent.model_validate(manifest["post_commit_memory_intent"])
+        intent = read_message_stage_material("post_commit_memory_intent", manifest["post_commit_memory_intent"])
         if (plan.effect_id != intent.effect_id or plan.requested != intent.requested
             or plan.runtime_result_asset_sha256 != intent.runtime_result_asset_sha256
             or plan.source_snapshot_id != intent.source_snapshot_id):
             raise FrameworkMessageStageRecoveryRequired("Memory plan differs from its atomic Memory intent")
     if "post_commit_memory_execution" in manifest:
-        from src.schemas.framework_projection_commit import FrameworkTurnMemoryExecution, FrameworkTurnMemoryPlan
-
         if (stage.schema_version < 27 or stage.phase not in {"runtime_submitted", "projected"}
             or "post_commit_memory_plan" not in manifest or "application_projection_commit" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Memory execution has no compatible frozen plan format")
-        plan = FrameworkTurnMemoryPlan.model_validate(manifest["post_commit_memory_plan"])
-        execution = FrameworkTurnMemoryExecution.model_validate_json(
-            json.dumps(manifest["post_commit_memory_execution"], ensure_ascii=False))
+        plan = read_message_stage_material("post_commit_memory_plan", manifest["post_commit_memory_plan"])
+        execution = read_message_stage_material("post_commit_memory_execution", manifest["post_commit_memory_execution"])
         if (execution.effect_id != plan.effect_id
             or execution.session_id != plan.session_id
             or execution.turn_id != plan.turn_id
@@ -119,18 +149,15 @@ def validate_message_stage(record):
         if execution.state == "completed" and {item.request_id for item in execution.row_receipts} != request_ids:
             raise FrameworkMessageStageRecoveryRequired("Completed Memory execution is missing a row receipt")
     if "approval_graph_inputs" in manifest:
-        from src.schemas.framework_graph_input import FrameworkApprovalGraphInput, parse_graph_input_asset
-
         originals = manifest["approval_graph_inputs"]
         if (stage.schema_version < 16 or stage.phase not in {"runtime_submitted", "projected"}
             or not isinstance(originals, dict) or not originals or "graph_input_asset" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Approval graph input has no compatible message stage format")
-        initial = parse_graph_input_asset(manifest["graph_input_asset"])
+        initial = read_message_stage_material("graph_input_asset", manifest["graph_input_asset"])
         if (initial.schema_version != 2 or initial.runtime_preparation.identity.binding.binding_id != stage.binding_id
             or manifest.get("binding_fingerprint") != initial.runtime_preparation.identity.binding.fingerprint):
             raise FrameworkMessageStageRecoveryRequired("Approval graph input has no original prepared binding")
-        for task_id, raw in originals.items():
-            original = FrameworkApprovalGraphInput.model_validate(raw)
+        for task_id, original in read_message_stage_material("approval_graph_inputs", originals).items():
             if stage.schema_version < original.graph_input_asset.required_message_stage_version:
                 raise FrameworkMessageStageRecoveryRequired("Approval preparation has no compatible message stage format")
             if (original.task_id != task_id
@@ -147,9 +174,7 @@ def validate_message_stage(record):
             if original.graph_input_asset.harness_settings != initial.harness_settings:
                 raise FrameworkMessageStageRecoveryRequired("Approval graph input changed its original Harness settings")
     if "graph_input_asset" in manifest:
-        from src.schemas.framework_graph_input import parse_graph_input_asset
-
-        graph_input = parse_graph_input_asset(manifest["graph_input_asset"])
+        graph_input = read_message_stage_material("graph_input_asset", manifest["graph_input_asset"])
         if stage.schema_version < graph_input.required_message_stage_version:
             raise FrameworkMessageStageRecoveryRequired("Graph tool material has no compatible message stage format")
         if graph_input.schema_version == 2 and (stage.schema_version < 12
@@ -157,42 +182,32 @@ def validate_message_stage(record):
             raise FrameworkMessageStageRecoveryRequired("Prepared graph input has no compatible message stage binding")
     observation_keys = {"observation_projection_asset", "observation_projection_commits"}
     if observation_keys.intersection(manifest):
-        from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
-
         if (stage.schema_version < 10 or stage.phase not in {"runtime_submitted", "projected"}
             or "runtime_result_asset" not in manifest or not observation_keys.issubset(manifest)):
             raise FrameworkMessageStageRecoveryRequired("Observation projection has no matching message stage format")
-        FrameworkObservationAsset.model_validate(manifest["observation_projection_asset"])
-        FrameworkObservationCommits.model_validate(manifest["observation_projection_commits"])
+        read_message_stage_material("observation_projection_asset", manifest["observation_projection_asset"])
+        read_message_stage_material("observation_projection_commits", manifest["observation_projection_commits"])
     if "event_projection_commits" in manifest:
-        from src.schemas.framework_projection_commit import FrameworkEventProjectionCommits
-
         if (stage.schema_version < 9 or stage.phase not in {"runtime_submitted", "projected"}
             or "runtime_result_asset" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Event projection has no matching message stage format")
-        FrameworkEventProjectionCommits.model_validate(manifest["event_projection_commits"])
+        read_message_stage_material("event_projection_commits", manifest["event_projection_commits"])
     if "snapshot_projection_commit" in manifest:
-        from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit
-
         if (stage.schema_version < 8 or stage.phase not in {"runtime_submitted", "projected"}
             or "runtime_result_asset" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Snapshot projection has no matching message stage format")
-        FrameworkSnapshotProjectionCommit.model_validate(manifest["snapshot_projection_commit"])
+        read_message_stage_material("snapshot_projection_commit", manifest["snapshot_projection_commit"])
     if "runtime_result_asset" in manifest:
-        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
-
         if stage.schema_version < 7 or stage.phase not in {"runtime_submitted", "projected"}:
             raise FrameworkMessageStageRecoveryRequired("Runtime result has no matching message stage format")
-        result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        result = read_message_stage_material("runtime_result_asset", manifest["runtime_result_asset"])
         if result.task_id in manifest.get("approval_graph_inputs", {}) and stage.schema_version < 17:
             raise FrameworkMessageStageRecoveryRequired("Approval runtime result has no compatible message stage format")
     if stage.approval_finalizations:
-        from src.schemas.framework_runtime_result import FrameworkRuntimeResultAsset
-
         if (stage.schema_version < 18 or "runtime_result_asset" not in manifest
             or stage.phase not in {"runtime_submitted", "projected"}):
             raise FrameworkMessageStageRecoveryRequired("Approval finalization has no compatible message stage format")
-        result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        result = read_message_stage_material("runtime_result_asset", manifest["runtime_result_asset"])
         if result.task_id not in manifest.get("approval_graph_inputs", {}):
             raise FrameworkMessageStageRecoveryRequired("Approval finalization has no original approval result")
         predecessor, attempt, epoch = result.task_id, result.attempt_id, result.owner_epoch
@@ -207,19 +222,15 @@ def validate_message_stage(record):
             predecessor, attempt, epoch = link.task_id, link.owner_attempt_id, link.owner_epoch
             identities.add(link.task_id)
     if "application_projection_commit" in manifest:
-        from src.schemas.framework_projection_commit import FrameworkProjectionCommit
-
         if stage.schema_version < 6 or stage.phase not in {"runtime_submitted", "projected"}:
             raise FrameworkMessageStageRecoveryRequired("Application commit has no matching message stage format")
-        FrameworkProjectionCommit.model_validate(manifest["application_projection_commit"])
+        read_message_stage_material("application_projection_commit", manifest["application_projection_commit"])
     if stage.approval_settlements:
-        from src.schemas.framework_projection_commit import FrameworkProjectionCommit
-
         if (stage.schema_version < 23 or stage.phase != "projected"
             or "application_projection_commit" not in manifest or "runtime_result_asset" not in manifest):
             raise FrameworkMessageStageRecoveryRequired("Approval settlement has no projected commit format")
-        commit = FrameworkProjectionCommit.model_validate(manifest["application_projection_commit"])
-        result = FrameworkRuntimeResultAsset.model_validate(manifest["runtime_result_asset"])
+        commit = read_message_stage_material("application_projection_commit", manifest["application_projection_commit"])
+        result = read_message_stage_material("runtime_result_asset", manifest["runtime_result_asset"])
         if result.task_id not in manifest.get("approval_graph_inputs", {}):
             raise FrameworkMessageStageRecoveryRequired("Approval settlement has no original approval result")
         previous = stage.approval_finalizations[-1] if stage.approval_finalizations else None
@@ -239,7 +250,7 @@ def validate_message_stage(record):
             predecessor, attempt, epoch = link.task_id, link.owner_attempt_id, link.owner_epoch
             identities.add(link.task_id)
     if "semantic_input" in manifest:
-        semantic = PreparedSemanticInput.model_validate(manifest["semantic_input"])
+        semantic = read_message_stage_material("semantic_input", manifest["semantic_input"])
         if semantic.request is not None and semantic.invocation_parameters is None:
             raise FrameworkMessageStageRecoveryRequired("Persisted semantic input has no invocation contract")
     elif manifest.get("semantic_input_required") and stage.phase != "orchestrating":
@@ -333,6 +344,14 @@ class FrameworkMessageStages:
         self._tasks, self._settings = tasks, tasks._settings
         self._table = message_stage_table(self._settings)
 
+    def require_worker_compatibility(self, cur, binding, capabilities):
+        # The caller already holds the Session/owner/task locks. Do not use
+        # _get_record here: that would check an earlier, separate transaction.
+        cur.execute(f"SELECT record FROM {self._table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
+        row = cur.fetchone()
+        if row is not None:
+            capabilities.require_message_stage_format(row["record"])
+
     def _get_record(self, task_id, session_id, *, for_capability=False):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             cur.execute(f"SELECT stage.record FROM {self._tasks._tasks} task LEFT JOIN {self._table} stage "
@@ -358,7 +377,7 @@ class FrameworkMessageStages:
         # Read the binding's original message format for continuations too;
         # do not parse a future strict schema or grant its execution rights.
         record = self._get_record(task_id, session_id, for_capability=True)
-        return record.get("schema_version", 3) if record is not None else None
+        return record.get("schema_version", 3) if isinstance(record, dict) else record
 
     async def begin(self, owner, sources):
         return await self._advance(owner, expected="submitted", phase="orchestrating",
