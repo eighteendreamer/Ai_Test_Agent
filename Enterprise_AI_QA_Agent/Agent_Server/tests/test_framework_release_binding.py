@@ -26,6 +26,260 @@ REFERENCE = {"schema_version": 1, "archive_sha256": "b" * 64,
     "size_bytes": 1234, "source_revision": "c" * 40}
 
 
+def prepare_submission(current_source_release, *, session_id="prepared-session", turn_id="prepared-turn", **changes):
+    from datetime import datetime, timedelta, timezone
+    from src.runtime.framework_submission_preparation import prepare_release_submission
+    from tests.test_framework_model_admission import model_configuration
+
+    store, reference = current_source_release
+    now = datetime.now(timezone.utc)
+    values = dict(binding_id="prepared-binding", session_id=session_id, turn_id=turn_id,
+        checkpoint_namespace="prepared:v2", root_model_key="primary",
+        model_configurations={"primary": model_configuration()}, max_calls=8, max_tokens=100_000,
+        created_at=now, deadline_at=now + timedelta(minutes=5))
+    values.update(changes)
+    return prepare_release_submission(store, reference, **values)
+
+
+def test_submission_preparation_uses_real_release_and_model_materials(current_source_release, caplog):
+    import hashlib
+    import zipfile
+    from src.schemas.framework_transcript import SUMMARY_CONTEXT_RUNTIME_VERSION
+    from src.runtime.framework_release_archive import require_installed_release, verify_release
+
+    store, reference = current_source_release
+    require_installed_release(Path(__file__).resolve().parents[2], store, reference)
+    prepared = prepare_submission(current_source_release)
+    selected, budget = prepared.binding, prepared.model_budget
+    manifest = verify_release(store, reference)
+    assert selected.release_reference == reference and selected.runtime_kind == "deepagents"
+    assert selected.runtime_version == SUMMARY_CONTEXT_RUNTIME_VERSION and selected.thread_id == selected.turn_id
+    assert selected.prompt_version == selected.skill_version == "release:" + reference.archive_sha256
+    assert selected.tool_schema_version == "sha256:" + manifest.files["release/tools.json"].sha256
+    assert selected.dependency_lock_sha256 == manifest.files["uv.lock"].sha256
+    assert budget.schema_version == 2 and budget.model_configurations["primary"].fingerprint == selected.model_config_fingerprint
+    with zipfile.ZipFile(store / (reference.archive_sha256 + ".zip")) as archive:
+        assert hashlib.sha256(archive.read("release/tools.json")).hexdigest() in selected.tool_schema_version
+        assert archive.read("Agent_Server/src/application/prompting/prompt_assembly_service.py")
+        assert any(name.startswith("Agent_Server/src/SKILLS/") and name.endswith("SKILL.md") for name in archive.namelist())
+    assert "synthetic-private-material" not in budget.model_dump_json() and "synthetic-private-material" not in caplog.text
+
+
+@pytest.mark.parametrize("change", ["missing_root", "mapping_identity", "inactive", "embedding_only",
+    "invalid_profile", "zero_limit", "deadline", "naive_creation"])
+def test_submission_preparation_rejects_invalid_models_and_limits_before_archive_access(tmp_path, monkeypatch,
+        caplog, change):
+    from datetime import datetime, timedelta, timezone
+    from src.runtime import framework_submission_preparation as module
+    from tests.test_framework_model_admission import model_configuration
+
+    def unexpected(*args):
+        pytest.fail("Invalid model or budget must fail before the archive probe")
+
+    monkeypatch.setattr(module, "require_installed_release", unexpected)
+    changes = {}
+    if change == "missing_root":
+        changes["root_model_key"] = "private-missing-model"
+    elif change == "mapping_identity":
+        changes["model_configurations"] = {"other": model_configuration()}
+    elif change == "inactive":
+        changes["model_configurations"] = {"primary": model_configuration(is_active=False)}
+    elif change == "embedding_only":
+        changes["model_configurations"] = {"primary": model_configuration(applications=["embedding_retrieval"])}
+    elif change == "invalid_profile":
+        changes["model_configurations"] = {"primary": model_configuration().model_copy(update={"request_profile": {
+            "future_field": "private-format-diagnostic"}})}
+    elif change == "zero_limit":
+        changes["max_calls"] = 0
+    elif change == "deadline":
+        changes["deadline_at"] = datetime.now(timezone.utc) - timedelta(minutes=1)
+    else:
+        changes["created_at"] = datetime(2030, 1, 1)
+    with pytest.raises(ValueError, match="Framework release submission preparation failed") as caught:
+        prepare_submission((tmp_path, REFERENCE), **changes)
+    assert caught.value.__suppress_context__
+    records = [row for row in caplog.records if row.message == "framework_submission_preparation_failed"]
+    assert len(records) == 1 and records[0].status == "models" and records[0].exc_info is None
+    assert records[0].error_type in {"KeyError", "ValueError", "ValidationError", "TypeError", "PydanticSerializationError"}
+    assert all(value not in caplog.text + str(caught.value) for value in (
+        "synthetic-private-material", "private-missing-model", "private-format-diagnostic", "models.invalid"))
+    assert not list(tmp_path.iterdir())
+
+
+@pytest.mark.parametrize("change", ["missing", "corrupt", "different_source"])
+def test_submission_preparation_never_falls_back_from_missing_or_wrong_archive(tmp_path, release, caplog, change):
+    store, reference = release
+    if change == "different_source":
+        from src.runtime.framework_release_archive import archive_release
+
+        # This source really predates the preparation port; future HEAD must
+        # not silently turn the negative sample into the current release.
+        store = tmp_path / "stale-source"
+        reference = archive_release(Path(__file__).resolve().parents[2], store,
+            revision="b8a5f2604cfa8ccee53b29a41f515810e7211458")
+    else:
+        store = tmp_path / "private-store"
+        store.mkdir()
+        if change == "corrupt":
+            (store / (reference.archive_sha256 + ".zip")).write_bytes(b"synthetic corrupt archive")
+    with pytest.raises(ValueError, match="Framework release submission preparation failed"):
+        prepare_submission((store, reference))
+    records = [row for row in caplog.records if row.message == "framework_submission_preparation_failed"]
+    assert len(records) == 1 and records[0].status == "release" and records[0].exc_info is None
+    assert all(value not in caplog.text for value in ("private-store", "synthetic-private-material", "models.invalid"))
+
+
+def test_submission_preparation_captures_all_models_before_the_installation_probe(current_source_release, monkeypatch):
+    from src.runtime import framework_submission_preparation as module
+    from src.schemas.model_config import ModelInvocationParameters
+    from tests.test_framework_model_admission import model_configuration
+
+    primary = model_configuration()
+    summary = model_configuration(key="summary", transport="openai_responses", temperature=.5)
+    expected = {config.key: ModelInvocationParameters.from_configuration(config) for config in (primary, summary)}
+    original = module.require_installed_release
+
+    def verify(*args):
+        for config in (primary, summary):
+            config.temperature = .75
+            config.model_id = "changed-during-probe"
+        return original(*args)
+
+    monkeypatch.setattr(module, "require_installed_release", verify)
+    prepared = prepare_submission(current_source_release, model_configurations={"primary": primary, "summary": summary})
+    assert prepared.model_budget.model_configurations == expected
+    assert prepared.binding.model_config_fingerprint == expected["primary"].fingerprint
+    assert set(prepared.model_budget.model_config_fingerprints) == {"primary", "summary"}
+
+
+def test_submission_preparation_does_not_emit_private_serializer_diagnostics(tmp_path, caplog):
+    import warnings
+    from tests.test_framework_model_admission import model_configuration
+
+    configuration = model_configuration().model_copy(update={"request_profile": {
+        "future_field": "synthetic-private-material"}})
+    with warnings.catch_warnings(record=True) as diagnostics:
+        warnings.simplefilter("always")
+        with pytest.raises(ValueError, match="Framework release submission preparation failed"):
+            prepare_submission((tmp_path, REFERENCE), model_configurations={"primary": configuration})
+    assert diagnostics == []
+    assert "synthetic-private-material" not in caplog.text
+
+
+def test_previous_source_budget_reader_preserves_v1_and_defers_snapshots(tmp_path):
+    from datetime import datetime, timezone
+    from src.runtime.framework_release_archive import archive_release, restore_release
+    from src.schemas.framework_model_call import FrameworkModelBudget
+    from src.schemas.model_config import ModelInvocationParameters
+    from tests.test_framework_model_admission import model_configuration
+
+    store = tmp_path / "previous-budget-store"
+    reference = archive_release(Path(__file__).resolve().parents[2], store,
+        revision="b8a5f2604cfa8ccee53b29a41f515810e7211458")
+    restored = tmp_path / "previous-budget-reader"
+    restore_release(store, reference, restored)
+    snapshot = ModelInvocationParameters.from_configuration(model_configuration())
+    budget = FrameworkModelBudget(max_calls=8, max_tokens=100_000,
+        deadline_at=datetime(2030, 1, 1, tzinfo=timezone.utc), model_config_fingerprints={"primary": snapshot.fingerprint})
+    v2 = FrameworkModelBudget(**{**budget.model_dump(), "schema_version": 2,
+        "model_configurations": {"primary": snapshot}})
+    path = tmp_path / "budget-wires.json"
+    path.write_text(json.dumps([budget.model_dump(mode="json"), v2.model_dump(mode="json")]), encoding="utf-8")
+    probe = '''
+import json, pathlib, sys
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root / 'Agent_Server'))
+from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+from src.schemas.framework_model_call import FrameworkModelBudget
+from src.runtime.task_deferred import TaskDeferred
+old, new = json.loads(pathlib.Path(sys.argv[2]).read_bytes())
+caps = FrameworkWorkerCapabilities('a' * 64, True)
+caps.require_model_ledger_format('budget', old)
+assert FrameworkModelBudget.model_validate(old).model_dump(mode='json') == old
+for wire in (new, {**new, 'schema_version': 1}):
+    try:
+        caps.require_model_ledger_format('budget', wire)
+    except TaskDeferred as exc:
+        assert str(exc) == 'framework_model_budget_format_unavailable'
+    else:
+        raise AssertionError('Old budget reader accepted unsupported snapshot fields')
+loaded = [pathlib.Path(item.__file__).resolve() for name, item in sys.modules.items()
+    if name.startswith('src.') and getattr(item, '__file__', None)]
+assert loaded and all(path.is_relative_to(root) for path in loaded)
+print('previous_source_v1_unchanged_v2_snapshot_deferred')
+'''
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(restored), str(path)],
+        cwd=restored, capture_output=True, timeout=120)
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+    assert b"previous_source_v1_unchanged_v2_snapshot_deferred" in result.stdout
+
+
+def test_restored_current_source_prepares_a_release_submission_in_a_fresh_process(tmp_path, current_source_release):
+    from src.runtime.framework_release_archive import restore_release
+
+    store, reference = current_source_release
+    restored = tmp_path / "current-preparation-source"
+    restore_release(store, reference, restored)
+    path = tmp_path / "reference.json"
+    path.write_text(reference.model_dump_json(), encoding="utf-8")
+    probe = '''
+import json, pathlib, sys
+from datetime import datetime, timedelta, timezone
+root = pathlib.Path(sys.argv[1]).resolve()
+sys.path.insert(0, str(root / 'Agent_Server'))
+from src.runtime.framework_submission_preparation import prepare_release_submission
+from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+from src.schemas.model_config import ModelConfigRecord
+reference = json.loads(pathlib.Path(sys.argv[3]).read_bytes())
+now = datetime.now(timezone.utc)
+config = ModelConfigRecord(key='primary', name='Isolated configuration', provider='openai',
+    transport='openai_chat_completions', model_id='fixture-model', api_base_url='https://models.invalid/v1', is_active=True)
+prepared = prepare_release_submission(pathlib.Path(sys.argv[2]), reference, binding_id='restored-binding',
+    session_id='restored-session', turn_id='restored-turn', checkpoint_namespace='restored:v2',
+    root_model_key='primary', model_configurations={'primary': config}, max_calls=8, max_tokens=100_000,
+    created_at=now, deadline_at=now+timedelta(minutes=5))
+caps = FrameworkWorkerCapabilities.from_release(pathlib.Path(sys.argv[2]), reference, deepagents_available=True)
+caps.require(prepared.binding, operation='message')
+caps.require_model_ledger_format('budget', prepared.model_budget.model_dump(mode='json'))
+assert prepared.binding.prompt_version == prepared.binding.skill_version == 'release:'+reference['archive_sha256']
+assert prepared.binding.model_config_fingerprint == prepared.model_budget.model_configurations['primary'].fingerprint
+assert prepared.model_budget.schema_version == 2
+loaded = [pathlib.Path(item.__file__).resolve() for name, item in sys.modules.items()
+    if name.startswith('src.') and getattr(item, '__file__', None)]
+assert loaded and all(path.is_relative_to(root) for path in loaded)
+assert 'src.runtime.framework_submission_preparation' in sys.modules
+print('restored_source_submission_prepared_and_readable')
+'''
+    environment = {name: os.environ[name] for name in ("SYSTEMROOT", "WINDIR", "PATH", "TEMP", "TMP") if name in os.environ}
+    result = subprocess.run([sys.executable, "-I", "-B", "-c", probe, str(restored), str(store), str(path)],
+        cwd=restored, env=environment, capture_output=True, timeout=120)
+    assert result.returncode == 0, (result.returncode, result.stdout, result.stderr)
+    assert b"restored_source_submission_prepared_and_readable" in result.stdout
+
+
+@pytest.mark.asyncio
+async def test_prepared_release_binding_and_semantic_configuration_commit_in_the_original_admission(admission,
+        isolate_recovery_stores, current_source_release):
+    from tests.test_framework_model_admission import counts
+    from tests.test_runtime_binding_persistence import make_command
+
+    h = admission
+    prepared = prepare_submission(current_source_release, session_id=h.session_id, turn_id=h.binding.turn_id,
+        binding_id=h.binding.binding_id)
+    h.binding, h.budget = prepared.binding, prepared.model_budget
+    h.command = make_command(h, h.binding)
+    task = await submit(h)
+    assert counts(h) == dict(tasks=1, owners=1, outbox=1, budgets=1, messages=1)
+    capabilities = FrameworkWorkerCapabilities.from_release(*current_source_release, deepagents_available=True)
+    capabilities.require(h.binding, operation="message")
+    claimed = await h.tasks.claim(task.id, worker_id="prepared-binding-reader", expected_binding=h.binding,
+        framework_capabilities=capabilities, check_model_ledger=True)
+    assert claimed.runtime_owner.binding == h.binding and claimed.attempt_no == 1
+    assert (await h.calls.snapshot(h.binding)).policy == prepared.model_budget
+    await h.tasks.finish(claimed, status="cancelled", error_code="prepared_binding_contract_probe")
+    assert (await h.tasks.get(task.id)).runtime_binding == h.binding and h.runtime.calls == []
+
+
 @pytest.fixture
 def isolate_recovery_stores(admission):
     # Same explicit isolation as the recovery harness, but not autouse: pure
@@ -225,6 +479,10 @@ def current_source_release(tmp_path_factory):
         destination = snapshot / name
         destination.parent.mkdir(parents=True, exist_ok=True)
         destination.write_bytes((checkout / name).read_bytes())
+    # The capability identity hashes raw lock bytes. Preserve this test's
+    # actual installed lock even under a host-wide core.autocrlf setting;
+    # only the isolated fixture repository gets these attributes.
+    (snapshot / ".gitattributes").write_text("uv.lock -text\n", encoding="utf-8")
     # This is an isolated test commit of the current implementation, not a
     # published commit in the user's repository or an independent venv install.
     environment = {**os.environ, "GIT_AUTHOR_NAME": "Release Test", "GIT_COMMITTER_NAME": "Release Test",

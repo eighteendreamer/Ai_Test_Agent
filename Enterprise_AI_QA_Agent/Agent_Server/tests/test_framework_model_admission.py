@@ -57,6 +57,208 @@ def counts(h):
         return result
 
 
+def model_configuration(**changes):
+    from src.schemas.model_config import ModelConfigRecord
+
+    values = dict(key="primary", name="Controlled model configuration", provider="openai",
+        transport="openai_chat_completions", model_id="fixture-model", api_base_url="https://models.invalid/v1",
+        is_active=True, temperature=.25, api_key="synthetic-private-material",
+        extra_headers={"X-Test-Private": "synthetic-private-material"})
+    values.update(changes)
+    return ModelConfigRecord(**values)
+
+
+def snapshot_budget(h):
+    from src.schemas.model_config import ModelInvocationParameters
+
+    configuration = model_configuration()
+    snapshot = ModelInvocationParameters.from_configuration(configuration)
+    h.binding = h.binding.model_copy(update={"model_config_fingerprint": snapshot.fingerprint})
+    h.command = make_command(h, h.binding)
+    h.budget = FrameworkModelBudget(**{**h.budget.model_dump(), "schema_version": 2,
+        "model_config_fingerprints": {configuration.key: snapshot.fingerprint},
+        "model_configurations": {configuration.key: snapshot}})
+    return configuration, snapshot
+
+
+@pytest.mark.parametrize("transport,provider", [("openai_chat_completions", "openai"),
+    ("openai_responses", "openai"), ("anthropic_messages", "anthropic"),
+    ("google_gemini_generate_content", "google")])
+def test_model_configuration_snapshot_reuses_the_existing_nonsecret_projection(transport, provider):
+    import hashlib
+    from src.application.models.framework_model_call_policy import canonical_model_input, model_config_fingerprint
+    from src.schemas.model_config import ModelInvocationParameters, model_invocation_parameters
+
+    configuration = model_configuration(transport=transport, provider=provider)
+    expected = model_invocation_parameters(configuration)
+    snapshot = ModelInvocationParameters.from_configuration(configuration)
+    assert snapshot.model_dump(mode="json") == expected
+    assert snapshot.fingerprint == model_config_fingerprint(configuration)
+    assert snapshot.fingerprint == hashlib.sha256(canonical_model_input(expected)).hexdigest()
+    assert "synthetic-private-material" not in snapshot.model_dump_json()
+    assert "models.invalid" not in snapshot.model_dump_json()
+    configuration.temperature = .75
+    configuration.capabilities.vision = True
+    assert snapshot.model_dump(mode="json") == expected
+
+
+@pytest.mark.parametrize("transport", ["openai_chat_completions", "openai_responses",
+    "anthropic_messages", "google_gemini_generate_content"])
+def test_model_configuration_snapshot_preserves_request_profile_and_is_detached(transport):
+    from src.application.models.framework_model_call_policy import model_config_fingerprint
+    from src.schemas.model_config import ModelInvocationParameters, model_invocation_parameters
+    from src.schemas.model_request_options import ModelRequestProfile
+
+    configuration = model_configuration(transport=transport,
+        request_profile=ModelRequestProfile(output_formats=["json_schema"]))
+    expected = model_invocation_parameters(configuration)
+    snapshot = ModelInvocationParameters.from_configuration(configuration)
+    assert snapshot.model_dump(mode="json") == expected
+    assert snapshot.fingerprint == model_config_fingerprint(configuration)
+    assert ModelInvocationParameters.model_validate_json(snapshot.model_dump_json()) == snapshot
+    configuration.request_profile.revision += 1
+    configuration.request_profile.output_formats.clear()
+    assert snapshot.model_dump(mode="json") == expected
+
+
+@pytest.mark.parametrize("change", ["missing_mapping", "missing_hash", "wrong_hash", "missing_profile",
+    "profile_transport", "capabilities_field", "profile_field", "token_limits", "nan"])
+def test_model_configuration_snapshot_rejects_changed_or_unknown_semantic_evidence(change):
+    from pydantic import ValidationError
+    from src.schemas.model_config import ModelInvocationParameters, model_invocation_parameters
+    from src.schemas.model_request_options import ModelRequestProfile
+
+    wire = model_invocation_parameters(model_configuration(request_profile=ModelRequestProfile(
+        output_formats=["json_schema"], chat_token_parameter="max_completion_tokens")))
+    if change == "missing_mapping":
+        wire.pop("request_mapping_version")
+    elif change == "missing_hash":
+        wire.pop("request_profile_hash")
+    elif change == "wrong_hash":
+        wire["request_profile"]["revision"] += 1
+    elif change == "missing_profile":
+        wire.pop("request_profile")
+    elif change == "profile_transport":
+        wire["transport"] = "anthropic_messages"
+    elif change == "capabilities_field":
+        wire["capabilities"]["future_capability"] = True
+    elif change == "profile_field":
+        wire["request_profile"]["future_field"] = True
+    elif change == "token_limits":
+        wire["max_tokens"] += 1
+    else:
+        wire["temperature"] = float("nan")
+    with pytest.raises(ValidationError):
+        ModelInvocationParameters.model_validate(wire)
+
+
+def test_historical_budget_wire_does_not_acquire_configuration_snapshots():
+    budget = FrameworkModelBudget(max_calls=8, max_tokens=1000,
+        deadline_at=datetime(2030, 1, 1, tzinfo=timezone.utc), model_config_fingerprints={"primary": "historical-fingerprint"})
+    assert set(budget.model_dump()) == {"schema_version", "max_calls", "max_tokens", "deadline_at", "model_config_fingerprints"}
+    assert FrameworkModelBudget.model_validate_json(budget.model_dump_json()) == budget
+
+
+@pytest.mark.parametrize("change", ["missing", "identity", "fingerprint", "legacy_version", "secret_field"])
+def test_snapshot_budget_rejects_missing_or_changed_model_configuration_evidence(change):
+    from pydantic import ValidationError
+    from src.schemas.model_config import ModelInvocationParameters
+
+    snapshot = ModelInvocationParameters.from_configuration(model_configuration())
+    wire = dict(schema_version=2, max_calls=8, max_tokens=1000,
+        deadline_at=datetime(2030, 1, 1, tzinfo=timezone.utc),
+        model_config_fingerprints={"primary": snapshot.fingerprint},
+        model_configurations={"primary": snapshot.model_dump(mode="json")})
+    if change == "missing":
+        wire.pop("model_configurations")
+    elif change == "identity":
+        wire["model_configurations"]["primary"]["key"] = "different-model"
+    elif change == "fingerprint":
+        wire["model_configurations"]["primary"]["temperature"] = .75
+    elif change == "legacy_version":
+        wire["schema_version"] = 1
+    else:
+        wire["model_configurations"]["primary"]["api_key"] = "synthetic-private-material"
+    with pytest.raises(ValidationError):
+        FrameworkModelBudget.model_validate(wire)
+
+
+@pytest.mark.asyncio
+async def test_snapshot_budget_is_committed_with_binding_and_cannot_be_replaced(admission):
+    h = admission
+    configuration, snapshot = snapshot_budget(h)
+    task = await submit(h)
+    assert counts(h) == dict(tasks=1, owners=1, outbox=1, budgets=1, messages=1)
+    saved = await h.calls.snapshot(h.binding)
+    assert saved.policy == h.budget and saved.policy.model_configurations["primary"] == snapshot
+    configuration.temperature = .75
+    assert (await h.calls.snapshot(h.binding)).policy.model_configurations["primary"] == snapshot
+    assert (await submit(h)).id == task.id
+    with pytest.raises(AgentSubmissionConflict):
+        await submit(h, h.budget.model_copy(update={"max_calls": 12}))
+    assert await h.calls.snapshot(h.binding) == saved
+
+
+@pytest.mark.asyncio
+async def test_snapshot_budget_admission_failure_keeps_no_partial_configuration_or_owner(admission, monkeypatch):
+    h = admission
+    snapshot_budget(h)
+    original = h.tasks._submit_message_in_transaction
+
+    def fail(*args, **kwargs):
+        original(*args, **kwargs)
+        raise ConnectionError("injected snapshot admission failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(h.tasks, "_submit_message_in_transaction", fail)
+        with pytest.raises(ConnectionError, match="injected snapshot admission failure"):
+            await submit(h)
+    assert counts(h) == dict(tasks=0, owners=0, outbox=0, budgets=0, messages=0)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["fingerprint", "nested_copy", "missing_model", "new_field"])
+async def test_snapshot_budget_model_copy_cannot_bypass_atomic_admission_validation(admission, change):
+    from pydantic import ValidationError
+
+    h = admission
+    _, snapshot = snapshot_budget(h)
+    if change == "fingerprint":
+        forged = h.budget.model_copy(update={"model_config_fingerprints": {"primary": "c" * 64}})
+    elif change == "nested_copy":
+        forged = h.budget.model_copy(update={"model_configurations": {
+            "primary": snapshot.model_copy(update={"api_base_url_hash": "invalid"})}})
+    elif change == "missing_model":
+        forged = h.budget.model_copy(update={"model_configurations": {}})
+    else:
+        wire = snapshot.model_dump()
+        wire["capabilities"] = {**wire["capabilities"], "future_capability": True}
+        forged = h.budget.model_copy(update={"model_configurations": {"primary": wire}})
+    if change == "new_field":
+        with pytest.warns(UserWarning, match="Pydantic serializer warnings"), pytest.raises(ValidationError):
+            await submit(h, forged)
+    else:
+        with pytest.raises(ValidationError):
+            await submit(h, forged)
+    assert counts(h) == dict(tasks=0, owners=0, outbox=0, budgets=0, messages=0)
+
+
+@pytest.mark.asyncio
+async def test_snapshot_budget_original_result_material_keeps_the_semantic_configuration(admission):
+    from src.application.models.framework_model_budget_projection import capture_model_budget_material, read_model_budget_material
+
+    h = admission
+    _, snapshot = snapshot_budget(h)
+    await submit(h)
+    original = await h.calls.snapshot(h.binding)
+    material = capture_model_budget_material(h.binding, original)
+    restored = read_model_budget_material(h.binding, material)
+    assert restored == original and restored.policy.model_configurations["primary"] == snapshot
+    assert "synthetic-private-material" not in str(material)
+    restored.policy.model_configurations.clear()
+    assert (await h.calls.snapshot(h.binding)) == original
+
+
 @pytest.mark.asyncio
 async def test_initial_submission_commits_frozen_budget_before_any_worker_claim(admission):
     h = admission
@@ -214,7 +416,8 @@ async def test_budget_gate_preserves_terminal_delivery_and_deterministic_reconci
 
 
 @pytest.mark.asyncio
-async def test_admitted_worker_runs_official_model_under_budget_and_keeps_legacy_adapter(admission):
+@pytest.mark.parametrize("budget_version", [1, 2])
+async def test_admitted_worker_runs_official_model_under_budget_and_keeps_legacy_adapter(admission, budget_version):
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
     from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter, DeepAgentRuntimeResult
     from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy, model_config_fingerprint
@@ -263,6 +466,11 @@ async def test_admitted_worker_runs_official_model_under_budget_and_keeps_legacy
             h.payload = h.payload.model_copy(update={"model_key": config.key, "mode_key": "code_review"})
             h.budget = h.budget.model_copy(update={"model_config_fingerprints": {
                 config.key: h.binding.model_config_fingerprint}})
+            if budget_version == 2:
+                from src.schemas.model_config import ModelInvocationParameters
+
+                h.budget = FrameworkModelBudget(**{**h.budget.model_dump(), "schema_version": 2,
+                    "model_configurations": {config.key: ModelInvocationParameters.from_configuration(config)}})
             task = await submit(h)
             dispatcher = AgentTaskDispatcher(h.settings, h.tasks, h.sessions, h.resources,
                 framework_model_calls=h.calls, framework_capabilities=FrameworkWorkerCapabilities("a" * 64, True))

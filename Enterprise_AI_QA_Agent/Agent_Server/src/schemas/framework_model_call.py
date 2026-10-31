@@ -9,7 +9,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, StrictInt, computed_field, field_validator, model_serializer, model_validator
 
-from src.schemas.model_config import ModelTransport
+from src.schemas.model_config import ModelInvocationParameters, ModelTransport
 
 
 class _ModelCallValue(BaseModel):
@@ -17,11 +17,26 @@ class _ModelCallValue(BaseModel):
 
 
 class FrameworkModelBudget(_ModelCallValue):
-    schema_version: Literal[1] = 1
+    schema_version: Literal[1, 2] = 1
     max_calls: StrictInt = Field(ge=1, le=100_000)
     max_tokens: StrictInt = Field(ge=1, le=1_000_000_000_000)
     deadline_at: datetime
     model_config_fingerprints: dict[str, str] = Field(min_length=1)
+    model_configurations: dict[str, ModelInvocationParameters] | None = Field(
+        default=None, exclude_if=lambda value: value is None)
+
+    @model_validator(mode="after")
+    def validate_configuration_evidence(self):
+        if self.schema_version == 1:
+            if self.model_configurations is not None:
+                raise ValueError("Model budget v1 has no configuration snapshot contract")
+        elif self.model_configurations is None or self.model_configurations.keys() != self.model_config_fingerprints.keys():
+            raise ValueError("Model budget v2 requires every model configuration snapshot")
+        else:
+            for key, snapshot in self.model_configurations.items():
+                if snapshot.key != key or snapshot.fingerprint != self.model_config_fingerprints[key]:
+                    raise ValueError("Model budget configuration identity or fingerprint differs from its snapshot")
+        return self
 
     @field_validator("deadline_at")
     @classmethod

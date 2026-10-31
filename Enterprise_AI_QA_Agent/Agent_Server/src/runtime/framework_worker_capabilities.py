@@ -43,6 +43,7 @@ class FrameworkWorkerCapabilities:
     native_summary_coverage_enabled: bool = True
     model_call_max_version: int = 3
     release_reference: FrameworkReleaseReference | None = None
+    model_budget_max_version: int = 2
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):
@@ -166,10 +167,13 @@ class FrameworkWorkerCapabilities:
         if not isinstance(value, dict):
             raise TaskDeferred(reason)
         version = value.get("schema_version", 1)
-        maximum = self.model_call_max_version if kind == "call" else 1
+        maximum = {"call": self.model_call_max_version, "budget": self.model_budget_max_version, "upload": 1}[kind]
         if type(version) is not int or not 1 <= version <= maximum:
             raise TaskDeferred(reason)
-        self._read_compatible(model.model_validate, value, reason)
+        # Budget v2 includes the existing request-profile/mapping protocols.
+        # Their Literal versions are format selectors, not semantic failures.
+        self._read_compatible(model.model_validate, value, reason,
+            literal_fields=("request_mapping_version", "version") if kind == "budget" else ())
 
     def require_message_stage_format(self, value: object) -> FrameworkMessageStage:
         from src.runtime.framework_message_stages import message_stage_material_readers

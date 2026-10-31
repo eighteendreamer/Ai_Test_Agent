@@ -72,6 +72,20 @@ v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原
 
 已知约束、摘要／fingerprint、合法格式下的身份不一致仍是原错误，不转为兼容等待；读能力不授予执行或恢复权限。普通 task API／未注入能力的底层调用、其他 owner 写权限端口和初始化读者保留原契约，不能据此认定所有旧初始化读者已升级。固定诊断事件为锁前 `agent_v2_binding_reader_unavailable` 和锁内 `framework_binding_reader_unavailable`，保留任务／Worker 标识，不输出原绑定或异常正文。真实 PG／Redis、失租／终态和锁等待反例见 `tests/test_framework_command_reader_admission.py`。
 
+### 服务端内部的新绑定准备（v4 B／§4、F／§14.1）
+
+`src/runtime/framework_submission_preparation.py::prepare_release_submission()` 接收显式的稳定绑定／Session／Turn 标识、checkpoint namespace、根模型 key、模型配置集合、限额及带时区时间。它先捕获配置，再用原安装 verifier 校验**本执行模块所在源码**与明确给定的真实归档引用，返回 `binding` 和 `model_budget`，交给原 `PostgresAgentTaskStore.submit_v2()` 同连接事务受理；自身不写数据库／队列、不领取或执行、不发模型请求。它不是公共 API，不根据环境或历史记录推断制品、模型或预算，也不检查／代替上层新接入路由授权。
+
+- 新绑定使用现有完整上下文 runtime v2.3.0／state v2、`thread_id=turn_id`；Prompt／Skill 的 `release:<archive_sha256>` 标识已校验、可读取的**归档源码束**，工具 `sha256:<digest>` 对应真实 `release/tools.json`，依赖锁对应真实 `uv.lock`。不是任意版本字符串，也不是完整动态有效 Prompt／Skill、Memory 或检索资产已在 API 受理时冻结；这些仍须沿原 graph-input 唯一装配资产链补齐。
+- 新预算格式 v2 的 `model_configurations` 保存与原 `model_invocation_parameters()` 白名单投影一致的语义参数原件，逐 key／fingerprint 校验，含明确 request profile／映射版本／摘要（有 profile 时）。不保存认证字段、endpoint 或 header 原值；endpoint／header 哈希只能核对，**不能还原连接或凭据**。执行仍需从既有配置端口解析当前授权并核对原 fingerprint，不能用快照授予永久调用权。
+- 原预算 v1 仍为默认读写格式，省略新增字段，历史 wire 和摘要不自动改变或回填；v2 必须保存完整映射。原受理事务继续一次性保存 binding／owner、预算、task、原消息、stage／outbox，任何失败回滚，幂等请求不能替换已冻结配置或限额。无生产 DDL 或数据迁移。
+- 当前能力追加 `model_budget_max_version=2`；call 上界仍 3，upload 仍 1。上界为 1 的预算消费者遇到 v2 沿原 TaskDeferred 保留 Redis 原 PEL，不增加 retry／dead letter／attempt；兼容读者可接续原 message_id。未知嵌套严格字段仍分类为格式不可用，已知摘要／身份／约束错误不伪装成兼容等待。实际旧源码的离线 codec 与实库读能力模拟分别验证，不混称旧源码 Worker 已完成独立部署。
+- 失败日志为 `framework_submission_preparation_failed`，只记录固定阶段 `status=models/release/binding` 与 `error_type`，不记录配置／路径／原异常正文；畸形配置的序列化诊断转为受控错误，不向 warnings 输出输入。成功为 `framework_submission_preparation_verified`，仅附既有制品 revision／sha256 标量。
+
+这一步不自动配置新写者或打开生产路由；普通 API 新消息仍走原 legacy 受理。所有初始化读者升级／隔离、完整有效输入冻结、发布与真实部署验收仍是上线前提。运行进程仍依赖可信且生命周期不可变的源码／依赖，不是热更新、ACL 或安全沙箱。
+
+验证落点：`test_framework_model_admission.py`（v1/v2、原子回滚／幂等、原结果材料及官方模型＋本地 HTTP）、`test_framework_model_reader_admission.py`（实库格式／身份错误分类、原 PEL 接续）、`test_framework_release_binding.py`（真实源码归档、内部准备、历史读者与恢复源码新进程）。临时源码仓库只用自身 `.gitattributes` 保留实际锁文件原始字节，不改用户 Git 配置；同一 venv 的恢复源码进程不代表独立依赖安装或完整 E4。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

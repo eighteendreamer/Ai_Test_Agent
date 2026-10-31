@@ -7841,3 +7841,61 @@ $env:RUN_LIVE_MYSQL_TESTS='0'
 v4 F／§14.1–14.2、H11 → 本节 → 原 Dispatcher、两个已有测试、原控制说明和本记录共 5 文件 → 上述红绿、469／125 两组最终回归 → 独立提交 `【fix】前移 Worker 能力准入并固定投递读者`，ID 见 Git 历史和交付；不推送、不提交用户草稿或测试制品。
 
 本步没有完成正式绑定创建／冻结／发布和真实 Prompt／Skill／工具／模型资产关联；后续沿原 submit_v2 原子受理事务衔接真实版本资产，不推断历史关联，并在旧初始化读者升级／隔离前保持引用写者关闭。§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位，当前样本通过不撤销历史失败。全部格式／行为清单、双制品独立安装／完整部署、一致备份恢复、灰度回滚排空、MySQL 实库、完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端及 E3/E4 继续按 v4 保留。整体目标仍 active，本子步不代表 F 或全系统完成。
+
+## 172. B／§4、F／§14.1：真实发布源码绑定准备与模型语义原件的原子受理（2026-11-01）
+
+### 续接、缺口与采用依据
+
+以 `b8a5f2604cfa8ccee53b29a41f515810e7211458`／§171 为已提交基线，核对现有新增测试后继续实现。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。原 Dispatcher.submit 仍构造 legacy 命令，现有生产源码没有 RuntimeBinding 准备工厂；根预算原来只留模型 fingerprint，不能据此恢复语义参数原件。缺的是受理材料准备，不重造已有事务、调度、图输入资产或审批恢复。
+
+依据原 `require_installed_release()`／实际 archive manifest → 核对本执行模块所在项目的完整源码、工具、格式、环境，再引用可读取实物；原 `model_invocation_parameters()`／`model_config_fingerprint()` → 复用唯一白名单投影及原 canonical JSON SHA，不另抄凭据读取或改变历史指纹；原 `submit_v2()`／`freeze_submission()` → 使用既有同连接事务写入新预算 JSON，不加表或新调度层。原模型 codec 的 `exclude_if` 与 Worker `_read_compatible()` → 历史预算 wire 不变、先部署兼容读者。固定 venv 中 Pydantic `main.py::model_dump(warnings="error")` → 畸形配置诊断转为受控异常，避免 warnings 打出输入；本地《评测工程化与CICD》的版本化追溯与《Agent轨迹与协议鲁棒性》的幂等／轨迹要求 → 同时验证实物、原入库事务、原投递和受控执行边界。没有升级或引入依赖。
+
+### TDD、实现与中间失败
+
+1. 续接的最初新行为专项实际 **13 failed、1 passed，50.66 秒**：缺少 `ModelInvocationParameters` 与准备模块；历史预算 wire 正例通过。这是能力缺失红测，不是抓到生产账本损坏。实现严格、与配置解耦的非秘密参数值及预算 v2，原预算仍默认 v1、只输出原五字段；v2 必须具备相同 key 集合、模型身份及完全一致的 fingerprint。可选 request profile 同步保存原映射版本／正文／摘要，并验证配套与传输语义；持久快照的 capabilities 使用严格读者，未知字段明确拒读，不修改原 ModelConfigRecord 的历史解析契约。
+2. `prepare_release_submission()` 先一次性捕获显式模型集合，拒绝缺根模型、身份不一致、非活跃／非 task_execution 配置和非法显式预算／时间；再校验本执行模块所在源码，不允许传另一个项目根冒充本机格式。返回绑定及预算，自身不写数据库／队列、不创建任务、不授 owner／恢复权、不执行模型。绑定使用原 v2.3.0／state v2；Prompt／Skill 为真实源码束 `release:<archive_sha256>`，工具为 manifest 中实际 `release/tools.json` 摘要，锁为实际 `uv.lock` 摘要。
+3. 第一轮实现实际 **2 failed、12 passed，58.26 秒**；安全阶段诊断单测 **1 failed，48.11 秒**，只显露 release／ValueError；补直接原 verifier 断言后 **1 failed，39.77 秒**，明确是安装环境／定义不一致。改用离线结构路径对比，不输出配置值，定位唯一差异为 worker lock SHA：归档 703533 字节／3380 CRLF，安装 700153 字节／0 CRLF，换行归一后字节相等。主机 `core.autocrlf=true` 影响隔离 Git archive 的锁字节；仅在 fixture 自建仓库写 `uv.lock -text` 属性，保留实际锁原件，不改用户 Git 配置、不改生产摘要规则或放宽安装 verifier。此后实际 **1 failed、1 passed，57.66 秒**：真实准备已通过，claim 明确被旧 budget 上界 1 拒绝。
+4. 扩展模型、profile、model_copy、原结果材料及真实 PG／Redis 读能力，实际 **5 failed、44 passed，75.97 秒**：三个已知证据错误因预算 v2 尚不支持而先被 TaskDeferred，两项旧预算 reader 测试缺少能力上界字段。将 `model_budget_max_version=2` 追加在能力 dataclass 末尾，不改变旧位置参数；call／upload 上界仍 3／1。原 claim 事务和原 ledger codec 自然读取新预算，不另加 writer／fallback。
+5. 三模块扩大组实际 **2 failed、125 passed，366.88 秒**：新测试使用普通 task.get 返回值收尾，丢失仅 claim 捕获的执行 owner；改为在原执行端口捕获原 claimed task，保留生产 `ContinuationLeaseLostError` 校验，不给 get 增加令牌或放宽 finish 权限。另有畸形 profile 的输入序列化 warning；补新安全负例实际 **1 failed，5.28 秒**，再依据当前 Pydantic 源码将新工厂的序列化设置为 error，原异常正文／输入不输出，固定阶段与 error_type 仍可检索。原受理的故意 model_copy 类型违约用例显式检查合成 warning 和拒绝，不将其冒称合法请求。
+6. 修正后三模块实际 **131 passed，455.09 秒**，包括预算 v1/v2 的官方框架＋本地合成 HTTP 实际请求、真实 PG／Redis、原 PEL 接续、真实当前源码 ZIP 和恢复目录新进程。随后跨层审阅发现新增 profile／request mapping 版本字段尚未进入原兼容分类，两个明确未来版本负例实际 **2 failed，6.13 秒**（ValidationError 而非 TaskDeferred）。扩大组结束后，仅在原 `_read_compatible()` 的预算调用传入对应 Literal 版本字段，不另造 reader、不扩及 call／upload 或任意语义枚举；两个未来版本及一个已知 profile 摘要错误的精确原因断言实际 **3 passed，4.77 秒**，后者仍是原 ValidationError，不伪装成兼容等待。
+
+### 证据范围与上线限制
+
+新预算随原 binding／owner、task、message、stage／outbox 同事务入库；失败全回滚，幂等不改变已冻结配置／限额，原结果 budget material 可无损携带新原件。旧预算上界 1 在真实 Redis Worker 中保留同一 PEL／wire／retry_count=0，不领取或转死信；兼容读者通过原 xclaim／pending／Dispatcher／owned ACK 接续原 message_id，仅产生一次 attempt，执行端口为受控替身，最终用捕获的 owner 取消收尾。实际 `b8a5f2604` 旧源码的新进程另行验证 v1 wire 逐字段不变及 v2／新增字段延迟读取；这不冒称两个不同依赖安装的真实旧／新 Worker 部署。
+
+真实准备的 v2.3 绑定验证到实库 claim／受控取消，没有用假的 Runtime 冒充完整 v2.3 图终态；v1/v2 预算的既有官方图执行用例沿原早期绑定协议，以固定 SDK、PostgreSQL saver、Redis 和本地合成 HTTP 执行，并保留 legacy adapter，不调用真实供应商。恢复当前源码目录的新进程验证新准备端口、全部 src 模块来源、制品引用及预算读能力；复用同一 venv，无独立依赖安装／完整后端／领域 Runner，不是 E4。
+
+Prompt／Skill 的内容地址只标识归档源码束，不等于完整动态有效 Prompt、Skill、检索／Memory 已在 API 受理时冻结。endpoint／header 仅留原白名单哈希，不能还原路由或认证；当前执行仍解析现有配置并核对 fingerprint，不用快照赋予永久调用权。内部准备端口不接公共路由、不配置写者，不替代上层新接入授权。所有旧初始化读者升级／隔离和完整冻结／发布出口仍须完成，生产新绑定写路由保持未接通。
+
+### 当前源码最终验证
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_calls.py tests/test_framework_model_policy.py tests/test_framework_model_reservation_transfer.py tests/test_framework_model_budget_projection.py tests/test_framework_model_dto.py tests/test_framework_model_uploads.py tests/test_framework_model_evidence.py tests/test_framework_model_evidence_cancellation.py tests/test_framework_execution_deadline.py tests/test_framework_chat_models.py tests/test_model_request_profile.py tests/test_framework_release_archive.py tests/test_framework_release_startup.py tests/test_framework_release_workers.py tests/test_runtime_binding_contract.py tests/test_runtime_binding_persistence.py tests/test_agent_v2_worker_contract.py tests/test_framework_command_reader_admission.py tests/test_framework_stage_reader_admission.py tests/test_framework_route_rollback.py -q -rs --tb=short
+# 964 passed，1915.39 秒，exit 0，无 skip／deselect
+```
+
+以上扩大组合在最后两个 profile／mapping Literal 字段分类同步前取得终态，不能称为最后源码的全量 964 项重跑；唯一后续生产改动为该预算 reader 的分类参数，受影响的三个完整模块另行在最终源码重跑，结果在下文记录。不把该 20 文件组合混称为 §159 的历史失败组合，也未用长时间等待为由中断、重启或漏记结果。
+
+```powershell
+# cwd／解释器及四项实库标志同上；最后版本分类同步后的完整受影响模块
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_model_admission.py tests/test_framework_model_reader_admission.py tests/test_framework_release_binding.py -q -rs --tb=short
+# 134 passed，380.60 秒，exit 0，无 skip／deselect
+```
+
+原版本分类专项的严格原因匹配另实际 **3 passed，4.77 秒**；最终三模块包含全部新反例、历史预算、原入库事务、真实 PG／Redis、官方模型对象＋本地 HTTP、真实源码／历史读者／恢复目录新进程。两组均持续观察至真实终态，无遗留运行 pytest，没有用历史绿色替代最后受影响源码验证；不把中间 964 项扩大组说成最后源码全量重跑。
+
+最终根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 实际 exit 0。ruff／mypy／build／wheel／setuptools 通过 find_spec 确认未安装，未执行独立 lint／typecheck／构建安装，不安装依赖。搜索了模型投影、预算 codec、原账本／受理、原结果材料、归档 probe、能力与前端引用：现有消费者继续复用原 codec，release 格式清单自动携带新定义；前端无直接预算类型／新准备端口消费，无前端修改，未重跑全前端。同步原控制说明，不增加公开 API／配置／生产 DDL 或数据迁移。
+
+配置事实继续按 §171：原实库 Harness 的 get_settings() 会沿 Settings 加载后端 `.env`，不能声称 fixture 完全不访问配置；本轮没有用工具直接打开、输出或修改实际 `.env`／认证内容，没有把连接配置复制到文档、日志或提交。没有启动／重启 PG／Redis、运行 Docker 验收、付费模型调用、目标扫描或生产路由变更。测试资源按原隔离 fixture 清理，不处理 §158 未归属共享残留；测试制品／恢复目录不提交。
+
+### 提交对应与剩余出口
+
+v4 B／§4、F／§14.1 → 本节 → 新内部准备模块、原模型／预算 schema 和 Worker 能力、三个已有测试、控制说明与本记录共 9 文件 → 本节实际红绿、964 项扩大组、最终 134 项与精确协议分类验证 → 独立提交 `【feat】准备真实制品绑定并冻结模型语义参数`，ID 见 Git 历史和交付；不推送、不混入用户草稿或测试制品。
+
+§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位，本轮新样本通过不撤销历史失败，也不等于历史完整失败组合全部通过；§158 未归属共享 checkpoint 残留不猜测清理。正式新绑定的 API 原子受理／完整有效输入冻结与发布、所有旧初始化读者升级／隔离、完整格式与行为清单、双制品独立安装／完整部署、一致备份恢复、灰度回滚排空、MySQL 实库、全部 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端及 E3/E4 继续按 v4 保留。整体目标继续 active，本子步不代表 B、F 或全系统完成。

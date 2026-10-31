@@ -19,7 +19,7 @@ from src.runtime.redis_task_worker import RedisTaskWorker
 from src.runtime.task_deferred import TaskDeferred
 from src.schemas.framework_model_call import FrameworkModelCallRecord, FrameworkModelObject, model_evidence_prefix
 from tests.test_agent_task_dispatch import harness
-from tests.test_framework_model_admission import admission, submit
+from tests.test_framework_model_admission import admission, snapshot_budget, submit
 from tests.test_framework_model_calls import intent
 
 
@@ -97,7 +97,7 @@ async def test_incompatible_model_call_is_deferred_before_replacement_claim(admi
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("path,value", [(["schema_version"], 2),
+@pytest.mark.parametrize("path,value", [(["schema_version"], 3),
     (["future_field"], "private-format-diagnostic")])
 async def test_incompatible_budget_cannot_consume_first_attempt(admission, path, value):
     h = admission
@@ -110,6 +110,76 @@ async def test_incompatible_budget_cannot_consume_first_attempt(admission, path,
         await deliver(h, dispatcher(h))
     assert database_state(h) == before and h.executions == h.runtime.calls == []
     assert (await h.tasks.get(h.command.task_id)).attempt_no == 0
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("path,value,expected", [
+    (["model_configurations", "primary", "capabilities", "future_field"], "private-format-diagnostic", TaskDeferred),
+    (["model_configurations", "primary", "temperature"], .75, ValidationError),
+    (["model_configurations", "primary", "api_base_url_hash"], "invalid", ValidationError),
+    (["model_configurations", "primary", "key"], "different-model", ValidationError),
+])
+async def test_snapshot_budget_reader_distinguishes_unknown_format_from_known_evidence_error(admission,
+        path, value, expected, caplog):
+    h = admission
+    snapshot_budget(h)
+    await submit(h)
+    with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+        cur.execute(f"UPDATE {h.calls.budgets_table} SET policy=jsonb_set(policy,%s,%s::jsonb) "
+            "WHERE binding_id=%s", (path, json.dumps(value), h.binding.binding_id))
+    before = database_state(h)
+    with pytest.raises(expected):
+        await deliver(h, dispatcher(h))
+    assert database_state(h) == before and h.executions == h.runtime.calls == []
+    assert (await h.tasks.get(h.command.task_id)).attempt_no == 0
+    assert "private-format-diagnostic" not in caplog.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("max_retries", [0, 3])
+async def test_old_budget_reader_keeps_original_redis_delivery_for_v2_snapshot_reader(admission, max_retries):
+    h = admission
+    snapshot_budget(h)
+    task = await submit(h)
+    queue = RedisTaskQueue(h.settings.database.redis_url,
+        stream=h.settings.orchestration.agent_task_v2_stream, group="snapshot-reader", client=h.redis)
+    await queue.connect()
+    assert await h.outbox.relay_once(queue_for_stream=lambda stream: queue if stream == queue.stream else None) == 1
+    caps = FrameworkWorkerCapabilities("a" * 64, True)
+    old = dispatcher(h, replace(caps, model_budget_max_version=1))
+    before = database_state(h)
+
+    async def handle(item):
+        await old.handle_v2(item, worker_id="old-budget-reader")
+
+    worker = RedisTaskWorker(queue, consumer="old-budget-reader", handler=handle,
+        max_retries=max_retries, block_ms=0)
+    assert await worker.run_once() == 0
+    pending = await queue.pending()
+    assert len(pending) == 1 and pending[0]["consumer"] == "old-budget-reader"
+    assert database_state(h) == before and h.executions == h.runtime.calls == []
+    assert await h.redis.xlen(queue.stream) == 1 and await h.redis.xlen(f"{queue.stream}:dead_letter") == 0
+    selected = dispatcher(h, caps)
+    owners = []
+    execute = selected._execute
+
+    async def capture(task):
+        owners.append(task)
+        await execute(task)
+
+    selected._execute = capture
+    await h.redis.xclaim(queue.stream, queue.group, "snapshot-reader", 0, [pending[0]["message_id"]], justid=True)
+    reclaimed = await queue.consume(consumer="snapshot-reader", stream_id="0", block_ms=0)
+    assert len(reclaimed) == 1 and reclaimed[0].message_id == pending[0]["message_id"]
+    assert reclaimed[0].retry_count == 0 and reclaimed[0].payload == h.command.model_dump(mode="json")
+    await selected.handle_v2(reclaimed[0], worker_id="snapshot-reader")
+    assert await queue.ack_owned(reclaimed[0], consumer="snapshot-reader")
+    assert not await queue.pending() and h.executions == [task.id] and h.claimed_epochs == [1]
+    assert (await h.calls.snapshot(h.binding)).policy == h.budget and h.runtime.calls == []
+    claimed = await h.tasks.get(task.id)
+    assert claimed.attempt_no == 1 and claimed.worker_id == "snapshot-reader"
+    assert len(owners) == 1 and owners[0].id == claimed.id
+    await h.tasks.finish(owners[0], status="cancelled", error_code="snapshot_reader_contract_probe")
 
 
 @pytest.mark.asyncio
@@ -191,6 +261,31 @@ def call_value():
     return FrameworkModelCallRecord(binding_id="binding-format", intent=intent(position_version=1),
         owner_epoch=1, owner_task_id="task-format", owner_attempt_id="worker-attempt",
         phase="ready", created_at=datetime.now(timezone.utc)).model_dump(mode="json")
+
+
+@pytest.mark.parametrize("change", ["request_mapping_version", "profile_version", "known_profile_digest"])
+def test_snapshot_reader_defers_future_request_profile_protocols(change):
+    from src.schemas.framework_model_call import FrameworkModelBudget
+    from src.schemas.model_config import ModelInvocationParameters
+    from src.schemas.model_request_options import ModelRequestProfile
+    from tests.test_framework_model_admission import model_configuration
+
+    snapshot = ModelInvocationParameters.from_configuration(model_configuration(
+        request_profile=ModelRequestProfile(output_formats=["json_schema"])))
+    budget = FrameworkModelBudget(schema_version=2, max_calls=8, max_tokens=1000,
+        deadline_at=datetime(2030, 1, 1, tzinfo=timezone.utc), model_configurations={"primary": snapshot},
+        model_config_fingerprints={"primary": snapshot.fingerprint})
+    wire = budget.model_dump(mode="json")
+    if change == "request_mapping_version":
+        wire["model_configurations"]["primary"][change] = "model-request-v2"
+    elif change == "profile_version":
+        wire["model_configurations"]["primary"]["request_profile"]["version"] = 2
+    else:
+        wire["model_configurations"]["primary"]["request_profile"]["revision"] += 1
+    expected = ValidationError if change == "known_profile_digest" else TaskDeferred
+    reason = "profile differs from its hash evidence" if change == "known_profile_digest" else "framework_model_budget_format_unavailable"
+    with pytest.raises(expected, match=reason):
+        FrameworkWorkerCapabilities("a" * 64, True).require_model_ledger_format("budget", wire)
 
 
 @pytest.mark.parametrize("version", [None, 1, 2, 3])

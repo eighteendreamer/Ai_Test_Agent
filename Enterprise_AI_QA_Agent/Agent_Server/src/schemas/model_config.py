@@ -164,6 +164,66 @@ def model_invocation_parameters(config: ModelConfigRecord) -> dict[str, Any]:
     return parameters
 
 
+class _InvocationCapabilities(ModelCapabilities):
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always")
+
+
+class ModelInvocationParameters(BaseModel):
+    """Detached nonsecret semantics, using the existing fingerprint projection.
+
+    Endpoint/header hashes are comparison evidence, not recoverable credentials
+    or routing configuration. Execution still resolves and verifies live config.
+    """
+    model_config = ConfigDict(extra="forbid", frozen=True, revalidate_instances="always", allow_inf_nan=False)
+
+    key: str
+    provider: str
+    transport: ModelTransport
+    model_id: str
+    temperature: float | None
+    max_tokens: int
+    max_output_tokens: int
+    context_window: int
+    capabilities: _InvocationCapabilities
+    auth_type: ModelAuthType
+    oauth_provider: str | None
+    api_base_url_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    extra_headers_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    request_profile: ModelRequestProfile | None = Field(default=None, exclude_if=lambda value: value is None)
+    request_mapping_version: Literal["model-request-v1"] | None = Field(default=None, exclude_if=lambda value: value is None)
+    request_profile_hash: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$", exclude_if=lambda value: value is None)
+
+    @classmethod
+    def from_configuration(cls, configuration: ModelConfigRecord):
+        return cls.model_validate(model_invocation_parameters(configuration))
+
+    @model_validator(mode="after")
+    def validate_semantics(self):
+        if self.max_tokens != self.max_output_tokens:
+            raise ValueError("Model invocation token limits differ from the configuration projection")
+        fields = (self.request_mapping_version, self.request_profile_hash)
+        if self.request_profile is None:
+            if any(value is not None for value in fields):
+                raise ValueError("Model invocation profile evidence requires its profile")
+        else:
+            if any(value is None for value in fields):
+                raise ValueError("Model invocation profile requires mapping and hash evidence")
+            profile = self.request_profile.model_dump(mode="json")
+            digest = hashlib.sha256(json.dumps(profile, sort_keys=True, ensure_ascii=False,
+                separators=(",", ":"), allow_nan=False).encode("utf-8")).hexdigest()
+            if self.request_profile_hash != digest:
+                raise ValueError("Model invocation profile differs from its hash evidence")
+            validate_profile_transport(self.request_profile, self.transport,
+                max_output_tokens=self.max_output_tokens, temperature=self.temperature)
+        return self
+
+    @property
+    def fingerprint(self) -> str:
+        encoded = json.dumps(self.model_dump(mode="json"), sort_keys=True, ensure_ascii=False,
+            separators=(",", ":"), allow_nan=False).encode("utf-8")
+        return hashlib.sha256(encoded).hexdigest()
+
+
 class ModelConfigPublic(BaseModel):
     id: int | None = None
     key: str
