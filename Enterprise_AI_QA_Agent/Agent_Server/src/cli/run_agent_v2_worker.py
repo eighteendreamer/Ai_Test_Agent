@@ -21,9 +21,13 @@ async def _run(*, once: bool, worker_id: str, release_store: Path | None = None,
         raise ValueError("Both release store and reference are required")
     settings = get_settings()
     available = settings.deep_agents.enabled and settings.deep_agents.checkpoint_enabled
-    capabilities = (FrameworkWorkerCapabilities.from_artifact(deepagents_available=available)
-        if release_reference is None else FrameworkWorkerCapabilities.from_release(release_store,
-            json.loads(release_reference.read_text(encoding="utf-8-sig")), deepagents_available=available))
+    if release_reference is None:
+        capabilities = await asyncio.to_thread(FrameworkWorkerCapabilities.from_configuration, settings.deep_agents)
+        if capabilities is None:
+            capabilities = FrameworkWorkerCapabilities.from_artifact(deepagents_available=available)
+    else:
+        capabilities = await asyncio.to_thread(FrameworkWorkerCapabilities.from_release, release_store,
+            json.loads(release_reference.read_text(encoding="utf-8-sig")), deepagents_available=available)
     async with app.router.lifespan_context(app):
         dispatcher = getattr(app.state, "agent_task_dispatcher", None)
         if dispatcher is None:

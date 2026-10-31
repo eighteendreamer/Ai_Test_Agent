@@ -507,6 +507,8 @@ class DeepAgentsConfig(BaseModel):
 
     enabled: bool = False
     new_turns_enabled: bool = True
+    release_store: Path | None = None
+    release_reference: Path | None = None
     pilot_mode_keys: list[str] = Field(default_factory=lambda: ["code_review"])
     read_only_filesystem_enabled: bool = False
     read_only_max_file_size_mb: int = 10
@@ -524,6 +526,19 @@ class DeepAgentsConfig(BaseModel):
     max_subagent_calls_per_turn: int = 1
     subagent_model_call_limit: int = 6
     subagent_tool_call_limit: int = 12
+
+    @field_validator("release_store", "release_reference", mode="before")
+    @classmethod
+    def normalize_release_paths(cls, value):
+        if isinstance(value, str):
+            return value.strip() or None
+        return value
+
+    @model_validator(mode="after")
+    def validate_release_paths(self):
+        if (self.release_store is None) != (self.release_reference is None):
+            raise ValueError("release_store and release_reference must be configured together")
+        return self
 
     @field_validator("checkpoint_schema")
     @classmethod

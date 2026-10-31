@@ -7654,3 +7654,46 @@ $env:PYTHONIOENCODING='utf-8'
 v4 C／§11、H07／H10 的故障可观测性及 F 回归 → 本节 → 原 Worker／formatter、原两个测试与本记录共 5 文件 → 红测、真实 Redis 故障注入、430 项最终回归 → 独立提交 `【fix】补齐 Redis 心跳失败的安全诊断`，ID 见 Git 历史和交付；不推送，不提交用户草稿或制品。
 
 §159 中断后 expired=False、§160 零秒失效后 claim 仍 lease-active、§166 子进程 RuntimeError **均仍未取得足够证据定位根因**；本轮原样本通过不撤销历史失败。后续优先在实际失败窗口取得新安全诊断／原栈和数据库决策证据，不调整租约／重试获取绿色。旧初始化读者未升级／隔离前仍不能开启生产引用写者；全部格式清单、正式创建／冻结入口、有证据历史关联、独立依赖安装／双制品部署、一致备份、灰度回滚排空、§158 未归属残留、完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 按 v4 保留。整体目标保持 active，本节不代表 C／F 或全系统完成。
+
+## 168. F／§14.1、H11：把可选制品预检接入真实应用启动与配置消费（2026-11-01）
+
+### 续接、查证与采用方式
+
+续接 `b9eeebc1c`／§167；上一轮已有生产代码、真实回归与提交，属于 progress。本轮重新核对 v4 §4／§14.1、原 CLI／main／Settings／Dispatcher 和最新记录。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。§159／160／166 的三类历史异常仍未定位，不删除历史失败，不通过改租约推进本步。
+
+查证发现：v2 CLI 已能用显式参数调用 `from_release()`，不能重复实现该校验；但 API 的真实 lifespan 未捕获制品身份，原 Dispatcher 在应用装配时仍无能力对象，API 普通新消息也仍创建 legacy 命令。新增生产引用写者尚不具备完整冻结／发布条件。本步只闭合应用启动这一必要消费链，不把接线说成已经创建正式新绑定。
+
+依据现有 `from_release()` → 复用唯一安装 verifier；原 DeepAgentsConfig／Settings nested env → 加默认留空的成对路径；main 的 AsyncExitStack 与原 CLI → 在资源启动前捕获能力、传给唯一 Dispatcher；原 ContextFormatter → 精确补两个安全标量字段。本地《评测工程化与CICD》版本化环境／质量门和《Agent轨迹与协议鲁棒性》轨迹要求 → 校验当前源码快照的真实新进程，并明确 backend 替身边界。无新依赖、调度层、备用恢复分支或隐式发布权限。
+
+### TDD、实现与中间结果
+
+1. 新专项先实际 **13 failed，15.38 秒**：配置路径被旧模型静默丢弃／半对配置不拒绝、缺少配置 factory、实际 lifespan 先进入 SQL 资源归属且无安装身份、原 Dispatcher 装配缺少参数。不是数据库或服务启动失败。随后实现可选配置及真实启动接线，**13 passed，6.49 秒**。首次 apply_patch 的 main import 锚点不匹配，工具未写入任何文件；核对 diff 后使用实际导入位置，不重复盲改。
+2. `DeepAgentsConfig.release_store`／`release_reference` 同时配置或同时为空；只将空白字符串归一为 None。另补 0／False 反例，初版 `value or None` 实际 **2 failed，6.41 秒**，会把非路径值当成未配置；修正为仅处理字符串、其余交回既有 Pydantic Path 校验，不用自造路径格式判断。nested env 和空白模板值有对应验证。
+3. `FrameworkWorkerCapabilities.from_configuration()` 在明确配置时复用 `from_release()`；配置缺文件、坏 JSON、未知严格字段、安装不匹配均按原错误类型安全记录并返回固定错误，不打印路径、原引用或异常正文。未配置返回 None，保持 API 原可选能力与 legacy 启动，不为了未启用的路径额外要求源码仓库或根锁；v2 CLI 未配置时仍保留原 `from_artifact()` 行为。校验配置不启用 enabled／checkpoint／new-turn 开关，不生产绑定。
+4. main 的真实 lifespan 在 SQL 池归属、Redis、业务初始化和 reaper 前在线程中完成校验，清空旧的启动身份后才安装新结果，原 Dispatcher 直接消费该对象。新取消用例证明取消等待者后，同步校验线程仍可能运行，但迟到返回不能安装能力或启动资源；测试最终等线程结束，不把 coroutine 取消当作同步操作已停。没有取消业务 Turn、修改 owner 权限或接管规则。
+5. 跨边界消费方先补红测，实际 **5 failed、12 passed，10.64 秒**：三个日志 formatter 用例未渲染新字段，CLI 配置分支未校验／仍通告无引用能力。随后同步有限白名单 `framework_release_revision`／`framework_release_sha256`、CLI 配置消费与原入口三分支（无配置／显式参数／配置）；不开放任意 extra，不用 CLI 参数绕过应用自身配置的启动校验。第一轮消费方组合 **394 passed、1 skipped，23.55 秒**，skip 为未启用 MySQL 实库池分支。
+6. 抽取原 `test_framework_release_binding.py` 当前源码快照构建为共享测试 fixture，原 pinned binding／真实源码模块来源断言不删除。新增恢复安装目录的新 `python -I -B` 进程，复用同一 venv、清除非必要继承环境，使用显式合成非凭据 Settings，不读取 `.env` 或调用供应商。第一次 **3 failed、14 passed，63.86 秒**，安全诊断仅得 ValidationError；窄复现只输出错误位置／类型，确认测试构造缺少既有 Redis URL、Docker 和 Mail 必填项。按现有 schema 补齐明确 unused 值，不放宽生产 Settings、不改必填约束；随后完整新专项 **22 passed，116.93 秒**。
+
+### 当前源码最终验证与证据边界
+
+新进程分别验证总能力关闭／开启但新接入关闭的合法安装，以及可导入但内容已漂移的配置源码。真实 `from_configuration()`／安装 probe／main lifespan 在相应恢复源码内执行，100 多个已加载 src 模块全部来自该目录；安装匹配才到达资源端口和 lifespan yield，源码漂移在任何资源端口前拒绝。SQL 池与全部业务初始化明确用空端口替换，未启动真实 backend／图／模型／工具／领域 Runner；**这是当前源码测试快照，不是正式发布 commit 的实物部署，不是独立依赖安装或完整 E4**。源码本来必须可信，预检不阻止已发生的 Python import，也不是热更新、ACL 或供应链安全保证。
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_archive.py tests/test_framework_release_binding.py tests/test_framework_release_workers.py tests/test_framework_release_startup.py tests/test_agent_v2_worker_contract.py tests/test_lifespan_resource_cleanup.py tests/test_framework_route_rollback.py tests/test_runtime_binding_contract.py tests/test_redis_task_worker.py tests/test_agent_task_monitor.py -q -rs --tb=short
+# 483 passed、1 skipped，421.07 秒，exit 0，无 deselect
+# skip: test_lifespan_disposes_only_last_owners_sql_pool[mysql] 未启用实库验证，不算通过
+```
+
+最终组合包含启动取消边界、新旧真实源码 Worker、真实 PG／Redis 投递、PostgreSQL 实库池清理、默认路由／能力和既有日志回归；不覆盖所有应用初始化资源或历史完整 20／10 文件失败组合。全部本节启动的 pytest 均取得终态，没有以重启代替观察。根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际 exit 0；ruff／mypy／build／wheel／setuptools 仍未安装，未运行独立 lint／typecheck／构建安装。前端无改动，未重跑；搜索当前设置消费方未发现公开 API／前端直接消费 DeepAgentsConfig 或完整 Settings dump，不新增前端 DTO。
+
+### 对应提交与剩余出口
+
+v4 F／§14.1、H11 → 本节 → main／原能力 factory／v2 CLI／配置／formatter、配置模板和控制说明、三个既有与一个新增测试、白名单及本记录共 13 文件 → 上述红绿、真实恢复源码预检、483 项通过与明确 1 项未验收 → 独立提交 `【feat】在应用资源启动前核验配置制品`，ID 见 Git 历史和交付。不推送、不修改实际 `.env`、不提交测试制品或用户草稿；没有重启服务、运行 Docker、调用付费模型、目标扫描、生产路由变更、DDL 或数据迁移。
+
+旧版可能静默忽略新配置字段，设置环境变量本身不是读者已升级证明；§166 的旧初始化限制未消失。新绑定正式创建／冻结／发布入口及真实 Prompt／Skill／工具／模型资产关联仍待完成，禁止补造版本或给历史绑定猜关联。三类历史异常、全部格式清单、双制品独立安装／完整后端启动、一致备份恢复、灰度／回滚排空、MySQL 实库清理分支、§158 未归属残留和完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 按 v4 保留。整体目标继续 active，本节不宣称 F 或全系统完成。

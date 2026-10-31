@@ -210,9 +210,11 @@ print('previous_reader_old_wire_unchanged_new_reference_deferred')
     assert b"old_wire_unchanged_new_reference_deferred" in result.stdout
 
 
-def test_current_source_snapshot_resolves_a_pinned_binding_in_a_fresh_process(tmp_path):
+@pytest.fixture(scope="module")
+def current_source_release(tmp_path_factory):
     from src.runtime import framework_release_archive as module
 
+    tmp_path = tmp_path_factory.mktemp("current-source-release")
     checkout = Path(__file__).resolve().parents[2]
     snapshot = tmp_path / "trusted-source-snapshot"
     snapshot.mkdir()
@@ -231,6 +233,13 @@ def test_current_source_snapshot_resolves_a_pinned_binding_in_a_fresh_process(tm
         subprocess.run(["git", *args], cwd=snapshot, env=environment, capture_output=True, check=True, timeout=120)
     store = tmp_path / "snapshot-store"
     reference = module.archive_release(snapshot, store)
+    return store, reference
+
+
+def test_current_source_snapshot_resolves_a_pinned_binding_in_a_fresh_process(tmp_path, current_source_release):
+    from src.runtime import framework_release_archive as module
+
+    store, reference = current_source_release
     restored = tmp_path / "restored-current-source"
     manifest = module.restore_release(store, reference, restored)
     selected = binding(release_reference=reference,

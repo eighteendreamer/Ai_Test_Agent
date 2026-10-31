@@ -9,6 +9,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 import hashlib
+import json
+import logging
 from pathlib import Path
 
 from pydantic import ValidationError
@@ -27,6 +29,7 @@ from src.schemas.framework_transcript import (
 
 
 FRAMEWORK_RUNTIME_VERSION = "v2.0.0"
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,27 @@ class FrameworkWorkerCapabilities:
         reference = FrameworkReleaseReference.model_validate(reference)
         require_installed_release(Path(__file__).resolve().parents[3], store, reference)
         return replace(cls.from_artifact(deepagents_available=deepagents_available), release_reference=reference)
+
+    @classmethod
+    def from_configuration(cls, config):
+        """Optional application preflight; never infer a release or enable writers."""
+        try:
+            if (config.release_store is None) != (config.release_reference is None):
+                raise ValueError("Release store and reference must be configured together")
+            if config.release_reference is None:
+                LOGGER.info("framework_release_preflight_unconfigured")
+                return None
+            reference = json.loads(config.release_reference.read_text(encoding="utf-8-sig"))
+            capabilities = cls.from_release(config.release_store, reference,
+                deepagents_available=config.enabled and config.checkpoint_enabled)
+        except Exception as exc:
+            # Paths and reference validation input can contain private data.
+            LOGGER.error("framework_release_preflight_failed", extra={"error_type": type(exc).__name__})
+            raise ValueError("Configured framework release preflight failed") from None
+        LOGGER.info("framework_release_preflight_verified", extra={
+            "framework_release_revision": capabilities.release_reference.source_revision,
+            "framework_release_sha256": capabilities.release_reference.archive_sha256})
+        return capabilities
 
     def require_release(self, binding: RuntimeBinding) -> None:
         if binding.release_reference is not None and binding.release_reference != self.release_reference:

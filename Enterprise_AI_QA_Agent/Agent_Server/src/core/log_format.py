@@ -39,6 +39,7 @@ DIAGNOSTIC_FIELDS = (
     "artifact_id", "task_status", "execution_id",
     "delivery_message_id", "delivery_stream", "heartbeat_operation", "heartbeat_failure_reason",
     "reclaim_idle_ms", "heartbeat_seconds", "touch_seconds", "successful_touches", "since_last_touch_seconds",
+    "framework_release_revision", "framework_release_sha256",
 )
 
 

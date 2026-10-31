@@ -41,6 +41,27 @@ DEEP_AGENTS__NEW_TURNS_ENABLED=false
 
 ## 日志与验证落点
 
+### 可选制品安装预检（v4 §14.1）
+
+`DEEP_AGENTS__RELEASE_STORE` 指向可信本机制品仓库，`DEEP_AGENTS__RELEASE_REFERENCE` 指向该仓库导出保存的引用 JSON。两项同时配置或同时留空，推荐使用绝对路径；不是用户请求字段，不接收客户端 context 覆盖。配置路径的实例文件和制品仍不应提交 Git。
+
+配置后，真实应用 lifespan 在 SQL 池归属、Redis、业务 store、reaper 等资源初始化前，复用 `FrameworkWorkerCapabilities.from_release()` 核对完整引用、安装源码、当前环境和定义；失败只记录错误类型并拒绝启动，不回退到未绑定制品。已导入的本机源码必须本来可信：这是服务启动预检，不是阻止 Python import、热修改、供应链或文件权限攻击的沙箱。
+
+旧程序可能静默忽略新配置字段，必须核实实际安装版本和预检日志，不能把设置了环境变量当作所有初始化读者已升级的证明。
+
+校验成功的能力对象传给原 AgentTaskDispatcher，不修改任何历史绑定，也不创建新绑定。`enabled && checkpoint_enabled` 继续决定运行能力，`new_turns_enabled` 仍独立决定新回合选路，路径配置不自动开启任何开关。留空时应用保持原可选能力为空，不额外要求 legacy 应用安装源码仓库／根锁；v2 CLI 保留原无引用 `from_artifact()` 能力，不把根锁摘要当成实物归档。
+
+v2 CLI 未传显式 `--release-store`／`--release-reference` 时也消费同一配置预检。原成对 CLI 参数仍可选择 Worker 的消费身份；应用 lifespan 仍校验其进程配置的引用，不能靠参数绕过启动校验。两者同时使用时应选择同一引用，且所有声明均必须与安装源码一致。配置只在启动捕获，不提供热更新。
+
+日志 `framework_release_preflight_verified` 带有限标量 `framework_release_revision`／`framework_release_sha256`；未配置为 `framework_release_preflight_unconfigured`，不声称已验证归档；失败为 `framework_release_preflight_failed`／error_type，不渲染路径、原 JSON、异常正文或凭据。
+
+**发布限制不变**：所有旧初始化读者升级／隔离前，不得启用引用写者。原 API 普通消息受理仍走现有 legacy；正式新绑定创建／冻结入口尚待接入。源码归档验收复用当前 venv，不等于双制品独立依赖安装、完整后端部署或 E4。
+
+- `tests/test_framework_release_startup.py`：配置、原安装校验 factory、实际 lifespan 的资源前顺序、CLI 配置分支、日志有限输出，以及恢复当前源码快照的新进程预检。新进程的 SQL／业务初始化明确替换为空端口，不是全后端 lifespan 验收。
+- `tests/test_framework_release_binding.py`／`test_framework_release_workers.py`：安装源码一致性、历史读者／真实 PG 与 Redis 的既有消费契约；具体结果和限制见实施记录。
+
+### 原路由与恢复验证
+
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
 
 - `tests/test_framework_route_rollback.py`：配置、实际 Runtime 选路、绑定矩阵、在途调用、请求覆盖负例，以及真实 CLI/dispatcher 搭配替身队列的能力准入。main 的接线审计为静态 AST 检查，不替代完整 lifespan。

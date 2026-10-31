@@ -12,6 +12,7 @@ import pytest
 from fastapi import FastAPI
 
 from src import main as main_module
+from src.core.config import DeepAgentsConfig
 from src.infrastructure import sqlalchemy_runtime
 from src.infrastructure.sqlalchemy_runtime import (
     dispose_sqlalchemy_engines,
@@ -97,6 +98,7 @@ async def test_startup_failure_closes_all_created_redis_resources(
         return Resource
 
     settings = SimpleNamespace(
+        deep_agents=DeepAgentsConfig(),
         database=main_module.get_settings().database.model_copy(update={"redis_url": "redis://unused"}),
         orchestration=SimpleNamespace(
             redis_task_dispatch_enabled=True,

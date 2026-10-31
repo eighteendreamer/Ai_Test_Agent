@@ -242,12 +242,14 @@ async def test_v2_dispatcher_rejects_binding_drift_before_claim():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("pinned", [False, True])
-async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypatch, tmp_path, pinned):
+@pytest.mark.parametrize("source", ["unconfigured", "flags", "configuration"])
+async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypatch, tmp_path, source):
     from src.cli import run_agent_v2_worker as module
+    from src.core.config import DeepAgentsConfig
     from src.schemas.framework_release import FrameworkReleaseReference
     import json
 
+    pinned = source != "unconfigured"
     runtime_binding = binding()
     wire = command(runtime_binding).model_dump(mode="json")
     received = []
@@ -318,7 +320,9 @@ async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypat
 
     settings = SimpleNamespace(
         database=SimpleNamespace(redis_url="redis://unused"),
-        deep_agents=SimpleNamespace(enabled=True, checkpoint_enabled=True),
+        deep_agents=DeepAgentsConfig(enabled=True, checkpoint_enabled=True,
+            release_store=tmp_path if source == "configuration" else None,
+            release_reference=reference_path if source == "configuration" else None),
         orchestration=SimpleNamespace(
             agent_task_v2_stream="qa:tasks:agent:v2",
             agent_task_v2_consumer_group="qa:workers:agent-v2",
@@ -337,8 +341,8 @@ async def test_v2_worker_entrypoint_uses_only_v2_stream_and_dispatcher(monkeypat
     monkeypatch.setattr(module, "RedisTaskQueue", Queue)
     monkeypatch.setattr(module, "RedisTaskWorker", Worker)
 
-    await module._run(once=True, worker_id="v2-test-worker", release_store=tmp_path if pinned else None,
-        release_reference=reference_path if pinned else None)
+    await module._run(once=True, worker_id="v2-test-worker", release_store=tmp_path if source == "flags" else None,
+        release_reference=reference_path if source == "flags" else None)
 
     assert [(queue.stream, queue.group) for queue in Queue.instances] == [
         ("qa:tasks:agent:v2", "qa:workers:agent-v2")
