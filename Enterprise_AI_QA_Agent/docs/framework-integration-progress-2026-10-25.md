@@ -7046,3 +7046,46 @@ $env:RUN_LIVE_DOCKER_TESTS='1'
 v4 A3／§8.1、§10.1–§10.2、§11、H06/H10 → 本节 → Docker 管理精确查询、Docker cleanup 的只读观测、PG receipt 原子结算、既有 Handler 的恢复复用、独立观测模型（5 个生产文件），4 个相关测试文件、基础规格与本记录 → 上述 PG／Redis／独立 Worker／真实 Docker 验证 → `【fix】凭容器缺失观测恢复清理回执` 同一提交，ID 见本轮交付及 Git 历史。用户 v3 草稿 SHA256 保持 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
 
 本步不做 DDL；新证据是原 JSON record 的可选带版本子结构，旧无观测回执读／执行沿现有测试验证。没有改变公开响应或终态枚举，但完整旧／新双制品与生产发布演练仍未执行，§151 的旧命令 DTO 读者限制也未解除。此观测只证明指定已绑定容器在查询时不存在，不能证明命令成功、外部副作用已撤销或未绑定 allocation 不会迟到创建；不授予新的删除／图／工具执行权。未确认查询目前只留结构化诊断，不宣称全量查询历史 journal 已完成。未绑定／历史缺身份、浏览器及其他 Runner 的未知清理仍不自动闭合；真实 Runner execution ID／代次全链路、独立停止意图／回执、其余 Memory／资源补偿、A2-2/A2-3、B/C、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 继续保留，整体目标 active。
+
+## 155. A3／§8.1、§10.1–§10.2、§11、H06/H10：清理成功后的回执提交未知不再授予重复执行权（2026-10-31）
+
+### 续接、根因与依据 → 做法
+
+续接 `89ad0caf9`／§154。原 `ResourceCleanupTaskHandler` 把外部 callback 与 PG `finish(completed)` 放在同一 try 内，统一在异常时写 `failed`。因此 adapter 已成功删除容器、PG 提交前写入失败，会将 running receipt 错标为 failed，下一投递可重新领取并再次调用 adapter；若 completed 已提交但确认丢失，又会额外尝试写 failed，产生 ownership lost 与错误的外部清理失败分类。根因是执行阶段与持久化确认阶段的错误边界混用，不是幂等 adapter 缺少更多重试。
+
+依据已有 `SecurityExecutionEnvironmentService` 的 `security_background_result_uncommitted` 独立持久化边界、§154 的 running 只读缺失观测／terminal fenced finalization、`RedisTaskWorker` 与 `RedisTaskQueue.transfer()` 的原子后继投递机制 → 仅把 callback 成功后的 completed 写入移入独立边界；失败记录安全结构化 `resource_cleanup_result_uncommitted` 后传播原异常，不再写 failed，也不调用 Redis 资源最终确认。原 running／已提交 completed 保留，后继复用现有对账与终态分支，不复制恢复链或新增调度器。本地《Agent轨迹与协议鲁棒性》的高风险写入幂等、异常注入及补偿断言 → 验证实际 adapter 不重派、持久回执／原结果不改写、投递后继不等于外部操作后继。
+
+### TDD、代码与契约同步
+
+1. 修正旧 fake 用例中“提交失败后允许再调用一次 adapter”的错误预期，`ReceiptStore` fake 对齐真实 started／in_progress／terminal 三态；另补真实 PG 的提交前失败／提交后确认丢失参数例，adapter 与缺失 oracle 使用替身。旧生产源码实际 **3 failed，5.52 秒**：fake 再次进入 callback 未抛 TaskDeferred；真实 PG 两例的写入轨迹均为 `[completed, failed]` 而非 `[completed]`，提交后例另触发 ownership lost 并回显注入的私有诊断正文。这是目标缺陷红测，不是服务未启动。
+2. 生产仅调整 `resource_cleanup_worker.py` 的异常边界。新增日志携带 task／资源类型／原资源及目标 ID／error_type，不带异常正文或 exc_info；原异常继续传播。adapter 本身的异常仍按既有显式幂等重试分类，不把普通程序错误一律吞成待对账；无外部资源的 skipped 与缺 adapter 行为不变，CancelledError 仍传播，保持 running，不写 failed。
+3. 初次修复后目标 **3 passed，4.17 秒**。再补 adapter／receipt 取消两个防回归例，强化真实 PG 的日志上下文、无外部失败误分类、无异常正文、error_type 未污染、attempts=1 与只查询／终态复用断言。fake 的真实 Redis 消费方 `test_cleanup_pending_recovery_retry_and_dead_letter` 加入最终大组合，确认 adapter 明确失败的原 retry／dead-letter 行为未改变。
+4. 扩展原真实延交清理用例为 normal／kill_before_receipt／pg_before_commit／pg_after_commit。后两例先经过真实取消、真实遗留 sleep 与真实 Docker 删除，再在 store 方法边界注入提交前异常或先真实提交再抛确认丢失；不是模拟 PG 服务器断网。真实 `RedisTaskWorker` 将原投递原子转为同 payload、retry_count=1 的后继；原配额仍为 1、receipt 原 Worker／attempts=1 保留。恢复阶段同时禁用 `list_containers` 与 `remove_container`，避免不存在容器时 callback 空扫描掩盖重复派发；提交前例仅精确查询并保存缺失观测，提交后例只复用已提交终态。两例初次实际 **2 passed，20.41 秒**。
+5. 原强杀例也同时禁用列表扫描及删除；所有延交分支再次校验单行命令启动标记、原 PG cancelled／退出码 130／输出快照完全不变。终态完成后确认 Stream 无新后继／dead letter、PEL 与资源配额清空，重复 Worker 空跑不产生新外部操作。此处只验证指定清理边界，不声称外部副作用已撤销。
+6. 已搜索 Handler、receipt API、新日志、fake 与测试消费方；未新增 schema／公开 DTO／API／配置／依赖或迁移。基础规格同步本阶段契约，§154 的唯一恢复链与窄证据 scope 不变。没有新增用户 v3 草稿变更。
+
+### 当前源码实际验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`，复用用户已启动的 PostgreSQL／Redis。Docker 验收限已授权本地 `vxcontrol/kali-linux:latest` echo／sleep、隔离容器及测试 Worker 强杀；Server **29.3.1**，镜像验收前后均为 `sha256:9520f0e11a5c74e80c758260e5ac2ad46bcae90fc0dda45670cb50b9f421c3d4`。network=none、pull=never、无 NET_RAW／NET_ADMIN；未拉镜像、扫描目标、重启服务、调用模型或改生产路由。不沿用 §154 的绿色结果代表本轮源码通过。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_security_detached_execution_evidence.py tests/test_security_execution_environment_upgrade.py tests/test_security_approval_boundary.py tests/test_invalid_tool_plan_visibility.py tests/test_security_target_guard.py tests/test_security_session_target_quoting.py tests/test_resource_cleanup_worker.py tests/test_browser_resource_harness.py tests/test_resource_cleanup_entrypoint.py tests/test_lifespan_resource_cleanup.py tests/test_resource_occupancy.py tests/test_docker_route_error_status.py tests/test_framework_turn_memory_reconciliation.py tests/test_live_redis_task_delivery.py tests/test_live_task_outbox.py tests/test_live_resource_leases.py::test_cleanup_pending_recovery_retry_and_dead_letter -q -rs --tb=short
+# 271 passed，3 skipped，31.90 秒，exit 0
+# skip：2 项其他 Docker 目标转义用例，本轮未扩张到这些命令；1 项既有 MySQL 环境门
+
+$env:RUN_LIVE_DOCKER_TESTS='1'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_live_resource_leases.py::test_security_background_lifecycle_and_durable_result tests/test_live_resource_leases.py::test_security_background_worker_kill_preserves_recovery_and_releases_container tests/test_live_resource_leases.py::test_security_background_cancel_remains_unknown_until_real_deferred_cleanup -q -rs --tb=short
+# 17 passed，124.21 秒，exit 0；无 skip／deselect
+```
+
+根目录 `.\.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际通过。验收后 managed 容器列表为空，无本轮容器残留。find_spec 再次确认 ruff／mypy 未安装，未运行独立 lint／typecheck；未擅自安装依赖。未跑全量前后端、真实浏览器进程、其他真实领域 Runner、真实供应商／embedding／RustFS、官方 saver conformance 或完整 E3/E4；本轮 PG 故障为方法边界注入，不是数据库进程强杀或网络分区。
+
+### 提交对应、兼容与剩余出口
+
+v4 A3／§8.1、§10.1–§10.2、§11、H06/H10 → 本节 → Handler 的阶段分离、2 个测试文件、基础规格与本记录 → 上述单元替身／真实 PG／Redis／独立 Worker／真实 Docker 验证 → `【fix】隔离清理成功后的回执提交故障` 同一提交，ID 见本轮交付与 Git 历史。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改、暂存或提交。
+
+本步无 DDL 或持久格式变化；没有将旧 failed 回执自动转换为完成、running 或未知，也未迁移历史数据。旧 Worker 仍有误分类逻辑，完整双制品／生产发布演练未做，§151 旧命令 DTO 读者限制仍保留；不能据此开放混合版本生产路由。adapter 成功返回但无法提供可靠只读目标观测的浏览器／其他 Runner 仍可能保持 running／待对账，不自动获得重试或释放资格。未确认查询的持久历史、未绑定 allocation、真实 Runner execution ID／执行代次全链路、独立停止意图／回执、其余 Memory／资源补偿、A2-2/A2-3、B/C、D/E/F、完整 H01–H12、官方 saver conformance 与 E3/E4 按完整 v4 保留；此子步不代表 A3 或全系统完成，整体目标继续 active。

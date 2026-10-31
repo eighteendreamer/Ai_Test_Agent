@@ -43,12 +43,19 @@ from src.schemas.session_resource import (
 class ReceiptStore:
     def __init__(self):
         self.statuses = []
+        self.running = False
 
     async def begin(self, *args, **kwargs):
-        return not self.statuses or self.statuses[-1] not in {"completed", "skipped"}
+        if self.statuses and self.statuses[-1] in {"completed", "skipped"}:
+            return "terminal"
+        if self.running:
+            return "in_progress"
+        self.running = True
+        return "started"
 
     async def finish(self, task_id, *, worker_id, status, error_type=None):
         self.statuses.append(status)
+        self.running = False
 
 
 class Manager:
@@ -158,7 +165,7 @@ async def test_missing_browser_adapter_is_failed_instead_of_acknowledged():
 
 
 @pytest.mark.asyncio
-async def test_receipt_failure_is_retried_and_duplicate_success_is_idempotent():
+async def test_successful_cleanup_receipt_failure_does_not_reexecute_adapter():
     store = ReceiptStore()
     calls = []
 
@@ -181,10 +188,38 @@ async def test_receipt_failure_is_retried_and_duplicate_success_is_idempotent():
     with pytest.raises(ConnectionError):
         await handler(task)
     store.finish = finish
-    await handler(task)
-    await handler(task)
-    assert calls == ["container-1", "container-1"]
-    assert store.statuses == ["failed", "completed"]
+    with pytest.raises(TaskDeferred):
+        await handler(task)
+    assert calls == ["container-1"]
+    assert store.statuses == [] and store.running
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("boundary", ["adapter", "receipt"])
+async def test_cleanup_cancellation_keeps_original_running_receipt(boundary):
+    store, manager = ReceiptStore(), Manager()
+    calls = []
+
+    async def docker(lease):
+        calls.append(lease.external_resource_id)
+        if boundary == "adapter":
+            raise asyncio.CancelledError()
+
+    async def cancel_commit(*args, **kwargs):
+        assert kwargs["status"] == "completed"
+        raise asyncio.CancelledError()
+
+    if boundary == "receipt":
+        store.finish = cancel_commit
+    handler = ResourceCleanupTaskHandler(store, {"docker": docker}, manager=manager)
+    task = QueuedTask("cancel-0", {"task_type": "cleanup_task",
+        **expired_lease("docker", "slot-cancel", "container-cancel").__dict__})
+    with pytest.raises(asyncio.CancelledError):
+        await handler(task)
+    with pytest.raises(TaskDeferred):
+        await handler(task)
+    assert calls == ["container-cancel"] and store.statuses == [] and store.running
+    assert manager.finalized == []
 
 
 @pytest.mark.asyncio
@@ -302,6 +337,63 @@ def absence_observation(lease, **updates):
     return DockerResourceAbsenceObservation(**{"container_id": lease.external_resource_id,
         "allocation_id": lease.allocation_id, "lease_namespace": "qa:test",
         "observer_worker_id": "query-worker", "observed_at": datetime.now(timezone.utc), **updates})
+
+
+@pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")
+@pytest.mark.asyncio
+@pytest.mark.parametrize("commit", ["before_pg", "after_pg"])
+async def test_cleanup_returned_but_receipt_commit_is_unknown_never_grants_reexecution(commit, caplog):
+    settings = get_settings()
+    store = PostgresResourceCleanupStore(settings)
+    await store.initialize()
+    task_id = f"cleanup-returned-{uuid4().hex}"
+    lease = replace(expired_lease("docker", "slot-returned", "a" * 64), allocation_id="a" * 32)
+    effects, observations, writes = [], [], []
+    class Cleanup:
+        async def __call__(self, value):
+            effects.append(value.external_resource_id)
+        async def observe_absence(self, value):
+            assert effects == [lease.external_resource_id]
+            observations.append(value.external_resource_id)
+            return absence_observation(value)
+    finish = store.finish
+    async def lose_commit_ack(*args, **kwargs):
+        writes.append(kwargs["status"])
+        if kwargs["status"] == "completed":
+            if commit == "after_pg":
+                await finish(*args, **kwargs)
+            raise ConnectionError("private-receipt-write-diagnostic")
+        return await finish(*args, **kwargs)
+    manager = Manager()
+    manager.namespace = "qa:test"
+    handler = ResourceCleanupTaskHandler(store, {"docker": Cleanup()}, manager=manager)
+    task = QueuedTask("returned-0", {"task_type": "cleanup_task", "task_id": task_id, **lease.__dict__})
+    try:
+        store.finish = lose_commit_ack
+        with pytest.raises(ConnectionError, match="private-receipt-write-diagnostic"):
+            await handler(task)
+        assert manager.finalized == [] and writes == ["completed"]
+        row = await asyncio.to_thread(store._read_sync, task_id)
+        assert row["status"] == ("running" if commit == "before_pg" else "completed")
+        assert row["attempts"] == 1 and row["error_type"] is None
+        event = next(record for record in caplog.records if record.message == "resource_cleanup_result_uncommitted")
+        assert event.task_id == task_id and event.resource_id == lease.resource_id
+        assert event.resource_type == "docker" and event.external_resource_id == lease.external_resource_id
+        assert event.error_type == "ConnectionError" and event.exc_info is None
+        assert not any(record.message == "resource_lease_external_cleanup_failed" for record in caplog.records)
+        assert "private-receipt-write-diagnostic" not in caplog.text
+        store.finish = finish
+        await handler(task)
+        await handler(task)
+        assert effects == [lease.external_resource_id]
+        assert observations == ([lease.external_resource_id] if commit == "before_pg" else [])
+        row = await asyncio.to_thread(store._read_sync, task_id)
+        assert row["status"] == "completed" and row["attempts"] == 1
+        assert (await store.reconcile(task_id, lease)).status == "completed"
+    finally:
+        with postgres_connect(settings) as conn, conn.cursor() as cur:
+            cur.execute(sql.SQL("DELETE FROM {} WHERE task_id=%s").format(
+                sql.Identifier(settings.database.postgres_resource_cleanup_table)), (task_id,))
 
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_POSTGRES_TESTS") != "1", reason="requires live PostgreSQL")

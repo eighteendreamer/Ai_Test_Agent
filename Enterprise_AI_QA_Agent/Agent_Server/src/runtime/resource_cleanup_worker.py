@@ -137,7 +137,6 @@ class ResourceCleanupTaskHandler:
             if callback is None:
                 raise NotImplementedError(f"No cleanup adapter for {lease.resource_type}")
             await callback(lease)
-            await self._store.finish(task_id, worker_id=worker_id, status="completed")
         except Exception as exc:
             try:
                 await self._store.finish(task_id, worker_id=worker_id, status="failed",
@@ -146,6 +145,20 @@ class ResourceCleanupTaskHandler:
                 LOGGER.exception("resource_cleanup_failure_record_failed", extra={"task_id": task_id})
             LOGGER.exception("resource_lease_external_cleanup_failed", extra={
                 "task_id": payload.get("task_id"),
+                "resource_type": lease.resource_type,
+                "resource_id": lease.resource_id,
+                "external_resource_id": lease.external_resource_id,
+                "error_type": type(exc).__name__,
+            })
+            raise
+        try:
+            await self._store.finish(task_id, worker_id=worker_id, status="completed")
+        except Exception as exc:
+            # The adapter returned successfully. A failed commit/ack does not
+            # authorize another dispatch; retain running or committed terminal
+            # state for the existing observation/finalization recovery path.
+            LOGGER.error("resource_cleanup_result_uncommitted", extra={
+                "task_id": task_id,
                 "resource_type": lease.resource_type,
                 "resource_id": lease.resource_id,
                 "external_resource_id": lease.external_resource_id,

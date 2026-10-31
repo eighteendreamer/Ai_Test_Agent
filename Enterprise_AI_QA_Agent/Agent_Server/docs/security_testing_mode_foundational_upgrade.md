@@ -73,6 +73,8 @@ depends_on: security_testing_mode_vs_pentagi_comparison.md
 
 **2026-10-31 资源清理恢复补充（v4 实施记录 §154）**：清理 Worker 在删除容器后、提交 receipt 前退出，原 `running` receipt 不重新领取或重派删除。既有 Handler 可调用 Docker adapter 的只读 `observe_absence()`：须有原 allocation 的持久完整容器绑定，核对租约／代次及请求谱系，再以完整 ID 查询；目标仍在、查询不确定、未绑定或身份漂移均不释放配额。确认缺失后，将带 namespace、allocation ID、完整容器 ID、观察者、时间和窄 scope 的观测存入原 receipt JSON，并在同一 PG 短事务核对身份后标记 completed；保留原 Worker 和 attempts，再复用已有 Redis fenced finalization／ACK。PG 回执未确认或 Redis 失败仍允许重复只读核验／最终确认，不再次执行删除，不改原 ToolJob 结果。已有回执的领取与复用均校验资源身份。无 DDL／公开 API／DTO 变更，旧无观测回执仍可读取；这不证明未绑定 allocation 不会迟到创建，也不证明命令成功或副作用被撤销，浏览器及其他 Runner 不自动获得该资格。
 
+**2026-10-31 清理调用与提交边界补充（v4 实施记录 §155）**：adapter 成功返回后，`completed` receipt 写入失败或提交确认丢失，不再尝试写 `failed`，也不提前释放 Redis 配额；保留原 running／已提交 completed，记录不含异常正文的 `resource_cleanup_result_uncommitted` 并传播原异常。既有 Stream 可转交同一任务的投递后继，但不能将其当作新的清理执行权：running 走 §154 只读观测，terminal 只补 fenced finalization／ACK，保留原 Worker／attempts。adapter 本身的异常仍沿原有显式幂等重试处理；取消仍传播且不降级为 failed。本步不把所有异常改成待对账，不增加调度／迁移／公开字段，也不扩大其他 Runner 的查询或补偿资格。
+
 **验收**：
 - 起一个 `sleep 30 && echo done` 的 detached job，`poll_execution` 能在结束后读到 `done` 全量输出；
 - `put_file` 上传一个字典文件、`get_file` 取回 nuclei 输出文件，内容一致；

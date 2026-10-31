@@ -1162,9 +1162,9 @@ async def test_security_background_lifecycle_and_durable_result(manager, tmp_pat
 
 @pytest.mark.skipif(os.environ.get("RUN_LIVE_DOCKER_TESTS") != "1", reason="requires live Kali Docker image")
 @pytest.mark.asyncio
-@pytest.mark.parametrize("cleanup_worker_crash", [False, True], ids=["normal", "kill_before_receipt"])
-async def test_security_background_cancel_remains_unknown_until_real_deferred_cleanup(manager, tmp_path, monkeypatch, cleanup_worker_crash):
-    """Real Docker/leases/results; controlled rm failure and optional cleaner crash."""
+@pytest.mark.parametrize("cleanup_failure", ["normal", "kill_before_receipt", "pg_before_commit", "pg_after_commit"])
+async def test_security_background_cancel_remains_unknown_until_real_deferred_cleanup(manager, tmp_path, monkeypatch, cleanup_failure, caplog):
+    """Real Docker/leases/results with cleaner crash or lost receipt commit ACK."""
     m, _ = manager
     settings = _security_foreground_settings()
     # This case injects removal failure, not expiry. Dedicated lost-lease and
@@ -1181,6 +1181,7 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
         user_message="test", normalized_input="test", context_bundle={"project_id": "p-live-security"})
     container_id = job_id = cleanup_task_id = ""
     process = None
+    queue = None
     denied_removals = []
 
     async def defer_own_removal(args, *, timeout):
@@ -1225,7 +1226,7 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
         assert len(pending) == 1 and pending[0]["external_resource_id"] == container_id
         assert (await m.usage_snapshot())["global:all"] == 1
         assert next(tmp_path.rglob("command-started")).read_text(encoding="utf-8").splitlines() == ["external-started"]
-        if cleanup_worker_crash:
+        if cleanup_failure == "kill_before_receipt":
             context = multiprocessing.get_context("spawn")
             removed = context.Event()
             process = context.Process(target=_cleanup_then_wait_after_pg_commit,
@@ -1251,6 +1252,8 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
             with monkeypatch.context() as patch:
                 patch.setattr("src.application.docker_management_service.DockerManagementService.remove_container",
                     must_not_repeat_removal)
+                patch.setattr("src.application.docker_management_service.DockerManagementService.list_containers",
+                    must_not_repeat_removal)
                 await asyncio.sleep(.05)
                 await _complete_real_cleanup(m, retain_receipt=True, reclaim_idle_ms=10)
             receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
@@ -1262,17 +1265,91 @@ async def test_security_background_cancel_remains_unknown_until_real_deferred_cl
             assert observation["scope"] == "docker_container_absence_only"
             assert observation["observer_worker_id"] == "live-perf-cleanup"
             assert "lease_token" not in observation
+        elif cleanup_failure in {"pg_before_commit", "pg_after_commit"}:
+            receipt_store = PostgresResourceCleanupStore(settings)
+            await receipt_store.initialize()
+            queue = RedisTaskQueue(settings.database.redis_url, stream=m._cleanup_stream, group="live-perf-cleanup")
+            await queue.connect()
+            deliveries = await m._client.xrange(m._cleanup_stream)
+            assert len(deliveries) == 1
+            payload = json.loads(deliveries[0][1]["payload"])
+            cleanup_task_id = payload["task_id"]
+            finish = receipt_store.finish
+            writes = []
+
+            async def lose_receipt_commit_ack(*args, **kwargs):
+                writes.append(kwargs["status"])
+                if kwargs["status"] == "completed":
+                    # Inject only after the real adapter has removed this exact
+                    # container. This is not a simulated external cleanup.
+                    code, stdout, stderr = await real_command(["ps", "--all", "--no-trunc", "--filter",
+                        f"id={container_id}", "--format", "{{.ID}}"], timeout=10)
+                    assert code == 0 and not stdout.strip(), (stdout, stderr)
+                    if cleanup_failure == "pg_after_commit":
+                        await finish(*args, **kwargs)
+                    raise ConnectionError("private-cleanup-commit-diagnostic")
+                await finish(*args, **kwargs)
+
+            receipt_store.finish = lose_receipt_commit_ack
+            handler = ResourceCleanupTaskHandler(receipt_store, build_cleanup_callbacks(settings, manager=m), manager=m)
+            worker = RedisTaskWorker(queue, consumer="receipt-write-worker", block_ms=0,
+                retry_base_ms=1, retry_max_ms=1, handler=handler)
+            assert await worker.run_once() == 0
+            assert writes == ["completed"]
+            assert any(record.message == "resource_cleanup_result_uncommitted" for record in caplog.records)
+            assert "private-cleanup-commit-diagnostic" not in caplog.text
+            receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
+            assert receipt["status"] == ("running" if cleanup_failure == "pg_before_commit" else "completed")
+            assert receipt["attempts"] == 1 and receipt["worker_id"] == "receipt-write-worker"
+            assert (await m.usage_snapshot())["global:all"] == 1
+            # An atomic delivery successor is not a new external operation.
+            deliveries_after = await m._client.xrange(m._cleanup_stream)
+            assert len(deliveries_after) == 2 and deliveries_after[0] == deliveries[0]
+            assert json.loads(deliveries_after[1][1]["payload"]) == payload
+            assert int(deliveries_after[1][1]["retry_count"]) == 1
+            assert not await queue.pending()  # Original ACKed; successor unread.
+            assert not await m._client.xlen(f"{m._cleanup_stream}:dead_letter")
+            receipt_store.finish = finish
+
+            async def must_not_dispatch_cleanup(*args, **kwargs):
+                raise AssertionError("Receipt recovery must not dispatch Docker cleanup again")
+
+            with monkeypatch.context() as patch:
+                patch.setattr("src.application.docker_management_service.DockerManagementService.remove_container",
+                    must_not_dispatch_cleanup)
+                patch.setattr("src.application.docker_management_service.DockerManagementService.list_containers",
+                    must_not_dispatch_cleanup)
+                await asyncio.sleep(.01)
+                recovery = RedisTaskWorker(queue, consumer="receipt-recovery-worker", block_ms=0, handler=handler)
+                assert await recovery.run_once() == 1
+                assert not await queue.pending() and not await m.usage_snapshot()
+                assert await recovery.run_once() == 0
+            receipt = await asyncio.to_thread(receipt_store._read_sync, cleanup_task_id)
+            assert receipt["status"] == "completed" and receipt["attempts"] == 1
+            assert receipt["worker_id"] == "receipt-write-worker"
+            observation = receipt["record"].get("absence_observation")
+            if cleanup_failure == "pg_before_commit":
+                assert observation["container_id"] == container_id
+                assert observation["allocation_id"] == pending[0]["allocation_id"]
+                assert observation["lease_namespace"] == m.namespace
+                assert observation["observer_worker_id"] == "receipt-recovery-worker"
+            else:
+                assert observation is None  # Already committed; no target query needed.
+            assert await m._client.xrange(m._cleanup_stream) == deliveries_after
         else:
             await _complete_real_cleanup(m)
         result = await remote.poll_execution(job_id, context=owner)
         assert result.is_running is False and result.exit_code == 130
         assert result.execution_observation == "container_absent"
         assert (await jobs.get_job(job_id)).model_dump(mode="json") == before
+        assert next(tmp_path.rglob("command-started")).read_text(encoding="utf-8").splitlines() == ["external-started"]
         code, stdout, stderr = await real_command(["ps", "--all", "--no-trunc", "--filter",
             f"id={container_id}", "--format", "{{.ID}}"], timeout=10)
         assert code == 0 and not stdout.strip(), (stdout, stderr)
         container_id = ""
     finally:
+        if queue is not None:
+            await queue.close()
         if process is not None:
             if process.is_alive():
                 process.terminate()
