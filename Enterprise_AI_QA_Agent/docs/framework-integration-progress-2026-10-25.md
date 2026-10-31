@@ -7959,3 +7959,66 @@ $env:PYTHONIOENCODING='utf-8'
 v4 B／§4.1／§5 唯一当前正文、F／§14.1 → 本节 → 原 Dispatcher、PostgreSQL task store、PromptAssembly，两个既有测试、原控制说明与本记录共 7 文件 → 本节红绿、实际完整上下文请求、最终 178／591 两组 → 独立提交 `【feat】接入消息受理并固定请求与执行身份`，ID 见 Git 历史与交付；不推送，不混入用户 v3 草稿或测试制品。
 
 本子步只完成原消息入口的显式、默认未安装的接入及其隔离验收，**没有为真实 main／CLI 配置新写者或开放模式**；同步准备端口不是正式模型选择／配置装配策略，其他 headless／Coordinator／审批入口也不因此自动迁移。后续仍需正式装配／发布策略、所有旧初始化读者升级或隔离、完整有效输入与项目／用例固定版本冻结验收、完整格式／行为能力审计、双制品独立依赖安装及完整部署、一致备份恢复、灰度回滚排空。§159／160 时间异常与 §166 子进程 RuntimeError 仍未定位；全部 A2/A3/B/C/D/E/F、H01–H12、真实项目／MySQL／供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端与 E3/E4 保持 v4 原出口。整体 goal 继续 active，本次接入验收不代表 B、F 或全系统完成。
+
+## 174. B／§4、§6：消费预算原件固定根选模并阻止绑定执行默认漂移（2026-11-01）
+
+### 续接、根因与依据 → 做法
+
+续接 `02f5f535ca5044003eaa850f1f6b62856415f137`／§173，核对 v4、原实施记录、当前 Git 与消息受理／Session 编排／Runtime／模型账本调用链。用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未修改／暂存。原 messages 顺序修复、严格原生比较、已有语义准备与结果恢复不重做。
+
+继续审阅正式生产者前，发现预算 v2 已保存受理时的配置原件，但 Worker 的图前编排仍根据请求 `auto`／Session 当前偏好决定模型，Runtime 找不到明确 key 时又选当前默认；缺的是冻结材料的消费契约，不是再给上下文一致性门加特判。依据原预算 v2 严格 codec、唯一 `ModelInvocationParameters.fingerprint`（包括 key）和 binding 指纹 → 派生唯一根配置，不增加 root 字段、版本或默认值。依据原 `PostgresFrameworkModelCalls.frozen_policy()` 的持久 binding 核对与只读预算解析 → 复用原读取，不另建账本或授权端口。依据原 `orchestrate_async()`／`orchestrate_prepared()`／ExecutionRequest 冻结 → 只在尚无冻结请求的编排传入临时有效模型 key，输入证据与冻结请求恢复继续消费原件。
+
+原 `RuntimeService._effective_model_config()` → 无绑定路径保留原 fallback；有绑定的初始状态只查询冻结请求的明确 key，不借 Session 偏好／当前默认更换身份。原共享调用策略、模型工厂和 fingerprint 验证不放宽；快照只有非秘密语义与路由摘要，不包含可恢复认证或 endpoint，不赋予永久调用权。本地《模型升级与微调回归测试》的版本签名／baseline snapshot／同输入与采样参数追溯原则 → 同时断言受理原件、冻结选择、图输入与实际请求，不以非空回答作为证明。不升级或引入依赖。
+
+### TDD 与实际过程
+
+1. 扩展 §173 原完整 HTTP→PG／Redis→官方框架全上下文用例，执行端使用真实 ModelRuntimeService 与受控配置 Registry；其当前默认总是 `new-default`，受理准备仍显式冻结 `fake`。三参数 explicit／auto／session_preference 专项实际 **2 failed、1 passed、68 deselected，78.62 秒**：显式 key 通过；auto 和受理后 Session 偏好由 fake 改为 new-default 均导致任务 failed，错误为 `Context assembly cannot replace the bound model selection`。这是实际消费链路漂移红测，不放宽该门。
+2. 补唯一根读取／历史 wire、bound 与 unbound fallback、原输入摘要不变、显式冲突拒绝的专项，修改生产源码前实际 **6 failed、2 passed、76 deselected，12.89 秒**：缺 root_configuration；两个 bound 路径错误选中 later-default；auto 原样进入编排；显式冲突也进入编排。实现后同一专项实际 **8 passed、76 deselected，10.99 秒**。
+3. 在原恢复测试增加预算 v2：orchestrating 的 skip／未预留／ready／completed 使用原 auto 请求，语义准备与最终请求均固定原根 key；禁止重新准备／分类，继续原请求／结算／reservation transfer。orchestrated 的 v1/v2 都禁止再次调用 frozen_policy，逐字段比较冻结 ExecutionRequest，保留原失败任务与唯一结果，不新增恢复分支或权限。
+4. 源码稳定后运行下述完整八模块，实际 **256 passed，852.79 秒**，exit 0，无 skip／deselect。所有三种 HTTP 选择方式、v2 恢复、原语义准备／显式 skip 和既有阶段完整验证通过。测试运行中未改动归档所覆盖的生产源码，保留真实安装 verifier。
+
+### 实现、消费契约与兼容性
+
+- `FrameworkModelBudget.root_configuration()` 为不序列化的派生方法。v2 必须按 binding 指纹精确命中一个配置，缺失则明确报错，不按映射首项／模型角色猜测；v1 返回 None，原 wire 与图前编排契约不变，不回填历史根模型。
+- `SessionService._framework_orchestration_payload()` 在尚未冻结请求的普通执行和获准 orchestrating 续接中复用原 frozen_policy；只复制 payload 并替换有效 model_key。auto／空值消费冻结根；明确 key 与根不同则编排前拒绝。原 task.input、source manifest 请求摘要、消息元数据与完整执行摘要不改。读取不授 owner／发送／恢复权，后续原 fenced 阶段与共享策略继续复核。
+- 已 orchestrated 的请求直接复用，不为新选模再读取策略；runtime_submitted 的确定性结果恢复及 projected／settlement／重复投递不进入此选择器。原 PreparedSemanticInput 的请求、模型、skip／结算仍是恢复依据，不重新生成分类输入。
+- bound Runtime 只读取 ExecutionRequest 明确 key；配置不可用时保留原 key 和绑定协议元数据，不换当前默认。真实模型工厂／共享策略仍校验可用配置和原 fingerprint；元数据初始状态不等于允许发送。无绑定路径继续原 Session 偏好／默认 fallback。此限制也适用于历史 bound 初始状态，但不改变历史预算 codec 或已冻结资产。
+- 增加 `framework_message_model_selection_frozen`／`framework_message_model_selection_rejected` 及 `framework_bound_model_configuration_unavailable` 日志，只有有限任务／绑定身份、预算版本或错误类型，不打印原请求、配置、认证或原异常正文。
+- 已搜索派生根读取、frozen_policy、原编排、Runtime 默认解析及阶段／恢复调用点。无公共 API／DTO 字段、DDL、预算 schema 或能力上界变化；前端无直接新消费方，不修改前端。原控制说明同步本消费契约，真实 main／CLI 的准备端口依然未装配，不开放生产写者或模式。
+
+### 当前源码验证与证据范围
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已启动 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_release_binding.py tests/test_framework_model_admission.py tests/test_framework_message_stages.py tests/test_framework_turn_context.py tests/test_framework_orchestrating_recovery.py tests/test_framework_orchestrated_message_recovery.py tests/test_framework_prepared_orchestration.py tests/test_framework_semantic_input.py -q -rs --tb=short
+# 256 passed，852.79 秒，exit 0，无 skip／deselect
+```
+
+三参数 HTTP 用例沿手动装配的测试 FastAPI app 原路由、真实 PG／Redis、原 outbox／Worker、当前真实源码归档 v2.3 binding 与预算 v2、统一上下文和原治理投影、固定官方模型对象／框架与 PG saver、本地合成 HTTP、原 graph-input 与应用结果。断言执行期间没有查 default／new-default／auto，冻结 ExecutionRequest、graph model_key 和 initial selected_model_key 都为 fake；task.input 逐字段等于原 HTTP body。原 Skill 冻结后改写、全部上下文标记与当前正文恰好一次、重复投递只 ACK 的严格断言均保留。
+
+这不证明正式生产选模已装配：准备回调的根选择与配置 Registry 受控、当前默认在执行端预设为另一 key，只有 session_preference 分支在受理后实际变更偏好；没有宣称正式模型选择器在受理时完成自动决策。检索／GeneralSettings 端口仍受控、Session 无正式项目、模型返回合成文本与 usage、未发业务工具调用，不代表完整 main lifespan、真实项目质量基线、真实供应商或 E3。原图前恢复在真实 PG／Redis／官方 SDK 与本地合成 HTTP 上消费原语义调用，后续领域 Runtime 为原受控替身；不冒称完整图内恢复。源码恢复新进程复用同一 venv，不是独立依赖安装或 E4。
+
+```powershell
+# 同一最终源码与上述环境；完整十七文件扩大组
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_agent_task_dispatch.py tests/test_runtime_binding_persistence.py tests/test_agent_v2_worker_contract.py tests/test_framework_context_transcript.py tests/test_framework_context_runtime.py tests/test_framework_graph_input_asset.py tests/test_framework_route_rollback.py tests/test_framework_execution_deadline.py tests/test_framework_message_recovery.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_projected_settlement.py tests/test_session_execution_ownership.py tests/test_session_message_order.py tests/test_runtime_interrupt_tool_calls.py tests/test_framework_model_reader_admission.py tests/test_framework_stage_reader_admission.py -q -rs --tb=short
+# 929 passed，1 warning，1546.12 秒，exit 0，无 skip／deselect
+```
+
+扩大组覆盖原调度／绑定、跨 Turn 与图输入、截止时间、消息恢复、应用投影／仅结算、Session 所有权／顺序、旧读者能力和 legacy 中断。唯一警告来自 Starlette TestClient 对 `anyio.abc.BlockingPortal` 的弃用引用，没有因警告升级依赖或改无关代码。两组最终源码共 **1185 passed**；不是 §159 原完整 20 文件或 §160 原完整 10 文件组合重跑，不能据此撤销历史失败。所有已启动 pytest 均已观察至真实终态，无遗留运行测试；测试期间只更新不属于源码归档范围的说明／记录，没有边跑真实归档 fixture 边改生产源码。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 和 `git diff --check` 实际 exit 0，另显式检查各命令退出码并输出 `compileall_ok`／`diff_check_ok`。find_spec 确认 ruff／mypy／build／wheel／setuptools 未安装，未跑独立 lint／typecheck／构建安装，不安装依赖。附加静态核对首轮误要求 CLI 也直接构造 Dispatcher，AST 断言失败；读取原 CLI 确认它导入并复用 main lifespan 后，改为核对 main 唯一构造与 CLI 的实际复用路径，实际 exit 0，输出 `main_preparer_unconfigured_cli_reuses_main_lifespan`。该源码审计不替代完整 main 启动／生产部署。
+
+配置事实继续按 §171：实库 Harness 的 get_settings() 会沿 Settings 加载后端 `.env`，不能声称完全不访问配置；本轮未用工具直接打开、输出或修改实际 `.env`／认证内容。前端无修改、未重跑前端；未启动／重启 PG／Redis、运行 Docker／MySQL、调用付费模型、扫描目标或改生产路由。测试 fixture 仅清理本轮隔离资源，不猜测处理 §158 未归属共享残留。用户 v3 草稿最终哈希再次核对不变；提交前逐项检查 diff 和暂存范围，不包含该草稿、认证、日志或测试制品。
+
+### 提交对应与剩余出口
+
+v4 B／§4、§6 → 本节 → 原预算 schema、SessionService、RuntimeService，六个已有测试、原控制说明和本记录共 11 文件 → 本节红绿、最终 256／929 两组 → 独立提交 `【fix】固定预算根模型并禁止绑定执行默认回退`，ID 见 Git 历史和交付；不推送、不建 PR。
+
+本步修复冻结模型身份的真实消费缺口，不等于正式模型选择／预算策略已经装配。main／CLI 仍不安装准备端口；同步准备不得在 PG Session 行锁中读取 MySQL／额外 DB／网络或执行模型，不能用启动时过期缓存冒充每请求快照，也不能为缺失的根调用／Token 数值自行编造默认。后续仍需正式生产者装配／发布、全部旧初始化读者升级或隔离、完整有效输入与正式项目／用例固定版本冻结验收、格式／行为能力审计、双制品独立依赖安装及完整部署、一致备份恢复和灰度排空。
+
+§159／160 时间异常与 §166 子进程 RuntimeError 尚未定位；本轮绿色不抹去历史失败。完整 A2/A3/B/C/D/E/F、H01–H12、真实项目／MySQL／供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端和 E3/E4 继续保留 v4 原出口。整体 goal 继续 active，本子步不代表 B 或全系统完成。

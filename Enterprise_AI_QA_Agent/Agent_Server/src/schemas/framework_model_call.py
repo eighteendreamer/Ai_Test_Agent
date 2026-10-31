@@ -52,6 +52,20 @@ class FrameworkModelBudget(_ModelCallValue):
             raise ValueError("Model budget requires explicit model identities")
         return value
 
+    def root_configuration(self, fingerprint: str) -> ModelInvocationParameters | None:
+        """Read the binding's root identity, not a current default or role guess.
+
+        V1 has no configuration originals and keeps its existing orchestration
+        contract. This derived value does not add a field to either wire format.
+        """
+        if self.schema_version == 1:
+            return None
+        roots = [snapshot for snapshot in (self.model_configurations or {}).values()
+            if snapshot.fingerprint == fingerprint]
+        if len(roots) != 1:
+            raise ValueError("Model budget does not identify exactly one frozen root model")
+        return roots[0]
+
 
 class FrameworkModelCallIntent(_ModelCallValue):
     position_version: Literal[1] | None = None

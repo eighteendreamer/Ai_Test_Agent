@@ -100,6 +100,16 @@ v2 Dispatcher 的任务读取与 claim 锁内的 task／owner 绑定均使用原
 
 日志 `agent_message_admission_reused`／`agent_message_admission_committed` 记录有限任务／绑定身份和 schema；`agent_message_preparation_failed`／`agent_message_prepared_values_invalid` 只记错误类型，不输出输入或原异常；关闭新意图为 `agent_message_new_turn_admission_disabled`。验证见 `test_framework_release_binding.py` 的真实 HTTP／PG／Redis、事务回滚、丢响应重试及官方框架＋本地 HTTP 完整上下文用例；证据等级与实际结果见实施记录 §173。普通 headless／Coordinator／审批等入口不因该端口自动迁移，发布门、独立部署与真实领域验收仍保留。
 
+### 消费受理时的根模型选择（v4 §4／§6）
+
+预算 v2 的非秘密配置原件通过原 `PostgresFrameworkModelCalls.frozen_policy()` 只读加载；`FrameworkModelBudget.root_configuration(binding.model_config_fingerprint)` 必须精确匹配唯一根配置，不以字典首项、角色名称或当前默认猜选。该派生读取不增加 JSON 字段／格式版本，不授予发送、owner 或恢复权限。历史预算 v1 没有配置原件，保留原图前编排选模契约，不推断或回填根身份。
+
+尚未冻结 ExecutionRequest 的普通执行及获准 `orchestrating` 续接，使用仅替换 `model_key` 的临时编排参数，确保新语义准备和最终 ExecutionRequest 消费同一根 key。`auto`／空值不再根据执行时默认或 Session 偏好重选；明确 key 与冻结根配置冲突时，在编排前拒绝，不静默改写用户显式选择。原任务 payload、原消息元数据、source manifest 的请求摘要及完整绑定＋预算执行摘要保持原值。`orchestrating` 仍按原 PreparedSemanticInput 和账本状态复用／接管调用，不重新准备分类输入；`orchestrated` 直接消费已冻结请求，结果投影／ACK-only 不进入新选模读取。
+
+bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回退 Session 偏好或当前默认。配置不可用时保留原 key 和绑定协议元数据并记录 `framework_bound_model_configuration_unavailable`，不能将当前默认当成可用替代；真实模型工厂与共享策略仍负责配置可用性、fingerprint、owner、预算及发送许可校验，快照不包含可恢复凭据／endpoint，不授权离线或永久调用。无绑定路径继续复用原默认 fallback。选模消费成功／失败日志为 `framework_message_model_selection_frozen`／`framework_message_model_selection_rejected`，仅记录任务／绑定身份、预算版本或错误类型，不输出原请求／配置正文。
+
+验证落点：`test_framework_release_binding.py` 原 HTTP→PG／Redis→完整上下文官方框架链路覆盖 explicit／auto／受理后偏好变化；`test_framework_message_stages.py` 核对原 payload／摘要不变与显式冲突拒绝；`test_framework_orchestrating_recovery.py` 覆盖 v2 的 skip／未预留／ready／completed；`test_framework_orchestrated_message_recovery.py` 明确禁止已冻结请求恢复时重新读取选模策略；`test_framework_turn_context.py` 区分 bound 无 fallback 与 unbound 原行为。实际结果和证据边界见实施记录 §174，正式 main／CLI 的新写者仍未装配，不以本消费修复代替生产发布。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

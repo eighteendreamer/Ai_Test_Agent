@@ -42,18 +42,32 @@ async def pause_orchestration(h, monkeypatch, window):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("transport", TRANSPORTS)
+@pytest.mark.parametrize("transport,budget_version", [(transport, 1) for transport in TRANSPORTS]
+    + [("openai_chat_completions", 2)])
 @pytest.mark.parametrize("window", ["completed", "unreserved", "ready", "skip"])
-async def test_orchestrating_successor_uses_original_preparation_and_budget(admission, monkeypatch, window, transport):
+async def test_orchestrating_successor_uses_original_preparation_and_budget(admission, monkeypatch, window, transport,
+        budget_version):
     h = admission
     with _provider(transport, first_reply=semantic_reply(transport)) as (url, requests):
         h.models = wire_semantic(h, url, transport)
         h.policy = h.models._framework_model_call_policy
         wire_evidence(h, monkeypatch)
+        root_key = h.payload.model_key
+        if budget_version == 2:
+            from src.schemas.framework_model_call import FrameworkModelBudget
+            from src.schemas.model_config import ModelInvocationParameters
+
+            snapshot = ModelInvocationParameters.from_configuration(h.models.get_model_config(root_key))
+            h.budget = FrameworkModelBudget(**{**h.budget.model_dump(), "schema_version": 2,
+                "model_configurations": {root_key: snapshot}})
+            h.payload = h.payload.model_copy(update={"model_key": "auto"})
         if window == "skip":
             h.semantic._enabled = False
         original, terminal, before = await pause_orchestration(h, monkeypatch, window)
         frozen = await stage(h, original)
+        assert original.input["model_key"] == ("auto" if budget_version == 2 else root_key)
+        if window != "skip":
+            assert frozen.source_manifest["semantic_input"]["model_key"] == root_key
         successor = await h.tasks.ensure_framework_message_recovery(original.id)
         assert successor is not None
         link = (await stage(h, original)).recoveries[-1]
@@ -80,6 +94,7 @@ async def test_orchestrating_successor_uses_original_preparation_and_budget(admi
         from src.runtime.framework_runtime_results import runtime_result_source
 
         saved = await stage(h, original)
+        assert saved.execution_request["model_key"] == root_key
         # Immutable orchestration inputs are unchanged; successful finalization
         # legitimately appends original-result and projection receipts.
         assert runtime_result_source(saved) == frozen.source_manifest

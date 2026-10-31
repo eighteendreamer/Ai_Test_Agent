@@ -537,11 +537,11 @@ async def test_prepared_api_idempotency_is_not_an_execution_digest_bypass(admiss
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("selection", ["explicit", "auto", "session_preference"])
 async def test_http_prepared_release_runs_full_context_graph_and_commits_original_assets(admission,
-        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch):
+        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch, selection):
     import httpx
     import shutil
-    from types import SimpleNamespace
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
     from src.application.deep_agents.runtime_adapter import DeepAgentRuntimeAdapter
     from src.application.models.framework_model_call_policy import FrameworkModelCallPolicy
@@ -594,7 +594,23 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
         await job_store.initialize()
         with _provider("openai_chat_completions") as (url, requests):
             config = _config("openai_chat_completions", url, key="fake", is_active=True)
-            models = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config), h.settings)
+            replacement = _config("openai_chat_completions", url, key="new-default", is_active=True)
+            reads = []
+
+            class Registry:
+                def get_runtime_config(self, key):
+                    reads.append(key)
+                    if key == config.key:
+                        return config
+                    if key == replacement.key:
+                        return replacement
+                    raise KeyError(key)
+
+                def get_default_runtime_config(self):
+                    reads.append("default")
+                    return replacement
+
+            models = ModelRuntimeService(Registry(), h.settings)
             owned = DeepAgentRuntimeAdapter(model_resolver=models.resolve_langchain_chat_model,
                 checkpointer_factory=provider.open, model_call_policy=FrameworkModelCallPolicy(
                     calls=h.calls, model_config_resolver=models.get_model_config))
@@ -615,13 +631,22 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                 return selected
 
             dispatcher = prepared_dispatcher(h, current_source_release, prepare)
-            body = payload("ORIGINAL_CURRENT_INPUT", key="full-context-http", model_key="fake", mode_key="code_review",
+            requested_key = "auto" if selection == "auto" else "fake" if selection == "explicit" else None
+            if selection == "session_preference":
+                session = await h.store.get_session(h.session_id)
+                session.preferred_model = config.key
+                await h.store.save_session(session)
+            body = payload("ORIGINAL_CURRENT_INPUT", key="full-context-http", model_key=requested_key, mode_key="code_review",
                 agent_key="context-reviewer", skill_keys=["tdd-review"], context={"requested_tool_keys": ["inspect_value"]},
                 attachments=[{"name": "context.txt", "text_excerpt": "ATTACHMENT_CONTEXT"}]).model_dump(mode="json")
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
                 response = await client.post(f"/sessions/{h.session_id}/messages", json=body)
             assert response.status_code == 202 and requests == []
             task_id = response.json()["task"]["id"]
+            if selection == "session_preference":
+                session = await h.store.get_session(h.session_id)
+                session.preferred_model = replacement.key
+                await h.store.save_session(session)
             queue = RedisTaskQueue(h.settings.database.redis_url,
                 stream=h.settings.orchestration.agent_task_v2_stream, group="prepared-http", client=h.redis)
             await queue.connect()
@@ -644,9 +669,15 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
             assert len(requests) == len(frozen_inputs) == len(prepared) == 1
             graph = frozen_inputs[0]
             assert graph.runtime_preparation.identity.binding == task.runtime_binding
+            assert graph.model_key == "fake" and graph.runtime_preparation.initial_state["selected_model_key"] == "fake"
+            assert "default" not in reads and replacement.key not in reads and "auto" not in reads
             stage = FrameworkMessageStages(h.tasks).get(task_id, h.session_id)
             assert stage.phase == "projected"
             assert parse_graph_input_asset(stage.source_manifest["graph_input_asset"]) == graph
+            assert stage.execution_request["model_key"] == "fake"
+            with postgres_connect(h.settings) as conn, conn.cursor() as cur:
+                cur.execute(f"SELECT input_payload FROM {h.settings.database.postgres_agent_task_table} WHERE id=%s", (task_id,))
+                assert cur.fetchone()["input_payload"] == body
             snapshot = await h.calls.snapshot(task.runtime_binding)
             assert snapshot.policy == prepared[0].model_budget and snapshot.actual_tokens == 10
             assert snapshot.reserved_calls == 1 and snapshot.calls[0].phase == "completed"

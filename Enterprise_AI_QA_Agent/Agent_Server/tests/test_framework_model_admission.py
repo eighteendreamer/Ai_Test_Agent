@@ -157,6 +157,22 @@ def test_historical_budget_wire_does_not_acquire_configuration_snapshots():
         deadline_at=datetime(2030, 1, 1, tzinfo=timezone.utc), model_config_fingerprints={"primary": "historical-fingerprint"})
     assert set(budget.model_dump()) == {"schema_version", "max_calls", "max_tokens", "deadline_at", "model_config_fingerprints"}
     assert FrameworkModelBudget.model_validate_json(budget.model_dump_json()) == budget
+    assert budget.root_configuration("historical-fingerprint") is None
+
+
+def test_snapshot_budget_selects_only_the_root_binding_fingerprint_without_new_wire_fields():
+    from src.schemas.model_config import ModelInvocationParameters
+
+    snapshots = {key: ModelInvocationParameters.from_configuration(model_configuration(key=key))
+        for key in ("summary", "primary")}
+    budget = FrameworkModelBudget(schema_version=2, max_calls=8, max_tokens=1000,
+        deadline_at=datetime(2030, 1, 1, tzinfo=timezone.utc), model_configurations=snapshots,
+        model_config_fingerprints={key: value.fingerprint for key, value in snapshots.items()})
+    before = budget.model_dump_json()
+    assert budget.root_configuration(snapshots["primary"].fingerprint) == snapshots["primary"]
+    assert budget.model_dump_json() == before and "root_model_key" not in before
+    with pytest.raises(ValueError, match="root model"):
+        budget.root_configuration("absent-fingerprint")
 
 
 @pytest.mark.parametrize("change", ["missing", "identity", "fingerprint", "legacy_version", "secret_field"])

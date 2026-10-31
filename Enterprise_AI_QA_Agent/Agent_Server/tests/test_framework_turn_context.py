@@ -301,6 +301,36 @@ def test_v22_initial_state_rejects_provider_transport_drift_from_the_bound_model
         runtime._build_initial_state(session, request, include_framework_transcript=True)
 
 
+@pytest.mark.parametrize("bound", [False, True])
+@pytest.mark.parametrize("requested_key", [None, "missing-model"])
+def test_only_unbound_initial_state_may_fall_back_to_a_session_or_current_default(bound, requested_key):
+    from tests.test_framework_chat_models import _config
+
+    session, request, runtime = context_case()
+    session.preferred_model = "later-session-preference"
+    request = request.model_copy(update={"runtime_binding": request.runtime_binding if bound else None,
+        "model_key": requested_key})
+    current_default = _config("openai_chat_completions", "http://127.0.0.1:1", key="later-default")
+    reads = []
+
+    def lookup(key):
+        reads.append(key)
+        return None
+
+    def default():
+        reads.append("default")
+        return current_default
+
+    runtime._model_runtime_service = SimpleNamespace(get_model_config=lookup, get_default_model_config=default)
+    state = runtime._build_initial_state(session, request)
+    if bound:
+        assert state["selected_model_key"] == (requested_key or "")
+        assert reads == ([requested_key] if requested_key else [])
+    else:
+        assert state["selected_model_key"] == current_default.key
+        assert reads == [requested_key or session.preferred_model, "default"]
+
+
 def test_unbound_client_context_cannot_select_full_prompt_semantics():
     from src.schemas.framework_transcript import uses_turn_context_assembly
 

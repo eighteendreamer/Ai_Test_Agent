@@ -2045,9 +2045,17 @@ class RuntimeService:
         *,
         include_framework_transcript: bool = False,
     ) -> dict[str, Any]:
-        requested_model_key = request.model_key or session.preferred_model or ""
-        model_config = self._effective_model_config(requested_model_key)
-        selected_model_key = model_config.key if model_config is not None else (request.model_key or session.preferred_model or "")
+        if request.runtime_binding is not None:
+            requested_model_key = request.model_key or ""
+            model_config = self._model_runtime_service.get_model_config(requested_model_key) if requested_model_key else None
+            if model_config is None:
+                logger.warning("framework_bound_model_configuration_unavailable", extra={
+                    "session_id": session.id, "turn_id": request.turn_id,
+                    "binding_id": request.runtime_binding.binding_id})
+        else:
+            requested_model_key = request.model_key or session.preferred_model or ""
+            model_config = self._effective_model_config(requested_model_key)
+        selected_model_key = model_config.key if model_config is not None else requested_model_key
         selected_model_name = model_config.name if model_config is not None else ""
         bound_protocol = (request.runtime_binding.model_provider, request.runtime_binding.model_transport) \
             if request.runtime_binding is not None else (None, None)

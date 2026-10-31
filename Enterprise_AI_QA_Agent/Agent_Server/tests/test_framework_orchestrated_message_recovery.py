@@ -34,9 +34,17 @@ async def frozen_before_runtime(h, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_frozen_execution_is_resumed_without_repeating_input_orchestration(admission, monkeypatch):
+@pytest.mark.parametrize("budget_version", [1, 2])
+async def test_frozen_execution_is_resumed_without_repeating_input_orchestration(admission, monkeypatch, budget_version):
     h = admission
+    if budget_version == 2:
+        from tests.test_framework_model_admission import snapshot_budget
+
+        snapshot_budget(h)
+        h.payload = h.payload.model_copy(update={"model_key": "auto"})
     original, terminal, frozen = await frozen_before_runtime(h, monkeypatch)
+    if budget_version == 2:
+        assert original.input["model_key"] == "auto" and frozen.execution_request["model_key"] == "primary"
     before = await h.calls.snapshot(h.binding)
     successors = await asyncio.gather(*(h.tasks.ensure_framework_message_recovery(original.id) for _ in range(4)))
     assert all(task is not None for task in successors)
@@ -49,6 +57,9 @@ async def test_frozen_execution_is_resumed_without_repeating_input_orchestration
         raise AssertionError("frozen orchestration must not run again")
 
     monkeypatch.setattr(h.sessions._input_orchestrator_service, "orchestrate_async", never_reorchestrate)
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+    monkeypatch.setattr(PostgresFrameworkModelCalls, "frozen_policy", never_reorchestrate)
     execute = h.runtime.execute_turn
 
     async def require_frozen(session, request, **kwargs):

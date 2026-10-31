@@ -153,6 +153,55 @@ async def test_execution_request_is_frozen_before_runtime_submission(admission, 
 
 
 @pytest.mark.asyncio
+async def test_snapshot_model_selection_does_not_rewrite_original_message_input(admission, monkeypatch):
+    from tests.test_framework_model_admission import snapshot_budget
+
+    h = admission
+    snapshot_budget(h)
+    h.payload = h.payload.model_copy(update={"model_key": "auto"})
+    task = await selected(h)
+    original_payload = h.payload.model_dump(mode="json")
+    original = h.sessions._input_orchestrator_service.orchestrate_async
+    observed = []
+
+    async def check(session, payload, **kwargs):
+        saved = await stage(h, task)
+        from src.schemas.framework_approval import approval_value_hash
+
+        assert saved.source_manifest["payload_sha256"] == approval_value_hash(original_payload)
+        assert payload.model_key == "primary"
+        observed.append(payload)
+        return await original(session, payload, **kwargs)
+
+    monkeypatch.setattr(h.sessions._input_orchestrator_service, "orchestrate_async", check)
+    await run(h, task)
+    assert len(observed) == 1 and (await stage(h, task)).execution_request["model_key"] == "primary"
+    assert (await h.tasks.get(task.id)).input == original_payload
+    assert h.payload.model_dump(mode="json") == original_payload
+
+
+@pytest.mark.asyncio
+async def test_snapshot_model_selection_rejects_a_conflicting_explicit_request_before_orchestration(admission,
+        monkeypatch, caplog):
+    from tests.test_framework_model_admission import snapshot_budget
+
+    h = admission
+    snapshot_budget(h)
+    h.payload = h.payload.model_copy(update={"model_key": "conflicting-model"})
+    task = await selected(h)
+
+    async def never(*args, **kwargs):
+        pytest.fail("A conflicting explicit selection must not enter orchestration")
+
+    monkeypatch.setattr(h.sessions._input_orchestrator_service, "orchestrate_async", never)
+    with pytest.raises(ValueError, match="frozen root model"):
+        await run(h, task)
+    assert h.runtime.calls == [] and (await stage(h, task)).phase == "submitted"
+    assert "framework_message_model_selection_rejected" in caplog.text
+    assert (await h.calls.snapshot(h.binding)).reserved_calls == 0
+
+
+@pytest.mark.asyncio
 async def test_historical_task_without_admission_is_not_reclassified_as_unsent(admission):
     h = admission
     task = await selected(h)

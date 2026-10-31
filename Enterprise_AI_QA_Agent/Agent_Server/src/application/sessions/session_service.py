@@ -170,6 +170,34 @@ class SessionService:
     def set_agent_task_dispatcher(self, dispatcher) -> None:
         self._agent_task_dispatcher = dispatcher
 
+    async def _framework_orchestration_payload(self, task, payload: SendMessageRequest) -> SendMessageRequest:
+        """Use admitted semantics before freezing a new ExecutionRequest.
+
+        The original payload still owns input hashes, source evidence and the
+        application result. Frozen requests and result-only recovery never call
+        this selector; a read of the budget grants no execution/recovery rights.
+        """
+        if task.runtime_binding is None:
+            return payload
+        from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+
+        try:
+            policy = await PostgresFrameworkModelCalls(self._agent_task_store._settings).frozen_policy(task.runtime_binding)
+            root = policy.root_configuration(task.runtime_binding.model_config_fingerprint)
+            if root is None:
+                return payload
+            if str(payload.model_key or "").strip() not in {"", "auto", root.key}:
+                raise ValueError("Message model selection differs from its frozen root model")
+        except Exception as exc:
+            logger.warning("framework_message_model_selection_rejected", extra={"task_id": task.id,
+                "session_id": task.session_id, "binding_id": task.runtime_binding.binding_id,
+                "error_type": type(exc).__name__})
+            raise
+        logger.info("framework_message_model_selection_frozen", extra={"task_id": task.id,
+            "session_id": task.session_id, "binding_id": task.runtime_binding.binding_id,
+            "model_budget_version": policy.schema_version})
+        return payload.model_copy(update={"model_key": root.key})
+
     async def execute_claimed_message(
         self,
         task,
@@ -238,6 +266,8 @@ class SessionService:
                         from src.runtime.session_message_order import require_context_message_order
 
                         require_context_message_order(session)
+                    orchestration_payload = (await self._framework_orchestration_payload(task, payload)
+                        if frozen is None else payload)
                     if prepared_stage is not None:
                         from src.runtime.framework_message_recovery import prepared_model_call
                         from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
@@ -247,7 +277,7 @@ class SessionService:
                             await calls.snapshot(task.runtime_binding))
                         if call is not None and call.phase == "ready":
                             await calls.transfer_ready(task.runtime_owner, expected=call)
-                        request = await self._input_orchestrator_service.orchestrate_prepared(session, payload, prepared,
+                        request = await self._input_orchestrator_service.orchestrate_prepared(session, orchestration_payload, prepared,
                             turn_id=str(task.turn_id), trace_id=str(task.trace_id),
                             **({"completed_call": call} if call is not None and call.phase == "completed" else {}))
                         request.runtime_binding = task.runtime_binding
@@ -261,7 +291,7 @@ class SessionService:
 
                         request = await self._input_orchestrator_service.orchestrate_async(
                             session,
-                            payload,
+                            orchestration_payload,
                             turn_id=str(task.turn_id),
                             trace_id=str(task.trace_id),
                             **({"record_semantic_input": record_semantic_input} if stages is not None else {}),
