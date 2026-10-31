@@ -129,6 +129,27 @@ def test_late_report_is_queryable_after_restart_without_changing_authoritative_r
     assert task["artifacts"] == before["tasks"][0]["artifacts"]
 
 
+def test_runner_execution_identity_cannot_change_terminal_authority(connected):
+    h = connected
+    first = h.http.post(report_path(), json={
+        **late_payload(h), "runner_execution_id": "external-execution-a",
+        "result": {"summary": "Authoritative external result"},
+    })
+    assert first.status_code == 200, first.text
+    assert h.http.get(f"{PREFIX}/tasks/task/snapshot").json()["metadata"]["runner_execution_id"] == "external-execution-a"
+
+    late = h.http.post(report_path(), json={
+        **late_payload(h), "runner_execution_id": "external-execution-b",
+        "result": {"summary": "Different external operation"},
+    })
+    assert late.status_code == 409, late.text
+    observation = late.json()["observation"]
+    assert observation["runner_execution_id"] == "external-execution-b"
+    snapshot = h.http.get(f"{PREFIX}/tasks/task/snapshot").json()
+    assert snapshot["metadata"]["runner_execution_id"] == "external-execution-a"
+    assert snapshot["result"]["summary"] == "Authoritative external result"
+
+
 @pytest.mark.parametrize("changed", ["missing-assignment", "unknown-assignment", "wrong-runner", "unknown-runner"])
 def test_unrecorded_identity_cannot_create_a_server_observation(connected, changed):
     h = connected

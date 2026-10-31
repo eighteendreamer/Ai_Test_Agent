@@ -32,6 +32,7 @@ _TASK_DEFINITION_FIELDS = {
     "runner_selector", "mode_calls", "created_at",
 }
 MODE_CALLS_EXECUTION_MARKER = "mode_calls_execution_v1"
+EXTERNAL_EXECUTION_MARKER = "external_execution_v1"
 
 
 def reconcile_runner_journal_entry(
@@ -262,6 +263,36 @@ class RunnerJournal:
             self._db.execute("UPDATE entries SET reason = ? WHERE assignment = ?", (MODE_CALLS_EXECUTION_MARKER, assignment))
         print(f"runner_journal_mode_execution_marked assignment={assignment}")
         return True
+
+    def begin_external_execution(self, task: dict[str, Any]) -> str:
+        """Persist a Runner operation identity before calling an external executor.
+
+        The identity is journal evidence only. It does not prove that the
+        target accepted the request and it never grants a retry or stop right.
+        """
+        assignment = (task.get("metadata") or {}).get("assignment_id")
+        if not assignment:
+            raise ValueError("External execution requires an identified assignment.")
+        with self._db:
+            row = self._db.execute(
+                "SELECT task, phase, payload FROM entries WHERE assignment = ?", (assignment,)
+            ).fetchone()
+            if row is None or row["phase"] != "executing" or row["task"] != json.dumps(task, ensure_ascii=False, allow_nan=False):
+                raise RuntimeError("External execution requires its original executing journal entry.")
+            payload = json.loads(row["payload"]) if row["payload"] is not None else {}
+            if not isinstance(payload, dict):
+                raise RuntimeError("Runner journal external execution marker is invalid.")
+            existing = payload.get("runner_execution_id")
+            if isinstance(existing, str) and existing:
+                return existing
+            execution_id = uuid4().hex
+            self._db.execute(
+                "UPDATE entries SET payload = ?, reason = ? WHERE assignment = ?",
+                (json.dumps({"runner_execution_id": execution_id, "status": "started"}, ensure_ascii=False),
+                 EXTERNAL_EXECUTION_MARKER, assignment),
+            )
+        print(f"runner_journal_external_execution_started assignment={assignment}")
+        return execution_id
 
     def acknowledge(self, assignment: str) -> None:
         with self._db:

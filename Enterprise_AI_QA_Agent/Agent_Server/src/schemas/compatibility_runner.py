@@ -97,6 +97,10 @@ class CompatibilityRunnerPollResponse(BaseModel):
 class CompatibilityRunnerTaskReportRequest(BaseModel):
     status: str
     assignment_id: str | None = None
+    # Stable identity allocated by the Runner before invoking an external
+    # executor. It correlates a late report with the operation that may have
+    # reached the target; it is not an execution or retry grant.
+    runner_execution_id: str | None = Field(default=None, min_length=1, max_length=128)
     result: dict[str, Any] = Field(default_factory=dict)
     artifacts: list[dict[str, Any]] = Field(default_factory=list)
     error: str | None = None
@@ -145,7 +149,7 @@ def runner_report_metadata(value: dict[str, Any]) -> dict[str, Any]:
         "mode_calls_execution_result_artifact_id",
         "retry_count", "retry_history", "automatic_retry_count", "automatic_retry_limit", "recovery_reason",
         "recovery_required_at", "recovery_source", "assignment_id", "assignment_fencing_required",
-        "report_receipt_sha256",
+        "report_receipt_sha256", "runner_execution_id",
     }
     return {key: item for key, item in value.items() if key not in server_controlled_keys}
 
@@ -164,6 +168,7 @@ class CompatibilityRunnerReportObservation(BaseModel):
     environment_id: str = Field(min_length=1)
     runner_id: str = Field(min_length=1)
     assignment_id: str = Field(min_length=1)
+    runner_execution_id: str | None = Field(default=None, min_length=1, max_length=128)
     report_receipt_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     observed_at: str = Field(min_length=1)
     authoritative: Literal[False] = False

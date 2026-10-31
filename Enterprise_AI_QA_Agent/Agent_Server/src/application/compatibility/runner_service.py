@@ -408,6 +408,9 @@ class CompatibilityRunnerService:
             try:
                 self._ensure_runner_can_write_task(runner_id, task)
                 self._ensure_assignment_matches(task, payload.assignment_id)
+                recorded_execution_id = task.metadata.get("runner_execution_id")
+                if recorded_execution_id is not None and payload.runner_execution_id != recorded_execution_id:
+                    raise PermissionError("Runner execution ID no longer matches the assigned operation.")
                 if task.status != "assigned" and receipt and task.metadata.get("report_receipt_sha256") == receipt:
                     logger.info("compatibility_task_report_receipt_reused", extra={
                         "task_id": task_id, "runner_id": runner_id, "task_status": task.status,
@@ -442,6 +445,12 @@ class CompatibilityRunnerService:
                 reserved_artifact_ids.add(artifact.artifact_id)
             merged_artifacts = [*task.artifacts, *artifacts]
             result = runner_report_result(payload, merged_artifacts)
+            updated_metadata = {
+                **task.metadata, **runner_report_metadata(payload.metadata),
+                "report_receipt_sha256": receipt,
+            }
+            if payload.runner_execution_id is not None:
+                updated_metadata["runner_execution_id"] = payload.runner_execution_id
             updated = task.model_copy(
                 update={
                     "status": status,
@@ -449,10 +458,7 @@ class CompatibilityRunnerService:
                     "artifacts": merged_artifacts,
                     "error": payload.error,
                     "updated_at": now,
-                    "metadata": {
-                        **task.metadata, **runner_report_metadata(payload.metadata),
-                        "report_receipt_sha256": receipt,
-                    },
+                    "metadata": updated_metadata,
                 }
             )
             self._tasks[task_id] = updated
@@ -512,7 +518,8 @@ class CompatibilityRunnerService:
             observation = CompatibilityRunnerReportObservation(
                 artifact_id=artifact_id, task_id=task.task_id, dispatch_id=task.dispatch_id,
                 plan_id=task.plan_id, environment_id=task.environment_id, runner_id=runner_id,
-                assignment_id=assignment_id, report_receipt_sha256=receipt, observed_at=now,
+                assignment_id=assignment_id, runner_execution_id=payload.runner_execution_id,
+                report_receipt_sha256=receipt, observed_at=now,
             )
             artifact = self._inline_observation_artifact(
                 observation, artifact_type="runner_late_report", marker="runner_report_observation",
@@ -535,9 +542,12 @@ class CompatibilityRunnerService:
             observation = CompatibilityRunnerReportObservation.model_validate(raw)
             content = self._inline_observation_content(artifact, observation, artifact_type="runner_late_report")
             payload = CompatibilityRunnerTaskReportRequest.model_validate_json(content, strict=True)
+            expected_observation = observation.model_dump(mode="json")
             if (
-                raw != observation.model_dump(mode="json")
+                raw != expected_observation
+                and raw != observation.model_dump(mode="json", exclude_none=True)
                 or payload.assignment_id != observation.assignment_id
+                or payload.runner_execution_id != observation.runner_execution_id
                 or runner_report_content(payload) != content
                 or runner_report_receipt(payload) != observation.report_receipt_sha256
                 or observation.artifact_id != self._report_observation_artifact_id(
@@ -1426,6 +1436,7 @@ class CompatibilityRunnerService:
                 "assignment_id": None,
                 "assignment_fencing_required": False,
                 "report_receipt_sha256": None,
+                "runner_execution_id": None,
                 "retry_history": retry_history[-10:],
             },
         })

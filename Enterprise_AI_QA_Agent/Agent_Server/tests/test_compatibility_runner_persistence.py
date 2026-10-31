@@ -118,6 +118,87 @@ def test_cli_keeps_completed_output_and_remaining_batch_after_lost_response(tmp_
         client.close()
 
 
+def test_runner_client_persists_external_execution_id_in_journal_and_report(tmp_path, monkeypatch):
+    """The external operation identity survives delivery and is server-visible."""
+    service = CompatibilityRunnerService(settings=settings_for(tmp_path))
+    app = FastAPI()
+    app.state.compatibility_runner_service = service
+    app.include_router(router, prefix="/api/v1")
+    requests = []
+    with TestClient(app) as http:
+        def transport(base_url, path, *, method="GET", payload=None):
+            response = http.request(method, path, json=payload)
+            if response.status_code >= 400:
+                raise error.HTTPError(path, response.status_code, "API rejected request", {}, None)
+            requests.append((path, payload))
+            return response.json()
+
+        monkeypatch.setattr(runner_client_module, "_json_request", transport)
+        client = CompatibilityRunnerClient(
+            base_url="http://test", runner_id="runner", name="Execution identity",
+            capabilities=["local_browser"], devices=[], max_parallel=1, poll_interval=1,
+            executor="dry-run", state_file=tmp_path / "client.sqlite3",
+        )
+        try:
+            client.register()
+            asyncio.run(service.enqueue_dispatch_plan(CompatibilityDispatchPlan(
+                plan_id="execution-identity-plan", tasks=[CompatibilityRunnerTask(
+                    task_id="task", environment_id="local",
+                    runner_selector=RunnerSelector(provider="local_browser", capabilities=["local_browser"]),
+                )],
+            )))
+            assert client.run_once() == 1
+            reports = [body for path, body in requests if path.endswith("/report")]
+            assert len(reports) == 1
+            execution_id = reports[0]["runner_execution_id"]
+            assert isinstance(execution_id, str) and execution_id
+            assert service._tasks["task"].metadata["runner_execution_id"] == execution_id
+            assert client.journal.entries() == []
+            asyncio.run(service.requeue_tasks(CompatibilityTaskRequeueRequest(
+                task_ids=["task"], statuses=["completed"], reason="reviewed_new_attempt",
+            )))
+            assert client.run_once() == 1
+            reports = [body for path, body in requests if path.endswith("/report")]
+            assert reports[-1]["runner_execution_id"] != execution_id
+            assert service._tasks["task"].metadata["runner_execution_id"] == reports[-1]["runner_execution_id"]
+        finally:
+            client.close()
+
+
+def test_runner_client_retains_external_execution_id_after_effective_failure(tmp_path, monkeypatch):
+    """A result-loss window keeps the identity without replaying the executor."""
+    path = tmp_path / "client.sqlite3"
+    journal = RunnerJournal(path, base_url="http://test", runner_id="runner")
+    task = {"task_id": "task", "metadata": {"assignment_id": "assignment"}}
+    journal.enqueue([task])
+    journal.update("assignment", "executing")
+    journal.begin_external_execution(task)
+    journal.close()
+
+    class RecoveryClient(CompatibilityRunnerClient):
+        def heartbeat(self, status="online"):
+            pass
+
+        def poll(self):
+            return []
+
+        def execute_task(self, task):
+            pytest.fail("Unknown execution was replayed")
+
+    client = RecoveryClient(
+        base_url="http://test", runner_id="runner", name="Execution identity",
+        capabilities=[], devices=[], max_parallel=1, poll_interval=1,
+        executor="dry-run", state_file=path,
+    )
+    try:
+        assert client.run_once() == 0
+        entry = client.journal.entries()[0]
+        assert entry["phase"] == "review"
+        assert isinstance(entry["payload"]["runner_execution_id"], str)
+    finally:
+        client.close()
+
+
 def test_journal_lock_is_exclusive_across_processes_and_released_on_close(tmp_path):
     path = tmp_path / "runner.sqlite3"
     journal = RunnerJournal(path, base_url="http://test", runner_id="runner")

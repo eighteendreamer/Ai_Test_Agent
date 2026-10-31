@@ -389,6 +389,9 @@ class CompatibilityRunnerClient:
             return
         payload = self._mode_call_report(entry["task"], result.evidence.response)
         payload["assignment_id"] = assignment
+        marker = entry.get("payload") if isinstance(entry.get("payload"), dict) else {}
+        if isinstance(marker.get("runner_execution_id"), str):
+            payload["runner_execution_id"] = marker["runner_execution_id"]
         # Must commit before upload/report. A failed SQLite write leaves the
         # same executing marker for another read, never another execution.
         self.journal.update(assignment, "executed", payload=payload)
@@ -424,6 +427,11 @@ class CompatibilityRunnerClient:
                         print(f"runner_assignment_conflict task={task_id}")
                         continue
                     self.journal.update(assignment, "executing")
+                    has_assignment = bool((task.get("metadata") or {}).get("assignment_id"))
+                    runner_execution_id = (
+                        self.journal.begin_external_execution(task)
+                        if self.executor != "server-mode-calls" and has_assignment else None
+                    )
                     try:
                         payload = self.execute_task(task)
                     except (error.HTTPError, error.URLError, TimeoutError, CompatibilityModeExecutionRecoveryError):
@@ -434,6 +442,8 @@ class CompatibilityRunnerClient:
                             "status": "failed", "result": {"summary": str(exc)}, "artifacts": [],
                             "error": traceback.format_exc(), "metadata": {"executor": "compatibility_runner_client"},
                         }
+                    if runner_execution_id is not None:
+                        payload["runner_execution_id"] = runner_execution_id
                     metadata = task.get("metadata") or {}
                     if metadata.get("assignment_id"):
                         payload["assignment_id"] = metadata["assignment_id"]

@@ -6816,4 +6816,32 @@ git diff --check
 
 本步闭合的是“已提交 Memory 行的同版本 Redis 副本可按稳定行身份恢复”一个 A3/H06 出口；没有新增副本完成／失败持久 journal，`get_vector_record()` 读不到 embedding 时不声称存在副本修复权，Redis 查询或发布失败仍保持 unknown。真实 embedding 供应商、外部 Runner／资源清理补偿、A2-2/A2-3、完整跨 Turn／逐模式 Harness、官方 saver conformance、E3/E4 和整体 v4 仍未完成。`ruff`、`mypy` 未安装，尚未执行独立 lint/typecheck；用户 v3 草稿继续保持未修改、未暂存、未提交。
 
+## 149. A3／H06／§10.1：外部 Runner 在执行前固定 operation identity（2026-10-31）
+
+### 续接、依据与根因 → 做法
+
+基线为 `1bf782326`／§148。兼容性 Runner 的本地 journal 已能在外部调用未知时保留 `executing`，但该阶段只有 assignment 身份；正常报告、迟到报告和人工对账无法区分“同一 assignment 的哪一次外部操作”。同一 assignment 只能有一次合法执行，但没有在调用前提交稳定 operation ID，导致后续停止／查询回执无法可靠绑定到原操作，不能靠报告到达时间、最后结果或 UUID 事后猜测。该缺口属于 Runner 执行身份契约，而非重试次数问题。
+
+依据 v4 §8.1、§10.1–§10.2 的“领域 Runner 另须 execution ID／执行代次；owner fence 不能撤销已发送外部请求；未知效果先查询／对账，不盲目重派”，以及现有 `RunnerJournal` 的 SQLite 提交先于执行、assignment fencing 和迟到报告 observation 规则：对带 assignment 的非中心桥 Runner，在调用外部 executor 前先在 journal 中生成并持久化不可变 `runner_execution_id`；成功、失败或迟到报告携带同一 ID，服务端只接受当前 assignment 已绑定的 ID，冲突只能保存非权威观察。中心 `server-mode-calls` 继续使用既有 mode execution marker，不把模式桥结果冒充领域 Runner 的外部执行事实；无 assignment 的旧 in-process SDK 兼容路径不伪造 ID。
+
+### TDD 与最小实现
+
+1. 新增 Runner client 失败样本：旧实现报告没有 `runner_execution_id`，且 executing journal 的未知窗口没有可恢复 operation identity；先得到真实红测，再补实现。
+2. `RunnerJournal.begin_external_execution()` 在 SQLite 中先写入 `{runner_execution_id, status=started}` marker；`CompatibilityRunnerClient.run_once()` 在非 `server-mode-calls` 且已有 assignment 时先领取该身份，再执行并把 ID 带入 report。恢复路径保留 marker，不重新调用 executor；模式桥恢复沿原 `mode_calls_execution_v1` 继续。
+3. `CompatibilityRunnerTaskReportRequest`、迟到 `CompatibilityRunnerReportObservation` 增加可选 `runner_execution_id`；服务端把首个当前 assignment 的 ID 保存为 server-controlled metadata，后续不同 ID 不得覆盖权威结果，冲突仅生成带该 ID 的非权威 observation；显式 requeue 清除当前 ID，下一执行代次必须生成新 ID。历史 observation 缺少该可选字段时仍按兼容读取处理。
+
+### 实际验证与边界
+
+使用已有 `.venv-framework-v2`、工作目录 `Agent_Server`；未启停 PostgreSQL／Redis，未调用付费模型、真实供应商、RustFS、浏览器或领域 Runner。
+
+```powershell
+..\\.venv-framework-v2\\Scripts\\python.exe -m pytest tests/test_compatibility_runner_persistence.py::test_runner_client_persists_external_execution_id_in_journal_and_report tests/test_compatibility_runner_persistence.py::test_runner_client_retains_external_execution_id_after_effective_failure tests/test_compatibility_runner_late_reports.py::test_runner_execution_identity_cannot_change_terminal_authority -q -x --tb=short
+# 3 passed
+
+..\\.venv-framework-v2\\Scripts\\python.exe -u -m pytest tests/test_compatibility_runner_persistence.py tests/test_compatibility_runner_reconciliation.py tests/test_compatibility_runner_late_reports.py tests/test_compatibility_mode_execution_recovery.py -q -rs --tb=short
+# 207 passed，1 warning，22.98 秒
+```
+
+本步只闭合“外部 Runner operation identity 在 assignment 内不可变且可跨 journal／报告恢复”这一 A3/H06 子出口；没有新增停止 API、目标查询端口、外部停止回执或自动补偿权限，`runner_execution_id` 仍是关联证据而非执行／停止授权。外部操作已发送但效果未知仍须 Runner journal／目标查询或人工对账；不能凭该 ID 认定已停止、重派或回滚正式结果。资源清理补偿、Memory 独立副本 journal、A2-2/A2-3、完整跨 Turn／逐模式 Harness、真实供应商／RustFS／领域 Runner、官方 saver conformance、E3/E4 和整体 v4 仍未完成。`ruff`、`mypy` 未安装，未执行独立 lint/typecheck；用户 v3 草稿保持未修改、未暂存、未提交。
+
 本步拟提交 `Agent_Server/src/contracts/memory_store.py`、`Agent_Server/src/infrastructure/postgres_vector_memory_store.py`、`Agent_Server/src/infrastructure/redis_vector_store.py`、`Agent_Server/src/application/context/memory_runtime_service.py`、观察投影回归测试及本实施记录；不包含用户草稿、日志、本地数据或配置。
