@@ -624,8 +624,6 @@ class AgentTaskDispatcher:
                     command.task_id, session_id=command.session_id)
                 self._framework_capabilities.require_message_stage(stage_version)
                 if command.operation == "message" and stored.status in {"queued", "waiting_resource"}:
-                    from src.application.context.framework_context_service import FrameworkContextService
-
                     try:
                         stage = await self._tasks.get_framework_message_stage(command.task_id, session_id=command.session_id)
                     except ValidationError as exc:
@@ -634,10 +632,7 @@ class AgentTaskDispatcher:
                         raise
                     if stage is None or stage.phase in {"submitted", "orchestrating", "orchestrated"}:
                         session = await self._sessions._require_session(command.session_id)
-                        try:
-                            FrameworkContextService.compatible_asset(session, runtime_binding)
-                        except (ValueError, FrameworkMessageStageRecoveryRequired) as exc:
-                            raise TaskDeferred("framework_transcript_format_unavailable") from exc
+                        self._framework_capabilities.require_transcript_format(session, runtime_binding)
             except TaskDeferred as exc:
                 LOGGER.warning("agent_v2_capability_unavailable", extra={
                     "task_id": command.task_id, "binding_id": runtime_binding.binding_id,

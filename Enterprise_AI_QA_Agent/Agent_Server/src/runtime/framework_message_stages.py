@@ -350,7 +350,7 @@ class FrameworkMessageStages:
         cur.execute(f"SELECT record FROM {self._table} WHERE binding_id=%s FOR SHARE", (binding.binding_id,))
         row = cur.fetchone()
         if row is not None:
-            capabilities.require_message_stage_format(row["record"])
+            return capabilities.require_message_stage_format(row["record"])
 
     def _get_record(self, task_id, session_id, *, for_capability=False):
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:

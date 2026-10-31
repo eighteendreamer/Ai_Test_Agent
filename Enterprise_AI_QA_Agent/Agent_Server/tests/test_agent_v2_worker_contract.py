@@ -603,7 +603,8 @@ def test_stage_format_reader_retains_each_existing_version(version):
     from src.runtime.framework_message_stages import validate_message_stage
 
     value = stage_record(schema_version=version)
-    FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value)
+    compatible = FrameworkWorkerCapabilities("a" * 64, True).require_message_stage_format(value)
+    assert compatible.schema_version == version and compatible.phase == value["phase"]
     assert validate_message_stage(value).schema_version == version
 
 

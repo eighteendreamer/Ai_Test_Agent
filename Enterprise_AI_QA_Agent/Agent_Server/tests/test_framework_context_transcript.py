@@ -322,6 +322,79 @@ async def test_recovery_does_not_reassemble_the_latest_session_transcript(operat
     assert tasks.claimed == ["reader"] and executions == [task.id]
 
 
+def transcript_reader_case(version):
+    from src.schemas.framework_transcript import framework_transcript_asset
+
+    session, request, _ = context_case()
+    binding = request.runtime_binding
+    asset = covered_asset(session, binding)
+    if version == 1:
+        binding = binding.model_copy(update={"runtime_version": "v2.0.0"})
+        asset = framework_transcript_asset(session_id=session.id, source_turn_id="old-turn",
+            runtime_version="v2.0.0", framework_messages=asset["framework_messages"]).model_dump(mode="json")
+    if version == 3:
+        binding = binding.model_copy(update={"runtime_version": "v2.3.0", "model_provider": "openai",
+            "model_transport": "openai_chat_completions"})
+        asset.update(schema_version=3, runtime_version="v2.3.0", model_provider="openai",
+            model_transport="openai_chat_completions")
+        asset["content_sha256"] = approval_value_hash({key: value for key, value in asset.items() if key != "content_sha256"})
+    session.metadata["framework_transcript_asset"] = asset
+    return session, binding, asset
+
+
+@pytest.mark.parametrize("version", [1, 2, 3])
+def test_admission_transcript_reader_preserves_each_supported_wire_format(version):
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+
+    session, binding, asset = transcript_reader_case(version)
+    before = deepcopy(asset)
+    FrameworkWorkerCapabilities("a" * 64, True).require_transcript_format(session, binding)
+    assert asset == before
+
+
+@pytest.mark.parametrize("version", [True, "1", 1.0, 0, 4, None])
+def test_admission_transcript_reader_rejects_unknown_explicit_versions_without_coercion(version):
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+    from src.runtime.task_deferred import TaskDeferred
+
+    session, binding, asset = transcript_reader_case(1)
+    asset["schema_version"] = version
+    with pytest.raises(TaskDeferred, match="framework_transcript_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_transcript_format(session, binding)
+
+
+def test_admission_transcript_reader_keeps_the_original_missing_version_default():
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+
+    session, binding, asset = transcript_reader_case(1)
+    del asset["schema_version"]
+    FrameworkWorkerCapabilities("a" * 64, True).require_transcript_format(session, binding)
+    assert "schema_version" not in asset
+
+
+@pytest.mark.parametrize("value", [[], 1, "future-transcript"])
+def test_admission_transcript_reader_rejects_nonobject_history(value):
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+    from src.runtime.task_deferred import TaskDeferred
+
+    session, binding, _ = transcript_reader_case(1)
+    session.metadata["framework_transcript_asset"] = value
+    with pytest.raises(TaskDeferred, match="framework_transcript_format_unavailable"):
+        FrameworkWorkerCapabilities("a" * 64, True).require_transcript_format(session, binding)
+
+
+def test_admission_reader_does_not_whitelist_provider_fields_or_arbitrary_metadata():
+    from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
+
+    session, binding, asset = transcript_reader_case(2)
+    session.metadata["unrelated_metadata"] = {"schema_version": 99, "future_field": True}
+    asset["framework_messages"][-1]["data"]["additional_kwargs"]["provider_metadata"] = {"schema_version": 99}
+    asset["content_sha256"] = approval_value_hash({key: value for key, value in asset.items() if key != "content_sha256"})
+    before = deepcopy(asset)
+    FrameworkWorkerCapabilities("a" * 64, True).require_transcript_format(session, binding)
+    assert asset == before
+
+
 @pytest.mark.asyncio
 async def test_a_frozen_graph_input_does_not_recheck_mutable_session_metadata():
     from src.application.orchestration.agent_task_dispatcher import AgentTaskDispatcher

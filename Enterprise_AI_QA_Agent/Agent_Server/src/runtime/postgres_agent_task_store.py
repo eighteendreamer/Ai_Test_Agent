@@ -10,6 +10,7 @@ import hashlib
 import json
 import logging
 from datetime import datetime, timezone
+from types import SimpleNamespace
 from uuid import uuid4
 
 from pydantic import ValidationError
@@ -1240,12 +1241,23 @@ class PostgresAgentTaskStore:
                 from src.runtime.framework_message_stages import FrameworkMessageStages
 
                 try:
-                    FrameworkMessageStages(self).require_worker_compatibility(cur, saved_binding, framework_capabilities)
+                    compatible_stage = FrameworkMessageStages(self).require_worker_compatibility(
+                        cur, saved_binding, framework_capabilities)
                 except TaskDeferred as exc:
                     logger.warning("framework_message_stage_reader_unavailable", extra={
                         "task_id": task_id, "binding_id": saved_binding.binding_id,
                         "worker_id": worker_id, "reason": str(exc)})
                     raise
+                if (row["operation"] == "message" and row["status"] in {"queued", "waiting_resource", "claimed"}
+                    and (compatible_stage is None or compatible_stage.phase in {"submitted", "orchestrating", "orchestrated"})):
+                    try:
+                        framework_capabilities.require_transcript_format(
+                            SimpleNamespace(id=session["id"], metadata=session["metadata"]), saved_binding)
+                    except TaskDeferred as exc:
+                        logger.warning("framework_transcript_reader_unavailable", extra={
+                            "task_id": task_id, "binding_id": saved_binding.binding_id,
+                            "worker_id": worker_id, "reason": str(exc)})
+                        raise
                 from src.runtime.framework_approval_journal import FrameworkApprovalJournal
 
                 try:

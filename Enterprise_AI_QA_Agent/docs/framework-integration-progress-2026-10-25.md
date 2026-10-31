@@ -7366,3 +7366,43 @@ $env:PYTHONIOENCODING='utf-8'
 v4 F／§14.1、H11 → 本节 → 两个生产文件、三个测试文件、测试白名单和本记录 → 上述红绿／完整组合失败与最终专项结果 → 独立提交 `【fix】领取前核对审批恢复证明格式`，ID 见 Git 历史和交付。生产无 DDL、数据迁移、写入格式、公共 API／DTO／前端／配置变化；仅提交本节 7 文件，不自动推送。用户 v3 草稿内容与 SHA256 不变，§158 已知共享 checkpoint 残留仍未擅自清理。
 
 仍需核实 §159／160 的时间异常，继续核对 native transcript／command／其他结果材料格式、实际双制品部署及归档。当前检查不代表所有 proof 或结果格式均覆盖，不补造历史证明、不授予跨 scope 恢复权限。A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、完整前后端与 E3/E4 均按 v4 保留；整体目标继续 active，本节不代表全系统完成。
+
+## 162. F／§14.1、H11：领取事务内核对原生历史兼容性（2026-10-31）
+
+### 缺口与依据 → 做法
+
+续接 `b08242bc2`／§161。原 Dispatcher 对 queued／waiting_resource 的 message 在事务外调用 `FrameworkContextService.compatible_asset()`，但等待 Session 行锁期间历史资产可能改变；已过期却尚未执行的 claimed message 也不经过这一快速检查。两种路径均可先修改 attempt／owner，再发现不兼容历史。根因是已有读者与领取事务的边界错位，不是缺少另一套历史拼接或模型重试。
+
+依据 `framework_context_service.compatible_asset()` 的原版本／迁移、Session／Turn 身份、模型与 provider／transport 校验，`framework_transcript.parse_framework_transcript_asset()` 的严格模型／摘要，以及 `framework_transcript.require_closed_transcript()` 的原生闭合协议 → 复用同一个真实读者核对锁内 Session 快照。固定环境 `langchain_core/messages/utils.py` 的 `_message_from_dict()`／`messages_from_dict()` 负责官方原生 type／data 反序列化，未知消息类型抛 ValueError；不以展示文本或自定义字段白名单替代。本地《Agent轨迹与协议鲁棒性》§3／§3.5 的协议漂移与关键轨迹检查 → 同时验证不兼容不领取、原状态不变及正常合法分支可执行，不引入课程示例中的新依赖。
+
+### TDD、实现与消费方
+
+1. 新增真实 PG 两例：持有 Session 行锁后更新未来 schema 再放行 Dispatcher，以及过期但尚未执行的 claimed message 更新未来字段。旧源码实际 **2 failed，16.85 秒**，均 `DID NOT RAISE TaskDeferred`；不是服务不可用或伪称真实未来发布事故样本。
+2. `FrameworkWorkerCapabilities.require_transcript_format()` 统一事务外 preflight 与事务内读者。显式版本仅接受精确整数 1／2／3；缺省保留原 v1，JSON null 继续表示没有历史资产。其余严格字段、摘要、迁移、模型／原生工具闭合沿原 reader，保留原 preflight 的 ValueError／recovery-required → 固定 TaskDeferred 策略，不附原私有历史异常输入链。任意 Session metadata 与 provider 附加字段不递归扫描、不设新白名单，也不据此授予恢复权限。
+3. `FrameworkMessageStages.require_worker_compatibility()` 返回已解析的 `FrameworkMessageStage`；能力方法返回类型与原版本 1–29 的单元契约同步，不在 claim 中再开连接重复读 stage。`PostgresAgentTaskStore._claim_sync()` 在原 Session → owner → task 锁内、任何状态修改前，以已锁定 Session 的 id／metadata 调用同一读者。仅限 `operation=message`、状态 queued／waiting_resource／claimed 且无 stage 或 phase 为 submitted／orchestrating／orchestrated，即尚需导入实时历史的路径。
+4. running 失租继续原 recovery_required，终态投递、message_recover／approval／reconciliation 和已冻结图输入／runtime result 不重新导入最新 Session 历史；冻结原件和后续原授权／摘要检查不移除。此次保证的是 claim 时锁内快照兼容，不声称消除提交后所有 metadata 变化窗口，也不把完整业务历史覆盖检查提前复制到 claim。新日志 `framework_transcript_reader_unavailable` 只含 task／binding／worker／固定 reason，无历史内容或异常正文。
+5. 新专项最终 20 项：Session 锁竞态、过期未执行／waiting_resource、无 stage 及可选 model ledger、未来版本／字段、hash／模型／serializer／Session 身份／native type／tool 协议、正常／null 历史首次领取与过期重领、running 失租／终态和冻结 runtime result 不重导历史。拒绝路径精确比较 11 张隔离表整行摘要，不改原 attempt、owner、outbox、模型账本等事实。真实 Redis 保留相同 stream entry、retry_count=0、PEL=1、无 dead letter，不调用执行端口。新模块显式依赖并核对随机 `prefix_checkpoints` 隔离，不写默认共享 checkpoint schema；沿精确测试白名单纳入 Git。
+6. 原 context_transcript 增加 14 项 reader 契约，覆盖 v1／v2／v3、精确版本类型、缺省／非对象及 metadata／provider 附加信息不误杀。初次两例加原 context／Worker 组合 **327 passed，28.67 秒**，仅为中间结果。扩大专项第一次 **2 failed、18 passed，69.18 秒**：一例误要求直接 TaskDeferred 也必须 suppress 不存在的异常上下文；另一例将历史 stage 7 的合法 `runtime_result_asset` 当作 `graph_input_asset`。修正为上下文为空或已 suppress，以及准确比较原 runtime result；其余原状态／执行次数／冻结材料断言不变，无生产授权放宽。最终专项／context／Worker／stage reader 组合 **372 passed，135.51 秒**，无 skip／deselect。
+
+### 当前源码最终验证
+
+固定 `.venv-framework-v2`，工作目录 `Agent_Server`，复用用户已启动 PostgreSQL／Redis。沿原本地固定 SDK／合成 HTTP 对端验证，context_runtime 全文件含 60 项真实框架／PG、跨 Turn、摘要、审批与冻结恢复测试，不等于真实付费供应商验收。本轮不运行 Docker、不重启服务、不扫描、不付费、不升级依赖或改生产路由。既有回归进程取得终态后才交付，未另起相同组合替代观察。
+
+```powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_transcript_reader_admission.py tests/test_framework_context_transcript.py tests/test_framework_context_runtime.py tests/test_agent_v2_worker_contract.py tests/test_framework_stage_reader_admission.py tests/test_framework_model_reader_admission.py tests/test_framework_approval_reader_admission.py tests/test_framework_recovery_proof_reader_admission.py tests/test_agent_task_dispatch.py tests/test_framework_task_control.py -q -rs --tb=short
+# 510 passed，1001.82 秒，exit 0；无 skip／deselect
+```
+
+根目录 `python -m compileall -q Agent_Server/src Agent_Server/tests` 与 `git diff --check` 实际通过；全局核对新增 reader、stage 返回契约与所有调用方。find_spec 确认 ruff／mypy 仍未安装，未运行独立 lint／typecheck，未安装依赖。没有执行全量前后端、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance 或不可变双制品部署演练；源码测试不替代这些出口。
+
+§159 完整 20 文件的 **1 failed、792 passed，3805.47 秒**，以及 §160 原 10 文件的 **2 failed、536 passed，1922.57 秒** 保持原记录：动态诊断污染已独立修正，中断到期比较与零秒续租后 claim 仍视为 active 的两类异常原因仍待核。当前 510 项包含控制回归但不等同于上述完整组合重新全绿，不能用本轮通过宣称其根因已修复。§158 默认共享 checkpoint 历史残留仍未归属，未猜测或执行清理。
+
+### 提交与剩余出口
+
+v4 F／§14.1、H11 → 本节 → 4 个生产文件、3 个测试文件、测试白名单与本记录 → 上述红绿、真实 PG／Redis 与固定官方 SDK 消费方验证 → 独立提交 `【fix】领取事务内核对原生历史兼容性`，ID 见 Git 历史和交付。无生产 DDL、数据迁移、写入格式、公共 API／DTO／前端／配置变化。仅提交本轮 9 文件，不推送；用户 v3 草稿 SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不修改、暂存或提交。
+
+下一步仍需核实上述时间异常，继续 native command／其他结果材料的独立读能力、实际不可变制品归档和双制品兼容部署；本节不宣称所有格式均覆盖。完整 A2/A3/B/C/D/E/F、H01–H12、真实依赖／领域 Runner、官方 saver conformance、完整前后端和 E3/E4 均按 v4 保留，整体目标继续 active，不把本次兼容子步当作全系统完成。

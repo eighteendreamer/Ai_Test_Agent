@@ -18,6 +18,7 @@ from src.schemas.framework_model_call import (
     FrameworkModelBudget, FrameworkModelCallRecord, FrameworkModelEvidenceUpload,
 )
 from src.schemas.runtime_binding import RuntimeBinding
+from src.schemas.framework_message_stage import FrameworkMessageStage
 from src.schemas.framework_transcript import (
     CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSION, SUMMARY_CONTEXT_RUNTIME_VERSION, TURN_CONTEXT_RUNTIME_VERSIONS,
 )
@@ -99,9 +100,8 @@ class FrameworkWorkerCapabilities:
             raise TaskDeferred(reason)
         self._read_compatible(model.model_validate, value, reason)
 
-    def require_message_stage_format(self, value: object) -> None:
+    def require_message_stage_format(self, value: object) -> FrameworkMessageStage:
         from src.runtime.framework_message_stages import message_stage_material_readers
-        from src.schemas.framework_message_stage import FrameworkMessageStage
 
         reason = "framework_message_stage_format_unavailable"
         if not isinstance(value, dict):
@@ -114,6 +114,28 @@ class FrameworkWorkerCapabilities:
                 if not isinstance(manifest[key], dict):
                     raise TaskDeferred(reason)
                 self._read_compatible(reader, manifest[key], reason)
+        return stage
+
+    def require_transcript_format(self, session, binding: RuntimeBinding) -> None:
+        """Reuse the actual cross-Turn reader, not a second metadata policy.
+
+        This is only for a message that still imports live Session history;
+        continuations and frozen graph inputs must retain their own sources.
+        """
+        from src.application.context.framework_context_service import FrameworkContextService
+        from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
+
+        reason = "framework_transcript_format_unavailable"
+        raw = (session.metadata or {}).get("framework_transcript_asset")
+        if raw is not None and (not isinstance(raw, dict)
+            or type(raw.get("schema_version", 1)) is not int or raw.get("schema_version", 1) not in {1, 2, 3}):
+            raise TaskDeferred(reason)
+        try:
+            FrameworkContextService.compatible_asset(session, binding)
+        except (ValueError, FrameworkMessageStageRecoveryRequired):
+            # Preserve the existing preflight's migration/protocol deferral,
+            # without attaching serialized private history to queue logs.
+            raise TaskDeferred(reason) from None
 
     def require_approval_journal_format(self, kind: str, value: object) -> None:
         """Reuse existing journal readers without granting native delivery rights.
