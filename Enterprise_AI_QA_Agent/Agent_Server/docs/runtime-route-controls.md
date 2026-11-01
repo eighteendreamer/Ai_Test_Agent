@@ -263,6 +263,40 @@ Worker 内存中的 `RuntimeExecutionOwner.controlled_case_lease` 捕获原 RunI
 
 真实正式来源＋本地合成 HTTP／工具、实际官方框架与 PG／Redis 的验收见实施记录 §188。完整服务器上下文与工具装配、确定性 RuntimeTurnResult 原件、唯一 Session finalizer、Assessment／Verification／证据与正式 RunItem 完成事务、case 审批继续／强杀恢复及领域／真实供应商验收仍待接入，不能据本内部执行出口开放生产。
 
+### 正式 case 的完整上下文准备与冻结消费（内部端口）
+
+`ControlledCaseRuntime.prepare_input()` 复用原 `RuntimeService._build_initial_state()` 与
+`TurnContextAssembly` 的 context_builder → router → permission_gate → prompt_assembler，
+不运行 legacy 图、不重分类、不新增模型循环。先核正式版本、原 RunItem attempt／plan pin、
+专用空 Session、绑定模型和预留投影身份，再冻结真实装配的完整应用 state、Prompt、
+原生输入、Skill 内容和工具描述。准备阶段不调用执行模型／业务工具，也不写业务库；
+检索与配置端口仍由应用装配；其真实 embedding 等依赖另需环境验收与调用授权，
+不能由本测试替身推断已验收或保证不发生外部检索调用。
+
+正式来源使用原 `AgentCaseExecutionContext`，无业务用户行／message-stage／跨 Turn transcript。
+原生协议中的 HumanMessage 显式标记 `source=test_run.agent_execution`，身份来自原固定 Turn；
+不能把它解释为伪造的持久用户消息或 Session 历史发布。request 中的框架／Deep Agents 保留标记
+不授予新格式，原 managed UI 的重复工作流 Skill 排除规则保留，trusted direct security 仍关闭。
+
+新增 task input schema 2，复用 `FrameworkRuntimePreparation` 保存绑定与预留 assistant／snapshot
+身份和图前 state；graph input 仍为原 schema 1。摘要同时覆盖准备材料，读者核对正式上下文、
+原生来源、Prompt、工具 schema／顺序、审批面、模型协议和原事件身份／时间／顺序。
+原 schema 1 保持可读、不得在新应用端口内静默补装配。原受理事务复用同一纯准备函数重构原件，
+核当前专用 Session；claim 在原写入前检查 `controlled_case_input_max_version` 和 assembly 能力。
+旧格式能力显式不足则 defer，不重写输入、不领取租约；默认 `controlled_case_available=false` 不变。
+
+`ControlledCaseRuntime.execute()` 仍委托 §188 的一次性 executor 和双租约 begin；running 提交后，
+用原 `SessionEventSink` 逐项确认冻结准备事件的原 ID／时间，再从冻结 state／描述装配治理工具。
+新 Worker 不重新检索项目、Memory、Skill、MCP 或配置来替换原上下文；工具执行仍走现有实时治理。
+ACK 失败保留 running 意图且禁止重跑，不能把准备时间冒充执行／数据库写入时间。
+返回 `ControlledCaseRuntimeOutcome` 只是应用状态、ToolJob 记录和原生读材料，**不是**
+`RuntimeTurnResult`、结果资产、完整事件集合提交证明、审批恢复许可或领域裁决。
+
+本端口未安装到 main／CLI／生产 Dispatcher。唯一 Session finalizer、确定性结果资产、原模型／
+ToolJob／事件原件复核、正式 Assessment／Verification／证据与 RunItem 原子完成、业务审批继续、
+强杀恢复、真实供应商／embedding／RustFS／领域 Runner 及部署验收仍未完成；不得据此开启生产。
+本轮真实来源与替身边界、实际命令和结果见实施记录 §189。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

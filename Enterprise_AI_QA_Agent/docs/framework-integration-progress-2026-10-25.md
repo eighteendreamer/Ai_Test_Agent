@@ -8867,3 +8867,72 @@ v4 E／§9.2、§12.1 → 本节 → 上述 7 文件 → 真实红绿、最终 1
 本步推进的是“有正式 task／双租约来源的实际官方受控执行”，不是完整 AgentCase 交付。下一依赖为完整服务器上下文／工具装配的冻结材料、controlled RuntimeTurnResult 确定性结果资产、原模型／ToolJob／事件原件复核、正常与恢复共用的唯一 Session finalizer、正式 Assessment／Verification／证据与 RunItem 原子完成，然后兼容 Worker／main、逐项业务审批继续、独立进程与真实领域验收。原 running／unknown 意图不自动重领，正式失败仍创建新回归运行，不能重置原结果。
 
 剩余 A2/A3/B/C/D/E/F、H01–H12、完整有效输入与逐模式质量、历史异常、真实供应商／embedding／RustFS／领域 Runner、全资源 main／E4 双制品及备份恢复继续保留，整体 goal 维持 active。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境准备与人工发布等待另计；首个正式 case 完整投影闭环和 E3 清单收口后重估，本步没有充分真实领域证据缩短工期。未启动／重启服务、未运行 Docker、未调用付费模型或访问外部目标、未改实际 .env／生产路由，仅原 fixture 清理本轮自有隔离资源。
+
+## 189. E／§9.2、§12.1：正式 case 的完整上下文准备、版本化冻结与实际消费（2026-11-02）
+
+### 依据、根因与范围
+
+续接 7fea54e39／§188，核实 active goal、Git 与原方案。用户 v3 草稿 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存。§188 的原生 executor 已真实执行，但其 fixture Prompt／治理 state 不是完整应用装配；这是应用准备材料缺口，不能靠伪造业务用户消息、message-stage 或 Deep Agents binding 解决。本轮只推进完整四步准备和原件消费，不把它当作确定性结果资产或正式用例完成。§181 四项及 §159／160／166 等历史异常保留，不用本轮绿色撤销历史失败。
+
+依据 → 采用方式：
+
+- 原 RuntimeService._build_initial_state、TurnContextAssembly／build_turn_context_assembly 与 PromptAssemblyService → 复用 context_builder → router → permission_gate → prompt_assembler，保留项目、Skill、Memory／observation、MCP、权限、模式和正式 case 的既有规则；不复制图节点、不运行 legacy 图或重分类。
+- 原 AgentCaseExecutionContext／prepare_controlled_case_input、SessionService.execute_case_turn 的正式来源与 managed UI 规则 → 仍由正式固定版本、原 attempt／plan pin 构建输入；保留 UI 重复工作流 Skill 排除，关闭 trusted direct security。ExecutionRequest 是服务器装配输入，不能由新公开路由自行构造授权。
+- 原 FrameworkProjectionIdentity／FrameworkRuntimePreparation → 复用预留 assistant／snapshot 身份和完整初始 state；使用显式 task input schema 2，不给旧格式添加隐含含义。graph input 和命令 envelope 版本不变，不新增 DDL／调度阶段／队列。
+- 原 LangChainToolAdapter、工具投影与治理端口 → 用同一适配器生成惰性 schema，冻结完整 ToolDescriptor 和顺序，执行时恢复原描述；实际动作仍经过原实时治理／ToolJob／模型根账本，不把冻结描述当成当前权限。
+- 原 _record_graph_event 的四字段 event_log、逐项 ACK sink 和一次性 begin／executor → 准备事件原 ID／时间随输入保存，running 后按原 Session 关联逐项确认，再装配治理工具并调用同一个图；不把内存缓冲当唯一材料，也不新增 finalizer。
+- 本地课程《Agent轨迹与协议鲁棒性》的结果＋轨迹、权限／幂等和异常注入 → 验证原正式来源、协议、工具原件、失效读者与 ACK 失败，不以最终文本或工具调用次数代替正式裁决。
+
+本轮 15 文件：新增 src/application/runtime/controlled_case_runtime.py 和 tests/test_controlled_case_runtime.py；修改原 runtime_service、controlled_case_preparation／admission、controlled_case_execution、framework_worker_capabilities、agent_task、controlled_case_task_input、framework_transcript；同步原 executor 夹具、task_input／execution_lease 的未来版本样本、路由控制说明和本记录。没有安装／升级依赖，没有修改 main／CLI／生产 Dispatcher、实际 .env 或默认 capability。
+
+### 实现与兼容语义
+
+ControlledCaseRuntime.prepare_input 捕获独立的 Session／request／正式来源，在检索前复用纯准备函数核原 attempt、正式版本和 plan pin；要求原专用空 Session、原 binding／模型协议与配置摘要、预留投影身份。复用原完整 initial_state 和四步装配，但不调用 FrameworkContextService 的业务消息历史入口，不导入／发布跨 Turn transcript。
+
+原生协议的 HumanMessage 来自正式 objective，稳定 ID 由原固定 Turn 派生，additional_kwargs 明示 source=test_run.agent_execution、Run／Item／原执行 attempt；它不是持久用户行，没有 user_message_id 或假 message-stage。正式完整内容仍进入原 PromptAssemblyService 的非可信数据区。request 中的 framework_*／deep_agent_* 保留标记不授予格式或 Deep Agents 阶段；服务端覆盖正式身份和受控装配标记，保留原模型选择／协议约束，拒绝路由器换模。
+
+新 ControlledCasePreparedTaskInputAsset（schema 2）保存原 FrameworkRuntimePreparation。摘要覆盖全部准备原件；读者核正式上下文、原生来源、Prompt、模型协议、工具 schema／顺序与描述、审批面，以及准备事件的原 ID／时间／顺序。原 schema 1 继续可读，新应用端口不静默补装配或升级旧输入。原受理事务用同一纯函数重构正式原件，并核当前专用 Session 的模式与预留版本；原 claim 在任何领取写入前通过 require_case_input_format 核 max version／assembly 能力。默认 controlled_case_available 仍为 false；旧能力不足则 defer，不改原输入／事实，不领取租约。
+
+ControlledCaseRuntime.execute 委托 §188 executor，不新增 claim／heartbeat／重试／模型循环。原双租约 begin 提交 running 后，用同一 sink 确认冻结准备事件的原身份和观察时间，再从原 state／描述恢复治理工具并实际调用受控图。新 Worker 无需重跑上下文检索或重新打开 Skill；运行期模型配置与权限仍由原治理复核，不能用新检索替换冻结上下文。准备时间和预留 snapshot 时间不是数据库行写入回执。准备阶段不调用执行模型／业务工具、不写业务库；真实检索端口可能依赖 embedding 等外部资源，需要独立授权与验收，本轮使用明确替身，不声称准备阶段在任意真实配置下均无外部请求。
+
+返回 ControlledCaseRuntimeOutcome 仅承载实际工作 state、ToolJob 记录与 FrameworkGraphOutcome，不是 RuntimeTurnResult、结果资产、完整审计集合提交证明、业务审批许可或正式结果。等待原生审批不生成假业务审批；ACK 失败后保留 running 意图、无模型／工具发送，重复入口不能重跑。图终态仍不完成 AgentTask／RunItem，原 finish(completed) 的未实现 finalizer 出口未放宽。
+
+### TDD 与真实失败记录
+
+首条正式 PG 来源红测实际 **1 failed，13.14 秒**，缺 controlled_case_runtime 模块。首实现实际 **1 failed，12.71 秒**：新测试的 request 写 fake，但本地模型配置实际 key 是 framework-fixture，原 router 正确拒绝换模；只将新夹具的 ModelDescriptor／request 对齐实际配置，不削弱原约束。其后实际 **1 failed，12.96 秒**：误把原 event_log 的四字段条目直接作为完整 ExecutionEvent，缺 session_id。查原 _record_graph_event／turn_projection，按同一原 Session 关联物化事件，严格保留原 ID／时间，不使用随机／当前时间 fallback。
+
+单项中间实际 **1 passed，11.96 秒**。扩大新专项中间实际 **33 passed，117.28 秒，无 skip／deselect**。补旧输入拒绝的可检索日志反例实际 **1 failed、33 deselected，10.84 秒**：正确拒绝旧 schema 1，却无应用入口日志；补固定 controlled_case_runtime_execution_rejected，仅记录标量身份、阶段和 error_type，不输出原 context／Prompt／异常正文。
+
+第一轮五模块实际 **1 failed、93 passed，246.34 秒**：旧 task-input 用例将 schema 2 当未来版本，现在该版本已被显式支持；缺 runtime_preparation 应是校验错误，不是未知格式 defer。同步三个旧“未来版本”输入样本为 schema 3（两个 task_input 样本与一个 execution_lease 样本），保留 graph input、admission checkpoint 和 budget 各自独立的版本边界；另补已知 schema 2 缺材料必须精确校验失败的反例。没有把缺材料改成降级／defer，没有削弱生产 reader 或忽略断言。再补冻结审批面确实进入原生等待、却无业务审批／工具执行的正例后才运行最终回归。
+
+### 最终验证与证据边界
+
+固定 E:\MiniConda3\envs\Agent\python.exe；每组前使用 scripts/clear_uv_environment.ps1 -ProcessOnly，PYTHONIOENCODING=utf-8，PG／Redis=1、Docker／MySQL=0，QA_FRAMEWORK_WORKER_DIAGNOSTICS=1，不使用 UV。最终五模块实际 **203 passed，571.44 秒，exit 0，无 skip／deselect**，含新专项全部 36 项：
+
+~~~powershell
+# cwd: Agent_Server；环境如上。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+同一最终 Python 源码的十二模块跨层回归实际 **705 passed，839.17 秒，exit 0，无 skip／deselect**：
+
+~~~powershell
+# 同上工作目录、固定 Python 和环境；与第一组后段有并行执行，各组独立随机隔离资源。
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_turn_context.py tests/test_framework_context_runtime.py tests/test_framework_context_transcript.py tests/test_framework_tool_bridge.py tests/test_framework_tool_projection.py tests/test_framework_live_event_persistence.py tests/test_runtime_binding_persistence.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_framework_release_archive.py tests/test_controlled_case_graph_input.py tests/test_controlled_case_adapter.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+两组分别报告，不将数量相加冒充新的独立证据等级。新专项覆盖四种协议的完整准备→真实受理／claim／begin→官方受控图／ToolJob；Worker 无 assembly 服务且 Skill 文件／Registry 描述已改变，仍使用原 Prompt／描述；准备不改原 Session／业务库、错误来源不进执行、重算摘要也不能跨原件混用、旧读者不领取、缺材料的已知版本校验、原准备事件逐项 ACK、ACK 失败后不重跑及原生等待不冒充业务许可。
+
+四个 RUN_LIVE 开关全部置 0，单跑新专项实际 **36 skipped，7.91 秒，exit 0**，仅证明原 opt-in 边界，不计通过。前端 npm.cmd run typecheck 实际 exit 0；原三文件事件消费回归实际 **18 passed，2.76 秒，exit 0**：ExecutionTrace.eventCompletion.test.ts、sessionEventRefresh.test.ts、useFlowSession.lifecycle.test.ts。固定新 Python compileall -q src tests 和 pip check 已实际运行，无 broken requirements；ruff／mypy 仍未安装，没有安装依赖，未运行独立 backend lint／typecheck。未跑全量前后端、前端 build／浏览器验收。
+
+最终 src 聚合 SHA256（按相对 src 的 Python 路径 UTF-8＋NUL＋原字节＋NUL 排序）为 ffee18f0ec69b05eadc809b625adecb6f6e697c9f368d839db0f40b7615021c5；新专项 SHA256 为 c91a735cdc0f83bc2a39d0b58c14beac02ad6ee25b82812ba215d25704f56088；修改的原 executor／task_input／execution_lease 专项分别为 2c0a6acea3f367b8a1c5267b4090a17af8fa97d995d6aa671b84cce4455976aa、c1636dce5be5d5b892a6230a27e00703582769ec0a5db55be14d495a398f68e1、f852080c37120420f815eca9609783e36ab55de4ba180b0a2f035018fb40c684。两组运行中及第一组结束、opt-out 后检查一致，测试运行期间没有修改最终 Python 源码／测试。后续提交前再次核对。
+
+正式来源由原服务在真实隔离 PG 完成草稿／评审／启用、Suite／计划 Run、原 RunItem 领取／start、原子受理、双租约 claim／begin；使用真实 Redis、固定官方 SDK／图／PostgresSaver、原账本／ToolJob／事件持久化。四步装配、Skill 文件和权限／Prompt 组件是真实原实现，正式项目也来自原 PG 服务；规划、模型配置存储、文档对象、Memory／observation／MCP 检索等端口仍是明确替身，HTTP 对端与工具 handler 为本地合成。服务器 orchestrator／实际模式资源的完整装配、真实 embedding／供应商／RustFS／领域 Runner、独立 case Worker 强杀、全资源 main、E4 双制品／备份恢复仍未验收，不能用此组替代真实逐模式质量或声称外部效果已停止。
+
+### 对应、提交与剩余出口
+
+v4 E／§9.2、§12.1 → 本节 → 上述 15 文件 → 真实红绿、203／705 项回归和前端检查 → 与本记录同一独立中文 commit，具体 ID 以 Git 与本轮交付为准。提交前审查完整 diff／status／暂存清单与 diff --check，只将本轮具体文件暂存；新被忽略测试仅单文件 git add -f，不改 ignore，不纳入用户 v3／认证／日志／制品，不推送或创建 PR。
+
+下一依赖是用原准备材料、原模型／ToolJob／事件与精确原生终态，确定性投影 controlled RuntimeTurnResult 并保存同一原结果资产；正常与恢复仍须共享唯一 Session finalizer，再接原 Assessment／Verification／证据与 RunItem 原子完成、业务审批继续、兼容 Worker／main 与独立进程验收。本步没有新建第二条 finalizer，也未给原生终态授予恢复权。旧失败结果保留，回归必须创建新运行，不能重置原任务／RunItem。
+
+剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式有效输入／质量、流式／取消等未收口项和历史异常继续保留，整体 goal 维持 active。本轮未启动／重启服务、未运行 Docker、未调用付费模型或访问外部目标、未改生产路由／实际 .env；仅原 fixture 清理本轮随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境与人工发布等待另计；本轮没有足够 E3／E4 证据缩短工期。

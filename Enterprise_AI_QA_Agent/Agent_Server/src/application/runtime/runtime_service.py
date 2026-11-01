@@ -21,6 +21,7 @@ from src.application.deep_agents.framework_transcript import append_turn_input, 
 from src.application.context.framework_context_service import FrameworkContextService
 from src.schemas.framework_transcript import (
     IDENTITY_CONTEXT_RUNTIME_VERSIONS, TURN_CONTEXT_RUNTIME_VERSIONS, SUMMARY_CONTEXT_RUNTIME_VERSION, TRANSCRIPT_PREPARATION_KEY,
+    uses_turn_context_assembly,
 )
 from src.schemas.framework_summary import SUMMARY_COVERAGE_VERSION_KEY
 from src.schemas.framework_harness_settings import FrameworkHarnessSettings, HARNESS_SETTINGS_KEY
@@ -1639,7 +1640,8 @@ class RuntimeService:
 
         bound = state.get("context_bundle", {}).get("runtime_binding")
         binding = RuntimeBinding.model_validate(bound) if bound is not None else None
-        if binding is not None and binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS:
+        if binding is not None and (binding.runtime_version in TURN_CONTEXT_RUNTIME_VERSIONS
+                or uses_turn_context_assembly(state.get("context_bundle") or {})):
             from src.schemas.agent import ToolDescriptor
 
             raw_descriptors = state["context_bundle"].get("framework_tool_descriptors")

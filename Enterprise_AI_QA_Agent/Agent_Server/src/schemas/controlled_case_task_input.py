@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 from src.schemas.case_execution import AgentCaseExecutionContext
 from src.schemas.controlled_case_graph_input import ControlledCaseGraphInputAsset, parse_controlled_graph_input
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.framework_graph_input import FrameworkRuntimePreparation
+from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
 from src.schemas.run_management import RunPlanSnapshotIdentity
 
 
@@ -73,7 +75,96 @@ class ControlledCaseTaskInputAsset(BaseModel):
         return next(step.item.case_version_id for step in self.context.steps if step.item.key == self.context.target_key)
 
 
-def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset:
+class ControlledCasePreparedTaskInputAsset(ControlledCaseTaskInputAsset):
+    """Original application preparation, not a result or recovery permit."""
+    schema_version: Literal[2]
+    runtime_preparation: FrameworkRuntimePreparation
+
+    @model_validator(mode="after")
+    def verify_preparation(self):
+        graph = self.graph_input
+        state = self.runtime_preparation.initial_state
+        context = state.get("context_bundle") or {}
+        if (self.runtime_preparation.identity.binding != graph.binding
+            or graph.binding.runtime_version != "v2.0.0"
+            or (state.get("session_id"), state.get("turn_id"), state.get("trace_id"), state.get("selected_model_key"))
+            != (graph.binding.session_id, graph.binding.turn_id, graph.trace_id, graph.model_key)
+            or context.get("runtime_binding") != graph.binding.model_dump(mode="json")
+            or state.get("system_prompt") != graph.system_prompt
+            or state.get("framework_messages") != graph.framework_messages
+            or any(context.get(key) != value for key, value in self.context.runtime_context().items())
+            or context.get("attempt_id") != self.run_item_execution_attempt_id
+            or context.get("case_execution_managed") is not True or context.get("case_assessment_requested") is not True
+            or context.get("trusted_security_runtime_direct_execution") is not False
+            or type(context.get(CONTROLLED_CASE_CONTEXT_VERSION_KEY)) is not int
+            or context[CONTROLLED_CASE_CONTEXT_VERSION_KEY] != 1
+            or context.get("framework_tool_projection_version") != 3
+            or context.get("framework_model_protocol") != {
+                "provider": graph.binding.model_provider, "transport": graph.binding.model_transport}
+            or (state.get("selected_model_provider"), state.get("selected_model_transport"))
+                != (graph.binding.model_provider, graph.binding.model_transport)
+            or state.get("user_message") != self.context.objective):
+            raise ValueError("Controlled runtime preparation differs from its formal input or original graph")
+        native = controlled_case_native_input(self.context, self.run_item_execution_attempt_id, graph.binding.turn_id)
+        if graph.framework_messages != native or state.get("runtime_messages") != [
+            {"role": "user", "content": self.context.objective}]:
+            raise ValueError("Controlled runtime preparation requires its formal native source, not Session history")
+        from langchain_core.utils.function_calling import convert_to_openai_tool
+        from src.schemas.session import ExecutionEvent
+
+        if approval_value_hash([convert_to_openai_tool(tool) for tool in controlled_case_schema_tools(state)]) \
+                != approval_value_hash(graph.tool_schemas):
+            raise ValueError("Controlled runtime tool descriptors differ from their frozen graph schemas")
+        expected = {key: {"allowed_decisions": ["approve", "reject"]}
+            for key in state.get("approval_required_tool_keys", [])}
+        if graph.model_dump(mode="json")["interrupt_on"] != expected:
+            raise ValueError("Controlled runtime approval surface differs from its frozen permissions")
+        raw_events = state.get("event_log", [])
+        if (not isinstance(raw_events, list) or any(not isinstance(event, dict)
+            or set(event) != {"id", "timestamp", "type", "payload"}
+            or not event["id"] or not event["timestamp"] for event in raw_events)):
+            raise ValueError("Controlled runtime preparation requires complete original event identities and timestamps")
+        events = [ExecutionEvent(session_id=graph.binding.session_id, **event) for event in raw_events]
+        if (not events or len({event.id for event in events}) != len(events)
+            or any(event.session_id != graph.binding.session_id
+                or event.payload.get("turn_id") != graph.binding.turn_id
+                or event.payload.get("trace_id") != graph.trace_id or event.payload.get("step") != index
+                for index, event in enumerate(events, 1))):
+            raise ValueError("Controlled runtime preparation requires its original ordered event intents")
+        return self
+
+
+def controlled_case_native_input(context, attempt_id, turn_id):
+    """Protocol user role denotes formal input, NOT a persisted business user row."""
+    from langchain_core.messages import HumanMessage
+    from src.application.deep_agents.framework_transcript import serialize_messages
+
+    return serialize_messages([HumanMessage(id=f"controlled-case:{turn_id}", content=context.objective,
+        additional_kwargs={"source": "test_run.agent_execution", "run_id": context.run_id,
+            "run_item_id": context.run_item_id, "run_item_execution_attempt_id": attempt_id})])
+
+
+def controlled_case_schema_tools(state):
+    """Use the original governed adapter, including formal action schema metadata."""
+    from src.application.model_adapters.tool_adapter import LangChainToolAdapter
+    from src.schemas.agent import ToolDescriptor
+
+    context = state.get("context_bundle") or {}
+    raw = context.get("framework_tool_descriptors")
+    if not isinstance(raw, list):
+        raise ValueError("Controlled runtime preparation has no frozen tool descriptors")
+    descriptors = [ToolDescriptor.model_validate(item) for item in raw]
+    visible = state.get("model_visible_tool_keys")
+    if [item.key for item in descriptors] != visible or len(set(visible)) != len(visible):
+        raise ValueError("Controlled runtime tool descriptors differ from their visible surface")
+
+    async def schema_only(*args):
+        raise RuntimeError("Controlled schema-only tool is not executable")
+
+    return LangChainToolAdapter().to_governed_tools(descriptors, invoke=schema_only, context_bundle=context)
+
+
+def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset | ControlledCasePreparedTaskInputAsset:
     # Frozen models retain mutable nested context. Never trust a prebuilt
     # object or retain caller JSON aliases across a later awaited boundary.
     if isinstance(value, ControlledCaseTaskInputAsset):
@@ -82,4 +173,6 @@ def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset:
         value = json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ValueError("Controlled case input contains non-persistable execution data") from exc
-    return ControlledCaseTaskInputAsset.model_validate(value)
+    reader = (ControlledCasePreparedTaskInputAsset if isinstance(value, dict) and value.get("schema_version") == 2
+        else ControlledCaseTaskInputAsset)
+    return reader.model_validate(value)

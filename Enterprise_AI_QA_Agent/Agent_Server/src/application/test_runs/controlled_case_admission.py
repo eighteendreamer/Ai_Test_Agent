@@ -157,7 +157,15 @@ class ControlledCaseAdmission:
             version = self._cases._version_from_value(row["record"])
             original = prepare_controlled_case_input(detail=detail, item=item, version=version,
                 attempt_id=attempt.id, binding=binding,
-                graph_request=asset.graph_input.request(business_tools=asset.graph_input.tool_schemas))
+                graph_request=asset.graph_input.request(business_tools=asset.graph_input.tool_schemas),
+                runtime_preparation=getattr(asset, "runtime_preparation", None))
+            if asset.schema_version == 2:
+                state = asset.runtime_preparation.initial_state
+                if (state.get("mode_key") != session["mode_key"]
+                    or state.get("session_mode") != session["session_mode"]
+                    or state.get("runtime_mode") != session["runtime_mode"]
+                    or asset.runtime_preparation.identity.snapshot_version != 1):
+                    raise AgentSubmissionConflict("Controlled runtime preparation differs from its dedicated Session")
             if original.asset_sha256 != asset.asset_sha256:
                 raise AgentSubmissionConflict("Controlled case frozen input differs from its formal original")
             # These writes share the transaction and roll back on expiry. Take

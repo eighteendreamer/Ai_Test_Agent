@@ -90,8 +90,7 @@ def prepare_case_claim(cur, tasks, command, capabilities):
     payload = row["input_payload"]
     if not isinstance(payload, dict) or set(payload) != {"case_execution_input"}:
         raise ValueError("Controlled case task requires its single frozen input original")
-    asset = capabilities._read_compatible(parse_controlled_case_task_input, payload["case_execution_input"],
-        "framework_case_input_format_unavailable", literal_fields=("schema_version",))
+    asset = capabilities.require_case_input_format(payload["case_execution_input"])
     reference = command.case_execution_reference
     if (reference.run_item_execution_attempt_id != asset.run_item_execution_attempt_id
         or reference.input_sha256 != asset.asset_sha256 or command.runtime_binding != asset.graph_input.binding

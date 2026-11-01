@@ -37,7 +37,7 @@ def implementation():
 
 
 @asynccontextmanager
-async def execution(s, config, *, tools=(), gating=None):
+async def execution(s, config, *, tools=(), gating=None, prepare_input=None):
     """Freeze local configuration BEFORE real admission, never edit admitted originals."""
     snapshot = ModelInvocationParameters.from_configuration(config)
     s.binding = RuntimeBinding.model_validate({**s.binding.model_dump(exclude={"fingerprint"}),
@@ -45,15 +45,16 @@ async def execution(s, config, *, tools=(), gating=None):
         "model_provider": config.provider, "model_transport": config.transport})
     s.graph_request = replace(s.graph_request, model_key=config.key,
         business_tools=list(tools), interrupt_on=gating or {})
-    s.asset = prepare_controlled_case_input(detail=s.detail, item=s.item, version=s.version,
-        attempt_id=s.attempt.id, binding=s.binding, graph_request=s.graph_request)
+    models = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config), s.h.settings)
+    s.asset = (await prepare_input(models) if prepare_input is not None else prepare_controlled_case_input(
+        detail=s.detail, item=s.item, version=s.version,
+        attempt_id=s.attempt.id, binding=s.binding, graph_request=s.graph_request))
     s.command = s.command.model_copy(update={"runtime_binding": s.binding, "case_execution_input": s.asset})
     s.budget = s.budget.model_copy(update={"max_tokens": 500_000,
         "model_configurations": {config.key: snapshot},
         "model_config_fingerprints": {config.key: snapshot.fingerprint}})
     await submit(s)
     task = await claim(s)
-    models = ModelRuntimeService(SimpleNamespace(get_runtime_config=lambda key: config), s.h.settings)
     policy = FrameworkModelCallPolicy(calls=s.calls, model_config_resolver=models.get_model_config)
     schema = f"formal_case_graph_{uuid4().hex}"
     s.h.settings.deep_agents.checkpoint_schema = schema

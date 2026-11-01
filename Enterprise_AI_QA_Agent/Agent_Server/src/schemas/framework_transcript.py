@@ -18,12 +18,16 @@ SUMMARY_CONTEXT_RUNTIME_VERSION = "v2.3.0"
 TURN_CONTEXT_RUNTIME_VERSIONS = frozenset({TURN_CONTEXT_RUNTIME_VERSION, SUMMARY_CONTEXT_RUNTIME_VERSION})
 IDENTITY_CONTEXT_RUNTIME_VERSIONS = frozenset({CONTEXT_RUNTIME_VERSION, *TURN_CONTEXT_RUNTIME_VERSIONS})
 TRANSCRIPT_PREPARATION_KEY = "framework_transcript_preparation"
+CONTROLLED_CASE_CONTEXT_VERSION_KEY = "controlled_case_context_version"
 
 
 def uses_turn_context_assembly(context: Mapping[str, Any]) -> bool:
     binding = context.get("runtime_binding")
-    return (isinstance(binding, dict) and binding.get("runtime_kind") == "deepagents"
-        and binding.get("runtime_version") in TURN_CONTEXT_RUNTIME_VERSIONS)
+    return isinstance(binding, dict) and (
+        binding.get("runtime_kind") == "deepagents" and binding.get("runtime_version") in TURN_CONTEXT_RUNTIME_VERSIONS
+        or binding.get("runtime_kind") == "langgraph" and binding.get("runtime_version") == "v2.0.0"
+        and type(context.get(CONTROLLED_CASE_CONTEXT_VERSION_KEY)) is int
+        and context[CONTROLLED_CASE_CONTEXT_VERSION_KEY] == 1)
 
 
 class FrameworkTranscriptAsset(BaseModel):
