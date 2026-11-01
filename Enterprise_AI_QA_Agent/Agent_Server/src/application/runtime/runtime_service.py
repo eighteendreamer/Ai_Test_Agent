@@ -1655,6 +1655,7 @@ class RuntimeService:
             raise FrameworkApprovalRecoveryRequired("Governed tool projection material format is unavailable")
         owner = current_framework_owner()
         gates = frozenset()
+        tool_harness = binding.runtime_kind if binding is not None else "deepagents"
         if binding is not None:
             if owner is None or owner.binding != binding or self._framework_approval_projection is None:
                 raise FrameworkApprovalRecoveryRequired("Governed tools require their captured native execution owner")
@@ -1690,9 +1691,10 @@ class RuntimeService:
                     raise FrameworkApprovalRecoveryRequired("Native tool approval disappeared after gate restoration")
                 approved = saved.model_dump(mode="python") if saved is not None else None
             await append_graph_event_durable(
-                state, "tool.execution_requested", "deepagents.tool_governance",
-                "Deep Agents requested a governed business tool.",
-                tool_key=descriptor.key, call_id=call_id, harness="deepagents",
+                state, "tool.execution_requested", f"{tool_harness}.tool_governance",
+                "Controlled graph requested a governed business tool." if tool_harness == "langgraph"
+                    else "Deep Agents requested a governed business tool.",
+                tool_key=descriptor.key, call_id=call_id, harness=tool_harness,
             )
             result = await self._tool_governance_service.execute(
                 ModelToolCall(id=call_id, name=descriptor.key, arguments=arguments),
@@ -1725,10 +1727,10 @@ class RuntimeService:
                 "denied": "tool.execution_denied",
             }.get(result.record.status, "tool.execution_failed")
             await append_graph_event_durable(
-                state, event_type, "deepagents.tool_governance", result.record.summary,
+                state, event_type, f"{tool_harness}.tool_governance", result.record.summary,
                 tool_key=result.record.tool_key, call_id=call_id,
                 tool_job_id=result.record.job_id, approval_id=result.record.approval_id,
-                status=result.record.status, replayed=result.replayed, harness="deepagents",
+                status=result.record.status, replayed=result.replayed, harness=tool_harness,
             )
             content = json.dumps(make_json_safe({
                 "status": result.record.status, "summary": result.record.summary,

@@ -249,6 +249,20 @@ Worker 内存中的 `RuntimeExecutionOwner.controlled_case_lease` 捕获原 RunI
 
 实际红绿与验证范围见实施记录 §187。真实 PG 正式来源、隔离 Redis、官方 saver、模型账本预留属于本轮范围；没有实际模型 HTTP／领域 Runner、受控图独立 Worker 强杀或正式结果 finalizer 验收。数据库 fence 不能撤销已发送的外部操作，未知效果仍需原 journal／停止回执或人工对账。
 
+### 内部正式 case 的一次性原生执行（v4 E／§9、§12.1）
+
+`ControlledCaseExecutor.execute()` 接受专用 claim 捕获的双租约 owner、调用者已取得的资源 fencing 身份，以及异步 `build_business_tools(prepared)` 工具装配端口。它不是 Dispatcher、重领／续租循环或 finalizer，main／CLI／生产 Worker 均未装配，默认 case capability 仍为 false。正式完成仍被原 `finish(completed)` 拦截。
+
+执行器深拷贝 Worker 对象，保留不可序列化的第二租约、隔离可变 input；先读取严格原件，再复用原 task `begin` 事务。在 Session／原 RunItem／owner／task 锁内，对 case 额外核对持久原输入、captured input、绑定／正式身份、原受理 checkpoint／plan pin 和提交摘要。取得原预算的共享锁后，再以原 owner assertion 复核两项租约和 DB deadline。只有原事务提交 running／Attempt／事件后，才调用工具装配和原 `execute_frozen()`；没有新 DDL、checkpoint 格式或中间 result_payload，也没有伪造 message-stage。
+
+工具装配保留原“running owner 才能读取 gates”的规则，不能提前构造再放宽检查。装配得到的工具仍须与冻结 schema／顺序一致；执行继续走原模型策略、根账本、官方 saver、ToolNode 和业务 ToolJob／权限治理。共享工具事件依据原 binding 标注 `langgraph.tool_governance`／`harness=langgraph`，Deep Agents 的既有值不变，不将 controlled case 伪贴为 Deep Agents 或 DA-E 阶段。事件名和公开 DTO 不变，消费方按原通用事件处理。
+
+执行器复用原 owner-bound `SessionEventSink.run()` 与 `graph_event_scope`，治理事件逐项 await PostgreSQL ACK，失败阻断后续执行，不使用内存溢出后的静默最终补刷。这里只证明已确认的单项事件持久化；没有声明完整事件集合、RuntimeTurnResult、应用提交或正式测试裁决。
+
+返回类型仍是原 `FrameworkGraphOutcome`：原生终态、逐项 interrupt、消息和根预算材料，不是应用结果资产。图返回、等待审批、模型 unknown、工具迟到或协程取消均不自动把 AgentTask／RunItem 置 completed。原 running 意图在重复／并发执行时阻断二次 invocation；失租由原 recovery_required／对账规则处理，没有恢复授权便不能重跑。begin 的 `to_thread` 等待者取消可能仍提交 SQL，固定日志保留 `begin_receipt_unknown`，不谎称回滚；原生只读 reader 不因旧租约失效而丢弃原件，也不授予重执行权。
+
+真实正式来源＋本地合成 HTTP／工具、实际官方框架与 PG／Redis 的验收见实施记录 §188。完整服务器上下文与工具装配、确定性 RuntimeTurnResult 原件、唯一 Session finalizer、Assessment／Verification／证据与正式 RunItem 完成事务、case 审批继续／强杀恢复及领域／真实供应商验收仍待接入，不能据本内部执行出口开放生产。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。

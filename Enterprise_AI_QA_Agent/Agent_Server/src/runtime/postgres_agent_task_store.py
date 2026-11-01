@@ -348,7 +348,9 @@ class PostgresAgentTaskStore:
         resource_id: str | None = None,
         fencing_token: int | None = None,
     ):
-        await asyncio.to_thread(
+        # Non-case callers keep None. A formal case receives the independently
+        # verified durable input only after its original running intent commits.
+        return await asyncio.to_thread(
             self._transition_sync,
             task,
             "running",
@@ -1619,14 +1621,16 @@ class PostgresAgentTaskStore:
         fencing_token,
     ):
         settlement = None
+        case_input = None
         with postgres_connect(self._settings) as conn, conn.cursor() as cur:
             if task.runtime_binding is not None:
                 configure_runtime_owner_transaction(cur, self._settings)
             session = self._lock_session(cur, task.session_id)
+            case = None
             if task.runtime_binding is not None:
                 if task.runtime_owner is None:
                     raise ContinuationLeaseLostError("Framework task requires its captured execution owner")
-                assert_runtime_owner(cur, self._settings, task.runtime_owner, states=("claimed", "running"))
+                case = assert_runtime_owner(cur, self._settings, task.runtime_owner, states=("claimed", "running"))
             cur.execute(f"SELECT * FROM {self._tasks} WHERE id=%s FOR UPDATE", (task.id,))
             row = cur.fetchone()
             if not row or row["attempt_id"] != task.attempt_id or row["lease_token"] != task.lease_token:
@@ -1636,6 +1640,10 @@ class PostgresAgentTaskStore:
                 raise ContinuationLeaseLostError("Agent task attempt is already settled")
             if status in {"running", "waiting_resource"} and row["status"] != "claimed":
                 raise ValueError("Only a claimed task can start or wait for admission")
+            if row["operation"] == "case_execute" and status == "running":
+                from src.runtime.controlled_case_execution import prepare_case_start
+
+                case_input = prepare_case_start(cur, self, row, case, task)
             if row["operation"] == "case_execute" and status == "completed":
                 logger.warning("controlled_case_finalizer_required", extra={"task_id": task.id,
                     "attempt_id": task.attempt_id, "binding_id": task.runtime_binding.binding_id,
@@ -1693,6 +1701,7 @@ class PostgresAgentTaskStore:
                 "attempt_id": task.attempt_id, "binding_id": task.runtime_binding.binding_id,
                 "origin_commit_task_id": settlement.task_id,
                 "result_reference": settlement.output_message_id or settlement.snapshot_id})
+        return case_input
 
     def _update_status(self, cur, row, status, result_status, reason, *, execution_returned=False):
         if row.get("runtime_binding") is not None:

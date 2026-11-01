@@ -127,6 +127,52 @@ def require_case_submission(cur, tasks, row, locked, now):
         raise ValueError("Controlled case original model deadline has expired")
 
 
+def prepare_case_start(cur, tasks, row, locked, task):
+    """Recheck original facts in the existing begin transaction, not a new intent.
+
+    The Worker copy is preflight input only. Return an independently parsed
+    durable original after all potentially waiting owner/task/budget locks.
+    """
+    from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
+    from src.schemas.framework_approval import approval_value_hash
+
+    try:
+        payload = row["input_payload"]
+        if (locked is None or row["operation"] != task.operation or task.runtime_owner.task_id != row["id"]
+            or row["runtime_binding"] != task.runtime_binding.model_dump(mode="json")
+            or any(row[name] != getattr(task, name) for name in (
+                "session_id", "turn_id", "project_id", "run_id", "run_item_id", "reference_id", "trace_id", "worker_id"))
+            or not isinstance(payload, dict) or set(payload) != {"case_execution_input"}
+            or approval_value_hash(payload) != approval_value_hash(task.input)):
+            raise ValueError("Controlled case start differs from its captured original input or identity")
+        asset = parse_controlled_case_task_input(payload["case_execution_input"])
+        if (asset.asset_sha256 != locked.lease.input_sha256
+            or asset.graph_input.binding != task.runtime_binding or asset.graph_input.trace_id != row["trace_id"]
+            or asset.run_item_execution_attempt_id != locked.attempt.id
+            or asset.plan_snapshot_identity != locked.checkpoint.plan_snapshot_identity
+            or (asset.context.project_id, asset.context.run_id, asset.context.run_item_id, asset.case_version_id)
+            != (row["project_id"], row["run_id"], row["run_item_id"], row["reference_id"])
+            or row["input_hash"] != locked.checkpoint.submission_sha256):
+            raise ValueError("Controlled case start differs from its original admission input")
+        if row["interrupt_requested"]:
+            raise ValueError("Controlled case start was interrupted before execution")
+        calls = PostgresFrameworkModelCalls(tasks._settings)
+        cur.execute(f"SELECT binding_id FROM {calls.budgets_table} WHERE binding_id=%s FOR SHARE",
+            (task.runtime_binding.binding_id,))
+        # Acquiring the budget lock may have waited. Recheck BOTH leases with
+        # the original assertion after it, not a caller timestamp or NOW().
+        from src.runtime.postgres_runtime_owner import assert_runtime_owner
+
+        assert_runtime_owner(cur, tasks._settings, task.runtime_owner, states=("claimed",))
+        cur.execute("SELECT clock_timestamp() AS now")
+        require_case_submission(cur, tasks, row, locked, cur.fetchone()["now"])
+        return asset
+    except (ValueError, ContinuationLeaseLostError) as exc:
+        logger.warning("controlled_case_start_rejected", extra={"task_id": task.id,
+            "attempt_id": task.attempt_id, "error_type": type(exc).__name__})
+        raise
+
+
 def lock_case_owner(cur, settings, owner, *, schema=""):
     """A stripped owner/source may not bypass the second lease check."""
     if owner.binding.runtime_kind != "langgraph" and owner.controlled_case_lease is None:
