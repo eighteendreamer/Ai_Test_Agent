@@ -257,44 +257,21 @@ class DeepAgentRuntimeAdapter:
                         "harness": "deepagents",
                     },
                 }
-                # LangGraph 1.2.12 cannot use sync durability without a saver.
-                # Non-persistent legacy cognitive pilots have no checkpoint;
-                # every persisted initial/resume/continue path must use sync.
-                persistence_options = {"durability": "sync"} if checkpointer is not None else {}
-                if request.cognitive_subagents_enabled:
-                    result, subagent_events = await _invoke_with_subagent_events(
-                        agent,
-                        invoke_input,
-                        invoke_config,
-                        on_event=request.on_subagent_event,
-                        persistence_options=persistence_options,
-                    )
-                else:
-                    result = await agent.ainvoke(invoke_input, config=invoke_config, **persistence_options)
-                    subagent_events = []
-                # Sync durability has returned the original graph outcome.
-                # Only native audit/accounting/projection remains; expiry must
-                # not erase a committed completion or approval wait. A graph
-                # that swallowed our cancellation cannot disarm an expired timer.
-                if execution_deadline is not None and not execution_deadline.expired():
-                    execution_deadline.reschedule(None)
-                native_interrupts = []
-                if execution_owner is not None:
-                    from src.application.deep_agents.native_interrupts import collect_pending_tool_interrupts
+                from src.application.runtime.framework_graph_invocation import invoke_and_audit_framework_graph
 
-                    native_interrupts = await collect_pending_tool_interrupts(agent, checkpointer, invoke_config)
-                    reported_ids = {item.id for item in result.get("__interrupt__", [])}
-                    if {item.interrupt_id for item in native_interrupts} != reported_ids:
-                        raise DeepAgentRuntimeError("Returned interrupts disagree with pending native tasks.")
-                    if not native_interrupts:
-                        from src.application.deep_agents.native_terminal import collect_native_terminal
-
-                        terminal = await collect_native_terminal(agent, checkpointer, invoke_config, returned_values=result)
-                        native_terminal = terminal.proof.model_dump(mode="json")
-                        native_checkpoint_timestamp = terminal.checkpoint_timestamp
-                        summary_values = terminal.values
-                if self._model_call_policy is not None:
-                    root_model_budget = await self._model_call_policy.capture_root_budget(execution_owner.binding)
+                outcome = await invoke_and_audit_framework_graph(agent=agent, invoke_input=invoke_input,
+                    invoke_config=invoke_config, checkpointer=checkpointer, execution_owner=execution_owner,
+                    model_call_policy=self._model_call_policy, execution_deadline=execution_deadline,
+                    invoke_with_events=(lambda options: _invoke_with_subagent_events(agent, invoke_input, invoke_config,
+                        on_event=request.on_subagent_event, persistence_options=options))
+                        if request.cognitive_subagents_enabled else None)
+                result, subagent_events, native_interrupts = outcome.values, outcome.subagent_events, outcome.native_interrupts
+                root_model_budget = outcome.root_model_budget
+                if outcome.native_terminal is not None:
+                    terminal = outcome.native_terminal
+                    native_terminal = terminal.proof.model_dump(mode="json")
+                    native_checkpoint_timestamp = terminal.checkpoint_timestamp
+                    summary_values = terminal.values
             finally:
                 if cleanup is not None:
                     cleanup()

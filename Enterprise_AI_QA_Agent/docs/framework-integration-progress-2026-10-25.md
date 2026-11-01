@@ -8291,3 +8291,56 @@ $env:PYTHONIOENCODING='utf-8'
 v4 E／§12.1 → 本节 → 共享模型包装器／旧 import 兼容、直接图内核、原夹具扩展／新测试、原控制说明与本记录，共 7 文件 → 本节红绿／扩大回归及最终复验 → 独立提交 `【feat】新增共享策略驱动的受控图内核`，ID 见 Git 历史与交付；不推送、不建 PR。仅对审阅过的新测试显式加入跟踪，不修改忽略规则、不混入用户 v3 草稿或认证／日志／测试制品。
 
 当前内核可以在上述组合下独立执行；正式 RunItem／AgentTask 双归属与 frozen AgentCase 输入、专用 RuntimeTurnResult／原件消费和唯一 finalizer、兼容 Worker／发布制品契约、main 路由仍待后续接通验证。不得提前移除 legacy 外循环或宣称 Assessment／Verification passed。完整 v4 A2/A3/B/C/D/E/F、H01–H12、模式质量／有效输入审计、全部旧读者、全资源启动、真实供应商／embedding／RustFS／领域 Runner、双制品独立安装／部署、备份恢复与 E3/E4 继续保留；§159／160 时间异常和 §166 子进程 RuntimeError 未由本组定位或撤销，整体 goal 继续 active。
+
+## 180. E／§12.1：共享图调用核验与受控图原生结果适配器（2026-11-01）
+
+### 续接与依据 → 做法
+
+基线 `3650a72f0`／§179；上一轮分类为实际进展：受控内核、共享模型策略及 24 项专项／445 项扩大回归已提交，不把当时 38 项 opt-in 跳过算通过。当前 status 仅有用户 v3 草稿，SHA256 仍为 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，不改动、不纳入提交。重读当前 v4、§52 的唯一收尾与较新事实，核对正式 AgentCase 的 durable intent／Session 入口和 Runtime／Worker 的 kind 拒绝；这些入口没有因内核导入自动接通。
+
+§179 内核还缺少统一的根 deadline／调用后原生结果边界；若在新适配器再复制 Deep Agents 的核验／预算捕获，会形成两套恢复材料规则。依据原 `DeepAgentRuntimeAdapter._execute()` 的 sync durability、原生中断集合比较、严格 `collect_native_terminal()`、根预算捕获和子代理事件 transport → 提取为 `application/runtime/framework_graph_invocation.py::invoke_and_audit_framework_graph()`，两个图构建者共享同一调用／核验端口，不建第二个调度器或恢复引擎。Deep Agents 的模型工厂／harness、原归一化与结果投影、原异常类型、schema-only 读者及应用 finalizer 都保持原实现。
+
+依据原 `DeepAgentRuntimeAdapter.execute()` 的 captured saver 身份与 `FrameworkModelCallPolicy.execution_scope()` → 新 `application/runtime/controlled_case_adapter.py::ControlledCaseGraphAdapter` 组合 §179 内核，初次／resume／continue 均用同一个原根 deadline 与模型账本。不借用普通消息或 RunItem 的另一个执行权；请求关联只比对捕获的 owner，不是领取或授权机制。依据原 lossless transcript codec → 初次只消费 LangChain 原生序列，拒绝空原件与展示字典，不靠角色／正文重建消息。固定 SDK 的 ainvoke／Command／sync 用法沿当前源码查证，没有更换库或 API 版本。
+
+本地 `better-harness/models/agent-work-loop.md` 的同一目标／动作／结果边界，以及课程《Agent轨迹与协议鲁棒性》的结果＋轨迹、权限／幂等／超时／半成功链路 → 在同一适配器调用中比较真实 HTTP、ToolJob／工具原件、完整 native messages 与预算；不将终结文本、原生 proof 或分散绿色结果升级为正式用例通过。
+
+### 实现与能力边界
+
+- 新内部 `ControlledCaseGraphRequest` 与 `FrameworkGraphOutcome` 是 Python 调用材料，未新增持久 schema、公开 DTO、路由／配置、版本能力或 DDL。Outcome 保留原始 values、子代理事件、NativeToolInterrupt、完整 NativeTerminalRead／checkpoint timestamp 与原根预算；不伪装 RuntimeTurnResult、Assessment、应用提交或恢复凭证。
+- 共享端口保持有 saver 才选 sync；只在原 timer 尚未 expired 时 disarm，已过期 timer 不能被吞取消的图关掉。返回 interrupt IDs 与原生待办精确相等；无待办才走原终态核验，包含 messages 全字段比较；核验后才捕获原预算。原 Deep Agents 子代理事件仍调用 `_invoke_with_subagent_events()`，不引入后台任务或重复消费事件。清理及异常传播仍由原边界处理。
+- 受控适配器比对 session／turn／namespace／kind 与捕获 owner；model key、saver、policy 必须具备，resume 与 continue 不能共存。先验证初次原生输入，再 resolve 模型，原根 scope 覆盖模型装配和图执行。成功日志 `controlled_case_graph_outcome_captured`；取消／异常 `controlled_case_graph_invocation_failed`，仅身份／类型／终态与待办数量，不输出原文或认证，也不把取消等同容器进程已停止。
+- 新模块 `tests/test_controlled_case_adapter.py` 复用 §179 工具桥：四协议官方 SDK 到本地合成 HTTP、真实随机 PG task／saver／预算／ToolJob／投影原件；同一终态 native continue 不增模型或工具效果，proof／原创建时间／消息／预算保持相等。工具 handler 仍是 fixture callback，无目标执行；这是单进程组合，不是实际供应商或独立进程验收。
+- 原生批准／拒绝重建用逐调用中断及 callback，明确不是公开业务审批权限；原 Kernel 的完整业务审批组不被替换。另验实际根 deadline 与取消阻止工具后的模型回边，unknown 不重发；伪造返回消息仍被原 native 核验拒绝并保留已结算账本。纯替身覆盖有／无 saver、expired／未过期 timer、返回／原生待办不一致，以及错误输入在模型／policy 前被拒绝。替身事实不冒充真实储存、外部效果停止或根计时器实现。
+
+### TDD 与阶段性验证
+
+修改生产实现前，新模块实际 **15 failed，64.20 秒，exit 1**：12 项缺 `controlled_case_adapter`，3 项缺 `framework_graph_invocation`，均为目标新行为不存在，不冒充现有生产故障。提取原核验并实现受控适配器后，实际 **15 passed，70.81 秒，exit 0**。随后增加拒绝恢复、expired timer、错误输入与实际返回／原生消息不一致反例，专项实际 **23 passed，74.23 秒，exit 0，无 skip／deselect**。消息篡改是显式故障注入，不是另一次真实生产失败；没有删除 messages 或放宽状态／工具／预算断言来取绿。
+
+### 最终源码回归与证据范围
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，沿用已运行 PG／Redis
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_adapter.py tests/test_controlled_case_graph.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_model_policy.py tests/test_framework_execution_deadline.py tests/test_framework_model_evidence_cancellation.py tests/test_framework_native_terminal.py tests/test_framework_native_interrupts.py tests/test_framework_cognitive_limits.py tests/test_framework_harness_settings.py tests/test_framework_turn_projection.py tests/test_framework_approval_runtime.py tests/test_framework_tool_bridge.py tests/test_framework_context_runtime.py tests/test_framework_result_projection.py -q -rs --tb=short
+# 592 passed，2100.69 秒，exit 0，无 skip／deselect
+```
+
+十五模块在同一最终生产／测试源码下验证新适配器与原内核、Deep Agents 正常／摘要／命名子代理及流式事件、根 deadline／取消／证据不确定性、原生中断／终态、认知限制／原冻结 harness 设置、原工具桥和完整上下文／应用结果投影。所有终态消息／签名／工具效果／原件与预算断言保留，原 Deep Agents 仍沿唯一结果规则及应用 finalizer。这里只证明本组实际覆盖的调用与恢复组合，不代表整个 v4 或所有正式模式通过。
+
+另外将四个 RUN_LIVE 开关显式全部置 0，执行 `..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_adapter.py -q -rs --tb=short`，实际 **9 passed、14 skipped，8.18 秒，exit 0**。14 项均明确要求真实 PG／Redis；纯输入、timer／saver 和中断不一致反例仍运行。此 opt-in 检查不替代上面的无跳过实库组，与 23 项专项及 592 项扩大组重叠，不相加。全部已启动 pytest 均观察到实际退出，无遗留运行测试；没有因观察等待到期而重启测试。
+
+新受控分支仍由测试在同一进程中手动组合 captured owner／适配器与本地 HTTP／PG／原业务工具桥；模型、工具和部分通用上下文端口保持上文替身边界。没有正式 RunItem 生产入口／公开审批 HTTP／完整 main 全资源初始化，也没有实际供应商 E3、领域目标／Runner、embedding、RustFS 或独立制品部署 E4 验收。原正式用例依赖组合的专用验收本轮未启用，不将未选中的旧用例或 §179 的历史 skip 隐藏成已通过。§159／160 时间异常与 §166 子进程 RuntimeError 没有由本组定位根因或撤销历史失败。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests` 实际通过；纳入新文件后的完整 `git diff --cached --check` 实际通过，包含原忽略规则下的新测试。find_spec 确认 ruff／mypy／build／wheel／setuptools 均未安装，未跑独立 lint／typecheck／build，不安装新依赖。全局搜索新适配器／请求／Outcome／共同调用端口的 Python 引用，仅有新两个模块、原 Deep Agents 适配器与新测试，消费与文档同步；没有遗留旧调用分叉。前端无修改、未重跑。
+
+按排序的 src 相对 Python 路径 UTF-8＋NUL＋原字节＋NUL 计算，扩大组前后聚合 SHA256 均为 `951662fc7b822eed2d5758141ce0616e783f61d61c6f8f5a7d7767bd14fc2da2`，期间没有修改生产或测试行为，只追加不在 src 范围内的说明／记录。用户 v3 草稿哈希也再次核对不变。原 Settings／Harness 仍自动加载后端 `.env`；没有直接打开、输出或修改认证文件，未启用生产路由、重启／启动服务或容器、拉镜像、调用付费模型或访问目标。只清理本轮夹具自有隔离资源，§158 未归属共享残留不在本轮处理范围。
+
+### 提交对应与后续出口
+
+v4 E／§12.1 → 本节 → 原 Deep Agents 调用提取、共同端口／受控适配器两个新模块、新测试、原控制说明与本记录，共 6 文件 → 本节 15 项红绿、23 项专项、最终 592 项扩大组和 opt-in 检查 → 独立提交 `【feat】接入受控图适配器并共享原生核验`，ID 见 Git 历史与交付；不推送、不建 PR。仅显式纳入已审阅新测试，不改忽略规则，不混入用户草稿、认证／日志／测试制品。
+
+本步补齐受控内核的运行层组合和原生结果材料，不是正式 AgentCase 接入完成。下一步继续正式 RunItem 的输入封存／AgentTask 双归属，以及版本化 controlled graph-input／source-only schema 读者、RuntimeTurnResult 原件与唯一收尾；现有 Deep Agents 资产／读者不得被当成受控图恢复的授权证明。兼容 Worker、发布制品与 main 选路仍未开放，legacy 外循环不提前删除。完整 v4 A2/A3/B/C/D/E/F、H01–H12、模式质量／有效输入审计、全资源启动、全部旧读者升级或隔离、真实依赖／供应商／领域 Runner、双制品独立安装与部署、备份恢复及 E3/E4 继续保留，整体 goal 维持 active。

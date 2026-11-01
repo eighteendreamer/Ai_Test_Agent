@@ -171,6 +171,16 @@ bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回�
 
 `tests/test_controlled_case_graph.py` 验证四种官方模型协议到本地合成 HTTP、真实隔离 PG 根账本／saver、同批 A/B 的逐项审批与严格 native messages 对比、预算回边、未知响应不重发、取消及失租。原应用工具桥的独立参数组复用真实 `ToolGovernanceService`／审批投影／`ToolRuntimeService`／PG ToolJob 和结果原件，handler 仍是测试 callback；审批决议直接写本轮隔离记录，不代表公开审批 HTTP 或正式 RunItem 入口已接通。回执文本不等于领域测试通过，详见实施记录 §179 的真实结果与剩余出口。
 
+### 受控图调用与原生结果边界（v4 E／§12.1；未接正式 RunItem）
+
+`src/application/runtime/controlled_case_adapter.py::ControlledCaseGraphAdapter` 将上述内核组合到原 captured saver／模型策略的 `execution_scope()` 中。初次输入只接受原生 LangChain 消息原件，不能以展示 role/content 字典重建历史；session／turn／namespace／runtime kind 必须匹配捕获的 owner，恢复决议与 native continue 不能同时提交。每次继续或重建都读取同一原根 deadline，不创建新的运行时预算或自动重试。调用方仍须从正式来源准备／冻结输入和工具，本适配器不会把普通请求文本升级为正式用例版本。
+
+`src/application/runtime/framework_graph_invocation.py::invoke_and_audit_framework_graph()` 是从原 Deep Agents 适配器提取的共同调用端口：有 saver 时 sync durability；返回后只在计时器未过期时停用该次 timer；逐项比较返回 interrupt 与原生待办，无 interrupt 时复用原严格 `collect_native_terminal()`，最后捕获原根预算。Deep Agents 的正常／审批／continue 与受控图都调用此端口，原子代理事件流仍委托既有实现，不复制调度、消息 reducer、恢复证明或收尾。已有 Deep Agents 结果投影和异常类型保持兼容。
+
+返回的 `FrameworkGraphOutcome` 只携带原始 values、子代理事件、原生中断、`NativeTerminalRead` 和预算原件。native proof／checkpoint timestamp 不是应用完成、正式测试通过或恢复许可；消息不一致会沿原核验异常拒绝返回结果，不忽略 messages。原生审批材料也不能替代业务决议授权。成功／失败日志为 `controlled_case_graph_outcome_captured`／`controlled_case_graph_invocation_failed`，不记录消息／配置正文，取消继续向外传播。
+
+`tests/test_controlled_case_adapter.py` 覆盖四协议官方 SDK＋本地合成 HTTP＋真实 PG saver／根账本／业务 ToolJob、同一终态继续不重发、原生批准／拒绝与重建、根 deadline／取消、错误输入和原生／返回消息不一致。部分审批、计时器及输入反例为明确替身；这些证据不等于独立进程、真实供应商或正式 AgentCase 验收，实际命令与结果见实施记录 §180。该内部请求／结果类型没有持久 schema 或公开 API；现有 graph-input 资产和 source-only 重建仍是 Deep Agents 契约，不能直接用于受控图的恢复准入。正式 RunItem／AgentTask 归属、版本化输入／只读 schema 读者、RuntimeTurnResult／原件与唯一 finalizer、兼容 Worker／发布制品、main 选路仍待接通。
+
 ### 原路由与恢复验证
 
 关闭新选路时记录 `deep_agent_new_turn_route_disabled`，带 `session_id`、`turn_id` 和 `recovery_reason=new_turn_admission_disabled`；这是路由决定，不是取消/停止回执。
