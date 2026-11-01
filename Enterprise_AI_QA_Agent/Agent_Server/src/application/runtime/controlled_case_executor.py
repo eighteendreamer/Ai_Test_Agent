@@ -80,7 +80,7 @@ class ControlledCaseExecutor:
             outcome = await sink.run(invoke)
             logger.info("controlled_case_execution_returned", extra={**scope,
                 "binding_id": owner.binding.binding_id, "native_terminal": outcome.native_terminal is not None,
-                "native_interrupt_count": len(outcome.native_interrupts), "application_completed": False})
+                "native_interrupt_count": len(outcome.native_interrupts), "application_commit_authority": False})
             return outcome
         except (Exception, asyncio.CancelledError) as exc:
             logger.warning("controlled_case_execution_unsettled", extra={**scope,

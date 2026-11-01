@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 
@@ -51,19 +51,14 @@ LOGGER = logging.getLogger(__name__)
 class FrameworkTurnMemoryExecutionWrite:
     owner: "RuntimeExecutionOwner"
     request_id: str
+    controlled_case_native: object | None = field(default=None, repr=False, compare=False)
 
 
 def _save_stage(cur, settings, stage, values):
+    from src.runtime.framework_projection_source import save_projection_manifest
+
     manifest = {**(stage.source_manifest or {}), **values}
-    updated = validate_message_stage(stage.model_copy(update={
-        "schema_version": max(27, stage.schema_version),
-        "source_manifest": manifest,
-        "source_sha256": approval_value_hash(manifest),
-    }).model_dump())
-    cur.execute(
-        f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
-        (updated.model_dump_json(), stage.task_id),
-    )
+    return save_projection_manifest(cur, settings, stage, manifest, message_version=27)
 
 
 def _execution(stage, plan: FrameworkTurnMemoryPlan) -> FrameworkTurnMemoryExecution | None:
@@ -126,7 +121,12 @@ def _plan_from_stage(stage, owner) -> FrameworkTurnMemoryPlan:
     return plan
 
 
-def _lock_stage_and_plan(cur, settings, owner):
+def _lock_stage_and_plan(cur, settings, owner, *, controlled_case_native=None):
+    if owner.binding.runtime_kind == "langgraph":
+        from src.runtime.framework_projection_source import lock_result_source
+
+        source, _ = lock_result_source(cur, settings, owner, controlled_case_native=controlled_case_native)
+        return source, _plan_from_stage(source, owner)
     # Post-commit Memory may run before or after the stage ACK.  The generic
     # runtime-result lock intentionally accepts only runtime_submitted; this
     # derived effect instead needs the narrower owner/stage fence for both
@@ -334,7 +334,7 @@ async def read_turn_memory_reconciliation_async(owner, settings) -> FrameworkTur
 def prepare_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryExecutionWrite,
     request: "MemoryWriteRequest", memory_id: str):
     """Validate the immutable request and lock its physical row before writing."""
-    stage, plan = _lock_stage_and_plan(cur, settings, execution.owner)
+    stage, plan = _lock_stage_and_plan(cur, settings, execution.owner, controlled_case_native=execution.controlled_case_native)
     item = _request_by_id(plan, execution.request_id)
     normalized = request.model_copy(update={
         "turn_lease_token": None,
@@ -346,13 +346,7 @@ def prepare_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryE
     receipt = _execution(stage, plan)
     if receipt is None:
         receipt = _new_execution(plan, state="running")
-        _save_stage(cur, settings, stage, {TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")})
-        stage = validate_message_stage({
-            **stage.model_dump(mode="json"),
-            "schema_version": max(27, stage.schema_version),
-            "source_manifest": {**stage.source_manifest, TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")},
-            "source_sha256": approval_value_hash({**stage.source_manifest, TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")}),
-        })
+        stage = _save_stage(cur, settings, stage, {TURN_MEMORY_EXECUTION_KEY: receipt.model_dump(mode="json")})
     cur.execute(
         f"SELECT {MEMORY_COLUMNS} FROM {settings.database.postgres_memory_table} WHERE id=%s FOR UPDATE",
         (memory_id,),
@@ -402,9 +396,9 @@ def record_memory_row_projection(cur, settings, execution: FrameworkTurnMemoryEx
     return updated
 
 
-def read_turn_memory_execution(owner, settings) -> FrameworkTurnMemoryExecution | None:
+def read_turn_memory_execution(owner, settings, *, controlled_case_native=None) -> FrameworkTurnMemoryExecution | None:
     with postgres_connect(settings) as conn, conn.cursor() as cur:
-        stage, plan = _lock_stage_and_plan(cur, settings, owner)
+        stage, plan = _lock_stage_and_plan(cur, settings, owner, controlled_case_native=controlled_case_native)
         receipt = _execution(stage, plan)
         if receipt is not None and receipt.row_receipts:
             ids = [item.memory_id for item in receipt.row_receipts]
@@ -416,14 +410,14 @@ def read_turn_memory_execution(owner, settings) -> FrameworkTurnMemoryExecution 
         return receipt
 
 
-async def read_turn_memory_execution_async(owner, settings):
-    return await asyncio.to_thread(read_turn_memory_execution, owner, settings)
+async def read_turn_memory_execution_async(owner, settings, *, controlled_case_native=None):
+    return await asyncio.to_thread(read_turn_memory_execution, owner, settings, controlled_case_native=controlled_case_native)
 
 
-def ensure_empty_turn_memory_execution(owner, settings):
+def ensure_empty_turn_memory_execution(owner, settings, *, controlled_case_native=None):
     """Persist a completed receipt for a valid empty requested plan."""
     with postgres_connect(settings) as conn, conn.cursor() as cur:
-        stage, plan = _lock_stage_and_plan(cur, settings, owner)
+        stage, plan = _lock_stage_and_plan(cur, settings, owner, controlled_case_native=controlled_case_native)
         _require(not plan.requests, "Only an empty Memory plan can be completed without rows")
         current = _execution(stage, plan)
         if current is not None:

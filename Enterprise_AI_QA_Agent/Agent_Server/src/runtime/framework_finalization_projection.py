@@ -9,7 +9,8 @@ from __future__ import annotations
 
 from src.application.context.transcript_hygiene_service import TranscriptHygieneService
 from src.runtime.framework_application_projection import COMMIT_KEY, _hash, _require
-from src.runtime.framework_runtime_results import RESULT_KEY, lock_runtime_result_stage, validate_runtime_result
+from src.runtime.framework_runtime_results import RESULT_KEY
+from src.runtime.framework_projection_source import lock_projection_source, validate_projection_result, source_input_message_id
 
 
 def original_messages(asset):
@@ -107,37 +108,40 @@ def require_partial_finalization(cur, settings, metadata, stage, asset):
 
 def prepare_finalization_projection(cur, settings, write, candidate):
     """Before Session/message UPSERT, with the Session/owner/stage locks held."""
-    stage, task = lock_runtime_result_stage(cur, settings, write.owner)
+    stage, task = lock_projection_source(cur, settings, write)
     manifest = stage.source_manifest or {}
     _require(COMMIT_KEY not in manifest, "Committed finalization must use ACK recovery")
     _require(RESULT_KEY in manifest, "Finalization has no original result asset")
-    asset = validate_runtime_result(cur, settings, write.owner, stage, task, manifest[RESULT_KEY])
+    asset = validate_projection_result(cur, settings, write.owner, stage, task, manifest[RESULT_KEY])
     _require(write.runtime_result_asset_sha256 == asset.asset_sha256
         and write.output_message_id == (asset.assistant_message_id if asset.runtime_result.output_text else None),
         "Finalization differs from its original output identity")
     _validate_messages(candidate.messages, asset)
     _validate_verifications(candidate.metadata, asset)
     originals = _existing_messages(cur, settings, asset)
-    _require(stage.user_message_id not in {item.id for item in originals},
+    input_id = source_input_message_id(stage)
+    _require(input_id not in {item.id for item in originals},
         "Original message collides with the admitted input")
     if asset.verification_results:
         cur.execute(f"SELECT metadata FROM {settings.database.postgres_session_table} WHERE id=%s", (asset.binding.session_id,))
         merge_original_verifications((cur.fetchone()["metadata"] or {}).get("verification_results", []), asset)
+    if input_id is None:
+        return {item.id for item in originals}
     # The admitted input is not a derived message and must not be repurposed.
     cur.execute(f"SELECT role,content,metadata FROM {settings.database.postgres_message_table} "
-        "WHERE id=%s AND session_id=%s FOR UPDATE", (stage.user_message_id, asset.binding.session_id))
+        "WHERE id=%s AND session_id=%s FOR UPDATE", (input_id, asset.binding.session_id))
     user = cur.fetchone()
     # AgentTaskDispatcher and Session submission persist content.strip(); the
     # asset intentionally retains the raw admitted request for other consumers.
     _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message.strip()
         and (user["metadata"] or {}).get("turn_id") == asset.binding.turn_id,
         "Admitted message differs from the original input")
-    candidates = [item for item in candidate.messages if item.id == stage.user_message_id]
+    candidates = [item for item in candidate.messages if item.id == input_id]
     _require(len(candidates) == 1 and candidates[0].role.value == "user"
         and candidates[0].content == asset.user_message.strip()
         and candidates[0].metadata.get("turn_id") == asset.binding.turn_id,
         "Admitted message is missing or changed in finalization")
-    return {item.id for item in originals} | {stage.user_message_id}
+    return {item.id for item in originals} | {input_id}
 
 
 def require_finalization_projection(cur, settings, session, asset, user_message_id):
@@ -148,12 +152,13 @@ def require_finalization_projection(cur, settings, session, asset, user_message_
     cur.execute(f"SELECT * FROM {settings.database.postgres_message_table} WHERE id=ANY(%s) AND session_id=%s",
         ([item.id for item in originals], asset.binding.session_id))
     _validate_messages([_message_from_row(row) for row in cur.fetchall()], asset)
-    cur.execute(f"SELECT role,content,metadata FROM {settings.database.postgres_message_table} "
-        "WHERE id=%s AND session_id=%s", (user_message_id, asset.binding.session_id))
-    user = cur.fetchone()
-    _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message.strip()
-        and (user["metadata"] or {}).get("turn_id") == asset.binding.turn_id,
-        "Admitted message differs from the original input after finalization")
+    if user_message_id is not None:
+        cur.execute(f"SELECT role,content,metadata FROM {settings.database.postgres_message_table} "
+            "WHERE id=%s AND session_id=%s", (user_message_id, asset.binding.session_id))
+        user = cur.fetchone()
+        _require(user is not None and user["role"] == "user" and user["content"] == asset.user_message.strip()
+            and (user["metadata"] or {}).get("turn_id") == asset.binding.turn_id,
+            "Admitted message differs from the original input after finalization")
     cur.execute(f"SELECT metadata FROM {settings.database.postgres_session_table} WHERE id=%s", (asset.binding.session_id,))
     metadata = cur.fetchone()["metadata"] or {}
     _validate_verifications(metadata, asset)

@@ -11,7 +11,10 @@ from src.schemas.run_management import RunPlanSnapshotIdentity
 from src.schemas.runtime_binding import RuntimeBinding
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
 from src.schemas.framework_approval import approval_value_hash
-from src.schemas.framework_projection_commit import FrameworkSnapshotProjectionCommit, FrameworkEventProjectionCommits
+from src.schemas.framework_projection_commit import (
+    FrameworkSnapshotProjectionCommit, FrameworkEventProjectionCommits, FrameworkProjectionCommit,
+    FrameworkTurnMemoryIntent, FrameworkTurnMemoryPlan, FrameworkTurnMemoryExecution,
+)
 from src.schemas.framework_observation_projection import FrameworkObservationAsset, FrameworkObservationCommits
 
 
@@ -113,10 +116,51 @@ class ControlledCaseProjectionCheckpoint(ControlledCaseResultCheckpoint):
         return self
 
 
+class ControlledCaseApplicationReceipts(ControlledCaseProjectionReceipts):
+    application_projection_commit: FrameworkProjectionCommit
+    post_commit_memory_intent: FrameworkTurnMemoryIntent
+    post_commit_memory_plan: FrameworkTurnMemoryPlan
+    post_commit_memory_execution: FrameworkTurnMemoryExecution | None = None
+
+
+class ControlledCaseApplicationCheckpoint(ControlledCaseProjectionCheckpoint):
+    """Session application receipt only; not Assessment or RunItem completion."""
+    schema_version: Literal[4]
+    projection_receipts: ControlledCaseApplicationReceipts
+
+    @model_validator(mode="after")
+    def require_application_identity(self):
+        asset, parts = self.runtime_result_asset, self.projection_receipts
+        proof, plan, intent = parts.application_projection_commit, parts.post_commit_memory_plan, parts.post_commit_memory_intent
+        if (proof.binding_fingerprint != asset.binding.fingerprint
+            or parts.snapshot_projection_commit is None or parts.event_projection_commits is None
+            or (proof.task_id, proof.attempt_id, proof.owner_epoch) != (asset.task_id, asset.attempt_id, asset.owner_epoch)
+            or proof.execution_sha256 != asset.execution_sha256 or proof.snapshot_id != asset.runtime_result.snapshot.id
+            or proof.output_message_id != (asset.assistant_message_id if asset.runtime_result.output_text else None)
+            or intent != FrameworkTurnMemoryIntent.from_result_asset(asset)
+            or (plan.effect_id, plan.session_id, plan.turn_id, plan.binding_fingerprint,
+                plan.runtime_result_asset_sha256, plan.source_snapshot_id, plan.requested)
+                != (intent.effect_id, intent.session_id, intent.turn_id, intent.binding_fingerprint,
+                    intent.runtime_result_asset_sha256, intent.source_snapshot_id, intent.requested)):
+            raise ValueError("Controlled application receipt differs from its original result")
+        execution = parts.post_commit_memory_execution
+        if execution is not None:
+            identities = {item.request_id: item.ordinal for item in plan.requests}
+            if ((execution.effect_id, execution.session_id, execution.turn_id, execution.binding_fingerprint,
+                execution.runtime_result_asset_sha256, execution.source_snapshot_id, execution.plan_asset_sha256)
+                != (plan.effect_id, plan.session_id, plan.turn_id, plan.binding_fingerprint,
+                    plan.runtime_result_asset_sha256, plan.source_snapshot_id, plan.asset_sha256)
+                or any(identities.get(item.request_id) != item.ordinal for item in execution.row_receipts)
+                or execution.state == "completed" and {item.request_id for item in execution.row_receipts} != set(identities)):
+                raise ValueError("Controlled Memory execution differs from its original plan")
+        return self
+
+
 def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
     if attempt.checkpoint_version == 1:
         return None
-    reader = {2: ControlledCaseResultCheckpoint, 3: ControlledCaseProjectionCheckpoint}.get(attempt.checkpoint_version)
+    reader = {2: ControlledCaseResultCheckpoint, 3: ControlledCaseProjectionCheckpoint,
+        4: ControlledCaseApplicationCheckpoint}.get(attempt.checkpoint_version)
     if reader is None:
         raise ValueError("RunItem has no supported controlled result checkpoint")
     return reader.model_validate(attempt.checkpoint_payload)
@@ -124,7 +168,7 @@ def read_result_checkpoint(attempt) -> ControlledCaseResultCheckpoint | None:
 
 def read_admission_checkpoint(attempt) -> ControlledCaseAdmissionCheckpoint:
     """Read the original reservation only; inherited attempts need reconciliation."""
-    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3}:
+    if attempt.checkpoint_key != CONTROLLED_CASE_ADMISSION_KEY or attempt.checkpoint_version not in {1, 2, 3, 4}:
         raise ValueError("RunItem has no supported original controlled case admission checkpoint")
     result = read_result_checkpoint(attempt)
     checkpoint = result.admission if result is not None else ControlledCaseAdmissionCheckpoint.model_validate(attempt.checkpoint_payload)

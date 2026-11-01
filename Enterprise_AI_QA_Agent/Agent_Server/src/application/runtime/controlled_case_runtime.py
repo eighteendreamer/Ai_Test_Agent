@@ -1,4 +1,4 @@
-"""Full formal input assembly and its original governed execution, not finalization."""
+"""Formal input/governed execution and an explicit sole Session finalizer port."""
 from __future__ import annotations
 
 import asyncio
@@ -25,7 +25,7 @@ from src.schemas.controlled_case_task_input import (
 from src.application.runtime.turn_projection import RuntimeTurnResult
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
 from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
-from src.schemas.session import ExecutionEvent
+from src.schemas.session import ExecutionEvent, ConversationResponse
 from src.schemas.framework_runtime_result import ControlledCaseRuntimeResultAsset
 
 
@@ -34,12 +34,13 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ControlledCaseRuntimeOutcome:
-    """Optional prepared application result; never finalization or a test verdict."""
+    """Optional Session application result; never Assessment or a test verdict."""
     graph_outcome: FrameworkGraphOutcome
     state: dict[str, Any]
     tool_records: list[dict[str, Any]]
     runtime_result: RuntimeTurnResult | None = None
     result_asset: ControlledCaseRuntimeResultAsset | None = None
+    conversation_response: ConversationResponse | None = None
 
 
 class ControlledCaseRuntime:
@@ -51,8 +52,9 @@ class ControlledCaseRuntime:
     Neither port is installed in main/Worker or grants recovery authority.
     """
 
-    def __init__(self, *, runtime_service):
+    def __init__(self, *, runtime_service, session_service=None):
         self._runtime = runtime_service
+        self._sessions = session_service
 
     async def prepare_input(self, session, request, *, detail, item, version, attempt_id, projection_identity):
         # Capture all mutable inputs before retrieval/configuration awaits.
@@ -158,6 +160,7 @@ class ControlledCaseRuntime:
         records = []
         runtime_result = None
         result_asset = None
+        conversation_response = None
 
         async def build(prepared):
             nonlocal state
@@ -178,7 +181,7 @@ class ControlledCaseRuntime:
             return tools
 
         async def project(prepared, outcome):
-            nonlocal state, runtime_result, result_asset
+            nonlocal state, runtime_result, result_asset, conversation_response
             if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
                 # Historical preparation is not silently upgraded. Native wait
                 # still needs the original business approval/admission contract.
@@ -195,10 +198,13 @@ class ControlledCaseRuntime:
 
                 result_asset = await FrameworkRuntimeResults(executor._tasks).freeze_controlled_case(
                     owner, runtime_result=projected, native=outcome.native_terminal)
+                if self._sessions is not None:
+                    conversation_response = await self._sessions.finalize_controlled_case_result(
+                        owner, native=outcome.native_terminal)
             runtime_result = projected
             state = deepcopy(projected.state)
 
         outcome = await executor.execute(task, build_business_tools=build,
             resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
         return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
-            runtime_result=runtime_result, result_asset=result_asset)
+            runtime_result=runtime_result, result_asset=result_asset, conversation_response=conversation_response)

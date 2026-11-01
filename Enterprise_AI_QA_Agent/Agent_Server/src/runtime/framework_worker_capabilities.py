@@ -46,7 +46,7 @@ class FrameworkWorkerCapabilities:
     model_budget_max_version: int = 2
     controlled_case_available: bool = False
     controlled_case_input_max_version: int = 4
-    controlled_case_checkpoint_max_version: int = 3
+    controlled_case_checkpoint_max_version: int = 4
 
     @classmethod
     def from_artifact(cls, *, deepagents_available: bool):

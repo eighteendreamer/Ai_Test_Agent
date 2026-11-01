@@ -362,20 +362,23 @@ def require_event_projections(cur, settings, stage, binding, asset_sha256, requi
 
 def record_application_commit(cur, settings, session, events, write):
     """Called only inside save_session_with_events, after its actual row writes."""
-    from src.runtime.framework_runtime_results import lock_runtime_result_stage, validate_runtime_result
+    from src.runtime.framework_projection_source import (
+        lock_projection_source, validate_projection_result, source_input_message_id,
+        source_execution_sha256, save_projection_manifest,
+    )
 
     owner, binding = write.owner, write.owner.binding
-    stage, task = lock_runtime_result_stage(cur, settings, owner)
+    stage, task = lock_projection_source(cur, settings, write)
     raw_result = (stage.source_manifest or {}).get("runtime_result_asset")
     _require((raw_result is None) == (write.runtime_result_asset_sha256 is None),
         "Application commit result asset disappeared or was not captured")
     if raw_result is not None:
-        result_asset = validate_runtime_result(cur, settings, owner, stage, task, raw_result)
+        result_asset = validate_projection_result(cur, settings, owner, stage, task, raw_result)
         _require(write.runtime_result_asset_sha256 == result_asset.asset_sha256,
             "Application commit result asset changed before finalization")
         from src.runtime.framework_finalization_projection import require_finalization_projection
 
-        require_finalization_projection(cur, settings, session, result_asset, stage.user_message_id)
+        require_finalization_projection(cur, settings, session, result_asset, source_input_message_id(stage))
     _require(session.id == binding.session_id and session.status.value == "completed"
         and not session.metadata.get("pending_turn")
         and (session.metadata.get("control") or {}).get("control_state") == "completed"
@@ -404,7 +407,8 @@ def record_application_commit(cur, settings, session, events, write):
         and all(event.payload.get("turn_id") == binding.turn_id for event in events),
         "Application commit requires one matching completion event")
     messages = _message_hashes(cur, settings, binding)
-    _require(stage.user_message_id in messages and (write.output_message_id is None or write.output_message_id in messages),
+    input_id = source_input_message_id(stage)
+    _require((input_id is None or input_id in messages) and (write.output_message_id is None or write.output_message_id in messages),
         "Application commit transcript is incomplete")
     if write.output_message_id is not None:
         cur.execute(f"SELECT role FROM {settings.database.postgres_message_table} WHERE id=%s AND session_id=%s",
@@ -430,7 +434,7 @@ def record_application_commit(cur, settings, session, events, write):
     proof = FrameworkProjectionCommit(binding_fingerprint=binding.fingerprint, task_id=owner.task_id,
         attempt_id=owner.attempt_id, owner_epoch=owner.owner_epoch, source_sha256=approval_value_hash(
             application_source_manifest(manifest)),
-        execution_sha256=stage.execution_sha256, snapshot_id=write.snapshot_id, snapshot_sha256=_hash(snapshot),
+        execution_sha256=source_execution_sha256(stage), snapshot_id=write.snapshot_id, snapshot_sha256=_hash(snapshot),
         output_message_id=write.output_message_id, message_hashes=messages,
         event_hashes=_event_hashes(cur, settings, binding.session_id, [event.id for event in events]),
         model_calls_sha256=_model_hash(cur, settings, binding), tool_jobs_sha256=_tool_hash(cur, settings, binding),
@@ -442,24 +446,24 @@ def record_application_commit(cur, settings, session, events, write):
     _require(previous is None or FrameworkProjectionCommit.model_validate(previous).model_dump(exclude={"committed_at"})
         == proof.model_dump(exclude={"committed_at"}), "Application commit cannot replace a different result")
     manifest[COMMIT_KEY] = previous or proof.model_dump(mode="json")
-    updated = validate_message_stage(stage.model_copy(update={"schema_version": max(
+    save_projection_manifest(cur, settings, stage, manifest, message_version=(
         27 if TURN_MEMORY_EXECUTION_KEY in manifest else (
-            26 if TURN_MEMORY_PLAN_KEY in manifest else (25 if TURN_MEMORY_INTENT_KEY in manifest else 6)),
-        stage.schema_version),
-        "source_manifest": manifest, "source_sha256": approval_value_hash(manifest)}).model_dump())
-    cur.execute(f"UPDATE {message_stage_table(settings)} SET record=%s::jsonb WHERE task_id=%s",
-        (updated.model_dump_json(), stage.task_id))
+            26 if TURN_MEMORY_PLAN_KEY in manifest else (25 if TURN_MEMORY_INTENT_KEY in manifest else 6))))
 
 
 def require_application_commit(cur, settings, session, binding, stage):
     """Recheck the original committed rows; never promote a bare snapshot."""
     manifest = dict(stage.source_manifest or {})
     raw = manifest.pop(COMMIT_KEY, None)
-    _require(stage.schema_version >= 6 and raw is not None, "Runtime submission has no application commit proof")
+    from src.runtime.framework_projection_source import ControlledCaseProjectionSource, source_execution_sha256
+
+    formal = isinstance(stage, ControlledCaseProjectionSource)
+    _require((formal or stage.schema_version >= 6) and raw is not None, "Runtime submission has no application commit proof")
     proof = FrameworkProjectionCommit.model_validate(raw)
-    owners = {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
-        *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch) for link in stage.recoveries)}
-    finalizations = [link for link in stage.approval_finalizations if link.task_id == proof.task_id]
+    owners = ({(stage.owner.task_id, stage.owner.attempt_id, stage.owner.owner_epoch)} if formal else
+        {(stage.current_task_id, stage.owner_attempt_id, stage.owner_epoch),
+        *((link.predecessor_task_id, link.predecessor_attempt_id, link.predecessor_owner_epoch) for link in stage.recoveries)})
+    finalizations = [] if formal else [link for link in stage.approval_finalizations if link.task_id == proof.task_id]
     if proof.task_id in manifest.get("approval_graph_inputs", {}) or finalizations:
         from src.runtime.framework_runtime_results import validate_runtime_result_binding, runtime_result_lineage
 
@@ -475,7 +479,7 @@ def require_application_commit(cur, settings, session, binding, stage):
         _require((proof.task_id, proof.attempt_id, proof.owner_epoch) == expected,
             "Application commit differs from its original approval result")
         owners.update({expected} if finalizations else runtime_result_lineage(stage, task))
-    _require(proof.binding_fingerprint == binding.fingerprint and proof.execution_sha256 == stage.execution_sha256
+    _require(proof.binding_fingerprint == binding.fingerprint and proof.execution_sha256 == source_execution_sha256(stage)
         and proof.source_sha256 == approval_value_hash(application_source_manifest(manifest))
         and (proof.task_id, proof.attempt_id, proof.owner_epoch) in owners,
         "Application commit identity or input assets changed")
@@ -497,7 +501,7 @@ def require_application_commit(cur, settings, session, binding, stage):
     return proof
 
 
-async def load_committed_projection(settings_or_tasks, owner):
+async def load_committed_projection(settings_or_tasks, owner, *, controlled_case_native=None, allow_uncommitted=False):
     """Read the exact proven output, never the latest snapshot or assistant text."""
     from src.runtime.postgres_agent_task_store import PostgresAgentTaskStore
 
@@ -507,6 +511,7 @@ async def load_committed_projection(settings_or_tasks, owner):
     def load():
         from src.runtime.postgres_session_store import _message_from_row, _snapshot_from_row
         from src.runtime.framework_runtime_results import lock_runtime_result_stage
+        from src.runtime.framework_projection_source import lock_result_source
 
         with postgres_connect(settings) as conn, conn.cursor() as cur:
             configure_runtime_owner_transaction(cur, settings)
@@ -514,12 +519,17 @@ async def load_committed_projection(settings_or_tasks, owner):
             cur.execute(f"SELECT * FROM {settings.database.postgres_session_table} WHERE id=%s",
                 (owner.binding.session_id,))
             session = cur.fetchone()
-            cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE",
-                (owner.binding.binding_id,))
-            row = cur.fetchone()
-            _require(row is not None, "Application commit stage is unavailable")
-            stage = validate_message_stage(row["record"])
-            if (stage.recoveries and stage.current_task_id == owner.task_id
+            if owner.binding.runtime_kind == "langgraph":
+                stage, task = lock_result_source(cur, settings, owner, controlled_case_native=controlled_case_native)
+                if allow_uncommitted and COMMIT_KEY not in stage.source_manifest:
+                    return None
+            else:
+                cur.execute(f"SELECT record FROM {message_stage_table(settings)} WHERE binding_id=%s FOR UPDATE",
+                    (owner.binding.binding_id,))
+                row = cur.fetchone()
+                _require(row is not None, "Application commit stage is unavailable")
+                stage = validate_message_stage(row["record"])
+            if (owner.binding.runtime_kind != "langgraph" and stage.recoveries and stage.current_task_id == owner.task_id
                 and stage.recoveries[-1].resume_phase == "runtime_submitted"):
                 # A1 grants only commit reads/ACK, not result/part writes or
                 # adoption of the original stage's execution-owner tuple.
@@ -530,7 +540,7 @@ async def load_committed_projection(settings_or_tasks, owner):
                 task = cur.fetchone()
                 require_message_recovery_claim(cur, tasks, session, owner.binding, task,
                     {"task_id": owner.task_id, "attempt_id": owner.attempt_id, "owner_epoch": owner.owner_epoch})
-            else:
+            elif owner.binding.runtime_kind != "langgraph":
                 stage, task = lock_runtime_result_stage(cur, settings, owner)
             proof = require_application_commit(cur, settings, session, owner.binding, stage)
             cur.execute(f"SELECT * FROM {settings.database.postgres_snapshot_table} WHERE id=%s AND session_id=%s",

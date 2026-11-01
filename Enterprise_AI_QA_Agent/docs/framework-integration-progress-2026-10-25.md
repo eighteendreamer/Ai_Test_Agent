@@ -9163,3 +9163,85 @@ v4 E／§9.4、§12.1 → 本节 → 上述7个生产文件＋新专项＋2份�
 下一依赖是将同一原结果资产、原来源端口与分项回执接入唯一 `_finalize_runtime_result` 的正式 case 入口；再补消息／Session Verification／最终应用提交、正式 Assessment／证据与 RunItem fenced 原子完成，随后业务审批继续、失租恢复／独立进程、兼容 Worker／main 与逐模式验收。本步没有第二 finalizer，也没有正式 Session completion／RunItem 完成，不能把部分回执变成 passed 或 finish 权限。旧失败保留，回归创建新运行，原任务／RunItem 不重置，不自动重跑原图。
 
 完整 v4 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式完整有效输入／质量、空结构化结果／流式／取消未收口项与历史异常继续保留，整体 goal 仍 active，不标 complete。未运行 Docker、启动／重启服务、新增付费调用或外部目标测试，未改实际 .env／生产路由，仅 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺；不能用本分项通过替代尚未完成的正式闭环和 E3／E4 出口来缩短估算。
+
+## 193. E／§9.4、§12.1：正式 case 接入唯一 Session finalizer 与应用提交证明（2026-11-02）
+
+### 续接、依据与边界
+
+上一轮 4549ae6d8／§192 已提交并真实验证，属于 progress，不是 no-progress 或全目标完成。本轮核对 Git 仅有用户 v3 草稿，重读 v4 §9／§12.1、§52 与后续最新记录，沿原 Session finalizer、Store 最终事务、分项来源与 Memory 执行调用链续接。v3 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存；不重复依赖迁移、不安装或升级包。
+
+§192 已能写原分项，但唯一 finalizer 的资产读取、消息／Verification／最终提交和提交后 Memory 仍要求真实 message-stage／user 行。正式来源没有这些行，这是既有最终事务的来源职责缺口；不能复制第二 finalizer，也不能伪造输入。本轮显式连接正式原资产到原唯一 finalizer，实际保存 Session 消息／Verification／completion 与同事务应用证明，并让原 Memory 计划／执行器沿同一正式来源工作。**仍没有正式 Assessment／证据与 RunItem 完成事务、失租后的正式恢复或 main 生产选路**，不把 Session completed 或 Verification 存在当 case passed。
+
+依据 → 采用方式：
+
+- 原 SessionService._finalize_runtime_result、_recover_projected_framework_message、原 Session rebase／immutable-message 规则 → 新正式来源入口只负责原资产选择与已提交只读／ACK，全部分项和最终保存仍调用现有唯一 finalizer，不复制收尾算法或图循环。
+- §192 显式 ControlledCaseProjectionSource 与完整 reader → 扩展同一来源到 prepare_finalization_projection／record_application_commit／load_committed_projection；消息来源继续严格验证原 user 行，正式来源明确没有 user 行，不造 stage。
+- 原 FrameworkProjectionCommit 和 post-commit Memory intent／plan／execution → checkpoint4 复用这些类型，原纯策略在应用提交中冻结计划，原 Memory 执行器只扩展 lock／save 来源，不重建另一写入或补偿链路。
+- 原 ControlledCaseExecutor 的 project_outcome owner／sink 生命周期 → ControlledCaseRuntime 显式传入 session_service 时，在原 callback 内调用该入口，不在 executor 返回后制造执行权；默认不传仍只准备，历史输入／原生审批等待不升级。
+- 原框架测试 test_controlled_case_graph 的 Responses 两次回复 ID 规则、本地《Agent轨迹与协议鲁棒性》的结果＋轨迹／恢复，以及《评测工程化与CICD》的不可变原结果／版本基线 → 保留完整原消息比较、真实故障事务、同源码回归；仅修合成对端标识，不放松生产身份检查或重置旧失败。
+
+本轮10个生产文件：application/context/memory_runtime_service、application/runtime/controlled_case_executor／controlled_case_runtime、application/sessions/session_service、runtime/framework_application_projection／framework_finalization_projection／framework_projection_source／framework_turn_memory_projection／framework_worker_capabilities、schemas/controlled_case_admission；新增 test_controlled_case_finalization，更新 runtime-route-controls 与本记录，共13文件。main／CLI／生产 Dispatcher、DDL、依赖、前端源码、实际 .env 与默认 controlled_case_available=false 均未改。
+
+### 契约、事务与权限
+
+新增内部 finalize_controlled_case_result(owner, native=...)，要求当前捕获的原 live 双 owner，进入已有 Session async lock；深拷贝原 owner／精确 native，不丢第二租约。先在同连接完整核原件并读取原应用证明；没有证明才加载原结果资产进入现有 _finalize_runtime_result。该 finalizer 用新参数把原 native 送到同一来源／Memory 端口；原 message 默认参数与行为保持不变，不接受调用方文本替代原资产。已留存 Verification 复用、不再调 builder。
+
+ControlledCaseRuntime 显式传 session_service 后，只有 schema4 正常终态／封存事件集合／原结果已留存才调用该入口；仍在 executor 的 framework_owner_scope／SessionEventSink 中。新可选 conversation_response 仅是内部返回值。默认准备路径、旧 schema1／2／3、审批等待不自动获得该能力；未接到 main／CLI／Worker，未启用生产。executor 原日志改为 application_commit_authority=false，表示它本身不裁决应用提交，不再用固定 application_completed=false 否认 callback 已可能完成的应用事实。
+
+checkpoint4 继承原 admission／资产／retained_at／分项回执，增加 FrameworkProjectionCommit 和原 post_commit_memory_intent／plan／可选 execution；不新增表、不改 key／checkpoint_at。codec 核原 binding／task／attempt／epoch、snapshot／assistant／execution、原 Memory 意图与计划、执行回执身份／完整集合；普通 message 的 stage25／26／27 仍沿原语义。Worker checkpoint 上限3→4，input 仍4，旧 reader3、未来字段／version5 defer，不重写原件，不将本测试称双制品滚动部署。
+
+原 finalizer 依次复用已有 snapshot／事件／观察、原 tool／assistant 消息和 Verification，保留原身份／时间／内容。正常与同一 live owner 的显式重入走同一规则；原 Store prepare 在 UPSERT 前验证消息冲突、Verification 与实际原件，原最终事务核 snapshot／必需事件集合和分项回执、实际消息／Verification、模型／ToolJob 摘要及 owner。proof 写前再次用 DB clock 核双租约，消息／Session／completion 事件与 checkpoint4 proof 同事务。合法 snapshot version 分配不回写原意图，原 Session rebase 保留并发偏好与其他 Turn 消息。
+
+应用 proof scope 仍为 session_messages_completion_events，不证明 Memory、cleanup 或正式 case 裁决。正常提交时原纯策略冻结 Memory 意图／计划，随后原执行器用同一来源与 exact native 复核、写原稳定请求 ID／行及执行回执同事务。没有 embedding 配置时不调用付费 embedding。Memory 失败沿原 _run_post_commit_effect 保留 Session 已提交事实和 unknown 诊断，不能撤销应用结果或假装派生效果完成。事务内来源日志只记录 application_commit_in_transaction，只有实际最终保存返回后才记应用 finalization 成功，不把预提交日志当成功证明。
+
+完整应用证明存在时只核原证明／原应用行并读回输出，不再调用 finalizer、Verification／观察 builder、Memory 或 cleanup；派生 Memory 物理行后来缺失也不自动修复。提交后 ACK 丢失／等待者取消保留真实已提交数据，application_commit_receipt_unknown／automatic_replay=false；取消不是同步 DB 线程停止证明。这里仍只接受原 live 双 owner，不授予失租后继、未知派生效果重派或正式 Memory 只读对账资格。
+
+### TDD 与中间失败
+
+首条真实正式来源红测 **1 failed，13.18 秒**：SessionService 缺 finalize_controlled_case_result。实现上述共享来源与唯一 finalizer 后，该条 **1 passed，17.25 秒**，包含真实观察／Memory 行与提交后重复只读，不作为后续扩展的最终结果。
+
+扩展中的一次运行实际 **1 failed、12 passed，106.72 秒**：并发消息夹具遗漏 ChatMessage 必填 created_at；仅按既有模型补创建时刻，不改生产模型或忽略时间。该运行按当时收集的中间用例执行，后续新增测试不以此结果冒充通过。四协议扩展随后实际 **1 failed、2 passed，28.88 秒**：OpenAI Responses 的合成 tool reply 与固定终态回复复用了 response ID，原图正确拒绝“model reused a message identity from its input”。查证 test_controlled_case_graph 已有两调用夹具规则，只为本轮第一回复分配独立 fixture response ID；不改生产原消息／native 身份校验，不忽略 messages。
+
+修正后完整当时29项实际 **29 passed，213.36 秒**。再补实际 snapshot 分配行头与应用 proof、提交后派生 Memory 行／回执事务失败的两项，新专项实际 **31 passed，229.04 秒，exit 0，无 skip／deselect**。这31项覆盖四协议正常 owner callback、真实 PG 的完整最终事务／回滚／提交后 ACK 丢失／取消后线程仍提交、原件和消息冲突、保留 failed Verification、旧读者／未来格式、同一 live owner 显式重入只读、Memory 行缺失不自动补派、rebase 和最终写前失租回滚。此组不是独立正式 case Worker 强杀、真实业务领域请求或生产路由验收。
+
+### 最终源码验证
+
+每条 backend pytest 前执行 scripts/clear_uv_environment.ps1 -ProcessOnly，固定 E:\MiniConda3\envs\Agent\python.exe，PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、RUN_LIVE_DOCKER_TESTS=0、RUN_LIVE_MYSQL_TESTS=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。只使用已运行且获授权的 PG／Redis，不启动／重启服务、不使用 UV。工作目录 Agent_Server：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_finalization.py tests/test_controlled_case_projection_parts.py tests/test_controlled_case_result_asset.py tests/test_controlled_case_result.py tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+实际 **329 passed，1121.00 秒，exit 0，无 skip／deselect**，包含最终新专项全部31项与原正式来源的四协议图执行、结果投影／资产留存、分项、受理和双租约契约。日志 .codex-logs/e193-formal-final.log 仅为本地执行证据，不提交；跨续接等待原 handle 取得完整终态，没有因等待或日志暂时为空重启命令。
+
+四个 RUN_LIVE 开关全为0，单跑 tests/test_controlled_case_finalization.py 的同一 pytest 参数，实际 **31 skipped，7.91 秒，exit 0**；只证明 opt-in 边界，不计通过。固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests 和 pip check 均实际 exit 0，pip 报 No broken requirements found。ruff／mypy 未安装，没有安装新依赖，未执行独立 backend lint／typecheck。
+
+工作目录 agent_web，npm.cmd run typecheck 实际 exit 0；以下事件消费回归第一次 **18 passed，2.40 秒**，正式主组结束后复核 **18 passed，2.72 秒，exit 0**，不是两个独立更高等级证据：
+
+~~~powershell
+npm.cmd run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/stores/sessionEventRefresh.test.ts src/features/flow/useFlowSession.lifecycle.test.ts
+~~~
+
+主组取得终态后串行运行共享回归，同一最终源码／测试不变，backend 环境同上：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_snapshot_projection.py tests/test_framework_event_projection.py tests/test_framework_observation_projection.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_framework_finalization_projection.py tests/test_framework_partial_projection_recovery.py tests/test_framework_turn_memory_projection.py tests/test_framework_turn_memory_reconciliation.py tests/test_case_execution_verification.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_agent_task_dispatch.py tests/test_runtime_binding_persistence.py -q -x -rs --tb=short --show-capture=no --log-level=INFO
+~~~
+
+实际 **673 passed，944.51 秒，exit 0，无 skip／deselect**。涵盖普通 message／approval 的原结果资产、分项、唯一应用提交、部分投影恢复、原派生 Memory／只读对账、Verification 和 Worker／调度／绑定／路由；没有把普通 message 的后继恢复当正式 case 恢复验收。日志 .codex-logs/e193-shared-final.log 不提交，原 handle 已取得终态并显式记录 PYTEST_EXIT_CODE=0。329／673 两组分别报告，不累计冒充独立更高级证据。
+
+两组回归运行时 src 聚合 SHA256 为 5b321383d3db91b3821e7ce48d9c6b70e647b3fc602fbf48793ba9b2494ede39（863个 Python 文件），tests 为 34e620623f57d3c352e2ad3d745a51a249487b58e42b14ea74bc5c4d41a20dde（664文件）；当时新专项为 96c04d45cfd2ff0fb5c3567dcfc6bfbf5b3cf3bdc8f9be4a0e14a545bdccbdf6。算法为相对 POSIX 路径排序、UTF-8 路径＋NUL＋原文件字节＋NUL。主组前及运行中、共享组结束后采样一致，两组运行期间只追加文档，未改 Python 源码／测试；v3 hash 不变。一次摘要辅助命令受 PowerShell 引号转义影响报 SyntaxError，改用 here-string 输入同一零依赖脚本后正常核验；不是测试失败，不据此重启任何 pytest。两组终态后对应 pytest 进程数为0。
+
+精确 force-add 被忽略的新测试后，git diff --cached --check 首次实际 exit 2：test_controlled_case_finalization.py:427: new blank line at EOF。此前未暂存的 diff 检查不会包含此忽略文件，不能把该早期检查当完整暂存检查。仅删除该文件最后一个空行（一个 LF 字节），逐字节核对无其他差异，并核完整 Python AST（包含全部 source-location 属性）完全不变；不改断言或生产逻辑。该格式修正后的 tests 聚合为 6a35bbb0855b047195ae5e1f7702c5f716bbe7c8ea58a48dead6604d3213e6fa，新专项为 36843515ffc80f7830a7d3b8998e9f38dc4541c4ecbf806065f042f4684c9d74；生产 src 与共享组全部测试／消费方字节未变。下述复核使用修正后的新专项，不把修正前后字节摘要说成相同。
+
+同一 backend 环境，实际复跑 `python -u -m pytest tests/test_controlled_case_finalization.py -q -x -rs --tb=short --show-capture=no --log-level=INFO`，**31 passed，224.25 秒，exit 0，无 skip／deselect**，原 handle 取得终态并显式记录 PYTEST_EXIT_CODE=0，日志 .codex-logs/e193-finalization-whitespace-final.log 不提交。修正后的 git diff --cached --check 实际 exit 0（仅既有 LF→CRLF 提示），精确暂存清单核为本轮13文件，新增行敏感模式扫描无匹配；模式扫描不是安全审计。文档围栏平衡，未纳入 v3／日志／制品。
+
+正式来源由原服务在真实隔离 PG 完成草稿／评审／启用、Suite／计划 Run、RunItem 原子 claim／start、受理与双租约 claim／begin；Redis、固定官方 SDK／LangGraph／PostgresSaver、原模型账本／ToolJob／事件、Verification 与观察／Memory builder 为真实实现。观察与派生 Memory 使用真实 PostgresVectorMemoryStore／pgvector 行，未配置或调用 embedding 模型。模型 HTTP 对端、handler、规划／配置／Memory／MCP／文档检索等端口仍为明确的本地合成或替身，不冒充真实供应商或实际业务目标。新正式 case 链路未做独立 Worker 强杀，不宣称完整 E2；没有真实付费供应商／embedding／RustFS／领域 Runner、全资源 main、E3／E4 双制品／一致备份恢复、全量前后端、前端 build／浏览器、独立 backend lint／typecheck 或性能基线验收。
+
+### 对应、提交与下一步
+
+v4 E／§9.4、§12.1 → 本节 → 10个生产文件＋新专项＋2份文档，共13文件 → 真实红绿、最终329／673项回归、18项前端与类型／compileall／pip check → 独立提交“【feat】接入正式用例唯一收尾与应用提交证明”，实际 ID 见 Git 与本轮交付。提交前核对完整 status／diff、跨层引用、diff --check 和暂存范围；被忽略的新测试只单文件 git add -f，不改 ignore，不纳入用户 v3／日志／认证／测试制品，不推送或创建 PR。
+
+下一依赖是复用原 AgentCaseAssessmentService／原证据与 TestRunService／RunStore 的正式结果事务，将原应用证明与固定 RunItem attempt 绑定后进行 fenced 原子完成；不能把 Session completion 或 failed Verification 转成 case passed。随后仍需原业务审批继续、失租后的正式恢复（含派生 Memory 只读对账）／独立 case Worker 强杀、兼容制品／main 与逐模式验收。当前 AgentTask 仍 running、RunItem 无 result_id，finish(completed) 仍明确拒绝，不重置旧任务／失败结果，回归创建新运行，不自动重跑原图／模型／工具。
+
+完整 v4 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式完整有效输入／质量、空结构化结果／流式／取消未收口项与历史异常继续保留，整体 goal 仍 active，不标 complete。未运行 Docker、启动／重启服务、新增付费调用或外部目标测试，未改实际 .env／生产路由；仅 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境及人工发布等待另计，非承诺；不因本子步通过缩短尚缺 E3／E4 证据的工期。

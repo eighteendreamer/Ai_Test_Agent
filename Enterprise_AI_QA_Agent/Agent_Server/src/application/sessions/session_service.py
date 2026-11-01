@@ -2833,6 +2833,51 @@ class SessionService:
             runtime_result=runtime_result, assistant_message_id=assistant_message_id, user_message=user_message,
             verification_results=self._runtime_verification_results(owner.binding.session_id, runtime_result))
 
+    async def finalize_controlled_case_result(self, owner, *, native) -> ConversationResponse:
+        """Original live dual owner -> the sole finalizer or proven ACK-only read.
+
+        No upstream counterpart (checked: original claimed-message recovery,
+        ControlledCaseResults and v4 §9.4): this formal source has no user row
+        or message-stage. It grants neither expired-owner recovery nor verdicts.
+        """
+        if owner is None or owner != current_framework_owner() or owner.controlled_case_lease is None:
+            logger.warning("controlled_case_application_finalization_owner_rejected", extra={
+                "task_id": getattr(owner, "task_id", None), "recovery_reason": "captured_dual_owner_unavailable"})
+            raise ContinuationLeaseLostError("Formal finalization requires its captured live dual owner")
+        from src.runtime.framework_application_projection import load_committed_projection
+        from src.runtime.framework_runtime_results import FrameworkRuntimeResults
+
+        owner, native = deepcopy((owner, native))
+        scope = {"task_id": owner.task_id, "binding_id": owner.binding.binding_id, "session_id": owner.binding.session_id}
+        try:
+            async with self._session_locks[owner.binding.session_id]:
+                committed = await load_committed_projection(self._agent_task_store, owner,
+                    controlled_case_native=native, allow_uncommitted=True)
+                if committed is not None:
+                    proof, snapshot, assistant = committed
+                    # ACK-only: do not inspect/rebuild derived Memory or re-run
+                    # the finalizer after its scoped application proof exists.
+                    session = await self._require_session(owner.binding.session_id)
+                    events = await self._store.list_events(session.id, limit=RECENT_CONVERSATION_EVENT_LIMIT)
+                    if assistant is None:
+                        assistant = ChatMessage(id=proof.snapshot_id, role=MessageRole.assistant, content="",
+                            created_at=snapshot.created_at, metadata={"turn_id": owner.binding.turn_id})
+                    logger.info("controlled_case_application_commit_reused", extra={**scope, "run_item_completed": False})
+                    return ConversationResponse(session=await self._to_detail(session), output=assistant, events=events)
+                asset = await FrameworkRuntimeResults(self._agent_task_store).load_controlled_case(owner, native=native)
+                response = await self._finalize_runtime_result(
+                    session=await self._require_session(owner.binding.session_id),
+                    runtime_result=asset.runtime_result.restore(), assistant_message_id=asset.assistant_message_id,
+                    user_message_override=asset.user_message, turn_lease_token=owner.owner_token,
+                    projection_owner=owner, projection_asset=asset, controlled_case_native=native)
+                logger.info("controlled_case_application_finalized", extra={**scope, "run_item_completed": False})
+                return response
+        except (Exception, asyncio.CancelledError) as exc:
+            logger.warning("controlled_case_application_finalization_unsettled", extra={**scope,
+                "error_type": type(exc).__name__, "recovery_reason": "application_commit_receipt_unknown",
+                "automatic_replay": False})
+            raise
+
     async def _finalize_runtime_result(
         self,
         session: SessionRecord,
@@ -2844,6 +2889,7 @@ class SessionService:
         turn_lease_token: str | None = None,
         projection_owner=None,
         projection_asset=None,
+        controlled_case_native=None,
     ) -> ConversationResponse:
         session_id = session.id
         if projection_asset is not None:
@@ -2853,7 +2899,9 @@ class SessionService:
             from src.runtime.framework_runtime_results import FrameworkRuntimeResults
             from src.runtime.framework_message_stages import FrameworkMessageStageRecoveryRequired
 
-            persisted_asset = await FrameworkRuntimeResults(self._agent_task_store).load(projection_owner)
+            results = FrameworkRuntimeResults(self._agent_task_store)
+            persisted_asset = (await results.load_controlled_case(projection_owner, native=controlled_case_native)
+                if projection_owner.binding.runtime_kind == "langgraph" else await results.load(projection_owner))
             if persisted_asset != projection_asset:
                 raise FrameworkMessageStageRecoveryRequired("Finalization input differs from its persisted original result")
             projection_asset = persisted_asset
@@ -2890,6 +2938,7 @@ class SessionService:
                 output_message_id=assistant_message_id if runtime_result.output_text else None,
                 runtime_result_asset_sha256=(projection_asset.asset_sha256
                     if projection_asset is not None else None),
+                controlled_case_native=controlled_case_native,
             )
         event_fenced_write = dict(fenced_write)
         if projection_asset is not None:
@@ -3204,6 +3253,7 @@ class SessionService:
                     fenced_write=fenced_write,
                     framework_owner=projection_owner,
                     source_snapshot_id=runtime_result.snapshot.id,
+                    **({"controlled_case_native": controlled_case_native} if controlled_case_native is not None else {}),
                 ),
             )
         if session.status == SessionStatus.completed:
@@ -3710,6 +3760,7 @@ class SessionService:
         fenced_write: dict[str, str | None] | None = None,
         framework_owner=None,
         source_snapshot_id: str | None = None,
+        controlled_case_native=None,
     ) -> None:
         if self._memory_runtime_service is None:
             return
@@ -3720,7 +3771,8 @@ class SessionService:
             await self._store.assert_turn_execution(session.id, turn_lease_token)
         if framework_owner is not None:
             memory_ids = await self._memory_runtime_service.execute_turn_memory_plan(
-                framework_owner, turn_lease_token=turn_lease_token or None)
+                framework_owner, turn_lease_token=turn_lease_token or None,
+                **({"controlled_case_native": controlled_case_native} if controlled_case_native is not None else {}))
         else:
             memory_ids = await self._memory_runtime_service.write_turn_memory(
                 session_id=session.id,

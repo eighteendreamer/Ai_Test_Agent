@@ -410,10 +410,11 @@ class MemoryRuntimeService:
                 write_ids.append(point.id)
         return write_ids
 
-    async def execute_turn_memory_plan(self, framework_owner, *, turn_lease_token: str | None = None) -> list[str]:
+    async def execute_turn_memory_plan(self, framework_owner, *, turn_lease_token: str | None = None,
+        controlled_case_native=None) -> list[str]:
         """Execute only the immutable framework plan and persist row receipts.
 
-        The plan is read from the fenced message stage; caller-provided turn
+        The plan is read from the fenced original source; caller-provided turn
         text is intentionally not accepted as a recovery source.
         """
         from src.runtime.framework_turn_memory_projection import (
@@ -422,7 +423,8 @@ class MemoryRuntimeService:
             read_turn_memory_execution_async,
         )
 
-        execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings)
+        source_options = {"controlled_case_native": controlled_case_native} if controlled_case_native is not None else {}
+        execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings, **source_options)
         # The read helper also validates the owner/stage/plan.  Importing the
         # plan here keeps the immutable source in one place and avoids a
         # second policy reconstruction in the normal or recovery path.
@@ -431,12 +433,12 @@ class MemoryRuntimeService:
 
         def read_plan():
             with postgres_connect(self._memory_store._settings) as conn, conn.cursor() as cur:
-                stage, plan = _lock_stage_and_plan(cur, self._memory_store._settings, framework_owner)
+                stage, plan = _lock_stage_and_plan(cur, self._memory_store._settings, framework_owner, **source_options)
                 return stage, plan
 
         _, plan = await asyncio.to_thread(read_plan)
         if not plan.requests:
-            await asyncio.to_thread(ensure_empty_turn_memory_execution, framework_owner, self._memory_store._settings)
+            await asyncio.to_thread(ensure_empty_turn_memory_execution, framework_owner, self._memory_store._settings, **source_options)
             return []
 
         write_ids: list[str] = []
@@ -454,10 +456,10 @@ class MemoryRuntimeService:
                 request = request.model_copy(update={"turn_lease_token": turn_lease_token})
             prepared = await self._attach_embeddings([request])
             point = await self._write_point(prepared[0], framework_memory_execution=FrameworkTurnMemoryExecutionWrite(
-                owner=framework_owner, request_id=item.request_id))
+                owner=framework_owner, request_id=item.request_id, **source_options))
             if point is not None:
                 write_ids.append(point.id)
-            execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings)
+            execution = await read_turn_memory_execution_async(framework_owner, self._memory_store._settings, **source_options)
             receipt_by_id = {
                 value.request_id: value
                 for value in (execution.row_receipts if execution is not None else [])

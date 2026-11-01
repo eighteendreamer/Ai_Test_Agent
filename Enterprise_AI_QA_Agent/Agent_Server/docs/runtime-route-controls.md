@@ -332,7 +332,7 @@ schema 2 只执行、schema 3 只投影，不能静默获得 schema 4 的留存�
 `checkpoint_at`／admission 事实不变；`retained_at` 使用本次实际 DB 留存时间，不冒充图结束时间。
 同事务追加稳定身份的 `test_run.case_result_prepared` 审计回执，绑定原资产摘要，
 `application_finalized=false`；它不是 completion 事件或业务裁决。claim 前与锁内均检查
-`controlled_case_input_max_version=4`／checkpoint strict codec（§191 上限 2，当前上限 3，见下节），
+`controlled_case_input_max_version=4`／checkpoint strict codec（§191 上限 2，当前上限 4，见后两节），
 旧能力或未来格式 defer、不改原件；默认 `controlled_case_available=false` 不变，
 本兼容测试不是双制品部署验收。
 
@@ -357,7 +357,7 @@ schema 2 只执行、schema 3 只投影，不能静默获得 schema 4 的留存�
 原 attempt checkpoint 3 保留 admission／原结果资产／retained_at、原 key 和 checkpoint_at；
 只增加 `projection_receipts`，复用现有 snapshot、event、observation asset／commits 类型。
 观察资产与回执成对、绑定与原结果摘要严格匹配，未知字段拒读；
-`controlled_case_checkpoint_max_version=3`，旧 reader2／未来格式 defer，不修改原件。
+§192 的 checkpoint 上限为 3（当前为 4，见下节），旧 reader2／未来格式 defer，不修改原件。
 默认 `controlled_case_available=false` 仍不变，未做双制品滚动部署验收。
 
 snapshot 重入核实际行头、完整内容与原回执；数据库合法分配 version 不改冻结意图，DTO 时间仍遵守
@@ -367,10 +367,46 @@ snapshot 重入核实际行头、完整内容与原回执；数据库合法分�
 
 snapshot 等待者取消仍传播 CancelledError，并记录 `snapshot_write_receipt_unknown`、
 `automatic_replay=false`；这不是后台 DB 线程停止或事务回滚证明。提交后 ACK 丢失保留真实事实，
-不得自动重跑图／模型／工具。本步仅保存分项，`application_finalized=false`，
-没有 message-stage／业务用户行，也没有接入唯一 `_finalize_runtime_result` 的正式 case 正常／恢复入口。
-Session 消息／Verification／最终应用提交、正式 Assessment／RunItem 完成、业务审批继续、
-失租恢复／独立进程与 main／生产路由仍待，不能凭这些回执调用 finish 或判通过。
+不得自动重跑图／模型／工具。上述分项端口本身只保存部分回执，不证明应用已最终提交，
+不创建 message-stage／业务用户行；唯一 finalizer 的正式来源入口见下节。
+正式 Assessment／RunItem 完成、业务审批继续、失租恢复／独立进程与 main／生产路由仍待，
+不能凭分项回执调用 finish 或判通过。
+
+### 正式 case 唯一 Session finalizer 与应用提交（内部显式接线）
+
+§193 的 `ControlledCaseRuntime(runtime_service=..., session_service=...)` 可显式连接原 SessionService。
+仅 schema 4 正常原生终态／原事件集合／结果资产已留存后，在原 executor owner／sink 关闭前，
+调用 `finalize_controlled_case_result(owner, native=...)`。默认未传 SessionService 仍只准备结果，
+历史 schema 1／2／3、审批等待不静默升级；未装配到 main／CLI／生产 Dispatcher。
+
+该内部端口要求当前捕获的原 live 双 owner，先完整核原件并读应用提交证明；未提交时加载原资产，
+进入**现有唯一** `_finalize_runtime_result`，重读原资产、原消息／时间／Verification，
+不重跑图、模型、工具或 Verification builder。原消息来源仍要求其真实 user 行，正式来源明确没有，
+不伪造 message-stage 或业务 user 行。工具展示与 assistant 原身份／内容、Verification 原结果，
+沿同一 Session rebase 和 immutable-message 写法提交，保留并发偏好、排队输入和其他 Turn 消息。
+
+checkpoint 4 继承原 admission／资产／部分回执，增加原 FrameworkProjectionCommit 和
+post_commit_memory_intent／plan／可选 execution；原 key／checkpoint_at／retained_at 不变。
+证明 scope 仍为 `session_messages_completion_events`，不是正式测试结果或 RunItem 结算。
+实际 snapshot／必需事件、消息、Verification、模型／ToolJob 摘要与 owner 均在原最终事务复核，
+写 proof 前再次按 DB clock 核双租约，Session 行／消息／completion 事件／proof 同事务。
+合法 snapshot version 分配不回写原意图；缺失、漂移或裸行不冒充完整提交。
+`controlled_case_checkpoint_max_version=4`，input 上限仍 4，reader3／未来字段／version5 defer；
+默认 controlled_case_available=false 不变，本读者测试不代表双制品部署验收。
+
+正常提交沿原纯策略冻结 Memory 意图／计划，原 Memory 执行器复用来源端口与精确 native，
+原行／执行回执同事务；没有第二个派生写入算法。Memory／cleanup 仍是提交后独立效果，
+失败保留已提交的 Session 和原 unknown 事件，不伪称效果完成。
+已有完整应用证明时只读／ACK，不再次调用 finalizer、Verification／观察 builder 或 Memory；
+派生 Memory 行后续缺失不会触发自动修复，未知效果不因重入重派。
+
+取消／ACK 丢失保留真实 SQL 事实并记录 application_commit_receipt_unknown，不自动重放；
+等待者取消不是后台线程停止证明。事务内日志 application_commit_in_transaction 仅说明已写待提交，
+只有最终事务实际返回后才记录应用 finalization 成功。
+这里的 Session completion 不等于 case passed：非空 Verification 的 failed 原结果仍保留，
+AgentTask／RunItem 仍 running／无正式 result_id，原 finish(completed) 仍拒绝。
+正式 Assessment／证据与 RunItem fenced 原子完成、业务审批继续、失租后的正式恢复／只读 Memory
+对账与独立 case Worker 强杀、main／逐模式／真实领域／E3/E4 出口尚未完成，不能据此开启生产。
 
 ### 原路由与恢复验证
 
