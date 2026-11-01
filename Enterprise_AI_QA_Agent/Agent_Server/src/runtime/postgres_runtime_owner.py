@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+from time import perf_counter
 
 from src.runtime.store import ContinuationLeaseLostError
 from src.schemas.runtime_binding import RuntimeBinding, RuntimeExecutionOwner
@@ -86,25 +87,53 @@ def assert_runtime_owner(cur, settings, owner: RuntimeExecutionOwner, *,
     live in public, explicitly selected by its caller; task transactions use
     their existing application search_path.
     """
+    started = perf_counter()
     cur.execute(f"SELECT metadata FROM {schema}{settings.database.postgres_session_table} WHERE id=%s FOR UPDATE",
         (owner.binding.session_id,))
     session = cur.fetchone()
     cur.execute(f"SELECT * FROM {schema}{runtime_owner_table(settings)} WHERE binding_id=%s FOR UPDATE",
         (owner.binding.binding_id,))
     saved = cur.fetchone()
+    locked = perf_counter()
     cur.execute("SELECT clock_timestamp() AS now")
     now = cur.fetchone()["now"]
     metadata = session["metadata"] if session else {}
     # PostgreSQL parses and compares the lease after lock acquisition, avoiding
     # transaction-start NOW() and a pre-wait lease observation.
-    cur.execute("SELECT %s::timestamptz > %s AS active",
-        (metadata.get("turn_lease_expires_at"), now))
-    active = cur.fetchone()["active"]
-    if (saved is None or not active or saved["expires_at"] is None or saved["expires_at"] <= now
-        or metadata.get("turn_lease_turn_id") != owner.binding.turn_id
-        or metadata.get("turn_lease_token") != owner.owner_token
-        or saved["owner_epoch"] != owner.owner_epoch or saved["owner_token"] != owner.owner_token
-        or saved["attempt_id"] != owner.attempt_id or saved["task_id"] != owner.task_id
-        or saved["worker_id"] != owner.worker_id or saved["execution_state"] not in states
-        or RuntimeBinding.model_validate(saved["runtime_binding"]) != owner.binding):
+    cur.execute("SELECT %s::timestamptz > %s AS active, %s::timestamptz AS session_expires_at",
+        (metadata.get("turn_lease_expires_at"), now, metadata.get("turn_lease_expires_at")))
+    comparison = cur.fetchone()
+    checks = [("session_missing", session is None), ("owner_missing", saved is None),
+        ("session_lease_inactive", not comparison["active"]),
+        ("session_turn_mismatch", metadata.get("turn_lease_turn_id") != owner.binding.turn_id),
+        ("session_token_mismatch", metadata.get("turn_lease_token") != owner.owner_token)]
+    if saved is not None:
+        checks.extend([("owner_lease_inactive", saved["expires_at"] is None or saved["expires_at"] <= now),
+            ("owner_epoch_mismatch", saved["owner_epoch"] != owner.owner_epoch),
+            ("owner_token_mismatch", saved["owner_token"] != owner.owner_token),
+            ("owner_attempt_mismatch", saved["attempt_id"] != owner.attempt_id),
+            ("owner_task_mismatch", saved["task_id"] != owner.task_id),
+            ("owner_worker_mismatch", saved["worker_id"] != owner.worker_id),
+            ("owner_state_mismatch", saved["execution_state"] not in states)])
+    rejected = [name for name, mismatch in checks if mismatch]
+    # Preserve the original short-circuit: malformed binding data still raises
+    # its original codec error, and is not inspected after a scalar rejection.
+    if not rejected and RuntimeBinding.model_validate(saved["runtime_binding"]) != owner.binding:
+        rejected.append("owner_binding_mismatch")
+    if rejected:
+        # Evidence is the SAME locked rows/clock used above, not a later query.
+        # No lease capability, raw binding, metadata or exception text is logged.
+        logger.warning("framework_runtime_owner_rejected", extra={
+            "binding_id": owner.binding.binding_id, "session_id": owner.binding.session_id,
+            "turn_id": owner.binding.turn_id, "task_id": owner.task_id, "attempt_id": owner.attempt_id,
+            "worker_id": owner.worker_id, "owner_epoch": owner.owner_epoch,
+            "authority_rejections": ",".join(rejected), "authority_observed_at": now.isoformat(),
+            "session_lease_expires_at": (comparison["session_expires_at"].isoformat()
+                if comparison.get("session_expires_at") is not None else None),
+            "owner_lease_expires_at": (saved["expires_at"].isoformat()
+                if saved is not None and saved["expires_at"] is not None else None),
+            "owner_execution_state": saved["execution_state"] if saved is not None else None,
+            "expected_owner_states": ",".join(states),
+            "authority_lock_seconds": locked-started, "authority_check_seconds": perf_counter()-started,
+        })
         raise ContinuationLeaseLostError("Framework execution owner is no longer active")

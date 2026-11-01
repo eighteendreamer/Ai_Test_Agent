@@ -360,6 +360,8 @@ class FrameworkMessageRecovery:
                 if reading_original else None)
             if result is None:
                 logger.info("framework_message_recovery_not_admitted", extra={"task_id": task_id,
+                    "recovery_source": "message_recovery", "error_type": type(exc).__name__,
+                    "recovery_reason": "native_original_rejected" if reading_original else "predecessor_rejected",
                     "reason": str(exc) if isinstance(exc, FrameworkMessageStageRecoveryRequired) else type(exc).__name__})
                 return None
         if result is not None:
@@ -428,6 +430,9 @@ class FrameworkMessageRecovery:
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (task_id,))
             predecessor = cur.fetchone()
             if not _expired(predecessor):
+                logger.info("framework_message_recovery_not_admitted", extra={"task_id": task_id,
+                    "recovery_source": "message_recovery", "recovery_reason": "predecessor_not_expired",
+                    "task_status": predecessor["status"]})
                 return None
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE operation='message_recover' AND parent_task_id=%s", (task_id,))
             existing = cur.fetchone()
@@ -441,6 +446,15 @@ class FrameworkMessageRecovery:
                 return tasks._record(existing)
             if (stage.current_task_id != task_id or session["lease_active"]
                 or owner["task_id"] != task_id or owner["attempt_id"] != predecessor["attempt_id"]):
+                logger.info("framework_message_recovery_predecessor_rejected", extra={"task_id": task_id,
+                    "binding_id": binding.binding_id, "owner_epoch": owner["owner_epoch"],
+                    "recovery_source": "message_recovery", "recovery_reason": "predecessor_not_inactive",
+                    "recovery_phase": stage.phase, "task_status": predecessor["status"],
+                    "authority_rejections": ",".join(name for name, mismatch in (
+                        ("stage_task_mismatch", stage.current_task_id != task_id),
+                        ("session_lease_active", session["lease_active"]),
+                        ("owner_task_mismatch", owner["task_id"] != task_id),
+                        ("owner_attempt_mismatch", owner["attempt_id"] != predecessor["attempt_id"])) if mismatch)})
                 _reject("Message predecessor is no longer the inactive execution owner")
             cur.execute(f"SELECT * FROM {tasks._tasks} WHERE id=%s FOR UPDATE", (stage.task_id,))
             origin = cur.fetchone()

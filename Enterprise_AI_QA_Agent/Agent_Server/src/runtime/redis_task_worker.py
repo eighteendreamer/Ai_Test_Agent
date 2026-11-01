@@ -97,6 +97,10 @@ class RedisTaskWorker:
             if self._stop.is_set():
                 break  # Unstarted deliveries stay pending for recovery.
             if not await self._queue.ready(task, consumer=self._consumer):
+                LOGGER.info("redis_task_delivery_not_ready", extra={
+                    "task_id": task.payload.get("task_id"), "delivery_message_id": task.message_id,
+                    "worker_id": self._consumer, "delivery_stream": stream,
+                    "retry_count": task.retry_count, "not_before_ms": task.not_before_ms})
                 continue
             payload = task.payload
             started = perf_counter()
@@ -162,7 +166,13 @@ class RedisTaskWorker:
                 })
                 continue
             else:
-                processed += int(bool(await self._queue.ack_owned(task, consumer=self._consumer)))
+                acknowledged = bool(await self._queue.ack_owned(task, consumer=self._consumer))
+                processed += int(acknowledged)
+                if not acknowledged:
+                    LOGGER.warning("redis_task_ack_owner_lost", extra={
+                        "task_id": payload.get("task_id"), "delivery_message_id": task.message_id,
+                        "worker_id": self._consumer, "delivery_stream": stream,
+                        "retry_count": task.retry_count, "not_before_ms": task.not_before_ms})
             finally:
                 worker_iteration_seconds().labels(stream=stream).observe(
                     max(0.0, perf_counter() - started)

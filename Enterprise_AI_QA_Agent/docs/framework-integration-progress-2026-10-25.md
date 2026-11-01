@@ -8418,3 +8418,51 @@ v4 E／§8.2、§12.1 → 本节 → 5 个生产文件、新测试、原控制�
 只读端口已有上述窄范围验证；组合稳定性仍有未定位缺口，不能称本轮全部验收完成。正式 RunItem 的冻结输入／AgentTask 双归属仍待实施，现有 Deep Agents 持久 graph-input 不因新增 Python 读端口变成受控资产。后续先补失败决策处的持久可观测性并定位租约／恢复／PEL 样本，再继续版本化输入、专用 RuntimeTurnResult 原件与唯一收尾、兼容 Worker／发布制品及 main 选路；不提前删除 legacy 外循环。
 
 完整 v4 A2/A3/B/C/D/E/F、H01–H12、全部旧读者升级或隔离、模式质量／完整有效输入、真实供应商／embedding／RustFS／领域 Runner、全资源 main 启动、双制品独立安装与部署、一致备份恢复和 E3/E4 继续保留，整体 goal 维持 active。本步不启动／重启服务或 Docker，不拉镜像、不调用付费模型、不访问目标、不改实际 .env 或生产路由；仅由原夹具创建／清理本轮自有隔离资源，不处理 §158 未归属共享残留。
+
+## 182. C／A2：执行权、恢复准入与 Redis 投递的决策处诊断（2026-11-01）
+
+### 续接、已证实缺口与依据 → 做法
+
+续接 485d0002c／§181。原四个失败仍未定位，不把错误类型、短窗口时钟采样或后续通过推定为根因。原 assert_runtime_owner() 只有通用失租异常；message recovery 的 reason extra 不在 ContextFormatter 白名单，真实日志不能看到该字段；Worker 的 ready=false 与 ACK=0 没有各自明确的返回点日志。这些是代码可直接证明的可观测性缺口，不是已证明的租约／恢复／PEL 故障根因。
+
+读取现有 Session → owner 锁序、锁后 clock_timestamp()、唯一恢复准入、Redis owned-control Lua 和白名单 formatter → 在原决策处记录原事实，不新增调度器、独立时钟采样循环或宽泛 fallback。实际配置为 turn lease 120 秒、heartbeat 30 秒、resource lease 300 秒、Redis reclaim 120000ms；这些配置、超时、重试和旧断言均未放宽。依据本地《Agent轨迹与协议鲁棒性》关于结果＋轨迹、幂等、权限和故障恢复的要求 → 验证记录可检索的同时，原状态、原件、PEL、wire 和执行次数不变。
+
+### 实现与消费方边界
+
+- postgres_runtime_owner.py：保留原四条 SELECT、锁顺序和锁后一次 DB 判定时间；第四条原比较 SQL 同时返回同一 Session expiry 的 timestamptz，不为日志另查一次时钟／租约。将原拒绝谓词命名，新增 framework_runtime_owner_rejected，包含固定差异标签、原判定 DB 时刻、两个到期时间、预期／实际执行状态及检查耗时。identity 为捕获的 task／attempt／worker／epoch；不输出 token、原 binding、metadata、消息或异常正文。authority_lock_seconds 是前两个锁查询的总耗时，含连接交互，不冒充纯锁等待或系统时钟跳变证明。
+- 保持原 ContinuationLeaseLostError 类型和文本；scalar 已拒绝时不解析 runtime binding，没有 scalar 拒绝时仍使用原完整 RuntimeBinding reader，codec 错误不包装成失租。合法路径不新增拒绝日志、查询或持久写入。
+- framework_message_recovery.py：原非过期 predecessor 返回 None、原 inactive-owner 冲突和既有 catch 出口补固定 recovery_source／recovery_reason／error_type；inactive 冲突同时记录固定 mismatch 标签、阶段与任务状态。原 reason extra 保留但不扩大 formatter 权利。后继、封存、恢复权限和返回行为不变；这不是对全部恢复拒绝原因建立新的持久分类协议。
+- redis_task_worker.py：ready=false 增加 INFO redis_task_delivery_not_ready；handler 成功后的原 ack_owned 仍只调用一次，ACK=0 增加 WARNING redis_task_ack_owner_lost。ready=false 不声称一定失去所有权，也可能尚未到投递时间。日志只含任务／投递／stream／worker 身份、retry_count 和 not_before_ms；没有自动 ACK、transfer、重跑或清 PEL。
+- log_format.py：只将上述明确 scalar 字段纳入原 DIAGNOSTIC_FIELDS；不开放任意 extras、完整行或异常正文。全局核对 guard 的原 saver、Session、账本、工具、审批、stage、结果和 finalizer 消费方；所有调用仍使用原签名和 states tuple。新事件仅由上述生产点、原 formatter 和新诊断测试消费；无前端／公共 DTO／配置／DDL／持久格式变更。
+
+### TDD 与实际验证
+
+实现前新两个诊断模块真实 **13 failed、1 passed，29.21 秒，exit 1**：缺少所需日志或 formatter 字段，不是服务连接失败。首实现 **14 passed，26.67 秒**。扩展完整 binding／task／attempt／worker 差异、真实 Session 行锁等待后到期、恢复 inactive 冲突后，实际 **22 passed，66.77 秒**。缺原件与 formatter 为替身／纯单元；owner／恢复和 Redis 换主使用原隔离 PG／Redis 夹具；锁等待用官方 saver，先观察真实 pg_blocking_pids，再释放本夹具自己的锁，仍断言旧写失败且无 checkpoint。
+
+固定 .venv-framework-v2，工作目录 Agent_Server，PG／Redis 沿用用户已启动服务。扩大组前后 src 聚合 SHA256（排序相对 Python 路径 UTF-8＋NUL＋原字节＋NUL）均为 b771073b7b7f94f7ded85b2e6078b365f71143348033fa6782d1f5b949cb3fa5。没有在运行中修改生产源码或测试；后续仅补两项 codec／scalar short-circuit 单元覆盖，不修改实现或旧断言。
+
+~~~powershell
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='0'
+$env:QA_FRAMEWORK_WORKER_DIAGNOSTICS='1'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_controlled_case_native_reader.py tests/test_controlled_case_adapter.py tests/test_controlled_case_graph.py tests/test_deep_agent_runtime_adapter.py tests/test_framework_native_terminal.py tests/test_framework_native_interrupts.py tests/test_framework_checkpoint_fencing.py tests/test_framework_harness_settings.py tests/test_framework_unsealed_result_reconstruction.py tests/test_framework_message_result_reconstruction.py tests/test_framework_approval_result_reconstruction.py tests/test_framework_terminal_gap.py tests/test_framework_context_runtime.py tests/test_framework_authority_diagnostics.py tests/test_framework_delivery_diagnostics.py -q -rs --tb=short --log-level=INFO
+# 429 passed，1888.40 秒，exit 0，无 skip／deselect。
+
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_authority_diagnostics.py tests/test_framework_delivery_diagnostics.py tests/test_framework_message_recovery.py tests/test_framework_orchestrated_message_recovery.py tests/test_runtime_binding_persistence.py tests/test_framework_worker_diagnostics.py tests/test_redis_task_worker.py tests/test_redis_task_queue.py tests/test_redis_task_retry.py tests/test_live_redis_task_delivery.py tests/test_agent_task_monitor.py -q -rs --tb=short --log-level=INFO
+# 161 passed，367.43 秒，exit 0，无 skip／deselect，含最终诊断专项全部 24 项。
+~~~
+
+两组覆盖有重叠，不相加为独立覆盖数量。官方 SDK 的模型对端仍为测试模型／本地合成 HTTP，工具为既有受控测试实现；原恢复组含真实独立 Worker 强杀，不等于真实供应商或领域目标验收。使用原 QA_FRAMEWORK_WORKER_DIAGNOSTICS，不增加临时插件。父 pytest 的 --log-level=INFO 保留 INFO 事件，但其默认 captured-log 文本不保证渲染 extra；真实应用／原子 Worker 由 ContextFormatter 渲染，字段级证据由新 caplog 与 formatter 测试精确断言。未将本次未出现的历史失败描述为已取得决策处证据。
+
+随后四个 RUN_LIVE 开关全部显式置 0，诊断两模块实际 **7 passed、17 skipped，7.95 秒，exit 0**；17 项明确需要真实 PG／Redis，不能记为通过。固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests 实际 exit 0；find_spec 确认 ruff／mypy／build／wheel／setuptools 均未安装，未运行独立 lint／typecheck／build，不安装依赖。前端无改动、未重跑。全部启动的 pytest 均观察到终态，无待观察测试。
+
+### 提交对应与剩余出口
+
+v4 C／§8.1、A2／§10.1 → 本节 → 4 个生产文件、2 个新测试及本记录，共 7 文件 → 上述真实红测、专项、十五模块与直接消费方组合 → 独立提交“【fix】补齐执行权与投递拒绝诊断”，ID 见 Git 历史与交付。提交前检查 status／staged diff／diff --check；只显式加入原忽略规则下已审阅的两个新测试，不改忽略规则，不纳入认证、日志、测试制品或用户 v3 草稿。草稿 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存；不推送、不建 PR。
+
+本步完成的是已证实诊断缺口，而非 §181 故障修复；十五模块本次全绿没有撤销 §181 的四个失败，也没有定位 §159／160 的过期比较异常或 §166 子进程 RuntimeError。后续若再现，使用决策处事实继续定位，不靠延长租约、放宽原件／消息／PEL 断言或重复挑选绿色结果。
+
+正式 RunItem 冻结输入／AgentTask 双归属、controlled 版本化 graph-input、RuntimeTurnResult 原件与唯一收尾、兼容 Worker／发布制品／main 选路仍待实现；AgentTask.attempt_id 不得承载 RunItem attempt。完整 v4 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、完整有效输入与模式质量、全资源启动、双制品部署 E4 和一致备份恢复均继续保留，整体 goal 维持 active。没有启动／重启服务或 Docker、拉镜像、调用付费模型、测试外部目标、修改实际 .env 或生产路由；只由原夹具清理本轮自有隔离资源，不处理 §158 未归属共享残留。

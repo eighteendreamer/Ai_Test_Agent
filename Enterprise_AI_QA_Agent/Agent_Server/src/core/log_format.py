@@ -40,6 +40,9 @@ DIAGNOSTIC_FIELDS = (
     "delivery_message_id", "delivery_stream", "heartbeat_operation", "heartbeat_failure_reason",
     "reclaim_idle_ms", "heartbeat_seconds", "touch_seconds", "successful_touches", "since_last_touch_seconds",
     "framework_release_revision", "framework_release_sha256",
+    "binding_id", "owner_epoch", "authority_rejections", "authority_observed_at",
+    "session_lease_expires_at", "owner_lease_expires_at", "owner_execution_state", "expected_owner_states",
+    "authority_lock_seconds", "authority_check_seconds", "recovery_phase", "retry_count", "not_before_ms",
 )
 
 
