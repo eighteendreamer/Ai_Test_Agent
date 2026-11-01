@@ -1743,7 +1743,8 @@ class RuntimeService:
             from langchain_core.messages import ToolMessage
 
             message = next(message for message in self._to_chat_messages(state["turn_id"], tool_records,
-                binding_id=binding.binding_id, previous_messages=previous_messages, event_log=state["event_log"])
+                binding_id=binding.binding_id, previous_messages=previous_messages, event_log=state["event_log"],
+                harness=tool_harness)
                 if message.metadata["tool_call_id"] == call_id)
             material = FrameworkToolProjection.capture(binding=binding, source=identity, record=result.record,
                 message=message, model_content=content,
@@ -2743,10 +2744,10 @@ class RuntimeService:
         records[:] = list(by_call.values())
 
     def _to_chat_messages(self, turn_id: str, tool_results: list[dict], *, binding_id: str | None = None,
-                          previous_messages=(), event_log=(), original_materials=()) -> list[ChatMessage]:
+                          previous_messages=(), event_log=(), original_materials=(), harness="deepagents") -> list[ChatMessage]:
         return build_chat_tool_messages(turn_id, tool_results, binding_id=binding_id,
             previous_messages=previous_messages, event_log=event_log, original_materials=original_materials,
-            hygiene_metadata=self._transcript_hygiene_service.tool_message_metadata())
+            hygiene_metadata=self._transcript_hygiene_service.tool_message_metadata(), harness=harness)
 
     def _build_tool_message(self, record: ToolExecutionRecord) -> dict[str, Any]:
         return build_tool_message(record)

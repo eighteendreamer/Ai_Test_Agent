@@ -97,7 +97,7 @@ def build_runtime_tool_messages(turn_id: str, tool_results: list[dict], *, bindi
 
 def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_metadata: dict,
                              binding_id: str | None = None, previous_messages=(), event_log=(),
-                             original_materials=()) -> list[ChatMessage]:
+                             original_materials=(), harness="deepagents") -> list[ChatMessage]:
     """Project original facts without assigning a new clock on bound replay.
 
     Existing published messages retain their original time (including older
@@ -148,13 +148,13 @@ def build_chat_tool_messages(turn_id: str, tool_results: list[dict], *, hygiene_
             "status": item.get("status", ""), "trace_id": item.get("trace_id", ""),
             "ordinal": index} | hygiene_metadata
         created_at = datetime.utcnow() if binding_id is None else _bound_message_time(
-            turn_id, item, identity, content, metadata, previous.get(identity), event_log)
+            turn_id, item, identity, content, metadata, previous.get(identity), event_log, harness)
         messages.append(ChatMessage(id=identity, role=MessageRole.tool, content=content,
             created_at=created_at, metadata=metadata))
     return messages
 
 
-def _bound_message_time(turn_id, item, identity, content, metadata, previous, event_log):
+def _bound_message_time(turn_id, item, identity, content, metadata, previous, event_log, harness):
     if previous is not None:
         if (previous.role != MessageRole.tool or previous.metadata.get("turn_id") != turn_id
             or previous.metadata.get("tool_call_id") != item["call_id"]):
@@ -174,7 +174,7 @@ def _bound_message_time(turn_id, item, identity, content, metadata, previous, ev
             and entry["payload"].get("tool_key") == item.get("tool_key")
             and entry["payload"].get("tool_job_id") == item.get("job_id")
             and entry["payload"].get("status") == item.get("status")
-            and entry["payload"].get("harness") == "deepagents"), None)
+            and entry["payload"].get("harness") == harness), None)
     if value is None:
         logger.warning("framework_tool_message_time_unavailable", extra={
             "turn_id": turn_id, "call_id": item["call_id"], "message_id": identity})

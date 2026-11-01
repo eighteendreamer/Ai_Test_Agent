@@ -158,8 +158,9 @@ class ControlledCaseAdmission:
             original = prepare_controlled_case_input(detail=detail, item=item, version=version,
                 attempt_id=attempt.id, binding=binding,
                 graph_request=asset.graph_input.request(business_tools=asset.graph_input.tool_schemas),
-                runtime_preparation=getattr(asset, "runtime_preparation", None))
-            if asset.schema_version == 2:
+                runtime_preparation=getattr(asset, "runtime_preparation", None),
+                result_preparation=getattr(asset, "result_preparation", None))
+            if asset.schema_version >= 2:
                 state = asset.runtime_preparation.initial_state
                 if (state.get("mode_key") != session["mode_key"]
                     or state.get("session_mode") != session["session_mode"]

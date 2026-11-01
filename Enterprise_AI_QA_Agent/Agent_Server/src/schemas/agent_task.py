@@ -8,7 +8,8 @@ from uuid import NAMESPACE_URL, uuid5
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.schemas.controlled_case_task_input import (
-    ControlledCaseTaskInputAsset, ControlledCasePreparedTaskInputAsset, ControlledCaseTaskInputReference,
+    ControlledCaseTaskInputAsset, ControlledCasePreparedTaskInputAsset, ControlledCaseResultTaskInputAsset,
+    ControlledCaseTaskInputReference,
     parse_controlled_case_task_input,
 )
 from src.schemas.session import ConversationResponse
@@ -92,7 +93,7 @@ class AgentTaskCommandV2(BaseModel):
     priority: int = Field(default=50, ge=0, le=100)
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
     payload: dict[str, Any] = Field(default_factory=dict)
-    case_execution_input: ControlledCasePreparedTaskInputAsset | ControlledCaseTaskInputAsset | None = Field(
+    case_execution_input: ControlledCaseResultTaskInputAsset | ControlledCasePreparedTaskInputAsset | ControlledCaseTaskInputAsset | None = Field(
         default=None, exclude_if=lambda value: value is None)
     case_execution_reference: ControlledCaseTaskInputReference | None = Field(default=None, exclude_if=lambda value: value is None)
 

@@ -87,7 +87,7 @@ async def test_full_formal_preparation_is_frozen_admitted_and_consumed_without_r
             p = assembly(s, tmp_path / "assembly", models)
             asset = await prepare(s, p)
             assert database_digest(s) == before and s.session == original and requests == []
-            assert asset.schema_version == 2 and asset.runtime_preparation.identity == p.identity
+            assert asset.schema_version == 3 and asset.runtime_preparation.identity == p.identity
             state = asset.runtime_preparation.initial_state
             assert state["context_bundle"]["case_execution"] == asset.context.execution_json()
             assert state["context_bundle"]["attempt_id"] == s.attempt.id
@@ -312,6 +312,7 @@ async def test_frozen_prepared_approval_wait_is_native_material_not_business_per
                 result = await implementation().ControlledCaseRuntime(runtime_service=bridge.runtime).execute(
                     h.task, executor=executor(s, h), resource_id="isolated-prepared-case", fencing_token=1)
                 assert result.graph_outcome.native_terminal is None and len(result.graph_outcome.native_interrupts) == 1
+                assert result.runtime_result is None
                 assert len(requests) == 1 and effects == [] and result.tool_records == []
                 assert await bridge.jobs.list_jobs(session_id=s.session.id) == []
                 assert await s.h.store.list_approvals(s.session.id) == []

@@ -17,7 +17,7 @@ class ControlledCaseExecutor:
 
     No upstream counterpart (checked: original task begin/claim, controlled
     adapter, v4 §9/§12.1): a native graph does not own our formal task start.
-    There is no retry/resume, new claim, heartbeat loop or completion here.
+    There is no retry/resume, new claim, heartbeat loop or task completion here.
     Native outcomes are read material, NOT RuntimeTurnResult/test verdicts.
     The caller owns resource admission/heartbeat; main/Worker do not install
     this port until application projection and recovery contracts are ready.
@@ -27,7 +27,7 @@ class ControlledCaseExecutor:
         self._tasks = task_store
         self._adapter = graph_adapter
 
-    async def execute(self, task, *, build_business_tools, resource_id, fencing_token):
+    async def execute(self, task, *, build_business_tools, resource_id, fencing_token, project_outcome=None):
         # Capture worker-only authority too: serialization deliberately strips
         # the second lease, while a shallow copy retains mutable input aliases.
         task = task.model_copy(deep=True)
@@ -65,11 +65,18 @@ class ControlledCaseExecutor:
                     phase = "tool_assembly_unsettled"
                     tools = list(await build_business_tools(prepared))
                     phase = "native_outcome_unknown"
-                    return await self._adapter.execute_frozen(prepared.graph_input, business_tools=tools)
+                    outcome = await self._adapter.execute_frozen(prepared.graph_input, business_tools=tools)
+                    if project_outcome is not None:
+                        # Application projection/ACKs must finish BEFORE this
+                        # original owner/sink scope closes, never after return.
+                        phase = "application_result_unsettled"
+                        await project_outcome(prepared, outcome)
+                    return outcome
 
             # Reuse acknowledged, owner-fenced persistence and cancellation
             # cleanup, never the legacy queue's memory-only overflow fallback.
-            # No event-completion/application-commit proof is declared here.
+            # Only the optional application callback can complete its event
+            # collection; this executor never declares application commit.
             outcome = await sink.run(invoke)
             logger.info("controlled_case_execution_returned", extra={**scope,
                 "binding_id": owner.binding.binding_id, "native_terminal": outcome.native_terminal is not None,

@@ -290,7 +290,7 @@ async def test_future_case_originals_defer_before_claim_without_changing_facts(f
         else:
             raw = s.asset.model_dump(mode="json")
             raw["future_field" if format_change == "extra_input" else "schema_version"] = (
-                2 if format_change == "extra_input" else 3)
+                2 if format_change == "extra_input" else 4)
             cur.execute(f"UPDATE {s.h.tasks._tasks} SET input_payload=%s::jsonb WHERE id=%s",
                 (json.dumps({"case_execution_input": raw}), s.command.task_id))
     before = database_digest(s)

@@ -8936,3 +8936,77 @@ v4 E／§9.2、§12.1 → 本节 → 上述 15 文件 → 真实红绿、203／7
 下一依赖是用原准备材料、原模型／ToolJob／事件与精确原生终态，确定性投影 controlled RuntimeTurnResult 并保存同一原结果资产；正常与恢复仍须共享唯一 Session finalizer，再接原 Assessment／Verification／证据与 RunItem 原子完成、业务审批继续、兼容 Worker／main 与独立进程验收。本步没有新建第二条 finalizer，也未给原生终态授予恢复权。旧失败结果保留，回归必须创建新运行，不能重置原任务／RunItem。
 
 剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式有效输入／质量、流式／取消等未收口项和历史异常继续保留，整体 goal 维持 active。本轮未启动／重启服务、未运行 Docker、未调用付费模型或访问外部目标、未改生产路由／实际 .env；仅原 fixture 清理本轮随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境与人工发布等待另计；本轮没有足够 E3／E4 证据缩短工期。
+
+## 190. E／§9.2–9.3、§12.1：正式 case 的确定性应用结果投影与原件重读（2026-11-02）
+
+### 续接、依据与范围
+
+续接 9a7e75dda／§189。重新核对 active goal、v4、Git、原投影／结果资产／Session finalizer 和原件读者；用户 v3 草稿 SHA256 仍为 8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4，不修改、不暂存。此前 435d9cf7c 已完成本阶段 Conda／pip 迁移，未重新安装或升级依赖。§181 四项及 §159／160／166 等历史异常原样保留，不以本轮绿色撤销。
+
+原 executor 的原生终态／消息不是应用 RuntimeTurnResult；既有结果资产与唯一 Session finalizer 需要真实 message／approval-stage，不能为正式 case 伪造一条。这是正式结果闭环的前置架构缺口，本步只补确定性投影及其材料核验，不另建 finalizer，不声称已保存不可变结果资产或完成正式裁决。
+
+依据 → 采用方式：
+
+- 原 FrameworkRuntimePreparation／ControlledCasePreparedTaskInputAsset → 新 task input schema 3 在执行前冻结独立结果规则版本、current_final_ai_text 输出契约和 native_checkpoint.ts 时间来源；原 schema 1／2 含义不变，graph input／binding／命令 envelope 不改。
+- 原 turn_projection.project_runtime_snapshot／project_completed_turn → 新纯 controlled_case_projection 复用同一应用装配函数，消费冻结准备、完整原生消息、原 ToolJob 投影、账本和事件；不套 Deep Agents 状态或 DA stage，不把最终文本当作测试证据。
+- 原 require_native_terminal_original、事件 ACK／completion、模型预算读者和 message-result ToolJob 核验 → 新 ControlledCaseResultReader 在同一短事务核精确 checkpoint、原 task／input／submission／budget、完整已结算账本、工具原件与逐项事件，等待后再次断言原双租约。抽取 framework_tool_materials 供普通 message 与 case 共用，普通 message 原有严格规则保留。
+- 原 ControlledCaseExecutor／SessionEventSink → 在原 owner／sink 关闭之前调用结果投影回调；只有终态事件逐项 ACK、原事件集合声明提交后才返回 runtime_result。未另造调度层、队列或完成事务。
+- 本地《Agent轨迹与协议鲁棒性》的结果＋轨迹、幂等／恢复和《评测工程化与CICD》的版本化基线 → 使用正式固定来源、漂移／未知／ACK 故障反例与实际命令记录，不以答案或计数代替领域验收。
+
+本轮 19 文件：新增 controlled_case_projection、controlled_case_result_reader、framework_tool_materials 和 test_controlled_case_result；修改 controlled_case_runtime／executor、runtime_service／tool_messages、controlled_case_preparation／admission、framework_message_result_reader／worker_capabilities、agent_task／controlled_case_task_input、三个原 case 测试，以及路由控制说明和本记录。没有修改 main／CLI／生产 Dispatcher、公开路由、DDL、实际 .env 或默认 controlled_case_available=false。
+
+### 实现与证明边界
+
+schema 3 准备材料的摘要包含完整结果规则；开始前不得已有结果／审批材料。受理使用原纯准备函数重构，命令 union／codec 同步兼容新类型，claim 前核 max version／assembly 能力；未来版本样本随之改为 4。旧 Worker 能力不足时 defer，不领取或改原 input；原 schema 2 实际执行仍只返回原生材料，不静默增加结果语义。这些内部兼容检查不等于双制品滚动发布已经验收。
+
+正常原生结束后，在原 live 双租约、已 running 意图和原 sink 下读取原件。最终 AI 必须是当前消息、配对完整且无 tool_calls；空当前文本不回退先前答案，已知截断／阻止／失败不标完成。这个输出契约尚不支持合法结构化空文本结果，后续须独立对齐，不能宣称已经支持。Responses 使用本机固定 SDK 保留的 status／incomplete_details，其他协议沿原 finish_reason／stop_reason 分类器；未知 vendor 值不自创为确定错误。
+
+工具展示和 runtime slot 消费原 FrameworkRuntimeToolProjection，不从 JSONB 重新拼造字符串；逐个核原模型调用身份／参数、ToolJob、输入／输出、ordinal 和原消息材料。无 Job 的治理拒绝／执行前失败只可匹配唯一持久审计及其原时间，保留 output_reference=None，不冒充外部执行证据。工具时间回退按原 binding harness 匹配，Deep Agents 默认值与原消费者保持不变。
+
+snapshot 身份／版本／时间使用图前预留值；终态事件 ID 按已冻结规则派生，时间是原生 checkpoint.ts，而非恢复时钟或应用提交时间。新 runtime_result 是内存中的确定性应用投影；完整事件声明只证明该集合。原 owner 的只读重读仍要求当前双租约和原声明，可得到同一结果，**不是失租恢复、A2-2 自动恢复授权、模型响应导入或应用最终提交证明**。模型账本 settled 不自动补造缺失响应对象。
+
+原生审批等待保留 runtime_result=None；终态／集合 ACK 失败、二次失租、提交后 ACK 丢失均保留原 running 意图，不重跑图／模型／工具。即使原集合已经提交，读取也不自动授予执行或裁决权。原 finish(completed) 继续要求尚待接入的唯一 finalizer；本轮不创建 message、Session snapshot、case result 或假 message-stage。
+
+### TDD 与真实失败保留
+
+首条真实正式来源专项失败为 AttributeError：ControlledCaseRuntimeOutcome 没有 runtime_result，证明缺应用结果出口。增加 schema 3 后的下一次失败为 PydanticSerializationError：AgentTaskCommandV2 的 union 尚无新类型，strict serializer 拒绝；同步命令消费方，而非降低 warnings=error。
+
+新增执行前拒绝专项真实失败：工具展示时间只接受 harness=deepagents，无法消费已 ACK 的 langgraph 拒绝事件。沿原调用链把原 binding harness 传给共享工具展示函数，未改时间事实或伪造 ToolJob。截断／阻止反例和工具原件 output 漂移反例曾各出现 DID NOT RAISE；前者补原 provider 终止分类，后者补原生 ToolMessage 中的完整 material 与传入 material 一致性，未删除原生 messages 比较或弱化断言。
+
+另两次失败属于夹具错误：失租时间缺时区触发 naive／aware 比较错误；用空字符串注册 handler 仍是已绑定 handler，实际得到 completed 而非预期 failed。只修正测试为原契约的 aware 时间及真正无 handler 的 ToolModule，未修改生产租约／治理校验迁就测试。早期 34 passed／159.06 秒只是扩展前中间结果，不冒充最终 36 项专项。跨层命令最初误写不存在的 test_framework_runtime_results.py，exit 1、no tests ran；随后改用仓库真实 test_framework_runtime_result_asset.py，以下最终回归不是沿用该失败命令的结果。
+
+### 最终源码验证
+
+每条 backend pytest 之前使用 scripts/clear_uv_environment.ps1 -ProcessOnly，固定 E:\MiniConda3\envs\Agent\python.exe；PYTHONIOENCODING=utf-8、RUN_LIVE_POSTGRES_TESTS=1、RUN_LIVE_REDIS_TESTS=1、Docker／MySQL 开关=0、QA_FRAMEWORK_WORKER_DIAGNOSTICS=1。未使用 UV、未启动／重启服务。工作目录 Agent_Server：
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_controlled_case_result.py tests/test_controlled_case_runtime.py tests/test_controlled_case_executor.py tests/test_controlled_case_task_input.py tests/test_controlled_case_admission.py tests/test_controlled_case_execution_lease.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+实际 **239 passed，733.60 秒，exit 0，无 skip／deselect**，包含新专项全部 36 项。覆盖四协议正式投影／声明重读、真实 ToolJob 和原展示／slot、native／input／Job／账本／事件／声明／租约漂移、终态／集合 ACK 失败及提交后 ACK 丢失、无 Job 的拒绝／失败、旧输入／旧能力、真实四协议截断、空当前答案与工具材料漂移等。
+
+~~~powershell
+& E:\MiniConda3\envs\Agent\python.exe -u -m pytest tests/test_framework_message_result_reconstruction.py tests/test_framework_turn_projection.py tests/test_framework_event_completion.py tests/test_framework_tool_projection.py tests/test_framework_tool_bridge.py tests/test_framework_runtime_result_asset.py tests/test_framework_application_projection.py tests/test_agent_v2_worker_contract.py tests/test_framework_route_rollback.py tests/test_controlled_case_graph_input.py tests/test_controlled_case_adapter.py -q -x -rs --tb=short --log-level=INFO
+~~~
+
+实际 **769 passed，1059.72 秒，exit 0，无 skip／deselect**。该命令跨续接仍在运行时未重复启动，最终取得原命令完整终态。两组分别报告，不将数量相加冒充更高级别的独立证据。另按同一 backend 环境定向运行 `python -u -m pytest tests/test_framework_tool_messages.py -q -x -rs --tb=short --log-level=INFO`，原工具时间／展示消费方实际 **26 passed，5.32 秒，exit 0，无 skip／deselect**。
+
+四个 RUN_LIVE 全为 0 时，新专项实际 **36 skipped，8.86 秒，exit 0**，只计 opt-in 验证，不计通过。本轮固定 Python 的 compileall -q Agent_Server/src Agent_Server/tests 和 pip check 实际 exit 0，依赖报告 No broken requirements found；ruff／mypy 仍未安装，未安装新依赖、未运行独立 backend lint／typecheck。
+
+工作目录 agent_web，npm.cmd run typecheck 实际 exit 0；以下事件消费回归实际 **18 passed，2.20 秒，exit 0**：
+
+~~~powershell
+npm.cmd run test -- src/components/chat/ExecutionTrace.eventCompletion.test.ts src/stores/sessionEventRefresh.test.ts src/features/flow/useFlowSession.lifecycle.test.ts
+~~~
+
+最终 src 聚合 SHA256（按相对 src 的 Python 路径排序，UTF-8 路径＋NUL＋原字节＋NUL）为 613868cc7feac6fa60ccc73c2d3cf14860ddffd3bb4f757ce327d4e0dc55460d；新专项 SHA256 为 cbf144e8c06ed971282ad3ef02cdb68d328bc3868cafda65469f592866a50e17。最终两组前的采样及续接后／终态后的核验一致，未在最终测试运行期间修改源码／测试。原 v3 草稿摘要不变。git diff --check 实际通过，只有既有 LF→CRLF 提示；最终本轮 pytest 进程数量为 0。
+
+正式来源由原服务在隔离真实 PostgreSQL 完成草稿／评审／启用、Suite／计划 Run、RunItem 领取／start、受理与双租约 claim／begin；Redis、固定官方 SDK／LangGraph／PostgresSaver、原账本／ToolJob／事件是实际实现。模型 HTTP 对端与工具 handler 为本地合成，规划、配置、Memory／MCP／文档对象等检索依赖仍沿原明确替身。没有真实付费供应商／embedding／RustFS／领域 Runner、新 case 独立 Worker 强杀、全资源 main、双制品／一致备份恢复验收；也没有全量前后端、前端 build／浏览器或官方 saver conformance，不把本结果当作上述出口通过。
+
+### 对应、提交与下一步
+
+v4 E／§9.2–9.3、§12.1 → 本节 → 上述 19 文件 → 真实红绿、239／769 项回归及前端检查 → 独立中文 commit，实际 ID 见 Git 与本轮交付。提交前检查 status／完整 diff／暂存范围及 diff --check，仅纳入本轮文件；被忽略的新测试只单文件 git add -f，不改 ignore，不纳入用户 v3／认证／日志／制品，不推送或创建 PR。
+
+下一依赖仍是同一原结果资产和唯一 Session finalizer 的正式 case 接口、原 Assessment／Verification／证据与 RunItem 原子完成，再推进业务审批继续、失租／独立进程恢复、兼容 Worker／main 与逐模式验收。不能用本轮确定性投影或事件集合代替这些待实现／待环境出口；不重置原任务／失败结果，回归必须创建新运行。
+
+剩余 A2/A3/B/C/D/E/F、H01–H12、逐模式质量／完整有效输入、流式／取消未收口项与历史异常继续保留，整体 goal 仍 active，不标 complete。未运行 Docker、未新增付费调用或外部目标测试、未改实际 .env／生产路由；仅原 fixture 清理本轮自有随机隔离资源。整体剩余仍粗估 **4–8 周有效开发／验收**，外部授权、环境和人工发布等待另计；该估算不是交付承诺，本子步没有充分 E3／E4 证据缩短工期。

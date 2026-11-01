@@ -9,11 +9,8 @@ import asyncio
 from dataclasses import dataclass, field
 import logging
 
-from langchain_core.messages import ToolMessage
-
 from src.application.deep_agents.native_terminal import NativeTerminalRead
 from src.application.deep_agents.result_projection import project_deep_agent_result
-from src.application.deep_agents.framework_transcript import deserialize_messages
 from src.application.models.framework_model_budget_projection import read_model_budget_material
 from src.application.runtime.turn_projection import project_deep_agent_callback_facts, project_original_completed_turn
 from src.application.testing.verification_service import VerificationService
@@ -32,8 +29,7 @@ from src.runtime.postgres_runtime_owner import configure_runtime_owner_transacti
 from src.runtime.postgres_tool_job_store import _job_from_row
 from src.schemas.framework_graph_input import FrameworkPreparedGraphInputAsset, parse_graph_input_asset
 from src.schemas.framework_runtime_result import FrameworkRuntimeResult
-from src.schemas.framework_tool_projection import FrameworkToolProjection, FrameworkRuntimeToolProjection, TOOL_PROJECTION_KEY
-from src.schemas.framework_tool_projection import parse_tool_projection
+from src.runtime.framework_tool_materials import read_unapproved_tool_materials as _tool_materials
 from src.schemas.framework_verification_projection import VERIFICATION_PREPARATION_KEY
 from src.schemas.runtime_binding import RuntimeCheckpointSource
 from src.schemas.session import VerificationResult
@@ -132,39 +128,6 @@ def read_message_originals(cur, tasks, binding, task_id, *, allow_unsealed=False
         logger.debug("framework_message_original_tool_store_absent", extra={"binding_id": binding.binding_id,
             "task_id": task_id})
     return (original, source, read, jobs, _model_hash(cur, settings, binding), _tool_hash(cur, settings, binding), stage.source_sha256, budget)
-
-def _tool_materials(original, binding, messages, jobs):
-    # Original application ordinal is completion order, not native task-path
-    # message order. Preserve it even for parallel/reordered ToolMessages.
-    by_job, materials = {job.id: job for job in jobs}, {}
-    frozen_history = deserialize_messages(original.framework_messages)
-    for message in messages:
-        if not isinstance(message, ToolMessage) or not isinstance(message.artifact, dict) or TOOL_PROJECTION_KEY not in message.artifact:
-            continue
-        material = parse_tool_projection(message.artifact[TOOL_PROJECTION_KEY])
-        if material.binding_fingerprint != binding.fingerprint:
-            _require(any(message == item for item in frozen_history),
-                "Message result has foreign tool material outside its original frozen history")
-            continue
-        material = FrameworkToolProjection.from_tool_message(message, binding=binding, source=material.source)
-        record = material.record
-        job = by_job.get(record.job_id)
-        _require(isinstance(material, FrameworkRuntimeToolProjection) and job is not None,
-            "Message result has missing or unsupported original tool material")
-        _require(job.metadata.get("framework_binding_id") == binding.binding_id and job.call_id == record.call_id
-            and job.tool_key == record.tool_key and job.tool_name == record.tool_name and job.status.value == record.status
-            and job.input_payload == record.input and job.output_payload == record.output and job.summary == record.summary
-            and job.trace_id == record.trace_id and job.started_at == record.started_at and job.completed_at == record.completed_at
-            and record.approval_id is None, "Message result original tool material differs from its settled ToolJob")
-        _require(record.call_id not in materials or materials[record.call_id] == material,
-            "Message result has conflicting original tool materials")
-        materials[record.call_id] = material
-    ordered = sorted(materials.values(), key=lambda item: item.message.metadata["ordinal"])
-    _require({item.record.job_id for item in ordered} == set(by_job)
-        and [item.message.metadata["ordinal"] for item in ordered] == list(range(1, len(ordered) + 1)),
-        "Message result has an unprepared business tool or conflicting original ordinals")
-    return ordered
-
 
 def project_original_message_result(original, source, read, native, jobs):
     """Same deterministic projection for a read and its owned admission recheck."""

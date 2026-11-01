@@ -134,6 +134,37 @@ class ControlledCasePreparedTaskInputAsset(ControlledCaseTaskInputAsset):
         return self
 
 
+class ControlledCaseResultPreparation(BaseModel):
+    """Explicit pre-execution rules, never a completed-result/recovery receipt."""
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    schema_version: Literal[1]
+    timestamp_source: Literal["native_checkpoint.ts"]
+    output_contract: Literal["current_final_ai_text"]
+
+    @model_validator(mode="before")
+    @classmethod
+    def require_version(cls, value):
+        if isinstance(value, dict) and type(value.get("schema_version")) is not int:
+            raise ValueError("Controlled result preparation requires its explicit integer version")
+        return value
+
+
+class ControlledCaseResultTaskInputAsset(ControlledCasePreparedTaskInputAsset):
+    """v3 selects deterministic result projection; v1/v2 keep their old meaning."""
+    schema_version: Literal[3]
+    result_preparation: ControlledCaseResultPreparation
+
+    @model_validator(mode="after")
+    def require_initial_result_gap(self):
+        state = self.runtime_preparation.initial_state
+        if (any(state.get(key) for key in ("tool_results", "tool_messages", "pending_turn", "pending_approvals",
+                "final_response", "model_response_text", "model_response_summary"))
+            or any(event["type"] == "runtime.turn_completed" for event in state["event_log"])):
+            raise ValueError("Controlled result preparation cannot replace prior result or pending execution facts")
+        return self
+
+
 def controlled_case_native_input(context, attempt_id, turn_id):
     """Protocol user role denotes formal input, NOT a persisted business user row."""
     from langchain_core.messages import HumanMessage
@@ -164,7 +195,7 @@ def controlled_case_schema_tools(state):
     return LangChainToolAdapter().to_governed_tools(descriptors, invoke=schema_only, context_bundle=context)
 
 
-def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset | ControlledCasePreparedTaskInputAsset:
+def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset:
     # Frozen models retain mutable nested context. Never trust a prebuilt
     # object or retain caller JSON aliases across a later awaited boundary.
     if isinstance(value, ControlledCaseTaskInputAsset):
@@ -173,6 +204,6 @@ def parse_controlled_case_task_input(value) -> ControlledCaseTaskInputAsset | Co
         value = json.loads(json.dumps(value, ensure_ascii=False, allow_nan=False))
     except (TypeError, ValueError) as exc:
         raise ValueError("Controlled case input contains non-persistable execution data") from exc
-    reader = (ControlledCasePreparedTaskInputAsset if isinstance(value, dict) and value.get("schema_version") == 2
-        else ControlledCaseTaskInputAsset)
+    reader = {2: ControlledCasePreparedTaskInputAsset, 3: ControlledCaseResultTaskInputAsset}.get(
+        value.get("schema_version") if isinstance(value, dict) else None, ControlledCaseTaskInputAsset)
     return reader.model_validate(value)

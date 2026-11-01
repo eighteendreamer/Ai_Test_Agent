@@ -244,7 +244,7 @@ async def test_case_future_formats_defer_but_digest_corruption_is_a_validation_e
     raw = command(s, prepare(s)).model_dump(mode="json")
     material = raw["case_execution_input"]
     if changed == "future_version":
-        material["schema_version"] = 3
+        material["schema_version"] = 4
     elif changed == "extra":
         material["future_field"] = 1
     else:
@@ -381,7 +381,7 @@ async def test_real_pg_reader_refuses_simulated_future_case_without_task_or_sess
         idempotency_key="simulated-case-reader")
     wire = value.model_dump(mode="json")
     if future_format:
-        wire["case_execution_input"]["schema_version"] = 3
+        wire["case_execution_input"]["schema_version"] = 4
     with postgres_connect(h.settings) as conn, conn.cursor() as cur:
         cur.execute(f"UPDATE {h.tasks._tasks} SET operation='case_execute', input_payload=%s::jsonb WHERE id=%s",
             (json.dumps(wire), value.task_id))

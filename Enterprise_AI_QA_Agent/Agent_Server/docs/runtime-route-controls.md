@@ -289,13 +289,31 @@ Worker 内存中的 `RuntimeExecutionOwner.controlled_case_lease` 捕获原 RunI
 用原 `SessionEventSink` 逐项确认冻结准备事件的原 ID／时间，再从冻结 state／描述装配治理工具。
 新 Worker 不重新检索项目、Memory、Skill、MCP 或配置来替换原上下文；工具执行仍走现有实时治理。
 ACK 失败保留 running 意图且禁止重跑，不能把准备时间冒充执行／数据库写入时间。
-返回 `ControlledCaseRuntimeOutcome` 只是应用状态、ToolJob 记录和原生读材料，**不是**
-`RuntimeTurnResult`、结果资产、完整事件集合提交证明、审批恢复许可或领域裁决。
+schema 2 的 `ControlledCaseRuntimeOutcome` 仍只含应用状态、ToolJob 记录和原生读材料，
+不静默升级历史输入。§190 的新准备端口生成 task input schema 3，单独冻结结果投影版本、
+`current_final_ai_text` 输出契约与 `native_checkpoint.ts` 时间来源；graph input、binding 和命令
+envelope 格式不变。旧格式／assembly 能力不足的 Worker 在 claim 前 defer，默认受控能力仍关闭。
 
-本端口未安装到 main／CLI／生产 Dispatcher。唯一 Session finalizer、确定性结果资产、原模型／
-ToolJob／事件原件复核、正式 Assessment／Verification／证据与 RunItem 原子完成、业务审批继续、
-强杀恢复、真实供应商／embedding／RustFS／领域 Runner 及部署验收仍未完成；不得据此开启生产。
-本轮真实来源与替身边界、实际命令和结果见实施记录 §189。
+schema 3 原生正常结束后，在原 executor 的 owner／sink 作用域内，复用同连接官方原生读者核对
+精确 checkpoint、冻结输入、原模型预算／已结算账本、原 ToolJob／工具展示与 runtime slot 和
+已 ACK 的有序事件。确定性投影器复用通用 snapshot／RuntimeTurnResult 装配，不贴 DA stage，
+不重新检索或执行模型／工具，不从 JSONB 重新拼造工具字符串。snapshot 身份／时间保留执行前
+预留值，终态事件身份按冻结规则派生，时间明确是原生 checkpoint 创建时间而非应用提交时间。
+原 sink 逐项 ACK 终态事件并持久事件集合声明后，才返回可选 `runtime_result`。
+
+同一原 live 双租约下的 `ControlledCaseResultReader.read()` 可从精确原生读材料与已声明集合重读
+同一结果；**不是失租恢复／A2-2 授权**。已知截断／阻止响应不标完成；当前 AI 文本为空时不回退
+旧答案，也不假装支持受控图尚未提供的结构化空结果。原生审批等待返回 `runtime_result=None`，
+不把它变成业务审批许可。无 Job 的执行前拒绝／失败只复用匹配的治理审计时间和原件，仍无
+`output_reference`，不是外部执行证据。模型账本结算不等于缺失的模型响应对象已被导入。
+
+终态事件／集合 ACK 失败、失租或提交后 ACK 丢失均不自动重跑；保留原 running 意图与实际
+持久事实。上述结果与事件集合仍**不是不可变结果资产、Session 最终提交、审批恢复许可或
+正式测试裁决**。本端口未安装到 main／CLI／生产 Dispatcher；原 `finish(completed)` 仍要求
+尚待接入的唯一应用 finalizer，不得仅凭文本、RuntimeTurnResult 或事件声明完成 RunItem。
+同一原结果资产／唯一 Session finalizer、正式 Assessment／Verification／证据与 RunItem 原子
+完成、业务审批继续、强杀恢复、真实供应商／embedding／RustFS／领域 Runner 及部署验收仍未
+完成；不得据此开启生产。真实来源／替身、实际命令和验证限制见实施记录 §189–190。
 
 ### 原路由与恢复验证
 

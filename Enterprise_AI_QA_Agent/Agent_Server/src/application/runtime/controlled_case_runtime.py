@@ -15,11 +15,13 @@ from src.application.test_runs.controlled_case_preparation import prepare_contro
 from src.runtime.execution_context import current_framework_owner, graph_event_scope
 from src.runtime.execution_logging import (
     append_graph_event_durable, append_graph_event_intent_durable, prepare_graph_event_log,
+    complete_graph_event_log,
 )
 from src.schemas.controlled_case_task_input import (
     ControlledCasePreparedTaskInputAsset, controlled_case_native_input, controlled_case_schema_tools,
-    parse_controlled_case_task_input,
+    ControlledCaseResultPreparation, ControlledCaseResultTaskInputAsset, parse_controlled_case_task_input,
 )
+from src.application.runtime.turn_projection import RuntimeTurnResult
 from src.schemas.framework_graph_input import FrameworkProjectionIdentity, FrameworkRuntimePreparation
 from src.schemas.framework_transcript import CONTROLLED_CASE_CONTEXT_VERSION_KEY
 from src.schemas.session import ExecutionEvent
@@ -30,10 +32,11 @@ logger = logging.getLogger(__name__)
 
 @dataclass(frozen=True)
 class ControlledCaseRuntimeOutcome:
-    """Application state and native read material; never a verdict/RuntimeTurnResult."""
+    """Optional prepared application result; never finalization or a test verdict."""
     graph_outcome: FrameworkGraphOutcome
     state: dict[str, Any]
     tool_records: list[dict[str, Any]]
+    runtime_result: RuntimeTurnResult | None = None
 
 
 class ControlledCaseRuntime:
@@ -120,7 +123,9 @@ class ControlledCaseRuntime:
             phase = "frozen_preparation"
             asset = prepare_controlled_case_input(detail=detail, item=item, version=version,
                 attempt_id=attempt_id, binding=binding, graph_request=graph,
-                runtime_preparation=FrameworkRuntimePreparation(identity=identity, initial_state=state))
+                runtime_preparation=FrameworkRuntimePreparation(identity=identity, initial_state=state),
+                result_preparation=ControlledCaseResultPreparation(schema_version=1,
+                    timestamp_source="native_checkpoint.ts", output_contract="current_final_ai_text"))
         except (Exception, asyncio.CancelledError) as exc:
             logger.warning("controlled_case_runtime_preparation_failed", extra={**scope,
                 "recovery_reason": phase, "error_type": type(exc).__name__})
@@ -142,6 +147,7 @@ class ControlledCaseRuntime:
             raise
         state = None
         records = []
+        runtime_result = None
 
         async def build(prepared):
             nonlocal state
@@ -161,6 +167,23 @@ class ControlledCaseRuntime:
             tools, _ = await self._runtime._build_deep_agent_business_tools(state=state, tool_records=records)
             return tools
 
+        async def project(prepared, outcome):
+            nonlocal state, runtime_result
+            if not isinstance(prepared, ControlledCaseResultTaskInputAsset) or outcome.native_interrupts:
+                # Historical preparation is not silently upgraded. Native wait
+                # still needs the original business approval/admission contract.
+                return
+            from src.runtime.controlled_case_result_reader import ControlledCaseResultReader
+
+            owner = current_framework_owner()
+            projected = await ControlledCaseResultReader(executor._tasks).prepare(
+                owner, prepared, outcome, state["event_log"])
+            await append_graph_event_intent_durable(state, projected.events[-1])
+            await complete_graph_event_log(state, outcome.native_terminal.proof.model_dump(mode="json"))
+            runtime_result = projected
+            state = deepcopy(projected.state)
+
         outcome = await executor.execute(task, build_business_tools=build,
-            resource_id=resource_id, fencing_token=fencing_token)
-        return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records)
+            resource_id=resource_id, fencing_token=fencing_token, project_outcome=project)
+        return ControlledCaseRuntimeOutcome(graph_outcome=outcome, state=state, tool_records=records,
+            runtime_result=runtime_result)
