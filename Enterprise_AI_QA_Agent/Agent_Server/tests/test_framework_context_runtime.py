@@ -18,7 +18,7 @@ from src.application.projects.project_store import PostgresProjectStore
 from src.runtime.postgres_framework_model_calls import PostgresFrameworkModelCalls
 from src.schemas.framework_model_call import FrameworkModelBudget
 from src.schemas.framework_approval import approval_value_hash
-from src.schemas.project import ProjectCreateRequest
+from src.schemas.project import ProjectCreateRequest, ProjectUpdateRequest
 from src.schemas.session import InputAttachment, SessionStatus
 from tests.live_postgres_config import LivePostgresTestConfig
 from tests.test_agent_task_dispatch import harness
@@ -42,7 +42,8 @@ async def context_project(monkeypatch):
     projects = ProjectService(store=PostgresProjectStore(settings))
     try:
         await projects.initialize()
-        project = await projects.create(ProjectCreateRequest(project_key="context-test", name="Context fixture"))
+        project = await projects.create(ProjectCreateRequest(project_key="context-test", name="Context fixture",
+            description="FORMAL_PROJECT_CONTEXT"))
         # Autouse runs before the imported harness creates its Session FK;
         # dependent fixtures remove their Session tables before this teardown.
         monkeypatch.setattr(dispatch_module, "get_settings", lambda: settings)
@@ -108,6 +109,7 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
             from tests.test_framework_turn_context import assembly_components, build_assembly
 
             parts = assembly_components(tmp_path, tools=h.registry)
+            parts.project_service = context_project.service
             h.runtime._turn_context_assembly = build_assembly(parts)
         h.sessions._runtime_service = h.runtime
         if runtime_version == "v2.3.0":
@@ -231,9 +233,12 @@ async def test_admitted_context_reaches_sdk_and_next_turn_reuses_the_published_n
                 initial_state = graph_input["runtime_preparation"]["initial_state"]
                 assert graph_input["system_prompt"] == initial_adapter_request.system_prompt == initial_state["system_prompt"]
                 assert graph_input["context"]["skill_prompt_snapshots"] == initial_state["context_bundle"]["skill_prompt_snapshots"]
+                assert graph_input["context"]["project_context"] == context_project.project.model_dump(
+                    mode="json", exclude={"created_by"})
+                assert initial_state["context_bundle"]["project_context"] == graph_input["context"]["project_context"]
                 assert len(parts.reads) == 5 * (index + 1)
                 for marker in ("FROZEN_SKILL_BODY", "OBSERVATION_CONTEXT", "MEMORY_CONTEXT", "CASE_CONTEXT", "MCP_CONTEXT",
-                    "ATTACHMENT_CONTEXT", "# Identity", "# Output Language Preference"):
+                    "ATTACHMENT_CONTEXT", "# Identity", "# Output Language Preference", "FORMAL_PROJECT_CONTEXT"):
                     assert initial_adapter_request.system_prompt.count(marker) == 1
                 assert "code review pilot" not in initial_adapter_request.system_prompt
                 assert "registered `skill`" not in initial_adapter_request.system_prompt
@@ -416,6 +421,7 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
         adapter = h.runtime._deep_agent_bound_runtime_adapter
         adapter._model_resolver = models.resolve_langchain_chat_model
         parts = assembly_components(tmp_path, tools=h.registry)
+        parts.project_service = context_project.service
         h.runtime._turn_context_assembly = build_assembly(parts)
         h.sessions._runtime_service = h.runtime
         monitor = asyncio.create_task(asyncio.Event().wait())
@@ -450,6 +456,9 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
             monitor.cancel()
             await asyncio.gather(monitor, return_exceptions=True)
         assert len(captured) == 1
+        original_project = context_project.project.model_dump(mode="json", exclude={"created_by"})
+        await context_project.service.update(context_project.project.id,
+            ProjectUpdateRequest(description="CHANGED_PROJECT_MUST_NOT_RELOAD"))
         parts.skill_file.unlink()
         before_reads = deepcopy(parts.reads)
         before_events = await h.store.list_events(h.session_id)
@@ -462,20 +471,25 @@ async def test_full_context_original_result_reader_never_reloads_prompt_or_skill
         monkeypatch.setattr(h.runtime, "_turn_context_assembly", SimpleNamespace(prepare=forbidden))
         monkeypatch.setattr(parts.prompt_assembly_service, "_general_settings_loader", forbidden)
         monkeypatch.setattr(adapter, "_model_resolver", forbidden)
-        if approval:
-            result = await h.runtime.read_completed_framework_approval(h.binding, owner.id, tasks=h.tasks)
-            graph_input = result.preparation.graph_input_asset
-        else:
-            result = await h.runtime.read_completed_framework_message(h.binding, owner.id, tasks=h.tasks)
-            graph_input = result.graph_input_asset
+        with monkeypatch.context() as patch:
+            patch.setattr(context_project.service, "require_active", forbidden)
+            if approval:
+                result = await h.runtime.read_completed_framework_approval(h.binding, owner.id, tasks=h.tasks)
+                graph_input = result.preparation.graph_input_asset
+            else:
+                result = await h.runtime.read_completed_framework_message(h.binding, owner.id, tasks=h.tasks)
+                graph_input = result.graph_input_asset
         assert result.runtime_result.model_dump(mode="json") == captured[0].model_dump(mode="json")
         if runtime_version == "v2.3.0":
             assert result.runtime_result.state["model_response_summary"]["native_summary_coverage"] is not None
         assert graph_input.system_prompt == captured[0].state["system_prompt"]
         for marker in ("FROZEN_SKILL_BODY", "OBSERVATION_CONTEXT", "MEMORY_CONTEXT", "CASE_CONTEXT", "MCP_CONTEXT",
-            "ATTACHMENT_CONTEXT", "# Identity"):
+            "ATTACHMENT_CONTEXT", "# Identity", "FORMAL_PROJECT_CONTEXT"):
             assert graph_input.system_prompt.count(marker) == 1
         assert graph_input.context["skill_prompt_snapshots"] == captured[0].state["context_bundle"]["skill_prompt_snapshots"]
+        assert graph_input.context["project_context"] == original_project
+        assert captured[0].state["context_bundle"]["project_context"] == original_project
+        assert "CHANGED_PROJECT_MUST_NOT_RELOAD" not in graph_input.system_prompt
         assert await h.tasks.get_framework_message_stage(submitted.id, session_id=h.session_id) == before_stage
         assert await h.tasks.get(owner.id) == before_task
         assert await h.store.list_events(h.session_id) == before_events

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from copy import deepcopy
+from datetime import datetime, timezone
 from types import SimpleNamespace
 
 import pytest
@@ -13,6 +14,7 @@ from src.registry.skills import SkillRegistry
 from src.registry.tools import ToolRegistry
 from src.schemas.agent import AgentDescriptor, ModelDescriptor, ToolDescriptor
 from src.schemas.framework_approval import approval_value_hash
+from src.schemas.project import ProjectRecord
 from src.schemas.settings import GeneralSettingsPayload
 from tests.test_framework_context_transcript import context_case, covered_asset
 
@@ -42,6 +44,13 @@ def assembly_components(tmp_path, *, tools=None):
     model = ModelDescriptor(key="fake", name="Frozen model", provider="openai", summary="Controlled model")
     models = SimpleNamespace(resolve_for_agent=lambda **kwargs: model)
     reads = []
+    project_reads = []
+
+    async def project(project_id):
+        project_reads.append(project_id)
+        return ProjectRecord(id=project_id, project_key="context-project", name="Project Context",
+            description="PROJECT_CONTEXT_BODY", created_at=datetime(2026, 10, 29, tzinfo=timezone.utc),
+            updated_at=datetime(2026, 10, 29, tzinfo=timezone.utc))
 
     async def observations(**kwargs):
         reads.append(("observations", kwargs))
@@ -72,7 +81,8 @@ def assembly_components(tmp_path, *, tools=None):
         mcp_runtime_service=SimpleNamespace(list_active_servers=active_servers,
             build_prompt_blocks=lambda servers: ["MCP_CONTEXT"]),
         test_case_embedding_service=SimpleNamespace(retrieve=cases), permission_service=PermissionService(),
-        prompt_assembly_service=PromptAssemblyService(settings), reads=reads, skill_file=skill / "SKILL.md")
+        prompt_assembly_service=PromptAssemblyService(settings), project_service=SimpleNamespace(require_active=project),
+        project_reads=project_reads, reads=reads, skill_file=skill / "SKILL.md")
 
 
 def build_assembly(parts):
@@ -81,7 +91,7 @@ def build_assembly(parts):
     return build_turn_context_assembly(**{key: getattr(parts, key) for key in (
         "agent_registry", "tool_registry", "model_registry", "skill_registry", "skill_runtime_service",
         "memory_runtime_service", "mcp_runtime_service", "test_case_embedding_service", "permission_service",
-        "prompt_assembly_service")})
+        "prompt_assembly_service", "project_service")})
 
 
 def prepared_case():
@@ -162,6 +172,8 @@ async def test_shared_assembly_freezes_all_sources_without_rebuilding_native_his
     assert result["context_bundle"]["skill_prompt_snapshots"][0]["prompt_block"] == result["skill_prompt_blocks"][0]
     assert [kind for kind, _ in parts.reads] == ["observations", "memory", "cases", "mcp", "settings"]
     assert next(args for kind, args in parts.reads if kind == "cases")["project_id"] == session.project_id
+    assert parts.project_reads == [session.project_id]
+    assert prompt.count("PROJECT_CONTEXT_BODY") == 1
     event = next(event for event in result["event_log"] if event["type"] == "graph.prompt_assembled")
     assert "system_prompt_preview" not in event["payload"]
 

@@ -127,6 +127,18 @@ main 在原 Dispatcher 构造处调用 `FrameworkReleaseSubmissionLoader.from_co
 
 组合日志 `framework_submission_unconfigured`／`framework_submission_configured`／`framework_submission_configuration_failed` 仅记录既有制品身份或错误类型，不输出路径、策略原件和认证。验证由 `test_framework_submission_configuration.py` 的配置／环境／工厂与 main AST 审计、原生命周期和预检测试、原完整 HTTP external 用例共同覆盖。HTTP 用例使用真实配置预检与同一组合工厂，但应用资源仍手动装配，不冒称完整 main lifespan、MySQL 模型配置链路或 E4 已通过。另有已运行本机 MySQL 的只读 SELECT 1／连接池归属清理验收，不代替配置表或正式受理验收。实际结果和剩余限制见实施记录 §176；没有修改实际 `.env` 或启用生产策略。
 
+### 正式项目数据与现有图输入原件（v4 §4.1）
+
+main 将既有 `ProjectService` 注入同一个 `build_turn_context_assembly()`；新完整上下文（v2.2／v2.3）只在上下文节点按 Runtime 已从 Session 写入的正式 `project_id` 读取一次项目正文。原 Session／Worker 的项目存在性和活动状态校验仍独立保留，不把一次正文读取说成整个请求只访问项目库一次。无项目不读取；有项目但服务未组合、记录不存在／已归档、返回身份不符或源异常时明确失败并记录 `framework_project_context_unavailable`，不使用客户端正文或切换 legacy。日志只有 Session／Turn／项目身份与错误类型，不输出原异常和项目正文。
+
+新装配先丢弃请求 context 中的 `project_context`，再用正式来源写入该内部业务资料。只投影 id、project_key、name、description、base_url、graph_scope_key、status、created_at、updated_at、archived_at，不加入 created_by 或自动包含未来新增字段。原 HTTP payload／冻结 ExecutionRequest 仍保留输入证据；它们不是可信项目正文来源。Prompt 复用原转义／不可信内容包装，新增一次 `official_project` 资料段，来源为 `project_registry`，不授予目标权限、不覆盖固定业务环境、工具范围或用例版本。成功日志为 `framework_project_context_loaded`。
+
+同一已装配正文和 Prompt 随原 graph-input 的 context／initial_state 入库，并直接进入实际框架请求。冻结后修改项目不改变该次调用；审批与原生终态后的结果读取／投影继续消费原图输入，不重新读取项目正文。新一次准备读取当时当前资料，没有启动缓存。原有项目活动状态／身份检查继续适用，冻结资料不意味着永久授权或归档后可继续发送。
+
+这里保存的是现有 ProjectRecord 白名单字段的原件，不是新增项目版本表；updated_at 不是伪造的正式版本号。完整原件受既有图输入摘要保护，仅属于通用业务 context／Prompt 内容，不增加恢复权限、持久 schema、能力上界或 DDL。无此资料的历史已冻结图输入仍按原格式读取，不补齐／重渲染；无绑定及 v2.0／v2.1 的旧准备路径不增加项目正文读取。独立组合者若启用带项目的完整上下文，必须提供原项目服务，不能用缺失依赖冒充已接线。
+
+验证位置：`test_framework_project_context.py`、原完整 HTTP 的 `test_framework_release_binding.py`、真实 PG 项目与审批／原件恢复的 `test_framework_context_runtime.py`。main 组合另有 AST 审计，不代替完整资源启动；实际命令、失败记录、结果与证据边界见实施记录 §177。正式用例版本执行、真实 embedding／供应商和领域 Runner 不由这一项目资料子步自动验收。
+
 ### 消费受理时的根模型选择（v4 §4／§6）
 
 预算 v2 的非秘密配置原件通过原 `PostgresFrameworkModelCalls.frozen_policy()` 只读加载；`FrameworkModelBudget.root_configuration(binding.model_config_fingerprint)` 必须精确匹配唯一根配置，不以字典首项、角色名称或当前默认猜选。该派生读取不增加 JSON 字段／格式版本，不授予发送、owner 或恢复权限。历史预算 v1 没有配置原件，保留原图前编排选模契约，不推断或回填根身份。
@@ -135,7 +147,7 @@ main 在原 Dispatcher 构造处调用 `FrameworkReleaseSubmissionLoader.from_co
 
 bound Runtime 初始状态只查询 ExecutionRequest 的明确 key，不再回退 Session 偏好或当前默认。配置不可用时保留原 key 和绑定协议元数据并记录 `framework_bound_model_configuration_unavailable`，不能将当前默认当成可用替代；真实模型工厂与共享策略仍负责配置可用性、fingerprint、owner、预算及发送许可校验，快照不包含可恢复凭据／endpoint，不授权离线或永久调用。无绑定路径继续复用原默认 fallback。选模消费成功／失败日志为 `framework_message_model_selection_frozen`／`framework_message_model_selection_rejected`，仅记录任务／绑定身份、预算版本或错误类型，不输出原请求／配置正文。
 
-验证落点：`test_framework_release_binding.py` 原 HTTP→PG／Redis→完整上下文官方框架链路覆盖 explicit／auto／受理后偏好变化；`test_framework_message_stages.py` 核对原 payload／摘要不变与显式冲突拒绝；`test_framework_orchestrating_recovery.py` 覆盖 v2 的 skip／未预留／ready／completed；`test_framework_orchestrated_message_recovery.py` 明确禁止已冻结请求恢复时重新读取选模策略；`test_framework_turn_context.py` 区分 bound 无 fallback 与 unbound 原行为。实际结果和证据边界见实施记录 §174，正式 main／CLI 的新写者仍未装配，不以本消费修复代替生产发布。
+验证落点：`test_framework_release_binding.py` 原 HTTP→PG／Redis→完整上下文官方框架链路覆盖 explicit／auto／受理后偏好变化；`test_framework_message_stages.py` 核对原 payload／摘要不变与显式冲突拒绝；`test_framework_orchestrating_recovery.py` 覆盖 v2 的 skip／未预留／ready／completed；`test_framework_orchestrated_message_recovery.py` 明确禁止已冻结请求恢复时重新读取选模策略；`test_framework_turn_context.py` 区分 bound 无 fallback 与 unbound 原行为。该消费修复的结果和证据边界见实施记录 §174；后续 main／CLI 默认关闭的可选写者组合见 §176 及本说明对应小节，不以消费修复或可选接线代替生产发布。
 
 ### 原路由与恢复验证
 

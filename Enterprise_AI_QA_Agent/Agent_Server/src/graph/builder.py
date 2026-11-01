@@ -11,6 +11,7 @@ from src.application.test_cases.embedding_service import TestCaseEmbeddingServic
 from src.application.models.model_runtime_service import ModelRuntimeService
 from src.application.observability import LangSmithObservabilityAdapter, TraceContext
 from src.application.permissions.permission_service import PermissionService
+from src.application.projects.project_service import ProjectService
 from src.application.prompting.prompt_assembly_service import PromptAssemblyService
 from src.application.skills.skill_runtime_service import SkillRuntimeService
 from src.application.runtime.tool_job_service import ToolJobService
@@ -45,9 +46,11 @@ def build_turn_context_assembly(
     test_case_embedding_service: TestCaseEmbeddingService | None,
     permission_service: PermissionService,
     prompt_assembly_service: PromptAssemblyService,
+    project_service: ProjectService | None = None,
 ) -> TurnContextAssembly:
     return TurnContextAssembly(
-        context_builder=build_context_builder_node(memory_runtime_service=memory_runtime_service),
+        context_builder=build_context_builder_node(memory_runtime_service=memory_runtime_service,
+            project_service=project_service),
         router=build_router_node(agent_registry=agent_registry, tool_registry=tool_registry,
             model_registry=model_registry, skill_registry=skill_registry, skill_runtime_service=skill_runtime_service,
             mcp_runtime_service=mcp_runtime_service, memory_runtime_service=memory_runtime_service,

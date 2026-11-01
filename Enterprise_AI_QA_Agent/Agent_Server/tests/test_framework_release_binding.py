@@ -8,6 +8,7 @@ import subprocess
 import sys
 
 import pytest
+import pytest_asyncio
 
 from src.infrastructure.postgres_runtime import postgres_connect
 from src.runtime.framework_worker_capabilities import FrameworkWorkerCapabilities
@@ -25,6 +26,45 @@ from tests.test_agent_v2_worker_contract import command
 
 REFERENCE = {"schema_version": 1, "archive_sha256": "b" * 64,
     "size_bytes": 1234, "source_revision": "c" * 40}
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def prepare_formal_project(request, monkeypatch):
+    # Pure release/codec tests do not opt into a database fixture. For the
+    # full-context test, select the project table before harness creates its FK.
+    if "formal_project" not in request.fixturenames:
+        yield None
+        return
+    from types import SimpleNamespace
+    from uuid import uuid4
+    from src.application.projects.project_service import ProjectService
+    from src.application.projects.project_store import PostgresProjectStore
+    from src.schemas.project import ProjectCreateRequest
+    from tests import test_agent_task_dispatch as dispatch_module
+    from tests.live_postgres_config import LivePostgresTestConfig
+    from tests.test_live_postgres_concurrency import _drop_tables
+
+    if not LivePostgresTestConfig().run_live_postgres_tests:
+        pytest.skip("requires real PostgreSQL and Redis")
+    settings = dispatch_module.get_settings().model_copy(deep=True)
+    settings.database.postgres_project_table = f"agent_test_release_project_{uuid4().hex[:12]}"
+    projects = ProjectService(store=PostgresProjectStore(settings))
+    try:
+        await projects.initialize()
+        project = await projects.create(ProjectCreateRequest(project_key="full-context-project",
+            name="Official Context Project", description="FROZEN_PROJECT_BODY",
+            base_url="https://project.invalid", graph_scope_key="full-context-scope"),
+            created_by="PRIVATE_PROJECT_AUTHOR")
+        monkeypatch.setattr(dispatch_module, "get_settings", lambda: settings)
+        yield SimpleNamespace(service=projects, project=project)
+    finally:
+        # Dependent harness fixtures drop their Session/FK before this table.
+        _drop_tables(settings, [settings.database.postgres_project_table])
+
+
+@pytest.fixture
+def formal_project(prepare_formal_project):
+    return prepare_formal_project
 
 
 def prepare_submission(current_source_release, *, session_id="prepared-session", turn_id="prepared-turn", **changes):
@@ -540,7 +580,7 @@ async def test_prepared_api_idempotency_is_not_an_execution_digest_bypass(admiss
 @pytest.mark.parametrize("selection", ["explicit", "auto", "session_preference"])
 @pytest.mark.parametrize("preparation", ["captured", "external"])
 async def test_http_prepared_release_runs_full_context_graph_and_commits_original_assets(admission,
-        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch, selection, preparation):
+        isolate_recovery_stores, current_source_release, tmp_path, monkeypatch, selection, preparation, formal_project):
     import httpx
     import shutil
     from src.application.deep_agents.checkpoint_provider import DeepAgentCheckpointProvider
@@ -560,16 +600,20 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
     from src.registry.modes import ModeRegistry
     from src.registry.skills import SkillRegistry
     from src.schemas.framework_graph_input import parse_graph_input_asset
+    from src.schemas.project import ProjectUpdateRequest
     from tests.test_agent_task_dispatch import payload
     from tests.test_framework_chat_models import _config, _provider
     from tests.test_framework_turn_context import assembly_components, build_assembly
 
     h = admission
     h.settings.database.postgres_tool_artifact_table = h.prefix + "_artifacts"
+    projects, project = formal_project.service, formal_project.project
+    h.sessions._project_service = projects
     job_store = PostgresToolJobStore(h.settings)
     jobs = ToolJobService(job_store)
     provider = DeepAgentCheckpointProvider(h.settings)
     parts = assembly_components(tmp_path)
+    parts.project_service = projects
     # HTTP orchestration adds the real mode's defaults. The small context-unit
     # fixture has only tdd-review; supply the actual additional source bodies
     # instead of weakening the production missing-Skill error or routing.
@@ -586,13 +630,18 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
         result = await original_record(stages, owner, asset)
         frozen_inputs.append(parse_graph_input_asset(asset))
         # The actual model request must use the already assembled original,
-        # not reopen mutable Skills after its graph-input receipt was saved.
+        # not reopen mutable Skills/projects after its graph-input was saved.
         parts.skill_file.write_text("# Changed Skill\nMUTATED_SKILL_BODY", encoding="utf-8")
+        await projects.update(project.id, ProjectUpdateRequest(description="MUTATED_PROJECT_BODY"))
         return result
 
     monkeypatch.setattr(FrameworkMessageStages, "record_graph_input", record)
     try:
         await job_store.initialize()
+        original_project = project.model_dump(mode="json", exclude={"created_by"})
+        session = await h.store.get_session(h.session_id)
+        session.project_id = project.id
+        await h.store.save_session(session)
         with _provider("openai_chat_completions") as (url, requests):
             config = _config("openai_chat_completions", url, key="fake", is_active=True)
             replacement = _config("openai_chat_completions", url, key="new-default", is_active=True)
@@ -702,7 +751,8 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
                 session.preferred_model = config.key
                 await h.store.save_session(session)
             body = payload("ORIGINAL_CURRENT_INPUT", key="full-context-http", model_key=requested_key, mode_key="code_review",
-                agent_key="context-reviewer", skill_keys=["tdd-review"], context={"requested_tool_keys": ["inspect_value"]},
+                agent_key="context-reviewer", skill_keys=["tdd-review"], context={"requested_tool_keys": ["inspect_value"],
+                    "project_id": "foreign-project", "project_context": {"description": "FORGED_PROJECT_BODY"}},
                 attachments=[{"name": "context.txt", "text_excerpt": "ATTACHMENT_CONTEXT"}]).model_dump(mode="json")
             async with httpx.AsyncClient(transport=httpx.ASGITransport(app=h.app), base_url="http://test") as client:
                 response = await client.post(f"/sessions/{h.session_id}/messages", json=body)
@@ -747,6 +797,10 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
             graph = frozen_inputs[0]
             assert graph.runtime_preparation.identity.binding == task.runtime_binding
             assert graph.model_key == "fake" and graph.runtime_preparation.initial_state["selected_model_key"] == "fake"
+            assert graph.context["project_id"] == project.id
+            assert graph.context["project_context"] == original_project
+            assert graph.runtime_preparation.initial_state["context_bundle"]["project_context"] == original_project
+            assert (await projects.get(project.id)).description == "MUTATED_PROJECT_BODY"
             assert "default" not in reads and replacement.key not in reads and "auto" not in reads
             stage = FrameworkMessageStages(h.tasks).get(task_id, h.session_id)
             assert stage.phase == "projected"
@@ -759,11 +813,14 @@ async def test_http_prepared_release_runs_full_context_graph_and_commits_origina
             assert snapshot.policy == prepared[0].model_budget and snapshot.actual_tokens == 10
             assert snapshot.reserved_calls == 1 and snapshot.calls[0].phase == "completed"
             wire = json.dumps(requests[0]["body"], ensure_ascii=False)
-            for marker in ("FROZEN_SKILL_BODY", "OBSERVATION_CONTEXT", "MEMORY_CONTEXT", "MCP_CONTEXT",
-                "ATTACHMENT_CONTEXT", "ORIGINAL_CURRENT_INPUT"):
+            for marker in ("FROZEN_SKILL_BODY", "OBSERVATION_CONTEXT", "MEMORY_CONTEXT", "MCP_CONTEXT", "CASE_CONTEXT",
+                "ATTACHMENT_CONTEXT", "ORIGINAL_CURRENT_INPUT", "FROZEN_PROJECT_BODY"):
                 assert wire.count(marker) == 1, marker
             assert "MUTATED_SKILL_BODY" not in wire and "code review pilot" not in wire
-            assert [kind for kind, _ in parts.reads] == ["observations", "memory", "mcp", "settings"]
+            assert all(marker not in wire for marker in (
+                "MUTATED_PROJECT_BODY", "FORGED_PROJECT_BODY", "PRIVATE_PROJECT_AUTHOR"))
+            assert [kind for kind, _ in parts.reads] == ["observations", "memory", "cases", "mcp", "settings"]
+            assert next(args for kind, args in parts.reads if kind == "cases")["project_id"] == project.id
             session = await h.store.get_session(h.session_id)
             assert [message.content for message in session.messages] == ["ORIGINAL_CURRENT_INPUT", "fixture answer"]
             # Duplicate delivery may only ACK the existing committed result.

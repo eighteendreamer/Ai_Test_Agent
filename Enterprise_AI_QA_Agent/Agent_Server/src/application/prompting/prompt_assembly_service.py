@@ -462,6 +462,15 @@ class PromptAssemblyService:
                 )
             )
 
+        if uses_turn_context_assembly(context_bundle) and context_bundle.get("project_context") is not None:
+            sections.append(PromptSection(
+                key="official_project", title="Official Project Data",
+                source="projects.registry", cache_scope="dynamic", priority=82,
+                content=wrap_untrusted_content("project_registry",
+                    json.dumps(context_bundle["project_context"], ensure_ascii=False, allow_nan=False)),
+                metadata={"project_id": context_bundle["project_id"], "trusted": False},
+            ))
+
         execution_basis = context_bundle.get("execution_basis")
         if execution_basis == "cases":
             frozen = AgentCaseExecutionContext.model_validate(context_bundle.get("case_execution"))

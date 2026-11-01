@@ -706,6 +706,7 @@ async def _initialize_lifespan_resources(
         mcp_runtime_service=mcp_runtime_service, memory_runtime_service=memory_runtime_service,
         test_case_embedding_service=test_case_embedding_service, permission_service=permission_service,
         prompt_assembly_service=prompt_assembly_service,
+        project_service=project_service,
     )
     graph = build_agent_graph(
         agent_registry=agent_registry,

@@ -1,18 +1,47 @@
 ﻿from __future__ import annotations
 
 from datetime import datetime
+import logging
 
 from src.application.context.memory_runtime_service import MemoryRuntimeService
+from src.application.projects.project_service import ProjectService
 from src.graph.state import AgentGraphState
 from src.runtime.execution_logging import append_graph_event_durable, truncate_text
 from src.schemas.framework_transcript import uses_turn_context_assembly
 
 
+logger = logging.getLogger(__name__)
+
+
 def build_context_builder_node(
     memory_runtime_service: MemoryRuntimeService | None = None,
+    *, project_service: ProjectService | None = None,
 ):
     async def context_builder(state: AgentGraphState) -> AgentGraphState:
         context = dict(state["context_bundle"])
+        if uses_turn_context_assembly(context):
+            # New preparation owns this source. Frozen graph-input recovery
+            # consumes its original state, not this mutable project lookup.
+            context.pop("project_context", None)
+            state["context_bundle"] = context
+            project_id = context.get("project_id")
+            if project_id:
+                try:
+                    if project_service is None:
+                        raise RuntimeError("Project service is not composed")
+                    project = await project_service.require_active(project_id)
+                    if project.id != project_id:
+                        raise ValueError("Project source returned another identity")
+                    context["project_context"] = project.model_dump(mode="json", include={
+                        "id", "project_key", "name", "description", "base_url", "graph_scope_key",
+                        "status", "created_at", "updated_at", "archived_at"})
+                except Exception as exc:
+                    logger.warning("framework_project_context_unavailable", extra={
+                        "session_id": state["session_id"], "turn_id": state["turn_id"],
+                        "project_id": project_id, "error_type": type(exc).__name__})
+                    raise RuntimeError("Framework project context is unavailable") from None
+                logger.info("framework_project_context_loaded", extra={
+                    "session_id": state["session_id"], "turn_id": state["turn_id"], "project_id": project_id})
         state["observation_hits"] = []
         state["observation_prompt_blocks"] = []
 

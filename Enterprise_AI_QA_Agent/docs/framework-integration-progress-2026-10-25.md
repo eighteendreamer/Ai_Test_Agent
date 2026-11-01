@@ -8127,3 +8127,58 @@ $env:RUN_LIVE_MYSQL_TESTS='1'
 v4 B／§4、§6，F／§14.1–14.2 → 本节 → core 配置、原 main、原 loader、原完整 HTTP 测试、新配置测试、原控制说明和本记录共 7 文件 → 本节红绿、最终 291＋1 skip 及清理模块 9 passed → 独立提交 `【feat】将消息受理策略接入应用启动`，ID 见 Git 历史和交付，不推送／建 PR；新增测试只对该文件显式纳入跟踪，不改忽略规则，不混入 v3 草稿或认证／日志／制品。
 
 本步具备真实 main 的默认关闭可选组合，不是仅测试 app 具备端口，但不代表生产发布或 B／F 完成。限额具体数值、模式质量／发布策略、实际模型配置表与正式项目／用例版本冻结、全资源 main 启动、全部旧读者升级或隔离、完整有效输入／格式／行为审计、双制品独立安装／部署、备份恢复与灰度排空仍待验收。§159／160 时间异常及 §166 子进程 RuntimeError 未定位；完整 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端、E3/E4 继续保留 v4 原出口，整体 goal 继续 active。
+
+## 177. B／§4.1：复用正式项目服务装配并冻结项目正文（2026-11-01）
+
+### 续接、根因与依据 → 做法
+
+续接 `0a0c2182f`／§176，重新核对 goal、Git、v4、原实施记录和项目／Session／编排／Runtime／Prompt／图输入消费。用户 v3 草稿仍为原 SHA256 `8A43E94160767A0DE20740F2CB30782F06322CBC3467076DFCB120D4EFDF1AD4`，未改／暂存。固定用例已有 `build_agent_case_context()`／`AgentCaseExecutionContext` 和固定计划、版本、实际依赖引用校验，不重造该领域链路，也不将本次项目正文接入说成正式用例已验收。
+
+缺口不是 ProjectService 不存在，而是 Session 项目校验丢弃其返回资料，Runtime 只覆盖 context 中的正式 project_id；统一上下文节点和 Prompt 都没有正式项目正文来源。依据既有 `ProjectService.require_active()`、`PostgresProjectStore` 和 `planning_service.prepare_task()`／PlanningTaskSeed 对项目 id／name／description／base_url 的原件投影 → 复用同一正式来源，并显式白名单包含追溯所需的项目 key／scope／状态与时间，不引入版本表、私有配置缓存或新调度层。依据原 ContextBuilder→Router→PermissionGate→PromptAssembly、现有不可信资料转义、graph-input 和原件投影 → 正常路径只装配一次，恢复消费原输入，不新增恢复分支。课程《模型升级与微调回归测试》版本签名／baseline snapshot／同输入追溯原则 → 同时比较实际请求和图输入原件，不以 ID 非空或有回答为通过依据。
+
+### 实现与兼容边界
+
+- `build_context_builder_node()` 增加可选原项目服务，`build_turn_context_assembly()` 透传，main 将已初始化的正式服务注入原共享实例；CLI 仍复用 main，没有新入口。仅 v2.2／v2.3 完整上下文准备按 Session 来源 project_id 读取正文；无项目不读，legacy／v2.0／v2.1 准备不变。
+- 新准备先移除客户端 `project_context`，有正式项目时调用 require_active，核对返回身份并仅保存 id／project_key／name／description／base_url／graph_scope_key／status／created_at／updated_at／archived_at 的 JSON 原件。created_by 不进入上下文／Prompt，不自动包含未来字段。无项目的伪造资料也被移除；原 task.input 与冻结 ExecutionRequest 的输入证据不改。
+- 项目服务缺失、记录缺失／归档、来源返回异项目或错误均明确失败，不使用客户端正文／legacy fallback。`framework_project_context_loaded`／`framework_project_context_unavailable` 只记录身份和错误类型；返回受控错误，不输出源异常正文。原 Session／Worker 的活动项目校验仍保留，不能把正文一次读取夸大为整个请求只访问项目库一次。
+- 原 PromptAssembly 在 `official_project` 段只注入一次 JSON，复用 HTML 转义与 `untrusted_content`，provenance=project_registry，trusted=false；正文不能提供指令、权限、目标授权或替换固定环境／用例。原 case_execution、检索和治理消费不改。正式项目会按既有规则触发项目内检索，不因本子步替换为全局检索。
+- 原图输入 context 和 runtime_preparation.initial_state 都保存同一原件，实际模型请求使用已装配 Prompt；冻结后更新项目不能使本次输入漂移。结果读取／审批／投影复用已有原件链，下一次新准备读当前项目，无启动缓存。不把 updated_at 当成不存在的项目版本号；正文由原图输入摘要固定，不是仅保存时间或 hash 而丢正文。
+- 没有新增公开 API／前端 DTO、数据库列、持久资产 schema 或能力上界；项目资料是原通用 context／Prompt 中的业务数据，不授予发送／恢复权。历史已冻结图输入没有该字段仍可读，不补齐／重渲染；项目活动性、Session 身份、owner／预算／当前授权仍由原各边界检查。搜索所有新参数、project_context、Prompt 和装配调用点，main／测试组合成对同步；原控制说明追加本契约，并澄清 §174 的未组合状态属于历史、当前可选组合见 §176。
+
+### TDD 与真实失败
+
+1. 新模块在修改生产代码前实际 **9 failed、3 passed，8.11 秒**，exit 1：正式项目原件缺失且保留客户端伪造 context；无项目未清理伪造资料；缺服务／缺记录／归档／异项目／源异常未拒绝；main 未组合项目服务。三项 legacy 兼容正例通过。实现后，新模块与原 turn_context 两模块实际 **36 passed，5.30 秒**，exit 0，无 skip／deselect；之后增加“下一次准备重新读取当前项目”正例，纳入最终完整组，不用这次 36 项代表该后增用例。
+2. 扩展原 HTTP 全链为真实隔离 PG 项目，并在图输入保存后实际修改项目和 Skill。首轮 **6 failed、68 deselected，68.42 秒**：测试在原 harness 初始化 Session 外键后才更换项目表，保存项目绑定时报 ForeignKeyViolation，外键仍引用 agent_projects。这是夹具隔离顺序错误，未执行模型，不是生产项目读取缺陷；没有向该现有项目表补数据，也没有禁用外键。
+3. 复用原 `test_framework_context_runtime.context_project` 的初始化前隔离模式：只对显式 opt-in formal_project 的完整 HTTP 用例，在 autouse 准备中选择随机项目表并初始化，再让 harness 建立真实 Session 外键；依赖夹具先清理 Session 表后才清理该项目表。纯制品／codec 测试不因新夹具访问数据库或跳过。
+4. 外键修正后专项实际 **6 failed、68 deselected，135.84 秒**：六例已经通过项目原件、冻结后变更、实际请求和唯一调用断言，但末尾原无项目夹具的读取序列断言漏列 cases。查阅原 router 的 project_id 条件确认正式项目本应触发检索；将精确预期同步为 observations→memory→cases→mcp→settings，并新增检索 project_id 等于正式项目、CASE_CONTEXT 在实际请求恰好一次的断言。未禁用检索、放宽正文／身份／消息／调用断言或修改生产路由。
+
+### 最终源码验证与证据范围
+
+```powershell
+# cwd: Agent_Server；固定 .venv-framework-v2，复用已运行 PG／Redis／MySQL
+$env:RUN_LIVE_POSTGRES_TESTS='1'
+$env:RUN_LIVE_REDIS_TESTS='1'
+$env:RUN_LIVE_DOCKER_TESTS='0'
+$env:RUN_LIVE_MYSQL_TESTS='1'
+$env:PYTHONIOENCODING='utf-8'
+..\.venv-framework-v2\Scripts\python.exe -u -m pytest tests/test_framework_project_context.py tests/test_framework_turn_context.py tests/test_framework_context_runtime.py tests/test_framework_context_transcript.py tests/test_framework_graph_input_asset.py tests/test_framework_release_binding.py tests/test_prompt_assembly_service.py tests/test_session_project_binding.py tests/test_framework_turn_projection.py tests/test_framework_approval_runtime.py tests/test_lifespan_resource_cleanup.py tests/test_framework_submission_configuration.py -q -rs --tb=short
+# 423 passed，1028.03 秒，exit 0，无 skip／deselect
+```
+
+同一最终源码完整十二模块覆盖项目装配反例／下一次读取／legacy 不变、全部原上下文／消息、原图输入 codec、正式项目绑定、main 可选组合、原生终态与审批、资源清理和原制品读者。包含上文两次 HTTP 参数组的最终六例，不用早期未跑完的断言当绿色；36 项专项与本组重叠，不相加。全部已启动 pytest 都观察到真实终态，无遗留运行测试。不是 §159／160 原完整故障组合的重跑，不能撤销旧时间异常或 §166 未定位的子进程问题。
+
+HTTP captured／external × explicit／auto／session_preference 六例现在从真实随机 PG 项目表创建正式记录，Session 外键、原任务 project_id、框架 context 与实际检索范围指向同一项目。原 HTTP→PG／Redis outbox→Worker→统一上下文→固定官方 SDK／框架／PG saver→原应用结果链保留，制品为本轮实际源码；保存 graph-input 后实际更新项目 description 和 Skill 文件，实际 HTTP 模型请求仍有原正文各一次，没有伪造项目、变更正文或 created_by。原 payload 逐字段相等、模型根选择／预算、唯一调用、所有上下文标记和重复投递 ACK-only 均保留。配置存储、GeneralSettings、Memory／用例检索仍为受控端口，模型响应是本地合成文本／usage，不是 MySQL 模型表、真实供应商、真实 embedding 或领域目标测试。
+
+原 `test_framework_context_runtime` 两处组合也改用其真实隔离项目服务，不用新单元 helper 的受控 ProjectRecord 冒充正式来源。跨 Turn／审批组比较实际 Prompt、图输入 context／initial_state 的完整项目原件；原生终态到结果资产间故障组在实际改写项目并删除 Skill 后，明确禁止项目正文／Prompt／配置／模型重读，继续逐字段比较原正常结果与原件读取结果。完整恢复参数继续走原获准 successor 与唯一 finalizer、保留原失败任务及一次工具效果；原 Session 换项目的拒绝反例保留。禁止项目源读取的 patch 仅包住原件读取，不取消恢复入口原有活动项目校验。这不是跨部署的新模型／工具重放许可，也不是独立依赖安装 E4。
+
+真实 MySQL 分支在本组仅做既有 SELECT 1／SQL 池归属和释放，不读取或迁移模型配置表；没有启动／重启 MySQL、PG、Redis 或容器。main 项目组合使用 AST 审计，实际链路 app 仍手动装配，不代表完整 main 全资源初始化。固定用例生产链、真实供应商、业务工具效果／Runner、embedding、RustFS 和模式质量基线均没有因项目资料接通而完成。
+
+根目录 `.venv-framework-v2\Scripts\python.exe -m compileall -q Agent_Server/src Agent_Server/tests`、`git diff --check` 实际 exit 0，明确输出 compileall_ok／diff_check_ok。find_spec 确认 ruff／mypy／build／wheel／setuptools 均未安装，未跑独立 lint／typecheck／构建安装，不安装依赖。测试前后对 src 全部 Python 文件路径与原始字节计算的聚合 SHA256 均为 `1228ff069bf5a810df5c7d58a0a94827e88d4f18eb25fb5468f91a83241105c4`，覆盖源码在归档／验证期间不变；期间只更新不在制品覆盖范围内的说明／记录。前端无修改、未重跑。
+
+实库 Harness 仍沿原 Settings 自动加载后端 `.env`，不宣称完全不访问配置；未用工具直接打开、输出或修改实际 `.env`／认证。不启用生产路由、不调用付费模型、不访问项目 base_url 或扫描目标。仅清理本轮夹具自有隔离表／schema／Redis key，未处理 §158 未归属共享残留。
+
+### 提交对应与剩余出口
+
+v4 B／§4.1 → 本节 → ContextBuilder／共享 builder／PromptAssembly／main，三个原测试及新项目测试、原控制说明和本记录共 10 文件 → 本节红绿、失败原件与最终 423 项 → 独立提交 `【feat】装配正式项目上下文并冻结请求原件`，ID 见 Git 历史与交付；不推送／建 PR。提交前核对 status／diff／具体暂存清单，只对已审阅的新测试显式纳入跟踪，不改忽略规则，不混入 v3 草稿、认证／日志或测试制品。
+
+本步完成项目正文的正式来源与冻结消费，不代表 B 或全系统完成。下一步继续核对正式固定用例／套件／RunItem 的新框架入口与版本冻结，以及实际 MySQL 模型配置链；不把已有领域实现重写为另一套流程。完整有效输入／格式／行为审计、全部旧读者升级或隔离、正式模式／预算发布、完整 main 启动、双制品独立安装／部署、备份恢复及灰度排空仍待验收；v4 A2/A3/B/C/D/E/F、H01–H12、真实供应商／embedding／RustFS／领域 Runner、官方 saver conformance、全前后端和 E3/E4 出口继续保留，整体 goal 维持 active。
